@@ -1,5 +1,8 @@
 #include <protoPython/PythonEnvironment.h>
 #include <protoPython/PythonModuleProvider.h>
+#include <protoPython/NativeModuleProvider.h>
+#include <protoPython/SysModule.h>
+#include <protoPython/BuiltinsModule.h>
 #include <protoCore.h>
 
 namespace protoPython {
@@ -135,8 +138,21 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath) {
     dictPrototype = dictPrototype->setAttribute(context, py_name, context->fromUTF8String("dict"));
     dictPrototype = dictPrototype->setAttribute(context, py_getitem, context->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_getitem));
 
-    // 5. Initialize StdLib Module Provider
+    // 5. Initialize Native Module Provider
     auto& registry = proto::ProviderRegistry::instance();
+    auto nativeProvider = std::make_unique<NativeModuleProvider>();
+
+    // sys module
+    sysModule = sys::initialize(context);
+    nativeProvider->registerModule("sys", [this](proto::ProtoContext* ctx) { return sysModule; });
+
+    // builtins module
+    builtinsModule = builtins::initialize(context, objectPrototype, typePrototype, intPrototype, strPrototype, listPrototype, dictPrototype);
+    nativeProvider->registerModule("builtins", [this](proto::ProtoContext* ctx) { return builtinsModule; });
+
+    registry.registerProvider(std::move(nativeProvider));
+
+    // 6. Initialize StdLib Module Provider
     // Use provided path or default to ./lib/python3.14
     std::string path = stdLibPath.empty() ? "./lib/python3.14" : stdLibPath;
     registry.registerProvider(std::make_unique<PythonModuleProvider>(path));
@@ -147,13 +163,20 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath) {
         const proto::ProtoList* chain = chainObj->asList(context);
         if (chain) {
             chain = chain->insertAt(context, 0, context->fromUTF8String("provider:python_stdlib"));
+            chain = chain->insertAt(context, 0, context->fromUTF8String("provider:native"));
             context->space->setResolutionChain(chain->asObject(context));
         }
     }
 }
 
 const proto::ProtoObject* PythonEnvironment::resolve(const std::string& name) {
-    // Simple resolution for built-ins
+    // 1. Check builtins
+    if (builtinsModule) {
+        const proto::ProtoObject* attr = builtinsModule->getAttribute(context, proto::ProtoString::fromUTF8String(context, name.c_str()));
+        if (attr && attr != PROTO_NONE) return attr;
+    }
+
+    // 2. Direct resolution fallback for hardcoded prototypes (already in builtins, but keep for robustness)
     if (name == "object") return objectPrototype;
     if (name == "type") return typePrototype;
     if (name == "int") return intPrototype;

@@ -1,8 +1,14 @@
 file(REMOVE_RECURSE
+  "CMakeFiles/protoPython.dir/BuiltinsModule.cpp.o"
+  "CMakeFiles/protoPython.dir/BuiltinsModule.cpp.o.d"
+  "CMakeFiles/protoPython.dir/NativeModuleProvider.cpp.o"
+  "CMakeFiles/protoPython.dir/NativeModuleProvider.cpp.o.d"
   "CMakeFiles/protoPython.dir/PythonEnvironment.cpp.o"
   "CMakeFiles/protoPython.dir/PythonEnvironment.cpp.o.d"
   "CMakeFiles/protoPython.dir/PythonModuleProvider.cpp.o"
   "CMakeFiles/protoPython.dir/PythonModuleProvider.cpp.o.d"
+  "CMakeFiles/protoPython.dir/SysModule.cpp.o"
+  "CMakeFiles/protoPython.dir/SysModule.cpp.o.d"
   "libprotoPython.pdb"
   "libprotoPython.so"
 )

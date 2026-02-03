@@ -73,6 +73,8 @@ private:
     const proto::ProtoObject* strPrototype;
     const proto::ProtoObject* listPrototype;
     const proto::ProtoObject* dictPrototype;
+    const proto::ProtoObject* sysModule;
+    const proto::ProtoObject* builtinsModule;
 };
 
 } // namespace protoPython

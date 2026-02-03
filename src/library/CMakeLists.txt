@@ -1,6 +1,9 @@
 add_library(protoPython SHARED
     PythonEnvironment.cpp
     PythonModuleProvider.cpp
+    NativeModuleProvider.cpp
+    SysModule.cpp
+    BuiltinsModule.cpp
 )
 
 target_include_directories(protoPython PUBLIC

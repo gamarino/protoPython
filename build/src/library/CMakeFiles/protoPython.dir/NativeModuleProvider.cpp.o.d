@@ -1,7 +1,7 @@
-src/library/CMakeFiles/protoPython.dir/PythonEnvironment.cpp.o: \
- /home/gamarino/Documentos/proyectos/protoPython/src/library/PythonEnvironment.cpp \
+src/library/CMakeFiles/protoPython.dir/NativeModuleProvider.cpp.o: \
+ /home/gamarino/Documentos/proyectos/protoPython/src/library/NativeModuleProvider.cpp \
  /usr/include/stdc-predef.h \
- /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/PythonEnvironment.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/NativeModuleProvider.h \
  /home/gamarino/Documentos/proyectos/protoCore/headers/protoCore.h \
  /usr/include/c++/13/atomic /usr/include/c++/13/bits/atomic_base.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/c++config.h \
@@ -210,10 +210,8 @@ src/library/CMakeFiles/protoPython.dir/PythonEnvironment.cpp.o: \
  /usr/include/c++/13/pstl/execution_defs.h /usr/include/c++/13/vector \
  /usr/include/c++/13/bits/stl_vector.h \
  /usr/include/c++/13/bits/stl_bvector.h \
- /usr/include/c++/13/bits/vector.tcc \
- /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/PythonModuleProvider.h \
- /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/NativeModuleProvider.h \
- /usr/include/c++/13/map /usr/include/c++/13/bits/stl_tree.h \
+ /usr/include/c++/13/bits/vector.tcc /usr/include/c++/13/map \
+ /usr/include/c++/13/bits/stl_tree.h \
  /usr/include/c++/13/bits/node_handle.h \
  /usr/include/c++/13/bits/stl_map.h \
  /usr/include/c++/13/bits/stl_multimap.h \
@@ -227,6 +225,4 @@ src/library/CMakeFiles/protoPython.dir/PythonEnvironment.cpp.o: \
  /usr/include/c++/13/array /usr/include/c++/13/bits/stl_algo.h \
  /usr/include/c++/13/bits/algorithmfwd.h \
  /usr/include/c++/13/bits/stl_heap.h \
- /usr/include/c++/13/bits/uniform_int_dist.h \
- /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/SysModule.h \
- /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/BuiltinsModule.h
+ /usr/include/c++/13/bits/uniform_int_dist.h

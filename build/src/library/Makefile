@@ -205,6 +205,54 @@ protoPython/fast:
 	cd /home/gamarino/Documentos/proyectos/protoPython/build && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/build
 .PHONY : protoPython/fast
 
+BuiltinsModule.o: BuiltinsModule.cpp.o
+.PHONY : BuiltinsModule.o
+
+# target to build an object file
+BuiltinsModule.cpp.o:
+	cd /home/gamarino/Documentos/proyectos/protoPython/build && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/BuiltinsModule.cpp.o
+.PHONY : BuiltinsModule.cpp.o
+
+BuiltinsModule.i: BuiltinsModule.cpp.i
+.PHONY : BuiltinsModule.i
+
+# target to preprocess a source file
+BuiltinsModule.cpp.i:
+	cd /home/gamarino/Documentos/proyectos/protoPython/build && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/BuiltinsModule.cpp.i
+.PHONY : BuiltinsModule.cpp.i
+
+BuiltinsModule.s: BuiltinsModule.cpp.s
+.PHONY : BuiltinsModule.s
+
+# target to generate assembly for a file
+BuiltinsModule.cpp.s:
+	cd /home/gamarino/Documentos/proyectos/protoPython/build && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/BuiltinsModule.cpp.s
+.PHONY : BuiltinsModule.cpp.s
+
+NativeModuleProvider.o: NativeModuleProvider.cpp.o
+.PHONY : NativeModuleProvider.o
+
+# target to build an object file
+NativeModuleProvider.cpp.o:
+	cd /home/gamarino/Documentos/proyectos/protoPython/build && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/NativeModuleProvider.cpp.o
+.PHONY : NativeModuleProvider.cpp.o
+
+NativeModuleProvider.i: NativeModuleProvider.cpp.i
+.PHONY : NativeModuleProvider.i
+
+# target to preprocess a source file
+NativeModuleProvider.cpp.i:
+	cd /home/gamarino/Documentos/proyectos/protoPython/build && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/NativeModuleProvider.cpp.i
+.PHONY : NativeModuleProvider.cpp.i
+
+NativeModuleProvider.s: NativeModuleProvider.cpp.s
+.PHONY : NativeModuleProvider.s
+
+# target to generate assembly for a file
+NativeModuleProvider.cpp.s:
+	cd /home/gamarino/Documentos/proyectos/protoPython/build && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/NativeModuleProvider.cpp.s
+.PHONY : NativeModuleProvider.cpp.s
+
 PythonEnvironment.o: PythonEnvironment.cpp.o
 .PHONY : PythonEnvironment.o
 
@@ -253,6 +301,30 @@ PythonModuleProvider.cpp.s:
 	cd /home/gamarino/Documentos/proyectos/protoPython/build && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/PythonModuleProvider.cpp.s
 .PHONY : PythonModuleProvider.cpp.s
 
+SysModule.o: SysModule.cpp.o
+.PHONY : SysModule.o
+
+# target to build an object file
+SysModule.cpp.o:
+	cd /home/gamarino/Documentos/proyectos/protoPython/build && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/SysModule.cpp.o
+.PHONY : SysModule.cpp.o
+
+SysModule.i: SysModule.cpp.i
+.PHONY : SysModule.i
+
+# target to preprocess a source file
+SysModule.cpp.i:
+	cd /home/gamarino/Documentos/proyectos/protoPython/build && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/SysModule.cpp.i
+.PHONY : SysModule.cpp.i
+
+SysModule.s: SysModule.cpp.s
+.PHONY : SysModule.s
+
+# target to generate assembly for a file
+SysModule.cpp.s:
+	cd /home/gamarino/Documentos/proyectos/protoPython/build && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/SysModule.cpp.s
+.PHONY : SysModule.cpp.s
+
 # Help Target
 help:
 	@echo "The following are some of the valid targets for this Makefile:"
@@ -269,12 +341,21 @@ help:
 	@echo "... rebuild_cache"
 	@echo "... test"
 	@echo "... protoPython"
+	@echo "... BuiltinsModule.o"
+	@echo "... BuiltinsModule.i"
+	@echo "... BuiltinsModule.s"
+	@echo "... NativeModuleProvider.o"
+	@echo "... NativeModuleProvider.i"
+	@echo "... NativeModuleProvider.s"
 	@echo "... PythonEnvironment.o"
 	@echo "... PythonEnvironment.i"
 	@echo "... PythonEnvironment.s"
 	@echo "... PythonModuleProvider.o"
 	@echo "... PythonModuleProvider.i"
 	@echo "... PythonModuleProvider.s"
+	@echo "... SysModule.o"
+	@echo "... SysModule.i"
+	@echo "... SysModule.s"
 .PHONY : help
 
 

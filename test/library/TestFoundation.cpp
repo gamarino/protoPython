@@ -70,3 +70,37 @@ TEST_F(FoundationTest, ModuleImport) {
     ASSERT_NE(fileVal, nullptr);
     ASSERT_TRUE(fileVal->isString(context));
 }
+
+TEST_F(FoundationTest, BuiltinsModule) {
+    proto::ProtoContext* context = env.getContext();
+    
+    // builtins should be resolvable
+    const proto::ProtoObject* builtins = env.resolve("builtins");
+    ASSERT_NE(builtins, nullptr);
+    ASSERT_NE(builtins, PROTO_NONE);
+    
+    // builtins.int should be the int prototype
+    const proto::ProtoObject* pyInt = builtins->getAttribute(context, proto::ProtoString::fromUTF8String(context, "int"));
+    EXPECT_EQ(pyInt, env.getIntPrototype());
+    
+    // resolve("int") should now go through builtins
+    EXPECT_EQ(env.resolve("int"), env.getIntPrototype());
+}
+
+TEST_F(FoundationTest, SysModule) {
+    proto::ProtoContext* context = env.getContext();
+    
+    const proto::ProtoObject* sys = env.resolve("sys");
+    ASSERT_NE(sys, nullptr);
+    ASSERT_NE(sys, PROTO_NONE);
+    
+    // Check sys.platform
+    const proto::ProtoObject* platform = sys->getAttribute(context, proto::ProtoString::fromUTF8String(context, "platform"));
+    ASSERT_NE(platform, nullptr);
+    ASSERT_TRUE(platform->isString(context));
+    
+    // Check sys.version
+    const proto::ProtoObject* version = sys->getAttribute(context, proto::ProtoString::fromUTF8String(context, "version"));
+    ASSERT_NE(version, nullptr);
+    ASSERT_TRUE(version->isString(context));
+}
