@@ -730,6 +730,54 @@ TEST_F(FoundationTest, StringDunders) {
     EXPECT_EQ(ls, "hello");
 }
 
+TEST_F(FoundationTest, DictUpdateClearCopy) {
+    proto::ProtoContext* context = env.getContext();
+
+    const proto::ProtoObject* dictObj = context->newObject(true)->addParent(context, env.getDictPrototype());
+    dictObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->newSparseList()->asObject(context));
+    dictObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__keys__"), context->newList()->asObject(context));
+
+    const proto::ProtoObject* setitem = dictObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__setitem__"));
+    const proto::ProtoObject* update = dictObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "update"));
+    const proto::ProtoObject* clear = dictObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "clear"));
+    const proto::ProtoObject* copy = dictObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "copy"));
+    const proto::ProtoObject* lenM = dictObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__len__"));
+
+    const proto::ProtoList* args1 = context->newList()->appendLast(context, context->fromInteger(1))->appendLast(context, context->fromUTF8String("a"));
+    setitem->asMethod(context)(context, dictObj, nullptr, args1, nullptr);
+    const proto::ProtoList* args2 = context->newList()->appendLast(context, context->fromInteger(2))->appendLast(context, context->fromUTF8String("b"));
+    setitem->asMethod(context)(context, dictObj, nullptr, args2, nullptr);
+
+    const proto::ProtoObject* other = context->newObject(true)->addParent(context, env.getDictPrototype());
+    other->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->newSparseList()->asObject(context));
+    other->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__keys__"), context->newList()->asObject(context));
+    const proto::ProtoObject* otherSetitem = other->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__setitem__"));
+    const proto::ProtoList* otherArgs1 = context->newList()->appendLast(context, context->fromInteger(2))->appendLast(context, context->fromUTF8String("B"));
+    otherSetitem->asMethod(context)(context, other, nullptr, otherArgs1, nullptr);
+    const proto::ProtoList* otherArgs2 = context->newList()->appendLast(context, context->fromInteger(3))->appendLast(context, context->fromUTF8String("c"));
+    otherSetitem->asMethod(context)(context, other, nullptr, otherArgs2, nullptr);
+
+    const proto::ProtoList* updateArgs = context->newList()->appendLast(context, other);
+    update->asMethod(context)(context, dictObj, nullptr, updateArgs, nullptr);
+
+    const proto::ProtoObject* lenResult = lenM->asMethod(context)(context, dictObj, nullptr, context->newList(), nullptr);
+    EXPECT_EQ(lenResult->asLong(context), 3);
+
+    const proto::ProtoObject* copied = copy->asMethod(context)(context, dictObj, nullptr, context->newList(), nullptr);
+    ASSERT_NE(copied, nullptr);
+    const proto::ProtoObject* copyLen = copied->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__len__"));
+    ASSERT_NE(copyLen, nullptr);
+    const proto::ProtoObject* copyLenResult = copyLen->asMethod(context)(context, copied, nullptr, context->newList(), nullptr);
+    EXPECT_EQ(copyLenResult->asLong(context), 3);
+
+    clear->asMethod(context)(context, dictObj, nullptr, context->newList(), nullptr);
+    const proto::ProtoObject* lenAfterClear = lenM->asMethod(context)(context, dictObj, nullptr, context->newList(), nullptr);
+    EXPECT_EQ(lenAfterClear->asLong(context), 0);
+
+    const proto::ProtoObject* copyLenAfter = copyLen->asMethod(context)(context, copied, nullptr, context->newList(), nullptr);
+    EXPECT_EQ(copyLenAfter->asLong(context), 3);
+}
+
 TEST_F(FoundationTest, DequeBasic) {
     proto::ProtoContext* context = env.getContext();
     const proto::ProtoObject* collections = env.resolve("_collections");
