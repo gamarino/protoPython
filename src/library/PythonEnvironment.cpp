@@ -6,6 +6,9 @@
 #include <protoPython/IOModule.h>
 #include <protoPython/CollectionsModule.h>
 #include <protoPython/ExceptionsModule.h>
+#include <protoPython/LoggingModule.h>
+#include <protoPython/MathModule.h>
+#include <protoPython/OperatorModule.h>
 #include <protoCore.h>
 
 namespace protoPython {
@@ -1034,6 +1037,41 @@ static const proto::ProtoObject* py_frozenset_call(
     return fs;
 }
 
+static const proto::ProtoObject* py_int_hash(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    return context->fromInteger(self->asLong(context));
+}
+
+static const proto::ProtoString* str_from_self(proto::ProtoContext* context, const proto::ProtoObject* self);
+
+static const proto::ProtoObject* py_str_hash(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoString* s = str_from_self(context, self);
+    if (!s) return context->fromInteger(0);
+    return context->fromInteger(static_cast<long long>(s->getHash(context)));
+}
+
+static const proto::ProtoObject* py_tuple_hash(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "__data__");
+    const proto::ProtoObject* data = self->getAttribute(context, dataName);
+    if (!data || !data->asTuple(context)) return context->fromInteger(0);
+    const proto::ProtoTuple* t = data->asTuple(context);
+    unsigned long h = 0x345678UL;
+    long n = static_cast<long>(t->getSize(context));
+    for (long i = 0; i < n; ++i) {
+        const proto::ProtoObject* el = t->getAt(context, static_cast<int>(i));
+        h ^= (el ? el->getHash(context) : 0) + (h << 6) + (h >> 2);
+    }
+    return context->fromInteger(static_cast<long long>(h));
+}
+
 static const proto::ProtoObject* py_tuple_len(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -1647,8 +1685,10 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     // 4. Basic types
     intPrototype = context->newObject(true);
     intPrototype = intPrototype->addParent(context, objectPrototype);
+    const proto::ProtoString* py_hash = proto::ProtoString::fromUTF8String(context, "__hash__");
     intPrototype = intPrototype->setAttribute(context, py_class, typePrototype);
     intPrototype = intPrototype->setAttribute(context, py_name, context->fromUTF8String("int"));
+    intPrototype = intPrototype->setAttribute(context, py_hash, context->fromMethod(const_cast<proto::ProtoObject*>(intPrototype), py_int_hash));
 
     strPrototype = context->newObject(true);
     strPrototype = strPrototype->addParent(context, objectPrototype);
@@ -1661,6 +1701,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     strPrototype = strPrototype->setAttribute(context, py_upper, context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_upper));
     strPrototype = strPrototype->setAttribute(context, py_lower, context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_lower));
     strPrototype = strPrototype->setAttribute(context, py_format, context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_format));
+    strPrototype = strPrototype->setAttribute(context, py_hash, context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_hash));
 
     listPrototype = context->newObject(true);
     listPrototype = listPrototype->addParent(context, objectPrototype);
@@ -1727,6 +1768,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     tuplePrototype = tuplePrototype->setAttribute(context, py_iter, context->fromMethod(const_cast<proto::ProtoObject*>(tuplePrototype), py_tuple_iter));
     tuplePrototype = tuplePrototype->setAttribute(context, py_contains, context->fromMethod(const_cast<proto::ProtoObject*>(tuplePrototype), py_tuple_contains));
     tuplePrototype = tuplePrototype->setAttribute(context, py_bool, context->fromMethod(const_cast<proto::ProtoObject*>(tuplePrototype), py_tuple_bool));
+    tuplePrototype = tuplePrototype->setAttribute(context, py_hash, context->fromMethod(const_cast<proto::ProtoObject*>(tuplePrototype), py_tuple_hash));
 
     const proto::ProtoObject* tupleIterProto = context->newObject(true);
     tupleIterProto = tupleIterProto->addParent(context, objectPrototype);
@@ -1749,7 +1791,6 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     setIterProto = setIterProto->setAttribute(context, py_next, context->fromMethod(const_cast<proto::ProtoObject*>(setIterProto), py_set_iter_next));
     setPrototype = setPrototype->setAttribute(context, py_iter_proto, setIterProto);
 
-    const proto::ProtoString* py_hash = proto::ProtoString::fromUTF8String(context, "__hash__");
     const proto::ProtoString* py_call = proto::ProtoString::fromUTF8String(context, "__call__");
     frozensetPrototype = context->newObject(true);
     frozensetPrototype = frozensetPrototype->addParent(context, objectPrototype);
@@ -1800,6 +1841,9 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
 
     // _collections module
     nativeProvider->registerModule("_collections", [this](proto::ProtoContext* ctx) { return collections::initialize(ctx, dictPrototype); });
+    nativeProvider->registerModule("logging", [](proto::ProtoContext* ctx) { return logging::initialize(ctx); });
+    nativeProvider->registerModule("operator", [](proto::ProtoContext* ctx) { return operator_::initialize(ctx); });
+    nativeProvider->registerModule("math", [](proto::ProtoContext* ctx) { return math::initialize(ctx); });
 
     const proto::ProtoObject* exceptionsMod = exceptions::initialize(context, objectPrototype, typePrototype);
     keyErrorType = exceptionsMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "KeyError"));
