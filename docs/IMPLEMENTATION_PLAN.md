@@ -1,0 +1,53 @@
+# ProtoPython: Comprehensive Implementation Plan
+
+This document outlines the roadmap for turning `protoPython` into a GIL-less, high-performance Python 3.14 replacement built on `protoCore`.
+
+## 1. Core Runtime & Object Model (In Progress)
+The foundation of the runtime must be fully compatible with Python 3.14's semantics while leveraging `protoCore`'s fine-grained locking and immutable-by-default sharing.
+
+- [x] **Phase 1: Foundation**: Set up `PythonEnvironment`, `object`, `type`, `int`, `str`, `list`, `dict`.
+- [ ] **Phase 2: Full Method Coverage**: Implement all dunder methods for built-in types.
+- [ ] **Phase 3: Execution Engine**: Finalize `ProtoContext` integration for Python bytecode execution (via `protopy`).
+- [ ] **Phase 4: GIL-less Concurrency**: Audit all mutable operations to ensure thread-safety using `protoCore` primitives.
+
+## 2. Standard Library Integration
+The goal is to provide a complete standard library that behaves identically to CPython's.
+
+- [ ] **Phase 1: StdLib Shell**: Copy the Python 3.14 `.py` standard library into `lib/python3.14/`.
+- [ ] **Phase 2: C-to-C++ Replacement**:
+    - Identify modules traditionally implemented in C (e.g., `_io`, `_collections`, `_functools`, `_ssl`, `_socket`).
+    - Re-implement these modules as C++ shared libraries using the `protoPython` internal API.
+    - Ensure these modules are GIL-less from the start.
+- [ ] **Phase 3: Native Optimization**: Progressively replace performance-critical Python modules with C++ implementations.
+
+## 3. Compatibility & Testing
+We aim for "No-Modification" compatibility with CPython tests.
+
+- [ ] **Integration of `test.regrtest`**: Set up a harness to run CPython's test suite directly.
+- [ ] **Incremental Success**: Track compatibility percentage across the entire test suite.
+- [ ] **Bug-for-Bug Compatibility**: Where safe, emulate CPython edge cases to ensure existing code works without changes.
+
+## 4. Debugging & IDE Support
+To be a viable replacement, `protoPython` must support professional developer workflows.
+
+- [ ] **Tracing API**: Implement `sys.settrace` and related hooks within the execution engine.
+- [ ] **Protocol Support**:
+    - Implement the **Debug Adapter Protocol (DAP)** directly in the runtime (or as a module).
+    - Enable line-by-line stepping, variable inspection, and breakpoint management.
+- [ ] **IDE Integration**: Ensure compatibility with VS Code (via `debugpy`-like backend) and PyCharm.
+- [ ] **Step-through C++ Boundaries**: Allow debugging to transition seamlessly from Python code into C++ module code.
+
+## 5. Compiler & Deployment (`protopyc`)
+Transitioning from interpreted to compiled execution.
+
+- [ ] **AOT Compilation**: A head-of-time compiler that translates `.py` to `.so`/`.dll` via C++.
+- [ ] **Static Analysis**: Leverage type hints for further optimization in the C++ layer.
+- [ ] **Self-Hosting**: Reach a point where `protopyc` can compile itself.
+
+## 6. Installation & Distribution
+- [ ] **Packaging**: Support `pip` and `wheels`.
+- [ ] **Virtual Environments**: Full `venv` support.
+- [ ] **Drop-in replacement**: Ensure `protopy` can be aliased to `python` and work in complex setups.
+
+---
+*This plan is a living document and will be updated as we reach milestones.*

@@ -1,0 +1,3 @@
+add_executable(test_foundation TestFoundation.cpp)
+target_link_libraries(test_foundation PRIVATE protoPython gtest_main)
+add_test(NAME test_foundation COMMAND test_foundation)
