@@ -13,6 +13,13 @@ namespace protoPython {
  */
 bool bytecodeLoaderStub(const std::string& path);
 
+/**
+ * @brief Stub for parsing .py source or marshal format. Validates path format.
+ * @param path Path to .py or .pyc file.
+ * @return true if the path appears parseable.
+ */
+bool bytecodeParseStub(const std::string& path);
+
 } // namespace protoPython
 
 #endif
