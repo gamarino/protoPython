@@ -174,8 +174,28 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath) {
     // Use provided path or default to ./lib/python3.14
     std::string path = stdLibPath.empty() ? "./lib/python3.14" : stdLibPath;
     registry.registerProvider(std::make_unique<PythonModuleProvider>(path));
+    
+    // 7. Populate sys.path and sys.modules
+    const proto::ProtoString* py_path = proto::ProtoString::fromUTF8String(context, "path");
+    const proto::ProtoString* py_modules = proto::ProtoString::fromUTF8String(context, "modules");
+    
+    // a. Update sys.path
+    const proto::ProtoObject* pathListObj = sysModule->getAttribute(context, py_path);
+    if (pathListObj && pathListObj->asList(context)) {
+        const proto::ProtoList* pList = pathListObj->asList(context);
+        pList = pList->appendLast(context, context->fromUTF8String(path.c_str()));
+        sysModule = sysModule->setAttribute(context, py_path, pList->asObject(context));
+    }
+    
+    // b. Create sys.modules and add sys/builtins
+    const proto::ProtoObject* modulesDictObj = sysModule->getAttribute(context, py_modules);
+    if (modulesDictObj) {
+        modulesDictObj = modulesDictObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "sys"), sysModule);
+        modulesDictObj = modulesDictObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "builtins"), builtinsModule);
+        sysModule = sysModule->setAttribute(context, py_modules, modulesDictObj);
+    }
 
-    // Prepend to resolution chain
+    // 8. Prepend to resolution chain
     const proto::ProtoObject* chainObj = context->space->getResolutionChain();
     if (chainObj) {
         const proto::ProtoList* chain = chainObj->asList(context);

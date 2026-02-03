@@ -176,3 +176,26 @@ TEST_F(FoundationTest, IOModule) {
     fileName->asString(context)->toUTF8String(context, name);
     EXPECT_EQ(name, "test.txt");
 }
+
+TEST_F(FoundationTest, SysPathAndModules) {
+    proto::ProtoContext* context = env.getContext();
+    const proto::ProtoObject* sys = env.resolve("sys");
+    
+    // Check sys.path
+    const proto::ProtoObject* pathObj = sys->getAttribute(context, proto::ProtoString::fromUTF8String(context, "path"));
+    ASSERT_NE(pathObj, nullptr);
+    const proto::ProtoList* path = pathObj->asList(context);
+    ASSERT_NE(path, nullptr);
+    EXPECT_GT(path->getSize(context), 0);
+    
+    // Check sys.modules
+    const proto::ProtoObject* modules = sys->getAttribute(context, proto::ProtoString::fromUTF8String(context, "modules"));
+    ASSERT_NE(modules, nullptr);
+    const proto::ProtoObject* sysInModules = modules->getAttribute(context, proto::ProtoString::fromUTF8String(context, "sys"));
+    ASSERT_NE(sysInModules, nullptr);
+    
+    // They should at least have the same version
+    const proto::ProtoObject* v1 = sys->getAttribute(context, proto::ProtoString::fromUTF8String(context, "version"));
+    const proto::ProtoObject* v2 = sysInModules->getAttribute(context, proto::ProtoString::fromUTF8String(context, "version"));
+    EXPECT_EQ(v1, v2);
+}
