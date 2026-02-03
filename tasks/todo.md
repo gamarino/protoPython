@@ -3,7 +3,7 @@
 Derived from [IMPLEMENTATION_PLAN.md](../docs/IMPLEMENTATION_PLAN.md). See also [DESIGN.md](../DESIGN.md) and workspace [tasks/todo.md](../../tasks/todo.md).
 
 ## 1. Core Runtime & Object Model
-- [ ] Phase 2: Full Method Coverage — all dunder methods for built-in types; first batch (list/dict `__getitem__`, `__setitem__`, `__len__`) [x]; second batch (list `__iter__`/`__next__`, dict key `__iter__`) [x]; third batch (list/dict `__contains__`) [x]; fourth batch (list/dict `__eq__`) [x]; fifth batch (list ordering dunders) [x]; sixth batch (list/dict `__repr__`, `__str__`) [x]; seventh batch (list/dict `__bool__`) [x]; eighth batch (tuple `__len__`) [x]; ninth batch (list slicing via slice list) [x]; tenth batch (tuple `__getitem__`, `__iter__`, `__contains__`, `__bool__`) [x]
+- [ ] Phase 2: Full Method Coverage — all dunder methods for built-in types; first batch (list/dict `__getitem__`, `__setitem__`, `__len__`) [x]; second batch (list `__iter__`/`__next__`, dict key `__iter__`) [x]; third batch (list/dict `__contains__`) [x]; fourth batch (list/dict `__eq__`) [x]; fifth batch (list ordering dunders) [x]; sixth batch (list/dict `__repr__`, `__str__`) [x]; seventh batch (list/dict `__bool__`) [x]; eighth batch (tuple `__len__`) [x]; ninth batch (list slicing via slice list) [x]; tenth batch (tuple `__getitem__`, `__iter__`, `__contains__`, `__bool__`) [x]; eleventh batch (string `__iter__`, `__contains__`, `__bool__`, upper/lower) [x]; dict mutation helpers (`update`, `clear`, `copy`) [x]
 ## 1.1 Dict missing-key behavior
 - [x] `__getitem__` returns `PROTO_NONE` for missing keys until exceptions are implemented
 ## 1.2 Dict views
