@@ -1508,28 +1508,41 @@ int PythonEnvironment::executeModule(const std::string& moduleName) {
     return exitRequested_ != 0 ? -3 : 0;
 }
 
+void PythonEnvironment::invalidateResolveCache() {
+    resolveCache_.clear();
+}
+
 const proto::ProtoObject* PythonEnvironment::resolve(const std::string& name) {
+    auto it = resolveCache_.find(name);
+    if (it != resolveCache_.end() && it->second != nullptr)
+        return it->second;
+
+    const proto::ProtoObject* result = PROTO_NONE;
+
     // 1. Check builtins
     if (builtinsModule) {
         const proto::ProtoObject* attr = builtinsModule->getAttribute(context, proto::ProtoString::fromUTF8String(context, name.c_str()));
-        if (attr && attr != PROTO_NONE) return attr;
+        if (attr && attr != PROTO_NONE) result = attr;
     }
 
-    // 2. Direct resolution fallback for hardcoded prototypes (already in builtins, but keep for robustness)
-    if (name == "object") return objectPrototype;
-    if (name == "type") return typePrototype;
-    if (name == "int") return intPrototype;
-    if (name == "str") return strPrototype;
-    if (name == "list") return listPrototype;
-    if (name == "dict") return dictPrototype;
-    
-    // Fallback: try to import as a module
-    const proto::ProtoObject* modWrapper = context->space->getImportModule(name.c_str(), "val");
-    if (modWrapper) {
-        return modWrapper->getAttribute(context, proto::ProtoString::fromUTF8String(context, "val"));
+    if (!result || result == PROTO_NONE) {
+        if (name == "object") result = objectPrototype;
+        else if (name == "type") result = typePrototype;
+        else if (name == "int") result = intPrototype;
+        else if (name == "str") result = strPrototype;
+        else if (name == "list") result = listPrototype;
+        else if (name == "dict") result = dictPrototype;
     }
 
-    return PROTO_NONE;
+    if (!result || result == PROTO_NONE) {
+        const proto::ProtoObject* modWrapper = context->space->getImportModule(name.c_str(), "val");
+        if (modWrapper) {
+            result = modWrapper->getAttribute(context, proto::ProtoString::fromUTF8String(context, "val"));
+        }
+    }
+
+    resolveCache_[name] = result;
+    return result;
 }
 
 } // namespace protoPython

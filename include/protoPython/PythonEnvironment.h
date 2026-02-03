@@ -77,6 +77,11 @@ public:
     const proto::ProtoObject* resolve(const std::string& name);
 
     /**
+     * @brief Invalidates the import resolution cache (e.g. after module reload).
+     */
+    void invalidateResolveCache();
+
+    /**
      * @brief Resolves the module by name, then invokes its \c main attribute if it is callable.
      * @param moduleName Module name (as used by resolve).
      * @return 0 on success (including when module has no \c main or it is not callable); non-zero on resolve failure.
@@ -177,6 +182,7 @@ private:
     ExecutionHook executionHook;
     const proto::ProtoObject* keyErrorType{nullptr};
     const proto::ProtoObject* valueErrorType{nullptr};
+    mutable std::unordered_map<std::string, const proto::ProtoObject*> resolveCache_;
 
     static void registerContext(proto::ProtoContext* ctx, PythonEnvironment* env);
     static void unregisterContext(proto::ProtoContext* ctx);
