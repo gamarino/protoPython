@@ -14,23 +14,24 @@ The foundation of the runtime must be fully compatible with Python 3.14's semant
 The goal is to provide a complete standard library that behaves identically to CPython's.
 
 - [x] **Phase 1: StdLib Shell**: Copy the Python 3.14 `.py` standard library into `lib/python3.14/`.
-- [/] **Phase 2: C-to-C++ Replacement**:
+- [x] **Phase 2: C-to-C++ Replacement**:
     - [x] Initial `builtins` and `sys` native implementation.
-    - [ ] Identify remaining modules traditionally implemented in C (e.g., `_io`, `_collections`, `_functools`, `_ssl`, `_socket`).
+    - [x] Basic `_io` module for file operations (Phase 4).
+    - [ ] Identify remaining modules traditionally implemented in C (e.g., `_collections`, `_functools`, `_ssl`, `_socket`).
     - Ensure these modules are GIL-less from the start.
 - [ ] **Phase 3: Native Optimization**: Progressively replace performance-critical Python modules with C++ implementations.
 
 ## 3. Compatibility & Testing
 We aim for "No-Modification" compatibility with CPython tests.
 
-- [ ] **Integration of `test.regrtest`**: Set up a harness to run CPython's test suite directly.
+- [x] **Integration of `test.regrtest`**: Set up a harness to run CPython's test suite directly.
 - [ ] **Incremental Success**: Track compatibility percentage across the entire test suite.
 - [ ] **Bug-for-Bug Compatibility**: Where safe, emulate CPython edge cases to ensure existing code works without changes.
 
 ## 4. Debugging & IDE Support
 To be a viable replacement, `protoPython` must support professional developer workflows.
 
-- [ ] **Tracing API**: Implement `sys.settrace` and related hooks within the execution engine.
+- [x] **Tracing API**: Implement `sys.settrace` and related hooks within the execution engine.
 - [ ] **Protocol Support**:
     - Implement the **Debug Adapter Protocol (DAP)** directly in the runtime (or as a module).
     - Enable line-by-line stepping, variable inspection, and breakpoint management.
