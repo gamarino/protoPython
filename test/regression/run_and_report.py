@@ -95,6 +95,21 @@ def main():
             json.dump(payload, f, indent=2)
         print(f"Results written to {output_path}")
 
+        history_path = os.environ.get("REGRTEST_HISTORY")
+        if not history_path and os.path.dirname(output_path):
+            history_path = os.path.join(os.path.dirname(output_path), "history.json")
+        if history_path:
+            history = []
+            if os.path.isfile(history_path):
+                with open(history_path) as hf:
+                    history = json.load(hf)
+            if not isinstance(history, list):
+                history = [history] if history else []
+            history.append(payload)
+            with open(history_path, "w") as hf:
+                json.dump(history[-100:], hf, indent=2)
+            print(f"History appended to {history_path}")
+
     sys.exit(0 if failed == 0 else 1)
 
 
