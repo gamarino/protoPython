@@ -19,21 +19,28 @@ ctest -R test_regr
 ./test/regression/test_regr
 ```
 
-## Known Issue: Foundation Test Hang
+## Known Issue: Foundation Test Hang (GC Reproducer)
 
-**Symptom**: `test_foundation` and `test_regr` (and any test that constructs `PythonEnvironment`) may hang during initialization, typically when creating the list prototype. The hang occurs inside protoCore’s allocation/GC path.
+### Symptom `test_foundation` and `test_regr` (and any test that constructs `PythonEnvironment`) may hang during initialization, typically when creating the list prototype. The hang occurs inside protoCore’s allocation/GC path.
 
-**Root cause**: Suspected GC deadlock when `PythonEnvironment` allocates many objects (object, type, int, str, list prototypes, etc.). The protoCore GC thread waits for `parkedThreads >= runningThreads`, while the main thread may be blocked or not properly participating in the stop-the-world protocol.
+### Root cause Suspected GC deadlock when `PythonEnvironment` allocates many objects (object, type, int, str, list prototypes, etc.). The protoCore GC thread waits for `parkedThreads >= runningThreads`, while the main thread may be blocked or not properly participating in the stop-the-world protocol.
 
-**Workaround**:
+### Reproducer steps
+
+1. Build protoPython: `cd build && cmake .. && make`
+2. Run minimal reproducer: `./test/library/test_minimal`
+3. If it hangs, the issue is reproduced. Compare with `./test/regression/test_protocore_minimal` (no protoPython) which should exit quickly.
+
+### Workarounds
 
 1. **CTest timeout**: `test_foundation` has a 60s timeout so CTest fails instead of hanging indefinitely.
 2. **Debug reproducers**: Use `test_minimal` and `test_protocore_minimal` for manual debugging:
    - `test_protocore_minimal`: Pure protoCore (ProtoSpace + ProtoContext). Should pass.
    - `test_minimal`: Full `PythonEnvironment`. Reproduces the hang.
 3. **protopy with --dry-run**: CLI exit-code tests use `--dry-run` and avoid instantiating `PythonEnvironment`, so they pass.
+4. **Future**: A `--no-gc` workaround would require protoCore support to disable the GC thread at ProtoSpace creation time.
 
-**Tracking**: See [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) Phase 2 and [GIL_FREE_AUDIT.md](GIL_FREE_AUDIT.md). A fix likely requires changes in protoCore’s GC/`allocCell` synchronization.
+### Tracking See [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) Phase 2 and [GIL_FREE_AUDIT.md](GIL_FREE_AUDIT.md). A fix likely requires changes in protoCore’s GC/`allocCell` synchronization.
 
 ## Incremental Regression Tracking
 
