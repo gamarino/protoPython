@@ -16,7 +16,7 @@ The foundation of the runtime must be fully compatible with Python 3.14's semant
 - [ ] **Exception scaffolding**: `exceptions` module with `Exception`, `KeyError`, `ValueError` [done]; see [EXCEPTIONS.md](EXCEPTIONS.md).
 - [ ] **protopy CLI**: distinct exit codes and flags (`--module`, `--script`, `--path`, `--stdlib`) with tests [done].
 - [ ] **Phase 2b: Foundation test stability**: `test_foundation` hangs during list prototype creation (GC deadlock suspected). CTest timeout and troubleshooting docs added; see [TESTING.md](TESTING.md).
-- [ ] **Phase 3: Execution Engine**: Finalize `ProtoContext` integration for Python bytecode execution (via `protopy`). protopy invokes module `main` when running a script (stub execution path).
+- [ ] **Phase 3: Execution Engine**: Finalize `ProtoContext` integration for Python bytecode execution (via `protopy`). protopy invokes module `main` when running a script (stub execution path). `PythonEnvironment::executeModule` provides high-level entry with optional pre/post execution hook.
 - [ ] **Phase 4: GIL-less Concurrency**: Audit all mutable operations to ensure thread-safety using `protoCore` primitives. Audit documented in [GIL_FREE_AUDIT.md](GIL_FREE_AUDIT.md); fixes TBD.
 
 ## 2. Standard Library Integration

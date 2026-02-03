@@ -105,6 +105,20 @@ TEST_F(FoundationTest, SysModule) {
     ASSERT_TRUE(version->isString(context));
 }
 
+TEST_F(FoundationTest, ExecuteModule) {
+    EXPECT_EQ(env.executeModule("builtins"), 0);
+    EXPECT_EQ(env.executeModule("nonexistent_module_xyz"), -1);
+
+    int hookBefore = 0, hookAfter = 0;
+    env.setExecutionHook([&](const std::string& name, int phase) {
+        if (phase == 0) ++hookBefore;
+        else ++hookAfter;
+    });
+    env.executeModule("builtins");
+    EXPECT_EQ(hookBefore, 1);
+    EXPECT_EQ(hookAfter, 1);
+}
+
 TEST_F(FoundationTest, BuiltinFunctions) {
     proto::ProtoContext* context = env.getContext();
     

@@ -143,14 +143,13 @@ static bool parseArgs(int argc, char* argv[], CliOptions& opts, std::string& err
 }
 
 int executeModule(protoPython::PythonEnvironment& env, const std::string& moduleName) {
-    const proto::ProtoObject* mod = env.resolve(moduleName);
-    if (mod == nullptr || mod == PROTO_NONE) {
+    int ret = env.executeModule(moduleName);
+    if (ret == -1) {
         std::cerr << "protopy: could not resolve module '" << moduleName << "'" << std::endl;
         return EXIT_RESOLVE;
     }
-    int ret = env.runModuleMain(moduleName);
-    if (ret != 0) {
-        std::cerr << "protopy: module '" << moduleName << "' exited with code " << ret << std::endl;
+    if (ret == -2) {
+        std::cerr << "protopy: module '" << moduleName << "' exited with runtime error" << std::endl;
         return EXIT_RUNTIME;
     }
     return EXIT_OK;

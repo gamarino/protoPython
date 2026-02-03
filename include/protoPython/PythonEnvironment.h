@@ -2,6 +2,7 @@
 #define PROTOPYTHON_PYTHONENVIRONMENT_H
 
 #include <protoCore.h>
+#include <functional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -80,6 +81,23 @@ public:
     int runModuleMain(const std::string& moduleName);
 
     /**
+     * @brief High-level execution entry: resolve module, invoke pre/post hooks, run main.
+     * @param moduleName Module name (as used by resolve).
+     * @return 0 on success, -1 on resolve failure, -2 on runtime failure.
+     */
+    int executeModule(const std::string& moduleName);
+
+    /**
+     * @brief Execution hook type: (moduleName, phase) where phase 0=before, 1=after.
+     */
+    using ExecutionHook = std::function<void(const std::string& moduleName, int phase)>;
+
+    /**
+     * @brief Sets the optional execution hook (called before and after module execution).
+     */
+    void setExecutionHook(ExecutionHook hook) { executionHook = std::move(hook); }
+
+    /**
      * @brief Sets the global trace function (sys.settrace).
      */
     void setTraceFunction(const proto::ProtoObject* func) { traceFunction = func; }
@@ -136,6 +154,7 @@ private:
     const proto::ProtoObject* builtinsModule;
     const proto::ProtoObject* traceFunction{nullptr};
     const proto::ProtoObject* pendingException{nullptr};
+    ExecutionHook executionHook;
     const proto::ProtoObject* keyErrorType{nullptr};
     const proto::ProtoObject* valueErrorType{nullptr};
 

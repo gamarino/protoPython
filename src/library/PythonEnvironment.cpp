@@ -1484,6 +1484,29 @@ int PythonEnvironment::runModuleMain(const std::string& moduleName) {
     return 0;
 }
 
+int PythonEnvironment::executeModule(const std::string& moduleName) {
+    const proto::ProtoObject* mod = resolve(moduleName);
+    if (mod == nullptr || mod == PROTO_NONE)
+        return -1;
+
+    if (executionHook) executionHook(moduleName, 0);
+
+    int ret = runModuleMain(moduleName);
+    if (ret != 0) {
+        if (executionHook) executionHook(moduleName, 1);
+        return ret == -1 ? -1 : -2;
+    }
+
+    const proto::ProtoObject* exc = takePendingException();
+    if (exc) {
+        if (executionHook) executionHook(moduleName, 1);
+        return -2;
+    }
+
+    if (executionHook) executionHook(moduleName, 1);
+    return 0;
+}
+
 const proto::ProtoObject* PythonEnvironment::resolve(const std::string& name) {
     // 1. Check builtins
     if (builtinsModule) {
