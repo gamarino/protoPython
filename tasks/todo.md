@@ -50,6 +50,8 @@ See [docs/NEXT_20_STEPS_V5.md](../docs/NEXT_20_STEPS_V5.md). Steps 25–44 plann
 - [x] Step 25: Foundation test stability / GC reproducer documentation
 - [x] Step 26: Builtins callable, getattr, setattr, hasattr, delattr
 - [x] Step 27: Slice object + __getitem__ slice support for list/str
+- [x] Step 28: frozenset prototype
+- [x] Step 29: bytes __iter__, fromiter constructor stub
 - [x] Step 01: Stabilize foundation tests (CTest timeout 60s, docs/TESTING.md, test_minimal/test_protocore_minimal reproducers; root fix in protoCore GC pending)
 - [x] Step 02: Tuple dunders (`__getitem__`, iter, contains, bool)
 - [x] Step 03: String dunders & helpers (iter, contains, upper/lower)

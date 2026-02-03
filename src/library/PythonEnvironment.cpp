@@ -758,6 +758,79 @@ static const proto::ProtoObject* py_bytes_getitem(
     return context->fromInteger(static_cast<unsigned char>(c[static_cast<size_t>(idx)]));
 }
 
+static const proto::ProtoObject* py_bytes_iter(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoString* iterProtoName = proto::ProtoString::fromUTF8String(context, "__iter_prototype__");
+    const proto::ProtoObject* iterProto = self->getAttribute(context, iterProtoName);
+    if (!iterProto) return PROTO_NONE;
+    const proto::ProtoString* s = bytes_data(context, self);
+    if (!s) return PROTO_NONE;
+    const proto::ProtoObject* iterObj = iterProto->newChild(context, true);
+    iterObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__bytes_data__"), s->asObject(context));
+    iterObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__bytes_index__"), context->fromInteger(0));
+    return iterObj;
+}
+
+static const proto::ProtoObject* py_bytes_iter_next(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "__bytes_data__");
+    const proto::ProtoString* indexName = proto::ProtoString::fromUTF8String(context, "__bytes_index__");
+    const proto::ProtoObject* dataObj = self->getAttribute(context, dataName);
+    const proto::ProtoObject* indexObj = self->getAttribute(context, indexName);
+    if (!dataObj || !dataObj->isString(context) || !indexObj || !indexObj->isInteger(context)) return PROTO_NONE;
+    const proto::ProtoString* s = dataObj->asString(context);
+    int idx = static_cast<int>(indexObj->asLong(context));
+    unsigned long size = s->getSize(context);
+    if (static_cast<unsigned long>(idx) >= size) return PROTO_NONE;
+    std::string c;
+    s->toUTF8String(context, c);
+    const proto::ProtoObject* result = context->fromInteger(static_cast<unsigned char>(c[static_cast<size_t>(idx)]));
+    self->setAttribute(context, indexName, context->fromInteger(idx + 1));
+    return result;
+}
+
+static const proto::ProtoObject* py_bytes_call(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    if (positionalParameters->getSize(context) == 0) {
+        const proto::ProtoObject* empty = self->newChild(context, true);
+        empty->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->fromUTF8String(""));
+        return empty;
+    }
+    const proto::ProtoObject* itObj = positionalParameters->getAt(context, 0);
+    const proto::ProtoObject* iterAttr = itObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__iter__"));
+    if (!iterAttr || !iterAttr->asMethod(context)) return PROTO_NONE;
+    const proto::ProtoList* empty = context->newList();
+    const proto::ProtoObject* iterResult = iterAttr->asMethod(context)(context, itObj, nullptr, empty, nullptr);
+    if (!iterResult) return PROTO_NONE;
+    const proto::ProtoObject* nextAttr = iterResult->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__next__"));
+    if (!nextAttr || !nextAttr->asMethod(context)) return PROTO_NONE;
+
+    std::string out;
+    const proto::ProtoList* nextArgs = context->newList();
+    for (;;) {
+        const proto::ProtoObject* item = nextAttr->asMethod(context)(context, iterResult, nullptr, nextArgs, nullptr);
+        if (!item || item == PROTO_NONE) break;
+        long long v = item->asLong(context);
+        if (v < 0 || v > 255) continue;
+        out += static_cast<char>(static_cast<unsigned char>(v));
+    }
+    const proto::ProtoObject* b = self->newChild(context, true);
+    b->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->fromUTF8String(out.c_str()));
+    return b;
+}
+
 static const proto::ProtoSet* set_data(proto::ProtoContext* context, const proto::ProtoObject* self) {
     const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "__data__");
     const proto::ProtoObject* data = self->getAttribute(context, dataName);
@@ -860,6 +933,105 @@ static const proto::ProtoObject* py_set_iter_next(
     const proto::ProtoSetIterator* nextIt = it->advance(context);
     self->setAttribute(context, iterItName, nextIt->asObject(context));
     return value;
+}
+
+static const proto::ProtoObject* py_frozenset_len(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoSet* s = set_data(context, self);
+    if (!s) return context->fromInteger(0);
+    return context->fromInteger(s->getSize(context));
+}
+
+static const proto::ProtoObject* py_frozenset_contains(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoSet* s = set_data(context, self);
+    if (!s || positionalParameters->getSize(context) < 1) return PROTO_FALSE;
+    return s->has(context, positionalParameters->getAt(context, 0));
+}
+
+static const proto::ProtoObject* py_frozenset_bool(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoSet* s = set_data(context, self);
+    if (!s) return PROTO_FALSE;
+    return s->getSize(context) > 0 ? PROTO_TRUE : PROTO_FALSE;
+}
+
+static const proto::ProtoObject* py_frozenset_iter(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoString* iterProtoName = proto::ProtoString::fromUTF8String(context, "__iter_prototype__");
+    const proto::ProtoObject* iterProto = self->getAttribute(context, iterProtoName);
+    if (!iterProto) return PROTO_NONE;
+    const proto::ProtoSet* s = set_data(context, self);
+    if (!s) return PROTO_NONE;
+    const proto::ProtoSetIterator* it = s->getIterator(context);
+    const proto::ProtoObject* iterObj = iterProto->newChild(context, true);
+    const proto::ProtoString* iterItName = proto::ProtoString::fromUTF8String(context, "__iter_it__");
+    iterObj->setAttribute(context, iterItName, it->asObject(context));
+    return iterObj;
+}
+
+static const proto::ProtoObject* py_frozenset_hash(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoSet* s = set_data(context, self);
+    if (!s) return context->fromInteger(0);
+    unsigned long h = 0x345678UL;
+    const proto::ProtoSetIterator* it = s->getIterator(context);
+    while (it->hasNext(context)) {
+        const proto::ProtoObject* val = it->next(context);
+        h ^= (val->getHash(context) + (h << 6) + (h >> 2));
+        it = it->advance(context);
+    }
+    return context->fromInteger(static_cast<long long>(h));
+}
+
+static const proto::ProtoObject* py_frozenset_call(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoString* iterProtoName = proto::ProtoString::fromUTF8String(context, "__iter_prototype__");
+    const proto::ProtoObject* iterProto = self->getAttribute(context, iterProtoName);
+    if (!iterProto || positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    const proto::ProtoObject* itObj = positionalParameters->getAt(context, 0);
+    const proto::ProtoObject* iterAttr = itObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__iter__"));
+    if (!iterAttr || !iterAttr->asMethod(context)) return PROTO_NONE;
+    const proto::ProtoList* empty = context->newList();
+    const proto::ProtoObject* iterResult = iterAttr->asMethod(context)(context, itObj, nullptr, empty, nullptr);
+    if (!iterResult) return PROTO_NONE;
+    const proto::ProtoObject* nextAttr = iterResult->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__next__"));
+    if (!nextAttr || !nextAttr->asMethod(context)) return PROTO_NONE;
+
+    const proto::ProtoSet* acc = context->newSet();
+    const proto::ProtoList* nextArgs = context->newList();
+    for (;;) {
+        const proto::ProtoObject* item = nextAttr->asMethod(context)(context, iterResult, nullptr, nextArgs, nullptr);
+        if (!item || item == PROTO_NONE) break;
+        acc = acc->add(context, item);
+    }
+    const proto::ProtoObject* fs = self->newChild(context, true);
+    fs->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), acc->asObject(context));
+    return fs;
 }
 
 static const proto::ProtoObject* py_tuple_len(
@@ -1577,14 +1749,34 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     setIterProto = setIterProto->setAttribute(context, py_next, context->fromMethod(const_cast<proto::ProtoObject*>(setIterProto), py_set_iter_next));
     setPrototype = setPrototype->setAttribute(context, py_iter_proto, setIterProto);
 
+    const proto::ProtoString* py_hash = proto::ProtoString::fromUTF8String(context, "__hash__");
+    const proto::ProtoString* py_call = proto::ProtoString::fromUTF8String(context, "__call__");
+    frozensetPrototype = context->newObject(true);
+    frozensetPrototype = frozensetPrototype->addParent(context, objectPrototype);
+    frozensetPrototype = frozensetPrototype->setAttribute(context, py_class, typePrototype);
+    frozensetPrototype = frozensetPrototype->setAttribute(context, py_name, context->fromUTF8String("frozenset"));
+    frozensetPrototype = frozensetPrototype->setAttribute(context, py_call, context->fromMethod(const_cast<proto::ProtoObject*>(frozensetPrototype), py_frozenset_call));
+    frozensetPrototype = frozensetPrototype->setAttribute(context, py_len, context->fromMethod(const_cast<proto::ProtoObject*>(frozensetPrototype), py_frozenset_len));
+    frozensetPrototype = frozensetPrototype->setAttribute(context, py_contains, context->fromMethod(const_cast<proto::ProtoObject*>(frozensetPrototype), py_frozenset_contains));
+    frozensetPrototype = frozensetPrototype->setAttribute(context, py_bool, context->fromMethod(const_cast<proto::ProtoObject*>(frozensetPrototype), py_frozenset_bool));
+    frozensetPrototype = frozensetPrototype->setAttribute(context, py_iter, context->fromMethod(const_cast<proto::ProtoObject*>(frozensetPrototype), py_frozenset_iter));
+    frozensetPrototype = frozensetPrototype->setAttribute(context, py_hash, context->fromMethod(const_cast<proto::ProtoObject*>(frozensetPrototype), py_frozenset_hash));
+    frozensetPrototype = frozensetPrototype->setAttribute(context, py_iter_proto, setIterProto);
+
     bytesPrototype = context->newObject(true);
     bytesPrototype = bytesPrototype->addParent(context, objectPrototype);
     bytesPrototype = bytesPrototype->setAttribute(context, py_class, typePrototype);
     bytesPrototype = bytesPrototype->setAttribute(context, py_name, context->fromUTF8String("bytes"));
     bytesPrototype = bytesPrototype->setAttribute(context, py_len, context->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_len));
     bytesPrototype = bytesPrototype->setAttribute(context, py_getitem, context->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_getitem));
+    bytesPrototype = bytesPrototype->setAttribute(context, py_iter, context->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_iter));
+    bytesPrototype = bytesPrototype->setAttribute(context, py_call, context->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_call));
 
-    const proto::ProtoString* py_call = proto::ProtoString::fromUTF8String(context, "__call__");
+    const proto::ProtoObject* bytesIterProto = context->newObject(true);
+    bytesIterProto = bytesIterProto->addParent(context, objectPrototype);
+    bytesIterProto = bytesIterProto->setAttribute(context, py_next, context->fromMethod(const_cast<proto::ProtoObject*>(bytesIterProto), py_bytes_iter_next));
+    bytesPrototype = bytesPrototype->setAttribute(context, py_iter_proto, bytesIterProto);
+
     sliceType = context->newObject(true);
     sliceType = sliceType->addParent(context, objectPrototype);
     sliceType = sliceType->setAttribute(context, py_class, typePrototype);
@@ -1600,7 +1792,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     nativeProvider->registerModule("sys", [this](proto::ProtoContext* ctx) { return sysModule; });
 
     // builtins module
-    builtinsModule = builtins::initialize(context, objectPrototype, typePrototype, intPrototype, strPrototype, listPrototype, dictPrototype, tuplePrototype, setPrototype, bytesPrototype, sliceType);
+    builtinsModule = builtins::initialize(context, objectPrototype, typePrototype, intPrototype, strPrototype, listPrototype, dictPrototype, tuplePrototype, setPrototype, bytesPrototype, sliceType, frozensetPrototype);
     nativeProvider->registerModule("builtins", [this](proto::ProtoContext* ctx) { return builtinsModule; });
 
     // _io module

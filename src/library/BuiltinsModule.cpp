@@ -366,7 +366,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
                                    const proto::ProtoObject* strProto, const proto::ProtoObject* listProto,
                                    const proto::ProtoObject* dictProto, const proto::ProtoObject* tupleProto,
                                    const proto::ProtoObject* setProto, const proto::ProtoObject* bytesProto,
-                                   const proto::ProtoObject* sliceType) {
+                                   const proto::ProtoObject* sliceType, const proto::ProtoObject* frozensetProto) {
     const proto::ProtoObject* builtins = ctx->newObject(true);
 
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "object"), objectProto);
@@ -379,6 +379,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "set"), setProto);
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "bytes"), bytesProto);
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "slice"), sliceType);
+    builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "frozenset"), frozensetProto);
     
     // Add functions
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "len"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_len));
