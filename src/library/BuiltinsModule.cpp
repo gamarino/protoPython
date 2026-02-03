@@ -172,6 +172,79 @@ static const proto::ProtoObject* py_bool(
     return PROTO_TRUE;
 }
 
+static const proto::ProtoObject* py_callable(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    if (positionalParameters->getSize(context) < 1) return PROTO_FALSE;
+    const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
+    const proto::ProtoObject* call = obj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__call__"));
+    return (call && call != PROTO_NONE && call->asMethod(context)) ? PROTO_TRUE : PROTO_FALSE;
+}
+
+static const proto::ProtoObject* py_getattr(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    if (positionalParameters->getSize(context) < 2) return PROTO_NONE;
+    const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
+    const proto::ProtoObject* nameObj = positionalParameters->getAt(context, 1);
+    if (!nameObj->isString(context)) return PROTO_NONE;
+    std::string name;
+    nameObj->asString(context)->toUTF8String(context, name);
+    const proto::ProtoObject* attr = obj->getAttribute(context, nameObj->asString(context));
+    if (attr && attr != PROTO_NONE) return attr;
+    if (positionalParameters->getSize(context) >= 3) return positionalParameters->getAt(context, 2);
+    return PROTO_NONE;
+}
+
+static const proto::ProtoObject* py_setattr(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    if (positionalParameters->getSize(context) < 3) return PROTO_NONE;
+    const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
+    const proto::ProtoObject* nameObj = positionalParameters->getAt(context, 1);
+    const proto::ProtoObject* value = positionalParameters->getAt(context, 2);
+    if (!nameObj->isString(context)) return PROTO_NONE;
+    obj->setAttribute(context, nameObj->asString(context), value);
+    return PROTO_NONE;
+}
+
+static const proto::ProtoObject* py_hasattr(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    if (positionalParameters->getSize(context) < 2) return PROTO_FALSE;
+    const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
+    const proto::ProtoObject* nameObj = positionalParameters->getAt(context, 1);
+    if (!nameObj->isString(context)) return PROTO_FALSE;
+    const proto::ProtoObject* attr = obj->getAttribute(context, nameObj->asString(context));
+    return (attr && attr != PROTO_NONE) ? PROTO_TRUE : PROTO_FALSE;
+}
+
+static const proto::ProtoObject* py_delattr(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    if (positionalParameters->getSize(context) < 2) return PROTO_NONE;
+    const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
+    const proto::ProtoObject* nameObj = positionalParameters->getAt(context, 1);
+    if (!nameObj->isString(context)) return PROTO_NONE;
+    obj->setAttribute(context, nameObj->asString(context), PROTO_NONE);
+    return PROTO_NONE;
+}
+
 static const proto::ProtoObject* py_type(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -320,6 +393,12 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "abs"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_abs));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "min"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_min));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "max"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_max));
+
+    builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "callable"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_callable));
+    builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "getattr"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_getattr));
+    builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "setattr"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_setattr));
+    builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "hasattr"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_hasattr));
+    builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "delattr"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_delattr));
 
     return builtins;
 }
