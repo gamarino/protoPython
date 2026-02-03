@@ -40,5 +40,27 @@ Derived from [IMPLEMENTATION_PLAN.md](../docs/IMPLEMENTATION_PLAN.md). See also 
 - [ ] Virtual Environments — full venv support
 - [ ] Drop-in replacement — protopy aliased to python
 
+## 7. Next 20 Steps (v3)
+- [ ] Step 01: Stabilize foundation tests (hang fix + watchdog)
+- [ ] Step 02: Tuple dunders (`__getitem__`, iter, contains, bool)
+- [ ] Step 03: String dunders & helpers (iter, contains, upper/lower)
+- [ ] Step 04: Dict mutation helpers (`update`, `clear`, `copy`)
+- [ ] Step 05: List mutation helpers (`insert`, `remove`, `clear`)
+- [ ] Step 06: Set prototype (`add`, `remove`, iter, len, contains)
+- [ ] Step 07: Exception scaffolding (Exception, KeyError, ValueError)
+- [ ] Step 08: Raise container exceptions (dict/list operations)
+- [ ] Step 09: Execution hook (`PythonEnvironment::executeModule`)
+- [ ] Step 10: Bytecode loader stub and CLI `--bytecode-only`
+- [ ] Step 11: Compatibility dashboard (history + pass %)
+- [ ] Step 12: Regression gating CTest target
+- [ ] Step 13: sys module parity (argv, exit, version info)
+- [ ] Step 14: Import resolution cache + invalidation
+- [ ] Step 15: Native math/operator helpers
+- [ ] Step 16: File I/O enhancements (modes, buffering, context)
+- [ ] Step 17: Logging/tracing utilities + CLI `--trace`
+- [ ] Step 18: Debug Adapter Protocol skeleton
+- [ ] Step 19: Interactive REPL mode (`protopy --repl`)
+- [ ] Step 20: Performance instrumentation (`sys.stats`)
+
 ---
 *Updated from plan implementation. Mark items complete as work progresses.*
