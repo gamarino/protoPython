@@ -3,6 +3,7 @@
 #include <protoPython/NativeModuleProvider.h>
 #include <protoPython/SysModule.h>
 #include <protoPython/BuiltinsModule.h>
+#include <protoPython/IOModule.h>
 #include <protoCore.h>
 
 namespace protoPython {
@@ -163,6 +164,9 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath) {
     // builtins module
     builtinsModule = builtins::initialize(context, objectPrototype, typePrototype, intPrototype, strPrototype, listPrototype, dictPrototype);
     nativeProvider->registerModule("builtins", [this](proto::ProtoContext* ctx) { return builtinsModule; });
+
+    // _io module
+    nativeProvider->registerModule("_io", [](proto::ProtoContext* ctx) { return io::initialize(ctx); });
 
     registry.registerProvider(std::move(nativeProvider));
 

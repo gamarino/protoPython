@@ -4,6 +4,7 @@ add_library(protoPython SHARED
     NativeModuleProvider.cpp
     SysModule.cpp
     BuiltinsModule.cpp
+    IOModule.cpp
 )
 
 target_include_directories(protoPython PUBLIC

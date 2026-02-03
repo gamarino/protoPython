@@ -229,6 +229,30 @@ BuiltinsModule.cpp.s:
 	cd /home/gamarino/Documentos/proyectos/protoPython/build && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/BuiltinsModule.cpp.s
 .PHONY : BuiltinsModule.cpp.s
 
+IOModule.o: IOModule.cpp.o
+.PHONY : IOModule.o
+
+# target to build an object file
+IOModule.cpp.o:
+	cd /home/gamarino/Documentos/proyectos/protoPython/build && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/IOModule.cpp.o
+.PHONY : IOModule.cpp.o
+
+IOModule.i: IOModule.cpp.i
+.PHONY : IOModule.i
+
+# target to preprocess a source file
+IOModule.cpp.i:
+	cd /home/gamarino/Documentos/proyectos/protoPython/build && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/IOModule.cpp.i
+.PHONY : IOModule.cpp.i
+
+IOModule.s: IOModule.cpp.s
+.PHONY : IOModule.s
+
+# target to generate assembly for a file
+IOModule.cpp.s:
+	cd /home/gamarino/Documentos/proyectos/protoPython/build && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/IOModule.cpp.s
+.PHONY : IOModule.cpp.s
+
 NativeModuleProvider.o: NativeModuleProvider.cpp.o
 .PHONY : NativeModuleProvider.o
 
@@ -344,6 +368,9 @@ help:
 	@echo "... BuiltinsModule.o"
 	@echo "... BuiltinsModule.i"
 	@echo "... BuiltinsModule.s"
+	@echo "... IOModule.o"
+	@echo "... IOModule.i"
+	@echo "... IOModule.s"
 	@echo "... NativeModuleProvider.o"
 	@echo "... NativeModuleProvider.i"
 	@echo "... NativeModuleProvider.s"

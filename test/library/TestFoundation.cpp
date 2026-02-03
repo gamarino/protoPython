@@ -155,3 +155,24 @@ TEST_F(FoundationTest, AdvancedBuiltins) {
     ASSERT_NE(rangeObj->asList(context), nullptr);
     EXPECT_EQ(rangeObj->asList(context)->getSize(context), 5);
 }
+
+TEST_F(FoundationTest, IOModule) {
+    proto::ProtoContext* context = env.getContext();
+    const proto::ProtoObject* ioMod = env.resolve("_io");
+    ASSERT_NE(ioMod, nullptr);
+    ASSERT_NE(ioMod, PROTO_NONE);
+    
+    // Test _io.open("test.txt")
+    const proto::ProtoObject* pyOpen = ioMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "open"));
+    ASSERT_NE(pyOpen, nullptr);
+    
+    const proto::ProtoList* args = context->newList()->appendLast(context, context->fromUTF8String("test.txt"));
+    const proto::ProtoObject* fileObj = pyOpen->asMethod(context)(context, PROTO_NONE, nullptr, args, nullptr);
+    
+    ASSERT_NE(fileObj, nullptr);
+    const proto::ProtoObject* fileName = fileObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "name"));
+    ASSERT_NE(fileName, nullptr);
+    std::string name;
+    fileName->asString(context)->toUTF8String(context, name);
+    EXPECT_EQ(name, "test.txt");
+}
