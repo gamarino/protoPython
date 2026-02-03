@@ -14,7 +14,7 @@ namespace builtins {
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::ProtoObject* objectProto, 
                                    const proto::ProtoObject* typeProto, const proto::ProtoObject* intProto,
                                    const proto::ProtoObject* strProto, const proto::ProtoObject* listProto,
-                                   const proto::ProtoObject* dictProto);
+                                   const proto::ProtoObject* dictProto, const proto::ProtoObject* tupleProto);
 
 } // namespace builtins
 } // namespace protoPython

@@ -504,6 +504,27 @@ TEST_F(FoundationTest, BoolDunder) {
     EXPECT_EQ(dictTrue, PROTO_TRUE);
 }
 
+TEST_F(FoundationTest, LenStringTuple) {
+    proto::ProtoContext* context = env.getContext();
+
+    const proto::ProtoObject* pyLen = env.resolve("len");
+    ASSERT_NE(pyLen, nullptr);
+    const proto::ProtoObject* strObj = context->fromUTF8String("abcd");
+    const proto::ProtoList* lenArgs = context->newList()->appendLast(context, strObj);
+    const proto::ProtoObject* strLen = pyLen->asMethod(context)(context, PROTO_NONE, nullptr, lenArgs, nullptr);
+    ASSERT_NE(strLen, nullptr);
+    EXPECT_EQ(strLen->asLong(context), 4);
+
+    const proto::ProtoObject* tupleObj = context->newObject(true)->addParent(context, env.getTuplePrototype());
+    const proto::ProtoList* tupleList = context->newList()->appendLast(context, context->fromInteger(1))->appendLast(context, context->fromInteger(2));
+    const proto::ProtoTuple* tuple = context->newTupleFromList(tupleList);
+    tupleObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), tuple->asObject(context));
+    const proto::ProtoList* tupleArgs = context->newList()->appendLast(context, tupleObj);
+    const proto::ProtoObject* tupleLen = pyLen->asMethod(context)(context, PROTO_NONE, nullptr, tupleArgs, nullptr);
+    ASSERT_NE(tupleLen, nullptr);
+    EXPECT_EQ(tupleLen->asLong(context), 2);
+}
+
 TEST_F(FoundationTest, DequeBasic) {
     proto::ProtoContext* context = env.getContext();
     const proto::ProtoObject* collections = env.resolve("_collections");

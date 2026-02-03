@@ -561,6 +561,18 @@ static const proto::ProtoObject* py_list_bool(
     return list->getSize(context) > 0 ? PROTO_TRUE : PROTO_FALSE;
 }
 
+static const proto::ProtoObject* py_tuple_len(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "__data__");
+    const proto::ProtoObject* data = self->getAttribute(context, dataName);
+    if (!data || !data->asTuple(context)) return context->fromInteger(0);
+    return context->fromInteger(data->asTuple(context)->getSize(context));
+}
+
 static const proto::ProtoObject* py_dict_repr(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -714,6 +726,12 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     dictPrototype = dictPrototype->setAttribute(context, py_str, context->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_str));
     dictPrototype = dictPrototype->setAttribute(context, py_bool, context->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_bool));
 
+    tuplePrototype = context->newObject(true);
+    tuplePrototype = tuplePrototype->addParent(context, objectPrototype);
+    tuplePrototype = tuplePrototype->setAttribute(context, py_class, typePrototype);
+    tuplePrototype = tuplePrototype->setAttribute(context, py_name, context->fromUTF8String("tuple"));
+    tuplePrototype = tuplePrototype->setAttribute(context, py_len, context->fromMethod(const_cast<proto::ProtoObject*>(tuplePrototype), py_tuple_len));
+
     // 5. Initialize Native Module Provider
     auto& registry = proto::ProviderRegistry::instance();
     auto nativeProvider = std::make_unique<NativeModuleProvider>();
@@ -723,7 +741,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     nativeProvider->registerModule("sys", [this](proto::ProtoContext* ctx) { return sysModule; });
 
     // builtins module
-    builtinsModule = builtins::initialize(context, objectPrototype, typePrototype, intPrototype, strPrototype, listPrototype, dictPrototype);
+    builtinsModule = builtins::initialize(context, objectPrototype, typePrototype, intPrototype, strPrototype, listPrototype, dictPrototype, tuplePrototype);
     nativeProvider->registerModule("builtins", [this](proto::ProtoContext* ctx) { return builtinsModule; });
 
     // _io module
