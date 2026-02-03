@@ -40,9 +40,13 @@ Derived from [IMPLEMENTATION_PLAN.md](../docs/IMPLEMENTATION_PLAN.md). See also 
 - [ ] Virtual Environments — full venv support
 - [ ] Drop-in replacement — protopy aliased to python
 
-## 7. Next 20 Steps (v4)
+## 7. Next 20 Steps (v4) — completed
 
 See [docs/NEXT_20_STEPS_V4.md](../docs/NEXT_20_STEPS_V4.md). Steps 01–24 completed.
+
+## 8. Next 20 Steps (v5)
+
+See [docs/NEXT_20_STEPS_V5.md](../docs/NEXT_20_STEPS_V5.md). Steps 25–44 planned.
 - [x] Step 01: Stabilize foundation tests (CTest timeout 60s, docs/TESTING.md, test_minimal/test_protocore_minimal reproducers; root fix in protoCore GC pending)
 - [x] Step 02: Tuple dunders (`__getitem__`, iter, contains, bool)
 - [x] Step 03: String dunders & helpers (iter, contains, upper/lower)
