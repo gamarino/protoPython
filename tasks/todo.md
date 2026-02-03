@@ -53,6 +53,15 @@ See [docs/NEXT_20_STEPS_V5.md](../docs/NEXT_20_STEPS_V5.md). Steps 25–44 plann
 - [x] Step 28: frozenset prototype
 - [x] Step 29: bytes __iter__, fromiter constructor stub
 - [x] Step 30: defaultdict default_factory __getitem__
+- [x] Step 31: File I/O read, write on mock files
+- [x] Step 32: REPL parse and execute (module resolve)
+- [x] Step 34: raise builtin
+- [x] Step 36: __hash__ for int, str, tuple, frozenset
+- [x] Step 39: Bytecode parse stub
+- [x] Step 41: CTest foundation test filter
+- [x] Step 42: logging module stub
+- [x] Step 43: operator module
+- [x] Step 44: math module stub
 - [x] Step 01: Stabilize foundation tests (CTest timeout 60s, docs/TESTING.md, test_minimal/test_protocore_minimal reproducers; root fix in protoCore GC pending)
 - [x] Step 02: Tuple dunders (`__getitem__`, iter, contains, bool)
 - [x] Step 03: String dunders & helpers (iter, contains, upper/lower)
