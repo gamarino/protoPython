@@ -8,7 +8,7 @@ The foundation of the runtime must be fully compatible with Python 3.14's semant
 - [x] **Phase 1: Foundation**: Set up `PythonEnvironment`, `object`, `type`, `int`, `str`, `list`, `dict`.
 - [ ] **Phase 2: Full Method Coverage**: Implement all dunder methods for built-in types. First batch: `__getitem__`, `__setitem__`, `__len__` for list and dict [done].
 - [ ] **Phase 3: Execution Engine**: Finalize `ProtoContext` integration for Python bytecode execution (via `protopy`). protopy invokes module `main` when running a script (stub execution path).
-- [ ] **Phase 4: GIL-less Concurrency**: Audit all mutable operations to ensure thread-safety using `protoCore` primitives.
+- [ ] **Phase 4: GIL-less Concurrency**: Audit all mutable operations to ensure thread-safety using `protoCore` primitives. Audit documented in [GIL_FREE_AUDIT.md](GIL_FREE_AUDIT.md); fixes TBD.
 
 ## 2. Standard Library Integration
 The goal is to provide a complete standard library that behaves identically to CPython's.
