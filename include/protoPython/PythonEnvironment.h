@@ -62,6 +62,13 @@ public:
     const proto::ProtoObject* resolve(const std::string& name);
 
     /**
+     * @brief Resolves the module by name, then invokes its \c main attribute if it is callable.
+     * @param moduleName Module name (as used by resolve).
+     * @return 0 on success (including when module has no \c main or it is not callable); non-zero on resolve failure.
+     */
+    int runModuleMain(const std::string& moduleName);
+
+    /**
      * @brief Sets the global trace function (sys.settrace).
      */
     void setTraceFunction(const proto::ProtoObject* func) { traceFunction = func; }

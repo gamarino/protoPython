@@ -289,6 +289,19 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     }
 }
 
+int PythonEnvironment::runModuleMain(const std::string& moduleName) {
+    const proto::ProtoObject* mod = resolve(moduleName);
+    if (mod == nullptr || mod == PROTO_NONE)
+        return -1;
+    const proto::ProtoString* mainName = proto::ProtoString::fromUTF8String(context, "main");
+    const proto::ProtoObject* mainAttr = mod->getAttribute(context, mainName);
+    if (mainAttr == nullptr || mainAttr == PROTO_NONE || !mainAttr->isMethod(context))
+        return 0;
+    const proto::ProtoList* emptyArgs = context->newList();
+    mainAttr->asMethod(context)(context, const_cast<proto::ProtoObject*>(mod), nullptr, emptyArgs, nullptr);
+    return 0;
+}
+
 const proto::ProtoObject* PythonEnvironment::resolve(const std::string& name) {
     // 1. Check builtins
     if (builtinsModule) {

@@ -31,6 +31,7 @@ The execution engine for Python scripts.
 
 - **Fork of CPython 3.14**: Maintains the frontend (parser, AST) but replaces the bytecode evaluation loop and memory management.
 - **Execution Engine**: Uses the `protoPython` library to execute logic without a GIL.
+- **Module main**: When running a script or module, protopy resolves it and, if the module has a callable `main` attribute, invokes it (stub execution path until full bytecode is in place).
 - **Threading**: Native mapping of Python `threading` to `protoCore` threads.
 
 ### 2.3. protopyc Compiler
@@ -72,6 +73,6 @@ Instead of a GIL, `protoPython` will use:
 2.  **Phase 2**: Objects & Types - Implementation of fundamental Python types (int, str, list, dict) [COMPLETED].
 3.  **Phase 3**: StdLib Infrastructure - Import system and pure-Python library layout [COMPLETED].
 4.  **Phase 4**: Core Module Replacement - Re-implementing `builtins`, `sys`, and `_io` in C++ [COMPLETED].
-5.  **Phase 5**: Debugging & Tooling - DAP support and tracing hooks (`sys.settrace`) [IN PROGRESS].
-6.  **Phase 6**: protopy & protopyc - Bytecode executor and AOT compiler integration.
+5.  **Phase 5**: Debugging & Tooling - Tracing hooks (`sys.settrace`) [COMPLETED]. DAP support and IDE integration [IN PROGRESS].
+6.  **Phase 6**: protopy & protopyc - protopy first: minimal runtime and bytecode executor using `PythonEnvironment` and protoCore; then protopyc AOT compiler integration.
 7.  **Phase 7**: Full Compatibility - Passing the CPython regression test suite.
