@@ -41,25 +41,37 @@ A static compiler for Python code.
 - **Optimization**: Performs type inference (where possible) and optimizes calls to `protoCore` and `protoPython` APIs.
 - **Packaging**: Compiles a directory of Python modules into a single shared library (`.so`) that can be loaded by `protopy` or linked directly by C++ applications.
 
-## 3. Data Representation
+### 2.4. Standard Library Integration
+- **Overlay Architecture**: Pure-Python modules are used directly from CPython 3.14.
+- **C-to-C++ Transition**: Modules traditionally implemented in C (e.g., `_io`, `_socket`) are re-implemented in C++ for `protoPython` to ensure GIL-less performance and a clean API.
+
+### 2.5. Debugging & IDE Support
+- **Tracing Support**: Native implementation of tracing hooks (`sys.settrace`).
+- **DAP Integration**: Support for the Debug Adapter Protocol to enable a premium debugging experience in IDEs like VS Code and PyCharm.
+
+## 3. Compatibility & Testing
+- **CPython Regression Tests**: Direct execution of CPython's regression test suite (`test.regrtest`) to ensure 1:1 behavioral parity.
+
+## 4. Data Representation
 
 Python objects in `protoPython` will be stored in `ProtoSpace`.
 - **Small Objects**: Inlined or optimized within `ProtoSpace`.
 - **Large Collections**: Using `protoCore`'s thread-safe collection types.
 - **Identity**: `id(obj)` will correspond to the `ProtoObject` address/identifier.
 
-## 4. Concurrency Model
+## 6. Concurrency Model
 
 Instead of a GIL, `protoPython` will use:
 - **Fine-grained locking**: For shared mutable structures where necessary (provided by `protoCore`).
 - **Atomic operations**: For reference counting (if required) or state transitions.
 - **Isolated Spaces**: Capability to run independent Python environments in separate `ProtoSpace` instances for maximum isolation and scaling.
 
-## 5. Development Phases
+## 7. Development Phases
 
-1.  **Phase 1**: Foundation - Basic `protoPython` library with `object` and core dunder methods. Initial `ProtoSpace` integration.
-2.  **Phase 2**: Objects & Types - Implementation of fundamental Python types (int, str, list, dict).
-3.  **Phase 3**: Import System - Logic for loading modules.
-4.  **Phase 4**: protopyc - Basic AOT compilation of Python scripts.
-5.  **Phase 5**: protopy - Bytecode executor/C-extension integration.
-6.  **Phase 6**: Standard Library - Porting/Implementing core stdlib modules.
+1.  **Phase 1**: Foundation - Basic `protoPython` library with `object` and core dunder methods. Initial `ProtoSpace` integration [COMPLETED].
+2.  **Phase 2**: Objects & Types - Implementation of fundamental Python types (int, str, list, dict) [COMPLETED].
+3.  **Phase 3**: StdLib Infrastructure - Import system and pure-Python library layout.
+4.  **Phase 4**: Core Module Replacement - Re-implementing `builtins`, `sys`, and `io` in C++.
+5.  **Phase 5**: Debugging & Tooling - DAP support and tracing hooks.
+6.  **Phase 6**: protopy & protopyc - Bytecode executor and AOT compiler integration.
+7.  **Phase 7**: Full Compatibility - Passing the CPython regression test suite.
