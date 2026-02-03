@@ -61,6 +61,18 @@ static const proto::ProtoObject* py_list_append(
     return PROTO_NONE;
 }
 
+static const proto::ProtoObject* py_list_len(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "__data__");
+    const proto::ProtoObject* data = self->getAttribute(context, dataName);
+    if (!data || !data->asList(context)) return context->fromInteger(0);
+    return context->fromInteger(data->asList(context)->getSize(context));
+}
+
 // --- Dict Methods ---
 
 static const proto::ProtoObject* py_dict_getitem(
@@ -100,6 +112,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath) {
     const proto::ProtoString* py_name = proto::ProtoString::fromUTF8String(context, "__name__");
     const proto::ProtoString* py_append = proto::ProtoString::fromUTF8String(context, "append");
     const proto::ProtoString* py_getitem = proto::ProtoString::fromUTF8String(context, "__getitem__");
+    const proto::ProtoString* py_len = proto::ProtoString::fromUTF8String(context, "__len__");
 
     // 1. Create 'object' base
     objectPrototype = context->newObject(true);
@@ -131,6 +144,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath) {
     listPrototype = listPrototype->setAttribute(context, py_class, typePrototype);
     listPrototype = listPrototype->setAttribute(context, py_name, context->fromUTF8String("list"));
     listPrototype = listPrototype->setAttribute(context, py_append, context->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_append));
+    listPrototype = listPrototype->setAttribute(context, py_len, context->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_len));
 
     dictPrototype = context->newObject(true);
     dictPrototype = dictPrototype->addParent(context, objectPrototype);

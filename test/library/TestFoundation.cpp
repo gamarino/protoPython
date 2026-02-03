@@ -104,3 +104,33 @@ TEST_F(FoundationTest, SysModule) {
     ASSERT_NE(version, nullptr);
     ASSERT_TRUE(version->isString(context));
 }
+
+TEST_F(FoundationTest, BuiltinFunctions) {
+    proto::ProtoContext* context = env.getContext();
+    
+    // Test len() on a list
+    const proto::ProtoObject* my_list = context->newObject(true);
+    my_list = my_list->addParent(context, env.getListPrototype());
+    my_list->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->newList()->appendLast(context, context->fromInteger(1))->asObject(context));
+    
+    const proto::ProtoObject* pyLen = env.resolve("len");
+    ASSERT_NE(pyLen, nullptr);
+    
+    const proto::ProtoList* args = context->newList()->appendLast(context, my_list);
+    const proto::ProtoObject* result = pyLen->asMethod(context)(context, PROTO_NONE, nullptr, args, nullptr);
+    ASSERT_NE(result, nullptr);
+    EXPECT_EQ(result->asLong(context), 1);
+    
+    // Test id()
+    const proto::ProtoObject* pyId = env.resolve("id");
+    ASSERT_NE(pyId, nullptr);
+    const proto::ProtoObject* idResult = pyId->asMethod(context)(context, PROTO_NONE, nullptr, args, nullptr);
+    ASSERT_NE(idResult, nullptr);
+    EXPECT_EQ(idResult->asLong(context), reinterpret_cast<long long>(my_list));
+    
+    // Test print() - just verify it doesn't crash and returns None
+    const proto::ProtoObject* pyPrint = env.resolve("print");
+    ASSERT_NE(pyPrint, nullptr);
+    const proto::ProtoObject* printResult = pyPrint->asMethod(context)(context, PROTO_NONE, nullptr, args, nullptr);
+    EXPECT_EQ(printResult, PROTO_NONE);
+}

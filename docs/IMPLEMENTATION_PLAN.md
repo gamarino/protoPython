@@ -14,9 +14,9 @@ The foundation of the runtime must be fully compatible with Python 3.14's semant
 The goal is to provide a complete standard library that behaves identically to CPython's.
 
 - [x] **Phase 1: StdLib Shell**: Copy the Python 3.14 `.py` standard library into `lib/python3.14/`.
-- [ ] **Phase 2: C-to-C++ Replacement**:
-    - Identify modules traditionally implemented in C (e.g., `_io`, `_collections`, `_functools`, `_ssl`, `_socket`).
-    - Re-implement these modules as C++ shared libraries using the `protoPython` internal API.
+- [/] **Phase 2: C-to-C++ Replacement**:
+    - [x] Initial `builtins` and `sys` native implementation.
+    - [ ] Identify remaining modules traditionally implemented in C (e.g., `_io`, `_collections`, `_functools`, `_ssl`, `_socket`).
     - Ensure these modules are GIL-less from the start.
 - [ ] **Phase 3: Native Optimization**: Progressively replace performance-critical Python modules with C++ implementations.
 
