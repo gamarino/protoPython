@@ -614,6 +614,72 @@ TEST_F(FoundationTest, LenStringTuple) {
     EXPECT_EQ(tupleLen->asLong(context), 2);
 }
 
+TEST_F(FoundationTest, TupleDunders) {
+    proto::ProtoContext* context = env.getContext();
+
+    const proto::ProtoObject* tupleObj = context->newObject(true)->addParent(context, env.getTuplePrototype());
+    const proto::ProtoList* tupleList = context->newList()
+        ->appendLast(context, context->fromInteger(10))
+        ->appendLast(context, context->fromInteger(20))
+        ->appendLast(context, context->fromInteger(30));
+    const proto::ProtoTuple* tuple = context->newTupleFromList(tupleList);
+    tupleObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), tuple->asObject(context));
+
+    const proto::ProtoString* pyGetItem = proto::ProtoString::fromUTF8String(context, "__getitem__");
+    const proto::ProtoString* pyIter = proto::ProtoString::fromUTF8String(context, "__iter__");
+    const proto::ProtoString* pyNext = proto::ProtoString::fromUTF8String(context, "__next__");
+    const proto::ProtoString* pyContains = proto::ProtoString::fromUTF8String(context, "__contains__");
+    const proto::ProtoString* pyBool = proto::ProtoString::fromUTF8String(context, "__bool__");
+
+    const proto::ProtoObject* getItem = tupleObj->getAttribute(context, pyGetItem);
+    ASSERT_NE(getItem, nullptr);
+    const proto::ProtoList* args0 = context->newList()->appendLast(context, context->fromInteger(0));
+    const proto::ProtoObject* v0 = getItem->asMethod(context)(context, tupleObj, nullptr, args0, nullptr);
+    ASSERT_NE(v0, nullptr);
+    EXPECT_EQ(v0->asLong(context), 10);
+
+    const proto::ProtoList* args1 = context->newList()->appendLast(context, context->fromInteger(-1));
+    const proto::ProtoObject* vLast = getItem->asMethod(context)(context, tupleObj, nullptr, args1, nullptr);
+    ASSERT_NE(vLast, nullptr);
+    EXPECT_EQ(vLast->asLong(context), 30);
+
+    const proto::ProtoObject* iterM = tupleObj->getAttribute(context, pyIter);
+    ASSERT_NE(iterM, nullptr);
+    const proto::ProtoObject* it = iterM->asMethod(context)(context, tupleObj, nullptr, context->newList(), nullptr);
+    ASSERT_NE(it, nullptr);
+
+    const proto::ProtoObject* nextM = it->getAttribute(context, pyNext);
+    ASSERT_NE(nextM, nullptr);
+    const proto::ProtoObject* n0 = nextM->asMethod(context)(context, it, nullptr, context->newList(), nullptr);
+    EXPECT_EQ(n0->asLong(context), 10);
+    const proto::ProtoObject* n1 = nextM->asMethod(context)(context, it, nullptr, context->newList(), nullptr);
+    EXPECT_EQ(n1->asLong(context), 20);
+    const proto::ProtoObject* n2 = nextM->asMethod(context)(context, it, nullptr, context->newList(), nullptr);
+    EXPECT_EQ(n2->asLong(context), 30);
+    const proto::ProtoObject* nEnd = nextM->asMethod(context)(context, it, nullptr, context->newList(), nullptr);
+    EXPECT_EQ(nEnd, PROTO_NONE);
+
+    const proto::ProtoObject* containsM = tupleObj->getAttribute(context, pyContains);
+    ASSERT_NE(containsM, nullptr);
+    const proto::ProtoList* args20 = context->newList()->appendLast(context, context->fromInteger(20));
+    const proto::ProtoObject* has20 = containsM->asMethod(context)(context, tupleObj, nullptr, args20, nullptr);
+    EXPECT_EQ(has20, PROTO_TRUE);
+    const proto::ProtoList* args99 = context->newList()->appendLast(context, context->fromInteger(99));
+    const proto::ProtoObject* has99 = containsM->asMethod(context)(context, tupleObj, nullptr, args99, nullptr);
+    EXPECT_EQ(has99, PROTO_FALSE);
+
+    const proto::ProtoObject* boolM = tupleObj->getAttribute(context, pyBool);
+    ASSERT_NE(boolM, nullptr);
+    const proto::ProtoObject* nonEmpty = boolM->asMethod(context)(context, tupleObj, nullptr, context->newList(), nullptr);
+    EXPECT_EQ(nonEmpty, PROTO_TRUE);
+
+    const proto::ProtoObject* emptyTupleObj = context->newObject(true)->addParent(context, env.getTuplePrototype());
+    const proto::ProtoTuple* emptyTuple = context->newTupleFromList(context->newList());
+    emptyTupleObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), emptyTuple->asObject(context));
+    const proto::ProtoObject* emptyBool = boolM->asMethod(context)(context, emptyTupleObj, nullptr, context->newList(), nullptr);
+    EXPECT_EQ(emptyBool, PROTO_FALSE);
+}
+
 TEST_F(FoundationTest, DequeBasic) {
     proto::ProtoContext* context = env.getContext();
     const proto::ProtoObject* collections = env.resolve("_collections");

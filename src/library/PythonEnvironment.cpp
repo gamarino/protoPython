@@ -636,6 +636,94 @@ static const proto::ProtoObject* py_tuple_len(
     return context->fromInteger(data->asTuple(context)->getSize(context));
 }
 
+static const proto::ProtoObject* py_tuple_getitem(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "__data__");
+    const proto::ProtoObject* data = self->getAttribute(context, dataName);
+    if (!data || !data->asTuple(context)) return PROTO_NONE;
+    const proto::ProtoTuple* tuple = data->asTuple(context);
+    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    int index = static_cast<int>(positionalParameters->getAt(context, 0)->asLong(context));
+    unsigned long size = tuple->getSize(context);
+    if (index < 0) index += static_cast<int>(size);
+    if (index < 0 || static_cast<unsigned long>(index) >= size) return PROTO_NONE;
+    return tuple->getAt(context, index);
+}
+
+static const proto::ProtoObject* py_tuple_iter(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoString* iterProtoName = proto::ProtoString::fromUTF8String(context, "__iter_prototype__");
+    const proto::ProtoObject* iterProto = self->getAttribute(context, iterProtoName);
+    if (!iterProto) return PROTO_NONE;
+
+    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "__data__");
+    const proto::ProtoObject* data = self->getAttribute(context, dataName);
+    if (!data || !data->asTuple(context)) return PROTO_NONE;
+
+    const proto::ProtoObject* iterObj = iterProto->newChild(context, true);
+    const proto::ProtoString* iterTupleName = proto::ProtoString::fromUTF8String(context, "__iter_tuple__");
+    const proto::ProtoString* iterIndexName = proto::ProtoString::fromUTF8String(context, "__iter_index__");
+    iterObj->setAttribute(context, iterTupleName, data);
+    iterObj->setAttribute(context, iterIndexName, context->fromInteger(0));
+    return iterObj;
+}
+
+static const proto::ProtoObject* py_tuple_iter_next(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoString* iterTupleName = proto::ProtoString::fromUTF8String(context, "__iter_tuple__");
+    const proto::ProtoString* iterIndexName = proto::ProtoString::fromUTF8String(context, "__iter_index__");
+    const proto::ProtoObject* tupleObj = self->getAttribute(context, iterTupleName);
+    const proto::ProtoObject* indexObj = self->getAttribute(context, iterIndexName);
+    if (!tupleObj || !tupleObj->asTuple(context) || !indexObj) return PROTO_NONE;
+
+    const proto::ProtoTuple* tuple = tupleObj->asTuple(context);
+    int index = static_cast<int>(indexObj->asLong(context));
+    unsigned long size = tuple->getSize(context);
+    if (static_cast<unsigned long>(index) >= size) return PROTO_NONE;
+
+    const proto::ProtoObject* value = tuple->getAt(context, index);
+    self->setAttribute(context, iterIndexName, context->fromInteger(index + 1));
+    return value;
+}
+
+static const proto::ProtoObject* py_tuple_contains(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "__data__");
+    const proto::ProtoObject* data = self->getAttribute(context, dataName);
+    if (!data || !data->asTuple(context)) return PROTO_FALSE;
+    if (positionalParameters->getSize(context) < 1) return PROTO_FALSE;
+    const proto::ProtoObject* value = positionalParameters->getAt(context, 0);
+    return data->asTuple(context)->has(context, value) ? PROTO_TRUE : PROTO_FALSE;
+}
+
+static const proto::ProtoObject* py_tuple_bool(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "__data__");
+    const proto::ProtoObject* data = self->getAttribute(context, dataName);
+    if (!data || !data->asTuple(context)) return PROTO_FALSE;
+    return data->asTuple(context)->getSize(context) > 0 ? PROTO_TRUE : PROTO_FALSE;
+}
+
 static const proto::ProtoObject* py_dict_repr(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -916,6 +1004,15 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     tuplePrototype = tuplePrototype->setAttribute(context, py_class, typePrototype);
     tuplePrototype = tuplePrototype->setAttribute(context, py_name, context->fromUTF8String("tuple"));
     tuplePrototype = tuplePrototype->setAttribute(context, py_len, context->fromMethod(const_cast<proto::ProtoObject*>(tuplePrototype), py_tuple_len));
+    tuplePrototype = tuplePrototype->setAttribute(context, py_getitem, context->fromMethod(const_cast<proto::ProtoObject*>(tuplePrototype), py_tuple_getitem));
+    tuplePrototype = tuplePrototype->setAttribute(context, py_iter, context->fromMethod(const_cast<proto::ProtoObject*>(tuplePrototype), py_tuple_iter));
+    tuplePrototype = tuplePrototype->setAttribute(context, py_contains, context->fromMethod(const_cast<proto::ProtoObject*>(tuplePrototype), py_tuple_contains));
+    tuplePrototype = tuplePrototype->setAttribute(context, py_bool, context->fromMethod(const_cast<proto::ProtoObject*>(tuplePrototype), py_tuple_bool));
+
+    const proto::ProtoObject* tupleIterProto = context->newObject(true);
+    tupleIterProto = tupleIterProto->addParent(context, objectPrototype);
+    tupleIterProto = tupleIterProto->setAttribute(context, py_next, context->fromMethod(const_cast<proto::ProtoObject*>(tupleIterProto), py_tuple_iter_next));
+    tuplePrototype = tuplePrototype->setAttribute(context, py_iter_proto, tupleIterProto);
 
     // 5. Initialize Native Module Provider
     auto& registry = proto::ProviderRegistry::instance();
