@@ -5,6 +5,7 @@
 #include <protoPython/BuiltinsModule.h>
 #include <protoPython/IOModule.h>
 #include <protoPython/CollectionsModule.h>
+#include <protoPython/ExceptionsModule.h>
 #include <protoCore.h>
 
 namespace protoPython {
@@ -1385,6 +1386,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
 
     // _collections module
     nativeProvider->registerModule("_collections", [](proto::ProtoContext* ctx) { return collections::initialize(ctx); });
+    nativeProvider->registerModule("exceptions", [this](proto::ProtoContext* ctx) { return exceptions::initialize(ctx, objectPrototype, typePrototype); });
 
     registry.registerProvider(std::move(nativeProvider));
 

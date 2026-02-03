@@ -6,6 +6,7 @@ add_library(protoPython SHARED
     BuiltinsModule.cpp
     IOModule.cpp
     CollectionsModule.cpp
+    ExceptionsModule.cpp
 )
 
 target_include_directories(protoPython PUBLIC

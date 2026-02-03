@@ -13,6 +13,7 @@ The foundation of the runtime must be fully compatible with Python 3.14's semant
 - [ ] **Dict accessors**: `get()` and `setdefault()` [done].
 - [ ] **Dict mutation helpers**: `update()`, `clear()`, `copy()` (shallow copy) [done].
 - [ ] **Set prototype**: `add`, `remove`, `__len__`, `__contains__`, `__bool__`, `__iter__` [done]; see [SET_SUPPORT.md](SET_SUPPORT.md).
+- [ ] **Exception scaffolding**: `exceptions` module with `Exception`, `KeyError`, `ValueError` [done]; see [EXCEPTIONS.md](EXCEPTIONS.md).
 - [ ] **protopy CLI**: distinct exit codes and flags (`--module`, `--script`, `--path`, `--stdlib`) with tests [done].
 - [ ] **Phase 2b: Foundation test stability**: `test_foundation` hangs during list prototype creation (GC deadlock suspected). CTest timeout and troubleshooting docs added; see [TESTING.md](TESTING.md).
 - [ ] **Phase 3: Execution Engine**: Finalize `ProtoContext` integration for Python bytecode execution (via `protopy`). protopy invokes module `main` when running a script (stub execution path).

@@ -730,6 +730,27 @@ TEST_F(FoundationTest, StringDunders) {
     EXPECT_EQ(ls, "hello");
 }
 
+TEST_F(FoundationTest, ExceptionScaffolding) {
+    proto::ProtoContext* context = env.getContext();
+
+    const proto::ProtoObject* exceptionsMod = env.resolve("exceptions");
+    ASSERT_NE(exceptionsMod, nullptr);
+    ASSERT_NE(exceptionsMod, PROTO_NONE);
+
+    const proto::ProtoObject* keyErrorType = exceptionsMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "KeyError"));
+    ASSERT_NE(keyErrorType, nullptr);
+    const proto::ProtoList* args = context->newList()->appendLast(context, context->fromUTF8String("missing"));
+    const proto::ProtoObject* instance = keyErrorType->call(context, nullptr, proto::ProtoString::fromUTF8String(context, "__call__"), keyErrorType, args, nullptr);
+    ASSERT_NE(instance, nullptr);
+    const proto::ProtoObject* reprM = instance->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__repr__"));
+    ASSERT_NE(reprM, nullptr);
+    const proto::ProtoObject* reprObj = reprM->asMethod(context)(context, instance, nullptr, context->newList(), nullptr);
+    ASSERT_NE(reprObj, nullptr);
+    std::string reprStr;
+    reprObj->asString(context)->toUTF8String(context, reprStr);
+    EXPECT_FALSE(reprStr.empty());
+}
+
 TEST_F(FoundationTest, SetBasic) {
     proto::ProtoContext* context = env.getContext();
 
