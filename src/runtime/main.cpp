@@ -186,10 +186,22 @@ int main(int argc, char* argv[]) {
     searchPaths.insert(searchPaths.end(), options.searchPaths.begin(), options.searchPaths.end());
 
     if (options.repl) {
-        std::cout << "protoPython REPL (stub) - type 'exit' to quit\n>>> ";
+        protoPython::PythonEnvironment env(stdLibPath, searchPaths, std::vector<std::string>());
+        if (options.trace) {
+            env.setExecutionHook([](const std::string& name, int phase) {
+                std::cerr << (phase == 0 ? "[trace] enter " : "[trace] leave ") << name << std::endl;
+            });
+        }
+        std::cout << "protoPython REPL - type 'exit' to quit\n>>> ";
         std::string line;
         while (std::getline(std::cin, line) && line != "exit") {
-            if (!line.empty()) std::cout << "... " << line << "\n>>> ";
+            if (line.empty()) { std::cout << ">>> "; continue; }
+            const proto::ProtoObject* mod = env.resolve(line);
+            if (mod && mod != PROTO_NONE) {
+                int ret = env.executeModule(line);
+                (void)ret;
+            }
+            std::cout << ">>> ";
         }
         return EXIT_OK;
     }
