@@ -2,9 +2,7 @@
 
 Plan for 20 incremental milestones. Each step: implement → update docs → `git add` → commit.
 
-**Completed**: Steps 01–04 (foundation tests, tuple dunders, string dunders, dict mutation helpers).
-
-**Remaining**: Steps 05–20 (from v3) plus four new steps 21–24.
+**Completed**: Steps 01–24 (all planned steps).
 
 ---
 

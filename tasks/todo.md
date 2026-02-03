@@ -42,7 +42,7 @@ Derived from [IMPLEMENTATION_PLAN.md](../docs/IMPLEMENTATION_PLAN.md). See also 
 
 ## 7. Next 20 Steps (v4)
 
-See [docs/NEXT_20_STEPS_V4.md](../docs/NEXT_20_STEPS_V4.md). Steps 01–04 done; 05–24 planned.
+See [docs/NEXT_20_STEPS_V4.md](../docs/NEXT_20_STEPS_V4.md). Steps 01–24 completed.
 - [x] Step 01: Stabilize foundation tests (CTest timeout 60s, docs/TESTING.md, test_minimal/test_protocore_minimal reproducers; root fix in protoCore GC pending)
 - [x] Step 02: Tuple dunders (`__getitem__`, iter, contains, bool)
 - [x] Step 03: String dunders & helpers (iter, contains, upper/lower)

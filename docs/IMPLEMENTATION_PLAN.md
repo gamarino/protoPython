@@ -6,15 +6,15 @@ This document outlines the roadmap for turning `protoPython` into a GIL-less, hi
 The foundation of the runtime must be fully compatible with Python 3.14's semantics while leveraging `protoCore`'s fine-grained locking and immutable-by-default sharing.
 
 - [x] **Phase 1: Foundation**: Set up `PythonEnvironment`, `object`, `type`, `int`, `str`, `list`, `dict`.
-- [ ] **Phase 2: Full Method Coverage** (Next 20 Steps v3: Steps 01–04 done): Implement all dunder methods for built-in types. First batch: `__getitem__`, `__setitem__`, `__len__` for list and dict [done]. Second batch: list `__iter__`/`__next__` [done], dict key iteration [done via `__keys__` list]. Third batch: list/dict `__contains__` [done]. Fourth batch: list/dict `__eq__` [done]. Fifth batch: list ordering dunders `__lt__`, `__le__`, `__gt__`, `__ge__` [done]; dict ordering returns `PROTO_NONE` (unsupported for now). Sixth batch: list/dict `__repr__` and `__str__` [done]. Seventh batch: list/dict `__bool__` [done]. Eighth batch: tuple `__len__` and builtins tuple registration [done]. Ninth batch: list slicing for `__getitem__` with slice spec `[start, stop, step]` (step=1 only) [done]. Tenth batch: tuple `__getitem__`, `__iter__`, `__contains__`, `__bool__` [done]. Eleventh batch: string `__iter__`, `__contains__`, `__bool__`, `upper()`, `lower()` [done]; see [STRING_SUPPORT.md](STRING_SUPPORT.md); raw string iteration has known issues.
-- [ ] **Missing-key behavior**: dict `__getitem__` returns `PROTO_NONE` for missing keys until exceptions are implemented [documented].
-- [ ] **Dict views**: `keys()`, `values()`, `items()` backed by `__keys__` and `__data__` [done].
-- [ ] **List methods**: `pop()`, `extend()`, `insert()`, `remove()`, `clear()` [done].
-- [ ] **Dict accessors**: `get()` and `setdefault()` [done].
-- [ ] **Dict mutation helpers**: `update()`, `clear()`, `copy()` (shallow copy) [done].
-- [ ] **Set prototype**: `add`, `remove`, `__len__`, `__contains__`, `__bool__`, `__iter__` [done]; see [SET_SUPPORT.md](SET_SUPPORT.md).
-- [ ] **Exception scaffolding**: `exceptions` module with `Exception`, `KeyError`, `ValueError` [done]; see [EXCEPTIONS.md](EXCEPTIONS.md).
-- [ ] **protopy CLI**: distinct exit codes and flags (`--module`, `--script`, `--path`, `--stdlib`) with tests [done].
+- [x] **Phase 2: Full Method Coverage** (Next 20 Steps v4: Steps 01–24 done): Implement all dunder methods for built-in types. First batch: `__getitem__`, `__setitem__`, `__len__` for list and dict [done]. Second batch: list `__iter__`/`__next__` [done], dict key iteration [done via `__keys__` list]. Third batch: list/dict `__contains__` [done]. Fourth batch: list/dict `__eq__` [done]. Fifth batch: list ordering dunders `__lt__`, `__le__`, `__gt__`, `__ge__` [done]; dict ordering returns `PROTO_NONE` (unsupported for now). Sixth batch: list/dict `__repr__` and `__str__` [done]. Seventh batch: list/dict `__bool__` [done]. Eighth batch: tuple `__len__` and builtins tuple registration [done]. Ninth batch: list slicing for `__getitem__` with slice spec `[start, stop, step]` (step=1 only) [done]. Tenth batch: tuple `__getitem__`, `__iter__`, `__contains__`, `__bool__` [done]. Eleventh batch: string `__iter__`, `__contains__`, `__bool__`, `upper()`, `lower()` [done]; see [STRING_SUPPORT.md](STRING_SUPPORT.md); raw string iteration has known issues.
+- [x] **Missing-key behavior**: dict `__getitem__` raises KeyError for missing keys; see [EXCEPTIONS.md](EXCEPTIONS.md).
+- [x] **Dict views**: `keys()`, `values()`, `items()` backed by `__keys__` and `__data__`.
+- [x] **List methods**: `pop()`, `extend()`, `insert()`, `remove()`, `clear()`.
+- [x] **Dict accessors**: `get()` and `setdefault()`.
+- [x] **Dict mutation helpers**: `update()`, `clear()`, `copy()` (shallow copy).
+- [x] **Set prototype**: `add`, `remove`, `__len__`, `__contains__`, `__bool__`, `__iter__`; see [SET_SUPPORT.md](SET_SUPPORT.md).
+- [x] **Exception scaffolding**: `exceptions` module with `Exception`, `KeyError`, `ValueError`; see [EXCEPTIONS.md](EXCEPTIONS.md).
+- [x] **protopy CLI**: distinct exit codes and flags (`--module`, `--script`, `--path`, `--stdlib`, `--bytecode-only`, `--trace`, `--repl`) with tests.
 - [ ] **Phase 2b: Foundation test stability**: `test_foundation` hangs during list prototype creation (GC deadlock suspected). CTest timeout and troubleshooting docs added; see [TESTING.md](TESTING.md).
 - [ ] **Phase 3: Execution Engine**: Finalize `ProtoContext` integration for Python bytecode execution (via `protopy`). protopy invokes module `main` when running a script (stub execution path). `PythonEnvironment::executeModule` provides high-level entry with optional pre/post execution hook.
 - [ ] **Phase 4: GIL-less Concurrency**: Audit all mutable operations to ensure thread-safety using `protoCore` primitives. Audit documented in [GIL_FREE_AUDIT.md](GIL_FREE_AUDIT.md); fixes TBD.
@@ -42,8 +42,7 @@ To be a viable replacement, `protoPython` must support professional developer wo
 
 - [x] **Tracing API**: Implement `sys.settrace` and related hooks within the execution engine.
 - [ ] **Protocol Support**:
-    - Implement the **Debug Adapter Protocol (DAP)** directly in the runtime (or as a module).
-    - Enable line-by-line stepping, variable inspection, and breakpoint management.
+    - DAP skeleton added (`DAPServer.h`); full DAP (line stepping, variable inspection, breakpoints) TBD.
 - [ ] **IDE Integration**: Ensure compatibility with VS Code (via `debugpy`-like backend) and PyCharm.
 - [ ] **Step-through C++ Boundaries**: Allow debugging to transition seamlessly from Python code into C++ module code.
 
