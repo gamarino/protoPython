@@ -114,6 +114,48 @@ static const proto::ProtoObject* py_list_setitem(
     return PROTO_NONE;
 }
 
+static const proto::ProtoObject* py_list_iter(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoString* iterProtoName = proto::ProtoString::fromUTF8String(context, "__iter_prototype__");
+    const proto::ProtoObject* iterProto = self->getAttribute(context, iterProtoName);
+    if (!iterProto) return PROTO_NONE;
+
+    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "__data__");
+    const proto::ProtoObject* data = self->getAttribute(context, dataName);
+    if (!data || !data->asList(context)) return PROTO_NONE;
+
+    const proto::ProtoList* list = data->asList(context);
+    const proto::ProtoListIterator* it = list->getIterator(context);
+
+    const proto::ProtoObject* iterObj = iterProto->newChild(context, true);
+    const proto::ProtoString* iterListName = proto::ProtoString::fromUTF8String(context, "__iter_list__");
+    const proto::ProtoString* iterItName = proto::ProtoString::fromUTF8String(context, "__iter_it__");
+    iterObj->setAttribute(context, iterListName, data);
+    iterObj->setAttribute(context, iterItName, it->asObject(context));
+    return iterObj;
+}
+
+static const proto::ProtoObject* py_list_iter_next(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoString* iterItName = proto::ProtoString::fromUTF8String(context, "__iter_it__");
+    const proto::ProtoObject* itObj = self->getAttribute(context, iterItName);
+    if (!itObj || !itObj->asListIterator(context)) return PROTO_NONE;
+    const proto::ProtoListIterator* it = itObj->asListIterator(context);
+    if (!it->hasNext(context)) return PROTO_NONE;
+    const proto::ProtoObject* value = it->next(context);
+    const proto::ProtoListIterator* nextIt = it->advance(context);
+    self->setAttribute(context, iterItName, nextIt->asObject(context));
+    return value;
+}
+
 // --- Dict Methods ---
 
 static const proto::ProtoObject* py_dict_getitem(
@@ -184,6 +226,9 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     const proto::ProtoString* py_getitem = proto::ProtoString::fromUTF8String(context, "__getitem__");
     const proto::ProtoString* py_setitem = proto::ProtoString::fromUTF8String(context, "__setitem__");
     const proto::ProtoString* py_len = proto::ProtoString::fromUTF8String(context, "__len__");
+    const proto::ProtoString* py_iter = proto::ProtoString::fromUTF8String(context, "__iter__");
+    const proto::ProtoString* py_next = proto::ProtoString::fromUTF8String(context, "__next__");
+    const proto::ProtoString* py_iter_proto = proto::ProtoString::fromUTF8String(context, "__iter_prototype__");
 
     // 1. Create 'object' base
     objectPrototype = context->newObject(true);
@@ -218,6 +263,12 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     listPrototype = listPrototype->setAttribute(context, py_len, context->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_len));
     listPrototype = listPrototype->setAttribute(context, py_getitem, context->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_getitem));
     listPrototype = listPrototype->setAttribute(context, py_setitem, context->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_setitem));
+    listPrototype = listPrototype->setAttribute(context, py_iter, context->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_iter));
+
+    const proto::ProtoObject* listIterProto = context->newObject(true);
+    listIterProto = listIterProto->addParent(context, objectPrototype);
+    listIterProto = listIterProto->setAttribute(context, py_next, context->fromMethod(const_cast<proto::ProtoObject*>(listIterProto), py_list_iter_next));
+    listPrototype = listPrototype->setAttribute(context, py_iter_proto, listIterProto);
 
     dictPrototype = context->newObject(true);
     dictPrototype = dictPrototype->addParent(context, objectPrototype);

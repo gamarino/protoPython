@@ -272,6 +272,34 @@ TEST_F(FoundationTest, DictSetItemLen) {
     EXPECT_EQ(got->asLong(context), 42);
 }
 
+TEST_F(FoundationTest, ListIterNext) {
+    proto::ProtoContext* context = env.getContext();
+    const proto::ProtoObject* my_list = context->newObject(true);
+    my_list = my_list->addParent(context, env.getListPrototype());
+    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "__data__");
+    const proto::ProtoList* list = context->newList()
+        ->appendLast(context, context->fromInteger(1))
+        ->appendLast(context, context->fromInteger(2));
+    my_list->setAttribute(context, dataName, list->asObject(context));
+
+    const proto::ProtoObject* pyIter = env.resolve("iter");
+    const proto::ProtoObject* pyNext = env.resolve("next");
+    ASSERT_NE(pyIter, nullptr);
+    ASSERT_NE(pyNext, nullptr);
+
+    const proto::ProtoList* iterArgs = context->newList()->appendLast(context, my_list);
+    const proto::ProtoObject* it = pyIter->asMethod(context)(context, PROTO_NONE, nullptr, iterArgs, nullptr);
+    ASSERT_NE(it, nullptr);
+
+    const proto::ProtoList* nextArgs = context->newList()->appendLast(context, it);
+    const proto::ProtoObject* v1 = pyNext->asMethod(context)(context, PROTO_NONE, nullptr, nextArgs, nullptr);
+    const proto::ProtoObject* v2 = pyNext->asMethod(context)(context, PROTO_NONE, nullptr, nextArgs, nullptr);
+    ASSERT_NE(v1, nullptr);
+    ASSERT_NE(v2, nullptr);
+    EXPECT_EQ(v1->asLong(context), 1);
+    EXPECT_EQ(v2->asLong(context), 2);
+}
+
 TEST_F(FoundationTest, DequeBasic) {
     proto::ProtoContext* context = env.getContext();
     const proto::ProtoObject* collections = env.resolve("_collections");
