@@ -543,6 +543,29 @@ TEST_F(FoundationTest, DictViews) {
     EXPECT_EQ(itemsObj->asList(context)->getSize(context), 1);
 }
 
+TEST_F(FoundationTest, DictGetSetDefault) {
+    proto::ProtoContext* context = env.getContext();
+    const proto::ProtoObject* dictObj = context->newObject(true)->addParent(context, env.getDictPrototype());
+    dictObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->newSparseList()->asObject(context));
+    const proto::ProtoObject* getMethod = dictObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "get"));
+    const proto::ProtoObject* setdefaultMethod = dictObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "setdefault"));
+    ASSERT_NE(getMethod, nullptr);
+    ASSERT_NE(setdefaultMethod, nullptr);
+
+    const proto::ProtoObject* key = context->fromUTF8String("k");
+    const proto::ProtoObject* defaultVal = context->fromInteger(7);
+    const proto::ProtoList* getArgs = context->newList()->appendLast(context, key)->appendLast(context, defaultVal);
+    const proto::ProtoObject* getVal = getMethod->asMethod(context)(context, dictObj, nullptr, getArgs, nullptr);
+    EXPECT_EQ(getVal, defaultVal);
+
+    const proto::ProtoList* setArgs = context->newList()->appendLast(context, key)->appendLast(context, defaultVal);
+    const proto::ProtoObject* setVal = setdefaultMethod->asMethod(context)(context, dictObj, nullptr, setArgs, nullptr);
+    EXPECT_EQ(setVal, defaultVal);
+
+    const proto::ProtoObject* getVal2 = getMethod->asMethod(context)(context, dictObj, nullptr, getArgs, nullptr);
+    EXPECT_EQ(getVal2, defaultVal);
+}
+
 TEST_F(FoundationTest, ListPopExtend) {
     proto::ProtoContext* context = env.getContext();
     const proto::ProtoObject* listObj = context->newObject(true)->addParent(context, env.getListPrototype());

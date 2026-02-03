@@ -753,6 +753,50 @@ static const proto::ProtoObject* py_dict_items(
     return items->asObject(context);
 }
 
+static const proto::ProtoObject* py_dict_get(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    const proto::ProtoObject* key = positionalParameters->getAt(context, 0);
+    const proto::ProtoObject* defaultVal = positionalParameters->getSize(context) > 1 ? positionalParameters->getAt(context, 1) : PROTO_NONE;
+    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "__data__");
+    const proto::ProtoObject* data = self->getAttribute(context, dataName);
+    const proto::ProtoSparseList* dict = data && data->asSparseList(context) ? data->asSparseList(context) : nullptr;
+    if (!dict) return defaultVal;
+    const proto::ProtoObject* val = dict->getAt(context, key->getHash(context));
+    return val ? val : defaultVal;
+}
+
+static const proto::ProtoObject* py_dict_setdefault(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    const proto::ProtoObject* key = positionalParameters->getAt(context, 0);
+    const proto::ProtoObject* defaultVal = positionalParameters->getSize(context) > 1 ? positionalParameters->getAt(context, 1) : PROTO_NONE;
+    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "__data__");
+    const proto::ProtoObject* data = self->getAttribute(context, dataName);
+    const proto::ProtoSparseList* dict = data && data->asSparseList(context) ? data->asSparseList(context) : nullptr;
+    if (!dict) return PROTO_NONE;
+    unsigned long hash = key->getHash(context);
+    const proto::ProtoObject* existing = dict->getAt(context, hash);
+    if (existing) return existing;
+    const proto::ProtoSparseList* newDict = dict->setAt(context, hash, defaultVal);
+    self->setAttribute(context, dataName, newDict->asObject(context));
+
+    const proto::ProtoString* keysName = proto::ProtoString::fromUTF8String(context, "__keys__");
+    const proto::ProtoObject* keysObj = self->getAttribute(context, keysName);
+    const proto::ProtoList* keysList = keysObj && keysObj->asList(context) ? keysObj->asList(context) : context->newList();
+    keysList = keysList->appendLast(context, key);
+    self->setAttribute(context, keysName, keysList->asObject(context));
+    return defaultVal;
+}
+
 // --- PythonEnvironment Implementation ---
 
 PythonEnvironment::PythonEnvironment(const std::string& stdLibPath, const std::vector<std::string>& searchPaths) : space() {
@@ -789,6 +833,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     const proto::ProtoString* py_keys = proto::ProtoString::fromUTF8String(context, "keys");
     const proto::ProtoString* py_values = proto::ProtoString::fromUTF8String(context, "values");
     const proto::ProtoString* py_items = proto::ProtoString::fromUTF8String(context, "items");
+    const proto::ProtoString* py_get = proto::ProtoString::fromUTF8String(context, "get");
+    const proto::ProtoString* py_setdefault = proto::ProtoString::fromUTF8String(context, "setdefault");
 
     // 1. Create 'object' base
     objectPrototype = context->newObject(true);
@@ -862,6 +908,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     dictPrototype = dictPrototype->setAttribute(context, py_keys, context->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_keys));
     dictPrototype = dictPrototype->setAttribute(context, py_values, context->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_values));
     dictPrototype = dictPrototype->setAttribute(context, py_items, context->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_items));
+    dictPrototype = dictPrototype->setAttribute(context, py_get, context->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_get));
+    dictPrototype = dictPrototype->setAttribute(context, py_setdefault, context->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_setdefault));
 
     tuplePrototype = context->newObject(true);
     tuplePrototype = tuplePrototype->addParent(context, objectPrototype);

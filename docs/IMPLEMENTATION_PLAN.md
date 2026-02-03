@@ -10,6 +10,7 @@ The foundation of the runtime must be fully compatible with Python 3.14's semant
 - [ ] **Missing-key behavior**: dict `__getitem__` returns `PROTO_NONE` for missing keys until exceptions are implemented [documented].
 - [ ] **Dict views**: `keys()`, `values()`, `items()` backed by `__keys__` and `__data__` [done].
 - [ ] **List methods**: `pop()` and `extend()` [done].
+- [ ] **Dict accessors**: `get()` and `setdefault()` [done].
 - [ ] **Phase 3: Execution Engine**: Finalize `ProtoContext` integration for Python bytecode execution (via `protopy`). protopy invokes module `main` when running a script (stub execution path).
 - [ ] **Phase 4: GIL-less Concurrency**: Audit all mutable operations to ensure thread-safety using `protoCore` primitives. Audit documented in [GIL_FREE_AUDIT.md](GIL_FREE_AUDIT.md); fixes TBD.
 

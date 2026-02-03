@@ -10,6 +10,8 @@ Derived from [IMPLEMENTATION_PLAN.md](../docs/IMPLEMENTATION_PLAN.md). See also 
 - [x] `keys()`, `values()`, `items()` backed by `__keys__` and `__data__`
 ## 1.3 List methods
 - [x] `pop()` and `extend()` implemented on list prototype
+## 1.4 Dict accessors
+- [x] `get()` and `setdefault()` implemented on dict prototype
 - [ ] Phase 3: Execution Engine — ProtoContext integration for bytecode execution (protopy)
 - [x] Phase 4: GIL-less Concurrency — audit documented in [docs/GIL_FREE_AUDIT.md](../docs/GIL_FREE_AUDIT.md); fixes TBD
 
