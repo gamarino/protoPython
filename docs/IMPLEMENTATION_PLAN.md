@@ -17,7 +17,7 @@ The goal is to provide a complete standard library that behaves identically to C
 - [x] **Phase 2: C-to-C++ Replacement**:
     - [x] Initial `builtins` and `sys` native implementation.
     - [x] Basic `_io` module for file operations (Phase 4).
-    - [ ] Identify remaining modules traditionally implemented in C (e.g., `_collections`, `_functools`, `_ssl`, `_socket`).
+    - [x] Identify remaining modules traditionally implemented in C (e.g., `_collections`, `_functools`, `_ssl`, `_socket`); see [C_MODULES_TO_REPLACE.md](C_MODULES_TO_REPLACE.md).
     - Ensure these modules are GIL-less from the start.
 - [ ] **Phase 3: Native Optimization**: Progressively replace performance-critical Python modules with C++ implementations.
 
@@ -25,7 +25,7 @@ The goal is to provide a complete standard library that behaves identically to C
 We aim for "No-Modification" compatibility with CPython tests.
 
 - [x] **Integration of `test.regrtest`**: Set up a harness to run CPython's test suite directly.
-- [ ] **Incremental Success**: Track compatibility percentage across the entire test suite.
+- [ ] **Incremental Success**: Track compatibility percentage across the entire test suite (e.g. script or dashboard counting pass/fail; see `test/regression/`).
 - [ ] **Bug-for-Bug Compatibility**: Where safe, emulate CPython edge cases to ensure existing code works without changes.
 
 ## 4. Debugging & IDE Support
