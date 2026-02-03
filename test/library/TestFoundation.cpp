@@ -134,3 +134,24 @@ TEST_F(FoundationTest, BuiltinFunctions) {
     const proto::ProtoObject* printResult = pyPrint->asMethod(context)(context, PROTO_NONE, nullptr, args, nullptr);
     EXPECT_EQ(printResult, PROTO_NONE);
 }
+
+TEST_F(FoundationTest, AdvancedBuiltins) {
+    proto::ProtoContext* context = env.getContext();
+    const proto::ProtoObject* my_list = context->newObject(true)->addParent(context, env.getListPrototype());
+    
+    // Test isinstance(my_list, list)
+    const proto::ProtoObject* pyIsInstance = env.resolve("isinstance");
+    ASSERT_NE(pyIsInstance, nullptr);
+    const proto::ProtoList* args = context->newList()->appendLast(context, my_list)->appendLast(context, env.getListPrototype());
+    const proto::ProtoObject* result = pyIsInstance->asMethod(context)(context, PROTO_NONE, nullptr, args, nullptr);
+    EXPECT_EQ(result, PROTO_TRUE);
+    
+    // Test range(5)
+    const proto::ProtoObject* pyRange = env.resolve("range");
+    ASSERT_NE(pyRange, nullptr);
+    const proto::ProtoList* rangeArgs = context->newList()->appendLast(context, context->fromInteger(5));
+    const proto::ProtoObject* rangeObj = pyRange->asMethod(context)(context, PROTO_NONE, nullptr, rangeArgs, nullptr);
+    ASSERT_NE(rangeObj, nullptr);
+    ASSERT_NE(rangeObj->asList(context), nullptr);
+    EXPECT_EQ(rangeObj->asList(context)->getSize(context), 5);
+}
