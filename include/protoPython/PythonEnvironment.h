@@ -77,6 +77,11 @@ public:
     const proto::ProtoObject* getBytesPrototype() const { return bytesPrototype; }
 
     /**
+     * @brief Gets the Python 'slice' type.
+     */
+    const proto::ProtoObject* getSliceType() const { return sliceType; }
+
+    /**
      * @brief Utility to resolve symbols in this environment.
      */
     const proto::ProtoObject* resolve(const std::string& name);
@@ -179,6 +184,7 @@ private:
     const proto::ProtoObject* tuplePrototype;
     const proto::ProtoObject* setPrototype;
     const proto::ProtoObject* bytesPrototype;
+    const proto::ProtoObject* sliceType;
     const proto::ProtoObject* sysModule;
     const proto::ProtoObject* builtinsModule;
     const proto::ProtoObject* traceFunction{nullptr};

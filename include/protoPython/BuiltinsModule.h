@@ -15,7 +15,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
                                    const proto::ProtoObject* typeProto, const proto::ProtoObject* intProto,
                                    const proto::ProtoObject* strProto, const proto::ProtoObject* listProto,
                                    const proto::ProtoObject* dictProto, const proto::ProtoObject* tupleProto,
-                                   const proto::ProtoObject* setProto, const proto::ProtoObject* bytesProto);
+                                   const proto::ProtoObject* setProto, const proto::ProtoObject* bytesProto,
+                                   const proto::ProtoObject* sliceType);
 
 } // namespace builtins
 } // namespace protoPython

@@ -76,6 +76,29 @@ static const proto::ProtoObject* py_list_len(
     return context->fromInteger(data->asList(context)->getSize(context));
 }
 
+struct SliceBounds { bool isSlice; long long start, stop, step; };
+
+static SliceBounds get_slice_bounds(proto::ProtoContext* context, const proto::ProtoObject* indexObj, long long size) {
+    SliceBounds sb{false, 0, 0, 1};
+    const proto::ProtoString* startName = proto::ProtoString::fromUTF8String(context, "start");
+    const proto::ProtoString* stopName = proto::ProtoString::fromUTF8String(context, "stop");
+    const proto::ProtoString* stepName = proto::ProtoString::fromUTF8String(context, "step");
+    const proto::ProtoObject* startObj = indexObj->getAttribute(context, startName);
+    const proto::ProtoObject* stopObj = indexObj->getAttribute(context, stopName);
+    if (!stopObj || stopObj == PROTO_NONE) return sb;
+    sb.isSlice = true;
+    sb.start = (startObj && startObj != PROTO_NONE && startObj->isInteger(context)) ? startObj->asLong(context) : 0;
+    sb.stop = (stopObj && stopObj != PROTO_NONE && stopObj->isInteger(context)) ? stopObj->asLong(context) : size;
+    const proto::ProtoObject* stepObj = indexObj->getAttribute(context, stepName);
+    sb.step = (stepObj && stepObj != PROTO_NONE && stepObj->isInteger(context)) ? stepObj->asLong(context) : 1;
+    if (sb.start < 0) sb.start += size;
+    if (sb.stop < 0) sb.stop += size;
+    if (sb.start < 0) sb.start = 0;
+    if (sb.stop > size) sb.stop = size;
+    if (sb.start > sb.stop) sb.start = sb.stop;
+    return sb;
+}
+
 static const proto::ProtoObject* py_list_getitem(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -88,31 +111,42 @@ static const proto::ProtoObject* py_list_getitem(
     const proto::ProtoList* list = data->asList(context);
     if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
     const proto::ProtoObject* indexObj = positionalParameters->getAt(context, 0);
-    const proto::ProtoList* slice = indexObj->asList(context);
-    if (slice) {
-        unsigned long sliceSize = slice->getSize(context);
-        if (sliceSize < 2) return PROTO_NONE;
-        long long start = slice->getAt(context, 0)->asLong(context);
-        long long stop = slice->getAt(context, 1)->asLong(context);
-        long long step = 1;
-        if (sliceSize >= 3) step = slice->getAt(context, 2)->asLong(context);
-        if (step != 1) return PROTO_NONE;
-        long long size = static_cast<long long>(list->getSize(context));
-        if (start < 0) start += size;
-        if (stop < 0) stop += size;
-        if (start < 0) start = 0;
-        if (stop > size) stop = size;
-        if (start > stop) start = stop;
+    long long size = static_cast<long long>(list->getSize(context));
+
+    SliceBounds sb = get_slice_bounds(context, indexObj, size);
+    if (sb.isSlice && sb.step == 1) {
         const proto::ProtoList* result = context->newList();
-        for (long long i = start; i < stop; i += step) {
+        for (long long i = sb.start; i < sb.stop; i += sb.step) {
             result = result->appendLast(context, list->getAt(context, static_cast<int>(i)));
         }
         return result->asObject(context);
     }
+
+    const proto::ProtoList* sliceList = indexObj->asList(context);
+    if (sliceList) {
+        unsigned long sliceSize = sliceList->getSize(context);
+        if (sliceSize >= 2) {
+            long long start = sliceList->getAt(context, 0)->asLong(context);
+            long long stop = sliceList->getAt(context, 1)->asLong(context);
+            long long step = sliceSize >= 3 ? sliceList->getAt(context, 2)->asLong(context) : 1;
+            if (step != 1) return PROTO_NONE;
+            if (start < 0) start += size;
+            if (stop < 0) stop += size;
+            if (start < 0) start = 0;
+            if (stop > size) stop = size;
+            if (start > stop) start = stop;
+            const proto::ProtoList* result = context->newList();
+            for (long long i = start; i < stop; i += step) {
+                result = result->appendLast(context, list->getAt(context, static_cast<int>(i)));
+            }
+            return result->asObject(context);
+        }
+    }
+
     int index = static_cast<int>(indexObj->asLong(context));
-    unsigned long size = list->getSize(context);
-    if (index < 0) index += static_cast<int>(size);
-    if (index < 0 || static_cast<unsigned long>(index) >= size) return PROTO_NONE;
+    unsigned long ulen = list->getSize(context);
+    if (index < 0) index += static_cast<int>(ulen);
+    if (index < 0 || static_cast<unsigned long>(index) >= ulen) return PROTO_NONE;
     return list->getAt(context, index);
 }
 
@@ -974,6 +1008,75 @@ static const proto::ProtoObject* py_str_bool(
     return str->getSize(context) > 0 ? PROTO_TRUE : PROTO_FALSE;
 }
 
+static const proto::ProtoObject* py_str_getitem(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoString* str = str_from_self(context, self);
+    if (!str || positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    std::string s;
+    str->toUTF8String(context, s);
+    long long size = static_cast<long long>(s.size());
+    const proto::ProtoObject* indexObj = positionalParameters->getAt(context, 0);
+
+    SliceBounds sb = get_slice_bounds(context, indexObj, size);
+    if (sb.isSlice && sb.step == 1) {
+        std::string sub = s.substr(static_cast<size_t>(sb.start), static_cast<size_t>(sb.stop - sb.start));
+        return context->fromUTF8String(sub.c_str());
+    }
+
+    const proto::ProtoList* sliceList = indexObj->asList(context);
+    if (sliceList && sliceList->getSize(context) >= 2) {
+        long long start = sliceList->getAt(context, 0)->asLong(context);
+        long long stop = sliceList->getAt(context, 1)->asLong(context);
+        long long step = sliceList->getSize(context) >= 3 ? sliceList->getAt(context, 2)->asLong(context) : 1;
+        if (step != 1) return PROTO_NONE;
+        if (start < 0) start += size;
+        if (stop < 0) stop += size;
+        if (start < 0) start = 0;
+        if (stop > size) stop = size;
+        if (start > stop) start = stop;
+        std::string sub = s.substr(static_cast<size_t>(start), static_cast<size_t>(stop - start));
+        return context->fromUTF8String(sub.c_str());
+    }
+
+    int idx = static_cast<int>(indexObj->asLong(context));
+    if (idx < 0) idx += static_cast<int>(size);
+    if (idx < 0 || static_cast<unsigned long>(idx) >= s.size()) return PROTO_NONE;
+    char c[2] = { s[static_cast<size_t>(idx)], '\0' };
+    return context->fromUTF8String(c);
+}
+
+static const proto::ProtoObject* py_slice_call(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoString* startName = proto::ProtoString::fromUTF8String(context, "start");
+    const proto::ProtoString* stopName = proto::ProtoString::fromUTF8String(context, "stop");
+    const proto::ProtoString* stepName = proto::ProtoString::fromUTF8String(context, "step");
+    unsigned long n = positionalParameters->getSize(context);
+    const proto::ProtoObject* start = PROTO_NONE;
+    const proto::ProtoObject* stop = PROTO_NONE;
+    const proto::ProtoObject* step = PROTO_NONE;
+    if (n == 1) {
+        stop = positionalParameters->getAt(context, 0);
+    } else if (n >= 2) {
+        start = positionalParameters->getAt(context, 0);
+        stop = positionalParameters->getAt(context, 1);
+        if (n >= 3) step = positionalParameters->getAt(context, 2);
+    }
+    const proto::ProtoObject* sliceObj = context->newObject(true);
+    sliceObj = sliceObj->addParent(context, self);
+    sliceObj = sliceObj->setAttribute(context, startName, start ? start : context->fromInteger(0));
+    sliceObj = sliceObj->setAttribute(context, stopName, stop ? stop : context->fromInteger(0));
+    sliceObj = sliceObj->setAttribute(context, stepName, step ? step : context->fromInteger(1));
+    return sliceObj;
+}
+
 static const proto::ProtoObject* py_str_upper(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -1380,6 +1483,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     strPrototype = strPrototype->setAttribute(context, py_class, typePrototype);
     strPrototype = strPrototype->setAttribute(context, py_name, context->fromUTF8String("str"));
     strPrototype = strPrototype->setAttribute(context, py_iter, context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_iter));
+    strPrototype = strPrototype->setAttribute(context, py_getitem, context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_getitem));
     strPrototype = strPrototype->setAttribute(context, py_contains, context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_contains));
     strPrototype = strPrototype->setAttribute(context, py_bool, context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_bool));
     strPrototype = strPrototype->setAttribute(context, py_upper, context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_upper));
@@ -1480,6 +1584,13 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     bytesPrototype = bytesPrototype->setAttribute(context, py_len, context->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_len));
     bytesPrototype = bytesPrototype->setAttribute(context, py_getitem, context->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_getitem));
 
+    const proto::ProtoString* py_call = proto::ProtoString::fromUTF8String(context, "__call__");
+    sliceType = context->newObject(true);
+    sliceType = sliceType->addParent(context, objectPrototype);
+    sliceType = sliceType->setAttribute(context, py_class, typePrototype);
+    sliceType = sliceType->setAttribute(context, py_name, context->fromUTF8String("slice"));
+    sliceType = sliceType->setAttribute(context, py_call, context->fromMethod(const_cast<proto::ProtoObject*>(sliceType), py_slice_call));
+
     // 5. Initialize Native Module Provider
     auto& registry = proto::ProviderRegistry::instance();
     auto nativeProvider = std::make_unique<NativeModuleProvider>();
@@ -1489,7 +1600,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     nativeProvider->registerModule("sys", [this](proto::ProtoContext* ctx) { return sysModule; });
 
     // builtins module
-    builtinsModule = builtins::initialize(context, objectPrototype, typePrototype, intPrototype, strPrototype, listPrototype, dictPrototype, tuplePrototype, setPrototype, bytesPrototype);
+    builtinsModule = builtins::initialize(context, objectPrototype, typePrototype, intPrototype, strPrototype, listPrototype, dictPrototype, tuplePrototype, setPrototype, bytesPrototype, sliceType);
     nativeProvider->registerModule("builtins", [this](proto::ProtoContext* ctx) { return builtinsModule; });
 
     // _io module
