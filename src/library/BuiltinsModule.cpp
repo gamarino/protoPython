@@ -1,4 +1,5 @@
 #include <protoPython/BuiltinsModule.h>
+#include <protoPython/PythonEnvironment.h>
 #include <iostream>
 
 namespace protoPython {
@@ -231,6 +232,20 @@ static const proto::ProtoObject* py_hasattr(
     return (attr && attr != PROTO_NONE) ? PROTO_TRUE : PROTO_FALSE;
 }
 
+static const proto::ProtoObject* py_raise(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(context);
+    if (!env) return PROTO_NONE;
+    if (positionalParameters->getSize(context) > 0) {
+        env->setPendingException(positionalParameters->getAt(context, 0));
+    }
+    return PROTO_NONE;
+}
+
 static const proto::ProtoObject* py_delattr(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -402,6 +417,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "setattr"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_setattr));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "hasattr"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_hasattr));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "delattr"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_delattr));
+    builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "raise"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_raise));
 
     return builtins;
 }
