@@ -158,7 +158,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     auto nativeProvider = std::make_unique<NativeModuleProvider>();
 
     // sys module
-    sysModule = sys::initialize(context);
+    sysModule = sys::initialize(context, this);
     nativeProvider->registerModule("sys", [this](proto::ProtoContext* ctx) { return sysModule; });
 
     // builtins module

@@ -1393,6 +1393,7 @@ src/library/CMakeFiles/protoPython.dir/PythonModuleProvider.cpp.o: /home/gamarin
 
 src/library/CMakeFiles/protoPython.dir/SysModule.cpp.o: /home/gamarino/Documentos/proyectos/protoPython/src/library/SysModule.cpp \
   /home/gamarino/Documentos/proyectos/protoCore/headers/protoCore.h \
+  /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/PythonEnvironment.h \
   /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/SysModule.h \
   /usr/include/alloca.h \
   /usr/include/asm-generic/errno-base.h \

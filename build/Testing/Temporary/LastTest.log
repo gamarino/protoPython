@@ -1,10 +1,10 @@
-Start testing: Feb 03 14:09 -03
+Start testing: Feb 03 14:38 -03
 ----------------------------------------------------------
 1/62 Testing: ContextTest.PositionalArgumentBinding
 1/62 Test: ContextTest.PositionalArgumentBinding
 Command: "/home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test/proto_tests" "--gtest_filter=ContextTest.PositionalArgumentBinding" "--gtest_also_run_disabled_tests"
 Directory: /home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test
-"ContextTest.PositionalArgumentBinding" start time: Feb 03 14:09 -03
+"ContextTest.PositionalArgumentBinding" start time: Feb 03 14:38 -03
 Output:
 ----------------------------------------------------------
 Running main() from /home/gamarino/Documentos/proyectos/protoPython/build/_deps/googletest-src/googletest/src/gtest_main.cc
@@ -13,17 +13,17 @@ Note: Google Test filter = ContextTest.PositionalArgumentBinding
 [----------] Global test environment set-up.
 [----------] 1 test from ContextTest
 [ RUN      ] ContextTest.PositionalArgumentBinding
-[       OK ] ContextTest.PositionalArgumentBinding (1 ms)
-[----------] 1 test from ContextTest (1 ms total)
+[       OK ] ContextTest.PositionalArgumentBinding (0 ms)
+[----------] 1 test from ContextTest (0 ms total)
 
 [----------] Global test environment tear-down
-[==========] 1 test from 1 test suite ran. (1 ms total)
+[==========] 1 test from 1 test suite ran. (0 ms total)
 [  PASSED  ] 1 test.
 <end of output>
 Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"ContextTest.PositionalArgumentBinding" end time: Feb 03 14:09 -03
+"ContextTest.PositionalArgumentBinding" end time: Feb 03 14:38 -03
 "ContextTest.PositionalArgumentBinding" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -31,7 +31,7 @@ Test Passed.
 2/62 Test: ContextTest.LocalVariableAllocation
 Command: "/home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test/proto_tests" "--gtest_filter=ContextTest.LocalVariableAllocation" "--gtest_also_run_disabled_tests"
 Directory: /home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test
-"ContextTest.LocalVariableAllocation" start time: Feb 03 14:09 -03
+"ContextTest.LocalVariableAllocation" start time: Feb 03 14:38 -03
 Output:
 ----------------------------------------------------------
 Running main() from /home/gamarino/Documentos/proyectos/protoPython/build/_deps/googletest-src/googletest/src/gtest_main.cc
@@ -40,17 +40,17 @@ Note: Google Test filter = ContextTest.LocalVariableAllocation
 [----------] Global test environment set-up.
 [----------] 1 test from ContextTest
 [ RUN      ] ContextTest.LocalVariableAllocation
-[       OK ] ContextTest.LocalVariableAllocation (2 ms)
-[----------] 1 test from ContextTest (2 ms total)
+[       OK ] ContextTest.LocalVariableAllocation (0 ms)
+[----------] 1 test from ContextTest (0 ms total)
 
 [----------] Global test environment tear-down
-[==========] 1 test from 1 test suite ran. (2 ms total)
+[==========] 1 test from 1 test suite ran. (0 ms total)
 [  PASSED  ] 1 test.
 <end of output>
-Test time =   0.02 sec
+Test time =   0.00 sec
 ----------------------------------------------------------
 Test Passed.
-"ContextTest.LocalVariableAllocation" end time: Feb 03 14:09 -03
+"ContextTest.LocalVariableAllocation" end time: Feb 03 14:38 -03
 "ContextTest.LocalVariableAllocation" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -58,7 +58,7 @@ Test Passed.
 3/62 Test: ContextTest.ArgumentCountError
 Command: "/home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test/proto_tests" "--gtest_filter=ContextTest.ArgumentCountError" "--gtest_also_run_disabled_tests"
 Directory: /home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test
-"ContextTest.ArgumentCountError" start time: Feb 03 14:09 -03
+"ContextTest.ArgumentCountError" start time: Feb 03 14:38 -03
 Output:
 ----------------------------------------------------------
 Running main() from /home/gamarino/Documentos/proyectos/protoPython/build/_deps/googletest-src/googletest/src/gtest_main.cc
@@ -67,34 +67,7 @@ Note: Google Test filter = ContextTest.ArgumentCountError
 [----------] Global test environment set-up.
 [----------] 1 test from ContextTest
 [ RUN      ] ContextTest.ArgumentCountError
-[       OK ] ContextTest.ArgumentCountError (1 ms)
-[----------] 1 test from ContextTest (1 ms total)
-
-[----------] Global test environment tear-down
-[==========] 1 test from 1 test suite ran. (1 ms total)
-[  PASSED  ] 1 test.
-<end of output>
-Test time =   0.01 sec
-----------------------------------------------------------
-Test Passed.
-"ContextTest.ArgumentCountError" end time: Feb 03 14:09 -03
-"ContextTest.ArgumentCountError" time elapsed: 00:00:00
-----------------------------------------------------------
-
-4/62 Testing: ContextTest.LifecycleAndReturnValuePromotion
-4/62 Test: ContextTest.LifecycleAndReturnValuePromotion
-Command: "/home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test/proto_tests" "--gtest_filter=ContextTest.LifecycleAndReturnValuePromotion" "--gtest_also_run_disabled_tests"
-Directory: /home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test
-"ContextTest.LifecycleAndReturnValuePromotion" start time: Feb 03 14:09 -03
-Output:
-----------------------------------------------------------
-Running main() from /home/gamarino/Documentos/proyectos/protoPython/build/_deps/googletest-src/googletest/src/gtest_main.cc
-Note: Google Test filter = ContextTest.LifecycleAndReturnValuePromotion
-[==========] Running 1 test from 1 test suite.
-[----------] Global test environment set-up.
-[----------] 1 test from ContextTest
-[ RUN      ] ContextTest.LifecycleAndReturnValuePromotion
-[       OK ] ContextTest.LifecycleAndReturnValuePromotion (2 ms)
+[       OK ] ContextTest.ArgumentCountError (2 ms)
 [----------] 1 test from ContextTest (2 ms total)
 
 [----------] Global test environment tear-down
@@ -104,7 +77,34 @@ Note: Google Test filter = ContextTest.LifecycleAndReturnValuePromotion
 Test time =   0.02 sec
 ----------------------------------------------------------
 Test Passed.
-"ContextTest.LifecycleAndReturnValuePromotion" end time: Feb 03 14:09 -03
+"ContextTest.ArgumentCountError" end time: Feb 03 14:38 -03
+"ContextTest.ArgumentCountError" time elapsed: 00:00:00
+----------------------------------------------------------
+
+4/62 Testing: ContextTest.LifecycleAndReturnValuePromotion
+4/62 Test: ContextTest.LifecycleAndReturnValuePromotion
+Command: "/home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test/proto_tests" "--gtest_filter=ContextTest.LifecycleAndReturnValuePromotion" "--gtest_also_run_disabled_tests"
+Directory: /home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test
+"ContextTest.LifecycleAndReturnValuePromotion" start time: Feb 03 14:38 -03
+Output:
+----------------------------------------------------------
+Running main() from /home/gamarino/Documentos/proyectos/protoPython/build/_deps/googletest-src/googletest/src/gtest_main.cc
+Note: Google Test filter = ContextTest.LifecycleAndReturnValuePromotion
+[==========] Running 1 test from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 1 test from ContextTest
+[ RUN      ] ContextTest.LifecycleAndReturnValuePromotion
+[       OK ] ContextTest.LifecycleAndReturnValuePromotion (0 ms)
+[----------] 1 test from ContextTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 1 test from 1 test suite ran. (1 ms total)
+[  PASSED  ] 1 test.
+<end of output>
+Test time =   0.01 sec
+----------------------------------------------------------
+Test Passed.
+"ContextTest.LifecycleAndReturnValuePromotion" end time: Feb 03 14:38 -03
 "ContextTest.LifecycleAndReturnValuePromotion" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -112,7 +112,7 @@ Test Passed.
 5/62 Test: GCStressTest.LargeAllocationReclamation
 Command: "/home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test/proto_tests" "--gtest_filter=GCStressTest.LargeAllocationReclamation" "--gtest_also_run_disabled_tests"
 Directory: /home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test
-"GCStressTest.LargeAllocationReclamation" start time: Feb 03 14:09 -03
+"GCStressTest.LargeAllocationReclamation" start time: Feb 03 14:38 -03
 Output:
 ----------------------------------------------------------
 Running main() from /home/gamarino/Documentos/proyectos/protoPython/build/_deps/googletest-src/googletest/src/gtest_main.cc
@@ -122,19 +122,19 @@ Note: Google Test filter = GCStressTest.LargeAllocationReclamation
 [----------] 1 test from GCStressTest
 [ RUN      ] GCStressTest.LargeAllocationReclamation
 Initial Heap Size: 10240 blocks
-Final Heap Size: 901120 blocks
-Final Free Cells: 1516 blocks
-[       OK ] GCStressTest.LargeAllocationReclamation (3033 ms)
-[----------] 1 test from GCStressTest (3033 ms total)
+Final Heap Size: 911360 blocks
+Final Free Cells: 1174 blocks
+[       OK ] GCStressTest.LargeAllocationReclamation (3214 ms)
+[----------] 1 test from GCStressTest (3214 ms total)
 
 [----------] Global test environment tear-down
-[==========] 1 test from 1 test suite ran. (3033 ms total)
+[==========] 1 test from 1 test suite ran. (3214 ms total)
 [  PASSED  ] 1 test.
 <end of output>
-Test time =   3.05 sec
+Test time =   3.23 sec
 ----------------------------------------------------------
 Test Passed.
-"GCStressTest.LargeAllocationReclamation" end time: Feb 03 14:09 -03
+"GCStressTest.LargeAllocationReclamation" end time: Feb 03 14:38 -03
 "GCStressTest.LargeAllocationReclamation" time elapsed: 00:00:03
 ----------------------------------------------------------
 
@@ -142,7 +142,7 @@ Test Passed.
 6/62 Test: NumericTest.CreationAndConversion
 Command: "/home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test/proto_tests" "--gtest_filter=NumericTest.CreationAndConversion" "--gtest_also_run_disabled_tests"
 Directory: /home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test
-"NumericTest.CreationAndConversion" start time: Feb 03 14:09 -03
+"NumericTest.CreationAndConversion" start time: Feb 03 14:38 -03
 Output:
 ----------------------------------------------------------
 Running main() from /home/gamarino/Documentos/proyectos/protoPython/build/_deps/googletest-src/googletest/src/gtest_main.cc
@@ -158,10 +158,10 @@ Note: Google Test filter = NumericTest.CreationAndConversion
 [==========] 1 test from 1 test suite ran. (0 ms total)
 [  PASSED  ] 1 test.
 <end of output>
-Test time =   0.01 sec
+Test time =   0.00 sec
 ----------------------------------------------------------
 Test Passed.
-"NumericTest.CreationAndConversion" end time: Feb 03 14:09 -03
+"NumericTest.CreationAndConversion" end time: Feb 03 14:38 -03
 "NumericTest.CreationAndConversion" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -169,7 +169,7 @@ Test Passed.
 7/62 Test: NumericTest.DoubleCreationAndConversion
 Command: "/home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test/proto_tests" "--gtest_filter=NumericTest.DoubleCreationAndConversion" "--gtest_also_run_disabled_tests"
 Directory: /home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test
-"NumericTest.DoubleCreationAndConversion" start time: Feb 03 14:09 -03
+"NumericTest.DoubleCreationAndConversion" start time: Feb 03 14:38 -03
 Output:
 ----------------------------------------------------------
 Running main() from /home/gamarino/Documentos/proyectos/protoPython/build/_deps/googletest-src/googletest/src/gtest_main.cc
@@ -185,10 +185,10 @@ Note: Google Test filter = NumericTest.DoubleCreationAndConversion
 [==========] 1 test from 1 test suite ran. (0 ms total)
 [  PASSED  ] 1 test.
 <end of output>
-Test time =   0.00 sec
+Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"NumericTest.DoubleCreationAndConversion" end time: Feb 03 14:09 -03
+"NumericTest.DoubleCreationAndConversion" end time: Feb 03 14:38 -03
 "NumericTest.DoubleCreationAndConversion" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -196,7 +196,7 @@ Test Passed.
 8/62 Test: NumericTest.FastPathArithmetic
 Command: "/home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test/proto_tests" "--gtest_filter=NumericTest.FastPathArithmetic" "--gtest_also_run_disabled_tests"
 Directory: /home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test
-"NumericTest.FastPathArithmetic" start time: Feb 03 14:09 -03
+"NumericTest.FastPathArithmetic" start time: Feb 03 14:38 -03
 Output:
 ----------------------------------------------------------
 Running main() from /home/gamarino/Documentos/proyectos/protoPython/build/_deps/googletest-src/googletest/src/gtest_main.cc
@@ -215,7 +215,7 @@ Note: Google Test filter = NumericTest.FastPathArithmetic
 Test time =   0.00 sec
 ----------------------------------------------------------
 Test Passed.
-"NumericTest.FastPathArithmetic" end time: Feb 03 14:09 -03
+"NumericTest.FastPathArithmetic" end time: Feb 03 14:38 -03
 "NumericTest.FastPathArithmetic" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -223,7 +223,7 @@ Test Passed.
 9/62 Test: NumericTest.LargeIntegerArithmetic
 Command: "/home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test/proto_tests" "--gtest_filter=NumericTest.LargeIntegerArithmetic" "--gtest_also_run_disabled_tests"
 Directory: /home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test
-"NumericTest.LargeIntegerArithmetic" start time: Feb 03 14:09 -03
+"NumericTest.LargeIntegerArithmetic" start time: Feb 03 14:38 -03
 Output:
 ----------------------------------------------------------
 Running main() from /home/gamarino/Documentos/proyectos/protoPython/build/_deps/googletest-src/googletest/src/gtest_main.cc
@@ -232,17 +232,17 @@ Note: Google Test filter = NumericTest.LargeIntegerArithmetic
 [----------] Global test environment set-up.
 [----------] 1 test from NumericTest
 [ RUN      ] NumericTest.LargeIntegerArithmetic
-[       OK ] NumericTest.LargeIntegerArithmetic (0 ms)
-[----------] 1 test from NumericTest (0 ms total)
+[       OK ] NumericTest.LargeIntegerArithmetic (1 ms)
+[----------] 1 test from NumericTest (1 ms total)
 
 [----------] Global test environment tear-down
-[==========] 1 test from 1 test suite ran. (0 ms total)
+[==========] 1 test from 1 test suite ran. (1 ms total)
 [  PASSED  ] 1 test.
 <end of output>
-Test time =   0.00 sec
+Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"NumericTest.LargeIntegerArithmetic" end time: Feb 03 14:09 -03
+"NumericTest.LargeIntegerArithmetic" end time: Feb 03 14:38 -03
 "NumericTest.LargeIntegerArithmetic" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -250,7 +250,7 @@ Test Passed.
 10/62 Test: NumericTest.MixedTypeArithmetic
 Command: "/home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test/proto_tests" "--gtest_filter=NumericTest.MixedTypeArithmetic" "--gtest_also_run_disabled_tests"
 Directory: /home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test
-"NumericTest.MixedTypeArithmetic" start time: Feb 03 14:09 -03
+"NumericTest.MixedTypeArithmetic" start time: Feb 03 14:38 -03
 Output:
 ----------------------------------------------------------
 Running main() from /home/gamarino/Documentos/proyectos/protoPython/build/_deps/googletest-src/googletest/src/gtest_main.cc
@@ -266,10 +266,10 @@ Note: Google Test filter = NumericTest.MixedTypeArithmetic
 [==========] 1 test from 1 test suite ran. (0 ms total)
 [  PASSED  ] 1 test.
 <end of output>
-Test time =   0.00 sec
+Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"NumericTest.MixedTypeArithmetic" end time: Feb 03 14:09 -03
+"NumericTest.MixedTypeArithmetic" end time: Feb 03 14:38 -03
 "NumericTest.MixedTypeArithmetic" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -277,7 +277,7 @@ Test Passed.
 11/62 Test: NumericTest.DivisionAndErrorHandling
 Command: "/home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test/proto_tests" "--gtest_filter=NumericTest.DivisionAndErrorHandling" "--gtest_also_run_disabled_tests"
 Directory: /home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test
-"NumericTest.DivisionAndErrorHandling" start time: Feb 03 14:09 -03
+"NumericTest.DivisionAndErrorHandling" start time: Feb 03 14:38 -03
 Output:
 ----------------------------------------------------------
 Running main() from /home/gamarino/Documentos/proyectos/protoPython/build/_deps/googletest-src/googletest/src/gtest_main.cc
@@ -296,7 +296,7 @@ Note: Google Test filter = NumericTest.DivisionAndErrorHandling
 Test time =   0.00 sec
 ----------------------------------------------------------
 Test Passed.
-"NumericTest.DivisionAndErrorHandling" end time: Feb 03 14:09 -03
+"NumericTest.DivisionAndErrorHandling" end time: Feb 03 14:38 -03
 "NumericTest.DivisionAndErrorHandling" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -304,7 +304,7 @@ Test Passed.
 12/62 Test: NumericTest.BitwiseNot
 Command: "/home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test/proto_tests" "--gtest_filter=NumericTest.BitwiseNot" "--gtest_also_run_disabled_tests"
 Directory: /home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test
-"NumericTest.BitwiseNot" start time: Feb 03 14:09 -03
+"NumericTest.BitwiseNot" start time: Feb 03 14:38 -03
 Output:
 ----------------------------------------------------------
 Running main() from /home/gamarino/Documentos/proyectos/protoPython/build/_deps/googletest-src/googletest/src/gtest_main.cc
@@ -317,13 +317,13 @@ Note: Google Test filter = NumericTest.BitwiseNot
 [----------] 1 test from NumericTest (0 ms total)
 
 [----------] Global test environment tear-down
-[==========] 1 test from 1 test suite ran. (0 ms total)
+[==========] 1 test from 1 test suite ran. (1 ms total)
 [  PASSED  ] 1 test.
 <end of output>
-Test time =   0.00 sec
+Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"NumericTest.BitwiseNot" end time: Feb 03 14:09 -03
+"NumericTest.BitwiseNot" end time: Feb 03 14:38 -03
 "NumericTest.BitwiseNot" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -331,7 +331,7 @@ Test Passed.
 13/62 Test: NumericTest.BitwiseOperations
 Command: "/home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test/proto_tests" "--gtest_filter=NumericTest.BitwiseOperations" "--gtest_also_run_disabled_tests"
 Directory: /home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test
-"NumericTest.BitwiseOperations" start time: Feb 03 14:09 -03
+"NumericTest.BitwiseOperations" start time: Feb 03 14:38 -03
 Output:
 ----------------------------------------------------------
 Running main() from /home/gamarino/Documentos/proyectos/protoPython/build/_deps/googletest-src/googletest/src/gtest_main.cc
@@ -340,17 +340,17 @@ Note: Google Test filter = NumericTest.BitwiseOperations
 [----------] Global test environment set-up.
 [----------] 1 test from NumericTest
 [ RUN      ] NumericTest.BitwiseOperations
-[       OK ] NumericTest.BitwiseOperations (0 ms)
-[----------] 1 test from NumericTest (0 ms total)
+[       OK ] NumericTest.BitwiseOperations (2 ms)
+[----------] 1 test from NumericTest (2 ms total)
 
 [----------] Global test environment tear-down
-[==========] 1 test from 1 test suite ran. (0 ms total)
+[==========] 1 test from 1 test suite ran. (2 ms total)
 [  PASSED  ] 1 test.
 <end of output>
-Test time =   0.00 sec
+Test time =   0.02 sec
 ----------------------------------------------------------
 Test Passed.
-"NumericTest.BitwiseOperations" end time: Feb 03 14:09 -03
+"NumericTest.BitwiseOperations" end time: Feb 03 14:38 -03
 "NumericTest.BitwiseOperations" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -358,7 +358,7 @@ Test Passed.
 14/62 Test: NumericTest.ShiftOperations
 Command: "/home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test/proto_tests" "--gtest_filter=NumericTest.ShiftOperations" "--gtest_also_run_disabled_tests"
 Directory: /home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test
-"NumericTest.ShiftOperations" start time: Feb 03 14:09 -03
+"NumericTest.ShiftOperations" start time: Feb 03 14:38 -03
 Output:
 ----------------------------------------------------------
 Running main() from /home/gamarino/Documentos/proyectos/protoPython/build/_deps/googletest-src/googletest/src/gtest_main.cc
@@ -367,17 +367,17 @@ Note: Google Test filter = NumericTest.ShiftOperations
 [----------] Global test environment set-up.
 [----------] 1 test from NumericTest
 [ RUN      ] NumericTest.ShiftOperations
-[       OK ] NumericTest.ShiftOperations (0 ms)
-[----------] 1 test from NumericTest (0 ms total)
+[       OK ] NumericTest.ShiftOperations (1 ms)
+[----------] 1 test from NumericTest (1 ms total)
 
 [----------] Global test environment tear-down
-[==========] 1 test from 1 test suite ran. (0 ms total)
+[==========] 1 test from 1 test suite ran. (1 ms total)
 [  PASSED  ] 1 test.
 <end of output>
-Test time =   0.00 sec
+Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"NumericTest.ShiftOperations" end time: Feb 03 14:09 -03
+"NumericTest.ShiftOperations" end time: Feb 03 14:38 -03
 "NumericTest.ShiftOperations" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -385,7 +385,7 @@ Test Passed.
 15/62 Test: NumericTest.ToString
 Command: "/home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test/proto_tests" "--gtest_filter=NumericTest.ToString" "--gtest_also_run_disabled_tests"
 Directory: /home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test
-"NumericTest.ToString" start time: Feb 03 14:09 -03
+"NumericTest.ToString" start time: Feb 03 14:38 -03
 Output:
 ----------------------------------------------------------
 Running main() from /home/gamarino/Documentos/proyectos/protoPython/build/_deps/googletest-src/googletest/src/gtest_main.cc
@@ -401,10 +401,10 @@ Note: Google Test filter = NumericTest.ToString
 [==========] 1 test from 1 test suite ran. (0 ms total)
 [  PASSED  ] 1 test.
 <end of output>
-Test time =   0.00 sec
+Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"NumericTest.ToString" end time: Feb 03 14:09 -03
+"NumericTest.ToString" end time: Feb 03 14:38 -03
 "NumericTest.ToString" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -412,7 +412,7 @@ Test Passed.
 16/62 Test: NumericTest.DivmodApi
 Command: "/home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test/proto_tests" "--gtest_filter=NumericTest.DivmodApi" "--gtest_also_run_disabled_tests"
 Directory: /home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test
-"NumericTest.DivmodApi" start time: Feb 03 14:09 -03
+"NumericTest.DivmodApi" start time: Feb 03 14:38 -03
 Output:
 ----------------------------------------------------------
 Running main() from /home/gamarino/Documentos/proyectos/protoPython/build/_deps/googletest-src/googletest/src/gtest_main.cc
@@ -421,17 +421,17 @@ Note: Google Test filter = NumericTest.DivmodApi
 [----------] Global test environment set-up.
 [----------] 1 test from NumericTest
 [ RUN      ] NumericTest.DivmodApi
-[       OK ] NumericTest.DivmodApi (0 ms)
-[----------] 1 test from NumericTest (0 ms total)
+[       OK ] NumericTest.DivmodApi (2 ms)
+[----------] 1 test from NumericTest (2 ms total)
 
 [----------] Global test environment tear-down
-[==========] 1 test from 1 test suite ran. (0 ms total)
+[==========] 1 test from 1 test suite ran. (2 ms total)
 [  PASSED  ] 1 test.
 <end of output>
-Test time =   0.00 sec
+Test time =   0.02 sec
 ----------------------------------------------------------
 Test Passed.
-"NumericTest.DivmodApi" end time: Feb 03 14:09 -03
+"NumericTest.DivmodApi" end time: Feb 03 14:38 -03
 "NumericTest.DivmodApi" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -439,7 +439,7 @@ Test Passed.
 17/62 Test: ListTest.CreationAndSize
 Command: "/home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test/proto_tests" "--gtest_filter=ListTest.CreationAndSize" "--gtest_also_run_disabled_tests"
 Directory: /home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test
-"ListTest.CreationAndSize" start time: Feb 03 14:09 -03
+"ListTest.CreationAndSize" start time: Feb 03 14:38 -03
 Output:
 ----------------------------------------------------------
 Running main() from /home/gamarino/Documentos/proyectos/protoPython/build/_deps/googletest-src/googletest/src/gtest_main.cc
@@ -448,17 +448,17 @@ Note: Google Test filter = ListTest.CreationAndSize
 [----------] Global test environment set-up.
 [----------] 1 test from ListTest
 [ RUN      ] ListTest.CreationAndSize
-[       OK ] ListTest.CreationAndSize (0 ms)
-[----------] 1 test from ListTest (0 ms total)
+[       OK ] ListTest.CreationAndSize (1 ms)
+[----------] 1 test from ListTest (1 ms total)
 
 [----------] Global test environment tear-down
-[==========] 1 test from 1 test suite ran. (0 ms total)
+[==========] 1 test from 1 test suite ran. (1 ms total)
 [  PASSED  ] 1 test.
 <end of output>
-Test time =   0.00 sec
+Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"ListTest.CreationAndSize" end time: Feb 03 14:09 -03
+"ListTest.CreationAndSize" end time: Feb 03 14:38 -03
 "ListTest.CreationAndSize" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -466,7 +466,7 @@ Test Passed.
 18/62 Test: ListTest.AppendAndGet
 Command: "/home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test/proto_tests" "--gtest_filter=ListTest.AppendAndGet" "--gtest_also_run_disabled_tests"
 Directory: /home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test
-"ListTest.AppendAndGet" start time: Feb 03 14:09 -03
+"ListTest.AppendAndGet" start time: Feb 03 14:38 -03
 Output:
 ----------------------------------------------------------
 Running main() from /home/gamarino/Documentos/proyectos/protoPython/build/_deps/googletest-src/googletest/src/gtest_main.cc
@@ -485,7 +485,7 @@ Note: Google Test filter = ListTest.AppendAndGet
 Test time =   0.00 sec
 ----------------------------------------------------------
 Test Passed.
-"ListTest.AppendAndGet" end time: Feb 03 14:09 -03
+"ListTest.AppendAndGet" end time: Feb 03 14:38 -03
 "ListTest.AppendAndGet" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -493,7 +493,7 @@ Test Passed.
 19/62 Test: ListTest.ImmutabilityOnAppend
 Command: "/home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test/proto_tests" "--gtest_filter=ListTest.ImmutabilityOnAppend" "--gtest_also_run_disabled_tests"
 Directory: /home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test
-"ListTest.ImmutabilityOnAppend" start time: Feb 03 14:09 -03
+"ListTest.ImmutabilityOnAppend" start time: Feb 03 14:38 -03
 Output:
 ----------------------------------------------------------
 Running main() from /home/gamarino/Documentos/proyectos/protoPython/build/_deps/googletest-src/googletest/src/gtest_main.cc
@@ -502,17 +502,17 @@ Note: Google Test filter = ListTest.ImmutabilityOnAppend
 [----------] Global test environment set-up.
 [----------] 1 test from ListTest
 [ RUN      ] ListTest.ImmutabilityOnAppend
-[       OK ] ListTest.ImmutabilityOnAppend (0 ms)
-[----------] 1 test from ListTest (0 ms total)
+[       OK ] ListTest.ImmutabilityOnAppend (2 ms)
+[----------] 1 test from ListTest (2 ms total)
 
 [----------] Global test environment tear-down
-[==========] 1 test from 1 test suite ran. (0 ms total)
+[==========] 1 test from 1 test suite ran. (2 ms total)
 [  PASSED  ] 1 test.
 <end of output>
-Test time =   0.00 sec
+Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"ListTest.ImmutabilityOnAppend" end time: Feb 03 14:09 -03
+"ListTest.ImmutabilityOnAppend" end time: Feb 03 14:38 -03
 "ListTest.ImmutabilityOnAppend" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -520,7 +520,7 @@ Test Passed.
 20/62 Test: ListTest.RemoveAt
 Command: "/home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test/proto_tests" "--gtest_filter=ListTest.RemoveAt" "--gtest_also_run_disabled_tests"
 Directory: /home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test
-"ListTest.RemoveAt" start time: Feb 03 14:09 -03
+"ListTest.RemoveAt" start time: Feb 03 14:38 -03
 Output:
 ----------------------------------------------------------
 Running main() from /home/gamarino/Documentos/proyectos/protoPython/build/_deps/googletest-src/googletest/src/gtest_main.cc
@@ -529,17 +529,17 @@ Note: Google Test filter = ListTest.RemoveAt
 [----------] Global test environment set-up.
 [----------] 1 test from ListTest
 [ RUN      ] ListTest.RemoveAt
-[       OK ] ListTest.RemoveAt (0 ms)
-[----------] 1 test from ListTest (0 ms total)
+[       OK ] ListTest.RemoveAt (1 ms)
+[----------] 1 test from ListTest (1 ms total)
 
 [----------] Global test environment tear-down
-[==========] 1 test from 1 test suite ran. (0 ms total)
+[==========] 1 test from 1 test suite ran. (1 ms total)
 [  PASSED  ] 1 test.
 <end of output>
-Test time =   0.00 sec
+Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"ListTest.RemoveAt" end time: Feb 03 14:09 -03
+"ListTest.RemoveAt" end time: Feb 03 14:38 -03
 "ListTest.RemoveAt" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -547,7 +547,7 @@ Test Passed.
 21/62 Test: ListTest.GetSlice
 Command: "/home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test/proto_tests" "--gtest_filter=ListTest.GetSlice" "--gtest_also_run_disabled_tests"
 Directory: /home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test
-"ListTest.GetSlice" start time: Feb 03 14:09 -03
+"ListTest.GetSlice" start time: Feb 03 14:38 -03
 Output:
 ----------------------------------------------------------
 Running main() from /home/gamarino/Documentos/proyectos/protoPython/build/_deps/googletest-src/googletest/src/gtest_main.cc
@@ -556,17 +556,17 @@ Note: Google Test filter = ListTest.GetSlice
 [----------] Global test environment set-up.
 [----------] 1 test from ListTest
 [ RUN      ] ListTest.GetSlice
-[       OK ] ListTest.GetSlice (0 ms)
-[----------] 1 test from ListTest (0 ms total)
+[       OK ] ListTest.GetSlice (1 ms)
+[----------] 1 test from ListTest (1 ms total)
 
 [----------] Global test environment tear-down
-[==========] 1 test from 1 test suite ran. (0 ms total)
+[==========] 1 test from 1 test suite ran. (1 ms total)
 [  PASSED  ] 1 test.
 <end of output>
-Test time =   0.00 sec
+Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"ListTest.GetSlice" end time: Feb 03 14:09 -03
+"ListTest.GetSlice" end time: Feb 03 14:38 -03
 "ListTest.GetSlice" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -574,7 +574,7 @@ Test Passed.
 22/62 Test: ModuleDiscoveryTest.ProviderRegistry_RegisterAndFindByAlias
 Command: "/home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test/proto_tests" "--gtest_filter=ModuleDiscoveryTest.ProviderRegistry_RegisterAndFindByAlias" "--gtest_also_run_disabled_tests"
 Directory: /home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test
-"ModuleDiscoveryTest.ProviderRegistry_RegisterAndFindByAlias" start time: Feb 03 14:09 -03
+"ModuleDiscoveryTest.ProviderRegistry_RegisterAndFindByAlias" start time: Feb 03 14:38 -03
 Output:
 ----------------------------------------------------------
 Running main() from /home/gamarino/Documentos/proyectos/protoPython/build/_deps/googletest-src/googletest/src/gtest_main.cc
@@ -583,17 +583,17 @@ Note: Google Test filter = ModuleDiscoveryTest.ProviderRegistry_RegisterAndFindB
 [----------] Global test environment set-up.
 [----------] 1 test from ModuleDiscoveryTest
 [ RUN      ] ModuleDiscoveryTest.ProviderRegistry_RegisterAndFindByAlias
-[       OK ] ModuleDiscoveryTest.ProviderRegistry_RegisterAndFindByAlias (0 ms)
-[----------] 1 test from ModuleDiscoveryTest (0 ms total)
+[       OK ] ModuleDiscoveryTest.ProviderRegistry_RegisterAndFindByAlias (1 ms)
+[----------] 1 test from ModuleDiscoveryTest (1 ms total)
 
 [----------] Global test environment tear-down
-[==========] 1 test from 1 test suite ran. (0 ms total)
+[==========] 1 test from 1 test suite ran. (1 ms total)
 [  PASSED  ] 1 test.
 <end of output>
-Test time =   0.00 sec
+Test time =   0.02 sec
 ----------------------------------------------------------
 Test Passed.
-"ModuleDiscoveryTest.ProviderRegistry_RegisterAndFindByAlias" end time: Feb 03 14:09 -03
+"ModuleDiscoveryTest.ProviderRegistry_RegisterAndFindByAlias" end time: Feb 03 14:38 -03
 "ModuleDiscoveryTest.ProviderRegistry_RegisterAndFindByAlias" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -601,7 +601,7 @@ Test Passed.
 23/62 Test: ModuleDiscoveryTest.ProviderRegistry_RegisterAndFindByGUID
 Command: "/home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test/proto_tests" "--gtest_filter=ModuleDiscoveryTest.ProviderRegistry_RegisterAndFindByGUID" "--gtest_also_run_disabled_tests"
 Directory: /home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test
-"ModuleDiscoveryTest.ProviderRegistry_RegisterAndFindByGUID" start time: Feb 03 14:09 -03
+"ModuleDiscoveryTest.ProviderRegistry_RegisterAndFindByGUID" start time: Feb 03 14:38 -03
 Output:
 ----------------------------------------------------------
 Running main() from /home/gamarino/Documentos/proyectos/protoPython/build/_deps/googletest-src/googletest/src/gtest_main.cc
@@ -610,17 +610,17 @@ Note: Google Test filter = ModuleDiscoveryTest.ProviderRegistry_RegisterAndFindB
 [----------] Global test environment set-up.
 [----------] 1 test from ModuleDiscoveryTest
 [ RUN      ] ModuleDiscoveryTest.ProviderRegistry_RegisterAndFindByGUID
-[       OK ] ModuleDiscoveryTest.ProviderRegistry_RegisterAndFindByGUID (0 ms)
-[----------] 1 test from ModuleDiscoveryTest (0 ms total)
+[       OK ] ModuleDiscoveryTest.ProviderRegistry_RegisterAndFindByGUID (1 ms)
+[----------] 1 test from ModuleDiscoveryTest (1 ms total)
 
 [----------] Global test environment tear-down
-[==========] 1 test from 1 test suite ran. (0 ms total)
+[==========] 1 test from 1 test suite ran. (1 ms total)
 [  PASSED  ] 1 test.
 <end of output>
-Test time =   0.00 sec
+Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"ModuleDiscoveryTest.ProviderRegistry_RegisterAndFindByGUID" end time: Feb 03 14:09 -03
+"ModuleDiscoveryTest.ProviderRegistry_RegisterAndFindByGUID" end time: Feb 03 14:38 -03
 "ModuleDiscoveryTest.ProviderRegistry_RegisterAndFindByGUID" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -628,7 +628,7 @@ Test Passed.
 24/62 Test: ModuleDiscoveryTest.ProviderRegistry_GetProviderForSpec_Alias
 Command: "/home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test/proto_tests" "--gtest_filter=ModuleDiscoveryTest.ProviderRegistry_GetProviderForSpec_Alias" "--gtest_also_run_disabled_tests"
 Directory: /home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test
-"ModuleDiscoveryTest.ProviderRegistry_GetProviderForSpec_Alias" start time: Feb 03 14:09 -03
+"ModuleDiscoveryTest.ProviderRegistry_GetProviderForSpec_Alias" start time: Feb 03 14:38 -03
 Output:
 ----------------------------------------------------------
 Running main() from /home/gamarino/Documentos/proyectos/protoPython/build/_deps/googletest-src/googletest/src/gtest_main.cc
@@ -637,17 +637,17 @@ Note: Google Test filter = ModuleDiscoveryTest.ProviderRegistry_GetProviderForSp
 [----------] Global test environment set-up.
 [----------] 1 test from ModuleDiscoveryTest
 [ RUN      ] ModuleDiscoveryTest.ProviderRegistry_GetProviderForSpec_Alias
-[       OK ] ModuleDiscoveryTest.ProviderRegistry_GetProviderForSpec_Alias (0 ms)
-[----------] 1 test from ModuleDiscoveryTest (0 ms total)
+[       OK ] ModuleDiscoveryTest.ProviderRegistry_GetProviderForSpec_Alias (8 ms)
+[----------] 1 test from ModuleDiscoveryTest (8 ms total)
 
 [----------] Global test environment tear-down
-[==========] 1 test from 1 test suite ran. (0 ms total)
+[==========] 1 test from 1 test suite ran. (8 ms total)
 [  PASSED  ] 1 test.
 <end of output>
-Test time =   0.00 sec
+Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"ModuleDiscoveryTest.ProviderRegistry_GetProviderForSpec_Alias" end time: Feb 03 14:09 -03
+"ModuleDiscoveryTest.ProviderRegistry_GetProviderForSpec_Alias" end time: Feb 03 14:38 -03
 "ModuleDiscoveryTest.ProviderRegistry_GetProviderForSpec_Alias" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -655,7 +655,7 @@ Test Passed.
 25/62 Test: ModuleDiscoveryTest.ProviderRegistry_GetProviderForSpec_GUID
 Command: "/home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test/proto_tests" "--gtest_filter=ModuleDiscoveryTest.ProviderRegistry_GetProviderForSpec_GUID" "--gtest_also_run_disabled_tests"
 Directory: /home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test
-"ModuleDiscoveryTest.ProviderRegistry_GetProviderForSpec_GUID" start time: Feb 03 14:09 -03
+"ModuleDiscoveryTest.ProviderRegistry_GetProviderForSpec_GUID" start time: Feb 03 14:38 -03
 Output:
 ----------------------------------------------------------
 Running main() from /home/gamarino/Documentos/proyectos/protoPython/build/_deps/googletest-src/googletest/src/gtest_main.cc
@@ -664,17 +664,17 @@ Note: Google Test filter = ModuleDiscoveryTest.ProviderRegistry_GetProviderForSp
 [----------] Global test environment set-up.
 [----------] 1 test from ModuleDiscoveryTest
 [ RUN      ] ModuleDiscoveryTest.ProviderRegistry_GetProviderForSpec_GUID
-[       OK ] ModuleDiscoveryTest.ProviderRegistry_GetProviderForSpec_GUID (0 ms)
-[----------] 1 test from ModuleDiscoveryTest (0 ms total)
+[       OK ] ModuleDiscoveryTest.ProviderRegistry_GetProviderForSpec_GUID (1 ms)
+[----------] 1 test from ModuleDiscoveryTest (1 ms total)
 
 [----------] Global test environment tear-down
-[==========] 1 test from 1 test suite ran. (0 ms total)
+[==========] 1 test from 1 test suite ran. (1 ms total)
 [  PASSED  ] 1 test.
 <end of output>
-Test time =   0.00 sec
+Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"ModuleDiscoveryTest.ProviderRegistry_GetProviderForSpec_GUID" end time: Feb 03 14:09 -03
+"ModuleDiscoveryTest.ProviderRegistry_GetProviderForSpec_GUID" end time: Feb 03 14:38 -03
 "ModuleDiscoveryTest.ProviderRegistry_GetProviderForSpec_GUID" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -682,7 +682,7 @@ Test Passed.
 26/62 Test: ModuleDiscoveryTest.ResolutionChain_GetReturnsNonEmpty
 Command: "/home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test/proto_tests" "--gtest_filter=ModuleDiscoveryTest.ResolutionChain_GetReturnsNonEmpty" "--gtest_also_run_disabled_tests"
 Directory: /home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test
-"ModuleDiscoveryTest.ResolutionChain_GetReturnsNonEmpty" start time: Feb 03 14:09 -03
+"ModuleDiscoveryTest.ResolutionChain_GetReturnsNonEmpty" start time: Feb 03 14:38 -03
 Output:
 ----------------------------------------------------------
 Running main() from /home/gamarino/Documentos/proyectos/protoPython/build/_deps/googletest-src/googletest/src/gtest_main.cc
@@ -701,7 +701,7 @@ Note: Google Test filter = ModuleDiscoveryTest.ResolutionChain_GetReturnsNonEmpt
 Test time =   0.00 sec
 ----------------------------------------------------------
 Test Passed.
-"ModuleDiscoveryTest.ResolutionChain_GetReturnsNonEmpty" end time: Feb 03 14:09 -03
+"ModuleDiscoveryTest.ResolutionChain_GetReturnsNonEmpty" end time: Feb 03 14:38 -03
 "ModuleDiscoveryTest.ResolutionChain_GetReturnsNonEmpty" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -709,7 +709,7 @@ Test Passed.
 27/62 Test: ModuleDiscoveryTest.ResolutionChain_FirstEntryIsDotOnUnix
 Command: "/home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test/proto_tests" "--gtest_filter=ModuleDiscoveryTest.ResolutionChain_FirstEntryIsDotOnUnix" "--gtest_also_run_disabled_tests"
 Directory: /home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test
-"ModuleDiscoveryTest.ResolutionChain_FirstEntryIsDotOnUnix" start time: Feb 03 14:09 -03
+"ModuleDiscoveryTest.ResolutionChain_FirstEntryIsDotOnUnix" start time: Feb 03 14:38 -03
 Output:
 ----------------------------------------------------------
 Running main() from /home/gamarino/Documentos/proyectos/protoPython/build/_deps/googletest-src/googletest/src/gtest_main.cc
@@ -718,17 +718,17 @@ Note: Google Test filter = ModuleDiscoveryTest.ResolutionChain_FirstEntryIsDotOn
 [----------] Global test environment set-up.
 [----------] 1 test from ModuleDiscoveryTest
 [ RUN      ] ModuleDiscoveryTest.ResolutionChain_FirstEntryIsDotOnUnix
-[       OK ] ModuleDiscoveryTest.ResolutionChain_FirstEntryIsDotOnUnix (0 ms)
-[----------] 1 test from ModuleDiscoveryTest (0 ms total)
+[       OK ] ModuleDiscoveryTest.ResolutionChain_FirstEntryIsDotOnUnix (1 ms)
+[----------] 1 test from ModuleDiscoveryTest (1 ms total)
 
 [----------] Global test environment tear-down
-[==========] 1 test from 1 test suite ran. (0 ms total)
+[==========] 1 test from 1 test suite ran. (1 ms total)
 [  PASSED  ] 1 test.
 <end of output>
-Test time =   0.00 sec
+Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"ModuleDiscoveryTest.ResolutionChain_FirstEntryIsDotOnUnix" end time: Feb 03 14:09 -03
+"ModuleDiscoveryTest.ResolutionChain_FirstEntryIsDotOnUnix" end time: Feb 03 14:38 -03
 "ModuleDiscoveryTest.ResolutionChain_FirstEntryIsDotOnUnix" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -736,7 +736,7 @@ Test Passed.
 28/62 Test: ModuleDiscoveryTest.GetImportModule_NoProviderReturnsNone
 Command: "/home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test/proto_tests" "--gtest_filter=ModuleDiscoveryTest.GetImportModule_NoProviderReturnsNone" "--gtest_also_run_disabled_tests"
 Directory: /home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test
-"ModuleDiscoveryTest.GetImportModule_NoProviderReturnsNone" start time: Feb 03 14:09 -03
+"ModuleDiscoveryTest.GetImportModule_NoProviderReturnsNone" start time: Feb 03 14:38 -03
 Output:
 ----------------------------------------------------------
 Running main() from /home/gamarino/Documentos/proyectos/protoPython/build/_deps/googletest-src/googletest/src/gtest_main.cc
@@ -745,17 +745,17 @@ Note: Google Test filter = ModuleDiscoveryTest.GetImportModule_NoProviderReturns
 [----------] Global test environment set-up.
 [----------] 1 test from ModuleDiscoveryTest
 [ RUN      ] ModuleDiscoveryTest.GetImportModule_NoProviderReturnsNone
-[       OK ] ModuleDiscoveryTest.GetImportModule_NoProviderReturnsNone (0 ms)
-[----------] 1 test from ModuleDiscoveryTest (0 ms total)
+[       OK ] ModuleDiscoveryTest.GetImportModule_NoProviderReturnsNone (2 ms)
+[----------] 1 test from ModuleDiscoveryTest (2 ms total)
 
 [----------] Global test environment tear-down
-[==========] 1 test from 1 test suite ran. (0 ms total)
+[==========] 1 test from 1 test suite ran. (2 ms total)
 [  PASSED  ] 1 test.
 <end of output>
-Test time =   0.00 sec
+Test time =   0.02 sec
 ----------------------------------------------------------
 Test Passed.
-"ModuleDiscoveryTest.GetImportModule_NoProviderReturnsNone" end time: Feb 03 14:09 -03
+"ModuleDiscoveryTest.GetImportModule_NoProviderReturnsNone" end time: Feb 03 14:38 -03
 "ModuleDiscoveryTest.GetImportModule_NoProviderReturnsNone" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -763,7 +763,7 @@ Test Passed.
 29/62 Test: ModuleDiscoveryTest.GetImportModule_ProviderReturnsModule
 Command: "/home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test/proto_tests" "--gtest_filter=ModuleDiscoveryTest.GetImportModule_ProviderReturnsModule" "--gtest_also_run_disabled_tests"
 Directory: /home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test
-"ModuleDiscoveryTest.GetImportModule_ProviderReturnsModule" start time: Feb 03 14:09 -03
+"ModuleDiscoveryTest.GetImportModule_ProviderReturnsModule" start time: Feb 03 14:38 -03
 Output:
 ----------------------------------------------------------
 Running main() from /home/gamarino/Documentos/proyectos/protoPython/build/_deps/googletest-src/googletest/src/gtest_main.cc
@@ -772,17 +772,17 @@ Note: Google Test filter = ModuleDiscoveryTest.GetImportModule_ProviderReturnsMo
 [----------] Global test environment set-up.
 [----------] 1 test from ModuleDiscoveryTest
 [ RUN      ] ModuleDiscoveryTest.GetImportModule_ProviderReturnsModule
-[       OK ] ModuleDiscoveryTest.GetImportModule_ProviderReturnsModule (0 ms)
-[----------] 1 test from ModuleDiscoveryTest (0 ms total)
+[       OK ] ModuleDiscoveryTest.GetImportModule_ProviderReturnsModule (1 ms)
+[----------] 1 test from ModuleDiscoveryTest (1 ms total)
 
 [----------] Global test environment tear-down
-[==========] 1 test from 1 test suite ran. (0 ms total)
+[==========] 1 test from 1 test suite ran. (1 ms total)
 [  PASSED  ] 1 test.
 <end of output>
-Test time =   0.00 sec
+Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"ModuleDiscoveryTest.GetImportModule_ProviderReturnsModule" end time: Feb 03 14:09 -03
+"ModuleDiscoveryTest.GetImportModule_ProviderReturnsModule" end time: Feb 03 14:38 -03
 "ModuleDiscoveryTest.GetImportModule_ProviderReturnsModule" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -790,7 +790,7 @@ Test Passed.
 30/62 Test: ModuleDiscoveryTest.GetImportModule_CacheHit
 Command: "/home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test/proto_tests" "--gtest_filter=ModuleDiscoveryTest.GetImportModule_CacheHit" "--gtest_also_run_disabled_tests"
 Directory: /home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test
-"ModuleDiscoveryTest.GetImportModule_CacheHit" start time: Feb 03 14:09 -03
+"ModuleDiscoveryTest.GetImportModule_CacheHit" start time: Feb 03 14:38 -03
 Output:
 ----------------------------------------------------------
 Running main() from /home/gamarino/Documentos/proyectos/protoPython/build/_deps/googletest-src/googletest/src/gtest_main.cc
@@ -799,17 +799,17 @@ Note: Google Test filter = ModuleDiscoveryTest.GetImportModule_CacheHit
 [----------] Global test environment set-up.
 [----------] 1 test from ModuleDiscoveryTest
 [ RUN      ] ModuleDiscoveryTest.GetImportModule_CacheHit
-[       OK ] ModuleDiscoveryTest.GetImportModule_CacheHit (0 ms)
-[----------] 1 test from ModuleDiscoveryTest (0 ms total)
+[       OK ] ModuleDiscoveryTest.GetImportModule_CacheHit (1 ms)
+[----------] 1 test from ModuleDiscoveryTest (1 ms total)
 
 [----------] Global test environment tear-down
-[==========] 1 test from 1 test suite ran. (0 ms total)
+[==========] 1 test from 1 test suite ran. (2 ms total)
 [  PASSED  ] 1 test.
 <end of output>
-Test time =   0.00 sec
+Test time =   0.02 sec
 ----------------------------------------------------------
 Test Passed.
-"ModuleDiscoveryTest.GetImportModule_CacheHit" end time: Feb 03 14:09 -03
+"ModuleDiscoveryTest.GetImportModule_CacheHit" end time: Feb 03 14:38 -03
 "ModuleDiscoveryTest.GetImportModule_CacheHit" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -817,7 +817,7 @@ Test Passed.
 31/62 Test: ModuleDiscoveryTest.ProtoString_ToUTF8String
 Command: "/home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test/proto_tests" "--gtest_filter=ModuleDiscoveryTest.ProtoString_ToUTF8String" "--gtest_also_run_disabled_tests"
 Directory: /home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test
-"ModuleDiscoveryTest.ProtoString_ToUTF8String" start time: Feb 03 14:09 -03
+"ModuleDiscoveryTest.ProtoString_ToUTF8String" start time: Feb 03 14:38 -03
 Output:
 ----------------------------------------------------------
 Running main() from /home/gamarino/Documentos/proyectos/protoPython/build/_deps/googletest-src/googletest/src/gtest_main.cc
@@ -826,17 +826,17 @@ Note: Google Test filter = ModuleDiscoveryTest.ProtoString_ToUTF8String
 [----------] Global test environment set-up.
 [----------] 1 test from ModuleDiscoveryTest
 [ RUN      ] ModuleDiscoveryTest.ProtoString_ToUTF8String
-[       OK ] ModuleDiscoveryTest.ProtoString_ToUTF8String (0 ms)
-[----------] 1 test from ModuleDiscoveryTest (0 ms total)
+[       OK ] ModuleDiscoveryTest.ProtoString_ToUTF8String (1 ms)
+[----------] 1 test from ModuleDiscoveryTest (1 ms total)
 
 [----------] Global test environment tear-down
-[==========] 1 test from 1 test suite ran. (0 ms total)
+[==========] 1 test from 1 test suite ran. (1 ms total)
 [  PASSED  ] 1 test.
 <end of output>
-Test time =   0.00 sec
+Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"ModuleDiscoveryTest.ProtoString_ToUTF8String" end time: Feb 03 14:09 -03
+"ModuleDiscoveryTest.ProtoString_ToUTF8String" end time: Feb 03 14:38 -03
 "ModuleDiscoveryTest.ProtoString_ToUTF8String" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -844,7 +844,7 @@ Test Passed.
 32/62 Test: ObjectTest.Creation
 Command: "/home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test/proto_tests" "--gtest_filter=ObjectTest.Creation" "--gtest_also_run_disabled_tests"
 Directory: /home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test
-"ObjectTest.Creation" start time: Feb 03 14:09 -03
+"ObjectTest.Creation" start time: Feb 03 14:38 -03
 Output:
 ----------------------------------------------------------
 Running main() from /home/gamarino/Documentos/proyectos/protoPython/build/_deps/googletest-src/googletest/src/gtest_main.cc
@@ -853,17 +853,17 @@ Note: Google Test filter = ObjectTest.Creation
 [----------] Global test environment set-up.
 [----------] 1 test from ObjectTest
 [ RUN      ] ObjectTest.Creation
-[       OK ] ObjectTest.Creation (0 ms)
-[----------] 1 test from ObjectTest (0 ms total)
+[       OK ] ObjectTest.Creation (1 ms)
+[----------] 1 test from ObjectTest (1 ms total)
 
 [----------] Global test environment tear-down
-[==========] 1 test from 1 test suite ran. (0 ms total)
+[==========] 1 test from 1 test suite ran. (1 ms total)
 [  PASSED  ] 1 test.
 <end of output>
 Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"ObjectTest.Creation" end time: Feb 03 14:09 -03
+"ObjectTest.Creation" end time: Feb 03 14:38 -03
 "ObjectTest.Creation" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -871,7 +871,7 @@ Test Passed.
 33/62 Test: ObjectTest.SetAndGetAttribute
 Command: "/home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test/proto_tests" "--gtest_filter=ObjectTest.SetAndGetAttribute" "--gtest_also_run_disabled_tests"
 Directory: /home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test
-"ObjectTest.SetAndGetAttribute" start time: Feb 03 14:09 -03
+"ObjectTest.SetAndGetAttribute" start time: Feb 03 14:38 -03
 Output:
 ----------------------------------------------------------
 Running main() from /home/gamarino/Documentos/proyectos/protoPython/build/_deps/googletest-src/googletest/src/gtest_main.cc
@@ -880,17 +880,17 @@ Note: Google Test filter = ObjectTest.SetAndGetAttribute
 [----------] Global test environment set-up.
 [----------] 1 test from ObjectTest
 [ RUN      ] ObjectTest.SetAndGetAttribute
-[       OK ] ObjectTest.SetAndGetAttribute (0 ms)
-[----------] 1 test from ObjectTest (0 ms total)
+[       OK ] ObjectTest.SetAndGetAttribute (1 ms)
+[----------] 1 test from ObjectTest (1 ms total)
 
 [----------] Global test environment tear-down
-[==========] 1 test from 1 test suite ran. (0 ms total)
+[==========] 1 test from 1 test suite ran. (1 ms total)
 [  PASSED  ] 1 test.
 <end of output>
-Test time =   0.00 sec
+Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"ObjectTest.SetAndGetAttribute" end time: Feb 03 14:09 -03
+"ObjectTest.SetAndGetAttribute" end time: Feb 03 14:38 -03
 "ObjectTest.SetAndGetAttribute" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -898,7 +898,7 @@ Test Passed.
 34/62 Test: ObjectTest.GetMissingAttribute
 Command: "/home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test/proto_tests" "--gtest_filter=ObjectTest.GetMissingAttribute" "--gtest_also_run_disabled_tests"
 Directory: /home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test
-"ObjectTest.GetMissingAttribute" start time: Feb 03 14:09 -03
+"ObjectTest.GetMissingAttribute" start time: Feb 03 14:38 -03
 Output:
 ----------------------------------------------------------
 Running main() from /home/gamarino/Documentos/proyectos/protoPython/build/_deps/googletest-src/googletest/src/gtest_main.cc
@@ -907,17 +907,17 @@ Note: Google Test filter = ObjectTest.GetMissingAttribute
 [----------] Global test environment set-up.
 [----------] 1 test from ObjectTest
 [ RUN      ] ObjectTest.GetMissingAttribute
-[       OK ] ObjectTest.GetMissingAttribute (0 ms)
-[----------] 1 test from ObjectTest (0 ms total)
+[       OK ] ObjectTest.GetMissingAttribute (1 ms)
+[----------] 1 test from ObjectTest (1 ms total)
 
 [----------] Global test environment tear-down
-[==========] 1 test from 1 test suite ran. (0 ms total)
+[==========] 1 test from 1 test suite ran. (1 ms total)
 [  PASSED  ] 1 test.
 <end of output>
-Test time =   0.00 sec
+Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"ObjectTest.GetMissingAttribute" end time: Feb 03 14:09 -03
+"ObjectTest.GetMissingAttribute" end time: Feb 03 14:38 -03
 "ObjectTest.GetMissingAttribute" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -925,7 +925,7 @@ Test Passed.
 35/62 Test: ObjectTest.SimpleInheritance
 Command: "/home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test/proto_tests" "--gtest_filter=ObjectTest.SimpleInheritance" "--gtest_also_run_disabled_tests"
 Directory: /home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test
-"ObjectTest.SimpleInheritance" start time: Feb 03 14:09 -03
+"ObjectTest.SimpleInheritance" start time: Feb 03 14:38 -03
 Output:
 ----------------------------------------------------------
 Running main() from /home/gamarino/Documentos/proyectos/protoPython/build/_deps/googletest-src/googletest/src/gtest_main.cc
@@ -944,7 +944,7 @@ Note: Google Test filter = ObjectTest.SimpleInheritance
 Test time =   0.00 sec
 ----------------------------------------------------------
 Test Passed.
-"ObjectTest.SimpleInheritance" end time: Feb 03 14:09 -03
+"ObjectTest.SimpleInheritance" end time: Feb 03 14:38 -03
 "ObjectTest.SimpleInheritance" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -952,7 +952,7 @@ Test Passed.
 36/62 Test: ObjectTest.AttributeOverriding
 Command: "/home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test/proto_tests" "--gtest_filter=ObjectTest.AttributeOverriding" "--gtest_also_run_disabled_tests"
 Directory: /home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test
-"ObjectTest.AttributeOverriding" start time: Feb 03 14:09 -03
+"ObjectTest.AttributeOverriding" start time: Feb 03 14:38 -03
 Output:
 ----------------------------------------------------------
 Running main() from /home/gamarino/Documentos/proyectos/protoPython/build/_deps/googletest-src/googletest/src/gtest_main.cc
@@ -961,17 +961,17 @@ Note: Google Test filter = ObjectTest.AttributeOverriding
 [----------] Global test environment set-up.
 [----------] 1 test from ObjectTest
 [ RUN      ] ObjectTest.AttributeOverriding
-[       OK ] ObjectTest.AttributeOverriding (0 ms)
-[----------] 1 test from ObjectTest (0 ms total)
+[       OK ] ObjectTest.AttributeOverriding (2 ms)
+[----------] 1 test from ObjectTest (2 ms total)
 
 [----------] Global test environment tear-down
-[==========] 1 test from 1 test suite ran. (0 ms total)
+[==========] 1 test from 1 test suite ran. (2 ms total)
 [  PASSED  ] 1 test.
 <end of output>
-Test time =   0.00 sec
+Test time =   0.02 sec
 ----------------------------------------------------------
 Test Passed.
-"ObjectTest.AttributeOverriding" end time: Feb 03 14:09 -03
+"ObjectTest.AttributeOverriding" end time: Feb 03 14:38 -03
 "ObjectTest.AttributeOverriding" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -979,7 +979,7 @@ Test Passed.
 37/62 Test: ObjectTest.HasAttribute
 Command: "/home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test/proto_tests" "--gtest_filter=ObjectTest.HasAttribute" "--gtest_also_run_disabled_tests"
 Directory: /home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test
-"ObjectTest.HasAttribute" start time: Feb 03 14:09 -03
+"ObjectTest.HasAttribute" start time: Feb 03 14:38 -03
 Output:
 ----------------------------------------------------------
 Running main() from /home/gamarino/Documentos/proyectos/protoPython/build/_deps/googletest-src/googletest/src/gtest_main.cc
@@ -992,13 +992,13 @@ Note: Google Test filter = ObjectTest.HasAttribute
 [----------] 1 test from ObjectTest (0 ms total)
 
 [----------] Global test environment tear-down
-[==========] 1 test from 1 test suite ran. (0 ms total)
+[==========] 1 test from 1 test suite ran. (1 ms total)
 [  PASSED  ] 1 test.
 <end of output>
-Test time =   0.00 sec
+Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"ObjectTest.HasAttribute" end time: Feb 03 14:09 -03
+"ObjectTest.HasAttribute" end time: Feb 03 14:38 -03
 "ObjectTest.HasAttribute" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -1006,7 +1006,7 @@ Test Passed.
 38/62 Test: PrimitivesTest.IntegerHandling
 Command: "/home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test/proto_tests" "--gtest_filter=PrimitivesTest.IntegerHandling" "--gtest_also_run_disabled_tests"
 Directory: /home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test
-"PrimitivesTest.IntegerHandling" start time: Feb 03 14:09 -03
+"PrimitivesTest.IntegerHandling" start time: Feb 03 14:38 -03
 Output:
 ----------------------------------------------------------
 Running main() from /home/gamarino/Documentos/proyectos/protoPython/build/_deps/googletest-src/googletest/src/gtest_main.cc
@@ -1015,17 +1015,17 @@ Note: Google Test filter = PrimitivesTest.IntegerHandling
 [----------] Global test environment set-up.
 [----------] 1 test from PrimitivesTest
 [ RUN      ] PrimitivesTest.IntegerHandling
-[       OK ] PrimitivesTest.IntegerHandling (0 ms)
-[----------] 1 test from PrimitivesTest (0 ms total)
+[       OK ] PrimitivesTest.IntegerHandling (7 ms)
+[----------] 1 test from PrimitivesTest (7 ms total)
 
 [----------] Global test environment tear-down
-[==========] 1 test from 1 test suite ran. (0 ms total)
+[==========] 1 test from 1 test suite ran. (7 ms total)
 [  PASSED  ] 1 test.
 <end of output>
-Test time =   0.00 sec
+Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"PrimitivesTest.IntegerHandling" end time: Feb 03 14:09 -03
+"PrimitivesTest.IntegerHandling" end time: Feb 03 14:38 -03
 "PrimitivesTest.IntegerHandling" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -1033,7 +1033,7 @@ Test Passed.
 39/62 Test: PrimitivesTest.BooleanHandling
 Command: "/home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test/proto_tests" "--gtest_filter=PrimitivesTest.BooleanHandling" "--gtest_also_run_disabled_tests"
 Directory: /home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test
-"PrimitivesTest.BooleanHandling" start time: Feb 03 14:09 -03
+"PrimitivesTest.BooleanHandling" start time: Feb 03 14:38 -03
 Output:
 ----------------------------------------------------------
 Running main() from /home/gamarino/Documentos/proyectos/protoPython/build/_deps/googletest-src/googletest/src/gtest_main.cc
@@ -1042,17 +1042,17 @@ Note: Google Test filter = PrimitivesTest.BooleanHandling
 [----------] Global test environment set-up.
 [----------] 1 test from PrimitivesTest
 [ RUN      ] PrimitivesTest.BooleanHandling
-[       OK ] PrimitivesTest.BooleanHandling (0 ms)
-[----------] 1 test from PrimitivesTest (0 ms total)
+[       OK ] PrimitivesTest.BooleanHandling (1 ms)
+[----------] 1 test from PrimitivesTest (1 ms total)
 
 [----------] Global test environment tear-down
-[==========] 1 test from 1 test suite ran. (0 ms total)
+[==========] 1 test from 1 test suite ran. (1 ms total)
 [  PASSED  ] 1 test.
 <end of output>
-Test time =   0.00 sec
+Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"PrimitivesTest.BooleanHandling" end time: Feb 03 14:09 -03
+"PrimitivesTest.BooleanHandling" end time: Feb 03 14:38 -03
 "PrimitivesTest.BooleanHandling" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -1060,7 +1060,7 @@ Test Passed.
 40/62 Test: PrimitivesTest.NoneHandling
 Command: "/home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test/proto_tests" "--gtest_filter=PrimitivesTest.NoneHandling" "--gtest_also_run_disabled_tests"
 Directory: /home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test
-"PrimitivesTest.NoneHandling" start time: Feb 03 14:09 -03
+"PrimitivesTest.NoneHandling" start time: Feb 03 14:38 -03
 Output:
 ----------------------------------------------------------
 Running main() from /home/gamarino/Documentos/proyectos/protoPython/build/_deps/googletest-src/googletest/src/gtest_main.cc
@@ -1076,10 +1076,10 @@ Note: Google Test filter = PrimitivesTest.NoneHandling
 [==========] 1 test from 1 test suite ran. (0 ms total)
 [  PASSED  ] 1 test.
 <end of output>
-Test time =   0.00 sec
+Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"PrimitivesTest.NoneHandling" end time: Feb 03 14:09 -03
+"PrimitivesTest.NoneHandling" end time: Feb 03 14:38 -03
 "PrimitivesTest.NoneHandling" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -1087,7 +1087,7 @@ Test Passed.
 41/62 Test: PrimitivesTest.StringHandling
 Command: "/home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test/proto_tests" "--gtest_filter=PrimitivesTest.StringHandling" "--gtest_also_run_disabled_tests"
 Directory: /home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test
-"PrimitivesTest.StringHandling" start time: Feb 03 14:09 -03
+"PrimitivesTest.StringHandling" start time: Feb 03 14:38 -03
 Output:
 ----------------------------------------------------------
 Running main() from /home/gamarino/Documentos/proyectos/protoPython/build/_deps/googletest-src/googletest/src/gtest_main.cc
@@ -1103,10 +1103,10 @@ Note: Google Test filter = PrimitivesTest.StringHandling
 [==========] 1 test from 1 test suite ran. (0 ms total)
 [  PASSED  ] 1 test.
 <end of output>
-Test time =   0.01 sec
+Test time =   0.00 sec
 ----------------------------------------------------------
 Test Passed.
-"PrimitivesTest.StringHandling" end time: Feb 03 14:09 -03
+"PrimitivesTest.StringHandling" end time: Feb 03 14:38 -03
 "PrimitivesTest.StringHandling" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -1114,7 +1114,7 @@ Test Passed.
 42/62 Test: SetTest.CreateEmptySet
 Command: "/home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test/proto_tests" "--gtest_filter=SetTest.CreateEmptySet" "--gtest_also_run_disabled_tests"
 Directory: /home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test
-"SetTest.CreateEmptySet" start time: Feb 03 14:09 -03
+"SetTest.CreateEmptySet" start time: Feb 03 14:38 -03
 Output:
 ----------------------------------------------------------
 Running main() from /home/gamarino/Documentos/proyectos/protoPython/build/_deps/googletest-src/googletest/src/gtest_main.cc
@@ -1123,17 +1123,17 @@ Note: Google Test filter = SetTest.CreateEmptySet
 [----------] Global test environment set-up.
 [----------] 1 test from SetTest
 [ RUN      ] SetTest.CreateEmptySet
-[       OK ] SetTest.CreateEmptySet (0 ms)
-[----------] 1 test from SetTest (0 ms total)
+[       OK ] SetTest.CreateEmptySet (1 ms)
+[----------] 1 test from SetTest (1 ms total)
 
 [----------] Global test environment tear-down
-[==========] 1 test from 1 test suite ran. (0 ms total)
+[==========] 1 test from 1 test suite ran. (1 ms total)
 [  PASSED  ] 1 test.
 <end of output>
-Test time =   0.00 sec
+Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"SetTest.CreateEmptySet" end time: Feb 03 14:09 -03
+"SetTest.CreateEmptySet" end time: Feb 03 14:38 -03
 "SetTest.CreateEmptySet" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -1141,7 +1141,7 @@ Test Passed.
 43/62 Test: SetTest.AddAndHas
 Command: "/home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test/proto_tests" "--gtest_filter=SetTest.AddAndHas" "--gtest_also_run_disabled_tests"
 Directory: /home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test
-"SetTest.AddAndHas" start time: Feb 03 14:09 -03
+"SetTest.AddAndHas" start time: Feb 03 14:38 -03
 Output:
 ----------------------------------------------------------
 Running main() from /home/gamarino/Documentos/proyectos/protoPython/build/_deps/googletest-src/googletest/src/gtest_main.cc
@@ -1150,17 +1150,17 @@ Note: Google Test filter = SetTest.AddAndHas
 [----------] Global test environment set-up.
 [----------] 1 test from SetTest
 [ RUN      ] SetTest.AddAndHas
-[       OK ] SetTest.AddAndHas (0 ms)
-[----------] 1 test from SetTest (0 ms total)
+[       OK ] SetTest.AddAndHas (2 ms)
+[----------] 1 test from SetTest (2 ms total)
 
 [----------] Global test environment tear-down
-[==========] 1 test from 1 test suite ran. (0 ms total)
+[==========] 1 test from 1 test suite ran. (2 ms total)
 [  PASSED  ] 1 test.
 <end of output>
-Test time =   0.00 sec
+Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"SetTest.AddAndHas" end time: Feb 03 14:09 -03
+"SetTest.AddAndHas" end time: Feb 03 14:38 -03
 "SetTest.AddAndHas" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -1168,7 +1168,7 @@ Test Passed.
 44/62 Test: SetTest.AddExisting
 Command: "/home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test/proto_tests" "--gtest_filter=SetTest.AddExisting" "--gtest_also_run_disabled_tests"
 Directory: /home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test
-"SetTest.AddExisting" start time: Feb 03 14:09 -03
+"SetTest.AddExisting" start time: Feb 03 14:38 -03
 Output:
 ----------------------------------------------------------
 Running main() from /home/gamarino/Documentos/proyectos/protoPython/build/_deps/googletest-src/googletest/src/gtest_main.cc
@@ -1177,17 +1177,17 @@ Note: Google Test filter = SetTest.AddExisting
 [----------] Global test environment set-up.
 [----------] 1 test from SetTest
 [ RUN      ] SetTest.AddExisting
-[       OK ] SetTest.AddExisting (0 ms)
-[----------] 1 test from SetTest (0 ms total)
+[       OK ] SetTest.AddExisting (1 ms)
+[----------] 1 test from SetTest (1 ms total)
 
 [----------] Global test environment tear-down
-[==========] 1 test from 1 test suite ran. (0 ms total)
+[==========] 1 test from 1 test suite ran. (1 ms total)
 [  PASSED  ] 1 test.
 <end of output>
-Test time =   0.00 sec
+Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"SetTest.AddExisting" end time: Feb 03 14:09 -03
+"SetTest.AddExisting" end time: Feb 03 14:38 -03
 "SetTest.AddExisting" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -1195,7 +1195,7 @@ Test Passed.
 45/62 Test: SetTest.Remove
 Command: "/home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test/proto_tests" "--gtest_filter=SetTest.Remove" "--gtest_also_run_disabled_tests"
 Directory: /home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test
-"SetTest.Remove" start time: Feb 03 14:09 -03
+"SetTest.Remove" start time: Feb 03 14:38 -03
 Output:
 ----------------------------------------------------------
 Running main() from /home/gamarino/Documentos/proyectos/protoPython/build/_deps/googletest-src/googletest/src/gtest_main.cc
@@ -1204,17 +1204,17 @@ Note: Google Test filter = SetTest.Remove
 [----------] Global test environment set-up.
 [----------] 1 test from SetTest
 [ RUN      ] SetTest.Remove
-[       OK ] SetTest.Remove (0 ms)
-[----------] 1 test from SetTest (0 ms total)
+[       OK ] SetTest.Remove (7 ms)
+[----------] 1 test from SetTest (7 ms total)
 
 [----------] Global test environment tear-down
-[==========] 1 test from 1 test suite ran. (0 ms total)
+[==========] 1 test from 1 test suite ran. (8 ms total)
 [  PASSED  ] 1 test.
 <end of output>
-Test time =   0.00 sec
+Test time =   0.02 sec
 ----------------------------------------------------------
 Test Passed.
-"SetTest.Remove" end time: Feb 03 14:09 -03
+"SetTest.Remove" end time: Feb 03 14:38 -03
 "SetTest.Remove" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -1222,7 +1222,7 @@ Test Passed.
 46/62 Test: SetTest.RemoveNonExistent
 Command: "/home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test/proto_tests" "--gtest_filter=SetTest.RemoveNonExistent" "--gtest_also_run_disabled_tests"
 Directory: /home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test
-"SetTest.RemoveNonExistent" start time: Feb 03 14:09 -03
+"SetTest.RemoveNonExistent" start time: Feb 03 14:38 -03
 Output:
 ----------------------------------------------------------
 Running main() from /home/gamarino/Documentos/proyectos/protoPython/build/_deps/googletest-src/googletest/src/gtest_main.cc
@@ -1231,17 +1231,17 @@ Note: Google Test filter = SetTest.RemoveNonExistent
 [----------] Global test environment set-up.
 [----------] 1 test from SetTest
 [ RUN      ] SetTest.RemoveNonExistent
-[       OK ] SetTest.RemoveNonExistent (0 ms)
-[----------] 1 test from SetTest (0 ms total)
+[       OK ] SetTest.RemoveNonExistent (1 ms)
+[----------] 1 test from SetTest (1 ms total)
 
 [----------] Global test environment tear-down
-[==========] 1 test from 1 test suite ran. (0 ms total)
+[==========] 1 test from 1 test suite ran. (1 ms total)
 [  PASSED  ] 1 test.
 <end of output>
-Test time =   0.00 sec
+Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"SetTest.RemoveNonExistent" end time: Feb 03 14:09 -03
+"SetTest.RemoveNonExistent" end time: Feb 03 14:38 -03
 "SetTest.RemoveNonExistent" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -1249,7 +1249,7 @@ Test Passed.
 47/62 Test: MultisetTest.CreateEmptyMultiset
 Command: "/home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test/proto_tests" "--gtest_filter=MultisetTest.CreateEmptyMultiset" "--gtest_also_run_disabled_tests"
 Directory: /home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test
-"MultisetTest.CreateEmptyMultiset" start time: Feb 03 14:09 -03
+"MultisetTest.CreateEmptyMultiset" start time: Feb 03 14:38 -03
 Output:
 ----------------------------------------------------------
 Running main() from /home/gamarino/Documentos/proyectos/protoPython/build/_deps/googletest-src/googletest/src/gtest_main.cc
@@ -1265,10 +1265,10 @@ Note: Google Test filter = MultisetTest.CreateEmptyMultiset
 [==========] 1 test from 1 test suite ran. (0 ms total)
 [  PASSED  ] 1 test.
 <end of output>
-Test time =   0.00 sec
+Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"MultisetTest.CreateEmptyMultiset" end time: Feb 03 14:09 -03
+"MultisetTest.CreateEmptyMultiset" end time: Feb 03 14:38 -03
 "MultisetTest.CreateEmptyMultiset" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -1276,7 +1276,7 @@ Test Passed.
 48/62 Test: MultisetTest.AddAndCount
 Command: "/home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test/proto_tests" "--gtest_filter=MultisetTest.AddAndCount" "--gtest_also_run_disabled_tests"
 Directory: /home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test
-"MultisetTest.AddAndCount" start time: Feb 03 14:09 -03
+"MultisetTest.AddAndCount" start time: Feb 03 14:38 -03
 Output:
 ----------------------------------------------------------
 Running main() from /home/gamarino/Documentos/proyectos/protoPython/build/_deps/googletest-src/googletest/src/gtest_main.cc
@@ -1285,17 +1285,17 @@ Note: Google Test filter = MultisetTest.AddAndCount
 [----------] Global test environment set-up.
 [----------] 1 test from MultisetTest
 [ RUN      ] MultisetTest.AddAndCount
-[       OK ] MultisetTest.AddAndCount (0 ms)
-[----------] 1 test from MultisetTest (0 ms total)
+[       OK ] MultisetTest.AddAndCount (1 ms)
+[----------] 1 test from MultisetTest (1 ms total)
 
 [----------] Global test environment tear-down
-[==========] 1 test from 1 test suite ran. (0 ms total)
+[==========] 1 test from 1 test suite ran. (1 ms total)
 [  PASSED  ] 1 test.
 <end of output>
-Test time =   0.00 sec
+Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"MultisetTest.AddAndCount" end time: Feb 03 14:09 -03
+"MultisetTest.AddAndCount" end time: Feb 03 14:38 -03
 "MultisetTest.AddAndCount" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -1303,7 +1303,7 @@ Test Passed.
 49/62 Test: MultisetTest.Remove
 Command: "/home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test/proto_tests" "--gtest_filter=MultisetTest.Remove" "--gtest_also_run_disabled_tests"
 Directory: /home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test
-"MultisetTest.Remove" start time: Feb 03 14:09 -03
+"MultisetTest.Remove" start time: Feb 03 14:38 -03
 Output:
 ----------------------------------------------------------
 Running main() from /home/gamarino/Documentos/proyectos/protoPython/build/_deps/googletest-src/googletest/src/gtest_main.cc
@@ -1319,10 +1319,10 @@ Note: Google Test filter = MultisetTest.Remove
 [==========] 1 test from 1 test suite ran. (0 ms total)
 [  PASSED  ] 1 test.
 <end of output>
-Test time =   0.00 sec
+Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"MultisetTest.Remove" end time: Feb 03 14:09 -03
+"MultisetTest.Remove" end time: Feb 03 14:38 -03
 "MultisetTest.Remove" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -1330,7 +1330,7 @@ Test Passed.
 50/62 Test: MultisetTest.RemoveNonExistent
 Command: "/home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test/proto_tests" "--gtest_filter=MultisetTest.RemoveNonExistent" "--gtest_also_run_disabled_tests"
 Directory: /home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test
-"MultisetTest.RemoveNonExistent" start time: Feb 03 14:09 -03
+"MultisetTest.RemoveNonExistent" start time: Feb 03 14:38 -03
 Output:
 ----------------------------------------------------------
 Running main() from /home/gamarino/Documentos/proyectos/protoPython/build/_deps/googletest-src/googletest/src/gtest_main.cc
@@ -1339,17 +1339,17 @@ Note: Google Test filter = MultisetTest.RemoveNonExistent
 [----------] Global test environment set-up.
 [----------] 1 test from MultisetTest
 [ RUN      ] MultisetTest.RemoveNonExistent
-[       OK ] MultisetTest.RemoveNonExistent (0 ms)
-[----------] 1 test from MultisetTest (0 ms total)
+[       OK ] MultisetTest.RemoveNonExistent (4 ms)
+[----------] 1 test from MultisetTest (5 ms total)
 
 [----------] Global test environment tear-down
-[==========] 1 test from 1 test suite ran. (0 ms total)
+[==========] 1 test from 1 test suite ran. (5 ms total)
 [  PASSED  ] 1 test.
 <end of output>
-Test time =   0.00 sec
+Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"MultisetTest.RemoveNonExistent" end time: Feb 03 14:09 -03
+"MultisetTest.RemoveNonExistent" end time: Feb 03 14:38 -03
 "MultisetTest.RemoveNonExistent" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -1357,7 +1357,7 @@ Test Passed.
 51/62 Test: SparseListTest.CreationAndSize
 Command: "/home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test/proto_tests" "--gtest_filter=SparseListTest.CreationAndSize" "--gtest_also_run_disabled_tests"
 Directory: /home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test
-"SparseListTest.CreationAndSize" start time: Feb 03 14:09 -03
+"SparseListTest.CreationAndSize" start time: Feb 03 14:38 -03
 Output:
 ----------------------------------------------------------
 Running main() from /home/gamarino/Documentos/proyectos/protoPython/build/_deps/googletest-src/googletest/src/gtest_main.cc
@@ -1366,17 +1366,17 @@ Note: Google Test filter = SparseListTest.CreationAndSize
 [----------] Global test environment set-up.
 [----------] 1 test from SparseListTest
 [ RUN      ] SparseListTest.CreationAndSize
-[       OK ] SparseListTest.CreationAndSize (0 ms)
-[----------] 1 test from SparseListTest (0 ms total)
+[       OK ] SparseListTest.CreationAndSize (1 ms)
+[----------] 1 test from SparseListTest (1 ms total)
 
 [----------] Global test environment tear-down
-[==========] 1 test from 1 test suite ran. (0 ms total)
+[==========] 1 test from 1 test suite ran. (1 ms total)
 [  PASSED  ] 1 test.
 <end of output>
-Test time =   0.00 sec
+Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"SparseListTest.CreationAndSize" end time: Feb 03 14:09 -03
+"SparseListTest.CreationAndSize" end time: Feb 03 14:38 -03
 "SparseListTest.CreationAndSize" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -1384,7 +1384,7 @@ Test Passed.
 52/62 Test: SparseListTest.SetAndGet
 Command: "/home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test/proto_tests" "--gtest_filter=SparseListTest.SetAndGet" "--gtest_also_run_disabled_tests"
 Directory: /home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test
-"SparseListTest.SetAndGet" start time: Feb 03 14:09 -03
+"SparseListTest.SetAndGet" start time: Feb 03 14:38 -03
 Output:
 ----------------------------------------------------------
 Running main() from /home/gamarino/Documentos/proyectos/protoPython/build/_deps/googletest-src/googletest/src/gtest_main.cc
@@ -1400,10 +1400,10 @@ Note: Google Test filter = SparseListTest.SetAndGet
 [==========] 1 test from 1 test suite ran. (0 ms total)
 [  PASSED  ] 1 test.
 <end of output>
-Test time =   0.00 sec
+Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"SparseListTest.SetAndGet" end time: Feb 03 14:09 -03
+"SparseListTest.SetAndGet" end time: Feb 03 14:38 -03
 "SparseListTest.SetAndGet" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -1411,7 +1411,7 @@ Test Passed.
 53/62 Test: SparseListTest.UseAsStringKeys
 Command: "/home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test/proto_tests" "--gtest_filter=SparseListTest.UseAsStringKeys" "--gtest_also_run_disabled_tests"
 Directory: /home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test
-"SparseListTest.UseAsStringKeys" start time: Feb 03 14:09 -03
+"SparseListTest.UseAsStringKeys" start time: Feb 03 14:38 -03
 Output:
 ----------------------------------------------------------
 Running main() from /home/gamarino/Documentos/proyectos/protoPython/build/_deps/googletest-src/googletest/src/gtest_main.cc
@@ -1430,7 +1430,7 @@ Note: Google Test filter = SparseListTest.UseAsStringKeys
 Test time =   0.00 sec
 ----------------------------------------------------------
 Test Passed.
-"SparseListTest.UseAsStringKeys" end time: Feb 03 14:09 -03
+"SparseListTest.UseAsStringKeys" end time: Feb 03 14:38 -03
 "SparseListTest.UseAsStringKeys" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -1438,7 +1438,7 @@ Test Passed.
 54/62 Test: SparseListTest.ImmutabilityOnSet
 Command: "/home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test/proto_tests" "--gtest_filter=SparseListTest.ImmutabilityOnSet" "--gtest_also_run_disabled_tests"
 Directory: /home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test
-"SparseListTest.ImmutabilityOnSet" start time: Feb 03 14:09 -03
+"SparseListTest.ImmutabilityOnSet" start time: Feb 03 14:38 -03
 Output:
 ----------------------------------------------------------
 Running main() from /home/gamarino/Documentos/proyectos/protoPython/build/_deps/googletest-src/googletest/src/gtest_main.cc
@@ -1447,17 +1447,17 @@ Note: Google Test filter = SparseListTest.ImmutabilityOnSet
 [----------] Global test environment set-up.
 [----------] 1 test from SparseListTest
 [ RUN      ] SparseListTest.ImmutabilityOnSet
-[       OK ] SparseListTest.ImmutabilityOnSet (0 ms)
-[----------] 1 test from SparseListTest (0 ms total)
+[       OK ] SparseListTest.ImmutabilityOnSet (1 ms)
+[----------] 1 test from SparseListTest (1 ms total)
 
 [----------] Global test environment tear-down
-[==========] 1 test from 1 test suite ran. (0 ms total)
+[==========] 1 test from 1 test suite ran. (1 ms total)
 [  PASSED  ] 1 test.
 <end of output>
-Test time =   0.00 sec
+Test time =   0.02 sec
 ----------------------------------------------------------
 Test Passed.
-"SparseListTest.ImmutabilityOnSet" end time: Feb 03 14:09 -03
+"SparseListTest.ImmutabilityOnSet" end time: Feb 03 14:38 -03
 "SparseListTest.ImmutabilityOnSet" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -1465,7 +1465,7 @@ Test Passed.
 55/62 Test: SparseListTest.RemoveAt
 Command: "/home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test/proto_tests" "--gtest_filter=SparseListTest.RemoveAt" "--gtest_also_run_disabled_tests"
 Directory: /home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test
-"SparseListTest.RemoveAt" start time: Feb 03 14:09 -03
+"SparseListTest.RemoveAt" start time: Feb 03 14:38 -03
 Output:
 ----------------------------------------------------------
 Running main() from /home/gamarino/Documentos/proyectos/protoPython/build/_deps/googletest-src/googletest/src/gtest_main.cc
@@ -1474,17 +1474,17 @@ Note: Google Test filter = SparseListTest.RemoveAt
 [----------] Global test environment set-up.
 [----------] 1 test from SparseListTest
 [ RUN      ] SparseListTest.RemoveAt
-[       OK ] SparseListTest.RemoveAt (0 ms)
-[----------] 1 test from SparseListTest (0 ms total)
+[       OK ] SparseListTest.RemoveAt (1 ms)
+[----------] 1 test from SparseListTest (1 ms total)
 
 [----------] Global test environment tear-down
-[==========] 1 test from 1 test suite ran. (0 ms total)
+[==========] 1 test from 1 test suite ran. (1 ms total)
 [  PASSED  ] 1 test.
 <end of output>
-Test time =   0.00 sec
+Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"SparseListTest.RemoveAt" end time: Feb 03 14:09 -03
+"SparseListTest.RemoveAt" end time: Feb 03 14:38 -03
 "SparseListTest.RemoveAt" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -1492,7 +1492,7 @@ Test Passed.
 56/62 Test: TupleTest.CreationAndSize
 Command: "/home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test/proto_tests" "--gtest_filter=TupleTest.CreationAndSize" "--gtest_also_run_disabled_tests"
 Directory: /home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test
-"TupleTest.CreationAndSize" start time: Feb 03 14:09 -03
+"TupleTest.CreationAndSize" start time: Feb 03 14:38 -03
 Output:
 ----------------------------------------------------------
 Running main() from /home/gamarino/Documentos/proyectos/protoPython/build/_deps/googletest-src/googletest/src/gtest_main.cc
@@ -1501,17 +1501,17 @@ Note: Google Test filter = TupleTest.CreationAndSize
 [----------] Global test environment set-up.
 [----------] 1 test from TupleTest
 [ RUN      ] TupleTest.CreationAndSize
-[       OK ] TupleTest.CreationAndSize (0 ms)
-[----------] 1 test from TupleTest (0 ms total)
+[       OK ] TupleTest.CreationAndSize (1 ms)
+[----------] 1 test from TupleTest (1 ms total)
 
 [----------] Global test environment tear-down
-[==========] 1 test from 1 test suite ran. (0 ms total)
+[==========] 1 test from 1 test suite ran. (1 ms total)
 [  PASSED  ] 1 test.
 <end of output>
-Test time =   0.00 sec
+Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"TupleTest.CreationAndSize" end time: Feb 03 14:09 -03
+"TupleTest.CreationAndSize" end time: Feb 03 14:38 -03
 "TupleTest.CreationAndSize" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -1519,7 +1519,7 @@ Test Passed.
 57/62 Test: TupleTest.CreationFromList
 Command: "/home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test/proto_tests" "--gtest_filter=TupleTest.CreationFromList" "--gtest_also_run_disabled_tests"
 Directory: /home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test
-"TupleTest.CreationFromList" start time: Feb 03 14:09 -03
+"TupleTest.CreationFromList" start time: Feb 03 14:38 -03
 Output:
 ----------------------------------------------------------
 Running main() from /home/gamarino/Documentos/proyectos/protoPython/build/_deps/googletest-src/googletest/src/gtest_main.cc
@@ -1535,10 +1535,10 @@ Note: Google Test filter = TupleTest.CreationFromList
 [==========] 1 test from 1 test suite ran. (0 ms total)
 [  PASSED  ] 1 test.
 <end of output>
-Test time =   0.00 sec
+Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"TupleTest.CreationFromList" end time: Feb 03 14:09 -03
+"TupleTest.CreationFromList" end time: Feb 03 14:38 -03
 "TupleTest.CreationFromList" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -1546,7 +1546,7 @@ Test Passed.
 58/62 Test: TupleTest.GetAt
 Command: "/home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test/proto_tests" "--gtest_filter=TupleTest.GetAt" "--gtest_also_run_disabled_tests"
 Directory: /home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test
-"TupleTest.GetAt" start time: Feb 03 14:09 -03
+"TupleTest.GetAt" start time: Feb 03 14:38 -03
 Output:
 ----------------------------------------------------------
 Running main() from /home/gamarino/Documentos/proyectos/protoPython/build/_deps/googletest-src/googletest/src/gtest_main.cc
@@ -1555,17 +1555,17 @@ Note: Google Test filter = TupleTest.GetAt
 [----------] Global test environment set-up.
 [----------] 1 test from TupleTest
 [ RUN      ] TupleTest.GetAt
-[       OK ] TupleTest.GetAt (0 ms)
-[----------] 1 test from TupleTest (0 ms total)
+[       OK ] TupleTest.GetAt (1 ms)
+[----------] 1 test from TupleTest (1 ms total)
 
 [----------] Global test environment tear-down
-[==========] 1 test from 1 test suite ran. (0 ms total)
+[==========] 1 test from 1 test suite ran. (1 ms total)
 [  PASSED  ] 1 test.
 <end of output>
-Test time =   0.00 sec
+Test time =   0.02 sec
 ----------------------------------------------------------
 Test Passed.
-"TupleTest.GetAt" end time: Feb 03 14:09 -03
+"TupleTest.GetAt" end time: Feb 03 14:38 -03
 "TupleTest.GetAt" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -1573,7 +1573,7 @@ Test Passed.
 59/62 Test: TupleTest.Interning
 Command: "/home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test/proto_tests" "--gtest_filter=TupleTest.Interning" "--gtest_also_run_disabled_tests"
 Directory: /home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test
-"TupleTest.Interning" start time: Feb 03 14:09 -03
+"TupleTest.Interning" start time: Feb 03 14:38 -03
 Output:
 ----------------------------------------------------------
 Running main() from /home/gamarino/Documentos/proyectos/protoPython/build/_deps/googletest-src/googletest/src/gtest_main.cc
@@ -1582,17 +1582,17 @@ Note: Google Test filter = TupleTest.Interning
 [----------] Global test environment set-up.
 [----------] 1 test from TupleTest
 [ RUN      ] TupleTest.Interning
-[       OK ] TupleTest.Interning (0 ms)
-[----------] 1 test from TupleTest (0 ms total)
+[       OK ] TupleTest.Interning (1 ms)
+[----------] 1 test from TupleTest (1 ms total)
 
 [----------] Global test environment tear-down
-[==========] 1 test from 1 test suite ran. (0 ms total)
+[==========] 1 test from 1 test suite ran. (1 ms total)
 [  PASSED  ] 1 test.
 <end of output>
-Test time =   0.00 sec
+Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"TupleTest.Interning" end time: Feb 03 14:09 -03
+"TupleTest.Interning" end time: Feb 03 14:38 -03
 "TupleTest.Interning" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -1600,7 +1600,7 @@ Test Passed.
 60/62 Test: TupleTest.GetSlice
 Command: "/home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test/proto_tests" "--gtest_filter=TupleTest.GetSlice" "--gtest_also_run_disabled_tests"
 Directory: /home/gamarino/Documentos/proyectos/protoPython/build/protoCore/test
-"TupleTest.GetSlice" start time: Feb 03 14:09 -03
+"TupleTest.GetSlice" start time: Feb 03 14:38 -03
 Output:
 ----------------------------------------------------------
 Running main() from /home/gamarino/Documentos/proyectos/protoPython/build/_deps/googletest-src/googletest/src/gtest_main.cc
@@ -1616,10 +1616,10 @@ Note: Google Test filter = TupleTest.GetSlice
 [==========] 1 test from 1 test suite ran. (0 ms total)
 [  PASSED  ] 1 test.
 <end of output>
-Test time =   0.00 sec
+Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"TupleTest.GetSlice" end time: Feb 03 14:09 -03
+"TupleTest.GetSlice" end time: Feb 03 14:38 -03
 "TupleTest.GetSlice" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -1627,13 +1627,13 @@ Test Passed.
 61/62 Test: test_foundation
 Command: "/home/gamarino/Documentos/proyectos/protoPython/build/test/library/test_foundation"
 Directory: /home/gamarino/Documentos/proyectos/protoPython/build/test/library
-"test_foundation" start time: Feb 03 14:09 -03
+"test_foundation" start time: Feb 03 14:38 -03
 Output:
 ----------------------------------------------------------
 Running main() from /home/gamarino/Documentos/proyectos/protoPython/build/_deps/googletest-src/googletest/src/gtest_main.cc
-[==========] Running 10 tests from 1 test suite.
+[==========] Running 11 tests from 1 test suite.
 [----------] Global test environment set-up.
-[----------] 10 tests from FoundationTest
+[----------] 11 tests from FoundationTest
 [ RUN      ] FoundationTest.BasicTypesExist
 [       OK ] FoundationTest.BasicTypesExist (1 ms)
 [ RUN      ] FoundationTest.ListAppend
@@ -1647,24 +1647,26 @@ Running main() from /home/gamarino/Documentos/proyectos/protoPython/build/_deps/
 [ RUN      ] FoundationTest.SysModule
 [       OK ] FoundationTest.SysModule (1 ms)
 [ RUN      ] FoundationTest.BuiltinFunctions
-<object at 0x738e97e0e340>
+<object at 0x7f11d8a16400>
 [       OK ] FoundationTest.BuiltinFunctions (1 ms)
 [ RUN      ] FoundationTest.AdvancedBuiltins
 [       OK ] FoundationTest.AdvancedBuiltins (1 ms)
 [ RUN      ] FoundationTest.IOModule
 [       OK ] FoundationTest.IOModule (1 ms)
 [ RUN      ] FoundationTest.SysPathAndModules
-[       OK ] FoundationTest.SysPathAndModules (1 ms)
-[----------] 10 tests from FoundationTest (12 ms total)
+[       OK ] FoundationTest.SysPathAndModules (8 ms)
+[ RUN      ] FoundationTest.SysTraceHooks
+[       OK ] FoundationTest.SysTraceHooks (4 ms)
+[----------] 11 tests from FoundationTest (26 ms total)
 
 [----------] Global test environment tear-down
-[==========] 10 tests from 1 test suite ran. (12 ms total)
-[  PASSED  ] 10 tests.
+[==========] 11 tests from 1 test suite ran. (26 ms total)
+[  PASSED  ] 11 tests.
 <end of output>
-Test time =   0.02 sec
+Test time =   0.03 sec
 ----------------------------------------------------------
 Test Passed.
-"test_foundation" end time: Feb 03 14:09 -03
+"test_foundation" end time: Feb 03 14:38 -03
 "test_foundation" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -1672,7 +1674,7 @@ Test Passed.
 62/62 Test: test_regr
 Command: "/home/gamarino/Documentos/proyectos/protoPython/build/test/regression/test_regr"
 Directory: /home/gamarino/Documentos/proyectos/protoPython/build/test/regression
-"test_regr" start time: Feb 03 14:09 -03
+"test_regr" start time: Feb 03 14:38 -03
 Output:
 ----------------------------------------------------------
 Running main() from /home/gamarino/Documentos/proyectos/protoPython/build/_deps/googletest-src/googletest/src/gtest_main.cc
@@ -1680,18 +1682,18 @@ Running main() from /home/gamarino/Documentos/proyectos/protoPython/build/_deps/
 [----------] Global test environment set-up.
 [----------] 1 test from RegressionTest
 [ RUN      ] RegressionTest.LoadRunner
-[       OK ] RegressionTest.LoadRunner (3 ms)
-[----------] 1 test from RegressionTest (3 ms total)
+[       OK ] RegressionTest.LoadRunner (13 ms)
+[----------] 1 test from RegressionTest (13 ms total)
 
 [----------] Global test environment tear-down
-[==========] 1 test from 1 test suite ran. (3 ms total)
+[==========] 1 test from 1 test suite ran. (13 ms total)
 [  PASSED  ] 1 test.
 <end of output>
-Test time =   0.01 sec
+Test time =   0.02 sec
 ----------------------------------------------------------
 Test Passed.
-"test_regr" end time: Feb 03 14:09 -03
+"test_regr" end time: Feb 03 14:38 -03
 "test_regr" time elapsed: 00:00:00
 ----------------------------------------------------------
 
-End testing: Feb 03 14:09 -03
+End testing: Feb 03 14:38 -03

@@ -61,6 +61,16 @@ public:
      */
     const proto::ProtoObject* resolve(const std::string& name);
 
+    /**
+     * @brief Sets the global trace function (sys.settrace).
+     */
+    void setTraceFunction(const proto::ProtoObject* func) { traceFunction = func; }
+
+    /**
+     * @brief Gets the global trace function (sys.gettrace).
+     */
+    const proto::ProtoObject* getTraceFunction() const { return traceFunction; }
+
 private:
     void initializeRootObjects(const std::string& stdLibPath, const std::vector<std::string>& searchPaths);
 
@@ -75,6 +85,7 @@ private:
     const proto::ProtoObject* dictPrototype;
     const proto::ProtoObject* sysModule;
     const proto::ProtoObject* builtinsModule;
+    const proto::ProtoObject* traceFunction{nullptr};
 };
 
 } // namespace protoPython

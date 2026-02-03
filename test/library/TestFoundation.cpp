@@ -199,3 +199,23 @@ TEST_F(FoundationTest, SysPathAndModules) {
     const proto::ProtoObject* v2 = sysInModules->getAttribute(context, proto::ProtoString::fromUTF8String(context, "version"));
     EXPECT_EQ(v1, v2);
 }
+
+TEST_F(FoundationTest, SysTraceHooks) {
+    proto::ProtoContext* context = env.getContext();
+    const proto::ProtoObject* sys = env.resolve("sys");
+    
+    const proto::ProtoObject* pySetTrace = sys->getAttribute(context, proto::ProtoString::fromUTF8String(context, "settrace"));
+    const proto::ProtoObject* pyGetTrace = sys->getAttribute(context, proto::ProtoString::fromUTF8String(context, "gettrace"));
+    
+    ASSERT_NE(pySetTrace, nullptr);
+    ASSERT_NE(pyGetTrace, nullptr);
+    
+    // Set a mock trace function
+    const proto::ProtoObject* mockFunc = context->newObject(false);
+    const proto::ProtoList* args = context->newList()->appendLast(context, mockFunc);
+    pySetTrace->asMethod(context)(context, sys, nullptr, args, nullptr);
+    
+    // Verify it's set
+    const proto::ProtoObject* currentTrace = pyGetTrace->asMethod(context)(context, sys, nullptr, nullptr, nullptr);
+    EXPECT_EQ(currentTrace, mockFunc);
+}

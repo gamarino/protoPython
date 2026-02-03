@@ -4,9 +4,11 @@
 #include <protoCore.h>
 
 namespace protoPython {
+class PythonEnvironment;
+
 namespace sys {
 
-const proto::ProtoObject* initialize(proto::ProtoContext* ctx);
+const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment* env);
 
 } // namespace sys
 } // namespace protoPython
