@@ -337,7 +337,9 @@ static const proto::ProtoObject* py_dict_getitem(
     if (positionalParameters->getSize(context) > 0) {
         const proto::ProtoObject* key = positionalParameters->getAt(context, 0);
         unsigned long hash = key->getHash(context);
-        return data->asSparseList(context)->getAt(context, hash);
+        const proto::ProtoObject* value = data->asSparseList(context)->getAt(context, hash);
+        // Placeholder behavior: return PROTO_NONE for missing keys until exceptions are implemented.
+        return value ? value : PROTO_NONE;
     }
     return PROTO_NONE;
 }

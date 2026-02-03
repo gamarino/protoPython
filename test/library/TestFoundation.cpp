@@ -270,6 +270,11 @@ TEST_F(FoundationTest, DictSetItemLen) {
     const proto::ProtoObject* got = my_dict->call(context, nullptr, getitemName, my_dict, getArgs);
     ASSERT_NE(got, nullptr);
     EXPECT_EQ(got->asLong(context), 42);
+
+    const proto::ProtoObject* missingKey = context->fromUTF8String("missing");
+    const proto::ProtoList* missArgs = context->newList()->appendLast(context, missingKey);
+    const proto::ProtoObject* missingVal = my_dict->call(context, nullptr, getitemName, my_dict, missArgs);
+    EXPECT_EQ(missingVal, PROTO_NONE);
 }
 
 TEST_F(FoundationTest, ListIterNext) {
