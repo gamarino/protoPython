@@ -3,6 +3,7 @@
 
 #include <protoCore.h>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace protoPython {
@@ -88,6 +89,35 @@ public:
      */
     const proto::ProtoObject* getTraceFunction() const { return traceFunction; }
 
+    /**
+     * @brief Sets the pending exception (raised by container operations).
+     */
+    void setPendingException(const proto::ProtoObject* exc) { pendingException = exc; }
+
+    /**
+     * @brief Gets and clears the pending exception.
+     */
+    const proto::ProtoObject* takePendingException() {
+        const proto::ProtoObject* e = pendingException;
+        pendingException = nullptr;
+        return e;
+    }
+
+    /**
+     * @brief Returns the environment for the given context (for use by dunder methods).
+     */
+    static PythonEnvironment* fromContext(proto::ProtoContext* ctx);
+
+    /**
+     * @brief Records a KeyError as the pending exception (for container operations).
+     */
+    void raiseKeyError(proto::ProtoContext* context, const proto::ProtoObject* key);
+
+    /**
+     * @brief Records a ValueError as the pending exception (for container operations).
+     */
+    void raiseValueError(proto::ProtoContext* context, const proto::ProtoObject* msg);
+
 private:
     void initializeRootObjects(const std::string& stdLibPath, const std::vector<std::string>& searchPaths);
 
@@ -105,6 +135,12 @@ private:
     const proto::ProtoObject* sysModule;
     const proto::ProtoObject* builtinsModule;
     const proto::ProtoObject* traceFunction{nullptr};
+    const proto::ProtoObject* pendingException{nullptr};
+    const proto::ProtoObject* keyErrorType{nullptr};
+    const proto::ProtoObject* valueErrorType{nullptr};
+
+    static void registerContext(proto::ProtoContext* ctx, PythonEnvironment* env);
+    static void unregisterContext(proto::ProtoContext* ctx);
 };
 
 } // namespace protoPython

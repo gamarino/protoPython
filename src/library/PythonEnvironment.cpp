@@ -361,8 +361,10 @@ static const proto::ProtoObject* py_dict_getitem(
         const proto::ProtoObject* key = positionalParameters->getAt(context, 0);
         unsigned long hash = key->getHash(context);
         const proto::ProtoObject* value = data->asSparseList(context)->getAt(context, hash);
-        // Placeholder behavior: return PROTO_NONE for missing keys until exceptions are implemented.
-        return value ? value : PROTO_NONE;
+        if (value) return value;
+        PythonEnvironment* env = PythonEnvironment::fromContext(context);
+        if (env) env->raiseKeyError(context, key);
+        return PROTO_NONE;
     }
     return PROTO_NONE;
 }
@@ -673,6 +675,8 @@ static const proto::ProtoObject* py_list_remove(
             return PROTO_NONE;
         }
     }
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (env) env->raiseValueError(context, context->fromUTF8String("list.remove(x): x not in list"));
     return PROTO_NONE;
 }
 
@@ -1207,13 +1211,44 @@ static const proto::ProtoObject* py_dict_setdefault(
 
 // --- PythonEnvironment Implementation ---
 
+static std::unordered_map<proto::ProtoContext*, PythonEnvironment*> s_contextToEnv;
+
+void PythonEnvironment::registerContext(proto::ProtoContext* ctx, PythonEnvironment* env) {
+    s_contextToEnv[ctx] = env;
+}
+
+void PythonEnvironment::unregisterContext(proto::ProtoContext* ctx) {
+    s_contextToEnv.erase(ctx);
+}
+
+PythonEnvironment* PythonEnvironment::fromContext(proto::ProtoContext* ctx) {
+    auto it = s_contextToEnv.find(ctx);
+    return it != s_contextToEnv.end() ? it->second : nullptr;
+}
+
 PythonEnvironment::PythonEnvironment(const std::string& stdLibPath, const std::vector<std::string>& searchPaths) : space() {
     context = new proto::ProtoContext(&space);
+    registerContext(context, this);
     initializeRootObjects(stdLibPath, searchPaths);
 }
 
 PythonEnvironment::~PythonEnvironment() {
+    unregisterContext(context);
     delete context;
+}
+
+void PythonEnvironment::raiseKeyError(proto::ProtoContext* ctx, const proto::ProtoObject* key) {
+    if (!keyErrorType) return;
+    const proto::ProtoList* args = ctx->newList()->appendLast(ctx, key);
+    const proto::ProtoObject* exc = keyErrorType->call(ctx, nullptr, proto::ProtoString::fromUTF8String(ctx, "__call__"), keyErrorType, args, nullptr);
+    if (exc) setPendingException(exc);
+}
+
+void PythonEnvironment::raiseValueError(proto::ProtoContext* ctx, const proto::ProtoObject* msg) {
+    if (!valueErrorType) return;
+    const proto::ProtoList* args = ctx->newList()->appendLast(ctx, msg);
+    const proto::ProtoObject* exc = valueErrorType->call(ctx, nullptr, proto::ProtoString::fromUTF8String(ctx, "__call__"), valueErrorType, args, nullptr);
+    if (exc) setPendingException(exc);
 }
 
 void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, const std::vector<std::string>& searchPaths) {
@@ -1386,7 +1421,11 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
 
     // _collections module
     nativeProvider->registerModule("_collections", [](proto::ProtoContext* ctx) { return collections::initialize(ctx); });
-    nativeProvider->registerModule("exceptions", [this](proto::ProtoContext* ctx) { return exceptions::initialize(ctx, objectPrototype, typePrototype); });
+
+    const proto::ProtoObject* exceptionsMod = exceptions::initialize(context, objectPrototype, typePrototype);
+    keyErrorType = exceptionsMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "KeyError"));
+    valueErrorType = exceptionsMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "ValueError"));
+    nativeProvider->registerModule("exceptions", [exceptionsMod](proto::ProtoContext*) { return exceptionsMod; });
 
     registry.registerProvider(std::move(nativeProvider));
 

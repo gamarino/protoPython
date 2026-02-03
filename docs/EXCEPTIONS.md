@@ -24,4 +24,4 @@ v = exceptions.ValueError("invalid value")
 
 - Exception instances store `__args__` (tuple/list of constructor arguments).
 - `__repr__` returns a string like `KeyError('x')`.
-- `raise_exception` and integration with the execution engine are planned for Step 8.
+- Container operations (dict `__getitem__` missing key, list `remove` value not found) record the exception via `PythonEnvironment::setPendingException`. Callers check `takePendingException()` after operations that may fail.

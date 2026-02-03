@@ -730,6 +730,22 @@ TEST_F(FoundationTest, StringDunders) {
     EXPECT_EQ(ls, "hello");
 }
 
+TEST_F(FoundationTest, ContainerExceptions) {
+    proto::ProtoContext* context = env.getContext();
+
+    const proto::ProtoObject* dictObj = context->newObject(true)->addParent(context, env.getDictPrototype());
+    dictObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->newSparseList()->asObject(context));
+    dictObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__keys__"), context->newList()->asObject(context));
+
+    const proto::ProtoObject* getitem = dictObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__getitem__"));
+    ASSERT_NE(getitem, nullptr);
+    const proto::ProtoList* args = context->newList()->appendLast(context, context->fromUTF8String("missing_key"));
+    getitem->asMethod(context)(context, dictObj, nullptr, args, nullptr);
+
+    const proto::ProtoObject* exc = env.takePendingException();
+    ASSERT_NE(exc, nullptr);
+}
+
 TEST_F(FoundationTest, ExceptionScaffolding) {
     proto::ProtoContext* context = env.getContext();
 
