@@ -1,10 +1,9 @@
 /**
  * Minimal reproducer for FoundationTest hang - no GTest.
  * Requires STDLIB_PATH compile definition (as TestFoundation).
- * Bisects: use protoCore directly first, then full PythonEnvironment.
+ * Used for debugging; see docs/TESTING.md.
  */
 #include <protoPython/PythonEnvironment.h>
-#include <protoCore.h>
 #include <cstdio>
 #include <cstdlib>
 
@@ -13,15 +12,7 @@
 #endif
 
 int main() {
-    fprintf(stderr, "A: ProtoSpace+Context (no Python)...\n");
-    fflush(stderr);
-    {
-        proto::ProtoSpace space;
-        proto::ProtoContext* ctx = new proto::ProtoContext(&space);
-        for (int i = 0; i < 200; i++) (void)ctx->fromUTF8String("x");
-        delete ctx;
-    }
-    fprintf(stderr, "B: ProtoSpace+Context OK. Creating PythonEnvironment...\n");
+    fprintf(stderr, "Creating PythonEnvironment...\n");
     fflush(stderr);
     protoPython::PythonEnvironment env(STDLIB_PATH);
     fprintf(stderr, "C: PythonEnvironment created.\n");

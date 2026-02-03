@@ -12,6 +12,7 @@ The foundation of the runtime must be fully compatible with Python 3.14's semant
 - [ ] **List methods**: `pop()` and `extend()` [done].
 - [ ] **Dict accessors**: `get()` and `setdefault()` [done].
 - [ ] **protopy CLI**: distinct exit codes and flags (`--module`, `--script`, `--path`, `--stdlib`) with tests [done].
+- [ ] **Phase 2b: Foundation test stability**: `test_foundation` hangs during list prototype creation (GC deadlock suspected). CTest timeout and troubleshooting docs added; see [TESTING.md](TESTING.md).
 - [ ] **Phase 3: Execution Engine**: Finalize `ProtoContext` integration for Python bytecode execution (via `protopy`). protopy invokes module `main` when running a script (stub execution path).
 - [ ] **Phase 4: GIL-less Concurrency**: Audit all mutable operations to ensure thread-safety using `protoCore` primitives. Audit documented in [GIL_FREE_AUDIT.md](GIL_FREE_AUDIT.md); fixes TBD.
 
