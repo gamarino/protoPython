@@ -3,7 +3,7 @@
 Derived from [IMPLEMENTATION_PLAN.md](../docs/IMPLEMENTATION_PLAN.md). See also [DESIGN.md](../DESIGN.md) and workspace [tasks/todo.md](../../tasks/todo.md).
 
 ## 1. Core Runtime & Object Model
-- [ ] Phase 2: Full Method Coverage — all dunder methods for built-in types
+- [ ] Phase 2: Full Method Coverage — all dunder methods for built-in types; first batch (list/dict `__getitem__`, `__setitem__`, `__len__`) [x]
 - [ ] Phase 3: Execution Engine — ProtoContext integration for bytecode execution (protopy)
 - [ ] Phase 4: GIL-less Concurrency — audit mutable operations for thread-safety
 

@@ -219,3 +219,100 @@ TEST_F(FoundationTest, SysTraceHooks) {
     const proto::ProtoObject* currentTrace = pyGetTrace->asMethod(context)(context, sys, nullptr, nullptr, nullptr);
     EXPECT_EQ(currentTrace, mockFunc);
 }
+
+TEST_F(FoundationTest, ListGetItemSetItem) {
+    proto::ProtoContext* context = env.getContext();
+    const proto::ProtoObject* my_list = context->newObject(true);
+    my_list = my_list->addParent(context, env.getListPrototype());
+    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "__data__");
+    const proto::ProtoList* list = context->newList()
+        ->appendLast(context, context->fromInteger(10))
+        ->appendLast(context, context->fromInteger(20))
+        ->appendLast(context, context->fromInteger(30));
+    my_list->setAttribute(context, dataName, list->asObject(context));
+
+    const proto::ProtoString* getitemName = proto::ProtoString::fromUTF8String(context, "__getitem__");
+    const proto::ProtoString* setitemName = proto::ProtoString::fromUTF8String(context, "__setitem__");
+
+    const proto::ProtoList* getArgs = context->newList()->appendLast(context, context->fromInteger(1));
+    const proto::ProtoObject* val = my_list->call(context, nullptr, getitemName, my_list, getArgs);
+    ASSERT_NE(val, nullptr);
+    EXPECT_EQ(val->asLong(context), 20);
+
+    const proto::ProtoList* setArgs = context->newList()
+        ->appendLast(context, context->fromInteger(1))
+        ->appendLast(context, context->fromInteger(99));
+    my_list->call(context, nullptr, setitemName, my_list, setArgs);
+    const proto::ProtoObject* updated = my_list->getAttribute(context, dataName);
+    EXPECT_EQ(updated->asList(context)->getAt(context, 1)->asLong(context), 99);
+}
+
+TEST_F(FoundationTest, DictSetItemLen) {
+    proto::ProtoContext* context = env.getContext();
+    const proto::ProtoObject* my_dict = context->newObject(true);
+    my_dict = my_dict->addParent(context, env.getDictPrototype());
+    my_dict->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->newSparseList()->asObject(context));
+
+    const proto::ProtoString* setitemName = proto::ProtoString::fromUTF8String(context, "__setitem__");
+    const proto::ProtoString* lenName = proto::ProtoString::fromUTF8String(context, "__len__");
+    const proto::ProtoString* getitemName = proto::ProtoString::fromUTF8String(context, "__getitem__");
+
+    const proto::ProtoObject* key = context->fromUTF8String("a");
+    const proto::ProtoObject* value = context->fromInteger(42);
+    const proto::ProtoList* setArgs = context->newList()->appendLast(context, key)->appendLast(context, value);
+    my_dict->call(context, nullptr, setitemName, my_dict, setArgs);
+
+    const proto::ProtoObject* lenResult = my_dict->call(context, nullptr, lenName, my_dict, nullptr);
+    ASSERT_NE(lenResult, nullptr);
+    EXPECT_EQ(lenResult->asLong(context), 1);
+
+    const proto::ProtoList* getArgs = context->newList()->appendLast(context, key);
+    const proto::ProtoObject* got = my_dict->call(context, nullptr, getitemName, my_dict, getArgs);
+    ASSERT_NE(got, nullptr);
+    EXPECT_EQ(got->asLong(context), 42);
+}
+
+TEST_F(FoundationTest, DequeBasic) {
+    proto::ProtoContext* context = env.getContext();
+    const proto::ProtoObject* collections = env.resolve("_collections");
+    ASSERT_NE(collections, nullptr);
+    
+    const proto::ProtoObject* pyDeque = collections->getAttribute(context, proto::ProtoString::fromUTF8String(context, "deque"));
+    ASSERT_NE(pyDeque, nullptr);
+    
+    // Create deque: d = deque()
+    const proto::ProtoObject* d = pyDeque->asMethod(context)(context, collections, nullptr, nullptr, nullptr);
+    ASSERT_NE(d, nullptr);
+    
+    const proto::ProtoObject* append = d->getAttribute(context, proto::ProtoString::fromUTF8String(context, "append"));
+    const proto::ProtoObject* appendleft = d->getAttribute(context, proto::ProtoString::fromUTF8String(context, "appendleft"));
+    const proto::ProtoObject* pop = d->getAttribute(context, proto::ProtoString::fromUTF8String(context, "pop"));
+    const proto::ProtoObject* popleft = d->getAttribute(context, proto::ProtoString::fromUTF8String(context, "popleft"));
+    const proto::ProtoObject* lenFunc = d->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__len__"));
+    
+    // Test append
+    const proto::ProtoObject* v1 = context->fromInteger(10);
+    const proto::ProtoList* args1 = context->newList()->appendLast(context, v1);
+    append->asMethod(context)(context, d, nullptr, args1, nullptr);
+    
+    // Test appendleft
+    const proto::ProtoObject* v2 = context->fromInteger(20);
+    const proto::ProtoList* args2 = context->newList()->appendLast(context, v2);
+    appendleft->asMethod(context)(context, d, nullptr, args2, nullptr);
+    
+    // Check length
+    const proto::ProtoObject* length = lenFunc->asMethod(context)(context, d, nullptr, nullptr, nullptr);
+    EXPECT_EQ(length->asLong(context), 2);
+    
+    // Test popleft (should be 20)
+    const proto::ProtoObject* p1 = popleft->asMethod(context)(context, d, nullptr, nullptr, nullptr);
+    EXPECT_EQ(p1->asLong(context), 20);
+    
+    // Test pop (should be 10)
+    const proto::ProtoObject* p2 = pop->asMethod(context)(context, d, nullptr, nullptr, nullptr);
+    EXPECT_EQ(p2->asLong(context), 10);
+    
+    // Check length after pops
+    length = lenFunc->asMethod(context)(context, d, nullptr, nullptr, nullptr);
+    EXPECT_EQ(length->asLong(context), 0);
+}

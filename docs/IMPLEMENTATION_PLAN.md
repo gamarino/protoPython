@@ -6,7 +6,7 @@ This document outlines the roadmap for turning `protoPython` into a GIL-less, hi
 The foundation of the runtime must be fully compatible with Python 3.14's semantics while leveraging `protoCore`'s fine-grained locking and immutable-by-default sharing.
 
 - [x] **Phase 1: Foundation**: Set up `PythonEnvironment`, `object`, `type`, `int`, `str`, `list`, `dict`.
-- [ ] **Phase 2: Full Method Coverage**: Implement all dunder methods for built-in types.
+- [ ] **Phase 2: Full Method Coverage**: Implement all dunder methods for built-in types. First batch: `__getitem__`, `__setitem__`, `__len__` for list and dict [done].
 - [ ] **Phase 3: Execution Engine**: Finalize `ProtoContext` integration for Python bytecode execution (via `protopy`).
 - [ ] **Phase 4: GIL-less Concurrency**: Audit all mutable operations to ensure thread-safety using `protoCore` primitives.
 
