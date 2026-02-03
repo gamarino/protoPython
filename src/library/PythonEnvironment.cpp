@@ -220,6 +220,108 @@ static const proto::ProtoObject* py_list_eq(
     return PROTO_TRUE;
 }
 
+static int compare_values(proto::ProtoContext* context, const proto::ProtoObject* a, const proto::ProtoObject* b) {
+    if (a == b) return 0;
+    if (a->isInteger(context) && b->isInteger(context)) {
+        long long av = a->asLong(context);
+        long long bv = b->asLong(context);
+        if (av == bv) return 0;
+        return av < bv ? -1 : 1;
+    }
+    if (a->isString(context) && b->isString(context)) {
+        std::string sa;
+        std::string sb;
+        a->asString(context)->toUTF8String(context, sa);
+        b->asString(context)->toUTF8String(context, sb);
+        if (sa == sb) return 0;
+        return sa < sb ? -1 : 1;
+    }
+    int cmp = a->compare(context, b);
+    if (cmp != 0) return cmp;
+    unsigned long ha = a->getHash(context);
+    unsigned long hb = b->getHash(context);
+    if (ha == hb) return 0;
+    return ha < hb ? -1 : 1;
+}
+
+static int compare_lists(proto::ProtoContext* context, const proto::ProtoObject* self, const proto::ProtoObject* other, bool* ok) {
+    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "__data__");
+    const proto::ProtoObject* data = self->getAttribute(context, dataName);
+    const proto::ProtoObject* otherData = other->getAttribute(context, dataName);
+    const proto::ProtoList* list = data && data->asList(context) ? data->asList(context) : self->asList(context);
+    const proto::ProtoList* otherList = otherData && otherData->asList(context) ? otherData->asList(context) : other->asList(context);
+    if (!list || !otherList) {
+        if (ok) *ok = false;
+        return 0;
+    }
+    unsigned long size = list->getSize(context);
+    unsigned long otherSize = otherList->getSize(context);
+    unsigned long minSize = size < otherSize ? size : otherSize;
+    for (unsigned long i = 0; i < minSize; ++i) {
+        const proto::ProtoObject* a = list->getAt(context, static_cast<int>(i));
+        const proto::ProtoObject* b = otherList->getAt(context, static_cast<int>(i));
+        int cmp = compare_values(context, a, b);
+        if (cmp != 0) {
+            if (ok) *ok = true;
+            return cmp;
+        }
+    }
+    if (size == otherSize) {
+        if (ok) *ok = true;
+        return 0;
+    }
+    if (ok) *ok = true;
+    return size < otherSize ? -1 : 1;
+}
+
+static const proto::ProtoObject* py_list_lt(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    if (positionalParameters->getSize(context) < 1) return PROTO_FALSE;
+    bool ok = false;
+    int cmp = compare_lists(context, self, positionalParameters->getAt(context, 0), &ok);
+    return ok && cmp < 0 ? PROTO_TRUE : PROTO_FALSE;
+}
+
+static const proto::ProtoObject* py_list_le(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    if (positionalParameters->getSize(context) < 1) return PROTO_FALSE;
+    bool ok = false;
+    int cmp = compare_lists(context, self, positionalParameters->getAt(context, 0), &ok);
+    return ok && cmp <= 0 ? PROTO_TRUE : PROTO_FALSE;
+}
+
+static const proto::ProtoObject* py_list_gt(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    if (positionalParameters->getSize(context) < 1) return PROTO_FALSE;
+    bool ok = false;
+    int cmp = compare_lists(context, self, positionalParameters->getAt(context, 0), &ok);
+    return ok && cmp > 0 ? PROTO_TRUE : PROTO_FALSE;
+}
+
+static const proto::ProtoObject* py_list_ge(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    if (positionalParameters->getSize(context) < 1) return PROTO_FALSE;
+    bool ok = false;
+    int cmp = compare_lists(context, self, positionalParameters->getAt(context, 0), &ok);
+    return ok && cmp >= 0 ? PROTO_TRUE : PROTO_FALSE;
+}
+
 // --- Dict Methods ---
 
 static const proto::ProtoObject* py_dict_getitem(
@@ -348,6 +450,42 @@ static const proto::ProtoObject* py_dict_eq(
     return PROTO_TRUE;
 }
 
+static const proto::ProtoObject* py_dict_lt(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    return PROTO_NONE;
+}
+
+static const proto::ProtoObject* py_dict_le(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    return PROTO_NONE;
+}
+
+static const proto::ProtoObject* py_dict_gt(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    return PROTO_NONE;
+}
+
+static const proto::ProtoObject* py_dict_ge(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    return PROTO_NONE;
+}
+
 // --- PythonEnvironment Implementation ---
 
 PythonEnvironment::PythonEnvironment(const std::string& stdLibPath, const std::vector<std::string>& searchPaths) : space() {
@@ -374,6 +512,10 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     const proto::ProtoString* py_iter_proto = proto::ProtoString::fromUTF8String(context, "__iter_prototype__");
     const proto::ProtoString* py_contains = proto::ProtoString::fromUTF8String(context, "__contains__");
     const proto::ProtoString* py_eq = proto::ProtoString::fromUTF8String(context, "__eq__");
+    const proto::ProtoString* py_lt = proto::ProtoString::fromUTF8String(context, "__lt__");
+    const proto::ProtoString* py_le = proto::ProtoString::fromUTF8String(context, "__le__");
+    const proto::ProtoString* py_gt = proto::ProtoString::fromUTF8String(context, "__gt__");
+    const proto::ProtoString* py_ge = proto::ProtoString::fromUTF8String(context, "__ge__");
 
     // 1. Create 'object' base
     objectPrototype = context->newObject(true);
@@ -411,6 +553,10 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     listPrototype = listPrototype->setAttribute(context, py_iter, context->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_iter));
     listPrototype = listPrototype->setAttribute(context, py_contains, context->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_contains));
     listPrototype = listPrototype->setAttribute(context, py_eq, context->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_eq));
+    listPrototype = listPrototype->setAttribute(context, py_lt, context->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_lt));
+    listPrototype = listPrototype->setAttribute(context, py_le, context->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_le));
+    listPrototype = listPrototype->setAttribute(context, py_gt, context->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_gt));
+    listPrototype = listPrototype->setAttribute(context, py_ge, context->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_ge));
 
     const proto::ProtoObject* listIterProto = context->newObject(true);
     listIterProto = listIterProto->addParent(context, objectPrototype);
@@ -428,6 +574,10 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     dictPrototype = dictPrototype->setAttribute(context, py_iter_proto, listIterProto);
     dictPrototype = dictPrototype->setAttribute(context, py_contains, context->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_contains));
     dictPrototype = dictPrototype->setAttribute(context, py_eq, context->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_eq));
+    dictPrototype = dictPrototype->setAttribute(context, py_lt, context->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_lt));
+    dictPrototype = dictPrototype->setAttribute(context, py_le, context->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_le));
+    dictPrototype = dictPrototype->setAttribute(context, py_gt, context->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_gt));
+    dictPrototype = dictPrototype->setAttribute(context, py_ge, context->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_ge));
 
     // 5. Initialize Native Module Provider
     auto& registry = proto::ProviderRegistry::instance();
