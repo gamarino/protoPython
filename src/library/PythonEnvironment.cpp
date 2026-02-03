@@ -650,6 +650,70 @@ static const proto::ProtoObject* py_dict_bool(
     return dict->getSize(context) > 0 ? PROTO_TRUE : PROTO_FALSE;
 }
 
+static const proto::ProtoObject* py_dict_keys(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoString* keysName = proto::ProtoString::fromUTF8String(context, "__keys__");
+    const proto::ProtoObject* keysObj = self->getAttribute(context, keysName);
+    const proto::ProtoList* keys = keysObj && keysObj->asList(context) ? keysObj->asList(context) : context->newList();
+    return keys->asObject(context);
+}
+
+static const proto::ProtoObject* py_dict_values(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoString* keysName = proto::ProtoString::fromUTF8String(context, "__keys__");
+    const proto::ProtoObject* keysObj = self->getAttribute(context, keysName);
+    const proto::ProtoList* keys = keysObj && keysObj->asList(context) ? keysObj->asList(context) : context->newList();
+
+    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "__data__");
+    const proto::ProtoObject* data = self->getAttribute(context, dataName);
+    const proto::ProtoSparseList* dict = data && data->asSparseList(context) ? data->asSparseList(context) : nullptr;
+    if (!dict) return context->newList()->asObject(context);
+
+    const proto::ProtoList* values = context->newList();
+    unsigned long size = keys->getSize(context);
+    for (unsigned long i = 0; i < size; ++i) {
+        const proto::ProtoObject* key = keys->getAt(context, static_cast<int>(i));
+        const proto::ProtoObject* val = dict->getAt(context, key->getHash(context));
+        values = values->appendLast(context, val ? val : PROTO_NONE);
+    }
+    return values->asObject(context);
+}
+
+static const proto::ProtoObject* py_dict_items(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoString* keysName = proto::ProtoString::fromUTF8String(context, "__keys__");
+    const proto::ProtoObject* keysObj = self->getAttribute(context, keysName);
+    const proto::ProtoList* keys = keysObj && keysObj->asList(context) ? keysObj->asList(context) : context->newList();
+
+    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "__data__");
+    const proto::ProtoObject* data = self->getAttribute(context, dataName);
+    const proto::ProtoSparseList* dict = data && data->asSparseList(context) ? data->asSparseList(context) : nullptr;
+    if (!dict) return context->newList()->asObject(context);
+
+    const proto::ProtoList* items = context->newList();
+    unsigned long size = keys->getSize(context);
+    for (unsigned long i = 0; i < size; ++i) {
+        const proto::ProtoObject* key = keys->getAt(context, static_cast<int>(i));
+        const proto::ProtoObject* val = dict->getAt(context, key->getHash(context));
+        const proto::ProtoList* pairList = context->newList()->appendLast(context, key)->appendLast(context, val ? val : PROTO_NONE);
+        const proto::ProtoTuple* pairTuple = context->newTupleFromList(pairList);
+        items = items->appendLast(context, pairTuple->asObject(context));
+    }
+    return items->asObject(context);
+}
+
 // --- PythonEnvironment Implementation ---
 
 PythonEnvironment::PythonEnvironment(const std::string& stdLibPath, const std::vector<std::string>& searchPaths) : space() {
@@ -681,6 +745,9 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     const proto::ProtoString* py_gt = proto::ProtoString::fromUTF8String(context, "__gt__");
     const proto::ProtoString* py_ge = proto::ProtoString::fromUTF8String(context, "__ge__");
     const proto::ProtoString* py_bool = proto::ProtoString::fromUTF8String(context, "__bool__");
+    const proto::ProtoString* py_keys = proto::ProtoString::fromUTF8String(context, "keys");
+    const proto::ProtoString* py_values = proto::ProtoString::fromUTF8String(context, "values");
+    const proto::ProtoString* py_items = proto::ProtoString::fromUTF8String(context, "items");
 
     // 1. Create 'object' base
     objectPrototype = context->newObject(true);
@@ -749,6 +816,9 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     dictPrototype = dictPrototype->setAttribute(context, py_repr, context->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_repr));
     dictPrototype = dictPrototype->setAttribute(context, py_str, context->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_str));
     dictPrototype = dictPrototype->setAttribute(context, py_bool, context->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_bool));
+    dictPrototype = dictPrototype->setAttribute(context, py_keys, context->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_keys));
+    dictPrototype = dictPrototype->setAttribute(context, py_values, context->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_values));
+    dictPrototype = dictPrototype->setAttribute(context, py_items, context->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_items));
 
     tuplePrototype = context->newObject(true);
     tuplePrototype = tuplePrototype->addParent(context, objectPrototype);

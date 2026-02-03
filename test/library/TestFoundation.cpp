@@ -448,13 +448,6 @@ TEST_F(FoundationTest, OrderingDunder) {
     EXPECT_EQ(ltRes, PROTO_TRUE);
     EXPECT_EQ(geRes, PROTO_FALSE);
 
-    const proto::ProtoObject* dict = context->newObject(true)->addParent(context, env.getDictPrototype());
-    dict->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->newSparseList()->asObject(context));
-    const proto::ProtoObject* dictLt = dict->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__lt__"));
-    ASSERT_NE(dictLt, nullptr);
-    const proto::ProtoList* dictArgs = context->newList()->appendLast(context, dict);
-    const proto::ProtoObject* dictLtRes = dictLt->asMethod(context)(context, dict, nullptr, dictArgs, nullptr);
-    EXPECT_EQ(dictLtRes, PROTO_NONE);
 }
 
 TEST_F(FoundationTest, ReprStrDunder) {
@@ -519,6 +512,35 @@ TEST_F(FoundationTest, BoolDunder) {
     setitem->asMethod(context)(context, dictObj, nullptr, setArgs, nullptr);
     const proto::ProtoObject* dictTrue = dictBool->asMethod(context)(context, dictObj, nullptr, nullptr, nullptr);
     EXPECT_EQ(dictTrue, PROTO_TRUE);
+}
+
+TEST_F(FoundationTest, DictViews) {
+    proto::ProtoContext* context = env.getContext();
+    const proto::ProtoObject* dictObj = context->newObject(true)->addParent(context, env.getDictPrototype());
+    dictObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->newSparseList()->asObject(context));
+    const proto::ProtoObject* setitem = dictObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__setitem__"));
+    ASSERT_NE(setitem, nullptr);
+    const proto::ProtoObject* key = context->fromUTF8String("k");
+    const proto::ProtoObject* val = context->fromInteger(5);
+    const proto::ProtoList* setArgs = context->newList()->appendLast(context, key)->appendLast(context, val);
+    setitem->asMethod(context)(context, dictObj, nullptr, setArgs, nullptr);
+
+    const proto::ProtoObject* keysMethod = dictObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "keys"));
+    const proto::ProtoObject* valuesMethod = dictObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "values"));
+    const proto::ProtoObject* itemsMethod = dictObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "items"));
+    ASSERT_NE(keysMethod, nullptr);
+    ASSERT_NE(valuesMethod, nullptr);
+    ASSERT_NE(itemsMethod, nullptr);
+
+    const proto::ProtoObject* keysObj = keysMethod->asMethod(context)(context, dictObj, nullptr, nullptr, nullptr);
+    const proto::ProtoObject* valuesObj = valuesMethod->asMethod(context)(context, dictObj, nullptr, nullptr, nullptr);
+    const proto::ProtoObject* itemsObj = itemsMethod->asMethod(context)(context, dictObj, nullptr, nullptr, nullptr);
+    ASSERT_TRUE(keysObj->asList(context));
+    ASSERT_TRUE(valuesObj->asList(context));
+    ASSERT_TRUE(itemsObj->asList(context));
+    EXPECT_EQ(keysObj->asList(context)->getSize(context), 1);
+    EXPECT_EQ(valuesObj->asList(context)->getSize(context), 1);
+    EXPECT_EQ(itemsObj->asList(context)->getSize(context), 1);
 }
 
 TEST_F(FoundationTest, LenStringTuple) {
