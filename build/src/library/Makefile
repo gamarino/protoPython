@@ -229,6 +229,30 @@ BuiltinsModule.cpp.s:
 	cd /home/gamarino/Documentos/proyectos/protoPython/build && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/BuiltinsModule.cpp.s
 .PHONY : BuiltinsModule.cpp.s
 
+CollectionsModule.o: CollectionsModule.cpp.o
+.PHONY : CollectionsModule.o
+
+# target to build an object file
+CollectionsModule.cpp.o:
+	cd /home/gamarino/Documentos/proyectos/protoPython/build && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/CollectionsModule.cpp.o
+.PHONY : CollectionsModule.cpp.o
+
+CollectionsModule.i: CollectionsModule.cpp.i
+.PHONY : CollectionsModule.i
+
+# target to preprocess a source file
+CollectionsModule.cpp.i:
+	cd /home/gamarino/Documentos/proyectos/protoPython/build && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/CollectionsModule.cpp.i
+.PHONY : CollectionsModule.cpp.i
+
+CollectionsModule.s: CollectionsModule.cpp.s
+.PHONY : CollectionsModule.s
+
+# target to generate assembly for a file
+CollectionsModule.cpp.s:
+	cd /home/gamarino/Documentos/proyectos/protoPython/build && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/CollectionsModule.cpp.s
+.PHONY : CollectionsModule.cpp.s
+
 IOModule.o: IOModule.cpp.o
 .PHONY : IOModule.o
 
@@ -368,6 +392,9 @@ help:
 	@echo "... BuiltinsModule.o"
 	@echo "... BuiltinsModule.i"
 	@echo "... BuiltinsModule.s"
+	@echo "... CollectionsModule.o"
+	@echo "... CollectionsModule.i"
+	@echo "... CollectionsModule.s"
 	@echo "... IOModule.o"
 	@echo "... IOModule.i"
 	@echo "... IOModule.s"

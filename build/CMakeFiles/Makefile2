@@ -66,6 +66,7 @@ CMAKE_BINARY_DIR = /home/gamarino/Documentos/proyectos/protoPython/build
 all: protoCore/all
 all: src/library/all
 all: test/library/all
+all: src/runtime/all
 all: test/regression/all
 .PHONY : all
 
@@ -73,6 +74,7 @@ all: test/regression/all
 preinstall: protoCore/preinstall
 preinstall: src/library/preinstall
 preinstall: test/library/preinstall
+preinstall: src/runtime/preinstall
 preinstall: test/regression/preinstall
 .PHONY : preinstall
 
@@ -80,6 +82,7 @@ preinstall: test/regression/preinstall
 clean: protoCore/clean
 clean: src/library/clean
 clean: test/library/clean
+clean: src/runtime/clean
 clean: test/regression/clean
 .PHONY : clean
 
@@ -186,6 +189,21 @@ src/library/preinstall:
 # Recursive "clean" directory target.
 src/library/clean: src/library/CMakeFiles/protoPython.dir/clean
 .PHONY : src/library/clean
+
+#=============================================================================
+# Directory level rules for directory src/runtime
+
+# Recursive "all" directory target.
+src/runtime/all: src/runtime/CMakeFiles/protopy.dir/all
+.PHONY : src/runtime/all
+
+# Recursive "preinstall" directory target.
+src/runtime/preinstall:
+.PHONY : src/runtime/preinstall
+
+# Recursive "clean" directory target.
+src/runtime/clean: src/runtime/CMakeFiles/protopy.dir/clean
+.PHONY : src/runtime/clean
 
 #=============================================================================
 # Directory level rules for directory test/library
@@ -304,7 +322,7 @@ protoCore/test/CMakeFiles/proto_tests.dir/all: _deps/googletest-build/googletest
 protoCore/test/CMakeFiles/proto_tests.dir/all: _deps/googletest-build/googletest/CMakeFiles/gtest_main.dir/all
 	$(MAKE) $(MAKESILENT) -f protoCore/test/CMakeFiles/proto_tests.dir/build.make protoCore/test/CMakeFiles/proto_tests.dir/depend
 	$(MAKE) $(MAKESILENT) -f protoCore/test/CMakeFiles/proto_tests.dir/build.make protoCore/test/CMakeFiles/proto_tests.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/build/CMakeFiles --progress-num=44,45,46,47,48,49,50,51,52,53,54,55 "Built target proto_tests"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/build/CMakeFiles --progress-num=45,46,47,48,49,50,51,52,53,54,55,56 "Built target proto_tests"
 .PHONY : protoCore/test/CMakeFiles/proto_tests.dir/all
 
 # Build rule for subdir invocation for target.
@@ -435,12 +453,12 @@ _deps/googletest-build/googletest/CMakeFiles/gtest_main.dir/clean:
 src/library/CMakeFiles/protoPython.dir/all: protoCore/CMakeFiles/protoCore.dir/all
 	$(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/depend
 	$(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/build/CMakeFiles --progress-num=37,38,39,40,41,42,43 "Built target protoPython"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/build/CMakeFiles --progress-num=37,38,39,40,41,42,43,44 "Built target protoPython"
 .PHONY : src/library/CMakeFiles/protoPython.dir/all
 
 # Build rule for subdir invocation for target.
 src/library/CMakeFiles/protoPython.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/gamarino/Documentos/proyectos/protoPython/build/CMakeFiles 31
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/gamarino/Documentos/proyectos/protoPython/build/CMakeFiles 32
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 src/library/CMakeFiles/protoPython.dir/all
 	$(CMAKE_COMMAND) -E cmake_progress_start /home/gamarino/Documentos/proyectos/protoPython/build/CMakeFiles 0
 .PHONY : src/library/CMakeFiles/protoPython.dir/rule
@@ -464,12 +482,12 @@ test/library/CMakeFiles/test_foundation.dir/all: _deps/googletest-build/googlete
 test/library/CMakeFiles/test_foundation.dir/all: src/library/CMakeFiles/protoPython.dir/all
 	$(MAKE) $(MAKESILENT) -f test/library/CMakeFiles/test_foundation.dir/build.make test/library/CMakeFiles/test_foundation.dir/depend
 	$(MAKE) $(MAKESILENT) -f test/library/CMakeFiles/test_foundation.dir/build.make test/library/CMakeFiles/test_foundation.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/build/CMakeFiles --progress-num=56,57 "Built target test_foundation"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/build/CMakeFiles --progress-num=59,60 "Built target test_foundation"
 .PHONY : test/library/CMakeFiles/test_foundation.dir/all
 
 # Build rule for subdir invocation for target.
 test/library/CMakeFiles/test_foundation.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/gamarino/Documentos/proyectos/protoPython/build/CMakeFiles 37
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/gamarino/Documentos/proyectos/protoPython/build/CMakeFiles 38
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test/library/CMakeFiles/test_foundation.dir/all
 	$(CMAKE_COMMAND) -E cmake_progress_start /home/gamarino/Documentos/proyectos/protoPython/build/CMakeFiles 0
 .PHONY : test/library/CMakeFiles/test_foundation.dir/rule
@@ -484,6 +502,33 @@ test/library/CMakeFiles/test_foundation.dir/clean:
 .PHONY : test/library/CMakeFiles/test_foundation.dir/clean
 
 #=============================================================================
+# Target rules for target src/runtime/CMakeFiles/protopy.dir
+
+# All Build rule for target.
+src/runtime/CMakeFiles/protopy.dir/all: protoCore/CMakeFiles/protoCore.dir/all
+src/runtime/CMakeFiles/protopy.dir/all: src/library/CMakeFiles/protoPython.dir/all
+	$(MAKE) $(MAKESILENT) -f src/runtime/CMakeFiles/protopy.dir/build.make src/runtime/CMakeFiles/protopy.dir/depend
+	$(MAKE) $(MAKESILENT) -f src/runtime/CMakeFiles/protopy.dir/build.make src/runtime/CMakeFiles/protopy.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/build/CMakeFiles --progress-num=57,58 "Built target protopy"
+.PHONY : src/runtime/CMakeFiles/protopy.dir/all
+
+# Build rule for subdir invocation for target.
+src/runtime/CMakeFiles/protopy.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/gamarino/Documentos/proyectos/protoPython/build/CMakeFiles 34
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 src/runtime/CMakeFiles/protopy.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/gamarino/Documentos/proyectos/protoPython/build/CMakeFiles 0
+.PHONY : src/runtime/CMakeFiles/protopy.dir/rule
+
+# Convenience name for target.
+protopy: src/runtime/CMakeFiles/protopy.dir/rule
+.PHONY : protopy
+
+# clean rule for target.
+src/runtime/CMakeFiles/protopy.dir/clean:
+	$(MAKE) $(MAKESILENT) -f src/runtime/CMakeFiles/protopy.dir/build.make src/runtime/CMakeFiles/protopy.dir/clean
+.PHONY : src/runtime/CMakeFiles/protopy.dir/clean
+
+#=============================================================================
 # Target rules for target test/regression/CMakeFiles/test_regr.dir
 
 # All Build rule for target.
@@ -493,12 +538,12 @@ test/regression/CMakeFiles/test_regr.dir/all: _deps/googletest-build/googletest/
 test/regression/CMakeFiles/test_regr.dir/all: src/library/CMakeFiles/protoPython.dir/all
 	$(MAKE) $(MAKESILENT) -f test/regression/CMakeFiles/test_regr.dir/build.make test/regression/CMakeFiles/test_regr.dir/depend
 	$(MAKE) $(MAKESILENT) -f test/regression/CMakeFiles/test_regr.dir/build.make test/regression/CMakeFiles/test_regr.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/build/CMakeFiles --progress-num=58,59 "Built target test_regr"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/build/CMakeFiles --progress-num=61,62 "Built target test_regr"
 .PHONY : test/regression/CMakeFiles/test_regr.dir/all
 
 # Build rule for subdir invocation for target.
 test/regression/CMakeFiles/test_regr.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/gamarino/Documentos/proyectos/protoPython/build/CMakeFiles 37
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/gamarino/Documentos/proyectos/protoPython/build/CMakeFiles 38
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test/regression/CMakeFiles/test_regr.dir/all
 	$(CMAKE_COMMAND) -E cmake_progress_start /home/gamarino/Documentos/proyectos/protoPython/build/CMakeFiles 0
 .PHONY : test/regression/CMakeFiles/test_regr.dir/rule

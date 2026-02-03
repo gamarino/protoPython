@@ -59,6 +59,11 @@ endif()
 
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   # Include the install script for the subdirectory.
+  include("/home/gamarino/Documentos/proyectos/protoPython/build/src/runtime/cmake_install.cmake")
+endif()
+
+if(NOT CMAKE_INSTALL_LOCAL_ONLY)
+  # Include the install script for the subdirectory.
   include("/home/gamarino/Documentos/proyectos/protoPython/build/test/regression/cmake_install.cmake")
 endif()
 

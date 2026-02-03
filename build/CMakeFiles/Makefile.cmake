@@ -23,6 +23,7 @@ set(CMAKE_MAKEFILE_DEPENDS
   "_deps/googletest-src/googletest/cmake/gtest_main.pc.in"
   "_deps/googletest-src/googletest/cmake/internal_utils.cmake"
   "/home/gamarino/Documentos/proyectos/protoPython/src/library/CMakeLists.txt"
+  "/home/gamarino/Documentos/proyectos/protoPython/src/runtime/CMakeLists.txt"
   "/home/gamarino/Documentos/proyectos/protoPython/test/library/CMakeLists.txt"
   "/home/gamarino/Documentos/proyectos/protoPython/test/regression/CMakeLists.txt"
   "/usr/share/cmake-3.28/Modules/BasicConfigVersion-AnyNewerVersion.cmake.in"
@@ -93,6 +94,7 @@ set(CMAKE_MAKEFILE_PRODUCTS
   "_deps/googletest-build/googletest/CMakeFiles/CMakeDirectoryInformation.cmake"
   "src/library/CMakeFiles/CMakeDirectoryInformation.cmake"
   "test/library/CMakeFiles/CMakeDirectoryInformation.cmake"
+  "src/runtime/CMakeFiles/CMakeDirectoryInformation.cmake"
   "test/regression/CMakeFiles/CMakeDirectoryInformation.cmake"
   )
 
@@ -108,5 +110,6 @@ set(CMAKE_DEPEND_INFO_FILES
   "_deps/googletest-build/googletest/CMakeFiles/gtest_main.dir/DependInfo.cmake"
   "src/library/CMakeFiles/protoPython.dir/DependInfo.cmake"
   "test/library/CMakeFiles/test_foundation.dir/DependInfo.cmake"
+  "src/runtime/CMakeFiles/protopy.dir/DependInfo.cmake"
   "test/regression/CMakeFiles/test_regr.dir/DependInfo.cmake"
   )

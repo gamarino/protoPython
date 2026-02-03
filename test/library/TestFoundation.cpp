@@ -245,6 +245,18 @@ TEST_F(FoundationTest, ListGetItemSetItem) {
     my_list->call(context, nullptr, setitemName, my_list, setArgs);
     const proto::ProtoObject* updated = my_list->getAttribute(context, dataName);
     EXPECT_EQ(updated->asList(context)->getAt(context, 1)->asLong(context), 99);
+
+    const proto::ProtoList* sliceSpec = context->newList()
+        ->appendLast(context, context->fromInteger(1))
+        ->appendLast(context, context->fromInteger(3));
+    const proto::ProtoList* sliceArgs = context->newList()->appendLast(context, sliceSpec->asObject(context));
+    const proto::ProtoObject* sliceObj = my_list->call(context, nullptr, getitemName, my_list, sliceArgs);
+    ASSERT_NE(sliceObj, nullptr);
+    const proto::ProtoList* sliceList = sliceObj->asList(context);
+    ASSERT_NE(sliceList, nullptr);
+    EXPECT_EQ(sliceList->getSize(context), 2);
+    EXPECT_EQ(sliceList->getAt(context, 0)->asLong(context), 99);
+    EXPECT_EQ(sliceList->getAt(context, 1)->asLong(context), 30);
 }
 
 TEST_F(FoundationTest, DictSetItemLen) {

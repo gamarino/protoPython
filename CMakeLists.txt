@@ -16,6 +16,8 @@ add_subdirectory(src/library)
 
 enable_testing()
 add_subdirectory(test/library)
+add_subdirectory(src/runtime)
 add_subdirectory(test/regression)
-# add_subdirectory(src/runtime) # Not yet ready
+# Test: protopy can resolve and "run" (stubbed) the regression runner script
+add_test(NAME regrtest_protopy_script COMMAND $<TARGET_FILE:protopy> ${CMAKE_SOURCE_DIR}/test/regression/regrtest_runner.py)
 # add_subdirectory(src/compiler) # Not yet ready

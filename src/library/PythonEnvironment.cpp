@@ -86,7 +86,29 @@ static const proto::ProtoObject* py_list_getitem(
     if (!data || !data->asList(context)) return PROTO_NONE;
     const proto::ProtoList* list = data->asList(context);
     if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
-    int index = static_cast<int>(positionalParameters->getAt(context, 0)->asLong(context));
+    const proto::ProtoObject* indexObj = positionalParameters->getAt(context, 0);
+    const proto::ProtoList* slice = indexObj->asList(context);
+    if (slice) {
+        unsigned long sliceSize = slice->getSize(context);
+        if (sliceSize < 2) return PROTO_NONE;
+        long long start = slice->getAt(context, 0)->asLong(context);
+        long long stop = slice->getAt(context, 1)->asLong(context);
+        long long step = 1;
+        if (sliceSize >= 3) step = slice->getAt(context, 2)->asLong(context);
+        if (step != 1) return PROTO_NONE;
+        long long size = static_cast<long long>(list->getSize(context));
+        if (start < 0) start += size;
+        if (stop < 0) stop += size;
+        if (start < 0) start = 0;
+        if (stop > size) stop = size;
+        if (start > stop) start = stop;
+        const proto::ProtoList* result = context->newList();
+        for (long long i = start; i < stop; i += step) {
+            result = result->appendLast(context, list->getAt(context, static_cast<int>(i)));
+        }
+        return result->asObject(context);
+    }
+    int index = static_cast<int>(indexObj->asLong(context));
     unsigned long size = list->getSize(context);
     if (index < 0) index += static_cast<int>(size);
     if (index < 0 || static_cast<unsigned long>(index) >= size) return PROTO_NONE;

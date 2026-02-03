@@ -322,6 +322,19 @@ test_foundation/fast:
 .PHONY : test_foundation/fast
 
 #=============================================================================
+# Target rules for targets named protopy
+
+# Build rule for target.
+protopy: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 protopy
+.PHONY : protopy
+
+# fast build rule for target.
+protopy/fast:
+	$(MAKE) $(MAKESILENT) -f src/runtime/CMakeFiles/protopy.dir/build.make src/runtime/CMakeFiles/protopy.dir/build
+.PHONY : protopy/fast
+
+#=============================================================================
 # Target rules for targets named test_regr
 
 # Build rule for target.
@@ -358,6 +371,7 @@ help:
 	@echo "... protoCore"
 	@echo "... protoPython"
 	@echo "... proto_tests"
+	@echo "... protopy"
 	@echo "... test_foundation"
 	@echo "... test_regr"
 .PHONY : help

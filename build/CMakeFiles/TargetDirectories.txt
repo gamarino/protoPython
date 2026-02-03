@@ -80,6 +80,16 @@
 /home/gamarino/Documentos/proyectos/protoPython/build/test/library/CMakeFiles/install.dir
 /home/gamarino/Documentos/proyectos/protoPython/build/test/library/CMakeFiles/install/local.dir
 /home/gamarino/Documentos/proyectos/protoPython/build/test/library/CMakeFiles/install/strip.dir
+/home/gamarino/Documentos/proyectos/protoPython/build/src/runtime/CMakeFiles/protopy.dir
+/home/gamarino/Documentos/proyectos/protoPython/build/src/runtime/CMakeFiles/package.dir
+/home/gamarino/Documentos/proyectos/protoPython/build/src/runtime/CMakeFiles/package_source.dir
+/home/gamarino/Documentos/proyectos/protoPython/build/src/runtime/CMakeFiles/test.dir
+/home/gamarino/Documentos/proyectos/protoPython/build/src/runtime/CMakeFiles/edit_cache.dir
+/home/gamarino/Documentos/proyectos/protoPython/build/src/runtime/CMakeFiles/rebuild_cache.dir
+/home/gamarino/Documentos/proyectos/protoPython/build/src/runtime/CMakeFiles/list_install_components.dir
+/home/gamarino/Documentos/proyectos/protoPython/build/src/runtime/CMakeFiles/install.dir
+/home/gamarino/Documentos/proyectos/protoPython/build/src/runtime/CMakeFiles/install/local.dir
+/home/gamarino/Documentos/proyectos/protoPython/build/src/runtime/CMakeFiles/install/strip.dir
 /home/gamarino/Documentos/proyectos/protoPython/build/test/regression/CMakeFiles/test_regr.dir
 /home/gamarino/Documentos/proyectos/protoPython/build/test/regression/CMakeFiles/package.dir
 /home/gamarino/Documentos/proyectos/protoPython/build/test/regression/CMakeFiles/package_source.dir

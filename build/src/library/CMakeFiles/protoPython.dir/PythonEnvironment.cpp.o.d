@@ -230,4 +230,5 @@ src/library/CMakeFiles/protoPython.dir/PythonEnvironment.cpp.o: \
  /usr/include/c++/13/bits/uniform_int_dist.h \
  /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/SysModule.h \
  /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/BuiltinsModule.h \
- /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/IOModule.h
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/IOModule.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/CollectionsModule.h

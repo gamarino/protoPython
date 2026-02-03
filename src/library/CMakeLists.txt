@@ -5,6 +5,7 @@ add_library(protoPython SHARED
     SysModule.cpp
     BuiltinsModule.cpp
     IOModule.cpp
+    CollectionsModule.cpp
 )
 
 target_include_directories(protoPython PUBLIC
