@@ -96,16 +96,16 @@ static const proto::ProtoObject* py_dict_getitem(
 
 // --- PythonEnvironment Implementation ---
 
-PythonEnvironment::PythonEnvironment(const std::string& stdLibPath) : space() {
+PythonEnvironment::PythonEnvironment(const std::string& stdLibPath, const std::vector<std::string>& searchPaths) : space() {
     context = new proto::ProtoContext(&space);
-    initializeRootObjects(stdLibPath);
+    initializeRootObjects(stdLibPath, searchPaths);
 }
 
 PythonEnvironment::~PythonEnvironment() {
     delete context;
 }
 
-void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath) {
+void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, const std::vector<std::string>& searchPaths) {
     const proto::ProtoString* py_init = proto::ProtoString::fromUTF8String(context, "__init__");
     const proto::ProtoString* py_repr = proto::ProtoString::fromUTF8String(context, "__repr__");
     const proto::ProtoString* py_str = proto::ProtoString::fromUTF8String(context, "__str__");
@@ -171,9 +171,12 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath) {
     registry.registerProvider(std::move(nativeProvider));
 
     // 6. Initialize StdLib Module Provider
-    // Use provided path or default to ./lib/python3.14
-    std::string path = stdLibPath.empty() ? "./lib/python3.14" : stdLibPath;
-    registry.registerProvider(std::make_unique<PythonModuleProvider>(path));
+    std::vector<std::string> allPaths;
+    if (!stdLibPath.empty()) allPaths.push_back(stdLibPath);
+    else allPaths.push_back("./lib/python3.14");
+    for (const auto& p : searchPaths) allPaths.push_back(p);
+    
+    registry.registerProvider(std::make_unique<PythonModuleProvider>(allPaths));
     
     // 7. Populate sys.path and sys.modules
     const proto::ProtoString* py_path = proto::ProtoString::fromUTF8String(context, "path");
@@ -183,7 +186,9 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath) {
     const proto::ProtoObject* pathListObj = sysModule->getAttribute(context, py_path);
     if (pathListObj && pathListObj->asList(context)) {
         const proto::ProtoList* pList = pathListObj->asList(context);
-        pList = pList->appendLast(context, context->fromUTF8String(path.c_str()));
+        for (const auto& p : allPaths) {
+            pList = pList->appendLast(context, context->fromUTF8String(p.c_str()));
+        }
         sysModule = sysModule->setAttribute(context, py_path, pList->asObject(context));
     }
     

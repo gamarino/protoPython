@@ -16,5 +16,6 @@ add_subdirectory(src/library)
 
 enable_testing()
 add_subdirectory(test/library)
+add_subdirectory(test/regression)
 # add_subdirectory(src/runtime) # Not yet ready
 # add_subdirectory(src/compiler) # Not yet ready

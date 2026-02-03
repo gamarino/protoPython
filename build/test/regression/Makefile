@@ -68,7 +68,7 @@ CMAKE_BINARY_DIR = /home/gamarino/Documentos/proyectos/protoPython/build
 # Special rule for the target package
 package: preinstall
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --cyan "Run CPack packaging tool..."
-	/usr/bin/cpack --config ./CPackConfig.cmake
+	cd /home/gamarino/Documentos/proyectos/protoPython/build && /usr/bin/cpack --config ./CPackConfig.cmake
 .PHONY : package
 
 # Special rule for the target package
@@ -78,7 +78,7 @@ package/fast: package
 # Special rule for the target package_source
 package_source:
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --cyan "Run CPack packaging tool for source..."
-	/usr/bin/cpack --config ./CPackSourceConfig.cmake /home/gamarino/Documentos/proyectos/protoPython/build/CPackSourceConfig.cmake
+	cd /home/gamarino/Documentos/proyectos/protoPython/build && /usr/bin/cpack --config ./CPackSourceConfig.cmake /home/gamarino/Documentos/proyectos/protoPython/build/CPackSourceConfig.cmake
 .PHONY : package_source
 
 # Special rule for the target package_source
@@ -162,14 +162,14 @@ install/strip/fast: preinstall/fast
 
 # The main all target
 all: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/gamarino/Documentos/proyectos/protoPython/build/CMakeFiles /home/gamarino/Documentos/proyectos/protoPython/build//CMakeFiles/progress.marks
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 all
+	cd /home/gamarino/Documentos/proyectos/protoPython/build && $(CMAKE_COMMAND) -E cmake_progress_start /home/gamarino/Documentos/proyectos/protoPython/build/CMakeFiles /home/gamarino/Documentos/proyectos/protoPython/build/test/regression//CMakeFiles/progress.marks
+	cd /home/gamarino/Documentos/proyectos/protoPython/build && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test/regression/all
 	$(CMAKE_COMMAND) -E cmake_progress_start /home/gamarino/Documentos/proyectos/protoPython/build/CMakeFiles 0
 .PHONY : all
 
 # The main clean target
 clean:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 clean
+	cd /home/gamarino/Documentos/proyectos/protoPython/build && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test/regression/clean
 .PHONY : clean
 
 # The main clean target
@@ -178,161 +178,56 @@ clean/fast: clean
 
 # Prepare targets for installation.
 preinstall: all
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 preinstall
+	cd /home/gamarino/Documentos/proyectos/protoPython/build && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test/regression/preinstall
 .PHONY : preinstall
 
 # Prepare targets for installation.
 preinstall/fast:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 preinstall
+	cd /home/gamarino/Documentos/proyectos/protoPython/build && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test/regression/preinstall
 .PHONY : preinstall/fast
 
 # clear depends
 depend:
-	$(CMAKE_COMMAND) -S$(CMAKE_SOURCE_DIR) -B$(CMAKE_BINARY_DIR) --check-build-system CMakeFiles/Makefile.cmake 1
+	cd /home/gamarino/Documentos/proyectos/protoPython/build && $(CMAKE_COMMAND) -S$(CMAKE_SOURCE_DIR) -B$(CMAKE_BINARY_DIR) --check-build-system CMakeFiles/Makefile.cmake 1
 .PHONY : depend
 
-#=============================================================================
-# Target rules for targets named protoCore
+# Convenience name for target.
+test/regression/CMakeFiles/test_regr.dir/rule:
+	cd /home/gamarino/Documentos/proyectos/protoPython/build && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test/regression/CMakeFiles/test_regr.dir/rule
+.PHONY : test/regression/CMakeFiles/test_regr.dir/rule
 
-# Build rule for target.
-protoCore: cmake_check_build_system
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 protoCore
-.PHONY : protoCore
-
-# fast build rule for target.
-protoCore/fast:
-	$(MAKE) $(MAKESILENT) -f protoCore/CMakeFiles/protoCore.dir/build.make protoCore/CMakeFiles/protoCore.dir/build
-.PHONY : protoCore/fast
-
-#=============================================================================
-# Target rules for targets named immutable_sharing_benchmark
-
-# Build rule for target.
-immutable_sharing_benchmark: cmake_check_build_system
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 immutable_sharing_benchmark
-.PHONY : immutable_sharing_benchmark
-
-# fast build rule for target.
-immutable_sharing_benchmark/fast:
-	$(MAKE) $(MAKESILENT) -f protoCore/CMakeFiles/immutable_sharing_benchmark.dir/build.make protoCore/CMakeFiles/immutable_sharing_benchmark.dir/build
-.PHONY : immutable_sharing_benchmark/fast
-
-#=============================================================================
-# Target rules for targets named concurrent_append_benchmark
-
-# Build rule for target.
-concurrent_append_benchmark: cmake_check_build_system
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 concurrent_append_benchmark
-.PHONY : concurrent_append_benchmark
-
-# fast build rule for target.
-concurrent_append_benchmark/fast:
-	$(MAKE) $(MAKESILENT) -f protoCore/CMakeFiles/concurrent_append_benchmark.dir/build.make protoCore/CMakeFiles/concurrent_append_benchmark.dir/build
-.PHONY : concurrent_append_benchmark/fast
-
-#=============================================================================
-# Target rules for targets named proto_tests
-
-# Build rule for target.
-proto_tests: cmake_check_build_system
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 proto_tests
-.PHONY : proto_tests
-
-# fast build rule for target.
-proto_tests/fast:
-	$(MAKE) $(MAKESILENT) -f protoCore/test/CMakeFiles/proto_tests.dir/build.make protoCore/test/CMakeFiles/proto_tests.dir/build
-.PHONY : proto_tests/fast
-
-#=============================================================================
-# Target rules for targets named gmock
-
-# Build rule for target.
-gmock: cmake_check_build_system
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 gmock
-.PHONY : gmock
-
-# fast build rule for target.
-gmock/fast:
-	$(MAKE) $(MAKESILENT) -f _deps/googletest-build/googlemock/CMakeFiles/gmock.dir/build.make _deps/googletest-build/googlemock/CMakeFiles/gmock.dir/build
-.PHONY : gmock/fast
-
-#=============================================================================
-# Target rules for targets named gmock_main
-
-# Build rule for target.
-gmock_main: cmake_check_build_system
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 gmock_main
-.PHONY : gmock_main
-
-# fast build rule for target.
-gmock_main/fast:
-	$(MAKE) $(MAKESILENT) -f _deps/googletest-build/googlemock/CMakeFiles/gmock_main.dir/build.make _deps/googletest-build/googlemock/CMakeFiles/gmock_main.dir/build
-.PHONY : gmock_main/fast
-
-#=============================================================================
-# Target rules for targets named gtest
-
-# Build rule for target.
-gtest: cmake_check_build_system
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 gtest
-.PHONY : gtest
-
-# fast build rule for target.
-gtest/fast:
-	$(MAKE) $(MAKESILENT) -f _deps/googletest-build/googletest/CMakeFiles/gtest.dir/build.make _deps/googletest-build/googletest/CMakeFiles/gtest.dir/build
-.PHONY : gtest/fast
-
-#=============================================================================
-# Target rules for targets named gtest_main
-
-# Build rule for target.
-gtest_main: cmake_check_build_system
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 gtest_main
-.PHONY : gtest_main
-
-# fast build rule for target.
-gtest_main/fast:
-	$(MAKE) $(MAKESILENT) -f _deps/googletest-build/googletest/CMakeFiles/gtest_main.dir/build.make _deps/googletest-build/googletest/CMakeFiles/gtest_main.dir/build
-.PHONY : gtest_main/fast
-
-#=============================================================================
-# Target rules for targets named protoPython
-
-# Build rule for target.
-protoPython: cmake_check_build_system
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 protoPython
-.PHONY : protoPython
-
-# fast build rule for target.
-protoPython/fast:
-	$(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/build
-.PHONY : protoPython/fast
-
-#=============================================================================
-# Target rules for targets named test_foundation
-
-# Build rule for target.
-test_foundation: cmake_check_build_system
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_foundation
-.PHONY : test_foundation
-
-# fast build rule for target.
-test_foundation/fast:
-	$(MAKE) $(MAKESILENT) -f test/library/CMakeFiles/test_foundation.dir/build.make test/library/CMakeFiles/test_foundation.dir/build
-.PHONY : test_foundation/fast
-
-#=============================================================================
-# Target rules for targets named test_regr
-
-# Build rule for target.
-test_regr: cmake_check_build_system
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_regr
+# Convenience name for target.
+test_regr: test/regression/CMakeFiles/test_regr.dir/rule
 .PHONY : test_regr
 
 # fast build rule for target.
 test_regr/fast:
-	$(MAKE) $(MAKESILENT) -f test/regression/CMakeFiles/test_regr.dir/build.make test/regression/CMakeFiles/test_regr.dir/build
+	cd /home/gamarino/Documentos/proyectos/protoPython/build && $(MAKE) $(MAKESILENT) -f test/regression/CMakeFiles/test_regr.dir/build.make test/regression/CMakeFiles/test_regr.dir/build
 .PHONY : test_regr/fast
+
+test_regr.o: test_regr.cpp.o
+.PHONY : test_regr.o
+
+# target to build an object file
+test_regr.cpp.o:
+	cd /home/gamarino/Documentos/proyectos/protoPython/build && $(MAKE) $(MAKESILENT) -f test/regression/CMakeFiles/test_regr.dir/build.make test/regression/CMakeFiles/test_regr.dir/test_regr.cpp.o
+.PHONY : test_regr.cpp.o
+
+test_regr.i: test_regr.cpp.i
+.PHONY : test_regr.i
+
+# target to preprocess a source file
+test_regr.cpp.i:
+	cd /home/gamarino/Documentos/proyectos/protoPython/build && $(MAKE) $(MAKESILENT) -f test/regression/CMakeFiles/test_regr.dir/build.make test/regression/CMakeFiles/test_regr.dir/test_regr.cpp.i
+.PHONY : test_regr.cpp.i
+
+test_regr.s: test_regr.cpp.s
+.PHONY : test_regr.s
+
+# target to generate assembly for a file
+test_regr.cpp.s:
+	cd /home/gamarino/Documentos/proyectos/protoPython/build && $(MAKE) $(MAKESILENT) -f test/regression/CMakeFiles/test_regr.dir/build.make test/regression/CMakeFiles/test_regr.dir/test_regr.cpp.s
+.PHONY : test_regr.cpp.s
 
 # Help Target
 help:
@@ -349,17 +244,10 @@ help:
 	@echo "... package_source"
 	@echo "... rebuild_cache"
 	@echo "... test"
-	@echo "... concurrent_append_benchmark"
-	@echo "... gmock"
-	@echo "... gmock_main"
-	@echo "... gtest"
-	@echo "... gtest_main"
-	@echo "... immutable_sharing_benchmark"
-	@echo "... protoCore"
-	@echo "... protoPython"
-	@echo "... proto_tests"
-	@echo "... test_foundation"
 	@echo "... test_regr"
+	@echo "... test_regr.o"
+	@echo "... test_regr.i"
+	@echo "... test_regr.s"
 .PHONY : help
 
 
@@ -371,6 +259,6 @@ help:
 # No rule that depends on this can have commands that come from listfiles
 # because they might be regenerated.
 cmake_check_build_system:
-	$(CMAKE_COMMAND) -S$(CMAKE_SOURCE_DIR) -B$(CMAKE_BINARY_DIR) --check-build-system CMakeFiles/Makefile.cmake 0
+	cd /home/gamarino/Documentos/proyectos/protoPython/build && $(CMAKE_COMMAND) -S$(CMAKE_SOURCE_DIR) -B$(CMAKE_BINARY_DIR) --check-build-system CMakeFiles/Makefile.cmake 0
 .PHONY : cmake_check_build_system
 

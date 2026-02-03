@@ -7,3 +7,4 @@
 subdirs("protoCore")
 subdirs("src/library")
 subdirs("test/library")
+subdirs("test/regression")

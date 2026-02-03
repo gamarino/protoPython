@@ -66,18 +66,21 @@ CMAKE_BINARY_DIR = /home/gamarino/Documentos/proyectos/protoPython/build
 all: protoCore/all
 all: src/library/all
 all: test/library/all
+all: test/regression/all
 .PHONY : all
 
 # The main recursive "preinstall" target.
 preinstall: protoCore/preinstall
 preinstall: src/library/preinstall
 preinstall: test/library/preinstall
+preinstall: test/regression/preinstall
 .PHONY : preinstall
 
 # The main recursive "clean" target.
 clean: protoCore/clean
 clean: src/library/clean
 clean: test/library/clean
+clean: test/regression/clean
 .PHONY : clean
 
 #=============================================================================
@@ -198,6 +201,21 @@ test/library/preinstall:
 # Recursive "clean" directory target.
 test/library/clean: test/library/CMakeFiles/test_foundation.dir/clean
 .PHONY : test/library/clean
+
+#=============================================================================
+# Directory level rules for directory test/regression
+
+# Recursive "all" directory target.
+test/regression/all: test/regression/CMakeFiles/test_regr.dir/all
+.PHONY : test/regression/all
+
+# Recursive "preinstall" directory target.
+test/regression/preinstall:
+.PHONY : test/regression/preinstall
+
+# Recursive "clean" directory target.
+test/regression/clean: test/regression/CMakeFiles/test_regr.dir/clean
+.PHONY : test/regression/clean
 
 #=============================================================================
 # Target rules for target protoCore/CMakeFiles/protoCore.dir
@@ -464,6 +482,35 @@ test_foundation: test/library/CMakeFiles/test_foundation.dir/rule
 test/library/CMakeFiles/test_foundation.dir/clean:
 	$(MAKE) $(MAKESILENT) -f test/library/CMakeFiles/test_foundation.dir/build.make test/library/CMakeFiles/test_foundation.dir/clean
 .PHONY : test/library/CMakeFiles/test_foundation.dir/clean
+
+#=============================================================================
+# Target rules for target test/regression/CMakeFiles/test_regr.dir
+
+# All Build rule for target.
+test/regression/CMakeFiles/test_regr.dir/all: protoCore/CMakeFiles/protoCore.dir/all
+test/regression/CMakeFiles/test_regr.dir/all: _deps/googletest-build/googletest/CMakeFiles/gtest.dir/all
+test/regression/CMakeFiles/test_regr.dir/all: _deps/googletest-build/googletest/CMakeFiles/gtest_main.dir/all
+test/regression/CMakeFiles/test_regr.dir/all: src/library/CMakeFiles/protoPython.dir/all
+	$(MAKE) $(MAKESILENT) -f test/regression/CMakeFiles/test_regr.dir/build.make test/regression/CMakeFiles/test_regr.dir/depend
+	$(MAKE) $(MAKESILENT) -f test/regression/CMakeFiles/test_regr.dir/build.make test/regression/CMakeFiles/test_regr.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/build/CMakeFiles --progress-num=58,59 "Built target test_regr"
+.PHONY : test/regression/CMakeFiles/test_regr.dir/all
+
+# Build rule for subdir invocation for target.
+test/regression/CMakeFiles/test_regr.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/gamarino/Documentos/proyectos/protoPython/build/CMakeFiles 37
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test/regression/CMakeFiles/test_regr.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/gamarino/Documentos/proyectos/protoPython/build/CMakeFiles 0
+.PHONY : test/regression/CMakeFiles/test_regr.dir/rule
+
+# Convenience name for target.
+test_regr: test/regression/CMakeFiles/test_regr.dir/rule
+.PHONY : test_regr
+
+# clean rule for target.
+test/regression/CMakeFiles/test_regr.dir/clean:
+	$(MAKE) $(MAKESILENT) -f test/regression/CMakeFiles/test_regr.dir/build.make test/regression/CMakeFiles/test_regr.dir/clean
+.PHONY : test/regression/CMakeFiles/test_regr.dir/clean
 
 #=============================================================================
 # Special targets to cleanup operation of make.

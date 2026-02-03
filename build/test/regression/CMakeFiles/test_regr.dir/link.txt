@@ -1,0 +1,1 @@
+/usr/bin/c++ CMakeFiles/test_regr.dir/test_regr.cpp.o -o test_regr  -Wl,-rpath,/home/gamarino/Documentos/proyectos/protoPython/build/src/library:/home/gamarino/Documentos/proyectos/protoPython/build/protoCore ../../src/library/libprotoPython.so ../../lib/libgtest_main.a ../../protoCore/libprotoCore.so.1.0.0 ../../lib/libgtest.a 

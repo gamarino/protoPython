@@ -8,7 +8,7 @@ namespace protoPython {
 
 class PythonModuleProvider : public proto::ModuleProvider {
 public:
-    PythonModuleProvider(std::string basePath);
+    PythonModuleProvider(std::vector<std::string> basePaths);
     virtual ~PythonModuleProvider() = default;
 
     virtual const proto::ProtoObject* tryLoad(const std::string& logicalPath, proto::ProtoContext* ctx) override;
@@ -16,7 +16,7 @@ public:
     virtual const std::string& getAlias() const override { return alias_; }
 
 private:
-    std::string basePath_;
+    std::vector<std::string> basePaths_;
     std::string guid_;
     std::string alias_;
 };

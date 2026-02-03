@@ -13,7 +13,7 @@ public:
      * @brief Initializes a new Python environment.
      * @param stdLibPath Path to the Python standard library. If empty, tries defaults.
      */
-    PythonEnvironment(const std::string& stdLibPath = "");
+    PythonEnvironment(const std::string& stdLibPath = "", const std::vector<std::string>& searchPaths = {});
     ~PythonEnvironment();
 
     /**
@@ -62,7 +62,7 @@ public:
     const proto::ProtoObject* resolve(const std::string& name);
 
 private:
-    void initializeRootObjects(const std::string& stdLibPath);
+    void initializeRootObjects(const std::string& stdLibPath, const std::vector<std::string>& searchPaths);
 
     proto::ProtoSpace space;
     proto::ProtoContext* context;
