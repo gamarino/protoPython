@@ -52,7 +52,7 @@ See [docs/NEXT_20_STEPS_V4.md](../docs/NEXT_20_STEPS_V4.md). Steps 01–04 done;
 - [x] Step 07: Exception scaffolding (Exception, KeyError, ValueError)
 - [x] Step 08: Raise container exceptions (dict/list operations)
 - [x] Step 09: Execution hook (`PythonEnvironment::executeModule`)
-- [ ] Step 10: Bytecode loader stub and CLI `--bytecode-only`
+- [x] Step 10: Bytecode loader stub and CLI `--bytecode-only`
 - [ ] Step 11: Compatibility dashboard (history + pass %)
 - [ ] Step 12: Regression gating CTest target
 - [ ] Step 13: sys module parity (argv, exit, version info)

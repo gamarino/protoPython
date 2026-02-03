@@ -1,4 +1,5 @@
 add_library(protoPython SHARED
+    BytecodeLoader.cpp
     PythonEnvironment.cpp
     PythonModuleProvider.cpp
     NativeModuleProvider.cpp

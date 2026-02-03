@@ -26,6 +26,7 @@ constexpr int EXIT_RUNTIME = 70;
 struct CliOptions {
     bool showHelp{false};
     bool dryRun{false};
+    bool bytecodeOnly{false};
     std::string moduleName;
     std::string scriptPath;
     std::string stdLibPath;
@@ -84,6 +85,7 @@ static void printUsage(const char* prog) {
                  "  --stdlib <path>   Override stdlib location (defaults to build-time path)\n"
                  "  --path <path>     Append additional module search path (repeatable)\n"
                  "  --dry-run         Validate inputs but skip environment initialization\n"
+                 "  --bytecode-only   Stub: validate bytecode loading path (no execution)\n"
                  "  --help            Show this help message\n";
 }
 
@@ -113,6 +115,8 @@ static bool parseArgs(int argc, char* argv[], CliOptions& opts, std::string& err
             opts.stdLibPath = argv[++i];
         } else if (arg == "--dry-run") {
             opts.dryRun = true;
+        } else if (arg == "--bytecode-only") {
+            opts.bytecodeOnly = true;
         } else if (arg == "--path") {
             if (i + 1 >= argc) {
                 error = "--path requires a value";
@@ -183,7 +187,7 @@ int main(int argc, char* argv[]) {
     if (!options.scriptPath.empty()) {
         std::vector<std::string> scriptPaths = searchPaths;
         scriptPaths.insert(scriptPaths.begin(), dirName(options.scriptPath));
-        if (options.dryRun) {
+        if (options.dryRun || options.bytecodeOnly) {
             return fileExists(options.scriptPath) ? EXIT_OK : EXIT_RESOLVE;
         }
         protoPython::PythonEnvironment envWithPath(stdLibPath, scriptPaths);
@@ -191,9 +195,8 @@ int main(int argc, char* argv[]) {
         return executeModule(envWithPath, moduleName);
     }
 
-    if (options.dryRun && !moduleExists(options.moduleName, stdLibPath, searchPaths)) {
-        std::cerr << "protopy: could not resolve module '" << options.moduleName << "'" << std::endl;
-        return EXIT_RESOLVE;
+    if (options.dryRun || options.bytecodeOnly) {
+        return moduleExists(options.moduleName, stdLibPath, searchPaths) ? EXIT_OK : EXIT_RESOLVE;
     }
 
     protoPython::PythonEnvironment env(stdLibPath, searchPaths);
