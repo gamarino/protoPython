@@ -474,6 +474,36 @@ TEST_F(FoundationTest, ReprStrDunder) {
     EXPECT_EQ(dictStr, "{k: 9}");
 }
 
+TEST_F(FoundationTest, BoolDunder) {
+    proto::ProtoContext* context = env.getContext();
+
+    const proto::ProtoObject* listObj = context->newObject(true)->addParent(context, env.getListPrototype());
+    listObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->newList()->asObject(context));
+    const proto::ProtoObject* listBool = listObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__bool__"));
+    ASSERT_NE(listBool, nullptr);
+    const proto::ProtoObject* listFalse = listBool->asMethod(context)(context, listObj, nullptr, nullptr, nullptr);
+    EXPECT_EQ(listFalse, PROTO_FALSE);
+
+    listObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"),
+                          context->newList()->appendLast(context, context->fromInteger(1))->asObject(context));
+    const proto::ProtoObject* listTrue = listBool->asMethod(context)(context, listObj, nullptr, nullptr, nullptr);
+    EXPECT_EQ(listTrue, PROTO_TRUE);
+
+    const proto::ProtoObject* dictObj = context->newObject(true)->addParent(context, env.getDictPrototype());
+    dictObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->newSparseList()->asObject(context));
+    const proto::ProtoObject* dictBool = dictObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__bool__"));
+    ASSERT_NE(dictBool, nullptr);
+    const proto::ProtoObject* dictFalse = dictBool->asMethod(context)(context, dictObj, nullptr, nullptr, nullptr);
+    EXPECT_EQ(dictFalse, PROTO_FALSE);
+
+    const proto::ProtoObject* setitem = dictObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__setitem__"));
+    const proto::ProtoObject* key = context->fromUTF8String("k");
+    const proto::ProtoList* setArgs = context->newList()->appendLast(context, key)->appendLast(context, context->fromInteger(1));
+    setitem->asMethod(context)(context, dictObj, nullptr, setArgs, nullptr);
+    const proto::ProtoObject* dictTrue = dictBool->asMethod(context)(context, dictObj, nullptr, nullptr, nullptr);
+    EXPECT_EQ(dictTrue, PROTO_TRUE);
+}
+
 TEST_F(FoundationTest, DequeBasic) {
     proto::ProtoContext* context = env.getContext();
     const proto::ProtoObject* collections = env.resolve("_collections");

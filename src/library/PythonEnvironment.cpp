@@ -548,6 +548,19 @@ static const proto::ProtoObject* py_list_str(
     return py_list_repr(context, self, parentLink, positionalParameters, keywordParameters);
 }
 
+static const proto::ProtoObject* py_list_bool(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "__data__");
+    const proto::ProtoObject* data = self->getAttribute(context, dataName);
+    const proto::ProtoList* list = data && data->asList(context) ? data->asList(context) : nullptr;
+    if (!list) return PROTO_FALSE;
+    return list->getSize(context) > 0 ? PROTO_TRUE : PROTO_FALSE;
+}
+
 static const proto::ProtoObject* py_dict_repr(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -588,6 +601,19 @@ static const proto::ProtoObject* py_dict_str(
     return py_dict_repr(context, self, parentLink, positionalParameters, keywordParameters);
 }
 
+static const proto::ProtoObject* py_dict_bool(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "__data__");
+    const proto::ProtoObject* data = self->getAttribute(context, dataName);
+    const proto::ProtoSparseList* dict = data && data->asSparseList(context) ? data->asSparseList(context) : nullptr;
+    if (!dict) return PROTO_FALSE;
+    return dict->getSize(context) > 0 ? PROTO_TRUE : PROTO_FALSE;
+}
+
 // --- PythonEnvironment Implementation ---
 
 PythonEnvironment::PythonEnvironment(const std::string& stdLibPath, const std::vector<std::string>& searchPaths) : space() {
@@ -618,6 +644,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     const proto::ProtoString* py_le = proto::ProtoString::fromUTF8String(context, "__le__");
     const proto::ProtoString* py_gt = proto::ProtoString::fromUTF8String(context, "__gt__");
     const proto::ProtoString* py_ge = proto::ProtoString::fromUTF8String(context, "__ge__");
+    const proto::ProtoString* py_bool = proto::ProtoString::fromUTF8String(context, "__bool__");
 
     // 1. Create 'object' base
     objectPrototype = context->newObject(true);
@@ -661,6 +688,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     listPrototype = listPrototype->setAttribute(context, py_ge, context->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_ge));
     listPrototype = listPrototype->setAttribute(context, py_repr, context->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_repr));
     listPrototype = listPrototype->setAttribute(context, py_str, context->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_str));
+    listPrototype = listPrototype->setAttribute(context, py_bool, context->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_bool));
 
     const proto::ProtoObject* listIterProto = context->newObject(true);
     listIterProto = listIterProto->addParent(context, objectPrototype);
@@ -684,6 +712,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     dictPrototype = dictPrototype->setAttribute(context, py_ge, context->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_ge));
     dictPrototype = dictPrototype->setAttribute(context, py_repr, context->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_repr));
     dictPrototype = dictPrototype->setAttribute(context, py_str, context->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_str));
+    dictPrototype = dictPrototype->setAttribute(context, py_bool, context->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_bool));
 
     // 5. Initialize Native Module Provider
     auto& registry = proto::ProviderRegistry::instance();
