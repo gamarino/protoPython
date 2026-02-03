@@ -43,7 +43,7 @@ Derived from [IMPLEMENTATION_PLAN.md](../docs/IMPLEMENTATION_PLAN.md). See also 
 ## 7. Next 20 Steps (v3)
 - [x] Step 01: Stabilize foundation tests (CTest timeout 60s, docs/TESTING.md, test_minimal/test_protocore_minimal reproducers; root fix in protoCore GC pending)
 - [x] Step 02: Tuple dunders (`__getitem__`, iter, contains, bool)
-- [ ] Step 03: String dunders & helpers (iter, contains, upper/lower)
+- [x] Step 03: String dunders & helpers (iter, contains, upper/lower)
 - [ ] Step 04: Dict mutation helpers (`update`, `clear`, `copy`)
 - [ ] Step 05: List mutation helpers (`insert`, `remove`, `clear`)
 - [ ] Step 06: Set prototype (`add`, `remove`, iter, len, contains)

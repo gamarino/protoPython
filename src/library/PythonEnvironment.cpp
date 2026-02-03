@@ -724,6 +724,84 @@ static const proto::ProtoObject* py_tuple_bool(
     return data->asTuple(context)->getSize(context) > 0 ? PROTO_TRUE : PROTO_FALSE;
 }
 
+static const proto::ProtoString* str_from_self(proto::ProtoContext* context, const proto::ProtoObject* self) {
+    if (self->isString(context)) return self->asString(context);
+    const proto::ProtoObject* data = self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"));
+    return data && data->isString(context) ? data->asString(context) : nullptr;
+}
+
+static const proto::ProtoObject* py_str_iter(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoString* str = str_from_self(context, self);
+    if (!str) return PROTO_NONE;
+    const proto::ProtoStringIterator* it = str->getIterator(context);
+    return it ? it->asObject(context) : PROTO_NONE;
+}
+
+static const proto::ProtoObject* py_str_contains(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoString* str = str_from_self(context, self);
+    if (!str || positionalParameters->getSize(context) < 1) return PROTO_FALSE;
+    const proto::ProtoObject* item = positionalParameters->getAt(context, 0);
+    if (!item->isString(context)) return PROTO_FALSE;
+    std::string haystack;
+    str->toUTF8String(context, haystack);
+    std::string needle;
+    item->asString(context)->toUTF8String(context, needle);
+    return haystack.find(needle) != std::string::npos ? PROTO_TRUE : PROTO_FALSE;
+}
+
+static const proto::ProtoObject* py_str_bool(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoString* str = str_from_self(context, self);
+    if (!str) return PROTO_FALSE;
+    return str->getSize(context) > 0 ? PROTO_TRUE : PROTO_FALSE;
+}
+
+static const proto::ProtoObject* py_str_upper(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoString* str = str_from_self(context, self);
+    if (!str) return PROTO_NONE;
+    std::string s;
+    str->toUTF8String(context, s);
+    for (char& c : s) {
+        if (c >= 'a' && c <= 'z') c -= 32;
+    }
+    return context->fromUTF8String(s.c_str());
+}
+
+static const proto::ProtoObject* py_str_lower(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoString* str = str_from_self(context, self);
+    if (!str) return PROTO_NONE;
+    std::string s;
+    str->toUTF8String(context, s);
+    for (char& c : s) {
+        if (c >= 'A' && c <= 'Z') c += 32;
+    }
+    return context->fromUTF8String(s.c_str());
+}
+
 static const proto::ProtoObject* py_dict_repr(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -923,6 +1001,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     const proto::ProtoString* py_items = proto::ProtoString::fromUTF8String(context, "items");
     const proto::ProtoString* py_get = proto::ProtoString::fromUTF8String(context, "get");
     const proto::ProtoString* py_setdefault = proto::ProtoString::fromUTF8String(context, "setdefault");
+    const proto::ProtoString* py_upper = proto::ProtoString::fromUTF8String(context, "upper");
+    const proto::ProtoString* py_lower = proto::ProtoString::fromUTF8String(context, "lower");
 
     // 1. Create 'object' base
     objectPrototype = context->newObject(true);
@@ -948,6 +1028,11 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     strPrototype = strPrototype->addParent(context, objectPrototype);
     strPrototype = strPrototype->setAttribute(context, py_class, typePrototype);
     strPrototype = strPrototype->setAttribute(context, py_name, context->fromUTF8String("str"));
+    strPrototype = strPrototype->setAttribute(context, py_iter, context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_iter));
+    strPrototype = strPrototype->setAttribute(context, py_contains, context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_contains));
+    strPrototype = strPrototype->setAttribute(context, py_bool, context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_bool));
+    strPrototype = strPrototype->setAttribute(context, py_upper, context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_upper));
+    strPrototype = strPrototype->setAttribute(context, py_lower, context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_lower));
 
     listPrototype = context->newObject(true);
     listPrototype = listPrototype->addParent(context, objectPrototype);

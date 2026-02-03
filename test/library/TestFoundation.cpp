@@ -680,6 +680,56 @@ TEST_F(FoundationTest, TupleDunders) {
     EXPECT_EQ(emptyBool, PROTO_FALSE);
 }
 
+TEST_F(FoundationTest, StringDunders) {
+    proto::ProtoContext* context = env.getContext();
+
+    const proto::ProtoObject* pyLen = env.resolve("len");
+    ASSERT_NE(pyLen, nullptr);
+    const proto::ProtoObject* strObj = context->fromUTF8String("abc");
+    const proto::ProtoList* lenArgs = context->newList()->appendLast(context, strObj);
+    const proto::ProtoObject* strLen = pyLen->asMethod(context)(context, PROTO_NONE, nullptr, lenArgs, nullptr);
+    EXPECT_EQ(strLen->asLong(context), 3);
+
+    const proto::ProtoObject* builtins = env.resolve("builtins");
+    ASSERT_NE(builtins, nullptr);
+    const proto::ProtoObject* pyContains = builtins->getAttribute(context, proto::ProtoString::fromUTF8String(context, "contains"));
+    const proto::ProtoObject* pyBool = builtins->getAttribute(context, proto::ProtoString::fromUTF8String(context, "bool"));
+    ASSERT_NE(pyContains, nullptr);
+    ASSERT_NE(pyBool, nullptr);
+
+    const proto::ProtoList* boolArgs = context->newList()->appendLast(context, strObj);
+    const proto::ProtoObject* nonEmptyBool = pyBool->asMethod(context)(context, PROTO_NONE, nullptr, boolArgs, nullptr);
+    EXPECT_EQ(nonEmptyBool, PROTO_TRUE);
+
+    const proto::ProtoList* containsArgs = context->newList()->appendLast(context, context->fromUTF8String("b"))->appendLast(context, strObj);
+    const proto::ProtoObject* hasB = pyContains->asMethod(context)(context, PROTO_NONE, nullptr, containsArgs, nullptr);
+    EXPECT_EQ(hasB, PROTO_TRUE);
+
+    const proto::ProtoList* containsX = context->newList()->appendLast(context, context->fromUTF8String("x"))->appendLast(context, strObj);
+    const proto::ProtoObject* hasX = pyContains->asMethod(context)(context, PROTO_NONE, nullptr, containsX, nullptr);
+    EXPECT_EQ(hasX, PROTO_FALSE);
+
+    const proto::ProtoObject* emptyStr = context->fromUTF8String("");
+    const proto::ProtoObject* emptyBool = pyBool->asMethod(context)(context, PROTO_NONE, nullptr, context->newList()->appendLast(context, emptyStr), nullptr);
+    EXPECT_EQ(emptyBool, PROTO_FALSE);
+
+    const proto::ProtoObject* strPrototype = env.getStrPrototype();
+    const proto::ProtoObject* upperM = strPrototype->getAttribute(context, proto::ProtoString::fromUTF8String(context, "upper"));
+    const proto::ProtoObject* lowerM = strPrototype->getAttribute(context, proto::ProtoString::fromUTF8String(context, "lower"));
+    ASSERT_NE(upperM, nullptr);
+    ASSERT_NE(lowerM, nullptr);
+    const proto::ProtoObject* wrapped = context->newObject(true)->addParent(context, strPrototype);
+    wrapped->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->fromUTF8String("HeLLo"));
+    const proto::ProtoObject* u = upperM->asMethod(context)(context, wrapped, nullptr, context->newList(), nullptr);
+    std::string us;
+    u->asString(context)->toUTF8String(context, us);
+    EXPECT_EQ(us, "HELLO");
+    const proto::ProtoObject* l = lowerM->asMethod(context)(context, wrapped, nullptr, context->newList(), nullptr);
+    std::string ls;
+    l->asString(context)->toUTF8String(context, ls);
+    EXPECT_EQ(ls, "hello");
+}
+
 TEST_F(FoundationTest, DequeBasic) {
     proto::ProtoContext* context = env.getContext();
     const proto::ProtoObject* collections = env.resolve("_collections");

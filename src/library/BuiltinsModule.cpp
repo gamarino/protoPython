@@ -85,12 +85,12 @@ static const proto::ProtoObject* py_iter(
     const proto::ProtoSparseList* keywordParameters) {
     if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
-    
+
     const proto::ProtoObject* iterMethod = obj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__iter__"));
     if (iterMethod && iterMethod->asMethod(context)) {
         return iterMethod->asMethod(context)(context, obj, nullptr, nullptr, nullptr);
     }
-    
+
     return PROTO_NONE;
 }
 
@@ -102,13 +102,74 @@ static const proto::ProtoObject* py_next(
     const proto::ProtoSparseList* keywordParameters) {
     if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
-    
+
+    if (obj->asStringIterator(context)) {
+        proto::ProtoStringIterator* it = const_cast<proto::ProtoStringIterator*>(obj->asStringIterator(context));
+        if (!it || !it->hasNext(context)) return PROTO_NONE;
+        return it->next(context);
+    }
+
     const proto::ProtoObject* nextMethod = obj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__next__"));
     if (nextMethod && nextMethod->asMethod(context)) {
         return nextMethod->asMethod(context)(context, obj, nullptr, nullptr, nullptr);
     }
-    
+
     return PROTO_NONE;
+}
+
+static const proto::ProtoObject* py_contains(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    if (positionalParameters->getSize(context) < 2) return PROTO_FALSE;
+    const proto::ProtoObject* container = positionalParameters->getAt(context, 1);
+    const proto::ProtoObject* item = positionalParameters->getAt(context, 0);
+
+    if (container->isString(context)) {
+        const proto::ProtoString* str = container->asString(context);
+        unsigned long size = str->getSize(context);
+        if (!item->isString(context)) return PROTO_FALSE;
+        std::string sub;
+        item->asString(context)->toUTF8String(context, sub);
+        if (sub.empty()) return PROTO_TRUE;
+        std::string haystack;
+        str->toUTF8String(context, haystack);
+        return haystack.find(sub) != std::string::npos ? PROTO_TRUE : PROTO_FALSE;
+    }
+
+    const proto::ProtoObject* containsMethod = container->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__contains__"));
+    if (containsMethod && containsMethod->asMethod(context)) {
+        const proto::ProtoList* args = context->newList()->appendLast(context, item);
+        return containsMethod->asMethod(context)(context, container, nullptr, args, nullptr);
+    }
+
+    return PROTO_FALSE;
+}
+
+static const proto::ProtoObject* py_bool(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    if (positionalParameters->getSize(context) < 1) return PROTO_FALSE;
+    const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
+
+    if (obj->isString(context)) {
+        return obj->asString(context)->getSize(context) > 0 ? PROTO_TRUE : PROTO_FALSE;
+    }
+    if (obj->isInteger(context)) {
+        return obj->asLong(context) != 0 ? PROTO_TRUE : PROTO_FALSE;
+    }
+
+    const proto::ProtoObject* boolMethod = obj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__bool__"));
+    if (boolMethod && boolMethod->asMethod(context)) {
+        return boolMethod->asMethod(context)(context, obj, nullptr, nullptr, nullptr);
+    }
+
+    return PROTO_TRUE;
 }
 
 static const proto::ProtoObject* py_isinstance(
@@ -194,6 +255,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "print"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_print));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "iter"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_iter));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "next"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_next));
+    builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "contains"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_contains));
+    builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "bool"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_bool));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "isinstance"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_isinstance));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "issubclass"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_issubclass));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "range"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_range));
