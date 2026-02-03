@@ -8,6 +8,8 @@ Derived from [IMPLEMENTATION_PLAN.md](../docs/IMPLEMENTATION_PLAN.md). See also 
 - [x] `__getitem__` returns `PROTO_NONE` for missing keys until exceptions are implemented
 ## 1.2 Dict views
 - [x] `keys()`, `values()`, `items()` backed by `__keys__` and `__data__`
+## 1.3 List methods
+- [x] `pop()` and `extend()` implemented on list prototype
 - [ ] Phase 3: Execution Engine — ProtoContext integration for bytecode execution (protopy)
 - [x] Phase 4: GIL-less Concurrency — audit documented in [docs/GIL_FREE_AUDIT.md](../docs/GIL_FREE_AUDIT.md); fixes TBD
 

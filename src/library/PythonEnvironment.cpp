@@ -585,6 +585,45 @@ static const proto::ProtoObject* py_list_bool(
     return list->getSize(context) > 0 ? PROTO_TRUE : PROTO_FALSE;
 }
 
+static const proto::ProtoObject* py_list_pop(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "__data__");
+    const proto::ProtoObject* data = self->getAttribute(context, dataName);
+    const proto::ProtoList* list = data && data->asList(context) ? data->asList(context) : nullptr;
+    if (!list || list->getSize(context) == 0) return PROTO_NONE;
+    const proto::ProtoObject* last = list->getAt(context, static_cast<int>(list->getSize(context) - 1));
+    const proto::ProtoList* newList = list->removeLast(context);
+    self->setAttribute(context, dataName, newList->asObject(context));
+    return last;
+}
+
+static const proto::ProtoObject* py_list_extend(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    const proto::ProtoObject* otherObj = positionalParameters->getAt(context, 0);
+    const proto::ProtoList* otherList = otherObj->asList(context);
+    if (!otherList) return PROTO_NONE;
+    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "__data__");
+    const proto::ProtoObject* data = self->getAttribute(context, dataName);
+    const proto::ProtoList* list = data && data->asList(context) ? data->asList(context) : nullptr;
+    if (!list) return PROTO_NONE;
+    const proto::ProtoList* newList = list;
+    unsigned long otherSize = otherList->getSize(context);
+    for (unsigned long i = 0; i < otherSize; ++i) {
+        newList = newList->appendLast(context, otherList->getAt(context, static_cast<int>(i)));
+    }
+    self->setAttribute(context, dataName, newList->asObject(context));
+    return PROTO_NONE;
+}
+
 static const proto::ProtoObject* py_tuple_len(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -745,6 +784,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     const proto::ProtoString* py_gt = proto::ProtoString::fromUTF8String(context, "__gt__");
     const proto::ProtoString* py_ge = proto::ProtoString::fromUTF8String(context, "__ge__");
     const proto::ProtoString* py_bool = proto::ProtoString::fromUTF8String(context, "__bool__");
+    const proto::ProtoString* py_pop = proto::ProtoString::fromUTF8String(context, "pop");
+    const proto::ProtoString* py_extend = proto::ProtoString::fromUTF8String(context, "extend");
     const proto::ProtoString* py_keys = proto::ProtoString::fromUTF8String(context, "keys");
     const proto::ProtoString* py_values = proto::ProtoString::fromUTF8String(context, "values");
     const proto::ProtoString* py_items = proto::ProtoString::fromUTF8String(context, "items");
@@ -792,6 +833,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     listPrototype = listPrototype->setAttribute(context, py_repr, context->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_repr));
     listPrototype = listPrototype->setAttribute(context, py_str, context->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_str));
     listPrototype = listPrototype->setAttribute(context, py_bool, context->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_bool));
+    listPrototype = listPrototype->setAttribute(context, py_pop, context->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_pop));
+    listPrototype = listPrototype->setAttribute(context, py_extend, context->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_extend));
 
     const proto::ProtoObject* listIterProto = context->newObject(true);
     listIterProto = listIterProto->addParent(context, objectPrototype);

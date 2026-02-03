@@ -543,6 +543,33 @@ TEST_F(FoundationTest, DictViews) {
     EXPECT_EQ(itemsObj->asList(context)->getSize(context), 1);
 }
 
+TEST_F(FoundationTest, ListPopExtend) {
+    proto::ProtoContext* context = env.getContext();
+    const proto::ProtoObject* listObj = context->newObject(true)->addParent(context, env.getListPrototype());
+    listObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"),
+                          context->newList()->appendLast(context, context->fromInteger(1))->appendLast(context, context->fromInteger(2))->asObject(context));
+
+    const proto::ProtoObject* pop = listObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "pop"));
+    ASSERT_NE(pop, nullptr);
+    const proto::ProtoObject* popped = pop->asMethod(context)(context, listObj, nullptr, nullptr, nullptr);
+    ASSERT_NE(popped, nullptr);
+    EXPECT_EQ(popped->asLong(context), 2);
+
+    const proto::ProtoObject* extend = listObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "extend"));
+    ASSERT_NE(extend, nullptr);
+    const proto::ProtoList* extList = context->newList()->appendLast(context, context->fromInteger(3))->appendLast(context, context->fromInteger(4));
+    const proto::ProtoList* extArgs = context->newList()->appendLast(context, extList->asObject(context));
+    extend->asMethod(context)(context, listObj, nullptr, extArgs, nullptr);
+
+    const proto::ProtoObject* data = listObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"));
+    const proto::ProtoList* list = data->asList(context);
+    ASSERT_NE(list, nullptr);
+    EXPECT_EQ(list->getSize(context), 3);
+    EXPECT_EQ(list->getAt(context, 0)->asLong(context), 1);
+    EXPECT_EQ(list->getAt(context, 1)->asLong(context), 3);
+    EXPECT_EQ(list->getAt(context, 2)->asLong(context), 4);
+}
+
 TEST_F(FoundationTest, LenStringTuple) {
     proto::ProtoContext* context = env.getContext();
 
