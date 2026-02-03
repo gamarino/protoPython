@@ -440,6 +440,40 @@ TEST_F(FoundationTest, OrderingDunder) {
     EXPECT_EQ(dictLtRes, PROTO_NONE);
 }
 
+TEST_F(FoundationTest, ReprStrDunder) {
+    proto::ProtoContext* context = env.getContext();
+
+    const proto::ProtoObject* listObj = context->newObject(true)->addParent(context, env.getListPrototype());
+    listObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"),
+                          context->newList()->appendLast(context, context->fromInteger(1))->appendLast(context, context->fromInteger(2))->asObject(context));
+    const proto::ProtoObject* listRepr = listObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__repr__"));
+    ASSERT_NE(listRepr, nullptr);
+    const proto::ProtoObject* listStrObj = listRepr->asMethod(context)(context, listObj, nullptr, nullptr, nullptr);
+    ASSERT_NE(listStrObj, nullptr);
+    ASSERT_TRUE(listStrObj->isString(context));
+    std::string listStr;
+    listStrObj->asString(context)->toUTF8String(context, listStr);
+    EXPECT_EQ(listStr, "[1, 2]");
+
+    const proto::ProtoObject* dictObj = context->newObject(true)->addParent(context, env.getDictPrototype());
+    dictObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->newSparseList()->asObject(context));
+    const proto::ProtoObject* setitem = dictObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__setitem__"));
+    ASSERT_NE(setitem, nullptr);
+    const proto::ProtoObject* key = context->fromUTF8String("k");
+    const proto::ProtoObject* val = context->fromInteger(9);
+    const proto::ProtoList* setArgs = context->newList()->appendLast(context, key)->appendLast(context, val);
+    setitem->asMethod(context)(context, dictObj, nullptr, setArgs, nullptr);
+
+    const proto::ProtoObject* dictRepr = dictObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__repr__"));
+    ASSERT_NE(dictRepr, nullptr);
+    const proto::ProtoObject* dictStrObj = dictRepr->asMethod(context)(context, dictObj, nullptr, nullptr, nullptr);
+    ASSERT_NE(dictStrObj, nullptr);
+    ASSERT_TRUE(dictStrObj->isString(context));
+    std::string dictStr;
+    dictStrObj->asString(context)->toUTF8String(context, dictStr);
+    EXPECT_EQ(dictStr, "{k: 9}");
+}
+
 TEST_F(FoundationTest, DequeBasic) {
     proto::ProtoContext* context = env.getContext();
     const proto::ProtoObject* collections = env.resolve("_collections");

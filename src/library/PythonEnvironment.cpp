@@ -486,6 +486,108 @@ static const proto::ProtoObject* py_dict_ge(
     return PROTO_NONE;
 }
 
+static std::string repr_object(proto::ProtoContext* context, const proto::ProtoObject* obj) {
+    if (obj->isInteger(context)) {
+        return std::to_string(obj->asLong(context));
+    }
+    if (obj->isBoolean(context)) {
+        return obj->asBoolean(context) ? "True" : "False";
+    }
+    if (obj->isString(context)) {
+        std::string s;
+        obj->asString(context)->toUTF8String(context, s);
+        return s;
+    }
+    if (obj->isNone(context)) {
+        return "None";
+    }
+    if (!obj->isCell(context)) {
+        return "<value>";
+    }
+    const proto::ProtoObject* reprMethod = obj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__repr__"));
+    if (reprMethod && reprMethod->asMethod(context)) {
+        const proto::ProtoObject* out = reprMethod->asMethod(context)(context, obj, nullptr, nullptr, nullptr);
+        if (out && out->isString(context)) {
+            std::string s;
+            out->asString(context)->toUTF8String(context, s);
+            return s;
+        }
+    }
+    return "<object>";
+}
+
+static const proto::ProtoObject* py_list_repr(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "__data__");
+    const proto::ProtoObject* data = self->getAttribute(context, dataName);
+    const proto::ProtoList* list = data && data->asList(context) ? data->asList(context) : nullptr;
+    if (!list) return context->fromUTF8String("[]");
+
+    unsigned long size = list->getSize(context);
+    unsigned long limit = 20;
+    std::string out = "[";
+    for (unsigned long i = 0; i < size && i < limit; ++i) {
+        if (i > 0) out += ", ";
+        out += repr_object(context, list->getAt(context, static_cast<int>(i)));
+    }
+    if (size > limit) out += ", ...";
+    out += "]";
+    return context->fromUTF8String(out.c_str());
+}
+
+static const proto::ProtoObject* py_list_str(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    return py_list_repr(context, self, parentLink, positionalParameters, keywordParameters);
+}
+
+static const proto::ProtoObject* py_dict_repr(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoString* keysName = proto::ProtoString::fromUTF8String(context, "__keys__");
+    const proto::ProtoObject* keysObj = self->getAttribute(context, keysName);
+    const proto::ProtoList* keys = keysObj && keysObj->asList(context) ? keysObj->asList(context) : context->newList();
+
+    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "__data__");
+    const proto::ProtoObject* data = self->getAttribute(context, dataName);
+    const proto::ProtoSparseList* dict = data && data->asSparseList(context) ? data->asSparseList(context) : nullptr;
+    if (!dict) return context->fromUTF8String("{}");
+
+    unsigned long size = keys->getSize(context);
+    unsigned long limit = 20;
+    std::string out = "{";
+    for (unsigned long i = 0; i < size && i < limit; ++i) {
+        if (i > 0) out += ", ";
+        const proto::ProtoObject* key = keys->getAt(context, static_cast<int>(i));
+        const proto::ProtoObject* value = dict->getAt(context, key->getHash(context));
+        out += repr_object(context, key);
+        out += ": ";
+        out += repr_object(context, value);
+    }
+    if (size > limit) out += ", ...";
+    out += "}";
+    return context->fromUTF8String(out.c_str());
+}
+
+static const proto::ProtoObject* py_dict_str(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    return py_dict_repr(context, self, parentLink, positionalParameters, keywordParameters);
+}
+
 // --- PythonEnvironment Implementation ---
 
 PythonEnvironment::PythonEnvironment(const std::string& stdLibPath, const std::vector<std::string>& searchPaths) : space() {
@@ -557,6 +659,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     listPrototype = listPrototype->setAttribute(context, py_le, context->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_le));
     listPrototype = listPrototype->setAttribute(context, py_gt, context->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_gt));
     listPrototype = listPrototype->setAttribute(context, py_ge, context->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_ge));
+    listPrototype = listPrototype->setAttribute(context, py_repr, context->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_repr));
+    listPrototype = listPrototype->setAttribute(context, py_str, context->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_str));
 
     const proto::ProtoObject* listIterProto = context->newObject(true);
     listIterProto = listIterProto->addParent(context, objectPrototype);
@@ -578,6 +682,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     dictPrototype = dictPrototype->setAttribute(context, py_le, context->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_le));
     dictPrototype = dictPrototype->setAttribute(context, py_gt, context->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_gt));
     dictPrototype = dictPrototype->setAttribute(context, py_ge, context->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_ge));
+    dictPrototype = dictPrototype->setAttribute(context, py_repr, context->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_repr));
+    dictPrototype = dictPrototype->setAttribute(context, py_str, context->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_str));
 
     // 5. Initialize Native Module Provider
     auto& registry = proto::ProviderRegistry::instance();
