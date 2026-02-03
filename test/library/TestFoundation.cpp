@@ -300,6 +300,46 @@ TEST_F(FoundationTest, ListIterNext) {
     EXPECT_EQ(v2->asLong(context), 2);
 }
 
+TEST_F(FoundationTest, DictIterKeys) {
+    proto::ProtoContext* context = env.getContext();
+    const proto::ProtoObject* my_dict = context->newObject(true);
+    my_dict = my_dict->addParent(context, env.getDictPrototype());
+    my_dict->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->newSparseList()->asObject(context));
+
+    const proto::ProtoObject* pyIter = env.resolve("iter");
+    const proto::ProtoObject* pyNext = env.resolve("next");
+    const proto::ProtoObject* setitem = my_dict->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__setitem__"));
+    ASSERT_NE(pyIter, nullptr);
+    ASSERT_NE(pyNext, nullptr);
+    ASSERT_NE(setitem, nullptr);
+
+    const proto::ProtoObject* k1 = context->fromUTF8String("a");
+    const proto::ProtoObject* k2 = context->fromUTF8String("b");
+    const proto::ProtoObject* v1 = context->fromInteger(1);
+    const proto::ProtoObject* v2 = context->fromInteger(2);
+    const proto::ProtoList* setArgs1 = context->newList()->appendLast(context, k1)->appendLast(context, v1);
+    const proto::ProtoList* setArgs2 = context->newList()->appendLast(context, k2)->appendLast(context, v2);
+    setitem->asMethod(context)(context, my_dict, nullptr, setArgs1, nullptr);
+    setitem->asMethod(context)(context, my_dict, nullptr, setArgs2, nullptr);
+
+    const proto::ProtoList* iterArgs = context->newList()->appendLast(context, my_dict);
+    const proto::ProtoObject* it = pyIter->asMethod(context)(context, PROTO_NONE, nullptr, iterArgs, nullptr);
+    ASSERT_NE(it, nullptr);
+
+    const proto::ProtoList* nextArgs = context->newList()->appendLast(context, it);
+    const proto::ProtoObject* r1 = pyNext->asMethod(context)(context, PROTO_NONE, nullptr, nextArgs, nullptr);
+    const proto::ProtoObject* r2 = pyNext->asMethod(context)(context, PROTO_NONE, nullptr, nextArgs, nullptr);
+    ASSERT_NE(r1, nullptr);
+    ASSERT_NE(r2, nullptr);
+
+    std::string s1;
+    std::string s2;
+    r1->asString(context)->toUTF8String(context, s1);
+    r2->asString(context)->toUTF8String(context, s2);
+    EXPECT_EQ(s1, "a");
+    EXPECT_EQ(s2, "b");
+}
+
 TEST_F(FoundationTest, DequeBasic) {
     proto::ProtoContext* context = env.getContext();
     const proto::ProtoObject* collections = env.resolve("_collections");
