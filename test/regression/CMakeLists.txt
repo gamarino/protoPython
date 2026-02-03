@@ -5,3 +5,4 @@ target_compile_definitions(test_regr PRIVATE
     REGR_PATH="${CMAKE_CURRENT_SOURCE_DIR}"
 )
 add_test(NAME test_regr COMMAND test_regr)
+set_tests_properties(test_regr PROPERTIES LABELS "regression_gate")
