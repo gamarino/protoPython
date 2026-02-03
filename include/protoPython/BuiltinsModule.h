@@ -11,10 +11,11 @@ namespace builtins {
  * @param ctx The context.
  * @param prototypes A struct or object containing the pre-initialized prototypes.
  */
-const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::ProtoObject* objectProto, 
+const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::ProtoObject* objectProto,
                                    const proto::ProtoObject* typeProto, const proto::ProtoObject* intProto,
                                    const proto::ProtoObject* strProto, const proto::ProtoObject* listProto,
-                                   const proto::ProtoObject* dictProto, const proto::ProtoObject* tupleProto);
+                                   const proto::ProtoObject* dictProto, const proto::ProtoObject* tupleProto,
+                                   const proto::ProtoObject* setProto);
 
 } // namespace builtins
 } // namespace protoPython

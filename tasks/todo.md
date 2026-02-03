@@ -48,7 +48,7 @@ See [docs/NEXT_20_STEPS_V4.md](../docs/NEXT_20_STEPS_V4.md). Steps 01–04 done;
 - [x] Step 03: String dunders & helpers (iter, contains, upper/lower)
 - [x] Step 04: Dict mutation helpers (`update`, `clear`, `copy`)
 - [x] Step 05: List mutation helpers (`insert`, `remove`, `clear`)
-- [ ] Step 06: Set prototype (`add`, `remove`, iter, len, contains)
+- [x] Step 06: Set prototype (`add`, `remove`, iter, len, contains)
 - [ ] Step 07: Exception scaffolding (Exception, KeyError, ValueError)
 - [ ] Step 08: Raise container exceptions (dict/list operations)
 - [ ] Step 09: Execution hook (`PythonEnvironment::executeModule`)

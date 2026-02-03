@@ -235,12 +235,13 @@ static const proto::ProtoObject* py_range(
     return list->asObject(context);
 }
 
-const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::ProtoObject* objectProto, 
+const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::ProtoObject* objectProto,
                                    const proto::ProtoObject* typeProto, const proto::ProtoObject* intProto,
                                    const proto::ProtoObject* strProto, const proto::ProtoObject* listProto,
-                                   const proto::ProtoObject* dictProto, const proto::ProtoObject* tupleProto) {
+                                   const proto::ProtoObject* dictProto, const proto::ProtoObject* tupleProto,
+                                   const proto::ProtoObject* setProto) {
     const proto::ProtoObject* builtins = ctx->newObject(true);
-    
+
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "object"), objectProto);
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "type"), typeProto);
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "int"), intProto);
@@ -248,6 +249,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "list"), listProto);
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "dict"), dictProto);
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "tuple"), tupleProto);
+    builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "set"), setProto);
     
     // Add functions
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "len"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_len));

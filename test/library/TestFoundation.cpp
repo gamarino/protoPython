@@ -730,6 +730,45 @@ TEST_F(FoundationTest, StringDunders) {
     EXPECT_EQ(ls, "hello");
 }
 
+TEST_F(FoundationTest, SetBasic) {
+    proto::ProtoContext* context = env.getContext();
+
+    const proto::ProtoObject* setObj = context->newObject(true)->addParent(context, env.getSetPrototype());
+    setObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->newSet()->asObject(context));
+
+    const proto::ProtoObject* addM = setObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "add"));
+    const proto::ProtoObject* removeM = setObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "remove"));
+    const proto::ProtoObject* lenM = setObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__len__"));
+    const proto::ProtoObject* containsM = setObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__contains__"));
+    const proto::ProtoObject* iterM = setObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__iter__"));
+    ASSERT_NE(addM, nullptr);
+    ASSERT_NE(removeM, nullptr);
+    ASSERT_NE(lenM, nullptr);
+    ASSERT_NE(containsM, nullptr);
+    ASSERT_NE(iterM, nullptr);
+
+    const proto::ProtoList* add1 = context->newList()->appendLast(context, context->fromInteger(10));
+    addM->asMethod(context)(context, setObj, nullptr, add1, nullptr);
+    addM->asMethod(context)(context, setObj, nullptr, context->newList()->appendLast(context, context->fromInteger(20)), nullptr);
+    addM->asMethod(context)(context, setObj, nullptr, context->newList()->appendLast(context, context->fromInteger(10)), nullptr);
+
+    const proto::ProtoObject* lenResult = lenM->asMethod(context)(context, setObj, nullptr, context->newList(), nullptr);
+    EXPECT_EQ(lenResult->asLong(context), 2);
+
+    const proto::ProtoList* contains10 = context->newList()->appendLast(context, context->fromInteger(10));
+    EXPECT_EQ(containsM->asMethod(context)(context, setObj, nullptr, contains10, nullptr), PROTO_TRUE);
+    const proto::ProtoList* contains99 = context->newList()->appendLast(context, context->fromInteger(99));
+    EXPECT_EQ(containsM->asMethod(context)(context, setObj, nullptr, contains99, nullptr), PROTO_FALSE);
+
+    const proto::ProtoObject* it = iterM->asMethod(context)(context, setObj, nullptr, context->newList(), nullptr);
+    ASSERT_NE(it, nullptr);
+
+    const proto::ProtoList* removeArgs = context->newList()->appendLast(context, context->fromInteger(10));
+    removeM->asMethod(context)(context, setObj, nullptr, removeArgs, nullptr);
+    const proto::ProtoObject* lenAfter = lenM->asMethod(context)(context, setObj, nullptr, context->newList(), nullptr);
+    EXPECT_EQ(lenAfter->asLong(context), 1);
+}
+
 TEST_F(FoundationTest, ListInsertRemoveClear) {
     proto::ProtoContext* context = env.getContext();
 

@@ -62,6 +62,11 @@ public:
     const proto::ProtoObject* getTuplePrototype() const { return tuplePrototype; }
 
     /**
+     * @brief Gets the Python 'set' prototype.
+     */
+    const proto::ProtoObject* getSetPrototype() const { return setPrototype; }
+
+    /**
      * @brief Utility to resolve symbols in this environment.
      */
     const proto::ProtoObject* resolve(const std::string& name);
@@ -96,6 +101,7 @@ private:
     const proto::ProtoObject* listPrototype;
     const proto::ProtoObject* dictPrototype;
     const proto::ProtoObject* tuplePrototype;
+    const proto::ProtoObject* setPrototype;
     const proto::ProtoObject* sysModule;
     const proto::ProtoObject* builtinsModule;
     const proto::ProtoObject* traceFunction{nullptr};

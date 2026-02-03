@@ -686,6 +686,110 @@ static const proto::ProtoObject* py_list_clear(
     return PROTO_NONE;
 }
 
+static const proto::ProtoSet* set_data(proto::ProtoContext* context, const proto::ProtoObject* self) {
+    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "__data__");
+    const proto::ProtoObject* data = self->getAttribute(context, dataName);
+    return data && data->asSet(context) ? data->asSet(context) : nullptr;
+}
+
+static const proto::ProtoObject* py_set_len(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoSet* s = set_data(context, self);
+    if (!s) return context->fromInteger(0);
+    return context->fromInteger(s->getSize(context));
+}
+
+static const proto::ProtoObject* py_set_contains(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoSet* s = set_data(context, self);
+    if (!s || positionalParameters->getSize(context) < 1) return PROTO_FALSE;
+    return s->has(context, positionalParameters->getAt(context, 0));
+}
+
+static const proto::ProtoObject* py_set_bool(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoSet* s = set_data(context, self);
+    if (!s) return PROTO_FALSE;
+    return s->getSize(context) > 0 ? PROTO_TRUE : PROTO_FALSE;
+}
+
+static const proto::ProtoObject* py_set_add(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "__data__");
+    const proto::ProtoObject* data = self->getAttribute(context, dataName);
+    const proto::ProtoSet* s = data && data->asSet(context) ? data->asSet(context) : context->newSet();
+    const proto::ProtoSet* newSet = s->add(context, positionalParameters->getAt(context, 0));
+    self->setAttribute(context, dataName, newSet->asObject(context));
+    return PROTO_NONE;
+}
+
+static const proto::ProtoObject* py_set_remove(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "__data__");
+    const proto::ProtoObject* data = self->getAttribute(context, dataName);
+    const proto::ProtoSet* s = data && data->asSet(context) ? data->asSet(context) : context->newSet();
+    const proto::ProtoSet* newSet = s->remove(context, positionalParameters->getAt(context, 0));
+    self->setAttribute(context, dataName, newSet->asObject(context));
+    return PROTO_NONE;
+}
+
+static const proto::ProtoObject* py_set_iter(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoString* iterProtoName = proto::ProtoString::fromUTF8String(context, "__iter_prototype__");
+    const proto::ProtoObject* iterProto = self->getAttribute(context, iterProtoName);
+    if (!iterProto) return PROTO_NONE;
+    const proto::ProtoSet* s = set_data(context, self);
+    if (!s) return PROTO_NONE;
+    const proto::ProtoSetIterator* it = s->getIterator(context);
+    const proto::ProtoObject* iterObj = iterProto->newChild(context, true);
+    const proto::ProtoString* iterItName = proto::ProtoString::fromUTF8String(context, "__iter_it__");
+    iterObj->setAttribute(context, iterItName, it->asObject(context));
+    return iterObj;
+}
+
+static const proto::ProtoObject* py_set_iter_next(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoString* iterItName = proto::ProtoString::fromUTF8String(context, "__iter_it__");
+    const proto::ProtoObject* itObj = self->getAttribute(context, iterItName);
+    if (!itObj || !itObj->asSetIterator(context)) return PROTO_NONE;
+    const proto::ProtoSetIterator* it = itObj->asSetIterator(context);
+    if (!it->hasNext(context)) return PROTO_NONE;
+    const proto::ProtoObject* value = it->next(context);
+    const proto::ProtoSetIterator* nextIt = it->advance(context);
+    self->setAttribute(context, iterItName, nextIt->asObject(context));
+    return value;
+}
+
 static const proto::ProtoObject* py_tuple_len(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -1145,6 +1249,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     const proto::ProtoString* py_copy = proto::ProtoString::fromUTF8String(context, "copy");
     const proto::ProtoString* py_upper = proto::ProtoString::fromUTF8String(context, "upper");
     const proto::ProtoString* py_lower = proto::ProtoString::fromUTF8String(context, "lower");
+    const proto::ProtoString* py_add = proto::ProtoString::fromUTF8String(context, "add");
 
     // 1. Create 'object' base
     objectPrototype = context->newObject(true);
@@ -1247,6 +1352,22 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     tupleIterProto = tupleIterProto->setAttribute(context, py_next, context->fromMethod(const_cast<proto::ProtoObject*>(tupleIterProto), py_tuple_iter_next));
     tuplePrototype = tuplePrototype->setAttribute(context, py_iter_proto, tupleIterProto);
 
+    setPrototype = context->newObject(true);
+    setPrototype = setPrototype->addParent(context, objectPrototype);
+    setPrototype = setPrototype->setAttribute(context, py_class, typePrototype);
+    setPrototype = setPrototype->setAttribute(context, py_name, context->fromUTF8String("set"));
+    setPrototype = setPrototype->setAttribute(context, py_len, context->fromMethod(const_cast<proto::ProtoObject*>(setPrototype), py_set_len));
+    setPrototype = setPrototype->setAttribute(context, py_contains, context->fromMethod(const_cast<proto::ProtoObject*>(setPrototype), py_set_contains));
+    setPrototype = setPrototype->setAttribute(context, py_bool, context->fromMethod(const_cast<proto::ProtoObject*>(setPrototype), py_set_bool));
+    setPrototype = setPrototype->setAttribute(context, py_add, context->fromMethod(const_cast<proto::ProtoObject*>(setPrototype), py_set_add));
+    setPrototype = setPrototype->setAttribute(context, py_remove, context->fromMethod(const_cast<proto::ProtoObject*>(setPrototype), py_set_remove));
+    setPrototype = setPrototype->setAttribute(context, py_iter, context->fromMethod(const_cast<proto::ProtoObject*>(setPrototype), py_set_iter));
+
+    const proto::ProtoObject* setIterProto = context->newObject(true);
+    setIterProto = setIterProto->addParent(context, objectPrototype);
+    setIterProto = setIterProto->setAttribute(context, py_next, context->fromMethod(const_cast<proto::ProtoObject*>(setIterProto), py_set_iter_next));
+    setPrototype = setPrototype->setAttribute(context, py_iter_proto, setIterProto);
+
     // 5. Initialize Native Module Provider
     auto& registry = proto::ProviderRegistry::instance();
     auto nativeProvider = std::make_unique<NativeModuleProvider>();
@@ -1256,7 +1377,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     nativeProvider->registerModule("sys", [this](proto::ProtoContext* ctx) { return sysModule; });
 
     // builtins module
-    builtinsModule = builtins::initialize(context, objectPrototype, typePrototype, intPrototype, strPrototype, listPrototype, dictPrototype, tuplePrototype);
+    builtinsModule = builtins::initialize(context, objectPrototype, typePrototype, intPrototype, strPrototype, listPrototype, dictPrototype, tuplePrototype, setPrototype);
     nativeProvider->registerModule("builtins", [this](proto::ProtoContext* ctx) { return builtinsModule; });
 
     // _io module
