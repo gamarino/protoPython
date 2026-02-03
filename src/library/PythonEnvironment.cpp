@@ -624,6 +624,68 @@ static const proto::ProtoObject* py_list_extend(
     return PROTO_NONE;
 }
 
+static const proto::ProtoObject* py_list_insert(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    if (positionalParameters->getSize(context) < 2) return PROTO_NONE;
+    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "__data__");
+    const proto::ProtoObject* data = self->getAttribute(context, dataName);
+    const proto::ProtoList* list = data && data->asList(context) ? data->asList(context) : nullptr;
+    if (!list) return PROTO_NONE;
+    int index = static_cast<int>(positionalParameters->getAt(context, 0)->asLong(context));
+    const proto::ProtoObject* value = positionalParameters->getAt(context, 1);
+    unsigned long size = list->getSize(context);
+    if (index < 0) index += static_cast<int>(size);
+    if (index < 0) index = 0;
+    if (static_cast<unsigned long>(index) > size) index = static_cast<int>(size);
+    const proto::ProtoList* newList = list->insertAt(context, index, value);
+    self->setAttribute(context, dataName, newList->asObject(context));
+    return PROTO_NONE;
+}
+
+static const proto::ProtoObject* py_list_remove(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "__data__");
+    const proto::ProtoObject* data = self->getAttribute(context, dataName);
+    const proto::ProtoList* list = data && data->asList(context) ? data->asList(context) : nullptr;
+    if (!list) return PROTO_NONE;
+    const proto::ProtoObject* value = positionalParameters->getAt(context, 0);
+    unsigned long size = list->getSize(context);
+    for (unsigned long i = 0; i < size; ++i) {
+        const proto::ProtoObject* elem = list->getAt(context, static_cast<int>(i));
+        if (elem == value) {
+            const proto::ProtoList* newList = list->removeAt(context, static_cast<int>(i));
+            self->setAttribute(context, dataName, newList->asObject(context));
+            return PROTO_NONE;
+        }
+        if (elem->compare(context, value) == 0) {
+            const proto::ProtoList* newList = list->removeAt(context, static_cast<int>(i));
+            self->setAttribute(context, dataName, newList->asObject(context));
+            return PROTO_NONE;
+        }
+    }
+    return PROTO_NONE;
+}
+
+static const proto::ProtoObject* py_list_clear(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "__data__");
+    self->setAttribute(context, dataName, context->newList()->asObject(context));
+    return PROTO_NONE;
+}
+
 static const proto::ProtoObject* py_tuple_len(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -1071,6 +1133,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     const proto::ProtoString* py_bool = proto::ProtoString::fromUTF8String(context, "__bool__");
     const proto::ProtoString* py_pop = proto::ProtoString::fromUTF8String(context, "pop");
     const proto::ProtoString* py_extend = proto::ProtoString::fromUTF8String(context, "extend");
+    const proto::ProtoString* py_insert = proto::ProtoString::fromUTF8String(context, "insert");
+    const proto::ProtoString* py_remove = proto::ProtoString::fromUTF8String(context, "remove");
     const proto::ProtoString* py_keys = proto::ProtoString::fromUTF8String(context, "keys");
     const proto::ProtoString* py_values = proto::ProtoString::fromUTF8String(context, "values");
     const proto::ProtoString* py_items = proto::ProtoString::fromUTF8String(context, "items");
@@ -1132,6 +1196,9 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     listPrototype = listPrototype->setAttribute(context, py_bool, context->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_bool));
     listPrototype = listPrototype->setAttribute(context, py_pop, context->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_pop));
     listPrototype = listPrototype->setAttribute(context, py_extend, context->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_extend));
+    listPrototype = listPrototype->setAttribute(context, py_insert, context->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_insert));
+    listPrototype = listPrototype->setAttribute(context, py_remove, context->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_remove));
+    listPrototype = listPrototype->setAttribute(context, py_clear, context->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_clear));
 
     const proto::ProtoObject* listIterProto = context->newObject(true);
     listIterProto = listIterProto->addParent(context, objectPrototype);

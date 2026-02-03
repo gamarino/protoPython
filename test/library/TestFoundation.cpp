@@ -730,6 +730,37 @@ TEST_F(FoundationTest, StringDunders) {
     EXPECT_EQ(ls, "hello");
 }
 
+TEST_F(FoundationTest, ListInsertRemoveClear) {
+    proto::ProtoContext* context = env.getContext();
+
+    const proto::ProtoObject* listObj = context->newObject(true)->addParent(context, env.getListPrototype());
+    listObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"),
+        context->newList()->appendLast(context, context->fromInteger(1))->appendLast(context, context->fromInteger(2))->appendLast(context, context->fromInteger(3))->asObject(context));
+
+    const proto::ProtoObject* insertM = listObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "insert"));
+    const proto::ProtoObject* removeM = listObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "remove"));
+    const proto::ProtoObject* clearM = listObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "clear"));
+    const proto::ProtoObject* lenM = listObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__len__"));
+    ASSERT_NE(insertM, nullptr);
+    ASSERT_NE(removeM, nullptr);
+    ASSERT_NE(clearM, nullptr);
+    ASSERT_NE(lenM, nullptr);
+
+    const proto::ProtoList* insertArgs = context->newList()->appendLast(context, context->fromInteger(0))->appendLast(context, context->fromInteger(0));
+    insertM->asMethod(context)(context, listObj, nullptr, insertArgs, nullptr);
+    const proto::ProtoObject* len1 = lenM->asMethod(context)(context, listObj, nullptr, context->newList(), nullptr);
+    EXPECT_EQ(len1->asLong(context), 4);
+
+    const proto::ProtoList* removeArgs = context->newList()->appendLast(context, context->fromInteger(2));
+    removeM->asMethod(context)(context, listObj, nullptr, removeArgs, nullptr);
+    const proto::ProtoObject* len2 = lenM->asMethod(context)(context, listObj, nullptr, context->newList(), nullptr);
+    EXPECT_EQ(len2->asLong(context), 3);
+
+    clearM->asMethod(context)(context, listObj, nullptr, context->newList(), nullptr);
+    const proto::ProtoObject* len3 = lenM->asMethod(context)(context, listObj, nullptr, context->newList(), nullptr);
+    EXPECT_EQ(len3->asLong(context), 0);
+}
+
 TEST_F(FoundationTest, DictUpdateClearCopy) {
     proto::ProtoContext* context = env.getContext();
 
