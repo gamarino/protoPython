@@ -6,7 +6,7 @@
 namespace protoPython {
 namespace collections {
 
-const proto::ProtoObject* initialize(proto::ProtoContext* ctx);
+const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::ProtoObject* dictPrototype);
 
 } // namespace collections
 } // namespace protoPython

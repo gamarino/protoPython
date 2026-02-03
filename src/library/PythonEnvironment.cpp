@@ -1799,7 +1799,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     nativeProvider->registerModule("_io", [](proto::ProtoContext* ctx) { return io::initialize(ctx); });
 
     // _collections module
-    nativeProvider->registerModule("_collections", [](proto::ProtoContext* ctx) { return collections::initialize(ctx); });
+    nativeProvider->registerModule("_collections", [this](proto::ProtoContext* ctx) { return collections::initialize(ctx, dictPrototype); });
 
     const proto::ProtoObject* exceptionsMod = exceptions::initialize(context, objectPrototype, typePrototype);
     keyErrorType = exceptionsMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "KeyError"));
