@@ -340,6 +340,39 @@ TEST_F(FoundationTest, DictIterKeys) {
     EXPECT_EQ(s2, "b");
 }
 
+TEST_F(FoundationTest, ContainsDunder) {
+    proto::ProtoContext* context = env.getContext();
+
+    const proto::ProtoObject* my_list = context->newObject(true);
+    my_list = my_list->addParent(context, env.getListPrototype());
+    const proto::ProtoString* listData = proto::ProtoString::fromUTF8String(context, "__data__");
+    const proto::ProtoList* list = context->newList()
+        ->appendLast(context, context->fromInteger(5))
+        ->appendLast(context, context->fromInteger(6));
+    my_list->setAttribute(context, listData, list->asObject(context));
+
+    const proto::ProtoObject* listContains = my_list->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__contains__"));
+    ASSERT_NE(listContains, nullptr);
+    const proto::ProtoList* listArgs = context->newList()->appendLast(context, context->fromInteger(6));
+    const proto::ProtoObject* listResult = listContains->asMethod(context)(context, my_list, nullptr, listArgs, nullptr);
+    EXPECT_EQ(listResult, PROTO_TRUE);
+
+    const proto::ProtoObject* my_dict = context->newObject(true);
+    my_dict = my_dict->addParent(context, env.getDictPrototype());
+    my_dict->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->newSparseList()->asObject(context));
+    const proto::ProtoObject* setitem = my_dict->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__setitem__"));
+    ASSERT_NE(setitem, nullptr);
+    const proto::ProtoObject* key = context->fromUTF8String("k");
+    const proto::ProtoList* setArgs = context->newList()->appendLast(context, key)->appendLast(context, context->fromInteger(7));
+    setitem->asMethod(context)(context, my_dict, nullptr, setArgs, nullptr);
+
+    const proto::ProtoObject* dictContains = my_dict->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__contains__"));
+    ASSERT_NE(dictContains, nullptr);
+    const proto::ProtoList* dictArgs = context->newList()->appendLast(context, key);
+    const proto::ProtoObject* dictResult = dictContains->asMethod(context)(context, my_dict, nullptr, dictArgs, nullptr);
+    EXPECT_EQ(dictResult, PROTO_TRUE);
+}
+
 TEST_F(FoundationTest, DequeBasic) {
     proto::ProtoContext* context = env.getContext();
     const proto::ProtoObject* collections = env.resolve("_collections");
