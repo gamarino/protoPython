@@ -691,6 +691,39 @@ static const proto::ProtoObject* py_list_clear(
     return PROTO_NONE;
 }
 
+static const proto::ProtoString* bytes_data(proto::ProtoContext* context, const proto::ProtoObject* self) {
+    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "__data__");
+    const proto::ProtoObject* data = self->getAttribute(context, dataName);
+    return data && data->isString(context) ? data->asString(context) : nullptr;
+}
+
+static const proto::ProtoObject* py_bytes_len(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoString* s = bytes_data(context, self);
+    return s ? context->fromInteger(s->getSize(context)) : context->fromInteger(0);
+}
+
+static const proto::ProtoObject* py_bytes_getitem(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoString* s = bytes_data(context, self);
+    if (!s || positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    int idx = static_cast<int>(positionalParameters->getAt(context, 0)->asLong(context));
+    unsigned long size = s->getSize(context);
+    if (idx < 0) idx += static_cast<int>(size);
+    if (idx < 0 || static_cast<unsigned long>(idx) >= size) return PROTO_NONE;
+    std::string c;
+    s->toUTF8String(context, c);
+    return context->fromInteger(static_cast<unsigned char>(c[static_cast<size_t>(idx)]));
+}
+
 static const proto::ProtoSet* set_data(proto::ProtoContext* context, const proto::ProtoObject* self) {
     const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "__data__");
     const proto::ProtoObject* data = self->getAttribute(context, dataName);
@@ -955,6 +988,39 @@ static const proto::ProtoObject* py_str_upper(
         if (c >= 'a' && c <= 'z') c -= 32;
     }
     return context->fromUTF8String(s.c_str());
+}
+
+static const proto::ProtoObject* py_str_format(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoString* str = str_from_self(context, self);
+    if (!str) return PROTO_NONE;
+    std::string tpl;
+    str->toUTF8String(context, tpl);
+    std::string out;
+    unsigned long idx = 0;
+    for (size_t i = 0; i < tpl.size(); ++i) {
+        if (tpl[i] == '{' && i + 1 < tpl.size() && tpl[i + 1] == '}') {
+            if (idx < positionalParameters->getSize(context)) {
+                const proto::ProtoObject* obj = positionalParameters->getAt(context, static_cast<int>(idx));
+                const proto::ProtoObject* strM = obj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__str__"));
+                if (strM && strM->asMethod(context)) {
+                    std::string s;
+                    const proto::ProtoObject* so = strM->asMethod(context)(context, obj, nullptr, context->newList(), nullptr);
+                    if (so && so->isString(context)) so->asString(context)->toUTF8String(context, s);
+                    out += s;
+                }
+            }
+            idx++;
+            i++;
+        } else {
+            out += tpl[i];
+        }
+    }
+    return context->fromUTF8String(out.c_str());
 }
 
 static const proto::ProtoObject* py_str_lower(
@@ -1286,6 +1352,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     const proto::ProtoString* py_copy = proto::ProtoString::fromUTF8String(context, "copy");
     const proto::ProtoString* py_upper = proto::ProtoString::fromUTF8String(context, "upper");
     const proto::ProtoString* py_lower = proto::ProtoString::fromUTF8String(context, "lower");
+    const proto::ProtoString* py_format = proto::ProtoString::fromUTF8String(context, "format");
     const proto::ProtoString* py_add = proto::ProtoString::fromUTF8String(context, "add");
 
     // 1. Create 'object' base
@@ -1317,6 +1384,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     strPrototype = strPrototype->setAttribute(context, py_bool, context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_bool));
     strPrototype = strPrototype->setAttribute(context, py_upper, context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_upper));
     strPrototype = strPrototype->setAttribute(context, py_lower, context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_lower));
+    strPrototype = strPrototype->setAttribute(context, py_format, context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_format));
 
     listPrototype = context->newObject(true);
     listPrototype = listPrototype->addParent(context, objectPrototype);
@@ -1405,6 +1473,13 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     setIterProto = setIterProto->setAttribute(context, py_next, context->fromMethod(const_cast<proto::ProtoObject*>(setIterProto), py_set_iter_next));
     setPrototype = setPrototype->setAttribute(context, py_iter_proto, setIterProto);
 
+    bytesPrototype = context->newObject(true);
+    bytesPrototype = bytesPrototype->addParent(context, objectPrototype);
+    bytesPrototype = bytesPrototype->setAttribute(context, py_class, typePrototype);
+    bytesPrototype = bytesPrototype->setAttribute(context, py_name, context->fromUTF8String("bytes"));
+    bytesPrototype = bytesPrototype->setAttribute(context, py_len, context->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_len));
+    bytesPrototype = bytesPrototype->setAttribute(context, py_getitem, context->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_getitem));
+
     // 5. Initialize Native Module Provider
     auto& registry = proto::ProviderRegistry::instance();
     auto nativeProvider = std::make_unique<NativeModuleProvider>();
@@ -1414,7 +1489,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     nativeProvider->registerModule("sys", [this](proto::ProtoContext* ctx) { return sysModule; });
 
     // builtins module
-    builtinsModule = builtins::initialize(context, objectPrototype, typePrototype, intPrototype, strPrototype, listPrototype, dictPrototype, tuplePrototype, setPrototype);
+    builtinsModule = builtins::initialize(context, objectPrototype, typePrototype, intPrototype, strPrototype, listPrototype, dictPrototype, tuplePrototype, setPrototype, bytesPrototype);
     nativeProvider->registerModule("builtins", [this](proto::ProtoContext* ctx) { return builtinsModule; });
 
     // _io module

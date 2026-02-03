@@ -58,11 +58,15 @@ See [docs/NEXT_20_STEPS_V4.md](../docs/NEXT_20_STEPS_V4.md). Steps 01–04 done;
 - [x] Step 13: sys module parity (argv, exit, version info)
 - [x] Step 14: Import resolution cache + invalidation
 - [x] Step 15: Native math/operator helpers
-- [ ] Step 16: File I/O enhancements (modes, buffering, context)
-- [ ] Step 17: Logging/tracing utilities + CLI `--trace`
-- [ ] Step 18: Debug Adapter Protocol skeleton
-- [ ] Step 19: Interactive REPL mode (`protopy --repl`)
-- [ ] Step 20: Performance instrumentation (`sys.stats`)
+- [x] Step 16: File I/O enhancements (modes, buffering, context)
+- [x] Step 17: Logging/tracing utilities + CLI `--trace`
+- [x] Step 18: Debug Adapter Protocol skeleton
+- [x] Step 19: Interactive REPL mode (`protopy --repl`)
+- [x] Step 20: Performance instrumentation (`sys.stats`)
+- [x] Step 21: Type introspection (`type()`, isinstance expansion)
+- [x] Step 22: String formatting (`format`, `__format__`)
+- [x] Step 23: Bytes/bytearray prototype (basic)
+- [x] Step 24: Collections extensions (defaultdict, OrderedDict basics)
 
 ---
 *Updated from plan implementation. Mark items complete as work progresses.*

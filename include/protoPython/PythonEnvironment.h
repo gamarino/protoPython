@@ -72,6 +72,11 @@ public:
     const proto::ProtoObject* getSetPrototype() const { return setPrototype; }
 
     /**
+     * @brief Gets the Python 'bytes' prototype.
+     */
+    const proto::ProtoObject* getBytesPrototype() const { return bytesPrototype; }
+
+    /**
      * @brief Utility to resolve symbols in this environment.
      */
     const proto::ProtoObject* resolve(const std::string& name);
@@ -173,6 +178,7 @@ private:
     const proto::ProtoObject* dictPrototype;
     const proto::ProtoObject* tuplePrototype;
     const proto::ProtoObject* setPrototype;
+    const proto::ProtoObject* bytesPrototype;
     const proto::ProtoObject* sysModule;
     const proto::ProtoObject* builtinsModule;
     const proto::ProtoObject* traceFunction{nullptr};

@@ -103,6 +103,11 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     vi = vi->appendLast(ctx, ctx->fromInteger(0));
     sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "version_info"), vi->asObject(ctx));
 
+    const proto::ProtoObject* stats = ctx->newObject(true);
+    stats = stats->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "calls"), ctx->fromInteger(0));
+    stats = stats->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "objects_created"), ctx->fromInteger(0));
+    sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "stats"), stats);
+
     return sys;
 }
 

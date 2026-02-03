@@ -108,6 +108,26 @@ static const proto::ProtoObject* py_deque_len(
     return ctx->fromInteger(0);
 }
 
+static const proto::ProtoObject* py_defaultdict_new(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoObject* d = ctx->newObject(true);
+    d = d->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__data__"), ctx->newSparseList()->asObject(ctx));
+    d = d->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__keys__"), ctx->newList()->asObject(ctx));
+    const proto::ProtoObject* factory = posArgs->getSize(ctx) > 0 ? posArgs->getAt(ctx, 0) : PROTO_NONE;
+    d = d->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "default_factory"), factory ? factory : PROTO_NONE);
+    return d;
+}
+
+static const proto::ProtoObject* py_ordereddict_new(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoObject* d = ctx->newObject(true);
+    d = d->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__data__"), ctx->newSparseList()->asObject(ctx));
+    d = d->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__keys__"), ctx->newList()->asObject(ctx));
+    return d;
+}
+
 static const proto::ProtoObject* py_deque_new(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self, // This is the module
@@ -144,9 +164,17 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     // Store prototype in module
     module = module->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__deque_prototype__"), dequePrototype);
 
-    module = module->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "deque"), 
+    module = module->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "deque"),
                                  ctx->fromMethod(const_cast<proto::ProtoObject*>(module), py_deque_new));
-                                 
+
+    const proto::ProtoObject* defaultdictMod = ctx->newObject(true);
+    const proto::ProtoObject* ordereddictMod = ctx->newObject(true);
+
+    module = module->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "defaultdict"),
+                                 ctx->fromMethod(const_cast<proto::ProtoObject*>(defaultdictMod), py_defaultdict_new));
+    module = module->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "OrderedDict"),
+                                 ctx->fromMethod(const_cast<proto::ProtoObject*>(ordereddictMod), py_ordereddict_new));
+
     return module;
 }
 

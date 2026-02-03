@@ -18,12 +18,16 @@ static const proto::ProtoObject* py_io_open(
     
     std::string filename;
     fileArg->asString(context)->toUTF8String(context, filename);
-    
-    // For now, return a mock file object
+
+    std::string mode = "r";
+    if (positionalParameters->getSize(context) >= 2 && positionalParameters->getAt(context, 1)->isString(context)) {
+        positionalParameters->getAt(context, 1)->asString(context)->toUTF8String(context, mode);
+    }
+
     const proto::ProtoObject* fileObj = context->newObject(true);
     fileObj = fileObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "name"), fileArg);
-    fileObj = fileObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "mode"), context->fromUTF8String("r"));
-    
+    fileObj = fileObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "mode"), context->fromUTF8String(mode.c_str()));
+    fileObj = fileObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "buffering"), context->fromInteger(-1));
     return fileObj;
 }
 

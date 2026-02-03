@@ -27,6 +27,8 @@ struct CliOptions {
     bool showHelp{false};
     bool dryRun{false};
     bool bytecodeOnly{false};
+    bool trace{false};
+    bool repl{false};
     std::string moduleName;
     std::string scriptPath;
     std::string stdLibPath;
@@ -86,6 +88,8 @@ static void printUsage(const char* prog) {
                  "  --path <path>     Append additional module search path (repeatable)\n"
                  "  --dry-run         Validate inputs but skip environment initialization\n"
                  "  --bytecode-only   Stub: validate bytecode loading path (no execution)\n"
+                 "  --trace           Enable tracing (stub)\n"
+                 "  --repl            Interactive REPL (stub)\n"
                  "  --help            Show this help message\n";
 }
 
@@ -181,6 +185,15 @@ int main(int argc, char* argv[]) {
     std::vector<std::string> searchPaths = {"."};
     searchPaths.insert(searchPaths.end(), options.searchPaths.begin(), options.searchPaths.end());
 
+    if (options.repl) {
+        std::cout << "protoPython REPL (stub) - type 'exit' to quit\n>>> ";
+        std::string line;
+        while (std::getline(std::cin, line) && line != "exit") {
+            if (!line.empty()) std::cout << "... " << line << "\n>>> ";
+        }
+        return EXIT_OK;
+    }
+
     if (options.moduleName.empty() && options.scriptPath.empty()) {
         printUsage(argv[0]);
         return EXIT_USAGE;
@@ -205,5 +218,10 @@ int main(int argc, char* argv[]) {
     }
 
     protoPython::PythonEnvironment env(stdLibPath, searchPaths, argvVec);
+    if (options.trace) {
+        env.setExecutionHook([](const std::string& name, int phase) {
+            std::cerr << (phase == 0 ? "[trace] enter " : "[trace] leave ") << name << std::endl;
+        });
+    }
     return executeModule(env, options.moduleName);
 }
