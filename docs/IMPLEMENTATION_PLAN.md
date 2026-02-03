@@ -25,7 +25,7 @@ The goal is to provide a complete standard library that behaves identically to C
 We aim for "No-Modification" compatibility with CPython tests.
 
 - [x] **Integration of `test.regrtest`**: Set up a harness to run CPython's test suite directly.
-- [ ] **Incremental Success**: Track compatibility percentage across the entire test suite (e.g. script or dashboard counting pass/fail; see `test/regression/`).
+- [ ] **Incremental Success**: Track compatibility percentage across the entire test suite (e.g. script or dashboard counting pass/fail; see `test/regression/`). Results can be persisted to JSON via `run_and_report.py --output <path>` or `REGRTEST_RESULTS=<path>`.
 - [ ] **Bug-for-Bug Compatibility**: Where safe, emulate CPython edge cases to ensure existing code works without changes.
 
 ## 4. Debugging & IDE Support

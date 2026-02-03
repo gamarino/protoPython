@@ -12,7 +12,7 @@ Derived from [IMPLEMENTATION_PLAN.md](../docs/IMPLEMENTATION_PLAN.md). See also 
 - [ ] Phase 3: Native Optimization — replace performance-critical Python modules with C++
 
 ## 3. Compatibility & Testing
-- [ ] Incremental Success — track compatibility percentage (run `test/regression/run_and_report.py` with `PROTOPY_BIN=<build>/src/runtime/protopy`; CTest: `regrtest_protopy_script`)
+- [ ] Incremental Success — track compatibility percentage (run `test/regression/run_and_report.py` with `PROTOPY_BIN=<build>/src/runtime/protopy`; persist with `--output <path>` or `REGRTEST_RESULTS=<path>`; CTest: `regrtest_protopy_script`)
 - [ ] Bug-for-Bug Compatibility — emulate CPython edge cases where safe
 
 ## 4. Debugging & IDE Support
