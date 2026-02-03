@@ -1226,7 +1226,8 @@ PythonEnvironment* PythonEnvironment::fromContext(proto::ProtoContext* ctx) {
     return it != s_contextToEnv.end() ? it->second : nullptr;
 }
 
-PythonEnvironment::PythonEnvironment(const std::string& stdLibPath, const std::vector<std::string>& searchPaths) : space() {
+PythonEnvironment::PythonEnvironment(const std::string& stdLibPath, const std::vector<std::string>& searchPaths,
+                                     const std::vector<std::string>& argv) : space(), argv_(argv) {
     context = new proto::ProtoContext(&space);
     registerContext(context, this);
     initializeRootObjects(stdLibPath, searchPaths);
@@ -1408,8 +1409,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     auto& registry = proto::ProviderRegistry::instance();
     auto nativeProvider = std::make_unique<NativeModuleProvider>();
 
-    // sys module
-    sysModule = sys::initialize(context, this);
+    // sys module (argv set later via setArgv before executeModule)
+    sysModule = sys::initialize(context, this, &argv_);
     nativeProvider->registerModule("sys", [this](proto::ProtoContext* ctx) { return sysModule; });
 
     // builtins module
@@ -1504,7 +1505,7 @@ int PythonEnvironment::executeModule(const std::string& moduleName) {
     }
 
     if (executionHook) executionHook(moduleName, 1);
-    return 0;
+    return exitRequested_ != 0 ? -3 : 0;
 }
 
 const proto::ProtoObject* PythonEnvironment::resolve(const std::string& name) {

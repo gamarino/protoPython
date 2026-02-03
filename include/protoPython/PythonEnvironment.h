@@ -14,8 +14,11 @@ public:
     /**
      * @brief Initializes a new Python environment.
      * @param stdLibPath Path to the Python standard library. If empty, tries defaults.
+     * @param searchPaths Module search paths.
+     * @param argv Command-line arguments for sys.argv (optional).
      */
-    PythonEnvironment(const std::string& stdLibPath = "", const std::vector<std::string>& searchPaths = {});
+    PythonEnvironment(const std::string& stdLibPath = "", const std::vector<std::string>& searchPaths = {},
+                     const std::vector<std::string>& argv = {});
     ~PythonEnvironment();
 
     /**
@@ -98,6 +101,21 @@ public:
     void setExecutionHook(ExecutionHook hook) { executionHook = std::move(hook); }
 
     /**
+     * @brief Sets sys.argv (list of command-line arguments).
+     */
+    void setArgv(const std::vector<std::string>& args) { argv_ = args; }
+
+    /**
+     * @brief Gets the requested exit code from sys.exit (0 if none).
+     */
+    int getExitRequested() const { return exitRequested_; }
+
+    /**
+     * @brief Sets the exit code requested by sys.exit (for execution engine).
+     */
+    void setExitRequested(int code) { exitRequested_ = code; }
+
+    /**
      * @brief Sets the global trace function (sys.settrace).
      */
     void setTraceFunction(const proto::ProtoObject* func) { traceFunction = func; }
@@ -154,6 +172,8 @@ private:
     const proto::ProtoObject* builtinsModule;
     const proto::ProtoObject* traceFunction{nullptr};
     const proto::ProtoObject* pendingException{nullptr};
+    std::vector<std::string> argv_;
+    int exitRequested_{0};
     ExecutionHook executionHook;
     const proto::ProtoObject* keyErrorType{nullptr};
     const proto::ProtoObject* valueErrorType{nullptr};

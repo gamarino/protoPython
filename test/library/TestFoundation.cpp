@@ -103,6 +103,14 @@ TEST_F(FoundationTest, SysModule) {
     const proto::ProtoObject* version = sys->getAttribute(context, proto::ProtoString::fromUTF8String(context, "version"));
     ASSERT_NE(version, nullptr);
     ASSERT_TRUE(version->isString(context));
+
+    const proto::ProtoObject* argv = sys->getAttribute(context, proto::ProtoString::fromUTF8String(context, "argv"));
+    ASSERT_NE(argv, nullptr);
+    ASSERT_TRUE(argv->asList(context) != nullptr);
+
+    const proto::ProtoObject* versionInfo = sys->getAttribute(context, proto::ProtoString::fromUTF8String(context, "version_info"));
+    ASSERT_NE(versionInfo, nullptr);
+    ASSERT_TRUE(versionInfo->asList(context) != nullptr);
 }
 
 TEST_F(FoundationTest, ExecuteModule) {

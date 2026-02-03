@@ -156,6 +156,8 @@ int executeModule(protoPython::PythonEnvironment& env, const std::string& module
         std::cerr << "protopy: module '" << moduleName << "' exited with runtime error" << std::endl;
         return EXIT_RUNTIME;
     }
+    if (ret == -3)
+        return env.getExitRequested();
     return EXIT_OK;
 }
 
@@ -184,13 +186,16 @@ int main(int argc, char* argv[]) {
         return EXIT_USAGE;
     }
 
+    std::vector<std::string> argvVec;
+    for (int i = 0; i < argc; ++i) argvVec.push_back(argv[i]);
+
     if (!options.scriptPath.empty()) {
         std::vector<std::string> scriptPaths = searchPaths;
         scriptPaths.insert(scriptPaths.begin(), dirName(options.scriptPath));
         if (options.dryRun || options.bytecodeOnly) {
             return fileExists(options.scriptPath) ? EXIT_OK : EXIT_RESOLVE;
         }
-        protoPython::PythonEnvironment envWithPath(stdLibPath, scriptPaths);
+        protoPython::PythonEnvironment envWithPath(stdLibPath, scriptPaths, argvVec);
         std::string moduleName = moduleNameFromPath(options.scriptPath);
         return executeModule(envWithPath, moduleName);
     }
@@ -199,6 +204,6 @@ int main(int argc, char* argv[]) {
         return moduleExists(options.moduleName, stdLibPath, searchPaths) ? EXIT_OK : EXIT_RESOLVE;
     }
 
-    protoPython::PythonEnvironment env(stdLibPath, searchPaths);
+    protoPython::PythonEnvironment env(stdLibPath, searchPaths, argvVec);
     return executeModule(env, options.moduleName);
 }
