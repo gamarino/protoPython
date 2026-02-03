@@ -373,6 +373,43 @@ TEST_F(FoundationTest, ContainsDunder) {
     EXPECT_EQ(dictResult, PROTO_TRUE);
 }
 
+TEST_F(FoundationTest, EqualsDunder) {
+    proto::ProtoContext* context = env.getContext();
+
+    const proto::ProtoObject* listObj = context->newObject(true)->addParent(context, env.getListPrototype());
+    const proto::ProtoObject* listObj2 = context->newObject(true)->addParent(context, env.getListPrototype());
+    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "__data__");
+    const proto::ProtoList* list = context->newList()
+        ->appendLast(context, context->fromInteger(1))
+        ->appendLast(context, context->fromInteger(2));
+    listObj->setAttribute(context, dataName, list->asObject(context));
+    listObj2->setAttribute(context, dataName, list->asObject(context));
+
+    const proto::ProtoObject* listEq = listObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__eq__"));
+    ASSERT_NE(listEq, nullptr);
+    const proto::ProtoList* listArgs = context->newList()->appendLast(context, listObj2);
+    const proto::ProtoObject* listEqResult = listEq->asMethod(context)(context, listObj, nullptr, listArgs, nullptr);
+    EXPECT_EQ(listEqResult, PROTO_TRUE);
+
+    const proto::ProtoObject* dict1 = context->newObject(true)->addParent(context, env.getDictPrototype());
+    const proto::ProtoObject* dict2 = context->newObject(true)->addParent(context, env.getDictPrototype());
+    dict1->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->newSparseList()->asObject(context));
+    dict2->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->newSparseList()->asObject(context));
+    const proto::ProtoObject* setitem = dict1->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__setitem__"));
+    ASSERT_NE(setitem, nullptr);
+    const proto::ProtoObject* key = context->fromUTF8String("k");
+    const proto::ProtoObject* val = context->fromInteger(7);
+    const proto::ProtoList* setArgs = context->newList()->appendLast(context, key)->appendLast(context, val);
+    setitem->asMethod(context)(context, dict1, nullptr, setArgs, nullptr);
+    setitem->asMethod(context)(context, dict2, nullptr, setArgs, nullptr);
+
+    const proto::ProtoObject* dictEq = dict1->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__eq__"));
+    ASSERT_NE(dictEq, nullptr);
+    const proto::ProtoList* dictArgs = context->newList()->appendLast(context, dict2);
+    const proto::ProtoObject* dictEqResult = dictEq->asMethod(context)(context, dict1, nullptr, dictArgs, nullptr);
+    EXPECT_EQ(dictEqResult, PROTO_TRUE);
+}
+
 TEST_F(FoundationTest, DequeBasic) {
     proto::ProtoContext* context = env.getContext();
     const proto::ProtoObject* collections = env.resolve("_collections");

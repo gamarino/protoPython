@@ -170,6 +170,56 @@ static const proto::ProtoObject* py_list_contains(
     return data->asList(context)->has(context, value) ? PROTO_TRUE : PROTO_FALSE;
 }
 
+static const proto::ProtoObject* py_list_eq(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    if (positionalParameters->getSize(context) < 1) return PROTO_FALSE;
+    const proto::ProtoObject* other = positionalParameters->getAt(context, 0);
+    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "__data__");
+    const proto::ProtoObject* data = self->getAttribute(context, dataName);
+    const proto::ProtoObject* otherData = other->getAttribute(context, dataName);
+    const proto::ProtoList* list = data && data->asList(context) ? data->asList(context) : self->asList(context);
+    const proto::ProtoList* otherList = otherData && otherData->asList(context) ? otherData->asList(context) : other->asList(context);
+    if (!list || !otherList) return PROTO_FALSE;
+    if (list == otherList) return PROTO_TRUE;
+    unsigned long size = list->getSize(context);
+    if (size != otherList->getSize(context)) return PROTO_FALSE;
+    for (unsigned long i = 0; i < size; ++i) {
+        const proto::ProtoObject* a = list->getAt(context, static_cast<int>(i));
+        const proto::ProtoObject* b = otherList->getAt(context, static_cast<int>(i));
+        if (a == b) continue;
+        if (a->compare(context, b) != 0) {
+            auto className = [context](const proto::ProtoObject* obj) -> std::string {
+                const proto::ProtoObject* cls = obj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__class__"));
+                if (!cls) return "";
+                const proto::ProtoObject* nameObj = cls->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__name__"));
+                if (!nameObj || !nameObj->isString(context)) return "";
+                std::string out;
+                nameObj->asString(context)->toUTF8String(context, out);
+                return out;
+            };
+
+            std::string aName = className(a);
+            std::string bName = className(b);
+            if (aName == "int" && bName == "int") {
+                if (a->asLong(context) != b->asLong(context)) return PROTO_FALSE;
+            } else if (aName == "str" && bName == "str") {
+                std::string sa;
+                std::string sb;
+                a->asString(context)->toUTF8String(context, sa);
+                b->asString(context)->toUTF8String(context, sb);
+                if (sa != sb) return PROTO_FALSE;
+            } else if (a->getHash(context) != b->getHash(context)) {
+                return PROTO_FALSE;
+            }
+        }
+    }
+    return PROTO_TRUE;
+}
+
 // --- Dict Methods ---
 
 static const proto::ProtoObject* py_dict_getitem(
@@ -264,6 +314,40 @@ static const proto::ProtoObject* py_dict_contains(
     return data->asSparseList(context)->has(context, key->getHash(context)) ? PROTO_TRUE : PROTO_FALSE;
 }
 
+static const proto::ProtoObject* py_dict_eq(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    if (positionalParameters->getSize(context) < 1) return PROTO_FALSE;
+    const proto::ProtoObject* other = positionalParameters->getAt(context, 0);
+    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "__data__");
+    const proto::ProtoObject* data = self->getAttribute(context, dataName);
+    const proto::ProtoObject* otherData = other->getAttribute(context, dataName);
+    if (!data || !data->asSparseList(context) || !otherData || !otherData->asSparseList(context)) return PROTO_FALSE;
+    const proto::ProtoSparseList* dictA = data->asSparseList(context);
+    const proto::ProtoSparseList* dictB = otherData->asSparseList(context);
+
+    const proto::ProtoString* keysName = proto::ProtoString::fromUTF8String(context, "__keys__");
+    const proto::ProtoObject* keysObjA = self->getAttribute(context, keysName);
+    const proto::ProtoObject* keysObjB = other->getAttribute(context, keysName);
+    const proto::ProtoList* keysA = keysObjA && keysObjA->asList(context) ? keysObjA->asList(context) : context->newList();
+    const proto::ProtoList* keysB = keysObjB && keysObjB->asList(context) ? keysObjB->asList(context) : context->newList();
+    if (keysA->getSize(context) != keysB->getSize(context)) return PROTO_FALSE;
+
+    unsigned long size = keysA->getSize(context);
+    for (unsigned long i = 0; i < size; ++i) {
+        const proto::ProtoObject* key = keysA->getAt(context, static_cast<int>(i));
+        unsigned long hash = key->getHash(context);
+        if (!dictB->has(context, hash)) return PROTO_FALSE;
+        const proto::ProtoObject* vA = dictA->getAt(context, hash);
+        const proto::ProtoObject* vB = dictB->getAt(context, hash);
+        if (vA->compare(context, vB) != 0) return PROTO_FALSE;
+    }
+    return PROTO_TRUE;
+}
+
 // --- PythonEnvironment Implementation ---
 
 PythonEnvironment::PythonEnvironment(const std::string& stdLibPath, const std::vector<std::string>& searchPaths) : space() {
@@ -289,6 +373,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     const proto::ProtoString* py_next = proto::ProtoString::fromUTF8String(context, "__next__");
     const proto::ProtoString* py_iter_proto = proto::ProtoString::fromUTF8String(context, "__iter_prototype__");
     const proto::ProtoString* py_contains = proto::ProtoString::fromUTF8String(context, "__contains__");
+    const proto::ProtoString* py_eq = proto::ProtoString::fromUTF8String(context, "__eq__");
 
     // 1. Create 'object' base
     objectPrototype = context->newObject(true);
@@ -325,6 +410,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     listPrototype = listPrototype->setAttribute(context, py_setitem, context->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_setitem));
     listPrototype = listPrototype->setAttribute(context, py_iter, context->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_iter));
     listPrototype = listPrototype->setAttribute(context, py_contains, context->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_contains));
+    listPrototype = listPrototype->setAttribute(context, py_eq, context->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_eq));
 
     const proto::ProtoObject* listIterProto = context->newObject(true);
     listIterProto = listIterProto->addParent(context, objectPrototype);
@@ -341,6 +427,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     dictPrototype = dictPrototype->setAttribute(context, py_iter, context->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_iter));
     dictPrototype = dictPrototype->setAttribute(context, py_iter_proto, listIterProto);
     dictPrototype = dictPrototype->setAttribute(context, py_contains, context->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_contains));
+    dictPrototype = dictPrototype->setAttribute(context, py_eq, context->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_eq));
 
     // 5. Initialize Native Module Provider
     auto& registry = proto::ProviderRegistry::instance();
