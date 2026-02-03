@@ -19,6 +19,7 @@
   1. Create `PythonEnvironment` with stdlib path and search paths.
   2. Accept a script path or module name.
   3. Resolve the module or load the file; if the module has a callable `main` attribute, invoke it (stub execution path). Once the full execution engine exists, bytecode will be run via `ProtoContext` and the protoPython object model.
+- **CLI contract**: `protopy` now exposes `--module`, `--script`, `--path`, and `--stdlib` flags plus distinct exit codes (0 success, 65 resolve error, 70 runtime failure, 64 usage). This allows tooling to consume protopy deterministically.
 
 ## Revision
 
