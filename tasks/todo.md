@@ -57,7 +57,7 @@ See [docs/NEXT_20_STEPS_V4.md](../docs/NEXT_20_STEPS_V4.md). Steps 01–04 done;
 - [x] Step 12: Regression gating CTest target
 - [x] Step 13: sys module parity (argv, exit, version info)
 - [x] Step 14: Import resolution cache + invalidation
-- [ ] Step 15: Native math/operator helpers
+- [x] Step 15: Native math/operator helpers
 - [ ] Step 16: File I/O enhancements (modes, buffering, context)
 - [ ] Step 17: Logging/tracing utilities + CLI `--trace`
 - [ ] Step 18: Debug Adapter Protocol skeleton

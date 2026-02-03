@@ -198,6 +198,47 @@ static const proto::ProtoObject* py_issubclass(
     return cls->isInstanceOf(context, base);
 }
 
+static const proto::ProtoObject* py_abs(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    long long v = positionalParameters->getAt(context, 0)->asLong(context);
+    return context->fromInteger(v < 0 ? -v : v);
+}
+
+static const proto::ProtoObject* py_min(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    long long m = positionalParameters->getAt(context, 0)->asLong(context);
+    for (unsigned long i = 1; i < positionalParameters->getSize(context); ++i) {
+        long long v = positionalParameters->getAt(context, static_cast<int>(i))->asLong(context);
+        if (v < m) m = v;
+    }
+    return context->fromInteger(m);
+}
+
+static const proto::ProtoObject* py_max(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    long long m = positionalParameters->getAt(context, 0)->asLong(context);
+    for (unsigned long i = 1; i < positionalParameters->getSize(context); ++i) {
+        long long v = positionalParameters->getAt(context, static_cast<int>(i))->asLong(context);
+        if (v > m) m = v;
+    }
+    return context->fromInteger(m);
+}
+
 static const proto::ProtoObject* py_range(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -262,6 +303,10 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "isinstance"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_isinstance));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "issubclass"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_issubclass));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "range"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_range));
+
+    builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "abs"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_abs));
+    builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "min"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_min));
+    builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "max"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_max));
 
     return builtins;
 }
