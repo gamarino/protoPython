@@ -6,7 +6,7 @@ using namespace protoPython;
 
 class FoundationTest : public ::testing::Test {
 protected:
-    PythonEnvironment env;
+    PythonEnvironment env{STDLIB_PATH};
 };
 
 TEST_F(FoundationTest, BasicTypesExist) {
@@ -45,4 +45,28 @@ TEST_F(FoundationTest, ResolveBuiltins) {
     EXPECT_EQ(env.resolve("int"), env.getIntPrototype());
     EXPECT_EQ(env.resolve("list"), env.getListPrototype());
     EXPECT_EQ(env.resolve("nonexistent"), PROTO_NONE);
+}
+
+TEST_F(FoundationTest, ModuleImport) {
+    proto::ProtoContext* context = env.getContext();
+    
+    // Attempt to resolve 'os' which should be found in our new StdLib shell
+    const proto::ProtoObject* osMod = env.resolve("os");
+    ASSERT_NE(osMod, nullptr);
+    ASSERT_NE(osMod, PROTO_NONE);
+    
+    // Check attributes set by PythonModuleProvider
+    const proto::ProtoString* nameKey = proto::ProtoString::fromUTF8String(context, "__name__");
+    const proto::ProtoObject* nameVal = osMod->getAttribute(context, nameKey);
+    ASSERT_NE(nameVal, nullptr);
+    ASSERT_TRUE(nameVal->isString(context));
+    
+    std::string nameStr;
+    nameVal->asString(context)->toUTF8String(context, nameStr);
+    EXPECT_EQ(nameStr, "os");
+    
+    const proto::ProtoString* fileKey = proto::ProtoString::fromUTF8String(context, "__file__");
+    const proto::ProtoObject* fileVal = osMod->getAttribute(context, fileKey);
+    ASSERT_NE(fileVal, nullptr);
+    ASSERT_TRUE(fileVal->isString(context));
 }

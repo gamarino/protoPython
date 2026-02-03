@@ -1,6 +1,8 @@
 file(REMOVE_RECURSE
   "CMakeFiles/protoPython.dir/PythonEnvironment.cpp.o"
   "CMakeFiles/protoPython.dir/PythonEnvironment.cpp.o.d"
+  "CMakeFiles/protoPython.dir/PythonModuleProvider.cpp.o"
+  "CMakeFiles/protoPython.dir/PythonModuleProvider.cpp.o.d"
   "libprotoPython.pdb"
   "libprotoPython.so"
 )

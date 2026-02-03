@@ -229,6 +229,30 @@ PythonEnvironment.cpp.s:
 	cd /home/gamarino/Documentos/proyectos/protoPython/build && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/PythonEnvironment.cpp.s
 .PHONY : PythonEnvironment.cpp.s
 
+PythonModuleProvider.o: PythonModuleProvider.cpp.o
+.PHONY : PythonModuleProvider.o
+
+# target to build an object file
+PythonModuleProvider.cpp.o:
+	cd /home/gamarino/Documentos/proyectos/protoPython/build && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/PythonModuleProvider.cpp.o
+.PHONY : PythonModuleProvider.cpp.o
+
+PythonModuleProvider.i: PythonModuleProvider.cpp.i
+.PHONY : PythonModuleProvider.i
+
+# target to preprocess a source file
+PythonModuleProvider.cpp.i:
+	cd /home/gamarino/Documentos/proyectos/protoPython/build && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/PythonModuleProvider.cpp.i
+.PHONY : PythonModuleProvider.cpp.i
+
+PythonModuleProvider.s: PythonModuleProvider.cpp.s
+.PHONY : PythonModuleProvider.s
+
+# target to generate assembly for a file
+PythonModuleProvider.cpp.s:
+	cd /home/gamarino/Documentos/proyectos/protoPython/build && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/PythonModuleProvider.cpp.s
+.PHONY : PythonModuleProvider.cpp.s
+
 # Help Target
 help:
 	@echo "The following are some of the valid targets for this Makefile:"
@@ -248,6 +272,9 @@ help:
 	@echo "... PythonEnvironment.o"
 	@echo "... PythonEnvironment.i"
 	@echo "... PythonEnvironment.s"
+	@echo "... PythonModuleProvider.o"
+	@echo "... PythonModuleProvider.i"
+	@echo "... PythonModuleProvider.s"
 .PHONY : help
 
 

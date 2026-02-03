@@ -1,4 +1,5 @@
 #include <protoPython/PythonEnvironment.h>
+#include <protoPython/PythonModuleProvider.h>
 #include <protoCore.h>
 
 namespace protoPython {
@@ -79,16 +80,16 @@ static const proto::ProtoObject* py_dict_getitem(
 
 // --- PythonEnvironment Implementation ---
 
-PythonEnvironment::PythonEnvironment() : space() {
+PythonEnvironment::PythonEnvironment(const std::string& stdLibPath) : space() {
     context = new proto::ProtoContext(&space);
-    initializeRootObjects();
+    initializeRootObjects(stdLibPath);
 }
 
 PythonEnvironment::~PythonEnvironment() {
     delete context;
 }
 
-void PythonEnvironment::initializeRootObjects() {
+void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath) {
     const proto::ProtoString* py_init = proto::ProtoString::fromUTF8String(context, "__init__");
     const proto::ProtoString* py_repr = proto::ProtoString::fromUTF8String(context, "__repr__");
     const proto::ProtoString* py_str = proto::ProtoString::fromUTF8String(context, "__str__");
@@ -133,6 +134,22 @@ void PythonEnvironment::initializeRootObjects() {
     dictPrototype = dictPrototype->setAttribute(context, py_class, typePrototype);
     dictPrototype = dictPrototype->setAttribute(context, py_name, context->fromUTF8String("dict"));
     dictPrototype = dictPrototype->setAttribute(context, py_getitem, context->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_getitem));
+
+    // 5. Initialize StdLib Module Provider
+    auto& registry = proto::ProviderRegistry::instance();
+    // Use provided path or default to ./lib/python3.14
+    std::string path = stdLibPath.empty() ? "./lib/python3.14" : stdLibPath;
+    registry.registerProvider(std::make_unique<PythonModuleProvider>(path));
+
+    // Prepend to resolution chain
+    const proto::ProtoObject* chainObj = context->space->getResolutionChain();
+    if (chainObj) {
+        const proto::ProtoList* chain = chainObj->asList(context);
+        if (chain) {
+            chain = chain->insertAt(context, 0, context->fromUTF8String("provider:python_stdlib"));
+            context->space->setResolutionChain(chain->asObject(context));
+        }
+    }
 }
 
 const proto::ProtoObject* PythonEnvironment::resolve(const std::string& name) {
@@ -144,6 +161,12 @@ const proto::ProtoObject* PythonEnvironment::resolve(const std::string& name) {
     if (name == "list") return listPrototype;
     if (name == "dict") return dictPrototype;
     
+    // Fallback: try to import as a module
+    const proto::ProtoObject* modWrapper = context->space->getImportModule(name.c_str(), "val");
+    if (modWrapper) {
+        return modWrapper->getAttribute(context, proto::ProtoString::fromUTF8String(context, "val"));
+    }
+
     return PROTO_NONE;
 }
 

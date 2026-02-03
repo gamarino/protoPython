@@ -13,7 +13,7 @@ The foundation of the runtime must be fully compatible with Python 3.14's semant
 ## 2. Standard Library Integration
 The goal is to provide a complete standard library that behaves identically to CPython's.
 
-- [ ] **Phase 1: StdLib Shell**: Copy the Python 3.14 `.py` standard library into `lib/python3.14/`.
+- [x] **Phase 1: StdLib Shell**: Copy the Python 3.14 `.py` standard library into `lib/python3.14/`.
 - [ ] **Phase 2: C-to-C++ Replacement**:
     - Identify modules traditionally implemented in C (e.g., `_io`, `_collections`, `_functools`, `_ssl`, `_socket`).
     - Re-implement these modules as C++ shared libraries using the `protoPython` internal API.
