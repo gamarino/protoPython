@@ -9,4 +9,7 @@ def getpid():
     return 0  # Placeholder
 
 def getcwd():
-    return "."
+    return "."  # Stub
+
+def chdir(path):
+    pass  # Stub: no-op
