@@ -15,3 +15,8 @@ target_compile_definitions(test_minimal PRIVATE STDLIB_PATH="${CMAKE_SOURCE_DIR}
 # ProtoCore-only minimal test (no protoPython)
 add_executable(test_protocore_minimal TestProtoCoreMinimal.cpp)
 target_link_libraries(test_protocore_minimal PRIVATE protoCore)
+
+# Execution engine (minimal bytecode)
+add_executable(test_execution_engine TestExecutionEngine.cpp)
+target_link_libraries(test_execution_engine PRIVATE protoPython protoCore gtest_main)
+add_test(NAME test_execution_engine COMMAND test_execution_engine)
