@@ -4527,14 +4527,17 @@ int PythonEnvironment::executeModule(const std::string& moduleName) {
     }
 
     if (executionHook) executionHook(moduleName, 0);
-    if (traceFunction) {
-        const proto::ProtoObject* callAttr = traceFunction->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__call__"));
-        if (callAttr && callAttr->asMethod(context)) {
-            const proto::ProtoList* args = context->newList()
-                ->appendLast(context, PROTO_NONE)
-                ->appendLast(context, context->fromUTF8String("call"))
-                ->appendLast(context, PROTO_NONE);
-            callAttr->asMethod(context)(context, traceFunction, nullptr, args, nullptr);
+    {
+        const proto::ProtoObject* tf = getTraceFunction();
+        if (tf) {
+            const proto::ProtoObject* callAttr = tf->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__call__"));
+            if (callAttr && callAttr->asMethod(context)) {
+                const proto::ProtoList* args = context->newList()
+                    ->appendLast(context, PROTO_NONE)
+                    ->appendLast(context, context->fromUTF8String("call"))
+                    ->appendLast(context, PROTO_NONE);
+                callAttr->asMethod(context)(context, tf, nullptr, args, nullptr);
+            }
         }
     }
 
@@ -4550,14 +4553,17 @@ int PythonEnvironment::executeModule(const std::string& moduleName) {
         return -2;
     }
 
-    if (traceFunction) {
-        const proto::ProtoObject* callAttr = traceFunction->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__call__"));
-        if (callAttr && callAttr->asMethod(context)) {
-            const proto::ProtoList* args = context->newList()
-                ->appendLast(context, PROTO_NONE)
-                ->appendLast(context, context->fromUTF8String("return"))
-                ->appendLast(context, PROTO_NONE);
-            callAttr->asMethod(context)(context, traceFunction, nullptr, args, nullptr);
+    {
+        const proto::ProtoObject* tf = getTraceFunction();
+        if (tf) {
+            const proto::ProtoObject* callAttr = tf->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__call__"));
+            if (callAttr && callAttr->asMethod(context)) {
+                const proto::ProtoList* args = context->newList()
+                    ->appendLast(context, PROTO_NONE)
+                    ->appendLast(context, context->fromUTF8String("return"))
+                    ->appendLast(context, PROTO_NONE);
+                callAttr->asMethod(context)(context, tf, nullptr, args, nullptr);
+            }
         }
     }
     if (executionHook) executionHook(moduleName, 1);

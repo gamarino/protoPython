@@ -3,6 +3,7 @@
 
 #include <protoCore.h>
 #include <functional>
+#include <mutex>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -131,14 +132,20 @@ public:
     void setExitRequested(int code) { exitRequested_ = code; }
 
     /**
-     * @brief Sets the global trace function (sys.settrace).
+     * @brief Sets the global trace function (sys.settrace). Thread-safe.
      */
-    void setTraceFunction(const proto::ProtoObject* func) { traceFunction = func; }
+    void setTraceFunction(const proto::ProtoObject* func) {
+        std::lock_guard<std::mutex> lock(traceAndExceptionMutex_);
+        traceFunction = func;
+    }
 
     /**
-     * @brief Gets the global trace function (sys.gettrace).
+     * @brief Gets the global trace function (sys.gettrace). Thread-safe.
      */
-    const proto::ProtoObject* getTraceFunction() const { return traceFunction; }
+    const proto::ProtoObject* getTraceFunction() const {
+        std::lock_guard<std::mutex> lock(traceAndExceptionMutex_);
+        return traceFunction;
+    }
 
     /**
      * @brief Sets the trace function from sys._trace_default (for --trace CLI).
@@ -151,14 +158,18 @@ public:
     void incrementSysStats(const char* key);
 
     /**
-     * @brief Sets the pending exception (raised by container operations).
+     * @brief Sets the pending exception (raised by container operations). Thread-safe.
      */
-    void setPendingException(const proto::ProtoObject* exc) { pendingException = exc; }
+    void setPendingException(const proto::ProtoObject* exc) {
+        std::lock_guard<std::mutex> lock(traceAndExceptionMutex_);
+        pendingException = exc;
+    }
 
     /**
-     * @brief Gets and clears the pending exception.
+     * @brief Gets and clears the pending exception. Thread-safe.
      */
     const proto::ProtoObject* takePendingException() {
+        std::lock_guard<std::mutex> lock(traceAndExceptionMutex_);
         const proto::ProtoObject* e = pendingException;
         pendingException = nullptr;
         return e;
@@ -202,6 +213,7 @@ private:
     const proto::ProtoObject* builtinsModule;
     const proto::ProtoObject* traceFunction{nullptr};
     const proto::ProtoObject* pendingException{nullptr};
+    mutable std::mutex traceAndExceptionMutex_;
     std::vector<std::string> argv_;
     int exitRequested_{0};
     ExecutionHook executionHook;
