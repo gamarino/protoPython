@@ -2114,6 +2114,89 @@ static const proto::ProtoObject* py_bytes_strip(
     return b;
 }
 
+static const proto::ProtoObject* py_bytes_split(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoString* s = bytes_data(context, self);
+    if (!s) return PROTO_NONE;
+    std::string raw;
+    s->toUTF8String(context, raw);
+    std::string sep = " ";
+    if (posArgs->getSize(context) >= 1 && posArgs->getAt(context, 0) != PROTO_NONE) {
+        bytes_needle_from_arg(context, posArgs->getAt(context, 0), sep);
+    }
+    long long maxsplit = -1;
+    if (posArgs->getSize(context) >= 2 && posArgs->getAt(context, 1)->isInteger(context))
+        maxsplit = posArgs->getAt(context, 1)->asLong(context);
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!env) return PROTO_NONE;
+    const proto::ProtoObject* listProto = env->getListPrototype();
+    if (!listProto) return PROTO_NONE;
+    proto::ProtoObject* resultObj = const_cast<proto::ProtoObject*>(listProto->newChild(context, true));
+    const proto::ProtoList* result = context->newList();
+    if (sep.empty()) return PROTO_NONE;
+    const proto::ProtoObject* bytesProto = env->getBytesPrototype();
+    if (!bytesProto) return PROTO_NONE;
+    size_t start = 0;
+    long long n = 0;
+    while (maxsplit < 0 || n < maxsplit) {
+        size_t pos = raw.find(sep, start);
+        if (pos == std::string::npos) break;
+        std::string part = raw.substr(start, pos - start);
+        proto::ProtoObject* b = const_cast<proto::ProtoObject*>(bytesProto->newChild(context, true));
+        b->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->fromUTF8String(part.c_str()));
+        result = result->appendLast(context, b);
+        start = pos + sep.size();
+        n++;
+    }
+    proto::ProtoObject* bLast = const_cast<proto::ProtoObject*>(bytesProto->newChild(context, true));
+    bLast->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->fromUTF8String(raw.substr(start).c_str()));
+    result = result->appendLast(context, bLast);
+    resultObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), result->asObject(context));
+    return resultObj;
+}
+
+static const proto::ProtoObject* py_bytes_join(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoString* sep = bytes_data(context, self);
+    if (!sep || posArgs->getSize(context) < 1) return PROTO_NONE;
+    std::string sepStr;
+    sep->toUTF8String(context, sepStr);
+    const proto::ProtoObject* iterable = posArgs->getAt(context, 0);
+    const proto::ProtoObject* iterM = iterable->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__iter__"));
+    if (!iterM || !iterM->asMethod(context)) return PROTO_NONE;
+    const proto::ProtoObject* it = iterM->asMethod(context)(context, iterable, nullptr, context->newList(), nullptr);
+    if (!it) return PROTO_NONE;
+    const proto::ProtoObject* nextM = it->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__next__"));
+    if (!nextM || !nextM->asMethod(context)) return PROTO_NONE;
+    std::string out;
+    bool first = true;
+    for (;;) {
+        const proto::ProtoObject* item = nextM->asMethod(context)(context, it, nullptr, context->newList(), nullptr);
+        if (!item || item == PROTO_NONE) break;
+        if (!first) out += sepStr;
+        first = false;
+        if (item->isInteger(context)) {
+            long long v = item->asLong(context);
+            if (v < 0 || v > 255) return PROTO_NONE;
+            out += static_cast<char>(static_cast<unsigned char>(v));
+        } else if (item->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"))) {
+            const proto::ProtoString* b = bytes_data(context, item);
+            if (b) { std::string s; b->toUTF8String(context, s); out += s; }
+        }
+    }
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!env) return PROTO_NONE;
+    const proto::ProtoObject* bytesProto = env->getBytesPrototype();
+    if (!bytesProto) return PROTO_NONE;
+    proto::ProtoObject* b = const_cast<proto::ProtoObject*>(bytesProto->newChild(context, true));
+    b->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->fromUTF8String(out.c_str()));
+    return b;
+}
+
 static const proto::ProtoString* str_from_self(proto::ProtoContext* context, const proto::ProtoObject* self) {
     if (self->isString(context)) return self->asString(context);
     const proto::ProtoObject* data = self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"));
@@ -3750,6 +3833,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     bytesPrototype = bytesPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "strip"), context->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_strip));
     bytesPrototype = bytesPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "lstrip"), context->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_lstrip));
     bytesPrototype = bytesPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "rstrip"), context->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_rstrip));
+    bytesPrototype = bytesPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "split"), context->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_split));
+    bytesPrototype = bytesPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "join"), context->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_join));
 
     sliceType = context->newObject(true);
     sliceType = sliceType->addParent(context, objectPrototype);
