@@ -3164,6 +3164,19 @@ static const proto::ProtoObject* py_str_isprintable(
     return PROTO_TRUE;
 }
 
+static const proto::ProtoObject* py_str_isascii(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoString* str = str_from_self(context, self);
+    if (!str) return PROTO_FALSE;
+    std::string s;
+    str->toUTF8String(context, s);
+    for (unsigned char c : s)
+        if (c > 127) return PROTO_FALSE;
+    return PROTO_TRUE;
+}
+
 static const proto::ProtoObject* py_str_isidentifier(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -4030,6 +4043,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     strPrototype = strPrototype->setAttribute(context, py_islower, context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_islower));
     strPrototype = strPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "isidentifier"), context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_isidentifier));
     strPrototype = strPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "isprintable"), context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_isprintable));
+    strPrototype = strPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "isascii"), context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_isascii));
     strPrototype = strPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "isdecimal"), context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_isdecimal));
     strPrototype = strPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "isnumeric"), context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_isnumeric));
 
@@ -4208,6 +4222,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     bytesPrototype = bytesPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "replace"), context->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_replace));
     bytesPrototype = bytesPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "isdigit"), context->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_isdigit));
     bytesPrototype = bytesPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "isalpha"), context->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_isalpha));
+    bytesPrototype = bytesPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "isascii"), context->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_isascii));
 
     sliceType = context->newObject(true);
     sliceType = sliceType->addParent(context, objectPrototype);

@@ -17,7 +17,7 @@ Plan for 20 incremental milestones. Each step: implement → update docs → `gi
 | 367 | Execution engine POP_TOP | done |
 | 368 | math.tan | done |
 | 369 | operator.invert | done |
-| 370 | str.isascii() / bytes.isascii() | pending |
+| 370 | str.isascii() / bytes.isascii() | done |
 | 371 | builtins.setattr | pending |
 | 372 | builtins.callable | pending |
 | 373 | list.__iadd__ or INPLACE_ADD for list | pending |
