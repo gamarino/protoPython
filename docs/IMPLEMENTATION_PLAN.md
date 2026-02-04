@@ -85,6 +85,8 @@ We aim for "No-Modification" compatibility with CPython tests.
 
 **Completed: Next 20 Steps v24 (405–424).** See [NEXT_20_STEPS_V24.md](NEXT_20_STEPS_V24.md). BINARY_LSHIFT, BINARY_RSHIFT, INPLACE_SUBTRACT; math atan2/degrees/radians; operator and_/or_/xor; str.split maxsplit, len/bool, float.hex (existing); email, runpy stubs; foundation and engine tests; STUBS and todo updated.
 
+**Next 20 Steps v25 (425–444).** See [NEXT_20_STEPS_V25.md](NEXT_20_STEPS_V25.md). Planned: BINARY_AND, BINARY_OR, BINARY_XOR, INPLACE_MULTIPLY; math hypot/fmod/log2/log1p; operator.index; stdlib stubs; foundation and engine tests.
+
 ## 5. Debugging & IDE Support
 To be a viable replacement, `protoPython` must support professional developer workflows.
 
