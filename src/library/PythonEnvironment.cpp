@@ -36,6 +36,17 @@ static const proto::ProtoObject* py_object_repr(
     return context->fromUTF8String(buffer);
 }
 
+static const proto::ProtoObject* py_object_format(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoObject* strM = self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__str__"));
+    if (strM && strM->asMethod(context)) {
+        return strM->asMethod(context)(context, self, nullptr, posArgs && posArgs->getSize(context) > 0 ? posArgs : context->newList(), nullptr);
+    }
+    return PROTO_NONE;
+}
+
 static const proto::ProtoObject* py_object_str(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -1037,14 +1048,33 @@ static const proto::ProtoObject* py_frozenset_call(
     return fs;
 }
 
+static const proto::ProtoObject* py_int_format(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    long long v = self->asLong(context);
+    char buf[32];
+    snprintf(buf, sizeof(buf), "%lld", v);
+    return context->fromUTF8String(buf);
+}
+
+static const proto::ProtoString* str_from_self(proto::ProtoContext* context, const proto::ProtoObject* self);
+
+static const proto::ProtoObject* py_str_format_dunder(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoString* s = str_from_self(context, self);
+    if (!s) return PROTO_NONE;
+    return s->asObject(context);
+}
+
 static const proto::ProtoObject* py_int_hash(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
     return context->fromInteger(self->asLong(context));
 }
-
-static const proto::ProtoString* str_from_self(proto::ProtoContext* context, const proto::ProtoObject* self);
 
 static const proto::ProtoObject* py_str_hash(
     proto::ProtoContext* context,
@@ -1670,9 +1700,11 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
 
     // 1. Create 'object' base
     objectPrototype = context->newObject(true);
+    const proto::ProtoString* py_format_dunder = proto::ProtoString::fromUTF8String(context, "__format__");
     objectPrototype = objectPrototype->setAttribute(context, py_init, context->fromMethod(const_cast<proto::ProtoObject*>(objectPrototype), py_object_init));
     objectPrototype = objectPrototype->setAttribute(context, py_repr, context->fromMethod(const_cast<proto::ProtoObject*>(objectPrototype), py_object_repr));
     objectPrototype = objectPrototype->setAttribute(context, py_str, context->fromMethod(const_cast<proto::ProtoObject*>(objectPrototype), py_object_str));
+    objectPrototype = objectPrototype->setAttribute(context, py_format_dunder, context->fromMethod(const_cast<proto::ProtoObject*>(objectPrototype), py_object_format));
 
     // 2. Create 'type'
     typePrototype = context->newObject(true);
@@ -1689,6 +1721,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     intPrototype = intPrototype->setAttribute(context, py_class, typePrototype);
     intPrototype = intPrototype->setAttribute(context, py_name, context->fromUTF8String("int"));
     intPrototype = intPrototype->setAttribute(context, py_hash, context->fromMethod(const_cast<proto::ProtoObject*>(intPrototype), py_int_hash));
+    intPrototype = intPrototype->setAttribute(context, py_format_dunder, context->fromMethod(const_cast<proto::ProtoObject*>(intPrototype), py_int_format));
 
     strPrototype = context->newObject(true);
     strPrototype = strPrototype->addParent(context, objectPrototype);
@@ -1701,6 +1734,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     strPrototype = strPrototype->setAttribute(context, py_upper, context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_upper));
     strPrototype = strPrototype->setAttribute(context, py_lower, context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_lower));
     strPrototype = strPrototype->setAttribute(context, py_format, context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_format));
+    strPrototype = strPrototype->setAttribute(context, py_format_dunder, context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_format_dunder));
     strPrototype = strPrototype->setAttribute(context, py_hash, context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_hash));
 
     listPrototype = context->newObject(true);
@@ -1913,6 +1947,16 @@ int PythonEnvironment::executeModule(const std::string& moduleName) {
         return -1;
 
     if (executionHook) executionHook(moduleName, 0);
+    if (traceFunction) {
+        const proto::ProtoObject* callAttr = traceFunction->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__call__"));
+        if (callAttr && callAttr->asMethod(context)) {
+            const proto::ProtoList* args = context->newList()
+                ->appendLast(context, PROTO_NONE)
+                ->appendLast(context, context->fromUTF8String("call"))
+                ->appendLast(context, PROTO_NONE);
+            callAttr->asMethod(context)(context, traceFunction, nullptr, args, nullptr);
+        }
+    }
 
     int ret = runModuleMain(moduleName);
     if (ret != 0) {
@@ -1926,8 +1970,34 @@ int PythonEnvironment::executeModule(const std::string& moduleName) {
         return -2;
     }
 
+    if (traceFunction) {
+        const proto::ProtoObject* callAttr = traceFunction->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__call__"));
+        if (callAttr && callAttr->asMethod(context)) {
+            const proto::ProtoList* args = context->newList()
+                ->appendLast(context, PROTO_NONE)
+                ->appendLast(context, context->fromUTF8String("return"))
+                ->appendLast(context, PROTO_NONE);
+            callAttr->asMethod(context)(context, traceFunction, nullptr, args, nullptr);
+        }
+    }
     if (executionHook) executionHook(moduleName, 1);
     return exitRequested_ != 0 ? -3 : 0;
+}
+
+void PythonEnvironment::incrementSysStats(const char* key) {
+    if (!sysModule) return;
+    const proto::ProtoObject* stats = sysModule->getAttribute(context, proto::ProtoString::fromUTF8String(context, "stats"));
+    if (!stats) return;
+    const proto::ProtoObject* val = stats->getAttribute(context, proto::ProtoString::fromUTF8String(context, key));
+    long long n = (val && val->isInteger(context)) ? val->asLong(context) : 0;
+    const proto::ProtoObject* newStats = stats->setAttribute(context, proto::ProtoString::fromUTF8String(context, key), context->fromInteger(n + 1));
+    sysModule = sysModule->setAttribute(context, proto::ProtoString::fromUTF8String(context, "stats"), newStats);
+}
+
+void PythonEnvironment::enableDefaultTrace() {
+    if (!sysModule) return;
+    const proto::ProtoObject* def = sysModule->getAttribute(context, proto::ProtoString::fromUTF8String(context, "_trace_default"));
+    if (def && def != PROTO_NONE) setTraceFunction(def);
 }
 
 void PythonEnvironment::invalidateResolveCache() {

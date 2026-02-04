@@ -234,6 +234,7 @@ int main(int argc, char* argv[]) {
         env.setExecutionHook([](const std::string& name, int phase) {
             std::cerr << (phase == 0 ? "[trace] enter " : "[trace] leave ") << name << std::endl;
         });
+        env.enableDefaultTrace();
     }
     return executeModule(env, options.moduleName);
 }

@@ -1,5 +1,6 @@
 #include <protoPython/SysModule.h>
 #include <protoPython/PythonEnvironment.h>
+#include <iostream>
 
 namespace protoPython {
 namespace sys {
@@ -39,6 +40,23 @@ static const proto::ProtoObject* sys_settrace(
     return PROTO_NONE; 
 }
 
+static const proto::ProtoObject* sys_trace_default(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    (void)self;
+    (void)parentLink;
+    (void)keywordParameters;
+    if (positionalParameters->getSize(context) >= 2 && positionalParameters->getAt(context, 1)->isString(context)) {
+        std::string ev;
+        positionalParameters->getAt(context, 1)->asString(context)->toUTF8String(context, ev);
+        std::cerr << "[settrace] event=" << ev << std::endl;
+    }
+    return PROTO_NONE;
+}
+
 static const proto::ProtoObject* sys_gettrace(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -67,6 +85,10 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "exit"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_exit));
     sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "settrace"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_settrace));
     sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "gettrace"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_gettrace));
+    const proto::ProtoObject* traceDefault = ctx->newObject(true);
+    traceDefault = traceDefault->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__call__"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(traceDefault), sys_trace_default));
+    sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_trace_default"), traceDefault);
     
     // sys.platform
 #if defined(_WIN32)

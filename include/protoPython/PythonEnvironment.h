@@ -141,6 +141,16 @@ public:
     const proto::ProtoObject* getTraceFunction() const { return traceFunction; }
 
     /**
+     * @brief Sets the trace function from sys._trace_default (for --trace CLI).
+     */
+    void enableDefaultTrace();
+
+    /**
+     * @brief Increments sys.stats.calls or sys.stats.objects_created by 1.
+     */
+    void incrementSysStats(const char* key);
+
+    /**
      * @brief Sets the pending exception (raised by container operations).
      */
     void setPendingException(const proto::ProtoObject* exc) { pendingException = exc; }
