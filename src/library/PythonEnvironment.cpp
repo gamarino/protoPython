@@ -13,6 +13,7 @@
 #include <protoPython/ItertoolsModule.h>
 #include <protoPython/JsonModule.h>
 #include <protoPython/ReModule.h>
+#include <protoPython/OsPathModule.h>
 #include <protoCore.h>
 
 namespace protoPython {
@@ -2145,6 +2146,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     nativeProvider->registerModule("itertools", [](proto::ProtoContext* ctx) { return itertools::initialize(ctx); });
     nativeProvider->registerModule("re", [](proto::ProtoContext* ctx) { return re::initialize(ctx); });
     nativeProvider->registerModule("json", [](proto::ProtoContext* ctx) { return json::initialize(ctx); });
+    nativeProvider->registerModule("os.path", [](proto::ProtoContext* ctx) { return os_path::initialize(ctx); });
 
     const proto::ProtoObject* exceptionsMod = exceptions::initialize(context, objectPrototype, typePrototype);
     keyErrorType = exceptionsMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "KeyError"));

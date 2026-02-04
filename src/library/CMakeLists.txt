@@ -8,6 +8,7 @@ add_library(protoPython SHARED
     MathModule.cpp
     OperatorModule.cpp
     ReModule.cpp
+    OsPathModule.cpp
     PythonEnvironment.cpp
     PythonModuleProvider.cpp
     NativeModuleProvider.cpp

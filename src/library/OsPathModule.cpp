@@ -1,0 +1,86 @@
+#include <protoPython/OsPathModule.h>
+#include <string>
+
+namespace protoPython {
+namespace os_path {
+
+static const proto::ProtoObject* py_join(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList*) {
+    (void)self;
+    if (!posArgs || posArgs->getSize(ctx) == 0)
+        return ctx->fromUTF8String("");
+    std::string out;
+    const char* sep = "/";
+    if (posArgs->getSize(ctx) == 1) {
+        const proto::ProtoObject* iterable = posArgs->getAt(ctx, 0);
+        const proto::ProtoObject* iterM = iterable->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iter__"));
+        if (!iterM || !iterM->asMethod(ctx)) return ctx->fromUTF8String("");
+        const proto::ProtoObject* it = iterM->asMethod(ctx)(ctx, iterable, nullptr, ctx->newList(), nullptr);
+        if (!it) return ctx->fromUTF8String("");
+        const proto::ProtoObject* nextM = it->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__next__"));
+        if (!nextM || !nextM->asMethod(ctx)) return ctx->fromUTF8String("");
+        bool first = true;
+        for (;;) {
+            const proto::ProtoObject* part = nextM->asMethod(ctx)(ctx, it, nullptr, ctx->newList(), nullptr);
+            if (!part || part == PROTO_NONE) break;
+            if (!first) out += sep;
+            first = false;
+            if (part->isString(ctx)) {
+                std::string s;
+                part->asString(ctx)->toUTF8String(ctx, s);
+                out += s;
+            }
+        }
+    } else {
+        for (unsigned long i = 0; i < posArgs->getSize(ctx); ++i) {
+            if (i > 0) out += sep;
+            const proto::ProtoObject* part = posArgs->getAt(ctx, static_cast<int>(i));
+            if (part->isString(ctx)) {
+                std::string s;
+                part->asString(ctx)->toUTF8String(ctx, s);
+                out += s;
+            }
+        }
+    }
+    return ctx->fromUTF8String(out.c_str());
+}
+
+static const proto::ProtoObject* py_exists(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList*) {
+    (void)self;
+    (void)posArgs;
+    return PROTO_FALSE;
+}
+
+static const proto::ProtoObject* py_isdir(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList*) {
+    (void)self;
+    (void)posArgs;
+    return PROTO_FALSE;
+}
+
+const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
+    const proto::ProtoObject* mod = ctx->newObject(true);
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "join"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_join));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "exists"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_exists));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "isdir"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_isdir));
+    return mod;
+}
+
+} // namespace os_path
+} // namespace protoPython
