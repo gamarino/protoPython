@@ -1,10 +1,14 @@
 #include <protoPython/BuiltinsModule.h>
+#include <protoPython/Compiler.h>
+#include <protoPython/Parser.h>
+#include <protoPython/Tokenizer.h>
 #include <protoPython/PythonEnvironment.h>
 #include <cmath>
 #include <cstdio>
 #include <iostream>
 #include <algorithm>
 #include <vector>
+#include <string>
 
 namespace protoPython {
 namespace builtins {
@@ -514,7 +518,73 @@ static const proto::ProtoObject* py_input(
     return context->fromUTF8String("");
 }
 
-/** eval(expr): stub returning None; full impl requires expression parser. */
+/** _tokenize_source(source): return list of (toktype_int, value_str) for tokenizer. Internal use by tokenize module. */
+static const proto::ProtoObject* py__tokenize_source(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    (void)self;
+    (void)parentLink;
+    (void)keywordParameters;
+    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    const proto::ProtoObject* srcObj = positionalParameters->getAt(context, 0);
+    if (!srcObj->isString(context)) return PROTO_NONE;
+    std::string source;
+    srcObj->asString(context)->toUTF8String(context, source);
+    Tokenizer tok(source);
+    const proto::ProtoList* result = context->newList();
+    while (true) {
+        Token t = tok.next();
+        if (t.type == TokenType::EndOfFile) break;
+        const proto::ProtoList* pair = context->newList();
+        pair = pair->appendLast(context, context->fromInteger(static_cast<int>(t.type)));
+        pair = pair->appendLast(context, context->fromUTF8String(t.value.c_str()));
+        result = result->appendLast(context, reinterpret_cast<const proto::ProtoObject*>(pair));
+    }
+    return reinterpret_cast<const proto::ProtoObject*>(result);
+}
+
+/** compile(source, filename='<string>', mode='eval'): return code object. */
+static const proto::ProtoObject* py_compile(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    (void)self;
+    (void)parentLink;
+    (void)keywordParameters;
+    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    const proto::ProtoObject* sourceObj = positionalParameters->getAt(context, 0);
+    if (!sourceObj->isString(context)) return PROTO_NONE;
+    std::string source;
+    sourceObj->asString(context)->toUTF8String(context, source);
+    std::string filename = "<string>";
+    if (positionalParameters->getSize(context) >= 2) {
+        const proto::ProtoObject* fn = positionalParameters->getAt(context, 1);
+        if (fn->isString(context)) fn->asString(context)->toUTF8String(context, filename);
+    }
+    std::string mode = "eval";
+    if (positionalParameters->getSize(context) >= 3) {
+        const proto::ProtoObject* m = positionalParameters->getAt(context, 2);
+        if (m->isString(context)) m->asString(context)->toUTF8String(context, mode);
+    }
+    Compiler compiler(context, filename);
+    if (mode == "eval") {
+        Parser parser(source);
+        std::unique_ptr<ASTNode> expr = parser.parseExpression();
+        if (!expr || !compiler.compileExpression(expr.get())) return PROTO_NONE;
+    } else {
+        Parser parser(source);
+        std::unique_ptr<ModuleNode> mod = parser.parseModule();
+        if (!mod || mod->body.empty() || !compiler.compileModule(mod.get())) return PROTO_NONE;
+    }
+    return makeCodeObject(context, compiler.getConstants(), compiler.getNames(), compiler.getBytecode());
+}
+
+/** eval(expr, globals=None, locals=None): compile and run expression. */
 static const proto::ProtoObject* py_eval(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -523,9 +593,26 @@ static const proto::ProtoObject* py_eval(
     const proto::ProtoSparseList* keywordParameters) {
     (void)self;
     (void)parentLink;
-    (void)positionalParameters;
     (void)keywordParameters;
-    return PROTO_NONE;
+    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    const proto::ProtoObject* exprObj = positionalParameters->getAt(context, 0);
+    if (!exprObj->isString(context)) return PROTO_NONE;
+    std::string source;
+    exprObj->asString(context)->toUTF8String(context, source);
+    Parser parser(source);
+    std::unique_ptr<ASTNode> expr = parser.parseExpression();
+    if (!expr) return PROTO_NONE;
+    Compiler compiler(context, "<string>");
+    if (!compiler.compileExpression(expr.get())) return PROTO_NONE;
+    const proto::ProtoObject* codeObj = makeCodeObject(context, compiler.getConstants(), compiler.getNames(), compiler.getBytecode());
+    if (!codeObj) return PROTO_NONE;
+    proto::ProtoObject* frame = nullptr;
+    if (positionalParameters->getSize(context) >= 2) {
+        const proto::ProtoObject* g = positionalParameters->getAt(context, 1);
+        if (g && g != PROTO_NONE) frame = const_cast<proto::ProtoObject*>(g);
+    }
+    if (!frame) frame = const_cast<proto::ProtoObject*>(context->newObject(true));
+    return runCodeObject(context, codeObj, frame);
 }
 
 /** help(obj): stub returning None. */
@@ -570,7 +657,7 @@ static const proto::ProtoObject* py_super(
     return PROTO_NONE;
 }
 
-/** exec(code): stub returning None; full impl requires statement execution. */
+/** exec(source, globals=None, locals=None): compile and run source. */
 static const proto::ProtoObject* py_exec(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -579,8 +666,26 @@ static const proto::ProtoObject* py_exec(
     const proto::ProtoSparseList* keywordParameters) {
     (void)self;
     (void)parentLink;
-    (void)positionalParameters;
     (void)keywordParameters;
+    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    const proto::ProtoObject* sourceObj = positionalParameters->getAt(context, 0);
+    if (!sourceObj->isString(context)) return PROTO_NONE;
+    std::string source;
+    sourceObj->asString(context)->toUTF8String(context, source);
+    Parser parser(source);
+    std::unique_ptr<ModuleNode> mod = parser.parseModule();
+    if (!mod || mod->body.empty()) return PROTO_NONE;
+    Compiler compiler(context, "<string>");
+    if (!compiler.compileModule(mod.get())) return PROTO_NONE;
+    const proto::ProtoObject* codeObj = makeCodeObject(context, compiler.getConstants(), compiler.getNames(), compiler.getBytecode());
+    if (!codeObj) return PROTO_NONE;
+    proto::ProtoObject* frame = nullptr;
+    if (positionalParameters->getSize(context) >= 2) {
+        const proto::ProtoObject* g = positionalParameters->getAt(context, 1);
+        if (g && g != PROTO_NONE) frame = const_cast<proto::ProtoObject*>(g);
+    }
+    if (!frame) frame = const_cast<proto::ProtoObject*>(context->newObject(true));
+    runCodeObject(context, codeObj, frame);
     return PROTO_NONE;
 }
 
@@ -1419,6 +1524,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "breakpoint"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_breakpoint));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "globals"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_globals));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "locals"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_locals));
+    builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_tokenize_source"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py__tokenize_source));
+    builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "compile"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_compile));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "eval"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_eval));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "exec"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_exec));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "hash"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_hash));

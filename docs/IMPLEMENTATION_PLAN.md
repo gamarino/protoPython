@@ -41,6 +41,7 @@ The goal is to provide a complete standard library that behaves identically to C
     - [x] Native stubs: `os.path` (join, exists, isdir), `pathlib` (Path basics), `collections.abc` (Iterable, Sequence).
     - Ensure these modules are GIL-less from the start.
 - [ ] **Phase 3: Native Optimization**: Progressively replace performance-critical Python modules with C++ implementations.
+- **Standard library stub implementation**: See [STUBS.md](STUBS.md) and [FULL_STUB_IMPLEMENTATION.md](FULL_STUB_IMPLEMENTATION.md). Phase 0 (tokenizer, parser, compiler, code object, compile/eval/exec) done; Phase 1 (binascii, uu, quopri, pprint, dis, random, statistics) implemented; Phase 2 (tokenize, runpy; ast stub); Phase 3 (native time module; os/subprocess/threading etc. stubs); Phase 4 (hashlib, ssl, sqlite3, ctypes stubs until external libs linked).
 
 ## 4. Compatibility & Testing
 We aim for "No-Modification" compatibility with CPython tests.

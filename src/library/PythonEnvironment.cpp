@@ -2,6 +2,7 @@
 #include <protoPython/PythonModuleProvider.h>
 #include <protoPython/NativeModuleProvider.h>
 #include <protoPython/SysModule.h>
+#include <protoPython/TimeModule.h>
 #include <protoPython/BuiltinsModule.h>
 #include <protoPython/IOModule.h>
 #include <protoPython/CollectionsModule.h>
@@ -4420,6 +4421,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     nativeProvider->registerModule("logging", [](proto::ProtoContext* ctx) { return logging::initialize(ctx); });
     nativeProvider->registerModule("operator", [](proto::ProtoContext* ctx) { return operator_::initialize(ctx); });
     nativeProvider->registerModule("math", [](proto::ProtoContext* ctx) { return math::initialize(ctx); });
+    nativeProvider->registerModule("time", [](proto::ProtoContext* ctx) { return time_module::initialize(ctx); });
     nativeProvider->registerModule("functools", [](proto::ProtoContext* ctx) { return functools::initialize(ctx); });
     nativeProvider->registerModule("itertools", [](proto::ProtoContext* ctx) { return itertools::initialize(ctx); });
     nativeProvider->registerModule("re", [](proto::ProtoContext* ctx) { return re::initialize(ctx); });

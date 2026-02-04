@@ -12,12 +12,18 @@ This document catalogs stub implementations and their completion status.
 | **math** | isclose, log, log10, log2, log1p, exp, sqrt, sin, cos, tan, asin, acos, atan, atan2, degrees, radians, hypot, fmod, remainder, erf, erfc, gamma, lgamma, dist, perm, comb, factorial, prod, isqrt, acosh, asinh, atanh, cosh, sinh, tanh, ulp, nextafter, ldexp, frexp, modf, cbrt, exp2, expm1, fma; constants pi, e, nan, inf | Implemented |
 | **operator** | add, sub, mul, truediv, eq, lt, pow, floordiv, mod, neg, not_, invert, lshift, rshift, and_, or_, xor, index | Implemented |
 
+## Native (C++) — Compiler / eval / exec (Phase 0)
+
+| Component | Item | Status |
+|-----------|------|--------|
+| **builtins** | compile, eval, exec | Implemented via C++ tokenizer, parser, compiler; code object (co_consts, co_names, co_code); runCodeObject + executeMinimalBytecode. Expression and single-statement module supported. |
+
 ## Native (C++) Stubs — Remaining
 
 | Component | Item | Notes |
 |-----------|------|-------|
 | **builtins** | help, memoryview | Stub retained. Implementation deferred: full impl needs pager (help) and buffer API (memoryview). Return None. |
-| **builtins** | input, eval, exec | Stub retained. Implementation deferred: need stdin (input) and expression/statement parser (eval, exec). Return None/empty. |
+| **builtins** | input | Stub retained. Implementation deferred: need stdin. |
 | **builtins** | breakpoint, globals, locals | Stub retained. Implementation deferred: need debugger integration (breakpoint) and frame access (globals, locals). breakpoint no-op; globals/locals return empty dict. |
 
 ## Python stdlib Stubs — Enhanced
@@ -39,8 +45,8 @@ This document catalogs stub implementations and their completion status.
 | getopt | getopt | Implemented: shortopts, longopts; returns (options, args). GetoptError on bad option. |
 | argparse | ArgumentParser | Stub retained. add_argument/parse_args return defaults. Full parser deferred. |
 | warnings | warn | Implemented: prints message (and category name if given) to sys.stderr when available. |
-| time | time, sleep | Return 0.0; no-op |
-| random | random, choice | Return 0.0; return first element |
+| time | time, sleep | Native TimeModule: time() returns seconds since epoch (std::chrono); sleep(seconds) blocks. |
+| random | random, choice, randint, getrandbits, seed | Implemented: LCG PRNG in lib/python3.14/random.py; deterministic when seeded. |
 | datetime | datetime | Stub class |
 | uuid | uuid4 | Return fixed string |
 | secrets | token_hex, token_urlsafe | Return placeholder |
@@ -84,7 +90,7 @@ This document catalogs stub implementations and their completion status.
 | Module | Item | Behavior |
 |--------|------|----------|
 | email | message_from_string | Stub: returns None. Full impl requires MIME parser. |
-| runpy | run_path, run_module | Stub: return {}. Full impl requires import/exec machinery. |
+| runpy | run_path, run_module | run_path implemented: open path, compile source, exec in init_globals, return globals. run_module uses __import__ and runs __main__ if present. |
 
 ## Python stdlib — New stubs (v25)
 
@@ -98,14 +104,14 @@ This document catalogs stub implementations and their completion status.
 | Module | Item | Behavior |
 |--------|------|----------|
 | plistlib | load, loads, dump, dumps | Stub: load/loads return empty dict; dump/dumps no-op/empty bytes. Full impl requires plist parser. |
-| quopri | encode, decode | Stub: copy input to output. Full impl requires quoted-printable encoding. |
+| quopri | encode, decode | Implemented: quoted-printable (RFC 2045) in lib/python3.14/quopri.py. |
 
 ## Python stdlib — New stubs (v27)
 
 | Module | Item | Behavior |
 |--------|------|----------|
-| binascii | hexlify, unhexlify, b2a_base64, a2b_base64 | Stub: return empty bytes. Full impl requires hex/base64 encoding. |
-| uu | encode, decode | Stub: no-op. Full impl requires uuencode/uudecode. |
+| binascii | hexlify, unhexlify, b2a_base64, a2b_base64 | Implemented: hex and base64 (RFC 4648) in lib/python3.14/binascii.py. |
+| uu | encode, decode | Implemented: uuencode/uudecode (3 bytes to 4 chars, line length 45) in lib/python3.14/uu.py. |
 
 ## Python stdlib — New stubs (v28)
 
@@ -146,15 +152,15 @@ This document catalogs stub implementations and their completion status.
 
 | Module | Item | Behavior |
 |--------|------|----------|
-| pprint | pprint, pformat, PrettyPrinter | Stub: pprint no-op; pformat returns str(object); PrettyPrinter stub class. Full impl requires recursive pretty-printing and stream handling. |
-| dis | dis, disassemble, distb, opname | Stub: dis/disassemble/distb no-op; opname empty list. Full impl requires bytecode introspection and opcode tables. |
+| pprint | pprint, pformat, PrettyPrinter | Implemented: recursive pformat for dict, list, tuple; pprint to stream; PrettyPrinter class in lib/python3.14/pprint.py. |
+| dis | dis, disassemble, distb, opname | Implemented: opname list for protoPython opcodes 100–155; disassemble(co) walks co_code and prints; dis(x) for code/function in lib/python3.14/dis.py. distb stub. |
 
 ## Python stdlib — New stubs (v34)
 
 | Module | Item | Behavior |
 |--------|------|----------|
-| ast | parse, dump, literal_eval, walk, NodeVisitor | Stub: parse/dump return None/empty string; literal_eval return None; walk yields nothing; NodeVisitor no-op. Full impl requires parser and AST construction. |
-| tokenize | generate_tokens, tokenize, untokenize | Stub: generate_tokens/tokenize yield nothing; untokenize returns b''. Full impl requires tokenizer and token stream. |
+| ast | parse, dump, literal_eval, walk, NodeVisitor | Stub: parse/dump return None/empty string; literal_eval return None; walk yields nothing; NodeVisitor no-op. Full impl requires C++ AST exposure. |
+| tokenize | generate_tokens, tokenize, untokenize | Implemented: uses builtins._tokenize_source (native tokenizer); generate_tokens yields (type, value, start, end, line); untokenize reconstructs from token strings. |
 
 ## Python stdlib — New stubs
 

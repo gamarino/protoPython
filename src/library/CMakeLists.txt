@@ -1,6 +1,9 @@
 add_library(protoPython SHARED
     BytecodeLoader.cpp
+    Compiler.cpp
     ExecutionEngine.cpp
+    Parser.cpp
+    Tokenizer.cpp
     FunctoolsModule.cpp
     ItertoolsModule.cpp
     JsonModule.cpp
@@ -15,6 +18,7 @@ add_library(protoPython SHARED
     PythonModuleProvider.cpp
     NativeModuleProvider.cpp
     SysModule.cpp
+    TimeModule.cpp
     BuiltinsModule.cpp
     IOModule.cpp
     CollectionsModule.cpp
