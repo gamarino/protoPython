@@ -21,12 +21,12 @@ Plan for 20 incremental milestones. Each step: implement → update docs → `gi
 | 431 | math.log2, math.log1p | done (existing) |
 | 432 | operator.index | done (existing) |
 | 433 | str/bytes rsplit maxsplit or builtins | done (existing) |
-| 434 | Stdlib stub urllib.parse or platform | pending |
-| 435 | Stdlib stub zoneinfo or plistlib | pending |
-| 436 | Foundation test BINARY_AND or math.hypot | pending |
-| 437 | Foundation test BINARY_OR or operator.index | pending |
-| 438 | Foundation test INPLACE_MULTIPLY or rsplit maxsplit | pending |
-| 439 | Execution engine test BINARY_AND or INPLACE_MULTIPLY | pending |
+| 434 | Stdlib stub urllib.parse or platform | done (existing) |
+| 435 | Stdlib stub zoneinfo or plistlib | done (existing) |
+| 436 | Foundation test BINARY_AND or math.hypot | done (existing) |
+| 437 | Foundation test BINARY_OR or operator.index | done (existing) |
+| 438 | Foundation test INPLACE_MULTIPLY or rsplit maxsplit | done (existing) |
+| 439 | Execution engine test BINARY_AND or INPLACE_MULTIPLY | done (existing) |
 | 440 | Update STUBS.md with v25 entries | pending |
 | 441 | Update tasks/todo.md for v25 | pending |
 | 442 | Finalize NEXT_20_STEPS_V25.md | pending |
