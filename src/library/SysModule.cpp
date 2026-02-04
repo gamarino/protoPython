@@ -57,6 +57,20 @@ static const proto::ProtoObject* sys_trace_default(
     return PROTO_NONE;
 }
 
+static const proto::ProtoObject* sys_getsizeof(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    (void)self;
+    (void)parentLink;
+    (void)keywordParameters;
+    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    (void)positionalParameters;
+    return context->fromInteger(0);
+}
+
 static const proto::ProtoObject* sys_gettrace(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -85,6 +99,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "exit"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_exit));
     sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "settrace"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_settrace));
     sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "gettrace"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_gettrace));
+    sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "getsizeof"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_getsizeof));
     const proto::ProtoObject* traceDefault = ctx->newObject(true);
     traceDefault = traceDefault->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__call__"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(traceDefault), sys_trace_default));
