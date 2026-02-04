@@ -71,6 +71,30 @@ static const proto::ProtoObject* py_isdir(
     return PROTO_FALSE;
 }
 
+static const proto::ProtoObject* py_realpath(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList*) {
+    (void)self;
+    if (!posArgs || posArgs->getSize(ctx) < 1) return ctx->fromUTF8String("");
+    const proto::ProtoObject* path = posArgs->getAt(ctx, 0);
+    return path->isString(ctx) ? path : ctx->fromUTF8String("");
+}
+
+static const proto::ProtoObject* py_normpath(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList*) {
+    (void)self;
+    if (!posArgs || posArgs->getSize(ctx) < 1) return ctx->fromUTF8String("");
+    const proto::ProtoObject* path = posArgs->getAt(ctx, 0);
+    return path->isString(ctx) ? path : ctx->fromUTF8String("");
+}
+
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     const proto::ProtoObject* mod = ctx->newObject(true);
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "join"),
@@ -79,6 +103,10 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_exists));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "isdir"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_isdir));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "realpath"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_realpath));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "normpath"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_normpath));
     return mod;
 }
 
