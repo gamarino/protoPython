@@ -128,6 +128,10 @@ See [docs/NEXT_20_STEPS_V23.md](../docs/NEXT_20_STEPS_V23.md). Steps 385–404: 
 
 See [docs/NEXT_20_STEPS_V24.md](../docs/NEXT_20_STEPS_V24.md). Steps 405–424: BINARY_LSHIFT, BINARY_RSHIFT, INPLACE_SUBTRACT; math.atan2/degrees/radians; operator.and_/or_/xor; str.split maxsplit, len/bool, float.hex (existing); email, runpy stubs; foundation and engine tests; STUBS and todo updated.
 
+## 29. Next 20 Steps (v25) — completed
+
+See [docs/NEXT_20_STEPS_V25.md](../docs/NEXT_20_STEPS_V25.md). Steps 425–444: BINARY_AND, BINARY_OR, BINARY_XOR, INPLACE_MULTIPLY; math.hypot/fmod/log2/log1p; operator.index; str/bytes rsplit maxsplit, builtins (existing); urllib.parse, zoneinfo stubs; foundation and engine tests; STUBS and todo updated.
+
 - [x] Step 145: ord builtin
 - [x] Step 146: chr builtin
 - [x] Step 147: bin builtin

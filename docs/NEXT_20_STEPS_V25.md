@@ -28,7 +28,7 @@ Plan for 20 incremental milestones. Each step: implement → update docs → `gi
 | 438 | Foundation test INPLACE_MULTIPLY or rsplit maxsplit | done |
 | 439 | Execution engine test BINARY_AND or INPLACE_MULTIPLY | done |
 | 440 | Update STUBS.md with v25 entries | done |
-| 441 | Update tasks/todo.md for v25 | pending |
+| 441 | Update tasks/todo.md for v25 | done |
 | 442 | Finalize NEXT_20_STEPS_V25.md | pending |
 | 443 | IMPLEMENTATION_PLAN v25 completion | pending |
 | 444 | Phase 3 opcode list or TESTING note for v25 | pending |
