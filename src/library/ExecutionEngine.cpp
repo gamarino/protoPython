@@ -250,6 +250,8 @@ const proto::ProtoObject* executeMinimalBytecode(
             } else {
                 stack.push_back(a);
             }
+        } else if (op == OP_NOP) {
+            i++;
         } else if (op == OP_COMPARE_OP) {
             i++;
             if (stack.size() < 2) continue;

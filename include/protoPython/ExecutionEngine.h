@@ -75,6 +75,8 @@ constexpr int OP_UNARY_INVERT = 132;
 constexpr int OP_POP_TOP = 133;
 /** UNARY_POSITIVE: push +TOS (for int/float same value; optional __pos__). */
 constexpr int OP_UNARY_POSITIVE = 134;
+/** NOP: no operation (advance instruction pointer only). */
+constexpr int OP_NOP = 135;
 
 /**
  * @brief Executes bytecode: LOAD_CONST, RETURN_VALUE, LOAD_NAME, STORE_NAME,
