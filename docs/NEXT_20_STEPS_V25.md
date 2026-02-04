@@ -23,7 +23,7 @@ Plan for 20 incremental milestones. Each step: implement → update docs → `gi
 | 433 | str/bytes rsplit maxsplit or builtins | done (existing) |
 | 434 | Stdlib stub urllib.parse or platform | done |
 | 435 | Stdlib stub zoneinfo or plistlib | done |
-| 436 | Foundation test BINARY_AND or math.hypot | pending |
+| 436 | Foundation test BINARY_AND or math.hypot | done |
 | 437 | Foundation test BINARY_OR or operator.index | pending |
 | 438 | Foundation test INPLACE_MULTIPLY or rsplit maxsplit | pending |
 | 439 | Execution engine test BINARY_AND or INPLACE_MULTIPLY | pending |

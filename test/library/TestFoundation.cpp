@@ -1206,6 +1206,19 @@ TEST_F(FoundationTest, StrSplitMaxsplit) {
     EXPECT_EQ(parts->getSize(context), 2u);  // maxsplit=1 -> ["a", "b c"]
 }
 
+TEST_F(FoundationTest, MathHypot) {
+    proto::ProtoContext* context = env.getContext();
+    const proto::ProtoObject* mathMod = env.resolve("math");
+    ASSERT_NE(mathMod, nullptr);
+    const proto::ProtoObject* hypotM = mathMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "hypot"));
+    ASSERT_NE(hypotM, nullptr);
+    const proto::ProtoList* args = context->newList()->appendLast(context, context->fromDouble(3.0))->appendLast(context, context->fromDouble(4.0));
+    const proto::ProtoObject* result = hypotM->asMethod(context)(context, mathMod, nullptr, args, nullptr);
+    ASSERT_NE(result, nullptr);
+    double val = result->isDouble(context) ? result->asDouble(context) : static_cast<double>(result->asLong(context));
+    EXPECT_NEAR(val, 5.0, 1e-10);  // hypot(3, 4) == 5
+}
+
 TEST_F(FoundationTest, ReprOrId) {
     proto::ProtoContext* context = env.getContext();
     const proto::ProtoObject* builtins = env.resolve("builtins");
