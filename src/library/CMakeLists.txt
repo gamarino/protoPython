@@ -19,6 +19,7 @@ add_library(protoPython SHARED
     NativeModuleProvider.cpp
     SysModule.cpp
     TimeModule.cpp
+    ThreadModule.cpp
     BuiltinsModule.cpp
     IOModule.cpp
     CollectionsModule.cpp

@@ -195,9 +195,7 @@ def bench_range_iterate(protopy_bin, cpython_bin, timeout=60, trace_file=None, v
 
 
 def bench_multithreaded_cpu(protopy_bin, cpython_bin, timeout=60, trace_file=None, verbose=False):
-    """CPU-bound work: 4 chunks. Both run with SINGLE_THREAD=1 (4 chunks in main) for fair comparison.
-    CPython is GIL-limited (single CPU); protoPython threading is stubbed so same model. When protoPython
-    gets real threading it could run 4 chunks in parallel (multi-CPU)."""
+    """CPU-bound work: 4 chunks. protoPython runs with real threads (ProtoSpace); CPython with SINGLE_THREAD=1."""
     script = SCRIPT_DIR / "multithreaded_cpu.py"
     if not script.exists():
         return None, None
@@ -206,12 +204,12 @@ def bench_multithreaded_cpu(protopy_bin, cpython_bin, timeout=60, trace_file=Non
     times_protopy = []
     times_cpython = []
     for _ in range(WARMUP_RUNS):
-        run_cmd([protopy_bin, "--path", PATH_ARG, "--script", script_str], timeout=timeout, stderr_file=trace_file, env=single_thread_env, verbose=verbose)
+        run_cmd([protopy_bin, "--path", PATH_ARG, "--script", script_str], timeout=timeout, stderr_file=trace_file, verbose=verbose)
         run_cmd([cpython_bin, script_str], timeout=timeout, env=single_thread_env, verbose=verbose)
     for i in range(N_RUNS):
         if verbose:
             print(f"    multithread_cpu protopy run {i+1}/{N_RUNS}:", end="")
-        t, _, to = run_cmd([protopy_bin, "--path", PATH_ARG, "--script", script_str], timeout=timeout, stderr_file=trace_file, env=single_thread_env, verbose=verbose)
+        t, _, to = run_cmd([protopy_bin, "--path", PATH_ARG, "--script", script_str], timeout=timeout, stderr_file=trace_file, verbose=verbose)
         if not to:
             times_protopy.append(t)
         if verbose:

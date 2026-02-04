@@ -1,15 +1,9 @@
-# multithreaded_cpu.py - Benchmark: same CPU work, single-thread (fair comparison)
+# multithreaded_cpu.py - Benchmark: same CPU work, 4 chunks.
 #
 # Execution model:
-# - Harness sets SINGLE_THREAD=1 for BOTH interpreters so both run 4 chunks in the
-#   main thread. This gives a fair comparison (same work, same execution model).
-# - CPython: with GIL, even 4 threads would serialize to one CPU; running in main
-#   avoids thread overhead and measures single-thread throughput.
-# - protoPython: threading is currently a stub (Thread.start/join are no-ops), so
-#   we must run in main. protoPython is designed to be GIL-free; when real threading
-#   is implemented, it could run 4 chunks in parallel (multi-CPU) and wall time
-#   would drop toward one chunk's time.
-#
+# - protoPython: runs with threading (4 ProtoSpace threads in parallel, no GIL).
+# - CPython: harness sets SINGLE_THREAD=1 so 4 chunks run in main thread (GIL
+#   would serialize threads anyway; single-thread keeps comparison stable).
 # Same total work: 4 x sum(range(CHUNK)).
 
 import os

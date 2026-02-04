@@ -129,6 +129,11 @@ static const proto::ProtoObject* invokeCallable(proto::ProtoContext* ctx,
     return callAttr->asMethod(ctx)(ctx, callable, nullptr, args, nullptr);
 }
 
+const proto::ProtoObject* invokePythonCallable(proto::ProtoContext* ctx,
+    const proto::ProtoObject* callable, const proto::ProtoList* args) {
+    return invokeCallable(ctx, callable, args);
+}
+
 const proto::ProtoObject* executeMinimalBytecode(
     proto::ProtoContext* ctx,
     const proto::ProtoList* constants,

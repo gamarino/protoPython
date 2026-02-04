@@ -6,17 +6,15 @@
 ├─────────────────────────────────────────────────────────────────────┤
 │ Benchmark              │ protopy (ms) │ cpython (ms) │ Ratio        │
 ├────────────────────────┼──────────────┼──────────────┼──────────────┤
-│ startup_empty          │       8.79   │      32.26   │ 0.27x faster │
-│ int_sum_loop           │       8.02   │      32.32   │ 0.25x faster │
-│ list_append_loop       │      16.16   │      32.36   │ 0.50x faster │
-│ str_concat_loop        │      16.19   │      32.43   │ 0.50x faster │
-│ range_iterate          │      16.03   │      65.70   │ 0.24x faster │
-│ multithread_cpu        │     115.19   │      32.76   │ 3.52x slower │
+│ startup_empty          │       7.97   │      32.25   │ 0.25x faster │
+│ int_sum_loop           │      16.35   │      35.77   │ 0.46x faster │
+│ list_append_loop       │      16.04   │      32.28   │ 0.50x faster │
+│ str_concat_loop        │      16.05   │      32.27   │ 0.50x faster │
+│ range_iterate          │      16.45   │      32.29   │ 0.51x faster │
+│ multithread_cpu        │     115.46   │      33.00   │ 3.50x slower │
 ├────────────────────────┼──────────────┼──────────────┼──────────────┤
-│ Geometric mean         │              │              │ ~0.49x       │
+│ Geometric mean         │              │              │ ~0.61x       │
 └─────────────────────────────────────────────────────────────────────┘
 
 Legend: Ratio = protopy/cpython. Lower is better. TIMEOUT = all runs hit timeout.
-
-multithread_cpu: single-thread comparison (both interpreters run with SINGLE_THREAD=1); ratio reflects per-chunk interpreter speed, not multi-CPU use.
 ```

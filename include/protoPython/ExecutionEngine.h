@@ -135,6 +135,12 @@ const proto::ProtoObject* executeMinimalBytecode(
     const proto::ProtoList* names = nullptr,
     proto::ProtoObject* frame = nullptr);
 
+/** Invoke a Python callable with the given args list. Used by _thread bootstrap. */
+const proto::ProtoObject* invokePythonCallable(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* callable,
+    const proto::ProtoList* args);
+
 } // namespace protoPython
 
 #endif
