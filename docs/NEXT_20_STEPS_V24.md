@@ -21,13 +21,13 @@ Plan for 20 incremental milestones. Each step: implement → update docs → `gi
 | 411 | str.split maxsplit or bytes.split | done (existing) |
 | 412 | builtins len enhancement or bool | done (existing) |
 | 413 | float.hex / float.fromhex or as_integer_ratio | done (existing) |
-| 414 | Stdlib stub email (minimal) | pending |
-| 415 | Stdlib stub runpy or quopri (minimal) | pending |
-| 416 | Foundation test BINARY_LSHIFT or math.atan2 | pending |
-| 417 | Foundation test operator.and_ or float.hex | pending |
-| 418 | Foundation test INPLACE_SUBTRACT or str.split maxsplit | pending |
-| 419 | Execution engine test BINARY_LSHIFT or INPLACE_SUBTRACT | pending |
-| 420 | Update STUBS.md with v24 entries | pending |
+| 414 | Stdlib stub email (minimal) | done |
+| 415 | Stdlib stub runpy or quopri (minimal) | done |
+| 416 | Foundation test BINARY_LSHIFT or math.atan2 | done |
+| 417 | Foundation test operator.and_ or float.hex | done |
+| 418 | Foundation test INPLACE_SUBTRACT or str.split maxsplit | done |
+| 419 | Execution engine test BINARY_LSHIFT or INPLACE_SUBTRACT | done |
+| 420 | Update STUBS.md with v24 entries | done |
 | 421 | Update tasks/todo.md for v24 | pending |
 | 422 | Finalize NEXT_20_STEPS_V24.md | pending |
 | 423 | IMPLEMENTATION_PLAN v24 completion | pending |
