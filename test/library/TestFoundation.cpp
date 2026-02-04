@@ -1190,6 +1190,22 @@ TEST_F(FoundationTest, OperatorAndOrFloatHex) {
     EXPECT_EQ(result->asLong(context), 12 & 10);  // 0b1100 & 0b1010 == 8
 }
 
+TEST_F(FoundationTest, StrSplitMaxsplit) {
+    proto::ProtoContext* context = env.getContext();
+    const proto::ProtoObject* strPrototype = env.getStrPrototype();
+    ASSERT_NE(strPrototype, nullptr);
+    proto::ProtoObject* s = const_cast<proto::ProtoObject*>(context->newObject(true)->addParent(context, strPrototype));
+    s->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->fromUTF8String("a b c"));
+    const proto::ProtoObject* splitM = s->getAttribute(context, proto::ProtoString::fromUTF8String(context, "split"));
+    ASSERT_NE(splitM, nullptr);
+    const proto::ProtoList* args = context->newList()->appendLast(context, context->fromUTF8String(" "))->appendLast(context, context->fromInteger(1));
+    const proto::ProtoObject* result = splitM->asMethod(context)(context, s, nullptr, args, nullptr);
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"))->asList(context));
+    const proto::ProtoList* parts = result->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"))->asList(context);
+    EXPECT_EQ(parts->getSize(context), 2u);  // maxsplit=1 -> ["a", "b c"]
+}
+
 TEST_F(FoundationTest, ReprOrId) {
     proto::ProtoContext* context = env.getContext();
     const proto::ProtoObject* builtins = env.resolve("builtins");
