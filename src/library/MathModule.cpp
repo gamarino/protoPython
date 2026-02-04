@@ -19,6 +19,22 @@ static const proto::ProtoObject* py_sqrt(
     return ctx->fromDouble(std::sqrt(x));
 }
 
+static const proto::ProtoObject* py_sin(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    double x = toDouble(ctx, posArgs->getAt(ctx, 0));
+    return ctx->fromDouble(std::sin(x));
+}
+
+static const proto::ProtoObject* py_cos(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    double x = toDouble(ctx, posArgs->getAt(ctx, 0));
+    return ctx->fromDouble(std::cos(x));
+}
+
 static const proto::ProtoObject* py_floor(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
@@ -165,6 +181,10 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     const proto::ProtoObject* mod = ctx->newObject(true);
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "sqrt"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_sqrt));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "sin"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_sin));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "cos"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_cos));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "floor"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_floor));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "ceil"),
