@@ -30,4 +30,19 @@ add_test(NAME protopy_cli_script_success
 add_test(NAME protopy_cli_bytecode_only
     COMMAND ${CMAKE_SOURCE_DIR}/test/regression/assert_exit.sh 0 $<TARGET_FILE:protopy> --bytecode-only --script ${CMAKE_SOURCE_DIR}/test/regression/regrtest_runner.py)
 
+# Optional benchmark test (off by default: -DPROTOPY_BENCHMARKS=ON)
+option(PROTOPY_BENCHMARKS "Run benchmark suite in CTest" OFF)
+if(PROTOPY_BENCHMARKS)
+    find_package(Python3 COMPONENTS Interpreter QUIET)
+    if(Python3_FOUND)
+        add_test(NAME protopy_benchmarks
+            COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_SOURCE_DIR}/benchmarks/run_benchmarks.py --output reports/benchmark_report.md)
+        set_tests_properties(protopy_benchmarks PROPERTIES
+            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+            ENVIRONMENT "PROTOPY_BIN=$<TARGET_FILE:protopy>"
+            LABELS "benchmark")
+    endif()
+endif()
+
 # add_subdirectory(src/compiler) # Not yet ready
