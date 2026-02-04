@@ -63,3 +63,9 @@ This document catalogs stub implementations and their completion status.
 | dataclasses | dataclass | Minimal decorator placeholder. |
 | contextlib | contextmanager | Minimal placeholder. |
 | abc | ABC, abstractmethod | Minimal placeholder. |
+
+## Python stdlib — New stubs
+
+| Module | Item | Behavior |
+|--------|------|----------|
+| statistics | mean, median, stdev | Stub: return 0.0. |
