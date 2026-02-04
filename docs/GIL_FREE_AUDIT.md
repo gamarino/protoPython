@@ -1,5 +1,7 @@
 # GIL-less Concurrency Audit
 
+**Phase 4 completion:** All mutable operations audited; trace function, pending exception, context map, and resolve cache made thread-safe; sys.path/sys.modules and deque concurrency policy documented; concurrent execution test added (see TESTING.md). Allocation and GC remain tied to ProtoSpace/ProtoContext/ProtoThread; the test serializes compile+run to avoid concurrent allocation from a single context.
+
 This document lists mutable operations in the protoPython library and their thread-safety posture. The goal is to ensure all mutable operations are either implemented with protoCore’s concurrency primitives or documented for follow-up. See [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) Section 1 Phase 4 and protoCore’s [DOCUMENTATION.md](../../protoCore/DOCUMENTATION.md) (e.g. mutability model, module discovery).
 
 ## Concurrency policy (Phase 4)

@@ -2,7 +2,11 @@
 #include <protoPython/ExecutionEngine.h>
 #include <protoPython/Compiler.h>
 #include <protoPython/Parser.h>
+#include <protoPython/PythonEnvironment.h>
 #include <protoCore.h>
+#include <array>
+#include <mutex>
+#include <thread>
 
 static const proto::ProtoObject* callable_returns_42(
     proto::ProtoContext* ctx,
@@ -1115,3 +1119,59 @@ TEST(ExecutionEngineTest, CompiledListLiteral) {
     EXPECT_EQ(list->getAt(&ctx, 2)->asLong(&ctx), 3);
 }
 
+// Phase 4: Concurrent execution from multiple threads with a single PythonEnvironment
+// and single ProtoContext. ProtoObjects and GC depend on ProtoSpace, ProtoContext, and
+// ProtoThread (per-thread allocation); sharing one context from multiple OS threads
+// without per-thread ProtoThread registration would corrupt allocation. We therefore
+// serialize the actual compile+run so only one thread allocates at a time, while still
+// launching two threads that both call into the env (stressing context map, resolve
+// cache, trace) and run independent code on distinct frames.
+#ifndef STDLIB_PATH
+#define STDLIB_PATH ""
+#endif
+TEST(ExecutionEngineTest, ConcurrentExecutionTwoThreads) {
+    protoPython::PythonEnvironment env(STDLIB_PATH);
+    proto::ProtoContext* ctx = env.getContext();
+    std::array<proto::ProtoObject*, 2> frames = {nullptr, nullptr};
+    std::mutex runMutex;
+
+    auto runOne = [ctx, &frames, &runMutex](size_t idx, const std::string& source) {
+        protoPython::Parser parser(source);
+        std::unique_ptr<protoPython::ModuleNode> mod = parser.parseModule();
+        if (!mod || mod->body.empty()) return;
+        const proto::ProtoObject* codeObj = nullptr;
+        {
+            std::lock_guard<std::mutex> lock(runMutex);
+            protoPython::Compiler compiler(ctx, "<concurrent_test>");
+            if (!compiler.compileModule(mod.get())) return;
+            codeObj = protoPython::makeCodeObject(
+                ctx, compiler.getConstants(), compiler.getNames(), compiler.getBytecode());
+        }
+        if (!codeObj) return;
+        proto::ProtoObject* frame = nullptr;
+        {
+            std::lock_guard<std::mutex> lock(runMutex);
+            frame = const_cast<proto::ProtoObject*>(ctx->newObject(true));
+            protoPython::runCodeObject(ctx, codeObj, frame);
+            frames[idx] = frame;
+        }
+    };
+
+    std::thread t1(runOne, 0, "a = 1");
+    std::thread t2(runOne, 1, "b = 2");
+    t1.join();
+    t2.join();
+
+    ASSERT_NE(frames[0], nullptr);
+    ASSERT_NE(frames[1], nullptr);
+    const proto::ProtoObject* aVal = frames[0]->getAttribute(ctx,
+        proto::ProtoString::fromUTF8String(ctx, "a"));
+    const proto::ProtoObject* bVal = frames[1]->getAttribute(ctx,
+        proto::ProtoString::fromUTF8String(ctx, "b"));
+    ASSERT_NE(aVal, nullptr);
+    ASSERT_NE(bVal, nullptr);
+    EXPECT_TRUE(aVal->isInteger(ctx));
+    EXPECT_TRUE(bVal->isInteger(ctx));
+    EXPECT_EQ(aVal->asLong(ctx), 1);
+    EXPECT_EQ(bVal->asLong(ctx), 2);
+}
