@@ -1310,6 +1310,84 @@ TEST_F(FoundationTest, MathLgamma) {
     EXPECT_NEAR(val, 0.0, 1e-10);  // lgamma(2) == 0
 }
 
+TEST_F(FoundationTest, MathDist) {
+    proto::ProtoContext* context = env.getContext();
+    const proto::ProtoObject* mathMod = env.resolve("math");
+    ASSERT_NE(mathMod, nullptr);
+    const proto::ProtoObject* distM = mathMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "dist"));
+    ASSERT_NE(distM, nullptr);
+    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "__data__");
+    const proto::ProtoObject* p1 = context->newObject(true)->addParent(context, env.getListPrototype());
+    p1->setAttribute(context, dataName,
+        context->newList()->appendLast(context, context->fromInteger(0))->appendLast(context, context->fromInteger(0))->asObject(context));
+    const proto::ProtoObject* p2 = context->newObject(true)->addParent(context, env.getListPrototype());
+    p2->setAttribute(context, dataName,
+        context->newList()->appendLast(context, context->fromInteger(3))->appendLast(context, context->fromInteger(4))->asObject(context));
+    const proto::ProtoList* args = context->newList()->appendLast(context, p1)->appendLast(context, p2);
+    const proto::ProtoObject* result = distM->asMethod(context)(context, mathMod, nullptr, args, nullptr);
+    ASSERT_NE(result, nullptr);
+    double val = result->isDouble(context) ? result->asDouble(context) : static_cast<double>(result->asLong(context));
+    EXPECT_NEAR(val, 5.0, 1e-10);  // dist((0,0), (3,4)) == 5
+}
+
+TEST_F(FoundationTest, MathPerm) {
+    proto::ProtoContext* context = env.getContext();
+    const proto::ProtoObject* mathMod = env.resolve("math");
+    ASSERT_NE(mathMod, nullptr);
+    const proto::ProtoObject* permM = mathMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "perm"));
+    ASSERT_NE(permM, nullptr);
+    const proto::ProtoList* args = context->newList()->appendLast(context, context->fromInteger(5))->appendLast(context, context->fromInteger(2));
+    const proto::ProtoObject* result = permM->asMethod(context)(context, mathMod, nullptr, args, nullptr);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->isInteger(context));
+    EXPECT_EQ(result->asLong(context), 20);  // perm(5,2) == 20
+}
+
+TEST_F(FoundationTest, MathComb) {
+    proto::ProtoContext* context = env.getContext();
+    const proto::ProtoObject* mathMod = env.resolve("math");
+    ASSERT_NE(mathMod, nullptr);
+    const proto::ProtoObject* combM = mathMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "comb"));
+    ASSERT_NE(combM, nullptr);
+    const proto::ProtoList* args = context->newList()->appendLast(context, context->fromInteger(5))->appendLast(context, context->fromInteger(2));
+    const proto::ProtoObject* result = combM->asMethod(context)(context, mathMod, nullptr, args, nullptr);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->isInteger(context));
+    EXPECT_EQ(result->asLong(context), 10);  // comb(5,2) == 10
+}
+
+TEST_F(FoundationTest, MathFactorial) {
+    proto::ProtoContext* context = env.getContext();
+    const proto::ProtoObject* mathMod = env.resolve("math");
+    ASSERT_NE(mathMod, nullptr);
+    const proto::ProtoObject* factM = mathMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "factorial"));
+    ASSERT_NE(factM, nullptr);
+    const proto::ProtoList* args = context->newList()->appendLast(context, context->fromInteger(5));
+    const proto::ProtoObject* result = factM->asMethod(context)(context, mathMod, nullptr, args, nullptr);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->isInteger(context));
+    EXPECT_EQ(result->asLong(context), 120);  // factorial(5) == 120
+}
+
+TEST_F(FoundationTest, MathProd) {
+    proto::ProtoContext* context = env.getContext();
+    const proto::ProtoObject* mathMod = env.resolve("math");
+    ASSERT_NE(mathMod, nullptr);
+    const proto::ProtoObject* prodM = mathMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "prod"));
+    ASSERT_NE(prodM, nullptr);
+    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "__data__");
+    const proto::ProtoObject* listObj = context->newObject(true)->addParent(context, env.getListPrototype());
+    listObj->setAttribute(context, dataName,
+        context->newList()->appendLast(context, context->fromInteger(2))
+            ->appendLast(context, context->fromInteger(3))
+            ->appendLast(context, context->fromInteger(4))->asObject(context));
+    const proto::ProtoList* args = context->newList()->appendLast(context, listObj);
+    const proto::ProtoObject* result = prodM->asMethod(context)(context, mathMod, nullptr, args, nullptr);
+    ASSERT_NE(result, nullptr);
+    double val = result->isDouble(context) ? result->asDouble(context) : static_cast<double>(result->asLong(context));
+    EXPECT_NEAR(val, 24.0, 1e-10);  // prod([2,3,4]) == 24
+}
+
 TEST_F(FoundationTest, ReprOrId) {
     proto::ProtoContext* context = env.getContext();
     const proto::ProtoObject* builtins = env.resolve("builtins");

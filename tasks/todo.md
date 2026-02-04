@@ -144,6 +144,18 @@ See [docs/NEXT_20_STEPS_V27.md](../docs/NEXT_20_STEPS_V27.md). Steps 465–484: 
 
 - [x] Steps 465–484
 
+## 32. Next 20 Steps (v28) — completed
+
+See [docs/NEXT_20_STEPS_V28.md](../docs/NEXT_20_STEPS_V28.md). Steps 485–504: ROT_THREE, ROT_FOUR; math.dist, math.perm, math.comb; operator (existing); configparser, getpass stubs; foundation and execution-engine tests.
+
+- [x] Steps 485–504
+
+## 33. Next 20 Steps (v29) — completed
+
+See [docs/NEXT_20_STEPS_V29.md](../docs/NEXT_20_STEPS_V29.md). Steps 505–524: DUP_TOP_TWO; math.factorial, math.prod; operator (existing); pickle, logging stubs; foundation and execution-engine tests.
+
+- [x] Steps 505–524
+
 - [x] Step 145: ord builtin
 - [x] Step 146: chr builtin
 - [x] Step 147: bin builtin

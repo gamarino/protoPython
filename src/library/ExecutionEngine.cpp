@@ -828,6 +828,44 @@ const proto::ProtoObject* executeMinimalBytecode(
                 stack.push_back(a);
                 stack.push_back(b);
             }
+        } else if (op == OP_ROT_THREE) {
+            if (stack.size() >= 3) {
+                const proto::ProtoObject* a = stack.back();
+                stack.pop_back();
+                const proto::ProtoObject* b = stack.back();
+                stack.pop_back();
+                const proto::ProtoObject* c = stack.back();
+                stack.pop_back();
+                stack.push_back(b);
+                stack.push_back(a);
+                stack.push_back(c);
+            }
+        } else if (op == OP_ROT_FOUR) {
+            if (stack.size() >= 4) {
+                const proto::ProtoObject* a = stack.back();
+                stack.pop_back();
+                const proto::ProtoObject* b = stack.back();
+                stack.pop_back();
+                const proto::ProtoObject* c = stack.back();
+                stack.pop_back();
+                const proto::ProtoObject* d = stack.back();
+                stack.pop_back();
+                stack.push_back(c);
+                stack.push_back(b);
+                stack.push_back(a);
+                stack.push_back(d);
+            }
+        } else if (op == OP_DUP_TOP_TWO) {
+            if (stack.size() >= 2) {
+                const proto::ProtoObject* b = stack.back();
+                stack.pop_back();
+                const proto::ProtoObject* a = stack.back();
+                stack.pop_back();
+                stack.push_back(a);
+                stack.push_back(b);
+                stack.push_back(a);
+                stack.push_back(b);
+            }
         } else if (op == OP_DUP_TOP) {
             if (!stack.empty())
                 stack.push_back(stack.back());

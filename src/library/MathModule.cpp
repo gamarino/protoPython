@@ -289,6 +289,81 @@ static const proto::ProtoObject* py_exp(
     return ctx->fromDouble(std::exp(x));
 }
 
+static const proto::ProtoObject* py_dist(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
+    const proto::ProtoObject* pa = posArgs->getAt(ctx, 0);
+    const proto::ProtoObject* pb = posArgs->getAt(ctx, 1);
+    const proto::ProtoObject* da = pa->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__data__"));
+    const proto::ProtoObject* db = pb->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__data__"));
+    if (!da || !db || !da->asList(ctx) || !db->asList(ctx)) return PROTO_NONE;
+    const proto::ProtoList* la = da->asList(ctx);
+    const proto::ProtoList* lb = db->asList(ctx);
+    size_t na = static_cast<size_t>(la->getSize(ctx));
+    size_t nb = static_cast<size_t>(lb->getSize(ctx));
+    size_t n = (na < nb) ? na : nb;
+    double sum = 0.0;
+    for (size_t i = 0; i < n; ++i) {
+        double a = toDouble(ctx, la->getAt(ctx, static_cast<int>(i)));
+        double b = toDouble(ctx, lb->getAt(ctx, static_cast<int>(i)));
+        double d = a - b;
+        sum += d * d;
+    }
+    return ctx->fromDouble(std::sqrt(sum));
+}
+
+static const proto::ProtoObject* py_perm(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
+    long long n = posArgs->getAt(ctx, 0)->asLong(ctx);
+    long long k = posArgs->getAt(ctx, 1)->asLong(ctx);
+    if (k < 0 || n < 0 || k > n) return ctx->fromInteger(0);
+    long long r = 1;
+    for (long long i = n - k + 1; i <= n; ++i) r *= i;
+    return ctx->fromInteger(r);
+}
+
+static const proto::ProtoObject* py_comb(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
+    long long n = posArgs->getAt(ctx, 0)->asLong(ctx);
+    long long k = posArgs->getAt(ctx, 1)->asLong(ctx);
+    if (k < 0 || n < 0 || k > n) return ctx->fromInteger(0);
+    if (k > n - k) k = n - k;
+    long long r = 1;
+    for (long long i = 1; i <= k; ++i) r = r * (n - k + i) / i;
+    return ctx->fromInteger(r);
+}
+
+static const proto::ProtoObject* py_factorial(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    long long n = posArgs->getAt(ctx, 0)->asLong(ctx);
+    if (n < 0) return PROTO_NONE;
+    if (n == 0) return ctx->fromInteger(1);
+    long long r = 1;
+    for (long long i = 2; i <= n; ++i) r *= i;
+    return ctx->fromInteger(r);
+}
+
+static const proto::ProtoObject* py_prod(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    const proto::ProtoObject* iterable = posArgs->getAt(ctx, 0);
+    double result = 1.0;
+    const proto::ProtoObject* da = iterable->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__data__"));
+    if (!da || !da->asList(ctx)) return PROTO_NONE;
+    const proto::ProtoList* list = da->asList(ctx);
+    for (int i = 0, sz = list->getSize(ctx); i < sz; ++i)
+        result *= toDouble(ctx, list->getAt(ctx, i));
+    return ctx->fromDouble(result);
+}
+
 static long long gcd_impl(long long a, long long b) {
     a = a < 0 ? -a : a;
     b = b < 0 ? -b : b;
@@ -382,6 +457,16 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_lgamma));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "exp"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_exp));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "dist"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_dist));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "perm"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_perm));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "comb"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_comb));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "factorial"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_factorial));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "prod"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_prod));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "gcd"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_gcd));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "lcm"),

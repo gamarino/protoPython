@@ -111,6 +111,12 @@ constexpr int OP_INPLACE_AND = 150;
 constexpr int OP_INPLACE_OR = 151;
 /** INPLACE_XOR: a ^= b; use __ixor__ if present else same as BINARY_XOR. */
 constexpr int OP_INPLACE_XOR = 152;
+/** ROT_THREE: lift third stack item to top. … C B A → … B A C (A becomes new TOS). */
+constexpr int OP_ROT_THREE = 153;
+/** ROT_FOUR: lift fourth stack item to top. … D C B A → … C B A D (D becomes new TOS). */
+constexpr int OP_ROT_FOUR = 154;
+/** DUP_TOP_TWO: duplicate the two top stack items. … A B → … A B A B. */
+constexpr int OP_DUP_TOP_TWO = 155;
 
 /**
  * @brief Executes bytecode: LOAD_CONST, RETURN_VALUE, LOAD_NAME, STORE_NAME,

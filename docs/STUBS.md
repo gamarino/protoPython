@@ -9,7 +9,7 @@ This document catalogs stub implementations and their completion status.
 | **set** | union, intersection, difference | Implemented |
 | **itertools** | accumulate | Full implementation (default add, optional binary func) |
 | **itertools** | groupby, product, combinations, combinations_with_replacement, permutations | Return empty iterator (no longer None) |
-| **math** | isclose, log, log10, log2, log1p, exp, sqrt, sin, cos, tan, asin, acos, atan, atan2, degrees, radians, hypot, fmod, remainder, erf, erfc, gamma, lgamma | Implemented |
+| **math** | isclose, log, log10, log2, log1p, exp, sqrt, sin, cos, tan, asin, acos, atan, atan2, degrees, radians, hypot, fmod, remainder, erf, erfc, gamma, lgamma, dist, perm, comb, factorial, prod | Implemented |
 | **operator** | add, sub, mul, truediv, eq, lt, pow, floordiv, mod, neg, not_, invert, lshift, rshift, and_, or_, xor, index | Implemented |
 
 ## Native (C++) Stubs — Remaining
@@ -106,6 +106,20 @@ This document catalogs stub implementations and their completion status.
 |--------|------|----------|
 | binascii | hexlify, unhexlify, b2a_base64, a2b_base64 | Stub: return empty bytes. Full impl requires hex/base64 encoding. |
 | uu | encode, decode | Stub: no-op. Full impl requires uuencode/uudecode. |
+
+## Python stdlib — New stubs (v28)
+
+| Module | Item | Behavior |
+|--------|------|----------|
+| configparser | ConfigParser: read, sections, get | Stub: read no-op; sections returns []; get returns fallback or "". |
+| getpass | getpass, getuser | Stub: return "" or placeholder. Full impl requires tty/env. |
+
+## Python stdlib — New stubs (v29)
+
+| Module | Item | Behavior |
+|--------|------|----------|
+| pickle | dump, dumps, load, loads | Stub: dump no-op; dumps return b''; load/loads return None. Full impl requires serialization. |
+| logging | getLogger, basicConfig, info, warning, error, debug | Stub: getLogger returns no-op logger; basicConfig no-op; level methods no-op. |
 
 ## Python stdlib — New stubs
 
