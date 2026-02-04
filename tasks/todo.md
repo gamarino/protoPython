@@ -68,6 +68,21 @@ See [docs/NEXT_20_STEPS_V9.md](../docs/NEXT_20_STEPS_V9.md). Steps 105–124 in 
 - [x] Step 107: next(iter, default=None)
 - [x] Step 108: exec BINARY_SUBSCR
 - [x] Step 109: exec BUILD_MAP
+- [x] Step 110: list.extend documented (list-like only)
+- [x] Step 111: typing stub (Any, List, Dict)
+- [x] Step 112: dataclasses stub
+- [x] Step 113: unittest stub
+- [x] Step 114: CTest regrtest output (regrtest_persistence)
+- [x] Step 115: slice builtin (existing)
+- [x] Step 116: str.find, str.index
+- [x] Step 117: os.path.realpath, normpath
+- [x] Step 118: BUILD_LIST test (102)
+- [x] Step 119: isinstance/issubclass (existing)
+- [x] Step 120: functools.wraps stub
+- [x] Step 121: contextlib stub
+- [x] Step 122: foundation test sorted
+- [x] Step 123: document v9 scope
+- [x] Step 124: v9 completion docs
 - [x] Step 95: benchmark range_iterate
 - [x] Step 96: integrate benchmarks into harness and report
 - [x] Step 97: vars builtin (stub)
