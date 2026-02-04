@@ -19,7 +19,7 @@ Plan for 20 incremental milestones. Each step: implement → update docs → `gi
 | 369 | operator.invert | done |
 | 370 | str.isascii() / bytes.isascii() | done |
 | 371 | builtins.setattr | done (existing) |
-| 372 | builtins.callable | pending |
+| 372 | builtins.callable | done (existing) |
 | 373 | list.__iadd__ or INPLACE_ADD for list | pending |
 | 374 | dict.__ior__ / __iror__ (in-place union) | pending |
 | 375 | Stdlib stub html (escape/unescape) | pending |
