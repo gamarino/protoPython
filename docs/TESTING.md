@@ -3,7 +3,7 @@
 ## Test Targets
 
 - **test_foundation** (`build/test/library/test_foundation`): Unit tests for `PythonEnvironment`, built-in types, and dunder methods.
-- **test_execution_engine** (`build/test/library/test_execution_engine`): CTest for bytecode opcodes (e.g. BINARY_LSHIFT, INPLACE_SUBTRACT; see Next 20 Steps v24).
+- **test_execution_engine** (`build/test/library/test_execution_engine`): CTest for bytecode opcodes (e.g. BINARY_LSHIFT, INPLACE_SUBTRACT, BINARY_AND, INPLACE_MULTIPLY; see Next 20 Steps v24, v25).
 - **test_regr** (`build/test/regression/test_regr`): Regression harness tests (e.g. module resolution).
 - **protopy_cli_***: CTest targets for protopy CLI (help, missing module, script success).
 - **regrtest_protopy_script**: Runs `protopy` on `regrtest_runner.py`.
