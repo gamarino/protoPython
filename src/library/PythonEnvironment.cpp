@@ -1214,28 +1214,114 @@ static const proto::ProtoObject* py_set_clear(
     return PROTO_NONE;
 }
 
-static const proto::ProtoObject* py_set_union_stub(
-    proto::ProtoContext* context, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    (void)self;
-    (void)posArgs;
-    return PROTO_NONE;
+static void add_iterable_to_set(proto::ProtoContext* context, const proto::ProtoObject* iterable, proto::ProtoSet*& acc) {
+    const proto::ProtoObject* iterM = iterable->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__iter__"));
+    if (!iterM || !iterM->asMethod(context)) return;
+    const proto::ProtoObject* it = iterM->asMethod(context)(context, iterable, nullptr, context->newList(), nullptr);
+    if (!it) return;
+    const proto::ProtoObject* nextM = it->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__next__"));
+    if (!nextM || !nextM->asMethod(context)) return;
+    for (;;) {
+        const proto::ProtoObject* val = nextM->asMethod(context)(context, it, nullptr, context->newList(), nullptr);
+        if (!val || val == PROTO_NONE) break;
+        acc = const_cast<proto::ProtoSet*>(acc->add(context, val));
+    }
 }
 
-static const proto::ProtoObject* py_set_intersection_stub(
+static const proto::ProtoObject* py_set_union(
     proto::ProtoContext* context, const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    (void)self;
-    (void)posArgs;
-    return PROTO_NONE;
+    const proto::ProtoSet* s = set_data(context, self);
+    if (!s) return PROTO_NONE;
+    proto::ProtoSet* acc = const_cast<proto::ProtoSet*>(context->newSet());
+    const proto::ProtoSetIterator* it = s->getIterator(context);
+    while (it->hasNext(context)) {
+        acc = const_cast<proto::ProtoSet*>(acc->add(context, it->next(context)));
+        it = it->advance(context);
+    }
+    for (unsigned long i = 0; i < posArgs->getSize(context); ++i)
+        add_iterable_to_set(context, posArgs->getAt(context, static_cast<int>(i)), acc);
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!env) return PROTO_NONE;
+    const proto::ProtoObject* parent = env->getSetPrototype();
+    if (!parent) return PROTO_NONE;
+    proto::ProtoObject* result = const_cast<proto::ProtoObject*>(parent->newChild(context, true));
+    result->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), acc->asObject(context));
+    return result;
 }
 
-static const proto::ProtoObject* py_set_difference_stub(
+static const proto::ProtoObject* py_set_intersection(
     proto::ProtoContext* context, const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    (void)self;
-    (void)posArgs;
-    return PROTO_NONE;
+    const proto::ProtoSet* s = set_data(context, self);
+    if (!s) return PROTO_NONE;
+    proto::ProtoSet* acc = const_cast<proto::ProtoSet*>(context->newSet());
+    if (posArgs->getSize(context) == 0) {
+        const proto::ProtoSetIterator* it = s->getIterator(context);
+        while (it->hasNext(context)) {
+            acc = const_cast<proto::ProtoSet*>(acc->add(context, it->next(context)));
+            it = it->advance(context);
+        }
+    } else {
+        const proto::ProtoSetIterator* it = s->getIterator(context);
+        while (it->hasNext(context)) {
+            const proto::ProtoObject* val = it->next(context);
+            bool in_all = true;
+            for (unsigned long i = 0; i < posArgs->getSize(context) && in_all; ++i) {
+                const proto::ProtoObject* other = posArgs->getAt(context, static_cast<int>(i));
+                const proto::ProtoSet* os = set_data(context, other);
+                if (os && os->has(context, val)) continue;
+                const proto::ProtoObject* containsM = other->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__contains__"));
+                if (!containsM || !containsM->asMethod(context)) { in_all = false; break; }
+                const proto::ProtoList* arg = context->newList()->appendLast(context, val);
+                const proto::ProtoObject* has = containsM->asMethod(context)(context, other, nullptr, arg, nullptr);
+                in_all = (has && has == PROTO_TRUE);
+            }
+            if (in_all) acc = const_cast<proto::ProtoSet*>(acc->add(context, val));
+            it = it->advance(context);
+        }
+    }
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!env) return PROTO_NONE;
+    const proto::ProtoObject* parent = env->getSetPrototype();
+    if (!parent) return PROTO_NONE;
+    proto::ProtoObject* result = const_cast<proto::ProtoObject*>(parent->newChild(context, true));
+    result->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), acc->asObject(context));
+    return result;
+}
+
+static const proto::ProtoObject* py_set_difference(
+    proto::ProtoContext* context, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoSet* s = set_data(context, self);
+    if (!s) return PROTO_NONE;
+    proto::ProtoSet* acc = const_cast<proto::ProtoSet*>(context->newSet());
+    const proto::ProtoSetIterator* it = s->getIterator(context);
+    while (it->hasNext(context)) {
+        acc = const_cast<proto::ProtoSet*>(acc->add(context, it->next(context)));
+        it = it->advance(context);
+    }
+    for (unsigned long i = 0; i < posArgs->getSize(context); ++i) {
+        const proto::ProtoObject* other = posArgs->getAt(context, static_cast<int>(i));
+        const proto::ProtoObject* iterM = other->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__iter__"));
+        if (!iterM || !iterM->asMethod(context)) continue;
+        const proto::ProtoObject* it2 = iterM->asMethod(context)(context, other, nullptr, context->newList(), nullptr);
+        if (!it2) continue;
+        const proto::ProtoObject* nextM = it2->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__next__"));
+        if (!nextM || !nextM->asMethod(context)) continue;
+        for (;;) {
+            const proto::ProtoObject* val = nextM->asMethod(context)(context, it2, nullptr, context->newList(), nullptr);
+            if (!val || val == PROTO_NONE) break;
+            if (acc->has(context, val)) acc = const_cast<proto::ProtoSet*>(acc->remove(context, val));
+        }
+    }
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!env) return PROTO_NONE;
+    const proto::ProtoObject* parent = env->getSetPrototype();
+    if (!parent) return PROTO_NONE;
+    proto::ProtoObject* result = const_cast<proto::ProtoObject*>(parent->newChild(context, true));
+    result->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), acc->asObject(context));
+    return result;
 }
 
 static const proto::ProtoObject* py_set_pop(
@@ -3574,9 +3660,9 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     setPrototype = setPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "discard"), context->fromMethod(const_cast<proto::ProtoObject*>(setPrototype), py_set_discard));
     setPrototype = setPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "copy"), context->fromMethod(const_cast<proto::ProtoObject*>(setPrototype), py_set_copy));
     setPrototype = setPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "clear"), context->fromMethod(const_cast<proto::ProtoObject*>(setPrototype), py_set_clear));
-    setPrototype = setPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "union"), context->fromMethod(const_cast<proto::ProtoObject*>(setPrototype), py_set_union_stub));
-    setPrototype = setPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "intersection"), context->fromMethod(const_cast<proto::ProtoObject*>(setPrototype), py_set_intersection_stub));
-    setPrototype = setPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "difference"), context->fromMethod(const_cast<proto::ProtoObject*>(setPrototype), py_set_difference_stub));
+    setPrototype = setPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "union"), context->fromMethod(const_cast<proto::ProtoObject*>(setPrototype), py_set_union));
+    setPrototype = setPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "intersection"), context->fromMethod(const_cast<proto::ProtoObject*>(setPrototype), py_set_intersection));
+    setPrototype = setPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "difference"), context->fromMethod(const_cast<proto::ProtoObject*>(setPrototype), py_set_difference));
     setPrototype = setPrototype->setAttribute(context, py_iter, context->fromMethod(const_cast<proto::ProtoObject*>(setPrototype), py_set_iter));
 
     const proto::ProtoObject* setIterProto = context->newObject(true);
