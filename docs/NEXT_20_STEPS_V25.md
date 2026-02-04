@@ -15,7 +15,7 @@ Plan for 20 incremental milestones. Each step: implement → update docs → `gi
 | 425 | Create NEXT_20_STEPS_V25.md, update IMPLEMENTATION_PLAN | done |
 | 426 | Execution engine BINARY_AND | done |
 | 427 | Execution engine BINARY_OR | done |
-| 428 | Execution engine BINARY_XOR | pending |
+| 428 | Execution engine BINARY_XOR | done |
 | 429 | Execution engine INPLACE_MULTIPLY | pending |
 | 430 | math.hypot, math.fmod | pending |
 | 431 | math.log2, math.log1p | pending |

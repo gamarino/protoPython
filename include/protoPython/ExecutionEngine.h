@@ -91,6 +91,8 @@ constexpr int OP_BINARY_AND = 140;
 constexpr int OP_BINARY_OR = 141;
 /** BINARY_XOR: pop two values, push a ^ b (int bitwise xor; else __xor__/__rxor__). */
 constexpr int OP_BINARY_XOR = 142;
+/** INPLACE_MULTIPLY: a *= b; use __imul__ if present else same as BINARY_MULTIPLY. */
+constexpr int OP_INPLACE_MULTIPLY = 143;
 
 /**
  * @brief Executes bytecode: LOAD_CONST, RETURN_VALUE, LOAD_NAME, STORE_NAME,
