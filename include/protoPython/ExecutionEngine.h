@@ -39,6 +39,8 @@ constexpr int OP_BUILD_LIST = 114;
 constexpr int OP_BINARY_SUBSCR = 115;
 /** BUILD_MAP: pop 2*arg (value, key) pairs, build dict, push dict. */
 constexpr int OP_BUILD_MAP = 116;
+/** STORE_SUBSCR: pop value, pop key, pop container; set container[key] = value. */
+constexpr int OP_STORE_SUBSCR = 117;
 
 /**
  * @brief Executes bytecode: LOAD_CONST, RETURN_VALUE, LOAD_NAME, STORE_NAME,

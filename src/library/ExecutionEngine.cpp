@@ -237,6 +237,21 @@ const proto::ProtoObject* executeMinimalBytecode(
                 mapObj->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__keys__"), keys->asObject(ctx));
                 stack.push_back(mapObj);
             }
+        } else if (op == OP_STORE_SUBSCR) {
+            i++;
+            if (stack.size() < 3) continue;
+            const proto::ProtoObject* value = stack.back();
+            stack.pop_back();
+            const proto::ProtoObject* key = stack.back();
+            stack.pop_back();
+            proto::ProtoObject* container = const_cast<proto::ProtoObject*>(stack.back());
+            stack.pop_back();
+            const proto::ProtoObject* setitem = container->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__setitem__"));
+            if (setitem && setitem->asMethod(ctx)) {
+                const proto::ProtoList* args = ctx->newList()->appendLast(ctx, key)->appendLast(ctx, value);
+                setitem->asMethod(ctx)(ctx, container, nullptr, args, nullptr);
+            }
+            /* When container has no __setitem__, subscript assignment is a no-op (e.g. minimal bytecode with BUILD_MAP/BUILD_LIST objects). */
         } else if (op == OP_CALL_FUNCTION) {
             i++;
             if (stack.size() < static_cast<size_t>(arg) + 1) continue;

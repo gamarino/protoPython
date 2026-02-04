@@ -60,9 +60,16 @@ See [docs/NEXT_20_STEPS_V7.md](../docs/NEXT_20_STEPS_V7.md). Steps 65–84 compl
 
 See [docs/NEXT_20_STEPS_V8.md](../docs/NEXT_20_STEPS_V8.md). Steps 85–104 completed.
 
-## 12. Next 20 Steps (v9)
+## 12. Next 20 Steps (v9) — completed
 
-See [docs/NEXT_20_STEPS_V9.md](../docs/NEXT_20_STEPS_V9.md). Steps 105–124 in progress.
+See [docs/NEXT_20_STEPS_V9.md](../docs/NEXT_20_STEPS_V9.md). Steps 105–124 completed.
+
+## 13. Next 20 Steps (v10)
+
+See [docs/NEXT_20_STEPS_V10.md](../docs/NEXT_20_STEPS_V10.md). Steps 125–144 in progress.
+- [x] Step 125: divmod builtin
+- [x] Step 126: ascii builtin
+- [x] Step 127: exec STORE_SUBSCR
 - [x] Step 105: filter builtin
 - [x] Step 106: map builtin
 - [x] Step 107: next(iter, default=None)

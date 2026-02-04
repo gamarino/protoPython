@@ -759,6 +759,55 @@ static const proto::ProtoObject* py_pow(
     return context->fromInteger(result);
 }
 
+static const proto::ProtoObject* py_divmod(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    (void)self;
+    (void)parentLink;
+    (void)keywordParameters;
+    if (positionalParameters->getSize(context) < 2) return PROTO_NONE;
+    long long a = positionalParameters->getAt(context, 0)->asLong(context);
+    long long b = positionalParameters->getAt(context, 1)->asLong(context);
+    if (b == 0) return PROTO_NONE;
+    long long quot = a / b;
+    long long rem = a % b;
+    if (rem != 0) {
+        if (b > 0 && rem < 0) { quot--; rem += b; }
+        else if (b < 0 && rem > 0) { quot++; rem -= b; }
+    }
+    const proto::ProtoList* pair = context->newList()
+        ->appendLast(context, context->fromInteger(quot))
+        ->appendLast(context, context->fromInteger(rem));
+    return context->newTupleFromList(pair)->asObject(context);
+}
+
+static const proto::ProtoObject* py_ascii(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
+    const proto::ProtoObject* reprMethod = obj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__repr__"));
+    if (!reprMethod || !reprMethod->asMethod(context)) return PROTO_NONE;
+    const proto::ProtoObject* reprObj = reprMethod->asMethod(context)(context, obj, nullptr, context->newList(), nullptr);
+    if (!reprObj || !reprObj->isString(context)) return PROTO_NONE;
+    std::string s;
+    reprObj->asString(context)->toUTF8String(context, s);
+    std::string out;
+    for (unsigned char c : s) {
+        if (c >= 32 && c < 127 && c != '\\' && c != '\'') out += c;
+        else if (c == '\\') out += "\\\\";
+        else if (c == '\'') out += "\\'";
+        else { char buf[8]; snprintf(buf, sizeof(buf), "\\x%02x", c); out += buf; }
+    }
+    return context->fromUTF8String(out.c_str());
+}
+
 static const proto::ProtoObject* py_round(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -1065,6 +1114,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "max"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_max));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "pow"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_pow));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "round"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_round));
+    builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "divmod"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_divmod));
+    builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "ascii"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_ascii));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "sorted"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_sorted));
 
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "callable"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_callable));
