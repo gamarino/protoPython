@@ -1232,6 +1232,19 @@ TEST_F(FoundationTest, OperatorIndex) {
     EXPECT_EQ(result->asLong(context), 42);
 }
 
+TEST_F(FoundationTest, MathLog2) {
+    proto::ProtoContext* context = env.getContext();
+    const proto::ProtoObject* mathMod = env.resolve("math");
+    ASSERT_NE(mathMod, nullptr);
+    const proto::ProtoObject* log2M = mathMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "log2"));
+    ASSERT_NE(log2M, nullptr);
+    const proto::ProtoList* args = context->newList()->appendLast(context, context->fromDouble(8.0));
+    const proto::ProtoObject* result = log2M->asMethod(context)(context, mathMod, nullptr, args, nullptr);
+    ASSERT_NE(result, nullptr);
+    double val = result->isDouble(context) ? result->asDouble(context) : static_cast<double>(result->asLong(context));
+    EXPECT_NEAR(val, 3.0, 1e-10);  // log2(8) == 3
+}
+
 TEST_F(FoundationTest, ReprOrId) {
     proto::ProtoContext* context = env.getContext();
     const proto::ProtoObject* builtins = env.resolve("builtins");
