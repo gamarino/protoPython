@@ -2,10 +2,16 @@
 
 This document lists mutable operations in the protoPython library and their thread-safety posture. The goal is to ensure all mutable operations are either implemented with protoCore’s concurrency primitives or documented for follow-up. See [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) Section 1 Phase 4 and protoCore’s [DOCUMENTATION.md](../../protoCore/DOCUMENTATION.md) (e.g. mutability model, module discovery).
 
+## Concurrency policy (Phase 4)
+
+- **Attribute mutations:** We rely on protoCore's lock-free `setAttribute` (CAS on `mutableRoot`). Multiple threads may mutate different objects or the same object; CAS ensures no lost updates. List/dict mutations that update object attributes (e.g. `setAttribute(__data__, newList)`) are therefore safe under this model.
+- **Execution model:** A single `PythonEnvironment` and single `ProtoContext` may be used from multiple threads. All shared mutable state in protoPython (trace function, pending exception, context registration map, resolve cache) is made thread-safe in Phase 4 (see follow-up resolutions below).
+- **Module resolution:** We rely on protoCore's `getImportModule` (SharedModuleCache with `std::shared_mutex`, moduleRoots under `moduleRootsMutex`) as the source of thread-safety for concurrent imports. **ProtoSpace and module cache:** Resolved per protoCore [MODULE_DISCOVERY.md](../../protoCore/docs/MODULE_DISCOVERY.md).
+
 ## Summary
 
-- **protoCore foundation**: ProtoList and ProtoSparseList are immutable-by-default (e.g. `appendLast`, `setAt` return new structures). ProtoObject attribute storage may use internal mutable state; ProtoSpace and module resolution are owned by protoCore.
-- **protoPython usage**: We create and mutate objects during environment setup and when executing Python operations (list append, dict setitem, sys.path, sys.modules). Concurrent access to the same `PythonEnvironment` / `ProtoContext` from multiple threads is not yet guaranteed safe; follow-up work is required.
+- **protoCore foundation**: ProtoList and ProtoSparseList are immutable-by-default (e.g. `appendLast`, `setAt` return new structures). ProtoObject attribute storage uses lock-free CAS on `mutableRoot`; ProtoSpace and module resolution are thread-safe per protoCore (SharedModuleCache, moduleRoots).
+- **protoPython usage**: We create and mutate objects during environment setup and when executing Python operations (list append, dict setitem, sys.path, sys.modules). Phase 4 makes shared mutable state in protoPython (trace, pending exception, context map, resolve cache) thread-safe; attribute mutations go through protoCore CAS.
 
 ## Mutable operations by component
 
@@ -13,12 +19,12 @@ This document lists mutable operations in the protoPython library and their thre
 
 | Operation | Uses protoCore | Thread-safe today | Follow-up |
 |-----------|-----------------|--------------------|-----------|
-| List `append` | Yes: `ProtoList::appendLast` (returns new list) | Single-threaded use only | Ensure `setAttribute(__data__)` on list instance is safe under protoCore’s model when multiple threads touch the same object. |
-| List `__setitem__` | Yes: `ProtoList::setAt` (returns new list) | Single-threaded use only | Same as above. |
-| Dict `__setitem__` | Yes: `ProtoSparseList::setAt` (returns new sparse list) | Single-threaded use only | Same as above. |
+| List `append` | Yes: `ProtoList::appendLast` (returns new list) | Safe: protoCore CAS on `setAttribute(__data__, ...)` | Resolved per concurrency policy. |
+| List `__setitem__` | Yes: `ProtoList::setAt` (returns new list) | Safe: same | Resolved per concurrency policy. |
+| Dict `__setitem__` | Yes: `ProtoSparseList::setAt` (returns new sparse list) | Safe: same | Resolved per concurrency policy. |
 | Root object setup | `setAttribute` on prototypes (object, type, list, dict, sys, builtins) | One-time init, single-threaded | No change. |
 | sys.path update | `pathList->appendLast`, then `sysModule->setAttribute(path, ...)` | Init only | No change. |
-| sys.modules update | `modulesDictObj->setAttribute("sys", ...)` etc. | Init only; runtime module registration may be shared | Document: if multiple threads register modules concurrently, protoCore’s module cache / resolution must be audited. |
+| sys.modules update | `modulesDictObj->setAttribute(...)` etc. | Safe: protoCore CAS; concurrent registration via getImportModule is thread-safe | Resolved per protoCore SharedModuleCache. |
 
 ### 2. SysModule (src/library/SysModule.cpp)
 
@@ -50,7 +56,7 @@ This document lists mutable operations in the protoPython library and their thre
 
 | Operation | Uses protoCore | Thread-safe today | Follow-up |
 |-----------|----------------|-------------------|-----------|
-| Module load / setAttribute(__name__, __file__, __path__) | Module object creation and attributes | Depends on ProtoSpace/getImportModule | Align with protoCore’s SharedModuleCache and resolution chain; document whether concurrent imports are safe. |
+| Module load / setAttribute(__name__, __file__, __path__) | Module object creation and attributes | Depends on ProtoSpace/getImportModule | Align with protoCore's SharedModuleCache and resolution chain; document whether concurrent imports are safe. |
 
 ### 7. NativeModuleProvider (src/library/NativeModuleProvider.cpp)
 
@@ -60,10 +66,10 @@ This document lists mutable operations in the protoPython library and their thre
 
 ## Recommendations
 
-1. **Single ProtoContext per thread (or explicit locking)**: Until proven otherwise, treat one `PythonEnvironment` (and its `ProtoContext`) as used by a single thread at a time, or introduce a clear locking strategy for shared access.
-2. **ProtoSpace and module cache**: Confirm with protoCore’s docs (e.g. [MODULE_DISCOVERY.md](../../protoCore/docs/MODULE_DISCOVERY.md), mutability model) whether `getImportModule` and the resolution chain are thread-safe for concurrent reads and/or registration.
-3. **Attribute mutation**: ProtoObject’s `setAttribute` mutates the object’s attribute storage. If multiple threads can mutate the same object, protoCore’s locking or copy-on-write semantics must be applied; otherwise restrict to single-threaded execution per context.
-4. **Deque and shared collections**: For shared deque/list/dict instances, either use protoCore’s thread-safe patterns (if any) or document that they are single-threaded and add locking in a later phase.
+1. **Single PythonEnvironment, shared ProtoContext**: Phase 4 allows multiple threads to use the same `PythonEnvironment` and `ProtoContext`; shared mutable state in protoPython is made thread-safe (trace, pending exception, context map, resolve cache).
+2. **ProtoSpace and module cache**: Resolved. protoCore's `getImportModule` and SharedModuleCache are thread-safe per [MODULE_DISCOVERY.md](../../protoCore/docs/MODULE_DISCOVERY.md).
+3. **Attribute mutation**: Resolved. protoCore's `setAttribute` uses lock-free CAS on `mutableRoot`; multiple threads may mutate the same or different objects.
+4. **Deque and shared collections**: Documented as not thread-safe for concurrent mutation of the same instance; see CollectionsModule section and Step 5 resolution.
 
 ## References
 

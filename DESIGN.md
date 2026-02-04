@@ -67,6 +67,8 @@ Instead of a GIL, `protoPython` will use:
 - **Atomic operations**: For reference counting (if required) or state transitions.
 - **Isolated Spaces**: Capability to run independent Python environments in separate `ProtoSpace` instances for maximum isolation and scaling.
 
+**Phase 4 concurrency policy:** A single `PythonEnvironment` and `ProtoContext` may be used from multiple threads. Attribute mutations rely on protoCore's lock-free CAS; protoPython's shared state (trace, resolve cache, context map) is made thread-safe. See [docs/GIL_FREE_AUDIT.md](docs/GIL_FREE_AUDIT.md).
+
 ## 7. Development Phases
 
 1.  **Phase 1**: Foundation - Basic `protoPython` library with `object` and core dunder methods. Initial `ProtoSpace` integration [COMPLETED].
