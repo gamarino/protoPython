@@ -3,6 +3,8 @@
 #include <cmath>
 #include <cstdio>
 #include <iostream>
+#include <algorithm>
+#include <vector>
 
 namespace protoPython {
 namespace builtins {
@@ -504,6 +506,71 @@ static const proto::ProtoObject* py_vars(
     return context->newSparseList()->asObject(context);
 }
 
+/** Compare two objects for sorting: int, string, else compare(). */
+static int sorted_compare(proto::ProtoContext* context, const proto::ProtoObject* a, const proto::ProtoObject* b) {
+    if (a == b) return 0;
+    if (a->isInteger(context) && b->isInteger(context)) {
+        long long av = a->asLong(context);
+        long long bv = b->asLong(context);
+        if (av == bv) return 0;
+        return av < bv ? -1 : 1;
+    }
+    if (a->isString(context) && b->isString(context)) {
+        std::string sa;
+        std::string sb;
+        a->asString(context)->toUTF8String(context, sa);
+        b->asString(context)->toUTF8String(context, sb);
+        if (sa == sb) return 0;
+        return sa < sb ? -1 : 1;
+    }
+    int cmp = a->compare(context, b);
+    if (cmp != 0) return cmp;
+    unsigned long ha = a->getHash(context);
+    unsigned long hb = b->getHash(context);
+    if (ha == hb) return 0;
+    return ha < hb ? -1 : 1;
+}
+
+static const proto::ProtoObject* py_sorted(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    (void)parentLink;
+    (void)keywordParameters;
+    (void)self;
+    if (!positionalParameters || positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    const proto::ProtoObject* iterable = positionalParameters->getAt(context, 0);
+    const proto::ProtoObject* iterMethod = iterable->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__iter__"));
+    if (!iterMethod || !iterMethod->asMethod(context)) return PROTO_NONE;
+    const proto::ProtoObject* it = iterMethod->asMethod(context)(context, iterable, nullptr, context->newList(), nullptr);
+    if (!it) return PROTO_NONE;
+    const proto::ProtoObject* nextMethod = it->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__next__"));
+    if (!nextMethod || !nextMethod->asMethod(context)) return PROTO_NONE;
+
+    std::vector<const proto::ProtoObject*> elems;
+    for (;;) {
+        const proto::ProtoObject* val = nextMethod->asMethod(context)(context, it, nullptr, context->newList(), nullptr);
+        if (!val || val == PROTO_NONE) break;
+        elems.push_back(val);
+    }
+
+    std::sort(elems.begin(), elems.end(), [context](const proto::ProtoObject* a, const proto::ProtoObject* b) {
+        return sorted_compare(context, a, b) < 0;
+    });
+
+    const proto::ProtoList* resultList = context->newList();
+    for (const proto::ProtoObject* obj : elems)
+        resultList = resultList->appendLast(context, obj);
+
+    protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(context);
+    if (!env) return PROTO_NONE;
+    const proto::ProtoObject* listObj = env->getListPrototype()->newChild(context, true);
+    listObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), resultList->asObject(context));
+    return listObj;
+}
+
 static const proto::ProtoObject* py_hash(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -885,6 +952,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "max"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_max));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "pow"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_pow));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "round"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_round));
+    builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "sorted"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_sorted));
 
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "callable"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_callable));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "getattr"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_getattr));

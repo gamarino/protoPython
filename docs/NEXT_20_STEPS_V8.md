@@ -25,7 +25,7 @@ Plan for 20 incremental milestones. Each step: implement → update docs → `gi
 | 95 | Benchmark: `range_iterate` | done |
 | 96 | Integrate new benchmarks into harness and report | done |
 | 97 | Builtin `vars()`: return object `__dict__` (stub) | done |
-| 98 | Builtin `sorted()`: return sorted list | `feat(protoPython): sorted builtin` |
+| 98 | Builtin `sorted()`: return sorted list | done |
 | 99 | os.path stub: `join`, `exists`, `isdir` | `feat(protoPython): os.path stub` |
 | 100 | pathlib stub: `Path` class basics | `feat(protoPython): pathlib stub` |
 | 101 | collections.abc stub: `Iterable`, `Sequence` | `feat(protoPython): collections.abc stub` |
