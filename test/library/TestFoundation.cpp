@@ -1125,6 +1125,19 @@ TEST_F(FoundationTest, MathLog) {
     EXPECT_DOUBLE_EQ(val10, 2.0);
 }
 
+TEST_F(FoundationTest, MathSqrt) {
+    proto::ProtoContext* context = env.getContext();
+    const proto::ProtoObject* mathMod = env.resolve("math");
+    ASSERT_NE(mathMod, nullptr);
+    const proto::ProtoObject* sqrtM = mathMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "sqrt"));
+    ASSERT_NE(sqrtM, nullptr);
+    const proto::ProtoList* args4 = context->newList()->appendLast(context, context->fromDouble(4.0));
+    const proto::ProtoObject* result = sqrtM->asMethod(context)(context, mathMod, nullptr, args4, nullptr);
+    ASSERT_NE(result, nullptr);
+    double val = result->isDouble(context) ? result->asDouble(context) : static_cast<double>(result->asLong(context));
+    EXPECT_DOUBLE_EQ(val, 2.0);
+}
+
 TEST_F(FoundationTest, ListRepeat) {
     proto::ProtoContext* context = env.getContext();
     const proto::ProtoObject* listPrototype = env.getListPrototype();
