@@ -45,7 +45,32 @@ def wraps(wrapped, assigned=None, updated=None):
     return decorator
 
 def lru_cache(maxsize=128, typed=False):
-    """Stub: returns a decorator that returns the callable unchanged (no caching)."""
+    """Decorator that caches up to maxsize most recent calls. maxsize=0 disables cache; maxsize=None unbounded."""
     def decorator(func):
-        return func
+        cache = {}
+        cache_order = []
+
+        def wrapper(*args, **kwargs):
+            if maxsize == 0:
+                return func(*args, **kwargs)
+            key = args
+            if kwargs:
+                key = key + (tuple(sorted(kwargs.items())),)
+            if typed:
+                key = tuple((k, type(k)) for k in key)
+            if key in cache:
+                val = cache[key]
+                if maxsize is not None and cache_order:
+                    cache_order.remove(key)
+                    cache_order.append(key)
+                return val
+            result = func(*args, **kwargs)
+            if maxsize is not None and len(cache) >= maxsize and cache_order:
+                oldest = cache_order.pop(0)
+                del cache[oldest]
+            cache[key] = result
+            if maxsize is not None:
+                cache_order.append(key)
+            return result
+        return wrapper
     return decorator
