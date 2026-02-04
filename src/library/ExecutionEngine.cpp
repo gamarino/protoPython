@@ -1,8 +1,16 @@
 #include <protoPython/ExecutionEngine.h>
 #include <cmath>
+#include <cstdint>
 #include <vector>
 
 namespace protoPython {
+
+/** Return true if obj is an embedded value (e.g. small int, bool); do not call getAttribute on it. */
+static bool isEmbeddedValue(const proto::ProtoObject* obj) {
+    if (!obj || obj == PROTO_NONE) return false;
+    constexpr unsigned long POINTER_TAG_EMBEDDED_VALUE = 1;
+    return (reinterpret_cast<uintptr_t>(obj) & 0x3FUL) == POINTER_TAG_EMBEDDED_VALUE;
+}
 
 static const proto::ProtoObject* binaryAdd(proto::ProtoContext* ctx,
     const proto::ProtoObject* a, const proto::ProtoObject* b) {
@@ -34,6 +42,11 @@ static const proto::ProtoObject* binaryTrueDivide(proto::ProtoContext* ctx,
     const proto::ProtoObject* a, const proto::ProtoObject* b) {
     if (b->isInteger(ctx) && b->asLong(ctx) == 0) return PROTO_NONE;
     if (b->isDouble(ctx) && b->asDouble(ctx) == 0.0) return PROTO_NONE;
+    if (isEmbeddedValue(a) || isEmbeddedValue(b)) {
+        double aa = a->isDouble(ctx) ? a->asDouble(ctx) : static_cast<double>(a->asLong(ctx));
+        double bb = b->isDouble(ctx) ? b->asDouble(ctx) : static_cast<double>(b->asLong(ctx));
+        return ctx->fromDouble(aa / bb);
+    }
     const proto::ProtoObject* r = a->divide(ctx, b);
     return r ? r : PROTO_NONE;
 }
@@ -169,7 +182,7 @@ const proto::ProtoObject* executeMinimalBytecode(
             stack.pop_back();
             const proto::ProtoObject* a = stack.back();
             stack.pop_back();
-            const proto::ProtoObject* iadd = a->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iadd__"));
+            const proto::ProtoObject* iadd = isEmbeddedValue(a) ? nullptr : a->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iadd__"));
             if (iadd && iadd->asMethod(ctx)) {
                 const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
                 const proto::ProtoObject* result = iadd->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
@@ -193,7 +206,7 @@ const proto::ProtoObject* executeMinimalBytecode(
             stack.pop_back();
             const proto::ProtoObject* a = stack.back();
             stack.pop_back();
-            const proto::ProtoObject* isub = a->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__isub__"));
+            const proto::ProtoObject* isub = isEmbeddedValue(a) ? nullptr : a->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__isub__"));
             if (isub && isub->asMethod(ctx)) {
                 const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
                 const proto::ProtoObject* result = isub->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
@@ -217,7 +230,7 @@ const proto::ProtoObject* executeMinimalBytecode(
             stack.pop_back();
             const proto::ProtoObject* a = stack.back();
             stack.pop_back();
-            const proto::ProtoObject* imul = a->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__imul__"));
+            const proto::ProtoObject* imul = isEmbeddedValue(a) ? nullptr : a->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__imul__"));
             if (imul && imul->asMethod(ctx)) {
                 const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
                 const proto::ProtoObject* result = imul->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
@@ -265,7 +278,7 @@ const proto::ProtoObject* executeMinimalBytecode(
             stack.pop_back();
             const proto::ProtoObject* a = stack.back();
             stack.pop_back();
-            const proto::ProtoObject* itruediv = a->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__itruediv__"));
+            const proto::ProtoObject* itruediv = isEmbeddedValue(a) ? nullptr : a->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__itruediv__"));
             if (itruediv && itruediv->asMethod(ctx)) {
                 const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
                 const proto::ProtoObject* result = itruediv->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
@@ -281,7 +294,7 @@ const proto::ProtoObject* executeMinimalBytecode(
             stack.pop_back();
             const proto::ProtoObject* a = stack.back();
             stack.pop_back();
-            const proto::ProtoObject* ifloordiv = a->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__ifloordiv__"));
+            const proto::ProtoObject* ifloordiv = isEmbeddedValue(a) ? nullptr : a->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__ifloordiv__"));
             if (ifloordiv && ifloordiv->asMethod(ctx)) {
                 const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
                 const proto::ProtoObject* result = ifloordiv->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
@@ -297,7 +310,7 @@ const proto::ProtoObject* executeMinimalBytecode(
             stack.pop_back();
             const proto::ProtoObject* a = stack.back();
             stack.pop_back();
-            const proto::ProtoObject* imod = a->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__imod__"));
+            const proto::ProtoObject* imod = isEmbeddedValue(a) ? nullptr : a->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__imod__"));
             if (imod && imod->asMethod(ctx)) {
                 const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
                 const proto::ProtoObject* result = imod->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
@@ -313,7 +326,7 @@ const proto::ProtoObject* executeMinimalBytecode(
             stack.pop_back();
             const proto::ProtoObject* a = stack.back();
             stack.pop_back();
-            const proto::ProtoObject* ipow = a->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__ipow__"));
+            const proto::ProtoObject* ipow = isEmbeddedValue(a) ? nullptr : a->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__ipow__"));
             if (ipow && ipow->asMethod(ctx)) {
                 const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
                 const proto::ProtoObject* result = ipow->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
@@ -329,7 +342,7 @@ const proto::ProtoObject* executeMinimalBytecode(
             stack.pop_back();
             const proto::ProtoObject* a = stack.back();
             stack.pop_back();
-            const proto::ProtoObject* ilshift = a->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__ilshift__"));
+            const proto::ProtoObject* ilshift = isEmbeddedValue(a) ? nullptr : a->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__ilshift__"));
             if (ilshift && ilshift->asMethod(ctx)) {
                 const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
                 const proto::ProtoObject* result = ilshift->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
@@ -348,7 +361,7 @@ const proto::ProtoObject* executeMinimalBytecode(
             stack.pop_back();
             const proto::ProtoObject* a = stack.back();
             stack.pop_back();
-            const proto::ProtoObject* irshift = a->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__irshift__"));
+            const proto::ProtoObject* irshift = isEmbeddedValue(a) ? nullptr : a->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__irshift__"));
             if (irshift && irshift->asMethod(ctx)) {
                 const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
                 const proto::ProtoObject* result = irshift->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
@@ -367,7 +380,7 @@ const proto::ProtoObject* executeMinimalBytecode(
             stack.pop_back();
             const proto::ProtoObject* a = stack.back();
             stack.pop_back();
-            const proto::ProtoObject* iand = a->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iand__"));
+            const proto::ProtoObject* iand = isEmbeddedValue(a) ? nullptr : a->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iand__"));
             if (iand && iand->asMethod(ctx)) {
                 const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
                 const proto::ProtoObject* result = iand->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
@@ -396,7 +409,7 @@ const proto::ProtoObject* executeMinimalBytecode(
             stack.pop_back();
             const proto::ProtoObject* a = stack.back();
             stack.pop_back();
-            const proto::ProtoObject* ior = a->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__ior__"));
+            const proto::ProtoObject* ior = isEmbeddedValue(a) ? nullptr : a->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__ior__"));
             if (ior && ior->asMethod(ctx)) {
                 const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
                 const proto::ProtoObject* result = ior->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
@@ -425,7 +438,7 @@ const proto::ProtoObject* executeMinimalBytecode(
             stack.pop_back();
             const proto::ProtoObject* a = stack.back();
             stack.pop_back();
-            const proto::ProtoObject* ixor = a->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__ixor__"));
+            const proto::ProtoObject* ixor = isEmbeddedValue(a) ? nullptr : a->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__ixor__"));
             if (ixor && ixor->asMethod(ctx)) {
                 const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
                 const proto::ProtoObject* result = ixor->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
@@ -585,7 +598,7 @@ const proto::ProtoObject* executeMinimalBytecode(
             if (stack.empty()) continue;
             const proto::ProtoObject* a = stack.back();
             stack.pop_back();
-            const proto::ProtoObject* pos = a->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__pos__"));
+            const proto::ProtoObject* pos = isEmbeddedValue(a) ? nullptr : a->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__pos__"));
             if (pos && pos->asMethod(ctx)) {
                 const proto::ProtoList* noArgs = ctx->newList();
                 const proto::ProtoObject* result = pos->asMethod(ctx)(ctx, a, nullptr, noArgs, nullptr);

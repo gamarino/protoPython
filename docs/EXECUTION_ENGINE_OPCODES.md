@@ -63,8 +63,8 @@ This document is the Phase 3 execution engine audit: for each opcode, whether it
 | ROT_FOUR | 154 | Y | RotFour |
 | DUP_TOP_TWO | 155 | Y | DupTopTwo |
 
-## Gaps (before Step 2)
+## Gaps (resolved in Step 2)
 
-Opcodes with no dedicated test: STORE_SUBSCR, FOR_ITER (real loop), BINARY_MODULO, UNARY_NEGATIVE, UNARY_NOT, UNARY_POSITIVE, BINARY_RSHIFT, BINARY_OR, BINARY_XOR, INPLACE_FLOOR_DIVIDE, INPLACE_POWER, INPLACE_RSHIFT, INPLACE_OR, INPLACE_XOR, POP_JUMP_IF_FALSE, JUMP_ABSOLUTE.
+Step 2 added dedicated tests for: STORE_SUBSCR (StoreSubscr), BINARY_MODULO (BinaryModulo), UNARY_NEGATIVE (UnaryNegative), UNARY_NOT (UnaryNot), UNARY_POSITIVE (UnaryPositive), BINARY_RSHIFT (BinaryRshift), BINARY_OR (BinaryOr), BINARY_XOR (BinaryXor), INPLACE_FLOOR_DIVIDE (InplaceFloorDivide), INPLACE_POWER (InplacePower), INPLACE_RSHIFT (InplaceRshift), INPLACE_OR (InplaceOr), INPLACE_XOR (InplaceXor), POP_JUMP_IF_FALSE (PopJumpIfFalse), JUMP_ABSOLUTE (JumpAbsolute). FOR_ITER (real loop) is still only covered by GetIterNoCrash (no full loop test).
 
 All opcodes 100–155 are implemented in [ExecutionEngine.cpp](../src/library/ExecutionEngine.cpp). Tests are in [TestExecutionEngine.cpp](../test/library/TestExecutionEngine.cpp). Run with: `ctest -R test_execution_engine` or `./build/test/library/test_execution_engine`.
