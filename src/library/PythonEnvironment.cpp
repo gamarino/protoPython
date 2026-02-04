@@ -1697,6 +1697,16 @@ static const proto::ProtoObject* py_int_bit_length(
     return context->fromInteger(bits);
 }
 
+static const proto::ProtoObject* py_int_bit_count(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    unsigned long long u = static_cast<unsigned long long>(self->asLong(context));
+    int count = 0;
+    while (u) { count += static_cast<int>(u & 1); u >>= 1; }
+    return context->fromInteger(count);
+}
+
 static const proto::ProtoObject* py_int_hash(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -4045,6 +4055,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     intPrototype = intPrototype->setAttribute(context, py_format_dunder, context->fromMethod(const_cast<proto::ProtoObject*>(intPrototype), py_int_format));
     const proto::ProtoString* py_bit_length = proto::ProtoString::fromUTF8String(context, "bit_length");
     intPrototype = intPrototype->setAttribute(context, py_bit_length, context->fromMethod(const_cast<proto::ProtoObject*>(intPrototype), py_int_bit_length));
+    intPrototype = intPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "bit_count"), context->fromMethod(const_cast<proto::ProtoObject*>(intPrototype), py_int_bit_count));
     const proto::ProtoString* py_from_bytes = proto::ProtoString::fromUTF8String(context, "from_bytes");
     const proto::ProtoString* py_to_bytes = proto::ProtoString::fromUTF8String(context, "to_bytes");
     intPrototype = intPrototype->setAttribute(context, py_from_bytes, context->fromMethod(const_cast<proto::ProtoObject*>(intPrototype), py_int_from_bytes));
