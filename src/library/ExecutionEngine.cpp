@@ -223,6 +223,21 @@ const proto::ProtoObject* executeMinimalBytecode(
             const proto::ProtoObject* a = stack.back();
             stack.pop_back();
             stack.push_back(isTruthy(ctx, a) ? PROTO_FALSE : PROTO_TRUE);
+        } else if (op == OP_UNARY_INVERT) {
+            if (stack.empty()) continue;
+            const proto::ProtoObject* a = stack.back();
+            stack.pop_back();
+            if (a->isInteger(ctx)) {
+                long long n = a->asLong(ctx);
+                stack.push_back(ctx->fromInteger(static_cast<long long>(~static_cast<unsigned long long>(n))));
+            } else {
+                const proto::ProtoObject* inv = a->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__invert__"));
+                if (inv && inv->asMethod(ctx)) {
+                    const proto::ProtoList* noArgs = ctx->newList();
+                    const proto::ProtoObject* result = inv->asMethod(ctx)(ctx, a, nullptr, noArgs, nullptr);
+                    if (result) stack.push_back(result);
+                }
+            }
         } else if (op == OP_COMPARE_OP) {
             i++;
             if (stack.size() < 2) continue;

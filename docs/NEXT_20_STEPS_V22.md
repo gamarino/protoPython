@@ -13,7 +13,7 @@ Plan for 20 incremental milestones. Each step: implement → update docs → `gi
 | Step | Description | Status |
 |------|-------------|--------|
 | 365 | Create NEXT_20_STEPS_V22.md, update IMPLEMENTATION_PLAN | done |
-| 366 | Execution engine UNARY_INVERT | pending |
+| 366 | Execution engine UNARY_INVERT | done |
 | 367 | Execution engine POP_TOP | pending |
 | 368 | math.tan | pending |
 | 369 | operator.invert | pending |

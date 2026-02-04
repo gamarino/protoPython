@@ -69,6 +69,8 @@ constexpr int OP_BINARY_FLOOR_DIVIDE = 129;
 constexpr int OP_UNARY_NEGATIVE = 130;
 /** UNARY_NOT: pop one value, push not TOS (boolean negation). */
 constexpr int OP_UNARY_NOT = 131;
+/** UNARY_INVERT: pop one value, push ~TOS (bitwise invert; for int: -x-1). */
+constexpr int OP_UNARY_INVERT = 132;
 
 /**
  * @brief Executes bytecode: LOAD_CONST, RETURN_VALUE, LOAD_NAME, STORE_NAME,
