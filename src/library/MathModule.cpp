@@ -67,6 +67,31 @@ static const proto::ProtoObject* py_atan(
     return ctx->fromDouble(std::atan(x));
 }
 
+static const proto::ProtoObject* py_atan2(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
+    double y = toDouble(ctx, posArgs->getAt(ctx, 0));
+    double x = toDouble(ctx, posArgs->getAt(ctx, 1));
+    return ctx->fromDouble(std::atan2(y, x));
+}
+
+static const proto::ProtoObject* py_degrees(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    double x = toDouble(ctx, posArgs->getAt(ctx, 0));
+    return ctx->fromDouble(x * (180.0 / 3.14159265358979323846));
+}
+
+static const proto::ProtoObject* py_radians(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    double x = toDouble(ctx, posArgs->getAt(ctx, 0));
+    return ctx->fromDouble(x * (3.14159265358979323846 / 180.0));
+}
+
 static const proto::ProtoObject* py_floor(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
@@ -225,6 +250,12 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_acos));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "atan"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_atan));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "atan2"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_atan2));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "degrees"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_degrees));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "radians"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_radians));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "floor"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_floor));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "ceil"),
