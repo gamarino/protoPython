@@ -79,6 +79,8 @@ constexpr int OP_UNARY_POSITIVE = 134;
 constexpr int OP_NOP = 135;
 /** INPLACE_ADD: a += b; for list use __iadd__; else same as BINARY_ADD. */
 constexpr int OP_INPLACE_ADD = 136;
+/** BINARY_LSHIFT: pop two values, push a << b (int bitwise). */
+constexpr int OP_BINARY_LSHIFT = 137;
 
 /**
  * @brief Executes bytecode: LOAD_CONST, RETURN_VALUE, LOAD_NAME, STORE_NAME,
