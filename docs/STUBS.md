@@ -36,7 +36,7 @@ This document catalogs stub implementations and their completion status.
 | hashlib | md5, sha1, sha256 | Return None |
 | base64 | b64encode, b64decode | Implemented: RFC 4648; accepts bytes-like; returns bytes. |
 | struct | pack, unpack | Return empty bytes / empty tuple |
-| getopt | getopt | Return [], [] |
+| getopt | getopt | Implemented: shortopts, longopts; returns (options, args). GetoptError on bad option. |
 | argparse | ArgumentParser | Stub parser |
 | warnings | warn | No-op |
 | time | time, sleep | Return 0.0; no-op |
