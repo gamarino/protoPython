@@ -1,5 +1,6 @@
 #include <protoPython/BuiltinsModule.h>
 #include <protoPython/PythonEnvironment.h>
+#include <cstdio>
 #include <iostream>
 
 namespace protoPython {
@@ -164,6 +165,9 @@ static const proto::ProtoObject* py_bool(
     if (obj->isInteger(context)) {
         return obj->asLong(context) != 0 ? PROTO_TRUE : PROTO_FALSE;
     }
+    if (obj->isDouble(context)) {
+        return obj->asDouble(context) != 0.0 ? PROTO_TRUE : PROTO_FALSE;
+    }
 
     const proto::ProtoObject* boolMethod = obj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__bool__"));
     if (boolMethod && boolMethod->asMethod(context)) {
@@ -181,6 +185,11 @@ static const proto::ProtoObject* py_repr(
     const proto::ProtoSparseList* keywordParameters) {
     if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
+    if (obj->isDouble(context)) {
+        char buf[64];
+        snprintf(buf, sizeof(buf), "%.15g", obj->asDouble(context));
+        return context->fromUTF8String(buf);
+    }
     const proto::ProtoObject* reprMethod = obj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__repr__"));
     if (reprMethod && reprMethod->asMethod(context)) {
         return reprMethod->asMethod(context)(context, obj, nullptr, context->newList(), nullptr);
@@ -196,6 +205,11 @@ static const proto::ProtoObject* py_format(
     const proto::ProtoSparseList* keywordParameters) {
     if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
+    if (obj->isDouble(context)) {
+        char buf[64];
+        snprintf(buf, sizeof(buf), "%.15g", obj->asDouble(context));
+        return context->fromUTF8String(buf);
+    }
     const proto::ProtoObject* formatMethod = obj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__format__"));
     if (!formatMethod || !formatMethod->asMethod(context)) return PROTO_NONE;
     const proto::ProtoList* args = context->newList();
@@ -366,14 +380,15 @@ static const proto::ProtoObject* py_all(
     const proto::ProtoObject* nextMethod = it->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__next__"));
     if (!nextMethod || !nextMethod->asMethod(context)) return PROTO_TRUE;
 
-    const proto::ProtoObject* boolMethod = self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "bool"));
-    if (!boolMethod || !boolMethod->asMethod(context)) return PROTO_TRUE;
+    const proto::ProtoObject* boolType = self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "bool"));
+    const proto::ProtoObject* boolCall = boolType ? boolType->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__call__")) : nullptr;
+    if (!boolCall || !boolCall->asMethod(context)) return PROTO_TRUE;
 
     for (;;) {
         const proto::ProtoObject* val = nextMethod->asMethod(context)(context, it, nullptr, context->newList(), nullptr);
         if (!val || val == PROTO_NONE) break;
         const proto::ProtoList* oneArg = context->newList()->appendLast(context, val);
-        const proto::ProtoObject* b = boolMethod->asMethod(context)(context, self, nullptr, oneArg, nullptr);
+        const proto::ProtoObject* b = boolCall->asMethod(context)(context, boolType, nullptr, oneArg, nullptr);
         if (!b || b == PROTO_FALSE) return PROTO_FALSE;
     }
     return PROTO_TRUE;
@@ -394,14 +409,15 @@ static const proto::ProtoObject* py_any(
     const proto::ProtoObject* nextMethod = it->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__next__"));
     if (!nextMethod || !nextMethod->asMethod(context)) return PROTO_FALSE;
 
-    const proto::ProtoObject* boolMethod = self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "bool"));
-    if (!boolMethod || !boolMethod->asMethod(context)) return PROTO_FALSE;
+    const proto::ProtoObject* boolType = self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "bool"));
+    const proto::ProtoObject* boolCall = boolType ? boolType->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__call__")) : nullptr;
+    if (!boolCall || !boolCall->asMethod(context)) return PROTO_FALSE;
 
     for (;;) {
         const proto::ProtoObject* val = nextMethod->asMethod(context)(context, it, nullptr, context->newList(), nullptr);
         if (!val || val == PROTO_NONE) break;
         const proto::ProtoList* oneArg = context->newList()->appendLast(context, val);
-        const proto::ProtoObject* b = boolMethod->asMethod(context)(context, self, nullptr, oneArg, nullptr);
+        const proto::ProtoObject* b = boolCall->asMethod(context)(context, boolType, nullptr, oneArg, nullptr);
         if (b == PROTO_TRUE) return PROTO_TRUE;
     }
     return PROTO_FALSE;
@@ -502,6 +518,14 @@ static const proto::ProtoObject* py_type(
     const proto::ProtoSparseList* keywordParameters) {
     if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
+    if (obj->isDouble(context)) {
+        const proto::ProtoObject* fp = self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "float"));
+        return fp ? fp : PROTO_NONE;
+    }
+    if (obj == PROTO_TRUE || obj == PROTO_FALSE) {
+        const proto::ProtoObject* bp = self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "bool"));
+        return bp ? bp : PROTO_NONE;
+    }
     const proto::ProtoObject* cls = obj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__class__"));
     return cls ? cls : PROTO_NONE;
 }
@@ -616,12 +640,15 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
                                    const proto::ProtoObject* dictProto, const proto::ProtoObject* tupleProto,
                                    const proto::ProtoObject* setProto, const proto::ProtoObject* bytesProto,
                                    const proto::ProtoObject* sliceType, const proto::ProtoObject* frozensetProto,
+                                   const proto::ProtoObject* floatProto, const proto::ProtoObject* boolProto,
                                    const proto::ProtoObject* ioModule) {
     const proto::ProtoObject* builtins = ctx->newObject(true);
     if (ioModule && ioModule != PROTO_NONE) {
         builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__io_module__"), ioModule);
     }
 
+    builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "True"), PROTO_TRUE);
+    builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "False"), PROTO_FALSE);
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "object"), objectProto);
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "type"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_type));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "int"), intProto);
@@ -633,6 +660,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "bytes"), bytesProto);
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "slice"), sliceType);
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "frozenset"), frozensetProto);
+    if (floatProto) builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "float"), floatProto);
+    if (boolProto) builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "bool"), boolProto);
     
     // Add functions
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "len"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_len));
@@ -645,7 +674,6 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "next"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_next));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "contains"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_contains));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "in"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_contains));
-    builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "bool"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_bool));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "isinstance"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_isinstance));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "issubclass"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_issubclass));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "range"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_range));

@@ -196,6 +196,8 @@ private:
     const proto::ProtoObject* bytesPrototype;
     const proto::ProtoObject* sliceType;
     const proto::ProtoObject* frozensetPrototype;
+    const proto::ProtoObject* floatPrototype;
+    const proto::ProtoObject* boolPrototype;
     const proto::ProtoObject* sysModule;
     const proto::ProtoObject* builtinsModule;
     const proto::ProtoObject* traceFunction{nullptr};

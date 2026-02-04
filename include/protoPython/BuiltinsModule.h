@@ -17,6 +17,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
                                    const proto::ProtoObject* dictProto, const proto::ProtoObject* tupleProto,
                                    const proto::ProtoObject* setProto, const proto::ProtoObject* bytesProto,
                                    const proto::ProtoObject* sliceType, const proto::ProtoObject* frozensetProto,
+                                   const proto::ProtoObject* floatProto = nullptr,
+                                   const proto::ProtoObject* boolProto = nullptr,
                                    const proto::ProtoObject* ioModule = nullptr);
 
 } // namespace builtins

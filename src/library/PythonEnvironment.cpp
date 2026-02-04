@@ -40,6 +40,30 @@ static const proto::ProtoObject* py_object_repr(
     return context->fromUTF8String(buffer);
 }
 
+static const proto::ProtoObject* py_float_call(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) == 0) return ctx->fromDouble(0.0);
+    const proto::ProtoObject* x = posArgs->getAt(ctx, 0);
+    if (x->isInteger(ctx)) return ctx->fromDouble(static_cast<double>(x->asLong(ctx)));
+    if (x->isDouble(ctx)) return x;
+    return PROTO_NONE;
+}
+
+static const proto::ProtoObject* py_bool_call(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_FALSE;
+    const proto::ProtoObject* obj = posArgs->getAt(ctx, 0);
+    if (obj->isString(ctx)) return obj->asString(ctx)->getSize(ctx) > 0 ? PROTO_TRUE : PROTO_FALSE;
+    if (obj->isInteger(ctx)) return obj->asLong(ctx) != 0 ? PROTO_TRUE : PROTO_FALSE;
+    if (obj->isDouble(ctx)) return obj->asDouble(ctx) != 0.0 ? PROTO_TRUE : PROTO_FALSE;
+    const proto::ProtoObject* boolMethod = obj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__bool__"));
+    if (boolMethod && boolMethod->asMethod(ctx))
+        return boolMethod->asMethod(ctx)(ctx, obj, nullptr, ctx->newList(), nullptr);
+    return PROTO_TRUE;
+}
+
 static const proto::ProtoObject* py_object_format(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -1862,6 +1886,18 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     sliceType = sliceType->setAttribute(context, py_name, context->fromUTF8String("slice"));
     sliceType = sliceType->setAttribute(context, py_call, context->fromMethod(const_cast<proto::ProtoObject*>(sliceType), py_slice_call));
 
+    floatPrototype = context->newObject(true);
+    floatPrototype = floatPrototype->addParent(context, objectPrototype);
+    floatPrototype = floatPrototype->setAttribute(context, py_class, typePrototype);
+    floatPrototype = floatPrototype->setAttribute(context, py_name, context->fromUTF8String("float"));
+    floatPrototype = floatPrototype->setAttribute(context, py_call, context->fromMethod(const_cast<proto::ProtoObject*>(floatPrototype), py_float_call));
+
+    boolPrototype = context->newObject(true);
+    boolPrototype = boolPrototype->addParent(context, intPrototype);
+    boolPrototype = boolPrototype->setAttribute(context, py_class, typePrototype);
+    boolPrototype = boolPrototype->setAttribute(context, py_name, context->fromUTF8String("bool"));
+    boolPrototype = boolPrototype->setAttribute(context, py_call, context->fromMethod(const_cast<proto::ProtoObject*>(boolPrototype), py_bool_call));
+
     // 5. Initialize Native Module Provider
     auto& registry = proto::ProviderRegistry::instance();
     auto nativeProvider = std::make_unique<NativeModuleProvider>();
@@ -1875,7 +1911,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     nativeProvider->registerModule("_io", [ioModule](proto::ProtoContext*) { return ioModule; });
 
     // builtins module
-    builtinsModule = builtins::initialize(context, objectPrototype, typePrototype, intPrototype, strPrototype, listPrototype, dictPrototype, tuplePrototype, setPrototype, bytesPrototype, sliceType, frozensetPrototype, ioModule);
+    builtinsModule = builtins::initialize(context, objectPrototype, typePrototype, intPrototype, strPrototype, listPrototype, dictPrototype, tuplePrototype, setPrototype, bytesPrototype, sliceType, frozensetPrototype, floatPrototype, boolPrototype, ioModule);
     nativeProvider->registerModule("builtins", [this](proto::ProtoContext* ctx) { return builtinsModule; });
 
     // _collections module
@@ -2030,6 +2066,8 @@ const proto::ProtoObject* PythonEnvironment::resolve(const std::string& name) {
         if (name == "object") result = objectPrototype;
         else if (name == "type") result = typePrototype;
         else if (name == "int") result = intPrototype;
+        else if (name == "float") result = floatPrototype;
+        else if (name == "bool") result = boolPrototype;
         else if (name == "str") result = strPrototype;
         else if (name == "list") result = listPrototype;
         else if (name == "dict") result = dictPrototype;
@@ -2039,6 +2077,13 @@ const proto::ProtoObject* PythonEnvironment::resolve(const std::string& name) {
         const proto::ProtoObject* modWrapper = context->space->getImportModule(name.c_str(), "val");
         if (modWrapper) {
             result = modWrapper->getAttribute(context, proto::ProtoString::fromUTF8String(context, "val"));
+            if (result && result != PROTO_NONE && sysModule) {
+                const proto::ProtoObject* mods = sysModule->getAttribute(context, proto::ProtoString::fromUTF8String(context, "modules"));
+                if (mods) {
+                    const proto::ProtoObject* updated = mods->setAttribute(context, proto::ProtoString::fromUTF8String(context, name.c_str()), result);
+                    sysModule = sysModule->setAttribute(context, proto::ProtoString::fromUTF8String(context, "modules"), updated);
+                }
+            }
         }
     }
 
