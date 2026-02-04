@@ -4,7 +4,7 @@ Plan for 20 incremental milestones. Each step: implement → update docs → `gi
 
 **Prerequisite**: Next 20 Steps (v23) completed (steps 385–404). See [NEXT_20_STEPS_V23.md](NEXT_20_STEPS_V23.md).
 
-**Status**: In progress.
+**Status**: Completed.
 
 ---
 
@@ -28,13 +28,13 @@ Plan for 20 incremental milestones. Each step: implement → update docs → `gi
 | 418 | Foundation test INPLACE_SUBTRACT or str.split maxsplit | done |
 | 419 | Execution engine test BINARY_LSHIFT or INPLACE_SUBTRACT | done |
 | 420 | Update STUBS.md with v24 entries | done |
-| 421 | Update tasks/todo.md for v24 | pending |
-| 422 | Finalize NEXT_20_STEPS_V24.md | pending |
-| 423 | IMPLEMENTATION_PLAN v24 completion | pending |
-| 424 | Phase 3 opcode list or TESTING note for v24 | pending |
+| 421 | Update tasks/todo.md for v24 | done |
+| 422 | Finalize NEXT_20_STEPS_V24.md | done |
+| 423 | IMPLEMENTATION_PLAN v24 completion | done |
+| 424 | Phase 3 opcode list or TESTING note for v24 | done |
 
 ---
 
 ## Summary
 
-(To be filled when steps 405–424 are complete.)
+Steps 405–424 delivered: execution engine BINARY_LSHIFT, BINARY_RSHIFT, INPLACE_SUBTRACT; math.atan2, degrees, radians; operator.and_, or_, xor; str.split maxsplit, bytes.split, len, bool, float.hex/fromhex (existing); minimal email and runpy stubs; foundation tests (MathAtan2, OperatorAndOrFloatHex, StrSplitMaxsplit) and execution-engine tests (BinaryLshift, InplaceSubtract); STUBS.md and tasks/todo.md updated; v24 doc and IMPLEMENTATION_PLAN finalized; Phase 3 opcode list updated.
