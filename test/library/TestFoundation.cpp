@@ -1151,6 +1151,57 @@ TEST_F(FoundationTest, MathTan) {
     EXPECT_DOUBLE_EQ(val, 0.0);
 }
 
+TEST_F(FoundationTest, MathAtan) {
+    proto::ProtoContext* context = env.getContext();
+    const proto::ProtoObject* mathMod = env.resolve("math");
+    ASSERT_NE(mathMod, nullptr);
+    const proto::ProtoObject* atanM = mathMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "atan"));
+    ASSERT_NE(atanM, nullptr);
+    const proto::ProtoList* args1 = context->newList()->appendLast(context, context->fromDouble(1.0));
+    const proto::ProtoObject* result = atanM->asMethod(context)(context, mathMod, nullptr, args1, nullptr);
+    ASSERT_NE(result, nullptr);
+    double val = result->isDouble(context) ? result->asDouble(context) : static_cast<double>(result->asLong(context));
+    EXPECT_NEAR(val, 0.78539816339744828, 1e-10);  // atan(1) == pi/4
+}
+
+TEST_F(FoundationTest, ReprOrId) {
+    proto::ProtoContext* context = env.getContext();
+    const proto::ProtoObject* builtins = env.resolve("builtins");
+    ASSERT_NE(builtins, nullptr);
+    const proto::ProtoObject* reprM = builtins->getAttribute(context, proto::ProtoString::fromUTF8String(context, "repr"));
+    ASSERT_NE(reprM, nullptr);
+    const proto::ProtoList* args42 = context->newList()->appendLast(context, context->fromInteger(42));
+    const proto::ProtoObject* result = reprM->asMethod(context)(context, builtins, nullptr, args42, nullptr);
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->isString(context));
+    std::string s;
+    result->asString(context)->toUTF8String(context, s);
+    EXPECT_EQ(s, "42");
+}
+
+TEST_F(FoundationTest, ListIaddOrRemoveprefix) {
+    proto::ProtoContext* context = env.getContext();
+    const proto::ProtoObject* listPrototype = env.getListPrototype();
+    proto::ProtoObject* listObj = const_cast<proto::ProtoObject*>(context->newObject(true)->addParent(context, listPrototype));
+    listObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"),
+        context->newList()->appendLast(context, context->fromInteger(1))->asObject(context));
+    const proto::ProtoObject* iaddM = listObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__iadd__"));
+    ASSERT_NE(iaddM, nullptr);
+    const proto::ProtoObject* other = context->newObject(true)->addParent(context, listPrototype);
+    other->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"),
+        context->newList()->appendLast(context, context->fromInteger(2))->appendLast(context, context->fromInteger(3))->asObject(context));
+    const proto::ProtoList* args = context->newList()->appendLast(context, other);
+    const proto::ProtoObject* result = iaddM->asMethod(context)(context, listObj, nullptr, args, nullptr);
+    ASSERT_NE(result, nullptr);
+    const proto::ProtoObject* data = listObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"));
+    ASSERT_NE(data, nullptr);
+    ASSERT_TRUE(data->asList(context));
+    EXPECT_EQ(data->asList(context)->getSize(context), 3u);
+    EXPECT_EQ(data->asList(context)->getAt(context, 0)->asLong(context), 1);
+    EXPECT_EQ(data->asList(context)->getAt(context, 1)->asLong(context), 2);
+    EXPECT_EQ(data->asList(context)->getAt(context, 2)->asLong(context), 3);
+}
+
 TEST_F(FoundationTest, OperatorInvert) {
     proto::ProtoContext* context = env.getContext();
     const proto::ProtoObject* opMod = env.resolve("operator");
