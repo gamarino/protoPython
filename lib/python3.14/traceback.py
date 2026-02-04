@@ -1,4 +1,4 @@
-# traceback.py - Minimal stub for traceback module.
+# traceback.py - Minimal stub for traceback module. See STUBS.md.
 
 def print_exc(*args, **kwargs):
     pass
