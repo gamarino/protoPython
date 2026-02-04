@@ -22,8 +22,25 @@ def reduce(function, iterable, initializer=None):
     return initializer
 
 def wraps(wrapped, assigned=None, updated=None):
-    """Placeholder: returns a no-op decorator that does not update the wrapper."""
+    """Decorator that copies __name__, __doc__, __module__ from wrapped to the wrapper."""
+    if assigned is None:
+        assigned = ('__module__', '__name__', '__qualname__', '__doc__', '__annotations__')
+    if updated is None:
+        updated = ('__dict__',)
+
     def decorator(func):
+        for attr in assigned:
+            if hasattr(wrapped, attr):
+                try:
+                    setattr(func, attr, getattr(wrapped, attr))
+                except (AttributeError, TypeError):
+                    pass
+        for attr in updated:
+            if hasattr(wrapped, attr):
+                try:
+                    getattr(func, attr).update(getattr(wrapped, attr, {}))
+                except (AttributeError, TypeError):
+                    pass
         return func
     return decorator
 

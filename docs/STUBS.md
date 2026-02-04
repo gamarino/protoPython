@@ -46,6 +46,6 @@ This document catalogs stub implementations and their completion status.
 | secrets | token_hex, token_urlsafe | Return placeholder |
 | threading | Thread, Lock | Minimal stubs |
 | enum | Enum | Implemented: name, value, __repr__; Enum(value) or Enum(name, value). auto() placeholder. |
-| functools | reduce, wraps, lru_cache | reduce implemented; wraps no-op; lru_cache stub (v20) |
+| functools | reduce, wraps, lru_cache | reduce implemented; wraps copies __name__, __doc__, __module__, etc.; lru_cache stub (v20). |
 | csv | reader, writer | Implemented: reader yields lists of strings; writer.writerow/writerows; delimiter default ','. |
 | xml.etree | ElementTree, Element | Minimal stub — v21 |
