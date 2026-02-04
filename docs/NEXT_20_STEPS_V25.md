@@ -21,7 +21,7 @@ Plan for 20 incremental milestones. Each step: implement → update docs → `gi
 | 431 | math.log2, math.log1p | done |
 | 432 | operator.index | done |
 | 433 | str/bytes rsplit maxsplit or builtins | done (existing) |
-| 434 | Stdlib stub urllib.parse or platform | pending |
+| 434 | Stdlib stub urllib.parse or platform | done |
 | 435 | Stdlib stub zoneinfo or plistlib | pending |
 | 436 | Foundation test BINARY_AND or math.hypot | pending |
 | 437 | Foundation test BINARY_OR or operator.index | pending |
