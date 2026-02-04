@@ -75,7 +75,7 @@ We aim for "No-Modification" compatibility with CPython tests.
 
 **Completed: Next 20 Steps v19 (305–324).** See [NEXT_20_STEPS_V19.md](NEXT_20_STEPS_V19.md). itertools.accumulate full implementation (default add + optional func); foundation tests set.union/copy, math.isclose, itertools.accumulate; docs and todo updated.
 
-**Next 20 Steps v20 (325–344).** See [NEXT_20_STEPS_V20.md](NEXT_20_STEPS_V20.md). Execution engine BINARY_POWER, BINARY_FLOOR_DIVIDE; math log/log10/exp; operator pow/floordiv/mod; str/bytes/list methods; builtins hasattr/delattr; stdlib stubs (atexit, heapq, json, functools.lru_cache); foundation tests; docs.
+**Completed: Next 20 Steps v20 (325–344).** See [NEXT_20_STEPS_V20.md](NEXT_20_STEPS_V20.md). Execution engine BINARY_POWER, BINARY_FLOOR_DIVIDE; math log/log10/exp; operator pow/floordiv/mod; str.isidentifier, bytes.count, list.__mul__/__rmul__; builtins hasattr/delattr; stdlib stubs atexit, heapq, functools.lru_cache; json.dumps/loads (JsonModule); foundation tests MathLog, ListRepeat, HasattrDelattr; STUBS and todo updated.
 
 ## 5. Debugging & IDE Support
 To be a viable replacement, `protoPython` must support professional developer workflows.
