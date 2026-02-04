@@ -1958,6 +1958,45 @@ static const proto::ProtoObject* py_str_index(
     return result;
 }
 
+static const proto::ProtoObject* py_str_rfind(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoString* str = str_from_self(context, self);
+    if (!str || posArgs->getSize(context) < 1) return context->fromInteger(-1);
+    std::string haystack;
+    str->toUTF8String(context, haystack);
+    const proto::ProtoObject* subObj = posArgs->getAt(context, 0);
+    if (!subObj->isString(context)) return context->fromInteger(-1);
+    std::string needle;
+    subObj->asString(context)->toUTF8String(context, needle);
+    long long start = 0, end = static_cast<long long>(haystack.size());
+    if (posArgs->getSize(context) >= 2 && posArgs->getAt(context, 1)->isInteger(context))
+        start = posArgs->getAt(context, 1)->asLong(context);
+    if (posArgs->getSize(context) >= 3 && posArgs->getAt(context, 2)->isInteger(context))
+        end = posArgs->getAt(context, 2)->asLong(context);
+    if (start < 0) start = 0;
+    if (end > static_cast<long long>(haystack.size())) end = static_cast<long long>(haystack.size());
+    if (start >= end) return context->fromInteger(-1);
+    std::string slice = haystack.substr(static_cast<size_t>(start), static_cast<size_t>(end - start));
+    size_t found = slice.rfind(needle);
+    if (found == std::string::npos) return context->fromInteger(-1);
+    return context->fromInteger(static_cast<long long>(start) + static_cast<long long>(found));
+}
+
+static const proto::ProtoObject* py_str_rindex(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoObject* r = py_str_rfind(context, self, nullptr, posArgs, nullptr);
+    if (!r || !r->isInteger(context) || r->asLong(context) < 0) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(context);
+        if (env) env->raiseValueError(context, context->fromUTF8String("substring not found"));
+        return PROTO_NONE;
+    }
+    return r;
+}
+
 static const proto::ProtoObject* py_str_count(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -3251,6 +3290,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     const proto::ProtoString* py_index = proto::ProtoString::fromUTF8String(context, "index");
     strPrototype = strPrototype->setAttribute(context, py_find, context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_find));
     strPrototype = strPrototype->setAttribute(context, py_index, context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_index));
+    strPrototype = strPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "rfind"), context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_rfind));
+    strPrototype = strPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "rindex"), context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_rindex));
     const proto::ProtoString* py_count = proto::ProtoString::fromUTF8String(context, "count");
     strPrototype = strPrototype->setAttribute(context, py_count, context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_count));
     const proto::ProtoString* py_rsplit = proto::ProtoString::fromUTF8String(context, "rsplit");
