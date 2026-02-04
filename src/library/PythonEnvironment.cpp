@@ -935,6 +935,31 @@ static const proto::ProtoObject* py_list_copy(
     return copyObj;
 }
 
+static const proto::ProtoObject* py_list_mul(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(context) < 1) return PROTO_NONE;
+    const proto::ProtoObject* other = posArgs->getAt(context, 0);
+    if (!other->isInteger(context)) return PROTO_NONE;
+    long long n = other->asLong(context);
+    if (n < 0) n = 0;
+    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "__data__");
+    const proto::ProtoObject* data = self->getAttribute(context, dataName);
+    const proto::ProtoList* list = data && data->asList(context) ? data->asList(context) : nullptr;
+    if (!list) return PROTO_NONE;
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!env) return PROTO_NONE;
+    const proto::ProtoList* result = context->newList();
+    unsigned long size = list->getSize(context);
+    for (long long rep = 0; rep < n; ++rep)
+        for (unsigned long i = 0; i < size; ++i)
+            result = result->appendLast(context, list->getAt(context, static_cast<int>(i)));
+    proto::ProtoObject* out = const_cast<proto::ProtoObject*>(env->getListPrototype()->newChild(context, true));
+    out->setAttribute(context, dataName, result->asObject(context));
+    return out;
+}
+
 static bool list_elem_equal(proto::ProtoContext* context, const proto::ProtoObject* elem, const proto::ProtoObject* value) {
     if (elem == value) return true;
     if (elem->isInteger(context) && value->isInteger(context) && elem->compare(context, value) == 0) return true;
@@ -3850,6 +3875,10 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     const proto::ProtoString* py_list_count_name = proto::ProtoString::fromUTF8String(context, "count");
     listPrototype = listPrototype->setAttribute(context, py_list_index_name, context->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_index));
     listPrototype = listPrototype->setAttribute(context, py_list_count_name, context->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_count));
+    const proto::ProtoString* py_mul = proto::ProtoString::fromUTF8String(context, "__mul__");
+    const proto::ProtoString* py_rmul = proto::ProtoString::fromUTF8String(context, "__rmul__");
+    listPrototype = listPrototype->setAttribute(context, py_mul, context->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_mul));
+    listPrototype = listPrototype->setAttribute(context, py_rmul, context->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_mul));
 
     const proto::ProtoObject* listIterProto = context->newObject(true);
     listIterProto = listIterProto->addParent(context, objectPrototype);
