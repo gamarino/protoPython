@@ -23,6 +23,43 @@ static const proto::ProtoObject* binarySubtract(proto::ProtoContext* ctx,
     return PROTO_NONE;
 }
 
+static const proto::ProtoObject* binaryMultiply(proto::ProtoContext* ctx,
+    const proto::ProtoObject* a, const proto::ProtoObject* b) {
+    const proto::ProtoObject* r = a->multiply(ctx, b);
+    return r ? r : PROTO_NONE;
+}
+
+static const proto::ProtoObject* binaryTrueDivide(proto::ProtoContext* ctx,
+    const proto::ProtoObject* a, const proto::ProtoObject* b) {
+    if (b->isInteger(ctx) && b->asLong(ctx) == 0) return PROTO_NONE;
+    if (b->isDouble(ctx) && b->asDouble(ctx) == 0.0) return PROTO_NONE;
+    const proto::ProtoObject* r = a->divide(ctx, b);
+    return r ? r : PROTO_NONE;
+}
+
+static const proto::ProtoObject* compareOp(proto::ProtoContext* ctx,
+    const proto::ProtoObject* a, const proto::ProtoObject* b, int op) {
+    bool result = false;
+    int c = a->compare(ctx, b);
+    if (op == 0) result = (c == 0);
+    else if (op == 1) result = (c != 0);
+    else if (op == 2) result = (c < 0);
+    else if (op == 3) result = (c <= 0);
+    else if (op == 4) result = (c > 0);
+    else if (op == 5) result = (c >= 0);
+    return result ? PROTO_TRUE : PROTO_FALSE;
+}
+
+static bool isTruthy(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
+    if (!obj || obj == PROTO_NONE) return false;
+    if (obj == PROTO_FALSE) return false;
+    if (obj == PROTO_TRUE) return true;
+    if (obj->isInteger(ctx)) return obj->asLong(ctx) != 0;
+    if (obj->isDouble(ctx)) return obj->asDouble(ctx) != 0.0;
+    if (obj->isString(ctx)) return obj->asString(ctx)->getSize(ctx) > 0;
+    return true;
+}
+
 static const proto::ProtoObject* invokeCallable(proto::ProtoContext* ctx,
     const proto::ProtoObject* callable, const proto::ProtoList* args) {
     const proto::ProtoObject* callAttr = callable->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__call__"));
@@ -84,6 +121,42 @@ const proto::ProtoObject* executeMinimalBytecode(
             stack.pop_back();
             const proto::ProtoObject* r = binarySubtract(ctx, a, b);
             if (r) stack.push_back(r);
+        } else if (op == OP_BINARY_MULTIPLY) {
+            if (stack.size() < 2) continue;
+            const proto::ProtoObject* b = stack.back();
+            stack.pop_back();
+            const proto::ProtoObject* a = stack.back();
+            stack.pop_back();
+            const proto::ProtoObject* r = binaryMultiply(ctx, a, b);
+            if (r) stack.push_back(r);
+        } else if (op == OP_BINARY_TRUE_DIVIDE) {
+            if (stack.size() < 2) continue;
+            const proto::ProtoObject* b = stack.back();
+            stack.pop_back();
+            const proto::ProtoObject* a = stack.back();
+            stack.pop_back();
+            const proto::ProtoObject* r = binaryTrueDivide(ctx, a, b);
+            if (r) stack.push_back(r);
+        } else if (op == OP_COMPARE_OP) {
+            i++;
+            if (stack.size() < 2) continue;
+            const proto::ProtoObject* b = stack.back();
+            stack.pop_back();
+            const proto::ProtoObject* a = stack.back();
+            stack.pop_back();
+            const proto::ProtoObject* r = compareOp(ctx, a, b, arg);
+            if (r) stack.push_back(r);
+        } else if (op == OP_POP_JUMP_IF_FALSE) {
+            i++;
+            if (stack.empty()) continue;
+            const proto::ProtoObject* top = stack.back();
+            stack.pop_back();
+            if (!isTruthy(ctx, top) && arg >= 0 && static_cast<unsigned long>(arg) < n)
+                i = static_cast<unsigned long>(arg) - 1;
+        } else if (op == OP_JUMP_ABSOLUTE) {
+            i++;
+            if (arg >= 0 && static_cast<unsigned long>(arg) < n)
+                i = static_cast<unsigned long>(arg) - 1;
         } else if (op == OP_CALL_FUNCTION) {
             i++;
             if (stack.size() < static_cast<size_t>(arg) + 1) continue;
