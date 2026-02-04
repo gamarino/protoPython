@@ -83,6 +83,8 @@ We aim for "No-Modification" compatibility with CPython tests.
 
 **Completed: Next 20 Steps v23 (385–404).** See [NEXT_20_STEPS_V23.md](NEXT_20_STEPS_V23.md). UNARY_POSITIVE, NOP, INPLACE_ADD; math asin/acos/atan; operator lshift/rshift; bytes removeprefix/removesuffix; repr, id; int.bit_count; shutil, mimetypes stubs; foundation and engine tests; STUBS and todo updated.
 
+**Next 20 Steps v24 (405–424).** See [NEXT_20_STEPS_V24.md](NEXT_20_STEPS_V24.md). Planned: BINARY_LSHIFT, BINARY_RSHIFT, INPLACE_SUBTRACT; math atan2/degrees/radians; operator and_/or_/xor; str.split maxsplit or bytes.split; len/bool or float.hex; email, runpy stubs; foundation and engine tests; STUBS and todo updates.
+
 ## 5. Debugging & IDE Support
 To be a viable replacement, `protoPython` must support professional developer workflows.
 
