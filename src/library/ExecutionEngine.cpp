@@ -210,6 +210,14 @@ const proto::ProtoObject* executeMinimalBytecode(
             stack.pop_back();
             const proto::ProtoObject* r = binaryFloorDivide(ctx, a, b);
             if (r) stack.push_back(r);
+        } else if (op == OP_UNARY_NEGATIVE) {
+            if (stack.empty()) continue;
+            const proto::ProtoObject* a = stack.back();
+            stack.pop_back();
+            if (a->isInteger(ctx))
+                stack.push_back(ctx->fromInteger(-a->asLong(ctx)));
+            else if (a->isDouble(ctx))
+                stack.push_back(ctx->fromDouble(-a->asDouble(ctx)));
         } else if (op == OP_COMPARE_OP) {
             i++;
             if (stack.size() < 2) continue;
