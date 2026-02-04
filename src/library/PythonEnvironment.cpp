@@ -3616,6 +3616,88 @@ static const proto::ProtoObject* py_dict_copy(
     return copyObj;
 }
 
+static const proto::ProtoObject* py_dict_or(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(context) < 1) return PROTO_NONE;
+    const proto::ProtoObject* other = posArgs->getAt(context, 0);
+    const proto::ProtoString* keysName = proto::ProtoString::fromUTF8String(context, "__keys__");
+    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "__data__");
+    const proto::ProtoObject* keysObj = self->getAttribute(context, keysName);
+    const proto::ProtoObject* dataObj = self->getAttribute(context, dataName);
+    const proto::ProtoList* keys = keysObj && keysObj->asList(context) ? keysObj->asList(context) : context->newList();
+    const proto::ProtoSparseList* dict = dataObj && dataObj->asSparseList(context) ? dataObj->asSparseList(context) : context->newSparseList();
+    const proto::ProtoList* parents = self->getParents(context);
+    const proto::ProtoObject* parent = parents && parents->getSize(context) > 0 ? parents->getAt(context, 0) : nullptr;
+    const proto::ProtoObject* result = context->newObject(true);
+    if (parent) result = result->addParent(context, parent);
+    result = result->setAttribute(context, keysName, keys->asObject(context));
+    result = result->setAttribute(context, dataName, dict->asObject(context));
+    const proto::ProtoObject* otherKeysObj = other->getAttribute(context, keysName);
+    const proto::ProtoList* otherKeys = otherKeysObj && otherKeysObj->asList(context) ? otherKeysObj->asList(context) : context->newList();
+    const proto::ProtoObject* otherDataObj = other->getAttribute(context, dataName);
+    const proto::ProtoSparseList* otherDict = otherDataObj && otherDataObj->asSparseList(context) ? otherDataObj->asSparseList(context) : nullptr;
+    if (otherDict) {
+        for (unsigned long i = 0; i < otherKeys->getSize(context); ++i) {
+            const proto::ProtoObject* key = otherKeys->getAt(context, static_cast<int>(i));
+            const proto::ProtoObject* value = otherDict->getAt(context, key->getHash(context));
+            if (!value) continue;
+            unsigned long hash = key->getHash(context);
+            dict = dict->setAt(context, hash, value);
+            bool found = false;
+            for (unsigned long j = 0; j < keys->getSize(context); ++j) {
+                if (keys->getAt(context, static_cast<int>(j))->getHash(context) == hash) { found = true; break; }
+            }
+            if (!found) keys = keys->appendLast(context, key);
+        }
+        result->setAttribute(context, keysName, keys->asObject(context));
+        result->setAttribute(context, dataName, dict->asObject(context));
+    }
+    return result;
+}
+
+static const proto::ProtoObject* py_dict_ror(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(context) < 1) return PROTO_NONE;
+    const proto::ProtoObject* other = posArgs->getAt(context, 0);
+    const proto::ProtoString* keysName = proto::ProtoString::fromUTF8String(context, "__keys__");
+    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "__data__");
+    const proto::ProtoObject* otherKeysObj = other->getAttribute(context, keysName);
+    const proto::ProtoObject* otherDataObj = other->getAttribute(context, dataName);
+    const proto::ProtoList* keys = otherKeysObj && otherKeysObj->asList(context) ? otherKeysObj->asList(context) : context->newList();
+    const proto::ProtoSparseList* dict = otherDataObj && otherDataObj->asSparseList(context) ? otherDataObj->asSparseList(context) : context->newSparseList();
+    const proto::ProtoList* parents = other->getParents(context);
+    const proto::ProtoObject* parent = parents && parents->getSize(context) > 0 ? parents->getAt(context, 0) : nullptr;
+    const proto::ProtoObject* result = context->newObject(true);
+    if (parent) result = result->addParent(context, parent);
+    result = result->setAttribute(context, keysName, keys->asObject(context));
+    result = result->setAttribute(context, dataName, dict->asObject(context));
+    const proto::ProtoObject* selfKeysObj = self->getAttribute(context, keysName);
+    const proto::ProtoList* selfKeys = selfKeysObj && selfKeysObj->asList(context) ? selfKeysObj->asList(context) : context->newList();
+    const proto::ProtoObject* selfDataObj = self->getAttribute(context, dataName);
+    const proto::ProtoSparseList* selfDict = selfDataObj && selfDataObj->asSparseList(context) ? selfDataObj->asSparseList(context) : nullptr;
+    if (selfDict) {
+        for (unsigned long i = 0; i < selfKeys->getSize(context); ++i) {
+            const proto::ProtoObject* key = selfKeys->getAt(context, static_cast<int>(i));
+            const proto::ProtoObject* value = selfDict->getAt(context, key->getHash(context));
+            if (!value) continue;
+            unsigned long hash = key->getHash(context);
+            dict = dict->setAt(context, hash, value);
+            bool found = false;
+            for (unsigned long j = 0; j < keys->getSize(context); ++j) {
+                if (keys->getAt(context, static_cast<int>(j))->getHash(context) == hash) { found = true; break; }
+            }
+            if (!found) keys = keys->appendLast(context, key);
+        }
+        result->setAttribute(context, keysName, keys->asObject(context));
+        result->setAttribute(context, dataName, dict->asObject(context));
+    }
+    return result;
+}
+
 static const proto::ProtoObject* py_dict_setdefault(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -3996,6 +4078,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     dictPrototype = dictPrototype->setAttribute(context, py_clear, context->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_clear));
     dictPrototype = dictPrototype->setAttribute(context, py_copy, context->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_copy));
     dictPrototype = dictPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "fromkeys"), context->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_fromkeys));
+    dictPrototype = dictPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__or__"), context->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_or));
+    dictPrototype = dictPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__ror__"), context->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_ror));
 
     tuplePrototype = context->newObject(true);
     tuplePrototype = tuplePrototype->addParent(context, objectPrototype);
