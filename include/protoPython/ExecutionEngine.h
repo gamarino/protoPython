@@ -85,6 +85,8 @@ constexpr int OP_BINARY_LSHIFT = 137;
 constexpr int OP_BINARY_RSHIFT = 138;
 /** INPLACE_SUBTRACT: a -= b; use __isub__ if present else same as BINARY_SUBTRACT. */
 constexpr int OP_INPLACE_SUBTRACT = 139;
+/** BINARY_AND: pop two values, push a & b (int bitwise and; else __and__/__rand__). */
+constexpr int OP_BINARY_AND = 140;
 
 /**
  * @brief Executes bytecode: LOAD_CONST, RETURN_VALUE, LOAD_NAME, STORE_NAME,
