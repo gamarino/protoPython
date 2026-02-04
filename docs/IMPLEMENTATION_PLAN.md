@@ -77,7 +77,7 @@ We aim for "No-Modification" compatibility with CPython tests.
 
 **Completed: Next 20 Steps v20 (325–344).** See [NEXT_20_STEPS_V20.md](NEXT_20_STEPS_V20.md). Execution engine BINARY_POWER, BINARY_FLOOR_DIVIDE; math log/log10/exp; operator pow/floordiv/mod; str.isidentifier, bytes.count, list.__mul__/__rmul__; builtins hasattr/delattr; stdlib stubs atexit, heapq, functools.lru_cache; json.dumps/loads (JsonModule); foundation tests MathLog, ListRepeat, HasattrDelattr; STUBS and todo updated.
 
-**Next 20 Steps v21 (345–364).** See [NEXT_20_STEPS_V21.md](NEXT_20_STEPS_V21.md). UNARY_NEGATIVE, UNARY_NOT; math sqrt/sin/cos; operator neg/not_; str.isprintable; bytes.isdigit/isalpha; list.__reversed__/reversed(); dict.__or__; getattr/slice; csv, xml stubs; foundation tests; STUBS and todo updates.
+**Completed: Next 20 Steps v21 (345–364).** See [NEXT_20_STEPS_V21.md](NEXT_20_STEPS_V21.md). UNARY_NEGATIVE, UNARY_NOT; math sqrt/sin/cos; operator neg/not_; str.isprintable; bytes.isdigit/isalpha; list.__reversed__/reversed(); dict.__or__/__ror__; getattr/slice repr; csv, xml.etree stubs; foundation tests MathSqrt, DictUnion, OperatorNegOrGetattr; STUBS and todo updated.
 
 ## 5. Debugging & IDE Support
 To be a viable replacement, `protoPython` must support professional developer workflows.
