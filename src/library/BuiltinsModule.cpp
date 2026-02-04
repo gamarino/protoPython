@@ -504,7 +504,7 @@ static const proto::ProtoObject* py_dir(
     return context->newList()->asObject(context);
 }
 
-/** input([prompt]): stub returning empty string; full impl requires stdin. */
+/** input([prompt]): read line from stdin, return as string. */
 static const proto::ProtoObject* py_input(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -513,8 +513,20 @@ static const proto::ProtoObject* py_input(
     const proto::ProtoSparseList* keywordParameters) {
     (void)self;
     (void)parentLink;
-    (void)positionalParameters;
     (void)keywordParameters;
+    if (positionalParameters->getSize(context) >= 1) {
+        const proto::ProtoObject* promptObj = positionalParameters->getAt(context, 0);
+        if (promptObj && promptObj->isString(context)) {
+            std::string prompt;
+            promptObj->asString(context)->toUTF8String(context, prompt);
+            std::cout << prompt << std::flush;
+        }
+    }
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    std::istream* in = env ? env->getStdin() : &std::cin;
+    std::string line;
+    if (in && std::getline(*in, line))
+        return context->fromUTF8String(line.c_str());
     return context->fromUTF8String("");
 }
 

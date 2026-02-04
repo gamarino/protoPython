@@ -140,6 +140,16 @@ public:
     void setExitRequested(int code) { exitRequested_ = code; }
 
     /**
+     * @brief Sets the input stream for builtins.input(). Defaults to std::cin.
+     */
+    void setStdin(std::istream* s) { stdin_ = s; }
+
+    /**
+     * @brief Gets the input stream for builtins.input().
+     */
+    std::istream* getStdin() const { return stdin_; }
+
+    /**
      * @brief Sets the global trace function (sys.settrace). Thread-safe.
      */
     void setTraceFunction(const proto::ProtoObject* func) {
@@ -229,6 +239,7 @@ private:
     const proto::ProtoObject* valueErrorType{nullptr};
     mutable std::unordered_map<std::string, const proto::ProtoObject*> resolveCache_;
     mutable std::mutex resolveCacheMutex_;
+    std::istream* stdin_{&std::cin};
 
     static void registerContext(proto::ProtoContext* ctx, PythonEnvironment* env);
     static void unregisterContext(proto::ProtoContext* ctx);
