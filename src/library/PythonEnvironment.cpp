@@ -15,6 +15,7 @@
 #include <protoPython/ReModule.h>
 #include <protoPython/OsPathModule.h>
 #include <protoPython/PathlibModule.h>
+#include <protoPython/CollectionsAbcModule.h>
 #include <protoCore.h>
 
 namespace protoPython {
@@ -2149,6 +2150,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     nativeProvider->registerModule("json", [](proto::ProtoContext* ctx) { return json::initialize(ctx); });
     nativeProvider->registerModule("os.path", [](proto::ProtoContext* ctx) { return os_path::initialize(ctx); });
     nativeProvider->registerModule("pathlib", [](proto::ProtoContext* ctx) { return pathlib::initialize(ctx); });
+    nativeProvider->registerModule("collections.abc", [](proto::ProtoContext* ctx) { return collections_abc::initialize(ctx); });
 
     const proto::ProtoObject* exceptionsMod = exceptions::initialize(context, objectPrototype, typePrototype);
     keyErrorType = exceptionsMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "KeyError"));

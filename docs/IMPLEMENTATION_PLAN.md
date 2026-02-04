@@ -38,6 +38,7 @@ The goal is to provide a complete standard library that behaves identically to C
     - [x] Initial `builtins` and `sys` native implementation.
     - [x] Basic `_io` module for file operations (Phase 4).
     - [x] Identify remaining modules traditionally implemented in C (e.g., `_collections`, `_functools`, `_ssl`, `_socket`); see [C_MODULES_TO_REPLACE.md](C_MODULES_TO_REPLACE.md).
+    - [x] Native stubs: `os.path` (join, exists, isdir), `pathlib` (Path basics), `collections.abc` (Iterable, Sequence).
     - Ensure these modules are GIL-less from the start.
 - [ ] **Phase 3: Native Optimization**: Progressively replace performance-critical Python modules with C++ implementations.
 

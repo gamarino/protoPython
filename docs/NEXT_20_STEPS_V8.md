@@ -28,7 +28,7 @@ Plan for 20 incremental milestones. Each step: implement → update docs → `gi
 | 98 | Builtin `sorted()`: return sorted list | done |
 | 99 | os.path stub: `join`, `exists`, `isdir` | done |
 | 100 | pathlib stub: `Path` class basics | done |
-| 101 | collections.abc stub: `Iterable`, `Sequence` | `feat(protoPython): collections.abc stub` |
+| 101 | collections.abc stub: `Iterable`, `Sequence` | done |
 | 102 | CTest: add `test_execution_engine` for LOAD_ATTR, BUILD_LIST | `chore(protoPython): exec engine tests v8` |
 | 103 | Incremental success: run_and_report `--output` persistence | `feat(protoPython): regrtest persistence` |
 | 104 | Update IMPLEMENTATION_PLAN and docs for v8 | `docs(protoPython): v8 completion` |
