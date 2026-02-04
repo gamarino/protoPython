@@ -31,8 +31,8 @@ def median(lst):
     return s[n // 2] if n % 2 else (s[n // 2 - 1] + s[n // 2]) / 2
 
 
-def run_cmd(cmd, cwd=None, timeout=60, stderr_file=None):
-    """Run command; if stderr_file is set (for protopy trace), send stderr there."""
+def run_cmd(cmd, cwd=None, timeout=60, stderr_file=None, env=None):
+    """Run command; if stderr_file is set (for protopy trace), send stderr there. env overrides for subprocess."""
     start = time.perf_counter()
     stderr_handle = None
     try:
@@ -41,6 +41,8 @@ def run_cmd(cmd, cwd=None, timeout=60, stderr_file=None):
             "text": True,
             "timeout": timeout,
         }
+        if env is not None:
+            kwargs["env"] = {**os.environ, **env}
         if stderr_file:
             stderr_handle = open(stderr_file, "a")
             kwargs["stdout"] = subprocess.PIPE
@@ -152,6 +154,26 @@ def bench_range_iterate(protopy_bin, cpython_bin, timeout=60, trace_file=None):
     return median(times_protopy), median(times_cpython)
 
 
+def bench_multithreaded_cpu(protopy_bin, cpython_bin, timeout=60, trace_file=None):
+    """CPU-bound work: 4 chunks. CPython uses 4 threads (GIL serializes). protoPython uses SINGLE_THREAD=1 (same work in main)."""
+    script = SCRIPT_DIR / "multithreaded_cpu.py"
+    if not script.exists():
+        return 0.0, 0.0
+    script_str = str(script.resolve())
+    protopy_env = {"SINGLE_THREAD": "1"}
+    times_protopy = []
+    times_cpython = []
+    for _ in range(WARMUP_RUNS):
+        run_cmd([protopy_bin, "--path", str(SCRIPT_DIR), "--script", script_str], timeout=timeout, stderr_file=trace_file, env=protopy_env)
+        run_cmd([cpython_bin, script_str], timeout=timeout)
+    for _ in range(N_RUNS):
+        t, _ = run_cmd([protopy_bin, "--path", str(SCRIPT_DIR), "--script", script_str], timeout=timeout, stderr_file=trace_file, env=protopy_env)
+        times_protopy.append(t)
+        t, _ = run_cmd([cpython_bin, script_str], timeout=timeout)
+        times_cpython.append(t)
+    return median(times_protopy), median(times_cpython)
+
+
 def geometric_mean(ratios):
     if not ratios:
         return 0.0
@@ -231,6 +253,15 @@ def run_cpython_only_bench(cpython_bin, warmup_runs, n_runs, run_fn):
         for _ in range(n_runs):
             t, _ = run_cmd([cpython_bin, script_str])
             times.append(t)
+    elif run_fn == "multithreaded_cpu":
+        script = script_dir / "multithreaded_cpu.py"
+        script_str = str(script.resolve())
+        for _ in range(warmup_runs):
+            run_cmd([cpython_bin, script_str])
+        times = []
+        for _ in range(n_runs):
+            t, _ = run_cmd([cpython_bin, script_str])
+            times.append(t)
     else:
         return 0.0, 0.0
     return 0.0, median(times)
@@ -287,6 +318,7 @@ def main():
             ("list_append_loop", "list_append_loop"),
             ("str_concat_loop", "str_concat_loop"),
             ("range_iterate", "range_iterate"),
+            ("multithread_cpu", "multithreaded_cpu"),
         ]:
             _, tc = run_cpython_only_bench(cpython_bin, WARMUP_RUNS, N_RUNS, key)
             results[name] = (0.0, tc)
@@ -325,6 +357,8 @@ def main():
     results["str_concat_loop"] = (tp, tc)
     tp, tc = bench_range_iterate(protopy_bin, cpython_bin, timeout, trace_file)
     results["range_iterate"] = (tp, tc)
+    tp, tc = bench_multithreaded_cpu(protopy_bin, cpython_bin, timeout, trace_file)
+    results["multithread_cpu"] = (tp, tc)
 
     for name, (tp, tc) in results.items():
         ratio = tp / tc if tc > 0 else 0
