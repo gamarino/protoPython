@@ -2114,6 +2114,90 @@ static const proto::ProtoObject* py_bytes_strip(
     return b;
 }
 
+static std::string bytes_sep_from_arg(proto::ProtoContext* context, const proto::ProtoObject* arg) {
+    if (!arg || arg->isInteger(context)) {
+        long long v = arg && arg->isInteger(context) ? arg->asLong(context) : 32;
+        if (v < 0 || v > 255) return " ";
+        return std::string(1, static_cast<char>(static_cast<unsigned char>(v)));
+    }
+    if (arg->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"))) {
+        const proto::ProtoString* s = bytes_data(context, arg);
+        if (s) { std::string r; s->toUTF8String(context, r); return r; }
+    }
+    return " ";
+}
+
+static const proto::ProtoObject* py_bytes_split(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoString* s = bytes_data(context, self);
+    if (!s) return PROTO_NONE;
+    std::string raw;
+    s->toUTF8String(context, raw);
+    std::string sep = (posArgs && posArgs->getSize(context) >= 1) ? bytes_sep_from_arg(context, posArgs->getAt(context, 0)) : " ";
+    if (sep.empty()) return PROTO_NONE;
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!env) return PROTO_NONE;
+    const proto::ProtoObject* bytesProto = env->getBytesPrototype();
+    if (!bytesProto) return PROTO_NONE;
+    const proto::ProtoList* result = context->newList();
+    size_t start = 0;
+    for (;;) {
+        size_t pos = raw.find(sep, start);
+        if (pos == std::string::npos) {
+            proto::ProtoObject* b = const_cast<proto::ProtoObject*>(bytesProto->newChild(context, true));
+            b->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->fromUTF8String(raw.substr(start).c_str()));
+            result = result->appendLast(context, b);
+            break;
+        }
+        proto::ProtoObject* b = const_cast<proto::ProtoObject*>(bytesProto->newChild(context, true));
+        b->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->fromUTF8String(raw.substr(start, pos - start).c_str()));
+        result = result->appendLast(context, b);
+        start = pos + sep.size();
+    }
+    return result->asObject(context);
+}
+
+static const proto::ProtoObject* py_bytes_join(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoString* sep = bytes_data(context, self);
+    if (!sep || !posArgs || posArgs->getSize(context) < 1) return PROTO_NONE;
+    std::string sepStr;
+    sep->toUTF8String(context, sepStr);
+    const proto::ProtoObject* iterable = posArgs->getAt(context, 0);
+    const proto::ProtoObject* iterM = iterable->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__iter__"));
+    if (!iterM || !iterM->asMethod(context)) return PROTO_NONE;
+    const proto::ProtoObject* it = iterM->asMethod(context)(context, iterable, nullptr, context->newList(), nullptr);
+    if (!it) return PROTO_NONE;
+    const proto::ProtoObject* nextM = it->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__next__"));
+    if (!nextM || !nextM->asMethod(context)) return PROTO_NONE;
+    std::string out;
+    bool first = true;
+    for (;;) {
+        const proto::ProtoObject* item = nextM->asMethod(context)(context, it, nullptr, context->newList(), nullptr);
+        if (!item || item == PROTO_NONE) break;
+        if (!first) out += sepStr;
+        first = false;
+        if (item->isInteger(context)) {
+            long long v = item->asLong(context);
+            if (v >= 0 && v <= 255) out += static_cast<char>(static_cast<unsigned char>(v));
+        } else if (item->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"))) {
+            const proto::ProtoString* bs = bytes_data(context, item);
+            if (bs) { std::string p; bs->toUTF8String(context, p); out += p; }
+        }
+    }
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!env) return PROTO_NONE;
+    const proto::ProtoObject* bytesProto = env->getBytesPrototype();
+    if (!bytesProto) return PROTO_NONE;
+    proto::ProtoObject* b = const_cast<proto::ProtoObject*>(bytesProto->newChild(context, true));
+    b->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->fromUTF8String(out.c_str()));
+    return b;
+}
+
 static const proto::ProtoString* str_from_self(proto::ProtoContext* context, const proto::ProtoObject* self) {
     if (self->isString(context)) return self->asString(context);
     const proto::ProtoObject* data = self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"));
@@ -3750,6 +3834,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     bytesPrototype = bytesPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "strip"), context->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_strip));
     bytesPrototype = bytesPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "lstrip"), context->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_lstrip));
     bytesPrototype = bytesPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "rstrip"), context->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_rstrip));
+    bytesPrototype = bytesPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "split"), context->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_split));
+    bytesPrototype = bytesPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "join"), context->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_join));
 
     sliceType = context->newObject(true);
     sliceType = sliceType->addParent(context, objectPrototype);
