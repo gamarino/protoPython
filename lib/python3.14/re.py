@@ -1,4 +1,5 @@
-# re.py - Minimal stub for regex compatibility
+# re.py - Minimal stub for regex compatibility.
+# Native ReModule may be used when available; this lib stub returns None/[]/string. See STUBS.md.
 
 def compile(pattern, flags=0):
     """Stub: returns None."""

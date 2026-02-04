@@ -54,6 +54,7 @@ This document catalogs stub implementations and their completion status.
 
 | Module | Item | Behavior |
 |--------|------|----------|
+| re | compile, match, search, findall, sub | Native ReModule; lib stub fallback returns None/[]/string. |
 | atexit | register, unregister | No-op; does not register for exit. |
 | heapq | heappush, heappop, heapify | Implemented: list as min-heap; heappush, heappop, heapify in-place. |
 | io | StringIO | Minimal: getvalue, read, write. |
