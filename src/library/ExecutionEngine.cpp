@@ -72,6 +72,20 @@ static const proto::ProtoObject* binaryPower(proto::ProtoContext* ctx,
     return ctx->fromDouble(std::pow(aa, bb));
 }
 
+static const proto::ProtoObject* binaryFloorDivide(proto::ProtoContext* ctx,
+    const proto::ProtoObject* a, const proto::ProtoObject* b) {
+    if (b->isInteger(ctx) && b->asLong(ctx) == 0) return PROTO_NONE;
+    if (b->isDouble(ctx) && b->asDouble(ctx) == 0.0) return PROTO_NONE;
+    if (a->isInteger(ctx) && b->isInteger(ctx)) {
+        long long aa = a->asLong(ctx);
+        long long bb = b->asLong(ctx);
+        return ctx->fromInteger(aa / bb);
+    }
+    double aa = a->isDouble(ctx) ? a->asDouble(ctx) : static_cast<double>(a->asLong(ctx));
+    double bb = b->isDouble(ctx) ? b->asDouble(ctx) : static_cast<double>(b->asLong(ctx));
+    return ctx->fromInteger(static_cast<long long>(std::floor(aa / bb)));
+}
+
 static const proto::ProtoObject* compareOp(proto::ProtoContext* ctx,
     const proto::ProtoObject* a, const proto::ProtoObject* b, int op) {
     bool result = false;
@@ -187,6 +201,14 @@ const proto::ProtoObject* executeMinimalBytecode(
             const proto::ProtoObject* a = stack.back();
             stack.pop_back();
             const proto::ProtoObject* r = binaryPower(ctx, a, b);
+            if (r) stack.push_back(r);
+        } else if (op == OP_BINARY_FLOOR_DIVIDE) {
+            if (stack.size() < 2) continue;
+            const proto::ProtoObject* b = stack.back();
+            stack.pop_back();
+            const proto::ProtoObject* a = stack.back();
+            stack.pop_back();
+            const proto::ProtoObject* r = binaryFloorDivide(ctx, a, b);
             if (r) stack.push_back(r);
         } else if (op == OP_COMPARE_OP) {
             i++;
