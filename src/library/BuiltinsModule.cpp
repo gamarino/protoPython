@@ -568,7 +568,12 @@ static const proto::ProtoObject* py_isinstance(
     if (positionalParameters->getSize(context) < 2) return PROTO_FALSE;
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
     const proto::ProtoObject* cls = positionalParameters->getAt(context, 1);
-    
+    if (obj == PROTO_TRUE || obj == PROTO_FALSE) {
+        const proto::ProtoObject* boolType = self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "bool"));
+        const proto::ProtoObject* intType = self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "int"));
+        if (cls == boolType || cls == intType) return PROTO_TRUE;
+        if (intType && cls->isInstanceOf(context, intType)) return PROTO_TRUE;
+    }
     return obj->isInstanceOf(context, cls);
 }
 
