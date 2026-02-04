@@ -2158,29 +2158,40 @@ static const proto::ProtoObject* py_str_strip(
     return context->fromUTF8String(s.substr(start, end - start).c_str());
 }
 
+static bool char_in_chars(unsigned char c, const std::string& ch) {
+    if (ch.empty()) return is_ascii_whitespace(c);
+    return ch.find(c) != std::string::npos;
+}
+
 static const proto::ProtoObject* py_str_lstrip(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
     const proto::ProtoString* str = str_from_self(context, self);
     if (!str) return PROTO_NONE;
     std::string s;
     str->toUTF8String(context, s);
+    std::string chars;
+    if (posArgs && posArgs->getSize(context) >= 1 && posArgs->getAt(context, 0)->isString(context))
+        posArgs->getAt(context, 0)->asString(context)->toUTF8String(context, chars);
     size_t start = 0;
-    while (start < s.size() && is_ascii_whitespace(s[start])) start++;
+    while (start < s.size() && char_in_chars(static_cast<unsigned char>(s[start]), chars)) start++;
     return context->fromUTF8String(s.substr(start).c_str());
 }
 
 static const proto::ProtoObject* py_str_rstrip(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
     const proto::ProtoString* str = str_from_self(context, self);
     if (!str) return PROTO_NONE;
     std::string s;
     str->toUTF8String(context, s);
+    std::string chars;
+    if (posArgs && posArgs->getSize(context) >= 1 && posArgs->getAt(context, 0)->isString(context))
+        posArgs->getAt(context, 0)->asString(context)->toUTF8String(context, chars);
     size_t end = s.size();
-    while (end > 0 && is_ascii_whitespace(s[end - 1])) end--;
+    while (end > 0 && char_in_chars(static_cast<unsigned char>(s[end - 1]), chars)) end--;
     return context->fromUTF8String(s.substr(0, end).c_str());
 }
 
