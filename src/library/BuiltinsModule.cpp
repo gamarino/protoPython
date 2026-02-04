@@ -198,6 +198,11 @@ static const proto::ProtoObject* py_repr(
     const proto::ProtoSparseList* keywordParameters) {
     if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
+    if (obj->isInteger(context)) {
+        char buf[32];
+        snprintf(buf, sizeof(buf), "%lld", (long long)obj->asLong(context));
+        return context->fromUTF8String(buf);
+    }
     if (obj->isDouble(context)) {
         char buf[64];
         snprintf(buf, sizeof(buf), "%.15g", obj->asDouble(context));
@@ -207,7 +212,7 @@ static const proto::ProtoObject* py_repr(
     if (reprMethod && reprMethod->asMethod(context)) {
         return reprMethod->asMethod(context)(context, obj, nullptr, context->newList(), nullptr);
     }
-    return PROTO_NONE;
+    return context->fromUTF8String("<object>");
 }
 
 static const proto::ProtoObject* py_format(
