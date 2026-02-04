@@ -124,6 +124,10 @@ See [docs/NEXT_20_STEPS_V22.md](../docs/NEXT_20_STEPS_V22.md). Steps 365–384: 
 
 See [docs/NEXT_20_STEPS_V23.md](../docs/NEXT_20_STEPS_V23.md). Steps 385–404: UNARY_POSITIVE, NOP, INPLACE_ADD; math.asin/acos/atan; operator.lshift/rshift; bytes removeprefix/removesuffix; repr, id (existing); int.bit_count; shutil, mimetypes stubs; foundation and engine tests; STUBS and todo updated.
 
+## 28. Next 20 Steps (v24) — completed
+
+See [docs/NEXT_20_STEPS_V24.md](../docs/NEXT_20_STEPS_V24.md). Steps 405–424: BINARY_LSHIFT, BINARY_RSHIFT, INPLACE_SUBTRACT; math.atan2/degrees/radians; operator.and_/or_/xor; str.split maxsplit, len/bool, float.hex (existing); email, runpy stubs; foundation and engine tests; STUBS and todo updated.
+
 - [x] Step 145: ord builtin
 - [x] Step 146: chr builtin
 - [x] Step 147: bin builtin
