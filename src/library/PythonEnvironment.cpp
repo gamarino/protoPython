@@ -1769,6 +1769,60 @@ static const proto::ProtoObject* py_bytes_count(
     return context->fromInteger(static_cast<long long>(count));
 }
 
+static void bytes_needle_from_arg(proto::ProtoContext* context, const proto::ProtoObject* arg, std::string& out) {
+    if (arg->isInteger(context)) {
+        long long v = arg->asLong(context);
+        if (v >= 0 && v <= 255) out = static_cast<char>(static_cast<unsigned char>(v));
+    } else if (arg->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"))) {
+        const proto::ProtoString* subStr = bytes_data(context, arg);
+        if (subStr) subStr->toUTF8String(context, out);
+    }
+}
+
+static const proto::ProtoObject* py_bytes_startswith(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoString* s = bytes_data(context, self);
+    if (!s || posArgs->getSize(context) < 1) return PROTO_FALSE;
+    std::string haystack;
+    s->toUTF8String(context, haystack);
+    std::string prefix;
+    bytes_needle_from_arg(context, posArgs->getAt(context, 0), prefix);
+    long long start = 0, end = static_cast<long long>(haystack.size());
+    if (posArgs->getSize(context) >= 2 && posArgs->getAt(context, 1)->isInteger(context))
+        start = posArgs->getAt(context, 1)->asLong(context);
+    if (posArgs->getSize(context) >= 3 && posArgs->getAt(context, 2)->isInteger(context))
+        end = posArgs->getAt(context, 2)->asLong(context);
+    if (start < 0) start = 0;
+    if (end > static_cast<long long>(haystack.size())) end = static_cast<long long>(haystack.size());
+    if (prefix.size() > static_cast<size_t>(end - start) || start > end) return PROTO_FALSE;
+    return haystack.compare(static_cast<size_t>(start), prefix.size(), prefix) == 0 ? PROTO_TRUE : PROTO_FALSE;
+}
+
+static const proto::ProtoObject* py_bytes_endswith(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoString* s = bytes_data(context, self);
+    if (!s || posArgs->getSize(context) < 1) return PROTO_FALSE;
+    std::string haystack;
+    s->toUTF8String(context, haystack);
+    std::string suffix;
+    bytes_needle_from_arg(context, posArgs->getAt(context, 0), suffix);
+    long long start = 0, end = static_cast<long long>(haystack.size());
+    if (posArgs->getSize(context) >= 2 && posArgs->getAt(context, 1)->isInteger(context))
+        start = posArgs->getAt(context, 1)->asLong(context);
+    if (posArgs->getSize(context) >= 3 && posArgs->getAt(context, 2)->isInteger(context))
+        end = posArgs->getAt(context, 2)->asLong(context);
+    if (start < 0) start = 0;
+    if (end > static_cast<long long>(haystack.size())) end = static_cast<long long>(haystack.size());
+    if (suffix.size() > static_cast<size_t>(end - start) || start > end) return PROTO_FALSE;
+    size_t pos = static_cast<size_t>(end) - suffix.size();
+    if (pos < static_cast<size_t>(start)) return PROTO_FALSE;
+    return haystack.compare(pos, suffix.size(), suffix) == 0 ? PROTO_TRUE : PROTO_FALSE;
+}
+
 static const proto::ProtoObject* py_bytes_index(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -3330,6 +3384,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     bytesPrototype = bytesPrototype->setAttribute(context, py_bytes_count_name, context->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_count));
     bytesPrototype = bytesPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "index"), context->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_index));
     bytesPrototype = bytesPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "rfind"), context->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_rfind));
+    bytesPrototype = bytesPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "startswith"), context->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_startswith));
+    bytesPrototype = bytesPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "endswith"), context->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_endswith));
 
     sliceType = context->newObject(true);
     sliceType = sliceType->addParent(context, objectPrototype);
