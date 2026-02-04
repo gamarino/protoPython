@@ -68,6 +68,7 @@ See [docs/NEXT_20_STEPS_V8.md](../docs/NEXT_20_STEPS_V8.md). Steps 85–104 plan
 - [x] Step 91: LOAD_ATTR STORE_ATTR
 - [x] Step 92: BUILD_LIST opcode
 - [x] Step 93: benchmark list_append_loop
+- [x] Step 94: benchmark str_concat_loop
 - [x] Step 45: repr builtin
 - [x] Step 46: format builtin
 - [x] Step 47: open builtin
