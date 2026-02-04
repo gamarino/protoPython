@@ -2183,6 +2183,34 @@ static const proto::ProtoObject* py_bytes_replace(
     return b;
 }
 
+static const proto::ProtoObject* py_bytes_isdigit(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoString* s = bytes_data(context, self);
+    if (!s) return PROTO_FALSE;
+    std::string raw;
+    s->toUTF8String(context, raw);
+    if (raw.empty()) return PROTO_FALSE;
+    for (unsigned char c : raw)
+        if (!std::isdigit(c)) return PROTO_FALSE;
+    return PROTO_TRUE;
+}
+
+static const proto::ProtoObject* py_bytes_isalpha(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoString* s = bytes_data(context, self);
+    if (!s) return PROTO_FALSE;
+    std::string raw;
+    s->toUTF8String(context, raw);
+    if (raw.empty()) return PROTO_FALSE;
+    for (unsigned char c : raw)
+        if (!std::isalpha(c)) return PROTO_FALSE;
+    return PROTO_TRUE;
+}
+
 static bool bytes_byte_in_chars(unsigned char c, const std::string& ch) {
     if (ch.empty()) return (c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v');
     return ch.find(c) != std::string::npos;
@@ -4026,6 +4054,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     bytesPrototype = bytesPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "split"), context->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_split));
     bytesPrototype = bytesPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "join"), context->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_join));
     bytesPrototype = bytesPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "replace"), context->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_replace));
+    bytesPrototype = bytesPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "isdigit"), context->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_isdigit));
+    bytesPrototype = bytesPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "isalpha"), context->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_isalpha));
 
     sliceType = context->newObject(true);
     sliceType = sliceType->addParent(context, objectPrototype);
