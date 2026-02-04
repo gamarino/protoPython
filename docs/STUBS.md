@@ -69,3 +69,4 @@ This document catalogs stub implementations and their completion status.
 | Module | Item | Behavior |
 |--------|------|----------|
 | statistics | mean, median, stdev | Stub: return 0.0. |
+| decimal | Decimal | Stub class; stores value; minimal __str__. |
