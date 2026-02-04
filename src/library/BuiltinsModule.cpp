@@ -448,6 +448,7 @@ static const proto::ProtoObject* py_callable(
     return (call && call != PROTO_NONE && call->asMethod(context)) ? PROTO_TRUE : PROTO_FALSE;
 }
 
+/** getattr(obj, name[, default]): return obj.name, or default if given and attribute missing. */
 static const proto::ProtoObject* py_getattr(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
