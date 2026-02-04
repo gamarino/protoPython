@@ -197,6 +197,24 @@ static const proto::ProtoObject* py_log10(
     return ctx->fromDouble(std::log10(x));
 }
 
+static const proto::ProtoObject* py_log2(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    double x = toDouble(ctx, posArgs->getAt(ctx, 0));
+    if (x <= 0.0) return PROTO_NONE;
+    return ctx->fromDouble(std::log2(x));
+}
+
+static const proto::ProtoObject* py_log1p(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    double x = toDouble(ctx, posArgs->getAt(ctx, 0));
+    if (x <= -1.0) return PROTO_NONE;
+    return ctx->fromDouble(std::log1p(x));
+}
+
 static const proto::ProtoObject* py_hypot(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
@@ -297,6 +315,10 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_log));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "log10"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_log10));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "log2"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_log2));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "log1p"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_log1p));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "hypot"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_hypot));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "fmod"),
