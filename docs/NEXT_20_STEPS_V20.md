@@ -18,7 +18,7 @@ Plan for 20 incremental milestones. Each step: implement → update docs → `gi
 | 328 | math.log, math.log10, math.exp | done |
 | 329 | operator.pow, operator.floordiv, operator.mod | done |
 | 330 | str.isidentifier() or str.isprintable() | done |
-| 331 | bytes.count(sub[, start[, end]]) | pending |
+| 331 | bytes.count(sub[, start[, end]]) | done (existing) |
 | 332 | list.__mul__ / list.__rmul__ (repeat) | pending |
 | 333 | builtins.hasattr | pending |
 | 334 | builtins.delattr | pending |
