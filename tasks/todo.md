@@ -91,6 +91,10 @@ See [docs/NEXT_20_STEPS_V15.md](../docs/NEXT_20_STEPS_V15.md). Steps 225–244 d
 ## 19. Next 20 Steps (v16) — completed
 
 See [docs/NEXT_20_STEPS_V16.md](../docs/NEXT_20_STEPS_V16.md). Steps 245–264 done.
+
+## 20. Next 20 Steps (v17) — completed
+
+See [docs/NEXT_20_STEPS_V17.md](../docs/NEXT_20_STEPS_V17.md). Steps 265–284 done.
 - [x] Step 145: ord builtin
 - [x] Step 146: chr builtin
 - [x] Step 147: bin builtin
