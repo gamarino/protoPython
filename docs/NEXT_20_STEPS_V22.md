@@ -25,7 +25,7 @@ Plan for 20 incremental milestones. Each step: implement → update docs → `gi
 | 375 | Stdlib stub html (escape/unescape) | done |
 | 376 | Stdlib stub difflib (minimal) | done |
 | 377 | Foundation test UNARY_INVERT or math.tan | done |
-| 378 | Foundation test setattr or callable | pending |
+| 378 | Foundation test setattr or callable | done |
 | 379 | Foundation test list __iadd__ or dict __ior__ | pending |
 | 380 | Execution engine test POP_TOP or UNARY_INVERT | pending |
 | 381 | Update STUBS.md with v22 entries | pending |

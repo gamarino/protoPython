@@ -1244,6 +1244,30 @@ TEST_F(FoundationTest, HasattrDelattr) {
     EXPECT_EQ(obj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "x")), PROTO_NONE);
 }
 
+TEST_F(FoundationTest, SetattrAndCallable) {
+    proto::ProtoContext* context = env.getContext();
+    const proto::ProtoObject* builtins = env.resolve("builtins");
+    ASSERT_NE(builtins, nullptr);
+    const proto::ProtoObject* setattrM = builtins->getAttribute(context, proto::ProtoString::fromUTF8String(context, "setattr"));
+    const proto::ProtoObject* getattrM = builtins->getAttribute(context, proto::ProtoString::fromUTF8String(context, "getattr"));
+    const proto::ProtoObject* callableM = builtins->getAttribute(context, proto::ProtoString::fromUTF8String(context, "callable"));
+    ASSERT_NE(setattrM, nullptr);
+    ASSERT_NE(getattrM, nullptr);
+    ASSERT_NE(callableM, nullptr);
+    proto::ProtoObject* obj = const_cast<proto::ProtoObject*>(context->newObject(true));
+    const proto::ProtoList* setArgs = context->newList()->appendLast(context, obj)->appendLast(context, context->fromUTF8String("foo"))->appendLast(context, context->fromInteger(100));
+    setattrM->asMethod(context)(context, builtins, nullptr, setArgs, nullptr);
+    const proto::ProtoList* getArgs = context->newList()->appendLast(context, obj)->appendLast(context, context->fromUTF8String("foo"));
+    const proto::ProtoObject* got = getattrM->asMethod(context)(context, builtins, nullptr, getArgs, nullptr);
+    ASSERT_NE(got, nullptr);
+    EXPECT_TRUE(got->isInteger(context));
+    EXPECT_EQ(got->asLong(context), 100);
+    const proto::ProtoObject* intProto = env.getIntPrototype();
+    const proto::ProtoList* callableArgs = context->newList()->appendLast(context, intProto);
+    const proto::ProtoObject* callableResult = callableM->asMethod(context)(context, builtins, nullptr, callableArgs, nullptr);
+    EXPECT_EQ(callableResult, PROTO_TRUE);
+}
+
 TEST_F(FoundationTest, ItertoolsAccumulate) {
     proto::ProtoContext* context = env.getContext();
     const proto::ProtoObject* itertoolsMod = env.resolve("itertools");
