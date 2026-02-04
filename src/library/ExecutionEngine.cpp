@@ -162,6 +162,22 @@ const proto::ProtoObject* executeMinimalBytecode(
             stack.pop_back();
             const proto::ProtoObject* r = binaryAdd(ctx, a, b);
             if (r) stack.push_back(r);
+        } else if (op == OP_INPLACE_ADD) {
+            i++;
+            if (stack.size() < 2) continue;
+            const proto::ProtoObject* b = stack.back();
+            stack.pop_back();
+            const proto::ProtoObject* a = stack.back();
+            stack.pop_back();
+            const proto::ProtoObject* iadd = a->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iadd__"));
+            if (iadd && iadd->asMethod(ctx)) {
+                const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
+                const proto::ProtoObject* result = iadd->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
+                if (result) stack.push_back(result);
+            } else {
+                const proto::ProtoObject* r = binaryAdd(ctx, a, b);
+                if (r) stack.push_back(r);
+            }
         } else if (op == OP_BINARY_SUBTRACT) {
             if (stack.size() < 2) continue;
             const proto::ProtoObject* b = stack.back();
