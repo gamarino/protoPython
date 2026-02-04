@@ -89,7 +89,7 @@ static void printUsage(const char* prog) {
                  "  --dry-run         Validate inputs but skip environment initialization\n"
                  "  --bytecode-only   Stub: validate bytecode loading path (no execution)\n"
                  "  --trace           Enable tracing (stub)\n"
-                 "  --repl            Interactive REPL (stub)\n"
+                 "  --repl            Interactive REPL\n"
                  "  --help            Show this help message\n";
 }
 
@@ -121,6 +121,10 @@ static bool parseArgs(int argc, char* argv[], CliOptions& opts, std::string& err
             opts.dryRun = true;
         } else if (arg == "--bytecode-only") {
             opts.bytecodeOnly = true;
+        } else if (arg == "--trace") {
+            opts.trace = true;
+        } else if (arg == "--repl") {
+            opts.repl = true;
         } else if (arg == "--path") {
             if (i + 1 >= argc) {
                 error = "--path requires a value";
@@ -192,17 +196,7 @@ int main(int argc, char* argv[]) {
                 std::cerr << (phase == 0 ? "[trace] enter " : "[trace] leave ") << name << std::endl;
             });
         }
-        std::cout << "protoPython REPL - type 'exit' to quit\n>>> ";
-        std::string line;
-        while (std::getline(std::cin, line) && line != "exit") {
-            if (line.empty()) { std::cout << ">>> "; continue; }
-            const proto::ProtoObject* mod = env.resolve(line);
-            if (mod && mod != PROTO_NONE) {
-                int ret = env.executeModule(line);
-                (void)ret;
-            }
-            std::cout << ">>> ";
-        }
+        env.runRepl(std::cin, std::cout);
         return EXIT_OK;
     }
 

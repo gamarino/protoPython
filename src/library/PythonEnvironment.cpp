@@ -4576,6 +4576,40 @@ int PythonEnvironment::executeModule(const std::string& moduleName) {
     return exitRequested_ != 0 ? -3 : 0;
 }
 
+void PythonEnvironment::runRepl(std::istream& in, std::ostream& out) {
+    if (!context || !builtinsModule) return;
+    const proto::ProtoString* py_eval = proto::ProtoString::fromUTF8String(context, "eval");
+    const proto::ProtoString* py_exec = proto::ProtoString::fromUTF8String(context, "exec");
+    const proto::ProtoString* py_repr = proto::ProtoString::fromUTF8String(context, "repr");
+    const proto::ProtoObject* evalFn = builtinsModule->getAttribute(context, py_eval);
+    const proto::ProtoObject* execFn = builtinsModule->getAttribute(context, py_exec);
+    const proto::ProtoObject* reprFn = builtinsModule->getAttribute(context, py_repr);
+    if (!evalFn || !evalFn->asMethod(context) || !execFn || !execFn->asMethod(context) || !reprFn || !reprFn->asMethod(context))
+        return;
+    proto::ProtoObject* frame = const_cast<proto::ProtoObject*>(context->newObject(true));
+    out << "protoPython REPL - type 'exit' to quit\n>>> " << std::flush;
+    std::string line;
+    while (std::getline(in, line) && line != "exit") {
+        if (line.empty()) { out << ">>> " << std::flush; continue; }
+        const proto::ProtoObject* source = context->fromUTF8String(line.c_str());
+        const proto::ProtoList* args = context->newList()->appendLast(context, source)->appendLast(context, frame)->appendLast(context, frame);
+        const proto::ProtoObject* result = PROTO_NONE;
+        result = evalFn->asMethod(context)(context, const_cast<proto::ProtoObject*>(builtinsModule), nullptr, args, nullptr);
+        if (result && result != PROTO_NONE) {
+            const proto::ProtoList* reprArgs = context->newList()->appendLast(context, result);
+            const proto::ProtoObject* reprResult = reprFn->asMethod(context)(context, const_cast<proto::ProtoObject*>(builtinsModule), nullptr, reprArgs, nullptr);
+            if (reprResult && reprResult->isString(context)) {
+                std::string s;
+                reprResult->asString(context)->toUTF8String(context, s);
+                out << s << "\n";
+            }
+        } else {
+            result = execFn->asMethod(context)(context, const_cast<proto::ProtoObject*>(builtinsModule), nullptr, args, nullptr);
+        }
+        out << ">>> " << std::flush;
+    }
+}
+
 void PythonEnvironment::incrementSysStats(const char* key) {
     if (!sysModule) return;
     const proto::ProtoObject* stats = sysModule->getAttribute(context, proto::ProtoString::fromUTF8String(context, "stats"));

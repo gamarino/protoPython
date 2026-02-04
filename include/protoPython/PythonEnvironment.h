@@ -3,6 +3,7 @@
 
 #include <protoCore.h>
 #include <functional>
+#include <iostream>
 #include <mutex>
 #include <string>
 #include <unordered_map>
@@ -105,6 +106,13 @@ public:
      * @return 0 on success, -1 on resolve failure, -2 on runtime failure.
      */
     int executeModule(const std::string& moduleName);
+
+    /**
+     * @brief Interactive REPL: read lines, eval/exec, print result. Uses builtins.eval/exec/repr.
+     * @param in Input stream (default std::cin).
+     * @param out Output stream (default std::cout).
+     */
+    void runRepl(std::istream& in = std::cin, std::ostream& out = std::cout);
 
     /**
      * @brief Execution hook type: (moduleName, phase) where phase 0=before, 1=after.
