@@ -18,7 +18,7 @@ Plan for 20 incremental milestones. Each step: implement → update docs → `gi
 | 428 | Execution engine BINARY_XOR | done |
 | 429 | Execution engine INPLACE_MULTIPLY | done |
 | 430 | math.hypot, math.fmod | done |
-| 431 | math.log2, math.log1p | pending |
+| 431 | math.log2, math.log1p | done |
 | 432 | operator.index | pending |
 | 433 | str/bytes rsplit maxsplit or builtins | pending |
 | 434 | Stdlib stub urllib.parse or platform | pending |

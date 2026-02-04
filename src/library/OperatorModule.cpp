@@ -210,6 +210,22 @@ static const proto::ProtoObject* py_xor(
     return ctx->fromInteger(static_cast<long long>(static_cast<unsigned long long>(a) ^ static_cast<unsigned long long>(b)));
 }
 
+static const proto::ProtoObject* py_index(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    const proto::ProtoObject* obj = posArgs->getAt(ctx, 0);
+    const proto::ProtoObject* indexM = obj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__index__"));
+    if (indexM && indexM->asMethod(ctx)) {
+        const proto::ProtoList* noArgs = ctx->newList();
+        const proto::ProtoObject* result = indexM->asMethod(ctx)(ctx, obj, nullptr, noArgs, nullptr);
+        if (result && result->isInteger(ctx)) return result;
+        return PROTO_NONE;
+    }
+    if (obj->isInteger(ctx)) return obj;
+    return PROTO_NONE;
+}
+
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     const proto::ProtoObject* mod = ctx->newObject(true);
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "add"),
@@ -246,6 +262,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_or_));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "xor"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_xor));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "index"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_index));
     return mod;
 }
 
