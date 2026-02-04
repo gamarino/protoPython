@@ -162,6 +162,12 @@ See [docs/NEXT_20_STEPS_V30.md](../docs/NEXT_20_STEPS_V30.md). Steps 525–544: 
 
 - [x] Steps 525–544
 
+## 35. Next 20 Steps (v31) — completed
+
+See [docs/NEXT_20_STEPS_V31.md](../docs/NEXT_20_STEPS_V31.md). Steps 545–564: math.cosh, sinh, tanh; math.nan, inf; shelve, locale stubs; foundation tests MathCosh, MathSinh; STUBS and todo updated.
+
+- [x] Steps 545–564
+
 - [x] Step 145: ord builtin
 - [x] Step 146: chr builtin
 - [x] Step 147: bin builtin

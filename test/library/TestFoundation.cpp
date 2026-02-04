@@ -1382,6 +1382,32 @@ TEST_F(FoundationTest, MathAcosh) {
     EXPECT_NEAR(val, 1.3169578969248168, 1e-10);  // acosh(2)
 }
 
+TEST_F(FoundationTest, MathCosh) {
+    proto::ProtoContext* context = env.getContext();
+    const proto::ProtoObject* mathMod = env.resolve("math");
+    ASSERT_NE(mathMod, nullptr);
+    const proto::ProtoObject* coshM = mathMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "cosh"));
+    ASSERT_NE(coshM, nullptr);
+    const proto::ProtoList* args = context->newList()->appendLast(context, context->fromDouble(0.0));
+    const proto::ProtoObject* result = coshM->asMethod(context)(context, mathMod, nullptr, args, nullptr);
+    ASSERT_NE(result, nullptr);
+    double val = result->isDouble(context) ? result->asDouble(context) : static_cast<double>(result->asLong(context));
+    EXPECT_NEAR(val, 1.0, 1e-10);  // cosh(0) == 1
+}
+
+TEST_F(FoundationTest, MathSinh) {
+    proto::ProtoContext* context = env.getContext();
+    const proto::ProtoObject* mathMod = env.resolve("math");
+    ASSERT_NE(mathMod, nullptr);
+    const proto::ProtoObject* sinhM = mathMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "sinh"));
+    ASSERT_NE(sinhM, nullptr);
+    const proto::ProtoList* args = context->newList()->appendLast(context, context->fromDouble(0.0));
+    const proto::ProtoObject* result = sinhM->asMethod(context)(context, mathMod, nullptr, args, nullptr);
+    ASSERT_NE(result, nullptr);
+    double val = result->isDouble(context) ? result->asDouble(context) : static_cast<double>(result->asLong(context));
+    EXPECT_NEAR(val, 0.0, 1e-10);  // sinh(0) == 0
+}
+
 TEST_F(FoundationTest, MathFactorial) {
     proto::ProtoContext* context = env.getContext();
     const proto::ProtoObject* mathMod = env.resolve("math");

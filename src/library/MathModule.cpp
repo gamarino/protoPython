@@ -1,5 +1,6 @@
 #include <protoPython/MathModule.h>
 #include <cmath>
+#include <limits>
 
 namespace protoPython {
 namespace math {
@@ -401,6 +402,30 @@ static const proto::ProtoObject* py_atanh(
     return ctx->fromDouble(std::atanh(x));
 }
 
+static const proto::ProtoObject* py_cosh(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    double x = toDouble(ctx, posArgs->getAt(ctx, 0));
+    return ctx->fromDouble(std::cosh(x));
+}
+
+static const proto::ProtoObject* py_sinh(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    double x = toDouble(ctx, posArgs->getAt(ctx, 0));
+    return ctx->fromDouble(std::sinh(x));
+}
+
+static const proto::ProtoObject* py_tanh(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    double x = toDouble(ctx, posArgs->getAt(ctx, 0));
+    return ctx->fromDouble(std::tanh(x));
+}
+
 static long long gcd_impl(long long a, long long b) {
     a = a < 0 ? -a : a;
     b = b < 0 ? -b : b;
@@ -512,12 +537,22 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_asinh));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "atanh"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_atanh));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "cosh"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_cosh));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "sinh"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_sinh));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "tanh"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_tanh));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "gcd"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_gcd));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "lcm"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_lcm));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "pi"),
         ctx->fromDouble(3.14159265358979323846));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "nan"),
+        ctx->fromDouble(std::numeric_limits<double>::quiet_NaN()));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "inf"),
+        ctx->fromDouble(std::numeric_limits<double>::infinity()));
     return mod;
 }
 
