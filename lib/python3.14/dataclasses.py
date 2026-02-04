@@ -1,4 +1,4 @@
-# dataclasses.py - Minimal stub; dataclass decorator placeholder.
+# dataclasses.py - Minimal stub; dataclass decorator placeholder. See STUBS.md.
 
 def dataclass(cls=None, **kwargs):
     """Placeholder: returns the class unchanged (no field generation)."""
