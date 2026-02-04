@@ -94,6 +94,24 @@ TEST(ExecutionEngineTest, BinarySubtract) {
     EXPECT_EQ(result->asLong(&ctx), 7);
 }
 
+TEST(ExecutionEngineTest, BinaryTrueDivide) {
+    proto::ProtoSpace space;
+    proto::ProtoContext ctx(&space);
+    const proto::ProtoList* constants = ctx.newList()
+        ->appendLast(&ctx, ctx.fromInteger(10))
+        ->appendLast(&ctx, ctx.fromInteger(2));
+    const proto::ProtoList* bytecode = ctx.newList()
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(0))
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(1))
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_BINARY_TRUE_DIVIDE))
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE));
+    const proto::ProtoObject* result = protoPython::executeMinimalBytecode(
+        &ctx, constants, bytecode, nullptr, nullptr);
+    ASSERT_NE(result, nullptr);
+    double val = result->isDouble(&ctx) ? result->asDouble(&ctx) : static_cast<double>(result->asLong(&ctx));
+    EXPECT_DOUBLE_EQ(val, 5.0);
+}
+
 TEST(ExecutionEngineTest, BinaryAdd) {
     proto::ProtoSpace space;
     proto::ProtoContext ctx(&space);
