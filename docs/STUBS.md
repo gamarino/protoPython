@@ -32,7 +32,7 @@ This document catalogs stub implementations and their completion status.
 
 | Module | Item | Behavior |
 |--------|------|----------|
-| copy | copy, deepcopy | Return x unchanged |
+| copy | copy, deepcopy | Implemented: shallow/deep for list, dict, tuple, set; else return x. Deep copy has no cycle detection. |
 | hashlib | md5, sha1, sha256 | Return None |
 | base64 | b64encode, b64decode | Return empty bytes |
 | struct | pack, unpack | Return empty bytes / empty tuple |
