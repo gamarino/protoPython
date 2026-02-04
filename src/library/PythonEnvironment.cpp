@@ -2275,6 +2275,52 @@ static const proto::ProtoObject* py_bytes_isalpha(
     return PROTO_TRUE;
 }
 
+static const proto::ProtoObject* py_bytes_removeprefix(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoString* s = bytes_data(context, self);
+    if (!s || !posArgs || posArgs->getSize(context) < 1) return PROTO_NONE;
+    std::string raw;
+    s->toUTF8String(context, raw);
+    std::string prefix;
+    const proto::ProtoString* pre = bytes_data(context, posArgs->getAt(context, 0));
+    if (pre) pre->toUTF8String(context, prefix);
+    if (prefix.size() <= raw.size() && raw.compare(0, prefix.size(), prefix) == 0) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(context);
+        if (!env) return PROTO_NONE;
+        const proto::ProtoObject* bytesProto = env->getBytesPrototype();
+        if (!bytesProto) return PROTO_NONE;
+        proto::ProtoObject* b = const_cast<proto::ProtoObject*>(bytesProto->newChild(context, true));
+        b->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->fromUTF8String(raw.substr(prefix.size()).c_str()));
+        return b;
+    }
+    return const_cast<proto::ProtoObject*>(self);
+}
+
+static const proto::ProtoObject* py_bytes_removesuffix(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoString* s = bytes_data(context, self);
+    if (!s || !posArgs || posArgs->getSize(context) < 1) return PROTO_NONE;
+    std::string raw;
+    s->toUTF8String(context, raw);
+    std::string suffix;
+    const proto::ProtoString* suf = bytes_data(context, posArgs->getAt(context, 0));
+    if (suf) suf->toUTF8String(context, suffix);
+    if (suffix.size() <= raw.size() && raw.compare(raw.size() - suffix.size(), suffix.size(), suffix) == 0) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(context);
+        if (!env) return PROTO_NONE;
+        const proto::ProtoObject* bytesProto = env->getBytesPrototype();
+        if (!bytesProto) return PROTO_NONE;
+        proto::ProtoObject* b = const_cast<proto::ProtoObject*>(bytesProto->newChild(context, true));
+        b->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->fromUTF8String(raw.substr(0, raw.size() - suffix.size()).c_str()));
+        return b;
+    }
+    return const_cast<proto::ProtoObject*>(self);
+}
+
 static bool bytes_byte_in_chars(unsigned char c, const std::string& ch) {
     if (ch.empty()) return (c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v');
     return ch.find(c) != std::string::npos;
@@ -4257,6 +4303,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     bytesPrototype = bytesPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "isdigit"), context->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_isdigit));
     bytesPrototype = bytesPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "isalpha"), context->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_isalpha));
     bytesPrototype = bytesPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "isascii"), context->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_isascii));
+    bytesPrototype = bytesPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "removeprefix"), context->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_removeprefix));
+    bytesPrototype = bytesPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "removesuffix"), context->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_removesuffix));
 
     sliceType = context->newObject(true);
     sliceType = sliceType->addParent(context, objectPrototype);
