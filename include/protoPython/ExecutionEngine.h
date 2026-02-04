@@ -73,6 +73,8 @@ constexpr int OP_UNARY_NOT = 131;
 constexpr int OP_UNARY_INVERT = 132;
 /** POP_TOP: discard the top-of-stack value. */
 constexpr int OP_POP_TOP = 133;
+/** UNARY_POSITIVE: push +TOS (for int/float same value; optional __pos__). */
+constexpr int OP_UNARY_POSITIVE = 134;
 
 /**
  * @brief Executes bytecode: LOAD_CONST, RETURN_VALUE, LOAD_NAME, STORE_NAME,

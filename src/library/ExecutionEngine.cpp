@@ -238,6 +238,18 @@ const proto::ProtoObject* executeMinimalBytecode(
                     if (result) stack.push_back(result);
                 }
             }
+        } else if (op == OP_UNARY_POSITIVE) {
+            if (stack.empty()) continue;
+            const proto::ProtoObject* a = stack.back();
+            stack.pop_back();
+            const proto::ProtoObject* pos = a->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__pos__"));
+            if (pos && pos->asMethod(ctx)) {
+                const proto::ProtoList* noArgs = ctx->newList();
+                const proto::ProtoObject* result = pos->asMethod(ctx)(ctx, a, nullptr, noArgs, nullptr);
+                if (result) stack.push_back(result);
+            } else {
+                stack.push_back(a);
+            }
         } else if (op == OP_COMPARE_OP) {
             i++;
             if (stack.size() < 2) continue;
