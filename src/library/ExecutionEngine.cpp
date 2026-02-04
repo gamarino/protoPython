@@ -267,6 +267,68 @@ const proto::ProtoObject* executeMinimalBytecode(
                 args = args->appendLast(ctx, argVec[j]);
             const proto::ProtoObject* result = invokeCallable(ctx, callable, args);
             if (result) stack.push_back(result);
+        } else if (op == OP_BUILD_TUPLE) {
+            i++;
+            if (stack.size() >= static_cast<size_t>(arg)) {
+                std::vector<const proto::ProtoObject*> elems(arg);
+                for (int j = arg - 1; j >= 0; --j) {
+                    elems[j] = stack.back();
+                    stack.pop_back();
+                }
+                const proto::ProtoList* lst = ctx->newList();
+                for (int j = 0; j < arg; ++j)
+                    lst = lst->appendLast(ctx, elems[j]);
+                const proto::ProtoTuple* tup = ctx->newTupleFromList(lst);
+                if (tup) stack.push_back(tup->asObject(ctx));
+            }
+        } else if (op == OP_GET_ITER) {
+            i++;
+            if (stack.empty()) continue;
+            const proto::ProtoObject* iterable = stack.back();
+            stack.pop_back();
+            const proto::ProtoObject* iterM = iterable->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iter__"));
+            if (!iterM || !iterM->asMethod(ctx)) continue;
+            const proto::ProtoObject* it = iterM->asMethod(ctx)(ctx, iterable, nullptr, ctx->newList(), nullptr);
+            if (it) stack.push_back(it);
+        } else if (op == OP_FOR_ITER) {
+            i++;
+            if (stack.empty()) continue;
+            const proto::ProtoObject* iterator = stack.back();
+            const proto::ProtoObject* nextM = iterator->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__next__"));
+            if (!nextM || !nextM->asMethod(ctx)) continue;
+            const proto::ProtoObject* val = nextM->asMethod(ctx)(ctx, iterator, nullptr, ctx->newList(), nullptr);
+            if (val && val != PROTO_NONE) {
+                stack.push_back(val);
+            } else {
+                stack.pop_back();
+                if (arg >= 0 && static_cast<unsigned long>(arg * 2) < n)
+                    i = static_cast<unsigned long>(arg * 2) - 1;
+            }
+        } else if (op == OP_UNPACK_SEQUENCE) {
+            i++;
+            if (stack.empty() || arg <= 0) continue;
+            const proto::ProtoObject* seq = stack.back();
+            stack.pop_back();
+            const proto::ProtoList* list = nullptr;
+            const proto::ProtoTuple* tup = nullptr;
+            if (seq->asList(ctx)) list = seq->asList(ctx);
+            else if (seq->asTuple(ctx)) tup = seq->asTuple(ctx);
+            else {
+                const proto::ProtoObject* data = seq->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__data__"));
+                if (data) {
+                    if (data->asList(ctx)) list = data->asList(ctx);
+                    else if (data->asTuple(ctx)) tup = data->asTuple(ctx);
+                }
+            }
+            if (list) {
+                if (static_cast<int>(list->getSize(ctx)) < arg) continue;
+                for (int j = arg - 1; j >= 0; --j)
+                    stack.push_back(list->getAt(ctx, j));
+            } else if (tup) {
+                if (static_cast<int>(tup->getSize(ctx)) < arg) continue;
+                for (int j = arg - 1; j >= 0; --j)
+                    stack.push_back(tup->getAt(ctx, j));
+            }
         }
     }
     return stack.empty() ? PROTO_NONE : stack.back();

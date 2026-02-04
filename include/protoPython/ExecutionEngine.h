@@ -41,6 +41,14 @@ constexpr int OP_BINARY_SUBSCR = 115;
 constexpr int OP_BUILD_MAP = 116;
 /** STORE_SUBSCR: pop value, pop key, pop container; set container[key] = value. */
 constexpr int OP_STORE_SUBSCR = 117;
+/** BUILD_TUPLE: pop arg values from stack, build tuple, push tuple. */
+constexpr int OP_BUILD_TUPLE = 118;
+/** GET_ITER: replace TOS with iter(TOS) (call __iter__). */
+constexpr int OP_GET_ITER = 119;
+/** FOR_ITER: TOS = iterator. Call __next__; if value push it; else pop iterator and jump to instruction index arg. */
+constexpr int OP_FOR_ITER = 120;
+/** UNPACK_SEQUENCE: pop sequence, push arg elements onto stack (reverse order for correct assignment). */
+constexpr int OP_UNPACK_SEQUENCE = 121;
 
 /**
  * @brief Executes bytecode: LOAD_CONST, RETURN_VALUE, LOAD_NAME, STORE_NAME,

@@ -101,6 +101,92 @@ static const proto::ProtoObject* py_islice(
     return sl;
 }
 
+static const proto::ProtoObject* py_chain_next(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoObject* itersObj = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__chain_iters__"));
+    const proto::ProtoObject* idxObj = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__chain_idx__"));
+    if (!itersObj || !itersObj->asList(ctx) || !idxObj || !idxObj->isInteger(ctx)) return PROTO_NONE;
+    const proto::ProtoList* iters = itersObj->asList(ctx);
+    long long idx = idxObj->asLong(ctx);
+    unsigned long n = iters->getSize(ctx);
+    while (static_cast<unsigned long>(idx) < n) {
+        const proto::ProtoObject* it = iters->getAt(ctx, static_cast<int>(idx));
+        const proto::ProtoObject* nextM = it ? it->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__next__")) : nullptr;
+        if (!nextM || !nextM->asMethod(ctx)) {
+            idx++;
+            self->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__chain_idx__"), ctx->fromInteger(idx));
+            continue;
+        }
+        const proto::ProtoObject* val = nextM->asMethod(ctx)(ctx, it, nullptr, ctx->newList(), nullptr);
+        if (val && val != PROTO_NONE) return val;
+        idx++;
+        self->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__chain_idx__"), ctx->fromInteger(idx));
+    }
+    return PROTO_NONE;
+}
+
+static const proto::ProtoObject* py_repeat_next(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoObject* obj = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__repeat_obj__"));
+    const proto::ProtoObject* timesObj = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__repeat_times__"));
+    const proto::ProtoObject* countObj = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__repeat_count__"));
+    if (!obj || !timesObj || !countObj) return PROTO_NONE;
+    if (timesObj != PROTO_NONE && timesObj->isInteger(ctx)) {
+        long long times = timesObj->asLong(ctx);
+        long long count = countObj->isInteger(ctx) ? countObj->asLong(ctx) : 0;
+        if (count >= times) return PROTO_NONE;
+        self->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__repeat_count__"), ctx->fromInteger(count + 1));
+    }
+    return obj;
+}
+
+static const proto::ProtoObject* py_repeat(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    const proto::ProtoObject* obj = posArgs->getAt(ctx, 0);
+    const proto::ProtoObject* times = PROTO_NONE;
+    if (posArgs->getSize(ctx) >= 2) times = posArgs->getAt(ctx, 1);
+
+    const proto::ProtoObject* proto = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__repeat_proto__"));
+    if (!proto) return PROTO_NONE;
+    const proto::ProtoObject* r = proto->newChild(ctx, true);
+    r = r->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__repeat_obj__"), obj);
+    r = r->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__repeat_times__"), times ? times : PROTO_NONE);
+    r = r->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__repeat_count__"), ctx->fromInteger(0));
+    return r;
+}
+
+static const proto::ProtoObject* py_chain(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList*) {
+    const proto::ProtoList* iters = ctx->newList();
+    unsigned long n = posArgs->getSize(ctx);
+    for (unsigned long i = 0; i < n; ++i) {
+        const proto::ProtoObject* iterable = posArgs->getAt(ctx, static_cast<int>(i));
+        const proto::ProtoObject* itAttr = iterable->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iter__"));
+        if (!itAttr || !itAttr->asMethod(ctx)) continue;
+        const proto::ProtoObject* it = itAttr->asMethod(ctx)(ctx, iterable, nullptr, ctx->newList(), nullptr);
+        if (it) iters = iters->appendLast(ctx, it);
+    }
+    const proto::ProtoObject* proto = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__chain_proto__"));
+    if (!proto) return PROTO_NONE;
+    const proto::ProtoObject* ch = proto->newChild(ctx, true);
+    ch = ch->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__chain_iters__"), iters->asObject(ctx));
+    ch = ch->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__chain_idx__"), ctx->fromInteger(0));
+    return ch;
+}
+
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     const proto::ProtoObject* mod = ctx->newObject(true);
 
@@ -121,6 +207,24 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__islice_proto__"), isliceProto);
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "islice"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_islice));
+
+    const proto::ProtoObject* chainProto = ctx->newObject(true);
+    chainProto = chainProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iter__"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(chainProto), py_iter_self));
+    chainProto = chainProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__next__"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(chainProto), py_chain_next));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__chain_proto__"), chainProto);
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "chain"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_chain));
+
+    const proto::ProtoObject* repeatProto = ctx->newObject(true);
+    repeatProto = repeatProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iter__"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(repeatProto), py_iter_self));
+    repeatProto = repeatProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__next__"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(repeatProto), py_repeat_next));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__repeat_proto__"), repeatProto);
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "repeat"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_repeat));
 
     return mod;
 }

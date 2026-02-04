@@ -64,12 +64,55 @@ See [docs/NEXT_20_STEPS_V8.md](../docs/NEXT_20_STEPS_V8.md). Steps 85–104 comp
 
 See [docs/NEXT_20_STEPS_V9.md](../docs/NEXT_20_STEPS_V9.md). Steps 105–124 completed.
 
-## 13. Next 20 Steps (v10)
+## 13. Next 20 Steps (v10) — completed
 
-See [docs/NEXT_20_STEPS_V10.md](../docs/NEXT_20_STEPS_V10.md). Steps 125–144 in progress.
+See [docs/NEXT_20_STEPS_V10.md](../docs/NEXT_20_STEPS_V10.md). Steps 125–144 completed.
+
+## 14. Next 20 Steps (v11) — completed
+
+See [docs/NEXT_20_STEPS_V11.md](../docs/NEXT_20_STEPS_V11.md). Steps 145–164 completed.
+
+## 15. Next 20 Steps (v12) — completed
+
+See [docs/NEXT_20_STEPS_V12.md](../docs/NEXT_20_STEPS_V12.md). Steps 165–184 done.
+
+## 16. Next 20 Steps (v13) — planned
+
+See [docs/NEXT_20_STEPS_V13.md](../docs/NEXT_20_STEPS_V13.md). Steps 185–204.
+- [x] Step 145: ord builtin
+- [x] Step 146: chr builtin
+- [x] Step 147: bin builtin
+- [x] Step 148: oct, hex builtins
+- [x] Step 149: list.sort
+- [x] Step 150: BUILD_TUPLE
+- [x] Step 151: GET_ITER
+- [x] Step 152: FOR_ITER
+- [x] Step 153: argparse stub
+- [x] Step 154: getopt stub
+- [x] Step 155: tempfile stub
+- [x] Step 156: subprocess stub
+- [x] Step 157: str.encode, bytes.decode
+- [x] Step 158: float.is_integer
+- [x] Step 159: foundation test map
+- [x] Step 160: exec engine test BUILD_TUPLE
+- [x] Step 161: GET_ITER/FOR_ITER test
+- [x] Steps 162–164: v11 completion docs
 - [x] Step 125: divmod builtin
 - [x] Step 126: ascii builtin
 - [x] Step 127: exec STORE_SUBSCR
+- [x] Step 128: str.count
+- [x] Step 129: list.reverse
+- [x] Step 130: dict.pop
+- [x] Step 131: typing Optional, Union
+- [x] Step 132: hashlib stub
+- [x] Step 133: copy stub
+- [x] Step 134: itertools.chain
+- [x] Step 135/140: STORE_SUBSCR note
+- [x] Step 136: int.bit_length
+- [x] Step 137: str.rsplit
+- [x] Step 138: foundation test filter
+- [x] Step 139: IMPLEMENTATION_PLAN opcodes
+- [x] Steps 141–144: v10 completion docs
 - [x] Step 105: filter builtin
 - [x] Step 106: map builtin
 - [x] Step 107: next(iter, default=None)

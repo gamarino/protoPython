@@ -269,3 +269,74 @@ TEST(ExecutionEngineTest, BuildMap) {
     EXPECT_TRUE((a0 == 1 && a1 == 2) || (a0 == 2 && a1 == 1));
 }
 
+TEST(ExecutionEngineTest, BuildTuple) {
+    proto::ProtoSpace space;
+    proto::ProtoContext ctx(&space);
+    const proto::ProtoList* constants = ctx.newList()
+        ->appendLast(&ctx, ctx.fromInteger(10))
+        ->appendLast(&ctx, ctx.fromInteger(20));
+    const proto::ProtoList* bytecode = ctx.newList()
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(0))
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(1))
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_BUILD_TUPLE))->appendLast(&ctx, ctx.fromInteger(2))
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE));
+    const proto::ProtoObject* result = protoPython::executeMinimalBytecode(
+        &ctx, constants, bytecode, nullptr, nullptr);
+    ASSERT_NE(result, nullptr);
+    ASSERT_NE(result->asTuple(&ctx), nullptr);
+    const proto::ProtoTuple* tup = result->asTuple(&ctx);
+    EXPECT_EQ(tup->getSize(&ctx), 2u);
+    EXPECT_EQ(tup->getAt(&ctx, 0)->asLong(&ctx), 10);
+    EXPECT_EQ(tup->getAt(&ctx, 1)->asLong(&ctx), 20);
+}
+
+TEST(ExecutionEngineTest, UnpackSequence) {
+    proto::ProtoSpace space;
+    proto::ProtoContext ctx(&space);
+    const proto::ProtoList* names = ctx.newList()
+        ->appendLast(&ctx, ctx.fromUTF8String("a"))
+        ->appendLast(&ctx, ctx.fromUTF8String("b"));
+    const proto::ProtoList* constants = ctx.newList()
+        ->appendLast(&ctx, ctx.fromInteger(10))
+        ->appendLast(&ctx, ctx.fromInteger(20));
+    const proto::ProtoObject* frameObj = ctx.newObject(true);
+    proto::ProtoObject* frame = const_cast<proto::ProtoObject*>(frameObj);
+    const proto::ProtoList* bytecode = ctx.newList()
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(0))
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(1))
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_BUILD_TUPLE))->appendLast(&ctx, ctx.fromInteger(2))
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_UNPACK_SEQUENCE))->appendLast(&ctx, ctx.fromInteger(2))
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_STORE_NAME))->appendLast(&ctx, ctx.fromInteger(0))
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_STORE_NAME))->appendLast(&ctx, ctx.fromInteger(1))
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_NAME))->appendLast(&ctx, ctx.fromInteger(0))
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_NAME))->appendLast(&ctx, ctx.fromInteger(1))
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_BINARY_ADD))
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE));
+    const proto::ProtoObject* result = protoPython::executeMinimalBytecode(
+        &ctx, constants, bytecode, names, frame);
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->isInteger(&ctx));
+    EXPECT_EQ(result->asLong(&ctx), 30);
+}
+
+// GET_ITER and FOR_ITER: The execution engine builds raw list objects (with __data__ only) in BUILD_LIST,
+// so they do not have __iter__/__next__. These opcodes are exercised when running real Python scripts
+// where lists come from the PythonEnvironment (full list prototype with __iter__).
+TEST(ExecutionEngineTest, GetIterNoCrash) {
+    proto::ProtoSpace space;
+    proto::ProtoContext ctx(&space);
+    const proto::ProtoList* constants = ctx.newList()
+        ->appendLast(&ctx, ctx.fromInteger(1))
+        ->appendLast(&ctx, ctx.fromInteger(2));
+    const proto::ProtoList* bytecode = ctx.newList()
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(0))
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(1))
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_BUILD_LIST))->appendLast(&ctx, ctx.fromInteger(2))
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_GET_ITER))->appendLast(&ctx, ctx.fromInteger(0))
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE));
+    const proto::ProtoObject* result = protoPython::executeMinimalBytecode(
+        &ctx, constants, bytecode, nullptr, nullptr);
+    (void)result;
+    EXPECT_TRUE(result == nullptr || result == PROTO_NONE);
+}
+

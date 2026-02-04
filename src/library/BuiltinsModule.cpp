@@ -494,6 +494,59 @@ static const proto::ProtoObject* py_dir(
     return context->newList()->asObject(context);
 }
 
+/** breakpoint(): no-op stub; real breakpoint requires debugger integration. */
+static const proto::ProtoObject* py_breakpoint(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    (void)context;
+    (void)self;
+    (void)parentLink;
+    (void)positionalParameters;
+    (void)keywordParameters;
+    return PROTO_NONE;
+}
+
+/** globals(): stub returning empty dict; full impl needs frame access. */
+static const proto::ProtoObject* py_globals(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    (void)self;
+    (void)parentLink;
+    (void)positionalParameters;
+    (void)keywordParameters;
+    protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(context);
+    if (!env) return PROTO_NONE;
+    proto::ProtoObject* d = const_cast<proto::ProtoObject*>(env->getDictPrototype()->newChild(context, true));
+    d->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__keys__"), context->newList()->asObject(context));
+    d->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->newSparseList()->asObject(context));
+    return d;
+}
+
+/** locals(): stub returning empty dict; full impl needs frame access. */
+static const proto::ProtoObject* py_locals(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    (void)self;
+    (void)parentLink;
+    (void)positionalParameters;
+    (void)keywordParameters;
+    protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(context);
+    if (!env) return PROTO_NONE;
+    proto::ProtoObject* d = const_cast<proto::ProtoObject*>(env->getDictPrototype()->newChild(context, true));
+    d->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__keys__"), context->newList()->asObject(context));
+    d->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->newSparseList()->asObject(context));
+    return d;
+}
+
 /** vars([object]): return object.__dict__ if given; stub for no-arg (locals). */
 static const proto::ProtoObject* py_vars(
     proto::ProtoContext* context,
@@ -808,6 +861,147 @@ static const proto::ProtoObject* py_ascii(
     return context->fromUTF8String(out.c_str());
 }
 
+static const proto::ProtoObject* py_ord(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    (void)self;
+    (void)parentLink;
+    (void)keywordParameters;
+    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    const proto::ProtoObject* arg = positionalParameters->getAt(context, 0);
+    if (!arg->isString(context)) return PROTO_NONE;
+    std::string s;
+    arg->asString(context)->toUTF8String(context, s);
+    if (s.empty()) return PROTO_NONE;
+    unsigned char first = static_cast<unsigned char>(s[0]);
+    if ((first & 0x80) == 0)
+        return context->fromInteger(static_cast<long long>(first));
+    if ((first & 0xE0) == 0xC0 && s.size() >= 2) {
+        long long cp = (first & 0x1F) << 6 | (static_cast<unsigned char>(s[1]) & 0x3F);
+        return context->fromInteger(cp);
+    }
+    if ((first & 0xF0) == 0xE0 && s.size() >= 3) {
+        long long cp = (first & 0x0F) << 12 | (static_cast<unsigned char>(s[1]) & 0x3F) << 6 | (static_cast<unsigned char>(s[2]) & 0x3F);
+        return context->fromInteger(cp);
+    }
+    if ((first & 0xF8) == 0xF0 && s.size() >= 4) {
+        long long cp = (first & 0x07) << 18 | (static_cast<unsigned char>(s[1]) & 0x3F) << 12
+            | (static_cast<unsigned char>(s[2]) & 0x3F) << 6 | (static_cast<unsigned char>(s[3]) & 0x3F);
+        return context->fromInteger(cp);
+    }
+    return context->fromInteger(static_cast<long long>(first));
+}
+
+static const proto::ProtoObject* py_chr(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    (void)self;
+    (void)parentLink;
+    (void)keywordParameters;
+    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    const proto::ProtoObject* arg = positionalParameters->getAt(context, 0);
+    if (!arg->isInteger(context)) return PROTO_NONE;
+    long long i = arg->asLong(context);
+    if (i < 0 || i > 0x10FFFF) return PROTO_NONE;
+    char buf[8];
+    int n = 0;
+    if (i <= 0x7F) {
+        buf[n++] = static_cast<char>(i);
+    } else if (i <= 0x7FF) {
+        buf[n++] = static_cast<char>(0xC0 | (i >> 6));
+        buf[n++] = static_cast<char>(0x80 | (i & 0x3F));
+    } else if (i <= 0xFFFF) {
+        buf[n++] = static_cast<char>(0xE0 | (i >> 12));
+        buf[n++] = static_cast<char>(0x80 | ((i >> 6) & 0x3F));
+        buf[n++] = static_cast<char>(0x80 | (i & 0x3F));
+    } else {
+        buf[n++] = static_cast<char>(0xF0 | (i >> 18));
+        buf[n++] = static_cast<char>(0x80 | ((i >> 12) & 0x3F));
+        buf[n++] = static_cast<char>(0x80 | ((i >> 6) & 0x3F));
+        buf[n++] = static_cast<char>(0x80 | (i & 0x3F));
+    }
+    buf[n] = '\0';
+    return context->fromUTF8String(buf);
+}
+
+static const proto::ProtoObject* py_bin(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    (void)self;
+    (void)parentLink;
+    (void)keywordParameters;
+    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    const proto::ProtoObject* arg = positionalParameters->getAt(context, 0);
+    if (!arg->isInteger(context)) return PROTO_NONE;
+    long long i = arg->asLong(context);
+    if (i == 0) return context->fromUTF8String("0b0");
+    std::string s = "0b";
+    unsigned long long u;
+    if (i < 0) {
+        s += "-";
+        u = static_cast<unsigned long long>(-i);
+    } else {
+        u = static_cast<unsigned long long>(i);
+    }
+    std::string bits;
+    while (u) { bits += (u & 1) ? '1' : '0'; u >>= 1; }
+    for (auto it = bits.rbegin(); it != bits.rend(); ++it) s += *it;
+    return context->fromUTF8String(s.c_str());
+}
+
+static const proto::ProtoObject* py_oct(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    (void)self;
+    (void)parentLink;
+    (void)keywordParameters;
+    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    const proto::ProtoObject* arg = positionalParameters->getAt(context, 0);
+    if (!arg->isInteger(context)) return PROTO_NONE;
+    long long i = arg->asLong(context);
+    if (i == 0) return context->fromUTF8String("0o0");
+    char buf[32];
+    if (i < 0)
+        snprintf(buf, sizeof(buf), "-0o%llo", static_cast<unsigned long long>(-i));
+    else
+        snprintf(buf, sizeof(buf), "0o%llo", static_cast<unsigned long long>(i));
+    return context->fromUTF8String(buf);
+}
+
+static const proto::ProtoObject* py_hex(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    (void)self;
+    (void)parentLink;
+    (void)keywordParameters;
+    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    const proto::ProtoObject* arg = positionalParameters->getAt(context, 0);
+    if (!arg->isInteger(context)) return PROTO_NONE;
+    long long i = arg->asLong(context);
+    if (i == 0) return context->fromUTF8String("0x0");
+    char buf[24];
+    if (i < 0)
+        snprintf(buf, sizeof(buf), "-0x%llx", static_cast<unsigned long long>(-i));
+    else
+        snprintf(buf, sizeof(buf), "0x%llx", static_cast<unsigned long long>(i));
+    return context->fromUTF8String(buf);
+}
+
 static const proto::ProtoObject* py_round(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -1116,6 +1310,11 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "round"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_round));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "divmod"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_divmod));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "ascii"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_ascii));
+    builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "ord"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_ord));
+    builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "chr"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_chr));
+    builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "bin"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_bin));
+    builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "oct"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_oct));
+    builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "hex"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_hex));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "sorted"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_sorted));
 
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "callable"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_callable));
@@ -1126,6 +1325,9 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "raise"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_raise));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "dir"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_dir));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "vars"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_vars));
+    builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "breakpoint"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_breakpoint));
+    builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "globals"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_globals));
+    builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "locals"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_locals));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "hash"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_hash));
 
     return builtins;

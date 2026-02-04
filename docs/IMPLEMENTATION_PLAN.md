@@ -16,7 +16,7 @@ The foundation of the runtime must be fully compatible with Python 3.14's semant
 - [x] **Exception scaffolding**: `exceptions` module with `Exception`, `KeyError`, `ValueError`; see [EXCEPTIONS.md](EXCEPTIONS.md).
 - [x] **protopy CLI**: distinct exit codes and flags (`--module`, `--script`, `--path`, `--stdlib`, `--bytecode-only`, `--trace`, `--repl`) with tests.
 - [ ] **Phase 2b: Foundation test stability**: `test_foundation` hangs during list prototype creation (GC deadlock suspected). CTest timeout and troubleshooting docs added; see [TESTING.md](TESTING.md). v5 Step 25 documented GC reproducer; `test_foundation_filtered` runs stable subset.
-- [ ] **Phase 3: Execution Engine**: `executeMinimalBytecode` supports LOAD_CONST, RETURN_VALUE, LOAD_NAME, STORE_NAME, BINARY_ADD/SUBTRACT/MULTIPLY/TRUE_DIVIDE, COMPARE_OP, POP_JUMP_IF_FALSE, JUMP_ABSOLUTE, CALL_FUNCTION, LOAD_ATTR, STORE_ATTR, BUILD_LIST. protopy invokes module `main` when running a script. CTest `test_execution_engine` covers these opcodes.
+- [ ] **Phase 3: Execution Engine**: `executeMinimalBytecode` supports LOAD_CONST, RETURN_VALUE, LOAD_NAME, STORE_NAME, BINARY_ADD/SUBTRACT/MULTIPLY/TRUE_DIVIDE, COMPARE_OP, POP_JUMP_IF_FALSE, JUMP_ABSOLUTE, CALL_FUNCTION, LOAD_ATTR, STORE_ATTR, BUILD_LIST, BINARY_SUBSCR, BUILD_MAP, STORE_SUBSCR, BUILD_TUPLE, GET_ITER, FOR_ITER, UNPACK_SEQUENCE. protopy invokes module `main` when running a script. CTest `test_execution_engine` covers these opcodes.
 - [ ] **Phase 4: GIL-less Concurrency**: Audit all mutable operations to ensure thread-safety using `protoCore` primitives. Audit documented in [GIL_FREE_AUDIT.md](GIL_FREE_AUDIT.md); fixes TBD.
 
 ## 2. HPy Support for Imported Modules
@@ -52,6 +52,14 @@ We aim for "No-Modification" compatibility with CPython tests.
 **Completed: Next 20 Steps v8 (85–104).** Delivered: builtins `pow`, `round`, `zip`, `sorted`, `vars`; str methods (strip, replace, startswith, endswith); execution engine LOAD_ATTR, STORE_ATTR, BUILD_LIST; benchmarks (list_append_loop, str_concat_loop, range_iterate) and harness; native stubs for `os.path`, `pathlib`, `collections.abc`; CTest coverage for LOAD_ATTR/STORE_ATTR/BUILD_LIST; regrtest persistence (`--output`, `REGRTEST_RESULTS`, CTest `regrtest_persistence`).
 
 **Completed: Next 20 Steps v9 (105–124).** Delivered: builtins `filter`, `map`, `next(iter, default)`; execution engine BINARY_SUBSCR, BUILD_MAP; list.extend limitation documented; stubs: `typing` (Any, List, Dict), `dataclasses`, `unittest`, `functools.wraps`, `contextlib`; `os.path.realpath`/`normpath`; str `find`/`index`; foundation test for `sorted`; v9 scope and completion documented.
+
+**Completed: Next 20 Steps v10 (125–144).** Delivered: builtins `divmod`, `ascii`; execution engine STORE_SUBSCR; str `count`, `rsplit`; list `reverse`; dict `pop`; int `bit_length`; stubs: `typing` (Optional, Union), `hashlib`, `copy`, `itertools.chain`; foundation test for `filter`; STORE_SUBSCR coverage note in TESTING.md; Phase 3 opcode list updated (BINARY_SUBSCR, BUILD_MAP, STORE_SUBSCR); v10 completion documented.
+
+**Completed: Next 20 Steps v11 (145–164).** Delivered: builtins `ord`, `chr`, `bin`, `oct`, `hex`; list `sort`; execution engine BUILD_TUPLE, GET_ITER, FOR_ITER; stubs: `argparse`, `getopt`, `tempfile`, `subprocess`; str `encode`, bytes `decode`; float `is_integer`; foundation test for `map`; execution engine tests BUILD_TUPLE and GET_ITER; v11 completion documented.
+
+**Completed: Next 20 Steps v12 (165–184).** See [NEXT_20_STEPS_V12.md](NEXT_20_STEPS_V12.md). Builtins `breakpoint`, `globals`, `locals`; str `center`, `ljust`, `rjust`, `zfill`, `partition`, `rpartition`; list `copy`; execution engine UNPACK_SEQUENCE; itertools `repeat` (islice existing); bytes `hex`, `fromhex`; stdlib stubs `struct`, `base64`, `random`; tests and docs.
+
+**Planned: Next 20 Steps v13 (185–204).** See [NEXT_20_STEPS_V13.md](NEXT_20_STEPS_V13.md). Builtin `input` stub; execution engine LOAD_GLOBAL, STORE_GLOBAL, BUILD_SLICE; dict `popitem`; str `expandtabs`; int `from_bytes`, `to_bytes`; float `as_integer_ratio`; itertools `cycle`, `takewhile`; stdlib stubs `time`, `datetime`, `warnings`.
 
 ## 5. Debugging & IDE Support
 To be a viable replacement, `protoPython` must support professional developer workflows.

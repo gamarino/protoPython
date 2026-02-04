@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include <protoPython/PythonEnvironment.h>
 #include <protoCore.h>
+#include <vector>
 
 using namespace protoPython;
 
@@ -741,6 +742,104 @@ TEST_F(FoundationTest, SortedBuiltin) {
     EXPECT_EQ(outList->getAt(context, 0)->asLong(context), 1);
     EXPECT_EQ(outList->getAt(context, 1)->asLong(context), 2);
     EXPECT_EQ(outList->getAt(context, 2)->asLong(context), 3);
+}
+
+TEST_F(FoundationTest, FilterBuiltin) {
+    proto::ProtoContext* context = env.getContext();
+    const proto::ProtoObject* builtins = env.resolve("builtins");
+    ASSERT_NE(builtins, nullptr);
+    const proto::ProtoObject* pyFilter = builtins->getAttribute(context, proto::ProtoString::fromUTF8String(context, "filter"));
+    const proto::ProtoObject* pyBool = builtins->getAttribute(context, proto::ProtoString::fromUTF8String(context, "bool"));
+    ASSERT_NE(pyFilter, nullptr);
+    ASSERT_NE(pyBool, nullptr);
+    const proto::ProtoList* inputList = context->newList()
+        ->appendLast(context, context->fromInteger(0))
+        ->appendLast(context, context->fromInteger(1))
+        ->appendLast(context, context->fromInteger(2));
+    const proto::ProtoObject* listObj = env.getListPrototype()->newChild(context, true);
+    listObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), inputList->asObject(context));
+    const proto::ProtoList* args = context->newList()->appendLast(context, pyBool)->appendLast(context, listObj);
+    const proto::ProtoObject* result = pyFilter->asMethod(context)(context, builtins, nullptr, args, nullptr);
+    ASSERT_NE(result, nullptr);
+    const proto::ProtoObject* nextM = result->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__next__"));
+    ASSERT_NE(nextM, nullptr);
+    ASSERT_TRUE(nextM->asMethod(context));
+    std::vector<long long> collected;
+    for (int i = 0; i < 5; ++i) {
+        const proto::ProtoObject* val = nextM->asMethod(context)(context, result, nullptr, context->newList(), nullptr);
+        if (!val || val == PROTO_NONE) break;
+        if (val->isInteger(context)) collected.push_back(val->asLong(context));
+    }
+    EXPECT_EQ(collected.size(), 2u);
+    if (collected.size() >= 2) {
+        EXPECT_EQ(collected[0], 1);
+        EXPECT_EQ(collected[1], 2);
+    }
+}
+
+TEST_F(FoundationTest, BreakpointGlobalsLocals) {
+    proto::ProtoContext* context = env.getContext();
+    const proto::ProtoObject* builtins = env.resolve("builtins");
+    ASSERT_NE(builtins, nullptr);
+    const proto::ProtoObject* breakpointFn = builtins->getAttribute(context, proto::ProtoString::fromUTF8String(context, "breakpoint"));
+    const proto::ProtoObject* globalsFn = builtins->getAttribute(context, proto::ProtoString::fromUTF8String(context, "globals"));
+    const proto::ProtoObject* localsFn = builtins->getAttribute(context, proto::ProtoString::fromUTF8String(context, "locals"));
+    ASSERT_NE(breakpointFn, nullptr);
+    ASSERT_NE(globalsFn, nullptr);
+    ASSERT_NE(localsFn, nullptr);
+    const proto::ProtoList* emptyArgs = context->newList();
+    const proto::ProtoObject* breakpointResult = breakpointFn->asMethod(context)(context, builtins, nullptr, emptyArgs, nullptr);
+    EXPECT_TRUE(breakpointResult == nullptr || breakpointResult == PROTO_NONE);
+    const proto::ProtoObject* g = globalsFn->asMethod(context)(context, builtins, nullptr, emptyArgs, nullptr);
+    ASSERT_NE(g, nullptr);
+    const proto::ProtoObject* lenAttr = g->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__len__"));
+    ASSERT_NE(lenAttr, nullptr);
+    const proto::ProtoObject* lenResult = lenAttr->asMethod(context)(context, g, nullptr, emptyArgs, nullptr);
+    ASSERT_NE(lenResult, nullptr);
+    EXPECT_TRUE(lenResult->isInteger(context));
+    EXPECT_EQ(lenResult->asLong(context), 0);
+    const proto::ProtoObject* l = localsFn->asMethod(context)(context, builtins, nullptr, emptyArgs, nullptr);
+    ASSERT_NE(l, nullptr);
+    const proto::ProtoObject* lLenAttr = l->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__len__"));
+    ASSERT_NE(lLenAttr, nullptr);
+    const proto::ProtoObject* lLenResult = lLenAttr->asMethod(context)(context, l, nullptr, emptyArgs, nullptr);
+    ASSERT_NE(lLenResult, nullptr);
+    EXPECT_TRUE(lLenResult->isInteger(context));
+    EXPECT_EQ(lLenResult->asLong(context), 0);
+}
+
+TEST_F(FoundationTest, MapBuiltin) {
+    proto::ProtoContext* context = env.getContext();
+    const proto::ProtoObject* builtins = env.resolve("builtins");
+    ASSERT_NE(builtins, nullptr);
+    const proto::ProtoObject* pyMap = builtins->getAttribute(context, proto::ProtoString::fromUTF8String(context, "map"));
+    const proto::ProtoObject* pyInt = builtins->getAttribute(context, proto::ProtoString::fromUTF8String(context, "int"));
+    ASSERT_NE(pyMap, nullptr);
+    ASSERT_NE(pyInt, nullptr);
+    const proto::ProtoList* inputList = context->newList()
+        ->appendLast(context, context->fromInteger(1))
+        ->appendLast(context, context->fromInteger(2))
+        ->appendLast(context, context->fromInteger(3));
+    const proto::ProtoObject* listObj = env.getListPrototype()->newChild(context, true);
+    listObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), inputList->asObject(context));
+    const proto::ProtoList* args = context->newList()->appendLast(context, pyInt)->appendLast(context, listObj);
+    const proto::ProtoObject* result = pyMap->asMethod(context)(context, builtins, nullptr, args, nullptr);
+    ASSERT_NE(result, nullptr);
+    const proto::ProtoObject* nextM = result->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__next__"));
+    ASSERT_NE(nextM, nullptr);
+    ASSERT_TRUE(nextM->asMethod(context));
+    std::vector<long long> collected;
+    for (int i = 0; i < 5; ++i) {
+        const proto::ProtoObject* val = nextM->asMethod(context)(context, result, nullptr, context->newList(), nullptr);
+        if (!val || val == PROTO_NONE) break;
+        if (val->isInteger(context)) collected.push_back(val->asLong(context));
+    }
+    EXPECT_EQ(collected.size(), 3u);
+    if (collected.size() >= 3) {
+        EXPECT_EQ(collected[0], 1);
+        EXPECT_EQ(collected[1], 2);
+        EXPECT_EQ(collected[2], 3);
+    }
 }
 
 TEST_F(FoundationTest, StringDunders) {
