@@ -1438,6 +1438,51 @@ static const proto::ProtoObject* py_str_split(
     return result->asObject(context);
 }
 
+static bool is_ascii_whitespace(char c) {
+    return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v';
+}
+
+static const proto::ProtoObject* py_str_strip(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoString* str = str_from_self(context, self);
+    if (!str) return PROTO_NONE;
+    std::string s;
+    str->toUTF8String(context, s);
+    size_t start = 0;
+    while (start < s.size() && is_ascii_whitespace(s[start])) start++;
+    size_t end = s.size();
+    while (end > start && is_ascii_whitespace(s[end - 1])) end--;
+    return context->fromUTF8String(s.substr(start, end - start).c_str());
+}
+
+static const proto::ProtoObject* py_str_lstrip(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoString* str = str_from_self(context, self);
+    if (!str) return PROTO_NONE;
+    std::string s;
+    str->toUTF8String(context, s);
+    size_t start = 0;
+    while (start < s.size() && is_ascii_whitespace(s[start])) start++;
+    return context->fromUTF8String(s.substr(start).c_str());
+}
+
+static const proto::ProtoObject* py_str_rstrip(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoString* str = str_from_self(context, self);
+    if (!str) return PROTO_NONE;
+    std::string s;
+    str->toUTF8String(context, s);
+    size_t end = s.size();
+    while (end > 0 && is_ascii_whitespace(s[end - 1])) end--;
+    return context->fromUTF8String(s.substr(0, end).c_str());
+}
+
 static const proto::ProtoObject* py_str_join(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -1827,6 +1872,9 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     strPrototype = strPrototype->setAttribute(context, py_hash, context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_hash));
     strPrototype = strPrototype->setAttribute(context, py_split, context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_split));
     strPrototype = strPrototype->setAttribute(context, py_join, context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_join));
+    strPrototype = strPrototype->setAttribute(context, py_strip, context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_strip));
+    strPrototype = strPrototype->setAttribute(context, py_lstrip, context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_lstrip));
+    strPrototype = strPrototype->setAttribute(context, py_rstrip, context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_rstrip));
 
     listPrototype = context->newObject(true);
     listPrototype = listPrototype->addParent(context, objectPrototype);

@@ -12,6 +12,9 @@ This document describes string dunder methods and helpers implemented in protoPy
 
 - **`upper()`**: ASCII uppercase. Non-ASCII bytes are left unchanged.
 - **`lower()`**: ASCII lowercase. Non-ASCII bytes are left unchanged.
+- **`strip()`**: Remove leading and trailing ASCII whitespace.
+- **`lstrip()`**: Remove leading ASCII whitespace.
+- **`rstrip()`**: Remove trailing ASCII whitespace.
 
 ## Dispatch
 
