@@ -48,9 +48,13 @@ See [docs/NEXT_20_STEPS_V4.md](../docs/NEXT_20_STEPS_V4.md). Steps 01–24 compl
 
 See [docs/NEXT_20_STEPS_V5.md](../docs/NEXT_20_STEPS_V5.md). Steps 25–44 completed.
 
-## 9. Next 20 Steps (v6)
+## 9. Next 20 Steps (v6) — completed
 
-See [docs/NEXT_20_STEPS_V6.md](../docs/NEXT_20_STEPS_V6.md). Steps 45–64 planned.
+See [docs/NEXT_20_STEPS_V6.md](../docs/NEXT_20_STEPS_V6.md). Steps 45–64 completed.
+
+## 10. Next 20 Steps (v7)
+
+See [docs/NEXT_20_STEPS_V7.md](../docs/NEXT_20_STEPS_V7.md). Steps 65–84 planned.
 - [x] Step 45: repr builtin
 - [x] Step 46: format builtin
 - [x] Step 47: open builtin
@@ -71,6 +75,13 @@ See [docs/NEXT_20_STEPS_V6.md](../docs/NEXT_20_STEPS_V6.md). Steps 45–64 plann
 - [x] Step 62: sys.modules register loaded
 - [x] Step 63: pyc marshal stub
 - [x] Step 64: test_execution_engine
+- [x] Step 65: range builtin (iterator)
+- [x] Step 66: print builtin (sep, end)
+- [x] Step 67: exec BINARY_MULTIPLY, BINARY_TRUE_DIVIDE
+- [x] Step 68: exec COMPARE_OP
+- [x] Step 69: exec POP_JUMP_IF_FALSE, JUMP_ABSOLUTE
+- [x] Step 70: dir builtin (stub)
+- [x] Step 71: hash builtin
 - [x] Step 25: Foundation test stability / GC reproducer documentation
 - [x] Step 26: Builtins callable, getattr, setattr, hasattr, delattr
 - [x] Step 27: Slice object + __getitem__ slice support for list/str
