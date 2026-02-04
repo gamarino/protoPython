@@ -16,7 +16,7 @@ The foundation of the runtime must be fully compatible with Python 3.14's semant
 - [x] **Exception scaffolding**: `exceptions` module with `Exception`, `KeyError`, `ValueError`; see [EXCEPTIONS.md](EXCEPTIONS.md).
 - [x] **protopy CLI**: distinct exit codes and flags (`--module`, `--script`, `--path`, `--stdlib`, `--bytecode-only`, `--trace`, `--repl`) with tests.
 - [ ] **Phase 2b: Foundation test stability**: `test_foundation` hangs during list prototype creation (GC deadlock suspected). CTest timeout and troubleshooting docs added; see [TESTING.md](TESTING.md). v5 Step 25 documented GC reproducer; `test_foundation_filtered` runs stable subset.
-- [ ] **Phase 3: Execution Engine**: `executeMinimalBytecode` supports LOAD_CONST, RETURN_VALUE, LOAD_NAME, STORE_NAME, BINARY_ADD/SUBTRACT/MULTIPLY/TRUE_DIVIDE, COMPARE_OP, POP_JUMP_IF_FALSE, JUMP_ABSOLUTE, CALL_FUNCTION, LOAD_ATTR, STORE_ATTR, BUILD_LIST, BINARY_SUBSCR, BUILD_MAP, STORE_SUBSCR, BUILD_TUPLE, GET_ITER, FOR_ITER, UNPACK_SEQUENCE. protopy invokes module `main` when running a script. CTest `test_execution_engine` covers these opcodes.
+- [ ] **Phase 3: Execution Engine**: `executeMinimalBytecode` supports LOAD_CONST, RETURN_VALUE, LOAD_NAME, STORE_NAME, BINARY_ADD/SUBTRACT/MULTIPLY/TRUE_DIVIDE, COMPARE_OP, POP_JUMP_IF_FALSE, JUMP_ABSOLUTE, CALL_FUNCTION, LOAD_ATTR, STORE_ATTR, BUILD_LIST, BINARY_SUBSCR, BUILD_MAP, STORE_SUBSCR, BUILD_TUPLE, GET_ITER, FOR_ITER, UNPACK_SEQUENCE, LOAD_GLOBAL, STORE_GLOBAL, BUILD_SLICE, ROT_TWO, DUP_TOP. protopy invokes module `main` when running a script. CTest `test_execution_engine` covers these opcodes.
 - [ ] **Phase 4: GIL-less Concurrency**: Audit all mutable operations to ensure thread-safety using `protoCore` primitives. Audit documented in [GIL_FREE_AUDIT.md](GIL_FREE_AUDIT.md); fixes TBD.
 
 ## 2. HPy Support for Imported Modules
@@ -59,7 +59,11 @@ We aim for "No-Modification" compatibility with CPython tests.
 
 **Completed: Next 20 Steps v12 (165–184).** See [NEXT_20_STEPS_V12.md](NEXT_20_STEPS_V12.md). Builtins `breakpoint`, `globals`, `locals`; str `center`, `ljust`, `rjust`, `zfill`, `partition`, `rpartition`; list `copy`; execution engine UNPACK_SEQUENCE; itertools `repeat` (islice existing); bytes `hex`, `fromhex`; stdlib stubs `struct`, `base64`, `random`; tests and docs.
 
-**Planned: Next 20 Steps v13 (185–204).** See [NEXT_20_STEPS_V13.md](NEXT_20_STEPS_V13.md). Builtin `input` stub; execution engine LOAD_GLOBAL, STORE_GLOBAL, BUILD_SLICE; dict `popitem`; str `expandtabs`; int `from_bytes`, `to_bytes`; float `as_integer_ratio`; itertools `cycle`, `takewhile`; stdlib stubs `time`, `datetime`, `warnings`.
+**Completed: Next 20 Steps v13 (185–204).** See [NEXT_20_STEPS_V13.md](NEXT_20_STEPS_V13.md). Builtin `input` stub; execution engine LOAD_GLOBAL, STORE_GLOBAL, BUILD_SLICE; dict `popitem`; str `expandtabs`; int `from_bytes`, `to_bytes`; float `as_integer_ratio`; itertools `cycle`, `takewhile`; stdlib stubs `time`, `datetime`, `warnings`; tests and docs.
+
+**Completed: Next 20 Steps v14 (205–224).** See [NEXT_20_STEPS_V14.md](NEXT_20_STEPS_V14.md). Builtin `object()` callable; str `capitalize`, `title`, `swapcase`; list `index`, `count`; tuple `index`, `count`; execution engine ROT_TWO, DUP_TOP; itertools `dropwhile`, `tee`; stdlib stubs `traceback`, `io.StringIO`; tests and docs.
+
+**Completed: Next 20 Steps v15 (225–244).** See [NEXT_20_STEPS_V15.md](NEXT_20_STEPS_V15.md). Builtins `eval`, `exec` stubs; str `casefold`, `isalpha`, `isdigit`, `isspace`, `isalnum`; bytes `find`, `count`; set `pop`; itertools `accumulate`, `groupby` stubs; math `floor`/`ceil` (float support); os.environ stub; foundation test isdigit.
 
 ## 5. Debugging & IDE Support
 To be a viable replacement, `protoPython` must support professional developer workflows.

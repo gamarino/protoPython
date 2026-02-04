@@ -49,6 +49,16 @@ constexpr int OP_GET_ITER = 119;
 constexpr int OP_FOR_ITER = 120;
 /** UNPACK_SEQUENCE: pop sequence, push arg elements onto stack (reverse order for correct assignment). */
 constexpr int OP_UNPACK_SEQUENCE = 121;
+/** LOAD_GLOBAL: push globals[name] (or frame when used as global namespace). */
+constexpr int OP_LOAD_GLOBAL = 122;
+/** STORE_GLOBAL: pop and set globals[name] = value. */
+constexpr int OP_STORE_GLOBAL = 123;
+/** BUILD_SLICE: pop arg values (2 or 3: start, stop[, step]), build slice object, push. */
+constexpr int OP_BUILD_SLICE = 124;
+/** ROT_TWO: swap the two top stack items. */
+constexpr int OP_ROT_TWO = 125;
+/** DUP_TOP: duplicate the reference on top of the stack. */
+constexpr int OP_DUP_TOP = 126;
 
 /**
  * @brief Executes bytecode: LOAD_CONST, RETURN_VALUE, LOAD_NAME, STORE_NAME,

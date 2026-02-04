@@ -1,5 +1,5 @@
-# typing.py - Minimal stub for type hints (Any, List, Dict).
-# Full typing module behavior (generics, Optional, etc.) is not implemented.
+# typing.py - Minimal stub for type hints (Any, List, Dict, Optional, Union).
+# Full typing module behavior (generics, etc.) is not implemented.
 
 Any = object()  # Placeholder for typing.Any in annotations.
 
@@ -9,3 +9,5 @@ def _alias(name, base):
 
 List = list
 Dict = dict
+Optional = object()  # Placeholder for typing.Optional (Optional[X] ~ Union[X, None]).
+Union = object()  # Placeholder for typing.Union.

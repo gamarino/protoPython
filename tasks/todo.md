@@ -76,9 +76,17 @@ See [docs/NEXT_20_STEPS_V11.md](../docs/NEXT_20_STEPS_V11.md). Steps 145–164 c
 
 See [docs/NEXT_20_STEPS_V12.md](../docs/NEXT_20_STEPS_V12.md). Steps 165–184 done.
 
-## 16. Next 20 Steps (v13) — planned
+## 16. Next 20 Steps (v13) — completed
 
-See [docs/NEXT_20_STEPS_V13.md](../docs/NEXT_20_STEPS_V13.md). Steps 185–204.
+See [docs/NEXT_20_STEPS_V13.md](../docs/NEXT_20_STEPS_V13.md). Steps 185–204 done.
+
+## 17. Next 20 Steps (v14) — completed
+
+See [docs/NEXT_20_STEPS_V14.md](../docs/NEXT_20_STEPS_V14.md). Steps 205–224 done.
+
+## 18. Next 20 Steps (v15) — completed
+
+See [docs/NEXT_20_STEPS_V15.md](../docs/NEXT_20_STEPS_V15.md). Steps 225–244 done.
 - [x] Step 145: ord builtin
 - [x] Step 146: chr builtin
 - [x] Step 147: bin builtin

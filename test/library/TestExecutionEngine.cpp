@@ -319,6 +319,84 @@ TEST(ExecutionEngineTest, UnpackSequence) {
     EXPECT_EQ(result->asLong(&ctx), 30);
 }
 
+TEST(ExecutionEngineTest, LoadGlobalStoreGlobal) {
+    proto::ProtoSpace space;
+    proto::ProtoContext ctx(&space);
+    const proto::ProtoList* names = ctx.newList()->appendLast(&ctx, ctx.fromUTF8String("x"));
+    const proto::ProtoList* constants = ctx.newList()->appendLast(&ctx, ctx.fromInteger(99));
+    const proto::ProtoObject* frameObj = ctx.newObject(true);
+    proto::ProtoObject* frame = const_cast<proto::ProtoObject*>(frameObj);
+    const proto::ProtoList* bytecode = ctx.newList()
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(0))
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_STORE_GLOBAL))->appendLast(&ctx, ctx.fromInteger(0))
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_GLOBAL))->appendLast(&ctx, ctx.fromInteger(0))
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE));
+    const proto::ProtoObject* result = protoPython::executeMinimalBytecode(
+        &ctx, constants, bytecode, names, frame);
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->isInteger(&ctx));
+    EXPECT_EQ(result->asLong(&ctx), 99);
+}
+
+TEST(ExecutionEngineTest, BuildSlice) {
+    proto::ProtoSpace space;
+    proto::ProtoContext ctx(&space);
+    const proto::ProtoList* constants = ctx.newList()
+        ->appendLast(&ctx, ctx.fromInteger(1))
+        ->appendLast(&ctx, ctx.fromInteger(4));
+    const proto::ProtoList* bytecode = ctx.newList()
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(0))
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(1))
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_BUILD_SLICE))->appendLast(&ctx, ctx.fromInteger(2))
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE));
+    const proto::ProtoObject* result = protoPython::executeMinimalBytecode(
+        &ctx, constants, bytecode, nullptr, nullptr);
+    ASSERT_NE(result, nullptr);
+    const proto::ProtoObject* start = result->getAttribute(&ctx, proto::ProtoString::fromUTF8String(&ctx, "start"));
+    const proto::ProtoObject* stop = result->getAttribute(&ctx, proto::ProtoString::fromUTF8String(&ctx, "stop"));
+    const proto::ProtoObject* step = result->getAttribute(&ctx, proto::ProtoString::fromUTF8String(&ctx, "step"));
+    ASSERT_NE(start, nullptr);
+    ASSERT_NE(stop, nullptr);
+    ASSERT_NE(step, nullptr);
+    EXPECT_EQ(start->asLong(&ctx), 1);
+    EXPECT_EQ(stop->asLong(&ctx), 4);
+    EXPECT_EQ(step->asLong(&ctx), 1);
+}
+
+TEST(ExecutionEngineTest, RotTwo) {
+    proto::ProtoSpace space;
+    proto::ProtoContext ctx(&space);
+    const proto::ProtoList* constants = ctx.newList()
+        ->appendLast(&ctx, ctx.fromInteger(10))
+        ->appendLast(&ctx, ctx.fromInteger(20));
+    const proto::ProtoList* bytecode = ctx.newList()
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(0))
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(1))
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_ROT_TWO))
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE));
+    const proto::ProtoObject* result = protoPython::executeMinimalBytecode(
+        &ctx, constants, bytecode, nullptr, nullptr);
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->isInteger(&ctx));
+    EXPECT_EQ(result->asLong(&ctx), 10);
+}
+
+TEST(ExecutionEngineTest, DupTop) {
+    proto::ProtoSpace space;
+    proto::ProtoContext ctx(&space);
+    const proto::ProtoList* constants = ctx.newList()->appendLast(&ctx, ctx.fromInteger(7));
+    const proto::ProtoList* bytecode = ctx.newList()
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(0))
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_DUP_TOP))
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_BINARY_ADD))
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE));
+    const proto::ProtoObject* result = protoPython::executeMinimalBytecode(
+        &ctx, constants, bytecode, nullptr, nullptr);
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->isInteger(&ctx));
+    EXPECT_EQ(result->asLong(&ctx), 14);
+}
+
 // GET_ITER and FOR_ITER: The execution engine builds raw list objects (with __data__ only) in BUILD_LIST,
 // so they do not have __iter__/__next__. These opcodes are exercised when running real Python scripts
 // where lists come from the PythonEnvironment (full list prototype with __iter__).

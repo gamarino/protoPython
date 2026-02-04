@@ -777,6 +777,32 @@ TEST_F(FoundationTest, FilterBuiltin) {
     }
 }
 
+TEST_F(FoundationTest, DictPopitem) {
+    proto::ProtoContext* context = env.getContext();
+    const proto::ProtoObject* dictObj = context->newObject(true)->addParent(context, env.getDictPrototype());
+    dictObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__keys__"), context->newList()->asObject(context));
+    dictObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->newSparseList()->asObject(context));
+    const proto::ProtoObject* key = context->fromUTF8String("a");
+    const proto::ProtoObject* val = context->fromInteger(42);
+    const proto::ProtoList* keys = context->newList()->appendLast(context, key);
+    const proto::ProtoSparseList* data = context->newSparseList()->setAt(context, key->getHash(context), val);
+    dictObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__keys__"), keys->asObject(context));
+    dictObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), data->asObject(context));
+    const proto::ProtoObject* popitemM = dictObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "popitem"));
+    ASSERT_NE(popitemM, nullptr);
+    const proto::ProtoObject* pair = popitemM->asMethod(context)(context, dictObj, nullptr, context->newList(), nullptr);
+    ASSERT_NE(pair, nullptr);
+    ASSERT_NE(pair->asTuple(context), nullptr);
+    const proto::ProtoTuple* tup = pair->asTuple(context);
+    EXPECT_EQ(tup->getSize(context), 2u);
+    std::string k;
+    tup->getAt(context, 0)->asString(context)->toUTF8String(context, k);
+    EXPECT_EQ(k, "a");
+    EXPECT_EQ(tup->getAt(context, 1)->asLong(context), 42);
+    const proto::ProtoObject* keysAfter = dictObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__keys__"));
+    EXPECT_EQ(keysAfter->asList(context)->getSize(context), 0u);
+}
+
 TEST_F(FoundationTest, BreakpointGlobalsLocals) {
     proto::ProtoContext* context = env.getContext();
     const proto::ProtoObject* builtins = env.resolve("builtins");
@@ -893,6 +919,22 @@ TEST_F(FoundationTest, StringDunders) {
     std::string ls;
     l->asString(context)->toUTF8String(context, ls);
     EXPECT_EQ(ls, "hello");
+
+    const proto::ProtoObject* capitalizeM = strPrototype->getAttribute(context, proto::ProtoString::fromUTF8String(context, "capitalize"));
+    ASSERT_NE(capitalizeM, nullptr);
+    const proto::ProtoObject* cap = capitalizeM->asMethod(context)(context, wrapped, nullptr, context->newList(), nullptr);
+    std::string cs;
+    cap->asString(context)->toUTF8String(context, cs);
+    EXPECT_EQ(cs, "Hello");
+
+    const proto::ProtoObject* isdigitM = strPrototype->getAttribute(context, proto::ProtoString::fromUTF8String(context, "isdigit"));
+    ASSERT_NE(isdigitM, nullptr);
+    const proto::ProtoObject* digits = context->newObject(true)->addParent(context, strPrototype);
+    digits->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->fromUTF8String("12345"));
+    EXPECT_EQ(isdigitM->asMethod(context)(context, digits, nullptr, context->newList(), nullptr), PROTO_TRUE);
+    const proto::ProtoObject* mixed = context->newObject(true)->addParent(context, strPrototype);
+    mixed->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->fromUTF8String("12a45"));
+    EXPECT_EQ(isdigitM->asMethod(context)(context, mixed, nullptr, context->newList(), nullptr), PROTO_FALSE);
 }
 
 TEST_F(FoundationTest, ContainerExceptions) {

@@ -329,6 +329,50 @@ const proto::ProtoObject* executeMinimalBytecode(
                 for (int j = arg - 1; j >= 0; --j)
                     stack.push_back(tup->getAt(ctx, j));
             }
+        } else if (op == OP_LOAD_GLOBAL && names && frame && static_cast<unsigned long>(arg) < names->getSize(ctx)) {
+            i++;
+            const proto::ProtoObject* nameObj = names->getAt(ctx, arg);
+            if (nameObj->isString(ctx)) {
+                const proto::ProtoObject* val = frame->getAttribute(ctx, nameObj->asString(ctx));
+                if (val && val != PROTO_NONE) stack.push_back(val);
+            }
+        } else if (op == OP_STORE_GLOBAL && names && frame && static_cast<unsigned long>(arg) < names->getSize(ctx)) {
+            i++;
+            if (stack.empty()) continue;
+            const proto::ProtoObject* nameObj = names->getAt(ctx, arg);
+            const proto::ProtoObject* val = stack.back();
+            stack.pop_back();
+            if (nameObj->isString(ctx))
+                frame->setAttribute(ctx, nameObj->asString(ctx), val);
+        } else if (op == OP_BUILD_SLICE) {
+            i++;
+            if ((arg != 2 && arg != 3) || stack.size() < static_cast<size_t>(arg)) continue;
+            long long step = 1;
+            if (arg == 3) {
+                step = stack.back()->asLong(ctx);
+                stack.pop_back();
+            }
+            const proto::ProtoObject* stopObj = stack.back();
+            stack.pop_back();
+            const proto::ProtoObject* startObj = stack.back();
+            stack.pop_back();
+            proto::ProtoObject* sliceObj = const_cast<proto::ProtoObject*>(ctx->newObject(true));
+            sliceObj->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "start"), startObj);
+            sliceObj->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "stop"), stopObj);
+            sliceObj->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "step"), ctx->fromInteger(step));
+            stack.push_back(sliceObj);
+        } else if (op == OP_ROT_TWO) {
+            if (stack.size() >= 2) {
+                const proto::ProtoObject* a = stack.back();
+                stack.pop_back();
+                const proto::ProtoObject* b = stack.back();
+                stack.pop_back();
+                stack.push_back(a);
+                stack.push_back(b);
+            }
+        } else if (op == OP_DUP_TOP) {
+            if (!stack.empty())
+                stack.push_back(stack.back());
         }
     }
     return stack.empty() ? PROTO_NONE : stack.back();

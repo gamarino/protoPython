@@ -78,4 +78,8 @@ If the output directory contains or is configured with `REGRTEST_HISTORY`, the s
 
 The test `regrtest_persistence` (when Python 3 is available) runs `run_and_report.py` with `--output` to `test/regression/results/ctest_regrtest.json` and verifies the file exists and has the expected keys. This exercises the persistence path in CI.
 
+### Execution engine: STORE_SUBSCR
+
+STORE_SUBSCR (subscript assignment) is implemented via the container’s `__setitem__` method. It is exercised when running real Python code that assigns to list or dict subscripts (e.g. `a[0] = x`, `d[k] = v`), since list and dict prototypes provide `__setitem__`. There is no dedicated CTest that builds minimal bytecode (BUILD_LIST/BUILD_MAP) and runs STORE_SUBSCR on the resulting objects, because that path would hit protoCore’s embedded-value conversion in the test harness; the behavior is covered by execution of normal scripts.
+
 See [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) Section 3 (Compatibility & Testing).
