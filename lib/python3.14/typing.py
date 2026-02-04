@@ -1,5 +1,5 @@
 # typing.py - Minimal stub for type hints (Any, List, Dict, Optional, Union).
-# Full typing module behavior (generics, etc.) is not implemented.
+# Full typing module behavior (generics, etc.) is not implemented. See STUBS.md.
 
 Any = object()  # Placeholder for typing.Any in annotations.
 
