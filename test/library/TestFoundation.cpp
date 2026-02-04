@@ -1164,6 +1164,19 @@ TEST_F(FoundationTest, MathAtan) {
     EXPECT_NEAR(val, 0.78539816339744828, 1e-10);  // atan(1) == pi/4
 }
 
+TEST_F(FoundationTest, MathAtan2) {
+    proto::ProtoContext* context = env.getContext();
+    const proto::ProtoObject* mathMod = env.resolve("math");
+    ASSERT_NE(mathMod, nullptr);
+    const proto::ProtoObject* atan2M = mathMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "atan2"));
+    ASSERT_NE(atan2M, nullptr);
+    const proto::ProtoList* args = context->newList()->appendLast(context, context->fromDouble(1.0))->appendLast(context, context->fromDouble(1.0));
+    const proto::ProtoObject* result = atan2M->asMethod(context)(context, mathMod, nullptr, args, nullptr);
+    ASSERT_NE(result, nullptr);
+    double val = result->isDouble(context) ? result->asDouble(context) : static_cast<double>(result->asLong(context));
+    EXPECT_NEAR(val, 0.78539816339744828, 1e-10);  // atan2(1, 1) == pi/4
+}
+
 TEST_F(FoundationTest, ReprOrId) {
     proto::ProtoContext* context = env.getContext();
     const proto::ProtoObject* builtins = env.resolve("builtins");
