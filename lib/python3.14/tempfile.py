@@ -1,9 +1,10 @@
-# tempfile.py - Minimal stub. gettempdir, gettempprefix, mkstemp/TemporaryFile stubs.
+# tempfile.py - Stub with gettempdir/gettempprefix from os; mkstemp/TemporaryFile stubs.
+# gettempdir uses os.environ (TEMP, TMP) with default '/tmp'. gettempprefix returns 'tmp'.
 
 import os
 
 def gettempdir():
-    """Stub: return a safe default temp directory."""
+    """Return temp directory: os.environ.get('TEMP') or os.environ.get('TMP') or '/tmp'."""
     return os.environ.get('TEMP', os.environ.get('TMP', '/tmp'))
 
 def gettempprefix():
