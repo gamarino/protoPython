@@ -6,13 +6,13 @@
 ├─────────────────────────────────────────────────────────────────────┤
 │ Benchmark              │ protopy (ms) │ cpython (ms) │ Ratio        │
 ├────────────────────────┼──────────────┼──────────────┼──────────────┤
-│ startup_empty          │      15.59  │      17.33  │ 0.90x faster │
-│ int_sum_loop           │      32.45  │      21.97  │ 1.48x slower │
-│ list_append_loop       │      20.62  │      16.66  │ 1.24x slower │
-│ str_concat_loop        │   30031.35  │      20.47  │ 1466.77x slower │
-│ range_iterate          │      20.48  │      18.44  │ 1.11x slower │
+│ startup_empty          │       5.61  │      16.14  │ 0.35x faster │
+│ int_sum_loop           │       5.65  │      29.73  │ 0.19x faster │
+│ list_append_loop       │       5.67  │      16.31  │ 0.35x faster │
+│ str_concat_loop        │   30032.00  │      20.22  │ 1485.22x slower │
+│ range_iterate          │       5.74  │      18.48  │ 0.31x faster │
 ├────────────────────────┼──────────────┼──────────────┼──────────────┤
-│ Geometric mean         │              │              │ ~4.85x        │
+│ Geometric mean         │              │              │ ~1.60x        │
 └─────────────────────────────────────────────────────────────────────┘
 
 Legend: Ratio = protopy/cpython. Lower is better for protoPython.
