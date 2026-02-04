@@ -20,6 +20,14 @@ bool bytecodeLoaderStub(const std::string& path);
  */
 bool bytecodeParseStub(const std::string& path);
 
+/**
+ * @brief Stub for loading .pyc marshal header (magic, flags, timestamp/hash).
+ *        Does not parse marshalled code; only validates file exists and header structure.
+ * @param path Path to .pyc file.
+ * @return true if the file exists and has a valid-looking .pyc header (>= 16 bytes).
+ */
+bool pycMarshalHeaderStub(const std::string& path);
+
 } // namespace protoPython
 
 #endif
