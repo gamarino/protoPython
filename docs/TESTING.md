@@ -20,6 +20,10 @@ ctest -R test_regr
 ./test/regression/test_regr
 ```
 
+## Script execution and main invocation
+
+When you run `protopy --script path/to/script.py`, the CLI adds the script directory to the module search paths and calls `executeModule(moduleNameFromPath(scriptPath))` (e.g. `executeModule("script")`). Resolution uses protoCore’s `getImportModule`; the **PythonModuleProvider** finds the `.py` file and returns a module object with `__name__` and `__file__` set. In `executeModule`, before calling `runModuleMain`, the runtime checks whether the module has `__file__` ending in `.py` and has not yet been executed (`__executed__` unset). If so, it reads the file content, calls `builtins.exec(source, module)` so that the script runs in the module’s namespace (defining `main` etc.), sets `__executed__` on the module, then calls `runModuleMain`. `runModuleMain` resolves the module again (cache hit), gets the `main` attribute, and if it is callable invokes `main()`. So a script that defines `def main(): ...` will have `main()` run when executed via `protopy --script`.
+
 ## Startup / GC Hang (Resolved with protoCore Fix)
 
 ### Symptom `test_foundation` and `test_regr` (and any test that constructs `PythonEnvironment`) may hang during initialization, typically when creating the list prototype. The hang occurs inside protoCore’s allocation/GC path.
