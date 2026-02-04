@@ -11,7 +11,11 @@ pathsep = ':'
 sep = '/'
 
 def getpid():
-    return 0  # Placeholder
+    try:
+        import _thread
+        return _thread.getpid()
+    except ImportError:
+        return 0
 
 def getcwd():
     return "."  # Stub
