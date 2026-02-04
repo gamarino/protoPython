@@ -2510,6 +2510,38 @@ static const proto::ProtoObject* py_str_splitlines(
     return result->asObject(context);
 }
 
+static const proto::ProtoObject* py_str_removeprefix(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoString* str = str_from_self(context, self);
+    if (!str || posArgs->getSize(context) < 1) return PROTO_NONE;
+    std::string s;
+    str->toUTF8String(context, s);
+    std::string prefix;
+    if (posArgs->getAt(context, 0)->isString(context))
+        posArgs->getAt(context, 0)->asString(context)->toUTF8String(context, prefix);
+    if (prefix.size() <= s.size() && s.compare(0, prefix.size(), prefix) == 0)
+        return context->fromUTF8String(s.substr(prefix.size()).c_str());
+    return context->fromUTF8String(s.c_str());
+}
+
+static const proto::ProtoObject* py_str_removesuffix(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoString* str = str_from_self(context, self);
+    if (!str || posArgs->getSize(context) < 1) return PROTO_NONE;
+    std::string s;
+    str->toUTF8String(context, s);
+    std::string suffix;
+    if (posArgs->getAt(context, 0)->isString(context))
+        posArgs->getAt(context, 0)->asString(context)->toUTF8String(context, suffix);
+    if (suffix.size() <= s.size() && s.compare(s.size() - suffix.size(), suffix.size(), suffix) == 0)
+        return context->fromUTF8String(s.substr(0, s.size() - suffix.size()).c_str());
+    return context->fromUTF8String(s.c_str());
+}
+
 static bool is_ascii_whitespace(char c) {
     return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v';
 }
@@ -3523,6 +3555,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     const proto::ProtoString* py_rsplit = proto::ProtoString::fromUTF8String(context, "rsplit");
     strPrototype = strPrototype->setAttribute(context, py_rsplit, context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_rsplit));
     strPrototype = strPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "splitlines"), context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_splitlines));
+    strPrototype = strPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "removeprefix"), context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_removeprefix));
+    strPrototype = strPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "removesuffix"), context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_removesuffix));
     const proto::ProtoString* py_center = proto::ProtoString::fromUTF8String(context, "center");
     const proto::ProtoString* py_ljust = proto::ProtoString::fromUTF8String(context, "ljust");
     const proto::ProtoString* py_rjust = proto::ProtoString::fromUTF8String(context, "rjust");
