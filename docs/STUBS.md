@@ -47,5 +47,5 @@ This document catalogs stub implementations and their completion status.
 | threading | Thread, Lock | Minimal stubs |
 | enum | Enum | Minimal base class |
 | functools | reduce, wraps, lru_cache | reduce implemented; wraps no-op; lru_cache stub (v20) |
-| csv | reader, writer | Stub (NotImplementedError) — v21 |
+| csv | reader, writer | Implemented: reader yields lists of strings; writer.writerow/writerows; delimiter default ','. |
 | xml.etree | ElementTree, Element | Minimal stub — v21 |
