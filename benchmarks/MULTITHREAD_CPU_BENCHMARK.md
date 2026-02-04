@@ -6,7 +6,7 @@ This benchmark compares **wall-clock time** for a fixed amount of CPU-bound work
 
 - **Same total work:** 4 chunks of `sum(range(50_000))` (CPU-bound, no I/O).
 - **Both interpreters** run the script with **`SINGLE_THREAD=1`**, so all 4 chunks run **sequentially in the main thread**. This gives a **fair comparison of per-chunk interpreter speed** without GIL or thread overhead differences.
-- **protoPython:** Its `threading` module is currently a stub; `SINGLE_THREAD=1` is required so the workload runs in the main thread.
+- **protoPython:** Script runs 4 chunks sequentially (no os/threading; fair per-chunk comparison).
 - **CPython 3.14:** Also run with `SINGLE_THREAD=1` so execution model matches (single thread, same total work).
 
 
@@ -49,5 +49,5 @@ Example:
 ## Script details
 
 - **Script:** [multithreaded_cpu.py](multithreaded_cpu.py)
-- **Env:** `SINGLE_THREAD=1` is set by the harness for **both** protopy and CPython so that all work runs in the main thread and the comparison is single-thread vs single-thread.
+- **Env:** Harness sets `SINGLE_THREAD=1` for both. Script has no env dependency; it always runs 4 chunks sequentially for a fair per-chunk comparison.
 - **Workload:** 4 × `sum(range(50_000))`; identical total CPU work in both runs.

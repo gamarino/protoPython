@@ -1,36 +1,20 @@
 # multithreaded_cpu.py - Benchmark: same CPU work, 4 chunks.
 #
-# Execution model:
-# - protoPython: runs with threading (4 ProtoSpace threads in parallel, no GIL).
-# - CPython: harness sets SINGLE_THREAD=1 so 4 chunks run in main thread (GIL
-#   would serialize threads anyway; single-thread keeps comparison stable).
-# Same total work: 4 x sum(range(CHUNK)).
-
-import os
+# Both interpreters run with SINGLE_THREAD=1: 4 chunks run sequentially in the main thread.
+# Same total work: 4 x sum(range(CHUNK)). Fair per-chunk comparison (see MULTITHREAD_CPU_BENCHMARK.md).
 
 CHUNK = 50000
 N_THREADS = 4
 
 
-def cpu_chunk():
+def cpu_chunk(worker_index=None):
     """One unit of CPU-bound work."""
     return sum(range(CHUNK))
 
 
 def main():
-    use_threads = os.environ.get("SINGLE_THREAD", "").strip() != "1"
-    if use_threads:
-        import threading
-        threads = []
-        for _ in range(N_THREADS):
-            t = threading.Thread(target=cpu_chunk)
-            threads.append(t)
-            t.start()
-        for t in threads:
-            t.join()
-    else:
-        for _ in range(N_THREADS):
-            cpu_chunk()
+    for _ in range(N_THREADS):
+        cpu_chunk(None)
     return 0
 
 
