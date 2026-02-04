@@ -1177,6 +1177,19 @@ TEST_F(FoundationTest, MathAtan2) {
     EXPECT_NEAR(val, 0.78539816339744828, 1e-10);  // atan2(1, 1) == pi/4
 }
 
+TEST_F(FoundationTest, OperatorAndOrFloatHex) {
+    proto::ProtoContext* context = env.getContext();
+    const proto::ProtoObject* opMod = env.resolve("operator");
+    ASSERT_NE(opMod, nullptr);
+    const proto::ProtoObject* andM = opMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "and_"));
+    ASSERT_NE(andM, nullptr);
+    const proto::ProtoList* args = context->newList()->appendLast(context, context->fromInteger(12))->appendLast(context, context->fromInteger(10));
+    const proto::ProtoObject* result = andM->asMethod(context)(context, opMod, nullptr, args, nullptr);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->isInteger(context));
+    EXPECT_EQ(result->asLong(context), 12 & 10);  // 0b1100 & 0b1010 == 8
+}
+
 TEST_F(FoundationTest, ReprOrId) {
     proto::ProtoContext* context = env.getContext();
     const proto::ProtoObject* builtins = env.resolve("builtins");
