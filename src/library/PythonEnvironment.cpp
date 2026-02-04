@@ -2354,6 +2354,34 @@ static const proto::ProtoObject* py_str_isdigit(
     return PROTO_TRUE;
 }
 
+static const proto::ProtoObject* py_str_isdecimal(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoString* str = str_from_self(context, self);
+    if (!str) return PROTO_FALSE;
+    std::string s;
+    str->toUTF8String(context, s);
+    if (s.empty()) return PROTO_FALSE;
+    for (unsigned char c : s)
+        if (!std::isdigit(c)) return PROTO_FALSE;
+    return PROTO_TRUE;
+}
+
+static const proto::ProtoObject* py_str_isnumeric(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoString* str = str_from_self(context, self);
+    if (!str) return PROTO_FALSE;
+    std::string s;
+    str->toUTF8String(context, s);
+    if (s.empty()) return PROTO_FALSE;
+    for (unsigned char c : s)
+        if (!std::isdigit(c)) return PROTO_FALSE;
+    return PROTO_TRUE;
+}
+
 static const proto::ProtoObject* py_str_isspace(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -3155,6 +3183,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     const proto::ProtoString* py_islower = proto::ProtoString::fromUTF8String(context, "islower");
     strPrototype = strPrototype->setAttribute(context, py_isupper, context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_isupper));
     strPrototype = strPrototype->setAttribute(context, py_islower, context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_islower));
+    strPrototype = strPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "isdecimal"), context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_isdecimal));
+    strPrototype = strPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "isnumeric"), context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_isnumeric));
 
     listPrototype = context->newObject(true);
     listPrototype = listPrototype->addParent(context, objectPrototype);
