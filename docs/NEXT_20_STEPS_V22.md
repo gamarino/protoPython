@@ -22,7 +22,7 @@ Plan for 20 incremental milestones. Each step: implement → update docs → `gi
 | 372 | builtins.callable | done (existing) |
 | 373 | list.__iadd__ or INPLACE_ADD for list | done |
 | 374 | dict.__ior__ / __iror__ (in-place union) | done |
-| 375 | Stdlib stub html (escape/unescape) | pending |
+| 375 | Stdlib stub html (escape/unescape) | done |
 | 376 | Stdlib stub difflib (minimal) | pending |
 | 377 | Foundation test UNARY_INVERT or math.tan | pending |
 | 378 | Foundation test setattr or callable | pending |
