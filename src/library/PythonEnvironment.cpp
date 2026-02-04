@@ -23,6 +23,8 @@
 #include <cmath>
 #include <climits>
 #include <cstdio>
+#include <fstream>
+#include <sstream>
 #include <vector>
 
 namespace protoPython {
@@ -4496,6 +4498,33 @@ int PythonEnvironment::executeModule(const std::string& moduleName) {
     const proto::ProtoObject* mod = resolve(moduleName);
     if (mod == nullptr || mod == PROTO_NONE)
         return -1;
+
+    const proto::ProtoString* fileKey = proto::ProtoString::fromUTF8String(context, "__file__");
+    const proto::ProtoString* executedKey = proto::ProtoString::fromUTF8String(context, "__executed__");
+    const proto::ProtoObject* fileObj = mod->getAttribute(context, fileKey);
+    if (fileObj && fileObj->isString(context) && !mod->getAttribute(context, executedKey)) {
+        std::string path;
+        fileObj->asString(context)->toUTF8String(context, path);
+        if (path.size() >= 3 && path.compare(path.size() - 3, 3, ".py") == 0) {
+            std::ifstream f(path);
+            if (f) {
+                std::stringstream buf;
+                buf << f.rdbuf();
+                std::string source = buf.str();
+                f.close();
+                if (builtinsModule) {
+                    const proto::ProtoObject* execFn = builtinsModule->getAttribute(context, proto::ProtoString::fromUTF8String(context, "exec"));
+                    if (execFn && execFn->asMethod(context)) {
+                        const proto::ProtoList* args = context->newList()
+                            ->appendLast(context, context->fromUTF8String(source.c_str()))
+                            ->appendLast(context, const_cast<proto::ProtoObject*>(mod));
+                        execFn->asMethod(context)(context, builtinsModule, nullptr, args, nullptr);
+                        const_cast<proto::ProtoObject*>(mod)->setAttribute(context, executedKey, PROTO_TRUE);
+                    }
+                }
+            }
+        }
+    }
 
     if (executionHook) executionHook(moduleName, 0);
     if (traceFunction) {
