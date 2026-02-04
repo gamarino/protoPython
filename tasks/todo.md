@@ -65,6 +65,12 @@ See [docs/NEXT_20_STEPS_V6.md](../docs/NEXT_20_STEPS_V6.md). Steps 45–64 plann
 - [x] Step 56: itertools islice, count
 - [x] Step 57: re module stub
 - [x] Step 58: json module stub
+- [x] Step 59: float prototype
+- [x] Step 60: bool type
+- [x] Step 61: sys.path mutable (--path appends)
+- [x] Step 62: sys.modules register loaded
+- [x] Step 63: pyc marshal stub
+- [x] Step 64: test_execution_engine
 - [x] Step 25: Foundation test stability / GC reproducer documentation
 - [x] Step 26: Builtins callable, getattr, setattr, hasattr, delattr
 - [x] Step 27: Slice object + __getitem__ slice support for list/str
