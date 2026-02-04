@@ -188,7 +188,54 @@ const proto::ProtoObject* executeMinimalBytecode(
                 const proto::ProtoList* lst = ctx->newList();
                 for (int j = 0; j < arg; ++j)
                     lst = lst->appendLast(ctx, elems[j]);
-                stack.push_back(lst->asObject(ctx));
+                proto::ProtoObject* listObj = const_cast<proto::ProtoObject*>(ctx->newObject(true));
+                listObj->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__data__"), lst->asObject(ctx));
+                stack.push_back(listObj);
+            }
+        } else if (op == OP_BINARY_SUBSCR) {
+            i++;
+            if (stack.size() < 2) continue;
+            const proto::ProtoObject* key = stack.back();
+            stack.pop_back();
+            const proto::ProtoObject* container = stack.back();
+            stack.pop_back();
+            const proto::ProtoObject* getitem = container->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__getitem__"));
+            if (getitem && getitem->asMethod(ctx)) {
+                const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, key);
+                const proto::ProtoObject* result = getitem->asMethod(ctx)(ctx, container, nullptr, oneArg, nullptr);
+                if (result) stack.push_back(result);
+            } else {
+                const proto::ProtoObject* data = container->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__data__"));
+                if (data && data->asList(ctx) && key->isInteger(ctx)) {
+                    long long idx = key->asLong(ctx);
+                    const proto::ProtoList* list = data->asList(ctx);
+                    if (idx >= 0 && static_cast<unsigned long>(idx) < list->getSize(ctx)) {
+                        stack.push_back(list->getAt(ctx, static_cast<int>(idx)));
+                    }
+                } else if (data && data->asSparseList(ctx)) {
+                    unsigned long h = key->getHash(ctx);
+                    const proto::ProtoObject* val = data->asSparseList(ctx)->getAt(ctx, h);
+                    if (val) stack.push_back(val);
+                }
+            }
+        } else if (op == OP_BUILD_MAP) {
+            i++;
+            if (stack.size() >= static_cast<size_t>(arg * 2)) {
+                proto::ProtoObject* mapObj = const_cast<proto::ProtoObject*>(ctx->newObject(true));
+                const proto::ProtoSparseList* data = ctx->newSparseList();
+                const proto::ProtoList* keys = ctx->newList();
+                for (int j = 0; j < arg; ++j) {
+                    const proto::ProtoObject* value = stack.back();
+                    stack.pop_back();
+                    const proto::ProtoObject* key = stack.back();
+                    stack.pop_back();
+                    unsigned long h = key->getHash(ctx);
+                    data = data->setAt(ctx, h, value);
+                    keys = keys->appendLast(ctx, key);
+                }
+                mapObj->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__data__"), data->asObject(ctx));
+                mapObj->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__keys__"), keys->asObject(ctx));
+                stack.push_back(mapObj);
             }
         } else if (op == OP_CALL_FUNCTION) {
             i++;

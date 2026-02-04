@@ -35,6 +35,10 @@ constexpr int OP_LOAD_ATTR = 112;
 constexpr int OP_STORE_ATTR = 113;
 /** BUILD_LIST: pop arg values from stack, build list, push list. */
 constexpr int OP_BUILD_LIST = 114;
+/** BINARY_SUBSCR: pop index, pop container, push container[index]. */
+constexpr int OP_BINARY_SUBSCR = 115;
+/** BUILD_MAP: pop 2*arg (value, key) pairs, build dict, push dict. */
+constexpr int OP_BUILD_MAP = 116;
 
 /**
  * @brief Executes bytecode: LOAD_CONST, RETURN_VALUE, LOAD_NAME, STORE_NAME,
