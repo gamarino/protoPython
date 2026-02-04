@@ -34,7 +34,7 @@ This document catalogs stub implementations and their completion status.
 |--------|------|----------|
 | copy | copy, deepcopy | Implemented: shallow/deep for list, dict, tuple, set; else return x. Deep copy has no cycle detection. |
 | hashlib | md5, sha1, sha256 | Return None |
-| base64 | b64encode, b64decode | Return empty bytes |
+| base64 | b64encode, b64decode | Implemented: RFC 4648; accepts bytes-like; returns bytes. |
 | struct | pack, unpack | Return empty bytes / empty tuple |
 | getopt | getopt | Return [], [] |
 | argparse | ArgumentParser | Stub parser |
