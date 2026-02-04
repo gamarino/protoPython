@@ -71,6 +71,8 @@ constexpr int OP_UNARY_NEGATIVE = 130;
 constexpr int OP_UNARY_NOT = 131;
 /** UNARY_INVERT: pop one value, push ~TOS (bitwise invert; for int: -x-1). */
 constexpr int OP_UNARY_INVERT = 132;
+/** POP_TOP: discard the top-of-stack value. */
+constexpr int OP_POP_TOP = 133;
 
 /**
  * @brief Executes bytecode: LOAD_CONST, RETURN_VALUE, LOAD_NAME, STORE_NAME,

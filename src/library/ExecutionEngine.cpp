@@ -474,6 +474,9 @@ const proto::ProtoObject* executeMinimalBytecode(
         } else if (op == OP_DUP_TOP) {
             if (!stack.empty())
                 stack.push_back(stack.back());
+        } else if (op == OP_POP_TOP) {
+            if (!stack.empty())
+                stack.pop_back();
         }
     }
     return stack.empty() ? PROTO_NONE : stack.back();
