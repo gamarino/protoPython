@@ -54,7 +54,7 @@ See [docs/NEXT_20_STEPS_V6.md](../docs/NEXT_20_STEPS_V6.md). Steps 45–64 compl
 
 ## 10. Next 20 Steps (v7)
 
-See [docs/NEXT_20_STEPS_V7.md](../docs/NEXT_20_STEPS_V7.md). Steps 65–84 planned.
+See [docs/NEXT_20_STEPS_V7.md](../docs/NEXT_20_STEPS_V7.md). Steps 65–84 completed.
 - [x] Step 45: repr builtin
 - [x] Step 46: format builtin
 - [x] Step 47: open builtin

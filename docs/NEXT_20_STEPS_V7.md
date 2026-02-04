@@ -4,6 +4,8 @@ Plan for 20 incremental milestones. Each step: implement → update docs → `gi
 
 **Prerequisite**: Next 20 Steps (v6) completed (steps 45–64).
 
+**Status**: Steps 65–84 completed.
+
 ---
 
 ## Steps 65–84
