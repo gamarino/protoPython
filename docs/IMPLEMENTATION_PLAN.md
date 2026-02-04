@@ -91,7 +91,7 @@ We aim for "No-Modification" compatibility with CPython tests.
 
 **Completed: Next 20 Steps v27 (465–484).** See [NEXT_20_STEPS_V27.md](NEXT_20_STEPS_V27.md). INPLACE_LSHIFT, INPLACE_RSHIFT, INPLACE_AND, INPLACE_OR, INPLACE_XOR; math.erfc, math.gamma, math.lgamma; operator (existing); binascii, uu stubs; foundation tests MathErfc, MathGamma; execution-engine tests InplaceLshift, InplaceAnd; STUBS and todo updated.
 
-**Planned: Next 20 Steps v28 (485–504).** See [NEXT_20_STEPS_V28.md](NEXT_20_STEPS_V28.md). ROT_THREE, ROT_FOUR; math.dist, math.perm, math.comb; configparser, getpass stubs; foundation and execution-engine tests; STUBS and todo updates.
+**Completed: Next 20 Steps v28 (485–504).** See [NEXT_20_STEPS_V28.md](NEXT_20_STEPS_V28.md). ROT_THREE, ROT_FOUR; math.dist, math.perm, math.comb; operator (existing); configparser, getpass stubs; foundation tests MathDist, MathPerm, MathComb; execution-engine tests RotThree, RotFour; STUBS and todo updated.
 
 **Completed: Next 20 Steps v29 (505–524).** See [NEXT_20_STEPS_V29.md](NEXT_20_STEPS_V29.md). DUP_TOP_TWO; math.factorial, math.prod; operator (existing); pickle, logging stubs; foundation tests MathFactorial, MathProd; execution-engine test DupTopTwo; STUBS and todo updated.
 
