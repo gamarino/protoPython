@@ -353,6 +353,22 @@ static const proto::ProtoObject* py_combinations_stub(
     return PROTO_NONE;
 }
 
+static const proto::ProtoObject* py_combinations_with_replacement_stub(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    (void)self;
+    (void)posArgs;
+    return PROTO_NONE;
+}
+
+static const proto::ProtoObject* py_permutations_stub(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    (void)self;
+    (void)posArgs;
+    return PROTO_NONE;
+}
+
 static const proto::ProtoObject* py_chain(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
@@ -452,6 +468,10 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_product_stub));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "combinations"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_combinations_stub));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "combinations_with_replacement"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_combinations_with_replacement_stub));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "permutations"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_permutations_stub));
 
     return mod;
 }
