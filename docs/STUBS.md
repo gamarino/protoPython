@@ -169,8 +169,11 @@ This document catalogs stub implementations and their completion status.
 | inspect | isfunction, ismodule, getsourcefile, signature | Stub: isfunction/ismodule return False; getsourcefile return None; signature raises ValueError. No real introspection. |
 | types | FunctionType, ModuleType, SimpleNamespace | Stub: FunctionType, ModuleType placeholder classes; SimpleNamespace minimal (init with **kwargs, setattr). |
 
-## Python stdlib — New stubs
+## Python stdlib — New stubs (v36)
 
+Reserved for v36. No new stub entries in this batch (v36 focused on documentation: concurrency model, protoCore compatibility).
+
+## Python stdlib — New stubs
 
 | Module | Item | Behavior |
 |--------|------|----------|

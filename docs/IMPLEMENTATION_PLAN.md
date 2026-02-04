@@ -113,6 +113,8 @@ We aim for "No-Modification" compatibility with CPython tests.
 
 **Completed: Next 20 Steps v35 (625–644).** See [NEXT_20_STEPS_V35.md](NEXT_20_STEPS_V35.md). math.sumprod; inspect, types stubs; foundation test MathSumprod; STUBS, todo, TESTING updated.
 
+**Completed: Next 20 Steps v36 (645–664).** See [NEXT_20_STEPS_V36.md](NEXT_20_STEPS_V36.md). Concurrent execution model (GIL_FREE_AUDIT); protoCore compatibility (INSTALLATION); STUBS v36 section; IMPLEMENTATION_PLAN, todo, TESTING updated.
+
 ## 5. Debugging & IDE Support
 To be a viable replacement, `protoPython` must support professional developer workflows.
 

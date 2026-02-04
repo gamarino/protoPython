@@ -10,6 +10,12 @@ This document lists mutable operations in the protoPython library and their thre
 - **Execution model:** A single `PythonEnvironment` and single `ProtoContext` may be used from multiple threads. All shared mutable state in protoPython (trace function, pending exception, context registration map, resolve cache) is made thread-safe in Phase 4 (see follow-up resolutions below).
 - **Module resolution:** We rely on protoCore's `getImportModule` (SharedModuleCache with `std::shared_mutex`, moduleRoots under `moduleRootsMutex`) as the source of thread-safety for concurrent imports. **ProtoSpace and module cache:** Resolved per protoCore [MODULE_DISCOVERY.md](../../protoCore/docs/MODULE_DISCOVERY.md).
 
+## Concurrent execution model
+
+- **Shared env/context and thread-safe layers:** Using a single `PythonEnvironment` and single `ProtoContext` from multiple OS threads is safe for protoPython’s thread-safe layers: trace function, resolve cache, and context registration map. Attribute mutations go through protoCore CAS.
+- **Allocation and GC:** Object allocation and garbage collection in protoCore are tied to ProtoSpace, ProtoContext, and ProtoThread (per-thread). Using one ProtoContext from multiple OS threads without per-thread ProtoThread registration would risk allocator/GC corruption. True concurrent execution from multiple threads therefore requires either per-thread ProtoThread/context registration (when supported by protoCore) or serialized execution (only one thread allocating at a time).
+- **Current test:** The Phase 4 concurrent test (ConcurrentExecutionTwoThreads) launches two threads that share one env/context but **serializes** the compile+run sections (mutex around allocation and execution). This validates the thread-safe layers from multiple threads without violating the allocation model.
+
 ## Summary
 
 - **protoCore foundation**: ProtoList and ProtoSparseList are immutable-by-default (e.g. `appendLast`, `setAt` return new structures). ProtoObject attribute storage uses lock-free CAS on `mutableRoot`; ProtoSpace and module resolution are thread-safe per protoCore (SharedModuleCache, moduleRoots).

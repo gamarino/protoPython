@@ -356,5 +356,11 @@ See [docs/NEXT_20_STEPS_V35.md](../docs/NEXT_20_STEPS_V35.md). Steps 625–644: 
 
 - [x] Steps 625–644
 
+## 35. Next 20 Steps (v36) — completed
+
+See [docs/NEXT_20_STEPS_V36.md](../docs/NEXT_20_STEPS_V36.md). Steps 645–664: Concurrent execution model (GIL_FREE_AUDIT); protoCore compatibility (INSTALLATION); STUBS v36 section; IMPLEMENTATION_PLAN, todo, TESTING updated.
+
+- [x] Steps 645–664
+
 ---
 *Updated from plan implementation. Mark items complete as work progresses.*

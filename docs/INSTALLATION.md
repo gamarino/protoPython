@@ -8,6 +8,10 @@ This guide covers installation procedures for Linux (Debian/Ubuntu, Fedora/RHEL)
 - **C++20**-capable compiler (GCC 10+, Clang 12+, MSVC 2019+)
 - **protoCore** — must be available in the parent directory of protoPython (`../protoCore`)
 
+### ProtoCore compatibility
+
+protoPython expects protoCore as a CMake subproject in a sibling directory (`../protoCore`). The protoCore version or commit is **not** pinned; the build uses whatever is present at configure time. For reproducible builds and CI, use a known protoCore commit (e.g. a tag or a specific commit hash) and document it in your environment. Breaking changes in protoCore (API or ABI) can require updates in protoPython; run the protoPython test suite (e.g. `ctest -R test_foundation_filtered test_execution_engine test_regr`) after updating protoCore.
+
 ---
 
 ## Linux
