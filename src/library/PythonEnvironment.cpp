@@ -2815,10 +2815,13 @@ static const proto::ProtoObject* py_str_split(
         const proto::ProtoObject* sepObj = posArgs->getAt(context, 0);
         if (sepObj->isString(context)) sepObj->asString(context)->toUTF8String(context, sep);
     }
+    long long maxsplit = -1;
+    if (posArgs->getSize(context) >= 2 && posArgs->getAt(context, 1)->isInteger(context))
+        maxsplit = posArgs->getAt(context, 1)->asLong(context);
     const proto::ProtoList* result = context->newList();
     if (sep.empty()) return PROTO_NONE;
     size_t start = 0;
-    for (;;) {
+    while (maxsplit != 0) {
         size_t pos = s.find(sep, start);
         if (pos == std::string::npos) {
             result = result->appendLast(context, context->fromUTF8String(s.substr(start).c_str()));
@@ -2826,7 +2829,10 @@ static const proto::ProtoObject* py_str_split(
         }
         result = result->appendLast(context, context->fromUTF8String(s.substr(start, pos - start).c_str()));
         start = pos + sep.size();
+        if (maxsplit > 0) maxsplit--;
     }
+    if (maxsplit != 0 && start < s.size())
+        result = result->appendLast(context, context->fromUTF8String(s.substr(start).c_str()));
     return result->asObject(context);
 }
 
