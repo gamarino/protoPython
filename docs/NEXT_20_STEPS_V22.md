@@ -4,7 +4,7 @@ Plan for 20 incremental milestones. Each step: implement → update docs → `gi
 
 **Prerequisite**: Next 20 Steps (v21) completed (steps 345–364). See [NEXT_20_STEPS_V21.md](NEXT_20_STEPS_V21.md).
 
-**Status**: In progress.
+**Status**: Completed.
 
 ---
 
@@ -27,14 +27,14 @@ Plan for 20 incremental milestones. Each step: implement → update docs → `gi
 | 377 | Foundation test UNARY_INVERT or math.tan | done |
 | 378 | Foundation test setattr or callable | done |
 | 379 | Foundation test list __iadd__ or dict __ior__ | done |
-| 380 | Execution engine test POP_TOP or UNARY_INVERT | pending |
-| 381 | Update STUBS.md with v22 entries | pending |
-| 382 | Update tasks/todo.md for v22 | pending |
-| 383 | Finalize NEXT_20_STEPS_V22.md | pending |
-| 384 | IMPLEMENTATION_PLAN v22 completion | pending |
+| 380 | Execution engine test POP_TOP or UNARY_INVERT | done |
+| 381 | Update STUBS.md with v22 entries | done |
+| 382 | Update tasks/todo.md for v22 | done |
+| 383 | Finalize NEXT_20_STEPS_V22.md | done |
+| 384 | IMPLEMENTATION_PLAN v22 completion | done |
 
 ---
 
 ## Summary
 
-(To be filled when steps 365–384 are complete.)
+Steps 365–384 delivered: execution engine UNARY_INVERT and POP_TOP; math.tan; operator.invert; str.isascii and bytes.isascii; builtins setattr and callable; list __iadd__ and dict __ior__/__iror__; minimal html and difflib stubs; foundation and execution-engine tests (UNARY_INVERT, POP_TOP, setattr/callable, list __iadd__/dict __ior__); STUBS.md and tasks/todo.md updated; v22 doc and IMPLEMENTATION_PLAN finalized.
