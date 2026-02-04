@@ -155,13 +155,12 @@ static const proto::ProtoObject* py_list_getitem(
     const proto::ProtoObject* indexObj = positionalParameters->getAt(context, 0);
     long long size = static_cast<long long>(list->getSize(context));
 
-    SliceBounds sb = get_slice_bounds(context, indexObj, size);
-    if (sb.isSlice && sb.step == 1) {
-        const proto::ProtoList* result = context->newList();
-        for (long long i = sb.start; i < sb.stop; i += sb.step) {
-            result = result->appendLast(context, list->getAt(context, static_cast<int>(i)));
-        }
-        return result->asObject(context);
+    if (indexObj->isInteger(context)) {
+        int index = static_cast<int>(indexObj->asLong(context));
+        unsigned long ulen = list->getSize(context);
+        if (index < 0) index += static_cast<int>(ulen);
+        if (index < 0 || static_cast<unsigned long>(index) >= ulen) return PROTO_NONE;
+        return list->getAt(context, index);
     }
 
     const proto::ProtoList* sliceList = indexObj->asList(context);
@@ -183,13 +182,19 @@ static const proto::ProtoObject* py_list_getitem(
             }
             return result->asObject(context);
         }
+        return PROTO_NONE;
     }
 
-    int index = static_cast<int>(indexObj->asLong(context));
-    unsigned long ulen = list->getSize(context);
-    if (index < 0) index += static_cast<int>(ulen);
-    if (index < 0 || static_cast<unsigned long>(index) >= ulen) return PROTO_NONE;
-    return list->getAt(context, index);
+    SliceBounds sb = get_slice_bounds(context, indexObj, size);
+    if (sb.isSlice && sb.step == 1) {
+        const proto::ProtoList* result = context->newList();
+        for (long long i = sb.start; i < sb.stop; i += sb.step) {
+            result = result->appendLast(context, list->getAt(context, static_cast<int>(i)));
+        }
+        return result->asObject(context);
+    }
+
+    return PROTO_NONE;
 }
 
 static const proto::ProtoObject* py_list_setitem(
@@ -686,14 +691,34 @@ static const proto::ProtoObject* py_list_extend(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
-    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    if (!positionalParameters || positionalParameters->getSize(context) < 1) return PROTO_NONE;
     const proto::ProtoObject* otherObj = positionalParameters->getAt(context, 0);
-    const proto::ProtoList* otherList = otherObj->asList(context);
-    if (!otherList) return PROTO_NONE;
+    if (!otherObj) return PROTO_NONE;
+    
+    // Try multiple ways to get the list to extend with
+    const proto::ProtoList* otherList = nullptr;
+    
+    // 1. Try direct asList conversion first (handles ProtoList wrapped as object)
+    otherList = otherObj->asList(context);
+    
+    // 2. If that fails, try getting __data__ attribute
+    if (!otherList) {
+        const proto::ProtoObject* otherData = otherObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"));
+        if (otherData) {
+            otherList = otherData->asList(context);
+        }
+    }
+    
+    // Get the current list from self - use the same pattern as py_list_append
     const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "__data__");
     const proto::ProtoObject* data = self->getAttribute(context, dataName);
-    const proto::ProtoList* list = data && data->asList(context) ? data->asList(context) : nullptr;
-    if (!list) return PROTO_NONE;
+    if (!data || !data->asList(context)) return PROTO_NONE;
+    const proto::ProtoList* list = data->asList(context);
+    
+    // If no otherList, return early
+    if (!otherList) return PROTO_NONE;
+    
+    // Perform extend by appending each element from otherList
     const proto::ProtoList* newList = list;
     unsigned long otherSize = otherList->getSize(context);
     for (unsigned long i = 0; i < otherSize; ++i) {
@@ -731,7 +756,7 @@ static const proto::ProtoObject* py_list_remove(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
-    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    if (!positionalParameters || positionalParameters->getSize(context) < 1) return PROTO_NONE;
     const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "__data__");
     const proto::ProtoObject* data = self->getAttribute(context, dataName);
     const proto::ProtoList* list = data && data->asList(context) ? data->asList(context) : nullptr;
@@ -745,7 +770,22 @@ static const proto::ProtoObject* py_list_remove(
             self->setAttribute(context, dataName, newList->asObject(context));
             return PROTO_NONE;
         }
-        if (elem->compare(context, value) == 0) {
+        if (elem->isInteger(context) && value->isInteger(context) && elem->compare(context, value) == 0) {
+            const proto::ProtoList* newList = list->removeAt(context, static_cast<int>(i));
+            self->setAttribute(context, dataName, newList->asObject(context));
+            return PROTO_NONE;
+        }
+        if (elem->isString(context) && value->isString(context)) {
+            std::string es, vs;
+            elem->asString(context)->toUTF8String(context, es);
+            value->asString(context)->toUTF8String(context, vs);
+            if (es == vs) {
+                const proto::ProtoList* newList = list->removeAt(context, static_cast<int>(i));
+                self->setAttribute(context, dataName, newList->asObject(context));
+                return PROTO_NONE;
+            }
+        }
+        if (elem->isDouble(context) && value->isDouble(context) && elem->asDouble(context) == value->asDouble(context)) {
             const proto::ProtoList* newList = list->removeAt(context, static_cast<int>(i));
             self->setAttribute(context, dataName, newList->asObject(context));
             return PROTO_NONE;
