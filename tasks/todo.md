@@ -64,6 +64,10 @@ See [docs/NEXT_20_STEPS_V8.md](../docs/NEXT_20_STEPS_V8.md). Steps 85–104 comp
 
 See [docs/NEXT_20_STEPS_V9.md](../docs/NEXT_20_STEPS_V9.md). Steps 105–124 in progress.
 - [x] Step 105: filter builtin
+- [x] Step 106: map builtin
+- [x] Step 107: next(iter, default=None)
+- [x] Step 108: exec BINARY_SUBSCR
+- [x] Step 109: exec BUILD_MAP
 - [x] Step 95: benchmark range_iterate
 - [x] Step 96: integrate benchmarks into harness and report
 - [x] Step 97: vars builtin (stub)

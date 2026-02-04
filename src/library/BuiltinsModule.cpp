@@ -108,21 +108,28 @@ static const proto::ProtoObject* py_next(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
+    (void)self;
+    (void)parentLink;
+    (void)keywordParameters;
     if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
+    const proto::ProtoObject* defaultVal = positionalParameters->getSize(context) >= 2
+        ? positionalParameters->getAt(context, 1) : nullptr;
 
     if (obj->asStringIterator(context)) {
         proto::ProtoStringIterator* it = const_cast<proto::ProtoStringIterator*>(obj->asStringIterator(context));
-        if (!it || !it->hasNext(context)) return PROTO_NONE;
+        if (!it || !it->hasNext(context)) return defaultVal ? defaultVal : PROTO_NONE;
         return it->next(context);
     }
 
     const proto::ProtoObject* nextMethod = obj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__next__"));
     if (nextMethod && nextMethod->asMethod(context)) {
-        return nextMethod->asMethod(context)(context, obj, nullptr, nullptr, nullptr);
+        const proto::ProtoObject* result = nextMethod->asMethod(context)(context, obj, nullptr, nullptr, nullptr);
+        if (result == PROTO_NONE && defaultVal) return defaultVal;
+        return result;
     }
 
-    return PROTO_NONE;
+    return defaultVal ? defaultVal : PROTO_NONE;
 }
 
 static const proto::ProtoObject* py_contains(
@@ -914,6 +921,47 @@ static const proto::ProtoObject* py_filter_next(
     }
 }
 
+static const proto::ProtoObject* py_map(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    (void)parentLink;
+    (void)keywordParameters;
+    if (positionalParameters->getSize(context) < 2) return PROTO_NONE;
+    const proto::ProtoObject* func = positionalParameters->getAt(context, 0);
+    const proto::ProtoObject* iterable = positionalParameters->getAt(context, 1);
+    const proto::ProtoObject* call = func->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__call__"));
+    if (!call || !call->asMethod(context)) return PROTO_NONE;
+    const proto::ProtoObject* iterM = iterable->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__iter__"));
+    if (!iterM || !iterM->asMethod(context)) return PROTO_NONE;
+    const proto::ProtoObject* it = iterM->asMethod(context)(context, iterable, nullptr, context->newList(), nullptr);
+    if (!it || it == PROTO_NONE) return PROTO_NONE;
+    const proto::ProtoObject* mapProto = self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__map_proto__"));
+    if (!mapProto) return PROTO_NONE;
+    const proto::ProtoObject* mapObj = mapProto->newChild(context, true);
+    mapObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__map_func__"), func);
+    mapObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__map_iter__"), it);
+    return mapObj;
+}
+
+static const proto::ProtoObject* py_map_next(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoObject* func = self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__map_func__"));
+    const proto::ProtoObject* it = self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__map_iter__"));
+    if (!func || !it) return PROTO_NONE;
+    const proto::ProtoObject* call = func->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__call__"));
+    const proto::ProtoObject* nextM = it->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__next__"));
+    if (!call || !call->asMethod(context) || !nextM || !nextM->asMethod(context)) return PROTO_NONE;
+    const proto::ProtoObject* val = nextM->asMethod(context)(context, it, nullptr, context->newList(), nullptr);
+    if (!val || val == PROTO_NONE) return PROTO_NONE;
+    const proto::ProtoList* oneArg = context->newList()->appendLast(context, val);
+    return call->asMethod(context)(context, func, nullptr, oneArg, nullptr);
+}
+
 static const proto::ProtoObject* py_range_next(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -988,6 +1036,11 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     filterProto = filterProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__next__"), ctx->fromMethod(const_cast<proto::ProtoObject*>(filterProto), py_filter_next));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__filter_proto__"), filterProto);
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "filter"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_filter));
+    const proto::ProtoObject* mapProto = ctx->newObject(true);
+    mapProto = mapProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iter__"), ctx->fromMethod(const_cast<proto::ProtoObject*>(mapProto), py_iter_self));
+    mapProto = mapProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__next__"), ctx->fromMethod(const_cast<proto::ProtoObject*>(mapProto), py_map_next));
+    builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__map_proto__"), mapProto);
+    builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "map"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_map));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "sum"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_sum));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "all"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_all));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "any"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_any));

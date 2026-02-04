@@ -13,10 +13,10 @@ Plan for 20 incremental milestones. Each step: implement → update docs → `gi
 | Step | Description | Commit message |
 |------|-------------|----------------|
 | 105 | Builtin `filter(function, iterable)` | done |
-| 106 | Builtin `map(function, iterable)` (single iterable) | `feat(protoPython): map builtin` |
-| 107 | Builtin `next(iter, default=None)` with optional second arg | `feat(protoPython): next default` |
-| 108 | Execution engine: `BINARY_SUBSCR` (subscript) | `feat(protoPython): exec binary subscr` |
-| 109 | Execution engine: `BUILD_MAP` (dict from stack) | `feat(protoPython): exec build map` |
+| 106 | Builtin `map(function, iterable)` (single iterable) | done |
+| 107 | Builtin `next(iter, default=None)` with optional second arg | done |
+| 108 | Execution engine: `BINARY_SUBSCR` (subscript) | done |
+| 109 | Execution engine: `BUILD_MAP` (dict from stack) | done |
 | 110 | Fix or document `list.extend(iterable)` for non-list iterables | `fix(protoPython): list extend iterable` |
 | 111 | `typing` stub: `Any`, `List`, `Dict` (type hints) | `feat(protoPython): typing stub` |
 | 112 | `dataclasses` stub: `dataclass` decorator placeholder | `feat(protoPython): dataclasses stub` |
