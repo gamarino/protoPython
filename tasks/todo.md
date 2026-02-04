@@ -56,9 +56,9 @@ See [docs/NEXT_20_STEPS_V6.md](../docs/NEXT_20_STEPS_V6.md). Steps 45–64 compl
 
 See [docs/NEXT_20_STEPS_V7.md](../docs/NEXT_20_STEPS_V7.md). Steps 65–84 completed.
 
-## 11. Next 20 Steps (v8)
+## 11. Next 20 Steps (v8) — completed
 
-See [docs/NEXT_20_STEPS_V8.md](../docs/NEXT_20_STEPS_V8.md). Steps 85–104 planned.
+See [docs/NEXT_20_STEPS_V8.md](../docs/NEXT_20_STEPS_V8.md). Steps 85–104 completed.
 - [x] Step 95: benchmark range_iterate
 - [x] Step 96: integrate benchmarks into harness and report
 - [x] Step 97: vars builtin (stub)
@@ -66,6 +66,9 @@ See [docs/NEXT_20_STEPS_V8.md](../docs/NEXT_20_STEPS_V8.md). Steps 85–104 plan
 - [x] Step 99: os.path stub
 - [x] Step 100: pathlib stub
 - [x] Step 101: collections.abc stub
+- [x] Step 102: CTest exec engine LOAD_ATTR, STORE_ATTR, BUILD_LIST
+- [x] Step 103: regrtest persistence (--output, REGRTEST_RESULTS, CTest regrtest_persistence)
+- [x] Step 104: docs v8 completion
 - [x] Step 85: pow builtin
 - [x] Step 86: round builtin
 - [x] Step 87: str strip lstrip rstrip
