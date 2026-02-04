@@ -218,6 +218,11 @@ const proto::ProtoObject* executeMinimalBytecode(
                 stack.push_back(ctx->fromInteger(-a->asLong(ctx)));
             else if (a->isDouble(ctx))
                 stack.push_back(ctx->fromDouble(-a->asDouble(ctx)));
+        } else if (op == OP_UNARY_NOT) {
+            if (stack.empty()) continue;
+            const proto::ProtoObject* a = stack.back();
+            stack.pop_back();
+            stack.push_back(isTruthy(ctx, a) ? PROTO_FALSE : PROTO_TRUE);
         } else if (op == OP_COMPARE_OP) {
             i++;
             if (stack.size() < 2) continue;
