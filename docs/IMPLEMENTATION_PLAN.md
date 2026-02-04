@@ -79,7 +79,7 @@ We aim for "No-Modification" compatibility with CPython tests.
 
 **Completed: Next 20 Steps v21 (345–364).** See [NEXT_20_STEPS_V21.md](NEXT_20_STEPS_V21.md). UNARY_NEGATIVE, UNARY_NOT; math sqrt/sin/cos; operator neg/not_; str.isprintable; bytes.isdigit/isalpha; list.__reversed__/reversed(); dict.__or__/__ror__; getattr/slice repr; csv, xml.etree stubs; foundation tests MathSqrt, DictUnion, OperatorNegOrGetattr; STUBS and todo updated.
 
-**Next 20 Steps v22 (365–384).** See [NEXT_20_STEPS_V22.md](NEXT_20_STEPS_V22.md). Planned: UNARY_INVERT, POP_TOP; math.tan; operator.invert; str/bytes.isascii; setattr, callable; list __iadd__, dict __ior__/__iror__; html, difflib stubs; foundation and engine tests; STUBS and todo updates.
+**Completed: Next 20 Steps v22 (365–384).** See [NEXT_20_STEPS_V22.md](NEXT_20_STEPS_V22.md). UNARY_INVERT, POP_TOP; math.tan; operator.invert; str/bytes.isascii; setattr, callable; list __iadd__, dict __ior__/__iror__; html, difflib stubs; foundation and engine tests; STUBS and todo updated.
 
 ## 5. Debugging & IDE Support
 To be a viable replacement, `protoPython` must support professional developer workflows.
