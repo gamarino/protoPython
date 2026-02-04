@@ -4,18 +4,19 @@
 namespace protoPython {
 namespace math {
 
-static const proto::ProtoObject* py_sqrt(
-    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
-    double x = static_cast<double>(posArgs->getAt(ctx, 0)->asLong(ctx));
-    return ctx->fromDouble(std::sqrt(x));
-}
-
 static double toDouble(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
     if (obj->isDouble(ctx)) return obj->asDouble(ctx);
     if (obj->isInteger(ctx)) return static_cast<double>(obj->asLong(ctx));
     return 0.0;
+}
+
+static const proto::ProtoObject* py_sqrt(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    double x = toDouble(ctx, posArgs->getAt(ctx, 0));
+    if (x < 0.0) return PROTO_NONE;
+    return ctx->fromDouble(std::sqrt(x));
 }
 
 static const proto::ProtoObject* py_floor(
