@@ -116,6 +116,10 @@ See [docs/NEXT_20_STEPS_V20.md](../docs/NEXT_20_STEPS_V20.md). Steps 325–344: 
 
 See [docs/NEXT_20_STEPS_V21.md](../docs/NEXT_20_STEPS_V21.md). Steps 345–364: UNARY_NEGATIVE, UNARY_NOT; math.sqrt/sin/cos; operator.neg/not_; str.isprintable; bytes.isdigit/isalpha; list.__reversed__/reversed(); dict.__or__/__ror__; getattr/slice repr; csv, xml.etree stubs; foundation tests MathSqrt, DictUnion, OperatorNegOrGetattr; STUBS and todo updated.
 
+## 26. Next 20 Steps (v22) — completed
+
+See [docs/NEXT_20_STEPS_V22.md](../docs/NEXT_20_STEPS_V22.md). Steps 365–384: UNARY_INVERT, POP_TOP; math.tan; operator.invert; str/bytes.isascii; setattr, callable; list __iadd__, dict __ior__/__iror__; html, difflib stubs; foundation and engine tests; STUBS and todo updated.
+
 - [x] Step 145: ord builtin
 - [x] Step 146: chr builtin
 - [x] Step 147: bin builtin
