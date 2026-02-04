@@ -942,6 +942,15 @@ TEST_F(FoundationTest, StringDunders) {
     upperStr->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->fromUTF8String("ABC"));
     EXPECT_EQ(isupperM->asMethod(context)(context, upperStr, nullptr, context->newList(), nullptr), PROTO_TRUE);
     EXPECT_EQ(isupperM->asMethod(context)(context, wrapped, nullptr, context->newList(), nullptr), PROTO_FALSE);
+
+    const proto::ProtoObject* splitlinesM = strPrototype->getAttribute(context, proto::ProtoString::fromUTF8String(context, "splitlines"));
+    ASSERT_NE(splitlinesM, nullptr);
+    const proto::ProtoObject* linesStr = context->newObject(true)->addParent(context, strPrototype);
+    linesStr->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->fromUTF8String("a\nb\nc"));
+    const proto::ProtoObject* lines = splitlinesM->asMethod(context)(context, linesStr, nullptr, context->newList(), nullptr);
+    ASSERT_NE(lines, nullptr);
+    EXPECT_TRUE(lines->asList(context));
+    EXPECT_EQ(lines->asList(context)->getSize(context), 3);
 }
 
 TEST_F(FoundationTest, BytesIndex) {
@@ -1041,6 +1050,15 @@ TEST_F(FoundationTest, SetBasic) {
     EXPECT_TRUE(popped->isInteger(context));
     const proto::ProtoObject* lenFinal = lenM->asMethod(context)(context, setObj, nullptr, context->newList(), nullptr);
     EXPECT_EQ(lenFinal->asLong(context), 0);
+
+    addM->asMethod(context)(context, setObj, nullptr, context->newList()->appendLast(context, context->fromInteger(5)), nullptr);
+    addM->asMethod(context)(context, setObj, nullptr, context->newList()->appendLast(context, context->fromInteger(7)), nullptr);
+    const proto::ProtoObject* discardM = setObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "discard"));
+    ASSERT_NE(discardM, nullptr);
+    discardM->asMethod(context)(context, setObj, nullptr, context->newList()->appendLast(context, context->fromInteger(99)), nullptr);
+    EXPECT_EQ(lenM->asMethod(context)(context, setObj, nullptr, context->newList(), nullptr)->asLong(context), 2);
+    discardM->asMethod(context)(context, setObj, nullptr, context->newList()->appendLast(context, context->fromInteger(5)), nullptr);
+    EXPECT_EQ(lenM->asMethod(context)(context, setObj, nullptr, context->newList(), nullptr)->asLong(context), 1);
 }
 
 TEST_F(FoundationTest, ListInsertRemoveClear) {
