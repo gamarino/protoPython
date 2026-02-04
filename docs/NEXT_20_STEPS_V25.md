@@ -17,10 +17,10 @@ Plan for 20 incremental milestones. Each step: implement → update docs → `gi
 | 427 | Execution engine BINARY_OR | done (existing) |
 | 428 | Execution engine BINARY_XOR | done (existing) |
 | 429 | Execution engine INPLACE_MULTIPLY | done (existing) |
-| 430 | math.hypot, math.fmod | pending |
-| 431 | math.log2, math.log1p | pending |
-| 432 | operator.index | pending |
-| 433 | str/bytes rsplit maxsplit or builtins | pending |
+| 430 | math.hypot, math.fmod | done (existing) |
+| 431 | math.log2, math.log1p | done (existing) |
+| 432 | operator.index | done (existing) |
+| 433 | str/bytes rsplit maxsplit or builtins | done (existing) |
 | 434 | Stdlib stub urllib.parse or platform | pending |
 | 435 | Stdlib stub zoneinfo or plistlib | pending |
 | 436 | Foundation test BINARY_AND or math.hypot | pending |
