@@ -1104,6 +1104,27 @@ TEST_F(FoundationTest, MathIsclose) {
     EXPECT_EQ(iscloseM->asMethod(context)(context, mathMod, nullptr, argsFar, nullptr), PROTO_FALSE);
 }
 
+TEST_F(FoundationTest, MathLog) {
+    proto::ProtoContext* context = env.getContext();
+    const proto::ProtoObject* mathMod = env.resolve("math");
+    ASSERT_NE(mathMod, nullptr);
+    const proto::ProtoObject* logM = mathMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "log"));
+    const proto::ProtoObject* log10M = mathMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "log10"));
+    ASSERT_NE(logM, nullptr);
+    ASSERT_NE(log10M, nullptr);
+    const proto::ProtoList* argsE = context->newList()->appendLast(context, context->fromDouble(2.718281828));
+    const proto::ProtoObject* logE = logM->asMethod(context)(context, mathMod, nullptr, argsE, nullptr);
+    ASSERT_NE(logE, nullptr);
+    EXPECT_TRUE(logE->isDouble(context) || logE->isInteger(context));
+    double valE = logE->isDouble(context) ? logE->asDouble(context) : static_cast<double>(logE->asLong(context));
+    EXPECT_NEAR(valE, 1.0, 0.001);
+    const proto::ProtoList* args100 = context->newList()->appendLast(context, context->fromDouble(100.0));
+    const proto::ProtoObject* log10_100 = log10M->asMethod(context)(context, mathMod, nullptr, args100, nullptr);
+    ASSERT_NE(log10_100, nullptr);
+    double val10 = log10_100->isDouble(context) ? log10_100->asDouble(context) : static_cast<double>(log10_100->asLong(context));
+    EXPECT_DOUBLE_EQ(val10, 2.0);
+}
+
 TEST_F(FoundationTest, ItertoolsAccumulate) {
     proto::ProtoContext* context = env.getContext();
     const proto::ProtoObject* itertoolsMod = env.resolve("itertools");
