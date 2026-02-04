@@ -7,6 +7,28 @@ except ImportError:
     _has_thread = False
 
 
+def get_ident():
+    """Return the current thread's id (OS thread id when _thread provides it)."""
+    if _has_thread:
+        return _thread.get_ident()
+    return 0
+
+
+def getpid():
+    """Return the current process id (when _thread provides it)."""
+    if _has_thread:
+        return _thread.getpid()
+    return 0
+
+
+def current_thread():
+    """Return a minimal object representing the current thread (ident, name)."""
+    class _CurrentThread:
+        ident = property(lambda self: get_ident())
+        name = "MainThread"
+    return _CurrentThread()
+
+
 class Thread:
     """Thread that runs target(*args) in a new ProtoSpace thread when _thread is available."""
     def __init__(self, target=None, args=()):
@@ -27,8 +49,18 @@ class Thread:
 
 
 class Lock:
-    """Minimal Lock (stub: no blocking)."""
+    """Lock using _thread.allocate_lock when available."""
+    def __init__(self):
+        if _has_thread:
+            self._lock = _thread.allocate_lock()
+        else:
+            self._lock = None
+
     def acquire(self, blocking=True, timeout=-1):
-        return True
+        if self._lock is None:
+            return True
+        return _thread._lock_acquire(self._lock, blocking)
+
     def release(self):
-        pass
+        if self._lock is not None:
+            _thread._lock_release(self._lock)
