@@ -1138,6 +1138,32 @@ TEST_F(FoundationTest, MathSqrt) {
     EXPECT_DOUBLE_EQ(val, 2.0);
 }
 
+TEST_F(FoundationTest, MathTan) {
+    proto::ProtoContext* context = env.getContext();
+    const proto::ProtoObject* mathMod = env.resolve("math");
+    ASSERT_NE(mathMod, nullptr);
+    const proto::ProtoObject* tanM = mathMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "tan"));
+    ASSERT_NE(tanM, nullptr);
+    const proto::ProtoList* args0 = context->newList()->appendLast(context, context->fromDouble(0.0));
+    const proto::ProtoObject* result = tanM->asMethod(context)(context, mathMod, nullptr, args0, nullptr);
+    ASSERT_NE(result, nullptr);
+    double val = result->isDouble(context) ? result->asDouble(context) : static_cast<double>(result->asLong(context));
+    EXPECT_DOUBLE_EQ(val, 0.0);
+}
+
+TEST_F(FoundationTest, OperatorInvert) {
+    proto::ProtoContext* context = env.getContext();
+    const proto::ProtoObject* opMod = env.resolve("operator");
+    ASSERT_NE(opMod, nullptr);
+    const proto::ProtoObject* invertM = opMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "invert"));
+    ASSERT_NE(invertM, nullptr);
+    const proto::ProtoList* args5 = context->newList()->appendLast(context, context->fromInteger(5));
+    const proto::ProtoObject* result = invertM->asMethod(context)(context, opMod, nullptr, args5, nullptr);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->isInteger(context));
+    EXPECT_EQ(result->asLong(context), -6);  // ~5 == -6 in Python
+}
+
 TEST_F(FoundationTest, DictUnion) {
     proto::ProtoContext* context = env.getContext();
     const proto::ProtoObject* dictProto = env.getDictPrototype();
