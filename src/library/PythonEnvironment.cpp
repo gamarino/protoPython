@@ -1483,6 +1483,40 @@ static const proto::ProtoObject* py_str_rstrip(
     return context->fromUTF8String(s.substr(0, end).c_str());
 }
 
+static const proto::ProtoObject* py_str_replace(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoString* str = str_from_self(context, self);
+    if (!str || posArgs->getSize(context) < 2) return PROTO_NONE;
+    std::string s;
+    str->toUTF8String(context, s);
+    std::string oldStr, newStr;
+    posArgs->getAt(context, 0)->asString(context)->toUTF8String(context, oldStr);
+    posArgs->getAt(context, 1)->asString(context)->toUTF8String(context, newStr);
+    int count = -1;
+    if (posArgs->getSize(context) >= 3) {
+        count = static_cast<int>(posArgs->getAt(context, 2)->asLong(context));
+    }
+    std::string result;
+    size_t pos = 0;
+    int replaced = 0;
+    while (pos < s.size() && (count < 0 || replaced < count)) {
+        size_t found = s.find(oldStr, pos);
+        if (found == std::string::npos) {
+            result += s.substr(pos);
+            break;
+        }
+        result += s.substr(pos, found - pos);
+        result += newStr;
+        pos = found + oldStr.size();
+        replaced++;
+    }
+    if (pos < s.size())
+        result += s.substr(pos);
+    return context->fromUTF8String(result.c_str());
+}
+
 static const proto::ProtoObject* py_str_join(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -1830,6 +1864,10 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     const proto::ProtoString* py_format = proto::ProtoString::fromUTF8String(context, "format");
     const proto::ProtoString* py_split = proto::ProtoString::fromUTF8String(context, "split");
     const proto::ProtoString* py_join = proto::ProtoString::fromUTF8String(context, "join");
+    const proto::ProtoString* py_strip = proto::ProtoString::fromUTF8String(context, "strip");
+    const proto::ProtoString* py_lstrip = proto::ProtoString::fromUTF8String(context, "lstrip");
+    const proto::ProtoString* py_rstrip = proto::ProtoString::fromUTF8String(context, "rstrip");
+    const proto::ProtoString* py_replace = proto::ProtoString::fromUTF8String(context, "replace");
     const proto::ProtoString* py_add = proto::ProtoString::fromUTF8String(context, "add");
 
     // 1. Create 'object' base
@@ -1875,6 +1913,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     strPrototype = strPrototype->setAttribute(context, py_strip, context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_strip));
     strPrototype = strPrototype->setAttribute(context, py_lstrip, context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_lstrip));
     strPrototype = strPrototype->setAttribute(context, py_rstrip, context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_rstrip));
+    strPrototype = strPrototype->setAttribute(context, py_replace, context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_replace));
 
     listPrototype = context->newObject(true);
     listPrototype = listPrototype->addParent(context, objectPrototype);

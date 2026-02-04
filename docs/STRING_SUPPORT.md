@@ -15,6 +15,7 @@ This document describes string dunder methods and helpers implemented in protoPy
 - **`strip()`**: Remove leading and trailing ASCII whitespace.
 - **`lstrip()`**: Remove leading ASCII whitespace.
 - **`rstrip()`**: Remove trailing ASCII whitespace.
+- **`replace()`**: Replace occurrences of old with new; optional count.
 
 ## Dispatch
 
