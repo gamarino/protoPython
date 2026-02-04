@@ -1324,6 +1324,80 @@ static const proto::ProtoObject* py_set_difference(
     return result;
 }
 
+static const proto::ProtoObject* py_set_symmetric_difference(
+    proto::ProtoContext* context, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoSet* s = set_data(context, self);
+    if (!s) return PROTO_NONE;
+    proto::ProtoSet* acc = const_cast<proto::ProtoSet*>(context->newSet());
+    const proto::ProtoSetIterator* it = s->getIterator(context);
+    while (it->hasNext(context)) {
+        acc = const_cast<proto::ProtoSet*>(acc->add(context, it->next(context)));
+        it = it->advance(context);
+    }
+    for (unsigned long i = 0; i < posArgs->getSize(context); ++i) {
+        const proto::ProtoObject* other = posArgs->getAt(context, static_cast<int>(i));
+        const proto::ProtoObject* iterM = other->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__iter__"));
+        if (!iterM || !iterM->asMethod(context)) continue;
+        const proto::ProtoObject* it2 = iterM->asMethod(context)(context, other, nullptr, context->newList(), nullptr);
+        if (!it2) continue;
+        const proto::ProtoObject* nextM = it2->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__next__"));
+        if (!nextM || !nextM->asMethod(context)) continue;
+        for (;;) {
+            const proto::ProtoObject* val = nextM->asMethod(context)(context, it2, nullptr, context->newList(), nullptr);
+            if (!val || val == PROTO_NONE) break;
+            if (acc->has(context, val)) acc = const_cast<proto::ProtoSet*>(acc->remove(context, val));
+            else acc = const_cast<proto::ProtoSet*>(acc->add(context, val));
+        }
+    }
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!env) return PROTO_NONE;
+    const proto::ProtoObject* parent = env->getSetPrototype();
+    if (!parent) return PROTO_NONE;
+    proto::ProtoObject* result = const_cast<proto::ProtoObject*>(parent->newChild(context, true));
+    result->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), acc->asObject(context));
+    return result;
+}
+
+static const proto::ProtoObject* py_set_issubset(
+    proto::ProtoContext* context, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoSet* s = set_data(context, self);
+    if (!s || posArgs->getSize(context) < 1) return PROTO_FALSE;
+    const proto::ProtoObject* other = posArgs->getAt(context, 0);
+    const proto::ProtoObject* containsM = other->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__contains__"));
+    if (!containsM || !containsM->asMethod(context)) return PROTO_FALSE;
+    const proto::ProtoSetIterator* it = s->getIterator(context);
+    while (it->hasNext(context)) {
+        const proto::ProtoObject* val = it->next(context);
+        const proto::ProtoList* arg = context->newList()->appendLast(context, val);
+        const proto::ProtoObject* has = containsM->asMethod(context)(context, other, nullptr, arg, nullptr);
+        if (!has || has != PROTO_TRUE) return PROTO_FALSE;
+        it = it->advance(context);
+    }
+    return PROTO_TRUE;
+}
+
+static const proto::ProtoObject* py_set_issuperset(
+    proto::ProtoContext* context, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoSet* s = set_data(context, self);
+    if (!s || posArgs->getSize(context) < 1) return PROTO_FALSE;
+    const proto::ProtoObject* other = posArgs->getAt(context, 0);
+    const proto::ProtoObject* iterM = other->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__iter__"));
+    if (!iterM || !iterM->asMethod(context)) return PROTO_FALSE;
+    const proto::ProtoObject* it = iterM->asMethod(context)(context, other, nullptr, context->newList(), nullptr);
+    if (!it) return PROTO_FALSE;
+    const proto::ProtoObject* nextM = it->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__next__"));
+    if (!nextM || !nextM->asMethod(context)) return PROTO_FALSE;
+    for (;;) {
+        const proto::ProtoObject* val = nextM->asMethod(context)(context, it, nullptr, context->newList(), nullptr);
+        if (!val || val == PROTO_NONE) break;
+        if (!s->has(context, val)) return PROTO_FALSE;
+    }
+    return PROTO_TRUE;
+}
+
 static const proto::ProtoObject* py_set_pop(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -3780,6 +3854,9 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     setPrototype = setPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "union"), context->fromMethod(const_cast<proto::ProtoObject*>(setPrototype), py_set_union));
     setPrototype = setPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "intersection"), context->fromMethod(const_cast<proto::ProtoObject*>(setPrototype), py_set_intersection));
     setPrototype = setPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "difference"), context->fromMethod(const_cast<proto::ProtoObject*>(setPrototype), py_set_difference));
+    setPrototype = setPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "symmetric_difference"), context->fromMethod(const_cast<proto::ProtoObject*>(setPrototype), py_set_symmetric_difference));
+    setPrototype = setPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "issubset"), context->fromMethod(const_cast<proto::ProtoObject*>(setPrototype), py_set_issubset));
+    setPrototype = setPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "issuperset"), context->fromMethod(const_cast<proto::ProtoObject*>(setPrototype), py_set_issuperset));
     setPrototype = setPrototype->setAttribute(context, py_iter, context->fromMethod(const_cast<proto::ProtoObject*>(setPrototype), py_set_iter));
 
     const proto::ProtoObject* setIterProto = context->newObject(true);
