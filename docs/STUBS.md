@@ -9,8 +9,8 @@ This document catalogs stub implementations and their completion status.
 | **set** | union, intersection, difference | Implemented |
 | **itertools** | accumulate | Full implementation (default add, optional binary func) |
 | **itertools** | groupby, product, combinations, combinations_with_replacement, permutations | Return empty iterator (no longer None) |
-| **math** | isclose, log, log10, exp | Implemented |
-| **operator** | add, sub, mul, truediv, eq, lt, pow, floordiv, mod | Implemented |
+| **math** | isclose, log, log10, exp, sqrt, sin, cos | Implemented |
+| **operator** | add, sub, mul, truediv, eq, lt, pow, floordiv, mod, neg, not_ | Implemented |
 
 ## Native (C++) Stubs — Remaining
 
@@ -47,3 +47,5 @@ This document catalogs stub implementations and their completion status.
 | threading | Thread, Lock | Minimal stubs |
 | enum | Enum | Minimal base class |
 | functools | reduce, wraps, lru_cache | reduce implemented; wraps no-op; lru_cache stub (v20) |
+| csv | reader, writer | Stub (NotImplementedError) — v21 |
+| xml.etree | ElementTree, Element | Minimal stub — v21 |
