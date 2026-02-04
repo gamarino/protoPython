@@ -58,6 +58,9 @@ See [docs/NEXT_20_STEPS_V6.md](../docs/NEXT_20_STEPS_V6.md). Steps 45–64 plann
 - [x] Step 49: reversed builtin
 - [x] Step 50: sum builtin
 - [x] Step 51: all any builtins
+- [x] Step 52: exec LOAD_NAME, STORE_NAME
+- [x] Step 53: exec BINARY_ADD, BINARY_SUBTRACT
+- [x] Step 54: exec CALL_FUNCTION
 - [x] Step 25: Foundation test stability / GC reproducer documentation
 - [x] Step 26: Builtins callable, getattr, setattr, hasattr, delattr
 - [x] Step 27: Slice object + __getitem__ slice support for list/str
