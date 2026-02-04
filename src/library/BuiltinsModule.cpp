@@ -173,6 +173,53 @@ static const proto::ProtoObject* py_bool(
     return PROTO_TRUE;
 }
 
+static const proto::ProtoObject* py_repr(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
+    const proto::ProtoObject* reprMethod = obj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__repr__"));
+    if (reprMethod && reprMethod->asMethod(context)) {
+        return reprMethod->asMethod(context)(context, obj, nullptr, context->newList(), nullptr);
+    }
+    return PROTO_NONE;
+}
+
+static const proto::ProtoObject* py_format(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
+    const proto::ProtoObject* formatMethod = obj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__format__"));
+    if (!formatMethod || !formatMethod->asMethod(context)) return PROTO_NONE;
+    const proto::ProtoList* args = context->newList();
+    if (positionalParameters->getSize(context) >= 2) {
+        args = args->appendLast(context, positionalParameters->getAt(context, 1));
+    } else {
+        args = args->appendLast(context, context->fromUTF8String(""));
+    }
+    return formatMethod->asMethod(context)(context, obj, nullptr, args, nullptr);
+}
+
+static const proto::ProtoObject* py_open(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoObject* ioMod = self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__io_module__"));
+    if (!ioMod || ioMod == PROTO_NONE) return PROTO_NONE;
+    const proto::ProtoObject* openFunc = ioMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "open"));
+    if (!openFunc || !openFunc->asMethod(context)) return PROTO_NONE;
+    return openFunc->asMethod(context)(context, ioMod, nullptr, positionalParameters, keywordParameters);
+}
+
 static const proto::ProtoObject* py_callable(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -381,8 +428,12 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
                                    const proto::ProtoObject* strProto, const proto::ProtoObject* listProto,
                                    const proto::ProtoObject* dictProto, const proto::ProtoObject* tupleProto,
                                    const proto::ProtoObject* setProto, const proto::ProtoObject* bytesProto,
-                                   const proto::ProtoObject* sliceType, const proto::ProtoObject* frozensetProto) {
+                                   const proto::ProtoObject* sliceType, const proto::ProtoObject* frozensetProto,
+                                   const proto::ProtoObject* ioModule) {
     const proto::ProtoObject* builtins = ctx->newObject(true);
+    if (ioModule && ioModule != PROTO_NONE) {
+        builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__io_module__"), ioModule);
+    }
 
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "object"), objectProto);
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "type"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_type));
@@ -398,6 +449,9 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     
     // Add functions
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "len"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_len));
+    builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "repr"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_repr));
+    builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "format"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_format));
+    builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "open"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_open));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "id"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_id));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "print"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_print));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "iter"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_iter));

@@ -1866,12 +1866,13 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     sysModule = sys::initialize(context, this, &argv_);
     nativeProvider->registerModule("sys", [this](proto::ProtoContext* ctx) { return sysModule; });
 
-    // builtins module
-    builtinsModule = builtins::initialize(context, objectPrototype, typePrototype, intPrototype, strPrototype, listPrototype, dictPrototype, tuplePrototype, setPrototype, bytesPrototype, sliceType, frozensetPrototype);
-    nativeProvider->registerModule("builtins", [this](proto::ProtoContext* ctx) { return builtinsModule; });
+    // _io module (created before builtins so open() can delegate)
+    const proto::ProtoObject* ioModule = io::initialize(context);
+    nativeProvider->registerModule("_io", [ioModule](proto::ProtoContext*) { return ioModule; });
 
-    // _io module
-    nativeProvider->registerModule("_io", [](proto::ProtoContext* ctx) { return io::initialize(ctx); });
+    // builtins module
+    builtinsModule = builtins::initialize(context, objectPrototype, typePrototype, intPrototype, strPrototype, listPrototype, dictPrototype, tuplePrototype, setPrototype, bytesPrototype, sliceType, frozensetPrototype, ioModule);
+    nativeProvider->registerModule("builtins", [this](proto::ProtoContext* ctx) { return builtinsModule; });
 
     // _collections module
     nativeProvider->registerModule("_collections", [this](proto::ProtoContext* ctx) { return collections::initialize(ctx, dictPrototype); });
