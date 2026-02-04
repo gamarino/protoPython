@@ -19,8 +19,8 @@ Plan for 20 incremental milestones. Each step: implement → update docs → `gi
 | 389 | math.asin, math.acos, math.atan | pending |
 | 390 | operator.lshift, operator.rshift | pending |
 | 391 | str/bytes removeprefix, removesuffix | pending |
-| 392 | builtins.repr | pending |
-| 393 | builtins.id or type as builtin | pending |
+| 392 | builtins.repr | done (existing) |
+| 393 | builtins.id or type as builtin | done (existing) |
 | 394 | int.bit_count or __format__ | pending |
 | 395 | Stdlib stub shutil (minimal) | pending |
 | 396 | Stdlib stub mimetypes (minimal) | pending |
