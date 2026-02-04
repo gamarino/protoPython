@@ -15,7 +15,7 @@ Plan for 20 incremental milestones. Each step: implement → update docs → `gi
 | 325 | Create NEXT_20_STEPS_V20.md, update IMPLEMENTATION_PLAN | done |
 | 326 | Execution engine BINARY_POWER | done |
 | 327 | Execution engine BINARY_FLOOR_DIVIDE | done |
-| 328 | math.log, math.log10, math.exp | pending |
+| 328 | math.log, math.log10, math.exp | done |
 | 329 | operator.pow, operator.floordiv, operator.mod | pending |
 | 330 | str.isidentifier() or str.isprintable() | pending |
 | 331 | bytes.count(sub[, start[, end]]) | pending |

@@ -100,6 +100,37 @@ static const proto::ProtoObject* py_isnan(
     return std::isnan(x) ? PROTO_TRUE : PROTO_FALSE;
 }
 
+static const proto::ProtoObject* py_log(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    double x = toDouble(ctx, posArgs->getAt(ctx, 0));
+    if (x <= 0.0) return PROTO_NONE;
+    if (posArgs->getSize(ctx) >= 2) {
+        double base = toDouble(ctx, posArgs->getAt(ctx, 1));
+        if (base <= 0.0 || base == 1.0) return PROTO_NONE;
+        return ctx->fromDouble(std::log(x) / std::log(base));
+    }
+    return ctx->fromDouble(std::log(x));
+}
+
+static const proto::ProtoObject* py_log10(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    double x = toDouble(ctx, posArgs->getAt(ctx, 0));
+    if (x <= 0.0) return PROTO_NONE;
+    return ctx->fromDouble(std::log10(x));
+}
+
+static const proto::ProtoObject* py_exp(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    double x = toDouble(ctx, posArgs->getAt(ctx, 0));
+    return ctx->fromDouble(std::exp(x));
+}
+
 static long long gcd_impl(long long a, long long b) {
     a = a < 0 ? -a : a;
     b = b < 0 ? -b : b;
@@ -151,6 +182,12 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_isfinite));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "isnan"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_isnan));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "log"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_log));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "log10"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_log10));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "exp"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_exp));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "gcd"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_gcd));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "lcm"),
