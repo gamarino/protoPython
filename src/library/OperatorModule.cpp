@@ -1,4 +1,5 @@
 #include <protoPython/OperatorModule.h>
+#include <cmath>
 #include <string>
 
 namespace protoPython {
@@ -69,6 +70,60 @@ static const proto::ProtoObject* py_lt(
     return (a < b) ? PROTO_TRUE : PROTO_FALSE;
 }
 
+static const proto::ProtoObject* py_pow(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
+    const proto::ProtoObject* a = posArgs->getAt(ctx, 0);
+    const proto::ProtoObject* b = posArgs->getAt(ctx, 1);
+    if (a->isInteger(ctx) && b->isInteger(ctx)) {
+        long long base = a->asLong(ctx);
+        long long exp = b->asLong(ctx);
+        if (exp < 0) {
+            double r = std::pow(static_cast<double>(base), static_cast<double>(exp));
+            return ctx->fromDouble(r);
+        }
+        long long result = 1;
+        for (long long i = 0; i < exp; ++i) result *= base;
+        return ctx->fromInteger(result);
+    }
+    double aa = toDouble(ctx, a);
+    double bb = toDouble(ctx, b);
+    return ctx->fromDouble(std::pow(aa, bb));
+}
+
+static const proto::ProtoObject* py_floordiv(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
+    const proto::ProtoObject* a = posArgs->getAt(ctx, 0);
+    const proto::ProtoObject* b = posArgs->getAt(ctx, 1);
+    if (b->isInteger(ctx) && b->asLong(ctx) == 0) return PROTO_NONE;
+    if (b->isDouble(ctx) && b->asDouble(ctx) == 0.0) return PROTO_NONE;
+    if (a->isInteger(ctx) && b->isInteger(ctx))
+        return ctx->fromInteger(a->asLong(ctx) / b->asLong(ctx));
+    double aa = toDouble(ctx, a);
+    double bb = toDouble(ctx, b);
+    return ctx->fromInteger(static_cast<long long>(std::floor(aa / bb)));
+}
+
+static const proto::ProtoObject* py_mod(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
+    const proto::ProtoObject* a = posArgs->getAt(ctx, 0);
+    const proto::ProtoObject* b = posArgs->getAt(ctx, 1);
+    if (a->isInteger(ctx) && b->isInteger(ctx)) {
+        long long bb = b->asLong(ctx);
+        if (bb == 0) return PROTO_NONE;
+        return ctx->fromInteger(a->asLong(ctx) % bb);
+    }
+    double aa = toDouble(ctx, a);
+    double bb = toDouble(ctx, b);
+    if (bb == 0.0) return PROTO_NONE;
+    return ctx->fromDouble(std::fmod(aa, bb));
+}
+
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     const proto::ProtoObject* mod = ctx->newObject(true);
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "add"),
@@ -83,6 +138,12 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_lt));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "truediv"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_truediv));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "pow"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_pow));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "floordiv"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_floordiv));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "mod"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_mod));
     return mod;
 }
 
