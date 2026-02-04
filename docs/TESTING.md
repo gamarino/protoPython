@@ -43,6 +43,8 @@ ctest -R test_regr
 
 ### Resolution (fixed in protoCore) The GC deadlock was fixed in protoCore’s `getFreeCells`: trigger GC only when there are no free cells (so the caller parks), and park/wait for GC completion when out of cells. See protoCore commit `fix(gc): resolve getFreeCells deadlock with GC thread`, and [STARTUP_GC_ANALYSIS.md](STARTUP_GC_ANALYSIS.md) for a full analysis. **Verification:** With a fixed protoCore, `./build/test/library/test_minimal` and `./build/src/runtime/protopy --module abc` should complete in a few seconds.
 
+### Intermittent performance-test hang Script-based benchmarks (e.g. `protopy --script benchmarks/str_concat_loop.py`) can intermittently hit a 60s timeout. See [PERFORMANCE_HANG_DIAGNOSIS.md](PERFORMANCE_HANG_DIAGNOSIS.md) for diagnosis and mitigations (`--timeout`, `--cpython-only`). The benchmark harness supports `--timeout SECS` to fail fast when a run hangs.
+
 ### Resolve order (FoundationTest.SysModule) `PythonEnvironment::resolve()` resolves names in this order: (1) type shortcuts (object, type, int, list, …), (2) module import via `getImportModule` (e.g. `sys`, `builtins`, `os`), (3) builtins. So names like `sys` always resolve to the real module object, not a builtins attribute (e.g. a method) that would cause a type mismatch when calling `getAttribute` (protoCore expects an object cell, not a method cell).
 
 ## Incremental Regression Tracking

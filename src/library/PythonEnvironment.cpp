@@ -2309,6 +2309,19 @@ static const proto::ProtoObject* py_bytes_isalpha(
     return PROTO_TRUE;
 }
 
+static const proto::ProtoObject* py_bytes_isascii(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoString* s = bytes_data(context, self);
+    if (!s) return PROTO_FALSE;
+    std::string raw;
+    s->toUTF8String(context, raw);
+    for (unsigned char c : raw)
+        if (c > 127) return PROTO_FALSE;
+    return PROTO_TRUE;
+}
+
 static const proto::ProtoObject* py_bytes_removeprefix(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -3856,6 +3869,20 @@ static const proto::ProtoObject* py_dict_ror(
     result = result->setAttribute(context, keysName, keys->asObject(context));
     result = result->setAttribute(context, dataName, dict->asObject(context));
     return result;
+}
+
+static const proto::ProtoObject* py_dict_ior(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    return py_dict_or(context, self, nullptr, posArgs, nullptr);
+}
+
+static const proto::ProtoObject* py_dict_iror(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    return py_dict_ror(context, self, nullptr, posArgs, nullptr);
 }
 
 static const proto::ProtoObject* py_dict_setdefault(

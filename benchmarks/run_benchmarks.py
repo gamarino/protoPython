@@ -33,33 +33,37 @@ def median(lst):
 
 def run_cmd(cmd, cwd=None, timeout=60):
     start = time.perf_counter()
-    r = subprocess.run(
-        cmd,
-        cwd=cwd or PROJECT_ROOT,
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-    )
-    elapsed_ms = (time.perf_counter() - start) * 1000
-    return elapsed_ms, r.returncode
+    try:
+        r = subprocess.run(
+            cmd,
+            cwd=cwd or PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        elapsed_ms = (time.perf_counter() - start) * 1000
+        return elapsed_ms, r.returncode
+    except subprocess.TimeoutExpired:
+        elapsed_ms = (time.perf_counter() - start) * 1000
+        return elapsed_ms, -1
 
 
-def bench_startup_empty(protopy_bin, cpython_bin):
+def bench_startup_empty(protopy_bin, cpython_bin, timeout=60):
     """Time to import minimal module (abc)."""
     times_protopy = []
     times_cpython = []
     for _ in range(WARMUP_RUNS):
-        run_cmd([protopy_bin, "--module", "abc"])
-        run_cmd([cpython_bin, "-c", "import abc"])
+        run_cmd([protopy_bin, "--module", "abc"], timeout=timeout)
+        run_cmd([cpython_bin, "-c", "import abc"], timeout=timeout)
     for _ in range(N_RUNS):
-        t, _ = run_cmd([protopy_bin, "--module", "abc"])
+        t, _ = run_cmd([protopy_bin, "--module", "abc"], timeout=timeout)
         times_protopy.append(t)
-        t, _ = run_cmd([cpython_bin, "-c", "import abc"])
+        t, _ = run_cmd([cpython_bin, "-c", "import abc"], timeout=timeout)
         times_cpython.append(t)
     return median(times_protopy), median(times_cpython)
 
 
-def bench_int_sum_loop(protopy_bin, cpython_bin):
+def bench_int_sum_loop(protopy_bin, cpython_bin, timeout=60):
     """Time to run sum(range(N)) with N=100000."""
     script = SCRIPT_DIR / "int_sum_loop.py"
     if not script.exists():
@@ -68,17 +72,17 @@ def bench_int_sum_loop(protopy_bin, cpython_bin):
     times_protopy = []
     times_cpython = []
     for _ in range(WARMUP_RUNS):
-        run_cmd([protopy_bin, "--path", str(SCRIPT_DIR), "--script", script_str])
-        run_cmd([cpython_bin, script_str])
+        run_cmd([protopy_bin, "--path", str(SCRIPT_DIR), "--script", script_str], timeout=timeout)
+        run_cmd([cpython_bin, script_str], timeout=timeout)
     for _ in range(N_RUNS):
-        t, _ = run_cmd([protopy_bin, "--path", str(SCRIPT_DIR), "--script", script_str])
+        t, _ = run_cmd([protopy_bin, "--path", str(SCRIPT_DIR), "--script", script_str], timeout=timeout)
         times_protopy.append(t)
-        t, _ = run_cmd([cpython_bin, script_str])
+        t, _ = run_cmd([cpython_bin, script_str], timeout=timeout)
         times_cpython.append(t)
     return median(times_protopy), median(times_cpython)
 
 
-def bench_list_append_loop(protopy_bin, cpython_bin):
+def bench_list_append_loop(protopy_bin, cpython_bin, timeout=60):
     """Time to run list append loop with N=10000."""
     script = SCRIPT_DIR / "list_append_loop.py"
     if not script.exists():
@@ -87,17 +91,17 @@ def bench_list_append_loop(protopy_bin, cpython_bin):
     times_protopy = []
     times_cpython = []
     for _ in range(WARMUP_RUNS):
-        run_cmd([protopy_bin, "--path", str(SCRIPT_DIR), "--script", script_str])
-        run_cmd([cpython_bin, script_str])
+        run_cmd([protopy_bin, "--path", str(SCRIPT_DIR), "--script", script_str], timeout=timeout)
+        run_cmd([cpython_bin, script_str], timeout=timeout)
     for _ in range(N_RUNS):
-        t, _ = run_cmd([protopy_bin, "--path", str(SCRIPT_DIR), "--script", script_str])
+        t, _ = run_cmd([protopy_bin, "--path", str(SCRIPT_DIR), "--script", script_str], timeout=timeout)
         times_protopy.append(t)
-        t, _ = run_cmd([cpython_bin, script_str])
+        t, _ = run_cmd([cpython_bin, script_str], timeout=timeout)
         times_cpython.append(t)
     return median(times_protopy), median(times_cpython)
 
 
-def bench_str_concat_loop(protopy_bin, cpython_bin):
+def bench_str_concat_loop(protopy_bin, cpython_bin, timeout=60):
     """Time to run string concat loop with N=10000."""
     script = SCRIPT_DIR / "str_concat_loop.py"
     if not script.exists():
@@ -106,17 +110,17 @@ def bench_str_concat_loop(protopy_bin, cpython_bin):
     times_protopy = []
     times_cpython = []
     for _ in range(WARMUP_RUNS):
-        run_cmd([protopy_bin, "--path", str(SCRIPT_DIR), "--script", script_str])
-        run_cmd([cpython_bin, script_str])
+        run_cmd([protopy_bin, "--path", str(SCRIPT_DIR), "--script", script_str], timeout=timeout)
+        run_cmd([cpython_bin, script_str], timeout=timeout)
     for _ in range(N_RUNS):
-        t, _ = run_cmd([protopy_bin, "--path", str(SCRIPT_DIR), "--script", script_str])
+        t, _ = run_cmd([protopy_bin, "--path", str(SCRIPT_DIR), "--script", script_str], timeout=timeout)
         times_protopy.append(t)
-        t, _ = run_cmd([cpython_bin, script_str])
+        t, _ = run_cmd([cpython_bin, script_str], timeout=timeout)
         times_cpython.append(t)
     return median(times_protopy), median(times_cpython)
 
 
-def bench_range_iterate(protopy_bin, cpython_bin):
+def bench_range_iterate(protopy_bin, cpython_bin, timeout=60):
     """Time to iterate over range(N) with N=100000."""
     script = SCRIPT_DIR / "range_iterate.py"
     if not script.exists():
@@ -125,12 +129,12 @@ def bench_range_iterate(protopy_bin, cpython_bin):
     times_protopy = []
     times_cpython = []
     for _ in range(WARMUP_RUNS):
-        run_cmd([protopy_bin, "--path", str(SCRIPT_DIR), "--script", script_str])
-        run_cmd([cpython_bin, script_str])
+        run_cmd([protopy_bin, "--path", str(SCRIPT_DIR), "--script", script_str], timeout=timeout)
+        run_cmd([cpython_bin, script_str], timeout=timeout)
     for _ in range(N_RUNS):
-        t, _ = run_cmd([protopy_bin, "--path", str(SCRIPT_DIR), "--script", script_str])
+        t, _ = run_cmd([protopy_bin, "--path", str(SCRIPT_DIR), "--script", script_str], timeout=timeout)
         times_protopy.append(t)
-        t, _ = run_cmd([cpython_bin, script_str])
+        t, _ = run_cmd([cpython_bin, script_str], timeout=timeout)
         times_cpython.append(t)
     return median(times_protopy), median(times_cpython)
 
@@ -251,6 +255,13 @@ def main():
         action="store_true",
         help="Run only CPython benchmarks (skip protoPython); use when protopy hangs.",
     )
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        default=60,
+        metavar="SECS",
+        help="Per-run timeout in seconds for each benchmark (default: 60).",
+    )
     args = parser.parse_args()
 
     cpython_bin = os.environ.get("CPYTHON_BIN", "python3")
@@ -286,15 +297,16 @@ def main():
         sys.exit(2)
 
     results = {}
-    tp, tc = bench_startup_empty(protopy_bin, cpython_bin)
+    timeout = args.timeout
+    tp, tc = bench_startup_empty(protopy_bin, cpython_bin, timeout)
     results["startup_empty"] = (tp, tc)
-    tp, tc = bench_int_sum_loop(protopy_bin, cpython_bin)
+    tp, tc = bench_int_sum_loop(protopy_bin, cpython_bin, timeout)
     results["int_sum_loop"] = (tp, tc)
-    tp, tc = bench_list_append_loop(protopy_bin, cpython_bin)
+    tp, tc = bench_list_append_loop(protopy_bin, cpython_bin, timeout)
     results["list_append_loop"] = (tp, tc)
-    tp, tc = bench_str_concat_loop(protopy_bin, cpython_bin)
+    tp, tc = bench_str_concat_loop(protopy_bin, cpython_bin, timeout)
     results["str_concat_loop"] = (tp, tc)
-    tp, tc = bench_range_iterate(protopy_bin, cpython_bin)
+    tp, tc = bench_range_iterate(protopy_bin, cpython_bin, timeout)
     results["range_iterate"] = (tp, tc)
 
     for name, (tp, tc) in results.items():
