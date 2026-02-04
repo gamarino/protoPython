@@ -1061,6 +1061,78 @@ TEST_F(FoundationTest, SetBasic) {
     EXPECT_EQ(lenM->asMethod(context)(context, setObj, nullptr, context->newList(), nullptr)->asLong(context), 1);
 }
 
+TEST_F(FoundationTest, SetUnion) {
+    proto::ProtoContext* context = env.getContext();
+    const proto::ProtoObject* setPrototype = env.getSetPrototype();
+    ASSERT_NE(setPrototype, nullptr);
+    const proto::ProtoObject* unionM = setPrototype->getAttribute(context, proto::ProtoString::fromUTF8String(context, "union"));
+    ASSERT_NE(unionM, nullptr);
+    const proto::ProtoObject* copyM = setPrototype->getAttribute(context, proto::ProtoString::fromUTF8String(context, "copy"));
+    ASSERT_NE(copyM, nullptr);
+
+    const proto::ProtoObject* set1 = context->newObject(true)->addParent(context, setPrototype);
+    set1->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->newSet()->asObject(context));
+    const proto::ProtoObject* addM = set1->getAttribute(context, proto::ProtoString::fromUTF8String(context, "add"));
+    ASSERT_NE(addM, nullptr);
+    addM->asMethod(context)(context, set1, nullptr, context->newList()->appendLast(context, context->fromInteger(1)), nullptr);
+    addM->asMethod(context)(context, set1, nullptr, context->newList()->appendLast(context, context->fromInteger(2)), nullptr);
+
+    const proto::ProtoObject* result = copyM->asMethod(context)(context, set1, nullptr, context->newList(), nullptr);
+    ASSERT_NE(result, nullptr);
+    const proto::ProtoObject* lenM = result->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__len__"));
+    ASSERT_NE(lenM, nullptr);
+    EXPECT_EQ(lenM->asMethod(context)(context, result, nullptr, context->newList(), nullptr)->asLong(context), 2);
+
+    const proto::ProtoObject* unionResult = unionM->asMethod(context)(context, set1, nullptr, context->newList(), nullptr);
+    ASSERT_NE(unionResult, nullptr);
+}
+
+TEST_F(FoundationTest, MathIsclose) {
+    proto::ProtoContext* context = env.getContext();
+    const proto::ProtoObject* mathMod = env.resolve("math");
+    ASSERT_NE(mathMod, nullptr);
+    const proto::ProtoObject* iscloseM = mathMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "isclose"));
+    ASSERT_NE(iscloseM, nullptr);
+
+    const proto::ProtoList* argsSame = context->newList()->appendLast(context, context->fromDouble(1.0))->appendLast(context, context->fromDouble(1.0));
+    EXPECT_EQ(iscloseM->asMethod(context)(context, mathMod, nullptr, argsSame, nullptr), PROTO_TRUE);
+
+    const proto::ProtoList* argsClose = context->newList()->appendLast(context, context->fromDouble(1.0))->appendLast(context, context->fromDouble(1.0 + 1e-10));
+    EXPECT_EQ(iscloseM->asMethod(context)(context, mathMod, nullptr, argsClose, nullptr), PROTO_TRUE);
+
+    const proto::ProtoList* argsFar = context->newList()->appendLast(context, context->fromDouble(1.0))->appendLast(context, context->fromDouble(2.0));
+    EXPECT_EQ(iscloseM->asMethod(context)(context, mathMod, nullptr, argsFar, nullptr), PROTO_FALSE);
+}
+
+TEST_F(FoundationTest, ItertoolsAccumulate) {
+    proto::ProtoContext* context = env.getContext();
+    const proto::ProtoObject* itertoolsMod = env.resolve("itertools");
+    ASSERT_NE(itertoolsMod, nullptr);
+    const proto::ProtoObject* accumulateM = itertoolsMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "accumulate"));
+    ASSERT_NE(accumulateM, nullptr);
+
+    const proto::ProtoObject* listPrototype = env.getListPrototype();
+    const proto::ProtoObject* listObj = context->newObject(true)->addParent(context, listPrototype);
+    listObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"),
+        context->newList()->appendLast(context, context->fromInteger(1))->appendLast(context, context->fromInteger(2))->appendLast(context, context->fromInteger(3))->asObject(context));
+    const proto::ProtoList* args = context->newList()->appendLast(context, listObj);
+    const proto::ProtoObject* accIt = accumulateM->asMethod(context)(context, itertoolsMod, nullptr, args, nullptr);
+    ASSERT_NE(accIt, nullptr);
+    const proto::ProtoObject* nextM = accIt->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__next__"));
+    ASSERT_NE(nextM, nullptr);
+    ASSERT_TRUE(nextM->asMethod(context));
+    const proto::ProtoObject* v1 = nextM->asMethod(context)(context, accIt, nullptr, context->newList(), nullptr);
+    const proto::ProtoObject* v2 = nextM->asMethod(context)(context, accIt, nullptr, context->newList(), nullptr);
+    const proto::ProtoObject* v3 = nextM->asMethod(context)(context, accIt, nullptr, context->newList(), nullptr);
+    ASSERT_NE(v1, nullptr);
+    ASSERT_NE(v2, nullptr);
+    ASSERT_NE(v3, nullptr);
+    EXPECT_EQ(v1->asLong(context), 1);
+    EXPECT_EQ(v2->asLong(context), 3);
+    EXPECT_EQ(v3->asLong(context), 6);
+    EXPECT_EQ(nextM->asMethod(context)(context, accIt, nullptr, context->newList(), nullptr), PROTO_NONE);
+}
+
 TEST_F(FoundationTest, ListInsertRemoveClear) {
     proto::ProtoContext* context = env.getContext();
 

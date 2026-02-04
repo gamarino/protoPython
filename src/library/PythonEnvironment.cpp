@@ -2123,6 +2123,41 @@ static const proto::ProtoObject* py_bytes_rindex(
     return r;
 }
 
+static const proto::ProtoObject* py_bytes_replace(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoString* s = bytes_data(context, self);
+    if (!s || posArgs->getSize(context) < 2) return PROTO_NONE;
+    std::string raw;
+    s->toUTF8String(context, raw);
+    std::string old_str, new_str;
+    bytes_needle_from_arg(context, posArgs->getAt(context, 0), old_str);
+    bytes_needle_from_arg(context, posArgs->getAt(context, 1), new_str);
+    long long count = -1;
+    if (posArgs->getSize(context) >= 3 && posArgs->getAt(context, 2)->isInteger(context))
+        count = posArgs->getAt(context, 2)->asLong(context);
+    std::string out;
+    size_t start = 0;
+    long long n = 0;
+    while (count < 0 || n < count) {
+        size_t pos = raw.find(old_str, start);
+        if (pos == std::string::npos) break;
+        out += raw.substr(start, pos - start);
+        out += new_str;
+        start = pos + old_str.size();
+        n++;
+    }
+    out += raw.substr(start);
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!env) return PROTO_NONE;
+    const proto::ProtoObject* bytesProto = env->getBytesPrototype();
+    if (!bytesProto) return PROTO_NONE;
+    proto::ProtoObject* b = const_cast<proto::ProtoObject*>(bytesProto->newChild(context, true));
+    b->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->fromUTF8String(out.c_str()));
+    return b;
+}
+
 static bool bytes_byte_in_chars(unsigned char c, const std::string& ch) {
     if (ch.empty()) return (c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v');
     return ch.find(c) != std::string::npos;
@@ -3927,6 +3962,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     bytesPrototype = bytesPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "rstrip"), context->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_rstrip));
     bytesPrototype = bytesPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "split"), context->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_split));
     bytesPrototype = bytesPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "join"), context->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_join));
+    bytesPrototype = bytesPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "replace"), context->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_replace));
 
     sliceType = context->newObject(true);
     sliceType = sliceType->addParent(context, objectPrototype);

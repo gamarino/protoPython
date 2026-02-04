@@ -550,6 +550,20 @@ static const proto::ProtoObject* py_memoryview(
     return PROTO_NONE;
 }
 
+/** super(): stub returning None; full impl requires MRO and type. */
+static const proto::ProtoObject* py_super(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    (void)self;
+    (void)parentLink;
+    (void)positionalParameters;
+    (void)keywordParameters;
+    return PROTO_NONE;
+}
+
 /** exec(code): stub returning None; full impl requires statement execution. */
 static const proto::ProtoObject* py_exec(
     proto::ProtoContext* context,
@@ -1404,6 +1418,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "hash"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_hash));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "help"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_help));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "memoryview"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_memoryview));
+    builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "super"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_super));
 
     return builtins;
 }

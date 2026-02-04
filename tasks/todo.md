@@ -102,7 +102,11 @@ See [docs/NEXT_20_STEPS_V18.md](../docs/NEXT_20_STEPS_V18.md). Steps 285–304 d
 
 ## 22. Stub completion — done
 
-See [docs/STUBS.md](../docs/STUBS.md). Set union/intersection/difference implemented; itertools stubs return empty iterator; math.isclose; stdlib enhancements (tempfile, subprocess, os).
+See [docs/STUBS.md](../docs/STUBS.md). Set union/intersection/difference implemented; itertools.accumulate full implementation; other itertools stubs return empty iterator; math.isclose; stdlib enhancements (tempfile, subprocess, os).
+
+## 23. Next 20 Steps (v19) — completed
+
+See [docs/NEXT_20_STEPS_V19.md](../docs/NEXT_20_STEPS_V19.md). Steps 305–324: itertools.accumulate full impl; foundation tests SetUnion, MathIsclose, ItertoolsAccumulate; docs updated.
 - [x] Step 145: ord builtin
 - [x] Step 146: chr builtin
 - [x] Step 147: bin builtin

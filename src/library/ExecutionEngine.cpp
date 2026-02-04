@@ -1,4 +1,5 @@
 #include <protoPython/ExecutionEngine.h>
+#include <cmath>
 #include <vector>
 
 namespace protoPython {
@@ -35,6 +36,22 @@ static const proto::ProtoObject* binaryTrueDivide(proto::ProtoContext* ctx,
     if (b->isDouble(ctx) && b->asDouble(ctx) == 0.0) return PROTO_NONE;
     const proto::ProtoObject* r = a->divide(ctx, b);
     return r ? r : PROTO_NONE;
+}
+
+static const proto::ProtoObject* binaryModulo(proto::ProtoContext* ctx,
+    const proto::ProtoObject* a, const proto::ProtoObject* b) {
+    if (a->isInteger(ctx) && b->isInteger(ctx)) {
+        long long bb = b->asLong(ctx);
+        if (bb == 0) return PROTO_NONE;
+        return ctx->fromInteger(a->asLong(ctx) % bb);
+    }
+    if (a->isDouble(ctx) || b->isDouble(ctx)) {
+        double aa = a->isDouble(ctx) ? a->asDouble(ctx) : static_cast<double>(a->asLong(ctx));
+        double bb = b->isDouble(ctx) ? b->asDouble(ctx) : static_cast<double>(b->asLong(ctx));
+        if (bb == 0.0) return PROTO_NONE;
+        return ctx->fromDouble(std::fmod(aa, bb));
+    }
+    return PROTO_NONE;
 }
 
 static const proto::ProtoObject* compareOp(proto::ProtoContext* ctx,
@@ -136,6 +153,14 @@ const proto::ProtoObject* executeMinimalBytecode(
             const proto::ProtoObject* a = stack.back();
             stack.pop_back();
             const proto::ProtoObject* r = binaryTrueDivide(ctx, a, b);
+            if (r) stack.push_back(r);
+        } else if (op == OP_BINARY_MODULO) {
+            if (stack.size() < 2) continue;
+            const proto::ProtoObject* b = stack.back();
+            stack.pop_back();
+            const proto::ProtoObject* a = stack.back();
+            stack.pop_back();
+            const proto::ProtoObject* r = binaryModulo(ctx, a, b);
             if (r) stack.push_back(r);
         } else if (op == OP_COMPARE_OP) {
             i++;

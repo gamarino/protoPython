@@ -1,5 +1,14 @@
 # functools.py - Minimal stub; wraps placeholder.
 
+class partial:
+    """Stub: minimal partial application placeholder."""
+    def __init__(self, func, *args, **kwargs):
+        self.func = func
+        self.args = args
+        self.keywords = kwargs
+    def __call__(self, *args, **kwargs):
+        return self.func(*(self.args + args), **{**self.keywords, **kwargs})
+
 def reduce(function, iterable, initializer=None):
     """Stub: returns initializer or first element."""
     it = iter(iterable)

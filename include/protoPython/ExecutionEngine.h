@@ -59,6 +59,8 @@ constexpr int OP_BUILD_SLICE = 124;
 constexpr int OP_ROT_TWO = 125;
 /** DUP_TOP: duplicate the reference on top of the stack. */
 constexpr int OP_DUP_TOP = 126;
+/** BINARY_MODULO: pop two values, push left % right. */
+constexpr int OP_BINARY_MODULO = 127;
 
 /**
  * @brief Executes bytecode: LOAD_CONST, RETURN_VALUE, LOAD_NAME, STORE_NAME,

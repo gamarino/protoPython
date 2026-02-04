@@ -100,6 +100,35 @@ static const proto::ProtoObject* py_isnan(
     return std::isnan(x) ? PROTO_TRUE : PROTO_FALSE;
 }
 
+static long long gcd_impl(long long a, long long b) {
+    a = a < 0 ? -a : a;
+    b = b < 0 ? -b : b;
+    while (b != 0) { long long t = b; b = a % b; a = t; }
+    return a;
+}
+
+static const proto::ProtoObject* py_gcd(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
+    long long a = posArgs->getAt(ctx, 0)->asLong(ctx);
+    long long b = posArgs->getAt(ctx, 1)->asLong(ctx);
+    return ctx->fromInteger(gcd_impl(a, b));
+}
+
+static const proto::ProtoObject* py_lcm(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
+    long long a = posArgs->getAt(ctx, 0)->asLong(ctx);
+    long long b = posArgs->getAt(ctx, 1)->asLong(ctx);
+    long long g = gcd_impl(a, b);
+    if (g == 0) return ctx->fromInteger(0);
+    long long ax = a < 0 ? -a : a;
+    long long bx = b < 0 ? -b : b;
+    return ctx->fromInteger(ax / g * bx);
+}
+
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     const proto::ProtoObject* mod = ctx->newObject(true);
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "sqrt"),
@@ -122,6 +151,10 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_isfinite));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "isnan"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_isnan));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "gcd"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_gcd));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "lcm"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_lcm));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "pi"),
         ctx->fromDouble(3.14159265358979323846));
     return mod;

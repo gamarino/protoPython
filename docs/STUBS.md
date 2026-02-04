@@ -7,7 +7,8 @@ This document catalogs stub implementations and their completion status.
 | Component | Item | Status |
 |-----------|------|--------|
 | **set** | union, intersection, difference | Implemented |
-| **itertools** | accumulate, groupby, product, combinations, combinations_with_replacement, permutations | Return empty iterator (no longer None) |
+| **itertools** | accumulate | Full implementation (default add, optional binary func) |
+| **itertools** | groupby, product, combinations, combinations_with_replacement, permutations | Return empty iterator (no longer None) |
 | **math** | isclose | Implemented |
 
 ## Native (C++) Stubs — Remaining

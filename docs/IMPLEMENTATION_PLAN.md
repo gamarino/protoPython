@@ -73,6 +73,8 @@ We aim for "No-Modification" compatibility with CPython tests.
 
 **Stub completion (post-v18).** See [STUBS.md](STUBS.md). set union/intersection/difference implemented; itertools stubs return empty iterator; math.isclose implemented; tempfile.mkstemp, subprocess.run/Popen/CompletedProcess enhanced; os.path, pathsep, sep added.
 
+**Completed: Next 20 Steps v19 (305–324).** See [NEXT_20_STEPS_V19.md](NEXT_20_STEPS_V19.md). itertools.accumulate full implementation (default add + optional func); foundation tests set.union/copy, math.isclose, itertools.accumulate; docs and todo updated.
+
 ## 5. Debugging & IDE Support
 To be a viable replacement, `protoPython` must support professional developer workflows.
 

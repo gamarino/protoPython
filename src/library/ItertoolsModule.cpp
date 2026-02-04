@@ -1,4 +1,5 @@
 #include <protoPython/ItertoolsModule.h>
+#include <string>
 
 namespace protoPython {
 namespace itertools {
@@ -328,11 +329,80 @@ static const proto::ProtoObject* empty_iterator(proto::ProtoContext* ctx, const 
     return chainM->asMethod(ctx)(ctx, self, nullptr, ctx->newList(), nullptr);
 }
 
-static const proto::ProtoObject* py_accumulate_stub(
+/** Binary add for two ProtoObjects (int, float, str); else calls left.__add__(right). */
+static const proto::ProtoObject* accumulate_add(
+    proto::ProtoContext* ctx, const proto::ProtoObject* left, const proto::ProtoObject* right) {
+    if (left->isInteger(ctx) && right->isInteger(ctx))
+        return ctx->fromInteger(left->asLong(ctx) + right->asLong(ctx));
+    if (left->isDouble(ctx) || right->isDouble(ctx)) {
+        double a = left->isDouble(ctx) ? left->asDouble(ctx) : (left->isInteger(ctx) ? static_cast<double>(left->asLong(ctx)) : 0.0);
+        double b = right->isDouble(ctx) ? right->asDouble(ctx) : (right->isInteger(ctx) ? static_cast<double>(right->asLong(ctx)) : 0.0);
+        return ctx->fromDouble(a + b);
+    }
+    if (left->isString(ctx) && right->isString(ctx)) {
+        std::string sa, sb;
+        left->asString(ctx)->toUTF8String(ctx, sa);
+        right->asString(ctx)->toUTF8String(ctx, sb);
+        return ctx->fromUTF8String((sa + sb).c_str());
+    }
+    const proto::ProtoObject* addM = left->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__add__"));
+    if (addM && addM->asMethod(ctx)) {
+        const proto::ProtoList* args = ctx->newList()->appendLast(ctx, right);
+        return addM->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(left), nullptr, args, nullptr);
+    }
+    return PROTO_NONE;
+}
+
+static const proto::ProtoObject* py_accumulate_next(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoObject* it = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__accum_it__"));
+    const proto::ProtoObject* totalObj = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__accum_total__"));
+    const proto::ProtoObject* func = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__accum_func__"));
+    if (!it) return PROTO_NONE;
+    const proto::ProtoObject* nextM = it->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__next__"));
+    if (!nextM || !nextM->asMethod(ctx)) return PROTO_NONE;
+
+    if (!totalObj || totalObj == PROTO_NONE) {
+        const proto::ProtoObject* first = nextM->asMethod(ctx)(ctx, it, nullptr, ctx->newList(), nullptr);
+        if (!first || first == PROTO_NONE) return PROTO_NONE;
+        self->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__accum_total__"), first);
+        return first;
+    }
+    const proto::ProtoObject* nextVal = nextM->asMethod(ctx)(ctx, it, nullptr, ctx->newList(), nullptr);
+    if (!nextVal || nextVal == PROTO_NONE) return PROTO_NONE;
+    const proto::ProtoObject* newTotal;
+    if (func && func != PROTO_NONE) {
+        const proto::ProtoList* args = ctx->newList()->appendLast(ctx, totalObj)->appendLast(ctx, nextVal);
+        const proto::ProtoObject* callResult = func->call(ctx, nullptr, proto::ProtoString::fromUTF8String(ctx, "__call__"), func, args, nullptr);
+        if (!callResult || callResult == PROTO_NONE) return PROTO_NONE;
+        newTotal = callResult;
+    } else {
+        newTotal = accumulate_add(ctx, totalObj, nextVal);
+        if (!newTotal || newTotal == PROTO_NONE) return PROTO_NONE;
+    }
+    self->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__accum_total__"), newTotal);
+    return newTotal;
+}
+
+static const proto::ProtoObject* py_accumulate(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    (void)posArgs;
-    return empty_iterator(ctx, self);
+    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    const proto::ProtoObject* iterable = posArgs->getAt(ctx, 0);
+    const proto::ProtoObject* func = (posArgs->getSize(ctx) >= 2) ? posArgs->getAt(ctx, 1) : PROTO_NONE;
+    const proto::ProtoObject* iterM = iterable->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iter__"));
+    if (!iterM || !iterM->asMethod(ctx)) return PROTO_NONE;
+    const proto::ProtoObject* it = iterM->asMethod(ctx)(ctx, iterable, nullptr, ctx->newList(), nullptr);
+    if (!it) return PROTO_NONE;
+    const proto::ProtoObject* proto = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__accumulate_proto__"));
+    if (!proto) return PROTO_NONE;
+    const proto::ProtoObject* acc = proto->newChild(ctx, true);
+    acc = acc->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__accum_it__"), it);
+    acc = acc->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__accum_total__"), PROTO_NONE);
+    acc = acc->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__accum_func__"), func ? func : PROTO_NONE);
+    return acc;
 }
 
 static const proto::ProtoObject* py_groupby_stub(
@@ -461,8 +531,14 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
 
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "tee"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_tee));
+    const proto::ProtoObject* accumulateProto = ctx->newObject(true);
+    accumulateProto = accumulateProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iter__"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(accumulateProto), py_iter_self));
+    accumulateProto = accumulateProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__next__"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(accumulateProto), py_accumulate_next));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__accumulate_proto__"), accumulateProto);
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "accumulate"),
-        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_accumulate_stub));
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_accumulate));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "groupby"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_groupby_stub));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "product"),
