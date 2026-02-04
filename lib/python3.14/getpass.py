@@ -8,5 +8,9 @@ def getpass(prompt="Password: ", stream=None):
     return ""
 
 def getuser():
-    """Stub: return placeholder. Full impl requires os.environ or pwd."""
-    return ""
+    """Return username from os.environ (USER or LOGNAME)."""
+    try:
+        import os
+        return os.environ.get('USER') or os.environ.get('LOGNAME') or ''
+    except Exception:
+        return ""
