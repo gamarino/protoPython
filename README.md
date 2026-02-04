@@ -2,6 +2,10 @@
 
 A high-performance Python 3.14 compatible environment built on top of [protoCore](file:///home/gamarino/Documentos/proyectos/protoCore).
 
+## Installation
+
+See [docs/INSTALLATION.md](docs/INSTALLATION.md) for installation procedures on Linux (.deb, .rpm, build from source), Windows, and macOS.
+
 ## Project Overview
 
 ProtoPython aims to provide a GIL-less, highly parallel Python runtime and a C++ compiler for Python modules.

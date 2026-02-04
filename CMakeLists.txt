@@ -57,3 +57,40 @@ if(PROTOPY_BENCHMARKS)
 endif()
 
 # add_subdirectory(src/compiler) # Not yet ready
+
+# --- Install rules ---
+include(GNUInstallDirs)
+set(CMAKE_INSTALL_COMPONENT "protoPython")
+
+install(TARGETS protopy
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    COMPONENT protoPython
+)
+
+install(TARGETS protoPython
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    COMPONENT protoPython
+)
+
+install(DIRECTORY lib/python3.14
+    DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/protoPython
+    USE_SOURCE_PERMISSIONS
+    COMPONENT protoPython
+)
+
+# --- CPack (DEB, RPM, etc.) ---
+set(CPACK_PACKAGE_NAME "protopython")
+set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION})
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "protoPython - GIL-less Python 3.14 compatible runtime")
+set(CPACK_PACKAGE_VENDOR "protoPython")
+set(CPACK_RESOURCE_FILE_README "${CMAKE_CURRENT_SOURCE_DIR}/README.md")
+set(CPACK_COMPONENTS_ALL protoPython)
+
+set(CPACK_DEBIAN_PACKAGE_MAINTAINER "gamarino@gmail.com")
+set(CPACK_DEBIAN_PACKAGE_SECTION "interpreters")
+
+set(CPACK_RPM_PACKAGE_LICENSE "MIT")
+set(CPACK_RPM_PACKAGE_GROUP "Development/Languages")
+
+include(CPack)
