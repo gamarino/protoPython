@@ -824,6 +824,37 @@ static const proto::ProtoObject* py_list_extend(
     return PROTO_NONE;
 }
 
+/** list.__iadd__(other): in-place extend with other, return self (for +=). */
+static const proto::ProtoObject* py_list_iadd(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    if (!positionalParameters || positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    const proto::ProtoObject* otherObj = positionalParameters->getAt(context, 0);
+    if (!otherObj) return PROTO_NONE;
+
+    const proto::ProtoList* otherList = otherObj->asList(context);
+    if (!otherList) {
+        const proto::ProtoObject* otherData = otherObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"));
+        if (otherData) otherList = otherData->asList(context);
+    }
+    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "__data__");
+    const proto::ProtoObject* data = self->getAttribute(context, dataName);
+    if (!data || !data->asList(context)) return PROTO_NONE;
+    const proto::ProtoList* list = data->asList(context);
+    if (!otherList) return PROTO_NONE;
+
+    const proto::ProtoList* newList = list;
+    unsigned long otherSize = otherList->getSize(context);
+    for (unsigned long i = 0; i < otherSize; ++i) {
+        newList = newList->appendLast(context, otherList->getAt(context, static_cast<int>(i)));
+    }
+    const_cast<proto::ProtoObject*>(self)->setAttribute(context, dataName, newList->asObject(context));
+    return self;
+}
+
 static const proto::ProtoObject* py_list_reverse(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -4081,6 +4112,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     const proto::ProtoString* py_rmul = proto::ProtoString::fromUTF8String(context, "__rmul__");
     listPrototype = listPrototype->setAttribute(context, py_mul, context->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_mul));
     listPrototype = listPrototype->setAttribute(context, py_rmul, context->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_mul));
+    listPrototype = listPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__iadd__"), context->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_iadd));
 
     const proto::ProtoObject* listIterProto = context->newObject(true);
     listIterProto = listIterProto->addParent(context, objectPrototype);
