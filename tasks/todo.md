@@ -44,9 +44,13 @@ Derived from [IMPLEMENTATION_PLAN.md](../docs/IMPLEMENTATION_PLAN.md). See also 
 
 See [docs/NEXT_20_STEPS_V4.md](../docs/NEXT_20_STEPS_V4.md). Steps 01–24 completed.
 
-## 8. Next 20 Steps (v5)
+## 8. Next 20 Steps (v5) — completed
 
-See [docs/NEXT_20_STEPS_V5.md](../docs/NEXT_20_STEPS_V5.md). Steps 25–44 planned.
+See [docs/NEXT_20_STEPS_V5.md](../docs/NEXT_20_STEPS_V5.md). Steps 25–44 completed.
+
+## 9. Next 20 Steps (v6)
+
+See [docs/NEXT_20_STEPS_V6.md](../docs/NEXT_20_STEPS_V6.md). Steps 45–64 planned.
 - [x] Step 25: Foundation test stability / GC reproducer documentation
 - [x] Step 26: Builtins callable, getattr, setattr, hasattr, delattr
 - [x] Step 27: Slice object + __getitem__ slice support for list/str
