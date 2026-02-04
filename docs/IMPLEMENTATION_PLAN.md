@@ -67,6 +67,8 @@ We aim for "No-Modification" compatibility with CPython tests.
 
 **Completed: Next 20 Steps v16 (245–264).** See [NEXT_20_STEPS_V16.md](NEXT_20_STEPS_V16.md). str `isupper`, `islower`; bytes `index`, `rfind`; itertools `product`, `combinations` stubs; math `fabs`, `trunc`; foundation test set.pop.
 
+**Completed: Next 20 Steps v17 (265–284).** See [NEXT_20_STEPS_V17.md](NEXT_20_STEPS_V17.md). str `lstrip(chars)`, `rstrip(chars)`; dict `fromkeys`; str `isdecimal`, `isnumeric`; bytes `startswith`, `endswith`; set `discard`; itertools `combinations_with_replacement`, `permutations` stubs; math `copysign`, `isclose`; collections.Counter, uuid, secrets stubs; foundation tests str.isupper, bytes.index; exec engine BinarySubtract test.
+
 ## 5. Debugging & IDE Support
 To be a viable replacement, `protoPython` must support professional developer workflows.
 
