@@ -9,6 +9,7 @@ add_library(protoPython SHARED
     OperatorModule.cpp
     ReModule.cpp
     OsPathModule.cpp
+    PathlibModule.cpp
     PythonEnvironment.cpp
     PythonModuleProvider.cpp
     NativeModuleProvider.cpp
