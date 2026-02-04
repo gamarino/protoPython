@@ -935,6 +935,28 @@ TEST_F(FoundationTest, StringDunders) {
     const proto::ProtoObject* mixed = context->newObject(true)->addParent(context, strPrototype);
     mixed->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->fromUTF8String("12a45"));
     EXPECT_EQ(isdigitM->asMethod(context)(context, mixed, nullptr, context->newList(), nullptr), PROTO_FALSE);
+
+    const proto::ProtoObject* isupperM = strPrototype->getAttribute(context, proto::ProtoString::fromUTF8String(context, "isupper"));
+    ASSERT_NE(isupperM, nullptr);
+    const proto::ProtoObject* upperStr = context->newObject(true)->addParent(context, strPrototype);
+    upperStr->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->fromUTF8String("ABC"));
+    EXPECT_EQ(isupperM->asMethod(context)(context, upperStr, nullptr, context->newList(), nullptr), PROTO_TRUE);
+    EXPECT_EQ(isupperM->asMethod(context)(context, wrapped, nullptr, context->newList(), nullptr), PROTO_FALSE);
+}
+
+TEST_F(FoundationTest, BytesIndex) {
+    proto::ProtoContext* context = env.getContext();
+    const proto::ProtoObject* bytesPrototype = env.getBytesPrototype();
+    ASSERT_NE(bytesPrototype, nullptr);
+    const proto::ProtoObject* b = context->newObject(true)->addParent(context, bytesPrototype);
+    b->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->fromUTF8String("hello"));
+    const proto::ProtoObject* indexM = bytesPrototype->getAttribute(context, proto::ProtoString::fromUTF8String(context, "index"));
+    ASSERT_NE(indexM, nullptr);
+    const proto::ProtoList* args = context->newList()->appendLast(context, context->fromUTF8String("ll"));
+    const proto::ProtoObject* idx = indexM->asMethod(context)(context, b, nullptr, args, nullptr);
+    ASSERT_NE(idx, nullptr);
+    EXPECT_TRUE(idx->isInteger(context));
+    EXPECT_EQ(idx->asLong(context), 2);
 }
 
 TEST_F(FoundationTest, ContainerExceptions) {
