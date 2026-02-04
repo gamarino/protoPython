@@ -54,17 +54,20 @@ static const proto::ProtoObject* py_print(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
+    (void)keywordParameters;
+    std::string sep = " ";
+    std::string end = "\n";
+
     unsigned long size = positionalParameters->getSize(context);
     for (unsigned long i = 0; i < size; ++i) {
         const proto::ProtoObject* obj = positionalParameters->getAt(context, static_cast<int>(i));
-        
-        // Call str(obj)
+
         const proto::ProtoObject* strMethod = obj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__str__"));
         const proto::ProtoObject* strObj = PROTO_NONE;
         if (strMethod && strMethod->asMethod(context)) {
             strObj = strMethod->asMethod(context)(context, obj, nullptr, nullptr, nullptr);
         }
-        
+
         if (strObj && strObj->isString(context)) {
             std::string out;
             strObj->asString(context)->toUTF8String(context, out);
@@ -72,10 +75,10 @@ static const proto::ProtoObject* py_print(
         } else {
             std::cout << "<unprintable>";
         }
-        
-        if (i < size - 1) std::cout << " ";
+
+        if (i < size - 1) std::cout << sep;
     }
-    std::cout << std::endl;
+    std::cout << end;
     return PROTO_NONE;
 }
 
@@ -468,6 +471,32 @@ static const proto::ProtoObject* py_setattr(
     return PROTO_NONE;
 }
 
+static const proto::ProtoObject* py_dir(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    (void)parentLink;
+    (void)keywordParameters;
+    (void)self;
+    (void)positionalParameters;
+    return context->newList()->asObject(context);
+}
+
+static const proto::ProtoObject* py_hash(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
+    const proto::ProtoObject* hashMethod = obj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__hash__"));
+    if (!hashMethod || !hashMethod->asMethod(context)) return PROTO_NONE;
+    return hashMethod->asMethod(context)(context, obj, nullptr, context->newList(), nullptr);
+}
+
 static const proto::ProtoObject* py_hasattr(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -597,6 +626,11 @@ static const proto::ProtoObject* py_max(
     return context->fromInteger(m);
 }
 
+static const proto::ProtoObject* py_range_next(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*);
+
 static const proto::ProtoObject* py_range(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -606,7 +640,7 @@ static const proto::ProtoObject* py_range(
     long long start = 0;
     long long stop = 0;
     long long step = 1;
-    
+
     unsigned long argsSize = positionalParameters->getSize(context);
     if (argsSize == 1) {
         stop = positionalParameters->getAt(context, 0)->asLong(context);
@@ -617,21 +651,35 @@ static const proto::ProtoObject* py_range(
             step = positionalParameters->getAt(context, 2)->asLong(context);
         }
     }
-    
+
     if (step == 0) return PROTO_NONE;
-    
-    const proto::ProtoList* list = context->newList();
-    if (step > 0) {
-        for (long long i = start; i < stop; i += step) {
-            list = list->appendLast(context, context->fromInteger(i));
-        }
-    } else {
-        for (long long i = start; i > stop; i += step) {
-            list = list->appendLast(context, context->fromInteger(i));
-        }
-    }
-    
-    return list->asObject(context);
+
+    const proto::ProtoObject* rangeProto = self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__range_proto__"));
+    if (!rangeProto) return PROTO_NONE;
+    const proto::ProtoObject* rangeObj = rangeProto->newChild(context, true);
+    rangeObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__range_cur__"), context->fromInteger(start));
+    rangeObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__range_stop__"), context->fromInteger(stop));
+    rangeObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__range_step__"), context->fromInteger(step));
+    return rangeObj;
+}
+
+static const proto::ProtoObject* py_range_next(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoObject* curObj = self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__range_cur__"));
+    const proto::ProtoObject* stopObj = self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__range_stop__"));
+    const proto::ProtoObject* stepObj = self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__range_step__"));
+    if (!curObj || !stopObj || !stepObj) return PROTO_NONE;
+    long long cur = curObj->asLong(context);
+    long long stop = stopObj->asLong(context);
+    long long step = stepObj->asLong(context);
+
+    bool done = (step > 0 && cur >= stop) || (step < 0 && cur <= stop);
+    if (done) return PROTO_NONE;
+
+    self->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__range_cur__"), context->fromInteger(cur + step));
+    return context->fromInteger(cur);
 }
 
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::ProtoObject* objectProto,
@@ -693,6 +741,11 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     revProto = revProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__next__"), ctx->fromMethod(const_cast<proto::ProtoObject*>(revProto), py_reversed_next));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__reversed_proto__"), revProto);
 
+    const proto::ProtoObject* rangeProto = ctx->newObject(true);
+    rangeProto = rangeProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iter__"), ctx->fromMethod(const_cast<proto::ProtoObject*>(rangeProto), py_iter_self));
+    rangeProto = rangeProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__next__"), ctx->fromMethod(const_cast<proto::ProtoObject*>(rangeProto), py_range_next));
+    builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__range_proto__"), rangeProto);
+
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "abs"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_abs));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "min"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_min));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "max"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_max));
@@ -703,6 +756,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "hasattr"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_hasattr));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "delattr"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_delattr));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "raise"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_raise));
+    builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "dir"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_dir));
+    builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "hash"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_hash));
 
     return builtins;
 }
