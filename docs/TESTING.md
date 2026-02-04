@@ -44,10 +44,38 @@ ctest -R test_regr
 
 ## Incremental Regression Tracking
 
-Use `test/regression/run_and_report.py` to track compatibility:
+Incremental success is tracked via `test/regression/run_and_report.py`. Results can be persisted to JSON for history and CI.
+
+### Persisting results
+
+- **`--output <path>`**: Write results to a JSON file at `<path>`.
+- **`REGRTEST_RESULTS=<path>`**: Same effect; use instead of or in addition to `--output` (env var is applied when writing).
+
+Example:
 
 ```bash
 PROTYPY_BIN=./build/src/runtime/protopy python test/regression/run_and_report.py --output results/latest.json
 ```
 
-Results can be persisted to JSON for history. See [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) Section 3 (Compatibility & Testing).
+Or with env var:
+
+```bash
+PROTYPY_BIN=./build/src/runtime/protopy REGRTEST_RESULTS=test/regression/results/latest.json python test/regression/run_and_report.py
+```
+
+### JSON output format
+
+The persisted JSON contains:
+
+- `passed`, `failed`, `total`: Counts.
+- `compatibility_pct`: Percentage of tests passed.
+- `timestamp`: ISO timestamp (UTC).
+- `failed_tests`: List of failing test names.
+
+If the output directory contains or is configured with `REGRTEST_HISTORY`, the same payload is appended to a `history.json` file (up to the last 100 runs).
+
+### CTest
+
+The test `regrtest_persistence` (when Python 3 is available) runs `run_and_report.py` with `--output` to `test/regression/results/ctest_regrtest.json` and verifies the file exists and has the expected keys. This exercises the persistence path in CI.
+
+See [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) Section 3 (Compatibility & Testing).

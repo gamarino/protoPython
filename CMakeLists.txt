@@ -22,6 +22,17 @@ add_subdirectory(test/regression)
 add_test(NAME regrtest_protopy_script COMMAND $<TARGET_FILE:protopy> --script ${CMAKE_SOURCE_DIR}/test/regression/regrtest_runner.py)
 set_tests_properties(regrtest_protopy_script PROPERTIES LABELS "regression_gate")
 
+# Test: run_and_report.py --output persistence (JSON written and valid)
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if(Python3_FOUND)
+    add_test(NAME regrtest_persistence
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/test/regression/run_and_validate_output.py)
+    set_tests_properties(regrtest_persistence PROPERTIES
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/test/regression
+        ENVIRONMENT "PROTOPY_BIN=$<TARGET_FILE:protopy>"
+        LABELS "regression_gate")
+endif()
+
 add_test(NAME protopy_cli_help COMMAND $<TARGET_FILE:protopy> --help)
 add_test(NAME protopy_cli_missing_module
     COMMAND ${CMAKE_SOURCE_DIR}/test/regression/assert_exit.sh 65 $<TARGET_FILE:protopy> --dry-run --module __proto_missing__)
