@@ -1410,6 +1410,65 @@ static const proto::ProtoObject* py_str_lower(
     return context->fromUTF8String(s.c_str());
 }
 
+static const proto::ProtoObject* py_str_split(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoString* str = str_from_self(context, self);
+    if (!str) return PROTO_NONE;
+    std::string s;
+    str->toUTF8String(context, s);
+    std::string sep = " ";
+    if (posArgs->getSize(context) >= 1) {
+        const proto::ProtoObject* sepObj = posArgs->getAt(context, 0);
+        if (sepObj->isString(context)) sepObj->asString(context)->toUTF8String(context, sep);
+    }
+    const proto::ProtoList* result = context->newList();
+    if (sep.empty()) return PROTO_NONE;
+    size_t start = 0;
+    for (;;) {
+        size_t pos = s.find(sep, start);
+        if (pos == std::string::npos) {
+            result = result->appendLast(context, context->fromUTF8String(s.substr(start).c_str()));
+            break;
+        }
+        result = result->appendLast(context, context->fromUTF8String(s.substr(start, pos - start).c_str()));
+        start = pos + sep.size();
+    }
+    return result->asObject(context);
+}
+
+static const proto::ProtoObject* py_str_join(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoString* sep = str_from_self(context, self);
+    if (!sep || posArgs->getSize(context) < 1) return PROTO_NONE;
+    std::string sepStr;
+    sep->toUTF8String(context, sepStr);
+    const proto::ProtoObject* iterable = posArgs->getAt(context, 0);
+    const proto::ProtoObject* iterM = iterable->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__iter__"));
+    if (!iterM || !iterM->asMethod(context)) return PROTO_NONE;
+    const proto::ProtoObject* it = iterM->asMethod(context)(context, iterable, nullptr, context->newList(), nullptr);
+    if (!it || it == PROTO_NONE) return context->fromUTF8String("");
+    const proto::ProtoObject* nextM = it->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__next__"));
+    if (!nextM || !nextM->asMethod(context)) return context->fromUTF8String("");
+    std::string out;
+    bool first = true;
+    for (;;) {
+        const proto::ProtoObject* item = nextM->asMethod(context)(context, it, nullptr, context->newList(), nullptr);
+        if (!item || item == PROTO_NONE) break;
+        if (!first) out += sepStr;
+        first = false;
+        if (item->isString(context)) {
+            std::string part;
+            item->asString(context)->toUTF8String(context, part);
+            out += part;
+        }
+    }
+    return context->fromUTF8String(out.c_str());
+}
+
 static const proto::ProtoObject* py_dict_repr(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -1724,6 +1783,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     const proto::ProtoString* py_upper = proto::ProtoString::fromUTF8String(context, "upper");
     const proto::ProtoString* py_lower = proto::ProtoString::fromUTF8String(context, "lower");
     const proto::ProtoString* py_format = proto::ProtoString::fromUTF8String(context, "format");
+    const proto::ProtoString* py_split = proto::ProtoString::fromUTF8String(context, "split");
+    const proto::ProtoString* py_join = proto::ProtoString::fromUTF8String(context, "join");
     const proto::ProtoString* py_add = proto::ProtoString::fromUTF8String(context, "add");
 
     // 1. Create 'object' base
@@ -1764,6 +1825,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     strPrototype = strPrototype->setAttribute(context, py_format, context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_format));
     strPrototype = strPrototype->setAttribute(context, py_format_dunder, context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_format_dunder));
     strPrototype = strPrototype->setAttribute(context, py_hash, context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_hash));
+    strPrototype = strPrototype->setAttribute(context, py_split, context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_split));
+    strPrototype = strPrototype->setAttribute(context, py_join, context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_join));
 
     listPrototype = context->newObject(true);
     listPrototype = listPrototype->addParent(context, objectPrototype);

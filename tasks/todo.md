@@ -82,6 +82,12 @@ See [docs/NEXT_20_STEPS_V7.md](../docs/NEXT_20_STEPS_V7.md). Steps 65–84 plann
 - [x] Step 69: exec POP_JUMP_IF_FALSE, JUMP_ABSOLUTE
 - [x] Step 70: dir builtin (stub)
 - [x] Step 71: hash builtin
+- [x] Step 72: id builtin (already present)
+- [x] Step 73: str split
+- [x] Step 74: str join
+- [x] Step 80: getattr default (already present)
+- [x] Step 81: sys.getsizeof
+- [x] Step 82: isinstance bool fix
 - [x] Step 25: Foundation test stability / GC reproducer documentation
 - [x] Step 26: Builtins callable, getattr, setattr, hasattr, delattr
 - [x] Step 27: Slice object + __getitem__ slice support for list/str
