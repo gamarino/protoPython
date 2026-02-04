@@ -38,7 +38,7 @@ This document catalogs stub implementations and their completion status.
 | struct | pack, unpack | Return empty bytes / empty tuple |
 | getopt | getopt | Implemented: shortopts, longopts; returns (options, args). GetoptError on bad option. |
 | argparse | ArgumentParser | Stub parser |
-| warnings | warn | No-op |
+| warnings | warn | Implemented: prints message (and category name if given) to sys.stderr when available. |
 | time | time, sleep | Return 0.0; no-op |
 | random | random, choice | Return 0.0; return first element |
 | datetime | datetime | Stub class |
