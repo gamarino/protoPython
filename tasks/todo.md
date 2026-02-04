@@ -168,6 +168,12 @@ See [docs/NEXT_20_STEPS_V31.md](../docs/NEXT_20_STEPS_V31.md). Steps 545–564: 
 
 - [x] Steps 545–564
 
+## 36. Next 20 Steps (v32) — completed
+
+See [docs/NEXT_20_STEPS_V32.md](../docs/NEXT_20_STEPS_V32.md). Steps 565–584: math.ulp, math.nextafter; ctypes, sqlite3 stubs; foundation tests MathUlp, MathNextafter; STUBS and todo updated.
+
+- [x] Steps 565–584
+
 - [x] Step 145: ord builtin
 - [x] Step 146: chr builtin
 - [x] Step 147: bin builtin

@@ -426,6 +426,27 @@ static const proto::ProtoObject* py_tanh(
     return ctx->fromDouble(std::tanh(x));
 }
 
+static const proto::ProtoObject* py_ulp(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    double x = toDouble(ctx, posArgs->getAt(ctx, 0));
+    if (std::isnan(x)) return ctx->fromDouble(std::numeric_limits<double>::quiet_NaN());
+    if (std::isinf(x)) return ctx->fromDouble(std::numeric_limits<double>::infinity());
+    if (x == 0.0) return ctx->fromDouble(std::numeric_limits<double>::denorm_min());
+    double next = std::nextafter(x, (x > 0 ? 1.0 : -1.0) * std::numeric_limits<double>::infinity());
+    return ctx->fromDouble(std::abs(next - x));
+}
+
+static const proto::ProtoObject* py_nextafter(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
+    double x = toDouble(ctx, posArgs->getAt(ctx, 0));
+    double y = toDouble(ctx, posArgs->getAt(ctx, 1));
+    return ctx->fromDouble(std::nextafter(x, y));
+}
+
 static long long gcd_impl(long long a, long long b) {
     a = a < 0 ? -a : a;
     b = b < 0 ? -b : b;
@@ -543,6 +564,10 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_sinh));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "tanh"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_tanh));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "ulp"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_ulp));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "nextafter"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_nextafter));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "gcd"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_gcd));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "lcm"),

@@ -1408,6 +1408,36 @@ TEST_F(FoundationTest, MathSinh) {
     EXPECT_NEAR(val, 0.0, 1e-10);  // sinh(0) == 0
 }
 
+TEST_F(FoundationTest, MathUlp) {
+    proto::ProtoContext* context = env.getContext();
+    const proto::ProtoObject* mathMod = env.resolve("math");
+    ASSERT_NE(mathMod, nullptr);
+    const proto::ProtoObject* ulpM = mathMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "ulp"));
+    ASSERT_NE(ulpM, nullptr);
+    const proto::ProtoList* args = context->newList()->appendLast(context, context->fromDouble(1.0));
+    const proto::ProtoObject* result = ulpM->asMethod(context)(context, mathMod, nullptr, args, nullptr);
+    ASSERT_NE(result, nullptr);
+    double val = result->isDouble(context) ? result->asDouble(context) : static_cast<double>(result->asLong(context));
+    EXPECT_GT(val, 0.0);
+    EXPECT_LT(val, 1e-10);  // ulp(1.0) is small positive
+}
+
+TEST_F(FoundationTest, MathNextafter) {
+    proto::ProtoContext* context = env.getContext();
+    const proto::ProtoObject* mathMod = env.resolve("math");
+    ASSERT_NE(mathMod, nullptr);
+    const proto::ProtoObject* infObj = mathMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "inf"));
+    ASSERT_NE(infObj, nullptr);
+    const proto::ProtoObject* nextafterM = mathMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "nextafter"));
+    ASSERT_NE(nextafterM, nullptr);
+    const proto::ProtoList* args = context->newList()->appendLast(context, context->fromDouble(1.0))->appendLast(context, infObj);
+    const proto::ProtoObject* result = nextafterM->asMethod(context)(context, mathMod, nullptr, args, nullptr);
+    ASSERT_NE(result, nullptr);
+    double val = result->isDouble(context) ? result->asDouble(context) : static_cast<double>(result->asLong(context));
+    EXPECT_GT(val, 1.0);
+    EXPECT_LT(val, 1.0 + 1e-14);  // nextafter(1, inf) > 1, very close
+}
+
 TEST_F(FoundationTest, MathFactorial) {
     proto::ProtoContext* context = env.getContext();
     const proto::ProtoObject* mathMod = env.resolve("math");
