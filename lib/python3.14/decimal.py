@@ -1,11 +1,23 @@
-# decimal.py - Minimal stub for decimal module.
-# Decimal is a stub class storing a value; full arithmetic not implemented. See STUBS.md.
+# decimal.py - Minimal Decimal with basic arithmetic.
 
 class Decimal:
-    """Stub: stores value; minimal __str__. Full decimal arithmetic not implemented."""
+    """Stores value as string; __str__, __repr__; basic __add__/__sub__."""
 
     def __init__(self, value="0", context=None):
         self._value = value if isinstance(value, str) else str(value)
 
     def __str__(self):
         return self._value
+
+    def __repr__(self):
+        return "Decimal('%s')" % self._value
+
+    def __add__(self, other):
+        if isinstance(other, Decimal):
+            return Decimal(str(float(self._value) + float(other._value)))
+        return Decimal(str(float(self._value) + float(other)))
+
+    def __sub__(self, other):
+        if isinstance(other, Decimal):
+            return Decimal(str(float(self._value) - float(other._value)))
+        return Decimal(str(float(self._value) - float(other)))

@@ -19,6 +19,10 @@ class Enum:
         return '<%s.%s: %s>' % (type(self).__name__, self._name, self._value)
 
 
+_auto_counter = 0
+
 def auto():
-    """Placeholder for auto-assigned enum value. Caller should replace with actual value."""
-    return object()
+    """Return incremental value for enum members."""
+    global _auto_counter
+    _auto_counter += 1
+    return _auto_counter

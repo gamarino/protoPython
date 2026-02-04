@@ -10,8 +10,11 @@ class FunctionType:
 
 
 class ModuleType:
-    """Stub: placeholder for module type. Full impl requires module instance."""
-    pass
+    """Minimal module type with __name__ and __dict__."""
+    def __init__(self, name, doc=None):
+        self.__name__ = name
+        self.__doc__ = doc
+        self.__dict__ = {}
 
 
 class SimpleNamespace:

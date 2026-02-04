@@ -5,13 +5,13 @@ isfunction, ismodule, getsourcefile, signature; no real introspection.
 
 
 def isfunction(obj):
-    """Stub: return False. Full impl requires function type check."""
-    return False
+    """Return True if obj has __code__ attribute (callable with code object)."""
+    return hasattr(obj, '__code__') and callable(obj)
 
 
 def ismodule(obj):
-    """Stub: return False. Full impl requires module type check."""
-    return False
+    """Return True if obj has __name__ and __dict__ (module-like)."""
+    return hasattr(obj, '__name__') and hasattr(obj, '__dict__')
 
 
 def getsourcefile(obj):
