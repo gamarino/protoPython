@@ -2210,6 +2210,41 @@ static const proto::ProtoObject* py_str_rsplit(
     return result->asObject(context);
 }
 
+static const proto::ProtoObject* py_str_splitlines(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoString* str = str_from_self(context, self);
+    if (!str) return PROTO_NONE;
+    std::string s;
+    str->toUTF8String(context, s);
+    bool keepends = false;
+    if (posArgs && posArgs->getSize(context) >= 1 && posArgs->getAt(context, 0)->isInteger(context))
+        keepends = posArgs->getAt(context, 0)->asLong(context) != 0;
+    const proto::ProtoList* result = context->newList();
+    size_t start = 0;
+    size_t i = 0;
+    while (i < s.size()) {
+        if (s[i] == '\n') {
+            std::string line = s.substr(start, i - start);
+            if (keepends) line += '\n';
+            result = result->appendLast(context, context->fromUTF8String(line.c_str()));
+            start = i + 1;
+            i++;
+        } else if (s[i] == '\r') {
+            std::string line = s.substr(start, i - start);
+            if (keepends) line += (i + 1 < s.size() && s[i + 1] == '\n') ? "\r\n" : "\r";
+            result = result->appendLast(context, context->fromUTF8String(line.c_str()));
+            i = (i + 1 < s.size() && s[i + 1] == '\n') ? i + 2 : i + 1;
+            start = i;
+        } else {
+            i++;
+        }
+    }
+    result = result->appendLast(context, context->fromUTF8String(s.substr(start).c_str()));
+    return result->asObject(context);
+}
+
 static bool is_ascii_whitespace(char c) {
     return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v';
 }
@@ -3220,6 +3255,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     strPrototype = strPrototype->setAttribute(context, py_count, context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_count));
     const proto::ProtoString* py_rsplit = proto::ProtoString::fromUTF8String(context, "rsplit");
     strPrototype = strPrototype->setAttribute(context, py_rsplit, context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_rsplit));
+    strPrototype = strPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "splitlines"), context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_splitlines));
     const proto::ProtoString* py_center = proto::ProtoString::fromUTF8String(context, "center");
     const proto::ProtoString* py_ljust = proto::ProtoString::fromUTF8String(context, "ljust");
     const proto::ProtoString* py_rjust = proto::ProtoString::fromUTF8String(context, "rjust");
