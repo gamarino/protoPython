@@ -43,6 +43,30 @@ static const proto::ProtoObject* py_tan(
     return ctx->fromDouble(std::tan(x));
 }
 
+static const proto::ProtoObject* py_asin(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    double x = toDouble(ctx, posArgs->getAt(ctx, 0));
+    return ctx->fromDouble(std::asin(x));
+}
+
+static const proto::ProtoObject* py_acos(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    double x = toDouble(ctx, posArgs->getAt(ctx, 0));
+    return ctx->fromDouble(std::acos(x));
+}
+
+static const proto::ProtoObject* py_atan(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    double x = toDouble(ctx, posArgs->getAt(ctx, 0));
+    return ctx->fromDouble(std::atan(x));
+}
+
 static const proto::ProtoObject* py_floor(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
@@ -195,6 +219,12 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_cos));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "tan"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_tan));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "asin"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_asin));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "acos"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_acos));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "atan"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_atan));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "floor"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_floor));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "ceil"),
