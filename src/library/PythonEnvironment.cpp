@@ -9,6 +9,10 @@
 #include <protoPython/LoggingModule.h>
 #include <protoPython/MathModule.h>
 #include <protoPython/OperatorModule.h>
+#include <protoPython/FunctoolsModule.h>
+#include <protoPython/ItertoolsModule.h>
+#include <protoPython/JsonModule.h>
+#include <protoPython/ReModule.h>
 #include <protoCore.h>
 
 namespace protoPython {
@@ -1879,6 +1883,10 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     nativeProvider->registerModule("logging", [](proto::ProtoContext* ctx) { return logging::initialize(ctx); });
     nativeProvider->registerModule("operator", [](proto::ProtoContext* ctx) { return operator_::initialize(ctx); });
     nativeProvider->registerModule("math", [](proto::ProtoContext* ctx) { return math::initialize(ctx); });
+    nativeProvider->registerModule("functools", [](proto::ProtoContext* ctx) { return functools::initialize(ctx); });
+    nativeProvider->registerModule("itertools", [](proto::ProtoContext* ctx) { return itertools::initialize(ctx); });
+    nativeProvider->registerModule("re", [](proto::ProtoContext* ctx) { return re::initialize(ctx); });
+    nativeProvider->registerModule("json", [](proto::ProtoContext* ctx) { return json::initialize(ctx); });
 
     const proto::ProtoObject* exceptionsMod = exceptions::initialize(context, objectPrototype, typePrototype);
     keyErrorType = exceptionsMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "KeyError"));

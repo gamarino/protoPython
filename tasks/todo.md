@@ -61,6 +61,10 @@ See [docs/NEXT_20_STEPS_V6.md](../docs/NEXT_20_STEPS_V6.md). Steps 45–64 plann
 - [x] Step 52: exec LOAD_NAME, STORE_NAME
 - [x] Step 53: exec BINARY_ADD, BINARY_SUBTRACT
 - [x] Step 54: exec CALL_FUNCTION
+- [x] Step 55: functools partial
+- [x] Step 56: itertools islice, count
+- [x] Step 57: re module stub
+- [x] Step 58: json module stub
 - [x] Step 25: Foundation test stability / GC reproducer documentation
 - [x] Step 26: Builtins callable, getattr, setattr, hasattr, delattr
 - [x] Step 27: Slice object + __getitem__ slice support for list/str
