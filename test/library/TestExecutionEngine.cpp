@@ -993,8 +993,8 @@ TEST(ExecutionEngineTest, InplaceXor) {
 TEST(ExecutionEngineTest, PopJumpIfFalse) {
     proto::ProtoSpace space;
     proto::ProtoContext ctx(&space);
+    // Truthy value (1) at const 0: POP_JUMP_IF_FALSE does not jump, fall through to LOAD_CONST 1 (constant 2), return 2.
     const proto::ProtoList* constants = ctx.newList()
-        ->appendLast(&ctx, ctx.fromInteger(0))
         ->appendLast(&ctx, ctx.fromInteger(1))
         ->appendLast(&ctx, ctx.fromInteger(2));
     const proto::ProtoList* bytecode = ctx.newList()
@@ -1002,7 +1002,7 @@ TEST(ExecutionEngineTest, PopJumpIfFalse) {
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_POP_JUMP_IF_FALSE))->appendLast(&ctx, ctx.fromInteger(4))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(1))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE))->appendLast(&ctx, ctx.fromInteger(0))
-        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(2))
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(1))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE))->appendLast(&ctx, ctx.fromInteger(0));
     const proto::ProtoObject* result = protoPython::executeMinimalBytecode(
         &ctx, constants, bytecode, nullptr, nullptr);

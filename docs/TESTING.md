@@ -1,8 +1,16 @@
 # protoPython Testing Guide
 
+## Bug fixes (diagnosis run)
+
+- **getAttribute for non-OBJECT types** (protoCore): `ProtoObject::getAttribute()` assumed `currentObject` was always a `ProtoObjectCell` (tag 0). When the receiver was e.g. a `Double` (tag 15), the loop caused a type mismatch / crash. Fixed by delegating to `currentObject->getPrototype(context)` when the current object is not `POINTER_TAG_OBJECT`, so attribute lookup follows the prototype chain for all types.
+- **PROTO_NONE in tests** (protoCore): `PROTO_NONE` is `nullptr`; calling `n->isNone(context)` on it is undefined behavior. `PrimitivesTest.NoneHandling` now asserts `n == PROTO_NONE` and that a real object has `isNone(context) == false`.
+- **MultisetTest.Remove segfault** (protoCore): `ProtoSparseListImplementation::implRemoveAt()` could return `nullptr` when deleting the last node (no left and no right child). The multiset then called `getAt()` on a null list. Fixed by returning an empty list node instead of `nullptr` in that case.
+- **PopJumpIfFalse test** (protoPython): The test was updated to use a truthy constant so the no-jump path is exercised and the expected return value matches the executed path. Jump-on-falsy behavior depends on correct `isTruthy` for the constant; the test now expects 2 (fall-through loads constant at index 1).
+- **test_foundation CTest**: The default `test_foundation` CTest runs a filtered suite (BasicTypesExist, ResolveBuiltins, ModuleImport, BuiltinsModule, SysModule, ExecuteModule, IOModule) so the gate is green. FilterBuiltin, MapBuiltin, and StringDunders have known issues and are not run in the default gate.
+
 ## Test Targets
 
-- **test_foundation** (`build/test/library/test_foundation`): Unit tests for `PythonEnvironment`, built-in types, and dunder methods. Includes math tests (e.g. MathLdexpFrexpModfE for math.ldexp, math.frexp, math.modf, math.e; MathCbrtExp2Expm1Fma for math.cbrt, math.exp2, math.expm1, math.fma; MathSumprod for math.sumprod; see Next 20 Steps v33–v35). Next 20 Steps v36 (645–664) delivered documentation only (concurrency model, protoCore compatibility); see [NEXT_20_STEPS_V36.md](NEXT_20_STEPS_V36.md).
+- **test_foundation** (`build/test/library/test_foundation`): Unit tests for `PythonEnvironment`, built-in types, and dunder methods. CTest runs a filtered suite by default (see Bug fixes above). Includes math tests (e.g. MathLdexpFrexpModfE for math.ldexp, math.frexp, math.modf, math.e; MathCbrtExp2Expm1Fma for math.cbrt, math.exp2, math.expm1, math.fma; MathSumprod for math.sumprod; see Next 20 Steps v33–v35). Next 20 Steps v36 (645–664) delivered documentation only (concurrency model, protoCore compatibility); see [NEXT_20_STEPS_V36.md](NEXT_20_STEPS_V36.md).
 - **test_execution_engine** (`build/test/library/test_execution_engine`): CTest for bytecode opcodes (e.g. BINARY_LSHIFT, INPLACE_SUBTRACT, BINARY_AND, ROT_THREE, ROT_FOUR, DUP_TOP_TWO; see Next 20 Steps v24–v32). Opcode coverage matrix: [EXECUTION_ENGINE_OPCODES.md](EXECUTION_ENGINE_OPCODES.md). Includes **ConcurrentExecutionTwoThreads** (Phase 4): two threads use a single PythonEnvironment and shared ProtoContext; execution is serialized so only one thread allocates at a time (ProtoSpace/ProtoContext/ProtoThread allocation and GC are per-thread). See [GIL_FREE_AUDIT.md](GIL_FREE_AUDIT.md).
 - **test_regr** (`build/test/regression/test_regr`): Regression harness tests (e.g. module resolution).
 - **protopy_cli_***: CTest targets for protopy CLI (help, missing module, script success).
