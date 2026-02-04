@@ -62,6 +62,11 @@ See [docs/NEXT_20_STEPS_V5.md](../docs/NEXT_20_STEPS_V5.md). Steps 25–44 plann
 - [x] Step 42: logging module stub
 - [x] Step 43: operator module
 - [x] Step 44: math module stub
+- [x] Step 33: Trace integration (--trace wires settrace, invoke on entry/exit)
+- [x] Step 35: sys.stats increment (calls)
+- [x] Step 37: in operator (builtin alias for contains)
+- [x] Step 38: __format__ protocol (object, str, int)
+- [x] Step 40: Minimal bytecode exec (LOAD_CONST, RETURN_VALUE)
 - [x] Step 01: Stabilize foundation tests (CTest timeout 60s, docs/TESTING.md, test_minimal/test_protocore_minimal reproducers; root fix in protoCore GC pending)
 - [x] Step 02: Tuple dunders (`__getitem__`, iter, contains, bool)
 - [x] Step 03: String dunders & helpers (iter, contains, upper/lower)
