@@ -88,6 +88,12 @@ See [docs/NEXT_20_STEPS_V7.md](../docs/NEXT_20_STEPS_V7.md). Steps 65–84 plann
 - [x] Step 80: getattr default (already present)
 - [x] Step 81: sys.getsizeof
 - [x] Step 82: isinstance bool fix
+- [x] Step 75: benchmark harness
+- [x] Step 76: benchmark startup_empty
+- [x] Step 77: benchmark int_sum_loop
+- [x] Step 78: benchmark report
+- [x] Step 79: benchmark CTest (optional -DPROTOPY_BENCHMARKS=ON)
+- [x] Step 83: exec engine tests (LOAD_NAME, BINARY_ADD, CALL_FUNCTION)
 - [x] Step 25: Foundation test stability / GC reproducer documentation
 - [x] Step 26: Builtins callable, getattr, setattr, hasattr, delattr
 - [x] Step 27: Slice object + __getitem__ slice support for list/str

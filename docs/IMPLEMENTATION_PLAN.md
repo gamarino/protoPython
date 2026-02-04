@@ -16,7 +16,7 @@ The foundation of the runtime must be fully compatible with Python 3.14's semant
 - [x] **Exception scaffolding**: `exceptions` module with `Exception`, `KeyError`, `ValueError`; see [EXCEPTIONS.md](EXCEPTIONS.md).
 - [x] **protopy CLI**: distinct exit codes and flags (`--module`, `--script`, `--path`, `--stdlib`, `--bytecode-only`, `--trace`, `--repl`) with tests.
 - [ ] **Phase 2b: Foundation test stability**: `test_foundation` hangs during list prototype creation (GC deadlock suspected). CTest timeout and troubleshooting docs added; see [TESTING.md](TESTING.md). v5 Step 25 documented GC reproducer; `test_foundation_filtered` runs stable subset.
-- [ ] **Phase 3: Execution Engine**: `executeMinimalBytecode` supports LOAD_CONST, RETURN_VALUE. v6 adds LOAD_NAME, STORE_NAME, BINARY_ADD/SUBTRACT, CALL_FUNCTION. protopy invokes module `main` when running a script (stub execution path). `PythonEnvironment::executeModule` provides high-level entry with optional pre/post execution hook.
+- [ ] **Phase 3: Execution Engine**: `executeMinimalBytecode` supports LOAD_CONST, RETURN_VALUE, LOAD_NAME, STORE_NAME, BINARY_ADD/SUBTRACT/MULTIPLY/TRUE_DIVIDE, COMPARE_OP, POP_JUMP_IF_FALSE, JUMP_ABSOLUTE, CALL_FUNCTION. protopy invokes module `main` when running a script. CTest `test_execution_engine` covers these opcodes.
 - [ ] **Phase 4: GIL-less Concurrency**: Audit all mutable operations to ensure thread-safety using `protoCore` primitives. Audit documented in [GIL_FREE_AUDIT.md](GIL_FREE_AUDIT.md); fixes TBD.
 
 ## 2. HPy Support for Imported Modules
@@ -75,15 +75,10 @@ Transitioning from interpreted to compiled execution.
 
 A dedicated performance test suite to measure protoPython execution speed and compare it against CPython 3.14.
 
-- [ ] **Benchmark harness**: Script or CTest target that runs the same workloads on both `protopy` and `python3.14`, records wall time and (optionally) memory usage.
-- [ ] **Benchmark categories**:
-  - **Startup**: Time to import a minimal module, time to first bytecode execution.
-  - **Object creation**: Lists, dicts, tuples, sets; iteration over built-in types.
-  - **Arithmetic**: Integer and float-heavy loops (e.g. sum of 1..N, simple math).
-  - **String operations**: Concatenation, iteration, `in`, format.
-  - **Builtins**: `len`, `iter`, `next`, `range`, `enumerate`, `reversed`, `all`, `any`.
-- [ ] **Reproducibility**: Fixed seed where applicable; warm-up runs before timing; multiple iterations with median reporting.
-- [ ] **Output**: Human-readable report (see §8.2) plus optional JSON for CI or dashboards.
+- [x] **Benchmark harness**: [benchmarks/run_benchmarks.py](benchmarks/run_benchmarks.py) runs workloads on protopy and CPython. Use `PROTOPY_BIN`, `CPYTHON_BIN`, `--output`.
+- [x] **Benchmark categories** (initial): Startup (`startup_empty`), Arithmetic (`int_sum_loop`). Future: object creation, string ops, builtins.
+- [x] **Reproducibility**: Warm-up runs before timing; median of 5 runs.
+- [x] **Output**: Human-readable report (see §7.2) via `--output`; writes to `benchmarks/reports/`.
 
 ### 7.2 CPython Comparison Format
 
