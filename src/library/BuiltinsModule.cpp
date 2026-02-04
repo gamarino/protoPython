@@ -485,6 +485,25 @@ static const proto::ProtoObject* py_dir(
     return context->newList()->asObject(context);
 }
 
+/** vars([object]): return object.__dict__ if given; stub for no-arg (locals). */
+static const proto::ProtoObject* py_vars(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    (void)parentLink;
+    (void)keywordParameters;
+    (void)self;
+    if (!positionalParameters || positionalParameters->getSize(context) == 0)
+        return PROTO_NONE;  // vars() without args: stub (would be caller locals)
+    const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
+    const proto::ProtoObject* d = obj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__dict__"));
+    if (d && d != PROTO_NONE)
+        return d;
+    return context->newSparseList()->asObject(context);
+}
+
 static const proto::ProtoObject* py_hash(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -874,6 +893,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "delattr"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_delattr));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "raise"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_raise));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "dir"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_dir));
+    builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "vars"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_vars));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "hash"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_hash));
 
     return builtins;
