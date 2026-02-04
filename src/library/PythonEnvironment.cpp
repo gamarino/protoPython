@@ -21,6 +21,7 @@
 #include <cctype>
 #include <cmath>
 #include <climits>
+#include <cstdio>
 #include <vector>
 
 namespace protoPython {
@@ -109,6 +110,29 @@ static const proto::ProtoObject* py_float_as_integer_ratio(
     const proto::ProtoList* pair = context->newList()->appendLast(context, context->fromInteger(num))->appendLast(context, context->fromInteger(den));
     const proto::ProtoTuple* tup = context->newTupleFromList(pair);
     return tup ? tup->asObject(context) : PROTO_NONE;
+}
+
+static const proto::ProtoObject* py_float_hex(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    if (!self->isDouble(context)) return PROTO_NONE;
+    double d = self->asDouble(context);
+    char buf[64];
+    std::snprintf(buf, sizeof(buf), "%a", d);
+    return context->fromUTF8String(buf);
+}
+
+static const proto::ProtoObject* py_float_fromhex(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* /*self*/,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(context) < 1 || !posArgs->getAt(context, 0)->isString(context)) return PROTO_NONE;
+    std::string s;
+    posArgs->getAt(context, 0)->asString(context)->toUTF8String(context, s);
+    double d = 0.0;
+    if (std::sscanf(s.c_str(), "%la", &d) != 1) return PROTO_NONE;
+    return context->fromDouble(d);
 }
 
 static const proto::ProtoObject* py_bool_call(
@@ -4339,6 +4363,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     floatPrototype = floatPrototype->setAttribute(context, py_is_integer, context->fromMethod(const_cast<proto::ProtoObject*>(floatPrototype), py_float_is_integer));
     const proto::ProtoString* py_as_integer_ratio = proto::ProtoString::fromUTF8String(context, "as_integer_ratio");
     floatPrototype = floatPrototype->setAttribute(context, py_as_integer_ratio, context->fromMethod(const_cast<proto::ProtoObject*>(floatPrototype), py_float_as_integer_ratio));
+    floatPrototype = floatPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "hex"), context->fromMethod(const_cast<proto::ProtoObject*>(floatPrototype), py_float_hex));
+    floatPrototype = floatPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "fromhex"), context->fromMethod(const_cast<proto::ProtoObject*>(floatPrototype), py_float_fromhex));
 
     boolPrototype = context->newObject(true);
     boolPrototype = boolPrototype->addParent(context, intPrototype);
