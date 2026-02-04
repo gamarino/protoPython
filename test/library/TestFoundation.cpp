@@ -1168,6 +1168,18 @@ TEST_F(FoundationTest, DictUnion) {
     EXPECT_EQ(lenVal->asLong(context), 2);
 }
 
+TEST_F(FoundationTest, OperatorNegOrGetattr) {
+    proto::ProtoContext* context = env.getContext();
+    const proto::ProtoObject* opMod = env.resolve("operator");
+    ASSERT_NE(opMod, nullptr);
+    const proto::ProtoObject* negM = opMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "neg"));
+    ASSERT_NE(negM, nullptr);
+    const proto::ProtoList* args = context->newList()->appendLast(context, context->fromInteger(-7));
+    const proto::ProtoObject* result = negM->asMethod(context)(context, opMod, nullptr, args, nullptr);
+    ASSERT_NE(result, nullptr);
+    EXPECT_EQ(result->asLong(context), 7);
+}
+
 TEST_F(FoundationTest, ListRepeat) {
     proto::ProtoContext* context = env.getContext();
     const proto::ProtoObject* listPrototype = env.getListPrototype();
