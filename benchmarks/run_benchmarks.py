@@ -31,39 +31,52 @@ def median(lst):
     return s[n // 2] if n % 2 else (s[n // 2 - 1] + s[n // 2]) / 2
 
 
-def run_cmd(cmd, cwd=None, timeout=60):
+def run_cmd(cmd, cwd=None, timeout=60, stderr_file=None):
+    """Run command; if stderr_file is set (for protopy trace), send stderr there."""
     start = time.perf_counter()
+    stderr_handle = None
     try:
-        r = subprocess.run(
-            cmd,
-            cwd=cwd or PROJECT_ROOT,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
+        kwargs = {
+            "cwd": cwd or PROJECT_ROOT,
+            "text": True,
+            "timeout": timeout,
+        }
+        if stderr_file:
+            stderr_handle = open(stderr_file, "a")
+            kwargs["stdout"] = subprocess.PIPE
+            kwargs["stderr"] = stderr_handle
+        else:
+            kwargs["capture_output"] = True
+        r = subprocess.run(cmd, **kwargs)
         elapsed_ms = (time.perf_counter() - start) * 1000
         return elapsed_ms, r.returncode
     except subprocess.TimeoutExpired:
         elapsed_ms = (time.perf_counter() - start) * 1000
         return elapsed_ms, -1
+    finally:
+        if stderr_handle is not None:
+            try:
+                stderr_handle.close()
+            except Exception:
+                pass
 
 
-def bench_startup_empty(protopy_bin, cpython_bin, timeout=60):
+def bench_startup_empty(protopy_bin, cpython_bin, timeout=60, trace_file=None):
     """Time to import minimal module (abc)."""
     times_protopy = []
     times_cpython = []
     for _ in range(WARMUP_RUNS):
-        run_cmd([protopy_bin, "--module", "abc"], timeout=timeout)
+        run_cmd([protopy_bin, "--module", "abc"], timeout=timeout, stderr_file=trace_file)
         run_cmd([cpython_bin, "-c", "import abc"], timeout=timeout)
     for _ in range(N_RUNS):
-        t, _ = run_cmd([protopy_bin, "--module", "abc"], timeout=timeout)
+        t, _ = run_cmd([protopy_bin, "--module", "abc"], timeout=timeout, stderr_file=trace_file)
         times_protopy.append(t)
         t, _ = run_cmd([cpython_bin, "-c", "import abc"], timeout=timeout)
         times_cpython.append(t)
     return median(times_protopy), median(times_cpython)
 
 
-def bench_int_sum_loop(protopy_bin, cpython_bin, timeout=60):
+def bench_int_sum_loop(protopy_bin, cpython_bin, timeout=60, trace_file=None):
     """Time to run sum(range(N)) with N=100000."""
     script = SCRIPT_DIR / "int_sum_loop.py"
     if not script.exists():
@@ -72,17 +85,17 @@ def bench_int_sum_loop(protopy_bin, cpython_bin, timeout=60):
     times_protopy = []
     times_cpython = []
     for _ in range(WARMUP_RUNS):
-        run_cmd([protopy_bin, "--path", str(SCRIPT_DIR), "--script", script_str], timeout=timeout)
+        run_cmd([protopy_bin, "--path", str(SCRIPT_DIR), "--script", script_str], timeout=timeout, stderr_file=trace_file)
         run_cmd([cpython_bin, script_str], timeout=timeout)
     for _ in range(N_RUNS):
-        t, _ = run_cmd([protopy_bin, "--path", str(SCRIPT_DIR), "--script", script_str], timeout=timeout)
+        t, _ = run_cmd([protopy_bin, "--path", str(SCRIPT_DIR), "--script", script_str], timeout=timeout, stderr_file=trace_file)
         times_protopy.append(t)
         t, _ = run_cmd([cpython_bin, script_str], timeout=timeout)
         times_cpython.append(t)
     return median(times_protopy), median(times_cpython)
 
 
-def bench_list_append_loop(protopy_bin, cpython_bin, timeout=60):
+def bench_list_append_loop(protopy_bin, cpython_bin, timeout=60, trace_file=None):
     """Time to run list append loop with N=10000."""
     script = SCRIPT_DIR / "list_append_loop.py"
     if not script.exists():
@@ -91,17 +104,17 @@ def bench_list_append_loop(protopy_bin, cpython_bin, timeout=60):
     times_protopy = []
     times_cpython = []
     for _ in range(WARMUP_RUNS):
-        run_cmd([protopy_bin, "--path", str(SCRIPT_DIR), "--script", script_str], timeout=timeout)
+        run_cmd([protopy_bin, "--path", str(SCRIPT_DIR), "--script", script_str], timeout=timeout, stderr_file=trace_file)
         run_cmd([cpython_bin, script_str], timeout=timeout)
     for _ in range(N_RUNS):
-        t, _ = run_cmd([protopy_bin, "--path", str(SCRIPT_DIR), "--script", script_str], timeout=timeout)
+        t, _ = run_cmd([protopy_bin, "--path", str(SCRIPT_DIR), "--script", script_str], timeout=timeout, stderr_file=trace_file)
         times_protopy.append(t)
         t, _ = run_cmd([cpython_bin, script_str], timeout=timeout)
         times_cpython.append(t)
     return median(times_protopy), median(times_cpython)
 
 
-def bench_str_concat_loop(protopy_bin, cpython_bin, timeout=60):
+def bench_str_concat_loop(protopy_bin, cpython_bin, timeout=60, trace_file=None):
     """Time to run string concat loop with N=10000."""
     script = SCRIPT_DIR / "str_concat_loop.py"
     if not script.exists():
@@ -110,17 +123,17 @@ def bench_str_concat_loop(protopy_bin, cpython_bin, timeout=60):
     times_protopy = []
     times_cpython = []
     for _ in range(WARMUP_RUNS):
-        run_cmd([protopy_bin, "--path", str(SCRIPT_DIR), "--script", script_str], timeout=timeout)
+        run_cmd([protopy_bin, "--path", str(SCRIPT_DIR), "--script", script_str], timeout=timeout, stderr_file=trace_file)
         run_cmd([cpython_bin, script_str], timeout=timeout)
     for _ in range(N_RUNS):
-        t, _ = run_cmd([protopy_bin, "--path", str(SCRIPT_DIR), "--script", script_str], timeout=timeout)
+        t, _ = run_cmd([protopy_bin, "--path", str(SCRIPT_DIR), "--script", script_str], timeout=timeout, stderr_file=trace_file)
         times_protopy.append(t)
         t, _ = run_cmd([cpython_bin, script_str], timeout=timeout)
         times_cpython.append(t)
     return median(times_protopy), median(times_cpython)
 
 
-def bench_range_iterate(protopy_bin, cpython_bin, timeout=60):
+def bench_range_iterate(protopy_bin, cpython_bin, timeout=60, trace_file=None):
     """Time to iterate over range(N) with N=100000."""
     script = SCRIPT_DIR / "range_iterate.py"
     if not script.exists():
@@ -129,10 +142,10 @@ def bench_range_iterate(protopy_bin, cpython_bin, timeout=60):
     times_protopy = []
     times_cpython = []
     for _ in range(WARMUP_RUNS):
-        run_cmd([protopy_bin, "--path", str(SCRIPT_DIR), "--script", script_str], timeout=timeout)
+        run_cmd([protopy_bin, "--path", str(SCRIPT_DIR), "--script", script_str], timeout=timeout, stderr_file=trace_file)
         run_cmd([cpython_bin, script_str], timeout=timeout)
     for _ in range(N_RUNS):
-        t, _ = run_cmd([protopy_bin, "--path", str(SCRIPT_DIR), "--script", script_str], timeout=timeout)
+        t, _ = run_cmd([protopy_bin, "--path", str(SCRIPT_DIR), "--script", script_str], timeout=timeout, stderr_file=trace_file)
         times_protopy.append(t)
         t, _ = run_cmd([cpython_bin, script_str], timeout=timeout)
         times_cpython.append(t)
@@ -298,15 +311,19 @@ def main():
 
     results = {}
     timeout = args.timeout
-    tp, tc = bench_startup_empty(protopy_bin, cpython_bin, timeout)
+    trace_file = os.environ.get("PROTO_GC_TRACE_FILE")
+    if trace_file:
+        # Clear or create so we only have this run's trace
+        open(trace_file, "w").close()
+    tp, tc = bench_startup_empty(protopy_bin, cpython_bin, timeout, trace_file)
     results["startup_empty"] = (tp, tc)
-    tp, tc = bench_int_sum_loop(protopy_bin, cpython_bin, timeout)
+    tp, tc = bench_int_sum_loop(protopy_bin, cpython_bin, timeout, trace_file)
     results["int_sum_loop"] = (tp, tc)
-    tp, tc = bench_list_append_loop(protopy_bin, cpython_bin, timeout)
+    tp, tc = bench_list_append_loop(protopy_bin, cpython_bin, timeout, trace_file)
     results["list_append_loop"] = (tp, tc)
-    tp, tc = bench_str_concat_loop(protopy_bin, cpython_bin, timeout)
+    tp, tc = bench_str_concat_loop(protopy_bin, cpython_bin, timeout, trace_file)
     results["str_concat_loop"] = (tp, tc)
-    tp, tc = bench_range_iterate(protopy_bin, cpython_bin, timeout)
+    tp, tc = bench_range_iterate(protopy_bin, cpython_bin, timeout, trace_file)
     results["range_iterate"] = (tp, tc)
 
     for name, (tp, tc) in results.items():

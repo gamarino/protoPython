@@ -1,0 +1,2555 @@
+[gc-lock] 33932268887 139146133609344 getFreeCells ACQ
+[gc-lock] 33932269566 139146133609344 getFreeCells REL(return OS)
+[gc-lock] 33932269951 139146133609344 getFreeCells ACQ
+[gc-lock] 33932270084 139146133609344 getFreeCells REL(return batch)
+[gc-lock] 33932270182 139146132924096 gcLoop ACQ(init)
+[gc-lock] 33932270464 139146133609344 getFreeCells ACQ
+[gc-lock] 33932270570 139146133609344 getFreeCells REL(return batch)
+[gc-lock] 33932270818 139146133609344 getFreeCells ACQ
+[gc-lock] 33932270917 139146133609344 getFreeCells REL(return batch)
+[gc-lock] 33932271152 139146133609344 getFreeCells ACQ
+[gc-lock] 33932271253 139146133609344 getFreeCells REL(return batch)
+[gc-lock] 33932271466 139146133609344 getFreeCells ACQ
+[gc-lock] 33932271564 139146133609344 getFreeCells REL(return batch)
+[gc-lock] 33932271782 139146133609344 getFreeCells ACQ
+[gc-lock] 33932271881 139146133609344 getFreeCells REL(return batch)
+[gc-lock] 33932272106 139146133609344 getFreeCells ACQ
+[gc-lock] 33932272207 139146133609344 getFreeCells REL(return batch)
+[gc-lock] 33932272424 139146133609344 getFreeCells ACQ
+[gc-lock] 33932272522 139146133609344 getFreeCells REL(return batch)
+[gc-lock] 33932272733 139146133609344 getFreeCells ACQ
+[gc-lock] 33932272835 139146133609344 getFreeCells REL(return batch)
+[gc-lock] 33932273137 139146133609344 getFreeCells ACQ
+[gc-lock] 33932273233 139146133609344 getFreeCells REL(park)
+[gc-lock] 33932273326 139146132924096 gcLoop ACQ(gcStarted)
+[gc-lock] 33932273440 139146132924096 gcLoop ACQ(parked)
+[gc-lock] 33932274184 139146132924096 gcLoop REL(mark-sweep)
+[gc-lock] 33932275665 139146132924096 gcLoop ACQ(after-sweep)
+[gc-lock] 33932275832 139146133609344 getFreeCells ACQ(wake)
+[gc-lock] 33932276416 139146133609344 getFreeCells REL(return OS)
+[gc-lock] 33932276673 139146133609344 getFreeCells ACQ
+[gc-lock] 33932276770 139146133609344 getFreeCells REL(return batch)
+[gc-lock] 33932277105 139146133609344 getFreeCells ACQ
+[gc-lock] 33932277205 139146133609344 getFreeCells REL(return batch)
+[gc-lock] 33932277412 139146133609344 getFreeCells ACQ
+[gc-lock] 33932277509 139146133609344 getFreeCells REL(return batch)
+[gc-lock] 33932277702 139146133609344 getFreeCells ACQ
+[gc-lock] 33932277800 139146133609344 getFreeCells REL(return batch)
+[gc-lock] 33932278062 139146133609344 getFreeCells ACQ
+[gc-lock] 33932278161 139146133609344 getFreeCells REL(return batch)
+[gc-lock] 33932278407 139146133609344 getFreeCells ACQ
+[gc-lock] 33932278505 139146133609344 getFreeCells REL(return batch)
+[gc-lock] 33932278849 139146133609344 getFreeCells ACQ
+[gc-lock] 33932278955 139146133609344 getFreeCells REL(return batch)
+[gc-lock] 33932279147 139146133609344 getFreeCells ACQ
+[gc-lock] 33932279242 139146133609344 getFreeCells REL(return batch)
+[gc-lock] 33932279443 139146133609344 getFreeCells ACQ
+[gc-lock] 33932279542 139146133609344 getFreeCells REL(return batch)
+[gc-lock] 33932279792 139146133609344 getFreeCells ACQ
+[gc-lock] 33932279882 139146133609344 getFreeCells REL(park)
+[gc-lock] 33932279986 139146132924096 gcLoop ACQ(gcStarted)
+[gc-lock] 33932280121 139146132924096 gcLoop ACQ(parked)
+[gc-lock] 33932281143 139146132924096 gcLoop REL(mark-sweep)
+[gc-lock] 33932283143 139146132924096 gcLoop ACQ(after-sweep)
+[gc-lock] 33932283327 139146133609344 getFreeCells ACQ(wake)
+[gc-lock] 33932284358 139146133609344 getFreeCells REL(return OS)
+[gc-lock] 33932284551 139146133609344 getFreeCells ACQ
+[gc-lock] 33932284644 139146133609344 getFreeCells REL(return batch)
+[gc-lock] 33932285015 139146133609344 submitYoung ACQ
+[gc-lock] 33932285100 139146133609344 submitYoung REL
+[gc-lock] 33932285210 139146132924096 gcLoop ACQ(gcStarted)
+[gc-lock] 33932285380 139146133609344 submitYoung ACQ
+[gc-lock] 33932285484 139146133609344 submitYoung REL
+[gc-lock] 33932307119 132453859187584 getFreeCells ACQ
+[gc-lock] 33932307697 132453859187584 getFreeCells REL(return OS)
+[gc-lock] 33932307966 132453859187584 getFreeCells ACQ
+[gc-lock] 33932308080 132453859187584 getFreeCells REL(return batch)
+[gc-lock] 33932308170 132453858502336 gcLoop ACQ(init)
+[gc-lock] 33932308403 132453859187584 getFreeCells ACQ
+[gc-lock] 33932308502 132453859187584 getFreeCells REL(return batch)
+[gc-lock] 33932308737 132453859187584 getFreeCells ACQ
+[gc-lock] 33932308835 132453859187584 getFreeCells REL(return batch)
+[gc-lock] 33932309062 132453859187584 getFreeCells ACQ
+[gc-lock] 33932309160 132453859187584 getFreeCells REL(return batch)
+[gc-lock] 33932309365 132453859187584 getFreeCells ACQ
+[gc-lock] 33932309460 132453859187584 getFreeCells REL(return batch)
+[gc-lock] 33932309678 132453859187584 getFreeCells ACQ
+[gc-lock] 33932309778 132453859187584 getFreeCells REL(return batch)
+[gc-lock] 33932309997 132453859187584 getFreeCells ACQ
+[gc-lock] 33932310108 132453859187584 getFreeCells REL(return batch)
+[gc-lock] 33932310324 132453859187584 getFreeCells ACQ
+[gc-lock] 33932310425 132453859187584 getFreeCells REL(return batch)
+[gc-lock] 33932310640 132453859187584 getFreeCells ACQ
+[gc-lock] 33932310737 132453859187584 getFreeCells REL(return batch)
+[gc-lock] 33932310997 132453859187584 getFreeCells ACQ
+[gc-lock] 33932311097 132453859187584 getFreeCells REL(park)
+[gc-lock] 33932311189 132453858502336 gcLoop ACQ(gcStarted)
+[gc-lock] 33932311290 132453858502336 gcLoop ACQ(parked)
+[gc-lock] 33932312632 132453858502336 gcLoop REL(mark-sweep)
+[gc-lock] 33932314453 132453858502336 gcLoop ACQ(after-sweep)
+[gc-lock] 33932314581 132453859187584 getFreeCells ACQ(wake)
+[gc-lock] 33932315583 132453859187584 getFreeCells REL(return OS)
+[gc-lock] 33932315856 132453859187584 getFreeCells ACQ
+[gc-lock] 33932315987 132453859187584 getFreeCells REL(return batch)
+[gc-lock] 33932316406 132453859187584 getFreeCells ACQ
+[gc-lock] 33932316548 132453859187584 getFreeCells REL(return batch)
+[gc-lock] 33932316826 132453859187584 getFreeCells ACQ
+[gc-lock] 33932316954 132453859187584 getFreeCells REL(return batch)
+[gc-lock] 33932317233 132453859187584 getFreeCells ACQ
+[gc-lock] 33932317373 132453859187584 getFreeCells REL(return batch)
+[gc-lock] 33932317665 132453859187584 getFreeCells ACQ
+[gc-lock] 33932317789 132453859187584 getFreeCells REL(return batch)
+[gc-lock] 33932318118 132453859187584 getFreeCells ACQ
+[gc-lock] 33932318244 132453859187584 getFreeCells REL(return batch)
+[gc-lock] 33932318628 132453859187584 getFreeCells ACQ
+[gc-lock] 33932318735 132453859187584 getFreeCells REL(return batch)
+[gc-lock] 33932318942 132453859187584 getFreeCells ACQ
+[gc-lock] 33932319085 132453859187584 getFreeCells REL(return batch)
+[gc-lock] 33932319337 132453859187584 getFreeCells ACQ
+[gc-lock] 33932319457 132453859187584 getFreeCells REL(return batch)
+[gc-lock] 33932319779 132453859187584 getFreeCells ACQ
+[gc-lock] 33932319885 132453859187584 getFreeCells REL(park)
+[gc-lock] 33932319990 132453858502336 gcLoop ACQ(gcStarted)
+[gc-lock] 33932320103 132453858502336 gcLoop ACQ(parked)
+[gc-lock] 33932321122 132453858502336 gcLoop REL(mark-sweep)
+[gc-lock] 33932323162 132453858502336 gcLoop ACQ(after-sweep)
+[gc-lock] 33932323329 132453859187584 getFreeCells ACQ(wake)
+[gc-lock] 33932324053 132453859187584 getFreeCells REL(return OS)
+[gc-lock] 33932324301 132453859187584 getFreeCells ACQ
+[gc-lock] 33932324428 132453859187584 getFreeCells REL(return batch)
+[gc-lock] 33932324859 132453859187584 submitYoung ACQ
+[gc-lock] 33932324979 132453859187584 submitYoung REL
+[gc-lock] 33932325128 132453858502336 gcLoop ACQ(gcStarted)
+[gc-lock] 33932325261 132453859187584 submitYoung ACQ
+[gc-lock] 33932325360 132453859187584 submitYoung REL
+[gc-lock] 33932349318 134617649421184 getFreeCells ACQ
+[gc-lock] 33932349882 134617649421184 getFreeCells REL(return OS)
+[gc-lock] 33932350237 134617649421184 getFreeCells ACQ
+[gc-lock] 33932350339 134617649421184 getFreeCells REL(return batch)
+[gc-lock] 33932350431 134617648735936 gcLoop ACQ(init)
+[gc-lock] 33932350700 134617649421184 getFreeCells ACQ
+[gc-lock] 33932350809 134617649421184 getFreeCells REL(return batch)
+[gc-lock] 33932351091 134617649421184 getFreeCells ACQ
+[gc-lock] 33932351203 134617649421184 getFreeCells REL(return batch)
+[gc-lock] 33932351428 134617649421184 getFreeCells ACQ
+[gc-lock] 33932351543 134617649421184 getFreeCells REL(return batch)
+[gc-lock] 33932351769 134617649421184 getFreeCells ACQ
+[gc-lock] 33932351874 134617649421184 getFreeCells REL(return batch)
+[gc-lock] 33932352123 134617649421184 getFreeCells ACQ
+[gc-lock] 33932352225 134617649421184 getFreeCells REL(return batch)
+[gc-lock] 33932352487 134617649421184 getFreeCells ACQ
+[gc-lock] 33932352592 134617649421184 getFreeCells REL(return batch)
+[gc-lock] 33932352832 134617649421184 getFreeCells ACQ
+[gc-lock] 33932352939 134617649421184 getFreeCells REL(return batch)
+[gc-lock] 33932353189 134617649421184 getFreeCells ACQ
+[gc-lock] 33932353295 134617649421184 getFreeCells REL(return batch)
+[gc-lock] 33932353621 134617649421184 getFreeCells ACQ
+[gc-lock] 33932353731 134617649421184 getFreeCells REL(park)
+[gc-lock] 33932353832 134617648735936 gcLoop ACQ(gcStarted)
+[gc-lock] 33932353962 134617648735936 gcLoop ACQ(parked)
+[gc-lock] 33932354730 134617648735936 gcLoop REL(mark-sweep)
+[gc-lock] 33932356183 134617648735936 gcLoop ACQ(after-sweep)
+[gc-lock] 33932356369 134617649421184 getFreeCells ACQ(wake)
+[gc-lock] 33932357016 134617649421184 getFreeCells REL(return OS)
+[gc-lock] 33932357306 134617649421184 getFreeCells ACQ
+[gc-lock] 33932357412 134617649421184 getFreeCells REL(return batch)
+[gc-lock] 33932357757 134617649421184 getFreeCells ACQ
+[gc-lock] 33932357865 134617649421184 getFreeCells REL(return batch)
+[gc-lock] 33932358111 134617649421184 getFreeCells ACQ
+[gc-lock] 33932358213 134617649421184 getFreeCells REL(return batch)
+[gc-lock] 33932358432 134617649421184 getFreeCells ACQ
+[gc-lock] 33932358539 134617649421184 getFreeCells REL(return batch)
+[gc-lock] 33932358834 134617649421184 getFreeCells ACQ
+[gc-lock] 33932358967 134617649421184 getFreeCells REL(return batch)
+[gc-lock] 33932359295 134617649421184 getFreeCells ACQ
+[gc-lock] 33932359403 134617649421184 getFreeCells REL(return batch)
+[gc-lock] 33932359809 134617649421184 getFreeCells ACQ
+[gc-lock] 33932359936 134617649421184 getFreeCells REL(return batch)
+[gc-lock] 33932360127 134617649421184 getFreeCells ACQ
+[gc-lock] 33932360225 134617649421184 getFreeCells REL(return batch)
+[gc-lock] 33932360473 134617649421184 getFreeCells ACQ
+[gc-lock] 33932360590 134617649421184 getFreeCells REL(return batch)
+[gc-lock] 33932360857 134617649421184 getFreeCells ACQ
+[gc-lock] 33932360970 134617649421184 getFreeCells REL(park)
+[gc-lock] 33932361097 134617648735936 gcLoop ACQ(gcStarted)
+[gc-lock] 33932361220 134617648735936 gcLoop ACQ(parked)
+[gc-lock] 33932362243 134617648735936 gcLoop REL(mark-sweep)
+[gc-lock] 33932364267 134617648735936 gcLoop ACQ(after-sweep)
+[gc-lock] 33932364485 134617649421184 getFreeCells ACQ(wake)
+[gc-lock] 33932365127 134617649421184 getFreeCells REL(return OS)
+[gc-lock] 33932365372 134617649421184 getFreeCells ACQ
+[gc-lock] 33932365491 134617649421184 getFreeCells REL(return batch)
+[gc-lock] 33932365906 134617649421184 submitYoung ACQ
+[gc-lock] 33932366028 134617649421184 submitYoung REL
+[gc-lock] 33932366163 134617648735936 gcLoop ACQ(gcStarted)
+[gc-lock] 33932366335 134617649421184 submitYoung ACQ
+[gc-lock] 33932366437 134617649421184 submitYoung REL
+[gc-lock] 33932389316 140497089137536 getFreeCells ACQ
+[gc-lock] 33932389888 140497089137536 getFreeCells REL(return OS)
+[gc-lock] 33932390215 140497089137536 getFreeCells ACQ
+[gc-lock] 33932390320 140497089137536 getFreeCells REL(return batch)
+[gc-lock] 33932390412 140497088452288 gcLoop ACQ(init)
+[gc-lock] 33932390658 140497089137536 getFreeCells ACQ
+[gc-lock] 33932390760 140497089137536 getFreeCells REL(return batch)
+[gc-lock] 33932391016 140497089137536 getFreeCells ACQ
+[gc-lock] 33932391114 140497089137536 getFreeCells REL(return batch)
+[gc-lock] 33932391329 140497089137536 getFreeCells ACQ
+[gc-lock] 33932391425 140497089137536 getFreeCells REL(return batch)
+[gc-lock] 33932391636 140497089137536 getFreeCells ACQ
+[gc-lock] 33932391734 140497089137536 getFreeCells REL(return batch)
+[gc-lock] 33932391950 140497089137536 getFreeCells ACQ
+[gc-lock] 33932392056 140497089137536 getFreeCells REL(return batch)
+[gc-lock] 33932392276 140497089137536 getFreeCells ACQ
+[gc-lock] 33932392372 140497089137536 getFreeCells REL(return batch)
+[gc-lock] 33932392587 140497089137536 getFreeCells ACQ
+[gc-lock] 33932392683 140497089137536 getFreeCells REL(return batch)
+[gc-lock] 33932392900 140497089137536 getFreeCells ACQ
+[gc-lock] 33932393034 140497089137536 getFreeCells REL(return batch)
+[gc-lock] 33932393370 140497089137536 getFreeCells ACQ
+[gc-lock] 33932393492 140497089137536 getFreeCells REL(park)
+[gc-lock] 33932393599 140497088452288 gcLoop ACQ(gcStarted)
+[gc-lock] 33932393701 140497088452288 gcLoop ACQ(parked)
+[gc-lock] 33932394440 140497088452288 gcLoop REL(mark-sweep)
+[gc-lock] 33932395909 140497088452288 gcLoop ACQ(after-sweep)
+[gc-lock] 33932396123 140497089137536 getFreeCells ACQ(wake)
+[gc-lock] 33932396672 140497089137536 getFreeCells REL(return OS)
+[gc-lock] 33932396932 140497089137536 getFreeCells ACQ
+[gc-lock] 33932397063 140497089137536 getFreeCells REL(return batch)
+[gc-lock] 33932397454 140497089137536 getFreeCells ACQ
+[gc-lock] 33932397576 140497089137536 getFreeCells REL(return batch)
+[gc-lock] 33932397835 140497089137536 getFreeCells ACQ
+[gc-lock] 33932397947 140497089137536 getFreeCells REL(return batch)
+[gc-lock] 33932398214 140497089137536 getFreeCells ACQ
+[gc-lock] 33932398334 140497089137536 getFreeCells REL(return batch)
+[gc-lock] 33932398667 140497089137536 getFreeCells ACQ
+[gc-lock] 33932398791 140497089137536 getFreeCells REL(return batch)
+[gc-lock] 33932399118 140497089137536 getFreeCells ACQ
+[gc-lock] 33932399233 140497089137536 getFreeCells REL(return batch)
+[gc-lock] 33932399653 140497089137536 getFreeCells ACQ
+[gc-lock] 33932399775 140497089137536 getFreeCells REL(return batch)
+[gc-lock] 33932399981 140497089137536 getFreeCells ACQ
+[gc-lock] 33932400120 140497089137536 getFreeCells REL(return batch)
+[gc-lock] 33932400383 140497089137536 getFreeCells ACQ
+[gc-lock] 33932400487 140497089137536 getFreeCells REL(return batch)
+[gc-lock] 33932400751 140497089137536 getFreeCells ACQ
+[gc-lock] 33932400839 140497089137536 getFreeCells REL(park)
+[gc-lock] 33932400937 140497088452288 gcLoop ACQ(gcStarted)
+[gc-lock] 33932401197 140497088452288 gcLoop ACQ(parked)
+[gc-lock] 33932402463 140497088452288 gcLoop REL(mark-sweep)
+[gc-lock] 33932404372 140497088452288 gcLoop ACQ(after-sweep)
+[gc-lock] 33932404546 140497089137536 getFreeCells ACQ(wake)
+[gc-lock] 33932405187 140497089137536 getFreeCells REL(return OS)
+[gc-lock] 33932405421 140497089137536 getFreeCells ACQ
+[gc-lock] 33932405544 140497089137536 getFreeCells REL(return batch)
+[gc-lock] 33932405952 140497089137536 submitYoung ACQ
+[gc-lock] 33932406064 140497089137536 submitYoung REL
+[gc-lock] 33932406182 140497088452288 gcLoop ACQ(gcStarted)
+[gc-lock] 33932406313 140497089137536 submitYoung ACQ
+[gc-lock] 33932406416 140497089137536 submitYoung REL
+[gc-lock] 33932425700 129385607584640 getFreeCells ACQ
+[gc-lock] 33932426267 129385607584640 getFreeCells REL(return OS)
+[gc-lock] 33932426540 129385607584640 getFreeCells ACQ
+[gc-lock] 33932426645 129385607584640 getFreeCells REL(return batch)
+[gc-lock] 33932426747 129385606899392 gcLoop ACQ(init)
+[gc-lock] 33932427094 129385607584640 getFreeCells ACQ
+[gc-lock] 33932427201 129385607584640 getFreeCells REL(return batch)
+[gc-lock] 33932427441 129385607584640 getFreeCells ACQ
+[gc-lock] 33932427540 129385607584640 getFreeCells REL(return batch)
+[gc-lock] 33932427763 129385607584640 getFreeCells ACQ
+[gc-lock] 33932427860 129385607584640 getFreeCells REL(return batch)
+[gc-lock] 33932428083 129385607584640 getFreeCells ACQ
+[gc-lock] 33932428181 129385607584640 getFreeCells REL(return batch)
+[gc-lock] 33932428394 129385607584640 getFreeCells ACQ
+[gc-lock] 33932428493 129385607584640 getFreeCells REL(return batch)
+[gc-lock] 33932428716 129385607584640 getFreeCells ACQ
+[gc-lock] 33932428818 129385607584640 getFreeCells REL(return batch)
+[gc-lock] 33932429053 129385607584640 getFreeCells ACQ
+[gc-lock] 33932429152 129385607584640 getFreeCells REL(return batch)
+[gc-lock] 33932429380 129385607584640 getFreeCells ACQ
+[gc-lock] 33932429479 129385607584640 getFreeCells REL(return batch)
+[gc-lock] 33932429730 129385607584640 getFreeCells ACQ
+[gc-lock] 33932429824 129385607584640 getFreeCells REL(park)
+[gc-lock] 33932429921 129385606899392 gcLoop ACQ(gcStarted)
+[gc-lock] 33932430144 129385606899392 gcLoop ACQ(parked)
+[gc-lock] 33932431220 129385606899392 gcLoop REL(mark-sweep)
+[gc-lock] 33932432801 129385606899392 gcLoop ACQ(after-sweep)
+[gc-lock] 33932433089 129385607584640 getFreeCells ACQ(wake)
+[gc-lock] 33932433756 129385607584640 getFreeCells REL(return OS)
+[gc-lock] 33932434117 129385607584640 getFreeCells ACQ
+[gc-lock] 33932434218 129385607584640 getFreeCells REL(return batch)
+[gc-lock] 33932434623 129385607584640 getFreeCells ACQ
+[gc-lock] 33932434747 129385607584640 getFreeCells REL(return batch)
+[gc-lock] 33932434963 129385607584640 getFreeCells ACQ
+[gc-lock] 33932435081 129385607584640 getFreeCells REL(return batch)
+[gc-lock] 33932435281 129385607584640 getFreeCells ACQ
+[gc-lock] 33932435379 129385607584640 getFreeCells REL(return batch)
+[gc-lock] 33932435638 129385607584640 getFreeCells ACQ
+[gc-lock] 33932435736 129385607584640 getFreeCells REL(return batch)
+[gc-lock] 33932436932 129385607584640 getFreeCells ACQ
+[gc-lock] 33932438190 129385607584640 getFreeCells REL(return batch)
+[gc-lock] 33932441911 129385607584640 getFreeCells ACQ
+[gc-lock] 33932442725 129385607584640 getFreeCells REL(return batch)
+[gc-lock] 33932443785 129385607584640 getFreeCells ACQ
+[gc-lock] 33932444281 129385607584640 getFreeCells REL(return batch)
+[gc-lock] 33932445138 129385607584640 getFreeCells ACQ
+[gc-lock] 33932445558 129385607584640 getFreeCells REL(return batch)
+[gc-lock] 33932446435 129385607584640 getFreeCells ACQ
+[gc-lock] 33932446746 129385607584640 getFreeCells REL(park)
+[gc-lock] 33932447071 129385606899392 gcLoop ACQ(gcStarted)
+[gc-lock] 33932447302 129385606899392 gcLoop ACQ(parked)
+[gc-lock] 33932449533 129385606899392 gcLoop REL(mark-sweep)
+[gc-lock] 33932452987 129385606899392 gcLoop ACQ(after-sweep)
+[gc-lock] 33932453245 129385607584640 getFreeCells ACQ(wake)
+[gc-lock] 33932454431 129385607584640 getFreeCells REL(return OS)
+[gc-lock] 33932454761 129385607584640 getFreeCells ACQ
+[gc-lock] 33932454882 129385607584640 getFreeCells REL(return batch)
+[gc-lock] 33932455325 129385607584640 submitYoung ACQ
+[gc-lock] 33932455432 129385607584640 submitYoung REL
+[gc-lock] 33932455578 129385606899392 gcLoop ACQ(gcStarted)
+[gc-lock] 33932455763 129385607584640 submitYoung ACQ
+[gc-lock] 33932455876 129385607584640 submitYoung REL
+[gc-lock] 33932475591 126257761352576 getFreeCells ACQ
+[gc-lock] 33932476185 126257761352576 getFreeCells REL(return OS)
+[gc-lock] 33932476482 126257761352576 getFreeCells ACQ
+[gc-lock] 33932476584 126257761352576 getFreeCells REL(return batch)
+[gc-lock] 33932476681 126257760667328 gcLoop ACQ(init)
+[gc-lock] 33932476960 126257761352576 getFreeCells ACQ
+[gc-lock] 33932477072 126257761352576 getFreeCells REL(return batch)
+[gc-lock] 33932477307 126257761352576 getFreeCells ACQ
+[gc-lock] 33932477404 126257761352576 getFreeCells REL(return batch)
+[gc-lock] 33932477618 126257761352576 getFreeCells ACQ
+[gc-lock] 33932477718 126257761352576 getFreeCells REL(return batch)
+[gc-lock] 33932477933 126257761352576 getFreeCells ACQ
+[gc-lock] 33932478044 126257761352576 getFreeCells REL(return batch)
+[gc-lock] 33932478261 126257761352576 getFreeCells ACQ
+[gc-lock] 33932478360 126257761352576 getFreeCells REL(return batch)
+[gc-lock] 33932478584 126257761352576 getFreeCells ACQ
+[gc-lock] 33932478683 126257761352576 getFreeCells REL(return batch)
+[gc-lock] 33932478903 126257761352576 getFreeCells ACQ
+[gc-lock] 33932479011 126257761352576 getFreeCells REL(return batch)
+[gc-lock] 33932479231 126257761352576 getFreeCells ACQ
+[gc-lock] 33932479330 126257761352576 getFreeCells REL(return batch)
+[gc-lock] 33932479590 126257761352576 getFreeCells ACQ
+[gc-lock] 33932479682 126257761352576 getFreeCells REL(park)
+[gc-lock] 33932479791 126257760667328 gcLoop ACQ(gcStarted)
+[gc-lock] 33932480049 126257760667328 gcLoop ACQ(parked)
+[gc-lock] 33932481200 126257760667328 gcLoop REL(mark-sweep)
+[gc-lock] 33932482686 126257760667328 gcLoop ACQ(after-sweep)
+[gc-lock] 33932482845 126257761352576 getFreeCells ACQ(wake)
+[gc-lock] 33932483851 126257761352576 getFreeCells REL(return OS)
+[gc-lock] 33932484162 126257761352576 getFreeCells ACQ
+[gc-lock] 33932484267 126257761352576 getFreeCells REL(return batch)
+[gc-lock] 33932484592 126257761352576 getFreeCells ACQ
+[gc-lock] 33932484693 126257761352576 getFreeCells REL(return batch)
+[gc-lock] 33932484917 126257761352576 getFreeCells ACQ
+[gc-lock] 33932485026 126257761352576 getFreeCells REL(return batch)
+[gc-lock] 33932485236 126257761352576 getFreeCells ACQ
+[gc-lock] 33932485335 126257761352576 getFreeCells REL(return batch)
+[gc-lock] 33932485587 126257761352576 getFreeCells ACQ
+[gc-lock] 33932485686 126257761352576 getFreeCells REL(return batch)
+[gc-lock] 33932485933 126257761352576 getFreeCells ACQ
+[gc-lock] 33932486045 126257761352576 getFreeCells REL(return batch)
+[gc-lock] 33932486391 126257761352576 getFreeCells ACQ
+[gc-lock] 33932486494 126257761352576 getFreeCells REL(return batch)
+[gc-lock] 33932486664 126257761352576 getFreeCells ACQ
+[gc-lock] 33932486765 126257761352576 getFreeCells REL(return batch)
+[gc-lock] 33932486970 126257761352576 getFreeCells ACQ
+[gc-lock] 33932487147 126257761352576 getFreeCells REL(return batch)
+[gc-lock] 33932487446 126257761352576 getFreeCells ACQ
+[gc-lock] 33932487563 126257761352576 getFreeCells REL(park)
+[gc-lock] 33932489088 126257760667328 gcLoop ACQ(gcStarted)
+[gc-lock] 33932490293 126257760667328 gcLoop ACQ(parked)
+[gc-lock] 33932498417 126257760667328 gcLoop REL(mark-sweep)
+[gc-lock] 33932503964 126257760667328 gcLoop ACQ(after-sweep)
+[gc-lock] 33932504318 126257761352576 getFreeCells ACQ(wake)
+[gc-lock] 33932505458 126257761352576 getFreeCells REL(return OS)
+[gc-lock] 33932505803 126257761352576 getFreeCells ACQ
+[gc-lock] 33932505972 126257761352576 getFreeCells REL(return batch)
+[gc-lock] 33932506498 126257761352576 submitYoung ACQ
+[gc-lock] 33932506624 126257761352576 submitYoung REL
+[gc-lock] 33932506777 126257760667328 gcLoop ACQ(gcStarted)
+[gc-lock] 33932507036 126257761352576 submitYoung ACQ
+[gc-lock] 33932507151 126257761352576 submitYoung REL
+[gc-lock] 33932526723 139933916388224 getFreeCells ACQ
+[gc-lock] 33932527310 139933916388224 getFreeCells REL(return OS)
+[gc-lock] 33932527635 139933916388224 getFreeCells ACQ
+[gc-lock] 33932527742 139933916388224 getFreeCells REL(return batch)
+[gc-lock] 33932527838 139933915702976 gcLoop ACQ(init)
+[gc-lock] 33932529100 139933916388224 getFreeCells ACQ
+[gc-lock] 33932530117 139933916388224 getFreeCells REL(return batch)
+[gc-lock] 33932532408 139933916388224 getFreeCells ACQ
+[gc-lock] 33932533308 139933916388224 getFreeCells REL(return batch)
+[gc-lock] 33932535326 139933916388224 getFreeCells ACQ
+[gc-lock] 33932535931 139933916388224 getFreeCells REL(return batch)
+[gc-lock] 33932536913 139933916388224 getFreeCells ACQ
+[gc-lock] 33932537304 139933916388224 getFreeCells REL(return batch)
+[gc-lock] 33932538037 139933916388224 getFreeCells ACQ
+[gc-lock] 33932538344 139933916388224 getFreeCells REL(return batch)
+[gc-lock] 33932539031 139933916388224 getFreeCells ACQ
+[gc-lock] 33932539278 139933916388224 getFreeCells REL(return batch)
+[gc-lock] 33932539839 139933916388224 getFreeCells ACQ
+[gc-lock] 33932540075 139933916388224 getFreeCells REL(return batch)
+[gc-lock] 33932540613 139933916388224 getFreeCells ACQ
+[gc-lock] 33932540834 139933916388224 getFreeCells REL(return batch)
+[gc-lock] 33932541387 139933916388224 getFreeCells ACQ
+[gc-lock] 33932541577 139933916388224 getFreeCells REL(park)
+[gc-lock] 33932541756 139933915702976 gcLoop ACQ(gcStarted)
+[gc-lock] 33932541971 139933915702976 gcLoop ACQ(parked)
+[gc-lock] 33932543379 139933915702976 gcLoop REL(mark-sweep)
+[gc-lock] 33932545641 139933915702976 gcLoop ACQ(after-sweep)
+[gc-lock] 33932545901 139933916388224 getFreeCells ACQ(wake)
+[gc-lock] 33932546711 139933916388224 getFreeCells REL(return OS)
+[gc-lock] 33932547156 139933916388224 getFreeCells ACQ
+[gc-lock] 33932547327 139933916388224 getFreeCells REL(return batch)
+[gc-lock] 33932547806 139933916388224 getFreeCells ACQ
+[gc-lock] 33932547961 139933916388224 getFreeCells REL(return batch)
+[gc-lock] 33932548313 139933916388224 getFreeCells ACQ
+[gc-lock] 33932548468 139933916388224 getFreeCells REL(return batch)
+[gc-lock] 33932548785 139933916388224 getFreeCells ACQ
+[gc-lock] 33932548934 139933916388224 getFreeCells REL(return batch)
+[gc-lock] 33932549305 139933916388224 getFreeCells ACQ
+[gc-lock] 33932549449 139933916388224 getFreeCells REL(return batch)
+[gc-lock] 33932549804 139933916388224 getFreeCells ACQ
+[gc-lock] 33932549944 139933916388224 getFreeCells REL(return batch)
+[gc-lock] 33932550408 139933916388224 getFreeCells ACQ
+[gc-lock] 33932550549 139933916388224 getFreeCells REL(return batch)
+[gc-lock] 33932550785 139933916388224 getFreeCells ACQ
+[gc-lock] 33932550919 139933916388224 getFreeCells REL(return batch)
+[gc-lock] 33932551193 139933916388224 getFreeCells ACQ
+[gc-lock] 33932551323 139933916388224 getFreeCells REL(return batch)
+[gc-lock] 33932551635 139933916388224 getFreeCells ACQ
+[gc-lock] 33932551748 139933916388224 getFreeCells REL(park)
+[gc-lock] 33932551869 139933915702976 gcLoop ACQ(gcStarted)
+[gc-lock] 33932552031 139933915702976 gcLoop ACQ(parked)
+[gc-lock] 33932553072 139933915702976 gcLoop REL(mark-sweep)
+[gc-lock] 33932555151 139933915702976 gcLoop ACQ(after-sweep)
+[gc-lock] 33932555382 139933916388224 getFreeCells ACQ(wake)
+[gc-lock] 33932555904 139933916388224 getFreeCells REL(return OS)
+[gc-lock] 33932556103 139933916388224 getFreeCells ACQ
+[gc-lock] 33932556201 139933916388224 getFreeCells REL(return batch)
+[gc-lock] 33932556605 139933916388224 submitYoung ACQ
+[gc-lock] 33932556690 139933916388224 submitYoung REL
+[gc-lock] 33932556804 139933915702976 gcLoop ACQ(gcStarted)
+[gc-lock] 33932556952 139933916388224 submitYoung ACQ
+[gc-lock] 33932557055 139933916388224 submitYoung REL
+[gc-lock] 33932592177 130213705956224 getFreeCells ACQ
+[gc-lock] 33932592783 130213705956224 getFreeCells REL(return OS)
+[gc-lock] 33932593128 130213705956224 getFreeCells ACQ
+[gc-lock] 33932593249 130213705956224 getFreeCells REL(return batch)
+[gc-lock] 33932593358 130213705270976 gcLoop ACQ(init)
+[gc-lock] 33932593653 130213705956224 getFreeCells ACQ
+[gc-lock] 33932593773 130213705956224 getFreeCells REL(return batch)
+[gc-lock] 33932594059 130213705956224 getFreeCells ACQ
+[gc-lock] 33932594178 130213705956224 getFreeCells REL(return batch)
+[gc-lock] 33932594432 130213705956224 getFreeCells ACQ
+[gc-lock] 33932594554 130213705956224 getFreeCells REL(return batch)
+[gc-lock] 33932594801 130213705956224 getFreeCells ACQ
+[gc-lock] 33932594919 130213705956224 getFreeCells REL(return batch)
+[gc-lock] 33932595191 130213705956224 getFreeCells ACQ
+[gc-lock] 33932595309 130213705956224 getFreeCells REL(return batch)
+[gc-lock] 33932595575 130213705956224 getFreeCells ACQ
+[gc-lock] 33932595692 130213705956224 getFreeCells REL(return batch)
+[gc-lock] 33932595952 130213705956224 getFreeCells ACQ
+[gc-lock] 33932596081 130213705956224 getFreeCells REL(return batch)
+[gc-lock] 33932596338 130213705956224 getFreeCells ACQ
+[gc-lock] 33932596456 130213705956224 getFreeCells REL(return batch)
+[gc-lock] 33932596757 130213705956224 getFreeCells ACQ
+[gc-lock] 33932596873 130213705956224 getFreeCells REL(park)
+[gc-lock] 33932596984 130213705270976 gcLoop ACQ(gcStarted)
+[gc-lock] 33932597118 130213705270976 gcLoop ACQ(parked)
+[gc-lock] 33932597830 130213705270976 gcLoop REL(mark-sweep)
+[gc-lock] 33932599236 130213705270976 gcLoop ACQ(after-sweep)
+[gc-lock] 33932599364 130213705956224 getFreeCells ACQ(wake)
+[gc-lock] 33932599908 130213705956224 getFreeCells REL(return OS)
+[gc-lock] 33932600149 130213705956224 getFreeCells ACQ
+[gc-lock] 33932600245 130213705956224 getFreeCells REL(return batch)
+[gc-lock] 33932600410 130213705956224 getFreeCells ACQ
+[gc-lock] 33932600505 130213705956224 getFreeCells REL(return batch)
+[gc-lock] 33932600686 130213705956224 getFreeCells ACQ
+[gc-lock] 33932600780 130213705956224 getFreeCells REL(return batch)
+[gc-lock] 33932600965 130213705956224 getFreeCells ACQ
+[gc-lock] 33932601185 130213705956224 getFreeCells REL(return batch)
+[gc-lock] 33932601557 130213705956224 getFreeCells ACQ
+[gc-lock] 33932601768 130213705956224 getFreeCells REL(return batch)
+[gc-lock] 33932602193 130213705956224 getFreeCells ACQ
+[gc-lock] 33932602299 130213705956224 getFreeCells REL(return batch)
+[gc-lock] 33932602562 130213705956224 getFreeCells ACQ
+[gc-lock] 33932602662 130213705956224 getFreeCells REL(return batch)
+[gc-lock] 33932602870 130213705956224 getFreeCells ACQ
+[gc-lock] 33932602967 130213705956224 getFreeCells REL(return batch)
+[gc-lock] 33932603213 130213705956224 getFreeCells ACQ
+[gc-lock] 33932603311 130213705956224 getFreeCells REL(return batch)
+[gc-lock] 33932603575 130213705956224 getFreeCells ACQ
+[gc-lock] 33932603677 130213705956224 getFreeCells REL(park)
+[gc-lock] 33932603792 130213705270976 gcLoop ACQ(gcStarted)
+[gc-lock] 33932604035 130213705270976 gcLoop ACQ(parked)
+[gc-lock] 33932606084 130213705270976 gcLoop REL(mark-sweep)
+[gc-lock] 33932608130 130213705270976 gcLoop ACQ(after-sweep)
+[gc-lock] 33932608299 130213705956224 getFreeCells ACQ(wake)
+[gc-lock] 33932608893 130213705956224 getFreeCells REL(return OS)
+[gc-lock] 33932609224 130213705956224 getFreeCells ACQ
+[gc-lock] 33932609351 130213705956224 getFreeCells REL(return batch)
+[gc-lock] 33932609727 130213705956224 getFreeCells ACQ
+[gc-lock] 33932609849 130213705956224 getFreeCells REL(return batch)
+[gc-lock] 33932610066 130213705956224 getFreeCells ACQ
+[gc-lock] 33932610185 130213705956224 getFreeCells REL(return batch)
+[gc-lock] 33932610398 130213705956224 getFreeCells ACQ
+[gc-lock] 33932610515 130213705956224 getFreeCells REL(return batch)
+[gc-lock] 33932610739 130213705956224 getFreeCells ACQ
+[gc-lock] 33932610855 130213705956224 getFreeCells REL(return batch)
+[gc-lock] 33932611085 130213705956224 getFreeCells ACQ
+[gc-lock] 33932611204 130213705956224 getFreeCells REL(return batch)
+[gc-lock] 33932611595 130213705956224 getFreeCells ACQ
+[gc-lock] 33932611716 130213705956224 getFreeCells REL(return batch)
+[gc-lock] 33932611920 130213705956224 getFreeCells ACQ
+[gc-lock] 33932612049 130213705956224 getFreeCells REL(return batch)
+[gc-lock] 33932612251 130213705956224 getFreeCells ACQ
+[gc-lock] 33932612368 130213705956224 getFreeCells REL(return batch)
+[gc-lock] 33932612617 130213705956224 getFreeCells ACQ
+[gc-lock] 33932612718 130213705956224 getFreeCells REL(park)
+[gc-lock] 33932612839 130213705270976 gcLoop ACQ(gcStarted)
+[gc-lock] 33932612969 130213705270976 gcLoop ACQ(parked)
+[gc-lock] 33932614241 130213705270976 gcLoop REL(mark-sweep)
+[gc-lock] 33932616459 130213705270976 gcLoop ACQ(after-sweep)
+[gc-lock] 33932616599 130213705956224 getFreeCells ACQ(wake)
+[gc-lock] 33932617394 130213705956224 getFreeCells REL(return OS)
+[gc-lock] 33932617808 130213705956224 submitYoung ACQ
+[gc-lock] 33932618034 130213705956224 submitYoung REL
+[gc-lock] 33932618292 130213705270976 gcLoop ACQ(gcStarted)
+[gc-lock] 33932618486 130213705956224 submitYoung ACQ
+[gc-lock] 33932618694 130213705956224 submitYoung REL
+[gc-lock] 33932639020 129561990540160 getFreeCells ACQ
+[gc-lock] 33932639581 129561990540160 getFreeCells REL(return OS)
+[gc-lock] 33932639858 129561990540160 getFreeCells ACQ
+[gc-lock] 33932639958 129561990540160 getFreeCells REL(return batch)
+[gc-lock] 33932640062 129561989854912 gcLoop ACQ(init)
+[gc-lock] 33932640313 129561990540160 getFreeCells ACQ
+[gc-lock] 33932640423 129561990540160 getFreeCells REL(return batch)
+[gc-lock] 33932640656 129561990540160 getFreeCells ACQ
+[gc-lock] 33932640753 129561990540160 getFreeCells REL(return batch)
+[gc-lock] 33932640972 129561990540160 getFreeCells ACQ
+[gc-lock] 33932641087 129561990540160 getFreeCells REL(return batch)
+[gc-lock] 33932641308 129561990540160 getFreeCells ACQ
+[gc-lock] 33932641411 129561990540160 getFreeCells REL(return batch)
+[gc-lock] 33932641624 129561990540160 getFreeCells ACQ
+[gc-lock] 33932641722 129561990540160 getFreeCells REL(return batch)
+[gc-lock] 33932641954 129561990540160 getFreeCells ACQ
+[gc-lock] 33932642085 129561990540160 getFreeCells REL(return batch)
+[gc-lock] 33932642347 129561990540160 getFreeCells ACQ
+[gc-lock] 33932642465 129561990540160 getFreeCells REL(return batch)
+[gc-lock] 33932642734 129561990540160 getFreeCells ACQ
+[gc-lock] 33932642839 129561990540160 getFreeCells REL(return batch)
+[gc-lock] 33932643114 129561990540160 getFreeCells ACQ
+[gc-lock] 33932643221 129561990540160 getFreeCells REL(park)
+[gc-lock] 33932643314 129561989854912 gcLoop ACQ(gcStarted)
+[gc-lock] 33932643404 129561989854912 gcLoop ACQ(parked)
+[gc-lock] 33932644080 129561989854912 gcLoop REL(mark-sweep)
+[gc-lock] 33932645416 129561989854912 gcLoop ACQ(after-sweep)
+[gc-lock] 33932645551 129561990540160 getFreeCells ACQ(wake)
+[gc-lock] 33932646092 129561990540160 getFreeCells REL(return OS)
+[gc-lock] 33932646311 129561990540160 getFreeCells ACQ
+[gc-lock] 33932646409 129561990540160 getFreeCells REL(return batch)
+[gc-lock] 33932646579 129561990540160 getFreeCells ACQ
+[gc-lock] 33932646672 129561990540160 getFreeCells REL(return batch)
+[gc-lock] 33932646852 129561990540160 getFreeCells ACQ
+[gc-lock] 33932646945 129561990540160 getFreeCells REL(return batch)
+[gc-lock] 33932647128 129561990540160 getFreeCells ACQ
+[gc-lock] 33932647224 129561990540160 getFreeCells REL(return batch)
+[gc-lock] 33932647391 129561990540160 getFreeCells ACQ
+[gc-lock] 33932647486 129561990540160 getFreeCells REL(return batch)
+[gc-lock] 33932647797 129561990540160 getFreeCells ACQ
+[gc-lock] 33932647915 129561990540160 getFreeCells REL(return batch)
+[gc-lock] 33932648205 129561990540160 getFreeCells ACQ
+[gc-lock] 33932648323 129561990540160 getFreeCells REL(return batch)
+[gc-lock] 33932648569 129561990540160 getFreeCells ACQ
+[gc-lock] 33932648688 129561990540160 getFreeCells REL(return batch)
+[gc-lock] 33932648946 129561990540160 getFreeCells ACQ
+[gc-lock] 33932649074 129561990540160 getFreeCells REL(return batch)
+[gc-lock] 33932649366 129561990540160 getFreeCells ACQ
+[gc-lock] 33932649469 129561990540160 getFreeCells REL(park)
+[gc-lock] 33932649575 129561989854912 gcLoop ACQ(gcStarted)
+[gc-lock] 33932649666 129561989854912 gcLoop ACQ(parked)
+[gc-lock] 33932650684 129561989854912 gcLoop REL(mark-sweep)
+[gc-lock] 33932653271 129561989854912 gcLoop ACQ(after-sweep)
+[gc-lock] 33932653439 129561990540160 getFreeCells ACQ(wake)
+[gc-lock] 33932654345 129561990540160 getFreeCells REL(return OS)
+[gc-lock] 33932654642 129561990540160 getFreeCells ACQ
+[gc-lock] 33932654761 129561990540160 getFreeCells REL(return batch)
+[gc-lock] 33932655162 129561990540160 getFreeCells ACQ
+[gc-lock] 33932655288 129561990540160 getFreeCells REL(return batch)
+[gc-lock] 33932655492 129561990540160 getFreeCells ACQ
+[gc-lock] 33932655609 129561990540160 getFreeCells REL(return batch)
+[gc-lock] 33932655825 129561990540160 getFreeCells ACQ
+[gc-lock] 33932655945 129561990540160 getFreeCells REL(return batch)
+[gc-lock] 33932656178 129561990540160 getFreeCells ACQ
+[gc-lock] 33932656295 129561990540160 getFreeCells REL(return batch)
+[gc-lock] 33932656496 129561990540160 getFreeCells ACQ
+[gc-lock] 33932656611 129561990540160 getFreeCells REL(return batch)
+[gc-lock] 33932656997 129561990540160 getFreeCells ACQ
+[gc-lock] 33932657136 129561990540160 getFreeCells REL(return batch)
+[gc-lock] 33932657347 129561990540160 getFreeCells ACQ
+[gc-lock] 33932657465 129561990540160 getFreeCells REL(return batch)
+[gc-lock] 33932657669 129561990540160 getFreeCells ACQ
+[gc-lock] 33932657787 129561990540160 getFreeCells REL(return batch)
+[gc-lock] 33932658046 129561990540160 getFreeCells ACQ
+[gc-lock] 33932658149 129561990540160 getFreeCells REL(park)
+[gc-lock] 33932658255 129561989854912 gcLoop ACQ(gcStarted)
+[gc-lock] 33932658342 129561989854912 gcLoop ACQ(parked)
+[gc-lock] 33932659573 129561989854912 gcLoop REL(mark-sweep)
+[gc-lock] 33932661592 129561989854912 gcLoop ACQ(after-sweep)
+[gc-lock] 33932661707 129561990540160 getFreeCells ACQ(wake)
+[gc-lock] 33932662470 129561990540160 getFreeCells REL(return OS)
+[gc-lock] 33932662701 129561990540160 submitYoung ACQ
+[gc-lock] 33932662801 129561990540160 submitYoung REL
+[gc-lock] 33932662924 129561989854912 gcLoop ACQ(gcStarted)
+[gc-lock] 33932663070 129561990540160 submitYoung ACQ
+[gc-lock] 33932663177 129561990540160 submitYoung REL
+[gc-lock] 33932683173 125624072584064 getFreeCells ACQ
+[gc-lock] 33932683731 125624072584064 getFreeCells REL(return OS)
+[gc-lock] 33932684036 125624072584064 getFreeCells ACQ
+[gc-lock] 33932684138 125624072584064 getFreeCells REL(return batch)
+[gc-lock] 33932684227 125624071898816 gcLoop ACQ(init)
+[gc-lock] 33932684473 125624072584064 getFreeCells ACQ
+[gc-lock] 33932684571 125624072584064 getFreeCells REL(return batch)
+[gc-lock] 33932684806 125624072584064 getFreeCells ACQ
+[gc-lock] 33932684903 125624072584064 getFreeCells REL(return batch)
+[gc-lock] 33932685139 125624072584064 getFreeCells ACQ
+[gc-lock] 33932685235 125624072584064 getFreeCells REL(return batch)
+[gc-lock] 33932685446 125624072584064 getFreeCells ACQ
+[gc-lock] 33932685543 125624072584064 getFreeCells REL(return batch)
+[gc-lock] 33932685759 125624072584064 getFreeCells ACQ
+[gc-lock] 33932685856 125624072584064 getFreeCells REL(return batch)
+[gc-lock] 33932686095 125624072584064 getFreeCells ACQ
+[gc-lock] 33932686194 125624072584064 getFreeCells REL(return batch)
+[gc-lock] 33932686411 125624072584064 getFreeCells ACQ
+[gc-lock] 33932686507 125624072584064 getFreeCells REL(return batch)
+[gc-lock] 33932686725 125624072584064 getFreeCells ACQ
+[gc-lock] 33932686821 125624072584064 getFreeCells REL(return batch)
+[gc-lock] 33932687084 125624072584064 getFreeCells ACQ
+[gc-lock] 33932687177 125624072584064 getFreeCells REL(park)
+[gc-lock] 33932687265 125624071898816 gcLoop ACQ(gcStarted)
+[gc-lock] 33932687354 125624071898816 gcLoop ACQ(parked)
+[gc-lock] 33932688018 125624071898816 gcLoop REL(mark-sweep)
+[gc-lock] 33932689931 125624071898816 gcLoop ACQ(after-sweep)
+[gc-lock] 33932690061 125624072584064 getFreeCells ACQ(wake)
+[gc-lock] 33932691087 125624072584064 getFreeCells REL(return OS)
+[gc-lock] 33932691527 125624072584064 getFreeCells ACQ
+[gc-lock] 33932691727 125624072584064 getFreeCells REL(return batch)
+[gc-lock] 33932692114 125624072584064 getFreeCells ACQ
+[gc-lock] 33932692314 125624072584064 getFreeCells REL(return batch)
+[gc-lock] 33932692707 125624072584064 getFreeCells ACQ
+[gc-lock] 33932692905 125624072584064 getFreeCells REL(return batch)
+[gc-lock] 33932693180 125624072584064 getFreeCells ACQ
+[gc-lock] 33932693272 125624072584064 getFreeCells REL(return batch)
+[gc-lock] 33932693441 125624072584064 getFreeCells ACQ
+[gc-lock] 33932693534 125624072584064 getFreeCells REL(return batch)
+[gc-lock] 33932693833 125624072584064 getFreeCells ACQ
+[gc-lock] 33932693930 125624072584064 getFreeCells REL(return batch)
+[gc-lock] 33932694174 125624072584064 getFreeCells ACQ
+[gc-lock] 33932694269 125624072584064 getFreeCells REL(return batch)
+[gc-lock] 33932694471 125624072584064 getFreeCells ACQ
+[gc-lock] 33932694565 125624072584064 getFreeCells REL(return batch)
+[gc-lock] 33932694780 125624072584064 getFreeCells ACQ
+[gc-lock] 33932694873 125624072584064 getFreeCells REL(return batch)
+[gc-lock] 33932695140 125624072584064 getFreeCells ACQ
+[gc-lock] 33932695225 125624072584064 getFreeCells REL(park)
+[gc-lock] 33932695313 125624071898816 gcLoop ACQ(gcStarted)
+[gc-lock] 33932695399 125624071898816 gcLoop ACQ(parked)
+[gc-lock] 33932696681 125624071898816 gcLoop REL(mark-sweep)
+[gc-lock] 33932698852 125624071898816 gcLoop ACQ(after-sweep)
+[gc-lock] 33932698983 125624072584064 getFreeCells ACQ(wake)
+[gc-lock] 33932699504 125624072584064 getFreeCells REL(return OS)
+[gc-lock] 33932699741 125624072584064 getFreeCells ACQ
+[gc-lock] 33932699836 125624072584064 getFreeCells REL(return batch)
+[gc-lock] 33932700304 125624072584064 getFreeCells ACQ
+[gc-lock] 33932700511 125624072584064 getFreeCells REL(return batch)
+[gc-lock] 33932700882 125624072584064 getFreeCells ACQ
+[gc-lock] 33932701103 125624072584064 getFreeCells REL(return batch)
+[gc-lock] 33932701287 125624072584064 getFreeCells ACQ
+[gc-lock] 33932701382 125624072584064 getFreeCells REL(return batch)
+[gc-lock] 33932701568 125624072584064 getFreeCells ACQ
+[gc-lock] 33932701660 125624072584064 getFreeCells REL(return batch)
+[gc-lock] 33932701827 125624072584064 getFreeCells ACQ
+[gc-lock] 33932701920 125624072584064 getFreeCells REL(return batch)
+[gc-lock] 33932702289 125624072584064 getFreeCells ACQ
+[gc-lock] 33932702387 125624072584064 getFreeCells REL(return batch)
+[gc-lock] 33932702555 125624072584064 getFreeCells ACQ
+[gc-lock] 33932702649 125624072584064 getFreeCells REL(return batch)
+[gc-lock] 33932702818 125624072584064 getFreeCells ACQ
+[gc-lock] 33932702913 125624072584064 getFreeCells REL(return batch)
+[gc-lock] 33932703124 125624072584064 getFreeCells ACQ
+[gc-lock] 33932703210 125624072584064 getFreeCells REL(park)
+[gc-lock] 33932703298 125624071898816 gcLoop ACQ(gcStarted)
+[gc-lock] 33932703387 125624071898816 gcLoop ACQ(parked)
+[gc-lock] 33932704565 125624071898816 gcLoop REL(mark-sweep)
+[gc-lock] 33932706776 125624071898816 gcLoop ACQ(after-sweep)
+[gc-lock] 33932706881 125624072584064 getFreeCells ACQ(wake)
+[gc-lock] 33932707422 125624072584064 getFreeCells REL(return OS)
+[gc-lock] 33932707631 125624072584064 submitYoung ACQ
+[gc-lock] 33932707713 125624072584064 submitYoung REL
+[gc-lock] 33932707817 125624071898816 gcLoop ACQ(gcStarted)
+[gc-lock] 33932707941 125624072584064 submitYoung ACQ
+[gc-lock] 33932708036 125624072584064 submitYoung REL
+[gc-lock] 33932728836 135984446892928 getFreeCells ACQ
+[gc-lock] 33932729409 135984446892928 getFreeCells REL(return OS)
+[gc-lock] 33932729738 135984446892928 getFreeCells ACQ
+[gc-lock] 33932729839 135984446892928 getFreeCells REL(return batch)
+[gc-lock] 33932729936 135984446207680 gcLoop ACQ(init)
+[gc-lock] 33932730337 135984446892928 getFreeCells ACQ
+[gc-lock] 33932730437 135984446892928 getFreeCells REL(return batch)
+[gc-lock] 33932730671 135984446892928 getFreeCells ACQ
+[gc-lock] 33932730770 135984446892928 getFreeCells REL(return batch)
+[gc-lock] 33932730984 135984446892928 getFreeCells ACQ
+[gc-lock] 33932731096 135984446892928 getFreeCells REL(return batch)
+[gc-lock] 33932731307 135984446892928 getFreeCells ACQ
+[gc-lock] 33932731403 135984446892928 getFreeCells REL(return batch)
+[gc-lock] 33932731616 135984446892928 getFreeCells ACQ
+[gc-lock] 33932731711 135984446892928 getFreeCells REL(return batch)
+[gc-lock] 33932731933 135984446892928 getFreeCells ACQ
+[gc-lock] 33932732045 135984446892928 getFreeCells REL(return batch)
+[gc-lock] 33932732261 135984446892928 getFreeCells ACQ
+[gc-lock] 33932732357 135984446892928 getFreeCells REL(return batch)
+[gc-lock] 33932732572 135984446892928 getFreeCells ACQ
+[gc-lock] 33932732667 135984446892928 getFreeCells REL(return batch)
+[gc-lock] 33932732916 135984446892928 getFreeCells ACQ
+[gc-lock] 33932733020 135984446892928 getFreeCells REL(park)
+[gc-lock] 33932733116 135984446207680 gcLoop ACQ(gcStarted)
+[gc-lock] 33932733242 135984446207680 gcLoop ACQ(parked)
+[gc-lock] 33932733928 135984446207680 gcLoop REL(mark-sweep)
+[gc-lock] 33932735359 135984446207680 gcLoop ACQ(after-sweep)
+[gc-lock] 33932735531 135984446892928 getFreeCells ACQ(wake)
+[gc-lock] 33932736054 135984446892928 getFreeCells REL(return OS)
+[gc-lock] 33932736345 135984446892928 getFreeCells ACQ
+[gc-lock] 33932736548 135984446892928 getFreeCells REL(return batch)
+[gc-lock] 33932736911 135984446892928 getFreeCells ACQ
+[gc-lock] 33932737131 135984446892928 getFreeCells REL(return batch)
+[gc-lock] 33932737348 135984446892928 getFreeCells ACQ
+[gc-lock] 33932737443 135984446892928 getFreeCells REL(return batch)
+[gc-lock] 33932737609 135984446892928 getFreeCells ACQ
+[gc-lock] 33932737704 135984446892928 getFreeCells REL(return batch)
+[gc-lock] 33932737875 135984446892928 getFreeCells ACQ
+[gc-lock] 33932737969 135984446892928 getFreeCells REL(return batch)
+[gc-lock] 33932738276 135984446892928 getFreeCells ACQ
+[gc-lock] 33932738373 135984446892928 getFreeCells REL(return batch)
+[gc-lock] 33932738604 135984446892928 getFreeCells ACQ
+[gc-lock] 33932738699 135984446892928 getFreeCells REL(return batch)
+[gc-lock] 33932738903 135984446892928 getFreeCells ACQ
+[gc-lock] 33932738998 135984446892928 getFreeCells REL(return batch)
+[gc-lock] 33932739232 135984446892928 getFreeCells ACQ
+[gc-lock] 33932739327 135984446892928 getFreeCells REL(return batch)
+[gc-lock] 33932739575 135984446892928 getFreeCells ACQ
+[gc-lock] 33932739658 135984446892928 getFreeCells REL(park)
+[gc-lock] 33932739751 135984446207680 gcLoop ACQ(gcStarted)
+[gc-lock] 33932739965 135984446207680 gcLoop ACQ(parked)
+[gc-lock] 33932741706 135984446207680 gcLoop REL(mark-sweep)
+[gc-lock] 33932743731 135984446207680 gcLoop ACQ(after-sweep)
+[gc-lock] 33932743942 135984446892928 getFreeCells ACQ(wake)
+[gc-lock] 33932744508 135984446892928 getFreeCells REL(return OS)
+[gc-lock] 33932744739 135984446892928 getFreeCells ACQ
+[gc-lock] 33932744835 135984446892928 getFreeCells REL(return batch)
+[gc-lock] 33932745198 135984446892928 getFreeCells ACQ
+[gc-lock] 33932745402 135984446892928 getFreeCells REL(return batch)
+[gc-lock] 33932745812 135984446892928 getFreeCells ACQ
+[gc-lock] 33932746078 135984446892928 getFreeCells REL(return batch)
+[gc-lock] 33932746338 135984446892928 getFreeCells ACQ
+[gc-lock] 33932746453 135984446892928 getFreeCells REL(return batch)
+[gc-lock] 33932746668 135984446892928 getFreeCells ACQ
+[gc-lock] 33932746781 135984446892928 getFreeCells REL(return batch)
+[gc-lock] 33932746974 135984446892928 getFreeCells ACQ
+[gc-lock] 33932747101 135984446892928 getFreeCells REL(return batch)
+[gc-lock] 33932747563 135984446892928 getFreeCells ACQ
+[gc-lock] 33932747682 135984446892928 getFreeCells REL(return batch)
+[gc-lock] 33932747879 135984446892928 getFreeCells ACQ
+[gc-lock] 33932747992 135984446892928 getFreeCells REL(return batch)
+[gc-lock] 33932748213 135984446892928 getFreeCells ACQ
+[gc-lock] 33932748329 135984446892928 getFreeCells REL(return batch)
+[gc-lock] 33932748582 135984446892928 getFreeCells ACQ
+[gc-lock] 33932748669 135984446892928 getFreeCells REL(park)
+[gc-lock] 33932748760 135984446207680 gcLoop ACQ(gcStarted)
+[gc-lock] 33932748892 135984446207680 gcLoop ACQ(parked)
+[gc-lock] 33932750081 135984446207680 gcLoop REL(mark-sweep)
+[gc-lock] 33932752143 135984446207680 gcLoop ACQ(after-sweep)
+[gc-lock] 33932752277 135984446892928 getFreeCells ACQ(wake)
+[gc-lock] 33932753562 135984446892928 getFreeCells REL(return OS)
+[gc-lock] 33932753899 135984446892928 submitYoung ACQ
+[gc-lock] 33932754083 135984446892928 submitYoung REL
+[gc-lock] 33932754242 135984446207680 gcLoop ACQ(gcStarted)
+[gc-lock] 33932754588 135984446892928 submitYoung ACQ
+[gc-lock] 33932754683 135984446892928 submitYoung REL
+[gc-lock] 33932775408 135198147533696 getFreeCells ACQ
+[gc-lock] 33932775960 135198147533696 getFreeCells REL(return OS)
+[gc-lock] 33932776299 135198147533696 getFreeCells ACQ
+[gc-lock] 33932776399 135198147533696 getFreeCells REL(return batch)
+[gc-lock] 33932776491 135198146848448 gcLoop ACQ(init)
+[gc-lock] 33932776774 135198147533696 getFreeCells ACQ
+[gc-lock] 33932776872 135198147533696 getFreeCells REL(return batch)
+[gc-lock] 33932777123 135198147533696 getFreeCells ACQ
+[gc-lock] 33932777222 135198147533696 getFreeCells REL(return batch)
+[gc-lock] 33932777438 135198147533696 getFreeCells ACQ
+[gc-lock] 33932777533 135198147533696 getFreeCells REL(return batch)
+[gc-lock] 33932777751 135198147533696 getFreeCells ACQ
+[gc-lock] 33932777850 135198147533696 getFreeCells REL(return batch)
+[gc-lock] 33932778080 135198147533696 getFreeCells ACQ
+[gc-lock] 33932778177 135198147533696 getFreeCells REL(return batch)
+[gc-lock] 33932778406 135198147533696 getFreeCells ACQ
+[gc-lock] 33932778502 135198147533696 getFreeCells REL(return batch)
+[gc-lock] 33932778718 135198147533696 getFreeCells ACQ
+[gc-lock] 33932778813 135198147533696 getFreeCells REL(return batch)
+[gc-lock] 33932779036 135198147533696 getFreeCells ACQ
+[gc-lock] 33932779143 135198147533696 getFreeCells REL(return batch)
+[gc-lock] 33932779421 135198147533696 getFreeCells ACQ
+[gc-lock] 33932779513 135198147533696 getFreeCells REL(park)
+[gc-lock] 33932779604 135198146848448 gcLoop ACQ(gcStarted)
+[gc-lock] 33932779714 135198146848448 gcLoop ACQ(parked)
+[gc-lock] 33932780446 135198146848448 gcLoop REL(mark-sweep)
+[gc-lock] 33932781898 135198146848448 gcLoop ACQ(after-sweep)
+[gc-lock] 33932782047 135198147533696 getFreeCells ACQ(wake)
+[gc-lock] 33932782575 135198147533696 getFreeCells REL(return OS)
+[gc-lock] 33932782792 135198147533696 getFreeCells ACQ
+[gc-lock] 33932782888 135198147533696 getFreeCells REL(return batch)
+[gc-lock] 33932783086 135198147533696 getFreeCells ACQ
+[gc-lock] 33932783184 135198147533696 getFreeCells REL(return batch)
+[gc-lock] 33932783457 135198147533696 getFreeCells ACQ
+[gc-lock] 33932783705 135198147533696 getFreeCells REL(return batch)
+[gc-lock] 33932784191 135198147533696 getFreeCells ACQ
+[gc-lock] 33932784379 135198147533696 getFreeCells REL(return batch)
+[gc-lock] 33932784542 135198147533696 getFreeCells ACQ
+[gc-lock] 33932784637 135198147533696 getFreeCells REL(return batch)
+[gc-lock] 33932784959 135198147533696 getFreeCells ACQ
+[gc-lock] 33932785079 135198147533696 getFreeCells REL(return batch)
+[gc-lock] 33932785307 135198147533696 getFreeCells ACQ
+[gc-lock] 33932785404 135198147533696 getFreeCells REL(return batch)
+[gc-lock] 33932785605 135198147533696 getFreeCells ACQ
+[gc-lock] 33932785702 135198147533696 getFreeCells REL(return batch)
+[gc-lock] 33932785916 135198147533696 getFreeCells ACQ
+[gc-lock] 33932786025 135198147533696 getFreeCells REL(return batch)
+[gc-lock] 33932786274 135198147533696 getFreeCells ACQ
+[gc-lock] 33932786360 135198147533696 getFreeCells REL(park)
+[gc-lock] 33932786449 135198146848448 gcLoop ACQ(gcStarted)
+[gc-lock] 33932786561 135198146848448 gcLoop ACQ(parked)
+[gc-lock] 33932787570 135198146848448 gcLoop REL(mark-sweep)
+[gc-lock] 33932789698 135198146848448 gcLoop ACQ(after-sweep)
+[gc-lock] 33932789862 135198147533696 getFreeCells ACQ(wake)
+[gc-lock] 33932791186 135198147533696 getFreeCells REL(return OS)
+[gc-lock] 33932791526 135198147533696 getFreeCells ACQ
+[gc-lock] 33932791621 135198147533696 getFreeCells REL(return batch)
+[gc-lock] 33932791936 135198147533696 getFreeCells ACQ
+[gc-lock] 33932792046 135198147533696 getFreeCells REL(return batch)
+[gc-lock] 33932792209 135198147533696 getFreeCells ACQ
+[gc-lock] 33932792303 135198147533696 getFreeCells REL(return batch)
+[gc-lock] 33932792483 135198147533696 getFreeCells ACQ
+[gc-lock] 33932792578 135198147533696 getFreeCells REL(return batch)
+[gc-lock] 33932792755 135198147533696 getFreeCells ACQ
+[gc-lock] 33932792851 135198147533696 getFreeCells REL(return batch)
+[gc-lock] 33932793022 135198147533696 getFreeCells ACQ
+[gc-lock] 33932793117 135198147533696 getFreeCells REL(return batch)
+[gc-lock] 33932793465 135198147533696 getFreeCells ACQ
+[gc-lock] 33932793563 135198147533696 getFreeCells REL(return batch)
+[gc-lock] 33932793725 135198147533696 getFreeCells ACQ
+[gc-lock] 33932793819 135198147533696 getFreeCells REL(return batch)
+[gc-lock] 33932793981 135198147533696 getFreeCells ACQ
+[gc-lock] 33932794107 135198147533696 getFreeCells REL(return batch)
+[gc-lock] 33932794307 135198147533696 getFreeCells ACQ
+[gc-lock] 33932794391 135198147533696 getFreeCells REL(park)
+[gc-lock] 33932794481 135198146848448 gcLoop ACQ(gcStarted)
+[gc-lock] 33932794587 135198146848448 gcLoop ACQ(parked)
+[gc-lock] 33932795790 135198146848448 gcLoop REL(mark-sweep)
+[gc-lock] 33932797987 135198146848448 gcLoop ACQ(after-sweep)
+[gc-lock] 33932798112 135198147533696 getFreeCells ACQ(wake)
+[gc-lock] 33932798647 135198147533696 getFreeCells REL(return OS)
+[gc-lock] 33932798839 135198147533696 submitYoung ACQ
+[gc-lock] 33932798923 135198147533696 submitYoung REL
+[gc-lock] 33932799044 135198146848448 gcLoop ACQ(gcStarted)
+[gc-lock] 33932799200 135198147533696 submitYoung ACQ
+[gc-lock] 33932799282 135198147533696 submitYoung REL
+[gc-lock] 33932821047 134662701239168 getFreeCells ACQ
+[gc-lock] 33932821592 134662701239168 getFreeCells REL(return OS)
+[gc-lock] 33932821870 134662701239168 getFreeCells ACQ
+[gc-lock] 33932821967 134662701239168 getFreeCells REL(return batch)
+[gc-lock] 33932822088 134662700553920 gcLoop ACQ(init)
+[gc-lock] 33932822512 134662701239168 getFreeCells ACQ
+[gc-lock] 33932822627 134662701239168 getFreeCells REL(return batch)
+[gc-lock] 33932822863 134662701239168 getFreeCells ACQ
+[gc-lock] 33932822958 134662701239168 getFreeCells REL(return batch)
+[gc-lock] 33932823176 134662701239168 getFreeCells ACQ
+[gc-lock] 33932823269 134662701239168 getFreeCells REL(return batch)
+[gc-lock] 33932823475 134662701239168 getFreeCells ACQ
+[gc-lock] 33932823570 134662701239168 getFreeCells REL(return batch)
+[gc-lock] 33932823772 134662701239168 getFreeCells ACQ
+[gc-lock] 33932823866 134662701239168 getFreeCells REL(return batch)
+[gc-lock] 33932824091 134662701239168 getFreeCells ACQ
+[gc-lock] 33932824187 134662701239168 getFreeCells REL(return batch)
+[gc-lock] 33932824395 134662701239168 getFreeCells ACQ
+[gc-lock] 33932824491 134662701239168 getFreeCells REL(return batch)
+[gc-lock] 33932824696 134662701239168 getFreeCells ACQ
+[gc-lock] 33932824790 134662701239168 getFreeCells REL(return batch)
+[gc-lock] 33932825035 134662701239168 getFreeCells ACQ
+[gc-lock] 33932825125 134662701239168 getFreeCells REL(park)
+[gc-lock] 33932825221 134662700553920 gcLoop ACQ(gcStarted)
+[gc-lock] 33932825431 134662700553920 gcLoop ACQ(parked)
+[gc-lock] 33932827267 134662700553920 gcLoop REL(mark-sweep)
+[gc-lock] 33932828786 134662700553920 gcLoop ACQ(after-sweep)
+[gc-lock] 33932828926 134662701239168 getFreeCells ACQ(wake)
+[gc-lock] 33932830124 134662701239168 getFreeCells REL(return OS)
+[gc-lock] 33932830455 134662701239168 getFreeCells ACQ
+[gc-lock] 33932830549 134662701239168 getFreeCells REL(return batch)
+[gc-lock] 33932830713 134662701239168 getFreeCells ACQ
+[gc-lock] 33932830807 134662701239168 getFreeCells REL(return batch)
+[gc-lock] 33932830980 134662701239168 getFreeCells ACQ
+[gc-lock] 33932831082 134662701239168 getFreeCells REL(return batch)
+[gc-lock] 33932831242 134662701239168 getFreeCells ACQ
+[gc-lock] 33932831334 134662701239168 getFreeCells REL(return batch)
+[gc-lock] 33932831496 134662701239168 getFreeCells ACQ
+[gc-lock] 33932831587 134662701239168 getFreeCells REL(return batch)
+[gc-lock] 33932831872 134662701239168 getFreeCells ACQ
+[gc-lock] 33932831967 134662701239168 getFreeCells REL(return batch)
+[gc-lock] 33932832205 134662701239168 getFreeCells ACQ
+[gc-lock] 33932832299 134662701239168 getFreeCells REL(return batch)
+[gc-lock] 33932832497 134662701239168 getFreeCells ACQ
+[gc-lock] 33932832591 134662701239168 getFreeCells REL(return batch)
+[gc-lock] 33932832802 134662701239168 getFreeCells ACQ
+[gc-lock] 33932832897 134662701239168 getFreeCells REL(return batch)
+[gc-lock] 33932833146 134662701239168 getFreeCells ACQ
+[gc-lock] 33932833229 134662701239168 getFreeCells REL(park)
+[gc-lock] 33932833321 134662700553920 gcLoop ACQ(gcStarted)
+[gc-lock] 33932833447 134662700553920 gcLoop ACQ(parked)
+[gc-lock] 33932834723 134662700553920 gcLoop REL(mark-sweep)
+[gc-lock] 33932837229 134662700553920 gcLoop ACQ(after-sweep)
+[gc-lock] 33932837392 134662701239168 getFreeCells ACQ(wake)
+[gc-lock] 33932838595 134662701239168 getFreeCells REL(return OS)
+[gc-lock] 33932838885 134662701239168 getFreeCells ACQ
+[gc-lock] 33932839013 134662701239168 getFreeCells REL(return batch)
+[gc-lock] 33932839396 134662701239168 getFreeCells ACQ
+[gc-lock] 33932839520 134662701239168 getFreeCells REL(return batch)
+[gc-lock] 33932839720 134662701239168 getFreeCells ACQ
+[gc-lock] 33932839837 134662701239168 getFreeCells REL(return batch)
+[gc-lock] 33932840062 134662701239168 getFreeCells ACQ
+[gc-lock] 33932840177 134662701239168 getFreeCells REL(return batch)
+[gc-lock] 33932840401 134662701239168 getFreeCells ACQ
+[gc-lock] 33932840518 134662701239168 getFreeCells REL(return batch)
+[gc-lock] 33932840720 134662701239168 getFreeCells ACQ
+[gc-lock] 33932840835 134662701239168 getFreeCells REL(return batch)
+[gc-lock] 33932841277 134662701239168 getFreeCells ACQ
+[gc-lock] 33932841407 134662701239168 getFreeCells REL(return batch)
+[gc-lock] 33932841612 134662701239168 getFreeCells ACQ
+[gc-lock] 33932841730 134662701239168 getFreeCells REL(return batch)
+[gc-lock] 33932841935 134662701239168 getFreeCells ACQ
+[gc-lock] 33932842065 134662701239168 getFreeCells REL(return batch)
+[gc-lock] 33932842329 134662701239168 getFreeCells ACQ
+[gc-lock] 33932842430 134662701239168 getFreeCells REL(park)
+[gc-lock] 33932842543 134662700553920 gcLoop ACQ(gcStarted)
+[gc-lock] 33932842666 134662700553920 gcLoop ACQ(parked)
+[gc-lock] 33932843852 134662700553920 gcLoop REL(mark-sweep)
+[gc-lock] 33932845923 134662700553920 gcLoop ACQ(after-sweep)
+[gc-lock] 33932846051 134662701239168 getFreeCells ACQ(wake)
+[gc-lock] 33932847064 134662701239168 getFreeCells REL(return OS)
+[gc-lock] 33932847549 134662701239168 submitYoung ACQ
+[gc-lock] 33932847754 134662701239168 submitYoung REL
+[gc-lock] 33932848014 134662700553920 gcLoop ACQ(gcStarted)
+[gc-lock] 33932848208 134662701239168 submitYoung ACQ
+[gc-lock] 33932848418 134662701239168 submitYoung REL
+[gc-lock] 33932869164 125394965199744 getFreeCells ACQ
+[gc-lock] 33932869721 125394965199744 getFreeCells REL(return OS)
+[gc-lock] 33932869994 125394965199744 getFreeCells ACQ
+[gc-lock] 33932870108 125394965199744 getFreeCells REL(return batch)
+[gc-lock] 33932870228 125394964514496 gcLoop ACQ(init)
+[gc-lock] 33932870569 125394965199744 getFreeCells ACQ
+[gc-lock] 33932870669 125394965199744 getFreeCells REL(return batch)
+[gc-lock] 33932870893 125394965199744 getFreeCells ACQ
+[gc-lock] 33932870990 125394965199744 getFreeCells REL(return batch)
+[gc-lock] 33932871218 125394965199744 getFreeCells ACQ
+[gc-lock] 33932871314 125394965199744 getFreeCells REL(return batch)
+[gc-lock] 33932871519 125394965199744 getFreeCells ACQ
+[gc-lock] 33932871614 125394965199744 getFreeCells REL(return batch)
+[gc-lock] 33932871823 125394965199744 getFreeCells ACQ
+[gc-lock] 33932871920 125394965199744 getFreeCells REL(return batch)
+[gc-lock] 33932872150 125394965199744 getFreeCells ACQ
+[gc-lock] 33932872246 125394965199744 getFreeCells REL(return batch)
+[gc-lock] 33932872456 125394965199744 getFreeCells ACQ
+[gc-lock] 33932872556 125394965199744 getFreeCells REL(return batch)
+[gc-lock] 33932872781 125394965199744 getFreeCells ACQ
+[gc-lock] 33932872880 125394965199744 getFreeCells REL(return batch)
+[gc-lock] 33932873131 125394965199744 getFreeCells ACQ
+[gc-lock] 33932873224 125394965199744 getFreeCells REL(park)
+[gc-lock] 33932873325 125394964514496 gcLoop ACQ(gcStarted)
+[gc-lock] 33932873418 125394964514496 gcLoop ACQ(parked)
+[gc-lock] 33932874727 125394964514496 gcLoop REL(mark-sweep)
+[gc-lock] 33932876484 125394964514496 gcLoop ACQ(after-sweep)
+[gc-lock] 33932876666 125394965199744 getFreeCells ACQ(wake)
+[gc-lock] 33932877611 125394965199744 getFreeCells REL(return OS)
+[gc-lock] 33932877839 125394965199744 getFreeCells ACQ
+[gc-lock] 33932877933 125394965199744 getFreeCells REL(return batch)
+[gc-lock] 33932878105 125394965199744 getFreeCells ACQ
+[gc-lock] 33932878199 125394965199744 getFreeCells REL(return batch)
+[gc-lock] 33932878386 125394965199744 getFreeCells ACQ
+[gc-lock] 33932878487 125394965199744 getFreeCells REL(return batch)
+[gc-lock] 33932878644 125394965199744 getFreeCells ACQ
+[gc-lock] 33932878738 125394965199744 getFreeCells REL(return batch)
+[gc-lock] 33932878896 125394965199744 getFreeCells ACQ
+[gc-lock] 33932878990 125394965199744 getFreeCells REL(return batch)
+[gc-lock] 33932879316 125394965199744 getFreeCells ACQ
+[gc-lock] 33932879414 125394965199744 getFreeCells REL(return batch)
+[gc-lock] 33932879648 125394965199744 getFreeCells ACQ
+[gc-lock] 33932879746 125394965199744 getFreeCells REL(return batch)
+[gc-lock] 33932879944 125394965199744 getFreeCells ACQ
+[gc-lock] 33932880047 125394965199744 getFreeCells REL(return batch)
+[gc-lock] 33932880278 125394965199744 getFreeCells ACQ
+[gc-lock] 33932880380 125394965199744 getFreeCells REL(return batch)
+[gc-lock] 33932880629 125394965199744 getFreeCells ACQ
+[gc-lock] 33932880714 125394965199744 getFreeCells REL(park)
+[gc-lock] 33932880808 125394964514496 gcLoop ACQ(gcStarted)
+[gc-lock] 33932881000 125394964514496 gcLoop ACQ(parked)
+[gc-lock] 33932882256 125394964514496 gcLoop REL(mark-sweep)
+[gc-lock] 33932884224 125394964514496 gcLoop ACQ(after-sweep)
+[gc-lock] 33932884359 125394965199744 getFreeCells ACQ(wake)
+[gc-lock] 33932885425 125394965199744 getFreeCells REL(return OS)
+[gc-lock] 33932885901 125394965199744 getFreeCells ACQ
+[gc-lock] 33932886114 125394965199744 getFreeCells REL(return batch)
+[gc-lock] 33932886583 125394965199744 getFreeCells ACQ
+[gc-lock] 33932886682 125394965199744 getFreeCells REL(return batch)
+[gc-lock] 33932886845 125394965199744 getFreeCells ACQ
+[gc-lock] 33932886937 125394965199744 getFreeCells REL(return batch)
+[gc-lock] 33932887120 125394965199744 getFreeCells ACQ
+[gc-lock] 33932887214 125394965199744 getFreeCells REL(return batch)
+[gc-lock] 33932887392 125394965199744 getFreeCells ACQ
+[gc-lock] 33932887491 125394965199744 getFreeCells REL(return batch)
+[gc-lock] 33932887656 125394965199744 getFreeCells ACQ
+[gc-lock] 33932887748 125394965199744 getFreeCells REL(return batch)
+[gc-lock] 33932888100 125394965199744 getFreeCells ACQ
+[gc-lock] 33932888200 125394965199744 getFreeCells REL(return batch)
+[gc-lock] 33932888359 125394965199744 getFreeCells ACQ
+[gc-lock] 33932888453 125394965199744 getFreeCells REL(return batch)
+[gc-lock] 33932888611 125394965199744 getFreeCells ACQ
+[gc-lock] 33932888703 125394965199744 getFreeCells REL(return batch)
+[gc-lock] 33932888894 125394965199744 getFreeCells ACQ
+[gc-lock] 33932888977 125394965199744 getFreeCells REL(park)
+[gc-lock] 33932889081 125394964514496 gcLoop ACQ(gcStarted)
+[gc-lock] 33932889254 125394964514496 gcLoop ACQ(parked)
+[gc-lock] 33932891098 125394964514496 gcLoop REL(mark-sweep)
+[gc-lock] 33932893082 125394964514496 gcLoop ACQ(after-sweep)
+[gc-lock] 33932893228 125394965199744 getFreeCells ACQ(wake)
+[gc-lock] 33932894340 125394965199744 getFreeCells REL(return OS)
+[gc-lock] 33932894614 125394965199744 submitYoung ACQ
+[gc-lock] 33932894700 125394965199744 submitYoung REL
+[gc-lock] 33932894805 125394964514496 gcLoop ACQ(gcStarted)
+[gc-lock] 33932894982 125394965199744 submitYoung ACQ
+[gc-lock] 33932895188 125394965199744 submitYoung REL
+[gc-lock] 33932925244 131297169709952 getFreeCells ACQ
+[gc-lock] 33932926338 131297169709952 getFreeCells REL(return OS)
+[gc-lock] 33932926826 131297169709952 getFreeCells ACQ
+[gc-lock] 33932926998 131297169709952 getFreeCells REL(return batch)
+[gc-lock] 33932927175 131297169024704 gcLoop ACQ(init)
+[gc-lock] 33932927703 131297169709952 getFreeCells ACQ
+[gc-lock] 33932927857 131297169709952 getFreeCells REL(return batch)
+[gc-lock] 33932928235 131297169709952 getFreeCells ACQ
+[gc-lock] 33932928390 131297169709952 getFreeCells REL(return batch)
+[gc-lock] 33932928718 131297169709952 getFreeCells ACQ
+[gc-lock] 33932928859 131297169709952 getFreeCells REL(return batch)
+[gc-lock] 33932929185 131297169709952 getFreeCells ACQ
+[gc-lock] 33932929333 131297169709952 getFreeCells REL(return batch)
+[gc-lock] 33932929637 131297169709952 getFreeCells ACQ
+[gc-lock] 33932929773 131297169709952 getFreeCells REL(return batch)
+[gc-lock] 33932930139 131297169709952 getFreeCells ACQ
+[gc-lock] 33932930307 131297169709952 getFreeCells REL(return batch)
+[gc-lock] 33932930688 131297169709952 getFreeCells ACQ
+[gc-lock] 33932930844 131297169709952 getFreeCells REL(return batch)
+[gc-lock] 33932931163 131297169709952 getFreeCells ACQ
+[gc-lock] 33932931306 131297169709952 getFreeCells REL(return batch)
+[gc-lock] 33932931663 131297169709952 getFreeCells ACQ
+[gc-lock] 33932931780 131297169709952 getFreeCells REL(park)
+[gc-lock] 33932931890 131297169024704 gcLoop ACQ(gcStarted)
+[gc-lock] 33932932022 131297169024704 gcLoop ACQ(parked)
+[gc-lock] 33932932840 131297169024704 gcLoop REL(mark-sweep)
+[gc-lock] 33932934557 131297169024704 gcLoop ACQ(after-sweep)
+[gc-lock] 33932934692 131297169709952 getFreeCells ACQ(wake)
+[gc-lock] 33932935964 131297169709952 getFreeCells REL(return OS)
+[gc-lock] 33932936445 131297169709952 getFreeCells ACQ
+[gc-lock] 33932936600 131297169709952 getFreeCells REL(return batch)
+[gc-lock] 33932936762 131297169709952 getFreeCells ACQ
+[gc-lock] 33932936857 131297169709952 getFreeCells REL(return batch)
+[gc-lock] 33932937049 131297169709952 getFreeCells ACQ
+[gc-lock] 33932937149 131297169709952 getFreeCells REL(return batch)
+[gc-lock] 33932937314 131297169709952 getFreeCells ACQ
+[gc-lock] 33932937409 131297169709952 getFreeCells REL(return batch)
+[gc-lock] 33932937573 131297169709952 getFreeCells ACQ
+[gc-lock] 33932937668 131297169709952 getFreeCells REL(return batch)
+[gc-lock] 33932937947 131297169709952 getFreeCells ACQ
+[gc-lock] 33932938052 131297169709952 getFreeCells REL(return batch)
+[gc-lock] 33932938280 131297169709952 getFreeCells ACQ
+[gc-lock] 33932938373 131297169709952 getFreeCells REL(return batch)
+[gc-lock] 33932938580 131297169709952 getFreeCells ACQ
+[gc-lock] 33932938673 131297169709952 getFreeCells REL(return batch)
+[gc-lock] 33932938867 131297169709952 getFreeCells ACQ
+[gc-lock] 33932938960 131297169709952 getFreeCells REL(return batch)
+[gc-lock] 33932939214 131297169709952 getFreeCells ACQ
+[gc-lock] 33932939301 131297169709952 getFreeCells REL(park)
+[gc-lock] 33932939396 131297169024704 gcLoop ACQ(gcStarted)
+[gc-lock] 33932939598 131297169024704 gcLoop ACQ(parked)
+[gc-lock] 33932941657 131297169024704 gcLoop REL(mark-sweep)
+[gc-lock] 33932943746 131297169024704 gcLoop ACQ(after-sweep)
+[gc-lock] 33932943894 131297169709952 getFreeCells ACQ(wake)
+[gc-lock] 33932944847 131297169709952 getFreeCells REL(return OS)
+[gc-lock] 33932945112 131297169709952 getFreeCells ACQ
+[gc-lock] 33932945210 131297169709952 getFreeCells REL(return batch)
+[gc-lock] 33932945577 131297169709952 getFreeCells ACQ
+[gc-lock] 33932945766 131297169709952 getFreeCells REL(return batch)
+[gc-lock] 33932946135 131297169709952 getFreeCells ACQ
+[gc-lock] 33932946334 131297169709952 getFreeCells REL(return batch)
+[gc-lock] 33932946645 131297169709952 getFreeCells ACQ
+[gc-lock] 33932946748 131297169709952 getFreeCells REL(return batch)
+[gc-lock] 33932946911 131297169709952 getFreeCells ACQ
+[gc-lock] 33932947019 131297169709952 getFreeCells REL(return batch)
+[gc-lock] 33932947198 131297169709952 getFreeCells ACQ
+[gc-lock] 33932947293 131297169709952 getFreeCells REL(return batch)
+[gc-lock] 33932947484 131297169709952 getFreeCells ACQ
+[gc-lock] 33932947579 131297169709952 getFreeCells REL(return batch)
+[gc-lock] 33932947850 131297169709952 getFreeCells ACQ
+[gc-lock] 33932947951 131297169709952 getFreeCells REL(return batch)
+[gc-lock] 33932948126 131297169709952 getFreeCells ACQ
+[gc-lock] 33932948220 131297169709952 getFreeCells REL(return batch)
+[gc-lock] 33932948382 131297169709952 getFreeCells ACQ
+[gc-lock] 33932948464 131297169709952 getFreeCells REL(park)
+[gc-lock] 33932948559 131297169024704 gcLoop ACQ(gcStarted)
+[gc-lock] 33932948667 131297169024704 gcLoop ACQ(parked)
+[gc-lock] 33932949826 131297169024704 gcLoop REL(mark-sweep)
+[gc-lock] 33932952069 131297169024704 gcLoop ACQ(after-sweep)
+[gc-lock] 33932952190 131297169709952 getFreeCells ACQ(wake)
+[gc-lock] 33932953504 131297169709952 getFreeCells REL(return OS)
+[gc-lock] 33932954404 131297169709952 submitYoung ACQ
+[gc-lock] 33932954655 131297169709952 submitYoung REL
+[gc-lock] 33932954800 131297169024704 gcLoop ACQ(gcStarted)
+[gc-lock] 33932954963 131297169709952 submitYoung ACQ
+[gc-lock] 33932955058 131297169709952 submitYoung REL
+[gc-lock] 33932975959 127448002001792 getFreeCells ACQ
+[gc-lock] 33932976539 127448002001792 getFreeCells REL(return OS)
+[gc-lock] 33932976841 127448002001792 getFreeCells ACQ
+[gc-lock] 33932976940 127448002001792 getFreeCells REL(return batch)
+[gc-lock] 33932977087 127448001316544 gcLoop ACQ(init)
+[gc-lock] 33932977324 127448002001792 getFreeCells ACQ
+[gc-lock] 33932977424 127448002001792 getFreeCells REL(return batch)
+[gc-lock] 33932977653 127448002001792 getFreeCells ACQ
+[gc-lock] 33932977752 127448002001792 getFreeCells REL(return batch)
+[gc-lock] 33932977974 127448002001792 getFreeCells ACQ
+[gc-lock] 33932978088 127448002001792 getFreeCells REL(return batch)
+[gc-lock] 33932978296 127448002001792 getFreeCells ACQ
+[gc-lock] 33932978405 127448002001792 getFreeCells REL(return batch)
+[gc-lock] 33932978614 127448002001792 getFreeCells ACQ
+[gc-lock] 33932978718 127448002001792 getFreeCells REL(return batch)
+[gc-lock] 33932978938 127448002001792 getFreeCells ACQ
+[gc-lock] 33932979045 127448002001792 getFreeCells REL(return batch)
+[gc-lock] 33932979259 127448002001792 getFreeCells ACQ
+[gc-lock] 33932979356 127448002001792 getFreeCells REL(return batch)
+[gc-lock] 33932979573 127448002001792 getFreeCells ACQ
+[gc-lock] 33932979682 127448002001792 getFreeCells REL(return batch)
+[gc-lock] 33932979925 127448002001792 getFreeCells ACQ
+[gc-lock] 33932980031 127448002001792 getFreeCells REL(park)
+[gc-lock] 33932980140 127448001316544 gcLoop ACQ(gcStarted)
+[gc-lock] 33932980251 127448001316544 gcLoop ACQ(parked)
+[gc-lock] 33932980943 127448001316544 gcLoop REL(mark-sweep)
+[gc-lock] 33932982446 127448001316544 gcLoop ACQ(after-sweep)
+[gc-lock] 33932982631 127448002001792 getFreeCells ACQ(wake)
+[gc-lock] 33932983170 127448002001792 getFreeCells REL(return OS)
+[gc-lock] 33932983411 127448002001792 getFreeCells ACQ
+[gc-lock] 33932983508 127448002001792 getFreeCells REL(return batch)
+[gc-lock] 33932983675 127448002001792 getFreeCells ACQ
+[gc-lock] 33932983775 127448002001792 getFreeCells REL(return batch)
+[gc-lock] 33932983952 127448002001792 getFreeCells ACQ
+[gc-lock] 33932984056 127448002001792 getFreeCells REL(return batch)
+[gc-lock] 33932984218 127448002001792 getFreeCells ACQ
+[gc-lock] 33932984314 127448002001792 getFreeCells REL(return batch)
+[gc-lock] 33932984490 127448002001792 getFreeCells ACQ
+[gc-lock] 33932984582 127448002001792 getFreeCells REL(return batch)
+[gc-lock] 33932984865 127448002001792 getFreeCells ACQ
+[gc-lock] 33932984961 127448002001792 getFreeCells REL(return batch)
+[gc-lock] 33932985210 127448002001792 getFreeCells ACQ
+[gc-lock] 33932985305 127448002001792 getFreeCells REL(return batch)
+[gc-lock] 33932985536 127448002001792 getFreeCells ACQ
+[gc-lock] 33932985660 127448002001792 getFreeCells REL(return batch)
+[gc-lock] 33932985891 127448002001792 getFreeCells ACQ
+[gc-lock] 33932986016 127448002001792 getFreeCells REL(return batch)
+[gc-lock] 33932986310 127448002001792 getFreeCells ACQ
+[gc-lock] 33932986397 127448002001792 getFreeCells REL(park)
+[gc-lock] 33932986492 127448001316544 gcLoop ACQ(gcStarted)
+[gc-lock] 33932986686 127448001316544 gcLoop ACQ(parked)
+[gc-lock] 33932987692 127448001316544 gcLoop REL(mark-sweep)
+[gc-lock] 33932989630 127448001316544 gcLoop ACQ(after-sweep)
+[gc-lock] 33932989763 127448002001792 getFreeCells ACQ(wake)
+[gc-lock] 33932990309 127448002001792 getFreeCells REL(return OS)
+[gc-lock] 33932990538 127448002001792 getFreeCells ACQ
+[gc-lock] 33932990634 127448002001792 getFreeCells REL(return batch)
+[gc-lock] 33932991273 127448002001792 getFreeCells ACQ
+[gc-lock] 33932991476 127448002001792 getFreeCells REL(return batch)
+[gc-lock] 33932991792 127448002001792 getFreeCells ACQ
+[gc-lock] 33932991885 127448002001792 getFreeCells REL(return batch)
+[gc-lock] 33932992070 127448002001792 getFreeCells ACQ
+[gc-lock] 33932992178 127448002001792 getFreeCells REL(return batch)
+[gc-lock] 33932992343 127448002001792 getFreeCells ACQ
+[gc-lock] 33932992437 127448002001792 getFreeCells REL(return batch)
+[gc-lock] 33932992615 127448002001792 getFreeCells ACQ
+[gc-lock] 33932992708 127448002001792 getFreeCells REL(return batch)
+[gc-lock] 33932992899 127448002001792 getFreeCells ACQ
+[gc-lock] 33932992995 127448002001792 getFreeCells REL(return batch)
+[gc-lock] 33932993257 127448002001792 getFreeCells ACQ
+[gc-lock] 33932993365 127448002001792 getFreeCells REL(return batch)
+[gc-lock] 33932993533 127448002001792 getFreeCells ACQ
+[gc-lock] 33932993631 127448002001792 getFreeCells REL(return batch)
+[gc-lock] 33932993797 127448002001792 getFreeCells ACQ
+[gc-lock] 33932993876 127448002001792 getFreeCells REL(park)
+[gc-lock] 33932993972 127448001316544 gcLoop ACQ(gcStarted)
+[gc-lock] 33932994211 127448001316544 gcLoop ACQ(parked)
+[gc-lock] 33932996315 127448001316544 gcLoop REL(mark-sweep)
+[gc-lock] 33932998552 127448001316544 gcLoop ACQ(after-sweep)
+[gc-lock] 33932998713 127448002001792 getFreeCells ACQ(wake)
+[gc-lock] 33932999258 127448002001792 getFreeCells REL(return OS)
+[gc-lock] 33932999622 127448002001792 submitYoung ACQ
+[gc-lock] 33932999705 127448002001792 submitYoung REL
+[gc-lock] 33932999809 127448001316544 gcLoop ACQ(gcStarted)
+[gc-lock] 33932999931 127448002001792 submitYoung ACQ
+[gc-lock] 33933000020 127448002001792 submitYoung REL
+[gc-lock] 33933020425 128365972765568 getFreeCells ACQ
+[gc-lock] 33933020976 128365972765568 getFreeCells REL(return OS)
+[gc-lock] 33933021306 128365972765568 getFreeCells ACQ
+[gc-lock] 33933021405 128365972765568 getFreeCells REL(return batch)
+[gc-lock] 33933021501 128365972080320 gcLoop ACQ(init)
+[gc-lock] 33933021840 128365972765568 getFreeCells ACQ
+[gc-lock] 33933021941 128365972765568 getFreeCells REL(return batch)
+[gc-lock] 33933022187 128365972765568 getFreeCells ACQ
+[gc-lock] 33933022282 128365972765568 getFreeCells REL(return batch)
+[gc-lock] 33933022496 128365972765568 getFreeCells ACQ
+[gc-lock] 33933022602 128365972765568 getFreeCells REL(return batch)
+[gc-lock] 33933022812 128365972765568 getFreeCells ACQ
+[gc-lock] 33933022912 128365972765568 getFreeCells REL(return batch)
+[gc-lock] 33933023135 128365972765568 getFreeCells ACQ
+[gc-lock] 33933023231 128365972765568 getFreeCells REL(return batch)
+[gc-lock] 33933023455 128365972765568 getFreeCells ACQ
+[gc-lock] 33933023551 128365972765568 getFreeCells REL(return batch)
+[gc-lock] 33933023765 128365972765568 getFreeCells ACQ
+[gc-lock] 33933023869 128365972765568 getFreeCells REL(return batch)
+[gc-lock] 33933024095 128365972765568 getFreeCells ACQ
+[gc-lock] 33933024194 128365972765568 getFreeCells REL(return batch)
+[gc-lock] 33933024433 128365972765568 getFreeCells ACQ
+[gc-lock] 33933024526 128365972765568 getFreeCells REL(park)
+[gc-lock] 33933024614 128365972080320 gcLoop ACQ(gcStarted)
+[gc-lock] 33933024711 128365972080320 gcLoop ACQ(parked)
+[gc-lock] 33933026044 128365972080320 gcLoop REL(mark-sweep)
+[gc-lock] 33933027729 128365972080320 gcLoop ACQ(after-sweep)
+[gc-lock] 33933027863 128365972765568 getFreeCells ACQ(wake)
+[gc-lock] 33933028382 128365972765568 getFreeCells REL(return OS)
+[gc-lock] 33933028592 128365972765568 getFreeCells ACQ
+[gc-lock] 33933028686 128365972765568 getFreeCells REL(return batch)
+[gc-lock] 33933028864 128365972765568 getFreeCells ACQ
+[gc-lock] 33933028961 128365972765568 getFreeCells REL(return batch)
+[gc-lock] 33933029157 128365972765568 getFreeCells ACQ
+[gc-lock] 33933029249 128365972765568 getFreeCells REL(return batch)
+[gc-lock] 33933029430 128365972765568 getFreeCells ACQ
+[gc-lock] 33933029523 128365972765568 getFreeCells REL(return batch)
+[gc-lock] 33933029694 128365972765568 getFreeCells ACQ
+[gc-lock] 33933029791 128365972765568 getFreeCells REL(return batch)
+[gc-lock] 33933030097 128365972765568 getFreeCells ACQ
+[gc-lock] 33933030218 128365972765568 getFreeCells REL(return batch)
+[gc-lock] 33933030480 128365972765568 getFreeCells ACQ
+[gc-lock] 33933030583 128365972765568 getFreeCells REL(return batch)
+[gc-lock] 33933030813 128365972765568 getFreeCells ACQ
+[gc-lock] 33933030909 128365972765568 getFreeCells REL(return batch)
+[gc-lock] 33933031122 128365972765568 getFreeCells ACQ
+[gc-lock] 33933031229 128365972765568 getFreeCells REL(return batch)
+[gc-lock] 33933031504 128365972765568 getFreeCells ACQ
+[gc-lock] 33933031588 128365972765568 getFreeCells REL(park)
+[gc-lock] 33933031675 128365972080320 gcLoop ACQ(gcStarted)
+[gc-lock] 33933031821 128365972080320 gcLoop ACQ(parked)
+[gc-lock] 33933033830 128365972080320 gcLoop REL(mark-sweep)
+[gc-lock] 33933035839 128365972080320 gcLoop ACQ(after-sweep)
+[gc-lock] 33933035984 128365972765568 getFreeCells ACQ(wake)
+[gc-lock] 33933036902 128365972765568 getFreeCells REL(return OS)
+[gc-lock] 33933037150 128365972765568 getFreeCells ACQ
+[gc-lock] 33933037244 128365972765568 getFreeCells REL(return batch)
+[gc-lock] 33933037602 128365972765568 getFreeCells ACQ
+[gc-lock] 33933037699 128365972765568 getFreeCells REL(return batch)
+[gc-lock] 33933037868 128365972765568 getFreeCells ACQ
+[gc-lock] 33933037987 128365972765568 getFreeCells REL(return batch)
+[gc-lock] 33933038225 128365972765568 getFreeCells ACQ
+[gc-lock] 33933038319 128365972765568 getFreeCells REL(return batch)
+[gc-lock] 33933038484 128365972765568 getFreeCells ACQ
+[gc-lock] 33933038579 128365972765568 getFreeCells REL(return batch)
+[gc-lock] 33933038762 128365972765568 getFreeCells ACQ
+[gc-lock] 33933038861 128365972765568 getFreeCells REL(return batch)
+[gc-lock] 33933039067 128365972765568 getFreeCells ACQ
+[gc-lock] 33933039170 128365972765568 getFreeCells REL(return batch)
+[gc-lock] 33933039435 128365972765568 getFreeCells ACQ
+[gc-lock] 33933039531 128365972765568 getFreeCells REL(return batch)
+[gc-lock] 33933039695 128365972765568 getFreeCells ACQ
+[gc-lock] 33933039789 128365972765568 getFreeCells REL(return batch)
+[gc-lock] 33933039962 128365972765568 getFreeCells ACQ
+[gc-lock] 33933040069 128365972765568 getFreeCells REL(park)
+[gc-lock] 33933040167 128365972080320 gcLoop ACQ(gcStarted)
+[gc-lock] 33933040360 128365972080320 gcLoop ACQ(parked)
+[gc-lock] 33933041816 128365972080320 gcLoop REL(mark-sweep)
+[gc-lock] 33933043973 128365972080320 gcLoop ACQ(after-sweep)
+[gc-lock] 33933044115 128365972765568 getFreeCells ACQ(wake)
+[gc-lock] 33933044644 128365972765568 getFreeCells REL(return OS)
+[gc-lock] 33933045050 128365972765568 submitYoung ACQ
+[gc-lock] 33933045154 128365972765568 submitYoung REL
+[gc-lock] 33933045256 128365972080320 gcLoop ACQ(gcStarted)
+[gc-lock] 33933045393 128365972765568 submitYoung ACQ
+[gc-lock] 33933045510 128365972765568 submitYoung REL
+[gc-lock] 33933065074 124309864815488 getFreeCells ACQ
+[gc-lock] 33933065639 124309864815488 getFreeCells REL(return OS)
+[gc-lock] 33933065930 124309864815488 getFreeCells ACQ
+[gc-lock] 33933066039 124309864815488 getFreeCells REL(return batch)
+[gc-lock] 33933066136 124309864130240 gcLoop ACQ(init)
+[gc-lock] 33933066474 124309864815488 getFreeCells ACQ
+[gc-lock] 33933066572 124309864815488 getFreeCells REL(return batch)
+[gc-lock] 33933066799 124309864815488 getFreeCells ACQ
+[gc-lock] 33933066922 124309864815488 getFreeCells REL(return batch)
+[gc-lock] 33933067154 124309864815488 getFreeCells ACQ
+[gc-lock] 33933067250 124309864815488 getFreeCells REL(return batch)
+[gc-lock] 33933067454 124309864815488 getFreeCells ACQ
+[gc-lock] 33933067548 124309864815488 getFreeCells REL(return batch)
+[gc-lock] 33933067755 124309864815488 getFreeCells ACQ
+[gc-lock] 33933067855 124309864815488 getFreeCells REL(return batch)
+[gc-lock] 33933068082 124309864815488 getFreeCells ACQ
+[gc-lock] 33933068189 124309864815488 getFreeCells REL(return batch)
+[gc-lock] 33933068405 124309864815488 getFreeCells ACQ
+[gc-lock] 33933068502 124309864815488 getFreeCells REL(return batch)
+[gc-lock] 33933068712 124309864815488 getFreeCells ACQ
+[gc-lock] 33933068806 124309864815488 getFreeCells REL(return batch)
+[gc-lock] 33933069057 124309864815488 getFreeCells ACQ
+[gc-lock] 33933069149 124309864815488 getFreeCells REL(park)
+[gc-lock] 33933069239 124309864130240 gcLoop ACQ(gcStarted)
+[gc-lock] 33933069335 124309864130240 gcLoop ACQ(parked)
+[gc-lock] 33933069994 124309864130240 gcLoop REL(mark-sweep)
+[gc-lock] 33933071434 124309864130240 gcLoop ACQ(after-sweep)
+[gc-lock] 33933071549 124309864815488 getFreeCells ACQ(wake)
+[gc-lock] 33933072061 124309864815488 getFreeCells REL(return OS)
+[gc-lock] 33933072265 124309864815488 getFreeCells ACQ
+[gc-lock] 33933072358 124309864815488 getFreeCells REL(return batch)
+[gc-lock] 33933072518 124309864815488 getFreeCells ACQ
+[gc-lock] 33933072612 124309864815488 getFreeCells REL(return batch)
+[gc-lock] 33933072804 124309864815488 getFreeCells ACQ
+[gc-lock] 33933072896 124309864815488 getFreeCells REL(return batch)
+[gc-lock] 33933073068 124309864815488 getFreeCells ACQ
+[gc-lock] 33933073163 124309864815488 getFreeCells REL(return batch)
+[gc-lock] 33933073324 124309864815488 getFreeCells ACQ
+[gc-lock] 33933073415 124309864815488 getFreeCells REL(return batch)
+[gc-lock] 33933073690 124309864815488 getFreeCells ACQ
+[gc-lock] 33933073785 124309864815488 getFreeCells REL(return batch)
+[gc-lock] 33933074037 124309864815488 getFreeCells ACQ
+[gc-lock] 33933074132 124309864815488 getFreeCells REL(return batch)
+[gc-lock] 33933074337 124309864815488 getFreeCells ACQ
+[gc-lock] 33933074431 124309864815488 getFreeCells REL(return batch)
+[gc-lock] 33933074631 124309864815488 getFreeCells ACQ
+[gc-lock] 33933074724 124309864815488 getFreeCells REL(return batch)
+[gc-lock] 33933074969 124309864815488 getFreeCells ACQ
+[gc-lock] 33933075063 124309864815488 getFreeCells REL(park)
+[gc-lock] 33933075154 124309864130240 gcLoop ACQ(gcStarted)
+[gc-lock] 33933075350 124309864130240 gcLoop ACQ(parked)
+[gc-lock] 33933077482 124309864130240 gcLoop REL(mark-sweep)
+[gc-lock] 33933079646 124309864130240 gcLoop ACQ(after-sweep)
+[gc-lock] 33933079798 124309864815488 getFreeCells ACQ(wake)
+[gc-lock] 33933080340 124309864815488 getFreeCells REL(return OS)
+[gc-lock] 33933080566 124309864815488 getFreeCells ACQ
+[gc-lock] 33933080659 124309864815488 getFreeCells REL(return batch)
+[gc-lock] 33933081161 124309864815488 getFreeCells ACQ
+[gc-lock] 33933081403 124309864815488 getFreeCells REL(return batch)
+[gc-lock] 33933081747 124309864815488 getFreeCells ACQ
+[gc-lock] 33933081887 124309864815488 getFreeCells REL(return batch)
+[gc-lock] 33933082068 124309864815488 getFreeCells ACQ
+[gc-lock] 33933082161 124309864815488 getFreeCells REL(return batch)
+[gc-lock] 33933082319 124309864815488 getFreeCells ACQ
+[gc-lock] 33933082411 124309864815488 getFreeCells REL(return batch)
+[gc-lock] 33933082586 124309864815488 getFreeCells ACQ
+[gc-lock] 33933082689 124309864815488 getFreeCells REL(return batch)
+[gc-lock] 33933082878 124309864815488 getFreeCells ACQ
+[gc-lock] 33933082972 124309864815488 getFreeCells REL(return batch)
+[gc-lock] 33933083229 124309864815488 getFreeCells ACQ
+[gc-lock] 33933083323 124309864815488 getFreeCells REL(return batch)
+[gc-lock] 33933083483 124309864815488 getFreeCells ACQ
+[gc-lock] 33933083576 124309864815488 getFreeCells REL(return batch)
+[gc-lock] 33933083735 124309864815488 getFreeCells ACQ
+[gc-lock] 33933083814 124309864815488 getFreeCells REL(park)
+[gc-lock] 33933083923 124309864130240 gcLoop ACQ(gcStarted)
+[gc-lock] 33933084144 124309864130240 gcLoop ACQ(parked)
+[gc-lock] 33933086234 124309864130240 gcLoop REL(mark-sweep)
+[gc-lock] 33933088473 124309864130240 gcLoop ACQ(after-sweep)
+[gc-lock] 33933088573 124309864815488 getFreeCells ACQ(wake)
+[gc-lock] 33933089356 124309864815488 getFreeCells REL(return OS)
+[gc-lock] 33933090064 124309864815488 submitYoung ACQ
+[gc-lock] 33933090235 124309864815488 submitYoung REL
+[gc-lock] 33933090466 124309864130240 gcLoop ACQ(gcStarted)
+[gc-lock] 33933090598 124309864815488 submitYoung ACQ
+[gc-lock] 33933090763 124309864815488 submitYoung REL
+[gc-lock] 33933111902 128385631378304 getFreeCells ACQ
+[gc-lock] 33933112466 128385631378304 getFreeCells REL(return OS)
+[gc-lock] 33933112742 128385631378304 getFreeCells ACQ
+[gc-lock] 33933112841 128385631378304 getFreeCells REL(return batch)
+[gc-lock] 33933112945 128385630693056 gcLoop ACQ(init)
+[gc-lock] 33933113314 128385631378304 getFreeCells ACQ
+[gc-lock] 33933113449 128385631378304 getFreeCells REL(return batch)
+[gc-lock] 33933113689 128385631378304 getFreeCells ACQ
+[gc-lock] 33933113789 128385631378304 getFreeCells REL(return batch)
+[gc-lock] 33933114031 128385631378304 getFreeCells ACQ
+[gc-lock] 33933114131 128385631378304 getFreeCells REL(return batch)
+[gc-lock] 33933114337 128385631378304 getFreeCells ACQ
+[gc-lock] 33933114431 128385631378304 getFreeCells REL(return batch)
+[gc-lock] 33933114643 128385631378304 getFreeCells ACQ
+[gc-lock] 33933114753 128385631378304 getFreeCells REL(return batch)
+[gc-lock] 33933114982 128385631378304 getFreeCells ACQ
+[gc-lock] 33933115094 128385631378304 getFreeCells REL(return batch)
+[gc-lock] 33933115308 128385631378304 getFreeCells ACQ
+[gc-lock] 33933115404 128385631378304 getFreeCells REL(return batch)
+[gc-lock] 33933115616 128385631378304 getFreeCells ACQ
+[gc-lock] 33933115714 128385631378304 getFreeCells REL(return batch)
+[gc-lock] 33933115958 128385631378304 getFreeCells ACQ
+[gc-lock] 33933116057 128385631378304 getFreeCells REL(park)
+[gc-lock] 33933116156 128385630693056 gcLoop ACQ(gcStarted)
+[gc-lock] 33933116252 128385630693056 gcLoop ACQ(parked)
+[gc-lock] 33933116958 128385630693056 gcLoop REL(mark-sweep)
+[gc-lock] 33933118874 128385630693056 gcLoop ACQ(after-sweep)
+[gc-lock] 33933118996 128385631378304 getFreeCells ACQ(wake)
+[gc-lock] 33933120052 128385631378304 getFreeCells REL(return OS)
+[gc-lock] 33933120469 128385631378304 getFreeCells ACQ
+[gc-lock] 33933120665 128385631378304 getFreeCells REL(return batch)
+[gc-lock] 33933120991 128385631378304 getFreeCells ACQ
+[gc-lock] 33933121092 128385631378304 getFreeCells REL(return batch)
+[gc-lock] 33933121269 128385631378304 getFreeCells ACQ
+[gc-lock] 33933121361 128385631378304 getFreeCells REL(return batch)
+[gc-lock] 33933121522 128385631378304 getFreeCells ACQ
+[gc-lock] 33933121615 128385631378304 getFreeCells REL(return batch)
+[gc-lock] 33933121780 128385631378304 getFreeCells ACQ
+[gc-lock] 33933121873 128385631378304 getFreeCells REL(return batch)
+[gc-lock] 33933122164 128385631378304 getFreeCells ACQ
+[gc-lock] 33933122260 128385631378304 getFreeCells REL(return batch)
+[gc-lock] 33933122486 128385631378304 getFreeCells ACQ
+[gc-lock] 33933122583 128385631378304 getFreeCells REL(return batch)
+[gc-lock] 33933122789 128385631378304 getFreeCells ACQ
+[gc-lock] 33933122882 128385631378304 getFreeCells REL(return batch)
+[gc-lock] 33933123096 128385631378304 getFreeCells ACQ
+[gc-lock] 33933123195 128385631378304 getFreeCells REL(return batch)
+[gc-lock] 33933123455 128385631378304 getFreeCells ACQ
+[gc-lock] 33933123538 128385631378304 getFreeCells REL(park)
+[gc-lock] 33933123629 128385630693056 gcLoop ACQ(gcStarted)
+[gc-lock] 33933123800 128385630693056 gcLoop ACQ(parked)
+[gc-lock] 33933125952 128385630693056 gcLoop REL(mark-sweep)
+[gc-lock] 33933128022 128385630693056 gcLoop ACQ(after-sweep)
+[gc-lock] 33933128159 128385631378304 getFreeCells ACQ(wake)
+[gc-lock] 33933129221 128385631378304 getFreeCells REL(return OS)
+[gc-lock] 33933129700 128385631378304 getFreeCells ACQ
+[gc-lock] 33933129928 128385631378304 getFreeCells REL(return batch)
+[gc-lock] 33933130328 128385631378304 getFreeCells ACQ
+[gc-lock] 33933130433 128385631378304 getFreeCells REL(return batch)
+[gc-lock] 33933130593 128385631378304 getFreeCells ACQ
+[gc-lock] 33933130690 128385631378304 getFreeCells REL(return batch)
+[gc-lock] 33933130863 128385631378304 getFreeCells ACQ
+[gc-lock] 33933130959 128385631378304 getFreeCells REL(return batch)
+[gc-lock] 33933131126 128385631378304 getFreeCells ACQ
+[gc-lock] 33933131238 128385631378304 getFreeCells REL(return batch)
+[gc-lock] 33933131414 128385631378304 getFreeCells ACQ
+[gc-lock] 33933131507 128385631378304 getFreeCells REL(return batch)
+[gc-lock] 33933131696 128385631378304 getFreeCells ACQ
+[gc-lock] 33933131790 128385631378304 getFreeCells REL(return batch)
+[gc-lock] 33933132071 128385631378304 getFreeCells ACQ
+[gc-lock] 33933132168 128385631378304 getFreeCells REL(return batch)
+[gc-lock] 33933132330 128385631378304 getFreeCells ACQ
+[gc-lock] 33933132434 128385631378304 getFreeCells REL(return batch)
+[gc-lock] 33933132599 128385631378304 getFreeCells ACQ
+[gc-lock] 33933132681 128385631378304 getFreeCells REL(park)
+[gc-lock] 33933132769 128385630693056 gcLoop ACQ(gcStarted)
+[gc-lock] 33933132872 128385630693056 gcLoop ACQ(parked)
+[gc-lock] 33933135219 128385630693056 gcLoop REL(mark-sweep)
+[gc-lock] 33933137383 128385630693056 gcLoop ACQ(after-sweep)
+[gc-lock] 33933137504 128385631378304 getFreeCells ACQ(wake)
+[gc-lock] 33933138578 128385631378304 getFreeCells REL(return OS)
+[gc-lock] 33933139175 128385631378304 submitYoung ACQ
+[gc-lock] 33933139261 128385631378304 submitYoung REL
+[gc-lock] 33933139363 128385630693056 gcLoop ACQ(gcStarted)
+[gc-lock] 33933139488 128385631378304 submitYoung ACQ
+[gc-lock] 33933139567 128385631378304 submitYoung REL
+[gc-lock] 33933159175 134383243656064 getFreeCells ACQ
+[gc-lock] 33933159717 134383243656064 getFreeCells REL(return OS)
+[gc-lock] 33933159982 134383243656064 getFreeCells ACQ
+[gc-lock] 33933160091 134383243656064 getFreeCells REL(return batch)
+[gc-lock] 33933160207 134383242970816 gcLoop ACQ(init)
+[gc-lock] 33933160482 134383243656064 getFreeCells ACQ
+[gc-lock] 33933160579 134383243656064 getFreeCells REL(return batch)
+[gc-lock] 33933160804 134383243656064 getFreeCells ACQ
+[gc-lock] 33933160898 134383243656064 getFreeCells REL(return batch)
+[gc-lock] 33933161118 134383243656064 getFreeCells ACQ
+[gc-lock] 33933161212 134383243656064 getFreeCells REL(return batch)
+[gc-lock] 33933161414 134383243656064 getFreeCells ACQ
+[gc-lock] 33933161521 134383243656064 getFreeCells REL(return batch)
+[gc-lock] 33933161726 134383243656064 getFreeCells ACQ
+[gc-lock] 33933161821 134383243656064 getFreeCells REL(return batch)
+[gc-lock] 33933162051 134383243656064 getFreeCells ACQ
+[gc-lock] 33933162146 134383243656064 getFreeCells REL(return batch)
+[gc-lock] 33933162356 134383243656064 getFreeCells ACQ
+[gc-lock] 33933162448 134383243656064 getFreeCells REL(return batch)
+[gc-lock] 33933162655 134383243656064 getFreeCells ACQ
+[gc-lock] 33933162757 134383243656064 getFreeCells REL(return batch)
+[gc-lock] 33933162988 134383243656064 getFreeCells ACQ
+[gc-lock] 33933163092 134383243656064 getFreeCells REL(park)
+[gc-lock] 33933163182 134383242970816 gcLoop ACQ(gcStarted)
+[gc-lock] 33933163287 134383242970816 gcLoop ACQ(parked)
+[gc-lock] 33933163953 134383242970816 gcLoop REL(mark-sweep)
+[gc-lock] 33933165356 134383242970816 gcLoop ACQ(after-sweep)
+[gc-lock] 33933165493 134383243656064 getFreeCells ACQ(wake)
+[gc-lock] 33933166059 134383243656064 getFreeCells REL(return OS)
+[gc-lock] 33933166639 134383243656064 getFreeCells ACQ
+[gc-lock] 33933166892 134383243656064 getFreeCells REL(return batch)
+[gc-lock] 33933167125 134383243656064 getFreeCells ACQ
+[gc-lock] 33933167215 134383243656064 getFreeCells REL(return batch)
+[gc-lock] 33933167389 134383243656064 getFreeCells ACQ
+[gc-lock] 33933167484 134383243656064 getFreeCells REL(return batch)
+[gc-lock] 33933167643 134383243656064 getFreeCells ACQ
+[gc-lock] 33933167736 134383243656064 getFreeCells REL(return batch)
+[gc-lock] 33933167906 134383243656064 getFreeCells ACQ
+[gc-lock] 33933167998 134383243656064 getFreeCells REL(return batch)
+[gc-lock] 33933168296 134383243656064 getFreeCells ACQ
+[gc-lock] 33933168413 134383243656064 getFreeCells REL(return batch)
+[gc-lock] 33933168649 134383243656064 getFreeCells ACQ
+[gc-lock] 33933168744 134383243656064 getFreeCells REL(return batch)
+[gc-lock] 33933168952 134383243656064 getFreeCells ACQ
+[gc-lock] 33933169062 134383243656064 getFreeCells REL(return batch)
+[gc-lock] 33933169274 134383243656064 getFreeCells ACQ
+[gc-lock] 33933169368 134383243656064 getFreeCells REL(return batch)
+[gc-lock] 33933169612 134383243656064 getFreeCells ACQ
+[gc-lock] 33933169697 134383243656064 getFreeCells REL(park)
+[gc-lock] 33933169787 134383242970816 gcLoop ACQ(gcStarted)
+[gc-lock] 33933169900 134383242970816 gcLoop ACQ(parked)
+[gc-lock] 33933170887 134383242970816 gcLoop REL(mark-sweep)
+[gc-lock] 33933172910 134383242970816 gcLoop ACQ(after-sweep)
+[gc-lock] 33933173084 134383243656064 getFreeCells ACQ(wake)
+[gc-lock] 33933174482 134383243656064 getFreeCells REL(return OS)
+[gc-lock] 33933175047 134383243656064 getFreeCells ACQ
+[gc-lock] 33933175142 134383243656064 getFreeCells REL(return batch)
+[gc-lock] 33933175474 134383243656064 getFreeCells ACQ
+[gc-lock] 33933175571 134383243656064 getFreeCells REL(return batch)
+[gc-lock] 33933175735 134383243656064 getFreeCells ACQ
+[gc-lock] 33933175827 134383243656064 getFreeCells REL(return batch)
+[gc-lock] 33933176020 134383243656064 getFreeCells ACQ
+[gc-lock] 33933176133 134383243656064 getFreeCells REL(return batch)
+[gc-lock] 33933176295 134383243656064 getFreeCells ACQ
+[gc-lock] 33933176388 134383243656064 getFreeCells REL(return batch)
+[gc-lock] 33933176567 134383243656064 getFreeCells ACQ
+[gc-lock] 33933176662 134383243656064 getFreeCells REL(return batch)
+[gc-lock] 33933176854 134383243656064 getFreeCells ACQ
+[gc-lock] 33933176948 134383243656064 getFreeCells REL(return batch)
+[gc-lock] 33933177234 134383243656064 getFreeCells ACQ
+[gc-lock] 33933177344 134383243656064 getFreeCells REL(return batch)
+[gc-lock] 33933177509 134383243656064 getFreeCells ACQ
+[gc-lock] 33933177602 134383243656064 getFreeCells REL(return batch)
+[gc-lock] 33933177770 134383243656064 getFreeCells ACQ
+[gc-lock] 33933177851 134383243656064 getFreeCells REL(park)
+[gc-lock] 33933177944 134383242970816 gcLoop ACQ(gcStarted)
+[gc-lock] 33933178061 134383242970816 gcLoop ACQ(parked)
+[gc-lock] 33933179243 134383242970816 gcLoop REL(mark-sweep)
+[gc-lock] 33933181335 134383242970816 gcLoop ACQ(after-sweep)
+[gc-lock] 33933181492 134383243656064 getFreeCells ACQ(wake)
+[gc-lock] 33933182054 134383243656064 getFreeCells REL(return OS)
+[gc-lock] 33933182467 134383243656064 submitYoung ACQ
+[gc-lock] 33933182567 134383243656064 submitYoung REL
+[gc-lock] 33933182677 134383242970816 gcLoop ACQ(gcStarted)
+[gc-lock] 33933182840 134383243656064 submitYoung ACQ
+[gc-lock] 33933182920 134383243656064 submitYoung REL
+[gc-lock] 33933201553 137631560403840 getFreeCells ACQ
+[gc-lock] 33933202101 137631560403840 getFreeCells REL(return OS)
+[gc-lock] 33933202405 137631560403840 getFreeCells ACQ
+[gc-lock] 33933202506 137631560403840 getFreeCells REL(return batch)
+[gc-lock] 33933202600 137631559718592 gcLoop ACQ(init)
+[gc-lock] 33933202936 137631560403840 getFreeCells ACQ
+[gc-lock] 33933203049 137631560403840 getFreeCells REL(return batch)
+[gc-lock] 33933203272 137631560403840 getFreeCells ACQ
+[gc-lock] 33933203367 137631560403840 getFreeCells REL(return batch)
+[gc-lock] 33933203579 137631560403840 getFreeCells ACQ
+[gc-lock] 33933203684 137631560403840 getFreeCells REL(return batch)
+[gc-lock] 33933203887 137631560403840 getFreeCells ACQ
+[gc-lock] 33933203980 137631560403840 getFreeCells REL(return batch)
+[gc-lock] 33933204202 137631560403840 getFreeCells ACQ
+[gc-lock] 33933204297 137631560403840 getFreeCells REL(return batch)
+[gc-lock] 33933204514 137631560403840 getFreeCells ACQ
+[gc-lock] 33933204608 137631560403840 getFreeCells REL(return batch)
+[gc-lock] 33933204841 137631560403840 getFreeCells ACQ
+[gc-lock] 33933204952 137631560403840 getFreeCells REL(return batch)
+[gc-lock] 33933205174 137631560403840 getFreeCells ACQ
+[gc-lock] 33933205268 137631560403840 getFreeCells REL(return batch)
+[gc-lock] 33933205500 137631560403840 getFreeCells ACQ
+[gc-lock] 33933205590 137631560403840 getFreeCells REL(park)
+[gc-lock] 33933205708 137631559718592 gcLoop ACQ(gcStarted)
+[gc-lock] 33933205897 137631559718592 gcLoop ACQ(parked)
+[gc-lock] 33933207302 137631559718592 gcLoop REL(mark-sweep)
+[gc-lock] 33933209084 137631559718592 gcLoop ACQ(after-sweep)
+[gc-lock] 33933209246 137631560403840 getFreeCells ACQ(wake)
+[gc-lock] 33933209752 137631560403840 getFreeCells REL(return OS)
+[gc-lock] 33933209969 137631560403840 getFreeCells ACQ
+[gc-lock] 33933210080 137631560403840 getFreeCells REL(return batch)
+[gc-lock] 33933210244 137631560403840 getFreeCells ACQ
+[gc-lock] 33933210336 137631560403840 getFreeCells REL(return batch)
+[gc-lock] 33933210514 137631560403840 getFreeCells ACQ
+[gc-lock] 33933210607 137631560403840 getFreeCells REL(return batch)
+[gc-lock] 33933210791 137631560403840 getFreeCells ACQ
+[gc-lock] 33933210883 137631560403840 getFreeCells REL(return batch)
+[gc-lock] 33933211053 137631560403840 getFreeCells ACQ
+[gc-lock] 33933211149 137631560403840 getFreeCells REL(return batch)
+[gc-lock] 33933211431 137631560403840 getFreeCells ACQ
+[gc-lock] 33933211528 137631560403840 getFreeCells REL(return batch)
+[gc-lock] 33933211761 137631560403840 getFreeCells ACQ
+[gc-lock] 33933211857 137631560403840 getFreeCells REL(return batch)
+[gc-lock] 33933212086 137631560403840 getFreeCells ACQ
+[gc-lock] 33933212181 137631560403840 getFreeCells REL(return batch)
+[gc-lock] 33933212383 137631560403840 getFreeCells ACQ
+[gc-lock] 33933212477 137631560403840 getFreeCells REL(return batch)
+[gc-lock] 33933212725 137631560403840 getFreeCells ACQ
+[gc-lock] 33933212809 137631560403840 getFreeCells REL(park)
+[gc-lock] 33933212905 137631559718592 gcLoop ACQ(gcStarted)
+[gc-lock] 33933213111 137631559718592 gcLoop ACQ(parked)
+[gc-lock] 33933215187 137631559718592 gcLoop REL(mark-sweep)
+[gc-lock] 33933217183 137631559718592 gcLoop ACQ(after-sweep)
+[gc-lock] 33933217319 137631560403840 getFreeCells ACQ(wake)
+[gc-lock] 33933218284 137631560403840 getFreeCells REL(return OS)
+[gc-lock] 33933218509 137631560403840 getFreeCells ACQ
+[gc-lock] 33933218604 137631560403840 getFreeCells REL(return batch)
+[gc-lock] 33933218972 137631560403840 getFreeCells ACQ
+[gc-lock] 33933219090 137631560403840 getFreeCells REL(return batch)
+[gc-lock] 33933219250 137631560403840 getFreeCells ACQ
+[gc-lock] 33933219367 137631560403840 getFreeCells REL(return batch)
+[gc-lock] 33933219538 137631560403840 getFreeCells ACQ
+[gc-lock] 33933219634 137631560403840 getFreeCells REL(return batch)
+[gc-lock] 33933219793 137631560403840 getFreeCells ACQ
+[gc-lock] 33933219886 137631560403840 getFreeCells REL(return batch)
+[gc-lock] 33933220075 137631560403840 getFreeCells ACQ
+[gc-lock] 33933220169 137631560403840 getFreeCells REL(return batch)
+[gc-lock] 33933220359 137631560403840 getFreeCells ACQ
+[gc-lock] 33933220469 137631560403840 getFreeCells REL(return batch)
+[gc-lock] 33933220719 137631560403840 getFreeCells ACQ
+[gc-lock] 33933220814 137631560403840 getFreeCells REL(return batch)
+[gc-lock] 33933220978 137631560403840 getFreeCells ACQ
+[gc-lock] 33933221080 137631560403840 getFreeCells REL(return batch)
+[gc-lock] 33933221239 137631560403840 getFreeCells ACQ
+[gc-lock] 33933221320 137631560403840 getFreeCells REL(park)
+[gc-lock] 33933221412 137631559718592 gcLoop ACQ(gcStarted)
+[gc-lock] 33933221604 137631559718592 gcLoop ACQ(parked)
+[gc-lock] 33933223660 137631559718592 gcLoop REL(mark-sweep)
+[gc-lock] 33933225691 137631559718592 gcLoop ACQ(after-sweep)
+[gc-lock] 33933225816 137631560403840 getFreeCells ACQ(wake)
+[gc-lock] 33933226937 137631560403840 getFreeCells REL(return OS)
+[gc-lock] 33933227421 137631560403840 submitYoung ACQ
+[gc-lock] 33933227503 137631560403840 submitYoung REL
+[gc-lock] 33933227610 137631559718592 gcLoop ACQ(gcStarted)
+[gc-lock] 33933227773 137631560403840 submitYoung ACQ
+[gc-lock] 33933227889 137631560403840 submitYoung REL
+[gc-lock] 33933247624 140417361755008 getFreeCells ACQ
+[gc-lock] 33933248226 140417361755008 getFreeCells REL(return OS)
+[gc-lock] 33933248584 140417361755008 getFreeCells ACQ
+[gc-lock] 33933248683 140417361755008 getFreeCells REL(return batch)
+[gc-lock] 33933248772 140417361069760 gcLoop ACQ(init)
+[gc-lock] 33933249043 140417361755008 getFreeCells ACQ
+[gc-lock] 33933249142 140417361755008 getFreeCells REL(return batch)
+[gc-lock] 33933249395 140417361755008 getFreeCells ACQ
+[gc-lock] 33933249523 140417361755008 getFreeCells REL(return batch)
+[gc-lock] 33933249738 140417361755008 getFreeCells ACQ
+[gc-lock] 33933249834 140417361755008 getFreeCells REL(return batch)
+[gc-lock] 33933250055 140417361755008 getFreeCells ACQ
+[gc-lock] 33933250155 140417361755008 getFreeCells REL(return batch)
+[gc-lock] 33933250369 140417361755008 getFreeCells ACQ
+[gc-lock] 33933250466 140417361755008 getFreeCells REL(return batch)
+[gc-lock] 33933250696 140417361755008 getFreeCells ACQ
+[gc-lock] 33933250819 140417361755008 getFreeCells REL(return batch)
+[gc-lock] 33933251049 140417361755008 getFreeCells ACQ
+[gc-lock] 33933251146 140417361755008 getFreeCells REL(return batch)
+[gc-lock] 33933251360 140417361755008 getFreeCells ACQ
+[gc-lock] 33933251454 140417361755008 getFreeCells REL(return batch)
+[gc-lock] 33933251718 140417361755008 getFreeCells ACQ
+[gc-lock] 33933251809 140417361755008 getFreeCells REL(park)
+[gc-lock] 33933251900 140417361069760 gcLoop ACQ(gcStarted)
+[gc-lock] 33933251985 140417361069760 gcLoop ACQ(parked)
+[gc-lock] 33933252670 140417361069760 gcLoop REL(mark-sweep)
+[gc-lock] 33933254623 140417361069760 gcLoop ACQ(after-sweep)
+[gc-lock] 33933254741 140417361755008 getFreeCells ACQ(wake)
+[gc-lock] 33933255402 140417361755008 getFreeCells REL(return OS)
+[gc-lock] 33933255886 140417361755008 getFreeCells ACQ
+[gc-lock] 33933256123 140417361755008 getFreeCells REL(return batch)
+[gc-lock] 33933256305 140417361755008 getFreeCells ACQ
+[gc-lock] 33933256399 140417361755008 getFreeCells REL(return batch)
+[gc-lock] 33933256607 140417361755008 getFreeCells ACQ
+[gc-lock] 33933256704 140417361755008 getFreeCells REL(return batch)
+[gc-lock] 33933256866 140417361755008 getFreeCells ACQ
+[gc-lock] 33933256959 140417361755008 getFreeCells REL(return batch)
+[gc-lock] 33933257130 140417361755008 getFreeCells ACQ
+[gc-lock] 33933257223 140417361755008 getFreeCells REL(return batch)
+[gc-lock] 33933257509 140417361755008 getFreeCells ACQ
+[gc-lock] 33933257618 140417361755008 getFreeCells REL(return batch)
+[gc-lock] 33933257867 140417361755008 getFreeCells ACQ
+[gc-lock] 33933257963 140417361755008 getFreeCells REL(return batch)
+[gc-lock] 33933258184 140417361755008 getFreeCells ACQ
+[gc-lock] 33933258279 140417361755008 getFreeCells REL(return batch)
+[gc-lock] 33948275420 125076923534208 getFreeCells ACQ
+[gc-lock] 33948276296 125076923534208 getFreeCells REL(return OS)
+[gc-lock] 33948276710 125076923534208 getFreeCells ACQ
+[gc-lock] 33948276817 125076923534208 getFreeCells REL(return batch)
+[gc-lock] 33948276955 125076922848960 gcLoop ACQ(init)
+[gc-lock] 33948277238 125076923534208 getFreeCells ACQ
+[gc-lock] 33948277340 125076923534208 getFreeCells REL(return batch)
+[gc-lock] 33948277573 125076923534208 getFreeCells ACQ
+[gc-lock] 33948277669 125076923534208 getFreeCells REL(return batch)
+[gc-lock] 33948277875 125076923534208 getFreeCells ACQ
+[gc-lock] 33948277968 125076923534208 getFreeCells REL(return batch)
+[gc-lock] 33948278186 125076923534208 getFreeCells ACQ
+[gc-lock] 33948278280 125076923534208 getFreeCells REL(return batch)
+[gc-lock] 33948278499 125076923534208 getFreeCells ACQ
+[gc-lock] 33948278593 125076923534208 getFreeCells REL(return batch)
+[gc-lock] 33948278809 125076923534208 getFreeCells ACQ
+[gc-lock] 33948278905 125076923534208 getFreeCells REL(return batch)
+[gc-lock] 33948279125 125076923534208 getFreeCells ACQ
+[gc-lock] 33948279222 125076923534208 getFreeCells REL(return batch)
+[gc-lock] 33948279429 125076923534208 getFreeCells ACQ
+[gc-lock] 33948279524 125076923534208 getFreeCells REL(return batch)
+[gc-lock] 33948279784 125076923534208 getFreeCells ACQ
+[gc-lock] 33948279874 125076923534208 getFreeCells REL(park)
+[gc-lock] 33948279967 125076922848960 gcLoop ACQ(gcStarted)
+[gc-lock] 33948280171 125076922848960 gcLoop ACQ(parked)
+[gc-lock] 33948281065 125076922848960 gcLoop REL(mark-sweep)
+[gc-lock] 33948282454 125076922848960 gcLoop ACQ(after-sweep)
+[gc-lock] 33948282566 125076923534208 getFreeCells ACQ(wake)
+[gc-lock] 33948283716 125076923534208 getFreeCells REL(return OS)
+[gc-lock] 33948283916 125076923534208 getFreeCells ACQ
+[gc-lock] 33948284033 125076923534208 getFreeCells REL(return batch)
+[gc-lock] 33948284204 125076923534208 getFreeCells ACQ
+[gc-lock] 33948284298 125076923534208 getFreeCells REL(return batch)
+[gc-lock] 33948284467 125076923534208 getFreeCells ACQ
+[gc-lock] 33948284557 125076923534208 getFreeCells REL(return batch)
+[gc-lock] 33948284714 125076923534208 getFreeCells ACQ
+[gc-lock] 33948284807 125076923534208 getFreeCells REL(return batch)
+[gc-lock] 33948284963 125076923534208 getFreeCells ACQ
+[gc-lock] 33948285080 125076923534208 getFreeCells REL(return batch)
+[gc-lock] 33948285356 125076923534208 getFreeCells ACQ
+[gc-lock] 33948285451 125076923534208 getFreeCells REL(return batch)
+[gc-lock] 33948285676 125076923534208 getFreeCells ACQ
+[gc-lock] 33948285770 125076923534208 getFreeCells REL(return batch)
+[gc-lock] 33948285972 125076923534208 getFreeCells ACQ
+[gc-lock] 33948286080 125076923534208 getFreeCells REL(return batch)
+[gc-lock] 33963327512 128654213905280 getFreeCells ACQ
+[gc-lock] 33963333427 128654213905280 getFreeCells REL(return OS)
+[gc-lock] 33963335591 128654213905280 getFreeCells ACQ
+[gc-lock] 33963336082 128654213905280 getFreeCells REL(return batch)
+[gc-lock] 33963336458 128654213220032 gcLoop ACQ(init)
+[gc-lock] 33963337618 128654213905280 getFreeCells ACQ
+[gc-lock] 33963337931 128654213905280 getFreeCells REL(return batch)
+[gc-lock] 33963338669 128654213905280 getFreeCells ACQ
+[gc-lock] 33963338937 128654213905280 getFreeCells REL(return batch)
+[gc-lock] 33963339602 128654213905280 getFreeCells ACQ
+[gc-lock] 33963339837 128654213905280 getFreeCells REL(return batch)
+[gc-lock] 33963340401 128654213905280 getFreeCells ACQ
+[gc-lock] 33963340611 128654213905280 getFreeCells REL(return batch)
+[gc-lock] 33963341121 128654213905280 getFreeCells ACQ
+[gc-lock] 33963341331 128654213905280 getFreeCells REL(return batch)
+[gc-lock] 33963341821 128654213905280 getFreeCells ACQ
+[gc-lock] 33963342074 128654213905280 getFreeCells REL(return batch)
+[gc-lock] 33963342537 128654213905280 getFreeCells ACQ
+[gc-lock] 33963342780 128654213905280 getFreeCells REL(return batch)
+[gc-lock] 33963343305 128654213905280 getFreeCells ACQ
+[gc-lock] 33963343481 128654213905280 getFreeCells REL(return batch)
+[gc-lock] 33963343930 128654213905280 getFreeCells ACQ
+[gc-lock] 33963344098 128654213905280 getFreeCells REL(park)
+[gc-lock] 33963344244 128654213220032 gcLoop ACQ(gcStarted)
+[gc-lock] 33963344408 128654213220032 gcLoop ACQ(parked)
+[gc-lock] 33963345491 128654213220032 gcLoop REL(mark-sweep)
+[gc-lock] 33963347637 128654213220032 gcLoop ACQ(after-sweep)
+[gc-lock] 33963347889 128654213905280 getFreeCells ACQ(wake)
+[gc-lock] 33963348624 128654213905280 getFreeCells REL(return OS)
+[gc-lock] 33963348913 128654213905280 getFreeCells ACQ
+[gc-lock] 33963349046 128654213905280 getFreeCells REL(return batch)
+[gc-lock] 33963349265 128654213905280 getFreeCells ACQ
+[gc-lock] 33963349380 128654213905280 getFreeCells REL(return batch)
+[gc-lock] 33963349592 128654213905280 getFreeCells ACQ
+[gc-lock] 33963349701 128654213905280 getFreeCells REL(return batch)
+[gc-lock] 33963349927 128654213905280 getFreeCells ACQ
+[gc-lock] 33963350045 128654213905280 getFreeCells REL(return batch)
+[gc-lock] 33963350237 128654213905280 getFreeCells ACQ
+[gc-lock] 33963350344 128654213905280 getFreeCells REL(return batch)
+[gc-lock] 33963350682 128654213905280 getFreeCells ACQ
+[gc-lock] 33963350787 128654213905280 getFreeCells REL(return batch)
+[gc-lock] 33963351067 128654213905280 getFreeCells ACQ
+[gc-lock] 33963351175 128654213905280 getFreeCells REL(return batch)
+[gc-lock] 33963351423 128654213905280 getFreeCells ACQ
+[gc-lock] 33963351529 128654213905280 getFreeCells REL(return batch)
+[gc-lock] 33978362088 136998774320000 getFreeCells ACQ
+[gc-lock] 33978362661 136998774320000 getFreeCells REL(return OS)
+[gc-lock] 33978362976 136998774320000 getFreeCells ACQ
+[gc-lock] 33978363088 136998774320000 getFreeCells REL(return batch)
+[gc-lock] 33978363191 136998773634752 gcLoop ACQ(init)
+[gc-lock] 33978363443 136998774320000 getFreeCells ACQ
+[gc-lock] 33978363574 136998774320000 getFreeCells REL(return batch)
+[gc-lock] 33978363796 136998774320000 getFreeCells ACQ
+[gc-lock] 33978363892 136998774320000 getFreeCells REL(return batch)
+[gc-lock] 33978364112 136998774320000 getFreeCells ACQ
+[gc-lock] 33978364207 136998774320000 getFreeCells REL(return batch)
+[gc-lock] 33978364404 136998774320000 getFreeCells ACQ
+[gc-lock] 33978364504 136998774320000 getFreeCells REL(return batch)
+[gc-lock] 33978364719 136998774320000 getFreeCells ACQ
+[gc-lock] 33978364816 136998774320000 getFreeCells REL(return batch)
+[gc-lock] 33978365096 136998774320000 getFreeCells ACQ
+[gc-lock] 33978365354 136998774320000 getFreeCells REL(return batch)
+[gc-lock] 33978367518 136998774320000 getFreeCells ACQ
+[gc-lock] 33978368434 136998774320000 getFreeCells REL(return batch)
+[gc-lock] 33978370623 136998774320000 getFreeCells ACQ
+[gc-lock] 33978371783 136998774320000 getFreeCells REL(return batch)
+[gc-lock] 33978373415 136998774320000 getFreeCells ACQ
+[gc-lock] 33978373857 136998774320000 getFreeCells REL(park)
+[gc-lock] 33978374340 136998773634752 gcLoop ACQ(gcStarted)
+[gc-lock] 33978374732 136998773634752 gcLoop ACQ(parked)
+[gc-lock] 33978376836 136998773634752 gcLoop REL(mark-sweep)
+[gc-lock] 33978379917 136998773634752 gcLoop ACQ(after-sweep)
+[gc-lock] 33978380185 136998774320000 getFreeCells ACQ(wake)
+[gc-lock] 33978381336 136998774320000 getFreeCells REL(return OS)
+[gc-lock] 33978381888 136998774320000 getFreeCells ACQ
+[gc-lock] 33978382054 136998774320000 getFreeCells REL(return batch)
+[gc-lock] 33978382355 136998774320000 getFreeCells ACQ
+[gc-lock] 33978382500 136998774320000 getFreeCells REL(return batch)
+[gc-lock] 33978382790 136998774320000 getFreeCells ACQ
+[gc-lock] 33978382935 136998774320000 getFreeCells REL(return batch)
+[gc-lock] 33978383196 136998774320000 getFreeCells ACQ
+[gc-lock] 33978383332 136998774320000 getFreeCells REL(return batch)
+[gc-lock] 33978383587 136998774320000 getFreeCells ACQ
+[gc-lock] 33978383723 136998774320000 getFreeCells REL(return batch)
+[gc-lock] 33978384153 136998774320000 getFreeCells ACQ
+[gc-lock] 33978384287 136998774320000 getFreeCells REL(return batch)
+[gc-lock] 33978384614 136998774320000 getFreeCells ACQ
+[gc-lock] 33978384745 136998774320000 getFreeCells REL(return batch)
+[gc-lock] 33978385038 136998774320000 getFreeCells ACQ
+[gc-lock] 33978385160 136998774320000 getFreeCells REL(return batch)
+[gc-lock] 33993389952 137323787225984 getFreeCells ACQ
+[gc-lock] 33993390549 137323787225984 getFreeCells REL(return OS)
+[gc-lock] 33993390843 137323787225984 getFreeCells ACQ
+[gc-lock] 33993390971 137323787225984 getFreeCells REL(return batch)
+[gc-lock] 33993391085 137323786540736 gcLoop ACQ(init)
+[gc-lock] 33993391486 137323787225984 getFreeCells ACQ
+[gc-lock] 33993391582 137323787225984 getFreeCells REL(return batch)
+[gc-lock] 33993391805 137323787225984 getFreeCells ACQ
+[gc-lock] 33993391899 137323787225984 getFreeCells REL(return batch)
+[gc-lock] 33993392119 137323787225984 getFreeCells ACQ
+[gc-lock] 33993392212 137323787225984 getFreeCells REL(return batch)
+[gc-lock] 33993392427 137323787225984 getFreeCells ACQ
+[gc-lock] 33993392519 137323787225984 getFreeCells REL(return batch)
+[gc-lock] 33993392722 137323787225984 getFreeCells ACQ
+[gc-lock] 33993392814 137323787225984 getFreeCells REL(return batch)
+[gc-lock] 33993393040 137323787225984 getFreeCells ACQ
+[gc-lock] 33993393137 137323787225984 getFreeCells REL(return batch)
+[gc-lock] 33993393344 137323787225984 getFreeCells ACQ
+[gc-lock] 33993393439 137323787225984 getFreeCells REL(return batch)
+[gc-lock] 33993393657 137323787225984 getFreeCells ACQ
+[gc-lock] 33993393749 137323787225984 getFreeCells REL(return batch)
+[gc-lock] 33993394032 137323787225984 getFreeCells ACQ
+[gc-lock] 33993394143 137323787225984 getFreeCells REL(park)
+[gc-lock] 33993394252 137323786540736 gcLoop ACQ(gcStarted)
+[gc-lock] 33993394391 137323786540736 gcLoop ACQ(parked)
+[gc-lock] 33993395042 137323786540736 gcLoop REL(mark-sweep)
+[gc-lock] 33993396389 137323786540736 gcLoop ACQ(after-sweep)
+[gc-lock] 33993396502 137323787225984 getFreeCells ACQ(wake)
+[gc-lock] 33993397070 137323787225984 getFreeCells REL(return OS)
+[gc-lock] 33993397309 137323787225984 getFreeCells ACQ
+[gc-lock] 33993397490 137323787225984 getFreeCells REL(return batch)
+[gc-lock] 33993397888 137323787225984 getFreeCells ACQ
+[gc-lock] 33993398142 137323787225984 getFreeCells REL(return batch)
+[gc-lock] 33993398427 137323787225984 getFreeCells ACQ
+[gc-lock] 33993398521 137323787225984 getFreeCells REL(return batch)
+[gc-lock] 33993398673 137323787225984 getFreeCells ACQ
+[gc-lock] 33993399469 137323787225984 getFreeCells REL(return batch)
+[gc-lock] 33993401124 137323787225984 getFreeCells ACQ
+[gc-lock] 33993401958 137323787225984 getFreeCells REL(return batch)
+[gc-lock] 33993404785 137323787225984 getFreeCells ACQ
+[gc-lock] 33993405672 137323787225984 getFreeCells REL(return batch)
+[gc-lock] 33993407215 137323787225984 getFreeCells ACQ
+[gc-lock] 33993407628 137323787225984 getFreeCells REL(return batch)
+[gc-lock] 33993408528 137323787225984 getFreeCells ACQ
+[gc-lock] 33993408947 137323787225984 getFreeCells REL(return batch)
+[gc-lock] 34008426099 125181047032704 getFreeCells ACQ
+[gc-lock] 34008426649 125181047032704 getFreeCells REL(return OS)
+[gc-lock] 34008426958 125181047032704 getFreeCells ACQ
+[gc-lock] 34008427069 125181047032704 getFreeCells REL(return batch)
+[gc-lock] 34008427164 125181046347456 gcLoop ACQ(init)
+[gc-lock] 34008427512 125181047032704 getFreeCells ACQ
+[gc-lock] 34008427606 125181047032704 getFreeCells REL(return batch)
+[gc-lock] 34008427827 125181047032704 getFreeCells ACQ
+[gc-lock] 34008427956 125181047032704 getFreeCells REL(return batch)
+[gc-lock] 34008428171 125181047032704 getFreeCells ACQ
+[gc-lock] 34008428266 125181047032704 getFreeCells REL(return batch)
+[gc-lock] 34008428464 125181047032704 getFreeCells ACQ
+[gc-lock] 34008428556 125181047032704 getFreeCells REL(return batch)
+[gc-lock] 34008428758 125181047032704 getFreeCells ACQ
+[gc-lock] 34008428850 125181047032704 getFreeCells REL(return batch)
+[gc-lock] 34008429074 125181047032704 getFreeCells ACQ
+[gc-lock] 34008429183 125181047032704 getFreeCells REL(return batch)
+[gc-lock] 34008429390 125181047032704 getFreeCells ACQ
+[gc-lock] 34008429482 125181047032704 getFreeCells REL(return batch)
+[gc-lock] 34008429688 125181047032704 getFreeCells ACQ
+[gc-lock] 34008429780 125181047032704 getFreeCells REL(return batch)
+[gc-lock] 34008430013 125181047032704 getFreeCells ACQ
+[gc-lock] 34008430098 125181047032704 getFreeCells REL(park)
+[gc-lock] 34008430196 125181046347456 gcLoop ACQ(gcStarted)
+[gc-lock] 34008430486 125181046347456 gcLoop ACQ(parked)
+[gc-lock] 34008431381 125181046347456 gcLoop REL(mark-sweep)
+[gc-lock] 34008432729 125181046347456 gcLoop ACQ(after-sweep)
+[gc-lock] 34008432857 125181047032704 getFreeCells ACQ(wake)
+[gc-lock] 34008436405 125181047032704 getFreeCells REL(return OS)
+[gc-lock] 34008438921 125181047032704 getFreeCells ACQ
+[gc-lock] 34008439896 125181047032704 getFreeCells REL(return batch)
+[gc-lock] 34008441086 125181047032704 getFreeCells ACQ
+[gc-lock] 34008441670 125181047032704 getFreeCells REL(return batch)
+[gc-lock] 34008442707 125181047032704 getFreeCells ACQ
+[gc-lock] 34008443200 125181047032704 getFreeCells REL(return batch)
+[gc-lock] 34008443814 125181047032704 getFreeCells ACQ
+[gc-lock] 34008444123 125181047032704 getFreeCells REL(return batch)
+[gc-lock] 34008444619 125181047032704 getFreeCells ACQ
+[gc-lock] 34008444951 125181047032704 getFreeCells REL(return batch)
+[gc-lock] 34008445734 125181047032704 getFreeCells ACQ
+[gc-lock] 34008445972 125181047032704 getFreeCells REL(return batch)
+[gc-lock] 34008446597 125181047032704 getFreeCells ACQ
+[gc-lock] 34008446830 125181047032704 getFreeCells REL(return batch)
+[gc-lock] 34008447287 125181047032704 getFreeCells ACQ
+[gc-lock] 34008447479 125181047032704 getFreeCells REL(return batch)
+[gc-lock] 34023459212 140509400308608 getFreeCells ACQ
+[gc-lock] 34023459766 140509400308608 getFreeCells REL(return OS)
+[gc-lock] 34023460052 140509400308608 getFreeCells ACQ
+[gc-lock] 34023460147 140509400308608 getFreeCells REL(return batch)
+[gc-lock] 34023460307 140509399623360 gcLoop ACQ(init)
+[gc-lock] 34023460697 140509400308608 getFreeCells ACQ
+[gc-lock] 34023460792 140509400308608 getFreeCells REL(return batch)
+[gc-lock] 34023461026 140509400308608 getFreeCells ACQ
+[gc-lock] 34023461125 140509400308608 getFreeCells REL(return batch)
+[gc-lock] 34023461332 140509400308608 getFreeCells ACQ
+[gc-lock] 34023461428 140509400308608 getFreeCells REL(return batch)
+[gc-lock] 34023461628 140509400308608 getFreeCells ACQ
+[gc-lock] 34023461719 140509400308608 getFreeCells REL(return batch)
+[gc-lock] 34023461936 140509400308608 getFreeCells ACQ
+[gc-lock] 34023462035 140509400308608 getFreeCells REL(return batch)
+[gc-lock] 34023462249 140509400308608 getFreeCells ACQ
+[gc-lock] 34023462341 140509400308608 getFreeCells REL(return batch)
+[gc-lock] 34023462550 140509400308608 getFreeCells ACQ
+[gc-lock] 34023462642 140509400308608 getFreeCells REL(return batch)
+[gc-lock] 34023462848 140509400308608 getFreeCells ACQ
+[gc-lock] 34023462939 140509400308608 getFreeCells REL(return batch)
+[gc-lock] 34023463190 140509400308608 getFreeCells ACQ
+[gc-lock] 34023463279 140509400308608 getFreeCells REL(park)
+[gc-lock] 34023463384 140509399623360 gcLoop ACQ(gcStarted)
+[gc-lock] 34023463620 140509399623360 gcLoop ACQ(parked)
+[gc-lock] 34023464711 140509399623360 gcLoop REL(mark-sweep)
+[gc-lock] 34023466133 140509399623360 gcLoop ACQ(after-sweep)
+[gc-lock] 34023466255 140509400308608 getFreeCells ACQ(wake)
+[gc-lock] 34023466816 140509400308608 getFreeCells REL(return OS)
+[gc-lock] 34023467100 140509400308608 getFreeCells ACQ
+[gc-lock] 34023467192 140509400308608 getFreeCells REL(return batch)
+[gc-lock] 34023467352 140509400308608 getFreeCells ACQ
+[gc-lock] 34023467445 140509400308608 getFreeCells REL(return batch)
+[gc-lock] 34023467617 140509400308608 getFreeCells ACQ
+[gc-lock] 34023467707 140509400308608 getFreeCells REL(return batch)
+[gc-lock] 34023467865 140509400308608 getFreeCells ACQ
+[gc-lock] 34023467954 140509400308608 getFreeCells REL(return batch)
+[gc-lock] 34023468121 140509400308608 getFreeCells ACQ
+[gc-lock] 34023468224 140509400308608 getFreeCells REL(return batch)
+[gc-lock] 34023468519 140509400308608 getFreeCells ACQ
+[gc-lock] 34023468612 140509400308608 getFreeCells REL(return batch)
+[gc-lock] 34023468840 140509400308608 getFreeCells ACQ
+[gc-lock] 34023468931 140509400308608 getFreeCells REL(return batch)
+[gc-lock] 34023469150 140509400308608 getFreeCells ACQ
+[gc-lock] 34023469244 140509400308608 getFreeCells REL(return batch)
+[gc-lock] 34038506912 125175661960064 getFreeCells ACQ
+[gc-lock] 34038507695 125175661960064 getFreeCells REL(return OS)
+[gc-lock] 34038508212 125175661960064 getFreeCells ACQ
+[gc-lock] 34038508370 125175661960064 getFreeCells REL(return batch)
+[gc-lock] 34038508479 125175661274816 gcLoop ACQ(init)
+[gc-lock] 34038508828 125175661960064 getFreeCells ACQ
+[gc-lock] 34038508973 125175661960064 getFreeCells REL(return batch)
+[gc-lock] 34038509276 125175661960064 getFreeCells ACQ
+[gc-lock] 34038509388 125175661960064 getFreeCells REL(return batch)
+[gc-lock] 34038509662 125175661960064 getFreeCells ACQ
+[gc-lock] 34038509767 125175661960064 getFreeCells REL(return batch)
+[gc-lock] 34038509994 125175661960064 getFreeCells ACQ
+[gc-lock] 34038510121 125175661960064 getFreeCells REL(return batch)
+[gc-lock] 34038510371 125175661960064 getFreeCells ACQ
+[gc-lock] 34038510480 125175661960064 getFreeCells REL(return batch)
+[gc-lock] 34038510707 125175661960064 getFreeCells ACQ
+[gc-lock] 34038510801 125175661960064 getFreeCells REL(return batch)
+[gc-lock] 34038511041 125175661960064 getFreeCells ACQ
+[gc-lock] 34038511185 125175661960064 getFreeCells REL(return batch)
+[gc-lock] 34038511393 125175661960064 getFreeCells ACQ
+[gc-lock] 34038511487 125175661960064 getFreeCells REL(return batch)
+[gc-lock] 34038511770 125175661960064 getFreeCells ACQ
+[gc-lock] 34038511861 125175661960064 getFreeCells REL(park)
+[gc-lock] 34038511952 125175661274816 gcLoop ACQ(gcStarted)
+[gc-lock] 34038512095 125175661274816 gcLoop ACQ(parked)
+[gc-lock] 34038512820 125175661274816 gcLoop REL(mark-sweep)
+[gc-lock] 34038514305 125175661274816 gcLoop ACQ(after-sweep)
+[gc-lock] 34038514454 125175661960064 getFreeCells ACQ(wake)
+[gc-lock] 34038514988 125175661960064 getFreeCells REL(return OS)
+[gc-lock] 34038515220 125175661960064 getFreeCells ACQ
+[gc-lock] 34038515316 125175661960064 getFreeCells REL(return batch)
+[gc-lock] 34038515480 125175661960064 getFreeCells ACQ
+[gc-lock] 34038515573 125175661960064 getFreeCells REL(return batch)
+[gc-lock] 34038515744 125175661960064 getFreeCells ACQ
+[gc-lock] 34038515868 125175661960064 getFreeCells REL(return batch)
+[gc-lock] 34038516042 125175661960064 getFreeCells ACQ
+[gc-lock] 34038516135 125175661960064 getFreeCells REL(return batch)
+[gc-lock] 34038516292 125175661960064 getFreeCells ACQ
+[gc-lock] 34038516385 125175661960064 getFreeCells REL(return batch)
+[gc-lock] 34038516702 125175661960064 getFreeCells ACQ
+[gc-lock] 34038516799 125175661960064 getFreeCells REL(return batch)
+[gc-lock] 34038517046 125175661960064 getFreeCells ACQ
+[gc-lock] 34038517141 125175661960064 getFreeCells REL(return batch)
+[gc-lock] 34038517347 125175661960064 getFreeCells ACQ
+[gc-lock] 34038517441 125175661960064 getFreeCells REL(return batch)
+[gc-lock] 34038517644 125175661960064 getFreeCells ACQ
+[gc-lock] 34038517737 125175661960064 getFreeCells REL(return batch)
+[gc-lock] 34038517978 125175661960064 getFreeCells ACQ
+[gc-lock] 34038518073 125175661960064 getFreeCells REL(park)
+[gc-lock] 34038518166 125175661274816 gcLoop ACQ(gcStarted)
+[gc-lock] 34038518287 125175661274816 gcLoop ACQ(parked)
+[gc-lock] 34038519306 125175661274816 gcLoop REL(mark-sweep)
+[gc-lock] 34038521414 125175661274816 gcLoop ACQ(after-sweep)
+[gc-lock] 34038521574 125175661960064 getFreeCells ACQ(wake)
+[gc-lock] 34038522078 125175661960064 getFreeCells REL(return OS)
+[gc-lock] 34038522288 125175661960064 getFreeCells ACQ
+[gc-lock] 34038522381 125175661960064 getFreeCells REL(return batch)
+[gc-lock] 34038522693 125175661960064 getFreeCells ACQ
+[gc-lock] 34038522789 125175661960064 getFreeCells REL(return batch)
+[gc-lock] 34038522964 125175661960064 getFreeCells ACQ
+[gc-lock] 34038523066 125175661960064 getFreeCells REL(return batch)
+[gc-lock] 34038523231 125175661960064 getFreeCells ACQ
+[gc-lock] 34038523323 125175661960064 getFreeCells REL(return batch)
+[gc-lock] 34038523496 125175661960064 getFreeCells ACQ
+[gc-lock] 34038523585 125175661960064 getFreeCells REL(return batch)
+[gc-lock] 34038523740 125175661960064 getFreeCells ACQ
+[gc-lock] 34038523830 125175661960064 getFreeCells REL(return batch)
+[gc-lock] 34038524177 125175661960064 getFreeCells ACQ
+[gc-lock] 34038524284 125175661960064 getFreeCells REL(return batch)
+[gc-lock] 34038524442 125175661960064 getFreeCells ACQ
+[gc-lock] 34038524531 125175661960064 getFreeCells REL(return batch)
+[gc-lock] 34038524688 125175661960064 getFreeCells ACQ
+[gc-lock] 34038524780 125175661960064 getFreeCells REL(return batch)
+[gc-lock] 34038524968 125175661960064 getFreeCells ACQ
+[gc-lock] 34038525113 125175661960064 getFreeCells REL(park)
+[gc-lock] 34038525203 125175661274816 gcLoop ACQ(gcStarted)
+[gc-lock] 34038525373 125175661274816 gcLoop ACQ(parked)
+[gc-lock] 34038526627 125175661274816 gcLoop REL(mark-sweep)
+[gc-lock] 34038528822 125175661274816 gcLoop ACQ(after-sweep)
+[gc-lock] 34038528966 125175661960064 getFreeCells ACQ(wake)
+[gc-lock] 34038530159 125175661960064 getFreeCells REL(return OS)
+[gc-lock] 34038530347 125175661960064 submitYoung ACQ
+[gc-lock] 34038530427 125175661960064 submitYoung REL
+[gc-lock] 34038530531 125175661274816 gcLoop ACQ(gcStarted)
+[gc-lock] 34038530682 125175661960064 submitYoung ACQ
+[gc-lock] 34038530791 125175661960064 submitYoung REL
+[gc-lock] 34038573202 126796010441600 getFreeCells ACQ
+[gc-lock] 34038573846 126796010441600 getFreeCells REL(return OS)
+[gc-lock] 34038574315 126796010441600 getFreeCells ACQ
+[gc-lock] 34038574470 126796010441600 getFreeCells REL(return batch)
+[gc-lock] 34038574580 126796009756352 gcLoop ACQ(init)
+[gc-lock] 34038574993 126796010441600 getFreeCells ACQ
+[gc-lock] 34038575167 126796010441600 getFreeCells REL(return batch)
+[gc-lock] 34038575516 126796010441600 getFreeCells ACQ
+[gc-lock] 34038575622 126796010441600 getFreeCells REL(return batch)
+[gc-lock] 34038575837 126796010441600 getFreeCells ACQ
+[gc-lock] 34038575941 126796010441600 getFreeCells REL(return batch)
+[gc-lock] 34038576170 126796010441600 getFreeCells ACQ
+[gc-lock] 34038576281 126796010441600 getFreeCells REL(return batch)
+[gc-lock] 34038576498 126796010441600 getFreeCells ACQ
+[gc-lock] 34038576600 126796010441600 getFreeCells REL(return batch)
+[gc-lock] 34038576853 126796010441600 getFreeCells ACQ
+[gc-lock] 34038576946 126796010441600 getFreeCells REL(return batch)
+[gc-lock] 34038577165 126796010441600 getFreeCells ACQ
+[gc-lock] 34038577272 126796010441600 getFreeCells REL(return batch)
+[gc-lock] 34038577478 126796010441600 getFreeCells ACQ
+[gc-lock] 34038577571 126796010441600 getFreeCells REL(return batch)
+[gc-lock] 34038577830 126796010441600 getFreeCells ACQ
+[gc-lock] 34038577921 126796010441600 getFreeCells REL(park)
+[gc-lock] 34038578020 126796009756352 gcLoop ACQ(gcStarted)
+[gc-lock] 34038578179 126796009756352 gcLoop ACQ(parked)
+[gc-lock] 34038578994 126796009756352 gcLoop REL(mark-sweep)
+[gc-lock] 34038580969 126796009756352 gcLoop ACQ(after-sweep)
+[gc-lock] 34038581139 126796010441600 getFreeCells ACQ(wake)
+[gc-lock] 34038581711 126796010441600 getFreeCells REL(return OS)
+[gc-lock] 34038581948 126796010441600 getFreeCells ACQ
+[gc-lock] 34038582060 126796010441600 getFreeCells REL(return batch)
+[gc-lock] 34038582239 126796010441600 getFreeCells ACQ
+[gc-lock] 34038582410 126796010441600 getFreeCells REL(return batch)
+[gc-lock] 34038582652 126796010441600 getFreeCells ACQ
+[gc-lock] 34038582793 126796010441600 getFreeCells REL(return batch)
+[gc-lock] 34038583060 126796010441600 getFreeCells ACQ
+[gc-lock] 34038583195 126796010441600 getFreeCells REL(return batch)
+[gc-lock] 34038583388 126796010441600 getFreeCells ACQ
+[gc-lock] 34038583502 126796010441600 getFreeCells REL(return batch)
+[gc-lock] 34038583881 126796010441600 getFreeCells ACQ
+[gc-lock] 34038584020 126796010441600 getFreeCells REL(return batch)
+[gc-lock] 34038584336 126796010441600 getFreeCells ACQ
+[gc-lock] 34038584467 126796010441600 getFreeCells REL(return batch)
+[gc-lock] 34038584716 126796010441600 getFreeCells ACQ
+[gc-lock] 34038584835 126796010441600 getFreeCells REL(return batch)
+[gc-lock] 34038585104 126796010441600 getFreeCells ACQ
+[gc-lock] 34038585208 126796010441600 getFreeCells REL(return batch)
+[gc-lock] 34038585496 126796010441600 getFreeCells ACQ
+[gc-lock] 34038585580 126796010441600 getFreeCells REL(park)
+[gc-lock] 34038585699 126796009756352 gcLoop ACQ(gcStarted)
+[gc-lock] 34038585815 126796009756352 gcLoop ACQ(parked)
+[gc-lock] 34038586811 126796009756352 gcLoop REL(mark-sweep)
+[gc-lock] 34038588814 126796009756352 gcLoop ACQ(after-sweep)
+[gc-lock] 34038588982 126796010441600 getFreeCells ACQ(wake)
+[gc-lock] 34038590351 126796010441600 getFreeCells REL(return OS)
+[gc-lock] 34038590944 126796010441600 getFreeCells ACQ
+[gc-lock] 34038591187 126796010441600 getFreeCells REL(return batch)
+[gc-lock] 34038591542 126796010441600 getFreeCells ACQ
+[gc-lock] 34038591638 126796010441600 getFreeCells REL(return batch)
+[gc-lock] 34038591792 126796010441600 getFreeCells ACQ
+[gc-lock] 34038591883 126796010441600 getFreeCells REL(return batch)
+[gc-lock] 34038592062 126796010441600 getFreeCells ACQ
+[gc-lock] 34038592156 126796010441600 getFreeCells REL(return batch)
+[gc-lock] 34038592329 126796010441600 getFreeCells ACQ
+[gc-lock] 34038592420 126796010441600 getFreeCells REL(return batch)
+[gc-lock] 34038592589 126796010441600 getFreeCells ACQ
+[gc-lock] 34038592679 126796010441600 getFreeCells REL(return batch)
+[gc-lock] 34038593030 126796010441600 getFreeCells ACQ
+[gc-lock] 34038593125 126796010441600 getFreeCells REL(return batch)
+[gc-lock] 34038593285 126796010441600 getFreeCells ACQ
+[gc-lock] 34038593377 126796010441600 getFreeCells REL(return batch)
+[gc-lock] 34038593531 126796010441600 getFreeCells ACQ
+[gc-lock] 34038593623 126796010441600 getFreeCells REL(return batch)
+[gc-lock] 34038593811 126796010441600 getFreeCells ACQ
+[gc-lock] 34038593905 126796010441600 getFreeCells REL(park)
+[gc-lock] 34038593997 126796009756352 gcLoop ACQ(gcStarted)
+[gc-lock] 34038594167 126796009756352 gcLoop ACQ(parked)
+[gc-lock] 34038595297 126796009756352 gcLoop REL(mark-sweep)
+[gc-lock] 34038597350 126796009756352 gcLoop ACQ(after-sweep)
+[gc-lock] 34038597486 126796010441600 getFreeCells ACQ(wake)
+[gc-lock] 34038598949 126796010441600 getFreeCells REL(return OS)
+[gc-lock] 34038599375 126796010441600 submitYoung ACQ
+[gc-lock] 34038599524 126796010441600 submitYoung REL
+[gc-lock] 34038599639 126796009756352 gcLoop ACQ(gcStarted)
+[gc-lock] 34038599813 126796010441600 submitYoung ACQ
+[gc-lock] 34038599896 126796010441600 submitYoung REL
+[gc-lock] 34038636933 129474951338880 getFreeCells ACQ
+[gc-lock] 34038637505 129474951338880 getFreeCells REL(return OS)
+[gc-lock] 34038637769 129474951338880 getFreeCells ACQ
+[gc-lock] 34038637863 129474951338880 getFreeCells REL(return batch)
+[gc-lock] 34038637978 129474950653632 gcLoop ACQ(init)
+[gc-lock] 34038638352 129474951338880 getFreeCells ACQ
+[gc-lock] 34038638446 129474951338880 getFreeCells REL(return batch)
+[gc-lock] 34038638663 129474951338880 getFreeCells ACQ
+[gc-lock] 34038638756 129474951338880 getFreeCells REL(return batch)
+[gc-lock] 34038638959 129474951338880 getFreeCells ACQ
+[gc-lock] 34038639059 129474951338880 getFreeCells REL(return batch)
+[gc-lock] 34038639260 129474951338880 getFreeCells ACQ
+[gc-lock] 34038639352 129474951338880 getFreeCells REL(return batch)
+[gc-lock] 34038639571 129474951338880 getFreeCells ACQ
+[gc-lock] 34038639663 129474951338880 getFreeCells REL(return batch)
+[gc-lock] 34038639874 129474951338880 getFreeCells ACQ
+[gc-lock] 34038639965 129474951338880 getFreeCells REL(return batch)
+[gc-lock] 34038640220 129474951338880 getFreeCells ACQ
+[gc-lock] 34038640327 129474951338880 getFreeCells REL(return batch)
+[gc-lock] 34038640561 129474951338880 getFreeCells ACQ
+[gc-lock] 34038640670 129474951338880 getFreeCells REL(return batch)
+[gc-lock] 34038640995 129474951338880 getFreeCells ACQ
+[gc-lock] 34038641213 129474951338880 getFreeCells REL(park)
+[gc-lock] 34038641345 129474950653632 gcLoop ACQ(gcStarted)
+[gc-lock] 34038641484 129474950653632 gcLoop ACQ(parked)
+[gc-lock] 34038642400 129474950653632 gcLoop REL(mark-sweep)
+[gc-lock] 34038643880 129474950653632 gcLoop ACQ(after-sweep)
+[gc-lock] 34038644112 129474951338880 getFreeCells ACQ(wake)
+[gc-lock] 34038644740 129474951338880 getFreeCells REL(return OS)
+[gc-lock] 34038645039 129474951338880 getFreeCells ACQ
+[gc-lock] 34038645153 129474951338880 getFreeCells REL(return batch)
+[gc-lock] 34038645333 129474951338880 getFreeCells ACQ
+[gc-lock] 34038645447 129474951338880 getFreeCells REL(return batch)
+[gc-lock] 34038645633 129474951338880 getFreeCells ACQ
+[gc-lock] 34038645741 129474951338880 getFreeCells REL(return batch)
+[gc-lock] 34038645913 129474951338880 getFreeCells ACQ
+[gc-lock] 34038646077 129474951338880 getFreeCells REL(return batch)
+[gc-lock] 34038646249 129474951338880 getFreeCells ACQ
+[gc-lock] 34038646370 129474951338880 getFreeCells REL(return batch)
+[gc-lock] 34038646686 129474951338880 getFreeCells ACQ
+[gc-lock] 34038646799 129474951338880 getFreeCells REL(return batch)
+[gc-lock] 34038647057 129474951338880 getFreeCells ACQ
+[gc-lock] 34038647171 129474951338880 getFreeCells REL(return batch)
+[gc-lock] 34038647378 129474951338880 getFreeCells ACQ
+[gc-lock] 34038647488 129474951338880 getFreeCells REL(return batch)
+[gc-lock] 34038647709 129474951338880 getFreeCells ACQ
+[gc-lock] 34038647821 129474951338880 getFreeCells REL(return batch)
+[gc-lock] 34038648095 129474951338880 getFreeCells ACQ
+[gc-lock] 34038648198 129474951338880 getFreeCells REL(park)
+[gc-lock] 34038648309 129474950653632 gcLoop ACQ(gcStarted)
+[gc-lock] 34038648532 129474950653632 gcLoop ACQ(parked)
+[gc-lock] 34038650496 129474950653632 gcLoop REL(mark-sweep)
+[gc-lock] 34038652460 129474950653632 gcLoop ACQ(after-sweep)
+[gc-lock] 34038652661 129474951338880 getFreeCells ACQ(wake)
+[gc-lock] 34038653612 129474951338880 getFreeCells REL(return OS)
+[gc-lock] 34038653911 129474951338880 getFreeCells ACQ
+[gc-lock] 34038654056 129474951338880 getFreeCells REL(return batch)
+[gc-lock] 34038654462 129474951338880 getFreeCells ACQ
+[gc-lock] 34038654581 129474951338880 getFreeCells REL(return batch)
+[gc-lock] 34038654755 129474951338880 getFreeCells ACQ
+[gc-lock] 34038654865 129474951338880 getFreeCells REL(return batch)
+[gc-lock] 34038655060 129474951338880 getFreeCells ACQ
+[gc-lock] 34038655169 129474951338880 getFreeCells REL(return batch)
+[gc-lock] 34038655361 129474951338880 getFreeCells ACQ
+[gc-lock] 34038655469 129474951338880 getFreeCells REL(return batch)
+[gc-lock] 34038655640 129474951338880 getFreeCells ACQ
+[gc-lock] 34038655749 129474951338880 getFreeCells REL(return batch)
+[gc-lock] 34038656120 129474951338880 getFreeCells ACQ
+[gc-lock] 34038656232 129474951338880 getFreeCells REL(return batch)
+[gc-lock] 34038656406 129474951338880 getFreeCells ACQ
+[gc-lock] 34038656514 129474951338880 getFreeCells REL(return batch)
+[gc-lock] 34038656687 129474951338880 getFreeCells ACQ
+[gc-lock] 34038656794 129474951338880 getFreeCells REL(return batch)
+[gc-lock] 34038656999 129474951338880 getFreeCells ACQ
+[gc-lock] 34038657108 129474951338880 getFreeCells REL(park)
+[gc-lock] 34038657208 129474950653632 gcLoop ACQ(gcStarted)
+[gc-lock] 34038657402 129474950653632 gcLoop ACQ(parked)
+[gc-lock] 34038659620 129474950653632 gcLoop REL(mark-sweep)
+[gc-lock] 34038661738 129474950653632 gcLoop ACQ(after-sweep)
+[gc-lock] 34038661858 129474951338880 getFreeCells ACQ(wake)
+[gc-lock] 34038662929 129474951338880 getFreeCells REL(return OS)
+[gc-lock] 34038663319 129474951338880 submitYoung ACQ
+[gc-lock] 34038663514 129474951338880 submitYoung REL
+[gc-lock] 34038663738 129474950653632 gcLoop ACQ(gcStarted)
+[gc-lock] 34038663884 129474951338880 submitYoung ACQ
+[gc-lock] 34038664092 129474951338880 submitYoung REL
+[gc-lock] 34038685980 140515630197632 getFreeCells ACQ
+[gc-lock] 34038686553 140515630197632 getFreeCells REL(return OS)
+[gc-lock] 34038686830 140515630197632 getFreeCells ACQ
+[gc-lock] 34038686944 140515630197632 getFreeCells REL(return batch)
+[gc-lock] 34038687065 140515629512384 gcLoop ACQ(init)
+[gc-lock] 34038687426 140515630197632 getFreeCells ACQ
+[gc-lock] 34038687540 140515630197632 getFreeCells REL(return batch)
+[gc-lock] 34038687776 140515630197632 getFreeCells ACQ
+[gc-lock] 34038687888 140515630197632 getFreeCells REL(return batch)
+[gc-lock] 34038688122 140515630197632 getFreeCells ACQ
+[gc-lock] 34038688233 140515630197632 getFreeCells REL(return batch)
+[gc-lock] 34038688453 140515630197632 getFreeCells ACQ
+[gc-lock] 34038688562 140515630197632 getFreeCells REL(return batch)
+[gc-lock] 34038688782 140515630197632 getFreeCells ACQ
+[gc-lock] 34038688892 140515630197632 getFreeCells REL(return batch)
+[gc-lock] 34038689139 140515630197632 getFreeCells ACQ
+[gc-lock] 34038689250 140515630197632 getFreeCells REL(return batch)
+[gc-lock] 34038689478 140515630197632 getFreeCells ACQ
+[gc-lock] 34038689588 140515630197632 getFreeCells REL(return batch)
+[gc-lock] 34038689813 140515630197632 getFreeCells ACQ
+[gc-lock] 34038689923 140515630197632 getFreeCells REL(return batch)
+[gc-lock] 34038690174 140515630197632 getFreeCells ACQ
+[gc-lock] 34038690281 140515630197632 getFreeCells REL(park)
+[gc-lock] 34038690395 140515629512384 gcLoop ACQ(gcStarted)
+[gc-lock] 34038690617 140515629512384 gcLoop ACQ(parked)
+[gc-lock] 34038691994 140515629512384 gcLoop REL(mark-sweep)
+[gc-lock] 34038693455 140515629512384 gcLoop ACQ(after-sweep)
+[gc-lock] 34038693592 140515630197632 getFreeCells ACQ(wake)
+[gc-lock] 34038694688 140515630197632 getFreeCells REL(return OS)
+[gc-lock] 34038695150 140515630197632 getFreeCells ACQ
+[gc-lock] 34038695352 140515630197632 getFreeCells REL(return batch)
+[gc-lock] 34038695553 140515630197632 getFreeCells ACQ
+[gc-lock] 34038695694 140515630197632 getFreeCells REL(return batch)
+[gc-lock] 34038695922 140515630197632 getFreeCells ACQ
+[gc-lock] 34038696080 140515630197632 getFreeCells REL(return batch)
+[gc-lock] 34038696300 140515630197632 getFreeCells ACQ
+[gc-lock] 34038696418 140515630197632 getFreeCells REL(return batch)
+[gc-lock] 34038696597 140515630197632 getFreeCells ACQ
+[gc-lock] 34038696710 140515630197632 getFreeCells REL(return batch)
+[gc-lock] 34038697096 140515630197632 getFreeCells ACQ
+[gc-lock] 34038697241 140515630197632 getFreeCells REL(return batch)
+[gc-lock] 34038697545 140515630197632 getFreeCells ACQ
+[gc-lock] 34038697674 140515630197632 getFreeCells REL(return batch)
+[gc-lock] 34038697932 140515630197632 getFreeCells ACQ
+[gc-lock] 34038698099 140515630197632 getFreeCells REL(return batch)
+[gc-lock] 34038698369 140515630197632 getFreeCells ACQ
+[gc-lock] 34038698501 140515630197632 getFreeCells REL(return batch)
+[gc-lock] 34038698816 140515630197632 getFreeCells ACQ
+[gc-lock] 34038698920 140515630197632 getFreeCells REL(park)
+[gc-lock] 34038699112 140515629512384 gcLoop ACQ(gcStarted)
+[gc-lock] 34038699284 140515629512384 gcLoop ACQ(parked)
+[gc-lock] 34038700501 140515629512384 gcLoop REL(mark-sweep)
+[gc-lock] 34038702618 140515629512384 gcLoop ACQ(after-sweep)
+[gc-lock] 34038702828 140515630197632 getFreeCells ACQ(wake)
+[gc-lock] 34038703380 140515630197632 getFreeCells REL(return OS)
+[gc-lock] 34038703632 140515630197632 getFreeCells ACQ
+[gc-lock] 34038703750 140515630197632 getFreeCells REL(return batch)
+[gc-lock] 34038704204 140515630197632 getFreeCells ACQ
+[gc-lock] 34038704328 140515630197632 getFreeCells REL(return batch)
+[gc-lock] 34038704505 140515630197632 getFreeCells ACQ
+[gc-lock] 34038704613 140515630197632 getFreeCells REL(return batch)
+[gc-lock] 34038704799 140515630197632 getFreeCells ACQ
+[gc-lock] 34038704907 140515630197632 getFreeCells REL(return batch)
+[gc-lock] 34038705111 140515630197632 getFreeCells ACQ
+[gc-lock] 34038705220 140515630197632 getFreeCells REL(return batch)
+[gc-lock] 34038705400 140515630197632 getFreeCells ACQ
+[gc-lock] 34038705516 140515630197632 getFreeCells REL(return batch)
+[gc-lock] 34038705890 140515630197632 getFreeCells ACQ
+[gc-lock] 34038706013 140515630197632 getFreeCells REL(return batch)
+[gc-lock] 34038706193 140515630197632 getFreeCells ACQ
+[gc-lock] 34038706303 140515630197632 getFreeCells REL(return batch)
+[gc-lock] 34038706480 140515630197632 getFreeCells ACQ
+[gc-lock] 34038706588 140515630197632 getFreeCells REL(return batch)
+[gc-lock] 34038706824 140515630197632 getFreeCells ACQ
+[gc-lock] 34038706932 140515630197632 getFreeCells REL(park)
+[gc-lock] 34038707052 140515629512384 gcLoop ACQ(gcStarted)
+[gc-lock] 34038707164 140515629512384 gcLoop ACQ(parked)
+[gc-lock] 34038708885 140515629512384 gcLoop REL(mark-sweep)
+[gc-lock] 34038710890 140515629512384 gcLoop ACQ(after-sweep)
+[gc-lock] 34038711076 140515630197632 getFreeCells ACQ(wake)
+[gc-lock] 34038711777 140515630197632 getFreeCells REL(return OS)
+[gc-lock] 34038712025 140515630197632 submitYoung ACQ
+[gc-lock] 34038712122 140515630197632 submitYoung REL
+[gc-lock] 34038712242 140515629512384 gcLoop ACQ(gcStarted)
+[gc-lock] 34038712389 140515630197632 submitYoung ACQ
+[gc-lock] 34038712487 140515630197632 submitYoung REL
+[gc-lock] 34038744844 124997039479680 getFreeCells ACQ
+[gc-lock] 34038745929 124997039479680 getFreeCells REL(return OS)
+[gc-lock] 34038746462 124997039479680 getFreeCells ACQ
+[gc-lock] 34038746668 124997039479680 getFreeCells REL(return batch)
+[gc-lock] 34038746837 124997038794432 gcLoop ACQ(init)
+[gc-lock] 34038747316 124997039479680 getFreeCells ACQ
+[gc-lock] 34038747511 124997039479680 getFreeCells REL(return batch)
+[gc-lock] 34038747903 124997039479680 getFreeCells ACQ
+[gc-lock] 34038748090 124997039479680 getFreeCells REL(return batch)
+[gc-lock] 34038748458 124997039479680 getFreeCells ACQ
+[gc-lock] 34038748620 124997039479680 getFreeCells REL(return batch)
+[gc-lock] 34038748950 124997039479680 getFreeCells ACQ
+[gc-lock] 34038749129 124997039479680 getFreeCells REL(return batch)
+[gc-lock] 34038749466 124997039479680 getFreeCells ACQ
+[gc-lock] 34038749619 124997039479680 getFreeCells REL(return batch)
+[gc-lock] 34038749949 124997039479680 getFreeCells ACQ
+[gc-lock] 34038750116 124997039479680 getFreeCells REL(return batch)
+[gc-lock] 34038750437 124997039479680 getFreeCells ACQ
+[gc-lock] 34038750583 124997039479680 getFreeCells REL(return batch)
+[gc-lock] 34038750882 124997039479680 getFreeCells ACQ
+[gc-lock] 34038751038 124997039479680 getFreeCells REL(return batch)
+[gc-lock] 34038751378 124997039479680 getFreeCells ACQ
+[gc-lock] 34038751509 124997039479680 getFreeCells REL(park)
+[gc-lock] 34038751636 124997038794432 gcLoop ACQ(gcStarted)
+[gc-lock] 34038751774 124997038794432 gcLoop ACQ(parked)
+[gc-lock] 34038752597 124997038794432 gcLoop REL(mark-sweep)
+[gc-lock] 34038754220 124997038794432 gcLoop ACQ(after-sweep)
+[gc-lock] 34038754368 124997039479680 getFreeCells ACQ(wake)
+[gc-lock] 34038754925 124997039479680 getFreeCells REL(return OS)
+[gc-lock] 34038755173 124997039479680 getFreeCells ACQ
+[gc-lock] 34038755292 124997039479680 getFreeCells REL(return batch)
+[gc-lock] 34038755521 124997039479680 getFreeCells ACQ
+[gc-lock] 34038755751 124997039479680 getFreeCells REL(return batch)
+[gc-lock] 34038756191 124997039479680 getFreeCells ACQ
+[gc-lock] 34038756425 124997039479680 getFreeCells REL(return batch)
+[gc-lock] 34038756622 124997039479680 getFreeCells ACQ
+[gc-lock] 34038756729 124997039479680 getFreeCells REL(return batch)
+[gc-lock] 34038756905 124997039479680 getFreeCells ACQ
+[gc-lock] 34038757023 124997039479680 getFreeCells REL(return batch)
+[gc-lock] 34038757323 124997039479680 getFreeCells ACQ
+[gc-lock] 34038757433 124997039479680 getFreeCells REL(return batch)
+[gc-lock] 34038757669 124997039479680 getFreeCells ACQ
+[gc-lock] 34038757779 124997039479680 getFreeCells REL(return batch)
+[gc-lock] 34038757990 124997039479680 getFreeCells ACQ
+[gc-lock] 34038758109 124997039479680 getFreeCells REL(return batch)
+[gc-lock] 34038758331 124997039479680 getFreeCells ACQ
+[gc-lock] 34038758442 124997039479680 getFreeCells REL(return batch)
+[gc-lock] 34038758700 124997039479680 getFreeCells ACQ
+[gc-lock] 34038758799 124997039479680 getFreeCells REL(park)
+[gc-lock] 34038758906 124997038794432 gcLoop ACQ(gcStarted)
+[gc-lock] 34038759110 124997038794432 gcLoop ACQ(parked)
+[gc-lock] 34038760818 124997038794432 gcLoop REL(mark-sweep)
+[gc-lock] 34038762812 124997038794432 gcLoop ACQ(after-sweep)
+[gc-lock] 34038763071 124997039479680 getFreeCells ACQ(wake)
+[gc-lock] 34038763684 124997039479680 getFreeCells REL(return OS)
+[gc-lock] 34038763990 124997039479680 getFreeCells ACQ
+[gc-lock] 34038764125 124997039479680 getFreeCells REL(return batch)
+[gc-lock] 34038764569 124997039479680 getFreeCells ACQ
+[gc-lock] 34038764683 124997039479680 getFreeCells REL(return batch)
+[gc-lock] 34038764869 124997039479680 getFreeCells ACQ
+[gc-lock] 34038764990 124997039479680 getFreeCells REL(return batch)
+[gc-lock] 34038765222 124997039479680 getFreeCells ACQ
+[gc-lock] 34038765373 124997039479680 getFreeCells REL(return batch)
+[gc-lock] 34038765574 124997039479680 getFreeCells ACQ
+[gc-lock] 34038765687 124997039479680 getFreeCells REL(return batch)
+[gc-lock] 34038765867 124997039479680 getFreeCells ACQ
+[gc-lock] 34038765974 124997039479680 getFreeCells REL(return batch)
+[gc-lock] 34038766408 124997039479680 getFreeCells ACQ
+[gc-lock] 34038766529 124997039479680 getFreeCells REL(return batch)
+[gc-lock] 34038766703 124997039479680 getFreeCells ACQ
+[gc-lock] 34038766812 124997039479680 getFreeCells REL(return batch)
+[gc-lock] 34038766989 124997039479680 getFreeCells ACQ
+[gc-lock] 34038767113 124997039479680 getFreeCells REL(return batch)
+[gc-lock] 34038767347 124997039479680 getFreeCells ACQ
+[gc-lock] 34038767446 124997039479680 getFreeCells REL(park)
+[gc-lock] 34038767550 124997038794432 gcLoop ACQ(gcStarted)
+[gc-lock] 34038767665 124997038794432 gcLoop ACQ(parked)
+[gc-lock] 34038768869 124997038794432 gcLoop REL(mark-sweep)
+[gc-lock] 34038770944 124997038794432 gcLoop ACQ(after-sweep)
+[gc-lock] 34038771085 124997039479680 getFreeCells ACQ(wake)
+[gc-lock] 34038772215 124997039479680 getFreeCells REL(return OS)
+[gc-lock] 34038772619 124997039479680 submitYoung ACQ
+[gc-lock] 34038772812 124997039479680 submitYoung REL
+[gc-lock] 34038773061 124997038794432 gcLoop ACQ(gcStarted)
+[gc-lock] 34038773210 124997039479680 submitYoung ACQ
+[gc-lock] 34038773432 124997039479680 submitYoung REL
+[gc-lock] 34038796323 129159060921216 getFreeCells ACQ
+[gc-lock] 34038797125 129159060921216 getFreeCells REL(return OS)
+[gc-lock] 34038797631 129159060921216 getFreeCells ACQ
+[gc-lock] 34038797778 129159060921216 getFreeCells REL(return batch)
+[gc-lock] 34038797947 129159060235968 gcLoop ACQ(init)
+[gc-lock] 34038801114 129159060921216 getFreeCells ACQ
+[gc-lock] 34038802580 129159060921216 getFreeCells REL(return batch)
+[gc-lock] 34038804704 129159060921216 getFreeCells ACQ
+[gc-lock] 34038805292 129159060921216 getFreeCells REL(return batch)
+[gc-lock] 34038806300 129159060921216 getFreeCells ACQ
+[gc-lock] 34038806742 129159060921216 getFreeCells REL(return batch)
+[gc-lock] 34038807562 129159060921216 getFreeCells ACQ
+[gc-lock] 34038807911 129159060921216 getFreeCells REL(return batch)
+[gc-lock] 34038808676 129159060921216 getFreeCells ACQ
+[gc-lock] 34038808992 129159060921216 getFreeCells REL(return batch)
+[gc-lock] 34038809697 129159060921216 getFreeCells ACQ
+[gc-lock] 34038809954 129159060921216 getFreeCells REL(return batch)
+[gc-lock] 34038810514 129159060921216 getFreeCells ACQ
+[gc-lock] 34038810755 129159060921216 getFreeCells REL(return batch)
+[gc-lock] 34038811257 129159060921216 getFreeCells ACQ
+[gc-lock] 34038811485 129159060921216 getFreeCells REL(return batch)
+[gc-lock] 34038812036 129159060921216 getFreeCells ACQ
+[gc-lock] 34038812251 129159060921216 getFreeCells REL(park)
+[gc-lock] 34038812450 129159060235968 gcLoop ACQ(gcStarted)
+[gc-lock] 34038812659 129159060235968 gcLoop ACQ(parked)
+[gc-lock] 34038813865 129159060235968 gcLoop REL(mark-sweep)
+[gc-lock] 34038816256 129159060235968 gcLoop ACQ(after-sweep)
+[gc-lock] 34038816503 129159060921216 getFreeCells ACQ(wake)
+[gc-lock] 34038817997 129159060921216 getFreeCells REL(return OS)
+[gc-lock] 34038818612 129159060921216 getFreeCells ACQ
+[gc-lock] 34038818744 129159060921216 getFreeCells REL(return batch)
+[gc-lock] 34038818958 129159060921216 getFreeCells ACQ
+[gc-lock] 34038819098 129159060921216 getFreeCells REL(return batch)
+[gc-lock] 34038819326 129159060921216 getFreeCells ACQ
+[gc-lock] 34038819455 129159060921216 getFreeCells REL(return batch)
+[gc-lock] 34038819664 129159060921216 getFreeCells ACQ
+[gc-lock] 34038819788 129159060921216 getFreeCells REL(return batch)
+[gc-lock] 34038819989 129159060921216 getFreeCells ACQ
+[gc-lock] 34038820118 129159060921216 getFreeCells REL(return batch)
+[gc-lock] 34038820470 129159060921216 getFreeCells ACQ
+[gc-lock] 34038820599 129159060921216 getFreeCells REL(return batch)
+[gc-lock] 34038820865 129159060921216 getFreeCells ACQ
+[gc-lock] 34038820983 129159060921216 getFreeCells REL(return batch)
+[gc-lock] 34038821223 129159060921216 getFreeCells ACQ
+[gc-lock] 34038821341 129159060921216 getFreeCells REL(return batch)
+[gc-lock] 34038821582 129159060921216 getFreeCells ACQ
+[gc-lock] 34038821696 129159060921216 getFreeCells REL(return batch)
+[gc-lock] 34038821964 129159060921216 getFreeCells ACQ
+[gc-lock] 34038822081 129159060921216 getFreeCells REL(park)
+[gc-lock] 34038822196 129159060235968 gcLoop ACQ(gcStarted)
+[gc-lock] 34038822436 129159060235968 gcLoop ACQ(parked)
+[gc-lock] 34038824010 129159060235968 gcLoop REL(mark-sweep)
+[gc-lock] 34038826065 129159060235968 gcLoop ACQ(after-sweep)
+[gc-lock] 34038826220 129159060921216 getFreeCells ACQ(wake)
+[gc-lock] 34038826997 129159060921216 getFreeCells REL(return OS)
+[gc-lock] 34038827252 129159060921216 getFreeCells ACQ
+[gc-lock] 34038827369 129159060921216 getFreeCells REL(return batch)
+[gc-lock] 34038827723 129159060921216 getFreeCells ACQ
+[gc-lock] 34038827838 129159060921216 getFreeCells REL(return batch)
+[gc-lock] 34038828028 129159060921216 getFreeCells ACQ
+[gc-lock] 34038828141 129159060921216 getFreeCells REL(return batch)
+[gc-lock] 34038828355 129159060921216 getFreeCells ACQ
+[gc-lock] 34038828494 129159060921216 getFreeCells REL(return batch)
+[gc-lock] 34038828741 129159060921216 getFreeCells ACQ
+[gc-lock] 34038828882 129159060921216 getFreeCells REL(return batch)
+[gc-lock] 34038830637 129159060921216 getFreeCells ACQ
+[gc-lock] 34038831724 129159060921216 getFreeCells REL(return batch)
+[gc-lock] 34038835582 129159060921216 getFreeCells ACQ
+[gc-lock] 34038836596 129159060921216 getFreeCells REL(return batch)
+[gc-lock] 34038837683 129159060921216 getFreeCells ACQ
+[gc-lock] 34038838177 129159060921216 getFreeCells REL(return batch)
+[gc-lock] 34038838906 129159060921216 getFreeCells ACQ
+[gc-lock] 34038839415 129159060921216 getFreeCells REL(return batch)
+[gc-lock] 34038840218 129159060921216 getFreeCells ACQ
+[gc-lock] 34038840576 129159060921216 getFreeCells REL(park)
+[gc-lock] 34038840920 129159060235968 gcLoop ACQ(gcStarted)
+[gc-lock] 34038841407 129159060235968 gcLoop ACQ(parked)
+[gc-lock] 34038844441 129159060235968 gcLoop REL(mark-sweep)
+[gc-lock] 34038848145 129159060235968 gcLoop ACQ(after-sweep)
+[gc-lock] 34038848350 129159060921216 getFreeCells ACQ(wake)
+[gc-lock] 34038849165 129159060921216 getFreeCells REL(return OS)
+[gc-lock] 34038849448 129159060921216 submitYoung ACQ
+[gc-lock] 34038849575 129159060921216 submitYoung REL
+[gc-lock] 34038849728 129159060235968 gcLoop ACQ(gcStarted)
+[gc-lock] 34038849913 129159060921216 submitYoung ACQ
+[gc-lock] 34038850061 129159060921216 submitYoung REL
+[gc-lock] 34038872406 126854958300032 getFreeCells ACQ
+[gc-lock] 34038872965 126854958300032 getFreeCells REL(return OS)
+[gc-lock] 34038873271 126854958300032 getFreeCells ACQ
+[gc-lock] 34038873396 126854958300032 getFreeCells REL(return batch)
+[gc-lock] 34038873514 126854957614784 gcLoop ACQ(init)
+[gc-lock] 34038873899 126854958300032 getFreeCells ACQ
+[gc-lock] 34038874074 126854958300032 getFreeCells REL(return batch)
+[gc-lock] 34038874338 126854958300032 getFreeCells ACQ
+[gc-lock] 34038874457 126854958300032 getFreeCells REL(return batch)
+[gc-lock] 34038874692 126854958300032 getFreeCells ACQ
+[gc-lock] 34038874806 126854958300032 getFreeCells REL(return batch)
+[gc-lock] 34038875050 126854958300032 getFreeCells ACQ
+[gc-lock] 34038875167 126854958300032 getFreeCells REL(return batch)
+[gc-lock] 34038875485 126854958300032 getFreeCells ACQ
+[gc-lock] 34038875613 126854958300032 getFreeCells REL(return batch)
+[gc-lock] 34038875897 126854958300032 getFreeCells ACQ
+[gc-lock] 34038876031 126854958300032 getFreeCells REL(return batch)
+[gc-lock] 34038876270 126854958300032 getFreeCells ACQ
+[gc-lock] 34038876379 126854958300032 getFreeCells REL(return batch)
+[gc-lock] 34038876604 126854958300032 getFreeCells ACQ
+[gc-lock] 34038876713 126854958300032 getFreeCells REL(return batch)
+[gc-lock] 34038877017 126854958300032 getFreeCells ACQ
+[gc-lock] 34038877130 126854958300032 getFreeCells REL(park)
+[gc-lock] 34038877237 126854957614784 gcLoop ACQ(gcStarted)
+[gc-lock] 34038877380 126854957614784 gcLoop ACQ(parked)
+[gc-lock] 34038878115 126854957614784 gcLoop REL(mark-sweep)
+[gc-lock] 34038879514 126854957614784 gcLoop ACQ(after-sweep)
+[gc-lock] 34038879670 126854958300032 getFreeCells ACQ(wake)
+[gc-lock] 34038880255 126854958300032 getFreeCells REL(return OS)
+[gc-lock] 34038880512 126854958300032 getFreeCells ACQ
+[gc-lock] 34038880624 126854958300032 getFreeCells REL(return batch)
+[gc-lock] 34038880806 126854958300032 getFreeCells ACQ
+[gc-lock] 34038880914 126854958300032 getFreeCells REL(return batch)
+[gc-lock] 34038881143 126854958300032 getFreeCells ACQ
+[gc-lock] 34038881251 126854958300032 getFreeCells REL(return batch)
+[gc-lock] 34038881427 126854958300032 getFreeCells ACQ
+[gc-lock] 34038881535 126854958300032 getFreeCells REL(return batch)
+[gc-lock] 34038881714 126854958300032 getFreeCells ACQ
+[gc-lock] 34038881824 126854958300032 getFreeCells REL(return batch)
+[gc-lock] 34038882721 126854958300032 getFreeCells ACQ
+[gc-lock] 34038884178 126854958300032 getFreeCells REL(return batch)
+[gc-lock] 34038887256 126854958300032 getFreeCells ACQ
+[gc-lock] 34038888243 126854958300032 getFreeCells REL(return batch)
+[gc-lock] 34038889502 126854958300032 getFreeCells ACQ
+[gc-lock] 34038889964 126854958300032 getFreeCells REL(return batch)
+[gc-lock] 34038890874 126854958300032 getFreeCells ACQ
+[gc-lock] 34038891314 126854958300032 getFreeCells REL(return batch)
+[gc-lock] 34038892186 126854958300032 getFreeCells ACQ
+[gc-lock] 34038892463 126854958300032 getFreeCells REL(park)
+[gc-lock] 34038892747 126854957614784 gcLoop ACQ(gcStarted)
+[gc-lock] 34038893105 126854957614784 gcLoop ACQ(parked)
+[gc-lock] 34038895495 126854957614784 gcLoop REL(mark-sweep)
+[gc-lock] 34038899018 126854957614784 gcLoop ACQ(after-sweep)
+[gc-lock] 34038899320 126854958300032 getFreeCells ACQ(wake)
+[gc-lock] 34038900213 126854958300032 getFreeCells REL(return OS)
+[gc-lock] 34038900569 126854958300032 getFreeCells ACQ
+[gc-lock] 34038900720 126854958300032 getFreeCells REL(return batch)
+[gc-lock] 34038901203 126854958300032 getFreeCells ACQ
+[gc-lock] 34038901351 126854958300032 getFreeCells REL(return batch)
+[gc-lock] 34038901590 126854958300032 getFreeCells ACQ
+[gc-lock] 34038901730 126854958300032 getFreeCells REL(return batch)
+[gc-lock] 34038901972 126854958300032 getFreeCells ACQ
+[gc-lock] 34038902116 126854958300032 getFreeCells REL(return batch)
+[gc-lock] 34038902365 126854958300032 getFreeCells ACQ
+[gc-lock] 34038902497 126854958300032 getFreeCells REL(return batch)
+[gc-lock] 34038902724 126854958300032 getFreeCells ACQ
+[gc-lock] 34038902853 126854958300032 getFreeCells REL(return batch)
+[gc-lock] 34038903292 126854958300032 getFreeCells ACQ
+[gc-lock] 34038903422 126854958300032 getFreeCells REL(return batch)
+[gc-lock] 34038903637 126854958300032 getFreeCells ACQ
+[gc-lock] 34038903763 126854958300032 getFreeCells REL(return batch)
+[gc-lock] 34038903966 126854958300032 getFreeCells ACQ
+[gc-lock] 34038904099 126854958300032 getFreeCells REL(return batch)
+[gc-lock] 34038904334 126854958300032 getFreeCells ACQ
+[gc-lock] 34038904443 126854958300032 getFreeCells REL(park)
+[gc-lock] 34038904564 126854957614784 gcLoop ACQ(gcStarted)
+[gc-lock] 34038904804 126854957614784 gcLoop ACQ(parked)
+[gc-lock] 34038906521 126854957614784 gcLoop REL(mark-sweep)
+[gc-lock] 34038908541 126854957614784 gcLoop ACQ(after-sweep)
+[gc-lock] 34038908676 126854958300032 getFreeCells ACQ(wake)
+[gc-lock] 34038909329 126854958300032 getFreeCells REL(return OS)
+[gc-lock] 34038909612 126854958300032 submitYoung ACQ
+[gc-lock] 34038909709 126854958300032 submitYoung REL
+[gc-lock] 34038909837 126854957614784 gcLoop ACQ(gcStarted)
+[gc-lock] 34038909983 126854958300032 submitYoung ACQ
+[gc-lock] 34038910089 126854958300032 submitYoung REL

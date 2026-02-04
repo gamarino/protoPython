@@ -1,0 +1,6 @@
+startup_empty: protopy=5.61ms cpython=16.14ms ratio=0.35x faster
+int_sum_loop: protopy=5.65ms cpython=29.73ms ratio=0.19x faster
+list_append_loop: protopy=5.67ms cpython=16.31ms ratio=0.35x faster
+str_concat_loop: protopy=30032.00ms cpython=20.22ms ratio=1485.22x slower
+range_iterate: protopy=5.74ms cpython=18.48ms ratio=0.31x faster
+Report written to /home/gamarino/Documentos/proyectos/protoPython/benchmarks/reports/benchmark_report.md
