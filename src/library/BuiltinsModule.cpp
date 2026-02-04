@@ -863,6 +863,57 @@ static const proto::ProtoObject* py_zip_next(
     return context->newTupleFromList(tupleParts)->asObject(context);
 }
 
+static const proto::ProtoObject* py_filter(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    (void)parentLink;
+    (void)keywordParameters;
+    if (positionalParameters->getSize(context) < 2) return PROTO_NONE;
+    const proto::ProtoObject* func = positionalParameters->getAt(context, 0);
+    const proto::ProtoObject* iterable = positionalParameters->getAt(context, 1);
+    const proto::ProtoObject* call = func->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__call__"));
+    if (!call || !call->asMethod(context)) return PROTO_NONE;
+    const proto::ProtoObject* iterM = iterable->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__iter__"));
+    if (!iterM || !iterM->asMethod(context)) return PROTO_NONE;
+    const proto::ProtoObject* it = iterM->asMethod(context)(context, iterable, nullptr, context->newList(), nullptr);
+    if (!it || it == PROTO_NONE) return PROTO_NONE;
+    const proto::ProtoObject* filterProto = self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__filter_proto__"));
+    if (!filterProto) return PROTO_NONE;
+    const proto::ProtoObject* boolType = self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "bool"));
+    const proto::ProtoObject* filterObj = filterProto->newChild(context, true);
+    filterObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__filter_func__"), func);
+    filterObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__filter_iter__"), it);
+    if (boolType) filterObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__filter_bool__"), boolType);
+    return filterObj;
+}
+
+static const proto::ProtoObject* py_filter_next(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoObject* func = self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__filter_func__"));
+    const proto::ProtoObject* it = self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__filter_iter__"));
+    if (!func || !it) return PROTO_NONE;
+    const proto::ProtoObject* call = func->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__call__"));
+    const proto::ProtoObject* nextM = it->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__next__"));
+    if (!call || !call->asMethod(context) || !nextM || !nextM->asMethod(context)) return PROTO_NONE;
+    const proto::ProtoObject* boolType = self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__filter_bool__"));
+    const proto::ProtoObject* boolCall = boolType ? boolType->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__call__")) : nullptr;
+    if (!boolCall || !boolCall->asMethod(context)) return PROTO_NONE;
+    for (;;) {
+        const proto::ProtoObject* val = nextM->asMethod(context)(context, it, nullptr, context->newList(), nullptr);
+        if (!val || val == PROTO_NONE) return PROTO_NONE;
+        const proto::ProtoList* oneArg = context->newList()->appendLast(context, val);
+        const proto::ProtoObject* result = call->asMethod(context)(context, func, nullptr, oneArg, nullptr);
+        const proto::ProtoList* boolArg = context->newList()->appendLast(context, result);
+        const proto::ProtoObject* b = boolCall->asMethod(context)(context, boolType, nullptr, boolArg, nullptr);
+        if (b == PROTO_TRUE) return val;
+    }
+}
+
 static const proto::ProtoObject* py_range_next(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -927,7 +978,16 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "range"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_range));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "enumerate"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_enumerate));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "reversed"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_reversed));
+    const proto::ProtoObject* zipProto = ctx->newObject(true);
+    zipProto = zipProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iter__"), ctx->fromMethod(const_cast<proto::ProtoObject*>(zipProto), py_iter_self));
+    zipProto = zipProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__next__"), ctx->fromMethod(const_cast<proto::ProtoObject*>(zipProto), py_zip_next));
+    builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__zip_proto__"), zipProto);
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "zip"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_zip));
+    const proto::ProtoObject* filterProto = ctx->newObject(true);
+    filterProto = filterProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iter__"), ctx->fromMethod(const_cast<proto::ProtoObject*>(filterProto), py_iter_self));
+    filterProto = filterProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__next__"), ctx->fromMethod(const_cast<proto::ProtoObject*>(filterProto), py_filter_next));
+    builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__filter_proto__"), filterProto);
+    builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "filter"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_filter));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "sum"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_sum));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "all"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_all));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "any"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_any));
