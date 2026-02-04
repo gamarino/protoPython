@@ -350,5 +350,11 @@ See [docs/NEXT_20_STEPS_V34.md](../docs/NEXT_20_STEPS_V34.md). Steps 605–624: 
 
 - [x] Steps 605–624
 
+## 34. Next 20 Steps (v35) — completed
+
+See [docs/NEXT_20_STEPS_V35.md](../docs/NEXT_20_STEPS_V35.md). Steps 625–644: math.sumprod; inspect, types stubs; foundation test MathSumprod; STUBS, todo, IMPLEMENTATION_PLAN, TESTING updated.
+
+- [x] Steps 625–644
+
 ---
 *Updated from plan implementation. Mark items complete as work progresses.*

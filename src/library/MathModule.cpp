@@ -365,6 +365,29 @@ static const proto::ProtoObject* py_prod(
     return ctx->fromDouble(result);
 }
 
+static const proto::ProtoObject* py_sumprod(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
+    const proto::ProtoObject* a = posArgs->getAt(ctx, 0);
+    const proto::ProtoObject* b = posArgs->getAt(ctx, 1);
+    const proto::ProtoObject* da = a->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__data__"));
+    const proto::ProtoObject* db = b->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__data__"));
+    if (!da || !db || !da->asList(ctx) || !db->asList(ctx)) return PROTO_NONE;
+    const proto::ProtoList* la = da->asList(ctx);
+    const proto::ProtoList* lb = db->asList(ctx);
+    size_t na = static_cast<size_t>(la->getSize(ctx));
+    size_t nb = static_cast<size_t>(lb->getSize(ctx));
+    size_t n = (na < nb) ? na : nb;
+    double sum = 0.0;
+    for (size_t i = 0; i < n; ++i) {
+        double x = toDouble(ctx, la->getAt(ctx, static_cast<int>(i)));
+        double y = toDouble(ctx, lb->getAt(ctx, static_cast<int>(i)));
+        sum += x * y;
+    }
+    return ctx->fromDouble(sum);
+}
+
 static const proto::ProtoObject* py_isqrt(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
@@ -621,6 +644,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_factorial));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "prod"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_prod));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "sumprod"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_sumprod));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "isqrt"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_isqrt));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "acosh"),

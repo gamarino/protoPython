@@ -1523,6 +1523,49 @@ TEST_F(FoundationTest, MathCbrtExp2Expm1Fma) {
     EXPECT_NEAR(valFma, 10.0, 1e-10);  // fma(2, 3, 4) == 10.0
 }
 
+TEST_F(FoundationTest, MathSumprod) {
+    proto::ProtoContext* context = env.getContext();
+    const proto::ProtoObject* mathMod = env.resolve("math");
+    ASSERT_NE(mathMod, nullptr);
+    const proto::ProtoObject* sumprodM = mathMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "sumprod"));
+    ASSERT_NE(sumprodM, nullptr);
+    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "__data__");
+    const proto::ProtoObject* list1 = context->newObject(true)->addParent(context, env.getListPrototype());
+    list1->setAttribute(context, dataName,
+        context->newList()->appendLast(context, context->fromInteger(1))
+            ->appendLast(context, context->fromInteger(2))
+            ->appendLast(context, context->fromInteger(3))->asObject(context));
+    const proto::ProtoObject* list2 = context->newObject(true)->addParent(context, env.getListPrototype());
+    list2->setAttribute(context, dataName,
+        context->newList()->appendLast(context, context->fromInteger(4))
+            ->appendLast(context, context->fromInteger(5))
+            ->appendLast(context, context->fromInteger(6))->asObject(context));
+    const proto::ProtoList* args = context->newList()->appendLast(context, list1)->appendLast(context, list2);
+    const proto::ProtoObject* result = sumprodM->asMethod(context)(context, mathMod, nullptr, args, nullptr);
+    ASSERT_NE(result, nullptr);
+    double val = result->isDouble(context) ? result->asDouble(context) : static_cast<double>(result->asLong(context));
+    EXPECT_NEAR(val, 32.0, 1e-10);  // sumprod([1,2,3], [4,5,6]) == 1*4+2*5+3*6 == 32
+}
+
+TEST_F(FoundationTest, EvalCompile) {
+    proto::ProtoContext* context = env.getContext();
+    const proto::ProtoObject* pyEval = env.resolve("eval");
+    const proto::ProtoObject* pyCompile = env.resolve("compile");
+    ASSERT_NE(pyEval, nullptr);
+    ASSERT_NE(pyCompile, nullptr);
+    const proto::ProtoList* evalArgs = context->newList()->appendLast(context, context->fromUTF8String("1 + 2"));
+    const proto::ProtoObject* evalResult = pyEval->asMethod(context)(context, PROTO_NONE, nullptr, evalArgs, nullptr);
+    ASSERT_NE(evalResult, nullptr);
+    EXPECT_TRUE(evalResult->isInteger(context));
+    EXPECT_EQ(evalResult->asLong(context), 3);
+    const proto::ProtoList* compileArgs = context->newList()
+        ->appendLast(context, context->fromUTF8String("3 * 4"))
+        ->appendLast(context, context->fromUTF8String("<test>"))
+        ->appendLast(context, context->fromUTF8String("eval"));
+    const proto::ProtoObject* codeObj = pyCompile->asMethod(context)(context, PROTO_NONE, nullptr, compileArgs, nullptr);
+    ASSERT_NE(codeObj, nullptr);
+}
+
 TEST_F(FoundationTest, MathFactorial) {
     proto::ProtoContext* context = env.getContext();
     const proto::ProtoObject* mathMod = env.resolve("math");

@@ -9,7 +9,7 @@ This document catalogs stub implementations and their completion status.
 | **set** | union, intersection, difference | Implemented |
 | **itertools** | accumulate | Full implementation (default add, optional binary func) |
 | **itertools** | groupby, product, combinations, combinations_with_replacement, permutations | Return empty iterator (no longer None) |
-| **math** | isclose, log, log10, log2, log1p, exp, sqrt, sin, cos, tan, asin, acos, atan, atan2, degrees, radians, hypot, fmod, remainder, erf, erfc, gamma, lgamma, dist, perm, comb, factorial, prod, isqrt, acosh, asinh, atanh, cosh, sinh, tanh, ulp, nextafter, ldexp, frexp, modf, cbrt, exp2, expm1, fma; constants pi, e, nan, inf | Implemented |
+| **math** | isclose, log, log10, log2, log1p, exp, sqrt, sin, cos, tan, asin, acos, atan, atan2, degrees, radians, hypot, fmod, remainder, erf, erfc, gamma, lgamma, dist, perm, comb, factorial, prod, sumprod, isqrt, acosh, asinh, atanh, cosh, sinh, tanh, ulp, nextafter, ldexp, frexp, modf, cbrt, exp2, expm1, fma; constants pi, e, nan, inf | Implemented |
 | **operator** | add, sub, mul, truediv, eq, lt, pow, floordiv, mod, neg, not_, invert, lshift, rshift, and_, or_, xor, index | Implemented |
 
 ## Native (C++) — Compiler / eval / exec (Phase 0)
@@ -162,7 +162,15 @@ This document catalogs stub implementations and their completion status.
 | ast | parse, dump, literal_eval, walk, NodeVisitor | Stub: parse/dump return None/empty string; literal_eval return None; walk yields nothing; NodeVisitor no-op. Full impl requires C++ AST exposure. |
 | tokenize | generate_tokens, tokenize, untokenize | Implemented: uses builtins._tokenize_source (native tokenizer); generate_tokens yields (type, value, start, end, line); untokenize reconstructs from token strings. |
 
+## Python stdlib — New stubs (v35)
+
+| Module | Item | Behavior |
+|--------|------|----------|
+| inspect | isfunction, ismodule, getsourcefile, signature | Stub: isfunction/ismodule return False; getsourcefile return None; signature raises ValueError. No real introspection. |
+| types | FunctionType, ModuleType, SimpleNamespace | Stub: FunctionType, ModuleType placeholder classes; SimpleNamespace minimal (init with **kwargs, setattr). |
+
 ## Python stdlib — New stubs
+
 
 | Module | Item | Behavior |
 |--------|------|----------|
