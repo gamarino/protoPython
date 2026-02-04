@@ -1268,6 +1268,47 @@ TEST_F(FoundationTest, SetattrAndCallable) {
     EXPECT_EQ(callableResult, PROTO_TRUE);
 }
 
+TEST_F(FoundationTest, ListIaddAndDictIor) {
+    proto::ProtoContext* context = env.getContext();
+    const proto::ProtoObject* listProto = env.getListPrototype();
+    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "__data__");
+    proto::ProtoObject* listObj = const_cast<proto::ProtoObject*>(context->newObject(true)->addParent(context, listProto));
+    listObj->setAttribute(context, dataName, context->newList()->appendLast(context, context->fromInteger(1))->appendLast(context, context->fromInteger(2))->asObject(context));
+    const proto::ProtoObject* otherList = context->newObject(true)->addParent(context, listProto);
+    otherList->setAttribute(context, dataName, context->newList()->appendLast(context, context->fromInteger(3))->asObject(context));
+    const proto::ProtoObject* iaddM = listObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__iadd__"));
+    ASSERT_NE(iaddM, nullptr);
+    const proto::ProtoList* iaddArgs = context->newList()->appendLast(context, otherList);
+    const proto::ProtoObject* result = iaddM->asMethod(context)(context, listObj, nullptr, iaddArgs, nullptr);
+    ASSERT_NE(result, nullptr);
+    EXPECT_EQ(result, listObj);
+    const proto::ProtoObject* data = listObj->getAttribute(context, dataName);
+    ASSERT_TRUE(data && data->asList(context));
+    EXPECT_EQ(data->asList(context)->getSize(context), 3u);
+    EXPECT_EQ(data->asList(context)->getAt(context, 2)->asLong(context), 3);
+
+    const proto::ProtoObject* dictProto = env.getDictPrototype();
+    const proto::ProtoString* keysName = proto::ProtoString::fromUTF8String(context, "__keys__");
+    proto::ProtoObject* d1 = const_cast<proto::ProtoObject*>(context->newObject(true)->addParent(context, dictProto));
+    d1->setAttribute(context, dataName, context->newSparseList()->asObject(context));
+    d1->setAttribute(context, keysName, context->newList()->asObject(context));
+    const proto::ProtoObject* k1 = context->fromUTF8String("a");
+    d1->call(context, nullptr, proto::ProtoString::fromUTF8String(context, "__setitem__"), d1, context->newList()->appendLast(context, k1)->appendLast(context, context->fromInteger(1)));
+    proto::ProtoObject* d2 = const_cast<proto::ProtoObject*>(context->newObject(true)->addParent(context, dictProto));
+    d2->setAttribute(context, dataName, context->newSparseList()->asObject(context));
+    d2->setAttribute(context, keysName, context->newList()->asObject(context));
+    const proto::ProtoObject* k2 = context->fromUTF8String("b");
+    d2->call(context, nullptr, proto::ProtoString::fromUTF8String(context, "__setitem__"), d2, context->newList()->appendLast(context, k2)->appendLast(context, context->fromInteger(2)));
+    const proto::ProtoObject* iorM = d1->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__ior__"));
+    ASSERT_NE(iorM, nullptr);
+    const proto::ProtoObject* iorResult = iorM->asMethod(context)(context, d1, nullptr, context->newList()->appendLast(context, d2), nullptr);
+    ASSERT_NE(iorResult, nullptr);
+    EXPECT_EQ(iorResult, d1);
+    const proto::ProtoObject* lenM = d1->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__len__"));
+    ASSERT_NE(lenM, nullptr);
+    EXPECT_EQ(lenM->asMethod(context)(context, d1, nullptr, context->newList(), nullptr)->asLong(context), 2);
+}
+
 TEST_F(FoundationTest, ItertoolsAccumulate) {
     proto::ProtoContext* context = env.getContext();
     const proto::ProtoObject* itertoolsMod = env.resolve("itertools");
