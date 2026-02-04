@@ -19,6 +19,19 @@ enum class TokenType {
     Comma,
     Newline,
     EndOfFile,
+    // Step 5: attribute, subscript, literals, control flow
+    Dot,
+    LSquare,
+    RSquare,
+    LCurly,
+    RCurly,
+    Colon,
+    Assign,
+    For,
+    In,
+    If,
+    Else,
+    Global,
 };
 
 struct Token {

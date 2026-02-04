@@ -108,6 +108,8 @@ We aim for "No-Modification" compatibility with CPython tests.
 
 **Phase 3 Execution Engine completed.** executeMinimalBytecode supports all listed opcodes (100–155); test_execution_engine covers them (see [EXECUTION_ENGINE_OPCODES.md](EXECUTION_ENGINE_OPCODES.md)); protopy runs script `.py` files via builtins.exec into the module namespace and invokes module `main` when present (see [TESTING.md](TESTING.md) § Script execution and main invocation).
 
+**Step 5 (optional): Parser/compiler extended to emit full opcode set.** Tokenizer: Dot, LSquare, RSquare, LCurly, RCurly, Colon, Assign, keywords For, In, If, Else, Global. Parser: AST nodes for Attribute, Subscript, Slice, ListLiteral, DictLiteral, TupleLiteral, Assign, For, If, Global; grammar for statements and module. Compiler: LOAD_ATTR, STORE_ATTR, BINARY_SUBSCR, STORE_SUBSCR, BUILD_LIST, BUILD_MAP, BUILD_TUPLE, BUILD_SLICE, GET_ITER, FOR_ITER, JUMP_ABSOLUTE, POP_JUMP_IF_FALSE, LOAD_GLOBAL, STORE_GLOBAL; jump patching for control flow. FOR_ITER jump target in the engine uses bytecode list index. Foundation tests: CompiledSnippetListLiteralAndSubscr, CompiledSnippetExecAssign.
+
 **Completed: Next 20 Steps v35 (625–644).** See [NEXT_20_STEPS_V35.md](NEXT_20_STEPS_V35.md). math.sumprod; inspect, types stubs; foundation test MathSumprod; STUBS, todo, TESTING updated.
 
 ## 5. Debugging & IDE Support

@@ -772,8 +772,8 @@ const proto::ProtoObject* executeMinimalBytecode(
                 stack.push_back(val);
             } else {
                 stack.pop_back();
-                if (arg >= 0 && static_cast<unsigned long>(arg * 2) < n)
-                    i = static_cast<unsigned long>(arg * 2) - 1;
+                if (arg >= 0 && static_cast<unsigned long>(arg) < n)
+                    i = static_cast<unsigned long>(arg) - 1;
             }
         } else if (op == OP_UNPACK_SEQUENCE) {
             i++;

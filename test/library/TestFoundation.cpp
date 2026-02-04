@@ -1566,6 +1566,39 @@ TEST_F(FoundationTest, EvalCompile) {
     ASSERT_NE(codeObj, nullptr);
 }
 
+/** Step 5: Extended parser/compiler – list literal and subscript. */
+TEST_F(FoundationTest, CompiledSnippetListLiteralAndSubscr) {
+    proto::ProtoContext* context = env.getContext();
+    const proto::ProtoObject* pyEval = env.resolve("eval");
+    ASSERT_NE(pyEval, nullptr);
+    const proto::ProtoList* args = context->newList()->appendLast(context, context->fromUTF8String("[1, 2, 3][1]"));
+    const proto::ProtoObject* result = pyEval->asMethod(context)(context, PROTO_NONE, nullptr, args, nullptr);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->isInteger(context));
+    EXPECT_EQ(result->asLong(context), 2);
+}
+
+/** Step 5: exec with assignment and expression (module with multiple statements). */
+TEST_F(FoundationTest, CompiledSnippetExecAssign) {
+    proto::ProtoContext* context = env.getContext();
+    const proto::ProtoObject* pyExec = env.resolve("exec");
+    const proto::ProtoObject* pyEval = env.resolve("eval");
+    ASSERT_NE(pyExec, nullptr);
+    ASSERT_NE(pyEval, nullptr);
+    proto::ProtoObject* frame = const_cast<proto::ProtoObject*>(context->newObject(true));
+    const proto::ProtoList* execArgs = context->newList()
+        ->appendLast(context, context->fromUTF8String("x = 1 + 2\n"))
+        ->appendLast(context, frame);
+    pyExec->asMethod(context)(context, PROTO_NONE, nullptr, execArgs, nullptr);
+    const proto::ProtoList* evalArgs = context->newList()
+        ->appendLast(context, context->fromUTF8String("x"))
+        ->appendLast(context, frame);
+    const proto::ProtoObject* result = pyEval->asMethod(context)(context, PROTO_NONE, nullptr, evalArgs, nullptr);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->isInteger(context));
+    EXPECT_EQ(result->asLong(context), 3);
+}
+
 TEST_F(FoundationTest, MathFactorial) {
     proto::ProtoContext* context = env.getContext();
     const proto::ProtoObject* mathMod = env.resolve("math");

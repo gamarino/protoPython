@@ -7,6 +7,7 @@
 #include <vector>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace protoPython {
 
@@ -43,6 +44,23 @@ private:
     bool compileName(NameNode* n);
     bool compileBinOp(BinOpNode* n);
     bool compileCall(CallNode* n);
+    bool compileAttribute(AttributeNode* n);
+    bool compileSubscript(SubscriptNode* n);
+    bool compileSlice(SliceNode* n);
+    bool compileListLiteral(ListLiteralNode* n);
+    bool compileDictLiteral(DictLiteralNode* n);
+    bool compileTupleLiteral(TupleLiteralNode* n);
+    bool compileAssign(AssignNode* n);
+    bool compileFor(ForNode* n);
+    bool compileIf(IfNode* n);
+    bool compileGlobal(GlobalNode* n);
+    bool compileTarget(ASTNode* target, bool isStore);
+    std::unordered_set<std::string> globalNames_;
+    int bytecodeOffset() const;
+    /** Record a jump arg slot to be patched later with target (bytecode list index). */
+    void addPatch(int argSlotIndex, int targetBytecodeIndex);
+    void applyPatches();
+    std::vector<std::pair<int, int>> patches_;
 };
 
 /** Build a code object (ProtoObject with co_consts, co_names, co_code) from compiler output. */

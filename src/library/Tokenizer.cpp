@@ -84,6 +84,11 @@ Token Tokenizer::scanNameOrKeyword() {
     Token t;
     t.type = TokenType::Name;
     t.value = source_.substr(start, pos_ - start);
+    if (t.value == "for") t.type = TokenType::For;
+    else if (t.value == "in") t.type = TokenType::In;
+    else if (t.value == "if") t.type = TokenType::If;
+    else if (t.value == "else") t.type = TokenType::Else;
+    else if (t.value == "global") t.type = TokenType::Global;
     return t;
 }
 
@@ -112,6 +117,15 @@ Token Tokenizer::next() {
     if (c == '(') { pos_++; Token t; t.type = TokenType::LParen; return t; }
     if (c == ')') { pos_++; Token t; t.type = TokenType::RParen; return t; }
     if (c == ',') { pos_++; Token t; t.type = TokenType::Comma; return t; }
+    if (c == '.') { pos_++; Token t; t.type = TokenType::Dot; return t; }
+    if (c == '[') { pos_++; Token t; t.type = TokenType::LSquare; return t; }
+    if (c == ']') { pos_++; Token t; t.type = TokenType::RSquare; return t; }
+    if (c == '{') { pos_++; Token t; t.type = TokenType::LCurly; return t; }
+    if (c == '}') { pos_++; Token t; t.type = TokenType::RCurly; return t; }
+    if (c == ':') { pos_++; Token t; t.type = TokenType::Colon; return t; }
+    if (c == '=' && (pos_ + 1 >= source_.size() || source_[pos_ + 1] != '=')) {
+        pos_++; Token t; t.type = TokenType::Assign; return t;
+    }
     if (c == '"' || c == '\'')
         return scanString(c);
     if (std::isdigit(static_cast<unsigned char>(c)))
