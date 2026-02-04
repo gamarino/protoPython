@@ -2634,6 +2634,22 @@ static const proto::ProtoObject* py_slice_call(
     return sliceObj;
 }
 
+static const proto::ProtoObject* py_slice_repr(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoObject* start = self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "start"));
+    const proto::ProtoObject* stop = self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "stop"));
+    const proto::ProtoObject* step = self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "step"));
+    std::string s_start = (!start || start == PROTO_NONE) ? "None" : (start->isInteger(context) ? std::to_string(start->asLong(context)) : "None");
+    std::string s_stop = (!stop || stop == PROTO_NONE) ? "None" : (stop->isInteger(context) ? std::to_string(stop->asLong(context)) : "None");
+    std::string out = "slice(" + s_start + ", " + s_stop;
+    if (step && step != PROTO_NONE && (!step->isInteger(context) || step->asLong(context) != 1))
+        out += ", " + (step->isInteger(context) ? std::to_string(step->asLong(context)) : "None");
+    out += ")";
+    return context->fromUTF8String(out.c_str());
+}
+
 static const proto::ProtoObject* py_str_upper(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -4198,6 +4214,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     sliceType = sliceType->setAttribute(context, py_class, typePrototype);
     sliceType = sliceType->setAttribute(context, py_name, context->fromUTF8String("slice"));
     sliceType = sliceType->setAttribute(context, py_call, context->fromMethod(const_cast<proto::ProtoObject*>(sliceType), py_slice_call));
+    sliceType = sliceType->setAttribute(context, py_repr, context->fromMethod(const_cast<proto::ProtoObject*>(sliceType), py_slice_repr));
 
     floatPrototype = context->newObject(true);
     floatPrototype = floatPrototype->addParent(context, objectPrototype);
