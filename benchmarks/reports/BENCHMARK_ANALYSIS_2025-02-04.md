@@ -15,20 +15,22 @@ Run the protoPython benchmark suite using **CPython 3.14** as the reference impl
 
 | Benchmark         | CPython 3.14 (median ms) | Workload / N |
 |-------------------|---------------------------|--------------|
-| startup_empty     | 16.39                     | `import abc` |
-| int_sum_loop      | 18.01                     | sum(range(100000)) |
-| list_append_loop | 29.36                     | list append loop, N=10000 |
-| str_concat_loop   | 17.34                     | string concat loop, N=10000 |
-| range_iterate     | 19.68                     | iterate range(100000) |
+| startup_empty     | 48.22                     | `import abc` |
+| int_sum_loop      | 22.42                     | sum(range(100000)) |
+| list_append_loop  | 21.76                     | list append loop, N=10000 |
+| str_concat_loop   | 21.61                     | string concat loop, N=10000 |
+| range_iterate     | 21.48                     | iterate range(100000) |
 
 Raw report: [2025-02-04_cpython314.md](2025-02-04_cpython314.md).
 
+*Note: Full benchmark (protopy vs CPython) was re-run; protopy timed out (60s) on `list_append_loop`, so this commit records CPython 3.14 baseline only via `--cpython-only`.*
+
 ## Observations
 
-1. **Startup** (~16 ms): Importing a minimal module (`abc`) on this machine gives a baseline for interpreter startup. protoPython will need to be measured once the GC deadlock is resolved.
-2. **Arithmetic / iteration**: `int_sum_loop` and `range_iterate` are in the 18–20 ms range; these are dominated by loop and integer operations.
-3. **Allocation-heavy**: `list_append_loop` is the slowest (~29 ms), consistent with repeated list growth and allocation.
-4. **String**: `str_concat_loop` (~17 ms) is in line with the other non-startup benchmarks.
+1. **Startup** (~48 ms): Importing a minimal module (`abc`) on this machine gives a baseline for interpreter startup. protoPython is not measured when it times out.
+2. **Arithmetic / iteration**: `int_sum_loop` and `range_iterate` are in the 21–22 ms range; dominated by loop and integer operations.
+3. **Allocation-heavy**: `list_append_loop` (~22 ms) and **string** `str_concat_loop` (~22 ms) are in line with the other script benchmarks.
+4. **Variance**: Median times can vary by run and load; use the same host and `--cpython-only` for reproducible baseline.
 
 ## Why protoPython Was Not Measured
 
