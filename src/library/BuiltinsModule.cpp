@@ -734,6 +734,49 @@ static const proto::ProtoObject* py_range(
     return rangeObj;
 }
 
+static const proto::ProtoObject* py_zip(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    unsigned long n = positionalParameters->getSize(context);
+    const proto::ProtoList* itersList = context->newList();
+    for (unsigned long i = 0; i < n; ++i) {
+        const proto::ProtoObject* iterable = positionalParameters->getAt(context, static_cast<int>(i));
+        const proto::ProtoObject* iterM = iterable->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__iter__"));
+        if (!iterM || !iterM->asMethod(context)) return PROTO_NONE;
+        const proto::ProtoObject* it = iterM->asMethod(context)(context, iterable, nullptr, context->newList(), nullptr);
+        if (!it || it == PROTO_NONE) return PROTO_NONE;
+        itersList = itersList->appendLast(context, it);
+    }
+    const proto::ProtoObject* zipProto = self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__zip_proto__"));
+    if (!zipProto) return PROTO_NONE;
+    const proto::ProtoObject* zipObj = zipProto->newChild(context, true);
+    zipObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__zip_iters__"), itersList->asObject(context));
+    return zipObj;
+}
+
+static const proto::ProtoObject* py_zip_next(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoObject* itersObj = self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__zip_iters__"));
+    if (!itersObj || !itersObj->asList(context)) return PROTO_NONE;
+    const proto::ProtoList* iters = itersObj->asList(context);
+    if (iters->getSize(context) == 0) return PROTO_NONE;
+    const proto::ProtoList* tupleParts = context->newList();
+    for (unsigned long i = 0; i < iters->getSize(context); ++i) {
+        const proto::ProtoObject* it = iters->getAt(context, static_cast<int>(i));
+        const proto::ProtoObject* nextM = it->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__next__"));
+        if (!nextM || !nextM->asMethod(context)) return PROTO_NONE;
+        const proto::ProtoObject* val = nextM->asMethod(context)(context, it, nullptr, context->newList(), nullptr);
+        if (!val || val == PROTO_NONE) return PROTO_NONE;
+        tupleParts = tupleParts->appendLast(context, val);
+    }
+    return context->newTupleFromList(tupleParts)->asObject(context);
+}
+
 static const proto::ProtoObject* py_range_next(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -798,6 +841,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "range"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_range));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "enumerate"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_enumerate));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "reversed"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_reversed));
+    builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "zip"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_zip));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "sum"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_sum));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "all"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_all));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "any"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_any));

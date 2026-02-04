@@ -1896,6 +1896,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     const proto::ProtoString* py_lstrip = proto::ProtoString::fromUTF8String(context, "lstrip");
     const proto::ProtoString* py_rstrip = proto::ProtoString::fromUTF8String(context, "rstrip");
     const proto::ProtoString* py_replace = proto::ProtoString::fromUTF8String(context, "replace");
+    const proto::ProtoString* py_startswith = proto::ProtoString::fromUTF8String(context, "startswith");
+    const proto::ProtoString* py_endswith = proto::ProtoString::fromUTF8String(context, "endswith");
     const proto::ProtoString* py_add = proto::ProtoString::fromUTF8String(context, "add");
 
     // 1. Create 'object' base
