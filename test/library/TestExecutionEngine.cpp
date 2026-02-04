@@ -611,8 +611,8 @@ TEST(ExecutionEngineTest, InplaceTrueDivide) {
     proto::ProtoSpace space;
     proto::ProtoContext ctx(&space);
     const proto::ProtoList* constants = ctx.newList()
-        ->appendLast(&ctx, ctx.fromInteger(10))
-        ->appendLast(&ctx, ctx.fromInteger(4));
+        ->appendLast(&ctx, ctx.fromDouble(10.0))
+        ->appendLast(&ctx, ctx.fromDouble(4.0));
     const proto::ProtoList* bytecode = ctx.newList()
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(0))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(1))
@@ -993,7 +993,7 @@ TEST(ExecutionEngineTest, PopJumpIfFalse) {
         ->appendLast(&ctx, ctx.fromInteger(2));
     const proto::ProtoList* bytecode = ctx.newList()
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(0))
-        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_POP_JUMP_IF_FALSE))->appendLast(&ctx, ctx.fromInteger(8))
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_POP_JUMP_IF_FALSE))->appendLast(&ctx, ctx.fromInteger(4))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(1))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE))->appendLast(&ctx, ctx.fromInteger(0))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(2))
