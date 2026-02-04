@@ -9,8 +9,8 @@ This document catalogs stub implementations and their completion status.
 | **set** | union, intersection, difference | Implemented |
 | **itertools** | accumulate | Full implementation (default add, optional binary func) |
 | **itertools** | groupby, product, combinations, combinations_with_replacement, permutations | Return empty iterator (no longer None) |
-| **math** | isclose, log, log10, exp, sqrt, sin, cos | Implemented |
-| **operator** | add, sub, mul, truediv, eq, lt, pow, floordiv, mod, neg, not_ | Implemented |
+| **math** | isclose, log, log10, exp, sqrt, sin, cos, tan | Implemented |
+| **operator** | add, sub, mul, truediv, eq, lt, pow, floordiv, mod, neg, not_, invert | Implemented |
 
 ## Native (C++) Stubs — Remaining
 
@@ -64,6 +64,13 @@ This document catalogs stub implementations and their completion status.
 | dataclasses | dataclass | Minimal decorator placeholder. |
 | contextlib | contextmanager | Minimal placeholder. |
 | abc | ABC, abstractmethod | Minimal placeholder. |
+
+## Python stdlib — New stubs (v22)
+
+| Module | Item | Behavior |
+|--------|------|----------|
+| html | escape, unescape | Minimal: escape replaces &<>\"'; unescape reverses. |
+| difflib | SequenceMatcher, unified_diff | Stub: SequenceMatcher returns placeholder; unified_diff returns empty list. |
 
 ## Python stdlib — New stubs
 
