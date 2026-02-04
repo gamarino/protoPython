@@ -107,6 +107,11 @@ See [docs/STUBS.md](../docs/STUBS.md). Set union/intersection/difference impleme
 ## 23. Next 20 Steps (v19) — completed
 
 See [docs/NEXT_20_STEPS_V19.md](../docs/NEXT_20_STEPS_V19.md). Steps 305–324: itertools.accumulate full impl; foundation tests SetUnion, MathIsclose, ItertoolsAccumulate; docs updated.
+
+## 24. Next 20 Steps (v20) — completed
+
+See [docs/NEXT_20_STEPS_V20.md](../docs/NEXT_20_STEPS_V20.md). Steps 325–344: BINARY_POWER, BINARY_FLOOR_DIVIDE; math.log/log10/exp; operator.pow/floordiv/mod; str.isidentifier; bytes.count; list.__mul__/__rmul__; hasattr/delattr; functools.lru_cache, atexit, heapq, json stubs; foundation tests MathLog, ListRepeat, HasattrDelattr; STUBS and todo updated.
+
 - [x] Step 145: ord builtin
 - [x] Step 146: chr builtin
 - [x] Step 147: bin builtin

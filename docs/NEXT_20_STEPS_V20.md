@@ -30,5 +30,5 @@ Plan for 20 incremental milestones. Each step: implement → update docs → `gi
 | 340 | Foundation test list * int or bytes.count | done |
 | 341 | Foundation test hasattr/delattr or operator.floordiv | done |
 | 342 | Update STUBS.md with v20 stub changes | done |
-| 343 | Update tasks/todo.md, mark steps done in v20 doc | pending |
+| 343 | Update tasks/todo.md, mark steps done in v20 doc | done |
 | 344 | Final v20 doc and IMPLEMENTATION_PLAN completion | pending |
