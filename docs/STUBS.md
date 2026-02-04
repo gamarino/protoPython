@@ -9,7 +9,8 @@ This document catalogs stub implementations and their completion status.
 | **set** | union, intersection, difference | Implemented |
 | **itertools** | accumulate | Full implementation (default add, optional binary func) |
 | **itertools** | groupby, product, combinations, combinations_with_replacement, permutations | Return empty iterator (no longer None) |
-| **math** | isclose | Implemented |
+| **math** | isclose, log, log10, exp | Implemented |
+| **operator** | add, sub, mul, truediv, eq, lt, pow, floordiv, mod | Implemented |
 
 ## Native (C++) Stubs — Remaining
 
@@ -45,4 +46,4 @@ This document catalogs stub implementations and their completion status.
 | secrets | token_hex, token_urlsafe | Return placeholder |
 | threading | Thread, Lock | Minimal stubs |
 | enum | Enum | Minimal base class |
-| functools | reduce, wraps | reduce implemented; wraps no-op |
+| functools | reduce, wraps, lru_cache | reduce implemented; wraps no-op; lru_cache stub (v20) |
