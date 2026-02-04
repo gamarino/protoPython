@@ -10,9 +10,11 @@ def gettempprefix():
     """Stub: return common prefix for temp files."""
     return 'tmp'
 
-def mkstemp(*args, **kwargs):
-    """Stub: not implemented."""
-    raise NotImplementedError('tempfile.mkstemp is a stub')
+def mkstemp(*args, suffix='', prefix='tmp', dir=None, **kwargs):
+    """Stub: returns (0, path) with a placeholder path."""
+    import os
+    base = dir if dir else os.gettempdir()
+    return (0, base + '/' + prefix + 'XXXXXX' + suffix)
 
 class TemporaryFile:
     """Stub: minimal file-like placeholder."""
