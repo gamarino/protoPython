@@ -25,7 +25,7 @@ Plan for 20 incremental milestones. Each step: implement → update docs → `gi
 | 335 | functools.lru_cache stub | done |
 | 336 | atexit module stub | done |
 | 337 | heapq module stub | done |
-| 338 | json module stub enhancement | pending |
+| 338 | json module stub enhancement | done (dumps/loads in JsonModule) |
 | 339 | Foundation test BINARY_POWER or math.log | pending |
 | 340 | Foundation test list * int or bytes.count | pending |
 | 341 | Foundation test hasattr/delattr or operator.floordiv | pending |
