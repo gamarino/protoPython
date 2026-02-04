@@ -13,14 +13,14 @@ Plan for 20 incremental milestones. Each step: implement → update docs → `gi
 | Step | Description | Status |
 |------|-------------|--------|
 | 405 | Create NEXT_20_STEPS_V24.md, update IMPLEMENTATION_PLAN | done |
-| 406 | Execution engine BINARY_LSHIFT | pending |
-| 407 | Execution engine BINARY_RSHIFT | pending |
-| 408 | Execution engine INPLACE_SUBTRACT | pending |
-| 409 | math.atan2, degrees, radians | pending |
-| 410 | operator.and_, or_, xor (bitwise) | pending |
-| 411 | str.split maxsplit or bytes.split | pending |
-| 412 | builtins len enhancement or bool | pending |
-| 413 | float.hex / float.fromhex or as_integer_ratio | pending |
+| 406 | Execution engine BINARY_LSHIFT | done |
+| 407 | Execution engine BINARY_RSHIFT | done |
+| 408 | Execution engine INPLACE_SUBTRACT | done |
+| 409 | math.atan2, degrees, radians | done |
+| 410 | operator.and_, or_, xor (bitwise) | done |
+| 411 | str.split maxsplit or bytes.split | done (existing) |
+| 412 | builtins len enhancement or bool | done (existing) |
+| 413 | float.hex / float.fromhex or as_integer_ratio | done (existing) |
 | 414 | Stdlib stub email (minimal) | pending |
 | 415 | Stdlib stub runpy or quopri (minimal) | pending |
 | 416 | Foundation test BINARY_LSHIFT or math.atan2 | pending |
