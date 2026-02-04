@@ -16,9 +16,9 @@ This document catalogs stub implementations and their completion status.
 
 | Component | Item | Notes |
 |-----------|------|-------|
-| **builtins** | help, memoryview | Return None; full impl needs pager/buffer API |
-| **builtins** | input, eval, exec | Return None/empty; need stdin/parser |
-| **builtins** | breakpoint, globals, locals | Stubs for debugging/frame access |
+| **builtins** | help, memoryview | Stub retained. Implementation deferred: full impl needs pager (help) and buffer API (memoryview). Return None. |
+| **builtins** | input, eval, exec | Stub retained. Implementation deferred: need stdin (input) and expression/statement parser (eval, exec). Return None/empty. |
+| **builtins** | breakpoint, globals, locals | Stub retained. Implementation deferred: need debugger integration (breakpoint) and frame access (globals, locals). breakpoint no-op; globals/locals return empty dict. |
 
 ## Python stdlib Stubs — Enhanced
 
