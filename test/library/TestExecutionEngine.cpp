@@ -76,6 +76,24 @@ TEST(ExecutionEngineTest, CompareOp) {
     EXPECT_EQ(result, PROTO_TRUE);
 }
 
+TEST(ExecutionEngineTest, BinarySubtract) {
+    proto::ProtoSpace space;
+    proto::ProtoContext ctx(&space);
+    const proto::ProtoList* constants = ctx.newList()
+        ->appendLast(&ctx, ctx.fromInteger(10))
+        ->appendLast(&ctx, ctx.fromInteger(3));
+    const proto::ProtoList* bytecode = ctx.newList()
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(0))
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(1))
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_BINARY_SUBTRACT))
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE));
+    const proto::ProtoObject* result = protoPython::executeMinimalBytecode(
+        &ctx, constants, bytecode, nullptr, nullptr);
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->isInteger(&ctx));
+    EXPECT_EQ(result->asLong(&ctx), 7);
+}
+
 TEST(ExecutionEngineTest, BinaryAdd) {
     proto::ProtoSpace space;
     proto::ProtoContext ctx(&space);
