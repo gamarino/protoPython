@@ -321,6 +321,39 @@ static const proto::ProtoObject* py_list_iter_next(
     return value;
 }
 
+static const proto::ProtoObject* py_list_reversed(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoString* revProtoName = proto::ProtoString::fromUTF8String(context, "__reversed_prototype__");
+    const proto::ProtoObject* revProto = self->getAttribute(context, revProtoName);
+    if (!revProto) return PROTO_NONE;
+    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "__data__");
+    const proto::ProtoObject* data = self->getAttribute(context, dataName);
+    if (!data || !data->asList(context)) return PROTO_NONE;
+    const proto::ProtoList* list = data->asList(context);
+    long long n = static_cast<long long>(list->getSize(context));
+    const proto::ProtoObject* revObj = revProto->newChild(context, true);
+    revObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__reversed_list__"), data);
+    revObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__reversed_idx__"), context->fromInteger(n - 1));
+    return revObj;
+}
+
+static const proto::ProtoObject* py_list_reversed_next(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoObject* data = self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__reversed_list__"));
+    const proto::ProtoObject* idxObj = self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__reversed_idx__"));
+    if (!data || !data->asList(context) || !idxObj || !idxObj->isInteger(context)) return PROTO_NONE;
+    long long idx = idxObj->asLong(context);
+    if (idx < 0) return PROTO_NONE;
+    const proto::ProtoList* list = data->asList(context);
+    const proto::ProtoObject* value = list->getAt(context, static_cast<int>(idx));
+    self->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__reversed_idx__"), context->fromInteger(idx - 1));
+    return value;
+}
+
 static const proto::ProtoObject* py_list_contains(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -3927,6 +3960,11 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     listIterProto = listIterProto->addParent(context, objectPrototype);
     listIterProto = listIterProto->setAttribute(context, py_next, context->fromMethod(const_cast<proto::ProtoObject*>(listIterProto), py_list_iter_next));
     listPrototype = listPrototype->setAttribute(context, py_iter_proto, listIterProto);
+    const proto::ProtoObject* listReverseIterProto = context->newObject(true);
+    listReverseIterProto = listReverseIterProto->addParent(context, objectPrototype);
+    listReverseIterProto = listReverseIterProto->setAttribute(context, py_next, context->fromMethod(const_cast<proto::ProtoObject*>(listReverseIterProto), py_list_reversed_next));
+    listPrototype = listPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__reversed_prototype__"), listReverseIterProto);
+    listPrototype = listPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__reversed__"), context->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_reversed));
 
     dictPrototype = context->newObject(true);
     dictPrototype = dictPrototype->addParent(context, objectPrototype);
