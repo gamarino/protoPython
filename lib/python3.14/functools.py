@@ -26,3 +26,9 @@ def wraps(wrapped, assigned=None, updated=None):
     def decorator(func):
         return func
     return decorator
+
+def lru_cache(maxsize=128, typed=False):
+    """Stub: returns a decorator that returns the callable unchanged (no caching)."""
+    def decorator(func):
+        return func
+    return decorator

@@ -22,7 +22,7 @@ Plan for 20 incremental milestones. Each step: implement → update docs → `gi
 | 332 | list.__mul__ / list.__rmul__ (repeat) | done |
 | 333 | builtins.hasattr | done (existing) |
 | 334 | builtins.delattr | done (existing) |
-| 335 | functools.lru_cache stub | pending |
+| 335 | functools.lru_cache stub | done |
 | 336 | atexit module stub | pending |
 | 337 | heapq module stub | pending |
 | 338 | json module stub enhancement | pending |
