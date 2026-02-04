@@ -93,6 +93,24 @@ constexpr int OP_BINARY_OR = 141;
 constexpr int OP_BINARY_XOR = 142;
 /** INPLACE_MULTIPLY: a *= b; use __imul__ if present else same as BINARY_MULTIPLY. */
 constexpr int OP_INPLACE_MULTIPLY = 143;
+/** INPLACE_TRUE_DIVIDE: a /= b; use __itruediv__ if present else same as BINARY_TRUE_DIVIDE. */
+constexpr int OP_INPLACE_TRUE_DIVIDE = 144;
+/** INPLACE_FLOOR_DIVIDE: a //= b; use __ifloordiv__ if present else same as BINARY_FLOOR_DIVIDE. */
+constexpr int OP_INPLACE_FLOOR_DIVIDE = 145;
+/** INPLACE_MODULO: a %= b; use __imod__ if present else same as BINARY_MODULO. */
+constexpr int OP_INPLACE_MODULO = 146;
+/** INPLACE_POWER: a **= b; use __ipow__ if present else same as BINARY_POWER. */
+constexpr int OP_INPLACE_POWER = 147;
+/** INPLACE_LSHIFT: a <<= b; use __ilshift__ if present else same as BINARY_LSHIFT. */
+constexpr int OP_INPLACE_LSHIFT = 148;
+/** INPLACE_RSHIFT: a >>= b; use __irshift__ if present else same as BINARY_RSHIFT. */
+constexpr int OP_INPLACE_RSHIFT = 149;
+/** INPLACE_AND: a &= b; use __iand__ if present else same as BINARY_AND. */
+constexpr int OP_INPLACE_AND = 150;
+/** INPLACE_OR: a |= b; use __ior__ if present else same as BINARY_OR. */
+constexpr int OP_INPLACE_OR = 151;
+/** INPLACE_XOR: a ^= b; use __ixor__ if present else same as BINARY_XOR. */
+constexpr int OP_INPLACE_XOR = 152;
 
 /**
  * @brief Executes bytecode: LOAD_CONST, RETURN_VALUE, LOAD_NAME, STORE_NAME,

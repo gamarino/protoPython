@@ -1245,6 +1245,71 @@ TEST_F(FoundationTest, MathLog2) {
     EXPECT_NEAR(val, 3.0, 1e-10);  // log2(8) == 3
 }
 
+TEST_F(FoundationTest, MathRemainder) {
+    proto::ProtoContext* context = env.getContext();
+    const proto::ProtoObject* mathMod = env.resolve("math");
+    ASSERT_NE(mathMod, nullptr);
+    const proto::ProtoObject* remainderM = mathMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "remainder"));
+    ASSERT_NE(remainderM, nullptr);
+    const proto::ProtoList* args = context->newList()->appendLast(context, context->fromDouble(5.5))->appendLast(context, context->fromDouble(2.0));
+    const proto::ProtoObject* result = remainderM->asMethod(context)(context, mathMod, nullptr, args, nullptr);
+    ASSERT_NE(result, nullptr);
+    double val = result->isDouble(context) ? result->asDouble(context) : static_cast<double>(result->asLong(context));
+    EXPECT_NEAR(val, -0.5, 1e-10);  // remainder(5.5, 2.0) == -0.5
+}
+
+TEST_F(FoundationTest, MathErf) {
+    proto::ProtoContext* context = env.getContext();
+    const proto::ProtoObject* mathMod = env.resolve("math");
+    ASSERT_NE(mathMod, nullptr);
+    const proto::ProtoObject* erfM = mathMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "erf"));
+    ASSERT_NE(erfM, nullptr);
+    const proto::ProtoList* args = context->newList()->appendLast(context, context->fromDouble(0.0));
+    const proto::ProtoObject* result = erfM->asMethod(context)(context, mathMod, nullptr, args, nullptr);
+    ASSERT_NE(result, nullptr);
+    double val = result->isDouble(context) ? result->asDouble(context) : static_cast<double>(result->asLong(context));
+    EXPECT_NEAR(val, 0.0, 1e-10);  // erf(0) == 0
+}
+
+TEST_F(FoundationTest, MathErfc) {
+    proto::ProtoContext* context = env.getContext();
+    const proto::ProtoObject* mathMod = env.resolve("math");
+    ASSERT_NE(mathMod, nullptr);
+    const proto::ProtoObject* erfcM = mathMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "erfc"));
+    ASSERT_NE(erfcM, nullptr);
+    const proto::ProtoList* args = context->newList()->appendLast(context, context->fromDouble(0.0));
+    const proto::ProtoObject* result = erfcM->asMethod(context)(context, mathMod, nullptr, args, nullptr);
+    ASSERT_NE(result, nullptr);
+    double val = result->isDouble(context) ? result->asDouble(context) : static_cast<double>(result->asLong(context));
+    EXPECT_NEAR(val, 1.0, 1e-10);  // erfc(0) == 1
+}
+
+TEST_F(FoundationTest, MathGamma) {
+    proto::ProtoContext* context = env.getContext();
+    const proto::ProtoObject* mathMod = env.resolve("math");
+    ASSERT_NE(mathMod, nullptr);
+    const proto::ProtoObject* gammaM = mathMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "gamma"));
+    ASSERT_NE(gammaM, nullptr);
+    const proto::ProtoList* args = context->newList()->appendLast(context, context->fromDouble(2.0));
+    const proto::ProtoObject* result = gammaM->asMethod(context)(context, mathMod, nullptr, args, nullptr);
+    ASSERT_NE(result, nullptr);
+    double val = result->isDouble(context) ? result->asDouble(context) : static_cast<double>(result->asLong(context));
+    EXPECT_NEAR(val, 1.0, 1e-10);  // gamma(2) == 1
+}
+
+TEST_F(FoundationTest, MathLgamma) {
+    proto::ProtoContext* context = env.getContext();
+    const proto::ProtoObject* mathMod = env.resolve("math");
+    ASSERT_NE(mathMod, nullptr);
+    const proto::ProtoObject* lgammaM = mathMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "lgamma"));
+    ASSERT_NE(lgammaM, nullptr);
+    const proto::ProtoList* args = context->newList()->appendLast(context, context->fromDouble(2.0));
+    const proto::ProtoObject* result = lgammaM->asMethod(context)(context, mathMod, nullptr, args, nullptr);
+    ASSERT_NE(result, nullptr);
+    double val = result->isDouble(context) ? result->asDouble(context) : static_cast<double>(result->asLong(context));
+    EXPECT_NEAR(val, 0.0, 1e-10);  // lgamma(2) == 0
+}
+
 TEST_F(FoundationTest, ReprOrId) {
     proto::ProtoContext* context = env.getContext();
     const proto::ProtoObject* builtins = env.resolve("builtins");

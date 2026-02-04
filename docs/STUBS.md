@@ -9,7 +9,7 @@ This document catalogs stub implementations and their completion status.
 | **set** | union, intersection, difference | Implemented |
 | **itertools** | accumulate | Full implementation (default add, optional binary func) |
 | **itertools** | groupby, product, combinations, combinations_with_replacement, permutations | Return empty iterator (no longer None) |
-| **math** | isclose, log, log10, log2, log1p, exp, sqrt, sin, cos, tan, asin, acos, atan, atan2, degrees, radians, hypot, fmod | Implemented |
+| **math** | isclose, log, log10, log2, log1p, exp, sqrt, sin, cos, tan, asin, acos, atan, atan2, degrees, radians, hypot, fmod, remainder, erf, erfc, gamma, lgamma | Implemented |
 | **operator** | add, sub, mul, truediv, eq, lt, pow, floordiv, mod, neg, not_, invert, lshift, rshift, and_, or_, xor, index | Implemented |
 
 ## Native (C++) Stubs — Remaining
@@ -93,12 +93,19 @@ This document catalogs stub implementations and their completion status.
 | urllib.parse | quote, unquote, urljoin | Stub: return string/url unchanged. Full impl requires percent-encoding. |
 | zoneinfo | ZoneInfo | Stub class with key; __str__, __repr__. Full impl requires tzdata. |
 
-## Python stdlib — New stubs (v26) — planned
+## Python stdlib — New stubs (v26)
 
 | Module | Item | Behavior |
 |--------|------|----------|
-| plistlib | load, loads, dump, dumps | Stub: planned for v26. Full impl requires plist parser. |
-| quopri | encode, decode | Stub: planned for v26. Full impl requires quoted-printable encoding. |
+| plistlib | load, loads, dump, dumps | Stub: load/loads return empty dict; dump/dumps no-op/empty bytes. Full impl requires plist parser. |
+| quopri | encode, decode | Stub: copy input to output. Full impl requires quoted-printable encoding. |
+
+## Python stdlib — New stubs (v27)
+
+| Module | Item | Behavior |
+|--------|------|----------|
+| binascii | hexlify, unhexlify, b2a_base64, a2b_base64 | Stub: return empty bytes. Full impl requires hex/base64 encoding. |
+| uu | encode, decode | Stub: no-op. Full impl requires uuencode/uudecode. |
 
 ## Python stdlib — New stubs
 

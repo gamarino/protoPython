@@ -258,6 +258,195 @@ const proto::ProtoObject* executeMinimalBytecode(
             stack.pop_back();
             const proto::ProtoObject* r = binaryFloorDivide(ctx, a, b);
             if (r) stack.push_back(r);
+        } else if (op == OP_INPLACE_TRUE_DIVIDE) {
+            i++;
+            if (stack.size() < 2) continue;
+            const proto::ProtoObject* b = stack.back();
+            stack.pop_back();
+            const proto::ProtoObject* a = stack.back();
+            stack.pop_back();
+            const proto::ProtoObject* itruediv = a->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__itruediv__"));
+            if (itruediv && itruediv->asMethod(ctx)) {
+                const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
+                const proto::ProtoObject* result = itruediv->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
+                if (result) stack.push_back(result);
+            } else {
+                const proto::ProtoObject* r = binaryTrueDivide(ctx, a, b);
+                if (r) stack.push_back(r);
+            }
+        } else if (op == OP_INPLACE_FLOOR_DIVIDE) {
+            i++;
+            if (stack.size() < 2) continue;
+            const proto::ProtoObject* b = stack.back();
+            stack.pop_back();
+            const proto::ProtoObject* a = stack.back();
+            stack.pop_back();
+            const proto::ProtoObject* ifloordiv = a->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__ifloordiv__"));
+            if (ifloordiv && ifloordiv->asMethod(ctx)) {
+                const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
+                const proto::ProtoObject* result = ifloordiv->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
+                if (result) stack.push_back(result);
+            } else {
+                const proto::ProtoObject* r = binaryFloorDivide(ctx, a, b);
+                if (r) stack.push_back(r);
+            }
+        } else if (op == OP_INPLACE_MODULO) {
+            i++;
+            if (stack.size() < 2) continue;
+            const proto::ProtoObject* b = stack.back();
+            stack.pop_back();
+            const proto::ProtoObject* a = stack.back();
+            stack.pop_back();
+            const proto::ProtoObject* imod = a->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__imod__"));
+            if (imod && imod->asMethod(ctx)) {
+                const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
+                const proto::ProtoObject* result = imod->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
+                if (result) stack.push_back(result);
+            } else {
+                const proto::ProtoObject* r = binaryModulo(ctx, a, b);
+                if (r) stack.push_back(r);
+            }
+        } else if (op == OP_INPLACE_POWER) {
+            i++;
+            if (stack.size() < 2) continue;
+            const proto::ProtoObject* b = stack.back();
+            stack.pop_back();
+            const proto::ProtoObject* a = stack.back();
+            stack.pop_back();
+            const proto::ProtoObject* ipow = a->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__ipow__"));
+            if (ipow && ipow->asMethod(ctx)) {
+                const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
+                const proto::ProtoObject* result = ipow->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
+                if (result) stack.push_back(result);
+            } else {
+                const proto::ProtoObject* r = binaryPower(ctx, a, b);
+                if (r) stack.push_back(r);
+            }
+        } else if (op == OP_INPLACE_LSHIFT) {
+            i++;
+            if (stack.size() < 2) continue;
+            const proto::ProtoObject* b = stack.back();
+            stack.pop_back();
+            const proto::ProtoObject* a = stack.back();
+            stack.pop_back();
+            const proto::ProtoObject* ilshift = a->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__ilshift__"));
+            if (ilshift && ilshift->asMethod(ctx)) {
+                const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
+                const proto::ProtoObject* result = ilshift->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
+                if (result) stack.push_back(result);
+            } else if (a->isInteger(ctx) && b->isInteger(ctx)) {
+                long long av = a->asLong(ctx);
+                long long bv = b->asLong(ctx);
+                if (bv < 0 || bv >= 64) av = 0;
+                else av = static_cast<long long>(static_cast<unsigned long long>(av) << bv);
+                stack.push_back(ctx->fromInteger(av));
+            }
+        } else if (op == OP_INPLACE_RSHIFT) {
+            i++;
+            if (stack.size() < 2) continue;
+            const proto::ProtoObject* b = stack.back();
+            stack.pop_back();
+            const proto::ProtoObject* a = stack.back();
+            stack.pop_back();
+            const proto::ProtoObject* irshift = a->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__irshift__"));
+            if (irshift && irshift->asMethod(ctx)) {
+                const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
+                const proto::ProtoObject* result = irshift->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
+                if (result) stack.push_back(result);
+            } else if (a->isInteger(ctx) && b->isInteger(ctx)) {
+                long long av = a->asLong(ctx);
+                long long bv = b->asLong(ctx);
+                if (bv < 0 || bv >= 64) av = 0;
+                else av = av >> bv;
+                stack.push_back(ctx->fromInteger(av));
+            }
+        } else if (op == OP_INPLACE_AND) {
+            i++;
+            if (stack.size() < 2) continue;
+            const proto::ProtoObject* b = stack.back();
+            stack.pop_back();
+            const proto::ProtoObject* a = stack.back();
+            stack.pop_back();
+            const proto::ProtoObject* iand = a->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iand__"));
+            if (iand && iand->asMethod(ctx)) {
+                const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
+                const proto::ProtoObject* result = iand->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
+                if (result) stack.push_back(result);
+            } else if (a->isInteger(ctx) && b->isInteger(ctx)) {
+                stack.push_back(ctx->fromInteger(a->asLong(ctx) & b->asLong(ctx)));
+            } else {
+                const proto::ProtoObject* andM = a->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__and__"));
+                if (andM && andM->asMethod(ctx)) {
+                    const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
+                    const proto::ProtoObject* result = andM->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
+                    if (result) stack.push_back(result);
+                } else {
+                    const proto::ProtoObject* randM = b->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__rand__"));
+                    if (randM && randM->asMethod(ctx)) {
+                        const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, a);
+                        const proto::ProtoObject* result = randM->asMethod(ctx)(ctx, b, nullptr, oneArg, nullptr);
+                        if (result) stack.push_back(result);
+                    }
+                }
+            }
+        } else if (op == OP_INPLACE_OR) {
+            i++;
+            if (stack.size() < 2) continue;
+            const proto::ProtoObject* b = stack.back();
+            stack.pop_back();
+            const proto::ProtoObject* a = stack.back();
+            stack.pop_back();
+            const proto::ProtoObject* ior = a->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__ior__"));
+            if (ior && ior->asMethod(ctx)) {
+                const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
+                const proto::ProtoObject* result = ior->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
+                if (result) stack.push_back(result);
+            } else if (a->isInteger(ctx) && b->isInteger(ctx)) {
+                stack.push_back(ctx->fromInteger(a->asLong(ctx) | b->asLong(ctx)));
+            } else {
+                const proto::ProtoObject* orM = a->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__or__"));
+                if (orM && orM->asMethod(ctx)) {
+                    const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
+                    const proto::ProtoObject* result = orM->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
+                    if (result) stack.push_back(result);
+                } else {
+                    const proto::ProtoObject* rorM = b->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__ror__"));
+                    if (rorM && rorM->asMethod(ctx)) {
+                        const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, a);
+                        const proto::ProtoObject* result = rorM->asMethod(ctx)(ctx, b, nullptr, oneArg, nullptr);
+                        if (result) stack.push_back(result);
+                    }
+                }
+            }
+        } else if (op == OP_INPLACE_XOR) {
+            i++;
+            if (stack.size() < 2) continue;
+            const proto::ProtoObject* b = stack.back();
+            stack.pop_back();
+            const proto::ProtoObject* a = stack.back();
+            stack.pop_back();
+            const proto::ProtoObject* ixor = a->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__ixor__"));
+            if (ixor && ixor->asMethod(ctx)) {
+                const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
+                const proto::ProtoObject* result = ixor->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
+                if (result) stack.push_back(result);
+            } else if (a->isInteger(ctx) && b->isInteger(ctx)) {
+                stack.push_back(ctx->fromInteger(a->asLong(ctx) ^ b->asLong(ctx)));
+            } else {
+                const proto::ProtoObject* xorM = a->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__xor__"));
+                if (xorM && xorM->asMethod(ctx)) {
+                    const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
+                    const proto::ProtoObject* result = xorM->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
+                    if (result) stack.push_back(result);
+                } else {
+                    const proto::ProtoObject* rxorM = b->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__rxor__"));
+                    if (rxorM && rxorM->asMethod(ctx)) {
+                        const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, a);
+                        const proto::ProtoObject* result = rxorM->asMethod(ctx)(ctx, b, nullptr, oneArg, nullptr);
+                        if (result) stack.push_back(result);
+                    }
+                }
+            }
         } else if (op == OP_BINARY_LSHIFT) {
             i++;
             if (stack.size() < 2) continue;

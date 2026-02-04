@@ -132,11 +132,17 @@ See [docs/NEXT_20_STEPS_V24.md](../docs/NEXT_20_STEPS_V24.md). Steps 405–424: 
 
 See [docs/NEXT_20_STEPS_V25.md](../docs/NEXT_20_STEPS_V25.md). Steps 425–444: BINARY_AND, BINARY_OR, BINARY_XOR, INPLACE_MULTIPLY; math.hypot/fmod/log2/log1p; operator.index; str/bytes rsplit maxsplit, builtins (existing); urllib.parse, zoneinfo stubs; foundation and engine tests; STUBS and todo updated.
 
-## 30. Next 20 Steps (v26) — planned
+## 30. Next 20 Steps (v26) — completed
 
-See [docs/NEXT_20_STEPS_V26.md](../docs/NEXT_20_STEPS_V26.md). Steps 445–464 planned (INPLACE_* opcodes, math/operator, stubs, tests).
+See [docs/NEXT_20_STEPS_V26.md](../docs/NEXT_20_STEPS_V26.md). Steps 445–464: INPLACE_TRUE_DIVIDE, INPLACE_FLOOR_DIVIDE, INPLACE_MODULO, INPLACE_POWER; math.remainder, math.erf; plistlib, quopri stubs; foundation and execution-engine tests.
 
-- [ ] Steps 445–464
+- [x] Steps 445–464
+
+## 31. Next 20 Steps (v27) — completed
+
+See [docs/NEXT_20_STEPS_V27.md](../docs/NEXT_20_STEPS_V27.md). Steps 465–484: INPLACE_LSHIFT, INPLACE_RSHIFT, INPLACE_AND, INPLACE_OR, INPLACE_XOR; math.erfc, math.gamma, math.lgamma; operator (existing); binascii, uu stubs; foundation and execution-engine tests.
+
+- [x] Steps 465–484
 
 - [x] Step 145: ord builtin
 - [x] Step 146: chr builtin
@@ -295,6 +301,12 @@ See [docs/NEXT_20_STEPS_V26.md](../docs/NEXT_20_STEPS_V26.md). Steps 445–464 p
 - [x] Step 22: String formatting (`format`, `__format__`)
 - [x] Step 23: Bytes/bytearray prototype (basic)
 - [x] Step 24: Collections extensions (defaultdict, OrderedDict basics)
+
+## 31. Next 20 Steps (v27) — completed
+
+See [docs/NEXT_20_STEPS_V27.md](../docs/NEXT_20_STEPS_V27.md). Steps 465–484: INPLACE_LSHIFT, INPLACE_RSHIFT, INPLACE_AND, INPLACE_OR, INPLACE_XOR; math.erfc, math.gamma, math.lgamma; operator (existing); binascii, uu stubs; foundation and execution-engine tests.
+
+- [x] Steps 465–484
 
 ---
 *Updated from plan implementation. Mark items complete as work progresses.*

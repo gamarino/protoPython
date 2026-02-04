@@ -234,6 +234,53 @@ static const proto::ProtoObject* py_fmod(
     return ctx->fromDouble(std::fmod(x, y));
 }
 
+static const proto::ProtoObject* py_remainder(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
+    double x = toDouble(ctx, posArgs->getAt(ctx, 0));
+    double y = toDouble(ctx, posArgs->getAt(ctx, 1));
+    return ctx->fromDouble(std::remainder(x, y));
+}
+
+static const proto::ProtoObject* py_erf(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    double x = toDouble(ctx, posArgs->getAt(ctx, 0));
+    return ctx->fromDouble(std::erf(x));
+}
+
+static const proto::ProtoObject* py_erfc(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    double x = toDouble(ctx, posArgs->getAt(ctx, 0));
+    return ctx->fromDouble(std::erfc(x));
+}
+
+static const proto::ProtoObject* py_gamma(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    double x = toDouble(ctx, posArgs->getAt(ctx, 0));
+    if (x <= 0.0 && std::floor(x) == x) return PROTO_NONE; /* non-positive integer: domain error */
+    double r = std::tgamma(x);
+    if (std::isnan(r) || std::isinf(r)) return PROTO_NONE;
+    return ctx->fromDouble(r);
+}
+
+static const proto::ProtoObject* py_lgamma(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    double x = toDouble(ctx, posArgs->getAt(ctx, 0));
+    if (x <= 0.0 && std::floor(x) == x) return PROTO_NONE; /* non-positive integer: domain error */
+    double r = std::lgamma(x);
+    if (std::isnan(r) || std::isinf(r)) return PROTO_NONE;
+    return ctx->fromDouble(r);
+}
+
 static const proto::ProtoObject* py_exp(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
@@ -323,6 +370,16 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_hypot));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "fmod"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_fmod));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "remainder"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_remainder));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "erf"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_erf));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "erfc"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_erfc));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "gamma"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_gamma));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "lgamma"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_lgamma));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "exp"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_exp));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "gcd"),
