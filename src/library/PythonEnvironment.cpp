@@ -4156,6 +4156,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     dictPrototype = dictPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "fromkeys"), context->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_fromkeys));
     dictPrototype = dictPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__or__"), context->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_or));
     dictPrototype = dictPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__ror__"), context->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_ror));
+    dictPrototype = dictPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__ior__"), context->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_ior));
+    dictPrototype = dictPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__iror__"), context->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_iror));
 
     tuplePrototype = context->newObject(true);
     tuplePrototype = tuplePrototype->addParent(context, objectPrototype);
