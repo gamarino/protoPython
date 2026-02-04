@@ -163,6 +163,26 @@ static const proto::ProtoObject* py_invert(
     return PROTO_NONE;
 }
 
+static const proto::ProtoObject* py_lshift(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
+    long long a = posArgs->getAt(ctx, 0)->asLong(ctx);
+    long long b = posArgs->getAt(ctx, 1)->asLong(ctx);
+    if (b < 0 || b >= 64) return ctx->fromInteger(0);
+    return ctx->fromInteger(static_cast<long long>(static_cast<unsigned long long>(a) << b));
+}
+
+static const proto::ProtoObject* py_rshift(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
+    long long a = posArgs->getAt(ctx, 0)->asLong(ctx);
+    long long b = posArgs->getAt(ctx, 1)->asLong(ctx);
+    if (b < 0 || b >= 64) return ctx->fromInteger(0);
+    return ctx->fromInteger(static_cast<long long>(a >> b));
+}
+
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     const proto::ProtoObject* mod = ctx->newObject(true);
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "add"),
@@ -189,6 +209,10 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_not_));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "invert"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_invert));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "lshift"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_lshift));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "rshift"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_rshift));
     return mod;
 }
 
