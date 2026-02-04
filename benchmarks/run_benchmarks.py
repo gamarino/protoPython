@@ -168,16 +168,116 @@ def format_report(results):
     return "\n".join(lines)
 
 
+def run_cpython_only_bench(cpython_bin, warmup_runs, n_runs, run_fn):
+    """Run only the CPython side of a benchmark; returns (0.0, median_cpython_ms)."""
+    script_dir = SCRIPT_DIR
+    if run_fn == "startup_empty":
+        for _ in range(warmup_runs):
+            run_cmd([cpython_bin, "-c", "import abc"])
+        times = []
+        for _ in range(n_runs):
+            t, _ = run_cmd([cpython_bin, "-c", "import abc"])
+            times.append(t)
+    elif run_fn == "int_sum_loop":
+        script = script_dir / "int_sum_loop.py"
+        script_str = str(script.resolve())
+        for _ in range(warmup_runs):
+            run_cmd([cpython_bin, script_str])
+        times = []
+        for _ in range(n_runs):
+            t, _ = run_cmd([cpython_bin, script_str])
+            times.append(t)
+    elif run_fn == "list_append_loop":
+        script = script_dir / "list_append_loop.py"
+        script_str = str(script.resolve())
+        for _ in range(warmup_runs):
+            run_cmd([cpython_bin, script_str])
+        times = []
+        for _ in range(n_runs):
+            t, _ = run_cmd([cpython_bin, script_str])
+            times.append(t)
+    elif run_fn == "str_concat_loop":
+        script = script_dir / "str_concat_loop.py"
+        script_str = str(script.resolve())
+        for _ in range(warmup_runs):
+            run_cmd([cpython_bin, script_str])
+        times = []
+        for _ in range(n_runs):
+            t, _ = run_cmd([cpython_bin, script_str])
+            times.append(t)
+    elif run_fn == "range_iterate":
+        script = script_dir / "range_iterate.py"
+        script_str = str(script.resolve())
+        for _ in range(warmup_runs):
+            run_cmd([cpython_bin, script_str])
+        times = []
+        for _ in range(n_runs):
+            t, _ = run_cmd([cpython_bin, script_str])
+            times.append(t)
+    else:
+        return 0.0, 0.0
+    return 0.0, median(times)
+
+
+def format_report_cpython_only(results, cpython_bin):
+    """Format report when only CPython was run (protopy N/A)."""
+    lines = [
+        "```",
+        "┌─────────────────────────────────────────────────────────────────────┐",
+        f"│ CPython 3.14 baseline only (protoPython N/A — startup hang)         │",
+        f"│ (median of {N_RUNS} runs, N=100000 where applicable)                       │",
+        f"│ {datetime.now(timezone.utc).strftime('%Y-%m-%d')} {platform.system()} {platform.machine()}                                │",
+        "├─────────────────────────────────────────────────────────────────────┤",
+        "│ Benchmark              │ protopy (ms) │ cpython (ms) │ Notes         │",
+        "├────────────────────────┼──────────────┼──────────────┼──────────────┤",
+    ]
+    for name, (tp, tc) in results.items():
+        lines.append(f"│ {name:<22} │       N/A    │ {tc:>10.2f}  │ baseline      │")
+    lines.append("└─────────────────────────────────────────────────────────────────────┘")
+    lines.append("")
+    lines.append("Legend: protoPython was not measured (known startup/GC hang; see TESTING.md).")
+    lines.append("```")
+    return "\n".join(lines)
+
+
 def main():
     parser = argparse.ArgumentParser(description="protoPython benchmark harness")
     parser.add_argument(
         "--output", "-o",
         help="Write markdown report (e.g. reports/YYYY-MM-DD_protopy_vs_cpython.md)",
     )
+    parser.add_argument(
+        "--cpython-only",
+        action="store_true",
+        help="Run only CPython benchmarks (skip protoPython); use when protopy hangs.",
+    )
     args = parser.parse_args()
 
-    protopy_bin = os.environ.get("PROTOPY_BIN")
     cpython_bin = os.environ.get("CPYTHON_BIN", "python3")
+
+    if args.cpython_only:
+        results = {}
+        for name, key in [
+            ("startup_empty", "startup_empty"),
+            ("int_sum_loop", "int_sum_loop"),
+            ("list_append_loop", "list_append_loop"),
+            ("str_concat_loop", "str_concat_loop"),
+            ("range_iterate", "range_iterate"),
+        ]:
+            _, tc = run_cpython_only_bench(cpython_bin, WARMUP_RUNS, N_RUNS, key)
+            results[name] = (0.0, tc)
+            print(f"{name}: cpython={tc:.2f}ms (protopy skipped)")
+        if args.output:
+            out_path = Path(args.output)
+            if not out_path.is_absolute():
+                out_path = REPORTS_DIR / out_path.name
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            report = format_report_cpython_only(results, cpython_bin)
+            out_path.write_text(report, encoding="utf-8")
+            print(f"Report written to {out_path}")
+        return 0
+
+    protopy_bin = os.environ.get("PROTOPY_BIN")
     if not protopy_bin or not os.path.isfile(protopy_bin):
         print("Error: PROTOPY_BIN must point to protopy executable", file=sys.stderr)
         sys.exit(2)
