@@ -195,26 +195,28 @@ def bench_range_iterate(protopy_bin, cpython_bin, timeout=60, trace_file=None, v
 
 
 def bench_multithreaded_cpu(protopy_bin, cpython_bin, timeout=60, trace_file=None, verbose=False):
-    """CPU-bound work: 4 chunks. CPython uses 4 threads (GIL serializes). protoPython uses SINGLE_THREAD=1 (same work in main)."""
+    """CPU-bound work: 4 chunks. Both run with SINGLE_THREAD=1 (4 chunks in main) for fair comparison.
+    CPython is GIL-limited (single CPU); protoPython threading is stubbed so same model. When protoPython
+    gets real threading it could run 4 chunks in parallel (multi-CPU)."""
     script = SCRIPT_DIR / "multithreaded_cpu.py"
     if not script.exists():
         return None, None
     script_str = str(script.resolve())
-    protopy_env = {"SINGLE_THREAD": "1"}
+    single_thread_env = {"SINGLE_THREAD": "1"}
     times_protopy = []
     times_cpython = []
     for _ in range(WARMUP_RUNS):
-        run_cmd([protopy_bin, "--path", PATH_ARG, "--script", script_str], timeout=timeout, stderr_file=trace_file, env=protopy_env, verbose=verbose)
-        run_cmd([cpython_bin, script_str], timeout=timeout, verbose=verbose)
+        run_cmd([protopy_bin, "--path", PATH_ARG, "--script", script_str], timeout=timeout, stderr_file=trace_file, env=single_thread_env, verbose=verbose)
+        run_cmd([cpython_bin, script_str], timeout=timeout, env=single_thread_env, verbose=verbose)
     for i in range(N_RUNS):
         if verbose:
             print(f"    multithread_cpu protopy run {i+1}/{N_RUNS}:", end="")
-        t, _, to = run_cmd([protopy_bin, "--path", PATH_ARG, "--script", script_str], timeout=timeout, stderr_file=trace_file, env=protopy_env, verbose=verbose)
+        t, _, to = run_cmd([protopy_bin, "--path", PATH_ARG, "--script", script_str], timeout=timeout, stderr_file=trace_file, env=single_thread_env, verbose=verbose)
         if not to:
             times_protopy.append(t)
         if verbose:
             print(f"    multithread_cpu cpython run {i+1}/{N_RUNS}:", end="")
-        t, _, to = run_cmd([cpython_bin, script_str], timeout=timeout, verbose=verbose)
+        t, _, to = run_cmd([cpython_bin, script_str], timeout=timeout, env=single_thread_env, verbose=verbose)
         if not to:
             times_cpython.append(t)
     return median(times_protopy) if times_protopy else None, median(times_cpython) if times_cpython else None

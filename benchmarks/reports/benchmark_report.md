@@ -17,4 +17,6 @@
 └─────────────────────────────────────────────────────────────────────┘
 
 Legend: Ratio = protopy/cpython. Lower is better. TIMEOUT = all runs hit timeout.
+
+multithread_cpu: single-thread comparison (both interpreters run with SINGLE_THREAD=1); ratio reflects per-chunk interpreter speed, not multi-CPU use.
 ```

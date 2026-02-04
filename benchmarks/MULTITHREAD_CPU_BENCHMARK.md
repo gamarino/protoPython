@@ -2,22 +2,23 @@
 
 This benchmark compares **wall-clock time** for a fixed amount of CPU-bound work when that work is expressed as a *multithreaded* task.
 
-## What it measures
+## What it measures (current setup: single-thread comparison)
 
 - **Same total work:** 4 chunks of `sum(range(50_000))` (CPU-bound, no I/O).
-- **CPython 3.14:** Runs the script **with 4 threads**. Because of the **Global Interpreter Lock (GIL)**, only one thread executes Python bytecode at a time. The four threads are effectively serialized, so wall time is similar to running four times the single-chunk work in one thread, plus thread creation/join overhead.
-- **protoPython:** Runs the same script with **`SINGLE_THREAD=1`**, so all 4 chunks run in the **main thread** (protoPython’s `threading` module is currently a stub). Total work is identical; there is no thread overhead.
+- **Both interpreters** run the script with **`SINGLE_THREAD=1`**, so all 4 chunks run **sequentially in the main thread**. This gives a **fair comparison of per-chunk interpreter speed** without GIL or thread overhead differences.
+- **protoPython:** Its `threading` module is currently a stub; `SINGLE_THREAD=1` is required so the workload runs in the main thread.
+- **CPython 3.14:** Also run with `SINGLE_THREAD=1` so execution model matches (single thread, same total work).
 
-## Why protoPython can be dramatically faster
 
-| | CPython 3.14 | protoPython |
-|--|--------------|-------------|
-| **Execution** | 4 threads; GIL serializes them | Same work in one thread |
-| **Wall time** | High (GIL + thread overhead) | Can be **dramatically less** (no GIL, no extra threads) |
+## Interpreting the ratio
 
-When the **ratio (protopy/cpython)** is **below 1.0**, protoPython is faster. On multithreaded CPU-bound workloads, protoPython often shows **dramatically less** wall time because it is not limited by the GIL and (in this benchmark) avoids thread overhead.
+| Ratio | Meaning |
+|-------|--------|
+| **< 1** | protoPython is faster (fewer ms). |
+| **= 1** | Same wall time. |
+| **> 1** | CPython is faster; the number reflects relative **per-chunk interpreter speed** (e.g. 3.5x means CPython's single-thread execution of the same work is ~3.5x faster). |
 
-When protoPython gains real multi-threaded execution, the same workload could be run in parallel and wall time would drop further (closer to one chunk’s time instead of four).
+This benchmark does **not** yet measure multi-CPU utilization. When protoPython implements real parallel threading, the script can be run without `SINGLE_THREAD=1` and wall time could drop (work split across CPUs).
 
 ## How to run
 
@@ -48,5 +49,5 @@ Example:
 ## Script details
 
 - **Script:** [multithreaded_cpu.py](multithreaded_cpu.py)
-- **Env:** `SINGLE_THREAD=1` is set by the harness when invoking protopy so that all work runs in the main thread. CPython runs without it, so it uses 4 threads.
+- **Env:** `SINGLE_THREAD=1` is set by the harness for **both** protopy and CPython so that all work runs in the main thread and the comparison is single-thread vs single-thread.
 - **Workload:** 4 × `sum(range(50_000))`; identical total CPU work in both runs.

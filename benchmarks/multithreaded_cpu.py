@@ -1,7 +1,16 @@
-# multithreaded_cpu.py - Benchmark: CPU-bound work, multithreaded (CPython) vs single-thread (protoPython)
-# Same total work: 4 chunks of sum(range(CHUNK)). CPython runs 4 threads (GIL serializes).
-# protoPython: set SINGLE_THREAD=1 to run 4 chunks in main (threading is stubbed).
-# Expectation: CPython multithreaded wall time is high (GIL); protoPython single-thread same work can be less.
+# multithreaded_cpu.py - Benchmark: same CPU work, single-thread (fair comparison)
+#
+# Execution model:
+# - Harness sets SINGLE_THREAD=1 for BOTH interpreters so both run 4 chunks in the
+#   main thread. This gives a fair comparison (same work, same execution model).
+# - CPython: with GIL, even 4 threads would serialize to one CPU; running in main
+#   avoids thread overhead and measures single-thread throughput.
+# - protoPython: threading is currently a stub (Thread.start/join are no-ops), so
+#   we must run in main. protoPython is designed to be GIL-free; when real threading
+#   is implemented, it could run 4 chunks in parallel (multi-CPU) and wall time
+#   would drop toward one chunk's time.
+#
+# Same total work: 4 x sum(range(CHUNK)).
 
 import os
 
