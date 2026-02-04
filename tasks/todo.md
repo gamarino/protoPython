@@ -59,6 +59,9 @@ See [docs/NEXT_20_STEPS_V7.md](../docs/NEXT_20_STEPS_V7.md). Steps 65–84 compl
 ## 11. Next 20 Steps (v8)
 
 See [docs/NEXT_20_STEPS_V8.md](../docs/NEXT_20_STEPS_V8.md). Steps 85–104 planned.
+- [x] Step 95: benchmark range_iterate
+- [x] Step 96: integrate benchmarks into harness and report
+- [x] Step 97: vars builtin (stub)
 - [x] Step 85: pow builtin
 - [x] Step 86: round builtin
 - [x] Step 87: str strip lstrip rstrip

@@ -22,9 +22,9 @@ Plan for 20 incremental milestones. Each step: implement → update docs → `gi
 | 92 | Execution engine: `BUILD_LIST` | `feat(protoPython): exec build list` |
 | 93 | Benchmark: `list_append_loop` | `feat(protoPython): benchmark list append` |
 | 94 | Benchmark: `str_concat_loop` | `feat(protoPython): benchmark str concat` |
-| 95 | Benchmark: `range_iterate` | `feat(protoPython): benchmark range iterate` |
-| 96 | Integrate new benchmarks into harness and report | `feat(protoPython): benchmark report extend` |
-| 97 | Builtin `vars()`: return object `__dict__` (stub) | `feat(protoPython): vars builtin` |
+| 95 | Benchmark: `range_iterate` | done |
+| 96 | Integrate new benchmarks into harness and report | done |
+| 97 | Builtin `vars()`: return object `__dict__` (stub) | done |
 | 98 | Builtin `sorted()`: return sorted list | `feat(protoPython): sorted builtin` |
 | 99 | os.path stub: `join`, `exists`, `isdir` | `feat(protoPython): os.path stub` |
 | 100 | pathlib stub: `Path` class basics | `feat(protoPython): pathlib stub` |

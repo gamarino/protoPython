@@ -76,7 +76,7 @@ Transitioning from interpreted to compiled execution.
 A dedicated performance test suite to measure protoPython execution speed and compare it against CPython 3.14.
 
 - [x] **Benchmark harness**: [benchmarks/run_benchmarks.py](benchmarks/run_benchmarks.py) runs workloads on protopy and CPython. Use `PROTOPY_BIN`, `CPYTHON_BIN`, `--output`.
-- [x] **Benchmark categories** (initial): Startup (`startup_empty`), Arithmetic (`int_sum_loop`). Future: object creation, string ops, builtins.
+- [x] **Benchmark categories**: Startup (`startup_empty`), Arithmetic (`int_sum_loop`), `list_append_loop`, `str_concat_loop`, `range_iterate` (iteration over `range(N)`).
 - [x] **Reproducibility**: Warm-up runs before timing; median of 5 runs.
 - [x] **Output**: Human-readable report (see §7.2) via `--output`; writes to `benchmarks/reports/`.
 

@@ -78,6 +78,63 @@ def bench_int_sum_loop(protopy_bin, cpython_bin):
     return median(times_protopy), median(times_cpython)
 
 
+def bench_list_append_loop(protopy_bin, cpython_bin):
+    """Time to run list append loop with N=10000."""
+    script = SCRIPT_DIR / "list_append_loop.py"
+    if not script.exists():
+        return 0.0, 0.0
+    script_str = str(script.resolve())
+    times_protopy = []
+    times_cpython = []
+    for _ in range(WARMUP_RUNS):
+        run_cmd([protopy_bin, "--path", str(SCRIPT_DIR), "--script", script_str])
+        run_cmd([cpython_bin, script_str])
+    for _ in range(N_RUNS):
+        t, _ = run_cmd([protopy_bin, "--path", str(SCRIPT_DIR), "--script", script_str])
+        times_protopy.append(t)
+        t, _ = run_cmd([cpython_bin, script_str])
+        times_cpython.append(t)
+    return median(times_protopy), median(times_cpython)
+
+
+def bench_str_concat_loop(protopy_bin, cpython_bin):
+    """Time to run string concat loop with N=10000."""
+    script = SCRIPT_DIR / "str_concat_loop.py"
+    if not script.exists():
+        return 0.0, 0.0
+    script_str = str(script.resolve())
+    times_protopy = []
+    times_cpython = []
+    for _ in range(WARMUP_RUNS):
+        run_cmd([protopy_bin, "--path", str(SCRIPT_DIR), "--script", script_str])
+        run_cmd([cpython_bin, script_str])
+    for _ in range(N_RUNS):
+        t, _ = run_cmd([protopy_bin, "--path", str(SCRIPT_DIR), "--script", script_str])
+        times_protopy.append(t)
+        t, _ = run_cmd([cpython_bin, script_str])
+        times_cpython.append(t)
+    return median(times_protopy), median(times_cpython)
+
+
+def bench_range_iterate(protopy_bin, cpython_bin):
+    """Time to iterate over range(N) with N=100000."""
+    script = SCRIPT_DIR / "range_iterate.py"
+    if not script.exists():
+        return 0.0, 0.0
+    script_str = str(script.resolve())
+    times_protopy = []
+    times_cpython = []
+    for _ in range(WARMUP_RUNS):
+        run_cmd([protopy_bin, "--path", str(SCRIPT_DIR), "--script", script_str])
+        run_cmd([cpython_bin, script_str])
+    for _ in range(N_RUNS):
+        t, _ = run_cmd([protopy_bin, "--path", str(SCRIPT_DIR), "--script", script_str])
+        times_protopy.append(t)
+        t, _ = run_cmd([cpython_bin, script_str])
+        times_cpython.append(t)
+    return median(times_protopy), median(times_cpython)
+
+
 def geometric_mean(ratios):
     if not ratios:
         return 0.0
@@ -137,6 +194,8 @@ def main():
     results["list_append_loop"] = (tp, tc)
     tp, tc = bench_str_concat_loop(protopy_bin, cpython_bin)
     results["str_concat_loop"] = (tp, tc)
+    tp, tc = bench_range_iterate(protopy_bin, cpython_bin)
+    results["range_iterate"] = (tp, tc)
 
     for name, (tp, tc) in results.items():
         ratio = tp / tc if tc > 0 else 0
