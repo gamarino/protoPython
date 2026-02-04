@@ -9,8 +9,8 @@ This document catalogs stub implementations and their completion status.
 | **set** | union, intersection, difference | Implemented |
 | **itertools** | accumulate | Full implementation (default add, optional binary func) |
 | **itertools** | groupby, product, combinations, combinations_with_replacement, permutations | Return empty iterator (no longer None) |
-| **math** | isclose, log, log10, exp, sqrt, sin, cos, tan | Implemented |
-| **operator** | add, sub, mul, truediv, eq, lt, pow, floordiv, mod, neg, not_, invert | Implemented |
+| **math** | isclose, log, log10, exp, sqrt, sin, cos, tan, asin, acos, atan | Implemented |
+| **operator** | add, sub, mul, truediv, eq, lt, pow, floordiv, mod, neg, not_, invert, lshift, rshift | Implemented |
 
 ## Native (C++) Stubs — Remaining
 
@@ -71,6 +71,13 @@ This document catalogs stub implementations and their completion status.
 |--------|------|----------|
 | html | escape, unescape | Minimal: escape replaces &<>\"'; unescape reverses. |
 | difflib | SequenceMatcher, unified_diff | Stub: SequenceMatcher returns placeholder; unified_diff returns empty list. |
+
+## Python stdlib — New stubs (v23)
+
+| Module | Item | Behavior |
+|--------|------|----------|
+| shutil | copyfile, rmtree, copy, move | Stub: no-op. Full impl requires native file APIs. |
+| mimetypes | guess_type, guess_extension, guess_all_extensions | Stub: return (None, None), None, []. |
 
 ## Python stdlib — New stubs
 
