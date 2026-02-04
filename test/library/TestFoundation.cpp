@@ -1125,6 +1125,25 @@ TEST_F(FoundationTest, MathLog) {
     EXPECT_DOUBLE_EQ(val10, 2.0);
 }
 
+TEST_F(FoundationTest, ListRepeat) {
+    proto::ProtoContext* context = env.getContext();
+    const proto::ProtoObject* listPrototype = env.getListPrototype();
+    const proto::ProtoObject* listObj = context->newObject(true)->addParent(context, listPrototype);
+    listObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"),
+        context->newList()->appendLast(context, context->fromInteger(1))->appendLast(context, context->fromInteger(2))->asObject(context));
+    const proto::ProtoObject* mulM = listObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__mul__"));
+    ASSERT_NE(mulM, nullptr);
+    const proto::ProtoList* args = context->newList()->appendLast(context, context->fromInteger(3));
+    const proto::ProtoObject* result = mulM->asMethod(context)(context, listObj, nullptr, args, nullptr);
+    ASSERT_NE(result, nullptr);
+    const proto::ProtoObject* data = result->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"));
+    ASSERT_NE(data, nullptr);
+    ASSERT_TRUE(data->asList(context));
+    EXPECT_EQ(data->asList(context)->getSize(context), 6u);
+    EXPECT_EQ(data->asList(context)->getAt(context, 0)->asLong(context), 1);
+    EXPECT_EQ(data->asList(context)->getAt(context, 5)->asLong(context), 2);
+}
+
 TEST_F(FoundationTest, ItertoolsAccumulate) {
     proto::ProtoContext* context = env.getContext();
     const proto::ProtoObject* itertoolsMod = env.resolve("itertools");
