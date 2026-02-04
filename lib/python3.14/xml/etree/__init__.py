@@ -1,4 +1,4 @@
-# xml.etree - minimal stub.
+# xml.etree - minimal stub. Stub retained; full XML parser out of scope. See STUBS.md.
 
 def Element(tag, **kwargs):
     """Stub: raises NotImplementedError."""

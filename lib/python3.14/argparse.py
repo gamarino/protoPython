@@ -1,4 +1,5 @@
 # argparse.py - Minimal stub for argument parsing. Full behavior not implemented.
+# Stub retained: add_argument/parse_args return defaults. See STUBS.md.
 
 
 class Namespace:

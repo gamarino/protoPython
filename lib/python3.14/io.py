@@ -1,11 +1,11 @@
-# io.py - Python wrapper for _io
+# io.py - Python wrapper for _io. StringIO: minimal getvalue/read/write. See STUBS.md.
 import _io
 
 open = _io.open
 
 
 class StringIO:
-    """Minimal StringIO stub. Full implementation would provide read/write/getvalue."""
+    """Minimal StringIO: getvalue, read, write. Full implementation would extend buffer semantics."""
 
     def __init__(self, initial_value="", newline="\n"):
         self._value = initial_value if isinstance(initial_value, str) else ""

@@ -55,7 +55,7 @@ This document catalogs stub implementations and their completion status.
 | Module | Item | Behavior |
 |--------|------|----------|
 | atexit | register, unregister | No-op; does not register for exit. |
-| heapq | heappush, heappop | Raise NotImplementedError or minimal; add to STUBS when implemented. |
+| heapq | heappush, heappop, heapify | Implemented: list as min-heap; heappush, heappop, heapify in-place. |
 | io | StringIO | Minimal: getvalue, read, write. |
 | typing | Any, List, Dict, etc. | Minimal stub for type hints. |
 | unittest | TestCase, main | Minimal stub placeholders. |
