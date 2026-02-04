@@ -1356,6 +1356,32 @@ TEST_F(FoundationTest, MathComb) {
     EXPECT_EQ(result->asLong(context), 10);  // comb(5,2) == 10
 }
 
+TEST_F(FoundationTest, MathIsqrt) {
+    proto::ProtoContext* context = env.getContext();
+    const proto::ProtoObject* mathMod = env.resolve("math");
+    ASSERT_NE(mathMod, nullptr);
+    const proto::ProtoObject* isqrtM = mathMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "isqrt"));
+    ASSERT_NE(isqrtM, nullptr);
+    const proto::ProtoList* args = context->newList()->appendLast(context, context->fromInteger(10));
+    const proto::ProtoObject* result = isqrtM->asMethod(context)(context, mathMod, nullptr, args, nullptr);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->isInteger(context));
+    EXPECT_EQ(result->asLong(context), 3);  // isqrt(10) == 3
+}
+
+TEST_F(FoundationTest, MathAcosh) {
+    proto::ProtoContext* context = env.getContext();
+    const proto::ProtoObject* mathMod = env.resolve("math");
+    ASSERT_NE(mathMod, nullptr);
+    const proto::ProtoObject* acoshM = mathMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "acosh"));
+    ASSERT_NE(acoshM, nullptr);
+    const proto::ProtoList* args = context->newList()->appendLast(context, context->fromDouble(2.0));
+    const proto::ProtoObject* result = acoshM->asMethod(context)(context, mathMod, nullptr, args, nullptr);
+    ASSERT_NE(result, nullptr);
+    double val = result->isDouble(context) ? result->asDouble(context) : static_cast<double>(result->asLong(context));
+    EXPECT_NEAR(val, 1.3169578969248168, 1e-10);  // acosh(2)
+}
+
 TEST_F(FoundationTest, MathFactorial) {
     proto::ProtoContext* context = env.getContext();
     const proto::ProtoObject* mathMod = env.resolve("math");

@@ -364,6 +364,43 @@ static const proto::ProtoObject* py_prod(
     return ctx->fromDouble(result);
 }
 
+static const proto::ProtoObject* py_isqrt(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    long long n = posArgs->getAt(ctx, 0)->asLong(ctx);
+    if (n < 0) return PROTO_NONE;
+    long long r = static_cast<long long>(std::sqrt(static_cast<double>(n)));
+    if (r * r > n) --r;
+    return ctx->fromInteger(r);
+}
+
+static const proto::ProtoObject* py_acosh(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    double x = toDouble(ctx, posArgs->getAt(ctx, 0));
+    if (x < 1.0) return PROTO_NONE;
+    return ctx->fromDouble(std::acosh(x));
+}
+
+static const proto::ProtoObject* py_asinh(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    double x = toDouble(ctx, posArgs->getAt(ctx, 0));
+    return ctx->fromDouble(std::asinh(x));
+}
+
+static const proto::ProtoObject* py_atanh(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    double x = toDouble(ctx, posArgs->getAt(ctx, 0));
+    if (x <= -1.0 || x >= 1.0) return PROTO_NONE;
+    return ctx->fromDouble(std::atanh(x));
+}
+
 static long long gcd_impl(long long a, long long b) {
     a = a < 0 ? -a : a;
     b = b < 0 ? -b : b;
@@ -467,6 +504,14 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_factorial));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "prod"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_prod));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "isqrt"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_isqrt));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "acosh"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_acosh));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "asinh"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_asinh));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "atanh"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_atanh));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "gcd"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_gcd));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "lcm"),

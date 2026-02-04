@@ -156,6 +156,12 @@ See [docs/NEXT_20_STEPS_V29.md](../docs/NEXT_20_STEPS_V29.md). Steps 505–524: 
 
 - [x] Steps 505–524
 
+## 34. Next 20 Steps (v30) — completed
+
+See [docs/NEXT_20_STEPS_V30.md](../docs/NEXT_20_STEPS_V30.md). Steps 525–544: math.isqrt, math.acosh/asinh/atanh; multiprocessing, ssl stubs; foundation tests MathIsqrt, MathAcosh; STUBS and todo updated.
+
+- [x] Steps 525–544
+
 - [x] Step 145: ord builtin
 - [x] Step 146: chr builtin
 - [x] Step 147: bin builtin

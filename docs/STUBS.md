@@ -9,7 +9,7 @@ This document catalogs stub implementations and their completion status.
 | **set** | union, intersection, difference | Implemented |
 | **itertools** | accumulate | Full implementation (default add, optional binary func) |
 | **itertools** | groupby, product, combinations, combinations_with_replacement, permutations | Return empty iterator (no longer None) |
-| **math** | isclose, log, log10, log2, log1p, exp, sqrt, sin, cos, tan, asin, acos, atan, atan2, degrees, radians, hypot, fmod, remainder, erf, erfc, gamma, lgamma, dist, perm, comb, factorial, prod | Implemented |
+| **math** | isclose, log, log10, log2, log1p, exp, sqrt, sin, cos, tan, asin, acos, atan, atan2, degrees, radians, hypot, fmod, remainder, erf, erfc, gamma, lgamma, dist, perm, comb, factorial, prod, isqrt, acosh, asinh, atanh | Implemented |
 | **operator** | add, sub, mul, truediv, eq, lt, pow, floordiv, mod, neg, not_, invert, lshift, rshift, and_, or_, xor, index | Implemented |
 
 ## Native (C++) Stubs — Remaining
@@ -120,6 +120,13 @@ This document catalogs stub implementations and their completion status.
 |--------|------|----------|
 | pickle | dump, dumps, load, loads | Stub: dump no-op; dumps return b''; load/loads return None. Full impl requires serialization. |
 | logging | getLogger, basicConfig, info, warning, error, debug | Stub: getLogger returns no-op logger; basicConfig no-op; level methods no-op. |
+
+## Python stdlib — New stubs (v30)
+
+| Module | Item | Behavior |
+|--------|------|----------|
+| multiprocessing | Process, Pool | Stub: Process start/join no-op; Pool returns None. Full impl requires process creation. |
+| ssl | SSLContext, wrap_socket | Stub: wrap_socket returns None. Full impl requires TLS. |
 
 ## Python stdlib — New stubs
 
