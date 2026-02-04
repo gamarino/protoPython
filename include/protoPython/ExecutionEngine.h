@@ -61,6 +61,8 @@ constexpr int OP_ROT_TWO = 125;
 constexpr int OP_DUP_TOP = 126;
 /** BINARY_MODULO: pop two values, push left % right. */
 constexpr int OP_BINARY_MODULO = 127;
+/** BINARY_POWER: pop two values, push left ** right. */
+constexpr int OP_BINARY_POWER = 128;
 
 /**
  * @brief Executes bytecode: LOAD_CONST, RETURN_VALUE, LOAD_NAME, STORE_NAME,

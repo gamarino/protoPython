@@ -13,7 +13,7 @@ Plan for 20 incremental milestones. Each step: implement → update docs → `gi
 | Step | Description | Status |
 |------|-------------|--------|
 | 325 | Create NEXT_20_STEPS_V20.md, update IMPLEMENTATION_PLAN | done |
-| 326 | Execution engine BINARY_POWER | pending |
+| 326 | Execution engine BINARY_POWER | done |
 | 327 | Execution engine BINARY_FLOOR_DIVIDE | pending |
 | 328 | math.log, math.log10, math.exp | pending |
 | 329 | operator.pow, operator.floordiv, operator.mod | pending |
