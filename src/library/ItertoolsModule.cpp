@@ -321,52 +321,53 @@ static const proto::ProtoObject* py_tee(
     return tup ? tup->asObject(ctx) : PROTO_NONE;
 }
 
+/** Returns an empty iterator (chain of no iterables). */
+static const proto::ProtoObject* empty_iterator(proto::ProtoContext* ctx, const proto::ProtoObject* self) {
+    const proto::ProtoObject* chainM = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "chain"));
+    if (!chainM || !chainM->asMethod(ctx)) return PROTO_NONE;
+    return chainM->asMethod(ctx)(ctx, self, nullptr, ctx->newList(), nullptr);
+}
+
 static const proto::ProtoObject* py_accumulate_stub(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    (void)self;
     (void)posArgs;
-    return PROTO_NONE;
+    return empty_iterator(ctx, self);
 }
 
 static const proto::ProtoObject* py_groupby_stub(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    (void)self;
     (void)posArgs;
-    return PROTO_NONE;
+    return empty_iterator(ctx, self);
 }
 
 static const proto::ProtoObject* py_product_stub(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    (void)self;
     (void)posArgs;
-    return PROTO_NONE;
+    return empty_iterator(ctx, self);
 }
 
 static const proto::ProtoObject* py_combinations_stub(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    (void)self;
     (void)posArgs;
-    return PROTO_NONE;
+    return empty_iterator(ctx, self);
 }
 
 static const proto::ProtoObject* py_combinations_with_replacement_stub(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    (void)self;
     (void)posArgs;
-    return PROTO_NONE;
+    return empty_iterator(ctx, self);
 }
 
 static const proto::ProtoObject* py_permutations_stub(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    (void)self;
     (void)posArgs;
-    return PROTO_NONE;
+    return empty_iterator(ctx, self);
 }
 
 static const proto::ProtoObject* py_chain(

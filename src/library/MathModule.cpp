@@ -59,11 +59,21 @@ static const proto::ProtoObject* py_copysign(
     return ctx->fromDouble(std::copysign(x, y));
 }
 
-static const proto::ProtoObject* py_isclose_stub(
+static const proto::ProtoObject* py_isclose(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    (void)posArgs;
-    return PROTO_FALSE;
+    if (posArgs->getSize(ctx) < 2) return PROTO_FALSE;
+    double a = toDouble(ctx, posArgs->getAt(ctx, 0));
+    double b = toDouble(ctx, posArgs->getAt(ctx, 1));
+    double rel_tol = 1e-09, abs_tol = 0.0;
+    if (posArgs->getSize(ctx) >= 3) rel_tol = toDouble(ctx, posArgs->getAt(ctx, 2));
+    if (posArgs->getSize(ctx) >= 4) abs_tol = toDouble(ctx, posArgs->getAt(ctx, 3));
+    if (std::isnan(a) && std::isnan(b)) return PROTO_TRUE;
+    if (std::isnan(a) || std::isnan(b)) return PROTO_FALSE;
+    if (std::isinf(a) && std::isinf(b)) return (a > 0) == (b > 0) ? PROTO_TRUE : PROTO_FALSE;
+    if (std::isinf(a) || std::isinf(b)) return PROTO_FALSE;
+    double diff = std::abs(a - b);
+    return (diff <= rel_tol * std::max(std::abs(a), std::abs(b)) || diff <= abs_tol) ? PROTO_TRUE : PROTO_FALSE;
 }
 
 static const proto::ProtoObject* py_isinf(
@@ -105,7 +115,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "copysign"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_copysign));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "isclose"),
-        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_isclose_stub));
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_isclose));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "isinf"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_isinf));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "isfinite"),
