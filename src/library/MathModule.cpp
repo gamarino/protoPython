@@ -66,6 +66,30 @@ static const proto::ProtoObject* py_isclose_stub(
     return PROTO_FALSE;
 }
 
+static const proto::ProtoObject* py_isinf(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_FALSE;
+    double x = toDouble(ctx, posArgs->getAt(ctx, 0));
+    return std::isinf(x) ? PROTO_TRUE : PROTO_FALSE;
+}
+
+static const proto::ProtoObject* py_isfinite(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_FALSE;
+    double x = toDouble(ctx, posArgs->getAt(ctx, 0));
+    return std::isfinite(x) ? PROTO_TRUE : PROTO_FALSE;
+}
+
+static const proto::ProtoObject* py_isnan(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_FALSE;
+    double x = toDouble(ctx, posArgs->getAt(ctx, 0));
+    return std::isnan(x) ? PROTO_TRUE : PROTO_FALSE;
+}
+
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     const proto::ProtoObject* mod = ctx->newObject(true);
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "sqrt"),
@@ -82,6 +106,12 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_copysign));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "isclose"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_isclose_stub));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "isinf"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_isinf));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "isfinite"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_isfinite));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "isnan"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_isnan));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "pi"),
         ctx->fromDouble(3.14159265358979323846));
     return mod;
