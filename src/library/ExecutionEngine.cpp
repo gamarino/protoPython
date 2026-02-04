@@ -322,6 +322,32 @@ const proto::ProtoObject* executeMinimalBytecode(
                     }
                 }
             }
+        } else if (op == OP_BINARY_XOR) {
+            i++;
+            if (stack.size() < 2) continue;
+            const proto::ProtoObject* b = stack.back();
+            stack.pop_back();
+            const proto::ProtoObject* a = stack.back();
+            stack.pop_back();
+            if (a->isInteger(ctx) && b->isInteger(ctx)) {
+                long long av = a->asLong(ctx);
+                long long bv = b->asLong(ctx);
+                stack.push_back(ctx->fromInteger(av ^ bv));
+            } else {
+                const proto::ProtoObject* xorM = a->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__xor__"));
+                if (xorM && xorM->asMethod(ctx)) {
+                    const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
+                    const proto::ProtoObject* result = xorM->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
+                    if (result) stack.push_back(result);
+                } else {
+                    const proto::ProtoObject* rxorM = b->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__rxor__"));
+                    if (rxorM && rxorM->asMethod(ctx)) {
+                        const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, a);
+                        const proto::ProtoObject* result = rxorM->asMethod(ctx)(ctx, b, nullptr, oneArg, nullptr);
+                        if (result) stack.push_back(result);
+                    }
+                }
+            }
         } else if (op == OP_UNARY_NEGATIVE) {
             if (stack.empty()) continue;
             const proto::ProtoObject* a = stack.back();

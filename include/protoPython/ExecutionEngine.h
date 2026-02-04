@@ -89,6 +89,8 @@ constexpr int OP_INPLACE_SUBTRACT = 139;
 constexpr int OP_BINARY_AND = 140;
 /** BINARY_OR: pop two values, push a | b (int bitwise or; else __or__/__ror__). */
 constexpr int OP_BINARY_OR = 141;
+/** BINARY_XOR: pop two values, push a ^ b (int bitwise xor; else __xor__/__rxor__). */
+constexpr int OP_BINARY_XOR = 142;
 
 /**
  * @brief Executes bytecode: LOAD_CONST, RETURN_VALUE, LOAD_NAME, STORE_NAME,
