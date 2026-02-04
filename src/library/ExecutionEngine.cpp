@@ -157,6 +157,39 @@ const proto::ProtoObject* executeMinimalBytecode(
             i++;
             if (arg >= 0 && static_cast<unsigned long>(arg) < n)
                 i = static_cast<unsigned long>(arg) - 1;
+        } else if (op == OP_LOAD_ATTR && names && stack.size() >= 1 && static_cast<unsigned long>(arg) < names->getSize(ctx)) {
+            i++;
+            const proto::ProtoObject* obj = stack.back();
+            stack.pop_back();
+            const proto::ProtoObject* nameObj = names->getAt(ctx, arg);
+            if (nameObj->isString(ctx)) {
+                const proto::ProtoObject* val = obj->getAttribute(ctx, nameObj->asString(ctx));
+                if (val) stack.push_back(val);
+            }
+        } else if (op == OP_STORE_ATTR && names && stack.size() >= 2 && static_cast<unsigned long>(arg) < names->getSize(ctx)) {
+            i++;
+            const proto::ProtoObject* val = stack.back();
+            stack.pop_back();
+            const proto::ProtoObject* obj = stack.back();
+            stack.pop_back();
+            const proto::ProtoObject* nameObj = names->getAt(ctx, arg);
+            if (nameObj->isString(ctx)) {
+                proto::ProtoObject* mutableObj = const_cast<proto::ProtoObject*>(obj);
+                mutableObj->setAttribute(ctx, nameObj->asString(ctx), val);
+            }
+        } else if (op == OP_BUILD_LIST) {
+            i++;
+            if (stack.size() >= static_cast<size_t>(arg)) {
+                std::vector<const proto::ProtoObject*> elems(arg);
+                for (int j = arg - 1; j >= 0; --j) {
+                    elems[j] = stack.back();
+                    stack.pop_back();
+                }
+                const proto::ProtoList* lst = ctx->newList();
+                for (int j = 0; j < arg; ++j)
+                    lst = lst->appendLast(ctx, elems[j]);
+                stack.push_back(lst->asObject(ctx));
+            }
         } else if (op == OP_CALL_FUNCTION) {
             i++;
             if (stack.size() < static_cast<size_t>(arg) + 1) continue;

@@ -29,6 +29,12 @@ constexpr int OP_COMPARE_OP = 109;
 constexpr int OP_POP_JUMP_IF_FALSE = 110;
 /** JUMP_ABSOLUTE: unconditionally jump to arg (bytecode index). */
 constexpr int OP_JUMP_ABSOLUTE = 111;
+/** LOAD_ATTR: pop obj, push obj.attr where attr = names[index]. */
+constexpr int OP_LOAD_ATTR = 112;
+/** STORE_ATTR: pop value, pop obj, set obj.attr = value where attr = names[index]. */
+constexpr int OP_STORE_ATTR = 113;
+/** BUILD_LIST: pop arg values from stack, build list, push list. */
+constexpr int OP_BUILD_LIST = 114;
 
 /**
  * @brief Executes bytecode: LOAD_CONST, RETURN_VALUE, LOAD_NAME, STORE_NAME,
