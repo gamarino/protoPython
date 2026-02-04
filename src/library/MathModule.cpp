@@ -447,6 +447,43 @@ static const proto::ProtoObject* py_nextafter(
     return ctx->fromDouble(std::nextafter(x, y));
 }
 
+static const proto::ProtoObject* py_ldexp(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
+    double x = toDouble(ctx, posArgs->getAt(ctx, 0));
+    int exp = static_cast<int>(posArgs->getAt(ctx, 1)->asLong(ctx));
+    return ctx->fromDouble(std::ldexp(x, exp));
+}
+
+static const proto::ProtoObject* py_frexp(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    double x = toDouble(ctx, posArgs->getAt(ctx, 0));
+    int exp = 0;
+    double mantissa = std::frexp(x, &exp);
+    const proto::ProtoList* lst = ctx->newList()
+        ->appendLast(ctx, ctx->fromDouble(mantissa))
+        ->appendLast(ctx, ctx->fromInteger(exp));
+    const proto::ProtoTuple* tup = ctx->newTupleFromList(lst);
+    return tup ? tup->asObject(ctx) : PROTO_NONE;
+}
+
+static const proto::ProtoObject* py_modf(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    double x = toDouble(ctx, posArgs->getAt(ctx, 0));
+    double intpart = 0.0;
+    double frac = std::modf(x, &intpart);
+    const proto::ProtoList* lst = ctx->newList()
+        ->appendLast(ctx, ctx->fromDouble(frac))
+        ->appendLast(ctx, ctx->fromDouble(intpart));
+    const proto::ProtoTuple* tup = ctx->newTupleFromList(lst);
+    return tup ? tup->asObject(ctx) : PROTO_NONE;
+}
+
 static long long gcd_impl(long long a, long long b) {
     a = a < 0 ? -a : a;
     b = b < 0 ? -b : b;
@@ -568,12 +605,20 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_ulp));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "nextafter"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_nextafter));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "ldexp"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_ldexp));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "frexp"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_frexp));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "modf"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_modf));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "gcd"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_gcd));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "lcm"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_lcm));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "pi"),
         ctx->fromDouble(3.14159265358979323846));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "e"),
+        ctx->fromDouble(2.71828182845904523536));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "nan"),
         ctx->fromDouble(std::numeric_limits<double>::quiet_NaN()));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "inf"),

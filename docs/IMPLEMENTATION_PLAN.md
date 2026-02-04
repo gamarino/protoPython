@@ -101,6 +101,8 @@ We aim for "No-Modification" compatibility with CPython tests.
 
 **Completed: Next 20 Steps v32 (565–584).** See [NEXT_20_STEPS_V32.md](NEXT_20_STEPS_V32.md). math.ulp, math.nextafter; ctypes, sqlite3 stubs; foundation tests MathUlp, MathNextafter; STUBS and todo updated.
 
+**Completed: Next 20 Steps v33 (585–604).** See [NEXT_20_STEPS_V33.md](NEXT_20_STEPS_V33.md). math.ldexp, math.frexp, math.modf, constant math.e; pprint, dis stubs; foundation test MathLdexpFrexpModfE; STUBS and todo updated.
+
 ## 5. Debugging & IDE Support
 To be a viable replacement, `protoPython` must support professional developer workflows.
 

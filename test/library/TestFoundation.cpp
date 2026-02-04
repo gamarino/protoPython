@@ -1438,6 +1438,50 @@ TEST_F(FoundationTest, MathNextafter) {
     EXPECT_LT(val, 1.0 + 1e-14);  // nextafter(1, inf) > 1, very close
 }
 
+TEST_F(FoundationTest, MathLdexpFrexpModfE) {
+    proto::ProtoContext* context = env.getContext();
+    const proto::ProtoObject* mathMod = env.resolve("math");
+    ASSERT_NE(mathMod, nullptr);
+    const proto::ProtoString* ldexpStr = proto::ProtoString::fromUTF8String(context, "ldexp");
+    const proto::ProtoString* frexpStr = proto::ProtoString::fromUTF8String(context, "frexp");
+    const proto::ProtoString* modfStr = proto::ProtoString::fromUTF8String(context, "modf");
+    const proto::ProtoString* eStr = proto::ProtoString::fromUTF8String(context, "e");
+    const proto::ProtoObject* ldexpM = mathMod->getAttribute(context, ldexpStr);
+    const proto::ProtoObject* frexpM = mathMod->getAttribute(context, frexpStr);
+    const proto::ProtoObject* modfM = mathMod->getAttribute(context, modfStr);
+    const proto::ProtoObject* eObj = mathMod->getAttribute(context, eStr);
+    ASSERT_NE(ldexpM, nullptr);
+    ASSERT_NE(frexpM, nullptr);
+    ASSERT_NE(modfM, nullptr);
+    ASSERT_NE(eObj, nullptr);
+    const proto::ProtoList* argsLdexp = context->newList()->appendLast(context, context->fromDouble(1.5))->appendLast(context, context->fromInteger(2));
+    const proto::ProtoObject* resLdexp = ldexpM->asMethod(context)(context, mathMod, nullptr, argsLdexp, nullptr);
+    ASSERT_NE(resLdexp, nullptr);
+    double valLdexp = resLdexp->isDouble(context) ? resLdexp->asDouble(context) : static_cast<double>(resLdexp->asLong(context));
+    EXPECT_NEAR(valLdexp, 6.0, 1e-10);  // ldexp(1.5, 2) == 6.0
+    const proto::ProtoList* argsFrexp = context->newList()->appendLast(context, context->fromDouble(8.0));
+    const proto::ProtoObject* resFrexp = frexpM->asMethod(context)(context, mathMod, nullptr, argsFrexp, nullptr);
+    ASSERT_NE(resFrexp, nullptr);
+    ASSERT_TRUE(resFrexp->asTuple(context));
+    const proto::ProtoTuple* tupFrexp = resFrexp->asTuple(context);
+    ASSERT_GE(tupFrexp->getSize(context), 2u);
+    double mantissa = tupFrexp->getAt(context, 0)->isDouble(context) ? tupFrexp->getAt(context, 0)->asDouble(context) : static_cast<double>(tupFrexp->getAt(context, 0)->asLong(context));
+    EXPECT_NEAR(mantissa, 0.5, 1e-10);  // frexp(8) -> (0.5, 4)
+    EXPECT_EQ(tupFrexp->getAt(context, 1)->asLong(context), 4);
+    const proto::ProtoList* argsModf = context->newList()->appendLast(context, context->fromDouble(2.5));
+    const proto::ProtoObject* resModf = modfM->asMethod(context)(context, mathMod, nullptr, argsModf, nullptr);
+    ASSERT_NE(resModf, nullptr);
+    ASSERT_TRUE(resModf->asTuple(context));
+    const proto::ProtoTuple* tupModf = resModf->asTuple(context);
+    ASSERT_GE(tupModf->getSize(context), 2u);
+    double frac = tupModf->getAt(context, 0)->isDouble(context) ? tupModf->getAt(context, 0)->asDouble(context) : static_cast<double>(tupModf->getAt(context, 0)->asLong(context));
+    double intpart = tupModf->getAt(context, 1)->isDouble(context) ? tupModf->getAt(context, 1)->asDouble(context) : static_cast<double>(tupModf->getAt(context, 1)->asLong(context));
+    EXPECT_NEAR(frac, 0.5, 1e-10);   // modf(2.5) -> (0.5, 2.0)
+    EXPECT_NEAR(intpart, 2.0, 1e-10);
+    double eVal = eObj->isDouble(context) ? eObj->asDouble(context) : static_cast<double>(eObj->asLong(context));
+    EXPECT_NEAR(eVal, 2.718281828459045, 1e-10);  // math.e
+}
+
 TEST_F(FoundationTest, MathFactorial) {
     proto::ProtoContext* context = env.getContext();
     const proto::ProtoObject* mathMod = env.resolve("math");

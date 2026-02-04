@@ -338,5 +338,11 @@ See [docs/NEXT_20_STEPS_V27.md](../docs/NEXT_20_STEPS_V27.md). Steps 465–484: 
 
 - [x] Steps 465–484
 
+## 32. Next 20 Steps (v33) — completed
+
+See [docs/NEXT_20_STEPS_V33.md](../docs/NEXT_20_STEPS_V33.md). Steps 585–604: math.ldexp, math.frexp, math.modf, constant math.e; pprint, dis stubs; foundation test MathLdexpFrexpModfE; STUBS, todo, IMPLEMENTATION_PLAN, TESTING updated.
+
+- [x] Steps 585–604
+
 ---
 *Updated from plan implementation. Mark items complete as work progresses.*

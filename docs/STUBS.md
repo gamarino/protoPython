@@ -9,7 +9,7 @@ This document catalogs stub implementations and their completion status.
 | **set** | union, intersection, difference | Implemented |
 | **itertools** | accumulate | Full implementation (default add, optional binary func) |
 | **itertools** | groupby, product, combinations, combinations_with_replacement, permutations | Return empty iterator (no longer None) |
-| **math** | isclose, log, log10, log2, log1p, exp, sqrt, sin, cos, tan, asin, acos, atan, atan2, degrees, radians, hypot, fmod, remainder, erf, erfc, gamma, lgamma, dist, perm, comb, factorial, prod, isqrt, acosh, asinh, atanh, cosh, sinh, tanh, ulp, nextafter; constants pi, nan, inf | Implemented |
+| **math** | isclose, log, log10, log2, log1p, exp, sqrt, sin, cos, tan, asin, acos, atan, atan2, degrees, radians, hypot, fmod, remainder, erf, erfc, gamma, lgamma, dist, perm, comb, factorial, prod, isqrt, acosh, asinh, atanh, cosh, sinh, tanh, ulp, nextafter, ldexp, frexp, modf; constants pi, e, nan, inf | Implemented |
 | **operator** | add, sub, mul, truediv, eq, lt, pow, floordiv, mod, neg, not_, invert, lshift, rshift, and_, or_, xor, index | Implemented |
 
 ## Native (C++) Stubs — Remaining
@@ -141,6 +141,13 @@ This document catalogs stub implementations and their completion status.
 |--------|------|----------|
 | ctypes | CDLL, c_int, c_double, c_long, byref, create_string_buffer, string_at | Stub: CDLL returns None; c_* return value; byref/string_at return None/b''. Full impl requires FFI. |
 | sqlite3 | connect, Connection | Stub: connect returns Connection stub; execute/commit/close no-op. Full impl requires SQLite. |
+
+## Python stdlib — New stubs (v33)
+
+| Module | Item | Behavior |
+|--------|------|----------|
+| pprint | pprint, pformat, PrettyPrinter | Stub: pprint no-op; pformat returns str(object); PrettyPrinter stub class. Full impl requires recursive pretty-printing and stream handling. |
+| dis | dis, disassemble, distb, opname | Stub: dis/disassemble/distb no-op; opname empty list. Full impl requires bytecode introspection and opcode tables. |
 
 ## Python stdlib — New stubs
 
