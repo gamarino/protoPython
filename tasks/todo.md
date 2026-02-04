@@ -120,6 +120,10 @@ See [docs/NEXT_20_STEPS_V21.md](../docs/NEXT_20_STEPS_V21.md). Steps 345–364: 
 
 See [docs/NEXT_20_STEPS_V22.md](../docs/NEXT_20_STEPS_V22.md). Steps 365–384: UNARY_INVERT, POP_TOP; math.tan; operator.invert; str/bytes.isascii; setattr, callable; list __iadd__, dict __ior__/__iror__; html, difflib stubs; foundation and engine tests; STUBS and todo updated.
 
+## 27. Next 20 Steps (v23) — completed
+
+See [docs/NEXT_20_STEPS_V23.md](../docs/NEXT_20_STEPS_V23.md). Steps 385–404: UNARY_POSITIVE, NOP, INPLACE_ADD; math.asin/acos/atan; operator.lshift/rshift; bytes removeprefix/removesuffix; repr, id (existing); int.bit_count; shutil, mimetypes stubs; foundation and engine tests; STUBS and todo updated.
+
 - [x] Step 145: ord builtin
 - [x] Step 146: chr builtin
 - [x] Step 147: bin builtin
