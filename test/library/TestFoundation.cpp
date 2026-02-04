@@ -1011,6 +1011,14 @@ TEST_F(FoundationTest, SetBasic) {
     removeM->asMethod(context)(context, setObj, nullptr, removeArgs, nullptr);
     const proto::ProtoObject* lenAfter = lenM->asMethod(context)(context, setObj, nullptr, context->newList(), nullptr);
     EXPECT_EQ(lenAfter->asLong(context), 1);
+
+    const proto::ProtoObject* popM = setObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "pop"));
+    ASSERT_NE(popM, nullptr);
+    const proto::ProtoObject* popped = popM->asMethod(context)(context, setObj, nullptr, context->newList(), nullptr);
+    ASSERT_NE(popped, nullptr);
+    EXPECT_TRUE(popped->isInteger(context));
+    const proto::ProtoObject* lenFinal = lenM->asMethod(context)(context, setObj, nullptr, context->newList(), nullptr);
+    EXPECT_EQ(lenFinal->asLong(context), 0);
 }
 
 TEST_F(FoundationTest, ListInsertRemoveClear) {

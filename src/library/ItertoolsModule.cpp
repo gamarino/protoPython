@@ -337,6 +337,22 @@ static const proto::ProtoObject* py_groupby_stub(
     return PROTO_NONE;
 }
 
+static const proto::ProtoObject* py_product_stub(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    (void)self;
+    (void)posArgs;
+    return PROTO_NONE;
+}
+
+static const proto::ProtoObject* py_combinations_stub(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    (void)self;
+    (void)posArgs;
+    return PROTO_NONE;
+}
+
 static const proto::ProtoObject* py_chain(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
@@ -432,6 +448,10 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_accumulate_stub));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "groupby"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_groupby_stub));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "product"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_product_stub));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "combinations"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_combinations_stub));
 
     return mod;
 }

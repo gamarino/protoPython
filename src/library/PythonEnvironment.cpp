@@ -1769,6 +1769,54 @@ static const proto::ProtoObject* py_bytes_count(
     return context->fromInteger(static_cast<long long>(count));
 }
 
+static const proto::ProtoObject* py_bytes_index(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoObject* r = py_bytes_find(context, self, nullptr, posArgs, nullptr);
+    if (!r || !r->isInteger(context) || r->asLong(context) < 0) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(context);
+        if (env) env->raiseValueError(context, context->fromUTF8String("subsection not found"));
+        return PROTO_NONE;
+    }
+    return r;
+}
+
+static const proto::ProtoObject* py_bytes_rfind(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoString* s = bytes_data(context, self);
+    if (!s || posArgs->getSize(context) < 1) return context->fromInteger(-1);
+    std::string haystack;
+    s->toUTF8String(context, haystack);
+    const proto::ProtoObject* sub = posArgs->getAt(context, 0);
+    long long start = 0, end = static_cast<long long>(haystack.size());
+    if (posArgs->getSize(context) >= 2 && posArgs->getAt(context, 1)->isInteger(context))
+        start = posArgs->getAt(context, 1)->asLong(context);
+    if (posArgs->getSize(context) >= 3 && posArgs->getAt(context, 2)->isInteger(context))
+        end = posArgs->getAt(context, 2)->asLong(context);
+    std::string needle;
+    if (sub->isInteger(context)) {
+        long long v = sub->asLong(context);
+        if (v < 0 || v > 255) return context->fromInteger(-1);
+        needle = static_cast<char>(static_cast<unsigned char>(v));
+    } else if (sub->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"))) {
+        const proto::ProtoString* subStr = bytes_data(context, sub);
+        if (!subStr) return context->fromInteger(-1);
+        subStr->toUTF8String(context, needle);
+    } else
+        return context->fromInteger(-1);
+    if (start >= end || static_cast<size_t>(start) >= haystack.size())
+        return context->fromInteger(-1);
+    size_t len = static_cast<size_t>(std::min(end, static_cast<long long>(haystack.size())) - start);
+    std::string slice = haystack.substr(static_cast<size_t>(start), len);
+    size_t found = slice.rfind(needle);
+    if (found == std::string::npos)
+        return context->fromInteger(-1);
+    return context->fromInteger(static_cast<long long>(start) + static_cast<long long>(found));
+}
+
 static const proto::ProtoString* str_from_self(proto::ProtoContext* context, const proto::ProtoObject* self) {
     if (self->isString(context)) return self->asString(context);
     const proto::ProtoObject* data = self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"));
@@ -2321,6 +2369,34 @@ static const proto::ProtoObject* py_str_isalnum(
     for (unsigned char c : s)
         if (!std::isalnum(c)) return PROTO_FALSE;
     return PROTO_TRUE;
+}
+
+static const proto::ProtoObject* py_str_isupper(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoString* str = str_from_self(context, self);
+    if (!str) return PROTO_FALSE;
+    std::string s;
+    str->toUTF8String(context, s);
+    if (s.empty()) return PROTO_FALSE;
+    for (unsigned char c : s)
+        if (std::isalpha(c) && !std::isupper(c)) return PROTO_FALSE;
+    return std::any_of(s.begin(), s.end(), [](unsigned char c) { return std::isalpha(c); }) ? PROTO_TRUE : PROTO_FALSE;
+}
+
+static const proto::ProtoObject* py_str_islower(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoString* str = str_from_self(context, self);
+    if (!str) return PROTO_FALSE;
+    std::string s;
+    str->toUTF8String(context, s);
+    if (s.empty()) return PROTO_FALSE;
+    for (unsigned char c : s)
+        if (std::isalpha(c) && !std::islower(c)) return PROTO_FALSE;
+    return std::any_of(s.begin(), s.end(), [](unsigned char c) { return std::isalpha(c); }) ? PROTO_TRUE : PROTO_FALSE;
 }
 
 static const proto::ProtoObject* py_str_center(
@@ -3025,6 +3101,10 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     strPrototype = strPrototype->setAttribute(context, py_isdigit, context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_isdigit));
     strPrototype = strPrototype->setAttribute(context, py_isspace, context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_isspace));
     strPrototype = strPrototype->setAttribute(context, py_isalnum, context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_isalnum));
+    const proto::ProtoString* py_isupper = proto::ProtoString::fromUTF8String(context, "isupper");
+    const proto::ProtoString* py_islower = proto::ProtoString::fromUTF8String(context, "islower");
+    strPrototype = strPrototype->setAttribute(context, py_isupper, context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_isupper));
+    strPrototype = strPrototype->setAttribute(context, py_islower, context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_islower));
 
     listPrototype = context->newObject(true);
     listPrototype = listPrototype->addParent(context, objectPrototype);
@@ -3167,6 +3247,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     const proto::ProtoString* py_bytes_count_name = proto::ProtoString::fromUTF8String(context, "count");
     bytesPrototype = bytesPrototype->setAttribute(context, py_bytes_find_name, context->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_find));
     bytesPrototype = bytesPrototype->setAttribute(context, py_bytes_count_name, context->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_count));
+    bytesPrototype = bytesPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "index"), context->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_index));
+    bytesPrototype = bytesPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "rfind"), context->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_rfind));
 
     sliceType = context->newObject(true);
     sliceType = sliceType->addParent(context, objectPrototype);

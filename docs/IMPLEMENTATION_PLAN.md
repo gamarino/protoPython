@@ -65,6 +65,8 @@ We aim for "No-Modification" compatibility with CPython tests.
 
 **Completed: Next 20 Steps v15 (225–244).** See [NEXT_20_STEPS_V15.md](NEXT_20_STEPS_V15.md). Builtins `eval`, `exec` stubs; str `casefold`, `isalpha`, `isdigit`, `isspace`, `isalnum`; bytes `find`, `count`; set `pop`; itertools `accumulate`, `groupby` stubs; math `floor`/`ceil` (float support); os.environ stub; foundation test isdigit.
 
+**Completed: Next 20 Steps v16 (245–264).** See [NEXT_20_STEPS_V16.md](NEXT_20_STEPS_V16.md). str `isupper`, `islower`; bytes `index`, `rfind`; itertools `product`, `combinations` stubs; math `fabs`, `trunc`; foundation test set.pop.
+
 ## 5. Debugging & IDE Support
 To be a viable replacement, `protoPython` must support professional developer workflows.
 
