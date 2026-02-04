@@ -133,6 +133,8 @@ def main():
     results["startup_empty"] = (tp, tc)
     tp, tc = bench_int_sum_loop(protopy_bin, cpython_bin)
     results["int_sum_loop"] = (tp, tc)
+    tp, tc = bench_list_append_loop(protopy_bin, cpython_bin)
+    results["list_append_loop"] = (tp, tc)
 
     for name, (tp, tc) in results.items():
         ratio = tp / tc if tc > 0 else 0
