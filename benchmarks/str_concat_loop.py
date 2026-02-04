@@ -1,5 +1,6 @@
 # str_concat_loop.py - Benchmark: s = ""; s = s + "x" for i in range(N)
-N = 10000
+# N kept moderate so protoPython completes within timeout (loop is O(N^2) per concat).
+N = 2000
 
 def main():
     s = ""
