@@ -20,8 +20,8 @@ Plan for 20 incremental milestones. Each step: implement → update docs → `gi
 | 330 | str.isidentifier() or str.isprintable() | done |
 | 331 | bytes.count(sub[, start[, end]]) | done (existing) |
 | 332 | list.__mul__ / list.__rmul__ (repeat) | done |
-| 333 | builtins.hasattr | pending |
-| 334 | builtins.delattr | pending |
+| 333 | builtins.hasattr | done (existing) |
+| 334 | builtins.delattr | done (existing) |
 | 335 | functools.lru_cache stub | pending |
 | 336 | atexit module stub | pending |
 | 337 | heapq module stub | pending |
