@@ -197,6 +197,25 @@ static const proto::ProtoObject* py_log10(
     return ctx->fromDouble(std::log10(x));
 }
 
+static const proto::ProtoObject* py_hypot(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
+    double sum = 0.0;
+    for (size_t k = 0; k < posArgs->getSize(ctx); k++)
+        sum += toDouble(ctx, posArgs->getAt(ctx, k)) * toDouble(ctx, posArgs->getAt(ctx, k));
+    return ctx->fromDouble(std::sqrt(sum));
+}
+
+static const proto::ProtoObject* py_fmod(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
+    double x = toDouble(ctx, posArgs->getAt(ctx, 0));
+    double y = toDouble(ctx, posArgs->getAt(ctx, 1));
+    return ctx->fromDouble(std::fmod(x, y));
+}
+
 static const proto::ProtoObject* py_exp(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
@@ -278,6 +297,10 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_log));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "log10"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_log10));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "hypot"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_hypot));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "fmod"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_fmod));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "exp"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_exp));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "gcd"),

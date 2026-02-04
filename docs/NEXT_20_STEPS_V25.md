@@ -16,7 +16,7 @@ Plan for 20 incremental milestones. Each step: implement → update docs → `gi
 | 426 | Execution engine BINARY_AND | done |
 | 427 | Execution engine BINARY_OR | done |
 | 428 | Execution engine BINARY_XOR | done |
-| 429 | Execution engine INPLACE_MULTIPLY | pending |
+| 429 | Execution engine INPLACE_MULTIPLY | done |
 | 430 | math.hypot, math.fmod | pending |
 | 431 | math.log2, math.log1p | pending |
 | 432 | operator.index | pending |
