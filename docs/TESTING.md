@@ -40,7 +40,9 @@ ctest -R test_regr
 3. **protopy with --dry-run**: CLI exit-code tests use `--dry-run` and avoid instantiating `PythonEnvironment`, so they pass.
 4. **Future**: A `--no-gc` workaround would require protoCore support to disable the GC thread at ProtoSpace creation time.
 
-### Tracking See [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) Phase 2 and [GIL_FREE_AUDIT.md](GIL_FREE_AUDIT.md). A fix likely requires changes in protoCore’s GC/`allocCell` synchronization.
+### Resolution (fixed in protoCore) The GC deadlock was fixed in protoCore’s `getFreeCells`: trigger GC only when there are no free cells (so the caller parks), and park/wait for GC completion when out of cells. See protoCore commit `fix(gc): resolve getFreeCells deadlock with GC thread`.
+
+### Resolve order (FoundationTest.SysModule) `PythonEnvironment::resolve()` resolves names in this order: (1) type shortcuts (object, type, int, list, …), (2) module import via `getImportModule` (e.g. `sys`, `builtins`, `os`), (3) builtins. So names like `sys` always resolve to the real module object, not a builtins attribute (e.g. a method) that would cause a type mismatch when calling `getAttribute` (protoCore expects an object cell, not a method cell).
 
 ## Incremental Regression Tracking
 

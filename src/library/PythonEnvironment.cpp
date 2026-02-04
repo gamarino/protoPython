@@ -4195,23 +4195,18 @@ const proto::ProtoObject* PythonEnvironment::resolve(const std::string& name) {
 
     const proto::ProtoObject* result = PROTO_NONE;
 
-    // 1. Check builtins
-    if (builtinsModule) {
-        const proto::ProtoObject* attr = builtinsModule->getAttribute(context, proto::ProtoString::fromUTF8String(context, name.c_str()));
-        if (attr && attr != PROTO_NONE) result = attr;
-    }
+    // 1. Type shortcuts (prototypes) so they are never shadowed by builtins or modules
+    if (name == "object") result = objectPrototype;
+    else if (name == "type") result = typePrototype;
+    else if (name == "int") result = intPrototype;
+    else if (name == "float") result = floatPrototype;
+    else if (name == "bool") result = boolPrototype;
+    else if (name == "str") result = strPrototype;
+    else if (name == "list") result = listPrototype;
+    else if (name == "dict") result = dictPrototype;
 
-    if (!result || result == PROTO_NONE) {
-        if (name == "object") result = objectPrototype;
-        else if (name == "type") result = typePrototype;
-        else if (name == "int") result = intPrototype;
-        else if (name == "float") result = floatPrototype;
-        else if (name == "bool") result = boolPrototype;
-        else if (name == "str") result = strPrototype;
-        else if (name == "list") result = listPrototype;
-        else if (name == "dict") result = dictPrototype;
-    }
-
+    // 2. Try module import so that names like "sys" resolve to the real module object,
+    //    not a builtins attribute (e.g. a method) that would cause type mismatch in getAttribute
     if (!result || result == PROTO_NONE) {
         const proto::ProtoObject* modWrapper = context->space->getImportModule(name.c_str(), "val");
         if (modWrapper) {
@@ -4223,6 +4218,14 @@ const proto::ProtoObject* PythonEnvironment::resolve(const std::string& name) {
                     sysModule = sysModule->setAttribute(context, proto::ProtoString::fromUTF8String(context, "modules"), updated);
                 }
             }
+        }
+    }
+
+    // 3. Fall back to builtins (e.g. len, print, type as callable)
+    if (!result || result == PROTO_NONE) {
+        if (builtinsModule) {
+            const proto::ProtoObject* attr = builtinsModule->getAttribute(context, proto::ProtoString::fromUTF8String(context, name.c_str()));
+            if (attr && attr != PROTO_NONE) result = attr;
         }
     }
 
