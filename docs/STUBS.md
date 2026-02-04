@@ -61,7 +61,7 @@ This document catalogs stub implementations and their completion status.
 | Module | Item | Behavior |
 |--------|------|----------|
 | re | compile, match, search, findall, sub | Native ReModule; lib stub fallback returns None/[]/string. |
-| atexit | register, unregister | No-op; does not register for exit. |
+| atexit | register, unregister, _run_exitfuncs | Implemented (v37): register stores callbacks; _run_exitfuncs invoked at shutdown. |
 | heapq | heappush, heappop, heapify | Implemented: list as min-heap; heappush, heappop, heapify in-place. |
 | io | StringIO | Minimal: getvalue, read, write. |
 | typing | Any, List, Dict, etc. | Minimal stub for type hints. |
@@ -82,7 +82,7 @@ This document catalogs stub implementations and their completion status.
 
 | Module | Item | Behavior |
 |--------|------|----------|
-| shutil | copyfile, rmtree, copy, move | Stub: no-op. Full impl requires native file APIs. |
+| shutil | copyfile, rmtree, copy, move | copyfile and copy implemented (v37); rmtree, move stub. |
 | mimetypes | guess_type, guess_extension, guess_all_extensions | Stub: return (None, None), None, []. |
 
 ## Python stdlib — New stubs (v24)
@@ -172,6 +172,15 @@ This document catalogs stub implementations and their completion status.
 ## Python stdlib — New stubs (v36)
 
 Reserved for v36. No new stub entries in this batch (v36 focused on documentation: concurrency model, protoCore compatibility).
+
+## Python stdlib — New stubs (v37)
+
+| Module | Item | Behavior |
+|--------|------|----------|
+| atexit | _run_exitfuncs | Wired to PythonEnvironment::runExitHandlers at script/REPL shutdown. |
+| shutil | copyfile, copy | Implemented via open/read/write. |
+| traceback | extract_tb, format_list, format_exception | Implemented. |
+| difflib | unified_diff | Implemented (line-by-line). |
 
 ## Python stdlib — New stubs
 

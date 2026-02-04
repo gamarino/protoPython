@@ -1979,3 +1979,25 @@ TEST_F(FoundationTest, DequeBasic) {
     length = lenFunc->asMethod(context)(context, d, nullptr, nullptr, nullptr);
     EXPECT_EQ(length->asLong(context), 0);
 }
+
+TEST_F(FoundationTest, AtexitRegister) {
+    const proto::ProtoObject* atexitMod = env.resolve("atexit");
+    ASSERT_NE(atexitMod, nullptr);
+    ASSERT_NE(atexitMod, PROTO_NONE);
+    const proto::ProtoString* reg = proto::ProtoString::fromUTF8String(env.getContext(), "register");
+    const proto::ProtoString* unreg = proto::ProtoString::fromUTF8String(env.getContext(), "unregister");
+    const proto::ProtoString* run = proto::ProtoString::fromUTF8String(env.getContext(), "_run_exitfuncs");
+    EXPECT_NE(atexitMod->getAttribute(env.getContext(), reg), nullptr);
+    EXPECT_NE(atexitMod->getAttribute(env.getContext(), unreg), nullptr);
+    EXPECT_NE(atexitMod->getAttribute(env.getContext(), run), nullptr);
+}
+
+TEST_F(FoundationTest, ShutilCopyfile) {
+    const proto::ProtoObject* shutilMod = env.resolve("shutil");
+    ASSERT_NE(shutilMod, nullptr);
+    ASSERT_NE(shutilMod, PROTO_NONE);
+    const proto::ProtoString* copyfile = proto::ProtoString::fromUTF8String(env.getContext(), "copyfile");
+    const proto::ProtoString* copy = proto::ProtoString::fromUTF8String(env.getContext(), "copy");
+    EXPECT_NE(shutilMod->getAttribute(env.getContext(), copyfile), nullptr);
+    EXPECT_NE(shutilMod->getAttribute(env.getContext(), copy), nullptr);
+}

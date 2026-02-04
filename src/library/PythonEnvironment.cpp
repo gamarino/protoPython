@@ -19,6 +19,7 @@
 #include <protoPython/OsPathModule.h>
 #include <protoPython/PathlibModule.h>
 #include <protoPython/CollectionsAbcModule.h>
+#include <protoPython/ExecutionEngine.h>
 #include <protoCore.h>
 #include <algorithm>
 #include <cctype>
@@ -4575,7 +4576,17 @@ int PythonEnvironment::executeModule(const std::string& moduleName) {
         }
     }
     if (executionHook) executionHook(moduleName, 1);
+    runExitHandlers();
     return exitRequested_ != 0 ? -3 : 0;
+}
+
+void PythonEnvironment::runExitHandlers() {
+    const proto::ProtoObject* atexitMod = resolve("atexit");
+    if (!atexitMod || atexitMod == PROTO_NONE) return;
+    const proto::ProtoObject* runFn = atexitMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "_run_exitfuncs"));
+    if (!runFn) return;
+    const proto::ProtoList* emptyArgs = context->newList();
+    protoPython::invokePythonCallable(context, runFn, emptyArgs);
 }
 
 void PythonEnvironment::runRepl(std::istream& in, std::ostream& out) {
@@ -4610,6 +4621,7 @@ void PythonEnvironment::runRepl(std::istream& in, std::ostream& out) {
         }
         out << ">>> " << std::flush;
     }
+    runExitHandlers();
 }
 
 void PythonEnvironment::incrementSysStats(const char* key) {

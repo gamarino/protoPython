@@ -115,6 +115,8 @@ We aim for "No-Modification" compatibility with CPython tests.
 
 **Completed: Next 20 Steps v36 (645–664).** See [NEXT_20_STEPS_V36.md](NEXT_20_STEPS_V36.md). Concurrent execution model (GIL_FREE_AUDIT); protoCore compatibility (INSTALLATION); STUBS v36 section; IMPLEMENTATION_PLAN, todo, TESTING updated.
 
+**Completed: Next 20 Steps v37 (665–684).** See [NEXT_20_STEPS_V37.md](NEXT_20_STEPS_V37.md). atexit (register/unregister/_run_exitfuncs) wired to runtime shutdown; shutil.copyfile and copy; traceback extract_tb, format_list, format_exception; difflib.unified_diff; foundation tests AtexitRegister, ShutilCopyfile; STUBS, todo, IMPLEMENTATION_PLAN updated.
+
 ## 5. Debugging & IDE Support
 To be a viable replacement, `protoPython` must support professional developer workflows.
 

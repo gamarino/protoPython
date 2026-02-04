@@ -362,5 +362,11 @@ See [docs/NEXT_20_STEPS_V36.md](../docs/NEXT_20_STEPS_V36.md). Steps 645–664: 
 
 - [x] Steps 645–664
 
+## 36. Next 20 Steps (v37) — completed
+
+See [docs/NEXT_20_STEPS_V37.md](../docs/NEXT_20_STEPS_V37.md). Steps 665–684: atexit wired to shutdown; shutil.copyfile/copy; traceback; difflib.unified_diff; foundation tests AtexitRegister, ShutilCopyfile.
+
+- [x] Steps 665–684
+
 ---
 *Updated from plan implementation. Mark items complete as work progresses.*

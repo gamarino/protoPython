@@ -115,6 +115,11 @@ public:
     void runRepl(std::istream& in = std::cin, std::ostream& out = std::cout);
 
     /**
+     * @brief Run atexit handlers (resolves atexit._run_exitfuncs and calls it).
+     */
+    void runExitHandlers();
+
+    /**
      * @brief Execution hook type: (moduleName, phase) where phase 0=before, 1=after.
      */
     using ExecutionHook = std::function<void(const std::string& moduleName, int phase)>;
