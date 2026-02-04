@@ -24,7 +24,7 @@ This document catalogs stub implementations and their completion status.
 
 | Module | Item | Status |
 |--------|------|--------|
-| **os** | environ, getcwd, chdir, path, pathsep, sep | Stub values; no-op where applicable |
+| **os** | environ, getcwd, chdir, path, pathsep, sep | Stub retained. environ empty dict (full impl requires native getenv); getcwd/chdir/path stub values; no-op where applicable. |
 | **tempfile** | gettempdir, gettempprefix, mkstemp, TemporaryFile | mkstemp returns (0, path) instead of raising |
 | **subprocess** | run, Popen, CompletedProcess | run returns CompletedProcess; Popen no-op |
 

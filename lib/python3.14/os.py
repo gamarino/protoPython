@@ -1,9 +1,11 @@
-# os.py - Minimal placeholder for protoPython
+# os.py - Minimal stub for protoPython.
+# environ: empty dict; full implementation would require native getenv/environ.
+# getcwd, chdir, path, getpid: stub values or no-op. See STUBS.md.
 import sys
 
 name = 'os'
 
-environ = {}  # Stub: empty dict; full impl would read process environment.
+environ = {}  # Stub: empty dict; full impl requires native getenv.
 path = []     # Stub: empty path list.
 pathsep = ':'
 sep = '/'
