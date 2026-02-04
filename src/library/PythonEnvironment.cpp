@@ -688,6 +688,13 @@ static const proto::ProtoObject* py_list_pop(
     return last;
 }
 
+/**
+ * list.extend(iterable): appends all items from iterable to the list.
+ * Limitation: only list-like objects are supported (object.asList() or object.__data__
+ * as list). Arbitrary iterables (e.g. range(), map(), filter()) are not supported;
+ * use a loop with append() instead. An iterator-based fallback was removed to avoid
+ * non-termination (infinite or very long iterators).
+ */
 static const proto::ProtoObject* py_list_extend(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -697,14 +704,9 @@ static const proto::ProtoObject* py_list_extend(
     if (!positionalParameters || positionalParameters->getSize(context) < 1) return PROTO_NONE;
     const proto::ProtoObject* otherObj = positionalParameters->getAt(context, 0);
     if (!otherObj) return PROTO_NONE;
-    
-    // Try multiple ways to get the list to extend with
+
     const proto::ProtoList* otherList = nullptr;
-    
-    // 1. Try direct asList conversion first (handles ProtoList wrapped as object)
     otherList = otherObj->asList(context);
-    
-    // 2. If that fails, try getting __data__ attribute
     if (!otherList) {
         const proto::ProtoObject* otherData = otherObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"));
         if (otherData) {
@@ -1306,6 +1308,41 @@ static const proto::ProtoObject* py_str_contains(
     std::string needle;
     item->asString(context)->toUTF8String(context, needle);
     return haystack.find(needle) != std::string::npos ? PROTO_TRUE : PROTO_FALSE;
+}
+
+static const proto::ProtoObject* py_str_find(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoString* str = str_from_self(context, self);
+    if (!str || positionalParameters->getSize(context) < 1) return context->fromInteger(-1);
+    std::string haystack;
+    str->toUTF8String(context, haystack);
+    const proto::ProtoObject* subObj = positionalParameters->getAt(context, 0);
+    if (!subObj->isString(context)) return context->fromInteger(-1);
+    std::string needle;
+    subObj->asString(context)->toUTF8String(context, needle);
+    size_t pos = haystack.find(needle);
+    return context->fromInteger(pos == std::string::npos ? -1 : static_cast<long long>(pos));
+}
+
+static const proto::ProtoObject* py_str_index(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoObject* result = py_str_find(context, self, parentLink, positionalParameters, keywordParameters);
+    if (!result || !result->isInteger(context)) return PROTO_NONE;
+    long long pos = result->asLong(context);
+    if (pos < 0) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(context);
+        if (env) env->raiseValueError(context, context->fromUTF8String("substring not found"));
+        return PROTO_NONE;
+    }
+    return result;
 }
 
 static const proto::ProtoObject* py_str_bool(
@@ -1989,6 +2026,10 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     strPrototype = strPrototype->setAttribute(context, py_replace, context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_replace));
     strPrototype = strPrototype->setAttribute(context, py_startswith, context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_startswith));
     strPrototype = strPrototype->setAttribute(context, py_endswith, context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_endswith));
+    const proto::ProtoString* py_find = proto::ProtoString::fromUTF8String(context, "find");
+    const proto::ProtoString* py_index = proto::ProtoString::fromUTF8String(context, "index");
+    strPrototype = strPrototype->setAttribute(context, py_find, context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_find));
+    strPrototype = strPrototype->setAttribute(context, py_index, context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_index));
 
     listPrototype = context->newObject(true);
     listPrototype = listPrototype->addParent(context, objectPrototype);

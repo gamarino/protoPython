@@ -9,7 +9,7 @@ The foundation of the runtime must be fully compatible with Python 3.14's semant
 - [x] **Phase 2: Full Method Coverage** (Next 20 Steps v4: Steps 01–24 done): Implement all dunder methods for built-in types. First batch: `__getitem__`, `__setitem__`, `__len__` for list and dict [done]. Second batch: list `__iter__`/`__next__` [done], dict key iteration [done via `__keys__` list]. Third batch: list/dict `__contains__` [done]. Fourth batch: list/dict `__eq__` [done]. Fifth batch: list ordering dunders `__lt__`, `__le__`, `__gt__`, `__ge__` [done]; dict ordering returns `PROTO_NONE` (unsupported for now). Sixth batch: list/dict `__repr__` and `__str__` [done]. Seventh batch: list/dict `__bool__` [done]. Eighth batch: tuple `__len__` and builtins tuple registration [done]. Ninth batch: list slicing for `__getitem__` with slice spec `[start, stop, step]` (step=1 only) [done]. Tenth batch: tuple `__getitem__`, `__iter__`, `__contains__`, `__bool__` [done]. Eleventh batch: string `__iter__`, `__contains__`, `__bool__`, `upper()`, `lower()`, `split()`, `join()` [done]; see [STRING_SUPPORT.md](STRING_SUPPORT.md); raw string iteration has known issues.
 - [x] **Missing-key behavior**: dict `__getitem__` raises KeyError for missing keys; see [EXCEPTIONS.md](EXCEPTIONS.md).
 - [x] **Dict views**: `keys()`, `values()`, `items()` backed by `__keys__` and `__data__`.
-- [x] **List methods**: `pop()`, `extend()`, `insert()`, `remove()`, `clear()`.
+- [x] **List methods**: `pop()`, `extend()`, `insert()`, `remove()`, `clear()`. Note: `list.extend(iterable)` accepts only list-like objects (with `__data__`/list); arbitrary iterables (e.g. `range`, `map`) are not supported—use a loop with `append()`.
 - [x] **Dict accessors**: `get()` and `setdefault()`.
 - [x] **Dict mutation helpers**: `update()`, `clear()`, `copy()` (shallow copy).
 - [x] **Set prototype**: `add`, `remove`, `__len__`, `__contains__`, `__bool__`, `__iter__`; see [SET_SUPPORT.md](SET_SUPPORT.md).
@@ -50,6 +50,8 @@ We aim for "No-Modification" compatibility with CPython tests.
 - [ ] **Bug-for-Bug Compatibility**: Where safe, emulate CPython edge cases to ensure existing code works without changes.
 
 **Completed: Next 20 Steps v8 (85–104).** Delivered: builtins `pow`, `round`, `zip`, `sorted`, `vars`; str methods (strip, replace, startswith, endswith); execution engine LOAD_ATTR, STORE_ATTR, BUILD_LIST; benchmarks (list_append_loop, str_concat_loop, range_iterate) and harness; native stubs for `os.path`, `pathlib`, `collections.abc`; CTest coverage for LOAD_ATTR/STORE_ATTR/BUILD_LIST; regrtest persistence (`--output`, `REGRTEST_RESULTS`, CTest `regrtest_persistence`).
+
+**Completed: Next 20 Steps v9 (105–124).** Delivered: builtins `filter`, `map`, `next(iter, default)`; execution engine BINARY_SUBSCR, BUILD_MAP; list.extend limitation documented; stubs: `typing` (Any, List, Dict), `dataclasses`, `unittest`, `functools.wraps`, `contextlib`; `os.path.realpath`/`normpath`; str `find`/`index`; foundation test for `sorted`; v9 scope and completion documented.
 
 ## 5. Debugging & IDE Support
 To be a viable replacement, `protoPython` must support professional developer workflows.
