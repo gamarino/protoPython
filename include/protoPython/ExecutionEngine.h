@@ -81,6 +81,8 @@ constexpr int OP_NOP = 135;
 constexpr int OP_INPLACE_ADD = 136;
 /** BINARY_LSHIFT: pop two values, push a << b (int bitwise). */
 constexpr int OP_BINARY_LSHIFT = 137;
+/** BINARY_RSHIFT: pop two values, push a >> b (int bitwise). */
+constexpr int OP_BINARY_RSHIFT = 138;
 
 /**
  * @brief Executes bytecode: LOAD_CONST, RETURN_VALUE, LOAD_NAME, STORE_NAME,

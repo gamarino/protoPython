@@ -240,6 +240,20 @@ const proto::ProtoObject* executeMinimalBytecode(
                 else av = static_cast<long long>(static_cast<unsigned long long>(av) << bv);
                 stack.push_back(ctx->fromInteger(av));
             }
+        } else if (op == OP_BINARY_RSHIFT) {
+            i++;
+            if (stack.size() < 2) continue;
+            const proto::ProtoObject* b = stack.back();
+            stack.pop_back();
+            const proto::ProtoObject* a = stack.back();
+            stack.pop_back();
+            if (a->isInteger(ctx) && b->isInteger(ctx)) {
+                long long av = a->asLong(ctx);
+                long long bv = b->asLong(ctx);
+                if (bv < 0 || bv >= 64) av = 0;
+                else av = av >> bv;
+                stack.push_back(ctx->fromInteger(av));
+            }
         } else if (op == OP_UNARY_NEGATIVE) {
             if (stack.empty()) continue;
             const proto::ProtoObject* a = stack.back();
