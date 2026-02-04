@@ -132,6 +132,12 @@ See [docs/NEXT_20_STEPS_V24.md](../docs/NEXT_20_STEPS_V24.md). Steps 405–424: 
 
 See [docs/NEXT_20_STEPS_V25.md](../docs/NEXT_20_STEPS_V25.md). Steps 425–444: BINARY_AND, BINARY_OR, BINARY_XOR, INPLACE_MULTIPLY; math.hypot/fmod/log2/log1p; operator.index; str/bytes rsplit maxsplit, builtins (existing); urllib.parse, zoneinfo stubs; foundation and engine tests; STUBS and todo updated.
 
+## 30. Next 20 Steps (v26) — planned
+
+See [docs/NEXT_20_STEPS_V26.md](../docs/NEXT_20_STEPS_V26.md). Steps 445–464 planned (INPLACE_* opcodes, math/operator, stubs, tests).
+
+- [ ] Steps 445–464
+
 - [x] Step 145: ord builtin
 - [x] Step 146: chr builtin
 - [x] Step 147: bin builtin

@@ -93,6 +93,13 @@ This document catalogs stub implementations and their completion status.
 | urllib.parse | quote, unquote, urljoin | Stub: return string/url unchanged. Full impl requires percent-encoding. |
 | zoneinfo | ZoneInfo | Stub class with key; __str__, __repr__. Full impl requires tzdata. |
 
+## Python stdlib — New stubs (v26) — planned
+
+| Module | Item | Behavior |
+|--------|------|----------|
+| plistlib | load, loads, dump, dumps | Stub: planned for v26. Full impl requires plist parser. |
+| quopri | encode, decode | Stub: planned for v26. Full impl requires quoted-printable encoding. |
+
 ## Python stdlib — New stubs
 
 | Module | Item | Behavior |
