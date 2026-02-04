@@ -15,6 +15,7 @@
 #include <protoPython/ItertoolsModule.h>
 #include <protoPython/JsonModule.h>
 #include <protoPython/ReModule.h>
+#include <protoPython/OsModule.h>
 #include <protoPython/OsPathModule.h>
 #include <protoPython/PathlibModule.h>
 #include <protoPython/CollectionsAbcModule.h>
@@ -4429,6 +4430,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     nativeProvider->registerModule("operator", [](proto::ProtoContext* ctx) { return operator_::initialize(ctx); });
     nativeProvider->registerModule("math", [](proto::ProtoContext* ctx) { return math::initialize(ctx); });
     nativeProvider->registerModule("time", [](proto::ProtoContext* ctx) { return time_module::initialize(ctx); });
+    nativeProvider->registerModule("_os", [](proto::ProtoContext* ctx) { return os_module::initialize(ctx); });
     nativeProvider->registerModule("_thread", [](proto::ProtoContext* ctx) { return thread_module::initialize(ctx); });
     nativeProvider->registerModule("functools", [](proto::ProtoContext* ctx) { return functools::initialize(ctx); });
     nativeProvider->registerModule("itertools", [](proto::ProtoContext* ctx) { return itertools::initialize(ctx); });

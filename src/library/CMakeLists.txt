@@ -11,6 +11,7 @@ add_library(protoPython SHARED
     MathModule.cpp
     OperatorModule.cpp
     ReModule.cpp
+    OsModule.cpp
     OsPathModule.cpp
     PathlibModule.cpp
     CollectionsAbcModule.cpp
