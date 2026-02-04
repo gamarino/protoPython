@@ -718,6 +718,31 @@ TEST_F(FoundationTest, TupleDunders) {
     EXPECT_EQ(emptyBool, PROTO_FALSE);
 }
 
+TEST_F(FoundationTest, SortedBuiltin) {
+    proto::ProtoContext* context = env.getContext();
+    const proto::ProtoObject* builtins = env.resolve("builtins");
+    ASSERT_NE(builtins, nullptr);
+    const proto::ProtoObject* pySorted = builtins->getAttribute(context, proto::ProtoString::fromUTF8String(context, "sorted"));
+    ASSERT_NE(pySorted, nullptr);
+    const proto::ProtoList* inputList = context->newList()
+        ->appendLast(context, context->fromInteger(3))
+        ->appendLast(context, context->fromInteger(1))
+        ->appendLast(context, context->fromInteger(2));
+    const proto::ProtoObject* listObj = env.getListPrototype()->newChild(context, true);
+    listObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), inputList->asObject(context));
+    const proto::ProtoList* args = context->newList()->appendLast(context, listObj);
+    const proto::ProtoObject* result = pySorted->asMethod(context)(context, builtins, nullptr, args, nullptr);
+    ASSERT_NE(result, nullptr);
+    const proto::ProtoObject* data = result->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"));
+    ASSERT_NE(data, nullptr);
+    const proto::ProtoList* outList = data->asList(context);
+    ASSERT_NE(outList, nullptr);
+    EXPECT_EQ(outList->getSize(context), 3u);
+    EXPECT_EQ(outList->getAt(context, 0)->asLong(context), 1);
+    EXPECT_EQ(outList->getAt(context, 1)->asLong(context), 2);
+    EXPECT_EQ(outList->getAt(context, 2)->asLong(context), 3);
+}
+
 TEST_F(FoundationTest, StringDunders) {
     proto::ProtoContext* context = env.getContext();
 
