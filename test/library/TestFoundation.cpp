@@ -1144,6 +1144,25 @@ TEST_F(FoundationTest, ListRepeat) {
     EXPECT_EQ(data->asList(context)->getAt(context, 5)->asLong(context), 2);
 }
 
+TEST_F(FoundationTest, HasattrDelattr) {
+    proto::ProtoContext* context = env.getContext();
+    const proto::ProtoObject* builtins = env.resolve("builtins");
+    ASSERT_NE(builtins, nullptr);
+    const proto::ProtoObject* hasattrM = builtins->getAttribute(context, proto::ProtoString::fromUTF8String(context, "hasattr"));
+    const proto::ProtoObject* delattrM = builtins->getAttribute(context, proto::ProtoString::fromUTF8String(context, "delattr"));
+    ASSERT_NE(hasattrM, nullptr);
+    ASSERT_NE(delattrM, nullptr);
+    proto::ProtoObject* obj = const_cast<proto::ProtoObject*>(context->newObject(true));
+    obj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "x"), context->fromInteger(42));
+    const proto::ProtoList* hasX = context->newList()->appendLast(context, obj)->appendLast(context, context->fromUTF8String("x"));
+    EXPECT_EQ(hasattrM->asMethod(context)(context, builtins, nullptr, hasX, nullptr), PROTO_TRUE);
+    const proto::ProtoList* hasY = context->newList()->appendLast(context, obj)->appendLast(context, context->fromUTF8String("y"));
+    EXPECT_EQ(hasattrM->asMethod(context)(context, builtins, nullptr, hasY, nullptr), PROTO_FALSE);
+    const proto::ProtoList* delX = context->newList()->appendLast(context, obj)->appendLast(context, context->fromUTF8String("x"));
+    delattrM->asMethod(context)(context, builtins, nullptr, delX, nullptr);
+    EXPECT_EQ(obj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "x")), PROTO_NONE);
+}
+
 TEST_F(FoundationTest, ItertoolsAccumulate) {
     proto::ProtoContext* context = env.getContext();
     const proto::ProtoObject* itertoolsMod = env.resolve("itertools");

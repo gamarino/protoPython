@@ -28,7 +28,7 @@ Plan for 20 incremental milestones. Each step: implement → update docs → `gi
 | 338 | json module stub enhancement | done (dumps/loads in JsonModule) |
 | 339 | Foundation test BINARY_POWER or math.log | done |
 | 340 | Foundation test list * int or bytes.count | done |
-| 341 | Foundation test hasattr/delattr or operator.floordiv | pending |
+| 341 | Foundation test hasattr/delattr or operator.floordiv | done |
 | 342 | Update STUBS.md with v20 stub changes | pending |
 | 343 | Update tasks/todo.md, mark steps done in v20 doc | pending |
 | 344 | Final v20 doc and IMPLEMENTATION_PLAN completion | pending |
