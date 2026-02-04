@@ -183,6 +183,33 @@ static const proto::ProtoObject* py_rshift(
     return ctx->fromInteger(static_cast<long long>(a >> b));
 }
 
+static const proto::ProtoObject* py_and_(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
+    long long a = posArgs->getAt(ctx, 0)->asLong(ctx);
+    long long b = posArgs->getAt(ctx, 1)->asLong(ctx);
+    return ctx->fromInteger(static_cast<long long>(static_cast<unsigned long long>(a) & static_cast<unsigned long long>(b)));
+}
+
+static const proto::ProtoObject* py_or_(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
+    long long a = posArgs->getAt(ctx, 0)->asLong(ctx);
+    long long b = posArgs->getAt(ctx, 1)->asLong(ctx);
+    return ctx->fromInteger(static_cast<long long>(static_cast<unsigned long long>(a) | static_cast<unsigned long long>(b)));
+}
+
+static const proto::ProtoObject* py_xor(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
+    long long a = posArgs->getAt(ctx, 0)->asLong(ctx);
+    long long b = posArgs->getAt(ctx, 1)->asLong(ctx);
+    return ctx->fromInteger(static_cast<long long>(static_cast<unsigned long long>(a) ^ static_cast<unsigned long long>(b)));
+}
+
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     const proto::ProtoObject* mod = ctx->newObject(true);
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "add"),
@@ -213,6 +240,12 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_lshift));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "rshift"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_rshift));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "and_"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_and_));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "or_"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_or_));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "xor"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_xor));
     return mod;
 }
 
