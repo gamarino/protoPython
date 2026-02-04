@@ -70,3 +70,4 @@ This document catalogs stub implementations and their completion status.
 |--------|------|----------|
 | statistics | mean, median, stdev | Stub: return 0.0. |
 | decimal | Decimal | Stub class; stores value; minimal __str__. |
+| fractions | Fraction | Stub class; stores n/d; minimal __str__. |
