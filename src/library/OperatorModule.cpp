@@ -124,6 +124,33 @@ static const proto::ProtoObject* py_mod(
     return ctx->fromDouble(std::fmod(aa, bb));
 }
 
+static const proto::ProtoObject* py_neg(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    const proto::ProtoObject* a = posArgs->getAt(ctx, 0);
+    if (a->isInteger(ctx)) return ctx->fromInteger(-a->asLong(ctx));
+    if (a->isDouble(ctx)) return ctx->fromDouble(-a->asDouble(ctx));
+    return PROTO_NONE;
+}
+
+static bool isTruthy(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
+    if (!obj || obj == PROTO_NONE) return false;
+    if (obj == PROTO_FALSE) return false;
+    if (obj == PROTO_TRUE) return true;
+    if (obj->isInteger(ctx)) return obj->asLong(ctx) != 0;
+    if (obj->isDouble(ctx)) return obj->asDouble(ctx) != 0.0;
+    if (obj->isString(ctx)) return obj->asString(ctx)->getSize(ctx) > 0;
+    return true;
+}
+
+static const proto::ProtoObject* py_not_(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    return isTruthy(ctx, posArgs->getAt(ctx, 0)) ? PROTO_FALSE : PROTO_TRUE;
+}
+
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     const proto::ProtoObject* mod = ctx->newObject(true);
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "add"),
@@ -144,6 +171,10 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_floordiv));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "mod"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_mod));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "neg"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_neg));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "not_"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_not_));
     return mod;
 }
 
