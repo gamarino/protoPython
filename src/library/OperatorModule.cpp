@@ -151,6 +151,18 @@ static const proto::ProtoObject* py_not_(
     return isTruthy(ctx, posArgs->getAt(ctx, 0)) ? PROTO_FALSE : PROTO_TRUE;
 }
 
+static const proto::ProtoObject* py_invert(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    const proto::ProtoObject* a = posArgs->getAt(ctx, 0);
+    if (a->isInteger(ctx)) {
+        long long n = a->asLong(ctx);
+        return ctx->fromInteger(static_cast<long long>(~static_cast<unsigned long long>(n)));
+    }
+    return PROTO_NONE;
+}
+
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     const proto::ProtoObject* mod = ctx->newObject(true);
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "add"),
@@ -175,6 +187,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_neg));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "not_"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_not_));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "invert"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_invert));
     return mod;
 }
 
