@@ -19,8 +19,8 @@ Plan for 20 incremental milestones. Each step: implement → update docs → `gi
 | 429 | Execution engine INPLACE_MULTIPLY | done |
 | 430 | math.hypot, math.fmod | done |
 | 431 | math.log2, math.log1p | done |
-| 432 | operator.index | pending |
-| 433 | str/bytes rsplit maxsplit or builtins | pending |
+| 432 | operator.index | done |
+| 433 | str/bytes rsplit maxsplit or builtins | done (existing) |
 | 434 | Stdlib stub urllib.parse or platform | pending |
 | 435 | Stdlib stub zoneinfo or plistlib | pending |
 | 436 | Foundation test BINARY_AND or math.hypot | pending |
