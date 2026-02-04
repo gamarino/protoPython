@@ -118,10 +118,10 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     // sys.version
     sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "version"), ctx->fromUTF8String("3.14.0 (protoPython, Feb 2026)"));
 
-    // sys.path (empty for now, PythonEnvironment will populate it)
+    // sys.path (empty for now, PythonEnvironment will populate it). Concurrent reads after init are safe; writes use protoCore setAttribute.
     sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "path"), ctx->newList()->asObject(ctx));
 
-    // sys.modules (dict mapping names to modules)
+    // sys.modules (dict mapping names to modules). Concurrent reads after init are safe; writes use protoCore setAttribute.
     sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "modules"), ctx->newObject(true));
 
     // sys.argv

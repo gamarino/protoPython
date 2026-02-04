@@ -30,8 +30,8 @@ This document lists mutable operations in the protoPython library and their thre
 
 | Operation | Uses protoCore | Thread-safe today | Follow-up |
 |-----------|----------------|-------------------|-----------|
-| settrace / gettrace | `PythonEnvironment::setTraceFunction` (pointer assignment) | Single-threaded | If trace is set from one thread and execution runs on another, add synchronization or document as single-threaded. |
-| sys.platform, sys.version, sys.path, sys.modules | Stored via `setAttribute` on sys object | Init only; path/modules may be read by many threads | Reads of immutable attributes are fine; mutations to sys.path/sys.modules from Python or C++ need a concurrency policy. |
+| settrace / gettrace | `PythonEnvironment::setTraceFunction` (pointer assignment) | Thread-safe (Step 2) | Resolved. |
+| sys.platform, sys.version, sys.path, sys.modules | Stored via `setAttribute` on sys object | Safe for concurrent read after init | **Policy:** sys.path and sys.modules are safe for concurrent read after initialization. Writes go through protoCore `setAttribute` (CAS). C++ code should not mutate sys.path/sys.modules from multiple threads without coordination; Python-level mutations use the same CAS path. |
 
 ### 3. BuiltinsModule (src/library/BuiltinsModule.cpp)
 
