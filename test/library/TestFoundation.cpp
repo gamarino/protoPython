@@ -1138,6 +1138,36 @@ TEST_F(FoundationTest, MathSqrt) {
     EXPECT_DOUBLE_EQ(val, 2.0);
 }
 
+TEST_F(FoundationTest, DictUnion) {
+    proto::ProtoContext* context = env.getContext();
+    const proto::ProtoObject* dictProto = env.getDictPrototype();
+    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "__data__");
+    const proto::ProtoString* keysName = proto::ProtoString::fromUTF8String(context, "__keys__");
+    const proto::ProtoObject* d1 = context->newObject(true)->addParent(context, dictProto);
+    d1->setAttribute(context, dataName, context->newSparseList()->asObject(context));
+    d1->setAttribute(context, keysName, context->newList()->asObject(context));
+    const proto::ProtoObject* k1 = context->fromUTF8String("a");
+    const proto::ProtoObject* v1 = context->fromInteger(1);
+    const proto::ProtoList* setArgs = context->newList()->appendLast(context, k1)->appendLast(context, v1);
+    d1->call(context, nullptr, proto::ProtoString::fromUTF8String(context, "__setitem__"), d1, setArgs);
+    const proto::ProtoObject* d2 = context->newObject(true)->addParent(context, dictProto);
+    d2->setAttribute(context, dataName, context->newSparseList()->asObject(context));
+    d2->setAttribute(context, keysName, context->newList()->asObject(context));
+    const proto::ProtoObject* k2 = context->fromUTF8String("b");
+    const proto::ProtoObject* v2 = context->fromInteger(2);
+    d2->call(context, nullptr, proto::ProtoString::fromUTF8String(context, "__setitem__"), d2, context->newList()->appendLast(context, k2)->appendLast(context, v2));
+    const proto::ProtoObject* orM = d1->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__or__"));
+    ASSERT_NE(orM, nullptr);
+    const proto::ProtoList* orArgs = context->newList()->appendLast(context, d2);
+    const proto::ProtoObject* merged = orM->asMethod(context)(context, d1, nullptr, orArgs, nullptr);
+    ASSERT_NE(merged, nullptr);
+    const proto::ProtoObject* lenM = merged->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__len__"));
+    ASSERT_NE(lenM, nullptr);
+    const proto::ProtoObject* lenVal = lenM->asMethod(context)(context, merged, nullptr, context->newList(), nullptr);
+    ASSERT_NE(lenVal, nullptr);
+    EXPECT_EQ(lenVal->asLong(context), 2);
+}
+
 TEST_F(FoundationTest, ListRepeat) {
     proto::ProtoContext* context = env.getContext();
     const proto::ProtoObject* listPrototype = env.getListPrototype();
