@@ -1173,6 +1173,23 @@ static const proto::ProtoObject* py_set_remove(
     return PROTO_NONE;
 }
 
+static const proto::ProtoObject* py_set_discard(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    const proto::ProtoSet* s = set_data(context, self);
+    if (!s) return PROTO_NONE;
+    const proto::ProtoObject* elem = positionalParameters->getAt(context, 0);
+    if (!s->has(context, elem)) return PROTO_NONE;
+    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "__data__");
+    const proto::ProtoSet* newSet = s->remove(context, elem);
+    self->setAttribute(context, dataName, newSet->asObject(context));
+    return PROTO_NONE;
+}
+
 static const proto::ProtoObject* py_set_pop(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -3337,6 +3354,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     setPrototype = setPrototype->setAttribute(context, py_add, context->fromMethod(const_cast<proto::ProtoObject*>(setPrototype), py_set_add));
     setPrototype = setPrototype->setAttribute(context, py_remove, context->fromMethod(const_cast<proto::ProtoObject*>(setPrototype), py_set_remove));
     setPrototype = setPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "pop"), context->fromMethod(const_cast<proto::ProtoObject*>(setPrototype), py_set_pop));
+    setPrototype = setPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "discard"), context->fromMethod(const_cast<proto::ProtoObject*>(setPrototype), py_set_discard));
     setPrototype = setPrototype->setAttribute(context, py_iter, context->fromMethod(const_cast<proto::ProtoObject*>(setPrototype), py_set_iter));
 
     const proto::ProtoObject* setIterProto = context->newObject(true);
