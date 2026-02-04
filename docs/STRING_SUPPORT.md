@@ -16,6 +16,8 @@ This document describes string dunder methods and helpers implemented in protoPy
 - **`lstrip()`**: Remove leading ASCII whitespace.
 - **`rstrip()`**: Remove trailing ASCII whitespace.
 - **`replace()`**: Replace occurrences of old with new; optional count.
+- **`startswith()`**: Check if string starts with prefix.
+- **`endswith()`**: Check if string ends with suffix.
 
 ## Dispatch
 

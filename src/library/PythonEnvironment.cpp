@@ -1483,6 +1483,34 @@ static const proto::ProtoObject* py_str_rstrip(
     return context->fromUTF8String(s.substr(0, end).c_str());
 }
 
+static const proto::ProtoObject* py_str_startswith(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoString* str = str_from_self(context, self);
+    if (!str || posArgs->getSize(context) < 1) return PROTO_NONE;
+    std::string s;
+    str->toUTF8String(context, s);
+    std::string prefix;
+    posArgs->getAt(context, 0)->asString(context)->toUTF8String(context, prefix);
+    if (prefix.size() > s.size()) return PROTO_FALSE;
+    return s.compare(0, prefix.size(), prefix) == 0 ? PROTO_TRUE : PROTO_FALSE;
+}
+
+static const proto::ProtoObject* py_str_endswith(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoString* str = str_from_self(context, self);
+    if (!str || posArgs->getSize(context) < 1) return PROTO_NONE;
+    std::string s;
+    str->toUTF8String(context, s);
+    std::string suffix;
+    posArgs->getAt(context, 0)->asString(context)->toUTF8String(context, suffix);
+    if (suffix.size() > s.size()) return PROTO_FALSE;
+    return s.compare(s.size() - suffix.size(), suffix.size(), suffix) == 0 ? PROTO_TRUE : PROTO_FALSE;
+}
+
 static const proto::ProtoObject* py_str_replace(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -1914,6 +1942,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     strPrototype = strPrototype->setAttribute(context, py_lstrip, context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_lstrip));
     strPrototype = strPrototype->setAttribute(context, py_rstrip, context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_rstrip));
     strPrototype = strPrototype->setAttribute(context, py_replace, context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_replace));
+    strPrototype = strPrototype->setAttribute(context, py_startswith, context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_startswith));
+    strPrototype = strPrototype->setAttribute(context, py_endswith, context->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_endswith));
 
     listPrototype = context->newObject(true);
     listPrototype = listPrototype->addParent(context, objectPrototype);
