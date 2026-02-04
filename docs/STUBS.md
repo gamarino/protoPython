@@ -86,6 +86,13 @@ This document catalogs stub implementations and their completion status.
 | email | message_from_string | Stub: returns None. Full impl requires MIME parser. |
 | runpy | run_path, run_module | Stub: return {}. Full impl requires import/exec machinery. |
 
+## Python stdlib — New stubs (v25)
+
+| Module | Item | Behavior |
+|--------|------|----------|
+| urllib.parse | quote, unquote, urljoin | Stub: return string/url unchanged. Full impl requires percent-encoding. |
+| zoneinfo | ZoneInfo | Stub class with key; __str__, __repr__. Full impl requires tzdata. |
+
 ## Python stdlib — New stubs
 
 | Module | Item | Behavior |
