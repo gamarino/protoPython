@@ -50,6 +50,22 @@ static const proto::ProtoObject* py_trunc(
     return ctx->fromInteger(static_cast<long long>(std::trunc(x)));
 }
 
+static const proto::ProtoObject* py_copysign(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
+    double x = toDouble(ctx, posArgs->getAt(ctx, 0));
+    double y = toDouble(ctx, posArgs->getAt(ctx, 1));
+    return ctx->fromDouble(std::copysign(x, y));
+}
+
+static const proto::ProtoObject* py_isclose_stub(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    (void)posArgs;
+    return PROTO_FALSE;
+}
+
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     const proto::ProtoObject* mod = ctx->newObject(true);
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "sqrt"),
@@ -62,6 +78,10 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_fabs));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "trunc"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_trunc));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "copysign"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_copysign));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "isclose"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_isclose_stub));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "pi"),
         ctx->fromDouble(3.14159265358979323846));
     return mod;
