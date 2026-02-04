@@ -1,5 +1,6 @@
 #include <protoPython/BuiltinsModule.h>
 #include <protoPython/PythonEnvironment.h>
+#include <cmath>
 #include <cstdio>
 #include <iostream>
 
@@ -631,6 +632,71 @@ static const proto::ProtoObject* py_max(
     return context->fromInteger(m);
 }
 
+static const proto::ProtoObject* py_pow(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    unsigned long n = positionalParameters->getSize(context);
+    if (n < 2) return PROTO_NONE;
+    long long base = positionalParameters->getAt(context, 0)->asLong(context);
+    long long exp = positionalParameters->getAt(context, 1)->asLong(context);
+    bool hasMod = n >= 3;
+    long long mod = hasMod ? positionalParameters->getAt(context, 2)->asLong(context) : 0;
+    if (hasMod && mod == 0) return PROTO_NONE;
+    if (exp < 0) return PROTO_NONE;
+    long long result = 1;
+    long long b = base;
+    long long e = exp;
+    if (hasMod) {
+        b = ((b % mod) + mod) % mod;
+        while (e > 0) {
+            if (e & 1) result = (result * b) % mod;
+            b = (b * b) % mod;
+            e >>= 1;
+        }
+        return context->fromInteger(result);
+    }
+    while (e > 0) {
+        if (e & 1) result *= b;
+        b *= b;
+        e >>= 1;
+    }
+    return context->fromInteger(result);
+}
+
+static const proto::ProtoObject* py_round(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    const proto::ProtoObject* n = positionalParameters->getAt(context, 0);
+    int ndigits = 0;
+    if (positionalParameters->getSize(context) >= 2) {
+        ndigits = static_cast<int>(positionalParameters->getAt(context, 1)->asLong(context));
+    }
+    if (n->isInteger(context)) {
+        if (ndigits == 0) return n;
+        double d = static_cast<double>(n->asLong(context));
+        for (int i = 0; i < ndigits; ++i) d *= 10.0;
+        d = std::round(d);
+        for (int i = 0; i < ndigits; ++i) d /= 10.0;
+        return context->fromDouble(d);
+    }
+    if (n->isDouble(context)) {
+        double d = n->asDouble(context);
+        if (ndigits == 0) return context->fromDouble(std::round(d));
+        for (int i = 0; i < ndigits; ++i) d *= 10.0;
+        d = std::round(d);
+        for (int i = 0; i < ndigits; ++i) d /= 10.0;
+        return context->fromDouble(d);
+    }
+    return PROTO_NONE;
+}
+
 static const proto::ProtoObject* py_range_next(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -755,6 +821,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "min"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_min));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "max"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_max));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "pow"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_pow));
+    builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "round"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_round));
 
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "callable"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_callable));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "getattr"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_getattr));
