@@ -45,7 +45,7 @@ This document catalogs stub implementations and their completion status.
 | uuid | uuid4 | Return fixed string |
 | secrets | token_hex, token_urlsafe | Return placeholder |
 | threading | Thread, Lock | Minimal stubs |
-| enum | Enum | Minimal base class |
+| enum | Enum | Implemented: name, value, __repr__; Enum(value) or Enum(name, value). auto() placeholder. |
 | functools | reduce, wraps, lru_cache | reduce implemented; wraps no-op; lru_cache stub (v20) |
 | csv | reader, writer | Implemented: reader yields lists of strings; writer.writerow/writerows; delimiter default ','. |
 | xml.etree | ElementTree, Element | Minimal stub — v21 |
