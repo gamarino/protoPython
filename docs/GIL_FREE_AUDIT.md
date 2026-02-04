@@ -44,7 +44,7 @@ This document lists mutable operations in the protoPython library and their thre
 
 | Operation | Uses protoCore | Thread-safe today | Follow-up |
 |-----------|----------------|-------------------|-----------|
-| deque append/pop/appendleft/popleft | Internal `__deque_ptr__` (ProtoList or similar) | Single-threaded use only | Deque state is per-instance; concurrent access to same deque needs locking or immutable-style updates. |
+| deque append/pop/appendleft/popleft | Internal `__deque_ptr__` (ProtoList or similar) | Not thread-safe for concurrent mutation | **Resolved:** Deque is not thread-safe for concurrent mutation of the same instance. Python code that shares a deque across threads must synchronize externally (e.g. threading.Lock) or use a single-threaded consumer. |
 
 ### 5. IOModule (src/library/IOModule.cpp)
 
