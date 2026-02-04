@@ -20,7 +20,7 @@ ctest -R test_regr
 ./test/regression/test_regr
 ```
 
-## Known Issue: Foundation Test Hang (GC Reproducer)
+## Startup / GC Hang (Resolved with protoCore Fix)
 
 ### Symptom `test_foundation` and `test_regr` (and any test that constructs `PythonEnvironment`) may hang during initialization, typically when creating the list prototype. The hang occurs inside protoCore’s allocation/GC path.
 
@@ -41,7 +41,7 @@ ctest -R test_regr
 3. **protopy with --dry-run**: CLI exit-code tests use `--dry-run` and avoid instantiating `PythonEnvironment`, so they pass.
 4. **Future**: A `--no-gc` workaround would require protoCore support to disable the GC thread at ProtoSpace creation time.
 
-### Resolution (fixed in protoCore) The GC deadlock was fixed in protoCore’s `getFreeCells`: trigger GC only when there are no free cells (so the caller parks), and park/wait for GC completion when out of cells. See protoCore commit `fix(gc): resolve getFreeCells deadlock with GC thread`.
+### Resolution (fixed in protoCore) The GC deadlock was fixed in protoCore’s `getFreeCells`: trigger GC only when there are no free cells (so the caller parks), and park/wait for GC completion when out of cells. See protoCore commit `fix(gc): resolve getFreeCells deadlock with GC thread`, and [STARTUP_GC_ANALYSIS.md](STARTUP_GC_ANALYSIS.md) for a full analysis. **Verification:** With a fixed protoCore, `./build/test/library/test_minimal` and `./build/src/runtime/protopy --module abc` should complete in a few seconds.
 
 ### Resolve order (FoundationTest.SysModule) `PythonEnvironment::resolve()` resolves names in this order: (1) type shortcuts (object, type, int, list, …), (2) module import via `getImportModule` (e.g. `sys`, `builtins`, `os`), (3) builtins. So names like `sys` always resolve to the real module object, not a builtins attribute (e.g. a method) that would cause a type mismatch when calling `getAttribute` (protoCore expects an object cell, not a method cell).
 
