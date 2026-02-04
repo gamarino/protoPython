@@ -112,6 +112,10 @@ See [docs/NEXT_20_STEPS_V19.md](../docs/NEXT_20_STEPS_V19.md). Steps 305–324: 
 
 See [docs/NEXT_20_STEPS_V20.md](../docs/NEXT_20_STEPS_V20.md). Steps 325–344: BINARY_POWER, BINARY_FLOOR_DIVIDE; math.log/log10/exp; operator.pow/floordiv/mod; str.isidentifier; bytes.count; list.__mul__/__rmul__; hasattr/delattr; functools.lru_cache, atexit, heapq, json stubs; foundation tests MathLog, ListRepeat, HasattrDelattr; STUBS and todo updated.
 
+## 25. Next 20 Steps (v21) — completed
+
+See [docs/NEXT_20_STEPS_V21.md](../docs/NEXT_20_STEPS_V21.md). Steps 345–364: UNARY_NEGATIVE, UNARY_NOT; math.sqrt/sin/cos; operator.neg/not_; str.isprintable; bytes.isdigit/isalpha; list.__reversed__/reversed(); dict.__or__/__ror__; getattr/slice repr; csv, xml.etree stubs; foundation tests MathSqrt, DictUnion, OperatorNegOrGetattr; STUBS and todo updated.
+
 - [x] Step 145: ord builtin
 - [x] Step 146: chr builtin
 - [x] Step 147: bin builtin
