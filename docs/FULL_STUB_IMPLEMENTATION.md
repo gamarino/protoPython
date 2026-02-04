@@ -5,8 +5,8 @@ This document summarizes the phased implementation of stdlib stubs toward CPytho
 ## Phase 0: Shared Infrastructure (C++)
 
 - **Tokenizer** (`include/protoPython/Tokenizer.h`, `src/library/Tokenizer.cpp`): Minimal Python tokenizer; tokens for numbers, strings, identifiers, operators, newlines.
-- **Parser** (`include/protoPython/Parser.h`, `src/library/Parser.cpp`): Recursive-descent expression and single-statement module parser; AST nodes: Constant, Name, BinOp, Call, Module.
-- **Compiler** (`include/protoPython/Compiler.h`, `src/library/Compiler.cpp`): Compiles AST to protoPython bytecode; `makeCodeObject` / `runCodeObject` for code objects.
+- **Parser** (`include/protoPython/Parser.h`, `src/library/Parser.cpp`): Recursive-descent parser; AST: Constant, Name, BinOp, Call, AttributeNode, SubscriptNode, SliceNode, ListLiteralNode, DictLiteralNode, TupleLiteralNode, AssignNode, ForNode, IfNode, GlobalNode, Module; statements (assignment, for, if, global, expression).
+- **Compiler** (`include/protoPython/Compiler.h`, `src/library/Compiler.cpp`): Compiles AST to protoPython bytecode (full opcode set: LOAD/STORE_ATTR, BINARY/STORE_SUBSCR, BUILD_LIST/MAP/TUPLE/SLICE, GET_ITER, FOR_ITER, POP_JUMP_IF_FALSE, JUMP_ABSOLUTE, LOAD/STORE_GLOBAL, ROT_THREE, etc.); `makeCodeObject` / `runCodeObject`; forward-jump patching.
 - **Builtins**: `compile(source, filename, mode)`, `eval(expr, globals, locals)`, `exec(source, globals, locals)`; internal `_tokenize_source(source)` for the tokenize module.
 
 ## Phase 1: Pure Python Stubs

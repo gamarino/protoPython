@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 #include <protoPython/ExecutionEngine.h>
+#include <protoPython/Compiler.h>
+#include <protoPython/Parser.h>
 #include <protoCore.h>
 
 static const proto::ProtoObject* callable_returns_42(
@@ -1039,5 +1041,77 @@ TEST(ExecutionEngineTest, GetIterNoCrash) {
         &ctx, constants, bytecode, nullptr, nullptr);
     (void)result;
     EXPECT_TRUE(result == nullptr || result == PROTO_NONE);
+}
+
+// Step 5: Hand-built bytecode for assignment then run (isolates engine vs compiler).
+TEST(ExecutionEngineTest, HandBuiltStoreNameInFrame) {
+    proto::ProtoSpace space;
+    proto::ProtoContext ctx(&space);
+    const proto::ProtoList* constants = ctx.newList()
+        ->appendLast(&ctx, ctx.fromInteger(1))
+        ->appendLast(&ctx, ctx.fromInteger(2));
+    const proto::ProtoList* names = ctx.newList()
+        ->appendLast(&ctx, reinterpret_cast<const proto::ProtoObject*>(proto::ProtoString::fromUTF8String(&ctx, "a")));
+    const proto::ProtoList* bytecode = ctx.newList()
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(0))
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(1))
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_BINARY_ADD))
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_STORE_NAME))->appendLast(&ctx, ctx.fromInteger(0))
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE));
+    proto::ProtoObject* frame = const_cast<proto::ProtoObject*>(ctx.newObject(true));
+    protoPython::executeMinimalBytecode(&ctx, constants, bytecode, names, frame);
+    const proto::ProtoObject* aVal = frame->getAttribute(&ctx, proto::ProtoString::fromUTF8String(&ctx, "a"));
+    ASSERT_NE(aVal, nullptr);
+    EXPECT_TRUE(aVal->isInteger(&ctx));
+    EXPECT_EQ(aVal->asLong(&ctx), 3);
+}
+
+// Step 5: Parser/compiler emit full opcode set — compile and run a simple assignment.
+TEST(ExecutionEngineTest, CompiledAssignment) {
+    proto::ProtoSpace space;
+    proto::ProtoContext ctx(&space);
+    protoPython::Parser parser("a = 1 + 2");
+    std::unique_ptr<protoPython::ModuleNode> mod = parser.parseModule();
+    ASSERT_NE(mod, nullptr);
+    ASSERT_FALSE(mod->body.empty());
+    protoPython::Compiler compiler(&ctx, "<test>");
+    ASSERT_TRUE(compiler.compileModule(mod.get()));
+    const proto::ProtoObject* codeObj = protoPython::makeCodeObject(
+        &ctx, compiler.getConstants(), compiler.getNames(), compiler.getBytecode());
+    ASSERT_NE(codeObj, nullptr);
+    proto::ProtoObject* frame = const_cast<proto::ProtoObject*>(ctx.newObject(true));
+    protoPython::runCodeObject(&ctx, codeObj, frame);
+    const proto::ProtoObject* aVal = frame->getAttribute(&ctx,
+        proto::ProtoString::fromUTF8String(&ctx, "a"));
+    ASSERT_NE(aVal, nullptr);
+    ASSERT_TRUE(aVal->isInteger(&ctx));
+    EXPECT_EQ(aVal->asLong(&ctx), 3);
+}
+
+// Step 5: Compile and run list literal expression (engine returns object with __data__).
+TEST(ExecutionEngineTest, CompiledListLiteral) {
+    proto::ProtoSpace space;
+    proto::ProtoContext ctx(&space);
+    protoPython::Parser parser("[1, 2, 3]");
+    std::unique_ptr<protoPython::ASTNode> expr = parser.parseExpression();
+    ASSERT_NE(expr, nullptr);
+    protoPython::Compiler compiler(&ctx, "<test>");
+    ASSERT_TRUE(compiler.compileExpression(expr.get()));
+    const proto::ProtoObject* codeObj = protoPython::makeCodeObject(
+        &ctx, compiler.getConstants(), compiler.getNames(), compiler.getBytecode());
+    ASSERT_NE(codeObj, nullptr);
+    proto::ProtoObject* frame = const_cast<proto::ProtoObject*>(ctx.newObject(true));
+    const proto::ProtoObject* result = protoPython::runCodeObject(&ctx, codeObj, frame);
+    ASSERT_NE(result, nullptr);
+    ASSERT_NE(result, PROTO_NONE);
+    const proto::ProtoObject* data = result->getAttribute(&ctx,
+        proto::ProtoString::fromUTF8String(&ctx, "__data__"));
+    ASSERT_NE(data, nullptr);
+    const proto::ProtoList* list = data->asList(&ctx);
+    ASSERT_NE(list, nullptr);
+    EXPECT_EQ(list->getSize(&ctx), 3);
+    EXPECT_EQ(list->getAt(&ctx, 0)->asLong(&ctx), 1);
+    EXPECT_EQ(list->getAt(&ctx, 1)->asLong(&ctx), 2);
+    EXPECT_EQ(list->getAt(&ctx, 2)->asLong(&ctx), 3);
 }
 

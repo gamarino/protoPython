@@ -272,17 +272,17 @@ std::unique_ptr<ASTNode> Parser::parseStatement() {
         }
         return iff;
     }
-    auto primary = parsePrimary();
-    if (!primary) return nullptr;
+    auto expr = parseOrExpr();
+    if (!expr) return nullptr;
     if (accept(TokenType::Assign)) {
         auto value = parseOrExpr();
         if (!value) return nullptr;
         auto a = std::make_unique<AssignNode>();
-        a->target = std::move(primary);
+        a->target = std::move(expr);
         a->value = std::move(value);
         return a;
     }
-    return primary;
+    return expr;
 }
 
 std::unique_ptr<ASTNode> Parser::parseExpression() {
