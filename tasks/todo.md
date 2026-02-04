@@ -344,5 +344,11 @@ See [docs/NEXT_20_STEPS_V33.md](../docs/NEXT_20_STEPS_V33.md). Steps 585–604: 
 
 - [x] Steps 585–604
 
+## 33. Next 20 Steps (v34) — completed
+
+See [docs/NEXT_20_STEPS_V34.md](../docs/NEXT_20_STEPS_V34.md). Steps 605–624: math.cbrt, math.exp2, math.expm1, math.fma; ast, tokenize stubs; foundation test MathCbrtExp2Expm1Fma; STUBS, todo, IMPLEMENTATION_PLAN, TESTING updated.
+
+- [x] Steps 605–624
+
 ---
 *Updated from plan implementation. Mark items complete as work progresses.*

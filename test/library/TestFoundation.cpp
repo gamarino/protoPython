@@ -1482,6 +1482,47 @@ TEST_F(FoundationTest, MathLdexpFrexpModfE) {
     EXPECT_NEAR(eVal, 2.718281828459045, 1e-10);  // math.e
 }
 
+TEST_F(FoundationTest, MathCbrtExp2Expm1Fma) {
+    proto::ProtoContext* context = env.getContext();
+    const proto::ProtoObject* mathMod = env.resolve("math");
+    ASSERT_NE(mathMod, nullptr);
+    const proto::ProtoString* cbrtStr = proto::ProtoString::fromUTF8String(context, "cbrt");
+    const proto::ProtoString* exp2Str = proto::ProtoString::fromUTF8String(context, "exp2");
+    const proto::ProtoString* expm1Str = proto::ProtoString::fromUTF8String(context, "expm1");
+    const proto::ProtoString* fmaStr = proto::ProtoString::fromUTF8String(context, "fma");
+    const proto::ProtoObject* cbrtM = mathMod->getAttribute(context, cbrtStr);
+    const proto::ProtoObject* exp2M = mathMod->getAttribute(context, exp2Str);
+    const proto::ProtoObject* expm1M = mathMod->getAttribute(context, expm1Str);
+    const proto::ProtoObject* fmaM = mathMod->getAttribute(context, fmaStr);
+    ASSERT_NE(cbrtM, nullptr);
+    ASSERT_NE(exp2M, nullptr);
+    ASSERT_NE(expm1M, nullptr);
+    ASSERT_NE(fmaM, nullptr);
+    const proto::ProtoList* argsCbrt = context->newList()->appendLast(context, context->fromDouble(27.0));
+    const proto::ProtoObject* resCbrt = cbrtM->asMethod(context)(context, mathMod, nullptr, argsCbrt, nullptr);
+    ASSERT_NE(resCbrt, nullptr);
+    double valCbrt = resCbrt->isDouble(context) ? resCbrt->asDouble(context) : static_cast<double>(resCbrt->asLong(context));
+    EXPECT_NEAR(valCbrt, 3.0, 1e-10);  // cbrt(27) == 3.0
+    const proto::ProtoList* argsExp2 = context->newList()->appendLast(context, context->fromInteger(3));
+    const proto::ProtoObject* resExp2 = exp2M->asMethod(context)(context, mathMod, nullptr, argsExp2, nullptr);
+    ASSERT_NE(resExp2, nullptr);
+    double valExp2 = resExp2->isDouble(context) ? resExp2->asDouble(context) : static_cast<double>(resExp2->asLong(context));
+    EXPECT_NEAR(valExp2, 8.0, 1e-10);  // exp2(3) == 8.0
+    const proto::ProtoList* argsExpm1 = context->newList()->appendLast(context, context->fromInteger(0));
+    const proto::ProtoObject* resExpm1 = expm1M->asMethod(context)(context, mathMod, nullptr, argsExpm1, nullptr);
+    ASSERT_NE(resExpm1, nullptr);
+    double valExpm1 = resExpm1->isDouble(context) ? resExpm1->asDouble(context) : static_cast<double>(resExpm1->asLong(context));
+    EXPECT_NEAR(valExpm1, 0.0, 1e-10);  // expm1(0) == 0.0
+    const proto::ProtoList* argsFma = context->newList()
+        ->appendLast(context, context->fromDouble(2.0))
+        ->appendLast(context, context->fromDouble(3.0))
+        ->appendLast(context, context->fromDouble(4.0));
+    const proto::ProtoObject* resFma = fmaM->asMethod(context)(context, mathMod, nullptr, argsFma, nullptr);
+    ASSERT_NE(resFma, nullptr);
+    double valFma = resFma->isDouble(context) ? resFma->asDouble(context) : static_cast<double>(resFma->asLong(context));
+    EXPECT_NEAR(valFma, 10.0, 1e-10);  // fma(2, 3, 4) == 10.0
+}
+
 TEST_F(FoundationTest, MathFactorial) {
     proto::ProtoContext* context = env.getContext();
     const proto::ProtoObject* mathMod = env.resolve("math");

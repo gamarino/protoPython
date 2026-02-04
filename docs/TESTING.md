@@ -2,7 +2,7 @@
 
 ## Test Targets
 
-- **test_foundation** (`build/test/library/test_foundation`): Unit tests for `PythonEnvironment`, built-in types, and dunder methods. Includes math tests (e.g. MathLdexpFrexpModfE for math.ldexp, math.frexp, math.modf, math.e; see Next 20 Steps v33).
+- **test_foundation** (`build/test/library/test_foundation`): Unit tests for `PythonEnvironment`, built-in types, and dunder methods. Includes math tests (e.g. MathLdexpFrexpModfE for math.ldexp, math.frexp, math.modf, math.e; MathCbrtExp2Expm1Fma for math.cbrt, math.exp2, math.expm1, math.fma; see Next 20 Steps v33–v34).
 - **test_execution_engine** (`build/test/library/test_execution_engine`): CTest for bytecode opcodes (e.g. BINARY_LSHIFT, INPLACE_SUBTRACT, BINARY_AND, INPLACE_MULTIPLY, INPLACE_TRUE_DIVIDE, INPLACE_MODULO, INPLACE_LSHIFT, INPLACE_AND, ROT_THREE, ROT_FOUR, DUP_TOP_TWO; see Next 20 Steps v24–v32).
 - **test_regr** (`build/test/regression/test_regr`): Regression harness tests (e.g. module resolution).
 - **protopy_cli_***: CTest targets for protopy CLI (help, missing module, script success).

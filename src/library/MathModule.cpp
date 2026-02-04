@@ -484,6 +484,40 @@ static const proto::ProtoObject* py_modf(
     return tup ? tup->asObject(ctx) : PROTO_NONE;
 }
 
+static const proto::ProtoObject* py_cbrt(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    double x = toDouble(ctx, posArgs->getAt(ctx, 0));
+    return ctx->fromDouble(std::cbrt(x));
+}
+
+static const proto::ProtoObject* py_exp2(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    double x = toDouble(ctx, posArgs->getAt(ctx, 0));
+    return ctx->fromDouble(std::exp2(x));
+}
+
+static const proto::ProtoObject* py_expm1(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    double x = toDouble(ctx, posArgs->getAt(ctx, 0));
+    return ctx->fromDouble(std::expm1(x));
+}
+
+static const proto::ProtoObject* py_fma(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 3) return PROTO_NONE;
+    double x = toDouble(ctx, posArgs->getAt(ctx, 0));
+    double y = toDouble(ctx, posArgs->getAt(ctx, 1));
+    double z = toDouble(ctx, posArgs->getAt(ctx, 2));
+    return ctx->fromDouble(std::fma(x, y, z));
+}
+
 static long long gcd_impl(long long a, long long b) {
     a = a < 0 ? -a : a;
     b = b < 0 ? -b : b;
@@ -611,6 +645,14 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_frexp));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "modf"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_modf));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "cbrt"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_cbrt));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "exp2"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_exp2));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "expm1"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_expm1));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "fma"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_fma));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "gcd"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_gcd));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "lcm"),
