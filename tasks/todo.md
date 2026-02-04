@@ -54,6 +54,10 @@ See [docs/NEXT_20_STEPS_V6.md](../docs/NEXT_20_STEPS_V6.md). Steps 45–64 plann
 - [x] Step 45: repr builtin
 - [x] Step 46: format builtin
 - [x] Step 47: open builtin
+- [x] Step 48: enumerate builtin
+- [x] Step 49: reversed builtin
+- [x] Step 50: sum builtin
+- [x] Step 51: all any builtins
 - [x] Step 25: Foundation test stability / GC reproducer documentation
 - [x] Step 26: Builtins callable, getattr, setattr, hasattr, delattr
 - [x] Step 27: Slice object + __getitem__ slice support for list/str
