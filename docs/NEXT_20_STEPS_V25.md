@@ -13,7 +13,7 @@ Plan for 20 incremental milestones. Each step: implement → update docs → `gi
 | Step | Description | Status |
 |------|-------------|--------|
 | 425 | Create NEXT_20_STEPS_V25.md, update IMPLEMENTATION_PLAN | done |
-| 426 | Execution engine BINARY_AND | pending |
+| 426 | Execution engine BINARY_AND | done |
 | 427 | Execution engine BINARY_OR | pending |
 | 428 | Execution engine BINARY_XOR | pending |
 | 429 | Execution engine INPLACE_MULTIPLY | pending |
