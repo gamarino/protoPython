@@ -24,7 +24,7 @@ Plan for 20 incremental milestones. Each step: implement → update docs → `gi
 | 434 | Stdlib stub urllib.parse or platform | done |
 | 435 | Stdlib stub zoneinfo or plistlib | done |
 | 436 | Foundation test BINARY_AND or math.hypot | done |
-| 437 | Foundation test BINARY_OR or operator.index | pending |
+| 437 | Foundation test BINARY_OR or operator.index | done |
 | 438 | Foundation test INPLACE_MULTIPLY or rsplit maxsplit | pending |
 | 439 | Execution engine test BINARY_AND or INPLACE_MULTIPLY | pending |
 | 440 | Update STUBS.md with v25 entries | pending |

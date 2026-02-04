@@ -1219,6 +1219,19 @@ TEST_F(FoundationTest, MathHypot) {
     EXPECT_NEAR(val, 5.0, 1e-10);  // hypot(3, 4) == 5
 }
 
+TEST_F(FoundationTest, OperatorIndex) {
+    proto::ProtoContext* context = env.getContext();
+    const proto::ProtoObject* opMod = env.resolve("operator");
+    ASSERT_NE(opMod, nullptr);
+    const proto::ProtoObject* indexM = opMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "index"));
+    ASSERT_NE(indexM, nullptr);
+    const proto::ProtoList* args = context->newList()->appendLast(context, context->fromInteger(42));
+    const proto::ProtoObject* result = indexM->asMethod(context)(context, opMod, nullptr, args, nullptr);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->isInteger(context));
+    EXPECT_EQ(result->asLong(context), 42);
+}
+
 TEST_F(FoundationTest, ReprOrId) {
     proto::ProtoContext* context = env.getContext();
     const proto::ProtoObject* builtins = env.resolve("builtins");
