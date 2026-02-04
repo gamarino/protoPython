@@ -220,6 +220,7 @@ private:
     const proto::ProtoObject* keyErrorType{nullptr};
     const proto::ProtoObject* valueErrorType{nullptr};
     mutable std::unordered_map<std::string, const proto::ProtoObject*> resolveCache_;
+    mutable std::mutex resolveCacheMutex_;
 
     static void registerContext(proto::ProtoContext* ctx, PythonEnvironment* env);
     static void unregisterContext(proto::ProtoContext* ctx);

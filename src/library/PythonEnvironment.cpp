@@ -4001,16 +4001,20 @@ static const proto::ProtoObject* py_dict_popitem(
 // --- PythonEnvironment Implementation ---
 
 static std::unordered_map<proto::ProtoContext*, PythonEnvironment*> s_contextToEnv;
+static std::mutex s_contextMapMutex;
 
 void PythonEnvironment::registerContext(proto::ProtoContext* ctx, PythonEnvironment* env) {
+    std::lock_guard<std::mutex> lock(s_contextMapMutex);
     s_contextToEnv[ctx] = env;
 }
 
 void PythonEnvironment::unregisterContext(proto::ProtoContext* ctx) {
+    std::lock_guard<std::mutex> lock(s_contextMapMutex);
     s_contextToEnv.erase(ctx);
 }
 
 PythonEnvironment* PythonEnvironment::fromContext(proto::ProtoContext* ctx) {
+    std::lock_guard<std::mutex> lock(s_contextMapMutex);
     auto it = s_contextToEnv.find(ctx);
     return it != s_contextToEnv.end() ? it->second : nullptr;
 }
@@ -4587,13 +4591,17 @@ void PythonEnvironment::enableDefaultTrace() {
 }
 
 void PythonEnvironment::invalidateResolveCache() {
+    std::lock_guard<std::mutex> lock(resolveCacheMutex_);
     resolveCache_.clear();
 }
 
 const proto::ProtoObject* PythonEnvironment::resolve(const std::string& name) {
-    auto it = resolveCache_.find(name);
-    if (it != resolveCache_.end() && it->second != nullptr)
-        return it->second;
+    {
+        std::lock_guard<std::mutex> lock(resolveCacheMutex_);
+        auto it = resolveCache_.find(name);
+        if (it != resolveCache_.end() && it->second != nullptr)
+            return it->second;
+    }
 
     const proto::ProtoObject* result = PROTO_NONE;
 
@@ -4631,7 +4639,10 @@ const proto::ProtoObject* PythonEnvironment::resolve(const std::string& name) {
         }
     }
 
-    resolveCache_[name] = result;
+    {
+        std::lock_guard<std::mutex> lock(resolveCacheMutex_);
+        resolveCache_[name] = result;
+    }
     return result;
 }
 
