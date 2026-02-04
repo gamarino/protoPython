@@ -1,4 +1,5 @@
 # subprocess.py - Minimal stub. run, Popen so imports and simple references work.
+# Stub retained: full implementation requires process creation API. See STUBS.md.
 
 def run(*args, **kwargs):
     """Stub: returns CompletedProcess(returncode=0, stdout=b'', stderr=b'')."""

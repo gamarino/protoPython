@@ -26,7 +26,7 @@ This document catalogs stub implementations and their completion status.
 |--------|------|--------|
 | **os** | environ, getcwd, chdir, path, pathsep, sep | Stub retained. environ empty dict (full impl requires native getenv); getcwd/chdir/path stub values; no-op where applicable. |
 | **tempfile** | gettempdir, gettempprefix, mkstemp, TemporaryFile | gettempdir/gettempprefix implemented (from os or default '/tmp', 'tmp'); mkstemp returns (0, path); TemporaryFile stub. |
-| **subprocess** | run, Popen, CompletedProcess | run returns CompletedProcess; Popen no-op |
+| **subprocess** | run, Popen, CompletedProcess | Stub retained. Full impl requires process creation API. run returns CompletedProcess; Popen no-op. |
 
 ## Python stdlib Stubs — Minimal (unchanged)
 
