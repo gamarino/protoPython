@@ -2089,6 +2089,8 @@ static const proto::ProtoObject* py_bytes_find(
         long long v = sub->asLong(context);
         if (v < 0 || v > 255) return context->fromInteger(-1);
         needle = static_cast<char>(static_cast<unsigned char>(v));
+    } else if (sub->isString(context)) {
+        sub->asString(context)->toUTF8String(context, needle);
     } else if (sub->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"))) {
         const proto::ProtoString* subStr = bytes_data(context, sub);
         if (!subStr) return context->fromInteger(-1);
@@ -2141,6 +2143,8 @@ static void bytes_needle_from_arg(proto::ProtoContext* context, const proto::Pro
     if (arg->isInteger(context)) {
         long long v = arg->asLong(context);
         if (v >= 0 && v <= 255) out = static_cast<char>(static_cast<unsigned char>(v));
+    } else if (arg->isString(context)) {
+        arg->asString(context)->toUTF8String(context, out);
     } else if (arg->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"))) {
         const proto::ProtoString* subStr = bytes_data(context, arg);
         if (subStr) subStr->toUTF8String(context, out);
@@ -2874,9 +2878,14 @@ static const proto::ProtoObject* py_str_split(
         start = pos + sep.size();
         if (maxsplit > 0) maxsplit--;
     }
-    if (maxsplit != 0 && start < s.size())
+    if (start < s.size())
         result = result->appendLast(context, context->fromUTF8String(s.substr(start).c_str()));
-    return result->asObject(context);
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!env) return result->asObject(context);
+    proto::ProtoObject* listObj = const_cast<proto::ProtoObject*>(env->getListPrototype()->newChild(context, true));
+    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "__data__");
+    listObj->setAttribute(context, dataName, result->asObject(context));
+    return listObj;
 }
 
 static const proto::ProtoObject* py_str_rsplit(
@@ -3881,7 +3890,45 @@ static const proto::ProtoObject* py_dict_ior(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    return py_dict_or(context, self, nullptr, posArgs, nullptr);
+    if (posArgs->getSize(context) < 1) return PROTO_NONE;
+    const proto::ProtoObject* other = posArgs->getAt(context, 0);
+    const proto::ProtoString* keysName = proto::ProtoString::fromUTF8String(context, "__keys__");
+    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "__data__");
+    const proto::ProtoObject* selfKeysObj = self->getAttribute(context, keysName);
+    const proto::ProtoList* selfKeys = selfKeysObj && selfKeysObj->asList(context) ? selfKeysObj->asList(context) : context->newList();
+    const proto::ProtoObject* selfDataObj = self->getAttribute(context, dataName);
+    const proto::ProtoSparseList* selfDict = selfDataObj && selfDataObj->asSparseList(context) ? selfDataObj->asSparseList(context) : context->newSparseList();
+    const proto::ProtoList* keys = context->newList();
+    const proto::ProtoSparseList* dict = context->newSparseList();
+    for (unsigned long i = 0; i < selfKeys->getSize(context); ++i) {
+        const proto::ProtoObject* key = selfKeys->getAt(context, static_cast<int>(i));
+        const proto::ProtoObject* value = selfDict->getAt(context, key->getHash(context));
+        if (!value) continue;
+        keys = keys->appendLast(context, key);
+        dict = dict->setAt(context, key->getHash(context), value);
+    }
+    const proto::ProtoObject* otherKeysObj = other->getAttribute(context, keysName);
+    const proto::ProtoList* otherKeys = otherKeysObj && otherKeysObj->asList(context) ? otherKeysObj->asList(context) : context->newList();
+    const proto::ProtoObject* otherDataObj = other->getAttribute(context, dataName);
+    const proto::ProtoSparseList* otherDict = otherDataObj && otherDataObj->asSparseList(context) ? otherDataObj->asSparseList(context) : nullptr;
+    if (otherDict) {
+        for (unsigned long i = 0; i < otherKeys->getSize(context); ++i) {
+            const proto::ProtoObject* key = otherKeys->getAt(context, static_cast<int>(i));
+            const proto::ProtoObject* value = otherDict->getAt(context, key->getHash(context));
+            if (!value) continue;
+            unsigned long hash = key->getHash(context);
+            dict = dict->setAt(context, hash, value);
+            bool found = false;
+            for (unsigned long j = 0; j < keys->getSize(context); ++j) {
+                if (keys->getAt(context, static_cast<int>(j))->getHash(context) == hash) { found = true; break; }
+            }
+            if (!found) keys = keys->appendLast(context, key);
+        }
+    }
+    proto::ProtoObject* mutSelf = const_cast<proto::ProtoObject*>(self);
+    mutSelf->setAttribute(context, keysName, keys->asObject(context));
+    mutSelf->setAttribute(context, dataName, dict->asObject(context));
+    return self;
 }
 
 static const proto::ProtoObject* py_dict_iror(
@@ -4003,28 +4050,55 @@ static const proto::ProtoObject* py_dict_popitem(
 
 // --- PythonEnvironment Implementation ---
 
-static std::unordered_map<proto::ProtoContext*, PythonEnvironment*> s_contextToEnv;
-static std::mutex s_contextMapMutex;
+/** Thread-local environment for the current thread. O(1) lookup; no mutex (L-Shape lock-free). */
+static thread_local PythonEnvironment* s_threadEnv = nullptr;
 
-void PythonEnvironment::registerContext(proto::ProtoContext* ctx, PythonEnvironment* env) {
-    std::lock_guard<std::mutex> lock(s_contextMapMutex);
-    s_contextToEnv[ctx] = env;
+/** Thread-local trace function and pending exception (no mutex in hot path). */
+static thread_local const proto::ProtoObject* s_threadTraceFunction = nullptr;
+static thread_local const proto::ProtoObject* s_threadPendingException = nullptr;
+
+/** Per-thread resolve cache; generation check makes invalidation lock-free. */
+static thread_local std::unordered_map<std::string, const proto::ProtoObject*> s_threadResolveCache;
+static thread_local uint64_t s_threadResolveCacheGeneration = 0;
+
+void PythonEnvironment::registerContext(proto::ProtoContext* /*ctx*/, PythonEnvironment* env) {
+    s_threadEnv = env;
 }
 
-void PythonEnvironment::unregisterContext(proto::ProtoContext* ctx) {
-    std::lock_guard<std::mutex> lock(s_contextMapMutex);
-    s_contextToEnv.erase(ctx);
+void PythonEnvironment::unregisterContext(proto::ProtoContext* /*ctx*/) {
+    s_threadEnv = nullptr;
 }
 
-PythonEnvironment* PythonEnvironment::fromContext(proto::ProtoContext* ctx) {
-    std::lock_guard<std::mutex> lock(s_contextMapMutex);
-    auto it = s_contextToEnv.find(ctx);
-    return it != s_contextToEnv.end() ? it->second : nullptr;
+PythonEnvironment* PythonEnvironment::fromContext(proto::ProtoContext* /*ctx*/) {
+    return s_threadEnv;
+}
+
+void PythonEnvironment::setTraceFunction(const proto::ProtoObject* func) {
+    s_threadTraceFunction = func;
+}
+
+const proto::ProtoObject* PythonEnvironment::getTraceFunction() const {
+    return s_threadTraceFunction;
+}
+
+void PythonEnvironment::setPendingException(const proto::ProtoObject* exc) {
+    s_threadPendingException = exc;
+}
+
+const proto::ProtoObject* PythonEnvironment::takePendingException() {
+    const proto::ProtoObject* e = s_threadPendingException;
+    s_threadPendingException = nullptr;
+    return e;
+}
+
+proto::ProtoSpace* PythonEnvironment::getProcessSpace() {
+    static proto::ProtoSpace s_processSpace;
+    return &s_processSpace;
 }
 
 PythonEnvironment::PythonEnvironment(const std::string& stdLibPath, const std::vector<std::string>& searchPaths,
-                                     const std::vector<std::string>& argv) : space(), argv_(argv) {
-    context = new proto::ProtoContext(&space);
+                                     const std::vector<std::string>& argv) : space_(getProcessSpace()), argv_(argv) {
+    context = new proto::ProtoContext(space_);
     registerContext(context, this);
     initializeRootObjects(stdLibPath, searchPaths);
 }
@@ -4496,10 +4570,24 @@ int PythonEnvironment::runModuleMain(const std::string& moduleName) {
         return -1;
     const proto::ProtoString* mainName = proto::ProtoString::fromUTF8String(context, "main");
     const proto::ProtoObject* mainAttr = mod->getAttribute(context, mainName);
-    if (mainAttr == nullptr || mainAttr == PROTO_NONE || !mainAttr->isMethod(context))
+    if (mainAttr == nullptr || mainAttr == PROTO_NONE)
         return 0;
     const proto::ProtoList* emptyArgs = context->newList();
-    mainAttr->asMethod(context)(context, const_cast<proto::ProtoObject*>(mod), nullptr, emptyArgs, nullptr);
+    if (mainAttr->isMethod(context)) {
+        if (std::getenv("PROTO_THREAD_DIAG"))
+            std::cerr << "[proto-thread-diag] runModuleMain calling main (native)\n" << std::flush;
+        mainAttr->asMethod(context)(context, const_cast<proto::ProtoObject*>(mod), nullptr, emptyArgs, nullptr);
+        return 0;
+    }
+    /* User-defined function: call via __call__ (self = function object). */
+    const proto::ProtoString* callName = proto::ProtoString::fromUTF8String(context, "__call__");
+    const proto::ProtoObject* callAttr = mainAttr->getAttribute(context, callName);
+    if (callAttr && callAttr->asMethod(context)) {
+        if (std::getenv("PROTO_THREAD_DIAG"))
+            std::cerr << "[proto-thread-diag] runModuleMain calling main (user def)\n" << std::flush;
+        callAttr->asMethod(context)(context, const_cast<proto::ProtoObject*>(mainAttr), nullptr, emptyArgs, nullptr);
+        return 0;
+    }
     return 0;
 }
 
@@ -4511,11 +4599,16 @@ int PythonEnvironment::executeModule(const std::string& moduleName) {
     const proto::ProtoString* fileKey = proto::ProtoString::fromUTF8String(context, "__file__");
     const proto::ProtoString* executedKey = proto::ProtoString::fromUTF8String(context, "__executed__");
     const proto::ProtoObject* fileObj = mod->getAttribute(context, fileKey);
+    const bool willExec = fileObj && fileObj->isString(context) && !mod->getAttribute(context, executedKey);
+    if (std::getenv("PROTO_THREAD_DIAG"))
+        std::cerr << "[proto-thread-diag] executeModule " << moduleName << " willExec=" << (willExec ? 1 : 0) << "\n" << std::flush;
     if (fileObj && fileObj->isString(context) && !mod->getAttribute(context, executedKey)) {
         std::string path;
         fileObj->asString(context)->toUTF8String(context, path);
         if (path.size() >= 3 && path.compare(path.size() - 3, 3, ".py") == 0) {
             std::ifstream f(path);
+            if (std::getenv("PROTO_THREAD_DIAG"))
+                std::cerr << "[proto-thread-diag] open path=" << path << " good=" << (f ? 1 : 0) << "\n" << std::flush;
             if (f) {
                 std::stringstream buf;
                 buf << f.rdbuf();
@@ -4524,11 +4617,23 @@ int PythonEnvironment::executeModule(const std::string& moduleName) {
                 if (builtinsModule) {
                     const proto::ProtoObject* execFn = builtinsModule->getAttribute(context, proto::ProtoString::fromUTF8String(context, "exec"));
                     if (execFn && execFn->asMethod(context)) {
+                        if (std::getenv("PROTO_THREAD_DIAG"))
+                            std::cerr << "[proto-thread-diag] about to exec sourceLen=" << source.size() << "\n" << std::flush;
                         const proto::ProtoList* args = context->newList()
                             ->appendLast(context, context->fromUTF8String(source.c_str()))
                             ->appendLast(context, const_cast<proto::ProtoObject*>(mod));
                         execFn->asMethod(context)(context, builtinsModule, nullptr, args, nullptr);
-                        const_cast<proto::ProtoObject*>(mod)->setAttribute(context, executedKey, PROTO_TRUE);
+                        if (std::getenv("PROTO_THREAD_DIAG"))
+                            std::cerr << "[proto-thread-diag] exec returned\n" << std::flush;
+                        const proto::ProtoObject* excAfterExec = takePendingException();
+                        if (std::getenv("PROTO_THREAD_DIAG") && excAfterExec && excAfterExec != PROTO_NONE)
+                            std::cerr << "[proto-thread-diag] exec raised an exception\n" << std::flush;
+                        if (!excAfterExec || excAfterExec == PROTO_NONE)
+                            const_cast<proto::ProtoObject*>(mod)->setAttribute(context, executedKey, PROTO_TRUE);
+                        if (std::getenv("PROTO_THREAD_DIAG")) {
+                            const proto::ProtoObject* mainRightAfter = mod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "main"));
+                            std::cerr << "[proto-thread-diag] right after exec mod.hasMain=" << (mainRightAfter && mainRightAfter != PROTO_NONE ? 1 : 0) << "\n" << std::flush;
+                        }
                     }
                 }
             }
@@ -4550,6 +4655,13 @@ int PythonEnvironment::executeModule(const std::string& moduleName) {
         }
     }
 
+    if (std::getenv("PROTO_THREAD_DIAG")) {
+        const proto::ProtoObject* m = resolve(moduleName);
+        const proto::ProtoObject* mainAttr = m && m != PROTO_NONE
+            ? m->getAttribute(context, proto::ProtoString::fromUTF8String(context, "main")) : nullptr;
+        std::cerr << "[proto-thread-diag] before runModuleMain hasMain=" << (mainAttr && mainAttr != PROTO_NONE ? 1 : 0)
+                  << " isMethod=" << (mainAttr && mainAttr->isMethod(context) ? 1 : 0) << "\n" << std::flush;
+    }
     int ret = runModuleMain(moduleName);
     if (ret != 0) {
         if (executionHook) executionHook(moduleName, 1);
@@ -4641,31 +4753,32 @@ void PythonEnvironment::enableDefaultTrace() {
 }
 
 void PythonEnvironment::invalidateResolveCache() {
-    std::lock_guard<std::mutex> lock(resolveCacheMutex_);
-    resolveCache_.clear();
+    resolveCacheGeneration_.fetch_add(1, std::memory_order_release);
 }
 
 const proto::ProtoObject* PythonEnvironment::resolve(const std::string& name) {
-    {
-        std::lock_guard<std::mutex> lock(resolveCacheMutex_);
-        auto it = resolveCache_.find(name);
-        if (it != resolveCache_.end() && it->second != nullptr)
-            return it->second;
+    // Type shortcuts always use current env (no cache) so multiple envs per thread stay correct.
+    if (name == "object") return objectPrototype;
+    if (name == "type") return typePrototype;
+    if (name == "int") return intPrototype;
+    if (name == "float") return floatPrototype;
+    if (name == "bool") return boolPrototype;
+    if (name == "str") return strPrototype;
+    if (name == "list") return listPrototype;
+    if (name == "dict") return dictPrototype;
+
+    uint64_t gen = resolveCacheGeneration_.load(std::memory_order_acquire);
+    if (s_threadResolveCacheGeneration != gen) {
+        s_threadResolveCache.clear();
+        s_threadResolveCacheGeneration = gen;
     }
+    auto it = s_threadResolveCache.find(name);
+    if (it != s_threadResolveCache.end() && it->second != nullptr)
+        return it->second;
 
     const proto::ProtoObject* result = PROTO_NONE;
 
-    // 1. Type shortcuts (prototypes) so they are never shadowed by builtins or modules
-    if (name == "object") result = objectPrototype;
-    else if (name == "type") result = typePrototype;
-    else if (name == "int") result = intPrototype;
-    else if (name == "float") result = floatPrototype;
-    else if (name == "bool") result = boolPrototype;
-    else if (name == "str") result = strPrototype;
-    else if (name == "list") result = listPrototype;
-    else if (name == "dict") result = dictPrototype;
-
-    // 2. Try module import so that names like "sys" resolve to the real module object,
+    // 1. Try module import so that names like "sys" resolve to the real module object,
     //    not a builtins attribute (e.g. a method) that would cause type mismatch in getAttribute
     if (!result || result == PROTO_NONE) {
         const proto::ProtoObject* modWrapper = context->space->getImportModule(name.c_str(), "val");
@@ -4681,7 +4794,7 @@ const proto::ProtoObject* PythonEnvironment::resolve(const std::string& name) {
         }
     }
 
-    // 3. Fall back to builtins (e.g. len, print, type as callable)
+    // 2. Fall back to builtins (e.g. len, print, type as callable)
     if (!result || result == PROTO_NONE) {
         if (builtinsModule) {
             const proto::ProtoObject* attr = builtinsModule->getAttribute(context, proto::ProtoString::fromUTF8String(context, name.c_str()));
@@ -4689,10 +4802,7 @@ const proto::ProtoObject* PythonEnvironment::resolve(const std::string& name) {
         }
     }
 
-    {
-        std::lock_guard<std::mutex> lock(resolveCacheMutex_);
-        resolveCache_[name] = result;
-    }
+    s_threadResolveCache[name] = result;
     return result;
 }
 
