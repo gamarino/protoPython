@@ -116,7 +116,9 @@ No mutexes were added in the ThreadingStrategy or ExecutionEngine paths; existin
 | ThreadingStrategy   | `test_threading_strategy`        | `ExecutionTask` 64-byte alignment; `runTaskInline` result; `submitTask` and null-safety. |
 | BasicBlockAnalysis  | `test_basic_block_analysis`      | Empty/null inputs; single block; JUMP_ABSOLUTE / POP_JUMP_IF_FALSE block starts and ends. |
 
-Run: `ctest -R "test_execution_engine|test_threading_strategy|test_basic_block"` from the build directory.
+Run re-architecture tests: `ctest -R "test_execution_engine|test_threading_strategy|test_basic_block"` from the build directory.
+
+Full suite (protoCore + protoPython): `ctest` from the build directory (71 tests; all must pass before commit).
 
 ---
 

@@ -22,9 +22,12 @@
 
 ```bash
 cd build
+ctest                    # Full suite (71 tests: protoCore + protoPython). Gate: all green.
 ctest -R test_foundation
 ctest -R protopy_cli
 ctest -R test_regr
+# Re-architecture tests:
+ctest -R "test_execution_engine|test_threading_strategy|test_basic_block"
 # Or run executables directly:
 ./test/library/test_foundation
 ./test/regression/test_regr
