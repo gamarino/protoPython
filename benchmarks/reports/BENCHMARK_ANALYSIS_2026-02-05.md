@@ -1,8 +1,8 @@
 # Performance Suite Analysis — 2026-02-05
 
-**Report:** [benchmark_report.md](benchmark_report.md)  
-**Harness:** `PROTOPY_BIN=./build/src/runtime/protopy python3 benchmarks/run_benchmarks.py --output reports/benchmark_report.md`  
-**Environment:** Linux x86_64, median of 5 runs, 90s timeout per run.
+**Report:** [BENCHMARK_REPORT_2026-02-05.md](BENCHMARK_REPORT_2026-02-05.md)  
+**Harness:** `PROTOPY_BIN=./build/src/runtime/protopy python3 benchmarks/run_benchmarks.py --output reports/BENCHMARK_REPORT_2026-02-05.md`  
+**Environment:** Linux x86_64, median of 5 runs, 60s timeout per run.
 
 ---
 
@@ -10,38 +10,37 @@
 
 | Benchmark         | protopy (ms) | cpython (ms) | Ratio     | Note                    |
 |-------------------|-------------:|-------------:|----------:|-------------------------|
-| startup_empty    |        33.84 |        37.52 | 0.90×     | Slightly faster         |
-| int_sum_loop     |        32.32 |        64.63 | 0.50×     | ~2× faster              |
-| list_append_loop |        32.45 |        36.03 | 0.90×     | Slightly faster         |
-| str_concat_loop  |        64.50 |        32.50 | **1.98×** | Slower; string path     |
-| range_iterate    |        34.60 |        64.68 | 0.53×     | ~2× faster              |
-| multithread_cpu  |      2335.08 |        32.40 | **72.08×**| Slower; threading model |
+| startup_empty     |        32.28 |        32.20 | 1.00×     | On par                  |
+| int_sum_loop      |        32.26 |        32.93 | 0.98×     | Slightly faster         |
+| list_append_loop  |        35.21 |        33.03 | 1.07×     | Slightly slower         |
+| str_concat_loop   |        32.19 |        32.39 | 0.99×     | Slightly faster         |
+| range_iterate     |        32.42 |        32.61 | 0.99×     | Slightly faster         |
+| multithread_cpu   |       218.25 |        64.65 | **3.38×** | Slower; shared allocator|
 
-**Geometric mean (ratio):** ~1.77× (dominated by multithread_cpu and str_concat_loop).
+**Geometric mean (ratio):** ~1.23× (multithread_cpu is the main gap).
 
 ---
 
 ## Per-benchmark analysis
 
-### Where protoPython is faster or on par
+### Where protoPython is on par or faster
 
-- **startup_empty (0.90×):** Importing `abc` is slightly faster; less interpreter startup overhead.
-- **int_sum_loop (0.50×):** Integer loop and `sum(range(N))` benefit from protoCore numeric path; ~2× faster than CPython.
-- **list_append_loop (0.90×):** List append loop is on par; allocation and list ops are efficient.
-- **range_iterate (0.53×):** Iteration over `range(N)` is ~2× faster; aligns with int_sum_loop.
+- **startup_empty (1.00×):** Importing `abc` is on par with CPython.
+- **int_sum_loop (0.98×):** Integer loop and `sum(range(N))` are slightly faster; protoCore numeric path is efficient.
+- **list_append_loop (1.07×):** List append loop is close; minor variance.
+- **str_concat_loop (0.99×):** String concatenation in a loop is on par.
+- **range_iterate (0.99×):** Iteration over `range(N)` is on par.
 
 ### Where protoPython is slower
 
-- **str_concat_loop (1.98×):** String concatenation in a loop is ~2× slower. Likely causes: repeated UTF8/ProtoString conversion, temporary allocations, or less optimized string buffer path. **Recommendation:** Profile and optimize the string concat path (e.g. pre-size or use a list-join pattern in the benchmark; or improve runtime string builder).
-- **multithread_cpu (72.08×):** protoPython ~2335 ms vs CPython ~32 ms. CPython runs the 4 chunks under the GIL (effectively single-threaded). protoPython is GIL-less but current execution still **serializes** compile+run per thread (see `TestExecutionEngine.ConcurrentExecutionTwoThreads` and [GIL_FREE_AUDIT.md](../../docs/GIL_FREE_AUDIT.md)): one shared `PythonEnvironment`/context and a mutex around allocation and execution. So we do not yet get parallel CPU-bound speedup; instead we pay thread and serialization overhead. **Recommendation:** This is the target of the re-architecture ([REARCHITECTURE_PROTOCORE.md](../../docs/REARCHITECTURE_PROTOCORE.md)): work-stealing scheduler, per-thread LocalHeap, and task batching so that multithreaded CPU workloads can run in parallel without mutex contention.
+- **multithread_cpu (3.38×):** protoPython ~218 ms vs CPython ~65 ms. CPython runs the 4 chunks under the GIL (effectively serial). protoPython is GIL-less; threads run in parallel but still contend on the **shared allocator** (`getFreeCells` lock when a thread exhausts its batch). Lock-free `submitYoungGeneration` and per-thread resolve cache / thread-local trace have removed the previous hot-path mutexes (see [MULTITHREAD_CPU_BENCHMARK.md](../MULTITHREAD_CPU_BENCHMARK.md)). **Recommendation:** To get protoPython faster than CPython on this workload, per-thread heaps (LocalHeap in protoCore) are needed; see [REARCHITECTURE_PROTOCORE.md](../../docs/REARCHITECTURE_PROTOCORE.md).
 
 ---
 
 ## Conclusions
 
-1. **Single-threaded numeric and iteration:** protoPython is competitive or faster (startup, int sum, list append, range iterate).
-2. **String-heavy loop:** protoPython is ~2× slower; worth a dedicated optimization pass.
-3. **Multithreaded CPU:** Current design does not yet show a parallelism win; geometric mean and worst ratio are dominated by this benchmark. Improving it requires the protoCore/protoPython re-architecture (scheduler, heaps, no mutex in hot path).
+1. **Single-threaded:** protoPython is on par with CPython across startup, int sum, list append, string concat, and range iteration (ratios ~0.98×–1.07×).
+2. **Multithreaded CPU:** Ratio improved from historical ~70× to **~3.38×** after allocator and lock-free fixes; remaining gap is the shared allocator. Geometric mean is ~1.23×.
 
 ---
 
@@ -50,7 +49,7 @@
 ```bash
 cd /path/to/protoPython
 PROTOPY_BIN=$(pwd)/build/src/runtime/protopy python3 benchmarks/run_benchmarks.py \
-  --output reports/benchmark_report.md --timeout 90
+  --output reports/BENCHMARK_REPORT_2026-02-05.md --timeout 60
 ```
 
 Optional: `-v` for per-run timings, `-q` for quick (2 runs, 1 warmup).
