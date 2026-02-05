@@ -182,6 +182,16 @@ Reserved for v36. No new stub entries in this batch (v36 focused on documentatio
 | traceback | extract_tb, format_list, format_exception | Implemented. |
 | difflib | unified_diff | Implemented (line-by-line). |
 
+## Python stdlib — New stubs (v39)
+
+| Module | Item | Behavior |
+|--------|------|----------|
+| _os | environ_keys | Returns list of env var names (POSIX). |
+| os | environ | Populated from _os.environ_keys + getenv when available. |
+| argparse | ArgumentParser, add_argument, parse_args | Implemented (lib/python3.14/argparse.py). |
+| configparser | ConfigParser: read, sections, get | Implemented (lib/python3.14/configparser.py). |
+| getpass | getpass, getuser | getpass returns ""; getuser from os.environ. |
+
 ## Python stdlib — New stubs (v38)
 
 | Module | Item | Behavior |

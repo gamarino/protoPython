@@ -370,9 +370,15 @@ See [docs/NEXT_20_STEPS_V37.md](../docs/NEXT_20_STEPS_V37.md). Steps 665–684: 
 
 ## 37. Next 20 Steps (v38) — completed
 
-See [docs/NEXT_20_STEPS_V38.md](../docs/NEXT_20_STEPS_V38.md). Steps 685–704: _thread native module resolution fix; statistics.mean/median/stdev; urllib.parse.quote/unquote/urljoin; dataclasses default values; unittest assertRaises/assertIn/main; contextlib full impl; foundation tests ThreadModuleLoads, StatisticsModuleLoads, UrllibParseModuleLoads.
+See [docs/NEXT_20_STEPS_V38.md](../docs/NEXT_20_STEPS_V38.md). Steps 685–704: _thread native module resolution fix; statistics.mean/median/stdev; urllib.parse.quote/unquote/urljoin; dataclasses default values; unittest assertRaises/assertIn/main; contextlib full impl; foundation tests.
 
 - [x] Steps 685–704
+
+## 38. Next 20 Steps (v39) — completed
+
+See [docs/NEXT_20_STEPS_V39.md](../docs/NEXT_20_STEPS_V39.md). Steps 705–724: _os.environ_keys; os.environ from environment; argparse; configparser; getpass; foundation tests OsEnviron, ArgparseBasic, ConfigParserRead.
+
+- [x] Steps 705–724
 
 ---
 *Updated from plan implementation. Mark items complete as work progresses.*
