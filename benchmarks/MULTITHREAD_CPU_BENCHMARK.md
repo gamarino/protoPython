@@ -65,10 +65,15 @@ Example:
 2. **Skip park-for-GC when multi-threaded**  
    When `runningThreads > 1` and the global list is empty, skip the “trigger GC and park” path and go directly to OS allocation. This avoids stop-the-world pauses while the main thread is in `join()` and reduces serialization.
 
-3. **Larger OS allocation when multi-threaded**  
-   When allocating from the OS with multiple threads, use a larger multiplier so the global list is refilled with more cells and subsequent threads rarely need to trigger allocation.
+3. **Allocate only one batch when multi-threaded (critical fix)**  
+   When `runningThreads > 1` and allocating from the OS, allocate only `batchSize` cells (e.g. 60k), not 256k. Previously we allocated 256k and chained all 256k cells *while holding the global lock*, so one thread held the lock for hundreds of ms and serialized all others. Allocating a single batch per thread keeps the critical section short so worst case is roughly serialized execution (~N_THREADS × single_chunk_time).
 
 4. **Correct `runningThreads` count**  
    Removed the duplicate `runningThreads++` in `ProtoSpace::newThread()` (the increment is already done in `ProtoThreadImplementation` constructor), so batch-size scaling uses the correct thread count.
 
-**Result:** multithread_cpu completes without timeout; ratio improves (e.g. from ~70× to ~33× slower). Full parallelism would require per-thread heaps (see [REARCHITECTURE_PROTOCORE.md](../docs/REARCHITECTURE_PROTOCORE.md)).
+   **OS allocation cap:** Each request to the OS in `getFreeCells` is capped at 16 MiB per call (see protoCore `docs/GarbageCollector.md`). This limits single `posix_memalign` size and keeps critical sections bounded.
+
+5. **Lock-free `submitYoungGeneration` (major fix)**  
+   Every context destruction (every function return) used to take `globalMutex` to push a dirty segment onto `dirtySegments`. With 4 threads and hundreds of thousands of returns, this serialized all threads on the same lock. `dirtySegments` is now a lock-free stack: `submitYoungGeneration` pushes with an atomic compare-exchange (no lock). The GC drains the stack under its existing lock when it runs. This removes the main hot-path contention and allows threads to run in parallel.
+
+**Result:** multithread_cpu ratio improves from ~70× to ~3.3× slower (e.g. 215 ms vs 65 ms CPython). Threads now run in parallel with much less contention. Remaining gap is due to: (a) shared allocator—`getFreeCells` still takes the lock when a thread exhausts its batch; (b) possible shared caches in protoPython (e.g. resolve cache); (c) single-threaded interpreter throughput. To get protoPython *faster* than CPython on this workload, per-thread heaps (LocalHeap in protoCore) and reduced shared-state contention are needed (see [REARCHITECTURE_PROTOCORE.md](../docs/REARCHITECTURE_PROTOCORE.md)).
