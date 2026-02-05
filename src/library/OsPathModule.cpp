@@ -1,5 +1,10 @@
 #include <protoPython/OsPathModule.h>
+#include <protoCore.h>
 #include <string>
+
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+#include <sys/stat.h>
+#endif
 
 namespace protoPython {
 namespace os_path {
@@ -56,8 +61,40 @@ static const proto::ProtoObject* py_exists(
     const proto::ProtoList* posArgs,
     const proto::ProtoSparseList*) {
     (void)self;
-    (void)posArgs;
+    if (!posArgs || posArgs->getSize(ctx) < 1) return PROTO_FALSE;
+    const proto::ProtoObject* pathObj = posArgs->getAt(ctx, 0);
+    if (!pathObj->isString(ctx)) return PROTO_FALSE;
+    std::string path;
+    pathObj->asString(ctx)->toUTF8String(ctx, path);
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+    struct stat st;
+    return (stat(path.c_str(), &st) == 0) ? PROTO_TRUE : PROTO_FALSE;
+#else
+    (void)path;
     return PROTO_FALSE;
+#endif
+}
+
+static const proto::ProtoObject* py_isfile(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList*) {
+    (void)self;
+    if (!posArgs || posArgs->getSize(ctx) < 1) return PROTO_FALSE;
+    const proto::ProtoObject* pathObj = posArgs->getAt(ctx, 0);
+    if (!pathObj->isString(ctx)) return PROTO_FALSE;
+    std::string path;
+    pathObj->asString(ctx)->toUTF8String(ctx, path);
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+    struct stat st;
+    if (stat(path.c_str(), &st) != 0) return PROTO_FALSE;
+    return S_ISREG(st.st_mode) ? PROTO_TRUE : PROTO_FALSE;
+#else
+    (void)path;
+    return PROTO_FALSE;
+#endif
 }
 
 static const proto::ProtoObject* py_isdir(
@@ -67,8 +104,19 @@ static const proto::ProtoObject* py_isdir(
     const proto::ProtoList* posArgs,
     const proto::ProtoSparseList*) {
     (void)self;
-    (void)posArgs;
+    if (!posArgs || posArgs->getSize(ctx) < 1) return PROTO_FALSE;
+    const proto::ProtoObject* pathObj = posArgs->getAt(ctx, 0);
+    if (!pathObj->isString(ctx)) return PROTO_FALSE;
+    std::string path;
+    pathObj->asString(ctx)->toUTF8String(ctx, path);
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+    struct stat st;
+    if (stat(path.c_str(), &st) != 0) return PROTO_FALSE;
+    return S_ISDIR(st.st_mode) ? PROTO_TRUE : PROTO_FALSE;
+#else
+    (void)path;
     return PROTO_FALSE;
+#endif
 }
 
 static const proto::ProtoObject* py_realpath(
@@ -101,6 +149,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_join));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "exists"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_exists));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "isfile"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_isfile));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "isdir"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_isdir));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "realpath"),

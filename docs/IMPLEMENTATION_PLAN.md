@@ -129,6 +129,8 @@ We aim for "No-Modification" compatibility with CPython tests.
 
 **Completed: Next 20 Steps v43 (785–804).** See [NEXT_20_STEPS_V43.md](NEXT_20_STEPS_V43.md). pathlib.Path exists, is_dir, is_file, mkdir; decimal __mul__/__truediv__; fractions __mul__; io.BytesIO; foundation tests PathlibExistsIsdir, DecimalMul, IoBytesIO; STUBS, todo, IMPLEMENTATION_PLAN updated.
 
+**Completed: Next 20 Steps v44 (805–824).** See [NEXT_20_STEPS_V44.md](NEXT_20_STEPS_V44.md). pathlib.Path read_text/write_text; os.path.isfile; functools.partial; datetime date/timedelta; foundation tests PathlibReadText, FunctoolsPartial, DatetimeDate; STUBS, todo, IMPLEMENTATION_PLAN updated.
+
 ## 5. Debugging & IDE Support
 To be a viable replacement, `protoPython` must support professional developer workflows.
 

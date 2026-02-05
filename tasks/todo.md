@@ -404,5 +404,11 @@ See [docs/NEXT_20_STEPS_V43.md](../docs/NEXT_20_STEPS_V43.md). Steps 785–804: 
 
 - [x] Steps 785–804
 
+## 43. Next 20 Steps (v44) — completed
+
+See [docs/NEXT_20_STEPS_V44.md](../docs/NEXT_20_STEPS_V44.md). Steps 805–824: pathlib.Path read_text/write_text; os.path.isfile; functools.partial; datetime date/timedelta; foundation tests PathlibReadText, FunctoolsPartial, DatetimeDate.
+
+- [x] Steps 805–824
+
 ---
 *Updated from plan implementation. Mark items complete as work progresses.*

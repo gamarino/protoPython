@@ -2172,3 +2172,31 @@ TEST_F(FoundationTest, IoBytesIO) {
     const proto::ProtoObject* fileVal = ioMod->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__file__"));
     EXPECT_TRUE(fileVal != nullptr && fileVal->isString(ctx));
 }
+
+TEST_F(FoundationTest, PathlibReadText) {
+    proto::ProtoContext* ctx = env.getContext();
+    const proto::ProtoObject* pathlibMod = env.resolve("pathlib");
+    ASSERT_NE(pathlibMod, nullptr);
+    const proto::ProtoObject* pathVal = pathlibMod->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "Path"));
+    ASSERT_NE(pathVal, nullptr);
+    const proto::ProtoObject* readTextAttr = pathVal->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "read_text"));
+    const proto::ProtoObject* writeTextAttr = pathVal->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "write_text"));
+    EXPECT_NE(readTextAttr, nullptr);
+    EXPECT_NE(writeTextAttr, nullptr);
+}
+
+TEST_F(FoundationTest, FunctoolsPartial) {
+    proto::ProtoContext* ctx = env.getContext();
+    const proto::ProtoObject* ftMod = env.resolve("functools");
+    ASSERT_NE(ftMod, nullptr);
+    const proto::ProtoObject* partialVal = ftMod->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "partial"));
+    EXPECT_NE(partialVal, nullptr);
+}
+
+TEST_F(FoundationTest, DatetimeDate) {
+    proto::ProtoContext* ctx = env.getContext();
+    const proto::ProtoObject* dtMod = env.resolve("datetime");
+    ASSERT_NE(dtMod, nullptr);
+    const proto::ProtoObject* fileVal = dtMod->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__file__"));
+    EXPECT_TRUE(fileVal != nullptr && fileVal->isString(ctx));
+}

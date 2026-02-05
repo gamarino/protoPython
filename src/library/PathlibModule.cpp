@@ -5,6 +5,8 @@
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <fstream>
+#include <sstream>
 #endif
 
 namespace protoPython {
@@ -134,6 +136,46 @@ static const proto::ProtoObject* py_path_mkdir(
     return PROTO_NONE;
 }
 
+static const proto::ProtoObject* py_path_read_text(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList*,
+    const proto::ProtoSparseList*) {
+    std::string path = path_from_self(ctx, self);
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+    std::ifstream f(path);
+    if (!f) return ctx->fromUTF8String("");
+    std::ostringstream oss;
+    oss << f.rdbuf();
+    return ctx->fromUTF8String(oss.str().c_str());
+#else
+    (void)path;
+    return ctx->fromUTF8String("");
+#endif
+}
+
+static const proto::ProtoObject* py_path_write_text(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList*) {
+    std::string path = path_from_self(ctx, self);
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+    std::string content;
+    if (posArgs && posArgs->getSize(ctx) >= 1) {
+        const proto::ProtoObject* data = posArgs->getAt(ctx, 0);
+        if (data->isString(ctx))
+            data->asString(ctx)->toUTF8String(ctx, content);
+    }
+    std::ofstream f(path);
+    if (f) f << content;
+#endif
+    (void)path;
+    return PROTO_NONE;
+}
+
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     const proto::ProtoObject* pathProto = ctx->newObject(true);
     pathProto = pathProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__path_proto__"), pathProto);
@@ -149,6 +191,10 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(const_cast<proto::ProtoObject*>(pathProto), py_path_is_file));
     pathProto = pathProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "mkdir"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(pathProto), py_path_mkdir));
+    pathProto = pathProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "read_text"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(pathProto), py_path_read_text));
+    pathProto = pathProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "write_text"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(pathProto), py_path_write_text));
 
     const proto::ProtoObject* mod = ctx->newObject(true);
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "Path"), pathProto);

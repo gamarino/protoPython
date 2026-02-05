@@ -239,6 +239,15 @@ Reserved for v36. No new stub entries in this batch (v36 focused on documentatio
 | fractions | Fraction | __mul__ added (v43). |
 | io | BytesIO | Minimal: getvalue, read, write (bytes buffer). |
 
+## Python stdlib — New stubs (v44)
+
+| Module | Item | Behavior |
+|--------|------|----------|
+| pathlib.Path | read_text, write_text | Native: fstream-based file I/O. |
+| os.path | isfile | Implemented: stat-based S_ISREG. |
+| functools | partial | Pre-existing: func, *args, **kwargs; __call__ merges. |
+| datetime | date, timedelta | date(year, month, day); timedelta(days, seconds, microseconds). |
+
 ## Python stdlib — New stubs
 
 | Module | Item | Behavior |
