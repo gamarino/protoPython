@@ -87,6 +87,8 @@ The following mutexes remain as technical debt until protoCore provides lock-fre
 5. **TestExecutionEngine**
    - `runMutex` used to serialize concurrent execution; once execution is task-based and each task runs on a dedicated context/heap, this can be removed.
 
+No mutexes were added in the ThreadingStrategy or ExecutionEngine paths; existing mutexes above remain until protoCore provides replacements.
+
 ---
 
 ## 5. Output Deliverables (Code)
