@@ -11,7 +11,9 @@
 ## Test Targets
 
 - **test_foundation** (`build/test/library/test_foundation`): Unit tests for `PythonEnvironment`, built-in types, and dunder methods. CTest runs a filtered suite by default (see Bug fixes above). Includes math tests (e.g. MathLdexpFrexpModfE for math.ldexp, math.frexp, math.modf, math.e; MathCbrtExp2Expm1Fma for math.cbrt, math.exp2, math.expm1, math.fma; MathSumprod for math.sumprod; see Next 20 Steps v33–v35). Next 20 Steps v36 (645–664) delivered documentation only (concurrency model, protoCore compatibility); see [NEXT_20_STEPS_V36.md](NEXT_20_STEPS_V36.md).
-- **test_execution_engine** (`build/test/library/test_execution_engine`): CTest for bytecode opcodes (e.g. BINARY_LSHIFT, INPLACE_SUBTRACT, BINARY_AND, ROT_THREE, ROT_FOUR, DUP_TOP_TWO; see Next 20 Steps v24–v32). Opcode coverage matrix: [EXECUTION_ENGINE_OPCODES.md](EXECUTION_ENGINE_OPCODES.md). Includes **ConcurrentExecutionTwoThreads** (Phase 4): two threads use a single PythonEnvironment and shared ProtoContext; execution is serialized so only one thread allocates at a time (ProtoSpace/ProtoContext/ProtoThread allocation and GC are per-thread). See [GIL_FREE_AUDIT.md](GIL_FREE_AUDIT.md).
+- **test_execution_engine** (`build/test/library/test_execution_engine`): CTest for bytecode opcodes (e.g. BINARY_LSHIFT, INPLACE_SUBTRACT, BINARY_AND, ROT_THREE, ROT_FOUR, DUP_TOP_TWO; see Next 20 Steps v24–v32). Opcode coverage matrix: [EXECUTION_ENGINE_OPCODES.md](EXECUTION_ENGINE_OPCODES.md). Includes **ExecuteBytecodeRangePartialRangeReturnsValue** and **ExecuteBytecodeRangeFullRangeEqualsExecuteMinimal** (bulk block execution). Includes **ConcurrentExecutionTwoThreads** (Phase 4): two threads use a single PythonEnvironment and shared ProtoContext; execution is serialized so only one thread allocates at a time (ProtoSpace/ProtoContext/ProtoThread allocation and GC are per-thread). See [GIL_FREE_AUDIT.md](GIL_FREE_AUDIT.md).
+- **test_threading_strategy** (`build/test/library/test_threading_strategy`): Re-architecture tests for ThreadingStrategy: ExecutionTask 64-byte alignment, runTaskInline, submitTask, null-safety. See [REARCHITECTURE_PROTOCORE.md](REARCHITECTURE_PROTOCORE.md).
+- **test_basic_block_analysis** (`build/test/library/test_basic_block_analysis`): Basic block boundary computation (getBasicBlockBoundaries) for bulk task dispatch. See [REARCHITECTURE_PROTOCORE.md](REARCHITECTURE_PROTOCORE.md).
 - **test_regr** (`build/test/regression/test_regr`): Regression harness tests (e.g. module resolution).
 - **protopy_cli_***: CTest targets for protopy CLI (help, missing module, script success).
 - **regrtest_protopy_script**: Runs `protopy` on `regrtest_runner.py`.
@@ -79,6 +81,10 @@ Or with env var:
 ```bash
 PROTYPY_BIN=./build/src/runtime/protopy REGRTEST_RESULTS=test/regression/results/latest.json python test/regression/run_and_report.py
 ```
+
+### Persistence format and dashboard
+
+The JSON output contains test run metadata and per-test results (pass/fail, duration). The format is suitable for CI and for the regression dashboard in `test/regression/dashboard.py` (history, trends). Use `REGRTEST_HISTORY` to point to the history file when running the dashboard.
 
 ### JSON output format
 
