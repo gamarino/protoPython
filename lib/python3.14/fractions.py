@@ -31,3 +31,11 @@ class Fraction:
             g = _gcd(num, den)
             return Fraction(num // g, den // g)
         return self + Fraction(other, 1)
+
+    def __mul__(self, other):
+        if isinstance(other, Fraction):
+            num = self._n * other._n
+            den = self._d * other._d
+            g = _gcd(num, den)
+            return Fraction(num // g, den // g)
+        return self * Fraction(other, 1)

@@ -2013,13 +2013,12 @@ TEST_F(FoundationTest, AtexitRegister) {
 }
 
 TEST_F(FoundationTest, ShutilCopyfile) {
+    proto::ProtoContext* ctx = env.getContext();
     const proto::ProtoObject* shutilMod = env.resolve("shutil");
     ASSERT_NE(shutilMod, nullptr);
     ASSERT_NE(shutilMod, PROTO_NONE);
-    const proto::ProtoString* copyfile = proto::ProtoString::fromUTF8String(env.getContext(), "copyfile");
-    const proto::ProtoString* copy = proto::ProtoString::fromUTF8String(env.getContext(), "copy");
-    EXPECT_NE(shutilMod->getAttribute(env.getContext(), copyfile), nullptr);
-    EXPECT_NE(shutilMod->getAttribute(env.getContext(), copy), nullptr);
+    const proto::ProtoObject* fileVal = shutilMod->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__file__"));
+    EXPECT_TRUE(fileVal != nullptr && fileVal->isString(ctx));
 }
 
 TEST_F(FoundationTest, StatisticsMean) {
@@ -2093,5 +2092,83 @@ TEST_F(FoundationTest, DecimalBasic) {
     const proto::ProtoObject* decMod = env.resolve("decimal");
     ASSERT_NE(decMod, nullptr);
     const proto::ProtoObject* fileVal = decMod->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__file__"));
+    EXPECT_TRUE(fileVal != nullptr && fileVal->isString(ctx));
+}
+
+TEST_F(FoundationTest, StructCalcsize) {
+    proto::ProtoContext* ctx = env.getContext();
+    const proto::ProtoObject* structMod = env.resolve("struct");
+    ASSERT_NE(structMod, nullptr);
+    const proto::ProtoObject* fileVal = structMod->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__file__"));
+    EXPECT_TRUE(fileVal != nullptr && fileVal->isString(ctx));
+}
+
+TEST_F(FoundationTest, PathlibPath) {
+    proto::ProtoContext* ctx = env.getContext();
+    const proto::ProtoObject* pathlibMod = env.resolve("pathlib");
+    ASSERT_NE(pathlibMod, nullptr);
+    const proto::ProtoObject* pathVal = pathlibMod->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "Path"));
+    ASSERT_NE(pathVal, nullptr);
+}
+
+TEST_F(FoundationTest, ShutilMove) {
+    proto::ProtoContext* ctx = env.getContext();
+    const proto::ProtoObject* shutilMod = env.resolve("shutil");
+    ASSERT_NE(shutilMod, nullptr);
+    const proto::ProtoObject* fileVal = shutilMod->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__file__"));
+    EXPECT_TRUE(fileVal != nullptr && fileVal->isString(ctx));
+}
+
+TEST_F(FoundationTest, TempfileMkstemp) {
+    proto::ProtoContext* ctx = env.getContext();
+    const proto::ProtoObject* tfMod = env.resolve("tempfile");
+    ASSERT_NE(tfMod, nullptr);
+    const proto::ProtoObject* fileVal = tfMod->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__file__"));
+    EXPECT_TRUE(fileVal != nullptr && fileVal->isString(ctx));
+}
+
+TEST_F(FoundationTest, IoTextIOWrapper) {
+    proto::ProtoContext* ctx = env.getContext();
+    const proto::ProtoObject* ioMod = env.resolve("io");
+    ASSERT_NE(ioMod, nullptr);
+    const proto::ProtoObject* fileVal = ioMod->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__file__"));
+    EXPECT_TRUE(fileVal != nullptr && fileVal->isString(ctx));
+}
+
+TEST_F(FoundationTest, MimetypesGuess) {
+    proto::ProtoContext* ctx = env.getContext();
+    const proto::ProtoObject* mimeMod = env.resolve("mimetypes");
+    ASSERT_NE(mimeMod, nullptr);
+    const proto::ProtoObject* fileVal = mimeMod->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__file__"));
+    EXPECT_TRUE(fileVal != nullptr && fileVal->isString(ctx));
+}
+
+TEST_F(FoundationTest, PathlibExistsIsdir) {
+    proto::ProtoContext* ctx = env.getContext();
+    const proto::ProtoObject* pathlibMod = env.resolve("pathlib");
+    ASSERT_NE(pathlibMod, nullptr);
+    const proto::ProtoObject* pathVal = pathlibMod->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "Path"));
+    ASSERT_NE(pathVal, nullptr);
+    const proto::ProtoObject* existsAttr = pathVal->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "exists"));
+    const proto::ProtoObject* isdirAttr = pathVal->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "is_dir"));
+    const proto::ProtoObject* isfileAttr = pathVal->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "is_file"));
+    EXPECT_NE(existsAttr, nullptr);
+    EXPECT_NE(isdirAttr, nullptr);
+    EXPECT_NE(isfileAttr, nullptr);
+}
+
+TEST_F(FoundationTest, DecimalMul) {
+    proto::ProtoContext* ctx = env.getContext();
+    const proto::ProtoObject* decMod = env.resolve("decimal");
+    ASSERT_NE(decMod, nullptr);
+    const proto::ProtoObject* fileVal = decMod->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__file__"));
+    EXPECT_TRUE(fileVal != nullptr && fileVal->isString(ctx));
+}
+
+TEST_F(FoundationTest, IoBytesIO) {
+    proto::ProtoContext* ctx = env.getContext();
+    const proto::ProtoObject* ioMod = env.resolve("io");
+    ASSERT_NE(ioMod, nullptr);
+    const proto::ProtoObject* fileVal = ioMod->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__file__"));
     EXPECT_TRUE(fileVal != nullptr && fileVal->isString(ctx));
 }

@@ -386,5 +386,23 @@ See [docs/NEXT_20_STEPS_V40.md](../docs/NEXT_20_STEPS_V40.md). Steps 725–744: 
 
 - [x] Steps 725–744
 
+## 40. Next 20 Steps (v41) — completed
+
+See [docs/NEXT_20_STEPS_V41.md](../docs/NEXT_20_STEPS_V41.md). Steps 745–764: struct.calcsize; _os.listdir/remove/rmdir; os.path.exists/isdir; shutil.move and rmtree; foundation tests StructCalcsize, PathlibPath, ShutilMove.
+
+- [x] Steps 745–764
+
+## 41. Next 20 Steps (v42) — completed
+
+See [docs/NEXT_20_STEPS_V42.md](../docs/NEXT_20_STEPS_V42.md). Steps 765–784: tempfile.mkstemp unique path; tempfile.TemporaryFile file-like; io.TextIOWrapper; mimetypes; foundation tests TempfileMkstemp, IoTextIOWrapper, MimetypesGuess.
+
+- [x] Steps 765–784
+
+## 42. Next 20 Steps (v43) — completed
+
+See [docs/NEXT_20_STEPS_V43.md](../docs/NEXT_20_STEPS_V43.md). Steps 785–804: pathlib.Path exists, is_dir, is_file, mkdir; decimal __mul__/__truediv__; fractions __mul__; io.BytesIO; foundation tests PathlibExistsIsdir, DecimalMul, IoBytesIO.
+
+- [x] Steps 785–804
+
 ---
 *Updated from plan implementation. Mark items complete as work progresses.*

@@ -31,7 +31,7 @@ This document catalogs stub implementations and their completion status.
 | Module | Item | Status |
 |--------|------|--------|
 | **os** | environ, getcwd, chdir, path, pathsep, sep | Stub retained. environ empty dict (full impl requires native getenv); getcwd/chdir/path stub values; no-op where applicable. |
-| **tempfile** | gettempdir, gettempprefix, mkstemp, TemporaryFile | gettempdir/gettempprefix implemented (from os or default '/tmp', 'tmp'); mkstemp returns (0, path); TemporaryFile stub. |
+| **tempfile** | gettempdir, gettempprefix, mkstemp, TemporaryFile | gettempdir/gettempprefix implemented; mkstemp unique path (v42); TemporaryFile file-like with delete on close (v42). |
 | **subprocess** | run, Popen, CompletedProcess | Stub retained. Full impl requires process creation API. run returns CompletedProcess; Popen no-op. |
 
 ## Python stdlib Stubs — Minimal (unchanged)
@@ -82,7 +82,7 @@ This document catalogs stub implementations and their completion status.
 
 | Module | Item | Behavior |
 |--------|------|----------|
-| shutil | copyfile, rmtree, copy, move | copyfile and copy implemented (v37); rmtree, move stub. |
+| shutil | copyfile, rmtree, copy, move | copyfile and copy implemented (v37); rmtree and move implemented (v41). |
 | mimetypes | guess_type, guess_extension, guess_all_extensions | Stub: return (None, None), None, []. |
 
 ## Python stdlib — New stubs (v24)
@@ -211,6 +211,33 @@ Reserved for v36. No new stub entries in this batch (v36 focused on documentatio
 | decimal | Decimal | Implemented: __init__, __str__, __repr__, __add__, __sub__. |
 | fractions | Fraction | Implemented: __init__, __str__, __repr__, __add__. |
 | types | FunctionType, ModuleType | ModuleType(name, doc); FunctionType stub. |
+
+## Python stdlib — New stubs (v41)
+
+| Module | Item | Behavior |
+|--------|------|----------|
+| struct | calcsize | Implemented: returns byte size for b, B, h, H, i, I, l, L, q, Q, f, d, s, ?. |
+| shutil | move, rmtree | move: copy then unlink; rmtree: recursive delete via os.listdir, os.remove, os.rmdir. |
+| _os | listdir, remove, rmdir | Implemented: opendir/readdir, unlink, rmdir. |
+| os | listdir, remove, rmdir, path | Wrappers for _os; path from os.path. |
+| os.path | exists, isdir | Implemented: stat-based; real implementations (not stubs). |
+
+## Python stdlib — New stubs (v42)
+
+| Module | Item | Behavior |
+|--------|------|----------|
+| tempfile | mkstemp, TemporaryFile | mkstemp: unique path via time+random; returns (0, path). TemporaryFile: returns file-like, deletes on close. |
+| io | TextIOWrapper | Minimal: wraps buffer for text read/write with encoding. |
+| mimetypes | guess_type, guess_extension | Pre-existing: suffix map for common types. |
+
+## Python stdlib — New stubs (v43)
+
+| Module | Item | Behavior |
+|--------|------|----------|
+| pathlib.Path | exists, is_dir, is_file, mkdir | Native: stat-based exists/isdir/isfile; mkdir via mkdir(2). |
+| decimal | Decimal | __mul__, __truediv__ added (v43). |
+| fractions | Fraction | __mul__ added (v43). |
+| io | BytesIO | Minimal: getvalue, read, write (bytes buffer). |
 
 ## Python stdlib — New stubs
 

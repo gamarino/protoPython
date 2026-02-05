@@ -21,3 +21,13 @@ class Decimal:
         if isinstance(other, Decimal):
             return Decimal(str(float(self._value) - float(other._value)))
         return Decimal(str(float(self._value) - float(other)))
+
+    def __mul__(self, other):
+        if isinstance(other, Decimal):
+            return Decimal(str(float(self._value) * float(other._value)))
+        return Decimal(str(float(self._value) * float(other)))
+
+    def __truediv__(self, other):
+        if isinstance(other, Decimal):
+            return Decimal(str(float(self._value) / float(other._value)))
+        return Decimal(str(float(self._value) / float(other)))

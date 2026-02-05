@@ -123,6 +123,12 @@ We aim for "No-Modification" compatibility with CPython tests.
 
 **Completed: Next 20 Steps v40 (725–744).** See [NEXT_20_STEPS_V40.md](NEXT_20_STEPS_V40.md). difflib.SequenceMatcher; ast.literal_eval; inspect isfunction/ismodule/getsourcefile; decimal.Decimal and fractions.Fraction basics; types.ModuleType; foundation tests DifflibSequenceMatcher, AstLiteralEval, DecimalBasic; STUBS, todo, IMPLEMENTATION_PLAN updated.
 
+**Completed: Next 20 Steps v41 (745–764).** See [NEXT_20_STEPS_V41.md](NEXT_20_STEPS_V41.md). struct.calcsize; _os.listdir/remove/rmdir; os.path.exists/isdir; shutil.move and rmtree; foundation tests StructCalcsize, PathlibPath, ShutilMove; STUBS, todo, IMPLEMENTATION_PLAN updated.
+
+**Completed: Next 20 Steps v42 (765–784).** See [NEXT_20_STEPS_V42.md](NEXT_20_STEPS_V42.md). tempfile.mkstemp unique path; tempfile.TemporaryFile file-like; io.TextIOWrapper; mimetypes; foundation tests TempfileMkstemp, IoTextIOWrapper, MimetypesGuess; STUBS, todo, IMPLEMENTATION_PLAN updated.
+
+**Completed: Next 20 Steps v43 (785–804).** See [NEXT_20_STEPS_V43.md](NEXT_20_STEPS_V43.md). pathlib.Path exists, is_dir, is_file, mkdir; decimal __mul__/__truediv__; fractions __mul__; io.BytesIO; foundation tests PathlibExistsIsdir, DecimalMul, IoBytesIO; STUBS, todo, IMPLEMENTATION_PLAN updated.
+
 ## 5. Debugging & IDE Support
 To be a viable replacement, `protoPython` must support professional developer workflows.
 
