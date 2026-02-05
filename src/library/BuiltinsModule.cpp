@@ -687,8 +687,16 @@ static const proto::ProtoObject* py_exec(
     Parser parser(source);
     std::unique_ptr<ModuleNode> mod = parser.parseModule();
     if (!mod || mod->body.empty()) return PROTO_NONE;
+    if (std::getenv("PROTO_THREAD_DIAG")) {
+        size_t n = mod->body.size();
+        std::cerr << "[proto-thread-diag] exec: parsed " << n << " statements\n" << std::flush;
+    }
     Compiler compiler(context, "<string>");
-    if (!compiler.compileModule(mod.get())) return PROTO_NONE;
+    if (!compiler.compileModule(mod.get())) {
+        if (std::getenv("PROTO_THREAD_DIAG"))
+            std::cerr << "[proto-thread-diag] exec: compileModule failed\n" << std::flush;
+        return PROTO_NONE;
+    }
     const proto::ProtoObject* codeObj = makeCodeObject(context, compiler.getConstants(), compiler.getNames(), compiler.getBytecode());
     if (!codeObj) return PROTO_NONE;
     proto::ProtoObject* frame = nullptr;
@@ -698,6 +706,10 @@ static const proto::ProtoObject* py_exec(
     }
     if (!frame) frame = const_cast<proto::ProtoObject*>(context->newObject(true));
     runCodeObject(context, codeObj, frame);
+    if (std::getenv("PROTO_THREAD_DIAG")) {
+        const proto::ProtoObject* mainAttr = frame->getAttribute(context, proto::ProtoString::fromUTF8String(context, "main"));
+        std::cerr << "[proto-thread-diag] py_exec after runCodeObject frame.hasMain=" << (mainAttr && mainAttr != PROTO_NONE ? 1 : 0) << "\n" << std::flush;
+    }
     return PROTO_NONE;
 }
 
@@ -1347,6 +1359,15 @@ static const proto::ProtoObject* py_filter(
     return filterObj;
 }
 
+static bool filter_is_truthy(proto::ProtoContext* context, const proto::ProtoObject* obj) {
+    if (!obj || obj == PROTO_NONE) return false;
+    if (obj == PROTO_FALSE) return false;
+    if (obj == PROTO_TRUE) return true;
+    if (obj->isInteger(context)) return obj->asLong(context) != 0;
+    if (obj->isDouble(context)) return obj->asDouble(context) != 0.0;
+    return true;
+}
+
 static const proto::ProtoObject* py_filter_next(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -1357,17 +1378,12 @@ static const proto::ProtoObject* py_filter_next(
     const proto::ProtoObject* call = func->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__call__"));
     const proto::ProtoObject* nextM = it->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__next__"));
     if (!call || !call->asMethod(context) || !nextM || !nextM->asMethod(context)) return PROTO_NONE;
-    const proto::ProtoObject* boolType = self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__filter_bool__"));
-    const proto::ProtoObject* boolCall = boolType ? boolType->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__call__")) : nullptr;
-    if (!boolCall || !boolCall->asMethod(context)) return PROTO_NONE;
     for (;;) {
         const proto::ProtoObject* val = nextM->asMethod(context)(context, it, nullptr, context->newList(), nullptr);
         if (!val || val == PROTO_NONE) return PROTO_NONE;
         const proto::ProtoList* oneArg = context->newList()->appendLast(context, val);
         const proto::ProtoObject* result = call->asMethod(context)(context, func, nullptr, oneArg, nullptr);
-        const proto::ProtoList* boolArg = context->newList()->appendLast(context, result);
-        const proto::ProtoObject* b = boolCall->asMethod(context)(context, boolType, nullptr, boolArg, nullptr);
-        if (b == PROTO_TRUE) return val;
+        if (filter_is_truthy(context, result)) return val;
     }
 }
 
