@@ -6,14 +6,14 @@
 ├─────────────────────────────────────────────────────────────────────┤
 │ Benchmark              │ protopy (ms) │ cpython (ms) │ Ratio        │
 ├────────────────────────┼──────────────┼──────────────┼──────────────┤
-│ startup_empty          │      33.84   │      37.52   │ 0.90x faster │
-│ int_sum_loop           │      32.32   │      64.63   │ 0.50x faster │
-│ list_append_loop       │      32.45   │      36.03   │ 0.90x faster │
-│ str_concat_loop        │      64.50   │      32.50   │ 1.98x slower │
-│ range_iterate          │      34.60   │      64.68   │ 0.53x faster │
-│ multithread_cpu        │    2335.08   │      32.40   │ 72.08x slower │
+│ startup_empty          │      15.94   │      32.26   │ 0.49x faster │
+│ int_sum_loop           │      16.00   │      32.20   │ 0.50x faster │
+│ list_append_loop       │      32.20   │      32.46   │ 0.99x faster │
+│ str_concat_loop        │      32.18   │      32.36   │ 0.99x faster │
+│ range_iterate          │      32.16   │      32.37   │ 0.99x faster │
+│ multithread_cpu        │    1768.93   │      32.36   │ 54.66x slower │
 ├────────────────────────┼──────────────┼──────────────┼──────────────┤
-│ Geometric mean         │              │              │ ~1.77x       │
+│ Geometric mean         │              │              │ ~1.54x       │
 └─────────────────────────────────────────────────────────────────────┘
 
 Legend: Ratio = protopy/cpython. Lower is better. TIMEOUT = all runs hit timeout.

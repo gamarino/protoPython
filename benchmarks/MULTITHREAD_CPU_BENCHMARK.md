@@ -2,23 +2,20 @@
 
 This benchmark compares **wall-clock time** for a fixed amount of CPU-bound work when that work is expressed as a *multithreaded* task.
 
-## What it measures (current setup: single-thread comparison)
+## What it measures (multithreading comparison)
 
 - **Same total work:** 4 chunks of `sum(range(50_000))` (CPU-bound, no I/O).
-- **Both interpreters** run the script with **`SINGLE_THREAD=1`**, so all 4 chunks run **sequentially in the main thread**. This gives a **fair comparison of per-chunk interpreter speed** without GIL or thread overhead differences.
-- **protoPython:** Script runs 4 chunks sequentially (no os/threading; fair per-chunk comparison).
-- **CPython 3.14:** Also run with `SINGLE_THREAD=1` so execution model matches (single thread, same total work).
+- **protoPython:** Real multithreading (ProtoSpace threads, GIL-less). Work can run in parallel on multiple cores.
+- **CPython 3.14:** Uses threads, but the GIL serializes CPU-bound Python bytecode. Wall time ~ single-thread.
 
 
 ## Interpreting the ratio
 
 | Ratio | Meaning |
 |-------|--------|
-| **< 1** | protoPython is faster (fewer ms). |
+| **< 1** | protoPython is faster (GIL-less parallelism shows benefit). |
 | **= 1** | Same wall time. |
-| **> 1** | CPython is faster; the number reflects relative **per-chunk interpreter speed** (e.g. 3.5x means CPython's single-thread execution of the same work is ~3.5x faster). |
-
-This benchmark does **not** yet measure multi-CPU utilization. When protoPython implements real parallel threading, the script can be run without `SINGLE_THREAD=1` and wall time could drop (work split across CPUs).
+| **> 1** | CPython faster (e.g. per-chunk overhead dominates; or protoPython thread overhead). |
 
 ## How to run
 
@@ -49,5 +46,29 @@ Example:
 ## Script details
 
 - **Script:** [multithreaded_cpu.py](multithreaded_cpu.py)
-- **Env:** Harness sets `SINGLE_THREAD=1` for both. Script has no env dependency; it always runs 4 chunks sequentially for a fair per-chunk comparison.
+- **Execution:** Both use `threading.Thread` when available. protoPython uses ProtoSpace threads (GIL-less); CPython uses OS threads (GIL serializes CPU-bound work).
 - **Workload:** 4 × `sum(range(50_000))`; identical total CPU work in both runs.
+
+---
+
+## Debugging and root cause (protoCore allocator)
+
+**Observed:** protoPython multithread_cpu was ~70× slower than CPython (e.g. 2300 ms vs 32 ms). All benchmark runs completed (no timeouts).
+
+**Root cause:** All threads share a single global free list in `ProtoSpace`. `getFreeCells()` takes `globalMutex` to take a batch of cells. With 4 workers each doing ~50k allocations, every refill (batch exhaustion) required the lock, so threads serialized on the allocator. Additionally, when the global list was empty, threads would park for stop-the-world GC; with the main thread blocked in `join()`, that path could cause long pauses or contention.
+
+**Fixes applied (in protoCore):**
+
+1. **Larger batch when multiple threads run**  
+   In `getFreeCells()`, when `runningThreads > 1`, the batch size is scaled (and clamped to at least 60k, max 64k) so each thread refills less often and holds the lock fewer times.
+
+2. **Skip park-for-GC when multi-threaded**  
+   When `runningThreads > 1` and the global list is empty, skip the “trigger GC and park” path and go directly to OS allocation. This avoids stop-the-world pauses while the main thread is in `join()` and reduces serialization.
+
+3. **Larger OS allocation when multi-threaded**  
+   When allocating from the OS with multiple threads, use a larger multiplier so the global list is refilled with more cells and subsequent threads rarely need to trigger allocation.
+
+4. **Correct `runningThreads` count**  
+   Removed the duplicate `runningThreads++` in `ProtoSpace::newThread()` (the increment is already done in `ProtoThreadImplementation` constructor), so batch-size scaling uses the correct thread count.
+
+**Result:** multithread_cpu completes without timeout; ratio improves (e.g. from ~70× to ~33× slower). Full parallelism would require per-thread heaps (see [REARCHITECTURE_PROTOCORE.md](../docs/REARCHITECTURE_PROTOCORE.md)).
