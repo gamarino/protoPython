@@ -10,13 +10,43 @@ def copyfile(src, dst, follow_symlinks=True):
         f.write(data)
 
 def rmtree(path, ignore_errors=False, onerror=None):
-    """Stub: no-op. Full impl requires native directory removal."""
-    pass
+    """Recursively remove directory. Uses os.listdir, os.remove, os.rmdir."""
+    import os
+    try:
+        entries = os.listdir(path)
+        for name in entries:
+            full = os.path.join(path, name)
+            if os.path.isdir(full):
+                rmtree(full, ignore_errors, onerror)
+            else:
+                try:
+                    os.remove(full)
+                except OSError as e:
+                    if not ignore_errors:
+                        if onerror:
+                            onerror(os.remove, full, e)
+                        else:
+                            raise
+        os.rmdir(path)
+    except OSError as e:
+        if not ignore_errors:
+            if onerror:
+                onerror(os.rmdir, path, e)
+            else:
+                raise
 
 def copy(src, dst, follow_symlinks=True):
     """Copy src to dst. For files, delegates to copyfile."""
     copyfile(src, dst, follow_symlinks)
 
 def move(src, dst, copy_function=copy):
-    """Stub: no-op. Full impl requires rename or copy+remove."""
-    pass
+    """Move src to dst. Copy then unlink (rename when same filesystem would require native support)."""
+    copy_function(src, dst)
+    try:
+        import os
+        if os.path.isdir(src):
+            rmtree(src)
+        else:
+            os.remove(src)
+    except (OSError, IOError):
+        pass

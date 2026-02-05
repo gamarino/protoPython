@@ -1,19 +1,19 @@
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │ Performance: protoPython vs CPython 3.14                            │
-│ (median of 5 runs, timeouts excluded)                             │
+│ (median of 2 runs, timeouts excluded)                             │
 │ 2026-02-05 Linux x86_64                                │
 ├─────────────────────────────────────────────────────────────────────┤
 │ Benchmark              │ protopy (ms) │ cpython (ms) │ Ratio        │
 ├────────────────────────┼──────────────┼──────────────┼──────────────┤
-│ startup_empty          │      32.28   │      32.20   │ 1.00x slower │
-│ int_sum_loop           │      32.26   │      32.93   │ 0.98x faster │
-│ list_append_loop       │      35.21   │      33.03   │ 1.07x slower │
-│ str_concat_loop        │      32.19   │      32.39   │ 0.99x faster │
-│ range_iterate          │      32.42   │      32.61   │ 0.99x faster │
-│ multithread_cpu        │     218.25   │      64.65   │ 3.38x slower │
+│ startup_empty          │    TIMEOUT │      32.21   │ timeout      │
+│ int_sum_loop           │      32.28   │      32.48   │ 0.99x faster │
+│ list_append_loop       │    TIMEOUT │      32.19   │ timeout      │
+│ str_concat_loop        │    TIMEOUT │      32.20   │ timeout      │
+│ range_iterate          │    TIMEOUT │      32.27   │ timeout      │
+│ multithread_cpu        │     966.72   │      32.17   │ 30.05x slower │
 ├────────────────────────┼──────────────┼──────────────┼──────────────┤
-│ Geometric mean         │              │              │ ~1.23x       │
+│ Geometric mean         │              │              │ ~5.46x       │
 └─────────────────────────────────────────────────────────────────────┘
 
 Legend: Ratio = protopy/cpython. Lower is better. TIMEOUT = all runs hit timeout.

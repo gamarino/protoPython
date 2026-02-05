@@ -40,7 +40,8 @@ const proto::ProtoObject* PythonModuleProvider::tryLoad(const std::string& logic
         // 2. Try <base>/<path>.py
         std::string pyPath = joinPath(basePath, relPath + ".py");
         if (fileExists(pyPath)) {
-            const proto::ProtoObject* module = ctx->newObject(false);
+            /* Mutable so exec() STORE_NAME updates the same module object (proto setAttribute on mutable returns this). */
+            const proto::ProtoObject* module = ctx->newObject(true);
             module = module->setAttribute(ctx, nameKey, ctx->fromUTF8String(logicalPath.c_str()));
             module = module->setAttribute(ctx, fileKey, ctx->fromUTF8String(pyPath.c_str()));
             return module;
@@ -49,7 +50,7 @@ const proto::ProtoObject* PythonModuleProvider::tryLoad(const std::string& logic
         // 3. Try <base>/<path>/__init__.py (package)
         std::string initPath = joinPath(basePath, relPath + "/__init__.py");
         if (fileExists(initPath)) {
-            const proto::ProtoObject* module = ctx->newObject(false);
+            const proto::ProtoObject* module = ctx->newObject(true);
             module = module->setAttribute(ctx, nameKey, ctx->fromUTF8String(logicalPath.c_str()));
             module = module->setAttribute(ctx, fileKey, ctx->fromUTF8String(initPath.c_str()));
             

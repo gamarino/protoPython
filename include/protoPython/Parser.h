@@ -95,9 +95,10 @@ struct GlobalNode : ASTNode {
     std::vector<std::string> names;
 };
 
-/** def name(): body (single-statement body only). */
+/** def name(params): body. params is list of parameter names in order. */
 struct FunctionDefNode : ASTNode {
     std::string name;
+    std::vector<std::string> parameters;
     std::unique_ptr<ASTNode> body;
 };
 

@@ -1,5 +1,6 @@
 # range_iterate.py - Benchmark: iterate over range(N) with N=100000
-N = 100000
+import os
+N = int(os.environ.get("BENCH_N", "100000"))
 
 
 def main():

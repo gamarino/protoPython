@@ -117,6 +117,12 @@ constexpr int OP_ROT_THREE = 153;
 constexpr int OP_ROT_FOUR = 154;
 /** DUP_TOP_TWO: duplicate the two top stack items. … A B → … A B A B. */
 constexpr int OP_DUP_TOP_TWO = 155;
+/** Pop code object from stack, push a callable with __code__ and __globals__ (current frame). */
+constexpr int OP_BUILD_FUNCTION = 156;
+/** LOAD_FAST: push ctx->getAutomaticLocals()[arg] (O(1) slot load). */
+constexpr int OP_LOAD_FAST = 157;
+/** STORE_FAST: pop TOS and store in ctx->getAutomaticLocals()[arg]. */
+constexpr int OP_STORE_FAST = 158;
 
 /**
  * @brief Executes a range of bytecode (one basic block). No per-instruction

@@ -2,6 +2,7 @@
 #define PROTOPYTHON_PYTHONENVIRONMENT_H
 
 #include <protoCore.h>
+#include <atomic>
 #include <functional>
 #include <iostream>
 #include <mutex>
@@ -24,9 +25,12 @@ public:
     ~PythonEnvironment();
 
     /**
-     * @brief Returns the underlaying ProtoSpace.
+     * @brief Returns the process singleton ProtoSpace (L-Shape: one per process).
      */
-    proto::ProtoSpace* getSpace() { return &space; }
+    proto::ProtoSpace* getSpace() { return space_; }
+
+    /** @brief Returns the process singleton ProtoSpace (static accessor). */
+    static proto::ProtoSpace* getProcessSpace();
 
     /**
      * @brief Returns the root context.
@@ -155,20 +159,14 @@ public:
     std::istream* getStdin() const { return stdin_; }
 
     /**
-     * @brief Sets the global trace function (sys.settrace). Thread-safe.
+     * @brief Sets the trace function for the current thread (sys.settrace). No lock; thread-local.
      */
-    void setTraceFunction(const proto::ProtoObject* func) {
-        std::lock_guard<std::mutex> lock(traceAndExceptionMutex_);
-        traceFunction = func;
-    }
+    void setTraceFunction(const proto::ProtoObject* func);
 
     /**
-     * @brief Gets the global trace function (sys.gettrace). Thread-safe.
+     * @brief Gets the trace function for the current thread (sys.gettrace). No lock; thread-local.
      */
-    const proto::ProtoObject* getTraceFunction() const {
-        std::lock_guard<std::mutex> lock(traceAndExceptionMutex_);
-        return traceFunction;
-    }
+    const proto::ProtoObject* getTraceFunction() const;
 
     /**
      * @brief Sets the trace function from sys._trace_default (for --trace CLI).
@@ -181,27 +179,24 @@ public:
     void incrementSysStats(const char* key);
 
     /**
-     * @brief Sets the pending exception (raised by container operations). Thread-safe.
+     * @brief Sets the pending exception for the current thread. No lock; thread-local.
      */
-    void setPendingException(const proto::ProtoObject* exc) {
-        std::lock_guard<std::mutex> lock(traceAndExceptionMutex_);
-        pendingException = exc;
-    }
+    void setPendingException(const proto::ProtoObject* exc);
 
     /**
-     * @brief Gets and clears the pending exception. Thread-safe.
+     * @brief Gets and clears the pending exception for the current thread. No lock; thread-local.
      */
-    const proto::ProtoObject* takePendingException() {
-        std::lock_guard<std::mutex> lock(traceAndExceptionMutex_);
-        const proto::ProtoObject* e = pendingException;
-        pendingException = nullptr;
-        return e;
-    }
+    const proto::ProtoObject* takePendingException();
 
     /**
      * @brief Returns the environment for the given context (for use by dunder methods).
      */
     static PythonEnvironment* fromContext(proto::ProtoContext* ctx);
+
+    /** Registers a context (e.g. worker thread) with this environment so fromContext() resolves. */
+    static void registerContext(proto::ProtoContext* ctx, PythonEnvironment* env);
+    /** Unregisters a context when a worker thread exits. */
+    static void unregisterContext(proto::ProtoContext* ctx);
 
     /**
      * @brief Records a KeyError as the pending exception (for container operations).
@@ -216,7 +211,7 @@ public:
 private:
     void initializeRootObjects(const std::string& stdLibPath, const std::vector<std::string>& searchPaths);
 
-    proto::ProtoSpace space;
+    proto::ProtoSpace* space_;
     proto::ProtoContext* context;
 
     const proto::ProtoObject* objectPrototype;
@@ -234,20 +229,14 @@ private:
     const proto::ProtoObject* boolPrototype;
     const proto::ProtoObject* sysModule;
     const proto::ProtoObject* builtinsModule;
-    const proto::ProtoObject* traceFunction{nullptr};
-    const proto::ProtoObject* pendingException{nullptr};
-    mutable std::mutex traceAndExceptionMutex_;
     std::vector<std::string> argv_;
     int exitRequested_{0};
     ExecutionHook executionHook;
     const proto::ProtoObject* keyErrorType{nullptr};
     const proto::ProtoObject* valueErrorType{nullptr};
-    mutable std::unordered_map<std::string, const proto::ProtoObject*> resolveCache_;
-    mutable std::mutex resolveCacheMutex_;
+    /** Incremented on invalidateResolveCache(); per-thread caches check this (lock-free). */
+    mutable std::atomic<uint64_t> resolveCacheGeneration_{0};
     std::istream* stdin_{&std::cin};
-
-    static void registerContext(proto::ProtoContext* ctx, PythonEnvironment* env);
-    static void unregisterContext(proto::ProtoContext* ctx);
 };
 
 } // namespace protoPython

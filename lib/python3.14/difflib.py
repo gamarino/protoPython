@@ -43,5 +43,26 @@ class SequenceMatcher:
 
 
 def unified_diff(a, b, fromfile='', tofile='', fromfiledate='', tofiledate='', n=3, lineterm='\n'):
-    """Stub: returns empty list. Full unified diff not implemented."""
-    return []
+    """Return unified diff lines between sequences a and b (line-by-line)."""
+    if hasattr(a, 'splitlines'):
+        a = a.splitlines()
+    elif not isinstance(a, list):
+        a = list(a)
+    if hasattr(b, 'splitlines'):
+        b = b.splitlines()
+    elif not isinstance(b, list):
+        b = list(b)
+    sm = SequenceMatcher(None, a, b)
+    blocks = sm.get_matching_blocks()
+    lines = []
+    if fromfile or tofile:
+        lines.append("--- %s%s" % (fromfile, " " + fromfiledate if fromfiledate else "") + lineterm)
+        lines.append("+++ %s%s" % (tofile, " " + tofiledate if tofiledate else "") + lineterm)
+    for k in range(len(blocks) - 1):
+        i1, j1, n1 = blocks[k]
+        i2, j2, n2 = blocks[k + 1]
+        for ii in range(i1 + n1, i2):
+            lines.append("- " + str(a[ii]) + lineterm)
+        for jj in range(j1 + n1, j2):
+            lines.append("+ " + str(b[jj]) + lineterm)
+    return lines

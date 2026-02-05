@@ -27,6 +27,8 @@ This document lists mutable operations in the protoPython library and their thre
 
 | Operation | Uses protoCore | Thread-safe today | Follow-up |
 |-----------|-----------------|--------------------|-----------|
+| Trace function / pending exception | — | **Lock-free:** thread-local storage; no mutex in get/set/take | Resolved (remaining work). |
+| Resolve cache | — | **Lock-free:** per-thread cache + atomic generation for invalidation; type shortcuts use current env | Resolved (remaining work). |
 | List `append` | Yes: `ProtoList::appendLast` (returns new list) | Safe: protoCore CAS on `setAttribute(__data__, ...)` | Resolved per concurrency policy. |
 | List `__setitem__` | Yes: `ProtoList::setAt` (returns new list) | Safe: same | Resolved per concurrency policy. |
 | Dict `__setitem__` | Yes: `ProtoSparseList::setAt` (returns new sparse list) | Safe: same | Resolved per concurrency policy. |
@@ -38,7 +40,7 @@ This document lists mutable operations in the protoPython library and their thre
 
 | Operation | Uses protoCore | Thread-safe today | Follow-up |
 |-----------|----------------|-------------------|-----------|
-| settrace / gettrace | `PythonEnvironment::setTraceFunction` (pointer assignment) | Thread-safe (Step 2) | Resolved. |
+| settrace / gettrace | `PythonEnvironment::setTraceFunction` (thread-local) | No lock; per-thread | Resolved. |
 | sys.platform, sys.version, sys.path, sys.modules | Stored via `setAttribute` on sys object | Safe for concurrent read after init | **Policy:** sys.path and sys.modules are safe for concurrent read after initialization. Writes go through protoCore `setAttribute` (CAS). C++ code should not mutate sys.path/sys.modules from multiple threads without coordination; Python-level mutations use the same CAS path. |
 
 ### 3. BuiltinsModule (src/library/BuiltinsModule.cpp)

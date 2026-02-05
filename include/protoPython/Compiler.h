@@ -59,7 +59,18 @@ private:
     bool compileTarget(ASTNode* target, bool isStore);
     /** True if executing this node leaves a value on the stack (expression stmt). */
     static bool statementLeavesValue(ASTNode* node);
+    /** Collect names from function body: globals from GlobalNode, locals (ordered) from Name/Assign. */
+    static void collectLocalsFromBody(ASTNode* body,
+        std::unordered_set<std::string>& globalsOut,
+        std::vector<std::string>& localsOrdered);
+    /** Collect names that are free in any nested def (captured by closures). */
+    static void collectCapturedNames(ASTNode* body,
+        const std::unordered_set<std::string>& globalsInScope,
+        const std::vector<std::string>& paramsInScope,
+        std::unordered_set<std::string>& capturedOut);
     std::unordered_set<std::string> globalNames_;
+    /** Optional: name -> slot index for LOAD_FAST/STORE_FAST. Set when compiling a function body. */
+    std::unordered_map<std::string, int> localSlotMap_;
     int bytecodeOffset() const;
     /** Record a jump arg slot to be patched later with target (bytecode list index). */
     void addPatch(int argSlotIndex, int targetBytecodeIndex);
@@ -67,11 +78,15 @@ private:
     std::vector<std::pair<int, int>> patches_;
 };
 
-/** Build a code object (ProtoObject with co_consts, co_names, co_code) from compiler output. */
+/** Build a code object (ProtoObject with co_consts, co_names, co_code) from compiler output.
+ * Optional: co_varnames (slot-ordered names), co_nparams, co_automatic_count for fast local slots. */
 const proto::ProtoObject* makeCodeObject(proto::ProtoContext* ctx,
     const proto::ProtoList* constants,
     const proto::ProtoList* names,
-    const proto::ProtoList* bytecode);
+    const proto::ProtoList* bytecode,
+    const proto::ProtoList* varnames = nullptr,
+    int nparams = 0,
+    int automatic_count = 0);
 
 /** Run a code object with the given frame. Returns execution result. */
 const proto::ProtoObject* runCodeObject(proto::ProtoContext* ctx,

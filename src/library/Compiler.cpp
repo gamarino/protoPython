@@ -30,6 +30,7 @@ int Compiler::addName(const std::string& name) {
 void Compiler::emit(int op, int arg) {
     bytecode_ = bytecode_->appendLast(ctx_, ctx_->fromInteger(op));
     bool hasArg = (op == OP_LOAD_CONST || op == OP_LOAD_NAME || op == OP_STORE_NAME ||
+                   op == OP_LOAD_FAST || op == OP_STORE_FAST ||
                    op == OP_CALL_FUNCTION || op == OP_LOAD_ATTR || op == OP_STORE_ATTR ||
                    op == OP_BUILD_LIST || op == OP_BUILD_MAP || op == OP_BUILD_TUPLE ||
                    op == OP_UNPACK_SEQUENCE || op == OP_LOAD_GLOBAL || op == OP_STORE_GLOBAL ||
@@ -77,11 +78,18 @@ bool Compiler::compileConstant(ConstantNode* n) {
 
 bool Compiler::compileName(NameNode* n) {
     if (!n) return false;
-    int idx = addName(n->id);
-    if (globalNames_.count(n->id))
+    if (globalNames_.count(n->id)) {
+        int idx = addName(n->id);
         emit(OP_LOAD_GLOBAL, idx);
-    else
-        emit(OP_LOAD_NAME, idx);
+        return true;
+    }
+    auto it = localSlotMap_.find(n->id);
+    if (it != localSlotMap_.end()) {
+        emit(OP_LOAD_FAST, it->second);
+        return true;
+    }
+    int idx = addName(n->id);
+    emit(OP_LOAD_NAME, idx);
     return true;
 }
 
@@ -177,15 +185,21 @@ bool Compiler::compileTupleLiteral(TupleLiteralNode* n) {
 bool Compiler::compileTarget(ASTNode* target, bool isStore) {
     if (!target) return false;
     if (auto* nm = dynamic_cast<NameNode*>(target)) {
+        if (globalNames_.count(nm->id)) {
+            int idx = addName(nm->id);
+            if (isStore) emit(OP_STORE_GLOBAL, idx);
+            else emit(OP_LOAD_GLOBAL, idx);
+            return true;
+        }
+        auto it = localSlotMap_.find(nm->id);
+        if (it != localSlotMap_.end()) {
+            if (isStore) emit(OP_STORE_FAST, it->second);
+            else emit(OP_LOAD_FAST, it->second);
+            return true;
+        }
         int idx = addName(nm->id);
-        if (isStore && globalNames_.count(nm->id))
-            emit(OP_STORE_GLOBAL, idx);
-        else if (isStore)
-            emit(OP_STORE_NAME, idx);
-        else if (globalNames_.count(nm->id))
-            emit(OP_LOAD_GLOBAL, idx);
-        else
-            emit(OP_LOAD_NAME, idx);
+        if (isStore) emit(OP_STORE_NAME, idx);
+        else emit(OP_LOAD_NAME, idx);
         return true;
     }
     if (auto* att = dynamic_cast<AttributeNode*>(target)) {
@@ -273,6 +287,226 @@ bool Compiler::statementLeavesValue(ASTNode* node) {
     return true;
 }
 
+static void collectLocalsFromNode(ASTNode* node,
+    std::unordered_set<std::string>& globalsOut,
+    std::unordered_set<std::string>& seenLocals,
+    std::vector<std::string>& localsOrdered) {
+    if (!node) return;
+    if (auto* g = dynamic_cast<GlobalNode*>(node)) {
+        for (const auto& name : g->names) globalsOut.insert(name);
+        return;
+    }
+    if (auto* nm = dynamic_cast<NameNode*>(node)) {
+        if (!globalsOut.count(nm->id) && !seenLocals.count(nm->id)) {
+            seenLocals.insert(nm->id);
+            localsOrdered.push_back(nm->id);
+        }
+        return;
+    }
+    if (auto* a = dynamic_cast<AssignNode*>(node)) {
+        collectLocalsFromNode(a->target.get(), globalsOut, seenLocals, localsOrdered);
+        collectLocalsFromNode(a->value.get(), globalsOut, seenLocals, localsOrdered);
+        return;
+    }
+    if (auto* s = dynamic_cast<SuiteNode*>(node)) {
+        for (auto& st : s->statements)
+            collectLocalsFromNode(st.get(), globalsOut, seenLocals, localsOrdered);
+        return;
+    }
+    if (auto* f = dynamic_cast<ForNode*>(node)) {
+        collectLocalsFromNode(f->target.get(), globalsOut, seenLocals, localsOrdered);
+        collectLocalsFromNode(f->iter.get(), globalsOut, seenLocals, localsOrdered);
+        collectLocalsFromNode(f->body.get(), globalsOut, seenLocals, localsOrdered);
+        return;
+    }
+    if (auto* iff = dynamic_cast<IfNode*>(node)) {
+        collectLocalsFromNode(iff->test.get(), globalsOut, seenLocals, localsOrdered);
+        collectLocalsFromNode(iff->body.get(), globalsOut, seenLocals, localsOrdered);
+        if (iff->orelse) collectLocalsFromNode(iff->orelse.get(), globalsOut, seenLocals, localsOrdered);
+        return;
+    }
+    if (dynamic_cast<FunctionDefNode*>(node)) {
+        return;
+    }
+    if (auto* c = dynamic_cast<CallNode*>(node)) {
+        collectLocalsFromNode(c->func.get(), globalsOut, seenLocals, localsOrdered);
+        for (auto& arg : c->args) collectLocalsFromNode(arg.get(), globalsOut, seenLocals, localsOrdered);
+        return;
+    }
+    if (auto* att = dynamic_cast<AttributeNode*>(node)) {
+        collectLocalsFromNode(att->value.get(), globalsOut, seenLocals, localsOrdered);
+        return;
+    }
+    if (auto* sub = dynamic_cast<SubscriptNode*>(node)) {
+        collectLocalsFromNode(sub->value.get(), globalsOut, seenLocals, localsOrdered);
+        collectLocalsFromNode(sub->index.get(), globalsOut, seenLocals, localsOrdered);
+        return;
+    }
+    if (auto* b = dynamic_cast<BinOpNode*>(node)) {
+        collectLocalsFromNode(b->left.get(), globalsOut, seenLocals, localsOrdered);
+        collectLocalsFromNode(b->right.get(), globalsOut, seenLocals, localsOrdered);
+        return;
+    }
+    if (auto* lst = dynamic_cast<ListLiteralNode*>(node)) {
+        for (auto& e : lst->elements) collectLocalsFromNode(e.get(), globalsOut, seenLocals, localsOrdered);
+        return;
+    }
+    if (auto* d = dynamic_cast<DictLiteralNode*>(node)) {
+        for (size_t i = 0; i < d->keys.size(); ++i) {
+            collectLocalsFromNode(d->keys[i].get(), globalsOut, seenLocals, localsOrdered);
+            collectLocalsFromNode(d->values[i].get(), globalsOut, seenLocals, localsOrdered);
+        }
+        return;
+    }
+    if (auto* tup = dynamic_cast<TupleLiteralNode*>(node)) {
+        for (auto& e : tup->elements) collectLocalsFromNode(e.get(), globalsOut, seenLocals, localsOrdered);
+        return;
+    }
+}
+
+void Compiler::collectLocalsFromBody(ASTNode* body,
+    std::unordered_set<std::string>& globalsOut,
+    std::vector<std::string>& localsOrdered) {
+    globalsOut.clear();
+    localsOrdered.clear();
+    std::unordered_set<std::string> seenLocals;
+    collectLocalsFromNode(body, globalsOut, seenLocals, localsOrdered);
+}
+
+/** Collect names used (read or written) in node into out. */
+static void collectUsedNames(ASTNode* node, std::unordered_set<std::string>& out) {
+    if (!node) return;
+    if (auto* nm = dynamic_cast<NameNode*>(node)) {
+        out.insert(nm->id);
+        return;
+    }
+    if (auto* a = dynamic_cast<AssignNode*>(node)) {
+        collectUsedNames(a->target.get(), out);
+        collectUsedNames(a->value.get(), out);
+        return;
+    }
+    if (auto* s = dynamic_cast<SuiteNode*>(node)) {
+        for (auto& st : s->statements) collectUsedNames(st.get(), out);
+        return;
+    }
+    if (auto* f = dynamic_cast<ForNode*>(node)) {
+        collectUsedNames(f->target.get(), out);
+        collectUsedNames(f->iter.get(), out);
+        collectUsedNames(f->body.get(), out);
+        return;
+    }
+    if (auto* iff = dynamic_cast<IfNode*>(node)) {
+        collectUsedNames(iff->test.get(), out);
+        collectUsedNames(iff->body.get(), out);
+        if (iff->orelse) collectUsedNames(iff->orelse.get(), out);
+        return;
+    }
+    if (auto* fn = dynamic_cast<FunctionDefNode*>(node)) {
+        for (const auto& p : fn->parameters) out.insert(p);
+        collectUsedNames(fn->body.get(), out);
+        return;
+    }
+    if (auto* c = dynamic_cast<CallNode*>(node)) {
+        collectUsedNames(c->func.get(), out);
+        for (auto& arg : c->args) collectUsedNames(arg.get(), out);
+        return;
+    }
+    if (auto* att = dynamic_cast<AttributeNode*>(node)) {
+        collectUsedNames(att->value.get(), out);
+        return;
+    }
+    if (auto* sub = dynamic_cast<SubscriptNode*>(node)) {
+        collectUsedNames(sub->value.get(), out);
+        collectUsedNames(sub->index.get(), out);
+        return;
+    }
+    if (auto* b = dynamic_cast<BinOpNode*>(node)) {
+        collectUsedNames(b->left.get(), out);
+        collectUsedNames(b->right.get(), out);
+        return;
+    }
+    if (auto* lst = dynamic_cast<ListLiteralNode*>(node)) {
+        for (auto& e : lst->elements) collectUsedNames(e.get(), out);
+        return;
+    }
+    if (auto* d = dynamic_cast<DictLiteralNode*>(node)) {
+        for (size_t i = 0; i < d->keys.size(); ++i) {
+            collectUsedNames(d->keys[i].get(), out);
+            collectUsedNames(d->values[i].get(), out);
+        }
+        return;
+    }
+    if (auto* tup = dynamic_cast<TupleLiteralNode*>(node)) {
+        for (auto& e : tup->elements) collectUsedNames(e.get(), out);
+        return;
+    }
+}
+
+/** Collect names defined in node (assigned or are params of a nested def). */
+static void collectDefinedNames(ASTNode* node, std::unordered_set<std::string>& out) {
+    if (!node) return;
+    if (auto* a = dynamic_cast<AssignNode*>(node)) {
+        collectDefinedNames(a->target.get(), out);
+        return;
+    }
+    if (auto* s = dynamic_cast<SuiteNode*>(node)) {
+        for (auto& st : s->statements) collectDefinedNames(st.get(), out);
+        return;
+    }
+    if (auto* f = dynamic_cast<ForNode*>(node)) {
+        collectDefinedNames(f->target.get(), out);
+        collectDefinedNames(f->body.get(), out);
+        return;
+    }
+    if (auto* iff = dynamic_cast<IfNode*>(node)) {
+        collectDefinedNames(iff->body.get(), out);
+        if (iff->orelse) collectDefinedNames(iff->orelse.get(), out);
+        return;
+    }
+    if (auto* fn = dynamic_cast<FunctionDefNode*>(node)) {
+        for (const auto& p : fn->parameters) out.insert(p);
+        collectDefinedNames(fn->body.get(), out);
+        return;
+    }
+    if (auto* nm = dynamic_cast<NameNode*>(node)) {
+        out.insert(nm->id);
+        return;
+    }
+}
+
+void Compiler::collectCapturedNames(ASTNode* body,
+    const std::unordered_set<std::string>& globalsInScope,
+    const std::vector<std::string>& paramsInScope,
+    std::unordered_set<std::string>& capturedOut) {
+    capturedOut.clear();
+    if (!body) return;
+    if (auto* s = dynamic_cast<SuiteNode*>(body)) {
+        for (auto& st : s->statements) {
+            if (auto* fn = dynamic_cast<FunctionDefNode*>(st.get())) {
+                std::unordered_set<std::string> used, defined;
+                collectUsedNames(fn->body.get(), used);
+                collectDefinedNames(fn->body.get(), defined);
+                for (const auto& name : used) {
+                    if (!defined.count(name) && !globalsInScope.count(name))
+                        capturedOut.insert(name);
+                }
+                collectCapturedNames(fn->body.get(), globalsInScope, fn->parameters, capturedOut);
+            }
+        }
+        return;
+    }
+    if (auto* fn = dynamic_cast<FunctionDefNode*>(body)) {
+        std::unordered_set<std::string> used, defined;
+        collectUsedNames(fn->body.get(), used);
+        collectDefinedNames(fn->body.get(), defined);
+        for (const auto& name : used) {
+            if (!defined.count(name) && !globalsInScope.count(name))
+                capturedOut.insert(name);
+        }
+        collectCapturedNames(fn->body.get(), globalsInScope, fn->parameters, capturedOut);
+    }
+}
+
 bool Compiler::compileSuite(SuiteNode* n) {
     if (!n || n->statements.empty()) return false;
     for (size_t i = 0; i < n->statements.size(); ++i) {
@@ -285,11 +519,40 @@ bool Compiler::compileSuite(SuiteNode* n) {
 
 bool Compiler::compileFunctionDef(FunctionDefNode* n) {
     if (!n) return false;
+    std::unordered_set<std::string> bodyGlobals;
+    std::vector<std::string> localsOrdered;
+    collectLocalsFromBody(n->body.get(), bodyGlobals, localsOrdered);
+    std::vector<std::string> params;
+    if (!n->parameters.empty()) {
+        for (const auto& p : n->parameters) params.push_back(p);
+    }
+    std::unordered_set<std::string> captured;
+    collectCapturedNames(n->body.get(), bodyGlobals, params, captured);
+
+    std::vector<std::string> automaticNames;
+    for (const auto& p : params)
+        automaticNames.push_back(p);
+    for (const auto& loc : localsOrdered) {
+        if (!bodyGlobals.count(loc) && !captured.count(loc))
+            automaticNames.push_back(loc);
+    }
+    std::unordered_map<std::string, int> slotMap;
+    for (size_t i = 0; i < automaticNames.size(); ++i)
+        slotMap[automaticNames[i]] = static_cast<int>(i);
+    int nparams = static_cast<int>(params.size());
+    int automatic_count = static_cast<int>(automaticNames.size());
+
     Compiler bodyCompiler(ctx_, filename_);
+    bodyCompiler.globalNames_ = bodyGlobals;
+    bodyCompiler.localSlotMap_ = slotMap;
     if (!bodyCompiler.compileNode(n->body.get())) return false;
     bodyCompiler.bytecode_ = bodyCompiler.bytecode_->appendLast(ctx_, ctx_->fromInteger(static_cast<int>(OP_RETURN_VALUE)));
     bodyCompiler.applyPatches();
-    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode());
+
+    const proto::ProtoList* co_varnames = ctx_->newList();
+    for (const auto& name : automaticNames)
+        co_varnames = co_varnames->appendLast(ctx_, ctx_->fromUTF8String(name.c_str()));
+    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), co_varnames, nparams, automatic_count);
     if (!codeObj) return false;
     int idx = addConstant(codeObj);
     emit(OP_LOAD_CONST, idx);
@@ -350,12 +613,18 @@ bool Compiler::compileModule(ModuleNode* mod) {
 const proto::ProtoObject* makeCodeObject(proto::ProtoContext* ctx,
     const proto::ProtoList* constants,
     const proto::ProtoList* names,
-    const proto::ProtoList* bytecode) {
+    const proto::ProtoList* bytecode,
+    const proto::ProtoList* varnames,
+    int nparams,
+    int automatic_count) {
     if (!ctx || !constants || !bytecode) return nullptr;
     const proto::ProtoObject* code = ctx->newObject(true);
     code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_consts"), reinterpret_cast<const proto::ProtoObject*>(constants));
     code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_names"), names ? reinterpret_cast<const proto::ProtoObject*>(names) : reinterpret_cast<const proto::ProtoObject*>(ctx->newList()));
     code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_code"), reinterpret_cast<const proto::ProtoObject*>(bytecode));
+    code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_varnames"), varnames ? reinterpret_cast<const proto::ProtoObject*>(varnames) : reinterpret_cast<const proto::ProtoObject*>(ctx->newList()));
+    code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_nparams"), ctx->fromInteger(nparams));
+    code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_automatic_count"), ctx->fromInteger(automatic_count));
     return code;
 }
 

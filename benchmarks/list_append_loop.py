@@ -1,5 +1,6 @@
 # list_append_loop.py - Benchmark: lst = []; lst.append(i) for i in range(N)
-N = 10000
+import os
+N = int(os.environ.get("BENCH_N", "10000"))
 
 def main():
     lst = []

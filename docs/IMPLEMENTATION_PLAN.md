@@ -131,6 +131,12 @@ We aim for "No-Modification" compatibility with CPython tests.
 
 **Completed: Next 20 Steps v44 (805–824).** See [NEXT_20_STEPS_V44.md](NEXT_20_STEPS_V44.md). pathlib.Path read_text/write_text; os.path.isfile; functools.partial; datetime date/timedelta; foundation tests PathlibReadText, FunctoolsPartial, DatetimeDate; STUBS, todo, IMPLEMENTATION_PLAN updated.
 
+**Completed: Next 20 Steps v45 (825–844).** See [NEXT_20_STEPS_V45.md](NEXT_20_STEPS_V45.md). pickle loads/dumps minimal; logging Handler/Formatter/StreamHandler; email message_from_string headers; foundation tests PickleLoadsDumps, LoggingHandler, EmailParse; STUBS, todo, IMPLEMENTATION_PLAN updated.
+
+**Completed: Next 20 Steps v46 (845–864).** See [NEXT_20_STEPS_V46.md](NEXT_20_STEPS_V46.md). secrets token_hex/token_urlsafe; subprocess.run args; regrtest persistence docs; C_MODULES_TO_REPLACE update; foundation tests SecretsTokenHex, SubprocessRun; STUBS, todo, IMPLEMENTATION_PLAN updated.
+
+**Completed: Next 20 Steps v47 (865–884).** See [NEXT_20_STEPS_V47.md](NEXT_20_STEPS_V47.md). HPY_INTEGRATION_PLAN; PACKAGING_ROADMAP; venv stub; lessons.md (v43–v47); STUBS, todo, IMPLEMENTATION_PLAN updated. Summary of v43–v47: pathlib (exists, is_dir, is_file, mkdir, read_text, write_text), decimal/fractions/io.BytesIO, pickle/logging/email, secrets/subprocess, regrtest docs, HPy and packaging roadmaps, venv stub.
+
 ## 5. Debugging & IDE Support
 To be a viable replacement, `protoPython` must support professional developer workflows.
 

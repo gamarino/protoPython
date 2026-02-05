@@ -18,9 +18,9 @@ This document lists Python standard library modules traditionally implemented in
 | `_io`          | High    | Replaced  | Basic open/file in IOModule            |
 | `_socket`      | Medium  | Deferred  | Thread-safe APIs from the start        |
 | `_ssl`         | Medium  | Deferred  | Build on _socket                       |
-| `_json`        | Medium  | Planned   | Parser in C++; no GIL                  |
+| `_json`        | Medium  | Replaced  | JsonModule in C++; no GIL              |
 | `_pickle`      | Medium  | Deferred  | Accelerator; pure-Python fallback      |
-| `_struct`      | Medium  | Planned   | Pack/unpack; small surface              |
+| `_struct`      | Medium  | Pure-Python | struct.py: pack, unpack, calcsize (v41) |
 | `_array`       | Medium  | Deferred  | Typed arrays                           |
 | `_heapq`       | Medium  | Deferred  | Heap operations                        |
 | `_random`      | Low     | Deferred  | Thread-local RNG                       |

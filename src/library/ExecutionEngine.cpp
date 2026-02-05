@@ -9,7 +9,8 @@
 namespace protoPython {
 
 namespace {
-/** __call__ for user-defined functions: push context (RAII), build frame, run __code__, promote return value. */
+/** __call__ for user-defined functions: push context (RAII), build frame, run __code__, promote return value.
+ * Reads co_varnames, co_nparams, co_automatic_count from code object to size automatic slots and bind args. */
 static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink* /*parentLink*/,
@@ -20,8 +21,43 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
     if (!codeObj || codeObj == PROTO_NONE) return PROTO_NONE;
     const proto::ProtoObject* globalsObj = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__globals__"));
     if (!globalsObj || globalsObj == PROTO_NONE) return PROTO_NONE;
-    ContextScope scope(ctx->space, ctx, nullptr, nullptr, args, kwargs);
+
+    const proto::ProtoObject* co_varnames_obj = codeObj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_varnames"));
+    const proto::ProtoObject* co_nparams_obj = codeObj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_nparams"));
+    const proto::ProtoObject* co_automatic_obj = codeObj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_automatic_count"));
+    const proto::ProtoList* co_varnames = co_varnames_obj && co_varnames_obj->asList(ctx) ? co_varnames_obj->asList(ctx) : nullptr;
+    int nparams = (co_nparams_obj && co_nparams_obj->isInteger(ctx)) ? static_cast<int>(co_nparams_obj->asLong(ctx)) : 0;
+    int automatic_count = (co_automatic_obj && co_automatic_obj->isInteger(ctx)) ? static_cast<int>(co_automatic_obj->asLong(ctx)) : 0;
+    if (automatic_count < 0) automatic_count = 0;
+    if (nparams < 0) nparams = 0;
+
+    const proto::ProtoList* parameterNames = nullptr;
+    const proto::ProtoList* localNames = nullptr;
+    if (co_varnames && automatic_count > 0 && static_cast<unsigned long>(automatic_count) <= co_varnames->getSize(ctx)) {
+        parameterNames = (nparams > 0 && static_cast<unsigned long>(nparams) <= co_varnames->getSize(ctx))
+            ? ctx->newList() : nullptr;
+        if (parameterNames) {
+            for (int i = 0; i < nparams; ++i)
+                parameterNames = parameterNames->appendLast(ctx, co_varnames->getAt(ctx, i));
+        }
+        localNames = ctx->newList();
+        for (int i = 0; i < automatic_count; ++i)
+            localNames = localNames->appendLast(ctx, co_varnames->getAt(ctx, i));
+    }
+
+    ContextScope scope(ctx->space, ctx, parameterNames, localNames, args, kwargs);
     proto::ProtoContext* calleeCtx = scope.context();
+
+    if (calleeCtx->getAutomaticLocalsCount() > 0 && args) {
+        unsigned long argCount = args->getSize(calleeCtx);
+        unsigned int nSlots = calleeCtx->getAutomaticLocalsCount();
+        unsigned long toCopy = (argCount < static_cast<unsigned long>(nparams)) ? argCount : static_cast<unsigned long>(nparams);
+        if (toCopy > nSlots) toCopy = nSlots;
+        proto::ProtoObject** slots = const_cast<proto::ProtoObject**>(calleeCtx->getAutomaticLocals());
+        for (unsigned long i = 0; i < toCopy; ++i)
+            slots[i] = const_cast<proto::ProtoObject*>(args->getAt(calleeCtx, static_cast<int>(i)));
+    }
+
     proto::ProtoObject* frame = const_cast<proto::ProtoObject*>(calleeCtx->newObject(true));
     if (!frame) return PROTO_NONE;
     frame->addParent(ctx, globalsObj);
@@ -218,6 +254,24 @@ const proto::ProtoObject* executeBytecodeRange(
             stack.pop_back();
             if (nameObj->isString(ctx))
                 frame->setAttribute(ctx, nameObj->asString(ctx), val);
+        } else if (op == OP_LOAD_FAST) {
+            i++;
+            const unsigned int nSlots = ctx->getAutomaticLocalsCount();
+            if (arg >= 0 && static_cast<unsigned long>(arg) < nSlots) {
+                const proto::ProtoObject** slots = ctx->getAutomaticLocals();
+                const proto::ProtoObject* val = slots[arg];
+                if (val) stack.push_back(val);
+            }
+        } else if (op == OP_STORE_FAST) {
+            i++;
+            if (stack.empty()) continue;
+            const unsigned int nSlots = ctx->getAutomaticLocalsCount();
+            if (arg >= 0 && static_cast<unsigned long>(arg) < nSlots) {
+                const proto::ProtoObject* val = stack.back();
+                stack.pop_back();
+                proto::ProtoObject** slots = const_cast<proto::ProtoObject**>(ctx->getAutomaticLocals());
+                slots[arg] = const_cast<proto::ProtoObject*>(val);
+            }
         } else if (op == OP_BINARY_ADD) {
             if (stack.size() < 2) continue;
             const proto::ProtoObject* b = stack.back();

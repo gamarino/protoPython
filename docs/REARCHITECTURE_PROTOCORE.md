@@ -71,12 +71,12 @@
 
 The following mutexes remain as technical debt until protoCore provides lock-free or per-thread primitives (Work-Stealing Scheduler, LocalHeap, CoW). The **ThreadingStrategy** and **ExecutionEngine** hot paths do not use mutexes.
 
-1. **PythonEnvironment**
-   - `traceAndExceptionMutex_`: protect trace hooks and pending exception with lock-free or thread-local state.
-   - `resolveCacheMutex_`: replace resolve cache with a lock-free structure or per-thread cache.
+1. **PythonEnvironment** — **Done (remaining work):**
+   - ~~`traceAndExceptionMutex_`~~: trace function and pending exception are now **thread-local** (`s_threadTraceFunction`, `s_threadPendingException`); no mutex in get/set/take.
+   - ~~`resolveCacheMutex_`~~: resolve cache is **per-thread** with a **generation counter** for lock-free invalidation; type shortcuts (object, type, int, …) always use the current env (no cache) so multiple envs per thread stay correct.
 
 2. **PythonEnvironment.cpp**
-   - `s_contextMapMutex`: context registration map; use lock-free map or thread-local registration.
+   - `s_contextMapMutex`: context registration map; use lock-free map or thread-local registration (still pending).
 
 3. **CollectionsModule (deque)**
    - Per-deque `std::mutex`: replace with protoCore-backed concurrent structure or ownership rules so that only one thread mutates a given deque.
@@ -87,7 +87,7 @@ The following mutexes remain as technical debt until protoCore provides lock-fre
 5. **TestExecutionEngine**
    - `runMutex` used to serialize concurrent execution; once execution is task-based and each task runs on a dedicated context/heap, this can be removed.
 
-No mutexes were added in the ThreadingStrategy or ExecutionEngine paths; existing mutexes above remain until protoCore provides replacements.
+No mutexes were added in the ThreadingStrategy or ExecutionEngine paths. PythonEnvironment trace and resolve no longer use mutexes (thread-local and per-thread cache). The remaining points (context map, deque, ThreadModule, TestExecutionEngine) stay until protoCore provides replacements or ownership rules.
 
 ---
 

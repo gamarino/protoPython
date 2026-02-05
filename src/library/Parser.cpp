@@ -238,18 +238,18 @@ std::unique_ptr<ASTNode> Parser::parseStatement() {
         std::string funcName = cur_.value;
         advance();
         if (!expect(TokenType::LParen)) return nullptr;
-        /* Skip parameter list (possibly with default values) until matching RParen. */
-        for (int depth = 1; depth > 0 && cur_.type != TokenType::EndOfFile;) {
-            if (cur_.type == TokenType::LParen) depth++;
-            else if (cur_.type == TokenType::RParen) depth--;
+        auto fn = std::make_unique<FunctionDefNode>();
+        fn->name = funcName;
+        while (cur_.type == TokenType::Name) {
+            fn->parameters.push_back(cur_.value);
             advance();
+            if (!accept(TokenType::Comma)) break;
         }
+        if (!expect(TokenType::RParen)) return nullptr;
         if (cur_.type != TokenType::Colon) return nullptr;
         advance();
         auto body = parseSuite();
         if (!body) return nullptr;
-        auto fn = std::make_unique<FunctionDefNode>();
-        fn->name = funcName;
         fn->body = std::move(body);
         return fn;
     }

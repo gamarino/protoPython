@@ -117,6 +117,38 @@ def _pack_simple(fmt, values):
     return b''.join(out)
 
 
+def calcsize(fmt):
+    """Return the size in bytes for the format string. Supports b, B, h, H, i, I, l, L, q, Q, f, d, s, ?."""
+    size = 0
+    i = 0
+    while i < len(fmt):
+        c = fmt[i]
+        if c in '<@=':
+            i += 1
+            continue
+        if c in 'bBhHiIlLqQfds?':
+            if c in 'bB?':
+                size += 1
+            elif c in 'hH':
+                size += 2
+            elif c in 'iIlLf':
+                size += 4
+            elif c in 'qQd':
+                size += 8
+            elif c == 's':
+                n = 1
+                j = i + 1
+                while j < len(fmt) and fmt[j].isdigit():
+                    n = n * 10 + int(fmt[j])
+                    j += 1
+                size += n
+                i = j - 1
+            i += 1
+        else:
+            i += 1
+    return size
+
+
 def pack(fmt, *values):
     """Pack values into bytes according to format. Minimal support: b, h, i, l, q, f, d, s, ? (little-endian)."""
     try:
