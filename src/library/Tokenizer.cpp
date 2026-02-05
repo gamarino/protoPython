@@ -4,9 +4,22 @@
 
 namespace protoPython {
 
-Tokenizer::Tokenizer(const std::string& source) : source_(source) {}
+Tokenizer::Tokenizer(const std::string& source) : source_(source) {
+    indentStack_.push_back(0);
+}
 
 void Tokenizer::skipWhitespace() {
+    while (pos_ < source_.size()) {
+        if (source_[pos_] == ' ' || source_[pos_] == '\t' || source_[pos_] == '\r')
+            pos_++;
+        else if (source_[pos_] == '#')
+            skipComment();
+        else
+            break;
+    }
+}
+
+void Tokenizer::skipWhitespaceNoNewline() {
     while (pos_ < source_.size()) {
         if (source_[pos_] == ' ' || source_[pos_] == '\t' || source_[pos_] == '\r')
             pos_++;
@@ -89,6 +102,8 @@ Token Tokenizer::scanNameOrKeyword() {
     else if (t.value == "if") t.type = TokenType::If;
     else if (t.value == "else") t.type = TokenType::Else;
     else if (t.value == "global") t.type = TokenType::Global;
+    else if (t.value == "def") t.type = TokenType::Def;
+    else if (t.value == "pass") t.type = TokenType::Pass;
     return t;
 }
 
@@ -97,7 +112,45 @@ Token Tokenizer::next() {
         hasPeeked_ = false;
         return peeked_;
     }
-    skipWhitespace();
+    /* After a newline we are at line start: count indentation and emit Indent/Dedent. */
+    if (atLineStart_) {
+        atLineStart_ = false;
+        if (pos_ >= source_.size()) {
+            Token t;
+            t.type = TokenType::EndOfFile;
+            return t;
+        }
+        int indent = 0;
+        while (pos_ < source_.size() && (source_[pos_] == ' ' || source_[pos_] == '\t')) {
+            indent += (source_[pos_] == '\t') ? 1 : 1;
+            pos_++;
+        }
+        if (pos_ < source_.size() && source_[pos_] == '#') {
+            /* Comment-only line: skip to newline and re-enter at line start. */
+            skipComment();
+            if (pos_ < source_.size() && source_[pos_] == '\n') {
+                pos_++;
+                atLineStart_ = true;
+            }
+            return next();
+        }
+        if (indent > indentStack_.back()) {
+            indentStack_.push_back(indent);
+            Token t;
+            t.type = TokenType::Indent;
+            return t;
+        }
+        if (indent < indentStack_.back()) {
+            if (indentStack_.size() > 1)
+                indentStack_.pop_back();
+            Token t;
+            t.type = TokenType::Dedent;
+            return t;
+        }
+        /* Same indent: fall through to read the next token (no skipWhitespace, we're past indent). */
+    } else {
+        skipWhitespace();
+    }
     if (pos_ >= source_.size()) {
         Token t;
         t.type = TokenType::EndOfFile;
@@ -106,6 +159,7 @@ Token Tokenizer::next() {
     char c = source_[pos_];
     if (c == '\n') {
         pos_++;
+        atLineStart_ = true;
         Token t;
         t.type = TokenType::Newline;
         return t;
@@ -123,9 +177,10 @@ Token Tokenizer::next() {
     if (c == '{') { pos_++; Token t; t.type = TokenType::LCurly; return t; }
     if (c == '}') { pos_++; Token t; t.type = TokenType::RCurly; return t; }
     if (c == ':') { pos_++; Token t; t.type = TokenType::Colon; return t; }
-    if (c == '=' && (pos_ + 1 >= source_.size() || source_[pos_ + 1] != '=')) {
-        pos_++; Token t; t.type = TokenType::Assign; return t;
+    if (c == '=' && pos_ + 1 < source_.size() && source_[pos_ + 1] == '=') {
+        pos_ += 2; Token t; t.type = TokenType::EqEqual; return t;
     }
+    if (c == '=') { pos_++; Token t; t.type = TokenType::Assign; return t; }
     if (c == '"' || c == '\'')
         return scanString(c);
     if (std::isdigit(static_cast<unsigned char>(c)))

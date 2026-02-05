@@ -95,6 +95,20 @@ struct GlobalNode : ASTNode {
     std::vector<std::string> names;
 };
 
+/** def name(): body (single-statement body only). */
+struct FunctionDefNode : ASTNode {
+    std::string name;
+    std::unique_ptr<ASTNode> body;
+};
+
+/** pass (no-op). */
+struct PassNode : ASTNode {};
+
+/** Suite: ordered list of statements (block body). */
+struct SuiteNode : ASTNode {
+    std::vector<std::unique_ptr<ASTNode>> statements;
+};
+
 struct ModuleNode : ASTNode {
     std::vector<std::unique_ptr<ASTNode>> body;
 };
@@ -122,6 +136,8 @@ private:
     std::unique_ptr<ASTNode> parseSubscript();
     /** Statement: assignment, for, if, global, or expression. */
     std::unique_ptr<ASTNode> parseStatement();
+    /** Suite: after ':', either Newline+Indent+statements+Dedent or single statement. */
+    std::unique_ptr<ASTNode> parseSuite();
 };
 
 } // namespace protoPython

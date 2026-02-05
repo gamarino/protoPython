@@ -54,7 +54,11 @@ private:
     bool compileFor(ForNode* n);
     bool compileIf(IfNode* n);
     bool compileGlobal(GlobalNode* n);
+    bool compileFunctionDef(FunctionDefNode* n);
+    bool compileSuite(SuiteNode* n);
     bool compileTarget(ASTNode* target, bool isStore);
+    /** True if executing this node leaves a value on the stack (expression stmt). */
+    static bool statementLeavesValue(ASTNode* node);
     std::unordered_set<std::string> globalNames_;
     int bytecodeOffset() const;
     /** Record a jump arg slot to be patched later with target (bytecode list index). */

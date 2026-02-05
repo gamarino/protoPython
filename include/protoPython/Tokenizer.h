@@ -3,6 +3,7 @@
 
 #include <string>
 #include <cstddef>
+#include <vector>
 
 namespace protoPython {
 
@@ -27,11 +28,16 @@ enum class TokenType {
     RCurly,
     Colon,
     Assign,
+    EqEqual,  /* == */
     For,
     In,
     If,
     Else,
     Global,
+    Def,
+    Pass,
+    Indent,
+    Dedent,
 };
 
 struct Token {
@@ -55,7 +61,10 @@ private:
     size_t pos_ = 0;
     Token peeked_;
     bool hasPeeked_ = false;
+    bool atLineStart_ = true;
+    std::vector<int> indentStack_;
     void skipWhitespace();
+    void skipWhitespaceNoNewline();
     void skipComment();
     Token scanNumber();
     Token scanString(char quote);

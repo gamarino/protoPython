@@ -263,8 +263,46 @@ bool Compiler::compileGlobal(GlobalNode* n) {
     return true;
 }
 
+bool Compiler::statementLeavesValue(ASTNode* node) {
+    if (!node) return false;
+    if (dynamic_cast<AssignNode*>(node) || dynamic_cast<ForNode*>(node) ||
+        dynamic_cast<IfNode*>(node) || dynamic_cast<GlobalNode*>(node) ||
+        dynamic_cast<PassNode*>(node) || dynamic_cast<FunctionDefNode*>(node) ||
+        dynamic_cast<SuiteNode*>(node))
+        return false;
+    return true;
+}
+
+bool Compiler::compileSuite(SuiteNode* n) {
+    if (!n || n->statements.empty()) return false;
+    for (size_t i = 0; i < n->statements.size(); ++i) {
+        if (!compileNode(n->statements[i].get())) return false;
+        if (i + 1 < n->statements.size() && statementLeavesValue(n->statements[i].get()))
+            emit(OP_POP_TOP, 0);
+    }
+    return true;
+}
+
+bool Compiler::compileFunctionDef(FunctionDefNode* n) {
+    if (!n) return false;
+    Compiler bodyCompiler(ctx_, filename_);
+    if (!bodyCompiler.compileNode(n->body.get())) return false;
+    bodyCompiler.bytecode_ = bodyCompiler.bytecode_->appendLast(ctx_, ctx_->fromInteger(static_cast<int>(OP_RETURN_VALUE)));
+    bodyCompiler.applyPatches();
+    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode());
+    if (!codeObj) return false;
+    int idx = addConstant(codeObj);
+    emit(OP_LOAD_CONST, idx);
+    emit(OP_BUILD_FUNCTION, 0);
+    int nameIdx = addName(n->name);
+    emit(OP_STORE_NAME, nameIdx);
+    return true;
+}
+
 bool Compiler::compileNode(ASTNode* node) {
     if (!node) return false;
+    if (dynamic_cast<PassNode*>(node)) return true;
+    if (auto* fn = dynamic_cast<FunctionDefNode*>(node)) return compileFunctionDef(fn);
     if (auto* c = dynamic_cast<ConstantNode*>(node)) return compileConstant(c);
     if (auto* nm = dynamic_cast<NameNode*>(node)) return compileName(nm);
     if (auto* b = dynamic_cast<BinOpNode*>(node)) return compileBinOp(b);
@@ -279,6 +317,7 @@ bool Compiler::compileNode(ASTNode* node) {
     if (auto* f = dynamic_cast<ForNode*>(node)) return compileFor(f);
     if (auto* iff = dynamic_cast<IfNode*>(node)) return compileIf(iff);
     if (auto* g = dynamic_cast<GlobalNode*>(node)) return compileGlobal(g);
+    if (auto* s = dynamic_cast<SuiteNode*>(node)) return compileSuite(s);
     return false;
 }
 

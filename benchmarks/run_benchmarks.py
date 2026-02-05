@@ -37,14 +37,14 @@ def median(lst):
 
 def run_cmd(cmd, cwd=None, timeout=60, stderr_file=None, env=None, verbose=False):
     """Run command; return (elapsed_ms, returncode, timed_out).
-    Use DEVNULL for stdout/stderr when not tracing to avoid pipe deadlock if child writes."""
+    protopy is run with PIPE (not DEVNULL) so it does not block on closed stdout/stderr."""
     start = time.perf_counter()
     stderr_handle = None
+    is_protopy = cmd and "protopy" in os.path.basename(cmd[0])
     try:
         kwargs = {
             "cwd": cwd or PROJECT_ROOT,
             "text": True,
-            "timeout": timeout,
         }
         if env is not None:
             kwargs["env"] = {**os.environ, **env}
@@ -52,9 +52,34 @@ def run_cmd(cmd, cwd=None, timeout=60, stderr_file=None, env=None, verbose=False
             stderr_handle = open(stderr_file, "a")
             kwargs["stdout"] = subprocess.DEVNULL
             kwargs["stderr"] = stderr_handle
-        else:
-            kwargs["stdout"] = subprocess.DEVNULL
-            kwargs["stderr"] = subprocess.DEVNULL
+            p = subprocess.Popen(cmd, **kwargs)
+            try:
+                p.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                p.kill()
+                p.wait()
+                raise
+            elapsed_ms = (time.perf_counter() - start) * 1000
+            if verbose:
+                print(f"      {elapsed_ms:.0f}ms exit={p.returncode}")
+            return elapsed_ms, p.returncode, False
+        if is_protopy:
+            kwargs["stdout"] = subprocess.PIPE
+            kwargs["stderr"] = subprocess.PIPE
+            p = subprocess.Popen(cmd, **kwargs)
+            try:
+                p.communicate(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                p.kill()
+                p.communicate()
+                raise
+            elapsed_ms = (time.perf_counter() - start) * 1000
+            if verbose:
+                print(f"      {elapsed_ms:.0f}ms exit={p.returncode}")
+            return elapsed_ms, p.returncode, False
+        kwargs["stdout"] = subprocess.DEVNULL
+        kwargs["stderr"] = subprocess.DEVNULL
+        kwargs["timeout"] = timeout
         r = subprocess.run(cmd, **kwargs)
         elapsed_ms = (time.perf_counter() - start) * 1000
         if verbose:
@@ -94,127 +119,136 @@ def bench_startup_empty(protopy_bin, cpython_bin, timeout=60, trace_file=None, v
     return median(times_protopy) if times_protopy else None, median(times_cpython) if times_cpython else None
 
 
+def _script_paths(script_path):
+    """Return (path_for_protopy, path_for_cpython). Use relative for protopy to avoid slowdown."""
+    script = script_path if isinstance(script_path, Path) else Path(script_path)
+    try:
+        rel = str(script.relative_to(PROJECT_ROOT))
+    except ValueError:
+        rel = str(script.resolve())
+    return rel, str(script.resolve())
+
+
 def bench_int_sum_loop(protopy_bin, cpython_bin, timeout=60, trace_file=None, verbose=False):
     """Time to run sum(range(N)) with N=100000."""
     script = SCRIPT_DIR / "int_sum_loop.py"
     if not script.exists():
         return None, None
-    script_str = str(script.resolve())
+    script_protopy, script_cpy = _script_paths(script)
     times_protopy = []
     times_cpython = []
     for _ in range(WARMUP_RUNS):
-        run_cmd([protopy_bin, "--path", PATH_ARG, "--script", script_str], timeout=timeout, stderr_file=trace_file, verbose=verbose)
-        run_cmd([cpython_bin, script_str], timeout=timeout, verbose=verbose)
+        run_cmd([protopy_bin, "--path", PATH_ARG, "--script", script_protopy], timeout=timeout, stderr_file=trace_file, verbose=verbose)
+        run_cmd([cpython_bin, script_cpy], timeout=timeout, verbose=verbose)
     for i in range(N_RUNS):
         if verbose:
             print(f"    int_sum_loop protopy run {i+1}/{N_RUNS}:", end="")
-        t, _, to = run_cmd([protopy_bin, "--path", PATH_ARG, "--script", script_str], timeout=timeout, stderr_file=trace_file, verbose=verbose)
+        t, _, to = run_cmd([protopy_bin, "--path", PATH_ARG, "--script", script_protopy], timeout=timeout, stderr_file=trace_file, verbose=verbose)
         if not to:
             times_protopy.append(t)
         if verbose:
             print(f"    int_sum_loop cpython run {i+1}/{N_RUNS}:", end="")
-        t, _, to = run_cmd([cpython_bin, script_str], timeout=timeout, verbose=verbose)
+        t, _, to = run_cmd([cpython_bin, script_cpy], timeout=timeout, verbose=verbose)
         if not to:
             times_cpython.append(t)
     return median(times_protopy) if times_protopy else None, median(times_cpython) if times_cpython else None
 
 
 def bench_list_append_loop(protopy_bin, cpython_bin, timeout=60, trace_file=None, verbose=False):
-    """Time to run list append loop with N=10000."""
+    """Time to run list append loop with N=10000 (or BENCH_N)."""
     script = SCRIPT_DIR / "list_append_loop.py"
     if not script.exists():
         return None, None
-    script_str = str(script.resolve())
+    script_protopy, script_cpy = _script_paths(script)
     times_protopy = []
     times_cpython = []
     for _ in range(WARMUP_RUNS):
-        run_cmd([protopy_bin, "--path", PATH_ARG, "--script", script_str], timeout=timeout, stderr_file=trace_file, verbose=verbose)
-        run_cmd([cpython_bin, script_str], timeout=timeout, verbose=verbose)
+        run_cmd([protopy_bin, "--path", PATH_ARG, "--script", script_protopy], timeout=timeout, stderr_file=trace_file, verbose=verbose)
+        run_cmd([cpython_bin, script_cpy], timeout=timeout, verbose=verbose)
     for i in range(N_RUNS):
         if verbose:
             print(f"    list_append_loop protopy run {i+1}/{N_RUNS}:", end="")
-        t, _, to = run_cmd([protopy_bin, "--path", PATH_ARG, "--script", script_str], timeout=timeout, stderr_file=trace_file, verbose=verbose)
+        t, _, to = run_cmd([protopy_bin, "--path", PATH_ARG, "--script", script_protopy], timeout=timeout, stderr_file=trace_file, verbose=verbose)
         if not to:
             times_protopy.append(t)
         if verbose:
             print(f"    list_append_loop cpython run {i+1}/{N_RUNS}:", end="")
-        t, _, to = run_cmd([cpython_bin, script_str], timeout=timeout, verbose=verbose)
+        t, _, to = run_cmd([cpython_bin, script_cpy], timeout=timeout, verbose=verbose)
         if not to:
             times_cpython.append(t)
     return median(times_protopy) if times_protopy else None, median(times_cpython) if times_cpython else None
 
 
 def bench_str_concat_loop(protopy_bin, cpython_bin, timeout=60, trace_file=None, verbose=False):
-    """Time to run string concat loop with N=10000."""
+    """Time to run string concat loop (N from BENCH_N or default)."""
     script = SCRIPT_DIR / "str_concat_loop.py"
     if not script.exists():
         return None, None
-    script_str = str(script.resolve())
+    script_protopy, script_cpy = _script_paths(script)
     times_protopy = []
     times_cpython = []
     for _ in range(WARMUP_RUNS):
-        run_cmd([protopy_bin, "--path", PATH_ARG, "--script", script_str], timeout=timeout, stderr_file=trace_file, verbose=verbose)
-        run_cmd([cpython_bin, script_str], timeout=timeout, verbose=verbose)
+        run_cmd([protopy_bin, "--path", PATH_ARG, "--script", script_protopy], timeout=timeout, stderr_file=trace_file, verbose=verbose)
+        run_cmd([cpython_bin, script_cpy], timeout=timeout, verbose=verbose)
     for i in range(N_RUNS):
         if verbose:
             print(f"    str_concat_loop protopy run {i+1}/{N_RUNS}:", end="")
-        t, _, to = run_cmd([protopy_bin, "--path", PATH_ARG, "--script", script_str], timeout=timeout, stderr_file=trace_file, verbose=verbose)
+        t, _, to = run_cmd([protopy_bin, "--path", PATH_ARG, "--script", script_protopy], timeout=timeout, stderr_file=trace_file, verbose=verbose)
         if not to:
             times_protopy.append(t)
         if verbose:
             print(f"    str_concat_loop cpython run {i+1}/{N_RUNS}:", end="")
-        t, _, to = run_cmd([cpython_bin, script_str], timeout=timeout, verbose=verbose)
+        t, _, to = run_cmd([cpython_bin, script_cpy], timeout=timeout, verbose=verbose)
         if not to:
             times_cpython.append(t)
     return median(times_protopy) if times_protopy else None, median(times_cpython) if times_cpython else None
 
 
 def bench_range_iterate(protopy_bin, cpython_bin, timeout=60, trace_file=None, verbose=False):
-    """Time to iterate over range(N) with N=100000."""
+    """Time to iterate over range(N) with N=100000 (or BENCH_N)."""
     script = SCRIPT_DIR / "range_iterate.py"
     if not script.exists():
         return None, None
-    script_str = str(script.resolve())
+    script_protopy, script_cpy = _script_paths(script)
     times_protopy = []
     times_cpython = []
     for _ in range(WARMUP_RUNS):
-        run_cmd([protopy_bin, "--path", PATH_ARG, "--script", script_str], timeout=timeout, stderr_file=trace_file, verbose=verbose)
-        run_cmd([cpython_bin, script_str], timeout=timeout, verbose=verbose)
+        run_cmd([protopy_bin, "--path", PATH_ARG, "--script", script_protopy], timeout=timeout, stderr_file=trace_file, verbose=verbose)
+        run_cmd([cpython_bin, script_cpy], timeout=timeout, verbose=verbose)
     for i in range(N_RUNS):
         if verbose:
             print(f"    range_iterate protopy run {i+1}/{N_RUNS}:", end="")
-        t, _, to = run_cmd([protopy_bin, "--path", PATH_ARG, "--script", script_str], timeout=timeout, stderr_file=trace_file, verbose=verbose)
+        t, _, to = run_cmd([protopy_bin, "--path", PATH_ARG, "--script", script_protopy], timeout=timeout, stderr_file=trace_file, verbose=verbose)
         if not to:
             times_protopy.append(t)
         if verbose:
             print(f"    range_iterate cpython run {i+1}/{N_RUNS}:", end="")
-        t, _, to = run_cmd([cpython_bin, script_str], timeout=timeout, verbose=verbose)
+        t, _, to = run_cmd([cpython_bin, script_cpy], timeout=timeout, verbose=verbose)
         if not to:
             times_cpython.append(t)
     return median(times_protopy) if times_protopy else None, median(times_cpython) if times_cpython else None
 
 
 def bench_multithreaded_cpu(protopy_bin, cpython_bin, timeout=60, trace_file=None, verbose=False):
-    """CPU-bound work: 4 chunks. Both run with SINGLE_THREAD=1 for fair per-chunk comparison (see MULTITHREAD_CPU_BENCHMARK.md)."""
+    """CPU-bound work: 4 chunks. protoPython real threads (GIL-less); CPython threads (GIL serializes)."""
     script = SCRIPT_DIR / "multithreaded_cpu.py"
     if not script.exists():
         return None, None
-    script_str = str(script.resolve())
-    single_thread_env = {"SINGLE_THREAD": "1"}
+    script_protopy, script_cpy = _script_paths(script)
     times_protopy = []
     times_cpython = []
     for _ in range(WARMUP_RUNS):
-        run_cmd([protopy_bin, "--path", PATH_ARG, "--script", script_str], timeout=timeout, stderr_file=trace_file, env=single_thread_env, verbose=verbose)
-        run_cmd([cpython_bin, script_str], timeout=timeout, env=single_thread_env, verbose=verbose)
+        run_cmd([protopy_bin, "--path", PATH_ARG, "--script", script_protopy], timeout=timeout, stderr_file=trace_file, verbose=verbose)
+        run_cmd([cpython_bin, script_cpy], timeout=timeout, verbose=verbose)
     for i in range(N_RUNS):
         if verbose:
             print(f"    multithread_cpu protopy run {i+1}/{N_RUNS}:", end="")
-        t, _, to = run_cmd([protopy_bin, "--path", PATH_ARG, "--script", script_str], timeout=timeout, stderr_file=trace_file, env=single_thread_env, verbose=verbose)
+        t, _, to = run_cmd([protopy_bin, "--path", PATH_ARG, "--script", script_protopy], timeout=timeout, stderr_file=trace_file, verbose=verbose)
         if not to:
             times_protopy.append(t)
         if verbose:
             print(f"    multithread_cpu cpython run {i+1}/{N_RUNS}:", end="")
-        t, _, to = run_cmd([cpython_bin, script_str], timeout=timeout, env=single_thread_env, verbose=verbose)
+        t, _, to = run_cmd([cpython_bin, script_cpy], timeout=timeout, verbose=verbose)
         if not to:
             times_cpython.append(t)
     return median(times_protopy) if times_protopy else None, median(times_cpython) if times_cpython else None

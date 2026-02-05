@@ -228,6 +228,31 @@ std::unique_ptr<ASTNode> Parser::parseOrExpr() {
 
 std::unique_ptr<ASTNode> Parser::parseStatement() {
     skipNewlines();
+    if (cur_.type == TokenType::Pass) {
+        advance();
+        return std::make_unique<PassNode>();
+    }
+    if (cur_.type == TokenType::Def) {
+        advance();
+        if (cur_.type != TokenType::Name) return nullptr;
+        std::string funcName = cur_.value;
+        advance();
+        if (!expect(TokenType::LParen)) return nullptr;
+        /* Skip parameter list (possibly with default values) until matching RParen. */
+        for (int depth = 1; depth > 0 && cur_.type != TokenType::EndOfFile;) {
+            if (cur_.type == TokenType::LParen) depth++;
+            else if (cur_.type == TokenType::RParen) depth--;
+            advance();
+        }
+        if (cur_.type != TokenType::Colon) return nullptr;
+        advance();
+        auto body = parseSuite();
+        if (!body) return nullptr;
+        auto fn = std::make_unique<FunctionDefNode>();
+        fn->name = funcName;
+        fn->body = std::move(body);
+        return fn;
+    }
     if (cur_.type == TokenType::Global) {
         advance();
         auto g = std::make_unique<GlobalNode>();
@@ -246,8 +271,7 @@ std::unique_ptr<ASTNode> Parser::parseStatement() {
         if (!target || !expect(TokenType::In)) return nullptr;
         auto iter = parseOrExpr();
         if (!iter || !expect(TokenType::Colon)) return nullptr;
-        skipNewlines();
-        auto body = parseStatement();
+        auto body = parseSuite();
         if (!body) return nullptr;
         auto f = std::make_unique<ForNode>();
         f->target = std::move(target);
@@ -259,16 +283,14 @@ std::unique_ptr<ASTNode> Parser::parseStatement() {
         advance();
         auto test = parseOrExpr();
         if (!test || !expect(TokenType::Colon)) return nullptr;
-        skipNewlines();
-        auto body = parseStatement();
+        auto body = parseSuite();
         if (!body) return nullptr;
         auto iff = std::make_unique<IfNode>();
         iff->test = std::move(test);
         iff->body = std::move(body);
         if (accept(TokenType::Else)) {
             if (!expect(TokenType::Colon)) return nullptr;
-            skipNewlines();
-            iff->orelse = parseStatement();
+            iff->orelse = parseSuite();
         }
         return iff;
     }
@@ -287,6 +309,28 @@ std::unique_ptr<ASTNode> Parser::parseStatement() {
 
 std::unique_ptr<ASTNode> Parser::parseExpression() {
     return parseOrExpr();
+}
+
+std::unique_ptr<ASTNode> Parser::parseSuite() {
+    skipNewlines();
+    auto suite = std::make_unique<SuiteNode>();
+    if (accept(TokenType::Indent)) {
+        while (cur_.type != TokenType::Dedent && cur_.type != TokenType::EndOfFile) {
+            auto st = parseStatement();
+            if (!st) break;
+            suite->statements.push_back(std::move(st));
+            skipNewlines();
+        }
+        if (!expect(TokenType::Dedent))
+            return nullptr;
+    } else {
+        auto st = parseStatement();
+        if (st)
+            suite->statements.push_back(std::move(st));
+    }
+    if (suite->statements.empty())
+        suite->statements.push_back(std::make_unique<PassNode>());
+    return suite;
 }
 
 std::unique_ptr<ModuleNode> Parser::parseModule() {
