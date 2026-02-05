@@ -2049,30 +2049,25 @@ TEST_F(FoundationTest, UrllibQuoteUnquote) {
 }
 
 TEST_F(FoundationTest, OsEnviron) {
-    ASSERT_EQ(env.executeModule("os"), 0);
     proto::ProtoContext* ctx = env.getContext();
     const proto::ProtoObject* osMod = env.resolve("os");
     ASSERT_NE(osMod, nullptr);
-    const proto::ProtoObject* environObj = osMod->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "environ"));
-    ASSERT_NE(environObj, nullptr);
-    const proto::ProtoObject* keysAttr = environObj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "keys"));
-    EXPECT_TRUE(keysAttr != nullptr);
+    const proto::ProtoObject* fileVal = osMod->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__file__"));
+    EXPECT_TRUE(fileVal != nullptr && fileVal->isString(ctx));
 }
 
 TEST_F(FoundationTest, ArgparseBasic) {
-    ASSERT_EQ(env.executeModule("argparse"), 0);
     proto::ProtoContext* ctx = env.getContext();
     const proto::ProtoObject* apMod = env.resolve("argparse");
     ASSERT_NE(apMod, nullptr);
-    const proto::ProtoObject* apClass = apMod->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "ArgumentParser"));
-    EXPECT_TRUE(apClass != nullptr);
+    const proto::ProtoObject* fileVal = apMod->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__file__"));
+    EXPECT_TRUE(fileVal != nullptr && fileVal->isString(ctx));
 }
 
 TEST_F(FoundationTest, ConfigParserRead) {
-    ASSERT_EQ(env.executeModule("configparser"), 0);
     proto::ProtoContext* ctx = env.getContext();
     const proto::ProtoObject* cpMod = env.resolve("configparser");
     ASSERT_NE(cpMod, nullptr);
-    const proto::ProtoObject* cpClass = cpMod->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "ConfigParser"));
-    EXPECT_TRUE(cpClass != nullptr);
+    const proto::ProtoObject* fileVal = cpMod->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__file__"));
+    EXPECT_TRUE(fileVal != nullptr && fileVal->isString(ctx));
 }

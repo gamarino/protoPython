@@ -182,16 +182,6 @@ Reserved for v36. No new stub entries in this batch (v36 focused on documentatio
 | traceback | extract_tb, format_list, format_exception | Implemented. |
 | difflib | unified_diff | Implemented (line-by-line). |
 
-## Python stdlib — New stubs (v39)
-
-| Module | Item | Behavior |
-|--------|------|----------|
-| _os | environ_keys | Returns list of env var names (POSIX). |
-| os | environ | Populated from _os.environ_keys + getenv when available. |
-| argparse | ArgumentParser, add_argument, parse_args | Implemented (lib/python3.14/argparse.py). |
-| configparser | ConfigParser: read, sections, get | Implemented (lib/python3.14/configparser.py). |
-| getpass | getpass, getuser | getpass returns ""; getuser from os.environ. |
-
 ## Python stdlib — New stubs (v38)
 
 | Module | Item | Behavior |
@@ -200,6 +190,16 @@ Reserved for v36. No new stub entries in this batch (v36 focused on documentatio
 | urllib.parse | quote, unquote, urljoin | Implemented (percent-encoding, lib/python3.14/urllib/parse.py). |
 | dataclasses | dataclass | Enhanced: __init__ with default values from class attributes. |
 | unittest | assertRaises, assertIn, main | Implemented: assertRaises context manager; main discovers and runs TestCase subclasses. |
+
+## Python stdlib — New stubs (v39)
+
+| Module | Item | Behavior |
+|--------|------|----------|
+| _os | getenv | Implemented: std::getenv, default arg when value missing. |
+| os | environ | Populated from _os.environ_keys and getenv. |
+| argparse | ArgumentParser, add_argument, parse_args | Implemented: positional and optional args, Namespace. |
+| configparser | ConfigParser, read, sections, get | Implemented: INI-style parsing. |
+| getpass | getpass, getuser | getpass returns placeholder; getuser from environ. |
 
 ## Python stdlib — New stubs
 
