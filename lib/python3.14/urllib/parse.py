@@ -29,14 +29,14 @@ def unquote(string, encoding='utf-8', errors='replace'):
         string = string.decode('latin-1')
     out = []
     i = 0
+    hex_digits = set('0123456789ABCDEFabcdef')
     while i < len(string):
         if string[i] == '%' and i + 2 < len(string):
-            try:
-                out.append(chr(int(string[i+1:i+3], 16)))
+            hex_part = string[i+1:i+3]
+            if hex_part[0] in hex_digits and hex_part[1] in hex_digits:
+                out.append(chr(int(hex_part, 16)))
                 i += 3
                 continue
-            except ValueError:
-                pass
         out.append(string[i])
         i += 1
     return ''.join(out)

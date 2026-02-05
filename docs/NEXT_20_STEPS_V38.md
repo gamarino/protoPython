@@ -27,10 +27,10 @@ Plan for 20 incremental milestones. Each step: implement → update docs → com
 | 697 | contextlib.contextmanager: full generator-based implementation | done |
 | 698 | Foundation test StatisticsModuleLoads, UrllibParseModuleLoads | done |
 | 699 | Update STUBS.md v38 section | done |
-| 700 | Update tasks/todo.md for v38 | pending |
-| 701 | Update IMPLEMENTATION_PLAN v38 | pending |
+| 700 | Update tasks/todo.md for v38 | done |
+| 701 | Update IMPLEMENTATION_PLAN v38 | done |
 | 702 | Finalize NEXT_20_STEPS_V38.md | done |
-| 703–704 | Git add, commit | pending |
+| 703–704 | Git add, commit | done |
 
 ---
 

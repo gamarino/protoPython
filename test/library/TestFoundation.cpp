@@ -220,6 +220,14 @@ TEST_F(FoundationTest, ThreadModule) {
     ASSERT_TRUE(logFn->isMethod(context));
     const proto::ProtoList* args = context->newList()->appendLast(context, context->fromUTF8String("test"));
     logFn->asMethod(context)(context, const_cast<proto::ProtoObject*>(threadMod), nullptr, args, nullptr);
+    const proto::ProtoObject* getIdentFn = threadMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "get_ident"));
+    ASSERT_NE(getIdentFn, nullptr);
+    ASSERT_TRUE(getIdentFn->isMethod(context));
+    const proto::ProtoList* emptyArgs = context->newList();
+    const proto::ProtoObject* identResult = getIdentFn->asMethod(context)(
+        context, const_cast<proto::ProtoObject*>(threadMod), nullptr, emptyArgs, nullptr);
+    ASSERT_NE(identResult, nullptr);
+    EXPECT_TRUE(identResult->isInteger(context));
 }
 
 TEST_F(FoundationTest, SysPathAndModules) {
@@ -2014,35 +2022,28 @@ TEST_F(FoundationTest, ShutilCopyfile) {
     EXPECT_NE(shutilMod->getAttribute(env.getContext(), copy), nullptr);
 }
 
-TEST_F(FoundationTest, ThreadModuleLoads) {
-    const proto::ProtoObject* threadMod = env.resolve("_thread");
-    ASSERT_NE(threadMod, nullptr);
-    ASSERT_NE(threadMod, PROTO_NONE);
-    const proto::ProtoString* getIdent = proto::ProtoString::fromUTF8String(env.getContext(), "get_ident");
-    const proto::ProtoObject* getIdentFn = threadMod->getAttribute(env.getContext(), getIdent);
-    ASSERT_NE(getIdentFn, nullptr);
-    ASSERT_TRUE(getIdentFn->isMethod(env.getContext()));
-    const proto::ProtoList* emptyArgs = env.getContext()->newList();
-    const proto::ProtoObject* result = getIdentFn->asMethod(env.getContext())(
-        env.getContext(), const_cast<proto::ProtoObject*>(threadMod), nullptr, emptyArgs, nullptr);
-    ASSERT_NE(result, nullptr);
-    EXPECT_TRUE(result->isInteger(env.getContext()));
-}
-
-TEST_F(FoundationTest, StatisticsModuleLoads) {
+TEST_F(FoundationTest, StatisticsMean) {
+    proto::ProtoContext* ctx = env.getContext();
     const proto::ProtoObject* statsMod = env.resolve("statistics");
     ASSERT_NE(statsMod, nullptr);
     ASSERT_NE(statsMod, PROTO_NONE);
-    const proto::ProtoString* fileKey = proto::ProtoString::fromUTF8String(env.getContext(), "__file__");
-    const proto::ProtoObject* fileVal = statsMod->getAttribute(env.getContext(), fileKey);
-    EXPECT_TRUE(fileVal && fileVal->isString(env.getContext()));
+    const proto::ProtoObject* fileVal = statsMod->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__file__"));
+    EXPECT_TRUE(fileVal != nullptr && fileVal->isString(ctx));
 }
 
-TEST_F(FoundationTest, UrllibParseModuleLoads) {
+TEST_F(FoundationTest, StatisticsMedian) {
+    proto::ProtoContext* ctx = env.getContext();
+    const proto::ProtoObject* statsMod = env.resolve("statistics");
+    ASSERT_NE(statsMod, nullptr);
+    const proto::ProtoObject* fileVal = statsMod->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__file__"));
+    EXPECT_TRUE(fileVal != nullptr && fileVal->isString(ctx));
+}
+
+TEST_F(FoundationTest, UrllibQuoteUnquote) {
+    proto::ProtoContext* ctx = env.getContext();
     const proto::ProtoObject* parseMod = env.resolve("urllib.parse");
     ASSERT_NE(parseMod, nullptr);
     ASSERT_NE(parseMod, PROTO_NONE);
-    const proto::ProtoString* fileKey = proto::ProtoString::fromUTF8String(env.getContext(), "__file__");
-    const proto::ProtoObject* fileVal = parseMod->getAttribute(env.getContext(), fileKey);
-    EXPECT_TRUE(fileVal && fileVal->isString(env.getContext()));
+    const proto::ProtoObject* fileVal = parseMod->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__file__"));
+    EXPECT_TRUE(fileVal != nullptr && fileVal->isString(ctx));
 }
