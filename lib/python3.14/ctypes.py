@@ -1,11 +1,12 @@
 """
-Minimal ctypes stub for protoPython.
-CDLL, c_int, c_double, etc.; full implementation requires FFI and platform shared libraries.
+ctypes stub for protoPython.
+Full implementation requires FFI (dlopen/dlsym) and platform shared libraries.
+CDLL raises NotImplementedError; c_* types and byref/string_at return placeholders.
 """
 
 def CDLL(name, *args, **kwargs):
-    """Stub: return None. Full impl requires dlopen/dlsym."""
-    return None
+    """Stub: raises NotImplementedError. Full impl requires dlopen/dlsym."""
+    raise NotImplementedError("ctypes.CDLL requires native FFI (dlopen/dlsym); not implemented in protoPython")
 
 def c_int(val=0):
     """Stub: return value as-is or 0."""
@@ -24,8 +25,8 @@ def c_void_p(val=None):
     return None
 
 def byref(obj):
-    """Stub: return None."""
-    return None
+    """Stub: raises NotImplementedError. Full impl requires FFI."""
+    raise NotImplementedError("ctypes.byref requires native FFI; not implemented in protoPython")
 
 def create_string_buffer(init=None, size=None):
     """Stub: return empty bytes or placeholder."""

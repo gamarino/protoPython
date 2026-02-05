@@ -1,13 +1,14 @@
 """
-Minimal sqlite3 stub for protoPython.
-connect, Connection; full implementation requires SQLite library.
+sqlite3 stub for protoPython.
+Full implementation requires the SQLite C library.
+connect returns a Connection stub; execute/commit/close are no-ops for import compatibility.
 """
 
 class Connection:
-    """Stub: no-op. execute/close do nothing. Full impl requires SQLite."""
+    """Stub: execute returns None; commit/close no-op. Full impl requires SQLite."""
 
     def execute(self, sql, parameters=()):
-        """Stub: return None or empty cursor."""
+        """Stub: return None. Full impl requires SQLite."""
         return None
 
     def commit(self):
@@ -23,6 +24,7 @@ class Connection:
         self.close()
         return False
 
+
 def connect(database, timeout=5.0, **kwargs):
-    """Stub: return minimal Connection stub. Full impl requires SQLite."""
+    """Return Connection stub. Full impl requires native SQLite."""
     return Connection()

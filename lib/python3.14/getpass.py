@@ -1,10 +1,10 @@
 """
-Minimal getpass stub for protoPython.
-getpass and getuser; full implementation requires tty/password input.
+getpass stub for protoPython.
+getuser reads from os.environ. getpass returns ""; full impl requires tty/password input.
 """
 
 def getpass(prompt="Password: ", stream=None):
-    """Stub: return placeholder. Full impl requires tty input."""
+    """Return empty string (stub). Full impl requires tty/password input."""
     return ""
 
 def getuser():
