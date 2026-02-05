@@ -39,7 +39,7 @@ This document catalogs stub implementations and their completion status.
 | Module | Item | Behavior |
 |--------|------|----------|
 | copy | copy, deepcopy | Implemented: shallow/deep for list, dict, tuple, set; else return x. Deep copy has no cycle detection. |
-| hashlib | md5, sha1, sha256 | Stub retained. Return None. Full impl requires native hashing. |
+| hashlib | md5, sha1, sha256 | Implemented: pure-Python MD5, SHA1, SHA256 (v48). |
 | base64 | b64encode, b64decode | Implemented: RFC 4648; accepts bytes-like; returns bytes. |
 | struct | pack, unpack | Implemented: b, h, i, l, q, f, d, s, ? (little-endian); minimal IEEE 754 for f/d. |
 | getopt | getopt | Implemented: shortopts, longopts; returns (options, args). GetoptError on bad option. |
@@ -83,7 +83,7 @@ This document catalogs stub implementations and their completion status.
 | Module | Item | Behavior |
 |--------|------|----------|
 | shutil | copyfile, rmtree, copy, move | copyfile and copy implemented (v37); rmtree and move implemented (v41). |
-| mimetypes | guess_type, guess_extension, guess_all_extensions | Stub: return (None, None), None, []. |
+| mimetypes | guess_type, guess_extension, guess_all_extensions | Implemented: suffix map for common types (v42). |
 
 ## Python stdlib — New stubs (v24)
 
@@ -103,7 +103,7 @@ This document catalogs stub implementations and their completion status.
 
 | Module | Item | Behavior |
 |--------|------|----------|
-| plistlib | load, loads, dump, dumps | Stub: load/loads return empty dict; dump/dumps no-op/empty bytes. Full impl requires plist parser. |
+| plistlib | load, loads, dump, dumps | Implemented: XML plist load/loads/dump/dumps (v48). |
 | quopri | encode, decode | Implemented: quoted-printable (RFC 2045) in lib/python3.14/quopri.py. |
 
 ## Python stdlib — New stubs (v27)
@@ -166,7 +166,7 @@ This document catalogs stub implementations and their completion status.
 
 | Module | Item | Behavior |
 |--------|------|----------|
-| inspect | isfunction, ismodule, getsourcefile, signature | Stub: isfunction/ismodule return False; getsourcefile return None; signature raises ValueError. No real introspection. |
+| inspect | isfunction, ismodule, getsourcefile, signature | Implemented: signature() from __code__; Parameter, Signature (v48). |
 | types | FunctionType, ModuleType, SimpleNamespace | Stub: FunctionType, ModuleType placeholder classes; SimpleNamespace minimal (init with **kwargs, setattr). |
 
 ## Python stdlib — New stubs (v36)
@@ -247,6 +247,40 @@ Reserved for v36. No new stub entries in this batch (v36 focused on documentatio
 | os.path | isfile | Implemented: stat-based S_ISREG. |
 | functools | partial | Pre-existing: func, *args, **kwargs; __call__ merges. |
 | datetime | date, timedelta | date(year, month, day); timedelta(days, seconds, microseconds). |
+
+## Python stdlib — New stubs (v45)
+
+| Module | Item | Behavior |
+|--------|------|----------|
+| pickle | loads, dumps | Minimal format: int, float, str, bytes, list, dict (str keys). |
+| logging | Handler, Formatter, StreamHandler | Handler base; Formatter %(message)s; StreamHandler; getLogger registry. |
+| email | message_from_string | Parse headers only; _Message with get(key). |
+
+## Python stdlib — New stubs (v46)
+
+| Module | Item | Behavior |
+|--------|------|----------|
+| secrets | token_hex, token_urlsafe | Pre-existing: uses random.getrandbits. |
+| subprocess | run | Accepts args; returns CompletedProcess(0, stdout, stderr) stubs. |
+
+## Python stdlib — New stubs (v47)
+
+| Module | Item | Behavior |
+|--------|------|----------|
+| venv | EnvBuilder, create | Stub: create no-op; EnvBuilder returns stub. |
+
+## Python stdlib — New stubs (v48)
+
+| Module | Item | Behavior |
+|--------|------|----------|
+| hashlib | md5, sha1, sha256 | Pure-Python implementation; update, digest, hexdigest, copy. |
+| plistlib | load, loads, dump, dumps | XML plist parse/serialize; dict, list, str, int, float, bool, bytes, date. |
+| inspect | signature, Parameter, Signature | Build Signature from __code__ (co_varnames, __defaults__, __kwdefaults__). |
+| email.utils | parsedate_to_datetime | Parse RFC 2822-style date strings to datetime. |
+| runpy | run_module | Docstring corrected; uses __import__ and __main__. |
+| ctypes | CDLL, byref | Raise NotImplementedError; requires native FFI. |
+| ssl | wrap_socket, SSLContext.wrap_socket | Raise NotImplementedError; requires native TLS. |
+| subprocess, sqlite3, multiprocessing, getpass | Documentation | Clearer docstrings; stubs documented for import compatibility. |
 
 ## Python stdlib — New stubs
 
