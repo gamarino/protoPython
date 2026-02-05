@@ -19,7 +19,7 @@ def run_path(path_name, init_globals=None, run_name=None):
     return init_globals
 
 def run_module(mod_name, init_globals=None, run_name=None, alter_sys=False):
-    """Run module mod_name as __main__. Stub: returns empty dict; full impl requires import machinery."""
+    """Run module mod_name as __main__. Uses __import__ and calls __main__ if present; returns init_globals."""
     if init_globals is None:
         init_globals = {}
     if run_name is None:
