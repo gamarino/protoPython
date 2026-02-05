@@ -17,6 +17,50 @@ static const proto::ProtoObject* callable_returns_42(
     return ctx->fromInteger(42);
 }
 
+// --- executeBytecodeRange (bulk block execution) ---
+TEST(ExecutionEngineTest, ExecuteBytecodeRangePartialRangeReturnsValue) {
+    proto::ProtoSpace space;
+    proto::ProtoContext ctx(&space);
+    // Bytecode: LOAD_CONST 0, LOAD_CONST 1, BINARY_ADD, RETURN_VALUE (indices 0..5)
+    const proto::ProtoList* constants = ctx.newList()
+        ->appendLast(&ctx, ctx.fromInteger(1))
+        ->appendLast(&ctx, ctx.fromInteger(2));
+    const proto::ProtoList* bytecode = ctx.newList()
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(0))
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(1))
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_BINARY_ADD))
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE))->appendLast(&ctx, ctx.fromInteger(0));
+    const proto::ProtoObject* result = protoPython::executeBytecodeRange(
+        &ctx, constants, bytecode, nullptr, nullptr, 0, 5);
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->isInteger(&ctx));
+    EXPECT_EQ(result->asLong(&ctx), 3);
+}
+
+TEST(ExecutionEngineTest, ExecuteBytecodeRangeFullRangeEqualsExecuteMinimal) {
+    proto::ProtoSpace space;
+    proto::ProtoContext ctx(&space);
+    const proto::ProtoList* constants = ctx.newList()
+        ->appendLast(&ctx, ctx.fromInteger(10))
+        ->appendLast(&ctx, ctx.fromInteger(32));
+    const proto::ProtoList* bytecode = ctx.newList()
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(0))
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(1))
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_BINARY_ADD))
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE))->appendLast(&ctx, ctx.fromInteger(0));
+    unsigned long n = bytecode->getSize(&ctx);
+    const proto::ProtoObject* rangeResult = protoPython::executeBytecodeRange(
+        &ctx, constants, bytecode, nullptr, nullptr, 0, n ? n - 1 : 0);
+    const proto::ProtoObject* minimalResult = protoPython::executeMinimalBytecode(
+        &ctx, constants, bytecode, nullptr, nullptr);
+    ASSERT_NE(rangeResult, nullptr);
+    ASSERT_NE(minimalResult, nullptr);
+    EXPECT_TRUE(rangeResult->isInteger(&ctx));
+    EXPECT_TRUE(minimalResult->isInteger(&ctx));
+    EXPECT_EQ(rangeResult->asLong(&ctx), minimalResult->asLong(&ctx));
+    EXPECT_EQ(rangeResult->asLong(&ctx), 42);
+}
+
 TEST(ExecutionEngineTest, LoadConstReturnValue) {
     proto::ProtoSpace space;
     proto::ProtoContext ctx(&space);

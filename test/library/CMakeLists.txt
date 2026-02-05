@@ -16,3 +16,13 @@ target_link_libraries(test_protocore_minimal PRIVATE protoCore)
 add_executable(test_execution_engine TestExecutionEngine.cpp)
 target_link_libraries(test_execution_engine PRIVATE protoPython protoCore gtest_main)
 add_test(NAME test_execution_engine COMMAND test_execution_engine)
+
+# ThreadingStrategy (re-architecture: no mutex, ExecutionTask, runTaskInline, submitTask)
+add_executable(test_threading_strategy TestThreadingStrategy.cpp)
+target_link_libraries(test_threading_strategy PRIVATE protoPython protoCore gtest_main)
+add_test(NAME test_threading_strategy COMMAND test_threading_strategy)
+
+# BasicBlockAnalysis (basic block boundaries for bulk task dispatch)
+add_executable(test_basic_block_analysis TestBasicBlockAnalysis.cpp)
+target_link_libraries(test_basic_block_analysis PRIVATE protoPython protoCore gtest_main)
+add_test(NAME test_basic_block_analysis COMMAND test_basic_block_analysis)

@@ -134,16 +134,23 @@ const proto::ProtoObject* invokePythonCallable(proto::ProtoContext* ctx,
     return invokeCallable(ctx, callable, args);
 }
 
-const proto::ProtoObject* executeMinimalBytecode(
+const proto::ProtoObject* executeBytecodeRange(
     proto::ProtoContext* ctx,
     const proto::ProtoList* constants,
     const proto::ProtoList* bytecode,
     const proto::ProtoList* names,
-    proto::ProtoObject* frame) {
+    proto::ProtoObject* frame,
+    unsigned long pcStart,
+    unsigned long pcEnd) {
     if (!ctx || !constants || !bytecode) return PROTO_NONE;
-    std::vector<const proto::ProtoObject*> stack;
     unsigned long n = bytecode->getSize(ctx);
-    for (unsigned long i = 0; i < n; ++i) {
+    if (n == 0) return PROTO_NONE;
+    if (pcEnd >= n) pcEnd = n - 1;
+    /* 64-byte aligned execution state to avoid false sharing when multiple threads run tasks. */
+    alignas(64) std::vector<const proto::ProtoObject*> stack;
+    stack.reserve(64);
+    for (unsigned long i = pcStart; i < n; ++i) {
+        if (i > pcEnd) break;
         const proto::ProtoObject* instr = bytecode->getAt(ctx, static_cast<int>(i));
         if (!instr->isInteger(ctx)) continue;
         int op = static_cast<int>(instr->asLong(ctx));
@@ -156,7 +163,7 @@ const proto::ProtoObject* executeMinimalBytecode(
                 stack.push_back(constants->getAt(ctx, arg));
         } else if (op == OP_RETURN_VALUE) {
             if (stack.empty()) return PROTO_NONE;
-            return stack.back();
+            return stack.back();  /* exit block immediately */
         } else if (op == OP_LOAD_NAME && names && frame && static_cast<unsigned long>(arg) < names->getSize(ctx)) {
             i++;
             const proto::ProtoObject* nameObj = names->getAt(ctx, arg);
@@ -893,6 +900,17 @@ const proto::ProtoObject* executeMinimalBytecode(
         }
     }
     return stack.empty() ? PROTO_NONE : stack.back();
+}
+
+const proto::ProtoObject* executeMinimalBytecode(
+    proto::ProtoContext* ctx,
+    const proto::ProtoList* constants,
+    const proto::ProtoList* bytecode,
+    const proto::ProtoList* names,
+    proto::ProtoObject* frame) {
+    if (!ctx || !bytecode) return PROTO_NONE;
+    unsigned long n = bytecode->getSize(ctx);
+    return executeBytecodeRange(ctx, constants, bytecode, names, frame, 0, n ? n - 1 : 0);
 }
 
 } // namespace protoPython

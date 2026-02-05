@@ -119,6 +119,20 @@ constexpr int OP_ROT_FOUR = 154;
 constexpr int OP_DUP_TOP_TWO = 155;
 
 /**
+ * @brief Executes a range of bytecode (one basic block). No per-instruction
+ *        scheduler dispatch; runs until pc exits [pcStart, pcEnd] or RETURN_VALUE.
+ *        Uses direct protoCore types (zero-copy). See REARCHITECTURE_PROTOCORE.md.
+ */
+const proto::ProtoObject* executeBytecodeRange(
+    proto::ProtoContext* ctx,
+    const proto::ProtoList* constants,
+    const proto::ProtoList* bytecode,
+    const proto::ProtoList* names,
+    proto::ProtoObject* frame,
+    unsigned long pcStart,
+    unsigned long pcEnd);
+
+/**
  * @brief Executes bytecode: LOAD_CONST, RETURN_VALUE, LOAD_NAME, STORE_NAME,
  *        BINARY_ADD, BINARY_SUBTRACT, CALL_FUNCTION.
  * @param ctx Proto context.

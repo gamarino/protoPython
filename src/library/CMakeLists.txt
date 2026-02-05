@@ -2,6 +2,8 @@ add_library(protoPython SHARED
     BytecodeLoader.cpp
     Compiler.cpp
     ExecutionEngine.cpp
+    ThreadingStrategy.cpp
+    BasicBlockAnalysis.cpp
     Parser.cpp
     Tokenizer.cpp
     FunctoolsModule.cpp
