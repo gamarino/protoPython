@@ -201,6 +201,17 @@ Reserved for v36. No new stub entries in this batch (v36 focused on documentatio
 | configparser | ConfigParser, read, sections, get | Implemented: INI-style parsing. |
 | getpass | getpass, getuser | getpass returns placeholder; getuser from environ. |
 
+## Python stdlib — New stubs (v40)
+
+| Module | Item | Behavior |
+|--------|------|----------|
+| difflib | SequenceMatcher | Implemented: __init__, ratio, get_matching_blocks. |
+| ast | literal_eval | Implemented: int, float, str, bytes, list, tuple, dict, set, None, True, False. |
+| inspect | isfunction, ismodule, getsourcefile | Enhanced: isfunction checks callable+__call__; getsourcefile returns __file__. |
+| decimal | Decimal | Implemented: __init__, __str__, __repr__, __add__, __sub__. |
+| fractions | Fraction | Implemented: __init__, __str__, __repr__, __add__. |
+| types | FunctionType, ModuleType | ModuleType(name, doc); FunctionType stub. |
+
 ## Python stdlib — New stubs
 
 | Module | Item | Behavior |

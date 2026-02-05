@@ -380,5 +380,11 @@ See [docs/NEXT_20_STEPS_V39.md](../docs/NEXT_20_STEPS_V39.md). Steps 705–724: 
 
 - [x] Steps 705–724
 
+## 39. Next 20 Steps (v40) — completed
+
+See [docs/NEXT_20_STEPS_V40.md](../docs/NEXT_20_STEPS_V40.md). Steps 725–744: difflib.SequenceMatcher; ast.literal_eval; inspect; decimal.Decimal; fractions.Fraction; types; foundation tests DifflibSequenceMatcher, AstLiteralEval, DecimalBasic.
+
+- [x] Steps 725–744
+
 ---
 *Updated from plan implementation. Mark items complete as work progresses.*

@@ -2071,3 +2071,27 @@ TEST_F(FoundationTest, ConfigParserRead) {
     const proto::ProtoObject* fileVal = cpMod->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__file__"));
     EXPECT_TRUE(fileVal != nullptr && fileVal->isString(ctx));
 }
+
+TEST_F(FoundationTest, DifflibSequenceMatcher) {
+    proto::ProtoContext* ctx = env.getContext();
+    const proto::ProtoObject* difflibMod = env.resolve("difflib");
+    ASSERT_NE(difflibMod, nullptr);
+    const proto::ProtoObject* fileVal = difflibMod->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__file__"));
+    EXPECT_TRUE(fileVal != nullptr && fileVal->isString(ctx));
+}
+
+TEST_F(FoundationTest, AstLiteralEval) {
+    proto::ProtoContext* ctx = env.getContext();
+    const proto::ProtoObject* astMod = env.resolve("ast");
+    ASSERT_NE(astMod, nullptr);
+    const proto::ProtoObject* fileVal = astMod->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__file__"));
+    EXPECT_TRUE(fileVal != nullptr && fileVal->isString(ctx));
+}
+
+TEST_F(FoundationTest, DecimalBasic) {
+    proto::ProtoContext* ctx = env.getContext();
+    const proto::ProtoObject* decMod = env.resolve("decimal");
+    ASSERT_NE(decMod, nullptr);
+    const proto::ProtoObject* fileVal = decMod->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__file__"));
+    EXPECT_TRUE(fileVal != nullptr && fileVal->isString(ctx));
+}

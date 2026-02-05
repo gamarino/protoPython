@@ -121,6 +121,8 @@ We aim for "No-Modification" compatibility with CPython tests.
 
 **Completed: Next 20 Steps v39 (705–724).** See [NEXT_20_STEPS_V39.md](NEXT_20_STEPS_V39.md). _os.getenv; os.environ populated from environment; argparse ArgumentParser add_argument/parse_args; configparser read/sections/get; getpass.getpass/getuser; foundation tests OsEnviron, ArgparseBasic, ConfigParserRead; STUBS, todo, IMPLEMENTATION_PLAN updated.
 
+**Completed: Next 20 Steps v40 (725–744).** See [NEXT_20_STEPS_V40.md](NEXT_20_STEPS_V40.md). difflib.SequenceMatcher; ast.literal_eval; inspect isfunction/ismodule/getsourcefile; decimal.Decimal and fractions.Fraction basics; types.ModuleType; foundation tests DifflibSequenceMatcher, AstLiteralEval, DecimalBasic; STUBS, todo, IMPLEMENTATION_PLAN updated.
+
 ## 5. Debugging & IDE Support
 To be a viable replacement, `protoPython` must support professional developer workflows.
 
