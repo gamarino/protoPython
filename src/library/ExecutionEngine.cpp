@@ -1,9 +1,46 @@
 #include <protoPython/ExecutionEngine.h>
+#include <protoPython/Compiler.h>
+#include <protoPython/MemoryManager.hpp>
+#include <protoCore.h>
 #include <cmath>
 #include <cstdint>
 #include <vector>
 
 namespace protoPython {
+
+namespace {
+/** __call__ for user-defined functions: push context (RAII), build frame, run __code__, promote return value. */
+static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* args,
+    const proto::ProtoSparseList* kwargs) {
+    if (!ctx || !self || !args) return PROTO_NONE;
+    const proto::ProtoObject* codeObj = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__code__"));
+    if (!codeObj || codeObj == PROTO_NONE) return PROTO_NONE;
+    const proto::ProtoObject* globalsObj = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__globals__"));
+    if (!globalsObj || globalsObj == PROTO_NONE) return PROTO_NONE;
+    ContextScope scope(ctx->space, ctx, nullptr, nullptr, args, kwargs);
+    proto::ProtoContext* calleeCtx = scope.context();
+    proto::ProtoObject* frame = const_cast<proto::ProtoObject*>(calleeCtx->newObject(true));
+    if (!frame) return PROTO_NONE;
+    frame->addParent(ctx, globalsObj);
+    const proto::ProtoObject* result = runCodeObject(calleeCtx, codeObj, frame);
+    promote(calleeCtx, result);
+    return result;
+}
+
+/** Create a callable object with __code__, __globals__, and __call__. */
+static proto::ProtoObject* createUserFunction(proto::ProtoContext* ctx, const proto::ProtoObject* codeObj, proto::ProtoObject* globalsFrame) {
+    if (!ctx || !codeObj || !globalsFrame) return nullptr;
+    const proto::ProtoObject* fn = ctx->newObject(true);
+    fn = fn->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__code__"), codeObj);
+    fn = fn->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__globals__"), globalsFrame);
+    fn = fn->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__call__"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(fn), runUserFunctionCall));
+    return const_cast<proto::ProtoObject*>(fn);
+}
+} // anonymous namespace
 
 /** Return true if obj is an embedded value (e.g. small int, bool); do not call getAttribute on it. */
 static bool isEmbeddedValue(const proto::ProtoObject* obj) {
@@ -163,7 +200,9 @@ const proto::ProtoObject* executeBytecodeRange(
                 stack.push_back(constants->getAt(ctx, arg));
         } else if (op == OP_RETURN_VALUE) {
             if (stack.empty()) return PROTO_NONE;
-            return stack.back();  /* exit block immediately */
+            const proto::ProtoObject* ret = stack.back();
+            ctx->returnValue = ret;
+            return ret;  /* exit block immediately; destructor will promote */
         } else if (op == OP_LOAD_NAME && names && frame && static_cast<unsigned long>(arg) < names->getSize(ctx)) {
             i++;
             const proto::ProtoObject* nameObj = names->getAt(ctx, arg);
@@ -763,6 +802,14 @@ const proto::ProtoObject* executeBytecodeRange(
                     lst = lst->appendLast(ctx, elems[j]);
                 const proto::ProtoTuple* tup = ctx->newTupleFromList(lst);
                 if (tup) stack.push_back(tup->asObject(ctx));
+            }
+        } else if (op == OP_BUILD_FUNCTION) {
+            i++;
+            if (!stack.empty() && frame) {
+                const proto::ProtoObject* codeObj = stack.back();
+                stack.pop_back();
+                proto::ProtoObject* fn = createUserFunction(ctx, codeObj, frame);
+                if (fn) stack.push_back(fn);
             }
         } else if (op == OP_GET_ITER) {
             i++;

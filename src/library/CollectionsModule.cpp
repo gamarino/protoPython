@@ -6,7 +6,8 @@
 namespace protoPython {
 namespace collections {
 
-// Thread safety: per-instance mutex in DequeState protects internal state. See docs/GIL_FREE_AUDIT.md.
+// Thread safety: per-instance mutex in DequeState protects mutable shared state (user-level locking, not GIL).
+// L-Shape: acceptable; see docs/L_SHAPE_ARCHITECTURE.md. See also docs/GIL_FREE_AUDIT.md.
 struct DequeState {
     std::deque<const proto::ProtoObject*> data;
     std::mutex mutex;

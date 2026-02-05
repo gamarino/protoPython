@@ -15,6 +15,7 @@ Derived from [IMPLEMENTATION_PLAN.md](../docs/IMPLEMENTATION_PLAN.md). See also 
 ## 1.5 protopy CLI
 - [x] Exit codes and flags (`--module`, `--script`, `--path`, `--stdlib`) with tests
 - [ ] Phase 3: Execution Engine — ProtoContext integration for bytecode execution (protopy)
+- [x] L-Shape architecture — context stack (ContextScope, promote), ProtoSpace singleton, TLS for env lookup, lock-free bootstrap diagnostic; see [docs/L_SHAPE_ARCHITECTURE.md](../docs/L_SHAPE_ARCHITECTURE.md)
 - [x] Phase 4: GIL-less Concurrency — audit documented in [docs/GIL_FREE_AUDIT.md](../docs/GIL_FREE_AUDIT.md); fixes TBD
 
 ## 2. Standard Library Integration
@@ -409,6 +410,24 @@ See [docs/NEXT_20_STEPS_V43.md](../docs/NEXT_20_STEPS_V43.md). Steps 785–804: 
 See [docs/NEXT_20_STEPS_V44.md](../docs/NEXT_20_STEPS_V44.md). Steps 805–824: pathlib.Path read_text/write_text; os.path.isfile; functools.partial; datetime date/timedelta; foundation tests PathlibReadText, FunctoolsPartial, DatetimeDate.
 
 - [x] Steps 805–824
+
+## 44. Next 20 Steps (v45) — completed
+
+See [docs/NEXT_20_STEPS_V45.md](../docs/NEXT_20_STEPS_V45.md). Steps 825–844: pickle loads/dumps minimal; logging Handler/Formatter/StreamHandler; email message_from_string headers; foundation tests PickleLoadsDumps, LoggingHandler, EmailParse.
+
+- [x] Steps 825–844
+
+## 45. Next 20 Steps (v46) — completed
+
+See [docs/NEXT_20_STEPS_V46.md](../docs/NEXT_20_STEPS_V46.md). Steps 845–864: secrets token_hex/token_urlsafe; subprocess.run args; regrtest persistence docs; C_MODULES_TO_REPLACE update; foundation tests SecretsTokenHex, SubprocessRun.
+
+- [x] Steps 845–864
+
+## 46. Next 20 Steps (v47) — completed
+
+See [docs/NEXT_20_STEPS_V47.md](../docs/NEXT_20_STEPS_V47.md). Steps 865–884: HPY_INTEGRATION_PLAN; PACKAGING_ROADMAP; venv stub; lessons.md; IMPLEMENTATION_PLAN v43–v47 summary.
+
+- [x] Steps 865–884
 
 ---
 *Updated from plan implementation. Mark items complete as work progresses.*

@@ -1,9 +1,12 @@
 #include <protoPython/ThreadModule.h>
 #include <protoPython/ExecutionEngine.h>
+#include <protoPython/PythonEnvironment.h>
 #include <protoCore.h>
 #include <iostream>
 #include <thread>
 #include <mutex>
+#include <atomic>
+#include <cstdlib>
 #include <cstdint>
 
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
@@ -38,19 +41,60 @@ static void mutex_finalizer(void* ptr) {
     delete static_cast<std::mutex*>(ptr);
 }
 
-/** Bootstrap run in the new ProtoThread: args = [callable, arg0, arg1, ...]. */
+/** Diagnostic: count distinct OS threads that enter thread_bootstrap (PROTO_THREAD_DIAG=1). Lock-free. */
+static std::atomic<int> s_bootstrapTidCount{0};
+static std::atomic<bool> s_bootstrapFirstLogged{false};
+static std::once_flag s_bootstrapDiagOnce;
+static void diagPrintBootstrapTids() {
+    int n = s_bootstrapTidCount.load(std::memory_order_relaxed);
+    if (n > 0)
+        std::cerr << "[proto-thread-diag] thread_bootstrap distinct_os_threads=" << n << std::endl;
+}
+static void diagBootstrapTid() {
+    if (!std::getenv("PROTO_THREAD_DIAG")) return;
+    std::call_once(s_bootstrapDiagOnce, []{ std::atexit(diagPrintBootstrapTids); });
+    static thread_local bool s_counted = false;
+    if (s_counted) return;
+    s_counted = true;
+    s_bootstrapTidCount.fetch_add(1, std::memory_order_relaxed);
+    if (!s_bootstrapFirstLogged.exchange(true, std::memory_order_relaxed))
+        std::cerr << "[proto-thread-diag] first thread_bootstrap tid=" << current_thread_id() << std::endl;
+}
+
+/**
+ * Bootstrap run in the new ProtoThread.
+ * args = [env_ep?, callable, arg0, arg1, ...]. If env_ep is present (external pointer to
+ * PythonEnvironment*), the worker context is registered so fromContext(worker_context) works.
+ */
 static const proto::ProtoObject* thread_bootstrap(
     proto::ProtoContext* context,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
     const proto::ProtoList* args,
     const proto::ProtoSparseList* /*kwargs*/) {
+    diagBootstrapTid();
     if (!args || args->getSize(context) < 1) return PROTO_NONE;
-    const proto::ProtoObject* callable = args->getAt(context, 0);
+    unsigned long callableIdx = 0;
+    protoPython::PythonEnvironment* env = nullptr;
+    if (args->getSize(context) >= 2) {
+        const proto::ProtoObject* first = args->getAt(context, 0);
+        const proto::ProtoExternalPointer* ep = first ? first->asExternalPointer(context) : nullptr;
+        if (ep) {
+            env = static_cast<protoPython::PythonEnvironment*>(ep->getPointer(context));
+            if (env) {
+                protoPython::PythonEnvironment::registerContext(context, env);
+                callableIdx = 1;
+            }
+        }
+    }
+    const proto::ProtoObject* callable = args->getAt(context, static_cast<int>(callableIdx));
     const proto::ProtoList* argList = context->newList();
-    for (unsigned long i = 1; i < args->getSize(context); ++i)
+    for (unsigned long i = callableIdx + 1; i < args->getSize(context); ++i)
         argList = argList->appendLast(context, args->getAt(context, static_cast<int>(i)));
-    return protoPython::invokePythonCallable(context, callable, argList);
+    const proto::ProtoObject* result = protoPython::invokePythonCallable(context, callable, argList);
+    if (env)
+        protoPython::PythonEnvironment::unregisterContext(context);
+    return result;
 }
 
 static const proto::ProtoObject* py_start_new_thread(
@@ -59,10 +103,16 @@ static const proto::ProtoObject* py_start_new_thread(
     const proto::ParentLink* /*parentLink*/,
     const proto::ProtoList* posArgs,
     const proto::ProtoSparseList* /*kwargs*/) {
+    if (std::getenv("PROTO_THREAD_DIAG"))
+        std::cerr << "[proto-thread-diag] start_new_thread called\n" << std::flush;
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* callable = posArgs->getAt(ctx, 0);
-    /* Build [callable, ...args]. If second arg is a tuple, unpack it; else use (posArgs[1], ...). */
-    const proto::ProtoList* argsForThread = ctx->newList()->appendLast(ctx, callable);
+    /* Build [env_ep, callable, ...args]. env_ep lets the worker register its context with PythonEnvironment. */
+    protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(ctx);
+    const proto::ProtoList* argsForThread = ctx->newList();
+    if (env)
+        argsForThread = argsForThread->appendLast(ctx, ctx->fromExternalPointer(env, nullptr));
+    argsForThread = argsForThread->appendLast(ctx, callable);
     if (posArgs->getSize(ctx) >= 2) {
         const proto::ProtoObject* second = posArgs->getAt(ctx, 1);
         if (second->asTuple(ctx)) {
