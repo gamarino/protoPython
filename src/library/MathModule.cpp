@@ -296,11 +296,15 @@ static const proto::ProtoObject* py_dist(
     if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
     const proto::ProtoObject* pa = posArgs->getAt(ctx, 0);
     const proto::ProtoObject* pb = posArgs->getAt(ctx, 1);
+    const proto::ProtoList* la = nullptr;
+    const proto::ProtoList* lb = nullptr;
     const proto::ProtoObject* da = pa->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__data__"));
     const proto::ProtoObject* db = pb->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__data__"));
-    if (!da || !db || !da->asList(ctx) || !db->asList(ctx)) return PROTO_NONE;
-    const proto::ProtoList* la = da->asList(ctx);
-    const proto::ProtoList* lb = db->asList(ctx);
+    if (da && da->asList(ctx)) la = da->asList(ctx);
+    else if (pa->asList(ctx)) la = pa->asList(ctx);
+    if (db && db->asList(ctx)) lb = db->asList(ctx);
+    else if (pb->asList(ctx)) lb = pb->asList(ctx);
+    if (!la || !lb) return PROTO_NONE;
     size_t na = static_cast<size_t>(la->getSize(ctx));
     size_t nb = static_cast<size_t>(lb->getSize(ctx));
     size_t n = (na < nb) ? na : nb;

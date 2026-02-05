@@ -19,6 +19,7 @@
 #include <protoPython/OsPathModule.h>
 #include <protoPython/PathlibModule.h>
 #include <protoPython/CollectionsAbcModule.h>
+#include <protoPython/AtexitModule.h>
 #include <protoPython/ExecutionEngine.h>
 #include <protoCore.h>
 #include <algorithm>
@@ -4514,6 +4515,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     nativeProvider->registerModule("os.path", [](proto::ProtoContext* ctx) { return os_path::initialize(ctx); });
     nativeProvider->registerModule("pathlib", [](proto::ProtoContext* ctx) { return pathlib::initialize(ctx); });
     nativeProvider->registerModule("collections.abc", [](proto::ProtoContext* ctx) { return collections_abc::initialize(ctx); });
+    nativeProvider->registerModule("atexit", [](proto::ProtoContext* ctx) { return atexit_module::initialize(ctx); });
 
     const proto::ProtoObject* exceptionsMod = exceptions::initialize(context, objectPrototype, typePrototype);
     keyErrorType = exceptionsMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "KeyError"));

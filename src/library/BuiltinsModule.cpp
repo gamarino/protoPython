@@ -470,7 +470,8 @@ static const proto::ProtoObject* py_getattr(
     if (!nameObj->isString(context)) return PROTO_NONE;
     std::string name;
     nameObj->asString(context)->toUTF8String(context, name);
-    const proto::ProtoObject* attr = obj->getAttribute(context, nameObj->asString(context));
+    const proto::ProtoString* key = proto::ProtoString::fromUTF8String(context, name.c_str());
+    const proto::ProtoObject* attr = obj->getAttribute(context, key);
     if (attr && attr != PROTO_NONE) return attr;
     if (positionalParameters->getSize(context) >= 3) return positionalParameters->getAt(context, 2);
     return PROTO_NONE;
@@ -487,7 +488,10 @@ static const proto::ProtoObject* py_setattr(
     const proto::ProtoObject* nameObj = positionalParameters->getAt(context, 1);
     const proto::ProtoObject* value = positionalParameters->getAt(context, 2);
     if (!nameObj->isString(context)) return PROTO_NONE;
-    obj->setAttribute(context, nameObj->asString(context), value);
+    std::string name;
+    nameObj->asString(context)->toUTF8String(context, name);
+    const proto::ProtoString* key = proto::ProtoString::fromUTF8String(context, name.c_str());
+    obj->setAttribute(context, key, value);
     return PROTO_NONE;
 }
 
