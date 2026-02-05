@@ -182,10 +182,18 @@ Reserved for v36. No new stub entries in this batch (v36 focused on documentatio
 | traceback | extract_tb, format_list, format_exception | Implemented. |
 | difflib | unified_diff | Implemented (line-by-line). |
 
+## Python stdlib — New stubs (v38)
+
+| Module | Item | Behavior |
+|--------|------|----------|
+| statistics | mean, median, stdev, variance, pvariance | Implemented (lib/python3.14/statistics.py). Sample stdev/variance use n-1. |
+| urllib.parse | quote, unquote, urljoin | Implemented (percent-encoding, lib/python3.14/urllib/parse.py). |
+| dataclasses | dataclass | Enhanced: __init__ with default values from class attributes. |
+| unittest | assertRaises, assertIn, main | Implemented: assertRaises context manager; main discovers and runs TestCase subclasses. |
+
 ## Python stdlib — New stubs
 
 | Module | Item | Behavior |
 |--------|------|----------|
-| statistics | mean, median, stdev | Stub: return 0.0. |
-| decimal | Decimal | Stub class; stores value; minimal __str__. |
-| fractions | Fraction | Stub class; stores n/d; minimal __str__. |
+| decimal | Decimal | Stub class; stores value; minimal __str__. Full impl in v40. |
+| fractions | Fraction | Stub class; stores n/d; minimal __str__. Full impl in v40. |

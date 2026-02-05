@@ -1,6 +1,7 @@
 #include <protoPython/ThreadModule.h>
 #include <protoPython/ExecutionEngine.h>
 #include <protoCore.h>
+#include <iostream>
 #include <thread>
 #include <mutex>
 #include <cstdint>
@@ -90,6 +91,8 @@ static const proto::ProtoObject* py_log_thread_ident(
         posArgs->getAt(ctx, 0)->asString(ctx)->toUTF8String(ctx, s);
         label = s.empty() ? "thread" : s.c_str();
     }
+    std::cerr << "[thread_ident] " << label << " pid=" << current_process_id()
+              << " tid=" << current_thread_id() << "\n" << std::flush;
     return PROTO_NONE;
 }
 

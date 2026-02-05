@@ -18,25 +18,35 @@ def median(data):
     return (data[n // 2 - 1] + data[n // 2]) / 2
 
 def stdev(data, xbar=None):
-    """Population standard deviation. If xbar is None, use mean(data)."""
+    """Sample standard deviation. If xbar is None, use mean(data)."""
     data = list(data)
     n = len(data)
     if n < 2:
         raise StatisticsError("variance requires at least two data points")
     if xbar is None:
         xbar = mean(data)
-    variance = sum((x - xbar) ** 2 for x in data) / n
+    variance = sum((x - xbar) ** 2 for x in data) / (n - 1)
     return variance ** 0.5
 
+def pvariance(data, mu=None):
+    """Population variance. If mu is None, use mean(data)."""
+    data = list(data)
+    n = len(data)
+    if n < 1:
+        raise StatisticsError("variance requires at least one data point")
+    if mu is None:
+        mu = mean(data)
+    return sum((x - mu) ** 2 for x in data) / n
+
 def variance(data, xbar=None):
-    """Population variance. If xbar is None, use mean(data)."""
+    """Sample variance. If xbar is None, use mean(data)."""
     data = list(data)
     n = len(data)
     if n < 2:
         raise StatisticsError("variance requires at least two data points")
     if xbar is None:
         xbar = mean(data)
-    return sum((x - xbar) ** 2 for x in data) / n
+    return sum((x - xbar) ** 2 for x in data) / (n - 1)
 
 class StatisticsError(Exception):
     pass

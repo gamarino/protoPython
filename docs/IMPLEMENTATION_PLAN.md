@@ -117,6 +117,8 @@ We aim for "No-Modification" compatibility with CPython tests.
 
 **Completed: Next 20 Steps v37 (665–684).** See [NEXT_20_STEPS_V37.md](NEXT_20_STEPS_V37.md). atexit (register/unregister/_run_exitfuncs) wired to runtime shutdown; shutil.copyfile and copy; traceback extract_tb, format_list, format_exception; difflib.unified_diff; foundation tests AtexitRegister, ShutilCopyfile; STUBS, todo, IMPLEMENTATION_PLAN updated.
 
+**Completed: Next 20 Steps v38 (685–704).** See [NEXT_20_STEPS_V38.md](NEXT_20_STEPS_V38.md). _thread native module resolution fix; statistics.mean, median, stdev, variance, pvariance; urllib.parse.quote, unquote, urljoin; dataclasses default values; unittest assertRaises, assertIn, main; foundation tests ThreadModuleLoads, StatisticsModuleLoads, UrllibParseModuleLoads; STUBS, todo, IMPLEMENTATION_PLAN updated.
+
 ## 5. Debugging & IDE Support
 To be a viable replacement, `protoPython` must support professional developer workflows.
 

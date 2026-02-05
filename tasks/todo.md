@@ -368,5 +368,11 @@ See [docs/NEXT_20_STEPS_V37.md](../docs/NEXT_20_STEPS_V37.md). Steps 665–684: 
 
 - [x] Steps 665–684
 
+## 37. Next 20 Steps (v38) — completed
+
+See [docs/NEXT_20_STEPS_V38.md](../docs/NEXT_20_STEPS_V38.md). Steps 685–704: _thread native module resolution fix; statistics.mean/median/stdev; urllib.parse.quote/unquote/urljoin; dataclasses default values; unittest assertRaises/assertIn/main; contextlib full impl; foundation tests ThreadModuleLoads, StatisticsModuleLoads, UrllibParseModuleLoads.
+
+- [x] Steps 685–704
+
 ---
 *Updated from plan implementation. Mark items complete as work progresses.*

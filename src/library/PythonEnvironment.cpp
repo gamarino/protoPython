@@ -4478,15 +4478,15 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
         sysModule = sysModule->setAttribute(context, py_modules, modulesDictObj);
     }
 
-    // 8. Prepend to resolution chain
+    // 8. Prepend to resolution chain: ensure provider:native is first so native modules
+    //    (_thread, _os, etc.) resolve before any file-based lookup.
     const proto::ProtoObject* chainObj = context->space->getResolutionChain();
-    if (chainObj) {
-        const proto::ProtoList* chain = chainObj->asList(context);
-        if (chain) {
-            chain = chain->insertAt(context, 0, context->fromUTF8String("provider:python_stdlib"));
-            chain = chain->insertAt(context, 0, context->fromUTF8String("provider:native"));
-            context->space->setResolutionChain(chain->asObject(context));
-        }
+    const proto::ProtoList* chain = chainObj && chainObj != PROTO_NONE
+        ? chainObj->asList(context) : nullptr;
+    if (chain) {
+        chain = chain->insertAt(context, 0, context->fromUTF8String("provider:python_stdlib"));
+        chain = chain->insertAt(context, 0, context->fromUTF8String("provider:native"));
+        context->space->setResolutionChain(chain->asObject(context));
     }
 }
 
