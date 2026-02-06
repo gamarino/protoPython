@@ -12,6 +12,12 @@ We welcome architectural feedback, edge-case identification, and performance cri
 
 ProtoPython aims to provide a GIL-less, highly parallel Python runtime and a C++ compiler for Python modules.
 
+### Why protoPython?
+
+- **Immutable Integrity**: Leverages protoCore's immutable memory model for thread-safety by design.
+- **Zero-Copy Interop**: The UMD allows passing massive data buffers to C-libraries (like NumPy) without moving a single pointer.
+- **Hardware-Aware**: Optimized for modern CPU cache lines through 64-byte cell alignment.
+
 ### Components
 
 - **protoPython Library**: The core runtime library defining the Python environment over `ProtoSpace`.
@@ -20,9 +26,7 @@ ProtoPython aims to provide a GIL-less, highly parallel Python runtime and a C++
 
 ## The Swarm of One
 
-**The Swarm of One** is the transition from "Individual Contributor" to "System Architect": a single human architect orchestrating a swarm of specialized AI agents to tackle high-density infrastructure that previously required entire R&D departments.
-
-In protoPython, that meant going from infrastructure to a runtime—and a **unified memory bridge (UMD)** across language paradigms—in record time. The same protoCore cells that back JavaScript and C++ now back Python; the execution engine, type bridges, and module resolution were designed and implemented with AI as a force multiplier. The result is the democratization of high-level engineering: one architect, one vision, amplified.
+**The Swarm of One** enables a paradigm shift in Python development. In protoPython, we moved from core infrastructure to a fully functional runtime—including a **Unified Memory Bridge (UMD)**—in record time. By orchestrating a swarm of specialized AI agents, a single architect has built a GIL-less environment where Python objects live in the same 64-byte cell universe as protoCore and protoJS. This is the democratization of high-level engineering: bridging language paradigms without the traditional overhead of massive R&D teams.
 
 ## The Methodology: AI-Augmented Engineering
 
@@ -44,4 +48,6 @@ MIT
 
 ---
 
-**Don't just watch the shift. Lead it.** The tools are here, the barrier is gone, and the only limit is the clarity of your vision. Join the review, test the limits, and become part of the Swarm of One. Let's build the future of computing, one cell at a time.
+## Lead the Shift
+
+**Lead the Shift.** Don't just watch the Python ecosystem evolve—be the one who drives it. Join the review, test the GIL-less performance, and become part of the Swarm of One. **Think Different, As All We.**
