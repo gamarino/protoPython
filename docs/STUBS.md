@@ -295,9 +295,10 @@ Reserved for v36. No new stub entries in this batch (v36 focused on documentatio
 - **json**: Native JsonModule (C++) — dumps, loads; supports null, bool, number, string, array, object. Basic JSON subset; no custom encoders/decoders.
 - **re**: Native ReModule (C++); lib fallback. See Python stdlib stubs table for re row.
 
-## HPy and packaging (v55)
+## HPy and packaging (v55, Next 100 Steps v63–v67)
 
 - **HPy Phase 1**: Design doc in [HPY_INTEGRATION_PLAN.md](HPY_INTEGRATION_PLAN.md) — handle table, HPyContext, core ABI mapping.
+- **HPy implementation**: [NEXT_100_STEPS_HPY.md](NEXT_100_STEPS_HPY.md) — 100 steps (1185–1284), 5 blocks of 20; each block document and commit. v63: Phase 1 foundation (context, handle table, core ABI); v64–v67: Phase 1 completion, Phases 2–4.
 - **Packaging**: Install layout and wheel design in [PACKAGING_ROADMAP.md](PACKAGING_ROADMAP.md).
 
 ## Venv and drop-in replacement (v57)

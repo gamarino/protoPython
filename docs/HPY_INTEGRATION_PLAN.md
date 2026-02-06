@@ -57,8 +57,13 @@ Allow HPy-compiled extension modules (`.so` / `.hpy.so`) to load and run under p
 | HPy_SetAttr | ProtoObject::setAttribute |
 | HPy_Call | Invoke callable via ProtoContext |
 
+## Implementation: Next 100 Steps
+
+HPy is implemented in 5 blocks of 20 steps (1185–1284). Each block is documented and committed separately. See [NEXT_100_STEPS_HPY.md](NEXT_100_STEPS_HPY.md). v63 (1185–1204): Phase 1 foundation (context, handle table, core ABI). v64–v67: Phase 1 completion, universal ABI, API coverage, ecosystem.
+
 ## References
 
 - [HPy Documentation](https://docs.hpyproject.org/)
 - [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) — Section 2 HPy Support
+- [NEXT_100_STEPS_HPY.md](NEXT_100_STEPS_HPY.md) — 100-step implementation plan
 - [C_MODULES_TO_REPLACE.md](C_MODULES_TO_REPLACE.md)
