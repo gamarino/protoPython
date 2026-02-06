@@ -1,8 +1,8 @@
 add_executable(test_foundation TestFoundation.cpp)
 target_link_libraries(test_foundation PRIVATE protoPython gtest_main)
 target_compile_definitions(test_foundation PRIVATE STDLIB_PATH="${CMAKE_SOURCE_DIR}/lib/python3.14")
-# Run stable foundation tests (FilterBuiltin, MapBuiltin, StringDunders have known issues; full suite can abort).
-add_test(NAME test_foundation COMMAND test_foundation --gtest_filter="FoundationTest.BasicTypesExist:FoundationTest.ResolveBuiltins:FoundationTest.ModuleImport:FoundationTest.BuiltinsModule:FoundationTest.SysModule:FoundationTest.ExecuteModule:FoundationTest.IOModule")
+# Run stable foundation tests. Filter: gate subset. Full suite: run test_foundation without filter.
+add_test(NAME test_foundation COMMAND test_foundation --gtest_filter="FoundationTest.BasicTypesExist:FoundationTest.ResolveBuiltins:FoundationTest.ModuleImport:FoundationTest.BuiltinsModule:FoundationTest.SysModule:FoundationTest.ExecuteModule:FoundationTest.IOModule:FoundationTest.FilterBuiltin")
 set_tests_properties(test_foundation PROPERTIES TIMEOUT 30)
 
 # Minimal reproducer without GTest (for debugging hangs)

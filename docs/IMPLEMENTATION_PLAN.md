@@ -143,9 +143,11 @@ We aim for "No-Modification" compatibility with CPython tests.
 
 **Completed: Next 20 Steps v50 (925–944).** See [NEXT_20_STEPS_V50.md](NEXT_20_STEPS_V50.md). tasks/todo.md v49/v50; IMPLEMENTATION_PLAN, STUBS, TESTING updated; lessons captured; commit.
 
-**In progress: Next 20 Steps v51 (945–964).** See [NEXT_20_STEPS_V51.md](NEXT_20_STEPS_V51.md). tasks/todo.md v51; IMPLEMENTATION_PLAN v50 done; TESTING, STUBS v51; protoCore immutable model; OperatorInvert, py_setattr/py_log10/ThreadModule status.
+**Completed: Next 20 Steps v51 (945–964).** See [NEXT_20_STEPS_V51.md](NEXT_20_STEPS_V51.md). tasks/todo.md v51; IMPLEMENTATION_PLAN v50 done; TESTING, STUBS v51; protoCore immutable model; OperatorInvert, py_setattr/py_log10/ThreadModule status.
 
-**In progress: Next 20 Steps v52 (965–984).** See [NEXT_20_STEPS_V52.md](NEXT_20_STEPS_V52.md). tasks/todo.md v52; IMPLEMENTATION_PLAN v51 done; TESTING, STUBS v52; lessons consolidated; commit.
+**Completed: Next 20 Steps v52 (965–984).** See [NEXT_20_STEPS_V52.md](NEXT_20_STEPS_V52.md). tasks/todo.md v52; IMPLEMENTATION_PLAN v51 done; TESTING, STUBS v52; lessons consolidated; commit.
+
+**In progress: Next 20 Steps v53 (985–1004).** See [NEXT_20_STEPS_V53.md](NEXT_20_STEPS_V53.md). FilterBuiltin passes; ThreadModule fix documented; py_log10 workaround; regrtest persistence; foundation suite full vs filtered; tasks/todo.md v53; IMPLEMENTATION_PLAN v52 done, v53 in progress; STUBS, TESTING updated.
 
 ## 5. Debugging & IDE Support
 To be a viable replacement, `protoPython` must support professional developer workflows.

@@ -282,14 +282,14 @@ Reserved for v36. No new stub entries in this batch (v36 focused on documentatio
 | ssl | wrap_socket, SSLContext.wrap_socket | Raise NotImplementedError; requires native TLS. |
 | subprocess, sqlite3, multiprocessing, getpass | Documentation | Clearer docstrings; stubs documented for import compatibility. |
 
-## Foundation tests (v48–v52)
+## Foundation tests (v48–v53)
 
 | Test | Status | Notes |
 |------|--------|-------|
-| SetBasic, MathLog, MathDist, MapBuiltin, StringDunders | Pass | v48 fixes applied. MathLog uses log(100,10) workaround. |
+| FilterBuiltin, SetBasic, MathLog, MathDist, MapBuiltin, StringDunders | Pass | v48/v53. MathLog uses log(100,10) workaround. |
 | SetattrAndCallable | Pass | Uses direct setAttribute/getAttribute on mutable obj; protoCore immutable model (v51). |
 | OperatorInvert | DISABLED_ | C++ direct asMethod returns nullptr; Python script path works (v49). |
-| ThreadModule | ASan stack-use-after-scope | py_log_thread_ident; fix pending. |
+| ThreadModule | Pass | py_log_thread_ident stack-use-after-scope fixed (v49); uses s directly in cerr. |
 
 ## Python stdlib — New stubs
 
