@@ -6,6 +6,16 @@
 - **O(1) concat**: `ProtoString::appendLast` uses `ProtoTupleImplementation::tupleConcat` (one new tuple referencing left and right); no character copy. Rope structure: concat tuple has 2 slots (strings) and `actual_size` = total length.
 - **Indexing**: getAt(index) traverses tuple tree by length; O(depth) then O(1) at leaf. Iterator uses getProtoStringSize/getProtoStringGetAt; O(1) amortized per character.
 
+## protoCore external buffer (v60)
+
+- **ProtoExternalBuffer**: 64-byte header cell; segment allocated with `std::aligned_alloc(64, size)`. `processReferences` is empty (no traced refs). Verified by protoCore build including `core/ProtoExternalBuffer.cpp`.
+- **Shadow GC**: When the cell is collected, `finalize()` frees the segment and sets the pointer to nullptr.
+
+## protoCore Swarm tests (v61)
+
+- **GetRawPointer API**: `ProtoObject::getRawPointerIfExternalBuffer(context)`; stable-address contract documented in protoCore GC doc.
+- **SwarmTests.cpp** (protoCore test): `SwarmTest.ExternalBufferGC` and `SwarmTest.GetRawPointerIfExternalBuffer` pass. `SwarmTest.DISABLED_OneMillionConcats` (1M rope concats) and `SwarmTest.DISABLED_LargeRopeIndexAccess` (~10MB rope) are disabled: GC segfault on very large rope graph; LargeRope hits "Non-tuple object in tuple node slot" (follow-up fix).
+
 ## Bug fixes (diagnosis run)
 
 - **getAttribute for non-OBJECT types** (protoCore): `ProtoObject::getAttribute()` assumed `currentObject` was always a `ProtoObjectCell` (tag 0). When the receiver was e.g. a `Double` (tag 15), the loop caused a type mismatch / crash. Fixed by delegating to `currentObject->getPrototype(context)` when the current object is not `POINTER_TAG_OBJECT`, so attribute lookup follows the prototype chain for all types.

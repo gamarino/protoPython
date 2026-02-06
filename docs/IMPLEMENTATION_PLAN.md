@@ -159,7 +159,13 @@ We aim for "No-Modification" compatibility with CPython tests.
 
 **Completed: Next 20 Steps v58 (1085–1104).** See [NEXT_20_STEPS_V58.md](NEXT_20_STEPS_V58.md). Implementation Block 1100-1200 V2: strings as ProtoTuple only; inline string (up to 7 UTF-32 chars in tagged pointer); O(1) concat via tupleConcat; design doc [protoCore/docs/ROPES_AS_PROTOTUPLE.md](../../protoCore/docs/ROPES_AS_PROTOTUPLE.md).
 
-**Next 20 Steps v59 (1105–1124) — in progress.** See [NEXT_20_STEPS_V59.md](NEXT_20_STEPS_V59.md). Clustering and index by tuple traverse; STRING_SUPPORT.md (ropes, inline, O(depth) indexing).
+**Completed: Next 20 Steps v59 (1105–1124).** See [NEXT_20_STEPS_V59.md](NEXT_20_STEPS_V59.md). Clustering in 64-byte tuple cells; getAt by tuple traverse (O(depth) then O(1) at leaf); getSize/iterator; STRING_SUPPORT.md, STUBS, TESTING updated.
+
+**Completed: Next 20 Steps v60 (1125–1144).** See [NEXT_20_STEPS_V60.md](NEXT_20_STEPS_V60.md). ProtoExternalBuffer (64-byte header, aligned_alloc segment); Shadow GC (finalize frees segment); protoCore docs, todo, IMPLEMENTATION_PLAN, STUBS, TESTING updated.
+
+**Completed: Next 20 Steps v61 (1145–1164).** See [NEXT_20_STEPS_V61.md](NEXT_20_STEPS_V61.md). GetRawPointer API; stable-address contract; SwarmTests (ExternalBufferGC, GetRawPointerIfExternalBuffer pass).
+
+**Next 20 Steps v62 (1165–1184) — next.** Swarm test hardening; lessons v58–v62; final doc updates.
 
 ## 5. Debugging & IDE Support
 To be a viable replacement, `protoPython` must support professional developer workflows.

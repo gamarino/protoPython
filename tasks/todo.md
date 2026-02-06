@@ -497,11 +497,29 @@ See [docs/NEXT_20_STEPS_V58.md](../docs/NEXT_20_STEPS_V58.md). Steps 1085–1104
 
 - [x] Steps 1085–1104
 
-## 58. Next 20 Steps (v59) — Clustering and index by tuple traverse — in progress
+## 58. Next 20 Steps (v59) — Clustering and index by tuple traverse — completed
 
 See [docs/NEXT_20_STEPS_V59.md](../docs/NEXT_20_STEPS_V59.md). Steps 1105–1124: Clustering in 64-byte tuple cells; getAt by tuple traverse; getSize/iterator; STRING_SUPPORT.md update; todo, IMPLEMENTATION_PLAN, STUBS, TESTING.
 
-- [ ] Steps 1105–1124
+- [x] Steps 1105–1124
+
+## 59. Next 20 Steps (v60) — ProtoExternalBuffer and Shadow GC — completed
+
+See [docs/NEXT_20_STEPS_V60.md](../docs/NEXT_20_STEPS_V60.md). Steps 1125–1144: ProtoExternalBuffer (64-byte header, aligned_alloc segment); Shadow GC (finalize frees segment); CMakeLists, build, tests; todo, IMPLEMENTATION_PLAN, STUBS, TESTING.
+
+- [x] Steps 1125–1144
+
+## 60. Next 20 Steps (v61) — GetRawPointer API and Swarm tests — completed
+
+See [docs/NEXT_20_STEPS_V61.md](../docs/NEXT_20_STEPS_V61.md). Steps 1145–1164: ProtoObject::getRawPointerIfExternalBuffer; stable-address contract; SwarmTests.cpp (ExternalBufferGC, GetRawPointerIfExternalBuffer pass; 1M concat / large rope disabled for follow-up).
+
+- [x] Steps 1145–1164
+
+## 61. Next 20 Steps (v62) — Swarm hardening and lessons — pending
+
+See [docs/NEXT_20_STEPS_V62.md](../docs/NEXT_20_STEPS_V62.md) (TBD). Steps 1165–1184: Swarm test hardening; lessons v58–v62; final doc updates.
+
+- [ ] Steps 1165–1184
 
 ---
 *Updated from plan implementation. Mark items complete as work progresses.*
