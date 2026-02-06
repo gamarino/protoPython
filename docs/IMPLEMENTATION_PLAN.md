@@ -151,7 +151,9 @@ We aim for "No-Modification" compatibility with CPython tests.
 
 **Completed: Next 20 Steps v54 (1005–1024).** See [NEXT_20_STEPS_V54.md](NEXT_20_STEPS_V54.md). Regrtest dashboard; compatibility tracking; C_MODULES_TO_REPLACE (_operator Replaced, _functools Partial); TESTING, STUBS v54.
 
-**In progress: Next 20 Steps v55 (1025–1044).** See [NEXT_20_STEPS_V55.md](NEXT_20_STEPS_V55.md). HPy Phase 1; packaging layout; tasks/todo.md v55.
+**Completed: Next 20 Steps v55 (1025–1044).** See [NEXT_20_STEPS_V55.md](NEXT_20_STEPS_V55.md). HPy Phase 1 design (handle table, HPyContext); packaging install and wheel layout; OperatorInvert root-cause hypothesis; TESTING, STUBS updated.
+
+**In progress: Next 20 Steps v56 (1045–1064).** See [NEXT_20_STEPS_V56.md](NEXT_20_STEPS_V56.md). functools.lru_cache; operator audit; stdlib enhancements; tasks/todo.md v56.
 
 ## 5. Debugging & IDE Support
 To be a viable replacement, `protoPython` must support professional developer workflows.

@@ -287,13 +287,18 @@ Reserved for v36. No new stub entries in this batch (v36 focused on documentatio
 - **_operator**: Replaced. Native OperatorModule (add, sub, invert, lshift, rshift, and_, or_, xor, index, etc.).
 - **_functools**: Partial. partial, reduce, wraps done; lru_cache stub. See [C_MODULES_TO_REPLACE.md](C_MODULES_TO_REPLACE.md).
 
-## Foundation tests (v48–v54)
+## HPy and packaging (v55)
+
+- **HPy Phase 1**: Design doc in [HPY_INTEGRATION_PLAN.md](HPY_INTEGRATION_PLAN.md) — handle table, HPyContext, core ABI mapping.
+- **Packaging**: Install layout and wheel design in [PACKAGING_ROADMAP.md](PACKAGING_ROADMAP.md).
+
+## Foundation tests (v48–v55)
 
 | Test | Status | Notes |
 |------|--------|-------|
 | FilterBuiltin, SetBasic, MathLog, MathDist, MapBuiltin, StringDunders | Pass | v48/v53. MathLog uses log(100,10) workaround. |
 | SetattrAndCallable | Pass | Uses direct setAttribute/getAttribute on mutable obj; protoCore immutable model (v51). |
-| OperatorInvert | DISABLED_ | C++ direct asMethod returns nullptr; Python script path works (v49). |
+| OperatorInvert | DISABLED_ | C++ direct asMethod returns nullptr; Python script path works (v49). Root-cause hypothesis in TESTING.md (v55). |
 | ThreadModule | Pass | py_log_thread_ident stack-use-after-scope fixed (v49); uses s directly in cerr. |
 
 ## Python stdlib — New stubs

@@ -473,5 +473,11 @@ See [docs/NEXT_20_STEPS_V54.md](../docs/NEXT_20_STEPS_V54.md). Steps 1005–1024
 
 - [x] Steps 1005–1024
 
+## 54. Next 20 Steps (v55) — completed
+
+See [docs/NEXT_20_STEPS_V55.md](../docs/NEXT_20_STEPS_V55.md). Steps 1025–1044: HPy Phase 1 design (handle table, HPyContext); packaging install and wheel layout; OperatorInvert root-cause hypothesis; tasks/todo.md v55; IMPLEMENTATION_PLAN, STUBS, TESTING updated.
+
+- [x] Steps 1025–1044
+
 ---
 *Updated from plan implementation. Mark items complete as work progresses.*

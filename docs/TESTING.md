@@ -20,7 +20,7 @@
 | Test | Status | Notes |
 |------|--------|-------|
 | FilterBuiltin, MapBuiltin, StringDunders, SetBasic, MathLog, MathDist, SetattrAndCallable | Pass | SetattrAndCallable uses direct setAttribute/getAttribute |
-| OperatorInvert | DISABLED_ | C++ asMethod returns nullptr; Python path works |
+| OperatorInvert | DISABLED_ | C++ asMethod returns nullptr; Python path works. Root-cause hypothesis (v55): C++ harness calls invertM->asMethod() directly; Python path uses invokeCallable which goes through __call__; native ProtoMethodCell may not have __call__ set, so direct asMethod path differs. Defer re-enable until investigated. |
 | py_setattr/py_getattr | Deferred | obj from posArgs: attribute does not persist |
 | MathLog | Workaround | math.log(100, 10) instead of math.log10(100) |
 | ThreadModule | Fixed | py_log_thread_ident stack-use-after-scope resolved |

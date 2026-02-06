@@ -32,6 +32,31 @@ Allow HPy-compiled extension modules (`.so` / `.hpy.so`) to load and run under p
 - **Phase 3**: API coverage for common extensions.
 - **Phase 4**: Documentation and tooling (build, distribute HPy extensions for protoPython).
 
+## Phase 1 Design (v55)
+
+### Handle table
+
+- **Per-context handle table**: Map `HPy` handle IDs to `ProtoObject*`. Handles are opaque; internally an index into a growable table.
+- **Allocation**: `HPy_FromPyObject` inserts `ProtoObject*` and returns new handle. `HPy_Close` releases the handle slot.
+- **Lookup**: `HPy_AsPyObject` resolves handle to `ProtoObject*` for native calls.
+
+### HPyContext skeleton
+
+- **ProtoPython HPy context**: Struct holding handle table and `ProtoContext*`. One per thread or per import session.
+- **Entry points**: HPy modules expect `HPyModuleDef` with init function; protoPython resolves and invokes, passing HPy context.
+
+### Core ABI (Phase 1 minimal)
+
+| HPy API | protoPython implementation |
+|---------|----------------------------|
+| HPy_FromPyObject | Insert ProtoObject* into handle table; return handle |
+| HPy_AsPyObject | Lookup handle; return ProtoObject* (or cast) |
+| HPy_Dup | Increment ref / duplicate handle |
+| HPy_Close | Release handle slot |
+| HPy_GetAttr | ProtoObject::getAttribute |
+| HPy_SetAttr | ProtoObject::setAttribute |
+| HPy_Call | Invoke callable via ProtoContext |
+
 ## References
 
 - [HPy Documentation](https://docs.hpyproject.org/)

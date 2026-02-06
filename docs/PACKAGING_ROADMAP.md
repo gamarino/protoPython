@@ -14,6 +14,32 @@ This document outlines the path to distributing protoPython via standard Python 
 - The `protopy` binary and `libprotoPython.so` are produced in the build tree.
 - Standard library lives under `lib/python3.14/` and is located via `--path` or build-time path.
 
+## Install layout (v55)
+
+Minimal layout for `cmake --install`:
+
+| Component | Path | Notes |
+|-----------|------|-------|
+| protopy binary | `CMAKE_INSTALL_PREFIX/bin/protopy` | Main executable |
+| libprotoPython.so | `CMAKE_INSTALL_PREFIX/lib/libprotoPython.so` | Runtime shared library |
+| stdlib | `CMAKE_INSTALL_PREFIX/share/protoPython/lib/python3.14/` | Python stdlib (lib/python3.14) |
+
+- Use `CMAKE_INSTALL_PREFIX` or `-DCMAKE_INSTALL_PREFIX=/usr/local` (or custom path).
+- protopy locates stdlib via build-time path or `--stdlib` / `--path`.
+
+## Wheel layout (v55)
+
+Proposed wheel contents:
+
+| Path in wheel | Content |
+|---------------|---------|
+| `protopy/` or `bin/` | protopy executable (platform-specific) |
+| `lib/` | libprotoPython.so |
+| `lib/python3.14/` or `stdlib/` | Bundled stdlib (or symlink/reference to share path) |
+
+- Single platform wheel per build (linux_x86_64, macos_arm64, etc.).
+- pip install extracts to site-packages or dedicated prefix; PATH updated for `protopy`.
+
 ## Roadmap
 
 1. **Build artifacts**: Define a minimal install layout (binary, shared library, stdlib path) and document `CMAKE_INSTALL_PREFIX` usage.
