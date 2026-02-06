@@ -314,7 +314,7 @@ Reserved for v36. No new stub entries in this batch (v36 focused on documentatio
 |------|--------|-------|
 | FilterBuiltin, SetBasic, MathLog, MathDist, MapBuiltin, StringDunders | Pass | v48/v53. MathLog uses log(100,10) workaround. |
 | SetattrAndCallable | Pass | Uses direct setAttribute/getAttribute on mutable obj; protoCore immutable model (v51). |
-| OperatorInvert | DISABLED_ | C++ direct asMethod returns nullptr; Python script path works (v49). Root-cause hypothesis in TESTING.md (v55). |
+| OperatorInvert | Pass | Fixed: foundation test uses __call__ path (same as Python); asMethod() direct call was incorrect for native method cell. |
 | ThreadModule | Pass | py_log_thread_ident stack-use-after-scope fixed (v49); uses s directly in cerr. |
 
 ## Python stdlib — New stubs

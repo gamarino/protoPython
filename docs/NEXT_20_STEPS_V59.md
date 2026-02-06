@@ -6,7 +6,7 @@ Plan for steps 1105–1124. Block 1100-1200 V2 continued.
 
 **Theme**: Character clustering in 64-byte tuple cells; index access by traversing ProtoTuple hierarchy; iterator O(1) amortized.
 
-**Status**: In progress.
+**Status**: Completed.
 
 ---
 
@@ -21,7 +21,7 @@ Plan for steps 1105–1124. Block 1100-1200 V2 continued.
 | 1113–1114 | Iterator: next() advances through tuple hierarchy; O(1) amortized per character (iterator holds string + index, uses getProtoStringGetAt) | done |
 | 1115–1116 | tasks/todo.md v59; IMPLEMENTATION_PLAN v58 done, v59 in progress | done |
 | 1117–1120 | STUBS.md, TESTING.md; STRING_SUPPORT.md (ropes as ProtoTuple, inline, indexing) | done |
-| 1121–1124 | Commit: NEXT_20_STEPS_V59, docs, todo, IMPLEMENTATION_PLAN, STUBS, TESTING | pending |
+| 1121–1124 | Commit: NEXT_20_STEPS_V59, docs, todo, IMPLEMENTATION_PLAN, STUBS, TESTING | done |
 
 ---
 

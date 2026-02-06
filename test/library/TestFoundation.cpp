@@ -1741,15 +1741,16 @@ TEST_F(FoundationTest, ListIaddOrRemoveprefix) {
     EXPECT_EQ(data->asList(context)->getAt(context, 2)->asLong(context), 3);
 }
 
-/* operator.invert(5) via direct asMethod returns nullptr in C++ test harness; Python script path works (v49). */
-TEST_F(FoundationTest, DISABLED_OperatorInvert) {
+/* operator.invert(5): use __call__ path (same as Python) so native ProtoMethodCell is invoked correctly. */
+TEST_F(FoundationTest, OperatorInvert) {
     proto::ProtoContext* context = env.getContext();
     const proto::ProtoObject* opMod = env.resolve("operator");
     ASSERT_NE(opMod, nullptr);
     const proto::ProtoObject* invertM = opMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "invert"));
     ASSERT_NE(invertM, nullptr);
     const proto::ProtoList* args5 = context->newList()->appendLast(context, context->fromInteger(5));
-    const proto::ProtoObject* result = invertM->asMethod(context)(context, opMod, nullptr, args5, nullptr);
+    const proto::ProtoObject* result = invertM->call(context, nullptr,
+        proto::ProtoString::fromUTF8String(context, "__call__"), invertM, args5, nullptr);
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->isInteger(context));
     EXPECT_EQ(result->asLong(context), -6);  // ~5 == -6 in Python

@@ -6,7 +6,7 @@ Plan for 20 incremental milestones (steps 1085–1104). Each step: implement, up
 
 **Theme**: Strings as ProtoTuple only; O(1) concatenation via concat tuple (left, right); inline string optimization (up to 7 logical UTF-32 chars in tagged pointer).
 
-**Status**: In progress.
+**Status**: Completed.
 
 ---
 
@@ -22,7 +22,7 @@ Plan for 20 incremental milestones (steps 1085–1104). Each step: implement, up
 | 1094–1095 | protoPython: tasks/todo.md v58; IMPLEMENTATION_PLAN v57 done, v58 in progress | done |
 | 1096–1098 | STUBS.md, TESTING.md: v58 (string/rope as ProtoTuple, inline) | done |
 | 1099–1102 | protoCore: Document tuple convention for rope (concat vs leaf) and 64-byte cell layout; GC processReferences | done |
-| 1103–1104 | Commit: NEXT_20_STEPS_V58, design doc, protoCore string/inline + ProtoTuple concat, todo, IMPLEMENTATION_PLAN, STUBS, TESTING | pending |
+| 1103–1104 | Commit: NEXT_20_STEPS_V58, design doc, protoCore string/inline + ProtoTuple concat, todo, IMPLEMENTATION_PLAN, STUBS, TESTING | done |
 
 ---
 

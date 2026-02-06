@@ -14,7 +14,7 @@
 ## protoCore Swarm tests (v61)
 
 - **GetRawPointer API**: `ProtoObject::getRawPointerIfExternalBuffer(context)`; stable-address contract documented in protoCore GC doc.
-- **SwarmTests.cpp** (protoCore test): `SwarmTest.ExternalBufferGC` and `SwarmTest.GetRawPointerIfExternalBuffer` pass. `SwarmTest.DISABLED_OneMillionConcats` (1M rope concats) and `SwarmTest.DISABLED_LargeRopeIndexAccess` (~10MB rope) are disabled: GC segfault on very large rope graph; LargeRope hits "Non-tuple object in tuple node slot" (follow-up fix).
+- **SwarmTests.cpp** (protoCore test): `SwarmTest.ExternalBufferGC` and `SwarmTest.GetRawPointerIfExternalBuffer` pass. `SwarmTest.DISABLED_OneMillionConcats` and `SwarmTest.DISABLED_LargeRopeIndexAccess` remain disabled by design: root cause is GC/rope handling on very large graphs (segfault / "Non-tuple object in tuple node slot"); no hack—fix requires protoCore GC and string-tuple traversal changes; see comments in test file and NEXT_20_STEPS_V61.md.
 
 ## Bug fixes (diagnosis run)
 
@@ -22,7 +22,7 @@
 - **PROTO_NONE in tests** (protoCore): `PROTO_NONE` is `nullptr`; calling `n->isNone(context)` on it is undefined behavior. `PrimitivesTest.NoneHandling` now asserts `n == PROTO_NONE` and that a real object has `isNone(context) == false`.
 - **MultisetTest.Remove segfault** (protoCore): `ProtoSparseListImplementation::implRemoveAt()` could return `nullptr` when deleting the last node (no left and no right child). The multiset then called `getAt()` on a null list. Fixed by returning an empty list node instead of `nullptr` in that case.
 - **PopJumpIfFalse test** (protoPython): The test was updated to use a truthy constant so the no-jump path is exercised and the expected return value matches the executed path. Jump-on-falsy behavior depends on correct `isTruthy` for the constant; the test now expects 2 (fall-through loads constant at index 1).
-- **test_foundation CTest**: The default `test_foundation` CTest runs a filtered suite (BasicTypesExist, ResolveBuiltins, ModuleImport, BuiltinsModule, SysModule, ExecuteModule, IOModule, FilterBuiltin) so the gate is green. As of v53: FilterBuiltin, MapBuiltin, StringDunders, SetattrAndCallable (direct setAttribute/getAttribute on mutable obj; py_setattr/py_getattr when obj from posArgs do not persist—root cause TBD), MathLog (log(100,10) workaround), MathDist, SetBasic pass; OperatorInvert is DISABLED_ (direct asMethod returns nullptr; Python script path works); ThreadModule stack-use-after-scope fixed (py_log_thread_ident uses s directly in cerr). **ProtoCore immutable model**: base objects are immutable (setAttribute returns new object); mutable objects (newObject(true)) update mutableRoot so the same handle reflects attribute changes. **Full suite**: run `test_foundation` without `--gtest_filter`; may include additional tests.
+- **test_foundation CTest**: The default `test_foundation` CTest runs a filtered suite (BasicTypesExist, ResolveBuiltins, ModuleImport, BuiltinsModule, SysModule, ExecuteModule, IOModule, FilterBuiltin) so the gate is green. As of v53: FilterBuiltin, MapBuiltin, StringDunders, SetattrAndCallable (direct setAttribute/getAttribute on mutable obj; py_setattr/py_getattr when obj from posArgs do not persist—root cause TBD), MathLog (log(100,10) workaround), MathDist, SetBasic, OperatorInvert (fixed: use __call__ path) pass; ThreadModule stack-use-after-scope fixed (py_log_thread_ident uses s directly in cerr). **ProtoCore immutable model**: base objects are immutable (setAttribute returns new object); mutable objects (newObject(true)) update mutableRoot so the same handle reflects attribute changes. **Full suite**: run `test_foundation` without `--gtest_filter`; may include additional tests.
 
 ## Foundation suite: full vs filtered CTest
 
@@ -36,7 +36,7 @@
 | Test | Status | Notes |
 |------|--------|-------|
 | FilterBuiltin, MapBuiltin, StringDunders, SetBasic, MathLog, MathDist, SetattrAndCallable | Pass | SetattrAndCallable uses direct setAttribute/getAttribute |
-| OperatorInvert | DISABLED_ | C++ asMethod returns nullptr; Python path works. Root-cause hypothesis (v55): C++ harness calls invertM->asMethod() directly; Python path uses invokeCallable which goes through __call__; native ProtoMethodCell may not have __call__ set, so direct asMethod path differs. Defer re-enable until investigated. |
+| OperatorInvert | Pass | Fixed: test now uses __call__ path (invertM->call(..., "__call__", invertM, args, nullptr)), same as Python; asMethod() bypass was the cause. |
 | py_setattr/py_getattr | Deferred | obj from posArgs: attribute does not persist |
 | MathLog | Workaround | math.log(100, 10) instead of math.log10(100) |
 | ThreadModule | Fixed | py_log_thread_ident stack-use-after-scope resolved |
