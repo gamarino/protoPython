@@ -13,20 +13,18 @@ Plan for 20 incremental milestones. Each step: implement → update docs → com
 | Step | Description | Status |
 |------|-------------|--------|
 | 905 | Create NEXT_20_STEPS_V49.md | done |
-| 906–907 | Complete v48 doc updates: TESTING.md (remove known-issues if fixed), STUBS.md v48 section | done |
-| 908–909 | Update tasks/todo.md v48 steps; IMPLEMENTATION_PLAN v48 summary | done |
-| 910 | Fix OperatorInvert: root cause for operator.invert(5) returning nullptr; re-enable test | pending |
-| 911 | Fix py_setattr: setattr(obj, "foo", 100) should persist; restore SetattrAndCallable to use setattr/getattr | pending |
-| 912 | Fix py_log10: math.log10(100) returning nullptr in some contexts; restore MathLog to use log10 | pending |
-| 913–914 | Fix ThreadModule: stack-use-after-scope in py_log_thread_ident (AddressSanitizer) | pending |
-| 915–916 | Foundation tests: ensure full v48+v49 suite passes (SetBasic, MathLog, MathDist, OperatorInvert, SetattrAndCallable, MapBuiltin, StringDunders) | pending |
-| 917–918 | Update TESTING.md: v49 known-issues; CTest gate if needed | pending |
-| 919 | Update STUBS.md v49 section | pending |
-| 920–921 | Update tasks/todo.md v49 steps | pending |
-| 922–924 | Update IMPLEMENTATION_PLAN v49 summary; commit | pending |
+| 906–907 | Complete v48 doc updates: TESTING.md (known-issues), STUBS.md v48 section | done |
+| 908–909 | Complete v48: tasks/todo.md v48 steps, IMPLEMENTATION_PLAN v48 summary | done |
+| 910–911 | Fix OperatorInvert: root cause of operator.invert(5) returning nullptr | pending |
+| 912–913 | Fix py_setattr: setattr(obj, "foo", 100) should persist for getattr | pending |
+| 914–915 | Fix py_log10: math.log10(100) returning nullptr (restore direct log10 call) | pending |
+| 916–917 | Fix ThreadModule: stack-use-after-scope in py_log_thread_ident | pending |
+| 918–919 | Re-enable OperatorInvert test when fix is applied | pending |
+| 920–921 | Update SetattrAndCallable test to use py_setattr when fixed | pending |
+| 922–924 | Update TESTING, STUBS, todo, IMPLEMENTATION_PLAN; commit | pending |
 
 ---
 
 ## Summary
 
-Steps 905–924 deliver: v48 doc completion (TESTING, STUBS, todo, IMPLEMENTATION_PLAN); fixes for OperatorInvert, py_setattr, py_log10; ThreadModule stack-use-after-scope fix; foundation test suite green; v49 docs and single commit.
+Steps 905–924 deliver: v48 doc completion; OperatorInvert, py_setattr, py_log10, ThreadModule fixes; test restorations; TESTING, STUBS, todo, IMPLEMENTATION_PLAN updated; single commit.

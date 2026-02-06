@@ -282,6 +282,15 @@ Reserved for v36. No new stub entries in this batch (v36 focused on documentatio
 | ssl | wrap_socket, SSLContext.wrap_socket | Raise NotImplementedError; requires native TLS. |
 | subprocess, sqlite3, multiprocessing, getpass | Documentation | Clearer docstrings; stubs documented for import compatibility. |
 
+## Foundation tests (v48–v50)
+
+| Test | Status | Notes |
+|------|--------|-------|
+| SetBasic, MathLog, MathDist, MapBuiltin, StringDunders | Pass | v48 fixes applied. MathLog uses log(100,10) workaround. |
+| SetattrAndCallable | Pass | Uses direct setAttribute; py_setattr persistence fix pending. |
+| OperatorInvert | DISABLED_ | operator.invert(5) returns nullptr; root cause TBD. |
+| ThreadModule | ASan stack-use-after-scope | py_log_thread_ident; fix pending. |
+
 ## Python stdlib — New stubs
 
 | Module | Item | Behavior |

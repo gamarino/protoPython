@@ -443,5 +443,11 @@ See [docs/NEXT_20_STEPS_V49.md](../docs/NEXT_20_STEPS_V49.md). Steps 905–924: 
 
 - [ ] Steps 905–924
 
+## 49. Next 20 Steps (v50) — in progress
+
+See [docs/NEXT_20_STEPS_V50.md](../docs/NEXT_20_STEPS_V50.md). Steps 925–944: Create v50 doc; tasks/todo.md v49/v50; IMPLEMENTATION_PLAN v48 done, v49/v50 in progress; STUBS and TESTING updated; lessons captured; commit.
+
+- [x] Steps 925–944 (doc and commit)
+
 ---
 *Updated from plan implementation. Mark items complete as work progresses.*

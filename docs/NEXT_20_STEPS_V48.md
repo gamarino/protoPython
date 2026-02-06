@@ -21,9 +21,9 @@ Plan for 20 incremental milestones. Each step: implement → update docs → com
 | 892–893 | Fix MapBuiltin: map() returns 0 items — fix iterable handling | done |
 | 894–895 | Fix StringDunders: strFromResult helper, SEGV resolved | done |
 | 896–897 | Update TESTING.md: remove known-issues if fixed | done |
-| 898 | Update STUBS.md v48 section | pending |
-| 899–901 | Update tasks/todo.md: v48 steps | pending |
-| 902–904 | Update IMPLEMENTATION_PLAN v48 summary; commit | pending |
+| 898 | Update STUBS.md v48 section | done (pre-existing) |
+| 899–901 | Update tasks/todo.md: v48 steps | done |
+| 902–904 | Update IMPLEMENTATION_PLAN v48 summary; commit | done |
 
 ---
 
