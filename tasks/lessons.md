@@ -16,3 +16,9 @@ Patterns and rules derived from implementation and corrections. Update after app
 - **Foundation test workarounds**: When a native method returns nullptr in some contexts (e.g. math.log10, operator.invert), use equivalent alternatives in tests: math.log(x, 10) instead of math.log10(x); direct setAttribute/getAttribute instead of py_setattr/py_getattr. Document the root cause and DISABLED_ the failing test until fixed.
 - **strFromResult helper**: For str methods (upper, lower, capitalize) that return raw ProtoString or Python wrapper (__data__), use a helper that checks obj->isString() first, then __data__->isString(), to safely extract the ProtoString for toUTF8String.
 - **OperatorInvert C++ vs Python path**: In C++ tests, calling `invertM->asMethod(context)(context, opMod, nullptr, args5, nullptr)` returns nullptr; Python script `operator.invert(5)` works. The Python path uses invokeCallable (__call__); native ProtoMethodCell may not expose __call__ in the C++ test harness. Keep OperatorInvert DISABLED_ until root cause is resolved; document the discrepancy.
+
+## Next 100 Steps (v53–v57)
+
+- **Foundation suite**: CTest runs a filtered gate; full suite (`test_foundation` without filter) may include DISABLED_ tests. Document known-issues matrix in TESTING.md.
+- **Regrtest persistence**: `run_and_validate_output.py` verifies `--output` writes valid JSON with `passed`, `failed`, `total` keys. Use `REGRTEST_RESULTS` for persistence path.
+- **Batch commits**: Each v53–v57 block: create NEXT_20_STEPS_Vxx.md, implement steps, update todo/IMPLEMENTATION_PLAN/STUBS/TESTING, commit with `docs(v5x): Next 20 Steps v5x (9xx–9xx); ...`.

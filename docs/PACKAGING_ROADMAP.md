@@ -40,6 +40,18 @@ Proposed wheel contents:
 - Single platform wheel per build (linux_x86_64, macos_arm64, etc.).
 - pip install extracts to site-packages or dedicated prefix; PATH updated for `protopy`.
 
+## Virtual environments (v57)
+
+- **venv stub**: `venv` module exists as stub; full venv creation deferred.
+- **Using protoPython in a venv**: Copy `protopy` and `libprotoPython.so` into the venv `bin/` and `lib/` directories, or set `PROTOPY_BIN` to the protopy executable and use `--path` to append the venv's site-packages.
+- **stdlib path**: Use `--stdlib <path>` or `--path <path>` so protopy finds the stdlib and any packages.
+
+## Drop-in replacement (v57)
+
+- **PROTOPY_BIN**: Recommended for scripts and CI. Set `PROTOPY_BIN=./build/src/runtime/protopy` (or installed path) and invoke `$PROTOPY_BIN --script ...` or `$PROTOPY_BIN --module ...`.
+- **Limitations**: protoPython does not implement the full CPython C-API; extensions and tools expecting `python` to be CPython may fail. Use `PROTOPY_BIN` explicitly where protoPython is intended.
+- **Aliasing**: `alias python=protopy` or symlinking is possible but not recommended until compatibility is higher; prefer `PROTOPY_BIN` for controlled invocation.
+
 ## Roadmap
 
 1. **Build artifacts**: Define a minimal install layout (binary, shared library, stdlib path) and document `CMAKE_INSTALL_PREFIX` usage.

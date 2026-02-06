@@ -479,5 +479,17 @@ See [docs/NEXT_20_STEPS_V55.md](../docs/NEXT_20_STEPS_V55.md). Steps 1025–1044
 
 - [x] Steps 1025–1044
 
+## 55. Next 20 Steps (v56) — completed
+
+See [docs/NEXT_20_STEPS_V56.md](../docs/NEXT_20_STEPS_V56.md). Steps 1045–1064: functools.lru_cache (lib impl); operator audit; json/re stdlib coverage; py_setattr posArgs; STUBS v56 section.
+
+- [x] Steps 1045–1064
+
+## 56. Next 20 Steps (v57) — completed
+
+See [docs/NEXT_20_STEPS_V57.md](../docs/NEXT_20_STEPS_V57.md). Steps 1065–1084: DAP skeleton; venv; drop-in replacement (PACKAGING_ROADMAP); lessons v53–v57 consolidation.
+
+- [x] Steps 1065–1084
+
 ---
 *Updated from plan implementation. Mark items complete as work progresses.*

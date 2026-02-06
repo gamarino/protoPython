@@ -52,7 +52,7 @@ This document catalogs stub implementations and their completion status.
 | secrets | token_hex, token_urlsafe | Return placeholder |
 | threading | Thread, Lock | Minimal stubs |
 | enum | Enum | Implemented: name, value, __repr__; Enum(value) or Enum(name, value). auto() placeholder. |
-| functools | reduce, wraps, lru_cache | reduce implemented; wraps copies __name__, __doc__, __module__, etc.; lru_cache stub (v20). |
+| functools | reduce, wraps, lru_cache | reduce implemented; wraps copies __name__, __doc__, __module__, etc.; lru_cache implemented in lib (maxsize, typed, LRU eviction) (v56). |
 | csv | reader, writer | Implemented: reader yields lists of strings; writer.writerow/writerows; delimiter default ','. |
 | xml.etree | ElementTree, Element | Stub retained. Minimal stub; full XML parser out of scope. |
 
@@ -60,7 +60,7 @@ This document catalogs stub implementations and their completion status.
 
 | Module | Item | Behavior |
 |--------|------|----------|
-| re | compile, match, search, findall, sub | Native ReModule; lib stub fallback returns None/[]/string. |
+| re | compile, match, search, findall, sub | Native ReModule (C++); lib/python3.14/re.py stub fallback returns None/[]/string. Native resolves first; lib used when native not available. |
 | atexit | register, unregister, _run_exitfuncs | Implemented (v37): register stores callbacks; _run_exitfuncs invoked at shutdown. |
 | heapq | heappush, heappop, heapify | Implemented: list as min-heap; heappush, heappop, heapify in-place. |
 | io | StringIO | Minimal: getvalue, read, write. |
@@ -287,10 +287,20 @@ Reserved for v36. No new stub entries in this batch (v36 focused on documentatio
 - **_operator**: Replaced. Native OperatorModule (add, sub, invert, lshift, rshift, and_, or_, xor, index, etc.).
 - **_functools**: Partial. partial, reduce, wraps done; lru_cache stub. See [C_MODULES_TO_REPLACE.md](C_MODULES_TO_REPLACE.md).
 
+## Stdlib coverage (v56)
+
+- **json**: Native JsonModule (C++) — dumps, loads; supports null, bool, number, string, array, object. Basic JSON subset; no custom encoders/decoders.
+- **re**: Native ReModule (C++); lib fallback. See Python stdlib stubs table for re row.
+
 ## HPy and packaging (v55)
 
 - **HPy Phase 1**: Design doc in [HPY_INTEGRATION_PLAN.md](HPY_INTEGRATION_PLAN.md) — handle table, HPyContext, core ABI mapping.
 - **Packaging**: Install layout and wheel design in [PACKAGING_ROADMAP.md](PACKAGING_ROADMAP.md).
+
+## Venv and drop-in replacement (v57)
+
+- **venv**: Stub retained; document `--path` and `PROTOPY_BIN` for using protoPython in a venv. See [PACKAGING_ROADMAP.md](PACKAGING_ROADMAP.md).
+- **Drop-in replacement**: `PROTOPY_BIN` recommended; alias/symlink limitations documented in PACKAGING_ROADMAP.
 
 ## Foundation tests (v48–v55)
 

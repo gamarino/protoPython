@@ -153,14 +153,16 @@ We aim for "No-Modification" compatibility with CPython tests.
 
 **Completed: Next 20 Steps v55 (1025–1044).** See [NEXT_20_STEPS_V55.md](NEXT_20_STEPS_V55.md). HPy Phase 1 design (handle table, HPyContext); packaging install and wheel layout; OperatorInvert root-cause hypothesis; TESTING, STUBS updated.
 
-**In progress: Next 20 Steps v56 (1045–1064).** See [NEXT_20_STEPS_V56.md](NEXT_20_STEPS_V56.md). functools.lru_cache; operator audit; stdlib enhancements; tasks/todo.md v56.
+**Completed: Next 20 Steps v56 (1045–1064).** See [NEXT_20_STEPS_V56.md](NEXT_20_STEPS_V56.md). functools.lru_cache; operator audit; json/re stdlib coverage; py_setattr posArgs; STUBS v56.
+
+**Completed: Next 20 Steps v57 (1065–1084).** See [NEXT_20_STEPS_V57.md](NEXT_20_STEPS_V57.md). DAP Phase 1 doc; venv and drop-in replacement (PACKAGING_ROADMAP); lessons v53–v57 consolidation.
 
 ## 5. Debugging & IDE Support
 To be a viable replacement, `protoPython` must support professional developer workflows.
 
 - [x] **Tracing API**: Implement `sys.settrace` and related hooks within the execution engine.
 - [ ] **Protocol Support**:
-    - DAP skeleton added (`DAPServer.h`); full DAP (line stepping, variable inspection, breakpoints) TBD.
+    - DAP skeleton added (`DAPServer.h`); `isSupported()` returns false (v57). Phase 1 scope: connect, disconnect, capabilities handshake; line stepping, variable inspection, breakpoints TBD.
 - [ ] **IDE Integration**: Ensure compatibility with VS Code (via `debugpy`-like backend) and PyCharm.
 - [ ] **Step-through C++ Boundaries**: Allow debugging to transition seamlessly from Python code into C++ module code.
 
