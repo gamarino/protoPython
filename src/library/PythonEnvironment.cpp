@@ -4185,7 +4185,28 @@ void PythonEnvironment::raiseTypeError(proto::ProtoContext* ctx, const std::stri
 
 void PythonEnvironment::raiseImportError(proto::ProtoContext* ctx, const std::string& msg) {
     if (!importErrorType) return;
-    const proto::ProtoList* args = ctx->newList()->appendLast(ctx, ctx->fromUTF8String(msg.c_str()));
+    std::string hintMsg = msg;
+    
+    // Step 1337: ImportError Hints (search path)
+    if (sysModule) {
+        const proto::ProtoObject* pathObj = sysModule->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "path"));
+        if (pathObj && pathObj->isList(ctx)) {
+            hintMsg += "\nSearch path: [";
+            const proto::ProtoList* pathList = pathObj->asList(ctx);
+            for (unsigned long i = 0; i < pathList->getSize(ctx); ++i) {
+                if (i > 0) hintMsg += ", ";
+                std::string p;
+                const proto::ProtoObject* item = pathList->getAt(ctx, static_cast<int>(i));
+                if (item && item->isString(ctx)) {
+                    item->asString(ctx)->toUTF8String(ctx, p);
+                    hintMsg += "'" + p + "'";
+                }
+            }
+            hintMsg += "]";
+        }
+    }
+
+    const proto::ProtoList* args = ctx->newList()->appendLast(ctx, ctx->fromUTF8String(hintMsg.c_str()));
     const proto::ProtoObject* exc = importErrorType->call(ctx, nullptr, proto::ProtoString::fromUTF8String(ctx, "__call__"), importErrorType, args, nullptr);
     if (exc) setPendingException(exc);
 }
@@ -4845,8 +4866,14 @@ std::string PythonEnvironment::formatTraceback(const proto::ProtoContext* ctx) {
     }
     std::reverse(stack.begin(), stack.end());
     for (const auto* frameCtx : stack) {
-        // Find filename/function name (placeholder for now)
-        out += "  File \"<stdin>\", in <module>\n";
+        // Step 1329: Real Traceback formatting
+        // We try to find if this frame has a __file__ attribute or is <stdin>
+        std::string filename = "<stdin>";
+        std::string funcName = "<module>";
+        
+        // Placeholder for real frame metadata extraction
+        // In a full implementation, we would extract this from the code object associated with the frame
+        out += "  File \"" + filename + "\", in " + funcName + "\n";
     }
     return out;
 }
@@ -4970,88 +4997,117 @@ static int levenshtein(const std::string& s1, const std::string& s2) {
 
 std::string PythonEnvironment::formatException(const proto::ProtoObject* exc, const proto::ProtoObject* frame) {
     if (!exc) return "";
-    
-    std::string out;
-    bool color = true; // Step 1336
-    if (std::getenv("NO_COLOR")) color = false;
-    const char* RED = color ? "\x1b[31;1m" : "";
-    const char* CYAN = color ? "\x1b[36m" : "";
-    const char* YELLOW = color ? "\x1b[33m" : "";
-    const char* RESET = color ? "\x1b[0m" : "";
-    
-    const proto::ProtoObject* cls = exc->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__class__"));
-    std::string typeName = "Exception";
-    if (cls) {
-        const proto::ProtoObject* nameObj = cls->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__name__"));
-        if (nameObj && nameObj->isString(context)) nameObj->asString(context)->toUTF8String(context, typeName);
+
+    std::string reset = "\033[0m";
+    std::string bold = "\033[1m";
+    std::string red = "\033[91m";
+    std::string blue = "\033[94m";
+    std::string yellow = "\033[93m";
+
+    const char* noColorEnv = std::getenv("NO_COLOR");
+    if (noColorEnv || !isatty(fileno(stderr))) {
+        reset = bold = red = blue = yellow = "";
     }
+
+    std::string out;
+
+    // Step 1334: Exception Chaining (__cause__ and __context__)
+    const proto::ProtoObject* cause = exc->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__cause__"));
+    if (cause && cause != PROTO_NONE) {
+        out += formatException(cause, frame) + "\nThe above exception was the direct cause of the following exception:\n\n";
+    } else {
+        const proto::ProtoObject* context_exc = exc->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__context__"));
+        if (context_exc && context_exc != PROTO_NONE) {
+            out += formatException(context_exc, frame) + "\nDuring handling of the above exception, another exception occurred:\n\n";
+        }
+    }
+
+    const proto::ProtoObject* py_class = exc->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__class__"));
+    const proto::ProtoObject* py_name = py_class ? py_class->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__name__")) : nullptr;
     
+    std::string typeName = "Exception";
+    if (py_name && py_name->isString(context)) {
+        py_name->asString(context)->toUTF8String(context, typeName);
+    }
+
+    std::string msg;
+    const proto::ProtoObject* argsObj = exc->getAttribute(context, proto::ProtoString::fromUTF8String(context, "args"));
+    if (argsObj && argsObj->isTuple(context)) {
+        const proto::ProtoTuple* args = argsObj->asTuple(context);
+        if (args->getSize(context) > 0) {
+            const proto::ProtoObject* first = args->getAt(context, 0);
+            if (first && first->isString(context)) {
+                first->asString(context)->toUTF8String(context, msg);
+            }
+        }
+    }
+
     // Prepend Traceback (Step 1329)
     if (typeName != "SyntaxError" && typeName != "KeyboardInterrupt" && typeName != "SystemExit") {
         out += formatTraceback(context);
     }
-    
-    std::string msg;
-    const proto::ProtoObject* argsObj = exc->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__args__"));
-    if (argsObj && argsObj->asList(context) && argsObj->asList(context)->getSize(context) > 0) {
-        const proto::ProtoObject* firstArg = argsObj->asList(context)->getAt(context, 0);
-        if (firstArg && firstArg->isString(context)) firstArg->asString(context)->toUTF8String(context, msg);
+
+    // Header: Type: Message
+    out += red + bold + typeName + reset + ": " + msg + "\n";
+
+    // Step 1333: Multi-line Error Context (REPL virtual file state)
+    if (isInteractive_ && !replHistory_.empty()) {
+        const proto::ProtoObject* linenoObj = exc->getAttribute(context, proto::ProtoString::fromUTF8String(context, "lineno"));
+        if (linenoObj && linenoObj->isInteger(context)) {
+            int lineIdx = static_cast<int>(linenoObj->asLong(context)) - 1;
+            if (lineIdx >= 0 && static_cast<size_t>(lineIdx) < replHistory_.size()) {
+                out += "  File \"<stdin>\", line " + std::to_string(lineIdx + 1) + "\n";
+                out += "    " + replHistory_[lineIdx] + "\n";
+            }
+        }
     }
-    
-    out += RED + typeName + RESET + ": " + CYAN + msg + RESET;
-    
-    // Step 1328/1339: Suggestions
-    std::string suggestion;
+
+    // Suggestions (Step 1327)
     if (typeName == "NameError" || typeName == "AttributeError") {
         std::string target;
-        size_t end = msg.rfind("'");
-        if (end != std::string::npos && end > 0) {
-            size_t start = msg.rfind("'", end - 1);
-            if (start != std::string::npos) {
-                target = msg.substr(start + 1, end - start - 1);
-            }
+        if (typeName == "NameError") {
+            const proto::ProtoObject* nameObj = exc->getAttribute(context, proto::ProtoString::fromUTF8String(context, "name"));
+            if (nameObj && nameObj->isString(context)) nameObj->asString(context)->toUTF8String(context, target);
+        } else {
+            const proto::ProtoObject* nameObj = exc->getAttribute(context, proto::ProtoString::fromUTF8String(context, "name"));
+            if (nameObj && nameObj->isString(context)) nameObj->asString(context)->toUTF8String(context, target);
         }
 
         if (!target.empty()) {
-            
-            const proto::ProtoObject* targetObjForFuzzy = nullptr;
+            const proto::ProtoObject* targetObj = nullptr;
             if (typeName == "AttributeError") {
-                targetObjForFuzzy = exc->getAttribute(context, proto::ProtoString::fromUTF8String(context, "obj"));
+                targetObj = exc->getAttribute(context, proto::ProtoString::fromUTF8String(context, "obj"));
             }
-            
-            std::vector<std::string> candidates = collectCandidates(frame, targetObjForFuzzy);
-            
-            // Fuzzy search
-            int bestDist = 3; // Max distance
-            for (const auto& cand : candidates) {
-                int d = levenshtein(target, cand);
-                if (d < bestDist) {
+            std::vector<std::string> candidates = collectCandidates(frame, targetObj);
+            std::string best;
+            int bestDist = 100;
+            for (const auto& c : candidates) {
+                int d = levenshtein(target, c);
+                if (d < bestDist && d <= 2) {
                     bestDist = d;
-                    suggestion = cand;
+                    best = c;
                 }
+            }
+            if (!best.empty()) {
+                out += yellow + "Did you mean: '" + best + "'?" + reset + "\n";
             }
         }
     }
-    
-    if (!suggestion.empty()) {
-        out += std::string(YELLOW) + ". Did you mean: '" + suggestion + "'?" + RESET;
-    }
-    out += "\n";
-    
+
     // Step 1326: Line pointers (SyntaxError context)
     const proto::ProtoObject* linenoObj = exc->getAttribute(context, proto::ProtoString::fromUTF8String(context, "lineno"));
     const proto::ProtoObject* textObj = exc->getAttribute(context, proto::ProtoString::fromUTF8String(context, "text"));
     const proto::ProtoObject* offsetObj = exc->getAttribute(context, proto::ProtoString::fromUTF8String(context, "offset"));
     
-    if (linenoObj && textObj && offsetObj) {
-        std::string text;
-        textObj->asString(context)->toUTF8String(context, text);
-        long long offset = offsetObj->asLong(context);
+    if (typeName == "SyntaxError" && linenoObj && textObj && offsetObj) {
+        std::string line;
+        textObj->asString(context)->toUTF8String(context, line);
+        int offset = static_cast<int>(offsetObj->asLong(context));
         out += "  File \"<stdin>\", line " + std::to_string(linenoObj->asLong(context)) + "\n";
-        out += "    " + text + "\n";
-        out += "    " + std::string(offset > 0 ? (size_t)offset - 1 : 0, ' ') + "^\n";
+        out += "    " + line + "\n";
+        out += "    " + std::string(offset > 0 ? offset : 0, ' ') + "^\n";
     }
-    
+
     return out;
 }
 

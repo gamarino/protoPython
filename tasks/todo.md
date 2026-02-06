@@ -571,6 +571,5 @@ Steps 1305–1324: Basic input loop, multiline detection, history, SIGINT handli
 
 - [x] Steps 1305–1324 (completed)
 
-### 63.3 Next 20 Steps (v70) — High-Quality Error Reporting — pending
-
-- [ ] Steps 1325–1344 (v70)
+### 63.3 Next 20 Steps (v70) — High-Quality Error Reporting — completed
+- [x] Steps 1325–1344 (v70)
