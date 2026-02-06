@@ -515,11 +515,11 @@ See [docs/NEXT_20_STEPS_V61.md](../docs/NEXT_20_STEPS_V61.md). Steps 1145–1164
 
 - [x] Steps 1145–1164
 
-## 61. Next 20 Steps (v62) — Swarm hardening and lessons — pending
+## 61. Next 20 Steps (v62) — Swarm hardening and lessons — completed
 
-See [docs/NEXT_20_STEPS_V62.md](../docs/NEXT_20_STEPS_V62.md) (TBD). Steps 1165–1184: Swarm test hardening; lessons v58–v62; final doc updates.
+See [docs/NEXT_20_STEPS_V62.md](../docs/NEXT_20_STEPS_V62.md). Steps 1165–1184: Swarm test hardening (DISABLED_ tests documented); lessons v58–v62 in tasks/lessons.md; IMPLEMENTATION_PLAN, todo, STUBS, TESTING, STRING_SUPPORT final updates. Block 1100-1200 V2 complete.
 
-- [ ] Steps 1165–1184
+- [x] Steps 1165–1184
 
 ---
 *Updated from plan implementation. Mark items complete as work progresses.*

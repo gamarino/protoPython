@@ -14,7 +14,7 @@
 ## protoCore Swarm tests (v61)
 
 - **GetRawPointer API**: `ProtoObject::getRawPointerIfExternalBuffer(context)`; stable-address contract documented in protoCore GC doc.
-- **SwarmTests.cpp** (protoCore test): `SwarmTest.ExternalBufferGC` and `SwarmTest.GetRawPointerIfExternalBuffer` pass. `SwarmTest.DISABLED_OneMillionConcats` and `SwarmTest.DISABLED_LargeRopeIndexAccess` remain disabled by design: root cause is GC/rope handling on very large graphs (segfault / "Non-tuple object in tuple node slot"); no hack—fix requires protoCore GC and string-tuple traversal changes; see comments in test file and NEXT_20_STEPS_V61.md.
+- **SwarmTests.cpp** (protoCore test): `SwarmTest.ExternalBufferGC` and `SwarmTest.GetRawPointerIfExternalBuffer` pass. `SwarmTest.DISABLED_OneMillionConcats` and `SwarmTest.DISABLED_LargeRopeIndexAccess` remain disabled by design: root cause is GC/rope handling on very large graphs (segfault / "Non-tuple object in tuple node slot"); no hack—fix requires protoCore GC and string-tuple traversal changes; see NEXT_20_STEPS_V61.md and v62 hardening in NEXT_20_STEPS_V62.md; lessons v58–v62 in tasks/lessons.md.
 
 ## Bug fixes (diagnosis run)
 

@@ -165,7 +165,7 @@ We aim for "No-Modification" compatibility with CPython tests.
 
 **Completed: Next 20 Steps v61 (1145–1164).** See [NEXT_20_STEPS_V61.md](NEXT_20_STEPS_V61.md). GetRawPointer API; stable-address contract; SwarmTests (ExternalBufferGC, GetRawPointerIfExternalBuffer pass).
 
-**Next 20 Steps v62 (1165–1184) — next.** Swarm test hardening; lessons v58–v62; final doc updates.
+**Completed: Next 20 Steps v62 (1165–1184).** See [NEXT_20_STEPS_V62.md](NEXT_20_STEPS_V62.md). Swarm hardening (disabled tests documented); lessons v58–v62; lock-free/C++20 notes; final doc updates (todo, STUBS, TESTING, STRING_SUPPORT). Block 1100-1200 V2 complete.
 
 ## 5. Debugging & IDE Support
 To be a viable replacement, `protoPython` must support professional developer workflows.

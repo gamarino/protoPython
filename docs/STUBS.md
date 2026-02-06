@@ -7,7 +7,8 @@ This document catalogs stub implementations and their completion status.
 | Component | Item | Status |
 |-----------|------|--------|
 | **protoCore** | ProtoExternalBuffer (v60) | Implemented: 64-byte header, aligned_alloc segment; Shadow GC finalize frees segment. API: newExternalBuffer, getRawPointer, getSize, asObject, getHash. |
-| **protoCore** | GetRawPointer API (v61) | ProtoObject::getRawPointerIfExternalBuffer(context) returns segment pointer for ProtoExternalBuffer else nullptr; stable-address contract (no compaction). Swarm tests: 1M concat, large rope index, external buffer GC. |
+| **protoCore** | GetRawPointer API (v61) | ProtoObject::getRawPointerIfExternalBuffer(context) returns segment pointer for ProtoExternalBuffer else nullptr; stable-address contract (no compaction). Swarm tests: ExternalBufferGC, GetRawPointerIfExternalBuffer pass; 1M concat / large rope disabled (v62). |
+| **protoCore** | Swarm hardening (v62) | DISABLED_OneMillionConcats, DISABLED_LargeRopeIndexAccess documented; lessons v58–v62 in tasks/lessons.md; block 1100-1200 V2 complete. |
 | **set** | union, intersection, difference | Implemented |
 | **itertools** | accumulate | Full implementation (default add, optional binary func) |
 | **itertools** | groupby, product, combinations, combinations_with_replacement, permutations | Return empty iterator (no longer None) |

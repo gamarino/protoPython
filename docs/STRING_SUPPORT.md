@@ -31,3 +31,7 @@ This document describes string dunder methods and helpers implemented in protoPy
 - Raw strings (from `context->fromUTF8String`) are primitives. `iter()` and `bool()` in builtins handle them directly.
 - Wrapped strings (object with `strPrototype` as parent and `__data__` holding the ProtoString) use `strPrototype` dunders.
 - Use `builtins.contains(item, container)` for substring checks on raw strings in tests.
+
+## Block 1100-1200 V2 (v58–v62)
+
+Ropes (ProtoTuple), inline strings, ProtoExternalBuffer, GetRawPointer API, and Swarm tests completed in v58–v61. v62: Swarm hardening (disabled 1M concat / large rope tests documented), lessons consolidated. See [NEXT_20_STEPS_V62.md](NEXT_20_STEPS_V62.md).

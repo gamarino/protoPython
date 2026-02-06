@@ -22,3 +22,11 @@ Patterns and rules derived from implementation and corrections. Update after app
 - **Foundation suite**: CTest runs a filtered gate; full suite (`test_foundation` without filter) may include DISABLED_ tests. Document known-issues matrix in TESTING.md.
 - **Regrtest persistence**: `run_and_validate_output.py` verifies `--output` writes valid JSON with `passed`, `failed`, `total` keys. Use `REGRTEST_RESULTS` for persistence path.
 - **Batch commits**: Each v53–v57 block: create NEXT_20_STEPS_Vxx.md, implement steps, update todo/IMPLEMENTATION_PLAN/STUBS/TESTING, commit with `docs(v5x): Next 20 Steps v5x (9xx–9xx); ...`.
+
+## Next 20 Steps (v58–v62) — Block 1100-1200 V2
+
+- **Ropes as ProtoTuple**: Strings are exclusively ProtoTuple; concat = one tuple with 2 slots (left, right) and actual_size; leaf = tuple of chars. Inline strings (≤7 ASCII) in tagged pointer. O(1) concat; getAt O(depth) then O(1) at leaf. See protoCore ROPES_AS_PROTOTUPLE.md.
+- **ProtoExternalBuffer and Shadow GC**: External segment via aligned_alloc; processReferences empty; finalize() frees segment when cell is collected. Stable-address contract: getRawPointer valid until object is collected (no compaction).
+- **GetRawPointer API**: ProtoObject::getRawPointerIfExternalBuffer(context) returns segment pointer for ProtoExternalBuffer else nullptr. Use for zero-copy interop; document stable-address in protoCore GC doc.
+- **Swarm tests**: ExternalBufferGC and GetRawPointerIfExternalBuffer pass. OneMillionConcats and LargeRopeIndexAccess disabled by design—root cause is GC/rope on very large graphs; fix requires protoCore changes; no hack (do not enable broken tests).
+- **OperatorInvert**: C++ test must use same path as Python: invertM->call(context, nullptr, "__call__", invertM, args, nullptr). Direct asMethod() bypasses __call__ and returns nullptr for native ProtoMethodCell.
