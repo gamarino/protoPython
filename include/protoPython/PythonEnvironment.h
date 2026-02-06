@@ -209,6 +209,10 @@ public:
     void raiseTypeError(proto::ProtoContext* context, const std::string& msg);
     void raiseImportError(proto::ProtoContext* context, const std::string& msg);
     void raiseKeyboardInterrupt(proto::ProtoContext* context);
+    void raiseSyntaxError(proto::ProtoContext* context, const std::string& msg, int lineno, int offset, const std::string& text);
+    void raiseSystemExit(proto::ProtoContext* context, int code);
+    void raiseRecursionError(proto::ProtoContext* context);
+    void raiseZeroDivisionError(proto::ProtoContext* context);
 
     /**
      * @brief Returns true if this environment is running in interactive mode.
@@ -236,9 +240,11 @@ public:
     std::string formatTraceback(const proto::ProtoContext* ctx);
 
     /**
-     * @brief Collects candidate names for fuzzy matching suggestions (Step 1328).
+     * @brief Collects candidate names for fuzzy matching suggestions.
+     * @param frame The global frame/scope to collect names from.
+     * @param targetObj Optional object to collect attributes from (for AttributeError).
      */
-    std::vector<std::string> collectCandidates(const proto::ProtoObject* frame);
+    std::vector<std::string> collectCandidates(const proto::ProtoObject* frame, const proto::ProtoObject* targetObj = nullptr);
 
 private:
     void initializeRootObjects(const std::string& stdLibPath, const std::vector<std::string>& searchPaths);
@@ -279,6 +285,9 @@ private:
     const proto::ProtoObject* typeErrorType{nullptr};
     const proto::ProtoObject* importErrorType{nullptr};
     const proto::ProtoObject* keyboardInterruptType{nullptr};
+    const proto::ProtoObject* systemExitType{nullptr};
+    const proto::ProtoObject* recursionErrorType{nullptr};
+    const proto::ProtoObject* zeroDivisionErrorType{nullptr};
     /** Incremented on invalidateResolveCache(); per-thread caches check this (lock-free). */
     mutable std::atomic<uint64_t> resolveCacheGeneration_{0};
     std::istream* stdin_{&std::cin};

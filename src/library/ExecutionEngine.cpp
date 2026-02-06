@@ -1,5 +1,6 @@
 #include <protoPython/ExecutionEngine.h>
 #include <protoPython/Compiler.h>
+#include <protoPython/PythonEnvironment.h>
 #include <protoPython/MemoryManager.hpp>
 #include <protoCore.h>
 #include <cmath>
@@ -113,8 +114,10 @@ static const proto::ProtoObject* binaryMultiply(proto::ProtoContext* ctx,
 
 static const proto::ProtoObject* binaryTrueDivide(proto::ProtoContext* ctx,
     const proto::ProtoObject* a, const proto::ProtoObject* b) {
-    if (b->isInteger(ctx) && b->asLong(ctx) == 0) return PROTO_NONE;
-    if (b->isDouble(ctx) && b->asDouble(ctx) == 0.0) return PROTO_NONE;
+    if ((b->isInteger(ctx) && b->asLong(ctx) == 0) || (b->isDouble(ctx) && b->asDouble(ctx) == 0.0)) {
+        PythonEnvironment::fromContext(ctx)->raiseZeroDivisionError(ctx);
+        return PROTO_NONE;
+    }
     if (isEmbeddedValue(a) || isEmbeddedValue(b)) {
         double aa = a->isDouble(ctx) ? a->asDouble(ctx) : static_cast<double>(a->asLong(ctx));
         double bb = b->isDouble(ctx) ? b->asDouble(ctx) : static_cast<double>(b->asLong(ctx));
@@ -126,15 +129,16 @@ static const proto::ProtoObject* binaryTrueDivide(proto::ProtoContext* ctx,
 
 static const proto::ProtoObject* binaryModulo(proto::ProtoContext* ctx,
     const proto::ProtoObject* a, const proto::ProtoObject* b) {
+    if ((b->isInteger(ctx) && b->asLong(ctx) == 0) || (b->isDouble(ctx) && b->asDouble(ctx) == 0.0)) {
+        PythonEnvironment::fromContext(ctx)->raiseZeroDivisionError(ctx);
+        return PROTO_NONE;
+    }
     if (a->isInteger(ctx) && b->isInteger(ctx)) {
-        long long bb = b->asLong(ctx);
-        if (bb == 0) return PROTO_NONE;
-        return ctx->fromInteger(a->asLong(ctx) % bb);
+        return ctx->fromInteger(a->asLong(ctx) % b->asLong(ctx));
     }
     if (a->isDouble(ctx) || b->isDouble(ctx)) {
         double aa = a->isDouble(ctx) ? a->asDouble(ctx) : static_cast<double>(a->asLong(ctx));
         double bb = b->isDouble(ctx) ? b->asDouble(ctx) : static_cast<double>(b->asLong(ctx));
-        if (bb == 0.0) return PROTO_NONE;
         return ctx->fromDouble(std::fmod(aa, bb));
     }
     return PROTO_NONE;
@@ -160,8 +164,10 @@ static const proto::ProtoObject* binaryPower(proto::ProtoContext* ctx,
 
 static const proto::ProtoObject* binaryFloorDivide(proto::ProtoContext* ctx,
     const proto::ProtoObject* a, const proto::ProtoObject* b) {
-    if (b->isInteger(ctx) && b->asLong(ctx) == 0) return PROTO_NONE;
-    if (b->isDouble(ctx) && b->asDouble(ctx) == 0.0) return PROTO_NONE;
+    if ((b->isInteger(ctx) && b->asLong(ctx) == 0) || (b->isDouble(ctx) && b->asDouble(ctx) == 0.0)) {
+        PythonEnvironment::fromContext(ctx)->raiseZeroDivisionError(ctx);
+        return PROTO_NONE;
+    }
     if (a->isInteger(ctx) && b->isInteger(ctx)) {
         long long aa = a->asLong(ctx);
         long long bb = b->asLong(ctx);
@@ -248,10 +254,19 @@ const proto::ProtoObject* executeBytecodeRange(
                     stack.push_back(val);
                 } else {
                     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-                    std::string name;
-                    nameObj->asString(ctx)->toUTF8String(ctx, name);
-                    if (env) env->raiseNameError(ctx, name);
-                    return PROTO_NONE;
+                    if (env) {
+                        std::string name;
+                        nameObj->asString(ctx)->toUTF8String(ctx, name);
+                        val = env->resolve(name);
+                        if (val && val != PROTO_NONE) {
+                            stack.push_back(val);
+                        } else {
+                            env->raiseNameError(ctx, name);
+                            return PROTO_NONE;
+                        }
+                    } else {
+                        return PROTO_NONE;
+                    }
                 }
             }
         } else if (op == OP_STORE_NAME && names && frame && static_cast<unsigned long>(arg) < names->getSize(ctx)) {
@@ -782,6 +797,13 @@ const proto::ProtoObject* executeBytecodeRange(
                     lst = lst->appendLast(ctx, elems[j]);
                 proto::ProtoObject* listObj = const_cast<proto::ProtoObject*>(ctx->newObject(true));
                 listObj->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__data__"), lst->asObject(ctx));
+                
+                PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+                if (env && env->getListPrototype()) {
+                    listObj->addParent(ctx, env->getListPrototype());
+                    listObj->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__class__"), env->getListPrototype());
+                }
+                
                 stack.push_back(listObj);
             }
         } else if (op == OP_BINARY_SUBSCR) {
@@ -827,6 +849,13 @@ const proto::ProtoObject* executeBytecodeRange(
                 }
                 mapObj->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__data__"), data->asObject(ctx));
                 mapObj->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__keys__"), keys->asObject(ctx));
+                
+                PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+                if (env && env->getDictPrototype()) {
+                    mapObj->addParent(ctx, env->getDictPrototype());
+                    mapObj->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__class__"), env->getDictPrototype());
+                }
+                
                 stack.push_back(mapObj);
             }
         } else if (op == OP_STORE_SUBSCR) {
@@ -871,7 +900,15 @@ const proto::ProtoObject* executeBytecodeRange(
                 for (int j = 0; j < arg; ++j)
                     lst = lst->appendLast(ctx, elems[j]);
                 const proto::ProtoTuple* tup = ctx->newTupleFromList(lst);
-                if (tup) stack.push_back(tup->asObject(ctx));
+                if (tup) {
+                    proto::ProtoObject* tupObj = const_cast<proto::ProtoObject*>(tup->asObject(ctx));
+                    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+                    if (env && env->getTuplePrototype()) {
+                        tupObj->addParent(ctx, env->getTuplePrototype());
+                        tupObj->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__class__"), env->getTuplePrototype());
+                    }
+                    stack.push_back(tupObj);
+                }
             }
         } else if (op == OP_BUILD_FUNCTION) {
             i++;

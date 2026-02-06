@@ -619,7 +619,24 @@ static const proto::ProtoObject* py_eval(
     exprObj->asString(context)->toUTF8String(context, source);
     Parser parser(source);
     std::unique_ptr<ASTNode> expr = parser.parseExpression();
-    if (!expr) return PROTO_NONE;
+    if (!expr) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(context);
+        if (env && parser.hasError()) {
+            std::string lineText = source;
+            // Extract the specific line
+            int line = parser.getLastErrorLine();
+            size_t start = 0;
+            for (int i = 1; i < line; ++i) {
+                size_t next = source.find('\n', start);
+                if (next == std::string::npos) break;
+                start = next + 1;
+            }
+            size_t end = source.find('\n', start);
+            lineText = source.substr(start, end == std::string::npos ? std::string::npos : end - start);
+            env->raiseSyntaxError(context, parser.getLastErrorMsg(), line, parser.getLastErrorColumn(), lineText);
+        }
+        return PROTO_NONE;
+    }
     Compiler compiler(context, "<string>");
     if (!compiler.compileExpression(expr.get())) return PROTO_NONE;
     const proto::ProtoObject* codeObj = makeCodeObject(context, compiler.getConstants(), compiler.getNames(), compiler.getBytecode());
@@ -692,7 +709,23 @@ static const proto::ProtoObject* py_exec(
     sourceObj->asString(context)->toUTF8String(context, source);
     Parser parser(source);
     std::unique_ptr<ModuleNode> mod = parser.parseModule();
-    if (!mod || mod->body.empty()) return PROTO_NONE;
+    if (!mod || mod->body.empty()) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(context);
+        if (env && parser.hasError()) {
+            std::string lineText = source;
+            int line = parser.getLastErrorLine();
+            size_t start = 0;
+            for (int i = 1; i < line; ++i) {
+                size_t next = source.find('\n', start);
+                if (next == std::string::npos) break;
+                start = next + 1;
+            }
+            size_t end = source.find('\n', start);
+            lineText = source.substr(start, end == std::string::npos ? std::string::npos : end - start);
+            env->raiseSyntaxError(context, parser.getLastErrorMsg(), line, parser.getLastErrorColumn(), lineText);
+        }
+        return PROTO_NONE;
+    }
     if (std::getenv("PROTO_THREAD_DIAG")) {
         size_t n = mod->body.size();
         std::cerr << "[proto-thread-diag] exec: parsed " << n << " statements\n" << std::flush;

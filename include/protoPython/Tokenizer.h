@@ -38,6 +38,28 @@ enum class TokenType {
     Pass,
     Indent,
     Dedent,
+    Import,
+    From,
+    Class,
+    Return,
+    While,
+    True,
+    False,
+    None,
+    And,
+    Or,
+    Not,
+    Try,
+    Except,
+    Finally,
+    Raise,
+    Break,
+    Continue,
+    Lambda,
+    With,
+    As,
+    Is,
+    Yield,
 };
 
 struct Token {
@@ -46,6 +68,8 @@ struct Token {
     double numValue = 0.0;
     bool isInteger = false;
     long long intValue = 0;
+    int line = 1;
+    int column = 1;
 };
 
 /** Minimal Python tokenizer for expressions and simple statements. */
@@ -56,9 +80,14 @@ public:
     const Token& peek();
     bool hasNext() const;
 
+    int getLine() const { return line_; }
+    int getColumn() const { return pos_ - lineStartPos_ + 1; }
+
 private:
     std::string source_;
     size_t pos_ = 0;
+    int line_ = 1;
+    size_t lineStartPos_ = 0;
     Token peeked_;
     bool hasPeeked_ = false;
     bool atLineStart_ = true;
@@ -69,6 +98,7 @@ private:
     Token scanNumber();
     Token scanString(char quote);
     Token scanNameOrKeyword();
+    Token makeToken(TokenType type);
 };
 
 } // namespace protoPython

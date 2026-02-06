@@ -121,9 +121,20 @@ public:
     std::unique_ptr<ModuleNode> parseModule();
     std::unique_ptr<ASTNode> parseExpression();
 
+    bool hasError() const { return hasError_; }
+    const std::string& getLastErrorMsg() const { return lastErrorMsg_; }
+    int getLastErrorLine() const { return lastErrorLine_; }
+    int getLastErrorColumn() const { return lastErrorColumn_; }
+
 private:
     Tokenizer tok_;
     Token cur_;
+    bool hasError_ = false;
+    std::string lastErrorMsg_;
+    int lastErrorLine_ = 0;
+    int lastErrorColumn_ = 0;
+
+    void error(const std::string& msg);
     void advance();
     bool accept(TokenType t);
     bool expect(TokenType t);

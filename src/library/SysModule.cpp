@@ -14,9 +14,12 @@ static const proto::ProtoObject* sys_exit(
     const proto::ProtoObject* envPtr = self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__env_ptr__"));
     if (envPtr && envPtr->asExternalPointer(context)) {
         auto* env = static_cast<PythonEnvironment*>(envPtr->asExternalPointer(context)->getPointer(context));
-        int code = positionalParameters->getSize(context) > 0
-            ? static_cast<int>(positionalParameters->getAt(context, 0)->asLong(context)) : 0;
-        if (env) env->setExitRequested(code);
+        int code = 0;
+        if (positionalParameters->getSize(context) > 0) {
+            const proto::ProtoObject* arg = positionalParameters->getAt(context, 0);
+            if (arg->isInteger(context)) code = static_cast<int>(arg->asLong(context));
+        }
+        if (env) env->raiseSystemExit(context, code);
     }
     return PROTO_NONE;
 }
@@ -144,6 +147,16 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     stats = stats->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "calls"), ctx->fromInteger(0));
     stats = stats->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "objects_created"), ctx->fromInteger(0));
     sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "stats"), stats);
+
+    // Step 1340: sys.excepthook
+    // Use an internal helper or just leave it for Python code to set. 
+    // For now, let's just add the attribute.
+    sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "excepthook"), PROTO_NONE);
+
+    // Step 1335: sys.last_*
+    sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "last_type"), PROTO_NONE);
+    sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "last_value"), PROTO_NONE);
+    sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "last_traceback"), PROTO_NONE);
 
     return sys;
 }

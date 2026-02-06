@@ -4160,11 +4160,20 @@ void PythonEnvironment::raiseAttributeError(proto::ProtoContext* ctx, const prot
     if (cls) {
         const proto::ProtoObject* nameAttr = cls->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__name__"));
         if (nameAttr && nameAttr->isString(ctx)) nameAttr->asString(ctx)->toUTF8String(ctx, typeName);
+    } else {
+        // Fallback for objects that don't have __class__ explicitly but might have a parent that does or is a core type
+        if (obj->isInteger(ctx)) typeName = "int";
+        else if (obj->isString(ctx)) typeName = "str";
+        else if (obj->asList(ctx)) typeName = "list";
     }
     std::string msg = "'" + typeName + "' object has no attribute '" + attr + "'";
     const proto::ProtoList* args = ctx->newList()->appendLast(ctx, ctx->fromUTF8String(msg.c_str()));
     const proto::ProtoObject* exc = attributeErrorType->call(ctx, nullptr, proto::ProtoString::fromUTF8String(ctx, "__call__"), attributeErrorType, args, nullptr);
-    if (exc) setPendingException(exc);
+    if (exc) {
+        exc = exc->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "obj"), obj);
+        exc = exc->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "name"), ctx->fromUTF8String(attr.c_str()));
+        setPendingException(exc);
+    }
 }
 
 void PythonEnvironment::raiseTypeError(proto::ProtoContext* ctx, const std::string& msg) {
@@ -4185,6 +4194,42 @@ void PythonEnvironment::raiseKeyboardInterrupt(proto::ProtoContext* ctx) {
     if (!keyboardInterruptType) return;
     const proto::ProtoList* args = ctx->newList();
     const proto::ProtoObject* exc = keyboardInterruptType->call(ctx, nullptr, proto::ProtoString::fromUTF8String(ctx, "__call__"), keyboardInterruptType, args, nullptr);
+    if (exc) setPendingException(exc);
+}
+
+void PythonEnvironment::raiseSyntaxError(proto::ProtoContext* ctx, const std::string& msg, int lineno, int offset, const std::string& text) {
+    if (!syntaxErrorType) return;
+    const proto::ProtoList* args = ctx->newList()->appendLast(ctx, ctx->fromUTF8String(msg.c_str()));
+    const proto::ProtoObject* exc = syntaxErrorType->call(ctx, nullptr, proto::ProtoString::fromUTF8String(ctx, "__call__"), syntaxErrorType, args, nullptr);
+    if (exc) {
+        exc = exc->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "lineno"), ctx->fromInteger(lineno));
+        exc = exc->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "offset"), ctx->fromInteger(offset));
+        exc = exc->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "text"), ctx->fromUTF8String(text.c_str()));
+        setPendingException(exc);
+    }
+}
+
+void PythonEnvironment::raiseSystemExit(proto::ProtoContext* ctx, int code) {
+    if (!systemExitType) return;
+    const proto::ProtoList* args = ctx->newList()->appendLast(ctx, ctx->fromInteger(code));
+    const proto::ProtoObject* exc = systemExitType->call(ctx, nullptr, proto::ProtoString::fromUTF8String(ctx, "__call__"), systemExitType, args, nullptr);
+    if (exc) {
+        exc = exc->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "code"), ctx->fromInteger(code));
+        setPendingException(exc);
+    }
+}
+
+void PythonEnvironment::raiseRecursionError(proto::ProtoContext* ctx) {
+    if (!recursionErrorType) return;
+    const proto::ProtoList* args = ctx->newList()->appendLast(ctx, ctx->fromUTF8String("maximum recursion depth exceeded"));
+    const proto::ProtoObject* exc = recursionErrorType->call(ctx, nullptr, proto::ProtoString::fromUTF8String(ctx, "__call__"), recursionErrorType, args, nullptr);
+    if (exc) setPendingException(exc);
+}
+
+void PythonEnvironment::raiseZeroDivisionError(proto::ProtoContext* ctx) {
+    if (!zeroDivisionErrorType) return;
+    const proto::ProtoList* args = ctx->newList()->appendLast(ctx, ctx->fromUTF8String("division by zero"));
+    const proto::ProtoObject* exc = zeroDivisionErrorType->call(ctx, nullptr, proto::ProtoString::fromUTF8String(ctx, "__call__"), zeroDivisionErrorType, args, nullptr);
     if (exc) setPendingException(exc);
 }
 
@@ -4592,6 +4637,9 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     typeErrorType = exceptionsMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "TypeError"));
     importErrorType = exceptionsMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "ImportError"));
     keyboardInterruptType = exceptionsMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "KeyboardInterrupt"));
+    systemExitType = exceptionsMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "SystemExit"));
+    recursionErrorType = exceptionsMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "RecursionError"));
+    zeroDivisionErrorType = exceptionsMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "ZeroDivisionError"));
     nativeProvider->registerModule("exceptions", [exceptionsMod](proto::ProtoContext*) { return exceptionsMod; });
 
     registry.registerProvider(std::move(nativeProvider));
@@ -4702,10 +4750,11 @@ int PythonEnvironment::executeModule(const std::string& moduleName) {
                         if (std::getenv("PROTO_THREAD_DIAG"))
                             std::cerr << "[proto-thread-diag] exec returned\n" << std::flush;
                         const proto::ProtoObject* excAfterExec = takePendingException();
-                        if (std::getenv("PROTO_THREAD_DIAG") && excAfterExec && excAfterExec != PROTO_NONE)
-                            std::cerr << "[proto-thread-diag] exec raised an exception\n" << std::flush;
-                        if (!excAfterExec || excAfterExec == PROTO_NONE)
-                            const_cast<proto::ProtoObject*>(mod)->setAttribute(context, executedKey, PROTO_TRUE);
+                        if (excAfterExec && excAfterExec != PROTO_NONE) {
+                            handleException(excAfterExec, mod, std::cerr);
+                            return -2;
+                        }
+                        const_cast<proto::ProtoObject*>(mod)->setAttribute(context, executedKey, PROTO_TRUE);
                         if (std::getenv("PROTO_THREAD_DIAG")) {
                             const proto::ProtoObject* mainRightAfter = mod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "main"));
                             std::cerr << "[proto-thread-diag] right after exec mod.hasMain=" << (mainRightAfter && mainRightAfter != PROTO_NONE ? 1 : 0) << "\n" << std::flush;
@@ -4802,11 +4851,17 @@ std::string PythonEnvironment::formatTraceback(const proto::ProtoContext* ctx) {
     return out;
 }
 
-std::vector<std::string> PythonEnvironment::collectCandidates(const proto::ProtoObject* frame) {
-    std::vector<std::string> candidates = {"print", "len", "range", "str", "int", "float", "list", "dict", "tuple", "set", "exit", "quit", "help", "input", "eval", "exec", "open"};
+std::vector<std::string> PythonEnvironment::collectCandidates(const proto::ProtoObject* frame, const proto::ProtoObject* targetObj) {
+    std::vector<std::string> candidates = {
+        "print", "len", "range", "str", "int", "float", "list", "dict", "tuple", "set", "exit", "quit", "help", "input", "eval", "exec", "open",
+        "append", "extend", "insert", "remove", "pop", "clear", "index", "count", "sort", "reverse", "copy",
+        "keys", "values", "items", "get", "update", "split", "join", "strip", "replace", "find", "lower", "upper"
+    };
     
     auto collectFromObj = [&](const proto::ProtoObject* obj) {
         if (!obj) return;
+        
+        // Collect own attributes
         const proto::ProtoSparseList* attrs = obj->getOwnAttributes(context);
         if (attrs) {
             auto* it = const_cast<proto::ProtoSparseListIterator*>(attrs->getIterator(context));
@@ -4821,10 +4876,38 @@ std::vector<std::string> PythonEnvironment::collectCandidates(const proto::Proto
                 it = const_cast<proto::ProtoSparseListIterator*>(it->advance(context));
             }
         }
+        
+        // Collect attributes from parents (depth-limited for performance)
+        const proto::ProtoList* parents = obj->getParents(context);
+        if (parents) {
+            for (unsigned long i = 0; i < parents->getSize(context); ++i) {
+                const proto::ProtoObject* p = parents->getAt(context, static_cast<int>(i));
+                if (p) {
+                    const proto::ProtoSparseList* pAttrs = p->getOwnAttributes(context);
+                    if (pAttrs) {
+                        auto* it = const_cast<proto::ProtoSparseListIterator*>(pAttrs->getIterator(context));
+                        while (it && it->hasNext(context)) {
+                            unsigned long key = it->nextKey(context);
+                            const proto::ProtoString* s = reinterpret_cast<const proto::ProtoString*>(key);
+                            if (s) {
+                                std::string name;
+                                s->toUTF8String(context, name);
+                                if (!name.empty() && name[0] != '_') candidates.push_back(name);
+                            }
+                            it = const_cast<proto::ProtoSparseListIterator*>(it->advance(context));
+                        }
+                    }
+                }
+            }
+        }
     };
 
-    collectFromObj(builtinsModule);
-    collectFromObj(frame);
+    if (targetObj) {
+        collectFromObj(targetObj);
+    } else {
+        collectFromObj(builtinsModule);
+        collectFromObj(frame);
+    }
     
     return candidates;
 }
@@ -4834,12 +4917,40 @@ void PythonEnvironment::handleException(const proto::ProtoObject* exc, const pro
     out << formatException(exc, frame) << std::flush;
     
     // Step 1335: sys.last_type, sys.last_value, sys.last_traceback
+    const proto::ProtoObject* type = exc->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__class__"));
     if (sysModule) {
-        const proto::ProtoObject* type = exc->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__class__"));
         sysModule->setAttribute(context, proto::ProtoString::fromUTF8String(context, "last_type"), type ? type : PROTO_NONE);
         sysModule->setAttribute(context, proto::ProtoString::fromUTF8String(context, "last_value"), const_cast<proto::ProtoObject*>(exc));
         sysModule->setAttribute(context, proto::ProtoString::fromUTF8String(context, "last_traceback"), PROTO_NONE);
     }
+
+    // Step 1340: sys.excepthook
+    if (sysModule) {
+        const proto::ProtoObject* hook = sysModule->getAttribute(context, proto::ProtoString::fromUTF8String(context, "excepthook"));
+        if (hook && hook != PROTO_NONE && hook->asMethod(context)) {
+            const proto::ProtoList* args = context->newList()
+                ->appendLast(context, type ? type : PROTO_NONE)
+                ->appendLast(context, const_cast<proto::ProtoObject*>(exc))
+                ->appendLast(context, PROTO_NONE); // traceback
+            hook->asMethod(context)(context, const_cast<proto::ProtoObject*>(sysModule), nullptr, args, nullptr);
+            return;
+        }
+    }
+
+    std::string typeName = "Exception";
+    if (type) {
+        const proto::ProtoObject* nameObj = type->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__name__"));
+        if (nameObj && nameObj->isString(context)) nameObj->asString(context)->toUTF8String(context, typeName);
+    }
+
+    if (typeName == "SystemExit") {
+        const proto::ProtoObject* codeObj = exc->getAttribute(context, proto::ProtoString::fromUTF8String(context, "code"));
+        int code = (codeObj && codeObj->isInteger(context)) ? static_cast<int>(codeObj->asLong(context)) : 0;
+        setExitRequested(code);
+        return;
+    }
+
+    out << formatException(exc, frame) << std::flush;
 }
 
 static int levenshtein(const std::string& s1, const std::string& s2) {
@@ -4862,6 +4973,7 @@ std::string PythonEnvironment::formatException(const proto::ProtoObject* exc, co
     
     std::string out;
     bool color = true; // Step 1336
+    if (std::getenv("NO_COLOR")) color = false;
     const char* RED = color ? "\x1b[31;1m" : "";
     const char* CYAN = color ? "\x1b[36m" : "";
     const char* YELLOW = color ? "\x1b[33m" : "";
@@ -4875,7 +4987,7 @@ std::string PythonEnvironment::formatException(const proto::ProtoObject* exc, co
     }
     
     // Prepend Traceback (Step 1329)
-    if (typeName != "SyntaxError" && typeName != "KeyboardInterrupt") {
+    if (typeName != "SyntaxError" && typeName != "KeyboardInterrupt" && typeName != "SystemExit") {
         out += formatTraceback(context);
     }
     
@@ -4892,12 +5004,22 @@ std::string PythonEnvironment::formatException(const proto::ProtoObject* exc, co
     std::string suggestion;
     if (typeName == "NameError" || typeName == "AttributeError") {
         std::string target;
-        size_t start = msg.find("'");
         size_t end = msg.rfind("'");
-        if (start != std::string::npos && end != std::string::npos && end > start) {
-            target = msg.substr(start + 1, end - start - 1);
+        if (end != std::string::npos && end > 0) {
+            size_t start = msg.rfind("'", end - 1);
+            if (start != std::string::npos) {
+                target = msg.substr(start + 1, end - start - 1);
+            }
+        }
+
+        if (!target.empty()) {
             
-            std::vector<std::string> candidates = collectCandidates(frame);
+            const proto::ProtoObject* targetObjForFuzzy = nullptr;
+            if (typeName == "AttributeError") {
+                targetObjForFuzzy = exc->getAttribute(context, proto::ProtoString::fromUTF8String(context, "obj"));
+            }
+            
+            std::vector<std::string> candidates = collectCandidates(frame, targetObjForFuzzy);
             
             // Fuzzy search
             int bestDist = 3; // Max distance
@@ -4967,7 +5089,7 @@ void PythonEnvironment::runRepl(std::istream& in, std::ostream& out) {
     
     while (true) {
         if (s_sigintReceived.exchange(false)) {
-            out << "\nKeyboardInterrupt\n";
+            out << "KeyboardInterrupt\n";
             buffer.clear();
         }
         
@@ -5013,9 +5135,25 @@ void PythonEnvironment::runRepl(std::istream& in, std::ostream& out) {
 
             result = evalFn->asMethod(context)(context, const_cast<proto::ProtoObject*>(builtinsModule), nullptr, args, nullptr);
             
-            if (const proto::ProtoObject* pending = takePendingException()) {
-                handleException(pending, frame, out);
-                result = PROTO_NONE;
+            const proto::ProtoObject* pending = takePendingException();
+            if (pending && pending != PROTO_NONE) {
+                // If eval failed with SyntaxError, try exec. Otherwise report and stop.
+                std::string typeName = "Exception";
+                const proto::ProtoObject* type = pending->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__class__"));
+                if (type) {
+                    const proto::ProtoObject* nameObj = type->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__name__"));
+                    if (nameObj && nameObj->isString(context)) nameObj->asString(context)->toUTF8String(context, typeName);
+                }
+
+                if (typeName == "SyntaxError") {
+                    // Try exec
+                    execFn->asMethod(context)(context, const_cast<proto::ProtoObject*>(builtinsModule), nullptr, args, nullptr);
+                    if (const proto::ProtoObject* execPending = takePendingException()) {
+                        handleException(execPending, frame, out);
+                    }
+                } else {
+                    handleException(pending, frame, out);
+                }
             } else if (result && result != PROTO_NONE) {
                 const proto::ProtoList* reprArgs = context->newList()->appendLast(context, result);
                 const proto::ProtoObject* reprResult = reprFn->asMethod(context)(context, const_cast<proto::ProtoObject*>(builtinsModule), nullptr, reprArgs, nullptr);
@@ -5024,17 +5162,19 @@ void PythonEnvironment::runRepl(std::istream& in, std::ostream& out) {
                     reprResult->asString(context)->toUTF8String(context, s);
                     out << s << "\n";
                 }
-            } else {
-                execFn->asMethod(context)(context, const_cast<proto::ProtoObject*>(builtinsModule), nullptr, args, nullptr);
-                if (const proto::ProtoObject* pending = takePendingException()) {
-                    handleException(pending, frame, out);
-                }
             }
         } catch (const proto::ProtoObject* e) {
             handleException(e, frame, out);
+        } catch (const std::overflow_error& e) {
+            raiseRecursionError(context);
+            if (const proto::ProtoObject* pending = takePendingException()) handleException(pending, frame, out);
+        } catch (const std::exception& e) {
+            const char* RED = std::getenv("NO_COLOR") ? "" : "\x1b[31;1m";
+            const char* RESET = std::getenv("NO_COLOR") ? "" : "\x1b[0m";
+            out << RED << "Runtime Error: " << e.what() << RESET << "\n";
         } catch (...) {
-            const char* RED = "\x1b[31;1m";
-            const char* RESET = "\x1b[0m";
+            const char* RED = std::getenv("NO_COLOR") ? "" : "\x1b[31;1m";
+            const char* RESET = std::getenv("NO_COLOR") ? "" : "\x1b[0m";
             out << RED << "Internal Runtime Error" << RESET << "\n";
         }
         

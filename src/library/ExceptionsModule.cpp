@@ -23,6 +23,7 @@ static const proto::ProtoObject* exception_call(
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
     const proto::ProtoObject* instance = self->newChild(context, true);
+    instance->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__class__"), self);
     const proto::ProtoString* argsName = proto::ProtoString::fromUTF8String(context, "__args__");
     const proto::ProtoObject* args = positionalParameters ? positionalParameters->asObject(context) : context->newList()->asObject(context);
     instance->setAttribute(context, argsName, args);
@@ -99,6 +100,9 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx,
     const proto::ProtoString* py_typeerror = proto::ProtoString::fromUTF8String(ctx, "TypeError");
     const proto::ProtoString* py_importerror = proto::ProtoString::fromUTF8String(ctx, "ImportError");
     const proto::ProtoString* py_kbdinterrupt = proto::ProtoString::fromUTF8String(ctx, "KeyboardInterrupt");
+    const proto::ProtoString* py_systemexit = proto::ProtoString::fromUTF8String(ctx, "SystemExit");
+    const proto::ProtoString* py_recursionerror = proto::ProtoString::fromUTF8String(ctx, "RecursionError");
+    const proto::ProtoString* py_zerodivisionerror = proto::ProtoString::fromUTF8String(ctx, "ZeroDivisionError");
 
     const proto::ProtoObject* exceptionType = make_exception_type(ctx, objectProto, typeProto, "Exception", objectProto);
     const proto::ProtoObject* keyErrorType = make_exception_type(ctx, objectProto, typeProto, "KeyError", exceptionType);
@@ -109,6 +113,9 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx,
     const proto::ProtoObject* typeErrorType = make_exception_type(ctx, objectProto, typeProto, "TypeError", exceptionType);
     const proto::ProtoObject* importErrorType = make_exception_type(ctx, objectProto, typeProto, "ImportError", exceptionType);
     const proto::ProtoObject* keyboardInterruptType = make_exception_type(ctx, objectProto, typeProto, "KeyboardInterrupt", exceptionType);
+    const proto::ProtoObject* systemExitType = make_exception_type(ctx, objectProto, typeProto, "SystemExit", exceptionType);
+    const proto::ProtoObject* recursionErrorType = make_exception_type(ctx, objectProto, typeProto, "RecursionError", exceptionType);
+    const proto::ProtoObject* zeroDivisionErrorType = make_exception_type(ctx, objectProto, typeProto, "ZeroDivisionError", exceptionType);
 
     const proto::ProtoObject* mod = ctx->newObject(true);
     mod = mod->setAttribute(ctx, py_exception, exceptionType);
@@ -120,6 +127,9 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx,
     mod = mod->setAttribute(ctx, py_typeerror, typeErrorType);
     mod = mod->setAttribute(ctx, py_importerror, importErrorType);
     mod = mod->setAttribute(ctx, py_kbdinterrupt, keyboardInterruptType);
+    mod = mod->setAttribute(ctx, py_systemexit, systemExitType);
+    mod = mod->setAttribute(ctx, py_recursionerror, recursionErrorType);
+    mod = mod->setAttribute(ctx, py_zerodivisionerror, zeroDivisionErrorType);
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__name__"), ctx->fromUTF8String("exceptions"));
 
     return mod;

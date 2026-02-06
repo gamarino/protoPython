@@ -3,6 +3,63 @@
 
 namespace protoPython {
 
+static const char* tokenToName(TokenType t) {
+    switch (t) {
+        case TokenType::Number: return "number";
+        case TokenType::String: return "string";
+        case TokenType::Name: return "name";
+        case TokenType::Plus: return "'+'";
+        case TokenType::Minus: return "'-'";
+        case TokenType::Star: return "'*'";
+        case TokenType::Slash: return "'/'";
+        case TokenType::LParen: return "'('";
+        case TokenType::RParen: return "')'";
+        case TokenType::Comma: return "','";
+        case TokenType::Newline: return "newline";
+        case TokenType::EndOfFile: return "EOF";
+        case TokenType::Dot: return "'.'";
+        case TokenType::LSquare: return "'['";
+        case TokenType::RSquare: return "']'";
+        case TokenType::LCurly: return "'{'";
+        case TokenType::RCurly: return "'}'";
+        case TokenType::Colon: return "':'";
+        case TokenType::Assign: return "'='";
+        case TokenType::EqEqual: return "'=='";
+        case TokenType::For: return "'for'";
+        case TokenType::In: return "'in'";
+        case TokenType::If: return "'if'";
+        case TokenType::Else: return "'else'";
+        case TokenType::Global: return "'global'";
+        case TokenType::Def: return "'def'";
+        case TokenType::Import: return "'import'";
+        case TokenType::From: return "'from'";
+        case TokenType::Class: return "'class'";
+        case TokenType::Return: return "'return'";
+        case TokenType::While: return "'while'";
+        case TokenType::True: return "'True'";
+        case TokenType::False: return "'False'";
+        case TokenType::None: return "'None'";
+        case TokenType::And: return "'and'";
+        case TokenType::Or: return "'or'";
+        case TokenType::Not: return "'not'";
+        case TokenType::Try: return "'try'";
+        case TokenType::Except: return "'except'";
+        case TokenType::Finally: return "'finally'";
+        case TokenType::Raise: return "'raise'";
+        case TokenType::Break: return "'break'";
+        case TokenType::Continue: return "'continue'";
+        case TokenType::Lambda: return "'lambda'";
+        case TokenType::With: return "'with'";
+        case TokenType::As: return "'as'";
+        case TokenType::Is: return "'is'";
+        case TokenType::Yield: return "'yield'";
+        case TokenType::Pass: return "'pass'";
+        case TokenType::Indent: return "indent";
+        case TokenType::Dedent: return "dedent";
+        default: return "unknown";
+    }
+}
+
 Parser::Parser(const std::string& source) : tok_(source) {
     advance();
 }
@@ -24,7 +81,22 @@ bool Parser::expect(TokenType t) {
         advance();
         return true;
     }
+    std::string msg = "expected ";
+    msg += tokenToName(t);
+    msg += ", but got ";
+    msg += tokenToName(cur_.type);
+    if (!cur_.value.empty()) msg += " ('" + cur_.value + "')";
+    error(msg);
     return false;
+}
+
+void Parser::error(const std::string& msg) {
+    if (!hasError_) {
+        hasError_ = true;
+        lastErrorMsg_ = msg;
+        lastErrorLine_ = cur_.line;
+        lastErrorColumn_ = cur_.column;
+    }
 }
 
 void Parser::skipNewlines() {

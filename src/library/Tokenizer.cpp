@@ -36,8 +36,7 @@ void Tokenizer::skipComment() {
 }
 
 Token Tokenizer::scanNumber() {
-    Token t;
-    t.type = TokenType::Number;
+    Token t = makeToken(TokenType::Number);
     size_t start = pos_;
     bool isFloat = false;
     while (pos_ < source_.size()) {
@@ -63,8 +62,7 @@ Token Tokenizer::scanNumber() {
 }
 
 Token Tokenizer::scanString(char quote) {
-    Token t;
-    t.type = TokenType::String;
+    Token t = makeToken(TokenType::String);
     pos_++; // consume opening quote
     std::string s;
     while (pos_ < source_.size()) {
@@ -94,8 +92,7 @@ Token Tokenizer::scanNameOrKeyword() {
         else
             break;
     }
-    Token t;
-    t.type = TokenType::Name;
+    Token t = makeToken(TokenType::Name);
     t.value = source_.substr(start, pos_ - start);
     if (t.value == "for") t.type = TokenType::For;
     else if (t.value == "in") t.type = TokenType::In;
@@ -103,6 +100,28 @@ Token Tokenizer::scanNameOrKeyword() {
     else if (t.value == "else") t.type = TokenType::Else;
     else if (t.value == "global") t.type = TokenType::Global;
     else if (t.value == "def") t.type = TokenType::Def;
+    else if (t.value == "import") t.type = TokenType::Import;
+    else if (t.value == "from") t.type = TokenType::From;
+    else if (t.value == "class") t.type = TokenType::Class;
+    else if (t.value == "return") t.type = TokenType::Return;
+    else if (t.value == "while") t.type = TokenType::While;
+    else if (t.value == "True") t.type = TokenType::True;
+    else if (t.value == "False") t.type = TokenType::False;
+    else if (t.value == "None") t.type = TokenType::None;
+    else if (t.value == "and") t.type = TokenType::And;
+    else if (t.value == "or") t.type = TokenType::Or;
+    else if (t.value == "not") t.type = TokenType::Not;
+    else if (t.value == "try") t.type = TokenType::Try;
+    else if (t.value == "except") t.type = TokenType::Except;
+    else if (t.value == "finally") t.type = TokenType::Finally;
+    else if (t.value == "raise") t.type = TokenType::Raise;
+    else if (t.value == "break") t.type = TokenType::Break;
+    else if (t.value == "continue") t.type = TokenType::Continue;
+    else if (t.value == "lambda") t.type = TokenType::Lambda;
+    else if (t.value == "with") t.type = TokenType::With;
+    else if (t.value == "as") t.type = TokenType::As;
+    else if (t.value == "is") t.type = TokenType::Is;
+    else if (t.value == "yield") t.type = TokenType::Yield;
     else if (t.value == "pass") t.type = TokenType::Pass;
     return t;
 }
@@ -116,9 +135,7 @@ Token Tokenizer::next() {
     if (atLineStart_) {
         atLineStart_ = false;
         if (pos_ >= source_.size()) {
-            Token t;
-            t.type = TokenType::EndOfFile;
-            return t;
+            return makeToken(TokenType::EndOfFile);
         }
         int indent = 0;
         while (pos_ < source_.size() && (source_[pos_] == ' ' || source_[pos_] == '\t')) {
@@ -130,57 +147,54 @@ Token Tokenizer::next() {
             skipComment();
             if (pos_ < source_.size() && source_[pos_] == '\n') {
                 pos_++;
+                line_++;
+                lineStartPos_ = pos_;
                 atLineStart_ = true;
             }
             return next();
         }
         if (indent > indentStack_.back()) {
             indentStack_.push_back(indent);
-            Token t;
-            t.type = TokenType::Indent;
-            return t;
+            return makeToken(TokenType::Indent);
         }
         if (indent < indentStack_.back()) {
             if (indentStack_.size() > 1)
                 indentStack_.pop_back();
-            Token t;
-            t.type = TokenType::Dedent;
-            return t;
+            return makeToken(TokenType::Dedent);
         }
         /* Same indent: fall through to read the next token (no skipWhitespace, we're past indent). */
     } else {
         skipWhitespace();
     }
     if (pos_ >= source_.size()) {
-        Token t;
-        t.type = TokenType::EndOfFile;
-        return t;
+        return makeToken(TokenType::EndOfFile);
     }
     char c = source_[pos_];
     if (c == '\n') {
+        Token t = makeToken(TokenType::Newline);
         pos_++;
+        line_++;
+        lineStartPos_ = pos_;
         atLineStart_ = true;
-        Token t;
-        t.type = TokenType::Newline;
         return t;
     }
-    if (c == '+') { pos_++; Token t; t.type = TokenType::Plus; return t; }
-    if (c == '-') { pos_++; Token t; t.type = TokenType::Minus; return t; }
-    if (c == '*') { pos_++; Token t; t.type = TokenType::Star; return t; }
-    if (c == '/') { pos_++; Token t; t.type = TokenType::Slash; return t; }
-    if (c == '(') { pos_++; Token t; t.type = TokenType::LParen; return t; }
-    if (c == ')') { pos_++; Token t; t.type = TokenType::RParen; return t; }
-    if (c == ',') { pos_++; Token t; t.type = TokenType::Comma; return t; }
-    if (c == '.') { pos_++; Token t; t.type = TokenType::Dot; return t; }
-    if (c == '[') { pos_++; Token t; t.type = TokenType::LSquare; return t; }
-    if (c == ']') { pos_++; Token t; t.type = TokenType::RSquare; return t; }
-    if (c == '{') { pos_++; Token t; t.type = TokenType::LCurly; return t; }
-    if (c == '}') { pos_++; Token t; t.type = TokenType::RCurly; return t; }
-    if (c == ':') { pos_++; Token t; t.type = TokenType::Colon; return t; }
+    if (c == '+') { Token t = makeToken(TokenType::Plus); pos_++; return t; }
+    if (c == '-') { Token t = makeToken(TokenType::Minus); pos_++; return t; }
+    if (c == '*') { Token t = makeToken(TokenType::Star); pos_++; return t; }
+    if (c == '/') { Token t = makeToken(TokenType::Slash); pos_++; return t; }
+    if (c == '(') { Token t = makeToken(TokenType::LParen); pos_++; return t; }
+    if (c == ')') { Token t = makeToken(TokenType::RParen); pos_++; return t; }
+    if (c == ',') { Token t = makeToken(TokenType::Comma); pos_++; return t; }
+    if (c == '.') { Token t = makeToken(TokenType::Dot); pos_++; return t; }
+    if (c == '[') { Token t = makeToken(TokenType::LSquare); pos_++; return t; }
+    if (c == ']') { Token t = makeToken(TokenType::RSquare); pos_++; return t; }
+    if (c == '{') { Token t = makeToken(TokenType::LCurly); pos_++; return t; }
+    if (c == '}') { Token t = makeToken(TokenType::RCurly); pos_++; return t; }
+    if (c == ':') { Token t = makeToken(TokenType::Colon); pos_++; return t; }
     if (c == '=' && pos_ + 1 < source_.size() && source_[pos_ + 1] == '=') {
-        pos_ += 2; Token t; t.type = TokenType::EqEqual; return t;
+        Token t = makeToken(TokenType::EqEqual); pos_ += 2; return t;
     }
-    if (c == '=') { pos_++; Token t; t.type = TokenType::Assign; return t; }
+    if (c == '=') { Token t = makeToken(TokenType::Assign); pos_++; return t; }
     if (c == '"' || c == '\'')
         return scanString(c);
     if (std::isdigit(static_cast<unsigned char>(c)))
@@ -201,8 +215,12 @@ const Token& Tokenizer::peek() {
     return peeked_;
 }
 
-bool Tokenizer::hasNext() const {
-    return pos_ < source_.size() || hasPeeked_;
+Token Tokenizer::makeToken(TokenType type) {
+    Token t;
+    t.type = type;
+    t.line = line_;
+    t.column = getColumn();
+    return t;
 }
 
 } // namespace protoPython
