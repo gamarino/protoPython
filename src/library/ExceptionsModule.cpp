@@ -93,15 +93,33 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx,
     const proto::ProtoString* py_exception = proto::ProtoString::fromUTF8String(ctx, "Exception");
     const proto::ProtoString* py_keyerror = proto::ProtoString::fromUTF8String(ctx, "KeyError");
     const proto::ProtoString* py_valueerror = proto::ProtoString::fromUTF8String(ctx, "ValueError");
+    const proto::ProtoString* py_nameerror = proto::ProtoString::fromUTF8String(ctx, "NameError");
+    const proto::ProtoString* py_attrerror = proto::ProtoString::fromUTF8String(ctx, "AttributeError");
+    const proto::ProtoString* py_syntaxerror = proto::ProtoString::fromUTF8String(ctx, "SyntaxError");
+    const proto::ProtoString* py_typeerror = proto::ProtoString::fromUTF8String(ctx, "TypeError");
+    const proto::ProtoString* py_importerror = proto::ProtoString::fromUTF8String(ctx, "ImportError");
+    const proto::ProtoString* py_kbdinterrupt = proto::ProtoString::fromUTF8String(ctx, "KeyboardInterrupt");
 
     const proto::ProtoObject* exceptionType = make_exception_type(ctx, objectProto, typeProto, "Exception", objectProto);
     const proto::ProtoObject* keyErrorType = make_exception_type(ctx, objectProto, typeProto, "KeyError", exceptionType);
     const proto::ProtoObject* valueErrorType = make_exception_type(ctx, objectProto, typeProto, "ValueError", exceptionType);
+    const proto::ProtoObject* nameErrorType = make_exception_type(ctx, objectProto, typeProto, "NameError", exceptionType);
+    const proto::ProtoObject* attributeErrorType = make_exception_type(ctx, objectProto, typeProto, "AttributeError", exceptionType);
+    const proto::ProtoObject* syntaxErrorType = make_exception_type(ctx, objectProto, typeProto, "SyntaxError", exceptionType);
+    const proto::ProtoObject* typeErrorType = make_exception_type(ctx, objectProto, typeProto, "TypeError", exceptionType);
+    const proto::ProtoObject* importErrorType = make_exception_type(ctx, objectProto, typeProto, "ImportError", exceptionType);
+    const proto::ProtoObject* keyboardInterruptType = make_exception_type(ctx, objectProto, typeProto, "KeyboardInterrupt", exceptionType);
 
     const proto::ProtoObject* mod = ctx->newObject(true);
     mod = mod->setAttribute(ctx, py_exception, exceptionType);
     mod = mod->setAttribute(ctx, py_keyerror, keyErrorType);
     mod = mod->setAttribute(ctx, py_valueerror, valueErrorType);
+    mod = mod->setAttribute(ctx, py_nameerror, nameErrorType);
+    mod = mod->setAttribute(ctx, py_attrerror, attributeErrorType);
+    mod = mod->setAttribute(ctx, py_syntaxerror, syntaxErrorType);
+    mod = mod->setAttribute(ctx, py_typeerror, typeErrorType);
+    mod = mod->setAttribute(ctx, py_importerror, importErrorType);
+    mod = mod->setAttribute(ctx, py_kbdinterrupt, keyboardInterruptType);
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__name__"), ctx->fromUTF8String("exceptions"));
 
     return mod;

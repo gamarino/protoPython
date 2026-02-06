@@ -22,6 +22,7 @@ add_library(protoPython SHARED
     PythonEnvironment.cpp
     PythonModuleProvider.cpp
     NativeModuleProvider.cpp
+    HPyModuleProvider.cpp
     SysModule.cpp
     TimeModule.cpp
     ThreadModule.cpp

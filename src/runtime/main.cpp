@@ -123,7 +123,7 @@ static bool parseArgs(int argc, char* argv[], CliOptions& opts, std::string& err
             opts.bytecodeOnly = true;
         } else if (arg == "--trace") {
             opts.trace = true;
-        } else if (arg == "--repl") {
+        } else if (arg == "--repl" || arg == "-i") {
             opts.repl = true;
         } else if (arg == "--path") {
             if (i + 1 >= argc) {

@@ -529,31 +529,48 @@ See [docs/NEXT_100_STEPS_HPY.md](../docs/NEXT_100_STEPS_HPY.md). Steps 1185–12
 
 See [docs/NEXT_20_STEPS_V63.md](../docs/NEXT_20_STEPS_V63.md). Steps 1185–1204: HPy context, handle table, core ABI (HPy_FromPyObject, HPy_AsPyObject, HPy_Dup, HPy_Close, HPy_GetAttr, HPy_SetAttr, HPy_Call, HPy_Type). Header include/protoPython/HPyContext.h, impl src/library/HPyContext.cpp, test test/library/TestHPyContext.cpp. Document and commit.
 
-- [x] Steps 1185–1204
+- [x] Steps 1185–1204 (completed)
 
-### 62.2 Next 20 Steps (v64) — HPy Phase 1 completion, Phase 2 start — pending
+### 62.2 Next 20 Steps (v64) — HPy Phase 1 completion, Phase 2 start — completed
 
-Steps 1205–1224: Module load (.so/.hpy.so), HPyModuleDef, init; universal ABI resolution. Document in NEXT_20_STEPS_V64.md; commit.
+Steps 1205–1224: Module load (.so/.hpy.so), HPyModuleDef, init; universal ABI resolution. Document in [NEXT_20_STEPS_V64.md](../docs/NEXT_20_STEPS_V64.md); commit.
 
-- [ ] Steps 1205–1224
+- [x] Steps 1205–1224 (completed)
 
-### 62.3 Next 20 Steps (v65) — Phase 2 universal ABI, Phase 3 start — pending
+### 62.3 Next 20 Steps (v65) — Phase 2 universal ABI, Phase 3 start — completed
 
-Steps 1225–1244: Universal ABI loading; entry points; import wiring; API subset. Document in NEXT_20_STEPS_V65.md; commit.
+Steps 1225–1244: Universal ABI loading; entry points; import wiring; API subset. Document in [NEXT_20_STEPS_V65.md](../docs/NEXT_20_STEPS_V65.md); commit.
 
-- [ ] Steps 1225–1244
+- [x] Steps 1225–1244 (completed)
 
-### 62.4 Next 20 Steps (v66) — Phase 3 API coverage — pending
+### 62.4 Next 20 Steps (v66) — Phase 3 API coverage — completed
 
-Steps 1245–1264: Number/sequence protocols, exceptions, object creation. Document in NEXT_20_STEPS_V66.md; commit.
+Steps 1245–1264: Number/sequence protocols, exceptions, object creation. Document in [NEXT_20_STEPS_V66.md](../docs/NEXT_20_STEPS_V66.md); commit.
 
-- [ ] Steps 1245–1264
+- [x] Steps 1245–1264 (completed)
 
-### 62.5 Next 20 Steps (v67) — Phase 4 ecosystem — pending
+### 62.5 Next 20 Steps (v67) — Phase 4 ecosystem — completed
 
-Steps 1265–1284: Documentation, tooling, build/distribute; final tests. Document in NEXT_20_STEPS_V67.md; commit.
+Steps 1265–1284: Documentation, tooling, build/distribute; final tests. Document in [NEXT_20_STEPS_V67.md](../docs/NEXT_20_STEPS_V67.md); commit.
 
-- [ ] Steps 1265–1284
+- [x] Steps 1265–1284 (completed)
 
----
-*Updated from plan implementation. Mark items complete as work progresses.*
+## 63. NEW MASTER PLAN: v68–v72 (Steps 1285–1384)
+
+See [docs/NEXT_100_STEPS_V68_V72.md](../docs/NEXT_100_STEPS_V68_V72.md).
+
+### 63.1 Next 20 Steps (v68) — HPy Finalization & REPL Foundation — completed
+
+Steps 1285–1304: ABI versioning, error reporting, string interning, REPL foundations. Document in [NEXT_20_STEPS_V68.md](../docs/NEXT_20_STEPS_V68.md); commit.
+
+- [x] Steps 1285–1304 (completed)
+
+### 63.2 Next 20 Steps (v69) — REPL Line Editing & UX — completed
+
+Steps 1305–1324: Basic input loop, multiline detection, history, SIGINT handling. Document in [NEXT_20_STEPS_V69.md](../docs/NEXT_20_STEPS_V69.md); commit.
+
+- [x] Steps 1305–1324 (completed)
+
+### 63.3 Next 20 Steps (v70) — High-Quality Error Reporting — pending
+
+- [ ] Steps 1325–1344 (v70)

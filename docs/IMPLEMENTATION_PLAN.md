@@ -26,10 +26,11 @@ The foundation of the runtime must be fully compatible with Python 3.14's semant
 
 **Implementation plan:** [NEXT_100_STEPS_HPY.md](NEXT_100_STEPS_HPY.md) — 100 steps (1185–1284) in 5 blocks of 20; each block documented and committed. v63 (1185–1204): Phase 1 foundation (context, handle table, core ABI). v64–v67: Phase 1 completion, Phase 2–4.
 
-- [x] **Phase 1: HPy runtime shim** (v63): HPy context and handle table implemented; core ABI (HPy_FromPyObject, HPy_AsPyObject, HPy_Dup, HPy_Close, HPy_GetAttr, HPy_SetAttr, HPy_Call, HPy_Type) in [HPyContext.h](include/protoPython/HPyContext.h), [HPyContext.cpp](src/library/HPyContext.cpp). Module loading (v64) pending.
-- [ ] **Phase 2: HPy universal ABI** (v64–v65): Support loading HPy modules built against the universal ABI (single binary, no Python-version coupling). Resolve HPy entry points (`HPyModuleDef`, init function) and wire them into the protoPython import system.
-- [ ] **Phase 3: HPy API coverage** (v65–v66): Implement the HPy API subset required by common HPy extensions (object creation, attribute access, calling, number/sequence protocols, exceptions). Prioritize modules relevant to protoPython's target workload.
-- [ ] **Phase 4: Ecosystem compatibility** (v67): Document how to build and distribute HPy extensions for protoPython. Ensure compatibility with `hpy` package and existing HPy tooling where feasible.
+- [x] **Phase 1: HPy runtime shim** (v63): HPy context and handle table implemented; core ABI done.
+- [x] **Phase 2: HPy universal ABI** (v64): Support loading HPy modules built against the universal ABI. `HPyModuleProvider` implemented. Done (v64).
+- [x] **Phase 3: HPy API coverage** (v65–v66): Implement additional HPy ABI (Object creation, numeric/string, protocols, collections, type creation). Done (v66).
+- [x] **Phase 4: Ecosystem compatibility** (v67): Documented build/distribute; final tests. Done (v67).
+- [/] **Phase 5: Interactive REPL & UX** (v68–v72): Implement CPython-style REPL, high-quality error messages, and final project polish. Phase 5.2 done (v69: line editing, history, multiline).
 
 *References: [HPy Documentation](https://docs.hpyproject.org/), [HPy API](https://docs.hpyproject.org/en/latest/api.html), [HPY_INTEGRATION_PLAN.md](HPY_INTEGRATION_PLAN.md).*
 

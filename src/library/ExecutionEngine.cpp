@@ -244,7 +244,15 @@ const proto::ProtoObject* executeBytecodeRange(
             const proto::ProtoObject* nameObj = names->getAt(ctx, arg);
             if (nameObj->isString(ctx)) {
                 const proto::ProtoObject* val = frame->getAttribute(ctx, nameObj->asString(ctx));
-                if (val && val != PROTO_NONE) stack.push_back(val);
+                if (val && val != PROTO_NONE) {
+                    stack.push_back(val);
+                } else {
+                    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+                    std::string name;
+                    nameObj->asString(ctx)->toUTF8String(ctx, name);
+                    if (env) env->raiseNameError(ctx, name);
+                    return PROTO_NONE;
+                }
             }
         } else if (op == OP_STORE_NAME && names && frame && static_cast<unsigned long>(arg) < names->getSize(ctx)) {
             i++;
@@ -740,7 +748,15 @@ const proto::ProtoObject* executeBytecodeRange(
             const proto::ProtoObject* nameObj = names->getAt(ctx, arg);
             if (nameObj->isString(ctx)) {
                 const proto::ProtoObject* val = obj->getAttribute(ctx, nameObj->asString(ctx));
-                if (val) stack.push_back(val);
+                if (val && val != PROTO_NONE) {
+                    stack.push_back(val);
+                } else {
+                    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+                    std::string attr;
+                    nameObj->asString(ctx)->toUTF8String(ctx, attr);
+                    if (env) env->raiseAttributeError(ctx, obj, attr);
+                    return PROTO_NONE;
+                }
             }
         } else if (op == OP_STORE_ATTR && names && stack.size() >= 2 && static_cast<unsigned long>(arg) < names->getSize(ctx)) {
             i++;

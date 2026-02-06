@@ -199,17 +199,52 @@ public:
     static void unregisterContext(proto::ProtoContext* ctx);
 
     /**
-     * @brief Records a KeyError as the pending exception (for container operations).
+     * @brief Records a KeyError as the pending exception.
      */
     void raiseKeyError(proto::ProtoContext* context, const proto::ProtoObject* key);
 
-    /**
-     * @brief Records a ValueError as the pending exception (for container operations).
-     */
     void raiseValueError(proto::ProtoContext* context, const proto::ProtoObject* msg);
+    void raiseNameError(proto::ProtoContext* context, const std::string& name);
+    void raiseAttributeError(proto::ProtoContext* context, const proto::ProtoObject* obj, const std::string& attr);
+    void raiseTypeError(proto::ProtoContext* context, const std::string& msg);
+    void raiseImportError(proto::ProtoContext* context, const std::string& msg);
+    void raiseKeyboardInterrupt(proto::ProtoContext* context);
+
+    /**
+     * @brief Returns true if this environment is running in interactive mode.
+     */
+    bool isInteractive() const { return isInteractive_; }
+
+    /**
+     * @brief Sets the interactive mode flag (Step 1309).
+     */
+    void setInteractive(bool interactive) { isInteractive_ = interactive; }
+
+    /**
+     * @brief Formats and prints an exception to the given stream (Step 1325).
+     */
+    void handleException(const proto::ProtoObject* exc, const proto::ProtoObject* frame = nullptr, std::ostream& out = std::cerr);
+
+    /**
+     * @brief Implementation of structured exception formatting (Step 1325-1327).
+     */
+    std::string formatException(const proto::ProtoObject* exc, const proto::ProtoObject* frame = nullptr);
+
+    /**
+     * @brief Formats a traceback starting from the given context (Step 1329).
+     */
+    std::string formatTraceback(const proto::ProtoContext* ctx);
+
+    /**
+     * @brief Collects candidate names for fuzzy matching suggestions (Step 1328).
+     */
+    std::vector<std::string> collectCandidates(const proto::ProtoObject* frame);
 
 private:
     void initializeRootObjects(const std::string& stdLibPath, const std::vector<std::string>& searchPaths);
+
+    /** Helper: checks if a string is a complete Python statement/expression (Step 1307). */
+    bool isCompleteBlock(const std::string& code);
 
     proto::ProtoSpace* space_;
     proto::ProtoContext* context;
@@ -231,12 +266,26 @@ private:
     const proto::ProtoObject* builtinsModule;
     std::vector<std::string> argv_;
     int exitRequested_{0};
+    bool isInteractive_{false};
+    std::vector<std::string> replHistory_;
+    std::string primaryPrompt_{">>> "};
+    std::string secondaryPrompt_{"... "};
     ExecutionHook executionHook;
     const proto::ProtoObject* keyErrorType{nullptr};
     const proto::ProtoObject* valueErrorType{nullptr};
+    const proto::ProtoObject* nameErrorType{nullptr};
+    const proto::ProtoObject* attributeErrorType{nullptr};
+    const proto::ProtoObject* syntaxErrorType{nullptr};
+    const proto::ProtoObject* typeErrorType{nullptr};
+    const proto::ProtoObject* importErrorType{nullptr};
+    const proto::ProtoObject* keyboardInterruptType{nullptr};
     /** Incremented on invalidateResolveCache(); per-thread caches check this (lock-free). */
     mutable std::atomic<uint64_t> resolveCacheGeneration_{0};
     std::istream* stdin_{&std::cin};
+
+public:
+    /** Signal handling flag (Step 1310). */
+    static std::atomic<bool> s_sigintReceived;
 };
 
 } // namespace protoPython

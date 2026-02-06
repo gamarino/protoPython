@@ -38,6 +38,11 @@ This is not "AI-generated code" in the traditional sense; it is **AI-amplified a
 
 See [docs/INSTALLATION.md](docs/INSTALLATION.md) for installation procedures on Linux (.deb, .rpm, build from source), Windows, and macOS.
 
+## Documentation
+
+- [HPy User Guide](docs/HPY_USER_GUIDE.md): How to load and use HPy extensions.
+- [HPy Developer Guide](docs/HPY_DEVELOPER_GUIDE.md): How to write HPy modules for protoPython.
+
 ## Author
 
 Gustavo Marino <gamarino@gmail.com>
