@@ -433,15 +433,15 @@ See [docs/NEXT_20_STEPS_V47.md](../docs/NEXT_20_STEPS_V47.md). Steps 865–884: 
 
 ## 47. Next 20 Steps (v48) — completed
 
-See [docs/NEXT_20_STEPS_V48.md](../docs/NEXT_20_STEPS_V48.md). Steps 885–904: Foundation test fixes (SetBasic, MathLog, MathDist, SetattrAndCallable, MapBuiltin, StringDunders); OperatorInvert DISABLED_; TESTING, STUBS, todo updated.
+See [docs/NEXT_20_STEPS_V48.md](../docs/NEXT_20_STEPS_V48.md). Steps 885–904: Foundation test fixes (SetBasic, MathLog, MathDist, SetattrAndCallable with direct setAttribute/getAttribute and protoCore immutable model, MapBuiltin, StringDunders); OperatorInvert DISABLED_; TESTING, STUBS, todo updated.
 
 - [x] Steps 885–904
 
 ## 48. Next 20 Steps (v49) — in progress
 
-See [docs/NEXT_20_STEPS_V49.md](../docs/NEXT_20_STEPS_V49.md). Steps 905–924: v48 doc completion; ThreadModule stack-use-after-scope fix done; OperatorInvert DISABLED_ (direct asMethod returns nullptr; Python path works); py_setattr fix pending; py_log10 fix pending; SetattrAndCallable uses direct setAttribute.
+See [docs/NEXT_20_STEPS_V49.md](../docs/NEXT_20_STEPS_V49.md). Steps 905–924: v48 doc completion; ThreadModule stack-use-after-scope fix done; OperatorInvert DISABLED_ (direct asMethod returns nullptr; Python path works); SetattrAndCallable uses direct setAttribute/getAttribute; py_setattr/py_getattr (obj from posArgs) and py_log10 fixes deferred.
 
-- [ ] Steps 905–924 (ThreadModule done; OperatorInvert deferred; py_setattr, py_log10 pending)
+- [ ] Steps 905–924 (ThreadModule done; OperatorInvert, py_setattr, py_log10 deferred)
 
 ## 49. Next 20 Steps (v50) — in progress
 

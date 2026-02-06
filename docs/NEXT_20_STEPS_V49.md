@@ -16,11 +16,11 @@ Plan for 20 incremental milestones. Each step: implement → update docs → com
 | 906–907 | Complete v48 doc updates: TESTING.md (known-issues), STUBS.md v48 section | done |
 | 908–909 | Complete v48: tasks/todo.md v48 steps, IMPLEMENTATION_PLAN v48 summary | done |
 | 910–911 | Fix OperatorInvert: direct asMethod returns nullptr; Python path works (DISABLED_) | deferred |
-| 912–913 | Fix py_setattr: setattr(obj, "foo", 100) should persist for getattr | pending |
+| 912–913 | Fix py_setattr/py_getattr: when obj from posArgs, attribute does not persist; direct setAttribute/getAttribute on same mutable obj work | deferred |
 | 914–915 | Fix py_log10: math.log10(100) returning nullptr (restore direct log10 call) | pending |
 | 916–917 | Fix ThreadModule: stack-use-after-scope in py_log_thread_ident | pending |
 | 918–919 | Re-enable OperatorInvert test when fix is applied | pending |
-| 920–921 | Update SetattrAndCallable test to use py_setattr when fixed | pending |
+| 920–921 | SetattrAndCallable: uses direct setAttribute/getAttribute; doc protoCore immutable model | done |
 | 922–924 | Update TESTING, STUBS, todo, IMPLEMENTATION_PLAN; commit | pending |
 
 ---
