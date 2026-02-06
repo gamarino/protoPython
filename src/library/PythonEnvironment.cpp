@@ -4190,7 +4190,7 @@ void PythonEnvironment::raiseImportError(proto::ProtoContext* ctx, const std::st
     // Step 1337: ImportError Hints (search path)
     if (sysModule) {
         const proto::ProtoObject* pathObj = sysModule->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "path"));
-        if (pathObj && pathObj->isList(ctx)) {
+        if (pathObj && pathObj->asList(ctx)) {
             hintMsg += "\nSearch path: [";
             const proto::ProtoList* pathList = pathObj->asList(ctx);
             for (unsigned long i = 0; i < pathList->getSize(ctx); ++i) {
@@ -5142,11 +5142,30 @@ void PythonEnvironment::runRepl(std::istream& in, std::ostream& out) {
         
     std::string buffer;
     std::string line;
+    std::string currentIndent = "";
+
+    // Step 1348: PROTOPYSTARTUP support (Move after execFn is ready)
+    const char* startup = std::getenv("PROTOPYSTARTUP");
+    if (startup && startup[0] != '\0') {
+        std::ifstream f(startup);
+        if (f) {
+            std::stringstream ss;
+            ss << f.rdbuf();
+            std::string src = ss.str();
+            f.close();
+            const proto::ProtoList* startupArgs = context->newList()->appendLast(context, context->fromUTF8String(src.c_str()))->appendLast(context, frame);
+            execFn->asMethod(context)(context, const_cast<proto::ProtoObject*>(builtinsModule), nullptr, startupArgs, nullptr);
+            if (const proto::ProtoObject* startupExc = takePendingException()) {
+                handleException(startupExc, frame, out);
+            }
+        }
+    }
     
     while (true) {
         if (s_sigintReceived.exchange(false)) {
             out << "KeyboardInterrupt\n";
             buffer.clear();
+            currentIndent = "";
         }
         
         // Refresh prompts from sys if they exist (Step 1319)
@@ -5157,7 +5176,7 @@ void PythonEnvironment::runRepl(std::istream& in, std::ostream& out) {
             if (ps2Obj && ps2Obj->isString(context)) ps2Obj->asString(context)->toUTF8String(context, secondaryPrompt_);
         }
 
-        out << (buffer.empty() ? primaryPrompt_ : secondaryPrompt_) << std::flush;
+        out << (buffer.empty() ? primaryPrompt_ : secondaryPrompt_) << currentIndent << std::flush;
         
         if (!std::getline(in, line)) {
             if (in.eof()) break;
@@ -5167,14 +5186,47 @@ void PythonEnvironment::runRepl(std::istream& in, std::ostream& out) {
         
         if (line == "exit()" || line == "quit()") break;
         
+        // Step 1349: %debug magic
+        if (line == "%debug") {
+            if (sysModule) {
+                const proto::ProtoObject* lastExc = sysModule->getAttribute(context, proto::ProtoString::fromUTF8String(context, "last_value"));
+                if (lastExc && lastExc != PROTO_NONE) {
+                    out << "Post-mortem debugger (stub):\n";
+                    out << formatException(lastExc, frame) << "\n";
+                } else {
+                    out << "No exception to debug.\n";
+                }
+            }
+            continue;
+        }
+
+        // Step 1345: Auto-indentation (Prepend current indent to line)
+        line = currentIndent + line;
+        
         // Step 1315: Empty Line Handling
         if (buffer.empty() && line.empty()) continue;
         
         buffer += line + "\n";
         
         if (!isCompleteBlock(buffer)) {
+            // Calculate indentation for next line
+            currentIndent = "";
+            size_t i = 0;
+            while (i < line.size() && (line[i] == ' ' || line[i] == '\t')) {
+                currentIndent += line[i];
+                i++;
+            }
+            // If ends with ':', increase (heuristic)
+            std::string trimmed = line;
+            trimmed.erase(0, trimmed.find_first_not_of(" \t\r\n"));
+            trimmed.erase(trimmed.find_last_not_of(" \t\r\n") + 1);
+            if (!trimmed.empty() && trimmed.back() == ':') {
+                currentIndent += "    "; // 4 spaces
+            }
             continue;
         }
+        
+        currentIndent = "";
         
         // Step 1311: History (Simple in-memory for now)
         replHistory_.push_back(buffer);

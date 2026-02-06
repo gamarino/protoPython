@@ -573,3 +573,6 @@ Steps 1305–1324: Basic input loop, multiline detection, history, SIGINT handli
 
 ### 63.3 Next 20 Steps (v70) — High-Quality Error Reporting — completed
 - [x] Steps 1325–1344 (v70)
+
+### 63.4 Next 20 Steps (v71) — Advanced REPL Features — completed
+- [x] Steps 1345–1364 (v71)

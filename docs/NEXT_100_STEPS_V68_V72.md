@@ -39,12 +39,15 @@ This plan covers the transition from HPy completion to a high-quality REPL and f
 - [ ] 1344: Finalize the error reporting engine.
 
 ## Block v71: Advanced REPL Features (1345–1364)
-*Focus: UX and productivity.*
-- [ ] 1345: Implement auto-indentation in multiline mode.
-- [ ] 1346: Add syntax highlighting for the input line.
-- [ ] 1347: Implement `help()` and `dir()` integration for native objects.
-- [ ] 1348: Support the `PYTHONSTARTUP` equivalent for `protopy`.
-- [ ] 1349: Add a `%debug` magic-like facility for inspection.
+*Focus: Productivity, inspection, and startup configuration.*
+- [x] 1345: Auto-indentation for multiline blocks.
+- [x] 1346: Basic syntax highlighting (ANSI colors).
+- [x] 1347: help()/dir() integration in BuiltinsModule.
+- [x] 1348: PROTOPYSTARTUP execution.
+- [x] 1349: %debug magic facility for post-mortem analysis.
+- [x] 1350: Tab-completion enhancements.
+- [x] 1351: Multiline paste improvements.
+- [x] 1352: REPL banner and environment info refinements.
 - [ ] 1364: Finalize the advanced interactive experience.
 
 ## Block v72: Final Integration & Pending Points (1365–1384)

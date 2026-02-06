@@ -505,9 +505,56 @@ static const proto::ProtoObject* py_dir(
     const proto::ProtoSparseList* keywordParameters) {
     (void)parentLink;
     (void)keywordParameters;
-    (void)self;
-    (void)positionalParameters;
-    return context->newList()->asObject(context);
+    
+    const proto::ProtoObject* target = nullptr;
+    if (positionalParameters->getSize(context) >= 1) {
+        target = positionalParameters->getAt(context, 0);
+    } else {
+        // Without args, dir() should show locals. In our environment, 
+        // we might not have easy access to the exact local frame here.
+        // Return an empty list for now or try to get it from PythonEnvironment.
+        return context->newList()->asObject(context);
+    }
+
+    if (!target) return context->newList()->asObject(context);
+
+    std::vector<std::string> names;
+    auto collect = [&](const proto::ProtoObject* obj) {
+        if (!obj) return;
+        const proto::ProtoSparseList* attrs = obj->getAttributes(context);
+        if (attrs) {
+            auto* it = const_cast<proto::ProtoSparseListIterator*>(attrs->getIterator(context));
+            while (it && it->hasNext(context)) {
+                unsigned long key = it->nextKey(context);
+                const proto::ProtoString* s = reinterpret_cast<const proto::ProtoString*>(key);
+                if (s) {
+                    std::string name;
+                    s->toUTF8String(context, name);
+                    if (!name.empty()) names.push_back(name);
+                }
+                it = const_cast<proto::ProtoSparseListIterator*>(it->advance(context));
+            }
+        }
+    };
+
+    collect(target);
+    std::sort(names.begin(), names.end());
+    names.erase(std::unique(names.begin(), names.end()), names.end());
+
+    const proto::ProtoList* result = context->newList();
+    for (const auto& name : names) {
+        result = result->appendLast(context, context->fromUTF8String(name.c_str()));
+    }
+    
+    // Wrap in a Python list object (Step 1347 fix)
+    const proto::ProtoObject* listType = self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "list"));
+    if (listType && listType != PROTO_NONE) {
+        const proto::ProtoObject* listObj = listType->newChild(context, true);
+        listObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), result->asObject(context));
+        return listObj;
+    }
+
+    return result->asObject(context);
 }
 
 /** input([prompt]): read line from stdin, return as string. */
@@ -657,10 +704,51 @@ static const proto::ProtoObject* py_help(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
-    (void)self;
+    (void)self; 
     (void)parentLink;
-    (void)positionalParameters;
     (void)keywordParameters;
+
+    if (positionalParameters->getSize(context) == 0) {
+        std::cout << "Welcome to protoPython 0.1.0 help!\n"
+                  << "If this is your first time using Python, you should definitely check out\n"
+                  << "the tutorial on the Internet at https://docs.python.org/3/tutorial/.\n\n"
+                  << "Enter the name of any module, keyword, or topic to get help on writing\n"
+                  << "Python programs and using Python modules.  To quit this help utility and\n"
+                  << "return to the interpreter, just type \"quit\".\n\n"
+                  << "To get help on an object, type help(object).\n";
+        return PROTO_NONE;
+    }
+
+    const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
+    const proto::ProtoObject* type = obj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__class__"));
+    std::string typeName = "object";
+    if (type) {
+        const proto::ProtoObject* nameAttr = type->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__name__"));
+        if (nameAttr && nameAttr->isString(context)) nameAttr->asString(context)->toUTF8String(context, typeName);
+    }
+
+    std::cout << "Help on " << typeName << " object:\n";
+    
+    // Attempt to call __repr__
+    const proto::ProtoObject* reprMethod = obj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__repr__"));
+    if (reprMethod && reprMethod->asMethod(context)) {
+        const proto::ProtoObject* r = reprMethod->asMethod(context)(context, obj, nullptr, context->newList(), nullptr);
+        if (r && r->isString(context)) {
+            std::string s;
+            r->asString(context)->toUTF8String(context, s);
+            std::cout << "  Value: " << s << "\n";
+        }
+    }
+
+    const proto::ProtoObject* doc = obj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__doc__"));
+    if (doc && doc->isString(context)) {
+        std::string s;
+        doc->asString(context)->toUTF8String(context, s);
+        std::cout << "\n  Docstring:\n    " << s << "\n";
+    } else {
+        std::cout << "\n  (No docstring found for this object)\n";
+    }
+
     return PROTO_NONE;
 }
 
