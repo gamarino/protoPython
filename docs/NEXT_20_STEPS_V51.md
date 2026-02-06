@@ -21,7 +21,7 @@ Plan for 20 incremental milestones. Each step: implement → update docs → com
 | 956–957 | ThreadModule: stack-use-after-scope fix (py_log_thread_ident) — document status | pending |
 | 958–959 | py_log10: math.log10(100) workaround (math.log(100, 10)); restore direct log10 when fixed | pending |
 | 960–962 | OperatorInvert: DISABLED_; direct asMethod returns nullptr; Python path works | done |
-| 963–964 | Commit: docs/NEXT_20_STEPS_V51.md, todo, IMPLEMENTATION_PLAN, STUBS, TESTING | pending |
+| 963–964 | Commit: docs/NEXT_20_STEPS_V51.md, todo, IMPLEMENTATION_PLAN, STUBS, TESTING | done |
 
 ---
 

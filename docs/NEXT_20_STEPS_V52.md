@@ -19,7 +19,7 @@ Plan for 20 incremental milestones. Each step: implement → update docs → com
 | 972–973 | STUBS.md: v52 section | done |
 | 974–976 | NEXT_20_STEPS_V49/V50: mark doc steps done where applicable | done |
 | 977–980 | Consolidate lessons: protoCore immutable model, py_setattr/py_getattr posArgs, OperatorInvert C++ harness | done |
-| 981–984 | Commit: docs/NEXT_20_STEPS_V51.md, NEXT_20_STEPS_V52.md; todo; IMPLEMENTATION_PLAN; STUBS; TESTING | pending |
+| 981–984 | Commit: docs/NEXT_20_STEPS_V51.md, NEXT_20_STEPS_V52.md; todo; IMPLEMENTATION_PLAN; STUBS; TESTING | done |
 
 ---
 
