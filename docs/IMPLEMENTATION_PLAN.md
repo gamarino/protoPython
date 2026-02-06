@@ -139,7 +139,7 @@ We aim for "No-Modification" compatibility with CPython tests.
 
 **Completed: Next 20 Steps v48 (885–904).** See [NEXT_20_STEPS_V48.md](NEXT_20_STEPS_V48.md). Foundation test fixes: SetBasic, MathLog (log(100,10) workaround), MathDist, SetattrAndCallable (direct setAttribute), MapBuiltin, StringDunders. OperatorInvert DISABLED_; TESTING, STUBS, todo updated.
 
-**In progress: Next 20 Steps v49 (905–924).** See [NEXT_20_STEPS_V49.md](NEXT_20_STEPS_V49.md). v48 doc completion; OperatorInvert fix; py_setattr fix; py_log10 fix; ThreadModule stack-use-after-scope fix.
+**In progress: Next 20 Steps v49 (905–924).** See [NEXT_20_STEPS_V49.md](NEXT_20_STEPS_V49.md). v48 doc completion; ThreadModule stack-use-after-scope fix done; OperatorInvert DISABLED_ (direct asMethod returns nullptr; Python path works); py_setattr, py_log10 fixes pending.
 
 **In progress: Next 20 Steps v50 (925–944).** See [NEXT_20_STEPS_V50.md](NEXT_20_STEPS_V50.md). tasks/todo.md v49/v50; IMPLEMENTATION_PLAN, STUBS, TESTING updated; lessons captured; commit.
 

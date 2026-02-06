@@ -288,7 +288,7 @@ Reserved for v36. No new stub entries in this batch (v36 focused on documentatio
 |------|--------|-------|
 | SetBasic, MathLog, MathDist, MapBuiltin, StringDunders | Pass | v48 fixes applied. MathLog uses log(100,10) workaround. |
 | SetattrAndCallable | Pass | Uses direct setAttribute; py_setattr persistence fix pending. |
-| OperatorInvert | DISABLED_ | operator.invert(5) returns nullptr; root cause TBD. |
+| OperatorInvert | DISABLED_ | C++ direct asMethod returns nullptr; Python script path works (v49). |
 | ThreadModule | ASan stack-use-after-scope | py_log_thread_ident; fix pending. |
 
 ## Python stdlib — New stubs

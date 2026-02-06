@@ -15,7 +15,7 @@ Plan for 20 incremental milestones. Each step: implement → update docs → com
 | 905 | Create NEXT_20_STEPS_V49.md | done |
 | 906–907 | Complete v48 doc updates: TESTING.md (known-issues), STUBS.md v48 section | done |
 | 908–909 | Complete v48: tasks/todo.md v48 steps, IMPLEMENTATION_PLAN v48 summary | done |
-| 910–911 | Fix OperatorInvert: root cause of operator.invert(5) returning nullptr | pending |
+| 910–911 | Fix OperatorInvert: direct asMethod returns nullptr; Python path works (DISABLED_) | deferred |
 | 912–913 | Fix py_setattr: setattr(obj, "foo", 100) should persist for getattr | pending |
 | 914–915 | Fix py_log10: math.log10(100) returning nullptr (restore direct log10 call) | pending |
 | 916–917 | Fix ThreadModule: stack-use-after-scope in py_log_thread_ident | pending |

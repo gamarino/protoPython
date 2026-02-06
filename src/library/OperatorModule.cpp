@@ -6,8 +6,15 @@ namespace protoPython {
 namespace operator_ {
 
 static double toDouble(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
+    if (!obj || obj == PROTO_NONE) return 0.0;
     if (obj->isDouble(ctx)) return obj->asDouble(ctx);
     if (obj->isInteger(ctx)) return static_cast<double>(obj->asLong(ctx));
+    /* Handle Python-style __data__ wrapper (e.g. int/float in __data__). */
+    const proto::ProtoObject* data = obj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__data__"));
+    if (data && data != PROTO_NONE) {
+        if (data->isDouble(ctx)) return data->asDouble(ctx);
+        if (data->isInteger(ctx)) return static_cast<double>(data->asLong(ctx));
+    }
     return 0.0;
 }
 
@@ -156,16 +163,21 @@ static const proto::ProtoObject* py_invert(
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* a = posArgs->getAt(ctx, 0);
-    /* Handle Python int (object with __data__) or raw ProtoInteger. */
+    if (!a || a == PROTO_NONE) return PROTO_NONE;
     long long n = 0;
-    if (a && a->isInteger(ctx)) {
+    if (a->isInteger(ctx)) {
         try { n = a->asLong(ctx); } catch (...) { return PROTO_NONE; }
-    } else if (a) {
+    } else {
         const proto::ProtoObject* data = a->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__data__"));
         if (data && data != PROTO_NONE && data->isInteger(ctx)) {
             try { n = data->asLong(ctx); } catch (...) { return PROTO_NONE; }
-        } else return PROTO_NONE;
-    } else return PROTO_NONE;
+        } else {
+            /* Fallback: toDouble handles Double and some wrappers (e.g. int-like). */
+            double d = toDouble(ctx, a);
+            n = static_cast<long long>(d);
+            if (static_cast<double>(n) != d) return PROTO_NONE;  /* Not an integer value */
+        }
+    }
     return ctx->fromInteger(static_cast<long long>(~static_cast<unsigned long long>(n)));
 }
 

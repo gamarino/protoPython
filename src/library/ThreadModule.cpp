@@ -135,14 +135,15 @@ static const proto::ProtoObject* py_log_thread_ident(
     const proto::ParentLink* /*parentLink*/,
     const proto::ProtoList* posArgs,
     const proto::ProtoSparseList* /*kwargs*/) {
-    const char* label = "thread";
     if (posArgs && posArgs->getSize(ctx) >= 1 && posArgs->getAt(ctx, 0)->isString(ctx)) {
         std::string s;
         posArgs->getAt(ctx, 0)->asString(ctx)->toUTF8String(ctx, s);
-        label = s.empty() ? "thread" : s.c_str();
+        std::cerr << "[thread_ident] " << (s.empty() ? "thread" : s) << " pid=" << current_process_id()
+                  << " tid=" << current_thread_id() << "\n" << std::flush;
+    } else {
+        std::cerr << "[thread_ident] thread pid=" << current_process_id()
+                  << " tid=" << current_thread_id() << "\n" << std::flush;
     }
-    std::cerr << "[thread_ident] " << label << " pid=" << current_process_id()
-              << " tid=" << current_thread_id() << "\n" << std::flush;
     return PROTO_NONE;
 }
 

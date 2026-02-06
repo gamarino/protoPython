@@ -1741,7 +1741,7 @@ TEST_F(FoundationTest, ListIaddOrRemoveprefix) {
     EXPECT_EQ(data->asList(context)->getAt(context, 2)->asLong(context), 3);
 }
 
-/* operator.invert(5) returns nullptr in some contexts; root cause TBD (v48). */
+/* operator.invert(5) via direct asMethod returns nullptr in C++ test harness; Python script path works (v49). */
 TEST_F(FoundationTest, DISABLED_OperatorInvert) {
     proto::ProtoContext* context = env.getContext();
     const proto::ProtoObject* opMod = env.resolve("operator");
@@ -1846,8 +1846,8 @@ TEST_F(FoundationTest, SetattrAndCallable) {
     ASSERT_NE(getattrM, nullptr);
     ASSERT_NE(callableM, nullptr);
     proto::ProtoObject* obj = const_cast<proto::ProtoObject*>(context->newObject(true));
-    const proto::ProtoString* fooKey = proto::ProtoString::fromUTF8String(context, "foo");
-    obj->setAttribute(context, fooKey, context->fromInteger(100));
+    /* Use direct setAttribute; py_setattr does not persist attribute in C++ test harness (v49). */
+    obj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "foo"), context->fromInteger(100));
     const proto::ProtoList* getArgs = context->newList()->appendLast(context, obj)->appendLast(context, context->fromUTF8String("foo"));
     const proto::ProtoObject* got = getattrM->asMethod(context)(context, builtins, nullptr, getArgs, nullptr);
     ASSERT_NE(got, nullptr);
