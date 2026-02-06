@@ -48,7 +48,11 @@ This plan covers the transition from HPy completion to a high-quality REPL and f
 - [x] 1350: Tab-completion enhancements.
 - [x] 1351: Multiline paste improvements.
 - [x] 1352: REPL banner and environment info refinements.
-- [ ] 1364: Finalize the advanced interactive experience.
+- [x] 1353: Clear Screen command.
+- [x] 1354: System command support (!).
+- [x] 1355: Exit refinements.
+- [x] 1356: History view magic.
+- [x] 1364: Finalize the advanced interactive experience.
 
 ## Block v72: Final Integration & Pending Points (1365–1384)
 *Focus: Overall project polish and completion.*

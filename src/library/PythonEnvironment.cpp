@@ -5186,6 +5186,30 @@ void PythonEnvironment::runRepl(std::istream& in, std::ostream& out) {
         
         if (line == "exit()" || line == "quit()") break;
         
+        // Step 1354: System Commands
+        if (!line.empty() && line[0] == '!') {
+            std::string cmd = line.substr(1);
+            if (!cmd.empty()) {
+                int status = std::system(cmd.c_str());
+                (void)status;
+            }
+            continue;
+        }
+
+        // Step 1353: Clear Screen
+        if (line == "%clear" || line == "clear()") {
+            out << "\x1b[2J\x1b[H" << std::flush;
+            continue;
+        }
+
+        // Step 1356: History View
+        if (line == "%history") {
+            for (size_t i = 0; i < replHistory_.size(); ++i) {
+                out << i << ": " << replHistory_[i];
+            }
+            continue;
+        }
+        
         // Step 1349: %debug magic
         if (line == "%debug") {
             if (sysModule) {

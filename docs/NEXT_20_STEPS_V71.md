@@ -12,11 +12,11 @@ These steps (1345–1364) focus on Advanced REPL Features and productivity.
 | 1350 | [x] | Update todo.md | Done. |
 | 1351 | [x] | Update docs | Done. |
 | 1352 | [x] | Finalize v71 | Done. |
-| 1353 | [ ] | Clear Screen | Add a 'clear' or Ctrl-L command for the REPL. |
-| 1354 | [ ] | System Commands | Support prefixing lines with '!' to run shell commands. |
-| 1355 | [ ] | Exit confirmation | Handle partial clear/exit UX refinements. |
-| 1356 | [ ] | History Search | Improve history navigation (reverse search equivalent). |
-| 1364 | [ ] | Finalize v71 | Project-wide sync, documentation, and milestone commit. |
+| 1353 | [x] | Clear Screen | Added %clear and clear(). |
+| 1354 | [x] | System Commands | Added '!' prefix support. |
+| 1355 | [x] | Exit confirmation | Refined exit/quit handling. |
+| 1356 | [x] | History Search | Added %history magic. |
+| 1364 | [x] | Finalize v71 | Complete. |
 
 ---
 *Generated from the Master Plan v68-v72.*
