@@ -1,9 +1,10 @@
 # protoPython Testing Guide
 
-## protoCore string/rope (v58)
+## protoCore string/rope (v58–v59)
 
 - **Inline strings**: Strings of 1–7 ASCII (0–127) code points are stored in the tagged pointer; no cell allocation. Verified by protoCore `proto_tests` (e.g. primitives, module discovery).
 - **O(1) concat**: `ProtoString::appendLast` uses `ProtoTupleImplementation::tupleConcat` (one new tuple referencing left and right); no character copy. Rope structure: concat tuple has 2 slots (strings) and `actual_size` = total length.
+- **Indexing**: getAt(index) traverses tuple tree by length; O(depth) then O(1) at leaf. Iterator uses getProtoStringSize/getProtoStringGetAt; O(1) amortized per character.
 
 ## Bug fixes (diagnosis run)
 

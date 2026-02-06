@@ -157,7 +157,9 @@ We aim for "No-Modification" compatibility with CPython tests.
 
 **Completed: Next 20 Steps v57 (1065–1084).** See [NEXT_20_STEPS_V57.md](NEXT_20_STEPS_V57.md). DAP Phase 1 doc; venv and drop-in replacement (PACKAGING_ROADMAP); lessons v53–v57 consolidation.
 
-**Next 20 Steps v58 (1085–1104) — in progress.** See [NEXT_20_STEPS_V58.md](NEXT_20_STEPS_V58.md). Implementation Block 1100-1200 V2: strings as ProtoTuple only; inline string (up to 7 UTF-32 chars in tagged pointer); O(1) concat via tupleConcat; design doc [protoCore/docs/ROPES_AS_PROTOTUPLE.md](../../protoCore/docs/ROPES_AS_PROTOTUPLE.md).
+**Completed: Next 20 Steps v58 (1085–1104).** See [NEXT_20_STEPS_V58.md](NEXT_20_STEPS_V58.md). Implementation Block 1100-1200 V2: strings as ProtoTuple only; inline string (up to 7 UTF-32 chars in tagged pointer); O(1) concat via tupleConcat; design doc [protoCore/docs/ROPES_AS_PROTOTUPLE.md](../../protoCore/docs/ROPES_AS_PROTOTUPLE.md).
+
+**Next 20 Steps v59 (1105–1124) — in progress.** See [NEXT_20_STEPS_V59.md](NEXT_20_STEPS_V59.md). Clustering and index by tuple traverse; STRING_SUPPORT.md (ropes, inline, O(depth) indexing).
 
 ## 5. Debugging & IDE Support
 To be a viable replacement, `protoPython` must support professional developer workflows.

@@ -2,6 +2,13 @@
 
 This document describes string dunder methods and helpers implemented in protoPython.
 
+## protoCore representation (v58–v59)
+
+- **Ropes as ProtoTuple**: Long strings are represented exclusively as ProtoTuple. No dedicated rope node type. Concat = one ProtoTuple with 2 slots (left string, right string) and `actual_size` = total length; leaf = tuple of 1..TUPLE_SIZE character objects. See [protoCore/docs/ROPES_AS_PROTOTUPLE.md](../../protoCore/docs/ROPES_AS_PROTOTUPLE.md).
+- **Inline strings**: Up to 7 UTF-32 code units (ASCII 0–127) are stored in the tagged pointer (EMBEDDED_TYPE_INLINE_STRING); zero cell allocation.
+- **Indexing**: getAt(index) traverses the tuple tree by length (concat: if index < leftSize then recurse left else recurse right; leaf: slot[index]). Cost is O(depth) then O(1) at leaf.
+- **Iterator**: O(1) amortized per character; iterator holds string (inline or cell) and index, uses getProtoStringSize and getProtoStringGetAt.
+
 ## Dunder Methods
 
 - **`__iter__`**: Returns an iterator over characters (single-character strings). Wrapped strings only; raw string iteration has known stability issues (segfault when returning raw ProtoStringIterator).

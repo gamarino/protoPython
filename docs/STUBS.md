@@ -302,9 +302,9 @@ Reserved for v36. No new stub entries in this batch (v36 focused on documentatio
 - **venv**: Stub retained; document `--path` and `PROTOPY_BIN` for using protoPython in a venv. See [PACKAGING_ROADMAP.md](PACKAGING_ROADMAP.md).
 - **Drop-in replacement**: `PROTOPY_BIN` recommended; alias/symlink limitations documented in PACKAGING_ROADMAP.
 
-## Strings as ProtoTuple and inline (v58)
+## Strings as ProtoTuple and inline (v58–v59)
 
-- **protoCore**: ProtoString implemented as ProtoTuple only (concat = tuple of 2 strings, leaf = tuple of chars). Inline string: up to 7 UTF-32 code units in tagged pointer (EMBEDDED_TYPE_INLINE_STRING); zero cell allocation for short strings. O(1) concatenation via `tupleConcat`. See [protoCore/docs/ROPES_AS_PROTOTUPLE.md](../../protoCore/docs/ROPES_AS_PROTOTUPLE.md).
+- **protoCore**: ProtoString implemented as ProtoTuple only (concat = tuple of 2 strings, leaf = tuple of chars). Inline string: up to 7 UTF-32 code units in tagged pointer (EMBEDDED_TYPE_INLINE_STRING); zero cell allocation for short strings. O(1) concatenation via `tupleConcat`. Indexing: getAt traverses tuple tree by length (O(depth) then O(1) at leaf). Iterator O(1) amortized per character. See [protoCore/docs/ROPES_AS_PROTOTUPLE.md](../../protoCore/docs/ROPES_AS_PROTOTUPLE.md) and [STRING_SUPPORT.md](STRING_SUPPORT.md).
 
 ## Foundation tests (v48–v55)
 

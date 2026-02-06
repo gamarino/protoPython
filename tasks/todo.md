@@ -491,11 +491,17 @@ See [docs/NEXT_20_STEPS_V57.md](../docs/NEXT_20_STEPS_V57.md). Steps 1065–1084
 
 - [x] Steps 1065–1084
 
-## 57. Next 20 Steps (v58) — Implementation Block 1100-1200 V2 — in progress
+## 57. Next 20 Steps (v58) — Implementation Block 1100-1200 V2 — completed
 
 See [docs/NEXT_20_STEPS_V58.md](../docs/NEXT_20_STEPS_V58.md). Steps 1085–1104: Strings as ProtoTuple only; inline string (up to 7 UTF-32 chars in tagged pointer); O(1) concat via tupleConcat; design doc ROPES_AS_PROTOTUPLE; protoCore changes; todo, IMPLEMENTATION_PLAN, STUBS, TESTING.
 
-- [ ] Steps 1085–1104
+- [x] Steps 1085–1104
+
+## 58. Next 20 Steps (v59) — Clustering and index by tuple traverse — in progress
+
+See [docs/NEXT_20_STEPS_V59.md](../docs/NEXT_20_STEPS_V59.md). Steps 1105–1124: Clustering in 64-byte tuple cells; getAt by tuple traverse; getSize/iterator; STRING_SUPPORT.md update; todo, IMPLEMENTATION_PLAN, STUBS, TESTING.
+
+- [ ] Steps 1105–1124
 
 ---
 *Updated from plan implementation. Mark items complete as work progresses.*
