@@ -1,5 +1,10 @@
 # protoPython Testing Guide
 
+## protoCore string/rope (v58)
+
+- **Inline strings**: Strings of 1–7 ASCII (0–127) code points are stored in the tagged pointer; no cell allocation. Verified by protoCore `proto_tests` (e.g. primitives, module discovery).
+- **O(1) concat**: `ProtoString::appendLast` uses `ProtoTupleImplementation::tupleConcat` (one new tuple referencing left and right); no character copy. Rope structure: concat tuple has 2 slots (strings) and `actual_size` = total length.
+
 ## Bug fixes (diagnosis run)
 
 - **getAttribute for non-OBJECT types** (protoCore): `ProtoObject::getAttribute()` assumed `currentObject` was always a `ProtoObjectCell` (tag 0). When the receiver was e.g. a `Double` (tag 15), the loop caused a type mismatch / crash. Fixed by delegating to `currentObject->getPrototype(context)` when the current object is not `POINTER_TAG_OBJECT`, so attribute lookup follows the prototype chain for all types.

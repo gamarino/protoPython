@@ -491,5 +491,11 @@ See [docs/NEXT_20_STEPS_V57.md](../docs/NEXT_20_STEPS_V57.md). Steps 1065–1084
 
 - [x] Steps 1065–1084
 
+## 57. Next 20 Steps (v58) — Implementation Block 1100-1200 V2 — in progress
+
+See [docs/NEXT_20_STEPS_V58.md](../docs/NEXT_20_STEPS_V58.md). Steps 1085–1104: Strings as ProtoTuple only; inline string (up to 7 UTF-32 chars in tagged pointer); O(1) concat via tupleConcat; design doc ROPES_AS_PROTOTUPLE; protoCore changes; todo, IMPLEMENTATION_PLAN, STUBS, TESTING.
+
+- [ ] Steps 1085–1104
+
 ---
 *Updated from plan implementation. Mark items complete as work progresses.*
