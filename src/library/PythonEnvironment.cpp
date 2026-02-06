@@ -66,6 +66,21 @@ static const proto::ProtoObject* py_object_repr(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
+    if (self->isInteger(context)) {
+        return context->fromUTF8String(std::to_string(self->asLong(context)).c_str());
+    }
+    if (self->isDouble(context)) {
+        return context->fromUTF8String(std::to_string(self->asDouble(context)).c_str());
+    }
+    if (self->isString(context)) {
+        std::string s;
+        self->asString(context)->toUTF8String(context, s);
+        return context->fromUTF8String(("'" + s + "'").c_str());
+    }
+    if (self == PROTO_TRUE) return context->fromUTF8String("True");
+    if (self == PROTO_FALSE) return context->fromUTF8String("False");
+    if (self == PROTO_NONE) return context->fromUTF8String("None");
+
     // Basic <object at 0x...> repr
     char buffer[64];
     snprintf(buffer, sizeof(buffer), "<object at %p>", (void*)self);
@@ -186,6 +201,13 @@ static const proto::ProtoObject* py_object_str(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
+    if (self->isString(context)) return self;
+    if (self->isInteger(context)) return context->fromUTF8String(std::to_string(self->asLong(context)).c_str());
+    if (self->isDouble(context)) return context->fromUTF8String(std::to_string(self->asDouble(context)).c_str());
+    if (self == PROTO_TRUE) return context->fromUTF8String("True");
+    if (self == PROTO_FALSE) return context->fromUTF8String("False");
+    if (self == PROTO_NONE) return context->fromUTF8String("None");
+
     // Default str(obj) calls repr(obj)
     return self->call(context, nullptr, proto::ProtoString::fromUTF8String(context, "__repr__"), self, nullptr);
 }
@@ -4615,6 +4637,16 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     boolPrototype = boolPrototype->setAttribute(context, py_class, typePrototype);
     boolPrototype = boolPrototype->setAttribute(context, py_name, context->fromUTF8String("bool"));
     boolPrototype = boolPrototype->setAttribute(context, py_call, context->fromMethod(const_cast<proto::ProtoObject*>(boolPrototype), py_bool_call));
+    
+    // V72: Register core prototypes in ProtoSpace so primitives can resolve methods
+    space_->objectPrototype = const_cast<proto::ProtoObject*>(objectPrototype);
+    space_->stringPrototype = const_cast<proto::ProtoObject*>(strPrototype);
+    space_->smallIntegerPrototype = const_cast<proto::ProtoObject*>(intPrototype);
+    space_->doublePrototype = const_cast<proto::ProtoObject*>(floatPrototype);
+    space_->booleanPrototype = const_cast<proto::ProtoObject*>(boolPrototype);
+    space_->listPrototype = const_cast<proto::ProtoObject*>(listPrototype);
+    space_->tuplePrototype = const_cast<proto::ProtoObject*>(tuplePrototype);
+    space_->sparseListPrototype = const_cast<proto::ProtoObject*>(dictPrototype);
 
     // 5. Initialize Native Module Provider
     auto& registry = proto::ProviderRegistry::instance();
@@ -4732,6 +4764,42 @@ int PythonEnvironment::runModuleMain(const std::string& moduleName) {
             std::cerr << "[proto-thread-diag] runModuleMain calling main (user def)\n" << std::flush;
         callAttr->asMethod(context)(context, const_cast<proto::ProtoObject*>(mainAttr), nullptr, emptyArgs, nullptr);
         return 0;
+    }
+    return 0;
+}
+
+int PythonEnvironment::executeString(const std::string& source, const std::string& name) {
+    const proto::ProtoObject* mod = resolve("__main__");
+    if (mod == nullptr || mod == PROTO_NONE) {
+        // Create a dummy __main__ if it doesn't exist
+        const proto::ProtoString* mainName = proto::ProtoString::fromUTF8String(context, "__main__");
+        mod = objectPrototype->newChild(context, true);
+        const_cast<proto::ProtoObject*>(mod)->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__name__"), mainName->asObject(context));
+        const_cast<proto::ProtoObject*>(mod)->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__file__"), context->fromUTF8String(name.c_str()));
+
+        // Add to sys.modules (Step V72)
+        const proto::ProtoObject* modules = sysModule->getAttribute(context, proto::ProtoString::fromUTF8String(context, "modules"));
+        if (modules) {
+            modules->setAttribute(context, mainName, mod);
+        }
+    }
+
+    // Always ensure __builtins__ is available in __main__ globals
+    const_cast<proto::ProtoObject*>(mod)->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__builtins__"), builtinsModule);
+
+    if (builtinsModule) {
+        const proto::ProtoObject* execFn = builtinsModule->getAttribute(context, proto::ProtoString::fromUTF8String(context, "exec"));
+        if (execFn) {
+            const proto::ProtoList* args = context->newList()
+                ->appendLast(context, context->fromUTF8String(source.c_str()))
+                ->appendLast(context, const_cast<proto::ProtoObject*>(mod));
+            execFn->asMethod(context)(context, builtinsModule, nullptr, args, nullptr);
+            const proto::ProtoObject* excAfterExec = takePendingException();
+            if (excAfterExec && excAfterExec != PROTO_NONE) {
+                handleException(excAfterExec, mod, std::cerr);
+                return -2;
+            }
+        }
     }
     return 0;
 }

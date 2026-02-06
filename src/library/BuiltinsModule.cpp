@@ -85,7 +85,7 @@ static const proto::ProtoObject* py_print(
 
         if (i < size - 1) std::cout << sep;
     }
-    std::cout << end;
+    std::cout << end << std::flush;
     return PROTO_NONE;
 }
 

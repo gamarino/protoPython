@@ -576,3 +576,7 @@ Steps 1305–1324: Basic input loop, multiline detection, history, SIGINT handli
 
 ### 63.4 Next 20 Steps (v71) — Advanced REPL Features — completed
 - [x] Steps 1345–1364 (v71)
+
+### 63.5 Next 20 Steps (v72) — in progress
+- [x] Step 1366: CLI Parity and Fixes (native method invocation, ProtoSpace prototype registration)
+- [ ] Steps 1365, 1367–1384

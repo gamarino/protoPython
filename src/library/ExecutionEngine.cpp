@@ -203,6 +203,9 @@ static bool isTruthy(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
 
 static const proto::ProtoObject* invokeCallable(proto::ProtoContext* ctx,
     const proto::ProtoObject* callable, const proto::ProtoList* args) {
+    if (callable->asMethod(ctx)) {
+        return callable->asMethod(ctx)(ctx, callable, nullptr, args, nullptr);
+    }
     const proto::ProtoObject* callAttr = callable->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__call__"));
     if (!callAttr || !callAttr->asMethod(ctx)) return PROTO_NONE;
     return callAttr->asMethod(ctx)(ctx, callable, nullptr, args, nullptr);
