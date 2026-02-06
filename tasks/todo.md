@@ -525,11 +525,11 @@ See [docs/NEXT_20_STEPS_V62.md](../docs/NEXT_20_STEPS_V62.md). Steps 1165–1184
 
 See [docs/NEXT_100_STEPS_HPY.md](../docs/NEXT_100_STEPS_HPY.md). Steps 1185–1284 in 5 blocks of 20; each block: implement, document in NEXT_20_STEPS_Vxx.md, update todo/IMPLEMENTATION_PLAN/STUBS/TESTING as needed, commit.
 
-### 62.1 Next 20 Steps (v63) — HPy Phase 1 foundation — pending
+### 62.1 Next 20 Steps (v63) — HPy Phase 1 foundation — completed
 
-See [docs/NEXT_20_STEPS_V63.md](../docs/NEXT_20_STEPS_V63.md). Steps 1185–1204: HPy context, handle table, core ABI (HPy_FromPyObject, HPy_AsPyObject, HPy_Dup, HPy_Close, HPy_GetAttr, HPy_SetAttr, HPy_Call, HPy_Type). Document and commit.
+See [docs/NEXT_20_STEPS_V63.md](../docs/NEXT_20_STEPS_V63.md). Steps 1185–1204: HPy context, handle table, core ABI (HPy_FromPyObject, HPy_AsPyObject, HPy_Dup, HPy_Close, HPy_GetAttr, HPy_SetAttr, HPy_Call, HPy_Type). Header include/protoPython/HPyContext.h, impl src/library/HPyContext.cpp, test test/library/TestHPyContext.cpp. Document and commit.
 
-- [ ] Steps 1185–1204
+- [x] Steps 1185–1204
 
 ### 62.2 Next 20 Steps (v64) — HPy Phase 1 completion, Phase 2 start — pending
 

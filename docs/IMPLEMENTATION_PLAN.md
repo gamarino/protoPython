@@ -26,7 +26,7 @@ The foundation of the runtime must be fully compatible with Python 3.14's semant
 
 **Implementation plan:** [NEXT_100_STEPS_HPY.md](NEXT_100_STEPS_HPY.md) — 100 steps (1185–1284) in 5 blocks of 20; each block documented and committed. v63 (1185–1204): Phase 1 foundation (context, handle table, core ABI). v64–v67: Phase 1 completion, Phase 2–4.
 
-- [ ] **Phase 1: HPy runtime shim** (v63–v64): Implement a protoPython-specific HPy context that maps HPy handles to `ProtoObject` instances. Provide the core HPy ABI (handles, `HPy_Close`, `HPy_Dup`, type/attr/call operations) so HPy-compiled `.so`/`.hpy.so` modules can be loaded.
+- [x] **Phase 1: HPy runtime shim** (v63): HPy context and handle table implemented; core ABI (HPy_FromPyObject, HPy_AsPyObject, HPy_Dup, HPy_Close, HPy_GetAttr, HPy_SetAttr, HPy_Call, HPy_Type) in [HPyContext.h](include/protoPython/HPyContext.h), [HPyContext.cpp](src/library/HPyContext.cpp). Module loading (v64) pending.
 - [ ] **Phase 2: HPy universal ABI** (v64–v65): Support loading HPy modules built against the universal ABI (single binary, no Python-version coupling). Resolve HPy entry points (`HPyModuleDef`, init function) and wire them into the protoPython import system.
 - [ ] **Phase 3: HPy API coverage** (v65–v66): Implement the HPy API subset required by common HPy extensions (object creation, attribute access, calling, number/sequence protocols, exceptions). Prioritize modules relevant to protoPython's target workload.
 - [ ] **Phase 4: Ecosystem compatibility** (v67): Document how to build and distribute HPy extensions for protoPython. Ensure compatibility with `hpy` package and existing HPy tooling where feasible.
@@ -168,6 +168,10 @@ We aim for "No-Modification" compatibility with CPython tests.
 **Completed: Next 20 Steps v61 (1145–1164).** See [NEXT_20_STEPS_V61.md](NEXT_20_STEPS_V61.md). GetRawPointer API; stable-address contract; SwarmTests (ExternalBufferGC, GetRawPointerIfExternalBuffer pass).
 
 **Completed: Next 20 Steps v62 (1165–1184).** See [NEXT_20_STEPS_V62.md](NEXT_20_STEPS_V62.md). Swarm hardening (disabled tests documented); lessons v58–v62; lock-free/C++20 notes; final doc updates (todo, STUBS, TESTING, STRING_SUPPORT). Block 1100-1200 V2 complete.
+
+**Completed: Next 20 Steps v63 (1185–1204).** See [NEXT_20_STEPS_V63.md](NEXT_20_STEPS_V63.md). HPy Phase 1 foundation: HPyContext, handle table (ref-counted slots), core ABI (HPy_FromPyObject, HPy_AsPyObject, HPy_Dup, HPy_Close, HPy_GetAttr, HPy_SetAttr, HPy_Call, HPy_Type). Header `include/protoPython/HPyContext.h`, impl `src/library/HPyContext.cpp`, test `test_hpy_context`.
+
+**Next 20 Steps v64 (1205–1224) — next.** Module load (.so/.hpy.so), HPyModuleDef, init; universal ABI start.
 
 ## 5. Debugging & IDE Support
 To be a viable replacement, `protoPython` must support professional developer workflows.

@@ -26,3 +26,8 @@ add_test(NAME test_threading_strategy COMMAND test_threading_strategy)
 add_executable(test_basic_block_analysis TestBasicBlockAnalysis.cpp)
 target_link_libraries(test_basic_block_analysis PRIVATE protoPython protoCore gtest_main)
 add_test(NAME test_basic_block_analysis COMMAND test_basic_block_analysis)
+
+# HPy Phase 1 (context, handle table, core ABI)
+add_executable(test_hpy_context TestHPyContext.cpp)
+target_link_libraries(test_hpy_context PRIVATE protoPython protoCore gtest_main)
+add_test(NAME test_hpy_context COMMAND test_hpy_context)

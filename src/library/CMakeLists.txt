@@ -1,4 +1,5 @@
 add_library(protoPython SHARED
+    HPyContext.cpp
     BytecodeLoader.cpp
     Compiler.cpp
     ExecutionEngine.cpp

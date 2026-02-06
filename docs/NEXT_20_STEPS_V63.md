@@ -6,7 +6,7 @@ Plan for steps 1185–1204. First block of [NEXT_100_STEPS_HPY.md](NEXT_100_STEP
 
 **Theme:** HPy context, handle table, and core ABI (handles, GetAttr, SetAttr, Call, Type). No module loading yet.
 
-**Status:** Pending.
+**Status:** Completed.
 
 ---
 
@@ -14,24 +14,24 @@ Plan for steps 1185–1204. First block of [NEXT_100_STEPS_HPY.md](NEXT_100_STEP
 
 | Step | Description | Status |
 |------|-------------|--------|
-| 1185 | Create NEXT_20_STEPS_V63.md; add v63 section to tasks/todo.md | pending |
-| 1186–1188 | Define HPy handle type and handle table (growable map: handle id → ProtoObject*); opaque HPy = index or pointer | pending |
-| 1189–1190 | Implement HPyContext struct: handle table + ProtoContext*; one per thread or import session | pending |
-| 1191–1192 | HPy_FromPyObject(ctx, obj): insert ProtoObject* into table, return handle | pending |
-| 1193–1194 | HPy_AsPyObject(ctx, h): lookup handle, return ProtoObject* (or null) | pending |
-| 1195–1196 | HPy_Dup(ctx, h): duplicate handle (ref-count or new slot); HPy_Close(ctx, h): release handle | pending |
-| 1197–1198 | HPy_GetAttr(ctx, obj, name), HPy_SetAttr(ctx, obj, name, value) via ProtoObject get/setAttribute | pending |
-| 1199–1200 | HPy_Call(ctx, callable, args): invoke via ProtoContext (call with __call__ or equivalent) | pending |
-| 1201 | HPy_Type(ctx, obj): return type object (getPrototype) as handle | pending |
-| 1202–1203 | C API header (e.g. include/protoPython/HPyContext.h or hpy_protopython.h) and single implementation file | pending |
-| 1204 | Document v63 in IMPLEMENTATION_PLAN/STUBS; commit all new files and changes | pending |
+| 1185 | Create NEXT_20_STEPS_V63.md; add v63 section to tasks/todo.md | done |
+| 1186–1188 | Define HPy handle type and handle table (growable map: handle id → ProtoObject*); opaque HPy = index or pointer | done |
+| 1189–1190 | Implement HPyContext struct: handle table + ProtoContext*; one per thread or import session | done |
+| 1191–1192 | HPy_FromPyObject(ctx, obj): insert ProtoObject* into table, return handle | done |
+| 1193–1194 | HPy_AsPyObject(ctx, h): lookup handle, return ProtoObject* (or null) | done |
+| 1195–1196 | HPy_Dup(ctx, h): duplicate handle (ref-count or new slot); HPy_Close(ctx, h): release handle | done |
+| 1197–1198 | HPy_GetAttr(ctx, obj, name), HPy_SetAttr(ctx, obj, name, value) via ProtoObject get/setAttribute | done |
+| 1199–1200 | HPy_Call(ctx, callable, args): invoke via ProtoContext (call with __call__ or equivalent) | done |
+| 1201 | HPy_Type(ctx, obj): return type object (getPrototype) as handle | done |
+| 1202–1203 | C API header (e.g. include/protoPython/HPyContext.h or hpy_protopython.h) and single implementation file | done |
+| 1204 | Document v63 in IMPLEMENTATION_PLAN/STUBS; commit all new files and changes | done |
 
 ---
 
 ## Deliverables (v63)
 
-- **New files:** HPy context and handle table (header + .cpp or .c); optional minimal test.
-- **API:** HPy_FromPyObject, HPy_AsPyObject, HPy_Dup, HPy_Close, HPy_GetAttr, HPy_SetAttr, HPy_Call, HPy_Type.
+- **New files:** [include/protoPython/HPyContext.h](../include/protoPython/HPyContext.h), [src/library/HPyContext.cpp](../src/library/HPyContext.cpp); [test/library/TestHPyContext.cpp](../test/library/TestHPyContext.cpp).
+- **API:** HPyContext::New/Free, FromPyObject, AsPyObject, Dup, Close, GetAttr, SetAttr, Call, Type.
 - **Doc:** NEXT_20_STEPS_V63.md (this file); todo.md v63; IMPLEMENTATION_PLAN/STUBS updated.
 - **Commit:** `feat(hpy): Next 20 Steps v63 (1185–1204); HPy context, handle table, core ABI`
 
