@@ -443,11 +443,23 @@ See [docs/NEXT_20_STEPS_V49.md](../docs/NEXT_20_STEPS_V49.md). Steps 905–924: 
 
 - [ ] Steps 905–924 (ThreadModule done; OperatorInvert, py_setattr, py_log10 deferred)
 
-## 49. Next 20 Steps (v50) — in progress
+## 49. Next 20 Steps (v50) — completed
 
 See [docs/NEXT_20_STEPS_V50.md](../docs/NEXT_20_STEPS_V50.md). Steps 925–944: Create v50 doc; tasks/todo.md v49/v50; IMPLEMENTATION_PLAN v48 done, v49/v50 in progress; STUBS and TESTING updated; lessons captured; commit.
 
 - [x] Steps 925–944 (doc and commit)
+
+## 50. Next 20 Steps (v51) — in progress
+
+See [docs/NEXT_20_STEPS_V51.md](../docs/NEXT_20_STEPS_V51.md). Steps 945–964: Create v51 doc; tasks/todo.md v51; IMPLEMENTATION_PLAN v50 done, v51 in progress; TESTING, STUBS v51 updates; protoCore immutable model documented; OperatorInvert, py_setattr/py_log10/ThreadModule status.
+
+- [ ] Steps 945–964 (doc and commit pending)
+
+## 51. Next 20 Steps (v52) — in progress
+
+See [docs/NEXT_20_STEPS_V52.md](../docs/NEXT_20_STEPS_V52.md). Steps 965–984: Create v52 doc; tasks/todo.md v52; IMPLEMENTATION_PLAN v51 done, v52 in progress; TESTING, STUBS v52 updates; lessons consolidated; documentation and changes committed.
+
+- [ ] Steps 965–984 (doc and commit pending)
 
 ---
 *Updated from plan implementation. Mark items complete as work progresses.*

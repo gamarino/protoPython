@@ -139,9 +139,13 @@ We aim for "No-Modification" compatibility with CPython tests.
 
 **Completed: Next 20 Steps v48 (885–904).** See [NEXT_20_STEPS_V48.md](NEXT_20_STEPS_V48.md). Foundation test fixes: SetBasic, MathLog (log(100,10) workaround), MathDist, SetattrAndCallable (direct setAttribute/getAttribute on mutable obj; protoCore immutable model documented), MapBuiltin, StringDunders. OperatorInvert DISABLED_; TESTING, STUBS, todo updated.
 
-**In progress: Next 20 Steps v49 (905–924).** See [NEXT_20_STEPS_V49.md](NEXT_20_STEPS_V49.md). v48 doc completion; ThreadModule stack-use-after-scope fix done; OperatorInvert DISABLED_ (direct asMethod returns nullptr; Python path works); py_setattr, py_log10 fixes pending.
+**Completed: Next 20 Steps v49 (905–924).** See [NEXT_20_STEPS_V49.md](NEXT_20_STEPS_V49.md). v48 doc completion; ThreadModule stack-use-after-scope fix; OperatorInvert DISABLED_; SetattrAndCallable with direct setAttribute/getAttribute; py_setattr, py_log10 deferred.
 
-**In progress: Next 20 Steps v50 (925–944).** See [NEXT_20_STEPS_V50.md](NEXT_20_STEPS_V50.md). tasks/todo.md v49/v50; IMPLEMENTATION_PLAN, STUBS, TESTING updated; lessons captured; commit.
+**Completed: Next 20 Steps v50 (925–944).** See [NEXT_20_STEPS_V50.md](NEXT_20_STEPS_V50.md). tasks/todo.md v49/v50; IMPLEMENTATION_PLAN, STUBS, TESTING updated; lessons captured; commit.
+
+**In progress: Next 20 Steps v51 (945–964).** See [NEXT_20_STEPS_V51.md](NEXT_20_STEPS_V51.md). tasks/todo.md v51; IMPLEMENTATION_PLAN v50 done; TESTING, STUBS v51; protoCore immutable model; OperatorInvert, py_setattr/py_log10/ThreadModule status.
+
+**In progress: Next 20 Steps v52 (965–984).** See [NEXT_20_STEPS_V52.md](NEXT_20_STEPS_V52.md). tasks/todo.md v52; IMPLEMENTATION_PLAN v51 done; TESTING, STUBS v52; lessons consolidated; commit.
 
 ## 5. Debugging & IDE Support
 To be a viable replacement, `protoPython` must support professional developer workflows.
