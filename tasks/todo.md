@@ -16,6 +16,7 @@ Derived from [IMPLEMENTATION_PLAN.md](../docs/IMPLEMENTATION_PLAN.md). See also 
 - [x] Exit codes and flags (`--module`, `--script`, `--path`, `--stdlib`) with tests
 - [ ] Phase 3: Execution Engine — ProtoContext integration for bytecode execution (protopy)
 - [x] L-Shape architecture — context stack (ContextScope, promote), ProtoSpace singleton, TLS for env lookup, lock-free bootstrap diagnostic; see [docs/L_SHAPE_ARCHITECTURE.md](../docs/L_SHAPE_ARCHITECTURE.md)
+- [x] L-Shape Execution Engine refactor — singleton enforcement (PythonEnvironment), escape analysis (hasDynamicLocalsAccess, MAPPED classification, slot fallback log), L_SHAPE_ARCHITECTURE work-stealing doc, POST_REFACTOR_AUDIT.md; see [docs/POST_REFACTOR_AUDIT.md](../docs/POST_REFACTOR_AUDIT.md)
 - [x] For-loop / block suite parsing — Indent/Dedent in tokenizer; SuiteNode and parseSuite() so def/for/if bodies compile multiple statements; see [docs/FOR_LOOP_SUITE_FIX.md](../docs/FOR_LOOP_SUITE_FIX.md)
 - [x] Phase 4: GIL-less Concurrency — audit documented in [docs/GIL_FREE_AUDIT.md](../docs/GIL_FREE_AUDIT.md); fixes TBD
 
@@ -429,6 +430,18 @@ See [docs/NEXT_20_STEPS_V46.md](../docs/NEXT_20_STEPS_V46.md). Steps 845–864: 
 See [docs/NEXT_20_STEPS_V47.md](../docs/NEXT_20_STEPS_V47.md). Steps 865–884: HPY_INTEGRATION_PLAN; PACKAGING_ROADMAP; venv stub; lessons.md; IMPLEMENTATION_PLAN v43–v47 summary.
 
 - [x] Steps 865–884
+
+## 47. Next 20 Steps (v48) — in progress
+
+See [docs/NEXT_20_STEPS_V48.md](../docs/NEXT_20_STEPS_V48.md). Steps 885–904: Foundation test fixes (SetBasic, MathLog, MathDist, SetattrAndCallable, MapBuiltin, StringDunders); OperatorInvert DISABLED_; TESTING, STUBS, todo updated.
+
+- [ ] Steps 885–904 (most done; OperatorInvert pending; doc updates pending)
+
+## 48. Next 20 Steps (v49) — in progress
+
+See [docs/NEXT_20_STEPS_V49.md](../docs/NEXT_20_STEPS_V49.md). Steps 905–924: v48 doc completion; OperatorInvert fix; py_setattr fix; py_log10 fix; ThreadModule stack-use-after-scope fix; foundation suite green.
+
+- [ ] Steps 905–924
 
 ---
 *Updated from plan implementation. Mark items complete as work progresses.*

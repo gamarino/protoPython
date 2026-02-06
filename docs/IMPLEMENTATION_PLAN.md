@@ -137,6 +137,10 @@ We aim for "No-Modification" compatibility with CPython tests.
 
 **Completed: Next 20 Steps v47 (865–884).** See [NEXT_20_STEPS_V47.md](NEXT_20_STEPS_V47.md). HPY_INTEGRATION_PLAN; PACKAGING_ROADMAP; venv stub; lessons.md (v43–v47); STUBS, todo, IMPLEMENTATION_PLAN updated. Summary of v43–v47: pathlib (exists, is_dir, is_file, mkdir, read_text, write_text), decimal/fractions/io.BytesIO, pickle/logging/email, secrets/subprocess, regrtest docs, HPy and packaging roadmaps, venv stub.
 
+**In progress: Next 20 Steps v48 (885–904).** See [NEXT_20_STEPS_V48.md](NEXT_20_STEPS_V48.md). Foundation test fixes: SetBasic, MathLog (log(100,10) workaround), MathDist, SetattrAndCallable (direct setAttribute), MapBuiltin, StringDunders. OperatorInvert DISABLED_; TESTING, STUBS, todo updated.
+
+**In progress: Next 20 Steps v49 (905–924).** See [NEXT_20_STEPS_V49.md](NEXT_20_STEPS_V49.md). v48 doc completion; OperatorInvert fix; py_setattr fix; py_log10 fix; ThreadModule stack-use-after-scope fix.
+
 ## 5. Debugging & IDE Support
 To be a viable replacement, `protoPython` must support professional developer workflows.
 

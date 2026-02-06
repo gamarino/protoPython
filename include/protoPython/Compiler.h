@@ -68,6 +68,8 @@ private:
         const std::unordered_set<std::string>& globalsInScope,
         const std::vector<std::string>& paramsInScope,
         std::unordered_set<std::string>& capturedOut);
+    /** True if body contains locals(), exec(), or eval()—dynamic locals access that forces MAPPED. */
+    static bool hasDynamicLocalsAccess(ASTNode* node);
     std::unordered_set<std::string> globalNames_;
     /** Optional: name -> slot index for LOAD_FAST/STORE_FAST. Set when compiling a function body. */
     std::unordered_map<std::string, int> localSlotMap_;

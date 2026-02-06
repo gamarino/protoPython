@@ -24,7 +24,7 @@ This document describes the L-Shape architecture adopted by protoPython for inte
 
 - **Ownership**: Objects allocated during a call belong to the active `ProtoContext` for that call.
 - **Cleanup**: When the context is destroyed, all cells in its chain are submitted to the GC (young generation). Objects that were not promoted are reclaimed.
-- **Promotion**: The return value is “promoted” by setting `ctx->returnValue` before the context is destroyed. The destructor of `ProtoContext` wraps it in a `ReturnReference` and adds it to the parent via `previous->addCell2Context`. **No data copy**—only pointer transfer.
+- **Promotion**: The return value is “promoted” by setting `ctx->returnValue` before the context is destroyed. The destructor of `ProtoContext` wraps it in a `ReturnReference` and adds it to the parent via `previous->addCell2Context`. **No data copy**—only pointer transfer. The promoted object's cell pointer is moved to the parent; no memcpy or value copy occurs.
 - **API**: `promote(ctx, obj)` in `MemoryManager.hpp` sets `ctx->returnValue = obj`. The bytecode interpreter sets `ctx->returnValue` on `OP_RETURN_VALUE` so that when the scope exits, the destructor promotes it.
 
 ## 5. Lock-Free Mandate
@@ -40,9 +40,15 @@ This document describes the L-Shape architecture adopted by protoPython for inte
 - **Current context**: Obtained via `ProtoThread::getCurrentContext()`—a single read of thread-local state. No global map or mutex.
 - **Deterministic cleanup**: When a function returns, the corresponding `ContextScope` is left and its destructor runs. The callee `ProtoContext` is destroyed immediately, so cleanup is deterministic and does not depend on a separate GC pass to reclaim the context object.
 
-## 7. Key Files
+## 7. Work-Stealing Readiness
+
+- **ProtoThread registry**: `ProtoSpace::threads` holds a mapping of `ProtoThread` objects. Each Python thread created via `_thread.start_new_thread` uses `ProtoSpace::newThread()`, which allocates a `ProtoThreadImplementation` and registers it in `ProtoSpace::threads`.
+- **protoPython role**: `ThreadModule::py_start_new_thread` invokes `ctx->space->newThread(ctx, name, thread_bootstrap, argsForThread, nullptr)`. protoCore handles registration; protoPython does not manage threads directly.
+- **Future integration**: A work-stealing scheduler can enumerate `ProtoSpace::threads` to discover idle or runnable threads. No protoPython changes are required for that integration.
+
+## 8. Key Files
 
 - **MemoryManager.hpp**: `promote()`, `ContextScope` (RAII push/pop).
 - **ExecutionEngine.cpp**: User function calls use `ContextScope` and `promote()`; `OP_RETURN_VALUE` sets `ctx->returnValue`.
 - **PythonEnvironment**: Uses `getProcessSpace()` (singleton); context→env resolution via thread-local `s_threadEnv` (no mutex).
-- **ThreadModule**: Bootstrap diagnostic uses a lock-free counter instead of a mutex-protected set.
+- **ThreadModule**: Bootstrap diagnostic uses a lock-free counter instead of a mutex-protected set; `start_new_thread` delegates to `ProtoSpace::newThread`.

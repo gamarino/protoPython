@@ -1,0 +1,1 @@
+/usr/bin/c++ -fsanitize=address -fno-omit-frame-pointer -g CMakeFiles/protopy.dir/main.cpp.o -o protopy  -Wl,-rpath,/home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/src/library:/home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/protoCore: ../library/libprotoPython.so ../../protoCore/libprotoCore.so.1.0.0 

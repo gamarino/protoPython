@@ -156,11 +156,17 @@ static const proto::ProtoObject* py_invert(
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* a = posArgs->getAt(ctx, 0);
-    if (a->isInteger(ctx)) {
-        long long n = a->asLong(ctx);
-        return ctx->fromInteger(static_cast<long long>(~static_cast<unsigned long long>(n)));
-    }
-    return PROTO_NONE;
+    /* Handle Python int (object with __data__) or raw ProtoInteger. */
+    long long n = 0;
+    if (a && a->isInteger(ctx)) {
+        try { n = a->asLong(ctx); } catch (...) { return PROTO_NONE; }
+    } else if (a) {
+        const proto::ProtoObject* data = a->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__data__"));
+        if (data && data != PROTO_NONE && data->isInteger(ctx)) {
+            try { n = data->asLong(ctx); } catch (...) { return PROTO_NONE; }
+        } else return PROTO_NONE;
+    } else return PROTO_NONE;
+    return ctx->fromInteger(static_cast<long long>(~static_cast<unsigned long long>(n)));
 }
 
 static const proto::ProtoObject* py_lshift(

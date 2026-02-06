@@ -23,6 +23,8 @@
 #include <protoPython/ExecutionEngine.h>
 #include <protoCore.h>
 #include <algorithm>
+#include <atomic>
+#include <iostream>
 #include <cctype>
 #include <cmath>
 #include <climits>
@@ -140,6 +142,16 @@ static const proto::ProtoObject* py_float_fromhex(
     double d = 0.0;
     if (std::sscanf(s.c_str(), "%la", &d) != 1) return PROTO_NONE;
     return context->fromDouble(d);
+}
+
+static const proto::ProtoObject* py_int_call(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (!posArgs || posArgs->getSize(ctx) == 0) return ctx->fromInteger(0);
+    const proto::ProtoObject* x = posArgs->getAt(ctx, 0);
+    if (x->isInteger(ctx)) return x;
+    if (x->isDouble(ctx)) return ctx->fromInteger(static_cast<long long>(std::trunc(x->asDouble(ctx))));
+    return PROTO_NONE;
 }
 
 static const proto::ProtoObject* py_bool_call(
@@ -4097,8 +4109,16 @@ proto::ProtoSpace* PythonEnvironment::getProcessSpace() {
     return &s_processSpace;
 }
 
+/** Singleton enforcement: L-Shape mandates one ProtoSpace per process. Log if multiple PythonEnvironment instances exist. */
+static std::atomic<int> s_pythonEnvInstanceCount{0};
+
 PythonEnvironment::PythonEnvironment(const std::string& stdLibPath, const std::vector<std::string>& searchPaths,
                                      const std::vector<std::string>& argv) : space_(getProcessSpace()), argv_(argv) {
+    int prev = s_pythonEnvInstanceCount.fetch_add(1, std::memory_order_relaxed);
+    if (prev > 0) {
+        std::cerr << "[protoPython] WARNING: Multiple PythonEnvironment instances (count=" << (prev + 1)
+                  << "). L-Shape mandates single ProtoSpace per process." << std::endl;
+    }
     context = new proto::ProtoContext(space_);
     registerContext(context, this);
     initializeRootObjects(stdLibPath, searchPaths);
@@ -4107,6 +4127,7 @@ PythonEnvironment::PythonEnvironment(const std::string& stdLibPath, const std::v
 PythonEnvironment::~PythonEnvironment() {
     unregisterContext(context);
     delete context;
+    s_pythonEnvInstanceCount.fetch_sub(1, std::memory_order_relaxed);
 }
 
 void PythonEnvironment::raiseKeyError(proto::ProtoContext* ctx, const proto::ProtoObject* key) {
@@ -4193,6 +4214,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     const proto::ProtoString* py_hash = proto::ProtoString::fromUTF8String(context, "__hash__");
     intPrototype = intPrototype->setAttribute(context, py_class, typePrototype);
     intPrototype = intPrototype->setAttribute(context, py_name, context->fromUTF8String("int"));
+    intPrototype = intPrototype->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__call__"), context->fromMethod(const_cast<proto::ProtoObject*>(intPrototype), py_int_call));
     intPrototype = intPrototype->setAttribute(context, py_hash, context->fromMethod(const_cast<proto::ProtoObject*>(intPrototype), py_int_hash));
     intPrototype = intPrototype->setAttribute(context, py_format_dunder, context->fromMethod(const_cast<proto::ProtoObject*>(intPrototype), py_int_format));
     const proto::ProtoString* py_bit_length = proto::ProtoString::fromUTF8String(context, "bit_length");

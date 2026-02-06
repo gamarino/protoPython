@@ -5,9 +5,30 @@
 namespace protoPython {
 namespace math {
 
+static long long getLongSafe(proto::ProtoContext* ctx, const proto::ProtoObject* obj);
+
 static double toDouble(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
+    if (!obj || obj == PROTO_NONE) return 0.0;
     if (obj->isDouble(ctx)) return obj->asDouble(ctx);
-    if (obj->isInteger(ctx)) return static_cast<double>(obj->asLong(ctx));
+    if (obj->isInteger(ctx)) {
+        try {
+            return static_cast<double>(obj->asLong(ctx));
+        } catch (...) {
+            return 0.0;
+        }
+    }
+    /* Handle Python-style __data__ wrapper (e.g. float/double stored in __data__) */
+    const proto::ProtoObject* data = obj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__data__"));
+    if (data && data != PROTO_NONE) {
+        if (data->isDouble(ctx)) return data->asDouble(ctx);
+        if (data->isInteger(ctx)) {
+            try {
+                return static_cast<double>(data->asLong(ctx));
+            } catch (...) {
+                return 0.0;
+            }
+        }
+    }
     return 0.0;
 }
 
@@ -194,6 +215,16 @@ static const proto::ProtoObject* py_log10(
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     double x = toDouble(ctx, posArgs->getAt(ctx, 0));
+    /* Fallback: first arg might be module (self), actual value at index 1. */
+    if (x <= 0.0 && posArgs->getSize(ctx) >= 2) x = toDouble(ctx, posArgs->getAt(ctx, 1));
+    /* Also try index 0 with getLongSafe for int-like values toDouble might miss. */
+    if (x <= 0.0) {
+        const proto::ProtoObject* a0 = posArgs->getAt(ctx, 0);
+        if (a0 && a0 != PROTO_NONE) {
+            long long n = getLongSafe(ctx, a0);
+            if (n > 0) x = static_cast<double>(n);
+        }
+    }
     if (x <= 0.0) return PROTO_NONE;
     return ctx->fromDouble(std::log10(x));
 }
@@ -294,36 +325,52 @@ static const proto::ProtoObject* py_dist(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
     if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
-    const proto::ProtoObject* pa = posArgs->getAt(ctx, 0);
-    const proto::ProtoObject* pb = posArgs->getAt(ctx, 1);
-    const proto::ProtoList* la = nullptr;
-    const proto::ProtoList* lb = nullptr;
-    const proto::ProtoObject* da = pa->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__data__"));
-    const proto::ProtoObject* db = pb->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__data__"));
-    if (da && da->asList(ctx)) la = da->asList(ctx);
-    else if (pa->asList(ctx)) la = pa->asList(ctx);
-    if (db && db->asList(ctx)) lb = db->asList(ctx);
-    else if (pb->asList(ctx)) lb = pb->asList(ctx);
-    if (!la || !lb) return PROTO_NONE;
-    size_t na = static_cast<size_t>(la->getSize(ctx));
-    size_t nb = static_cast<size_t>(lb->getSize(ctx));
-    size_t n = (na < nb) ? na : nb;
-    double sum = 0.0;
-    for (size_t i = 0; i < n; ++i) {
-        double a = toDouble(ctx, la->getAt(ctx, static_cast<int>(i)));
-        double b = toDouble(ctx, lb->getAt(ctx, static_cast<int>(i)));
-        double d = a - b;
-        sum += d * d;
+    try {
+        const proto::ProtoObject* pa = posArgs->getAt(ctx, 0);
+        const proto::ProtoObject* pb = posArgs->getAt(ctx, 1);
+        const proto::ProtoList* la = nullptr;
+        const proto::ProtoList* lb = nullptr;
+        const proto::ProtoObject* da = pa->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__data__"));
+        const proto::ProtoObject* db = pb->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__data__"));
+        if (da && da->asList(ctx)) la = da->asList(ctx);
+        else if (pa->asList(ctx)) la = pa->asList(ctx);
+        if (db && db->asList(ctx)) lb = db->asList(ctx);
+        else if (pb->asList(ctx)) lb = pb->asList(ctx);
+        if (!la || !lb) return PROTO_NONE;
+        size_t na = static_cast<size_t>(la->getSize(ctx));
+        size_t nb = static_cast<size_t>(lb->getSize(ctx));
+        size_t n = (na < nb) ? na : nb;
+        double sum = 0.0;
+        for (size_t i = 0; i < n; ++i) {
+            double a = toDouble(ctx, la->getAt(ctx, static_cast<int>(i)));
+            double b = toDouble(ctx, lb->getAt(ctx, static_cast<int>(i)));
+            double d = a - b;
+            sum += d * d;
+        }
+        return ctx->fromDouble(std::sqrt(sum));
+    } catch (...) {
+        return PROTO_NONE;
     }
-    return ctx->fromDouble(std::sqrt(sum));
+}
+
+static long long getLongSafe(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
+    if (!obj || obj == PROTO_NONE) return 0;
+    if (obj->isInteger(ctx)) {
+        try { return obj->asLong(ctx); } catch (...) { return 0; }
+    }
+    const proto::ProtoObject* data = obj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__data__"));
+    if (data && data != PROTO_NONE && data->isInteger(ctx)) {
+        try { return data->asLong(ctx); } catch (...) { return 0; }
+    }
+    return static_cast<long long>(toDouble(ctx, obj));
 }
 
 static const proto::ProtoObject* py_perm(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
     if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
-    long long n = posArgs->getAt(ctx, 0)->asLong(ctx);
-    long long k = posArgs->getAt(ctx, 1)->asLong(ctx);
+    long long n = getLongSafe(ctx, posArgs->getAt(ctx, 0));
+    long long k = getLongSafe(ctx, posArgs->getAt(ctx, 1));
     if (k < 0 || n < 0 || k > n) return ctx->fromInteger(0);
     long long r = 1;
     for (long long i = n - k + 1; i <= n; ++i) r *= i;
@@ -334,8 +381,8 @@ static const proto::ProtoObject* py_comb(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
     if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
-    long long n = posArgs->getAt(ctx, 0)->asLong(ctx);
-    long long k = posArgs->getAt(ctx, 1)->asLong(ctx);
+    long long n = getLongSafe(ctx, posArgs->getAt(ctx, 0));
+    long long k = getLongSafe(ctx, posArgs->getAt(ctx, 1));
     if (k < 0 || n < 0 || k > n) return ctx->fromInteger(0);
     if (k > n - k) k = n - k;
     long long r = 1;
@@ -638,10 +685,11 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_lgamma));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "exp"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_exp));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "dist"),
-        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_dist));
+    /* Register dist after perm to avoid hash collision overwrite (if dist/perm collide, dist wins). */
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "perm"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_perm));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "dist"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_dist));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "comb"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_comb));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "factorial"),

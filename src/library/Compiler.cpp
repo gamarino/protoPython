@@ -1,5 +1,6 @@
 #include <protoPython/Compiler.h>
 #include <protoPython/ExecutionEngine.h>
+#include <iostream>
 
 namespace protoPython {
 
@@ -474,6 +475,44 @@ static void collectDefinedNames(ASTNode* node, std::unordered_set<std::string>& 
     }
 }
 
+/** Returns non-empty string if body has dynamic locals access; reason for slot fallback. */
+static std::string getDynamicLocalsReason(ASTNode* node) {
+    if (!node) return "";
+    if (auto* call = dynamic_cast<CallNode*>(node)) {
+        if (call->func) {
+            if (auto* nm = dynamic_cast<NameNode*>(call->func.get())) {
+                if (nm->id == "locals") return "locals";
+                if (nm->id == "exec") return "exec";
+                if (nm->id == "eval") return "eval";
+            }
+        }
+    }
+    if (auto* suite = dynamic_cast<SuiteNode*>(node)) {
+        for (auto& st : suite->statements) {
+            std::string r = getDynamicLocalsReason(st.get());
+            if (!r.empty()) return r;
+        }
+        return "";
+    }
+    if (auto* iff = dynamic_cast<IfNode*>(node)) {
+        std::string r = getDynamicLocalsReason(iff->body.get());
+        if (!r.empty()) return r;
+        if (iff->orelse) return getDynamicLocalsReason(iff->orelse.get());
+        return "";
+    }
+    if (auto* fn = dynamic_cast<FunctionDefNode*>(node)) {
+        return getDynamicLocalsReason(fn->body.get());
+    }
+    if (auto* f = dynamic_cast<ForNode*>(node)) {
+        return getDynamicLocalsReason(f->body.get());
+    }
+    return "";
+}
+
+bool Compiler::hasDynamicLocalsAccess(ASTNode* node) {
+    return !getDynamicLocalsReason(node).empty();
+}
+
 void Compiler::collectCapturedNames(ASTNode* body,
     const std::unordered_set<std::string>& globalsInScope,
     const std::vector<std::string>& paramsInScope,
@@ -529,12 +568,22 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
     std::unordered_set<std::string> captured;
     collectCapturedNames(n->body.get(), bodyGlobals, params, captured);
 
+    std::string dynamicReason = getDynamicLocalsReason(n->body.get());
+    const bool forceMapped = !dynamicReason.empty();
+
     std::vector<std::string> automaticNames;
-    for (const auto& p : params)
-        automaticNames.push_back(p);
-    for (const auto& loc : localsOrdered) {
-        if (!bodyGlobals.count(loc) && !captured.count(loc))
-            automaticNames.push_back(loc);
+    if (!forceMapped) {
+        for (const auto& p : params)
+            automaticNames.push_back(p);
+        for (const auto& loc : localsOrdered) {
+            if (!bodyGlobals.count(loc) && !captured.count(loc))
+                automaticNames.push_back(loc);
+        }
+    }
+    if (forceMapped) {
+        std::cerr << "[protoPython] Slot fallback: function=" << n->name << " reason=" << dynamicReason << std::endl;
+    } else if (!captured.empty()) {
+        std::cerr << "[protoPython] Slot fallback: function=" << n->name << " reason=capture" << std::endl;
     }
     std::unordered_map<std::string, int> slotMap;
     for (size_t i = 0; i < automaticNames.size(); ++i)

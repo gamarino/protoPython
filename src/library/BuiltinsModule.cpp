@@ -468,9 +468,10 @@ static const proto::ProtoObject* py_getattr(
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
     const proto::ProtoObject* nameObj = positionalParameters->getAt(context, 1);
     if (!nameObj->isString(context)) return PROTO_NONE;
-    std::string name;
-    nameObj->asString(context)->toUTF8String(context, name);
-    const proto::ProtoString* key = proto::ProtoString::fromUTF8String(context, name.c_str());
+    /* Use canonical ProtoString from content so getAttribute matches setAttribute storage. */
+    std::string nameStr;
+    nameObj->asString(context)->toUTF8String(context, nameStr);
+    const proto::ProtoString* key = proto::ProtoString::fromUTF8String(context, nameStr.c_str());
     const proto::ProtoObject* attr = obj->getAttribute(context, key);
     if (attr && attr != PROTO_NONE) return attr;
     if (positionalParameters->getSize(context) >= 3) return positionalParameters->getAt(context, 2);
@@ -488,9 +489,10 @@ static const proto::ProtoObject* py_setattr(
     const proto::ProtoObject* nameObj = positionalParameters->getAt(context, 1);
     const proto::ProtoObject* value = positionalParameters->getAt(context, 2);
     if (!nameObj->isString(context)) return PROTO_NONE;
-    std::string name;
-    nameObj->asString(context)->toUTF8String(context, name);
-    const proto::ProtoString* key = proto::ProtoString::fromUTF8String(context, name.c_str());
+    /* Use canonical ProtoString from content so getAttribute matches setAttribute storage. */
+    std::string nameStr;
+    nameObj->asString(context)->toUTF8String(context, nameStr);
+    const proto::ProtoString* key = proto::ProtoString::fromUTF8String(context, nameStr.c_str());
     obj->setAttribute(context, key, value);
     return PROTO_NONE;
 }

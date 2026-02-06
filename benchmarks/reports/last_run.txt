@@ -1,0 +1,12 @@
+Benchmark: protopy=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/src/runtime/protopy timeout=25s N_RUNS=2 WARMUP=1
+[startup_empty]
+[int_sum_loop]
+[list_append_loop]
+[str_concat_loop]
+[multithread_cpu]
+startup_empty: protopy=TIMEOUT cpython=32.22ms
+int_sum_loop: protopy=32.16ms cpython=32.21ms ratio=1.00x faster
+list_append_loop: protopy=TIMEOUT cpython=32.12ms
+str_concat_loop: protopy=TIMEOUT cpython=32.11ms
+range_iterate: protopy=TIMEOUT cpython=32.29ms
+multithread_cpu: protopy=966.94ms cpython=32.38ms ratio=29.86x slower
