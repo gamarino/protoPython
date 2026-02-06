@@ -149,7 +149,9 @@ We aim for "No-Modification" compatibility with CPython tests.
 
 **Completed: Next 20 Steps v53 (985–1004).** See [NEXT_20_STEPS_V53.md](NEXT_20_STEPS_V53.md). FilterBuiltin passes; ThreadModule fix documented; py_log10 workaround; regrtest persistence verified; foundation suite full vs filtered documented; STUBS, TESTING updated.
 
-**In progress: Next 20 Steps v54 (1005–1024).** See [NEXT_20_STEPS_V54.md](NEXT_20_STEPS_V54.md). Regrtest dashboard; compatibility tracking; run_and_validate_output; tasks/todo.md v54.
+**Completed: Next 20 Steps v54 (1005–1024).** See [NEXT_20_STEPS_V54.md](NEXT_20_STEPS_V54.md). Regrtest dashboard; compatibility tracking; C_MODULES_TO_REPLACE (_operator Replaced, _functools Partial); TESTING, STUBS v54.
+
+**In progress: Next 20 Steps v55 (1025–1044).** See [NEXT_20_STEPS_V55.md](NEXT_20_STEPS_V55.md). HPy Phase 1; packaging layout; tasks/todo.md v55.
 
 ## 5. Debugging & IDE Support
 To be a viable replacement, `protoPython` must support professional developer workflows.

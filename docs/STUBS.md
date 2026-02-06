@@ -282,6 +282,11 @@ Reserved for v36. No new stub entries in this batch (v36 focused on documentatio
 | ssl | wrap_socket, SSLContext.wrap_socket | Raise NotImplementedError; requires native TLS. |
 | subprocess, sqlite3, multiprocessing, getpass | Documentation | Clearer docstrings; stubs documented for import compatibility. |
 
+## C modules (v54)
+
+- **_operator**: Replaced. Native OperatorModule (add, sub, invert, lshift, rshift, and_, or_, xor, index, etc.).
+- **_functools**: Partial. partial, reduce, wraps done; lru_cache stub. See [C_MODULES_TO_REPLACE.md](C_MODULES_TO_REPLACE.md).
+
 ## Foundation tests (v48–v54)
 
 | Test | Status | Notes |

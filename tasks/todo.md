@@ -467,11 +467,11 @@ See [docs/NEXT_20_STEPS_V53.md](../docs/NEXT_20_STEPS_V53.md). Steps 985–1004:
 
 - [x] Steps 985–1004
 
-## 53. Next 20 Steps (v54) — in progress
+## 53. Next 20 Steps (v54) — completed
 
-See [docs/NEXT_20_STEPS_V54.md](../docs/NEXT_20_STEPS_V54.md). Steps 1005–1024: Regrtest dashboard; compatibility tracking; run_and_validate_output; C_MODULES_TO_REPLACE; foundation test filter; tasks/todo.md v54; IMPLEMENTATION_PLAN v53 done, v54 in progress; STUBS, TESTING updated.
+See [docs/NEXT_20_STEPS_V54.md](../docs/NEXT_20_STEPS_V54.md). Steps 1005–1024: Regrtest dashboard; compatibility tracking; run_and_validate_output; C_MODULES_TO_REPLACE (_operator Replaced, _functools Partial); foundation test filter; TESTING, STUBS v54 updates.
 
-- [ ] Steps 1005–1024
+- [x] Steps 1005–1024
 
 ---
 *Updated from plan implementation. Mark items complete as work progresses.*
