@@ -48,7 +48,7 @@ The goal is to provide a complete standard library that behaves identically to C
 We aim for "No-Modification" compatibility with CPython tests.
 
 - [x] **Integration of `test.regrtest`**: Set up a harness to run CPython's test suite directly.
-- [ ] **Incremental Success**: Track compatibility percentage across the entire test suite (e.g. script or dashboard counting pass/fail; see `test/regression/`). Results can be persisted to JSON via `run_and_report.py --output <path>` or `REGRTEST_RESULTS=<path>`. See [TESTING.md](TESTING.md) for the JSON format and the `regrtest_persistence` CTest that exercises persistence.
+- [x] **Incremental Success** (v54): Track compatibility percentage across the test suite via `test/regression/run_and_report.py` and `dashboard.py`. Results persisted to JSON via `--output <path>` or `REGRTEST_RESULTS=<path>`. JSON format: `passed`, `failed`, `total`, `compatibility_pct`, `timestamp`, `failed_tests`. History (last 100 runs) via `REGRTEST_HISTORY` or `results/history.json`. Dashboard: `python test/regression/dashboard.py` or `REGRTEST_HISTORY=<path>`. CTest `regrtest_persistence` (via `run_and_validate_output.py`) exercises persistence. See [TESTING.md](TESTING.md).
 - [ ] **Bug-for-Bug Compatibility**: Where safe, emulate CPython edge cases to ensure existing code works without changes.
 
 **Completed: Next 20 Steps v8 (85–104).** Delivered: builtins `pow`, `round`, `zip`, `sorted`, `vars`; str methods (strip, replace, startswith, endswith); execution engine LOAD_ATTR, STORE_ATTR, BUILD_LIST; benchmarks (list_append_loop, str_concat_loop, range_iterate) and harness; native stubs for `os.path`, `pathlib`, `collections.abc`; CTest coverage for LOAD_ATTR/STORE_ATTR/BUILD_LIST; regrtest persistence (`--output`, `REGRTEST_RESULTS`, CTest `regrtest_persistence`).
@@ -147,7 +147,9 @@ We aim for "No-Modification" compatibility with CPython tests.
 
 **Completed: Next 20 Steps v52 (965–984).** See [NEXT_20_STEPS_V52.md](NEXT_20_STEPS_V52.md). tasks/todo.md v52; IMPLEMENTATION_PLAN v51 done; TESTING, STUBS v52; lessons consolidated; commit.
 
-**In progress: Next 20 Steps v53 (985–1004).** See [NEXT_20_STEPS_V53.md](NEXT_20_STEPS_V53.md). FilterBuiltin passes; ThreadModule fix documented; py_log10 workaround; regrtest persistence; foundation suite full vs filtered; tasks/todo.md v53; IMPLEMENTATION_PLAN v52 done, v53 in progress; STUBS, TESTING updated.
+**Completed: Next 20 Steps v53 (985–1004).** See [NEXT_20_STEPS_V53.md](NEXT_20_STEPS_V53.md). FilterBuiltin passes; ThreadModule fix documented; py_log10 workaround; regrtest persistence verified; foundation suite full vs filtered documented; STUBS, TESTING updated.
+
+**In progress: Next 20 Steps v54 (1005–1024).** See [NEXT_20_STEPS_V54.md](NEXT_20_STEPS_V54.md). Regrtest dashboard; compatibility tracking; run_and_validate_output; tasks/todo.md v54.
 
 ## 5. Debugging & IDE Support
 To be a viable replacement, `protoPython` must support professional developer workflows.

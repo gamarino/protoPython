@@ -21,10 +21,10 @@ Plan for 20 incremental milestones. Each step: implement → update docs → com
 | 996–997 | tasks/todo.md: add v53 section; mark v51/v52 done | done |
 | 998–999 | IMPLEMENTATION_PLAN: v52 done, v53 in progress | done |
 | 1000–1002 | STUBS.md, TESTING.md: v53 updates | done |
-| 1003–1004 | Commit: NEXT_20_STEPS_V53, todo, IMPLEMENTATION_PLAN, STUBS, TESTING | pending |
+| 1003–1004 | Commit: NEXT_20_STEPS_V53, todo, IMPLEMENTATION_PLAN, STUBS, TESTING | done |
 
 ---
 
 ## Summary
 
-Steps 985–1004 deliver: NEXT_20_STEPS_V53.md; FilterBuiltin passes; ThreadModule stack-use-after-scope fixed (s used directly in cerr); py_log10 workaround documented; regrtest persistence verified; foundation suite full vs filtered documented; tasks/todo.md v53; IMPLEMENTATION_PLAN v52 done, v53 in progress; STUBS and TESTING updated; single commit.
+Steps 985–1004 deliver: NEXT_20_STEPS_V53.md; FilterBuiltin fix or documentation; ThreadModule and py_log10 status; regrtest persistence verification; foundation suite documentation (full vs filtered CTest); tasks/todo.md, IMPLEMENTATION_PLAN, STUBS, TESTING updated; single commit.

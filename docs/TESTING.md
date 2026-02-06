@@ -102,9 +102,16 @@ Or with env var:
 PROTYPY_BIN=./build/src/runtime/protopy REGRTEST_RESULTS=test/regression/results/latest.json python test/regression/run_and_report.py
 ```
 
-### Persistence format and dashboard
+### Persistence format and dashboard (v54)
 
-The JSON output contains test run metadata and per-test results (pass/fail, duration). The format is suitable for CI and for the regression dashboard in `test/regression/dashboard.py` (history, trends). Use `REGRTEST_HISTORY` to point to the history file when running the dashboard.
+The JSON output contains: `passed`, `failed`, `total`, `compatibility_pct`, `timestamp`, `failed_tests`. The format is suitable for CI and for the regression dashboard.
+
+**dashboard.py**: Display history and pass % from regrtest results. Usage:
+```bash
+python test/regression/dashboard.py [results/history.json]
+# Or: REGRTEST_HISTORY=path/to/history.json python test/regression/dashboard.py
+```
+Reads JSON array of `{timestamp, passed, failed, compatibility_pct}` and prints summary. Default history path: `test/regression/results/history.json`.
 
 ### JSON output format
 

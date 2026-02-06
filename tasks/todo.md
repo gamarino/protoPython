@@ -461,11 +461,17 @@ See [docs/NEXT_20_STEPS_V52.md](../docs/NEXT_20_STEPS_V52.md). Steps 965–984: 
 
 - [x] Steps 965–984
 
-## 52. Next 20 Steps (v53) — in progress
+## 52. Next 20 Steps (v53) — completed
 
-See [docs/NEXT_20_STEPS_V53.md](../docs/NEXT_20_STEPS_V53.md). Steps 985–1004: FilterBuiltin passes; ThreadModule fix; py_log10 workaround; regrtest persistence; foundation suite full vs filtered; tasks/todo.md v53; IMPLEMENTATION_PLAN v52 done, v53 in progress; STUBS, TESTING updated.
+See [docs/NEXT_20_STEPS_V53.md](../docs/NEXT_20_STEPS_V53.md). Steps 985–1004: FilterBuiltin passes; ThreadModule fix; py_log10 workaround; regrtest persistence verified; foundation suite full vs filtered documented; tasks/todo.md v53; IMPLEMENTATION_PLAN v52 done, v53 in progress; STUBS, TESTING updated.
 
-- [ ] Steps 985–1004 (commit pending)
+- [x] Steps 985–1004
+
+## 53. Next 20 Steps (v54) — in progress
+
+See [docs/NEXT_20_STEPS_V54.md](../docs/NEXT_20_STEPS_V54.md). Steps 1005–1024: Regrtest dashboard; compatibility tracking; run_and_validate_output; C_MODULES_TO_REPLACE; foundation test filter; tasks/todo.md v54; IMPLEMENTATION_PLAN v53 done, v54 in progress; STUBS, TESTING updated.
+
+- [ ] Steps 1005–1024
 
 ---
 *Updated from plan implementation. Mark items complete as work progresses.*
