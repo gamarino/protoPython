@@ -4127,6 +4127,14 @@ const proto::ProtoObject* PythonEnvironment::takePendingException() {
     return e;
 }
 
+bool PythonEnvironment::hasPendingException() const {
+    return s_threadPendingException != nullptr;
+}
+
+const proto::ProtoObject* PythonEnvironment::peekPendingException() const {
+    return s_threadPendingException;
+}
+
 proto::ProtoSpace* PythonEnvironment::getProcessSpace() {
     static proto::ProtoSpace s_processSpace;
     return &s_processSpace;
@@ -4167,9 +4175,73 @@ void PythonEnvironment::raiseValueError(proto::ProtoContext* ctx, const proto::P
     if (exc) setPendingException(exc);
 }
 
+static int levenshtein_distance(const std::string& s1, const std::string& s2) {
+    const size_t len1 = s1.size(), len2 = s2.size();
+    if (len1 == 0) return (int)len2;
+    if (len2 == 0) return (int)len1;
+    std::vector<int> col(len2 + 1), prevCol(len2 + 1);
+    for (int i = 0; i <= (int)len2; i++) prevCol[i] = i;
+    for (int i = 0; i < (int)len1; i++) {
+        col[0] = i + 1;
+        for (int j = 0; j < (int)len2; j++) {
+            col[j + 1] = std::min({ prevCol[1 + j] + 1, col[j] + 1, prevCol[j] + (s1[i] == s2[j] ? 0 : 1) });
+        }
+        std::swap(col, prevCol);
+    }
+    return prevCol[len2];
+}
+
+static std::string suggestSimilarName(proto::ProtoContext* ctx, const std::string& name, const proto::ProtoObject* scope) {
+    if (!scope) return "";
+    const proto::ProtoSparseList* attrs = scope->getAttributes(ctx);
+    if (!attrs) return "";
+    
+    std::string bestMatch;
+    int bestDist = 3; // Max distance to suggest
+    
+    proto::ProtoSparseListIterator* it = const_cast<proto::ProtoSparseListIterator*>(attrs->getIterator(ctx));
+    while (it && it->hasNext(ctx)) {
+        unsigned long key = it->nextKey(ctx);
+        const proto::ProtoString* s = reinterpret_cast<const proto::ProtoString*>(key);
+        if (s) {
+            std::string candidate;
+            s->toUTF8String(ctx, candidate);
+            if (candidate.size() >= 2) {
+                int d = levenshtein_distance(name, candidate);
+                if (d < bestDist) {
+                    bestDist = d;
+                    bestMatch = candidate;
+                }
+            }
+        }
+        it = const_cast<proto::ProtoSparseListIterator*>(it->advance(ctx));
+    }
+    return bestMatch;
+}
+
 void PythonEnvironment::raiseNameError(proto::ProtoContext* ctx, const std::string& name) {
     if (!nameErrorType) return;
     std::string msg = "name '" + name + "' is not defined";
+
+    std::string suggestion;
+    // Check builtins first
+    if (builtinsModule) suggestion = suggestSimilarName(ctx, name, builtinsModule);
+    
+    // Also check __main__
+    const proto::ProtoObject* mainMod = resolve("__main__");
+    if (mainMod) {
+        std::string mainSug = suggestSimilarName(ctx, name, mainMod);
+        if (!mainSug.empty()) {
+            if (suggestion.empty() || levenshtein_distance(name, mainSug) < levenshtein_distance(name, suggestion)) {
+                suggestion = mainSug;
+            }
+        }
+    }
+
+    if (!suggestion.empty()) {
+        msg += ". Did you mean: '" + suggestion + "'?";
+    }
+
     const proto::ProtoList* args = ctx->newList()->appendLast(ctx, ctx->fromUTF8String(msg.c_str()));
     const proto::ProtoObject* exc = nameErrorType->call(ctx, nullptr, proto::ProtoString::fromUTF8String(ctx, "__call__"), nameErrorType, args, nullptr);
     if (exc) setPendingException(exc);
@@ -4189,6 +4261,12 @@ void PythonEnvironment::raiseAttributeError(proto::ProtoContext* ctx, const prot
         else if (obj->asList(ctx)) typeName = "list";
     }
     std::string msg = "'" + typeName + "' object has no attribute '" + attr + "'";
+    
+    std::string suggestion = suggestSimilarName(ctx, attr, obj);
+    if (!suggestion.empty()) {
+        msg += ". Did you mean: '" + suggestion + "'?";
+    }
+
     const proto::ProtoList* args = ctx->newList()->appendLast(ctx, ctx->fromUTF8String(msg.c_str()));
     const proto::ProtoObject* exc = attributeErrorType->call(ctx, nullptr, proto::ProtoString::fromUTF8String(ctx, "__call__"), attributeErrorType, args, nullptr);
     if (exc) {
@@ -4273,6 +4351,13 @@ void PythonEnvironment::raiseZeroDivisionError(proto::ProtoContext* ctx) {
     if (!zeroDivisionErrorType) return;
     const proto::ProtoList* args = ctx->newList()->appendLast(ctx, ctx->fromUTF8String("division by zero"));
     const proto::ProtoObject* exc = zeroDivisionErrorType->call(ctx, nullptr, proto::ProtoString::fromUTF8String(ctx, "__call__"), zeroDivisionErrorType, args, nullptr);
+    if (exc) setPendingException(exc);
+}
+
+void PythonEnvironment::raiseStopIteration(proto::ProtoContext* ctx) {
+    if (!stopIterationType) return;
+    const proto::ProtoList* args = ctx->newList();
+    const proto::ProtoObject* exc = stopIterationType->call(ctx, nullptr, proto::ProtoString::fromUTF8String(ctx, "__call__"), stopIterationType, args, nullptr);
     if (exc) setPendingException(exc);
 }
 
@@ -4639,6 +4724,15 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     boolPrototype = boolPrototype->setAttribute(context, py_call, context->fromMethod(const_cast<proto::ProtoObject*>(boolPrototype), py_bool_call));
     
     // V72: Register core prototypes in ProtoSpace so primitives can resolve methods
+    nonePrototype = space_->nonePrototype;
+    if (!nonePrototype) {
+        nonePrototype = context->newObject(true);
+        space_->nonePrototype = const_cast<proto::ProtoObject*>(nonePrototype);
+    }
+    // Set NoneType name (PEP 484)
+    nonePrototype->setAttribute(context, py_class, typePrototype);
+    nonePrototype->setAttribute(context, py_name, context->fromUTF8String("NoneType"));
+
     space_->objectPrototype = const_cast<proto::ProtoObject*>(objectPrototype);
     space_->stringPrototype = const_cast<proto::ProtoObject*>(strPrototype);
     space_->smallIntegerPrototype = const_cast<proto::ProtoObject*>(intPrototype);
@@ -4661,7 +4755,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     nativeProvider->registerModule("_io", [ioModule](proto::ProtoContext*) { return ioModule; });
 
     // builtins module
-    builtinsModule = builtins::initialize(context, objectPrototype, typePrototype, intPrototype, strPrototype, listPrototype, dictPrototype, tuplePrototype, setPrototype, bytesPrototype, sliceType, frozensetPrototype, floatPrototype, boolPrototype, ioModule);
+    builtinsModule = builtins::initialize(context, objectPrototype, typePrototype, intPrototype, strPrototype, listPrototype, dictPrototype, tuplePrototype, setPrototype, bytesPrototype, nonePrototype, sliceType, frozensetPrototype, floatPrototype, boolPrototype, ioModule);
     nativeProvider->registerModule("builtins", [this](proto::ProtoContext* ctx) { return builtinsModule; });
 
     // _collections module
@@ -4692,8 +4786,53 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     keyboardInterruptType = exceptionsMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "KeyboardInterrupt"));
     systemExitType = exceptionsMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "SystemExit"));
     recursionErrorType = exceptionsMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "RecursionError"));
+    stopIterationType = exceptionsMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "StopIteration"));
     zeroDivisionErrorType = exceptionsMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "ZeroDivisionError"));
     nativeProvider->registerModule("exceptions", [exceptionsMod](proto::ProtoContext*) { return exceptionsMod; });
+
+    iterString = proto::ProtoString::fromUTF8String(context, "__iter__");
+    nextString = proto::ProtoString::fromUTF8String(context, "__next__");
+    emptyList = context->newList();
+
+    rangeCurString = proto::ProtoString::fromUTF8String(context, "__range_cur__");
+    rangeStopString = proto::ProtoString::fromUTF8String(context, "__range_stop__");
+    rangeStepString = proto::ProtoString::fromUTF8String(context, "__range_step__");
+    mapFuncString = proto::ProtoString::fromUTF8String(context, "__map_func__");
+    mapIterString = proto::ProtoString::fromUTF8String(context, "__map_iter__");
+    enumIterString = proto::ProtoString::fromUTF8String(context, "__enumerate_it__");
+    enumIdxString = proto::ProtoString::fromUTF8String(context, "__enumerate_idx__");
+    revObjString = proto::ProtoString::fromUTF8String(context, "__reversed_obj__");
+    revIdxString = proto::ProtoString::fromUTF8String(context, "__reversed_idx__");
+    zipItersString = proto::ProtoString::fromUTF8String(context, "__zip_iters__");
+    filterFuncString = proto::ProtoString::fromUTF8String(context, "__filter_func__");
+    filterIterString = proto::ProtoString::fromUTF8String(context, "__filter_iter__");
+
+    classString = proto::ProtoString::fromUTF8String(context, "__class__");
+    nameString = proto::ProtoString::fromUTF8String(context, "__name__");
+    callString = proto::ProtoString::fromUTF8String(context, "__call__");
+    getItemString = proto::ProtoString::fromUTF8String(context, "__getitem__");
+
+    lenString = proto::ProtoString::fromUTF8String(context, "__len__");
+    boolString = proto::ProtoString::fromUTF8String(context, "__bool__");
+    intString = proto::ProtoString::fromUTF8String(context, "__int__");
+    floatString = proto::ProtoString::fromUTF8String(context, "__float__");
+    strString = proto::ProtoString::fromUTF8String(context, "__str__");
+    reprString = proto::ProtoString::fromUTF8String(context, "__repr__");
+    hashString = proto::ProtoString::fromUTF8String(context, "__hash__");
+    containsString = proto::ProtoString::fromUTF8String(context, "__contains__");
+    formatString = proto::ProtoString::fromUTF8String(context, "__format__");
+    dictString = proto::ProtoString::fromUTF8String(context, "__dict__");
+    docString = proto::ProtoString::fromUTF8String(context, "__doc__");
+    reversedString = proto::ProtoString::fromUTF8String(context, "__reversed__");
+
+    enumProtoS = proto::ProtoString::fromUTF8String(context, "__enumerate_proto__");
+    revProtoS = proto::ProtoString::fromUTF8String(context, "__reversed_proto__");
+    zipProtoS = proto::ProtoString::fromUTF8String(context, "__zip_proto__");
+    filterProtoS = proto::ProtoString::fromUTF8String(context, "__filter_proto__");
+    mapProtoS = proto::ProtoString::fromUTF8String(context, "__map_proto__");
+    rangeProtoS = proto::ProtoString::fromUTF8String(context, "__range_proto__");
+    boolTypeS = proto::ProtoString::fromUTF8String(context, "bool");
+    filterBoolS = proto::ProtoString::fromUTF8String(context, "__filter_bool__");
 
     registry.registerProvider(std::move(nativeProvider));
 
@@ -4804,10 +4943,16 @@ int PythonEnvironment::executeString(const std::string& source, const std::strin
     return 0;
 }
 
-int PythonEnvironment::executeModule(const std::string& moduleName) {
+int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain) {
     const proto::ProtoObject* mod = resolve(moduleName);
     if (mod == nullptr || mod == PROTO_NONE)
         return -1;
+
+    if (asMain) {
+        const proto::ProtoString* nameS = proto::ProtoString::fromUTF8String(context, "__name__");
+        const proto::ProtoObject* mainS = context->fromUTF8String("__main__");
+        mod = mod->setAttribute(context, nameS, mainS);
+    }
 
     const proto::ProtoString* fileKey = proto::ProtoString::fromUTF8String(context, "__file__");
     const proto::ProtoString* executedKey = proto::ProtoString::fromUTF8String(context, "__executed__");
@@ -5009,7 +5154,6 @@ std::vector<std::string> PythonEnvironment::collectCandidates(const proto::Proto
 
 void PythonEnvironment::handleException(const proto::ProtoObject* exc, const proto::ProtoObject* frame, std::ostream& out) {
     if (!exc) return;
-    out << formatException(exc, frame) << std::flush;
     
     // Step 1335: sys.last_type, sys.last_value, sys.last_traceback
     const proto::ProtoObject* type = exc->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__class__"));
@@ -5435,6 +5579,7 @@ bool PythonEnvironment::isCompleteBlock(const std::string& code) {
 }
 
 const proto::ProtoObject* PythonEnvironment::resolve(const std::string& name) {
+    if (name == "None") return nonePrototype;
     // Type shortcuts always use current env (no cache) so multiple envs per thread stay correct.
     if (name == "object") return objectPrototype;
     if (name == "type") return typePrototype;

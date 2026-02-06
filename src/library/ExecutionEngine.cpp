@@ -258,10 +258,11 @@ const proto::ProtoObject* executeBytecodeRange(
                 } else {
                     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
                     if (env) {
+                        // Check if it's explicitly None in builtins
                         std::string name;
                         nameObj->asString(ctx)->toUTF8String(ctx, name);
                         val = env->resolve(name);
-                        if (val && val != PROTO_NONE) {
+                        if (val) { // Now resolve returns the real None object for "None"
                             stack.push_back(val);
                         } else {
                             env->raiseNameError(ctx, name);
@@ -890,7 +891,13 @@ const proto::ProtoObject* executeBytecodeRange(
             for (int j = 0; j < arg; ++j)
                 args = args->appendLast(ctx, argVec[j]);
             const proto::ProtoObject* result = invokeCallable(ctx, callable, args);
-            if (result) stack.push_back(result);
+            if (result) {
+                stack.push_back(result);
+            } else {
+                // If it returns nullptr, it must be an exception.
+                // Standardized None is now a real object.
+                return PROTO_NONE;
+            }
         } else if (op == OP_BUILD_TUPLE) {
             i++;
             if (stack.size() >= static_cast<size_t>(arg)) {
@@ -926,20 +933,36 @@ const proto::ProtoObject* executeBytecodeRange(
             if (stack.empty()) continue;
             const proto::ProtoObject* iterable = stack.back();
             stack.pop_back();
-            const proto::ProtoObject* iterM = iterable->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iter__"));
+            PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+            const proto::ProtoString* iterS = env ? env->getIterString() : proto::ProtoString::fromUTF8String(ctx, "__iter__");
+            
+            const proto::ProtoList* emptyL = env ? env->getEmptyList() : ctx->newList();
+            
+            const proto::ProtoObject* iterM = iterable->getAttribute(ctx, iterS);
             if (!iterM || !iterM->asMethod(ctx)) continue;
-            const proto::ProtoObject* it = iterM->asMethod(ctx)(ctx, iterable, nullptr, ctx->newList(), nullptr);
+            const proto::ProtoObject* it = iterM->asMethod(ctx)(ctx, iterable, nullptr, emptyL, nullptr);
             if (it) stack.push_back(it);
         } else if (op == OP_FOR_ITER) {
             i++;
             if (stack.empty()) continue;
             const proto::ProtoObject* iterator = stack.back();
-            const proto::ProtoObject* nextM = iterator->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__next__"));
-            if (!nextM || !nextM->asMethod(ctx)) continue;
-            const proto::ProtoObject* val = nextM->asMethod(ctx)(ctx, iterator, nullptr, ctx->newList(), nullptr);
-            if (val && val != PROTO_NONE) {
+            PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+            const proto::ProtoString* nextS = env ? env->getNextString() : proto::ProtoString::fromUTF8String(ctx, "__next__");
+            const proto::ProtoList* emptyL = env ? env->getEmptyList() : ctx->newList();
+            
+            const proto::ProtoObject* nextM = iterator->getAttribute(ctx, nextS);
+            if (!nextM || !nextM->asMethod(ctx)) {
+                stack.pop_back();
+                if (arg >= 0 && static_cast<unsigned long>(arg) < n)
+                    i = static_cast<unsigned long>(arg) - 1;
+                continue;
+            }
+            
+            const proto::ProtoObject* val = nextM->asMethod(ctx)(ctx, iterator, nullptr, emptyL, nullptr);
+            if (val && val != (env ? env->getNonePrototype() : nullptr)) {
                 stack.push_back(val);
             } else {
+                // nullptr or None returned by native __next__ signals exhaustion in protoPython protocol
                 stack.pop_back();
                 if (arg >= 0 && static_cast<unsigned long>(arg) < n)
                     i = static_cast<unsigned long>(arg) - 1;
@@ -974,7 +997,24 @@ const proto::ProtoObject* executeBytecodeRange(
             const proto::ProtoObject* nameObj = names->getAt(ctx, arg);
             if (nameObj->isString(ctx)) {
                 const proto::ProtoObject* val = frame->getAttribute(ctx, nameObj->asString(ctx));
-                if (val && val != PROTO_NONE) stack.push_back(val);
+                if (val && val != PROTO_NONE) {
+                    stack.push_back(val);
+                } else {
+                    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+                    if (env) {
+                        std::string name;
+                        nameObj->asString(ctx)->toUTF8String(ctx, name);
+                        val = env->resolve(name);
+                        if (val) {
+                            stack.push_back(val);
+                        } else {
+                            env->raiseNameError(ctx, name);
+                            return PROTO_NONE;
+                        }
+                    } else {
+                        return PROTO_NONE;
+                    }
+                }
             }
         } else if (op == OP_STORE_GLOBAL && names && frame && static_cast<unsigned long>(arg) < names->getSize(ctx)) {
             i++;

@@ -54,6 +54,9 @@ private:
     bool compileFor(ForNode* n);
     bool compileIf(IfNode* n);
     bool compileGlobal(GlobalNode* n);
+    bool compileReturn(ReturnNode* n);
+    bool compileImport(ImportNode* n);
+    bool compileTry(TryNode* n);
     bool compileFunctionDef(FunctionDefNode* n);
     bool compileSuite(SuiteNode* n);
     bool compileTarget(ASTNode* target, bool isStore);

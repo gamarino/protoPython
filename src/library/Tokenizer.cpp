@@ -63,21 +63,38 @@ Token Tokenizer::scanNumber() {
 
 Token Tokenizer::scanString(char quote) {
     Token t = makeToken(TokenType::String);
-    pos_++; // consume opening quote
+    bool triple = false;
+    if (pos_ + 2 < source_.size() && source_[pos_ + 1] == quote && source_[pos_ + 2] == quote) {
+        triple = true;
+        pos_ += 3;
+    } else {
+        pos_++;
+    }
     std::string s;
     while (pos_ < source_.size()) {
-        char c = source_[pos_++];
-        if (c == quote)
+        if (triple && pos_ + 2 < source_.size() && source_[pos_] == quote && source_[pos_ + 1] == quote && source_[pos_ + 2] == quote) {
+            pos_ += 3;
             break;
+        } else if (!triple && source_[pos_] == quote) {
+            pos_++;
+            break;
+        }
+        char c = source_[pos_++];
         if (c == '\\' && pos_ < source_.size()) {
             char e = source_[pos_++];
             if (e == 'n') s += '\n';
             else if (e == 't') s += '\t';
             else if (e == 'r') s += '\r';
-            else if (e == '"' || e == '\'') s += e;
+            else if (e == quote) s += quote;
+            else if (e == '\\') s += '\\';
             else s += e;
-        } else
+        } else {
+            if (c == '\n') {
+                line_++;
+                lineStartPos_ = pos_;
+            }
             s += c;
+        }
     }
     t.value = s;
     return t;
@@ -191,6 +208,18 @@ Token Tokenizer::next() {
     if (c == '{') { Token t = makeToken(TokenType::LCurly); pos_++; return t; }
     if (c == '}') { Token t = makeToken(TokenType::RCurly); pos_++; return t; }
     if (c == ':') { Token t = makeToken(TokenType::Colon); pos_++; return t; }
+    if (c == '%') { Token t = makeToken(TokenType::Modulo); pos_++; return t; }
+    if (c == '!' && pos_ + 1 < source_.size() && source_[pos_ + 1] == '=') {
+        Token t = makeToken(TokenType::NotEqual); pos_ += 2; return t;
+    }
+    if (c == '<' && pos_ + 1 < source_.size() && source_[pos_ + 1] == '=') {
+        Token t = makeToken(TokenType::LessEqual); pos_ += 2; return t;
+    }
+    if (c == '<') { Token t = makeToken(TokenType::Less); pos_++; return t; }
+    if (c == '>' && pos_ + 1 < source_.size() && source_[pos_ + 1] == '=') {
+        Token t = makeToken(TokenType::GreaterEqual); pos_ += 2; return t;
+    }
+    if (c == '>') { Token t = makeToken(TokenType::Greater); pos_++; return t; }
     if (c == '=' && pos_ + 1 < source_.size() && source_[pos_ + 1] == '=') {
         Token t = makeToken(TokenType::EqEqual); pos_ += 2; return t;
     }

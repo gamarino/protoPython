@@ -9,9 +9,10 @@ static const proto::ProtoObject* exception_init(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
-    const proto::ProtoString* argsName = proto::ProtoString::fromUTF8String(context, "__args__");
-    const proto::ProtoObject* args = positionalParameters && positionalParameters->getSize(context) > 0
-        ? positionalParameters->asObject(context) : context->newList()->asObject(context);
+    const proto::ProtoString* argsName = proto::ProtoString::fromUTF8String(context, "args");
+    const proto::ProtoObject* args = (positionalParameters && positionalParameters->getSize(context) > 0)
+        ? context->newTupleFromList(positionalParameters)->asObject(context)
+        : context->newTuple()->asObject(context);
     self->setAttribute(context, argsName, args);
     return PROTO_NONE;
 }
@@ -24,8 +25,10 @@ static const proto::ProtoObject* exception_call(
     const proto::ProtoSparseList* keywordParameters) {
     const proto::ProtoObject* instance = self->newChild(context, true);
     instance->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__class__"), self);
-    const proto::ProtoString* argsName = proto::ProtoString::fromUTF8String(context, "__args__");
-    const proto::ProtoObject* args = positionalParameters ? positionalParameters->asObject(context) : context->newList()->asObject(context);
+    const proto::ProtoString* argsName = proto::ProtoString::fromUTF8String(context, "args");
+    const proto::ProtoObject* args = positionalParameters 
+        ? context->newTupleFromList(positionalParameters)->asObject(context) 
+        : context->newTuple()->asObject(context);
     instance->setAttribute(context, argsName, args);
     const proto::ProtoObject* init = self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__init__"));
     if (init && init->asMethod(context)) {
@@ -40,9 +43,9 @@ static const proto::ProtoObject* exception_repr(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
-    const proto::ProtoString* argsName = proto::ProtoString::fromUTF8String(context, "__args__");
+    const proto::ProtoString* argsName = proto::ProtoString::fromUTF8String(context, "args");
     const proto::ProtoObject* argsObj = self->getAttribute(context, argsName);
-    const proto::ProtoList* args = argsObj && argsObj->asList(context) ? argsObj->asList(context) : context->newList();
+    const proto::ProtoTuple* args = argsObj && argsObj->isTuple(context) ? argsObj->asTuple(context) : context->newTuple();
     const proto::ProtoObject* nameObj = self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__name__"));
     std::string name = "Exception";
     if (nameObj && nameObj->isString(context)) {

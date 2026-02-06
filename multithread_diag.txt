@@ -1,0 +1,5 @@
+CHUNK=50000 N_THREADS=4
+single_chunk_ms=0.64
+sequential_ms=2.35 (expected_serial~2.6)
+threaded_ms=2.52
+ratio_threaded_over_expected_serial=0.98

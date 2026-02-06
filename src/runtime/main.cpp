@@ -31,6 +31,7 @@ struct CliOptions {
     bool repl{false};
     std::string moduleName;
     std::string scriptPath;
+    std::string commandLine;
     std::string stdLibPath;
     std::vector<std::string> searchPaths;
 };
@@ -80,17 +81,20 @@ static bool moduleExists(const std::string& moduleName,
 static void printUsage(const char* prog) {
     std::cout << "protopy 0.1.0 - minimal runtime (execution stubbed)\n"
                  "Usage:\n"
-                 "  " << prog << " --module <name> [--path <search_path>]...\n"
-                 "  " << prog << " --script <script.py> [--path <search_path>]...\n"
+                 "  " << prog << " [-m <name> | --module <name>] [-p <path> | --path <path>]...\n"
+                 "  " << prog << " [-c <cmd>] [-p <path> | --path <path>]...\n"
+                 "  " << prog << " [--script <script.py>] [--path <path>]...\n"
                  "  " << prog << " [module_name|script.py]\n"
                  "Options:\n"
+                 "  -c <command>      Execute Python program passed as string\n"
+                 "  -m <module-name>  Execute module as a script\n"
+                 "  -p, --path <path> Append additional module search path (repeatable)\n"
                  "  --stdlib <path>   Override stdlib location (defaults to build-time path)\n"
-                 "  --path <path>     Append additional module search path (repeatable)\n"
                  "  --dry-run         Validate inputs but skip environment initialization\n"
                  "  --bytecode-only   Stub: validate bytecode loading path (no execution)\n"
                  "  --trace           Enable tracing (stub)\n"
-                 "  --repl            Interactive REPL\n"
-                 "  --help            Show this help message\n";
+                 "  --repl, -i        Interactive REPL\n"
+                 "  --help, -h        Show this help message\n";
 }
 
 static bool parseArgs(int argc, char* argv[], CliOptions& opts, std::string& error) {
@@ -99,12 +103,18 @@ static bool parseArgs(int argc, char* argv[], CliOptions& opts, std::string& err
         if (arg == "--help" || arg == "-h") {
             opts.showHelp = true;
             return true;
-        } else if (arg == "--module") {
+        } else if (arg == "--module" || arg == "-m") {
             if (i + 1 >= argc) {
-                error = "--module requires a value";
+                error = arg + " requires a value";
                 return false;
             }
             opts.moduleName = argv[++i];
+        } else if (arg == "-c") {
+            if (i + 1 >= argc) {
+                error = "-c requires a value";
+                return false;
+            }
+            opts.commandLine = argv[++i];
         } else if (arg == "--script") {
             if (i + 1 >= argc) {
                 error = "--script requires a value";
@@ -125,16 +135,16 @@ static bool parseArgs(int argc, char* argv[], CliOptions& opts, std::string& err
             opts.trace = true;
         } else if (arg == "--repl" || arg == "-i") {
             opts.repl = true;
-        } else if (arg == "--path") {
+        } else if (arg == "--path" || arg == "-p") {
             if (i + 1 >= argc) {
-                error = "--path requires a value";
+                error = arg + " requires a value";
                 return false;
             }
             opts.searchPaths.push_back(argv[++i]);
         } else if (!arg.empty() && arg[0] == '-') {
             error = "Unknown option: " + arg;
             return false;
-        } else if (opts.moduleName.empty() && opts.scriptPath.empty()) {
+        } else if (opts.moduleName.empty() && opts.scriptPath.empty() && opts.commandLine.empty()) {
             // Positional target for backwards compatibility.
             if (arg.find('/') != std::string::npos || arg.find('\\') != std::string::npos ||
                 (arg.size() >= 3 && arg.compare(arg.size() - 3, 3, ".py") == 0)) {
@@ -147,15 +157,16 @@ static bool parseArgs(int argc, char* argv[], CliOptions& opts, std::string& err
             return false;
         }
     }
-    if (!opts.moduleName.empty() && !opts.scriptPath.empty()) {
-        error = "Specify either --module or --script, not both";
+    int targets = (!opts.moduleName.empty()) + (!opts.scriptPath.empty()) + (!opts.commandLine.empty());
+    if (targets > 1) {
+        error = "Specify only one of -c, -m, or script path";
         return false;
     }
     return true;
 }
 
-int executeModule(protoPython::PythonEnvironment& env, const std::string& moduleName) {
-    int ret = env.executeModule(moduleName);
+int executeModule(protoPython::PythonEnvironment& env, const std::string& moduleName, bool asMain = false) {
+    int ret = env.executeModule(moduleName, asMain);
     if (ret == -1) {
         std::cerr << "protopy: could not resolve module '" << moduleName << "'" << std::endl;
         return EXIT_RESOLVE;
@@ -189,14 +200,31 @@ int main(int argc, char* argv[]) {
     std::vector<std::string> searchPaths = {"."};
     searchPaths.insert(searchPaths.end(), options.searchPaths.begin(), options.searchPaths.end());
 
+    std::vector<std::string> argvVec;
+    for (int i = 0; i < argc; ++i) argvVec.push_back(argv[i]);
+
     if (options.repl) {
-        protoPython::PythonEnvironment env(stdLibPath, searchPaths, std::vector<std::string>());
+        protoPython::PythonEnvironment env(stdLibPath, searchPaths, argvVec);
         if (options.trace) {
             env.setExecutionHook([](const std::string& name, int phase) {
                 std::cerr << (phase == 0 ? "[trace] enter " : "[trace] leave ") << name << std::endl;
             });
+            env.enableDefaultTrace();
         }
         env.runRepl(std::cin, std::cout);
+        return EXIT_OK;
+    }
+
+    if (!options.commandLine.empty()) {
+        protoPython::PythonEnvironment env(stdLibPath, searchPaths, argvVec);
+        if (options.trace) {
+            env.setExecutionHook([](const std::string& name, int phase) {
+                std::cerr << (phase == 0 ? "[trace] enter " : "[trace] leave ") << name << std::endl;
+            });
+            env.enableDefaultTrace();
+        }
+        int ret = env.executeString(options.commandLine, "<string>");
+        if (ret == -2) return EXIT_RUNTIME;
         return EXIT_OK;
     }
 
@@ -205,9 +233,6 @@ int main(int argc, char* argv[]) {
         return EXIT_USAGE;
     }
 
-    std::vector<std::string> argvVec;
-    for (int i = 0; i < argc; ++i) argvVec.push_back(argv[i]);
-
     if (!options.scriptPath.empty()) {
         std::vector<std::string> scriptPaths = searchPaths;
         scriptPaths.insert(scriptPaths.begin(), dirName(options.scriptPath));
@@ -215,8 +240,14 @@ int main(int argc, char* argv[]) {
             return fileExists(options.scriptPath) ? EXIT_OK : EXIT_RESOLVE;
         }
         protoPython::PythonEnvironment envWithPath(stdLibPath, scriptPaths, argvVec);
+        if (options.trace) {
+            envWithPath.setExecutionHook([](const std::string& name, int phase) {
+                std::cerr << (phase == 0 ? "[trace] enter " : "[trace] leave ") << name << std::endl;
+            });
+            envWithPath.enableDefaultTrace();
+        }
         std::string moduleName = moduleNameFromPath(options.scriptPath);
-        return executeModule(envWithPath, moduleName);
+        return executeModule(envWithPath, moduleName, true);
     }
 
     if (options.dryRun || options.bytecodeOnly) {

@@ -36,8 +36,9 @@ def median(lst):
 
 
 def run_cmd(cmd, cwd=None, timeout=60, stderr_file=None, env=None, verbose=False):
-    """Run command; return (elapsed_ms, returncode, timed_out).
-    protopy is run with PIPE (not DEVNULL) so it does not block on closed stdout/stderr."""
+    """Run command; return (elapsed_ms, returncode, timed_out, peak_rss_kb)."""
+    # Use /usr/bin/time -f "%M" to get peak RSS in KB
+    time_cmd = ["/usr/bin/time", "-f", "%M"] + cmd
     start = time.perf_counter()
     stderr_handle = None
     is_protopy = cmd and "protopy" in os.path.basename(cmd[0])
@@ -45,78 +46,40 @@ def run_cmd(cmd, cwd=None, timeout=60, stderr_file=None, env=None, verbose=False
         kwargs = {
             "cwd": cwd or PROJECT_ROOT,
             "text": True,
+            "stdout": subprocess.PIPE,
+            "stderr": subprocess.PIPE,
         }
         if env is not None:
             kwargs["env"] = {**os.environ, **env}
-        if stderr_file:
-            stderr_handle = open(stderr_file, "a")
-            kwargs["stdout"] = subprocess.DEVNULL
-            kwargs["stderr"] = stderr_handle
-            p = subprocess.Popen(cmd, **kwargs)
-            try:
-                p.wait(timeout=timeout)
-            except subprocess.TimeoutExpired:
-                p.kill()
-                p.wait()
-                raise
-            elapsed_ms = (time.perf_counter() - start) * 1000
-            if verbose:
-                print(f"      {elapsed_ms:.0f}ms exit={p.returncode}")
-            return elapsed_ms, p.returncode, False
-        if is_protopy:
-            kwargs["stdout"] = subprocess.PIPE
-            kwargs["stderr"] = subprocess.PIPE
-            p = subprocess.Popen(cmd, **kwargs)
-            try:
-                p.communicate(timeout=timeout)
-            except subprocess.TimeoutExpired:
-                p.kill()
-                p.communicate()
-                raise
-            elapsed_ms = (time.perf_counter() - start) * 1000
-            if verbose:
-                print(f"      {elapsed_ms:.0f}ms exit={p.returncode}")
-            return elapsed_ms, p.returncode, False
-        kwargs["stdout"] = subprocess.DEVNULL
-        kwargs["stderr"] = subprocess.DEVNULL
-        kwargs["timeout"] = timeout
-        r = subprocess.run(cmd, **kwargs)
-        elapsed_ms = (time.perf_counter() - start) * 1000
-        if verbose:
-            print(f"      {elapsed_ms:.0f}ms exit={r.returncode}")
-        return elapsed_ms, r.returncode, False
-    except subprocess.TimeoutExpired:
-        elapsed_ms = (time.perf_counter() - start) * 1000
-        if verbose:
-            print(f"      TIMEOUT {elapsed_ms:.0f}ms")
-        return elapsed_ms, -1, True
-    finally:
-        if stderr_handle is not None:
-            try:
-                stderr_handle.close()
-            except Exception:
-                pass
+        
+        p = subprocess.Popen(time_cmd, **kwargs)
+        try:
+            stdout_data, stderr_data = p.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            p.kill()
+            p.communicate()
+            if verbose: print(" TIMEOUT", end="")
+            return (time.perf_counter() - start) * 1000, -1, True, 0
 
+        elapsed_ms = (time.perf_counter() - start) * 1000
+        
+        rss = 0
+        if stderr_data:
+            lines = stderr_data.strip().split("\n")
+            if lines:
+                try:
+                    rss = int(lines[-1].strip())
+                except ValueError:
+                    if verbose: print(f" (RSS parse fail: {lines[-1]})", end="")
+                    pass
 
-def bench_startup_empty(protopy_bin, cpython_bin, timeout=60, trace_file=None, verbose=False):
-    """Time to import minimal module (abc)."""
-    times_protopy = []
-    times_cpython = []
-    for _ in range(WARMUP_RUNS):
-        run_cmd([protopy_bin, "--module", "abc"], timeout=timeout, stderr_file=trace_file, verbose=verbose)
-        run_cmd([cpython_bin, "-c", "import abc"], timeout=timeout, verbose=verbose)
-    for i in range(N_RUNS):
         if verbose:
-            print(f"    startup_empty protopy run {i+1}/{N_RUNS}:", end="")
-        t, _, to = run_cmd([protopy_bin, "--module", "abc"], timeout=timeout, stderr_file=trace_file, verbose=verbose)
-        if not to:
-            times_protopy.append(t)
+            print(f" {elapsed_ms:.0f}ms (exit={p.returncode}, rss={rss}KB)", end="")
+        return elapsed_ms, p.returncode, False, rss
+    except Exception as e:
         if verbose:
-            print(f"    startup_empty cpython run {i+1}/{N_RUNS}:", end="")
-        t, _, to = run_cmd([cpython_bin, "-c", "import abc"], timeout=timeout, verbose=verbose)
-        if not to:
-            times_cpython.append(t)
-    return median(times_protopy) if times_protopy else None, median(times_cpython) if times_cpython else None
+            print(f"      ERROR: {e}")
+        return 0, -1, False, 0
 
 
 def _script_paths(script_path):
@@ -129,389 +92,126 @@ def _script_paths(script_path):
     return rel, str(script.resolve())
 
 
-def bench_int_sum_loop(protopy_bin, cpython_bin, timeout=60, trace_file=None, verbose=False):
-    """Time to run sum(range(N)) with N=100000."""
-    script = SCRIPT_DIR / "int_sum_loop.py"
+def bench_generic(name, script_name, protopy_bin, cpython_bin, timeout=60, trace_file=None, verbose=False):
+    """Generic benchmark runner."""
+    script = SCRIPT_DIR / script_name
     if not script.exists():
-        return None, None
+        return None, None, None, None
     script_protopy, script_cpy = _script_paths(script)
-    times_protopy = []
-    times_cpython = []
+    times_p, times_c = [], []
+    rss_p, rss_c = [], []
+    
     for _ in range(WARMUP_RUNS):
         run_cmd([protopy_bin, "--path", PATH_ARG, "--script", script_protopy], timeout=timeout, stderr_file=trace_file, verbose=verbose)
         run_cmd([cpython_bin, script_cpy], timeout=timeout, verbose=verbose)
+    
     for i in range(N_RUNS):
-        if verbose:
-            print(f"    int_sum_loop protopy run {i+1}/{N_RUNS}:", end="")
-        t, _, to = run_cmd([protopy_bin, "--path", PATH_ARG, "--script", script_protopy], timeout=timeout, stderr_file=trace_file, verbose=verbose)
+        if verbose: print(f"    {name} protopy {i+1}/{N_RUNS}:", end="")
+        tp, _, to, rp = run_cmd([protopy_bin, "--path", PATH_ARG, "--script", script_protopy], timeout=timeout, stderr_file=trace_file, verbose=verbose)
         if not to:
-            times_protopy.append(t)
-        if verbose:
-            print(f"    int_sum_loop cpython run {i+1}/{N_RUNS}:", end="")
-        t, _, to = run_cmd([cpython_bin, script_cpy], timeout=timeout, verbose=verbose)
+            times_p.append(tp)
+            rss_p.append(rp)
+        
+        if verbose: print(f"    {name} cpython {i+1}/{N_RUNS}:", end="")
+        tc, _, to, rc = run_cmd([cpython_bin, script_cpy], timeout=timeout, verbose=verbose)
         if not to:
-            times_cpython.append(t)
-    return median(times_protopy) if times_protopy else None, median(times_cpython) if times_cpython else None
-
-
-def bench_list_append_loop(protopy_bin, cpython_bin, timeout=60, trace_file=None, verbose=False):
-    """Time to run list append loop with N=10000 (or BENCH_N)."""
-    script = SCRIPT_DIR / "list_append_loop.py"
-    if not script.exists():
-        return None, None
-    script_protopy, script_cpy = _script_paths(script)
-    times_protopy = []
-    times_cpython = []
-    for _ in range(WARMUP_RUNS):
-        run_cmd([protopy_bin, "--path", PATH_ARG, "--script", script_protopy], timeout=timeout, stderr_file=trace_file, verbose=verbose)
-        run_cmd([cpython_bin, script_cpy], timeout=timeout, verbose=verbose)
-    for i in range(N_RUNS):
-        if verbose:
-            print(f"    list_append_loop protopy run {i+1}/{N_RUNS}:", end="")
-        t, _, to = run_cmd([protopy_bin, "--path", PATH_ARG, "--script", script_protopy], timeout=timeout, stderr_file=trace_file, verbose=verbose)
-        if not to:
-            times_protopy.append(t)
-        if verbose:
-            print(f"    list_append_loop cpython run {i+1}/{N_RUNS}:", end="")
-        t, _, to = run_cmd([cpython_bin, script_cpy], timeout=timeout, verbose=verbose)
-        if not to:
-            times_cpython.append(t)
-    return median(times_protopy) if times_protopy else None, median(times_cpython) if times_cpython else None
-
-
-def bench_str_concat_loop(protopy_bin, cpython_bin, timeout=60, trace_file=None, verbose=False):
-    """Time to run string concat loop (N from BENCH_N or default)."""
-    script = SCRIPT_DIR / "str_concat_loop.py"
-    if not script.exists():
-        return None, None
-    script_protopy, script_cpy = _script_paths(script)
-    times_protopy = []
-    times_cpython = []
-    for _ in range(WARMUP_RUNS):
-        run_cmd([protopy_bin, "--path", PATH_ARG, "--script", script_protopy], timeout=timeout, stderr_file=trace_file, verbose=verbose)
-        run_cmd([cpython_bin, script_cpy], timeout=timeout, verbose=verbose)
-    for i in range(N_RUNS):
-        if verbose:
-            print(f"    str_concat_loop protopy run {i+1}/{N_RUNS}:", end="")
-        t, _, to = run_cmd([protopy_bin, "--path", PATH_ARG, "--script", script_protopy], timeout=timeout, stderr_file=trace_file, verbose=verbose)
-        if not to:
-            times_protopy.append(t)
-        if verbose:
-            print(f"    str_concat_loop cpython run {i+1}/{N_RUNS}:", end="")
-        t, _, to = run_cmd([cpython_bin, script_cpy], timeout=timeout, verbose=verbose)
-        if not to:
-            times_cpython.append(t)
-    return median(times_protopy) if times_protopy else None, median(times_cpython) if times_cpython else None
-
-
-def bench_range_iterate(protopy_bin, cpython_bin, timeout=60, trace_file=None, verbose=False):
-    """Time to iterate over range(N) with N=100000 (or BENCH_N)."""
-    script = SCRIPT_DIR / "range_iterate.py"
-    if not script.exists():
-        return None, None
-    script_protopy, script_cpy = _script_paths(script)
-    times_protopy = []
-    times_cpython = []
-    for _ in range(WARMUP_RUNS):
-        run_cmd([protopy_bin, "--path", PATH_ARG, "--script", script_protopy], timeout=timeout, stderr_file=trace_file, verbose=verbose)
-        run_cmd([cpython_bin, script_cpy], timeout=timeout, verbose=verbose)
-    for i in range(N_RUNS):
-        if verbose:
-            print(f"    range_iterate protopy run {i+1}/{N_RUNS}:", end="")
-        t, _, to = run_cmd([protopy_bin, "--path", PATH_ARG, "--script", script_protopy], timeout=timeout, stderr_file=trace_file, verbose=verbose)
-        if not to:
-            times_protopy.append(t)
-        if verbose:
-            print(f"    range_iterate cpython run {i+1}/{N_RUNS}:", end="")
-        t, _, to = run_cmd([cpython_bin, script_cpy], timeout=timeout, verbose=verbose)
-        if not to:
-            times_cpython.append(t)
-    return median(times_protopy) if times_protopy else None, median(times_cpython) if times_cpython else None
-
-
-def bench_multithreaded_cpu(protopy_bin, cpython_bin, timeout=60, trace_file=None, verbose=False):
-    """CPU-bound work: 4 chunks. protoPython real threads (GIL-less); CPython threads (GIL serializes)."""
-    script = SCRIPT_DIR / "multithreaded_cpu.py"
-    if not script.exists():
-        return None, None
-    script_protopy, script_cpy = _script_paths(script)
-    times_protopy = []
-    times_cpython = []
-    for _ in range(WARMUP_RUNS):
-        run_cmd([protopy_bin, "--path", PATH_ARG, "--script", script_protopy], timeout=timeout, stderr_file=trace_file, verbose=verbose)
-        run_cmd([cpython_bin, script_cpy], timeout=timeout, verbose=verbose)
-    for i in range(N_RUNS):
-        if verbose:
-            print(f"    multithread_cpu protopy run {i+1}/{N_RUNS}:", end="")
-        t, _, to = run_cmd([protopy_bin, "--path", PATH_ARG, "--script", script_protopy], timeout=timeout, stderr_file=trace_file, verbose=verbose)
-        if not to:
-            times_protopy.append(t)
-        if verbose:
-            print(f"    multithread_cpu cpython run {i+1}/{N_RUNS}:", end="")
-        t, _, to = run_cmd([cpython_bin, script_cpy], timeout=timeout, verbose=verbose)
-        if not to:
-            times_cpython.append(t)
-    return median(times_protopy) if times_protopy else None, median(times_cpython) if times_cpython else None
-
-
-def geometric_mean(ratios):
-    if not ratios:
-        return 0.0
-    return math.exp(sum(math.log(r) if r > 0 else 0 for r in ratios) / len(ratios))
+            times_c.append(tc)
+            rss_c.append(rc)
+            
+    return (median(times_p) if times_p else None, median(times_c) if times_c else None,
+            median(rss_p) if rss_p else None, median(rss_c) if rss_c else None)
 
 
 def format_report(results):
     lines = [
         "```",
-        "┌─────────────────────────────────────────────────────────────────────┐",
-        "│ Performance: protoPython vs CPython 3.14                            │",
-        f"│ (median of {N_RUNS} runs, timeouts excluded)                             │",
-        f"│ {datetime.now(timezone.utc).strftime('%Y-%m-%d')} {platform.system()} {platform.machine()}                                │",
-        "├─────────────────────────────────────────────────────────────────────┤",
-        "│ Benchmark              │ protopy (ms) │ cpython (ms) │ Ratio        │",
-        "├────────────────────────┼──────────────┼──────────────┼──────────────┤",
+        "┌──────────────────────────────────────────────────────────────────────────────────────┐",
+        "│ Performance Audit: protoPython vs CPython 3.14                                       │",
+        f"│ (median of {N_RUNS} runs, timeouts excluded)                                                │",
+        f"│ {datetime.now(timezone.utc).strftime('%Y-%m-%d')} {platform.system()} {platform.machine()}                                           │",
+        "├────────────────────────┬──────────────┬──────────────┬──────────────┬────────────────┤",
+        "│ Benchmark              │ Time P (ms)  │ Time C (ms)  │ Ratio        │ Peak RSS (P/C) │",
+        "├────────────────────────┼──────────────┼──────────────┼──────────────┼────────────────┤",
     ]
     ratios = []
-    for name, (tp, tc) in results.items():
-        if tp is None:
-            tp_str = "   TIMEOUT"
-        else:
-            tp_str = f"{tp:>10.2f}  "
-        if tc is None:
-            tc_str = "   TIMEOUT"
-        else:
-            tc_str = f"{tc:>10.2f}  "
+    for name, (tp, tc, rp, rc) in results.items():
+        tp_str = f"{tp:>10.2f}" if tp is not None else "   TIMEOUT"
+        tc_str = f"{tc:>10.2f}" if tc is not None else "   TIMEOUT"
         if tp is not None and tc is not None and tc > 0:
             ratio = tp / tc
             ratios.append(ratio)
             label = "slower" if ratio >= 1 else "faster"
-            ratio_str = f"{ratio:.2f}x {label:<5}"
+            ratio_str = f"{ratio:.2f}x {label:<6}"
         else:
             ratio_str = "timeout"
-        lines.append(f"│ {name:<22} │ {tp_str} │ {tc_str} │ {ratio_str:<12} │")
-    gm = geometric_mean(ratios) if ratios else None
-    lines.append("├────────────────────────┼──────────────┼──────────────┼──────────────┤")
-    gm_str = f"~{gm:.2f}x" if gm is not None else "N/A"
-    lines.append(f"│ Geometric mean         │              │              │ {gm_str:<12} │")
-    lines.append("└─────────────────────────────────────────────────────────────────────┘")
-    lines.append("")
-    lines.append("Legend: Ratio = protopy/cpython. Lower is better. TIMEOUT = all runs hit timeout.")
-    lines.append("```")
-    return "\n".join(lines)
-
-
-def run_cpython_only_bench(cpython_bin, warmup_runs, n_runs, run_fn):
-    """Run only the CPython side of a benchmark; returns (0.0, median_cpython_ms)."""
-    script_dir = SCRIPT_DIR
-    def run_one(cmd, timeout=60):
-        t, _, to = run_cmd(cmd, timeout=timeout)
-        return (t, to)
-    if run_fn == "startup_empty":
-        for _ in range(warmup_runs):
-            run_one([cpython_bin, "-c", "import abc"])
-        times = []
-        for _ in range(n_runs):
-            t, to = run_one([cpython_bin, "-c", "import abc"])
-            if not to:
-                times.append(t)
-    elif run_fn == "int_sum_loop":
-        script = script_dir / "int_sum_loop.py"
-        script_str = str(script.resolve())
-        for _ in range(warmup_runs):
-            run_one([cpython_bin, script_str])
-        times = []
-        for _ in range(n_runs):
-            t, to = run_one([cpython_bin, script_str])
-            if not to:
-                times.append(t)
-    elif run_fn == "list_append_loop":
-        script = script_dir / "list_append_loop.py"
-        script_str = str(script.resolve())
-        for _ in range(warmup_runs):
-            run_one([cpython_bin, script_str])
-        times = []
-        for _ in range(n_runs):
-            t, to = run_one([cpython_bin, script_str])
-            if not to:
-                times.append(t)
-    elif run_fn == "str_concat_loop":
-        script = script_dir / "str_concat_loop.py"
-        script_str = str(script.resolve())
-        for _ in range(warmup_runs):
-            run_one([cpython_bin, script_str])
-        times = []
-        for _ in range(n_runs):
-            t, to = run_one([cpython_bin, script_str])
-            if not to:
-                times.append(t)
-    elif run_fn == "range_iterate":
-        script = script_dir / "range_iterate.py"
-        script_str = str(script.resolve())
-        for _ in range(warmup_runs):
-            run_one([cpython_bin, script_str])
-        times = []
-        for _ in range(n_runs):
-            t, to = run_one([cpython_bin, script_str])
-            if not to:
-                times.append(t)
-    elif run_fn == "multithreaded_cpu":
-        script = script_dir / "multithreaded_cpu.py"
-        script_str = str(script.resolve())
-        for _ in range(warmup_runs):
-            run_one([cpython_bin, script_str])
-        times = []
-        for _ in range(n_runs):
-            t, to = run_one([cpython_bin, script_str])
-            if not to:
-                times.append(t)
-    else:
-        return 0.0, 0.0
-    return 0.0, median(times) if times else None
-
-
-def format_report_cpython_only(results, cpython_bin):
-    """Format report when only CPython was run (protopy N/A)."""
-    lines = [
-        "```",
-        "┌─────────────────────────────────────────────────────────────────────┐",
-        f"│ CPython 3.14 baseline only (protoPython N/A — startup hang)         │",
-        f"│ (median of {N_RUNS} runs, N=100000 where applicable)                       │",
-        f"│ {datetime.now(timezone.utc).strftime('%Y-%m-%d')} {platform.system()} {platform.machine()}                                │",
-        "├─────────────────────────────────────────────────────────────────────┤",
-        "│ Benchmark              │ protopy (ms) │ cpython (ms) │ Notes         │",
-        "├────────────────────────┼──────────────┼──────────────┼──────────────┤",
-    ]
-    for name, (tp, tc) in results.items():
-        lines.append(f"│ {name:<22} │       N/A    │ {tc:>10.2f}  │ baseline      │")
-    lines.append("└─────────────────────────────────────────────────────────────────────┘")
-    lines.append("")
-    lines.append("Legend: protoPython was not measured (known startup/GC hang; see TESTING.md).")
+        
+        mem_str = f"{rp/1024:>5.1f}/{rc/1024:>5.1f}MB" if rp and rc else "N/A"
+        lines.append(f"│ {name:<22} │ {tp_str}   │ {tc_str}   │ {ratio_str:<12} │ {mem_str:<14} │")
+    
+    gm = math.exp(sum(math.log(r) for r in ratios) / len(ratios)) if ratios else 0
+    lines.append("├────────────────────────┼──────────────┼──────────────┼──────────────┼────────────────┤")
+    lines.append(f"│ Geomean Time Ratio     │              │              │ {gm:>5.2f}x        │                │")
+    lines.append("└──────────────────────────────────────────────────────────────────────────────────────┘")
     lines.append("```")
     return "\n".join(lines)
 
 
 def main():
-    parser = argparse.ArgumentParser(description="protoPython benchmark harness")
-    parser.add_argument(
-        "--output", "-o",
-        help="Write markdown report (e.g. reports/YYYY-MM-DD_protopy_vs_cpython.md)",
-    )
-    parser.add_argument(
-        "--cpython-only",
-        action="store_true",
-        help="Run only CPython benchmarks (skip protoPython); use when protopy hangs.",
-    )
-    parser.add_argument(
-        "--timeout",
-        type=int,
-        default=60,
-        metavar="SECS",
-        help="Per-run timeout in seconds for each benchmark (default: 60).",
-    )
-    parser.add_argument(
-        "--verbose", "-v",
-        action="store_true",
-        help="Print each run's elapsed time and TIMEOUT events.",
-    )
-    parser.add_argument(
-        "--quick", "-q",
-        action="store_true",
-        help="Use N_RUNS=2, WARMUP_RUNS=1 for faster iteration.",
-    )
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--output", "-o")
+    parser.add_argument("--verbose", "-v", action="store_true")
+    parser.add_argument("--quick", "-q", action="store_true")
+    parser.add_argument("--timeout", type=int, default=60)
     args = parser.parse_args()
 
     global N_RUNS, WARMUP_RUNS
-    if args.quick:
-        N_RUNS = 2
-        WARMUP_RUNS = 1
-
-    cpython_bin = os.environ.get("CPYTHON_BIN", "python3")
-
-    if args.cpython_only:
-        results = {}
-        for name, key in [
-            ("startup_empty", "startup_empty"),
-            ("int_sum_loop", "int_sum_loop"),
-            ("list_append_loop", "list_append_loop"),
-            ("str_concat_loop", "str_concat_loop"),
-            ("range_iterate", "range_iterate"),
-            ("multithread_cpu", "multithreaded_cpu"),
-        ]:
-            _, tc = run_cpython_only_bench(cpython_bin, WARMUP_RUNS, N_RUNS, key)
-            results[name] = (0.0, tc)
-            print(f"{name}: cpython={tc:.2f}ms (protopy skipped)")
-        if args.output:
-            out_path = Path(args.output)
-            if not out_path.is_absolute():
-                out_path = REPORTS_DIR / out_path.name
-            out_path.parent.mkdir(parents=True, exist_ok=True)
-            report = format_report_cpython_only(results, cpython_bin)
-            out_path.write_text(report, encoding="utf-8")
-            print(f"Report written to {out_path}")
-        return 0
-
+    if args.quick: N_RUNS, WARMUP_RUNS = 2, 1
+    
     protopy_bin = os.environ.get("PROTOPY_BIN")
-    if not protopy_bin or not os.path.isfile(protopy_bin):
-        print("Error: PROTOPY_BIN must point to protopy executable", file=sys.stderr)
-        sys.exit(2)
-    if not os.access(protopy_bin, os.X_OK):
-        print("Error: protopy binary not executable", file=sys.stderr)
-        sys.exit(2)
+    if not protopy_bin:
+        print("Set PROTOPY_BIN environment variable.")
+        return 1
+    cpython_bin = os.environ.get("CPYTHON_BIN", "python3")
+    
+    benchmarks = [
+        ("startup_empty", "abc", True), # specialized
+        ("int_sum_loop", "int_sum_loop.py", False),
+        ("list_append_loop", "list_append_loop.py", False),
+        ("str_concat_loop", "str_concat_loop.py", False),
+        ("range_iterate", "range_iterate.py", False),
+        ("multithread_cpu", "multithreaded_cpu.py", False),
+        ("attr_lookup", "attr_lookup.py", False),
+        ("call_recursion", "call_recursion.py", False),
+        ("memory_pressure", "memory_pressure.py", False),
+    ]
 
     results = {}
-    timeout = args.timeout
-    verbose = args.verbose
-    print(f"Benchmark: protopy={protopy_bin} timeout={timeout}s N_RUNS={N_RUNS} WARMUP={WARMUP_RUNS}", flush=True)
-    trace_file = os.environ.get("PROTO_GC_TRACE_FILE")
-    if trace_file:
-        # Clear or create so we only have this run's trace
-        open(trace_file, "w").close()
-    print("[startup_empty]", flush=True)
-    tp, tc = bench_startup_empty(protopy_bin, cpython_bin, timeout, trace_file, verbose=verbose)
-    results["startup_empty"] = (tp, tc)
-    print("[int_sum_loop]", flush=True)
-    tp, tc = bench_int_sum_loop(protopy_bin, cpython_bin, timeout, trace_file, verbose=verbose)
-    results["int_sum_loop"] = (tp, tc)
-    print("[list_append_loop]", flush=True)
-    tp, tc = bench_list_append_loop(protopy_bin, cpython_bin, timeout, trace_file, verbose=verbose)
-    results["list_append_loop"] = (tp, tc)
-    print("[str_concat_loop]", flush=True)
-    tp, tc = bench_str_concat_loop(protopy_bin, cpython_bin, timeout, trace_file, verbose=verbose)
-    results["str_concat_loop"] = (tp, tc)
-    if verbose:
-        print("[range_iterate]")
-    tp, tc = bench_range_iterate(protopy_bin, cpython_bin, timeout, trace_file, verbose=verbose)
-    results["range_iterate"] = (tp, tc)
-    print("[multithread_cpu]", flush=True)
-    tp, tc = bench_multithreaded_cpu(protopy_bin, cpython_bin, timeout, trace_file, verbose=verbose)
-    results["multithread_cpu"] = (tp, tc)
+    for name, script, is_mod in benchmarks:
+        print(f"Running {name}...")
+        if name == "startup_empty":
+            tp, tc, rp, rc = bench_generic("startup", script, protopy_bin, cpython_bin, args.timeout, verbose=args.verbose) # Won't work as it expects .py
+            # Fix for startup_empty which uses --module
+            times_p, times_c, rss_p, rss_c = [], [], [], []
+            for _ in range(WARMUP_RUNS):
+                run_cmd([protopy_bin, "--module", "abc"])
+                run_cmd([cpython_bin, "-c", "import abc"])
+            for _ in range(N_RUNS):
+                tp, _, _, rp = run_cmd([protopy_bin, "--module", "abc"])
+                times_p.append(tp); rss_p.append(rp)
+                tc, _, _, rc = run_cmd([cpython_bin, "-c", "import abc"])
+                times_c.append(tc); rss_c.append(rc)
+            results[name] = (median(times_p), median(times_c), median(rss_p), median(rss_c))
+        else:
+            results[name] = bench_generic(name, script, protopy_bin, cpython_bin, args.timeout, verbose=args.verbose)
 
-    for name, (tp, tc) in results.items():
-        if tp is None:
-            tp_s = "TIMEOUT"
-        else:
-            tp_s = f"{tp:.2f}ms"
-        if tc is None:
-            tc_s = "TIMEOUT"
-        else:
-            tc_s = f"{tc:.2f}ms"
-        if tp is not None and tc is not None and tc > 0:
-            ratio = tp / tc
-            label = "slower" if ratio >= 1 else "faster"
-            print(f"{name}: protopy={tp_s} cpython={tc_s} ratio={ratio:.2f}x {label}")
-        else:
-            print(f"{name}: protopy={tp_s} cpython={tc_s}")
-
+    report = format_report(results)
+    print(report)
     if args.output:
-        out_path = Path(args.output)
-        if not out_path.is_absolute():
-            out_path = REPORTS_DIR / out_path.name
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        report = format_report(results)
-        out_path.write_text(report, encoding="utf-8")
-        print(f"Report written to {out_path}")
-
+        Path(args.output).write_text(report)
     return 0
+
+if __name__ == "__main__":
+    sys.exit(main())
 
 
 if __name__ == "__main__":

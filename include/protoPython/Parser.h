@@ -13,7 +13,7 @@ struct ASTNode {
 };
 
 struct ConstantNode : ASTNode {
-    enum class ConstType { Int, Float, Str };
+    enum class ConstType { Int, Float, Str, None, Bool };
     ConstType constType = ConstType::Int;
     long long intVal = 0;
     double floatVal = 0.0;
@@ -102,6 +102,25 @@ struct FunctionDefNode : ASTNode {
     std::unique_ptr<ASTNode> body;
 };
 
+/** return expr. */
+struct ReturnNode : ASTNode {
+    std::unique_ptr<ASTNode> value;
+};
+
+/** import name [as rename]. */
+struct ImportNode : ASTNode {
+    std::string moduleName;
+    std::string alias;
+};
+
+/** try: body except [type] [as name]: handler. simplified. */
+struct TryNode : ASTNode {
+    std::unique_ptr<ASTNode> body;
+    std::unique_ptr<ASTNode> handlers; /* SuiteNode of handlers or similar */
+    std::unique_ptr<ASTNode> orelse;
+    std::unique_ptr<ASTNode> finalbody;
+};
+
 /** pass (no-op). */
 struct PassNode : ASTNode {};
 
@@ -140,6 +159,8 @@ private:
     bool expect(TokenType t);
     void skipNewlines();
     std::unique_ptr<ASTNode> parseOrExpr();
+    std::unique_ptr<ASTNode> parseAndExpr();
+    std::unique_ptr<ASTNode> parseCompareExpr();
     std::unique_ptr<ASTNode> parseAddExpr();
     std::unique_ptr<ASTNode> parseMulExpr();
     std::unique_ptr<ASTNode> parseUnary();

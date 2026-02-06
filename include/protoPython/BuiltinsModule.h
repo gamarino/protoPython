@@ -16,6 +16,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
                                    const proto::ProtoObject* strProto, const proto::ProtoObject* listProto,
                                    const proto::ProtoObject* dictProto, const proto::ProtoObject* tupleProto,
                                    const proto::ProtoObject* setProto, const proto::ProtoObject* bytesProto,
+                                   const proto::ProtoObject* noneProto,
                                    const proto::ProtoObject* sliceType, const proto::ProtoObject* frozensetProto,
                                    const proto::ProtoObject* floatProto = nullptr,
                                    const proto::ProtoObject* boolProto = nullptr,

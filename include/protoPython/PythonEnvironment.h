@@ -88,9 +88,61 @@ public:
     const proto::ProtoObject* getSliceType() const { return sliceType; }
 
     /**
+     * @brief Gets the Python 'None' prototype.
+     */
+    const proto::ProtoObject* getNonePrototype() const { return nonePrototype; }
+
+    /**
      * @brief Utility to resolve symbols in this environment.
      */
     const proto::ProtoObject* resolve(const std::string& name);
+    
+    /**
+     * @brief Accessors for frequently used dunder strings (performance).
+     */
+    const proto::ProtoString* getIterString() const { return iterString; }
+    const proto::ProtoString* getNextString() const { return nextString; }
+    const proto::ProtoList* getEmptyList() const { return emptyList; }
+
+    const proto::ProtoString* getRangeCurString() const { return rangeCurString; }
+    const proto::ProtoString* getRangeStopString() const { return rangeStopString; }
+    const proto::ProtoString* getRangeStepString() const { return rangeStepString; }
+    const proto::ProtoString* getMapFuncString() const { return mapFuncString; }
+    const proto::ProtoString* getMapIterString() const { return mapIterString; }
+    const proto::ProtoString* getEnumIterString() const { return enumIterString; }
+    const proto::ProtoString* getEnumIdxString() const { return enumIdxString; }
+    const proto::ProtoString* getRevObjString() const { return revObjString; }
+    const proto::ProtoString* getRevIdxString() const { return revIdxString; }
+    const proto::ProtoString* getZipItersString() const { return zipItersString; }
+    const proto::ProtoString* getFilterFuncString() const { return filterFuncString; }
+    const proto::ProtoString* getFilterIterString() const { return filterIterString; }
+
+    const proto::ProtoString* getClassString() const { return classString; }
+    const proto::ProtoString* getNameString() const { return nameString; }
+    const proto::ProtoString* getCallString() const { return callString; }
+    const proto::ProtoString* getGetItemString() const { return getItemString; }
+
+    const proto::ProtoString* getLenString() const { return lenString; }
+    const proto::ProtoString* getBoolString() const { return boolString; }
+    const proto::ProtoString* getIntString() const { return intString; }
+    const proto::ProtoString* getFloatString() const { return floatString; }
+    const proto::ProtoString* getStrString() const { return strString; }
+    const proto::ProtoString* getReprString() const { return reprString; }
+    const proto::ProtoString* getHashString() const { return hashString; }
+    const proto::ProtoString* getContainsString() const { return containsString; }
+    const proto::ProtoString* getFormatString() const { return formatString; }
+    const proto::ProtoString* getDictString() const { return dictString; }
+    const proto::ProtoString* getDocString() const { return docString; }
+    const proto::ProtoString* getReversedString() const { return reversedString; }
+
+    const proto::ProtoString* getEnumProtoString() const { return enumProtoS; }
+    const proto::ProtoString* getRevProtoString() const { return revProtoS; }
+    const proto::ProtoString* getZipProtoString() const { return zipProtoS; }
+    const proto::ProtoString* getFilterProtoString() const { return filterProtoS; }
+    const proto::ProtoString* getMapProtoString() const { return mapProtoS; }
+    const proto::ProtoString* getRangeProtoString() const { return rangeProtoS; }
+    const proto::ProtoString* getBoolTypeString() const { return boolTypeS; }
+    const proto::ProtoString* getFilterBoolString() const { return filterBoolS; }
 
     /**
      * @brief Invalidates the import resolution cache (e.g. after module reload).
@@ -109,7 +161,15 @@ public:
      * @param moduleName Module name (as used by resolve).
      * @return 0 on success, -1 on resolve failure, -2 on runtime failure.
      */
-    int executeModule(const std::string& moduleName);
+    int executeModule(const std::string& moduleName, bool asMain = false);
+    
+    /**
+     * @brief Executes a string of Python code in the current environment's __main__ context.
+     * @param source The source code to execute.
+     * @param name The name of the source (e.g. "<string>").
+     * @return 0 on success, -2 on runtime failure.
+     */
+    int executeString(const std::string& source, const std::string& name = "<string>");
 
     /**
      * @brief Interactive REPL: read lines, eval/exec, print result. Uses builtins.eval/exec/repr.
@@ -189,6 +249,16 @@ public:
     const proto::ProtoObject* takePendingException();
 
     /**
+     * @brief Returns true if there is a pending exception.
+     */
+    bool hasPendingException() const;
+
+    /**
+     * @brief Returns the pending exception without clearing it.
+     */
+    const proto::ProtoObject* peekPendingException() const;
+
+    /**
      * @brief Returns the environment for the given context (for use by dunder methods).
      */
     static PythonEnvironment* fromContext(proto::ProtoContext* ctx);
@@ -213,6 +283,7 @@ public:
     void raiseSystemExit(proto::ProtoContext* context, int code);
     void raiseRecursionError(proto::ProtoContext* context);
     void raiseZeroDivisionError(proto::ProtoContext* context);
+    void raiseStopIteration(proto::ProtoContext* context);
 
     /**
      * @brief Returns true if this environment is running in interactive mode.
@@ -264,6 +335,7 @@ private:
     const proto::ProtoObject* tuplePrototype;
     const proto::ProtoObject* setPrototype;
     const proto::ProtoObject* bytesPrototype;
+    const proto::ProtoObject* nonePrototype;
     const proto::ProtoObject* sliceType;
     const proto::ProtoObject* frozensetPrototype;
     const proto::ProtoObject* floatPrototype;
@@ -287,7 +359,51 @@ private:
     const proto::ProtoObject* keyboardInterruptType{nullptr};
     const proto::ProtoObject* systemExitType{nullptr};
     const proto::ProtoObject* recursionErrorType{nullptr};
+    const proto::ProtoObject* stopIterationType{nullptr};
     const proto::ProtoObject* zeroDivisionErrorType{nullptr};
+    const proto::ProtoString* iterString{nullptr};
+    const proto::ProtoString* nextString{nullptr};
+    const proto::ProtoList* emptyList{nullptr};
+
+    const proto::ProtoString* rangeCurString{nullptr};
+    const proto::ProtoString* rangeStopString{nullptr};
+    const proto::ProtoString* rangeStepString{nullptr};
+    const proto::ProtoString* mapFuncString{nullptr};
+    const proto::ProtoString* mapIterString{nullptr};
+    const proto::ProtoString* enumIterString{nullptr};
+    const proto::ProtoString* enumIdxString{nullptr};
+    const proto::ProtoString* revObjString{nullptr};
+    const proto::ProtoString* revIdxString{nullptr};
+    const proto::ProtoString* zipItersString{nullptr};
+    const proto::ProtoString* filterFuncString{nullptr};
+    const proto::ProtoString* filterIterString{nullptr};
+
+    const proto::ProtoString* classString{nullptr};
+    const proto::ProtoString* nameString{nullptr};
+    const proto::ProtoString* callString{nullptr};
+    const proto::ProtoString* getItemString{nullptr};
+
+    const proto::ProtoString* lenString{nullptr};
+    const proto::ProtoString* boolString{nullptr};
+    const proto::ProtoString* intString{nullptr};
+    const proto::ProtoString* floatString{nullptr};
+    const proto::ProtoString* strString{nullptr};
+    const proto::ProtoString* reprString{nullptr};
+    const proto::ProtoString* hashString{nullptr};
+    const proto::ProtoString* containsString{nullptr};
+    const proto::ProtoString* formatString{nullptr};
+    const proto::ProtoString* dictString{nullptr};
+    const proto::ProtoString* docString{nullptr};
+    const proto::ProtoString* reversedString{nullptr};
+
+    const proto::ProtoString* enumProtoS{nullptr};
+    const proto::ProtoString* revProtoS{nullptr};
+    const proto::ProtoString* zipProtoS{nullptr};
+    const proto::ProtoString* filterProtoS{nullptr};
+    const proto::ProtoString* mapProtoS{nullptr};
+    const proto::ProtoString* rangeProtoS{nullptr};
+    const proto::ProtoString* boolTypeS{nullptr};
+    const proto::ProtoString* filterBoolS{nullptr};
     /** Incremented on invalidateResolveCache(); per-thread caches check this (lock-free). */
     mutable std::atomic<uint64_t> resolveCacheGeneration_{0};
     std::istream* stdin_{&std::cin};

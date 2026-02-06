@@ -59,6 +59,14 @@ enum class TokenType {
     With,
     As,
     Is,
+    IsNot,
+    NotIn,
+    Modulo,
+    NotEqual,
+    Less,
+    Greater,
+    LessEqual,
+    GreaterEqual,
     Yield,
 };
 
