@@ -33,17 +33,6 @@ static const proto::ProtoObject* py_import(
     return env ? env->resolve(moduleName) : PROTO_NONE;
 }
 
-static const proto::ProtoObject* py_dir(
-    proto::ProtoContext* context,
-    const proto::ProtoObject* self,
-    const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
-    (void)self; (void)parentLink; (void)positionalParameters; (void)keywordParameters;
-    // Stub: returns a minimal list of names or empty list
-    return context->newList()->asObject(context);
-}
-
 static const proto::ProtoObject* py_id(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -53,56 +42,9 @@ static const proto::ProtoObject* py_id(
     (void)self; (void)parentLink; (void)keywordParameters;
     if (positionalParameters->getSize(context) == 0) return PROTO_NONE;
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
-    // id in Python is often the memory address
     return context->fromInteger(reinterpret_cast<long long>(obj));
 }
 
-static const proto::ProtoObject* py_getattr(
-    proto::ProtoContext* context,
-    const proto::ProtoObject* self,
-    const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
-    (void)self; (void)parentLink; (void)keywordParameters;
-    if (positionalParameters->getSize(context) < 2) return PROTO_NONE;
-    const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
-    const proto::ProtoObject* nameObj = positionalParameters->getAt(context, 1);
-    if (!nameObj->isString(context)) return PROTO_NONE;
-    const proto::ProtoObject* attr = obj->getAttribute(context, nameObj->asString(context));
-    if (attr) return attr;
-    if (positionalParameters->getSize(context) >= 3) return positionalParameters->getAt(context, 2);
-    return PROTO_NONE; // Should raise AttributeError
-}
-
-static const proto::ProtoObject* py_setattr(
-    proto::ProtoContext* context,
-    const proto::ProtoObject* self,
-    const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
-    (void)self; (void)parentLink; (void)keywordParameters;
-    if (positionalParameters->getSize(context) < 3) return PROTO_NONE;
-    proto::ProtoObject* obj = const_cast<proto::ProtoObject*>(positionalParameters->getAt(context, 0));
-    const proto::ProtoObject* nameObj = positionalParameters->getAt(context, 1);
-    const proto::ProtoObject* val = positionalParameters->getAt(context, 2);
-    if (!nameObj->isString(context)) return PROTO_NONE;
-    obj->setAttribute(context, nameObj->asString(context), val);
-    return PROTO_NONE;
-}
-
-static const proto::ProtoObject* py_hasattr(
-    proto::ProtoContext* context,
-    const proto::ProtoObject* self,
-    const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
-    (void)self; (void)parentLink; (void)keywordParameters;
-    if (positionalParameters->getSize(context) < 2) return PROTO_FALSE;
-    const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
-    const proto::ProtoObject* nameObj = positionalParameters->getAt(context, 1);
-    if (!nameObj->isString(context)) return PROTO_FALSE;
-    return obj->getAttribute(context, nameObj->asString(context)) ? PROTO_TRUE : PROTO_FALSE;
-}
 
 static const proto::ProtoObject* py_len(
     proto::ProtoContext* context,
@@ -137,16 +79,6 @@ static const proto::ProtoObject* py_len(
     return PROTO_NONE;
 }
 
-static const proto::ProtoObject* py_id(
-    proto::ProtoContext* context,
-    const proto::ProtoObject* self,
-    const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
-    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
-    const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
-    return context->fromInteger(reinterpret_cast<long long>(obj));
-}
 
 static const proto::ProtoObject* py_print(
     proto::ProtoContext* context,
@@ -1884,8 +1816,9 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "len"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_len));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "repr"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_repr));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "format"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_format));
+    builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__name__"), ctx->fromUTF8String("builtins"));
+    builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__package__"), ctx->fromUTF8String(""));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "open"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_open));
-    builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "id"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_id));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "print"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_print));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "dir"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_dir));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "id"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_id));

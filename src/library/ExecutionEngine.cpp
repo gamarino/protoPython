@@ -252,38 +252,41 @@ const proto::ProtoObject* executeBytecodeRange(
             const proto::ProtoObject* ret = stack.back();
             ctx->returnValue = ret;
             return ret;  /* exit block immediately; destructor will promote */
-        } else if (op == OP_LOAD_NAME && names && frame && static_cast<unsigned long>(arg) < names->getSize(ctx)) {
+        } else if (op == OP_LOAD_NAME) {
             i++;
-            const proto::ProtoObject* nameObj = names->getAt(ctx, arg);
-            if (nameObj->isString(ctx)) {
-                const proto::ProtoObject* val = frame->getAttribute(ctx, nameObj->asString(ctx));
-                if (val && val != PROTO_NONE) {
-                    stack.push_back(val);
-                } else {
-                    if (env) {
-                        // Check if it's explicitly None in builtins
-                        std::string name;
-                        nameObj->asString(ctx)->toUTF8String(ctx, name);
-                        val = env->resolve(name);
-                        if (val) { // Now resolve returns the real None object for "None"
-                            stack.push_back(val);
+            if (names && frame && static_cast<unsigned long>(arg) < names->getSize(ctx)) {
+                const proto::ProtoObject* nameObj = names->getAt(ctx, arg);
+                if (nameObj->isString(ctx)) {
+                    const proto::ProtoObject* val = frame->getAttribute(ctx, nameObj->asString(ctx));
+                    if (val && val != PROTO_NONE) {
+                        stack.push_back(val);
+                    } else {
+                        if (env) {
+                            std::string name;
+                            nameObj->asString(ctx)->toUTF8String(ctx, name);
+                            val = env->resolve(name);
+                            if (val) {
+                                stack.push_back(val);
+                            } else {
+                                env->raiseNameError(ctx, name);
+                                return PROTO_NONE;
+                            }
                         } else {
-                            env->raiseNameError(ctx, name);
                             return PROTO_NONE;
                         }
-                    } else {
-                        return PROTO_NONE;
                     }
                 }
             }
-        } else if (op == OP_STORE_NAME && names && frame && static_cast<unsigned long>(arg) < names->getSize(ctx)) {
+        } else if (op == OP_STORE_NAME) {
             i++;
-            if (stack.empty()) continue;
-            const proto::ProtoObject* nameObj = names->getAt(ctx, arg);
-            const proto::ProtoObject* val = stack.back();
-            stack.pop_back();
-            if (nameObj->isString(ctx))
-                frame->setAttribute(ctx, nameObj->asString(ctx), val);
+            if (names && frame && static_cast<unsigned long>(arg) < names->getSize(ctx)) {
+                if (stack.empty()) continue;
+                const proto::ProtoObject* nameObj = names->getAt(ctx, arg);
+                const proto::ProtoObject* val = stack.back();
+                stack.pop_back();
+                if (nameObj->isString(ctx))
+                    frame->setAttribute(ctx, nameObj->asString(ctx), val);
+            }
         } else if (op == OP_LOAD_FAST) {
             i++;
             const unsigned int nSlots = ctx->getAutomaticLocalsCount();
@@ -745,33 +748,37 @@ const proto::ProtoObject* executeBytecodeRange(
             i++;
             if (arg >= 0 && static_cast<unsigned long>(arg) < n)
                 i = static_cast<unsigned long>(arg) - 1;
-        } else if (op == OP_LOAD_ATTR && names && stack.size() >= 1 && static_cast<unsigned long>(arg) < names->getSize(ctx)) {
+        } else if (op == OP_LOAD_ATTR) {
             i++;
-            const proto::ProtoObject* obj = stack.back();
-            stack.pop_back();
-            const proto::ProtoObject* nameObj = names->getAt(ctx, arg);
-            if (nameObj->isString(ctx)) {
-                const proto::ProtoObject* val = obj->getAttribute(ctx, nameObj->asString(ctx));
-                if (val && val != PROTO_NONE) {
-                    stack.push_back(val);
-                } else {
-                    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-                    std::string attr;
-                    nameObj->asString(ctx)->toUTF8String(ctx, attr);
-                    if (env) env->raiseAttributeError(ctx, obj, attr);
-                    return PROTO_NONE;
+            if (names && stack.size() >= 1 && static_cast<unsigned long>(arg) < names->getSize(ctx)) {
+                const proto::ProtoObject* obj = stack.back();
+                stack.pop_back();
+                const proto::ProtoObject* nameObj = names->getAt(ctx, arg);
+                if (nameObj->isString(ctx)) {
+                    const proto::ProtoObject* val = obj->getAttribute(ctx, nameObj->asString(ctx));
+                    if (val && val != PROTO_NONE) {
+                        stack.push_back(val);
+                    } else {
+                        PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+                        std::string attr;
+                        nameObj->asString(ctx)->toUTF8String(ctx, attr);
+                        if (env) env->raiseAttributeError(ctx, obj, attr);
+                        return PROTO_NONE;
+                    }
                 }
             }
-        } else if (op == OP_STORE_ATTR && names && stack.size() >= 2 && static_cast<unsigned long>(arg) < names->getSize(ctx)) {
+        } else if (op == OP_STORE_ATTR) {
             i++;
-            const proto::ProtoObject* val = stack.back();
-            stack.pop_back();
-            const proto::ProtoObject* obj = stack.back();
-            stack.pop_back();
-            const proto::ProtoObject* nameObj = names->getAt(ctx, arg);
-            if (nameObj->isString(ctx)) {
-                proto::ProtoObject* mutableObj = const_cast<proto::ProtoObject*>(obj);
-                mutableObj->setAttribute(ctx, nameObj->asString(ctx), val);
+            if (names && stack.size() >= 2 && static_cast<unsigned long>(arg) < names->getSize(ctx)) {
+                const proto::ProtoObject* val = stack.back();
+                stack.pop_back();
+                const proto::ProtoObject* obj = stack.back();
+                stack.pop_back();
+                const proto::ProtoObject* nameObj = names->getAt(ctx, arg);
+                if (nameObj->isString(ctx)) {
+                    proto::ProtoObject* mutableObj = const_cast<proto::ProtoObject*>(obj);
+                    mutableObj->setAttribute(ctx, nameObj->asString(ctx), val);
+                }
             }
         } else if (op == OP_BUILD_LIST) {
             i++;
@@ -1012,38 +1019,42 @@ const proto::ProtoObject* executeBytecodeRange(
                 for (int j = arg - 1; j >= 0; --j)
                     stack.push_back(tup->getAt(ctx, j));
             }
-        } else if (op == OP_LOAD_GLOBAL && names && frame && static_cast<unsigned long>(arg) < names->getSize(ctx)) {
+        } else if (op == OP_LOAD_GLOBAL) {
             i++;
-            const proto::ProtoObject* nameObj = names->getAt(ctx, arg);
-            if (nameObj->isString(ctx)) {
-                const proto::ProtoObject* val = frame->getAttribute(ctx, nameObj->asString(ctx));
-                if (val && val != PROTO_NONE) {
-                    stack.push_back(val);
-                } else {
-                    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-                    if (env) {
-                        std::string name;
-                        nameObj->asString(ctx)->toUTF8String(ctx, name);
-                        val = env->resolve(name);
-                        if (val) {
-                            stack.push_back(val);
+            if (names && frame && static_cast<unsigned long>(arg) < names->getSize(ctx)) {
+                const proto::ProtoObject* nameObj = names->getAt(ctx, arg);
+                if (nameObj->isString(ctx)) {
+                    const proto::ProtoObject* val = frame->getAttribute(ctx, nameObj->asString(ctx));
+                    if (val && val != PROTO_NONE) {
+                        stack.push_back(val);
+                    } else {
+                        PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+                        if (env) {
+                            std::string name;
+                            nameObj->asString(ctx)->toUTF8String(ctx, name);
+                            val = env->resolve(name);
+                            if (val) {
+                                stack.push_back(val);
+                            } else {
+                                env->raiseNameError(ctx, name);
+                                return PROTO_NONE;
+                            }
                         } else {
-                            env->raiseNameError(ctx, name);
                             return PROTO_NONE;
                         }
-                    } else {
-                        return PROTO_NONE;
                     }
                 }
             }
-        } else if (op == OP_STORE_GLOBAL && names && frame && static_cast<unsigned long>(arg) < names->getSize(ctx)) {
+        } else if (op == OP_STORE_GLOBAL) {
             i++;
-            if (stack.empty()) continue;
-            const proto::ProtoObject* nameObj = names->getAt(ctx, arg);
-            const proto::ProtoObject* val = stack.back();
-            stack.pop_back();
-            if (nameObj->isString(ctx))
-                frame->setAttribute(ctx, nameObj->asString(ctx), val);
+            if (names && frame && static_cast<unsigned long>(arg) < names->getSize(ctx)) {
+                if (stack.empty()) continue;
+                const proto::ProtoObject* nameObj = names->getAt(ctx, arg);
+                const proto::ProtoObject* val = stack.back();
+                stack.pop_back();
+                if (nameObj->isString(ctx))
+                    frame->setAttribute(ctx, nameObj->asString(ctx), val);
+            }
         } else if (op == OP_BUILD_SLICE) {
             i++;
             if ((arg != 2 && arg != 3) || stack.size() < static_cast<size_t>(arg)) continue;

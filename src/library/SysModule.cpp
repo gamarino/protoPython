@@ -148,6 +148,9 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     stats = stats->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "objects_created"), ctx->fromInteger(0));
     sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "stats"), stats);
 
+    // sys.executable
+    sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "executable"), ctx->fromUTF8String("/usr/bin/protopy"));
+
     // Step 1340: sys.excepthook
     // Use an internal helper or just leave it for Python code to set. 
     // For now, let's just add the attribute.
