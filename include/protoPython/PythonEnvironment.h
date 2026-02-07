@@ -397,6 +397,7 @@ private:
     const proto::ProtoObject* floatPrototype;
     const proto::ProtoObject* boolPrototype;
     const proto::ProtoObject* sysModule;
+    static thread_local PythonEnvironment* s_threadEnv;
     const proto::ProtoObject* builtinsModule;
     std::vector<std::string> argv_;
     int exitRequested_{0};

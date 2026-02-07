@@ -37,7 +37,7 @@ void Compiler::emit(int op, int arg) {
                    op == OP_UNPACK_SEQUENCE || op == OP_LOAD_GLOBAL || op == OP_STORE_GLOBAL ||
                    op == OP_BUILD_SLICE || op == OP_FOR_ITER || op == OP_POP_JUMP_IF_FALSE ||
                    op == OP_JUMP_ABSOLUTE || op == OP_COMPARE_OP || op == OP_BINARY_SUBSCR ||
-                   op == OP_STORE_SUBSCR);
+                   op == OP_STORE_SUBSCR || op == OP_CALL_FUNCTION_KW);
     if (hasArg)
         bytecode_ = bytecode_->appendLast(ctx_, ctx_->fromInteger(arg));
 }

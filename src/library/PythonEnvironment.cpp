@@ -4086,8 +4086,8 @@ static const proto::ProtoObject* py_dict_popitem(
 
 // --- PythonEnvironment Implementation ---
 
-/** Thread-local environment for the current thread. O(1) lookup; no mutex (L-Shape lock-free). */
-static thread_local PythonEnvironment* s_threadEnv = nullptr;
+/** thread_local member initialization */
+thread_local PythonEnvironment* PythonEnvironment::s_threadEnv = nullptr;
 
 /** Thread-local trace function and pending exception (no mutex in hot path). */
 static thread_local const proto::ProtoObject* s_threadTraceFunction = nullptr;

@@ -311,7 +311,6 @@ const proto::ProtoObject* executeBytecodeRange(
             const proto::ProtoObject* r = binaryAdd(ctx, a, b);
             if (r) stack.push_back(r);
         } else if (op == OP_INPLACE_ADD) {
-            i++;
             if (stack.size() < 2) continue;
             const proto::ProtoObject* b = stack.back();
             stack.pop_back();
@@ -335,7 +334,6 @@ const proto::ProtoObject* executeBytecodeRange(
             const proto::ProtoObject* r = binarySubtract(ctx, a, b);
             if (r) stack.push_back(r);
         } else if (op == OP_INPLACE_SUBTRACT) {
-            i++;
             if (stack.size() < 2) continue;
             const proto::ProtoObject* b = stack.back();
             stack.pop_back();
@@ -359,7 +357,6 @@ const proto::ProtoObject* executeBytecodeRange(
             const proto::ProtoObject* r = binaryMultiply(ctx, a, b);
             if (r) stack.push_back(r);
         } else if (op == OP_INPLACE_MULTIPLY) {
-            i++;
             if (stack.size() < 2) continue;
             const proto::ProtoObject* b = stack.back();
             stack.pop_back();
@@ -407,7 +404,6 @@ const proto::ProtoObject* executeBytecodeRange(
             const proto::ProtoObject* r = binaryFloorDivide(ctx, a, b);
             if (r) stack.push_back(r);
         } else if (op == OP_INPLACE_TRUE_DIVIDE) {
-            i++;
             if (stack.size() < 2) continue;
             const proto::ProtoObject* b = stack.back();
             stack.pop_back();
@@ -423,7 +419,6 @@ const proto::ProtoObject* executeBytecodeRange(
                 if (r) stack.push_back(r);
             }
         } else if (op == OP_INPLACE_FLOOR_DIVIDE) {
-            i++;
             if (stack.size() < 2) continue;
             const proto::ProtoObject* b = stack.back();
             stack.pop_back();
@@ -439,7 +434,6 @@ const proto::ProtoObject* executeBytecodeRange(
                 if (r) stack.push_back(r);
             }
         } else if (op == OP_INPLACE_MODULO) {
-            i++;
             if (stack.size() < 2) continue;
             const proto::ProtoObject* b = stack.back();
             stack.pop_back();
@@ -455,7 +449,6 @@ const proto::ProtoObject* executeBytecodeRange(
                 if (r) stack.push_back(r);
             }
         } else if (op == OP_INPLACE_POWER) {
-            i++;
             if (stack.size() < 2) continue;
             const proto::ProtoObject* b = stack.back();
             stack.pop_back();
@@ -471,7 +464,6 @@ const proto::ProtoObject* executeBytecodeRange(
                 if (r) stack.push_back(r);
             }
         } else if (op == OP_INPLACE_LSHIFT) {
-            i++;
             if (stack.size() < 2) continue;
             const proto::ProtoObject* b = stack.back();
             stack.pop_back();
@@ -490,7 +482,6 @@ const proto::ProtoObject* executeBytecodeRange(
                 stack.push_back(ctx->fromInteger(av));
             }
         } else if (op == OP_INPLACE_RSHIFT) {
-            i++;
             if (stack.size() < 2) continue;
             const proto::ProtoObject* b = stack.back();
             stack.pop_back();
@@ -509,7 +500,6 @@ const proto::ProtoObject* executeBytecodeRange(
                 stack.push_back(ctx->fromInteger(av));
             }
         } else if (op == OP_INPLACE_AND) {
-            i++;
             if (stack.size() < 2) continue;
             const proto::ProtoObject* b = stack.back();
             stack.pop_back();
@@ -538,7 +528,6 @@ const proto::ProtoObject* executeBytecodeRange(
                 }
             }
         } else if (op == OP_INPLACE_OR) {
-            i++;
             if (stack.size() < 2) continue;
             const proto::ProtoObject* b = stack.back();
             stack.pop_back();
@@ -567,7 +556,6 @@ const proto::ProtoObject* executeBytecodeRange(
                 }
             }
         } else if (op == OP_INPLACE_XOR) {
-            i++;
             if (stack.size() < 2) continue;
             const proto::ProtoObject* b = stack.back();
             stack.pop_back();
@@ -596,7 +584,6 @@ const proto::ProtoObject* executeBytecodeRange(
                 }
             }
         } else if (op == OP_BINARY_LSHIFT) {
-            i++;
             if (stack.size() < 2) continue;
             const proto::ProtoObject* b = stack.back();
             stack.pop_back();
@@ -610,7 +597,6 @@ const proto::ProtoObject* executeBytecodeRange(
                 stack.push_back(ctx->fromInteger(av));
             }
         } else if (op == OP_BINARY_RSHIFT) {
-            i++;
             if (stack.size() < 2) continue;
             const proto::ProtoObject* b = stack.back();
             stack.pop_back();
@@ -624,7 +610,6 @@ const proto::ProtoObject* executeBytecodeRange(
                 stack.push_back(ctx->fromInteger(av));
             }
         } else if (op == OP_BINARY_AND) {
-            i++;
             if (stack.size() < 2) continue;
             const proto::ProtoObject* b = stack.back();
             stack.pop_back();
@@ -650,7 +635,6 @@ const proto::ProtoObject* executeBytecodeRange(
                 }
             }
         } else if (op == OP_BINARY_OR) {
-            i++;
             if (stack.size() < 2) continue;
             const proto::ProtoObject* b = stack.back();
             stack.pop_back();
@@ -676,7 +660,6 @@ const proto::ProtoObject* executeBytecodeRange(
                 }
             }
         } else if (op == OP_BINARY_XOR) {
-            i++;
             if (stack.size() < 2) continue;
             const proto::ProtoObject* b = stack.back();
             stack.pop_back();
@@ -742,7 +725,6 @@ const proto::ProtoObject* executeBytecodeRange(
                 stack.push_back(a);
             }
         } else if (op == OP_NOP) {
-            i++;
         } else if (op == OP_COMPARE_OP) {
             i++;
             if (stack.size() < 2) continue;
@@ -961,7 +943,6 @@ const proto::ProtoObject* executeBytecodeRange(
                 }
             }
         } else if (op == OP_BUILD_FUNCTION) {
-            i++;
             if (!stack.empty() && frame) {
                 const proto::ProtoObject* codeObj = stack.back();
                 stack.pop_back();
@@ -969,7 +950,6 @@ const proto::ProtoObject* executeBytecodeRange(
                 if (fn) stack.push_back(fn);
             }
         } else if (op == OP_GET_ITER) {
-            i++;
             if (stack.empty()) continue;
             const proto::ProtoObject* iterable = stack.back();
             stack.pop_back();
