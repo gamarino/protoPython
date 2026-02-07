@@ -123,6 +123,8 @@ constexpr int OP_BUILD_FUNCTION = 156;
 constexpr int OP_LOAD_FAST = 157;
 /** STORE_FAST: pop TOS and store in ctx->getAutomaticLocals()[arg]. */
 constexpr int OP_STORE_FAST = 158;
+/** CALL_FUNCTION_KW: pop name tuple, then kwargs, then positional args, then callable. */
+constexpr int OP_CALL_FUNCTION_KW = 159;
 
 /**
  * @brief Executes a range of bytecode (one basic block). No per-instruction
@@ -159,7 +161,8 @@ const proto::ProtoObject* executeMinimalBytecode(
 const proto::ProtoObject* invokePythonCallable(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* callable,
-    const proto::ProtoList* args);
+    const proto::ProtoList* args,
+    const proto::ProtoSparseList* kwargs = nullptr);
 
 } // namespace protoPython
 

@@ -92,6 +92,9 @@ public:
      */
     const proto::ProtoObject* getNonePrototype() const { return nonePrototype; }
 
+    /** @brief Gets the builtins module object. */
+    const proto::ProtoObject* getBuiltins() const { return builtinsModule; }
+
     /**
      * @brief Utility to resolve symbols in this environment.
      */
@@ -131,7 +134,7 @@ public:
     const proto::ProtoString* getHashString() const { return hashString; }
     const proto::ProtoString* getContainsString() const { return containsString; }
     const proto::ProtoString* getFormatString() const { return formatString; }
-    const proto::ProtoString* getDictString() const { return dictString; }
+    const proto::ProtoString* getDictDunderString() const { return dictString; }
     const proto::ProtoString* getDocString() const { return docString; }
     const proto::ProtoString* getReversedString() const { return reversedString; }
 
@@ -143,6 +146,59 @@ public:
     const proto::ProtoString* getRangeProtoString() const { return rangeProtoS; }
     const proto::ProtoString* getBoolTypeString() const { return boolTypeS; }
     const proto::ProtoString* getFilterBoolString() const { return filterBoolS; }
+    const proto::ProtoObject* getZeroInteger() const { return zeroInteger; }
+    const proto::ProtoObject* getOneInteger() const { return oneInteger; }
+
+    const proto::ProtoString* getCodeString() const { return __code__; }
+    const proto::ProtoString* getGlobalsString() const { return __globals__; }
+    const proto::ProtoString* getCoVarnamesString() const { return co_varnames; }
+    const proto::ProtoString* getCoNparamsString() const { return co_nparams; }
+    const proto::ProtoString* getCoAutomaticCountString() const { return co_automatic_count; }
+
+    const proto::ProtoString* getIAddString() const { return __iadd__; }
+    const proto::ProtoString* getISubString() const { return __isub__; }
+    const proto::ProtoString* getIMulString() const { return __imul__; }
+    const proto::ProtoString* getITrueDivString() const { return __itruediv__; }
+    const proto::ProtoString* getIFloorDivString() const { return __ifloordiv__; }
+    const proto::ProtoString* getIModString() const { return __imod__; }
+    const proto::ProtoString* getIPowString() const { return __ipow__; }
+    const proto::ProtoString* getILShiftString() const { return __ilshift__; }
+    const proto::ProtoString* getIRShiftString() const { return __irshift__; }
+    const proto::ProtoString* getIAndString() const { return __iand__; }
+    const proto::ProtoString* getIOrString() const { return __ior__; }
+    const proto::ProtoString* getIXorString() const { return __ixor__; }
+
+    const proto::ProtoString* getAndString() const { return __and__; }
+    const proto::ProtoString* getRAndString() const { return __rand__; }
+    const proto::ProtoString* getOrString() const { return __or__; }
+    const proto::ProtoString* getROrString() const { return __ror__; }
+    const proto::ProtoString* getXorString() const { return __xor__; }
+    const proto::ProtoString* getRXorString() const { return __rxor__; }
+
+    const proto::ProtoString* getInvertString() const { return __invert__; }
+    const proto::ProtoString* getPosString() const { return __pos__; }
+
+    const proto::ProtoString* getSetItemString() const { return setItemString; }
+    const proto::ProtoString* getDataString() const { return dataString; }
+    const proto::ProtoString* getKeysString() const { return keysString; }
+
+    const proto::ProtoString* getStartString() const { return startString; }
+    const proto::ProtoString* getStopString() const { return stopString; }
+    const proto::ProtoString* getStepString() const { return stepString; }
+
+    const proto::ProtoString* getIOModuleString() const { return ioModuleString; }
+    const proto::ProtoString* getOpenString() const { return openString; }
+
+    const proto::ProtoString* getListTypeString() const { return listS; }
+    const proto::ProtoString* getDictTypeString() const { return dictS; }
+    const proto::ProtoString* getTupleTypeString() const { return tupleS; }
+    const proto::ProtoString* getSetTypeString() const { return setS; }
+    const proto::ProtoString* getIntTypeNameString() const { return intS; }
+    const proto::ProtoString* getFloatTypeNameString() const { return floatS; }
+    const proto::ProtoString* getStrTypeNameString() const { return strS; }
+    const proto::ProtoString* getBoolTypeNameString() const { return boolS; }
+    const proto::ProtoString* getObjectString() const { return objectS; }
+    const proto::ProtoString* getTypeString() const { return typeS; }
 
     /**
      * @brief Invalidates the import resolution cache (e.g. after module reload).
@@ -404,6 +460,61 @@ private:
     const proto::ProtoString* rangeProtoS{nullptr};
     const proto::ProtoString* boolTypeS{nullptr};
     const proto::ProtoString* filterBoolS{nullptr};
+
+    const proto::ProtoString* __code__{nullptr};
+    const proto::ProtoString* __globals__{nullptr};
+    const proto::ProtoString* co_varnames{nullptr};
+    const proto::ProtoString* co_nparams{nullptr};
+    const proto::ProtoString* co_automatic_count{nullptr};
+
+    const proto::ProtoString* __iadd__{nullptr};
+    const proto::ProtoString* __isub__{nullptr};
+    const proto::ProtoString* __imul__{nullptr};
+    const proto::ProtoString* __itruediv__{nullptr};
+    const proto::ProtoString* __ifloordiv__{nullptr};
+    const proto::ProtoString* __imod__{nullptr};
+    const proto::ProtoString* __ipow__{nullptr};
+    const proto::ProtoString* __ilshift__{nullptr};
+    const proto::ProtoString* __irshift__{nullptr};
+    const proto::ProtoString* __iand__{nullptr};
+    const proto::ProtoString* __ior__{nullptr};
+    const proto::ProtoString* __ixor__{nullptr};
+
+    const proto::ProtoString* __and__{nullptr};
+    const proto::ProtoString* __rand__{nullptr};
+    const proto::ProtoString* __or__{nullptr};
+    const proto::ProtoString* __ror__{nullptr};
+    const proto::ProtoString* __xor__{nullptr};
+    const proto::ProtoString* __rxor__{nullptr};
+
+    const proto::ProtoString* __invert__{nullptr};
+    const proto::ProtoString* __pos__{nullptr};
+
+    const proto::ProtoString* setItemString{nullptr};
+    const proto::ProtoString* dataString{nullptr};
+    const proto::ProtoString* keysString{nullptr};
+
+    const proto::ProtoString* startString{nullptr};
+    const proto::ProtoString* stopString{nullptr};
+    const proto::ProtoString* stepString{nullptr};
+
+    const proto::ProtoString* ioModuleString{nullptr};
+    const proto::ProtoString* openString{nullptr};
+
+    const proto::ProtoObject* zeroInteger{nullptr};
+    const proto::ProtoObject* oneInteger{nullptr};
+
+    const proto::ProtoString* listS{nullptr};
+    const proto::ProtoString* dictS{nullptr};
+    const proto::ProtoString* tupleS{nullptr};
+    const proto::ProtoString* setS{nullptr};
+    const proto::ProtoString* intS{nullptr};
+    const proto::ProtoString* floatS{nullptr};
+    const proto::ProtoString* strS{nullptr};
+    const proto::ProtoString* boolS{nullptr};
+    const proto::ProtoString* objectS{nullptr};
+    const proto::ProtoString* typeS{nullptr};
+    const proto::ProtoString* __dict_dunder__{nullptr};
     /** Incremented on invalidateResolveCache(); per-thread caches check this (lock-free). */
     mutable std::atomic<uint64_t> resolveCacheGeneration_{0};
     std::istream* stdin_{&std::cin};

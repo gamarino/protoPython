@@ -153,7 +153,20 @@ bool Compiler::compileCall(CallNode* n) {
     for (auto& arg : n->args) {
         if (!compileNode(arg.get())) return false;
     }
-    emit(OP_CALL_FUNCTION, static_cast<int>(n->args.size()));
+    if (n->keywords.empty()) {
+        emit(OP_CALL_FUNCTION, static_cast<int>(n->args.size()));
+    } else {
+        const proto::ProtoList* kwList = ctx_->newList();
+        for (auto& kw : n->keywords) {
+            if (!compileNode(kw.second.get())) return false;
+            kwList = kwList->appendLast(ctx_, ctx_->fromUTF8String(kw.first.c_str()));
+        }
+        const proto::ProtoTuple* nameTuple = ctx_->newTupleFromList(kwList);
+        
+        int idx = addConstant(nameTuple->asObject(ctx_));
+        emit(OP_LOAD_CONST, idx);
+        emit(OP_CALL_FUNCTION_KW, static_cast<int>(n->args.size() + n->keywords.size()));
+    }
     return true;
 }
 

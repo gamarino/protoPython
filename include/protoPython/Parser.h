@@ -33,6 +33,7 @@ struct BinOpNode : ASTNode {
 struct CallNode : ASTNode {
     std::unique_ptr<ASTNode> func;
     std::vector<std::unique_ptr<ASTNode>> args;
+    std::vector<std::pair<std::string, std::unique_ptr<ASTNode>>> keywords;
 };
 
 /** Attribute access: expr.attr (load or store context). */

@@ -4362,6 +4362,61 @@ void PythonEnvironment::raiseStopIteration(proto::ProtoContext* ctx) {
 }
 
 void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, const std::vector<std::string>& searchPaths) {
+    __code__ = proto::ProtoString::fromUTF8String(context, "__code__");
+    __globals__ = proto::ProtoString::fromUTF8String(context, "__globals__");
+    co_varnames = proto::ProtoString::fromUTF8String(context, "co_varnames");
+    co_nparams = proto::ProtoString::fromUTF8String(context, "co_nparams");
+    co_automatic_count = proto::ProtoString::fromUTF8String(context, "co_automatic_count");
+
+    __iadd__ = proto::ProtoString::fromUTF8String(context, "__iadd__");
+    __isub__ = proto::ProtoString::fromUTF8String(context, "__isub__");
+    __imul__ = proto::ProtoString::fromUTF8String(context, "__imul__");
+    __itruediv__ = proto::ProtoString::fromUTF8String(context, "__itruediv__");
+    __ifloordiv__ = proto::ProtoString::fromUTF8String(context, "__ifloordiv__");
+    __imod__ = proto::ProtoString::fromUTF8String(context, "__imod__");
+    __ipow__ = proto::ProtoString::fromUTF8String(context, "__ipow__");
+    __ilshift__ = proto::ProtoString::fromUTF8String(context, "__ilshift__");
+    __irshift__ = proto::ProtoString::fromUTF8String(context, "__irshift__");
+    __iand__ = proto::ProtoString::fromUTF8String(context, "__iand__");
+    __ior__ = proto::ProtoString::fromUTF8String(context, "__ior__");
+    __ixor__ = proto::ProtoString::fromUTF8String(context, "__ixor__");
+
+    __and__ = proto::ProtoString::fromUTF8String(context, "__and__");
+    __rand__ = proto::ProtoString::fromUTF8String(context, "__rand__");
+    __or__ = proto::ProtoString::fromUTF8String(context, "__or__");
+    __ror__ = proto::ProtoString::fromUTF8String(context, "__ror__");
+    __xor__ = proto::ProtoString::fromUTF8String(context, "__xor__");
+    __rxor__ = proto::ProtoString::fromUTF8String(context, "__rxor__");
+
+    __invert__ = proto::ProtoString::fromUTF8String(context, "__invert__");
+    __pos__ = proto::ProtoString::fromUTF8String(context, "__pos__");
+
+    setItemString = proto::ProtoString::fromUTF8String(context, "__setitem__");
+    dataString = proto::ProtoString::fromUTF8String(context, "__data__");
+    keysString = proto::ProtoString::fromUTF8String(context, "__keys__");
+
+    startString = proto::ProtoString::fromUTF8String(context, "start");
+    stopString = proto::ProtoString::fromUTF8String(context, "stop");
+    stepString = proto::ProtoString::fromUTF8String(context, "step");
+
+    ioModuleString = proto::ProtoString::fromUTF8String(context, "__io_module__");
+    openString = proto::ProtoString::fromUTF8String(context, "open");
+
+    zeroInteger = context->fromInteger(0);
+    oneInteger = context->fromInteger(1);
+
+    listS = proto::ProtoString::fromUTF8String(context, "list");
+    dictS = proto::ProtoString::fromUTF8String(context, "dict");
+    tupleS = proto::ProtoString::fromUTF8String(context, "tuple");
+    setS = proto::ProtoString::fromUTF8String(context, "set");
+    intS = proto::ProtoString::fromUTF8String(context, "int");
+    floatS = proto::ProtoString::fromUTF8String(context, "float");
+    strS = proto::ProtoString::fromUTF8String(context, "str");
+    boolS = proto::ProtoString::fromUTF8String(context, "bool");
+    objectS = proto::ProtoString::fromUTF8String(context, "object");
+    typeS = proto::ProtoString::fromUTF8String(context, "type");
+    __dict_dunder__ = proto::ProtoString::fromUTF8String(context, "__dict__");
+
     const proto::ProtoString* py_init = proto::ProtoString::fromUTF8String(context, "__init__");
     const proto::ProtoString* py_repr = proto::ProtoString::fromUTF8String(context, "__repr__");
     const proto::ProtoString* py_str = proto::ProtoString::fromUTF8String(context, "__str__");
@@ -5057,7 +5112,7 @@ void PythonEnvironment::runExitHandlers() {
     const proto::ProtoObject* runFn = atexitMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "_run_exitfuncs"));
     if (!runFn) return;
     const proto::ProtoList* emptyArgs = context->newList();
-    protoPython::invokePythonCallable(context, runFn, emptyArgs);
+    protoPython::invokePythonCallable(context, runFn, emptyArgs, nullptr);
 }
 
 #include <signal.h>

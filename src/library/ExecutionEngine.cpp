@@ -18,14 +18,15 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
     const proto::ProtoList* args,
     const proto::ProtoSparseList* kwargs) {
     if (!ctx || !self || !args) return PROTO_NONE;
-    const proto::ProtoObject* codeObj = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__code__"));
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    const proto::ProtoObject* codeObj = self->getAttribute(ctx, env ? env->getCodeString() : proto::ProtoString::fromUTF8String(ctx, "__code__"));
     if (!codeObj || codeObj == PROTO_NONE) return PROTO_NONE;
-    const proto::ProtoObject* globalsObj = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__globals__"));
+    const proto::ProtoObject* globalsObj = self->getAttribute(ctx, env ? env->getGlobalsString() : proto::ProtoString::fromUTF8String(ctx, "__globals__"));
     if (!globalsObj || globalsObj == PROTO_NONE) return PROTO_NONE;
 
-    const proto::ProtoObject* co_varnames_obj = codeObj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_varnames"));
-    const proto::ProtoObject* co_nparams_obj = codeObj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_nparams"));
-    const proto::ProtoObject* co_automatic_obj = codeObj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_automatic_count"));
+    const proto::ProtoObject* co_varnames_obj = codeObj->getAttribute(ctx, env ? env->getCoVarnamesString() : proto::ProtoString::fromUTF8String(ctx, "co_varnames"));
+    const proto::ProtoObject* co_nparams_obj = codeObj->getAttribute(ctx, env ? env->getCoNparamsString() : proto::ProtoString::fromUTF8String(ctx, "co_nparams"));
+    const proto::ProtoObject* co_automatic_obj = codeObj->getAttribute(ctx, env ? env->getCoAutomaticCountString() : proto::ProtoString::fromUTF8String(ctx, "co_automatic_count"));
     const proto::ProtoList* co_varnames = co_varnames_obj && co_varnames_obj->asList(ctx) ? co_varnames_obj->asList(ctx) : nullptr;
     int nparams = (co_nparams_obj && co_nparams_obj->isInteger(ctx)) ? static_cast<int>(co_nparams_obj->asLong(ctx)) : 0;
     int automatic_count = (co_automatic_obj && co_automatic_obj->isInteger(ctx)) ? static_cast<int>(co_automatic_obj->asLong(ctx)) : 0;
@@ -70,10 +71,11 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
 /** Create a callable object with __code__, __globals__, and __call__. */
 static proto::ProtoObject* createUserFunction(proto::ProtoContext* ctx, const proto::ProtoObject* codeObj, proto::ProtoObject* globalsFrame) {
     if (!ctx || !codeObj || !globalsFrame) return nullptr;
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     const proto::ProtoObject* fn = ctx->newObject(true);
-    fn = fn->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__code__"), codeObj);
-    fn = fn->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__globals__"), globalsFrame);
-    fn = fn->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__call__"),
+    fn = fn->setAttribute(ctx, env ? env->getCodeString() : proto::ProtoString::fromUTF8String(ctx, "__code__"), codeObj);
+    fn = fn->setAttribute(ctx, env ? env->getGlobalsString() : proto::ProtoString::fromUTF8String(ctx, "__globals__"), globalsFrame);
+    fn = fn->setAttribute(ctx, env ? env->getCallString() : proto::ProtoString::fromUTF8String(ctx, "__call__"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(fn), runUserFunctionCall));
     return const_cast<proto::ProtoObject*>(fn);
 }
@@ -202,18 +204,19 @@ static bool isTruthy(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
 }
 
 static const proto::ProtoObject* invokeCallable(proto::ProtoContext* ctx,
-    const proto::ProtoObject* callable, const proto::ProtoList* args) {
+    const proto::ProtoObject* callable, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs = nullptr) {
     if (callable->asMethod(ctx)) {
-        return callable->asMethod(ctx)(ctx, callable, nullptr, args, nullptr);
+        return callable->asMethod(ctx)(ctx, callable, nullptr, args, kwargs);
     }
-    const proto::ProtoObject* callAttr = callable->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__call__"));
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    const proto::ProtoObject* callAttr = callable->getAttribute(ctx, env ? env->getCallString() : proto::ProtoString::fromUTF8String(ctx, "__call__"));
     if (!callAttr || !callAttr->asMethod(ctx)) return PROTO_NONE;
-    return callAttr->asMethod(ctx)(ctx, callable, nullptr, args, nullptr);
+    return callAttr->asMethod(ctx)(ctx, callable, nullptr, args, kwargs);
 }
 
 const proto::ProtoObject* invokePythonCallable(proto::ProtoContext* ctx,
-    const proto::ProtoObject* callable, const proto::ProtoList* args) {
-    return invokeCallable(ctx, callable, args);
+    const proto::ProtoObject* callable, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+    return invokeCallable(ctx, callable, args, kwargs);
 }
 
 const proto::ProtoObject* executeBytecodeRange(
@@ -225,6 +228,7 @@ const proto::ProtoObject* executeBytecodeRange(
     unsigned long pcStart,
     unsigned long pcEnd) {
     if (!ctx || !constants || !bytecode) return PROTO_NONE;
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     unsigned long n = bytecode->getSize(ctx);
     if (n == 0) return PROTO_NONE;
     if (pcEnd >= n) pcEnd = n - 1;
@@ -256,7 +260,6 @@ const proto::ProtoObject* executeBytecodeRange(
                 if (val && val != PROTO_NONE) {
                     stack.push_back(val);
                 } else {
-                    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
                     if (env) {
                         // Check if it's explicitly None in builtins
                         std::string name;
@@ -314,7 +317,7 @@ const proto::ProtoObject* executeBytecodeRange(
             stack.pop_back();
             const proto::ProtoObject* a = stack.back();
             stack.pop_back();
-            const proto::ProtoObject* iadd = isEmbeddedValue(a) ? nullptr : a->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iadd__"));
+            const proto::ProtoObject* iadd = isEmbeddedValue(a) ? nullptr : a->getAttribute(ctx, env ? env->getIAddString() : proto::ProtoString::fromUTF8String(ctx, "__iadd__"));
             if (iadd && iadd->asMethod(ctx)) {
                 const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
                 const proto::ProtoObject* result = iadd->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
@@ -338,7 +341,7 @@ const proto::ProtoObject* executeBytecodeRange(
             stack.pop_back();
             const proto::ProtoObject* a = stack.back();
             stack.pop_back();
-            const proto::ProtoObject* isub = isEmbeddedValue(a) ? nullptr : a->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__isub__"));
+            const proto::ProtoObject* isub = isEmbeddedValue(a) ? nullptr : a->getAttribute(ctx, env ? env->getISubString() : proto::ProtoString::fromUTF8String(ctx, "__isub__"));
             if (isub && isub->asMethod(ctx)) {
                 const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
                 const proto::ProtoObject* result = isub->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
@@ -362,7 +365,7 @@ const proto::ProtoObject* executeBytecodeRange(
             stack.pop_back();
             const proto::ProtoObject* a = stack.back();
             stack.pop_back();
-            const proto::ProtoObject* imul = isEmbeddedValue(a) ? nullptr : a->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__imul__"));
+            const proto::ProtoObject* imul = isEmbeddedValue(a) ? nullptr : a->getAttribute(ctx, env ? env->getIMulString() : proto::ProtoString::fromUTF8String(ctx, "__imul__"));
             if (imul && imul->asMethod(ctx)) {
                 const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
                 const proto::ProtoObject* result = imul->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
@@ -410,7 +413,7 @@ const proto::ProtoObject* executeBytecodeRange(
             stack.pop_back();
             const proto::ProtoObject* a = stack.back();
             stack.pop_back();
-            const proto::ProtoObject* itruediv = isEmbeddedValue(a) ? nullptr : a->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__itruediv__"));
+            const proto::ProtoObject* itruediv = isEmbeddedValue(a) ? nullptr : a->getAttribute(ctx, env ? env->getITrueDivString() : proto::ProtoString::fromUTF8String(ctx, "__itruediv__"));
             if (itruediv && itruediv->asMethod(ctx)) {
                 const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
                 const proto::ProtoObject* result = itruediv->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
@@ -426,7 +429,7 @@ const proto::ProtoObject* executeBytecodeRange(
             stack.pop_back();
             const proto::ProtoObject* a = stack.back();
             stack.pop_back();
-            const proto::ProtoObject* ifloordiv = isEmbeddedValue(a) ? nullptr : a->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__ifloordiv__"));
+            const proto::ProtoObject* ifloordiv = isEmbeddedValue(a) ? nullptr : a->getAttribute(ctx, env ? env->getIFloorDivString() : proto::ProtoString::fromUTF8String(ctx, "__ifloordiv__"));
             if (ifloordiv && ifloordiv->asMethod(ctx)) {
                 const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
                 const proto::ProtoObject* result = ifloordiv->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
@@ -442,7 +445,7 @@ const proto::ProtoObject* executeBytecodeRange(
             stack.pop_back();
             const proto::ProtoObject* a = stack.back();
             stack.pop_back();
-            const proto::ProtoObject* imod = isEmbeddedValue(a) ? nullptr : a->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__imod__"));
+            const proto::ProtoObject* imod = isEmbeddedValue(a) ? nullptr : a->getAttribute(ctx, env ? env->getIModString() : proto::ProtoString::fromUTF8String(ctx, "__imod__"));
             if (imod && imod->asMethod(ctx)) {
                 const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
                 const proto::ProtoObject* result = imod->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
@@ -458,7 +461,7 @@ const proto::ProtoObject* executeBytecodeRange(
             stack.pop_back();
             const proto::ProtoObject* a = stack.back();
             stack.pop_back();
-            const proto::ProtoObject* ipow = isEmbeddedValue(a) ? nullptr : a->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__ipow__"));
+            const proto::ProtoObject* ipow = isEmbeddedValue(a) ? nullptr : a->getAttribute(ctx, env ? env->getIPowString() : proto::ProtoString::fromUTF8String(ctx, "__ipow__"));
             if (ipow && ipow->asMethod(ctx)) {
                 const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
                 const proto::ProtoObject* result = ipow->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
@@ -474,7 +477,7 @@ const proto::ProtoObject* executeBytecodeRange(
             stack.pop_back();
             const proto::ProtoObject* a = stack.back();
             stack.pop_back();
-            const proto::ProtoObject* ilshift = isEmbeddedValue(a) ? nullptr : a->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__ilshift__"));
+            const proto::ProtoObject* ilshift = isEmbeddedValue(a) ? nullptr : a->getAttribute(ctx, env ? env->getILShiftString() : proto::ProtoString::fromUTF8String(ctx, "__ilshift__"));
             if (ilshift && ilshift->asMethod(ctx)) {
                 const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
                 const proto::ProtoObject* result = ilshift->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
@@ -493,7 +496,7 @@ const proto::ProtoObject* executeBytecodeRange(
             stack.pop_back();
             const proto::ProtoObject* a = stack.back();
             stack.pop_back();
-            const proto::ProtoObject* irshift = isEmbeddedValue(a) ? nullptr : a->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__irshift__"));
+            const proto::ProtoObject* irshift = isEmbeddedValue(a) ? nullptr : a->getAttribute(ctx, env ? env->getIRShiftString() : proto::ProtoString::fromUTF8String(ctx, "__irshift__"));
             if (irshift && irshift->asMethod(ctx)) {
                 const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
                 const proto::ProtoObject* result = irshift->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
@@ -512,7 +515,7 @@ const proto::ProtoObject* executeBytecodeRange(
             stack.pop_back();
             const proto::ProtoObject* a = stack.back();
             stack.pop_back();
-            const proto::ProtoObject* iand = isEmbeddedValue(a) ? nullptr : a->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iand__"));
+            const proto::ProtoObject* iand = isEmbeddedValue(a) ? nullptr : a->getAttribute(ctx, env ? env->getIAndString() : proto::ProtoString::fromUTF8String(ctx, "__iand__"));
             if (iand && iand->asMethod(ctx)) {
                 const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
                 const proto::ProtoObject* result = iand->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
@@ -520,13 +523,13 @@ const proto::ProtoObject* executeBytecodeRange(
             } else if (a->isInteger(ctx) && b->isInteger(ctx)) {
                 stack.push_back(ctx->fromInteger(a->asLong(ctx) & b->asLong(ctx)));
             } else {
-                const proto::ProtoObject* andM = a->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__and__"));
+                const proto::ProtoObject* andM = a->getAttribute(ctx, env ? env->getAndString() : proto::ProtoString::fromUTF8String(ctx, "__and__"));
                 if (andM && andM->asMethod(ctx)) {
                     const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
                     const proto::ProtoObject* result = andM->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
                     if (result) stack.push_back(result);
                 } else {
-                    const proto::ProtoObject* randM = b->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__rand__"));
+                    const proto::ProtoObject* randM = b->getAttribute(ctx, env ? env->getRAndString() : proto::ProtoString::fromUTF8String(ctx, "__rand__"));
                     if (randM && randM->asMethod(ctx)) {
                         const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, a);
                         const proto::ProtoObject* result = randM->asMethod(ctx)(ctx, b, nullptr, oneArg, nullptr);
@@ -541,7 +544,7 @@ const proto::ProtoObject* executeBytecodeRange(
             stack.pop_back();
             const proto::ProtoObject* a = stack.back();
             stack.pop_back();
-            const proto::ProtoObject* ior = isEmbeddedValue(a) ? nullptr : a->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__ior__"));
+            const proto::ProtoObject* ior = isEmbeddedValue(a) ? nullptr : a->getAttribute(ctx, env ? env->getIOrString() : proto::ProtoString::fromUTF8String(ctx, "__ior__"));
             if (ior && ior->asMethod(ctx)) {
                 const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
                 const proto::ProtoObject* result = ior->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
@@ -549,13 +552,13 @@ const proto::ProtoObject* executeBytecodeRange(
             } else if (a->isInteger(ctx) && b->isInteger(ctx)) {
                 stack.push_back(ctx->fromInteger(a->asLong(ctx) | b->asLong(ctx)));
             } else {
-                const proto::ProtoObject* orM = a->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__or__"));
+                const proto::ProtoObject* orM = a->getAttribute(ctx, env ? env->getOrString() : proto::ProtoString::fromUTF8String(ctx, "__or__"));
                 if (orM && orM->asMethod(ctx)) {
                     const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
                     const proto::ProtoObject* result = orM->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
                     if (result) stack.push_back(result);
                 } else {
-                    const proto::ProtoObject* rorM = b->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__ror__"));
+                    const proto::ProtoObject* rorM = b->getAttribute(ctx, env ? env->getROrString() : proto::ProtoString::fromUTF8String(ctx, "__ror__"));
                     if (rorM && rorM->asMethod(ctx)) {
                         const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, a);
                         const proto::ProtoObject* result = rorM->asMethod(ctx)(ctx, b, nullptr, oneArg, nullptr);
@@ -570,7 +573,7 @@ const proto::ProtoObject* executeBytecodeRange(
             stack.pop_back();
             const proto::ProtoObject* a = stack.back();
             stack.pop_back();
-            const proto::ProtoObject* ixor = isEmbeddedValue(a) ? nullptr : a->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__ixor__"));
+            const proto::ProtoObject* ixor = isEmbeddedValue(a) ? nullptr : a->getAttribute(ctx, env ? env->getIXorString() : proto::ProtoString::fromUTF8String(ctx, "__ixor__"));
             if (ixor && ixor->asMethod(ctx)) {
                 const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
                 const proto::ProtoObject* result = ixor->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
@@ -578,13 +581,13 @@ const proto::ProtoObject* executeBytecodeRange(
             } else if (a->isInteger(ctx) && b->isInteger(ctx)) {
                 stack.push_back(ctx->fromInteger(a->asLong(ctx) ^ b->asLong(ctx)));
             } else {
-                const proto::ProtoObject* xorM = a->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__xor__"));
+                const proto::ProtoObject* xorM = a->getAttribute(ctx, env ? env->getXorString() : proto::ProtoString::fromUTF8String(ctx, "__xor__"));
                 if (xorM && xorM->asMethod(ctx)) {
                     const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
                     const proto::ProtoObject* result = xorM->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
                     if (result) stack.push_back(result);
                 } else {
-                    const proto::ProtoObject* rxorM = b->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__rxor__"));
+                    const proto::ProtoObject* rxorM = b->getAttribute(ctx, env ? env->getRXorString() : proto::ProtoString::fromUTF8String(ctx, "__rxor__"));
                     if (rxorM && rxorM->asMethod(ctx)) {
                         const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, a);
                         const proto::ProtoObject* result = rxorM->asMethod(ctx)(ctx, b, nullptr, oneArg, nullptr);
@@ -632,13 +635,13 @@ const proto::ProtoObject* executeBytecodeRange(
                 long long bv = b->asLong(ctx);
                 stack.push_back(ctx->fromInteger(av & bv));
             } else {
-                const proto::ProtoObject* andM = a->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__and__"));
+                const proto::ProtoObject* andM = a->getAttribute(ctx, env ? env->getAndString() : proto::ProtoString::fromUTF8String(ctx, "__and__"));
                 if (andM && andM->asMethod(ctx)) {
                     const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
                     const proto::ProtoObject* result = andM->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
                     if (result) stack.push_back(result);
                 } else {
-                    const proto::ProtoObject* randM = b->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__rand__"));
+                    const proto::ProtoObject* randM = b->getAttribute(ctx, env ? env->getRAndString() : proto::ProtoString::fromUTF8String(ctx, "__rand__"));
                     if (randM && randM->asMethod(ctx)) {
                         const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, a);
                         const proto::ProtoObject* result = randM->asMethod(ctx)(ctx, b, nullptr, oneArg, nullptr);
@@ -658,13 +661,13 @@ const proto::ProtoObject* executeBytecodeRange(
                 long long bv = b->asLong(ctx);
                 stack.push_back(ctx->fromInteger(av | bv));
             } else {
-                const proto::ProtoObject* orM = a->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__or__"));
+                const proto::ProtoObject* orM = a->getAttribute(ctx, env ? env->getOrString() : proto::ProtoString::fromUTF8String(ctx, "__or__"));
                 if (orM && orM->asMethod(ctx)) {
                     const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
                     const proto::ProtoObject* result = orM->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
                     if (result) stack.push_back(result);
                 } else {
-                    const proto::ProtoObject* rorM = b->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__ror__"));
+                    const proto::ProtoObject* rorM = b->getAttribute(ctx, env ? env->getROrString() : proto::ProtoString::fromUTF8String(ctx, "__ror__"));
                     if (rorM && rorM->asMethod(ctx)) {
                         const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, a);
                         const proto::ProtoObject* result = rorM->asMethod(ctx)(ctx, b, nullptr, oneArg, nullptr);
@@ -684,13 +687,13 @@ const proto::ProtoObject* executeBytecodeRange(
                 long long bv = b->asLong(ctx);
                 stack.push_back(ctx->fromInteger(av ^ bv));
             } else {
-                const proto::ProtoObject* xorM = a->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__xor__"));
+                const proto::ProtoObject* xorM = a->getAttribute(ctx, env ? env->getXorString() : proto::ProtoString::fromUTF8String(ctx, "__xor__"));
                 if (xorM && xorM->asMethod(ctx)) {
                     const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
                     const proto::ProtoObject* result = xorM->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
                     if (result) stack.push_back(result);
                 } else {
-                    const proto::ProtoObject* rxorM = b->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__rxor__"));
+                    const proto::ProtoObject* rxorM = b->getAttribute(ctx, env ? env->getRXorString() : proto::ProtoString::fromUTF8String(ctx, "__rxor__"));
                     if (rxorM && rxorM->asMethod(ctx)) {
                         const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, a);
                         const proto::ProtoObject* result = rxorM->asMethod(ctx)(ctx, b, nullptr, oneArg, nullptr);
@@ -719,7 +722,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 long long n = a->asLong(ctx);
                 stack.push_back(ctx->fromInteger(static_cast<long long>(~static_cast<unsigned long long>(n))));
             } else {
-                const proto::ProtoObject* inv = a->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__invert__"));
+                const proto::ProtoObject* inv = a->getAttribute(ctx, env ? env->getInvertString() : proto::ProtoString::fromUTF8String(ctx, "__invert__"));
                 if (inv && inv->asMethod(ctx)) {
                     const proto::ProtoList* noArgs = ctx->newList();
                     const proto::ProtoObject* result = inv->asMethod(ctx)(ctx, a, nullptr, noArgs, nullptr);
@@ -730,7 +733,7 @@ const proto::ProtoObject* executeBytecodeRange(
             if (stack.empty()) continue;
             const proto::ProtoObject* a = stack.back();
             stack.pop_back();
-            const proto::ProtoObject* pos = isEmbeddedValue(a) ? nullptr : a->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__pos__"));
+            const proto::ProtoObject* pos = isEmbeddedValue(a) ? nullptr : a->getAttribute(ctx, env ? env->getPosString() : proto::ProtoString::fromUTF8String(ctx, "__pos__"));
             if (pos && pos->asMethod(ctx)) {
                 const proto::ProtoList* noArgs = ctx->newList();
                 const proto::ProtoObject* result = pos->asMethod(ctx)(ctx, a, nullptr, noArgs, nullptr);
@@ -800,12 +803,12 @@ const proto::ProtoObject* executeBytecodeRange(
                 for (int j = 0; j < arg; ++j)
                     lst = lst->appendLast(ctx, elems[j]);
                 proto::ProtoObject* listObj = const_cast<proto::ProtoObject*>(ctx->newObject(true));
-                listObj->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__data__"), lst->asObject(ctx));
+                listObj->setAttribute(ctx, env ? env->getDataString() : proto::ProtoString::fromUTF8String(ctx, "__data__"), lst->asObject(ctx));
                 
                 PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
                 if (env && env->getListPrototype()) {
                     listObj->addParent(ctx, env->getListPrototype());
-                    listObj->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__class__"), env->getListPrototype());
+                    listObj->setAttribute(ctx, env ? env->getClassString() : proto::ProtoString::fromUTF8String(ctx, "__class__"), env->getListPrototype());
                 }
                 
                 stack.push_back(listObj);
@@ -817,13 +820,13 @@ const proto::ProtoObject* executeBytecodeRange(
             stack.pop_back();
             const proto::ProtoObject* container = stack.back();
             stack.pop_back();
-            const proto::ProtoObject* getitem = container->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__getitem__"));
+            const proto::ProtoObject* getitem = container->getAttribute(ctx, env ? env->getGetItemString() : proto::ProtoString::fromUTF8String(ctx, "__getitem__"));
             if (getitem && getitem->asMethod(ctx)) {
                 const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, key);
                 const proto::ProtoObject* result = getitem->asMethod(ctx)(ctx, container, nullptr, oneArg, nullptr);
                 if (result) stack.push_back(result);
             } else {
-                const proto::ProtoObject* data = container->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__data__"));
+                const proto::ProtoObject* data = container->getAttribute(ctx, env ? env->getDataString() : proto::ProtoString::fromUTF8String(ctx, "__data__"));
                 if (data && data->asList(ctx) && key->isInteger(ctx)) {
                     long long idx = key->asLong(ctx);
                     const proto::ProtoList* list = data->asList(ctx);
@@ -851,13 +854,13 @@ const proto::ProtoObject* executeBytecodeRange(
                     data = data->setAt(ctx, h, value);
                     keys = keys->appendLast(ctx, key);
                 }
-                mapObj->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__data__"), data->asObject(ctx));
-                mapObj->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__keys__"), keys->asObject(ctx));
+                mapObj->setAttribute(ctx, env ? env->getDataString() : proto::ProtoString::fromUTF8String(ctx, "__data__"), data->asObject(ctx));
+                mapObj->setAttribute(ctx, env ? env->getKeysString() : proto::ProtoString::fromUTF8String(ctx, "__keys__"), keys->asObject(ctx));
                 
                 PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
                 if (env && env->getDictPrototype()) {
                     mapObj->addParent(ctx, env->getDictPrototype());
-                    mapObj->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__class__"), env->getDictPrototype());
+                    mapObj->setAttribute(ctx, env ? env->getClassString() : proto::ProtoString::fromUTF8String(ctx, "__class__"), env->getDictPrototype());
                 }
                 
                 stack.push_back(mapObj);
@@ -871,12 +874,49 @@ const proto::ProtoObject* executeBytecodeRange(
             stack.pop_back();
             proto::ProtoObject* container = const_cast<proto::ProtoObject*>(stack.back());
             stack.pop_back();
-            const proto::ProtoObject* setitem = container->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__setitem__"));
+            const proto::ProtoObject* setitem = container->getAttribute(ctx, env ? env->getSetItemString() : proto::ProtoString::fromUTF8String(ctx, "__setitem__"));
             if (setitem && setitem->asMethod(ctx)) {
                 const proto::ProtoList* args = ctx->newList()->appendLast(ctx, key)->appendLast(ctx, value);
                 setitem->asMethod(ctx)(ctx, container, nullptr, args, nullptr);
             }
             /* When container has no __setitem__, subscript assignment is a no-op (e.g. minimal bytecode with BUILD_MAP/BUILD_LIST objects). */
+        } else if (op == OP_CALL_FUNCTION_KW) {
+            i++;
+            if (stack.size() < 2) continue; // at least callable and names_tuple
+            const proto::ProtoObject* namesTupleObj = stack.back();
+            stack.pop_back();
+            const proto::ProtoTuple* namesTuple = namesTupleObj->asTuple(ctx);
+            if (!namesTuple) continue;
+            int nkw = namesTuple->getSize(ctx);
+            int npos = arg - nkw;
+            if (stack.size() < static_cast<size_t>(arg) + 1) continue;
+
+            std::vector<const proto::ProtoObject*> kwVals(nkw);
+            for (int k = nkw - 1; k >= 0; --k) {
+                kwVals[k] = stack.back();
+                stack.pop_back();
+            }
+            std::vector<const proto::ProtoObject*> posArgs(npos);
+            for (int p = npos - 1; p >= 0; --p) {
+                posArgs[p] = stack.back();
+                stack.pop_back();
+            }
+            const proto::ProtoObject* callable = stack.back();
+            stack.pop_back();
+
+            const proto::ProtoList* plArgs = ctx->newList();
+            for (int p = 0; p < npos; ++p) plArgs = plArgs->appendLast(ctx, posArgs[p]);
+
+            const proto::ProtoSparseList* kwMap = ctx->newSparseList();
+            for (int k = 0; k < nkw; ++k) {
+                const proto::ProtoObject* nameStr = namesTuple->getAt(ctx, k);
+                if (nameStr->isString(ctx))
+                    kwMap = kwMap->setAt(ctx, nameStr->getHash(ctx), kwVals[k]);
+            }
+
+            const proto::ProtoObject* result = invokeCallable(ctx, callable, plArgs, kwMap);
+            if (result) stack.push_back(result);
+            else return PROTO_NONE;
         } else if (op == OP_CALL_FUNCTION) {
             i++;
             if (stack.size() < static_cast<size_t>(arg) + 1) continue;
@@ -915,7 +955,7 @@ const proto::ProtoObject* executeBytecodeRange(
                     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
                     if (env && env->getTuplePrototype()) {
                         tupObj->addParent(ctx, env->getTuplePrototype());
-                        tupObj->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__class__"), env->getTuplePrototype());
+                        tupObj->setAttribute(ctx, env ? env->getClassString() : proto::ProtoString::fromUTF8String(ctx, "__class__"), env->getTuplePrototype());
                     }
                     stack.push_back(tupObj);
                 }
@@ -977,7 +1017,7 @@ const proto::ProtoObject* executeBytecodeRange(
             if (seq->asList(ctx)) list = seq->asList(ctx);
             else if (seq->asTuple(ctx)) tup = seq->asTuple(ctx);
             else {
-                const proto::ProtoObject* data = seq->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__data__"));
+                const proto::ProtoObject* data = seq->getAttribute(ctx, env ? env->getDataString() : proto::ProtoString::fromUTF8String(ctx, "__data__"));
                 if (data) {
                     if (data->asList(ctx)) list = data->asList(ctx);
                     else if (data->asTuple(ctx)) tup = data->asTuple(ctx);
@@ -1028,18 +1068,23 @@ const proto::ProtoObject* executeBytecodeRange(
             i++;
             if ((arg != 2 && arg != 3) || stack.size() < static_cast<size_t>(arg)) continue;
             long long step = 1;
+            const proto::ProtoObject* stepObj = nullptr;
             if (arg == 3) {
-                step = stack.back()->asLong(ctx);
+                stepObj = stack.back();
                 stack.pop_back();
+            } else {
+                PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+                stepObj = env ? env->getOneInteger() : ctx->fromInteger(1);
             }
             const proto::ProtoObject* stopObj = stack.back();
             stack.pop_back();
             const proto::ProtoObject* startObj = stack.back();
             stack.pop_back();
             proto::ProtoObject* sliceObj = const_cast<proto::ProtoObject*>(ctx->newObject(true));
-            sliceObj->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "start"), startObj);
-            sliceObj->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "stop"), stopObj);
-            sliceObj->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "step"), ctx->fromInteger(step));
+            PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+            sliceObj->setAttribute(ctx, env ? env->getStartString() : proto::ProtoString::fromUTF8String(ctx, "start"), startObj);
+            sliceObj->setAttribute(ctx, env ? env->getStopString() : proto::ProtoString::fromUTF8String(ctx, "stop"), stopObj);
+            sliceObj->setAttribute(ctx, env ? env->getStepString() : proto::ProtoString::fromUTF8String(ctx, "step"), stepObj);
             stack.push_back(sliceObj);
         } else if (op == OP_ROT_TWO) {
             if (stack.size() >= 2) {

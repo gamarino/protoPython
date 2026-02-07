@@ -157,23 +157,9 @@ std::unique_ptr<ASTNode> Parser::parseAtom() {
         return n;
     }
     if (cur_.type == TokenType::Name) {
-        std::string name = cur_.value;
-        advance();
-        if (cur_.type == TokenType::LParen) {
-            advance();
-            auto call = std::make_unique<CallNode>();
-            call->func = std::make_unique<NameNode>();
-            static_cast<NameNode*>(call->func.get())->id = name;
-            while (cur_.type != TokenType::RParen && cur_.type != TokenType::EndOfFile) {
-                call->args.push_back(parseOrExpr());
-                if (!accept(TokenType::Comma))
-                    break;
-            }
-            expect(TokenType::RParen);
-            return call;
-        }
         auto n = std::make_unique<NameNode>();
-        n->id = name;
+        n->id = cur_.value;
+        advance();
         return n;
     }
     if (accept(TokenType::LParen)) {
@@ -258,7 +244,17 @@ std::unique_ptr<ASTNode> Parser::parsePrimary() {
             auto call = std::make_unique<CallNode>();
             call->func = std::move(left);
             while (cur_.type != TokenType::RParen && cur_.type != TokenType::EndOfFile) {
-                call->args.push_back(parseOrExpr());
+                if (cur_.type == TokenType::Name && tok_.peek().type == TokenType::Assign) {
+                    std::string kwname = cur_.value;
+                    advance(); // name
+                    advance(); // =
+                    call->keywords.push_back({kwname, parseOrExpr()});
+                } else {
+                    if (!call->keywords.empty()) {
+                        error("positional argument follows keyword argument");
+                    }
+                    call->args.push_back(parseOrExpr());
+                }
                 if (!accept(TokenType::Comma)) break;
             }
             expect(TokenType::RParen);

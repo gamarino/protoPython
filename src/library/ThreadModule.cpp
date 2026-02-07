@@ -91,7 +91,7 @@ static const proto::ProtoObject* thread_bootstrap(
     const proto::ProtoList* argList = context->newList();
     for (unsigned long i = callableIdx + 1; i < args->getSize(context); ++i)
         argList = argList->appendLast(context, args->getAt(context, static_cast<int>(i)));
-    const proto::ProtoObject* result = protoPython::invokePythonCallable(context, callable, argList);
+    const proto::ProtoObject* result = protoPython::invokePythonCallable(context, callable, argList, nullptr);
     if (env)
         protoPython::PythonEnvironment::unregisterContext(context);
     return result;
