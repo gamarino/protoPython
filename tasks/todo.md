@@ -580,3 +580,33 @@ Steps 1305–1324: Basic input loop, multiline detection, history, SIGINT handli
 ### 63.5 Next 20 Steps (v72) — in progress
 - [x] Step 1366: CLI Parity and Fixes (native method invocation, ProtoSpace prototype registration)
 - [ ] Steps 1365, 1367–1384
+- [x] Step 1366: CLI Parity and Fixes (native method invocation, ProtoSpace prototype registration)
+
+## 64. NEXT 100 STEPS: Implementation & Stub Completion (v73–v77)
+
+See [docs/NEXT_100_STEPS_V73_V77.md](../docs/NEXT_100_STEPS_V73_V77.md).
+
+### 64.1 Next 20 Steps (v73) — Builtins & Core Reflection — in progress
+Steps 1385–1404: globals, locals, vars, input, os.environ.
+
+- [ ] Steps 1385–1404
+
+### 64.2 Next 20 Steps (v74) — Concurrency & Integrity
+Steps 1405–1424: native threading, locks.
+
+- [ ] Steps 1405–1424
+
+### 64.3 Next 20 Steps (v75) — I/O & Networking
+Steps 1425–1444: socket, subprocess.
+
+- [ ] Steps 1425–1444
+
+### 64.4 Next 20 Steps (v76) — Stubs Completion I
+Steps 1445–1464: datetime, hashlib native, sqlite3.
+
+- [ ] Steps 1445–1464
+
+### 64.5 Next 20 Steps (v77) — Stubs Completion II & Final Regression
+Steps 1465–1484: ctypes, help, 60s test suite.
+
+- [ ] Steps 1465–1484

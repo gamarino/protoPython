@@ -30,7 +30,8 @@ The foundation of the runtime must be fully compatible with Python 3.14's semant
 - [x] **Phase 2: HPy universal ABI** (v64): Support loading HPy modules built against the universal ABI. `HPyModuleProvider` implemented. Done (v64).
 - [x] **Phase 3: HPy API coverage** (v65–v66): Implement additional HPy ABI (Object creation, numeric/string, protocols, collections, type creation). Done (v66).
 - [x] **Phase 4: Ecosystem compatibility** (v67): Documented build/distribute; final tests. Done (v67).
-- [x] **Phase 5: Interactive REPL & UX** (v68–v72): Implement CPython-style REPL, high-quality error messages, and final project polish. Phase 5.4 done (v71: advanced REPL features, help/dir, auto-indent, %debug). <!-- id: 1 -->
+- [x] **Phase 5: Interactive REPL & UX** (v68–v72): Implement CPython-style REPL, high-quality error messages, and final project polish. Phase 5.4 done (v71: advanced REPL features, help/dir, auto-indent, %debug). Phase 5.5 pending (v72).
+- [ ] **Phase 6: Implementation Completion & Full Stubs** (v73–v77): Complete core builtins, full native threading, networking foundation, and comprehensive stub implementation. [NEXT_100_STEPS_V73_V77.md](NEXT_100_STEPS_V73_V77.md) — 100 steps (1385–1484). <!-- id: 2 -->
 
 *References: [HPy Documentation](https://docs.hpyproject.org/), [HPy API](https://docs.hpyproject.org/en/latest/api.html), [HPY_INTEGRATION_PLAN.md](HPY_INTEGRATION_PLAN.md).*
 
