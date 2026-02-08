@@ -208,6 +208,7 @@ Token Tokenizer::next() {
     if (c == '{') { Token t = makeToken(TokenType::LCurly); pos_++; return t; }
     if (c == '}') { Token t = makeToken(TokenType::RCurly); pos_++; return t; }
     if (c == ':') { Token t = makeToken(TokenType::Colon); pos_++; return t; }
+    if (c == ';') { Token t = makeToken(TokenType::Semicolon); pos_++; return t; }
     if (c == '%') { Token t = makeToken(TokenType::Modulo); pos_++; return t; }
     if (c == '!' && pos_ + 1 < source_.size() && source_[pos_ + 1] == '=') {
         Token t = makeToken(TokenType::NotEqual); pos_ += 2; return t;

@@ -30,8 +30,9 @@ TEST(ExecutionEngineTest, ExecuteBytecodeRangePartialRangeReturnsValue) {
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(1))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_BINARY_ADD))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE))->appendLast(&ctx, ctx.fromInteger(0));
+    proto::ProtoObject* frame = nullptr;
     const proto::ProtoObject* result = protoPython::executeBytecodeRange(
-        &ctx, constants, bytecode, nullptr, nullptr, 0, 5);
+        &ctx, constants, bytecode, nullptr, frame, 0, 5);
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->isInteger(&ctx));
     EXPECT_EQ(result->asLong(&ctx), 3);
@@ -49,10 +50,11 @@ TEST(ExecutionEngineTest, ExecuteBytecodeRangeFullRangeEqualsExecuteMinimal) {
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_BINARY_ADD))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE))->appendLast(&ctx, ctx.fromInteger(0));
     unsigned long n = bytecode->getSize(&ctx);
+    proto::ProtoObject* frame = nullptr;
     const proto::ProtoObject* rangeResult = protoPython::executeBytecodeRange(
-        &ctx, constants, bytecode, nullptr, nullptr, 0, n ? n - 1 : 0);
+        &ctx, constants, bytecode, nullptr, frame, 0, n ? n - 1 : 0);
     const proto::ProtoObject* minimalResult = protoPython::executeMinimalBytecode(
-        &ctx, constants, bytecode, nullptr, nullptr);
+        &ctx, constants, bytecode, nullptr, frame);
     ASSERT_NE(rangeResult, nullptr);
     ASSERT_NE(minimalResult, nullptr);
     EXPECT_TRUE(rangeResult->isInteger(&ctx));
@@ -71,7 +73,8 @@ TEST(ExecutionEngineTest, LoadConstReturnValue) {
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))
         ->appendLast(&ctx, ctx.fromInteger(0))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE));
-    const proto::ProtoObject* result = protoPython::executeMinimalBytecode(&ctx, constants, bytecode, nullptr, nullptr);
+    proto::ProtoObject* frame = nullptr;
+    const proto::ProtoObject* result = protoPython::executeMinimalBytecode(&ctx, constants, bytecode, nullptr, frame);
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->isInteger(&ctx));
     EXPECT_EQ(result->asLong(&ctx), 42);
@@ -85,7 +88,8 @@ TEST(ExecutionEngineTest, LoadConstString) {
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))
         ->appendLast(&ctx, ctx.fromInteger(0))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE));
-    const proto::ProtoObject* result = protoPython::executeMinimalBytecode(&ctx, constants, bytecode, nullptr, nullptr);
+    proto::ProtoObject* frame = nullptr;
+    const proto::ProtoObject* result = protoPython::executeMinimalBytecode(&ctx, constants, bytecode, nullptr, frame);
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->isString(&ctx));
     std::string s;
@@ -104,7 +108,8 @@ TEST(ExecutionEngineTest, BinaryMultiply) {
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(1))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_BINARY_MULTIPLY))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE));
-    const proto::ProtoObject* result = protoPython::executeMinimalBytecode(&ctx, constants, bytecode, nullptr, nullptr);
+    proto::ProtoObject* frame = nullptr;
+    const proto::ProtoObject* result = protoPython::executeMinimalBytecode(&ctx, constants, bytecode, nullptr, frame);
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->isInteger(&ctx));
     EXPECT_EQ(result->asLong(&ctx), 42);
@@ -121,7 +126,8 @@ TEST(ExecutionEngineTest, CompareOp) {
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(1))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_COMPARE_OP))->appendLast(&ctx, ctx.fromInteger(2))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE));
-    const proto::ProtoObject* result = protoPython::executeMinimalBytecode(&ctx, constants, bytecode, nullptr, nullptr);
+    proto::ProtoObject* frame = nullptr;
+    const proto::ProtoObject* result = protoPython::executeMinimalBytecode(&ctx, constants, bytecode, nullptr, frame);
     ASSERT_NE(result, nullptr);
     EXPECT_EQ(result, PROTO_TRUE);
 }
@@ -137,8 +143,9 @@ TEST(ExecutionEngineTest, BinarySubtract) {
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(1))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_BINARY_SUBTRACT))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE));
+    proto::ProtoObject* frame = nullptr;
     const proto::ProtoObject* result = protoPython::executeMinimalBytecode(
-        &ctx, constants, bytecode, nullptr, nullptr);
+        &ctx, constants, bytecode, nullptr, frame);
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->isInteger(&ctx));
     EXPECT_EQ(result->asLong(&ctx), 7);
@@ -155,8 +162,9 @@ TEST(ExecutionEngineTest, BinaryTrueDivide) {
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(1))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_BINARY_TRUE_DIVIDE))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE));
+    proto::ProtoObject* frame = nullptr;
     const proto::ProtoObject* result = protoPython::executeMinimalBytecode(
-        &ctx, constants, bytecode, nullptr, nullptr);
+        &ctx, constants, bytecode, nullptr, frame);
     ASSERT_NE(result, nullptr);
     double val = result->isDouble(&ctx) ? result->asDouble(&ctx) : static_cast<double>(result->asLong(&ctx));
     EXPECT_DOUBLE_EQ(val, 5.0);
@@ -173,8 +181,9 @@ TEST(ExecutionEngineTest, BinaryPower) {
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(1))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_BINARY_POWER))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE));
+    proto::ProtoObject* frame = nullptr;
     const proto::ProtoObject* result = protoPython::executeMinimalBytecode(
-        &ctx, constants, bytecode, nullptr, nullptr);
+        &ctx, constants, bytecode, nullptr, frame);
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->isInteger(&ctx));
     EXPECT_EQ(result->asLong(&ctx), 1024);
@@ -191,8 +200,9 @@ TEST(ExecutionEngineTest, BinaryFloorDivide) {
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(1))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_BINARY_FLOOR_DIVIDE))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE));
+    proto::ProtoObject* frame = nullptr;
     const proto::ProtoObject* result = protoPython::executeMinimalBytecode(
-        &ctx, constants, bytecode, nullptr, nullptr);
+        &ctx, constants, bytecode, nullptr, frame);
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->isInteger(&ctx));
     EXPECT_EQ(result->asLong(&ctx), 3);
@@ -209,7 +219,8 @@ TEST(ExecutionEngineTest, BinaryAdd) {
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(1))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_BINARY_ADD))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE));
-    const proto::ProtoObject* result = protoPython::executeMinimalBytecode(&ctx, constants, bytecode, nullptr, nullptr);
+    proto::ProtoObject* frame = nullptr;
+    const proto::ProtoObject* result = protoPython::executeMinimalBytecode(&ctx, constants, bytecode, nullptr, frame);
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->isInteger(&ctx));
     EXPECT_EQ(result->asLong(&ctx), 42);
@@ -257,8 +268,9 @@ TEST(ExecutionEngineTest, CallFunction) {
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(1))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_CALL_FUNCTION))->appendLast(&ctx, ctx.fromInteger(1))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE));
+    proto::ProtoObject* frame = nullptr;
     const proto::ProtoObject* result = protoPython::executeMinimalBytecode(
-        &ctx, constants, bytecode, nullptr, nullptr);
+        &ctx, constants, bytecode, nullptr, frame);
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->isInteger(&ctx));
     EXPECT_EQ(result->asLong(&ctx), 42);
@@ -276,8 +288,9 @@ TEST(ExecutionEngineTest, LoadAttr) {
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(0))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_ATTR))->appendLast(&ctx, ctx.fromInteger(0))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE));
+    proto::ProtoObject* frame = nullptr;
     const proto::ProtoObject* result = protoPython::executeMinimalBytecode(
-        &ctx, constants, bytecode, names, nullptr);
+        &ctx, constants, bytecode, names, frame);
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->isInteger(&ctx));
     EXPECT_EQ(result->asLong(&ctx), 42);
@@ -298,11 +311,12 @@ TEST(ExecutionEngineTest, StoreAttr) {
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(0))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_ATTR))->appendLast(&ctx, ctx.fromInteger(0))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE));
-    const proto::ProtoObject* result = protoPython::executeMinimalBytecode(
-        &ctx, constants, bytecode, names, nullptr);
-    ASSERT_NE(result, nullptr);
-    ASSERT_TRUE(result->isInteger(&ctx));
-    EXPECT_EQ(result->asLong(&ctx), 99);
+    proto::ProtoObject* frame2 = nullptr;
+    const proto::ProtoObject* result2 = protoPython::executeMinimalBytecode(
+        &ctx, constants, bytecode, names, frame2);
+    ASSERT_NE(result2, nullptr);
+    ASSERT_TRUE(result2->isInteger(&ctx));
+    EXPECT_EQ(result2->asLong(&ctx), 99);
 }
 
 TEST(ExecutionEngineTest, BuildList) {
@@ -318,8 +332,9 @@ TEST(ExecutionEngineTest, BuildList) {
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(2))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_BUILD_LIST))->appendLast(&ctx, ctx.fromInteger(3))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE));
+    proto::ProtoObject* frame = nullptr;
     const proto::ProtoObject* result = protoPython::executeMinimalBytecode(
-        &ctx, constants, bytecode, nullptr, nullptr);
+        &ctx, constants, bytecode, nullptr, frame);
     ASSERT_NE(result, nullptr);
     const proto::ProtoObject* data = result->getAttribute(&ctx, proto::ProtoString::fromUTF8String(&ctx, "__data__"));
     ASSERT_NE(data, nullptr);
@@ -347,8 +362,9 @@ TEST(ExecutionEngineTest, BinarySubscr) {
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(3))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_BINARY_SUBSCR))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE));
+    proto::ProtoObject* frame = nullptr;
     const proto::ProtoObject* result = protoPython::executeMinimalBytecode(
-        &ctx, constants, bytecode, nullptr, nullptr);
+        &ctx, constants, bytecode, nullptr, frame);
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->isInteger(&ctx));
     EXPECT_EQ(result->asLong(&ctx), 2);
@@ -369,8 +385,9 @@ TEST(ExecutionEngineTest, BuildMap) {
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(3))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_BUILD_MAP))->appendLast(&ctx, ctx.fromInteger(2))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE));
+    proto::ProtoObject* frame = nullptr;
     const proto::ProtoObject* result = protoPython::executeMinimalBytecode(
-        &ctx, constants, bytecode, nullptr, nullptr);
+        &ctx, constants, bytecode, nullptr, frame);
     ASSERT_NE(result, nullptr);
     const proto::ProtoObject* data = result->getAttribute(&ctx, proto::ProtoString::fromUTF8String(&ctx, "__data__"));
     ASSERT_NE(data, nullptr);
@@ -402,8 +419,9 @@ TEST(ExecutionEngineTest, BuildTuple) {
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(1))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_BUILD_TUPLE))->appendLast(&ctx, ctx.fromInteger(2))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE));
+    proto::ProtoObject* frame = nullptr;
     const proto::ProtoObject* result = protoPython::executeMinimalBytecode(
-        &ctx, constants, bytecode, nullptr, nullptr);
+        &ctx, constants, bytecode, nullptr, frame);
     ASSERT_NE(result, nullptr);
     ASSERT_NE(result->asTuple(&ctx), nullptr);
     const proto::ProtoTuple* tup = result->asTuple(&ctx);
@@ -471,8 +489,9 @@ TEST(ExecutionEngineTest, BuildSlice) {
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(1))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_BUILD_SLICE))->appendLast(&ctx, ctx.fromInteger(2))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE));
+    proto::ProtoObject* frame = nullptr;
     const proto::ProtoObject* result = protoPython::executeMinimalBytecode(
-        &ctx, constants, bytecode, nullptr, nullptr);
+        &ctx, constants, bytecode, nullptr, frame);
     ASSERT_NE(result, nullptr);
     const proto::ProtoObject* start = result->getAttribute(&ctx, proto::ProtoString::fromUTF8String(&ctx, "start"));
     const proto::ProtoObject* stop = result->getAttribute(&ctx, proto::ProtoString::fromUTF8String(&ctx, "stop"));
@@ -496,8 +515,9 @@ TEST(ExecutionEngineTest, RotTwo) {
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(1))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_ROT_TWO))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE));
+    proto::ProtoObject* frame = nullptr;
     const proto::ProtoObject* result = protoPython::executeMinimalBytecode(
-        &ctx, constants, bytecode, nullptr, nullptr);
+        &ctx, constants, bytecode, nullptr, frame);
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->isInteger(&ctx));
     EXPECT_EQ(result->asLong(&ctx), 10);
@@ -512,8 +532,9 @@ TEST(ExecutionEngineTest, DupTop) {
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_DUP_TOP))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_BINARY_ADD))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE));
+    proto::ProtoObject* frame = nullptr;
     const proto::ProtoObject* result = protoPython::executeMinimalBytecode(
-        &ctx, constants, bytecode, nullptr, nullptr);
+        &ctx, constants, bytecode, nullptr, frame);
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->isInteger(&ctx));
     EXPECT_EQ(result->asLong(&ctx), 14);
@@ -527,8 +548,9 @@ TEST(ExecutionEngineTest, UnaryInvert) {
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(0))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_UNARY_INVERT))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE));
+    proto::ProtoObject* frame = nullptr;
     const proto::ProtoObject* result = protoPython::executeMinimalBytecode(
-        &ctx, constants, bytecode, nullptr, nullptr);
+        &ctx, constants, bytecode, nullptr, frame);
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->isInteger(&ctx));
     EXPECT_EQ(result->asLong(&ctx), -6);  // In Python ~5 == -6
@@ -545,8 +567,9 @@ TEST(ExecutionEngineTest, PopTop) {
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(1))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_POP_TOP))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE));
+    proto::ProtoObject* frame = nullptr;
     const proto::ProtoObject* result = protoPython::executeMinimalBytecode(
-        &ctx, constants, bytecode, nullptr, nullptr);
+        &ctx, constants, bytecode, nullptr, frame);
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->isInteger(&ctx));
     EXPECT_EQ(result->asLong(&ctx), 1);  // TOS was 2, popped; return 1
@@ -563,8 +586,9 @@ TEST(ExecutionEngineTest, InplaceAdd) {
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(1))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_INPLACE_ADD))->appendLast(&ctx, ctx.fromInteger(0))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE));
+    proto::ProtoObject* frame = nullptr;
     const proto::ProtoObject* result = protoPython::executeMinimalBytecode(
-        &ctx, constants, bytecode, nullptr, nullptr);
+        &ctx, constants, bytecode, nullptr, frame);
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->isInteger(&ctx));
     EXPECT_EQ(result->asLong(&ctx), 1000000013);
@@ -578,8 +602,9 @@ TEST(ExecutionEngineTest, Nop) {
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(0))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_NOP))->appendLast(&ctx, ctx.fromInteger(0))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE));
+    proto::ProtoObject* frame = nullptr;
     const proto::ProtoObject* result = protoPython::executeMinimalBytecode(
-        &ctx, constants, bytecode, nullptr, nullptr);
+        &ctx, constants, bytecode, nullptr, frame);
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->isInteger(&ctx));
     EXPECT_EQ(result->asLong(&ctx), 7);
@@ -596,8 +621,9 @@ TEST(ExecutionEngineTest, BinaryLshift) {
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(1))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_BINARY_LSHIFT))->appendLast(&ctx, ctx.fromInteger(0))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE));
+    proto::ProtoObject* frame = nullptr;
     const proto::ProtoObject* result = protoPython::executeMinimalBytecode(
-        &ctx, constants, bytecode, nullptr, nullptr);
+        &ctx, constants, bytecode, nullptr, frame);
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->isInteger(&ctx));
     EXPECT_EQ(result->asLong(&ctx), 8);  // 1 << 3 == 8
@@ -614,8 +640,9 @@ TEST(ExecutionEngineTest, InplaceSubtract) {
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(1))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_INPLACE_SUBTRACT))->appendLast(&ctx, ctx.fromInteger(0))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE));
+    proto::ProtoObject* frame = nullptr;
     const proto::ProtoObject* result = protoPython::executeMinimalBytecode(
-        &ctx, constants, bytecode, nullptr, nullptr);
+        &ctx, constants, bytecode, nullptr, frame);
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->isInteger(&ctx));
     EXPECT_EQ(result->asLong(&ctx), 7);
@@ -632,8 +659,9 @@ TEST(ExecutionEngineTest, BinaryAnd) {
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(1))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_BINARY_AND))->appendLast(&ctx, ctx.fromInteger(0))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE));
+    proto::ProtoObject* frame = nullptr;
     const proto::ProtoObject* result = protoPython::executeMinimalBytecode(
-        &ctx, constants, bytecode, nullptr, nullptr);
+        &ctx, constants, bytecode, nullptr, frame);
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->isInteger(&ctx));
     EXPECT_EQ(result->asLong(&ctx), 8);  // 12 & 10 == 8
@@ -650,8 +678,9 @@ TEST(ExecutionEngineTest, InplaceMultiply) {
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(1))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_INPLACE_MULTIPLY))->appendLast(&ctx, ctx.fromInteger(0))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE));
+    proto::ProtoObject* frame = nullptr;
     const proto::ProtoObject* result = protoPython::executeMinimalBytecode(
-        &ctx, constants, bytecode, nullptr, nullptr);
+        &ctx, constants, bytecode, nullptr, frame);
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->isInteger(&ctx));
     EXPECT_EQ(result->asLong(&ctx), 12);  // 3 * 4 == 12
@@ -668,8 +697,9 @@ TEST(ExecutionEngineTest, InplaceTrueDivide) {
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(1))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_INPLACE_TRUE_DIVIDE))->appendLast(&ctx, ctx.fromInteger(0))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE));
+    proto::ProtoObject* frame = nullptr;
     const proto::ProtoObject* result = protoPython::executeMinimalBytecode(
-        &ctx, constants, bytecode, nullptr, nullptr);
+        &ctx, constants, bytecode, nullptr, frame);
     ASSERT_NE(result, nullptr);
     double val = result->isDouble(&ctx) ? result->asDouble(&ctx) : static_cast<double>(result->asLong(&ctx));
     EXPECT_NEAR(val, 2.5, 1e-10);  // 10 / 4 == 2.5 (true divide)
@@ -686,8 +716,9 @@ TEST(ExecutionEngineTest, InplaceModulo) {
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(1))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_INPLACE_MODULO))->appendLast(&ctx, ctx.fromInteger(0))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE));
+    proto::ProtoObject* frame = nullptr;
     const proto::ProtoObject* result = protoPython::executeMinimalBytecode(
-        &ctx, constants, bytecode, nullptr, nullptr);
+        &ctx, constants, bytecode, nullptr, frame);
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->isInteger(&ctx));
     EXPECT_EQ(result->asLong(&ctx), 2);  // 17 % 5 == 2
@@ -704,8 +735,9 @@ TEST(ExecutionEngineTest, InplaceLshift) {
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(1))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_INPLACE_LSHIFT))->appendLast(&ctx, ctx.fromInteger(0))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE));
+    proto::ProtoObject* frame = nullptr;
     const proto::ProtoObject* result = protoPython::executeMinimalBytecode(
-        &ctx, constants, bytecode, nullptr, nullptr);
+        &ctx, constants, bytecode, nullptr, frame);
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->isInteger(&ctx));
     EXPECT_EQ(result->asLong(&ctx), 16);  // 4 << 2 == 16
@@ -722,8 +754,9 @@ TEST(ExecutionEngineTest, InplaceAnd) {
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(1))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_INPLACE_AND))->appendLast(&ctx, ctx.fromInteger(0))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE));
+    proto::ProtoObject* frame = nullptr;
     const proto::ProtoObject* result = protoPython::executeMinimalBytecode(
-        &ctx, constants, bytecode, nullptr, nullptr);
+        &ctx, constants, bytecode, nullptr, frame);
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->isInteger(&ctx));
     EXPECT_EQ(result->asLong(&ctx), 7);  // 15 & 7 == 7
@@ -742,8 +775,9 @@ TEST(ExecutionEngineTest, RotThree) {
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(2))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_ROT_THREE))->appendLast(&ctx, ctx.fromInteger(0))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE));
+    proto::ProtoObject* frame = nullptr;
     const proto::ProtoObject* result = protoPython::executeMinimalBytecode(
-        &ctx, constants, bytecode, nullptr, nullptr);
+        &ctx, constants, bytecode, nullptr, frame);
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->isInteger(&ctx));
     EXPECT_EQ(result->asLong(&ctx), 1);  // stack 1,2,3 (3 top); ROT_THREE -> 2,3,1; top=1
@@ -764,8 +798,9 @@ TEST(ExecutionEngineTest, RotFour) {
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(3))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_ROT_FOUR))->appendLast(&ctx, ctx.fromInteger(0))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE));
+    proto::ProtoObject* frame = nullptr;
     const proto::ProtoObject* result = protoPython::executeMinimalBytecode(
-        &ctx, constants, bytecode, nullptr, nullptr);
+        &ctx, constants, bytecode, nullptr, frame);
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->isInteger(&ctx));
     EXPECT_EQ(result->asLong(&ctx), 1);  // stack 1,2,3,4 (4 top); ROT_FOUR lifts fourth to top -> top=1
@@ -782,8 +817,9 @@ TEST(ExecutionEngineTest, DupTopTwo) {
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(1))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_DUP_TOP_TWO))->appendLast(&ctx, ctx.fromInteger(0))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE));
+    proto::ProtoObject* frame = nullptr;
     const proto::ProtoObject* result = protoPython::executeMinimalBytecode(
-        &ctx, constants, bytecode, nullptr, nullptr);
+        &ctx, constants, bytecode, nullptr, frame);
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->isInteger(&ctx));
     EXPECT_EQ(result->asLong(&ctx), 20);  // stack was 10,20; DUP_TOP_TWO -> 10,20,10,20; top=20
@@ -808,8 +844,9 @@ TEST(ExecutionEngineTest, StoreSubscr) {
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(2))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_BINARY_SUBSCR))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE));
+    proto::ProtoObject* frame = nullptr;
     const proto::ProtoObject* result = protoPython::executeMinimalBytecode(
-        &ctx, constants, bytecode, nullptr, nullptr);
+        &ctx, constants, bytecode, nullptr, frame);
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->isDouble(&ctx) || result->isInteger(&ctx));
     if (result->isDouble(&ctx))
@@ -826,8 +863,9 @@ TEST(ExecutionEngineTest, UnaryNegative) {
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(0))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_UNARY_NEGATIVE))->appendLast(&ctx, ctx.fromInteger(0))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE));
+    proto::ProtoObject* frame = nullptr;
     const proto::ProtoObject* result = protoPython::executeMinimalBytecode(
-        &ctx, constants, bytecode, nullptr, nullptr);
+        &ctx, constants, bytecode, nullptr, frame);
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->isInteger(&ctx));
     EXPECT_EQ(result->asLong(&ctx), -42);
@@ -843,8 +881,9 @@ TEST(ExecutionEngineTest, UnaryNot) {
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(0))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_UNARY_NOT))->appendLast(&ctx, ctx.fromInteger(0))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE));
+    proto::ProtoObject* frame = nullptr;
     const proto::ProtoObject* result = protoPython::executeMinimalBytecode(
-        &ctx, constants, bytecode, nullptr, nullptr);
+        &ctx, constants, bytecode, nullptr, frame);
     ASSERT_NE(result, nullptr);
     EXPECT_EQ(result, PROTO_TRUE);
     const proto::ProtoList* bytecode2 = ctx.newList()
@@ -852,7 +891,7 @@ TEST(ExecutionEngineTest, UnaryNot) {
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_UNARY_NOT))->appendLast(&ctx, ctx.fromInteger(0))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE));
     const proto::ProtoObject* result2 = protoPython::executeMinimalBytecode(
-        &ctx, constants, bytecode2, nullptr, nullptr);
+        &ctx, constants, bytecode2, nullptr, frame);
     ASSERT_NE(result2, nullptr);
     EXPECT_EQ(result2, PROTO_FALSE);
 }
@@ -865,8 +904,9 @@ TEST(ExecutionEngineTest, UnaryPositive) {
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(0))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_UNARY_POSITIVE))->appendLast(&ctx, ctx.fromInteger(0))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE));
+    proto::ProtoObject* frame = nullptr;
     const proto::ProtoObject* result = protoPython::executeMinimalBytecode(
-        &ctx, constants, bytecode, nullptr, nullptr);
+        &ctx, constants, bytecode, nullptr, frame);
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->isInteger(&ctx));
     EXPECT_EQ(result->asLong(&ctx), 1000007);
@@ -883,8 +923,9 @@ TEST(ExecutionEngineTest, BinaryRshift) {
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(1))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_BINARY_RSHIFT))->appendLast(&ctx, ctx.fromInteger(0))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE));
+    proto::ProtoObject* frame = nullptr;
     const proto::ProtoObject* result = protoPython::executeMinimalBytecode(
-        &ctx, constants, bytecode, nullptr, nullptr);
+        &ctx, constants, bytecode, nullptr, frame);
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->isInteger(&ctx));
     EXPECT_EQ(result->asLong(&ctx), 2);
@@ -901,8 +942,9 @@ TEST(ExecutionEngineTest, BinaryOr) {
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(1))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_BINARY_OR))->appendLast(&ctx, ctx.fromInteger(0))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE));
+    proto::ProtoObject* frame = nullptr;
     const proto::ProtoObject* result = protoPython::executeMinimalBytecode(
-        &ctx, constants, bytecode, nullptr, nullptr);
+        &ctx, constants, bytecode, nullptr, frame);
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->isInteger(&ctx));
     EXPECT_EQ(result->asLong(&ctx), 12);
@@ -919,8 +961,9 @@ TEST(ExecutionEngineTest, BinaryXor) {
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(1))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_BINARY_XOR))->appendLast(&ctx, ctx.fromInteger(0))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE));
+    proto::ProtoObject* frame = nullptr;
     const proto::ProtoObject* result = protoPython::executeMinimalBytecode(
-        &ctx, constants, bytecode, nullptr, nullptr);
+        &ctx, constants, bytecode, nullptr, frame);
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->isInteger(&ctx));
     EXPECT_EQ(result->asLong(&ctx), 6);
@@ -937,8 +980,9 @@ TEST(ExecutionEngineTest, BinaryModulo) {
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(1))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_BINARY_MODULO))->appendLast(&ctx, ctx.fromInteger(0))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE));
+    proto::ProtoObject* frame = nullptr;
     const proto::ProtoObject* result = protoPython::executeMinimalBytecode(
-        &ctx, constants, bytecode, nullptr, nullptr);
+        &ctx, constants, bytecode, nullptr, frame);
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->isInteger(&ctx));
     EXPECT_EQ(result->asLong(&ctx), 2);
@@ -955,8 +999,9 @@ TEST(ExecutionEngineTest, InplaceFloorDivide) {
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(1))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_INPLACE_FLOOR_DIVIDE))->appendLast(&ctx, ctx.fromInteger(0))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE));
+    proto::ProtoObject* frame = nullptr;
     const proto::ProtoObject* result = protoPython::executeMinimalBytecode(
-        &ctx, constants, bytecode, nullptr, nullptr);
+        &ctx, constants, bytecode, nullptr, frame);
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->isInteger(&ctx));
     EXPECT_EQ(result->asLong(&ctx), 250002);
@@ -973,8 +1018,9 @@ TEST(ExecutionEngineTest, InplacePower) {
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(1))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_INPLACE_POWER))->appendLast(&ctx, ctx.fromInteger(0))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE));
+    proto::ProtoObject* frame = nullptr;
     const proto::ProtoObject* result = protoPython::executeMinimalBytecode(
-        &ctx, constants, bytecode, nullptr, nullptr);
+        &ctx, constants, bytecode, nullptr, frame);
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->isInteger(&ctx));
     EXPECT_EQ(result->asLong(&ctx), 1000002);
@@ -991,8 +1037,9 @@ TEST(ExecutionEngineTest, InplaceRshift) {
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(1))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_INPLACE_RSHIFT))->appendLast(&ctx, ctx.fromInteger(0))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE));
+    proto::ProtoObject* frame = nullptr;
     const proto::ProtoObject* result = protoPython::executeMinimalBytecode(
-        &ctx, constants, bytecode, nullptr, nullptr);
+        &ctx, constants, bytecode, nullptr, frame);
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->isInteger(&ctx));
     EXPECT_EQ(result->asLong(&ctx), 250002);
@@ -1009,8 +1056,9 @@ TEST(ExecutionEngineTest, InplaceOr) {
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(1))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_INPLACE_OR))->appendLast(&ctx, ctx.fromInteger(0))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE));
+    proto::ProtoObject* frame = nullptr;
     const proto::ProtoObject* result = protoPython::executeMinimalBytecode(
-        &ctx, constants, bytecode, nullptr, nullptr);
+        &ctx, constants, bytecode, nullptr, frame);
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->isInteger(&ctx));
     EXPECT_EQ(result->asLong(&ctx), 1000012);
@@ -1027,8 +1075,9 @@ TEST(ExecutionEngineTest, InplaceXor) {
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(1))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_INPLACE_XOR))->appendLast(&ctx, ctx.fromInteger(0))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE));
+    proto::ProtoObject* frame = nullptr;
     const proto::ProtoObject* result = protoPython::executeMinimalBytecode(
-        &ctx, constants, bytecode, nullptr, nullptr);
+        &ctx, constants, bytecode, nullptr, frame);
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->isInteger(&ctx));
     EXPECT_EQ(result->asLong(&ctx), 1000006);  // 1000012 ^ 10 == 1000006
@@ -1048,8 +1097,9 @@ TEST(ExecutionEngineTest, PopJumpIfFalse) {
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE))->appendLast(&ctx, ctx.fromInteger(0))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(1))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE))->appendLast(&ctx, ctx.fromInteger(0));
+    proto::ProtoObject* frame = nullptr;
     const proto::ProtoObject* result = protoPython::executeMinimalBytecode(
-        &ctx, constants, bytecode, nullptr, nullptr);
+        &ctx, constants, bytecode, nullptr, frame);
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->isInteger(&ctx));
     EXPECT_EQ(result->asLong(&ctx), 2);
@@ -1063,8 +1113,9 @@ TEST(ExecutionEngineTest, JumpAbsolute) {
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_JUMP_ABSOLUTE))->appendLast(&ctx, ctx.fromInteger(1))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(0))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE));
+    proto::ProtoObject* frame = nullptr;
     const proto::ProtoObject* result = protoPython::executeMinimalBytecode(
-        &ctx, constants, bytecode, nullptr, nullptr);
+        &ctx, constants, bytecode, nullptr, frame);
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->isInteger(&ctx));
     EXPECT_EQ(result->asLong(&ctx), 42);
@@ -1085,8 +1136,9 @@ TEST(ExecutionEngineTest, GetIterNoCrash) {
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_BUILD_LIST))->appendLast(&ctx, ctx.fromInteger(2))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_GET_ITER))->appendLast(&ctx, ctx.fromInteger(0))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE));
+    proto::ProtoObject* frame = nullptr;
     const proto::ProtoObject* result = protoPython::executeMinimalBytecode(
-        &ctx, constants, bytecode, nullptr, nullptr);
+        &ctx, constants, bytecode, nullptr, frame);
     (void)result;
     EXPECT_TRUE(result == nullptr || result == PROTO_NONE);
 }

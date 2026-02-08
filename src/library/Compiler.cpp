@@ -12,8 +12,13 @@ Compiler::Compiler(proto::ProtoContext* ctx, const std::string& filename)
 }
 
 int Compiler::addConstant(const proto::ProtoObject* obj) {
-    if (!obj || !constants_) return -1;
-    int idx = static_cast<int>(constants_->getSize(ctx_));
+    if (!constants_) return -1;
+    // Basic de-duplication to save space and potentially speed up comparisons
+    int n = static_cast<int>(constants_->getSize(ctx_));
+    for (int i = 0; i < n; ++i) {
+        if (constants_->getAt(ctx_, i) == obj) return i;
+    }
+    int idx = n;
     constants_ = constants_->appendLast(ctx_, obj);
     return idx;
 }
@@ -37,7 +42,8 @@ void Compiler::emit(int op, int arg) {
                    op == OP_UNPACK_SEQUENCE || op == OP_LOAD_GLOBAL || op == OP_STORE_GLOBAL ||
                    op == OP_BUILD_SLICE || op == OP_FOR_ITER || op == OP_POP_JUMP_IF_FALSE ||
                    op == OP_JUMP_ABSOLUTE || op == OP_COMPARE_OP || op == OP_BINARY_SUBSCR ||
-                   op == OP_STORE_SUBSCR || op == OP_CALL_FUNCTION_KW);
+                   op == OP_STORE_SUBSCR || op == OP_CALL_FUNCTION_KW || 
+                   op == OP_BUILD_FUNCTION || op == OP_GET_ITER);
     if (hasArg)
         bytecode_ = bytecode_->appendLast(ctx_, ctx_->fromInteger(arg));
 }
@@ -75,7 +81,7 @@ bool Compiler::compileConstant(ConstantNode* n) {
         obj = PROTO_NONE;
     else if (n->constType == ConstantNode::ConstType::Bool)
         obj = n->intVal ? PROTO_TRUE : PROTO_FALSE;
-    if (!obj) return false;
+    if (!obj && n->constType != ConstantNode::ConstType::None) return false;
     int idx = addConstant(obj);
     emit(OP_LOAD_CONST, idx);
     return true;
@@ -775,15 +781,15 @@ const proto::ProtoObject* makeCodeObject(proto::ProtoContext* ctx,
 
 const proto::ProtoObject* runCodeObject(proto::ProtoContext* ctx,
     const proto::ProtoObject* codeObj,
-    proto::ProtoObject* frame) {
+    proto::ProtoObject*& frame) {
     if (!ctx || !codeObj || !frame) return PROTO_NONE;
     const proto::ProtoObject* co_consts = codeObj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_consts"));
     const proto::ProtoObject* co_names = codeObj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_names"));
     const proto::ProtoObject* co_code = codeObj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_code"));
     if (!co_consts || !co_consts->asList(ctx) || !co_code || !co_code->asList(ctx))
         return PROTO_NONE;
-    const proto::ProtoList* names = co_names && co_names->asList(ctx) ? co_names->asList(ctx) : nullptr;
-    return executeMinimalBytecode(ctx, co_consts->asList(ctx), co_code->asList(ctx), names, frame);
+    return executeBytecodeRange(ctx, co_consts->asList(ctx), co_code->asList(ctx),
+        co_names ? co_names->asList(ctx) : nullptr, frame, 0, co_code->asList(ctx)->getSize(ctx));
 }
 
 } // namespace protoPython

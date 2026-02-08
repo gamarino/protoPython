@@ -91,6 +91,7 @@ public:
      * @brief Gets the Python 'None' prototype.
      */
     const proto::ProtoObject* getNonePrototype() const { return nonePrototype; }
+    const proto::ProtoObject* getGlobals() const;
 
     /** @brief Gets the builtins module object. */
     const proto::ProtoObject* getBuiltins() const { return builtinsModule; }
@@ -339,6 +340,7 @@ public:
     void raiseSystemExit(proto::ProtoContext* context, int code);
     void raiseRecursionError(proto::ProtoContext* context);
     void raiseZeroDivisionError(proto::ProtoContext* context);
+    void raiseIndexError(proto::ProtoContext* context, const std::string& msg);
     void raiseStopIteration(proto::ProtoContext* context);
 
     /**
@@ -418,6 +420,7 @@ private:
     const proto::ProtoObject* recursionErrorType{nullptr};
     const proto::ProtoObject* stopIterationType{nullptr};
     const proto::ProtoObject* zeroDivisionErrorType{nullptr};
+    const proto::ProtoObject* indexErrorType{nullptr};
     const proto::ProtoString* iterString{nullptr};
     const proto::ProtoString* nextString{nullptr};
     const proto::ProtoList* emptyList{nullptr};
@@ -447,7 +450,9 @@ private:
     const proto::ProtoString* strString{nullptr};
     const proto::ProtoString* reprString{nullptr};
     const proto::ProtoString* hashString{nullptr};
+    const proto::ProtoString* powString{nullptr};
     const proto::ProtoString* containsString{nullptr};
+    const proto::ProtoString* addString{nullptr};
     const proto::ProtoString* formatString{nullptr};
     const proto::ProtoString* dictString{nullptr};
     const proto::ProtoString* docString{nullptr};

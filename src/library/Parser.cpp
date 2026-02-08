@@ -65,6 +65,7 @@ static const char* tokenToName(TokenType t) {
         case TokenType::Pass: return "'pass'";
         case TokenType::Indent: return "indent";
         case TokenType::Dedent: return "dedent";
+        case TokenType::Semicolon: return "';'";
         default: return "unknown";
     }
 }
@@ -540,9 +541,11 @@ std::unique_ptr<ASTNode> Parser::parseSuite() {
         if (!expect(TokenType::Dedent))
             return nullptr;
     } else {
-        auto st = parseStatement();
-        if (st)
-            suite->statements.push_back(std::move(st));
+        do {
+            auto st = parseStatement();
+            if (st)
+                suite->statements.push_back(std::move(st));
+        } while (accept(TokenType::Semicolon) && cur_.type != TokenType::Newline && cur_.type != TokenType::EndOfFile);
     }
     if (suite->statements.empty())
         suite->statements.push_back(std::make_unique<PassNode>());
@@ -554,11 +557,13 @@ std::unique_ptr<ModuleNode> Parser::parseModule() {
     skipNewlines();
     while (cur_.type != TokenType::EndOfFile) {
         auto st = parseStatement();
-        if (!st) {
-            if (!hasError_) error("expected statement");
-            break;
+        if (st) {
+            mod->body.push_back(std::move(st));
         }
-        mod->body.push_back(std::move(st));
+        while (accept(TokenType::Semicolon) && cur_.type != TokenType::Newline && cur_.type != TokenType::EndOfFile) {
+            auto s2 = parseStatement();
+            if (s2) mod->body.push_back(std::move(s2));
+        }
         skipNewlines();
     }
     return mod;

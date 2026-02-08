@@ -89,6 +89,7 @@ static const proto::ProtoObject* py_print(
     (void)keywordParameters;
     std::string sep = " ";
     std::string end = "\n";
+    if (std::getenv("PROTO_ENV_DIAG")) std::cerr << "[proto-builtins] py_print called size=" << positionalParameters->getSize(context) << "\n" << std::flush;
 
     ::protoPython::PythonEnvironment* env = ::protoPython::PythonEnvironment::fromContext(context);
     const proto::ProtoString* strS = env ? env->getStrString() : proto::ProtoString::fromUTF8String(context, "__str__");
@@ -98,10 +99,28 @@ static const proto::ProtoObject* py_print(
     for (unsigned long i = 0; i < size; ++i) {
         const proto::ProtoObject* obj = positionalParameters->getAt(context, static_cast<int>(i));
 
-        const proto::ProtoObject* strMethod = obj->getAttribute(context, strS);
         const proto::ProtoObject* strObj = PROTO_NONE;
-        if (strMethod && strMethod->asMethod(context)) {
-            strObj = strMethod->asMethod(context)(context, obj, nullptr, emptyL, nullptr);
+        if (!obj || obj == PROTO_NONE || (env && obj == env->getNonePrototype())) {
+            strObj = context->fromUTF8String("None");
+        } else if (obj->isInteger(context)) {
+            strObj = context->fromUTF8String(std::to_string(obj->asLong(context)).c_str());
+        } else if (obj->isDouble(context)) {
+            strObj = context->fromUTF8String(std::to_string(obj->asDouble(context)).c_str());
+        } else if (obj->isString(context)) {
+            strObj = obj;
+        } else if (obj == PROTO_TRUE) {
+            strObj = context->fromUTF8String("True");
+        } else if (obj == PROTO_FALSE) {
+            strObj = context->fromUTF8String("False");
+        } else {
+            const proto::ProtoObject* strMethod = obj->getAttribute(context, strS);
+            if (std::getenv("PROTO_ENV_DIAG")) {
+                std::string sname; strS->toUTF8String(context, sname);
+                std::cerr << "[proto-builtins] py_print attr lookup: name=" << sname << " obj=" << obj << " found=" << strMethod << "\n" << std::flush;
+            }
+            if (strMethod && strMethod->asMethod(context)) {
+                strObj = strMethod->asMethod(context)(context, obj, nullptr, emptyL, nullptr);
+            }
         }
 
         if (strObj && strObj->isString(context)) {
@@ -817,7 +836,12 @@ static const proto::ProtoObject* py_eval(
         const proto::ProtoObject* g = positionalParameters->getAt(context, 1);
         if (g && g != PROTO_NONE) frame = const_cast<proto::ProtoObject*>(g);
     }
+    if (!frame) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(context);
+        if (env) frame = const_cast<proto::ProtoObject*>(env->getGlobals());
+    }
     if (!frame) frame = const_cast<proto::ProtoObject*>(context->newObject(true));
+
     return runCodeObject(context, codeObj, frame);
 }
 
@@ -956,13 +980,19 @@ static const proto::ProtoObject* py_exec(
     const proto::ProtoObject* codeObj = makeCodeObject(context, compiler.getConstants(), compiler.getNames(), compiler.getBytecode());
     if (!codeObj) return PROTO_NONE;
     proto::ProtoObject* frame = nullptr;
+    const proto::ProtoObject* g_obj = nullptr;
     if (positionalParameters->getSize(context) >= 2) {
-        const proto::ProtoObject* g = positionalParameters->getAt(context, 1);
-        if (g && g != PROTO_NONE) frame = const_cast<proto::ProtoObject*>(g);
+        g_obj = positionalParameters->getAt(context, 1);
+        if (g_obj && g_obj != PROTO_NONE) frame = const_cast<proto::ProtoObject*>(g_obj);
+    }
+    if (!frame) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(context);
+        if (env) frame = const_cast<proto::ProtoObject*>(env->getGlobals());
     }
     if (!frame) frame = const_cast<proto::ProtoObject*>(context->newObject(true));
-    const proto::ProtoObject* result = runCodeObject(context, codeObj, frame);
-    return result;
+
+    const proto::ProtoObject* res = runCodeObject(context, codeObj, frame);
+    return res;
 }
 
 /** breakpoint(): no-op stub; real breakpoint requires debugger integration. */

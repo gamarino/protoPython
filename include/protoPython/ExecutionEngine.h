@@ -136,7 +136,7 @@ const proto::ProtoObject* executeBytecodeRange(
     const proto::ProtoList* constants,
     const proto::ProtoList* bytecode,
     const proto::ProtoList* names,
-    proto::ProtoObject* frame,
+    proto::ProtoObject*& frame,
     unsigned long pcStart,
     unsigned long pcEnd);
 
@@ -154,8 +154,8 @@ const proto::ProtoObject* executeMinimalBytecode(
     proto::ProtoContext* ctx,
     const proto::ProtoList* constants,
     const proto::ProtoList* bytecode,
-    const proto::ProtoList* names = nullptr,
-    proto::ProtoObject* frame = nullptr);
+    const proto::ProtoList* names,
+    proto::ProtoObject*& frame);
 
 /** Invoke a Python callable with the given args list. Used by _thread bootstrap. */
 const proto::ProtoObject* invokePythonCallable(

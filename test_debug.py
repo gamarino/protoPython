@@ -1,0 +1,20 @@
+# test_debug.py
+import sys
+
+print("Testing join")
+",".join(["a", "b"])
+print("Testing split")
+"a b".split()
+"a,b".split(",")
+print("Testing strip")
+"  a  ".strip()
+print("Testing find")
+"abc".find("bc")
+print("Testing startswith")
+"abc".startswith("a")
+"abc".startswith(("x", "a"))
+print("Testing replace non-empty")
+"aaa".replace("a", "b")
+print("Testing replace empty")
+"ab".replace("", "x")
+print("ALL DONE")

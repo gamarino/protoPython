@@ -96,7 +96,7 @@ const proto::ProtoObject* makeCodeObject(proto::ProtoContext* ctx,
 /** Run a code object with the given frame. Returns execution result. */
 const proto::ProtoObject* runCodeObject(proto::ProtoContext* ctx,
     const proto::ProtoObject* codeObj,
-    proto::ProtoObject* frame);
+    proto::ProtoObject*& frame);
 
 } // namespace protoPython
 
