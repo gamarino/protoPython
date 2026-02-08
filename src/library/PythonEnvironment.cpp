@@ -226,7 +226,7 @@ static const proto::ProtoObject* py_object_str(
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
-    if (std::getenv("PROTO_ENV_DIAG")) std::cerr << "[proto-env] py_object_str self=" << self << " NoneP=" << (env ? env->getNonePrototype() : nullptr) << "\n" << std::flush;
+
     if (self == PROTO_NONE || (env && self == env->getNonePrototype())) return context->fromUTF8String("None");
     if (self->isString(context)) return self;
     if (self->isInteger(context)) return context->fromUTF8String(std::to_string(self->asLong(context)).c_str());
@@ -781,6 +781,10 @@ static const proto::ProtoObject* py_dict_ge(
 }
 
 static std::string repr_object(proto::ProtoContext* context, const proto::ProtoObject* obj) {
+
+    if (!obj || obj == PROTO_NONE) {
+        return "None";
+    }
     if (obj->isInteger(context)) {
         return std::to_string(obj->asLong(context));
     }
@@ -1496,14 +1500,10 @@ static void add_iterable_to_set(proto::ProtoContext* context, const proto::Proto
 static const proto::ProtoObject* py_set_union(
     proto::ProtoContext* context, const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    if (std::getenv("PROTO_ENV_DIAG")) std::cerr << "[proto-diag] py_set_union start self=" << self << "\n" << std::flush;
     const proto::ProtoSet* s = set_data(context, self);
-    if (std::getenv("PROTO_ENV_DIAG")) std::cerr << "[proto-diag] py_set_union set_data s=" << s << "\n" << std::flush;
     if (!s) return PROTO_NONE;
     proto::ProtoSet* acc = const_cast<proto::ProtoSet*>(context->newSet());
-    if (std::getenv("PROTO_ENV_DIAG")) std::cerr << "[proto-diag] py_set_union newSet acc=" << acc << "\n" << std::flush;
     const proto::ProtoSetIterator* it = s->getIterator(context);
-    if (std::getenv("PROTO_ENV_DIAG")) std::cerr << "[proto-diag] py_set_union getIterator it=" << it << "\n" << std::flush;
     if (it) {
         while (it->hasNext(context)) {
             acc = const_cast<proto::ProtoSet*>(acc->add(context, it->next(context)));
@@ -1511,7 +1511,6 @@ static const proto::ProtoObject* py_set_union(
         }
     }
     for (unsigned long i = 0; i < posArgs->getSize(context); ++i) {
-        if (std::getenv("PROTO_ENV_DIAG")) std::cerr << "[proto-diag] py_set_union add arg " << i << "\n" << std::flush;
         add_iterable_to_set(context, posArgs->getAt(context, static_cast<int>(i)), acc);
     }
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
@@ -3849,19 +3848,24 @@ static const proto::ProtoObject* py_str_join(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    std::cerr << "py_str_join: starting self=" << (void*)self << std::endl;
+    std::cout << "DEBUG: py_str_join: starting self=" << (void*)self << std::endl;
     const proto::ProtoString* sep = str_from_self(context, self);
-    if (!sep || !posArgs || posArgs->getSize(context) < 1) return PROTO_NONE;
+    if (!sep || !posArgs || posArgs->getSize(context) < 1) {
+        std::cerr << "py_str_join: early return sep=" << (void*)sep << " posArgsSize=" << (posArgs ? posArgs->getSize(context) : -1) << std::endl;
+        return PROTO_NONE;
+    }
     std::string sepStr;
     sep->toUTF8String(context, sepStr);
     const proto::ProtoObject* iterable = posArgs->getAt(context, 0);
+    std::cerr << "py_str_join: iterable=" << (void*)iterable << std::endl;
     const proto::ProtoObject* iterM = iterable->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__iter__"));
+    std::cerr << "py_str_join: iterM=" << (void*)iterM << std::endl;
     if (!iterM || !iterM->asMethod(context)) {
         PythonEnvironment* env = PythonEnvironment::fromContext(context);
         if (env) env->raiseTypeError(context, "join() arg must be an iterable");
         return PROTO_NONE;
     }
-    std::cerr << "py_str_join: starting" << std::endl;
-    std::cout << "DEBUG: py_str_join: starting" << std::endl;
     const proto::ProtoObject* it = iterM->asMethod(context)(context, iterable, nullptr, context->newList(), nullptr);
     if (!it || it == PROTO_NONE) {
         std::cerr << "py_str_join: it is null" << std::endl;

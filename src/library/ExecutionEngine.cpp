@@ -3,6 +3,7 @@
 #include <protoPython/PythonEnvironment.h>
 #include <protoPython/MemoryManager.hpp>
 #include <protoCore.h>
+#include <proto_internal.h>
 #include <cmath>
 #include <cstdint>
 #include <iostream>
@@ -88,7 +89,6 @@ static proto::ProtoObject* createUserFunction(proto::ProtoContext* ctx, const pr
 /** Return true if obj is an embedded value (e.g. small int, bool); do not call getAttribute on it. */
 static bool isEmbeddedValue(const proto::ProtoObject* obj) {
     if (!obj || obj == PROTO_NONE) return false;
-    constexpr unsigned long POINTER_TAG_EMBEDDED_VALUE = 1;
     return (reinterpret_cast<uintptr_t>(obj) & 0x3FUL) == POINTER_TAG_EMBEDDED_VALUE;
 }
 
@@ -210,8 +210,9 @@ static bool isTruthy(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
 static const proto::ProtoObject* invokeCallable(proto::ProtoContext* ctx,
     const proto::ProtoObject* callable, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs = nullptr) {
     if (std::getenv("PROTO_ENV_DIAG")) std::cerr << "[proto-engine] invokeCallable callable=" << callable << " args=" << (args ? args->getSize(ctx) : -1) << "\n" << std::flush;
-    if (callable->asMethod(ctx)) {
-        return callable->asMethod(ctx)(ctx, callable, nullptr, args, kwargs);
+    if (callable->isMethod(ctx)) {
+        const auto* cell = proto::toImpl<const proto::ProtoMethodCell>(callable);
+        return cell->method(ctx, const_cast<proto::ProtoObject*>(cell->self), nullptr, args, kwargs);
     }
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     const proto::ProtoObject* callAttr = callable->getAttribute(ctx, env ? env->getCallString() : proto::ProtoString::fromUTF8String(ctx, "__call__"));
@@ -774,6 +775,9 @@ const proto::ProtoObject* executeBytecodeRange(
                 if (nameObj->isString(ctx)) {
                     const proto::ProtoObject* val = obj->getAttribute(ctx, nameObj->asString(ctx));
                     if (val && val != PROTO_NONE) {
+                        if (val->isMethod(ctx)) {
+                            val = ctx->fromMethod(const_cast<proto::ProtoObject*>(obj), val->asMethod(ctx));
+                        }
                         stack.push_back(val);
                     } else {
                         PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
@@ -923,8 +927,14 @@ const proto::ProtoObject* executeBytecodeRange(
             }
 
             const proto::ProtoObject* result = invokeCallable(ctx, callable, plArgs, kwMap);
-            if (result) stack.push_back(result);
-            else return PROTO_NONE;
+            PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+            if (result) {
+                stack.push_back(result);
+            } else if (env && env->hasPendingException()) {
+                return PROTO_NONE;
+            } else {
+                stack.push_back(PROTO_NONE);
+            }
         } else if (op == OP_CALL_FUNCTION) {
             i++;
             if (stack.size() < static_cast<size_t>(arg) + 1) continue;
@@ -939,12 +949,15 @@ const proto::ProtoObject* executeBytecodeRange(
             for (int j = 0; j < arg; ++j)
                 args = args->appendLast(ctx, argVec[j]);
             const proto::ProtoObject* result = invokeCallable(ctx, callable, args);
+            PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
             if (result) {
                 stack.push_back(result);
-            } else {
-                // If it returns nullptr, it must be an exception.
-                // Standardized None is now a real object.
+            } else if (env && env->hasPendingException()) {
+                // If it returns nullptr and has exception, it's an error.
                 return PROTO_NONE;
+            } else {
+                // Return value was None (nullptr) but no exception.
+                stack.push_back(PROTO_NONE);
             }
         } else if (op == OP_BUILD_TUPLE) {
             i++;
@@ -959,8 +972,8 @@ const proto::ProtoObject* executeBytecodeRange(
                     lst = lst->appendLast(ctx, elems[j]);
                 const proto::ProtoTuple* tup = ctx->newTupleFromList(lst);
                 if (tup) {
-                    proto::ProtoObject* tupObj = const_cast<proto::ProtoObject*>(tup->asObject(ctx));
-                    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+                    proto::ProtoObject* tupObj = const_cast<proto::ProtoObject*>(ctx->newObject(true));
+                    tupObj = const_cast<proto::ProtoObject*>(tupObj->setAttribute(ctx, env ? env->getDataString() : proto::ProtoString::fromUTF8String(ctx, "__data__"), tup->asObject(ctx)));
                     if (env && env->getTuplePrototype()) {
                         tupObj = const_cast<proto::ProtoObject*>(tupObj->addParent(ctx, env->getTuplePrototype()));
                         tupObj->setAttribute(ctx, env->getClassString(), env->getTuplePrototype());
