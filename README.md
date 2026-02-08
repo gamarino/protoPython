@@ -9,6 +9,9 @@
 
 **protoPython** is a high-performance, Python 3.14 compatible environment built from the ground up on top of [**protoCore**](../protoCore/). It delivers a modern, highly parallel Python runtime that eliminates the Global Interpreter Lock (GIL) and leverages immutable data structures for elite thread safety and performance.
 
+> [!WARNING]
+> This project is officially **open for Community Review and Suggestions**. It is **not production ready**. We welcome architectural feedback, edge-case identification, and performance critiques.
+
 ---
 
 ## 🎯 Key Features
@@ -23,7 +26,7 @@
 
 ## 📋 Project Status: Phase 6 Complete ✅
 
-**Current Status:** Production-ready runtime with advanced collection support and high-performance collection wrapping.
+**Current Status:** Experimental runtime (Open for Review) with advanced collection support. **Not production ready.**
 
 | Metric | Status |
 |--------|--------|
