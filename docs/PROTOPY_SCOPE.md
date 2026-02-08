@@ -21,6 +21,10 @@
   3. Resolve the module or load the file; if the module has a callable `main` attribute, invoke it (stub execution path). Once the full execution engine exists, bytecode will be run via `ProtoContext` and the protoPython object model.
 - **CLI contract**: `protopy` now exposes `--module`, `--script`, `--path`, and `--stdlib` flags plus distinct exit codes (0 success, 65 resolve error, 70 runtime failure, 64 usage). This allows tooling to consume protopy deterministically.
 
+## Current Status
+
+The bytecode format and execution engine are implemented (Phase 3 complete). The parser and compiler are integrated in protoPython; protopy executes `.py` scripts via tokenizer, parser, compiler, and `executeMinimalBytecode`. See [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) and [EXECUTION_ENGINE_OPCODES.md](EXECUTION_ENGINE_OPCODES.md).
+
 ## Revision
 
-This document may be updated when we add the real bytecode format and execution loop (Phase 6). A future revision could record the choice of “CPython bytecode subset” vs “custom bytecode” and the chosen frontend (parser/compiler) source.
+This document may be updated as Phase 6 (full stubs, threading, networking) progresses. The choice of CPython bytecode subset and frontend is documented in [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md).

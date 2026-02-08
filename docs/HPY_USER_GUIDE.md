@@ -15,11 +15,15 @@ When you execute `import my_module`, `protoPython` follows this resolution seque
 `protoPython` searches for modules in the directories specified during initialization.
 
 ### From CLI
+
+Search paths come from `--path`, `--stdlib`, and `sys.path`. Use `--path` to add directories:
+
 ```bash
-./protoPython -p ./extensions my_script.py
+./protopy --path ./extensions my_script.py
 ```
 
 ### From Python (sys.path)
+
 You can append paths to `sys.path` (if the `sys` module is fully integrated) or ensure they are present in the environment's search paths at startup.
 
 ## Internal Mechanism
@@ -43,8 +47,8 @@ The `HPyModuleProvider` handles the heavy lifting:
 - **C++ Mangling**: If writing in C++, ensure the init function is wrapped in `extern "C"`.
 
 ### Debugging
-Run `protoPython` with the environment variable `PROTO_HPY_DEBUG=1` to see detailed loading logs.
+Run `protopy` with the environment variable `PROTO_HPY_DEBUG=1` to see detailed loading logs:
 
 ```bash
-PROTO_HPY_DEBUG=1 ./protoPython my_script.py
+PROTO_HPY_DEBUG=1 ./protopy my_script.py
 ```

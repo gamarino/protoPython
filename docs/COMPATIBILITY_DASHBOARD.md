@@ -2,7 +2,13 @@
 
 Track protoPython regression test pass rate over time.
 
+## What This Tracks
+
+The dashboard shows the regrtest (CPython regression test suite) pass rate over time. Use `test/regression/run_and_report.py` to run the suite against the `protopy` binary and persist results to JSON. The dashboard visualizes pass/fail counts, compatibility percentage, and trends.
+
 ## Usage
+
+Set `PROTOPY_BIN` to the path of the built `protopy` executable. Then:
 
 1. Run regression tests and persist results:
    ```bash

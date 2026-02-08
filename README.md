@@ -108,6 +108,8 @@ This project was built using **extensive AI-augmentation tools** to empower huma
 
 ## 📚 Documentation
 
+- [**Documentation Index**](docs/README.md) — Entry point for all documentation; start here if you are new.
+- [**Design Decisions**](docs/DESIGN_DECISIONS.md) — Main architectural choices and rationale.
 - [**Installation Guide**](docs/INSTALLATION.md) — Platform-specific build and deploy instructions.
 - [**HPy User Guide**](docs/HPY_USER_GUIDE.md) — How to load and use HPy extensions.
 - [**HPy Developer Guide**](docs/HPY_DEVELOPER_GUIDE.md) — How to write HPy modules for protoPython.
