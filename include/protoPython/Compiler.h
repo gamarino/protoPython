@@ -58,8 +58,11 @@ private:
     bool compileImport(ImportNode* n);
     bool compileTry(TryNode* n);
     bool compileFunctionDef(FunctionDefNode* n);
+    bool compileClassDef(ClassDefNode* n);
+    bool compileCondExpr(CondExprNode* n);
     bool compileSuite(SuiteNode* n);
     bool compileTarget(ASTNode* target, bool isStore);
+    bool emitNameOp(const std::string& id, bool isStore);
     /** True if executing this node leaves a value on the stack (expression stmt). */
     static bool statementLeavesValue(ASTNode* node);
     /** Collect names from function body: globals from GlobalNode, locals (ordered) from Name/Assign. */

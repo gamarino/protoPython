@@ -15,8 +15,32 @@
 namespace protoPython {
 
 namespace {
+
+struct FrameScope {
+    FrameScope(const proto::ProtoObject* frame) : oldFrame(PythonEnvironment::getCurrentFrame()) {
+        PythonEnvironment::setCurrentFrame(frame);
+    }
+    ~FrameScope() {
+        PythonEnvironment::setCurrentFrame(oldFrame);
+    }
+    const proto::ProtoObject* oldFrame;
+};
+
+struct GlobalsScope {
+    GlobalsScope(const proto::ProtoObject* globals) : oldGlobals(PythonEnvironment::getCurrentGlobals()) {
+        PythonEnvironment::setCurrentGlobals(globals);
+    }
+    ~GlobalsScope() {
+        PythonEnvironment::setCurrentGlobals(oldGlobals);
+    }
+    const proto::ProtoObject* oldGlobals;
+};
+
 /** __call__ for user-defined functions: push context (RAII), build frame, run __code__, promote return value.
  * Reads co_varnames, co_nparams, co_automatic_count from code object to size automatic slots and bind args. */
+static const proto::ProtoObject* invokeCallable(proto::ProtoContext* ctx,
+    const proto::ProtoObject* callable, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs);
+
 static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink* /*parentLink*/,
@@ -68,7 +92,11 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
     proto::ProtoObject* frame = const_cast<proto::ProtoObject*>(calleeCtx->newObject(true));
     if (!frame) return PROTO_NONE;
     frame = const_cast<proto::ProtoObject*>(frame->addParent(ctx, globalsObj));
-    const proto::ProtoObject* result = runCodeObject(calleeCtx, codeObj, frame);
+    const proto::ProtoObject* result = nullptr;
+    {
+        GlobalsScope gscope(globalsObj);
+        result = runCodeObject(calleeCtx, codeObj, frame);
+    }
     promote(calleeCtx, result);
     return result;
 }
@@ -84,7 +112,30 @@ static proto::ProtoObject* createUserFunction(proto::ProtoContext* ctx, const pr
         ctx->fromMethod(const_cast<proto::ProtoObject*>(fn), runUserFunctionCall));
     return const_cast<proto::ProtoObject*>(fn);
 }
-} // anonymous namespace
+
+static const proto::ProtoObject* runUserClassCall(proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* args,
+    const proto::ProtoSparseList* kwargs) {
+    if (!ctx || !self) return PROTO_NONE;
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    
+    // Create new object instance
+    proto::ProtoObject* obj = const_cast<proto::ProtoObject*>(ctx->newObject(true));
+    // Class acts as prototype/parent
+    obj = const_cast<proto::ProtoObject*>(obj->addParent(ctx, self));
+    
+    // Invoke __init__ if present
+    const proto::ProtoString* initS = env ? env->getInitString() : proto::ProtoString::fromUTF8String(ctx, "__init__");
+    const proto::ProtoObject* initM = obj->getAttribute(ctx, initS);
+    if (initM) {
+        invokeCallable(ctx, initM, args, kwargs);
+    }
+    
+    return obj;
+}
+
 
 /** Return true if obj is an embedded value (e.g. small int, bool); do not call getAttribute on it. */
 static bool isEmbeddedValue(const proto::ProtoObject* obj) {
@@ -120,9 +171,11 @@ static const proto::ProtoObject* binaryMultiply(proto::ProtoContext* ctx,
 
 static const proto::ProtoObject* binaryTrueDivide(proto::ProtoContext* ctx,
     const proto::ProtoObject* a, const proto::ProtoObject* b) {
-    if ((b->isInteger(ctx) && b->asLong(ctx) == 0) || (b->isDouble(ctx) && b->asDouble(ctx) == 0.0)) {
-        PythonEnvironment::fromContext(ctx)->raiseZeroDivisionError(ctx);
-        return PROTO_NONE;
+    if (a->isInteger(ctx) || a->isDouble(ctx)) {
+        if ((b->isInteger(ctx) && b->asLong(ctx) == 0) || (b->isDouble(ctx) && b->asDouble(ctx) == 0.0)) {
+            PythonEnvironment::fromContext(ctx)->raiseZeroDivisionError(ctx);
+            return PROTO_NONE;
+        }
     }
     if (isEmbeddedValue(a) || isEmbeddedValue(b)) {
         double aa = a->isDouble(ctx) ? a->asDouble(ctx) : static_cast<double>(a->asLong(ctx));
@@ -135,9 +188,11 @@ static const proto::ProtoObject* binaryTrueDivide(proto::ProtoContext* ctx,
 
 static const proto::ProtoObject* binaryModulo(proto::ProtoContext* ctx,
     const proto::ProtoObject* a, const proto::ProtoObject* b) {
-    if ((b->isInteger(ctx) && b->asLong(ctx) == 0) || (b->isDouble(ctx) && b->asDouble(ctx) == 0.0)) {
-        PythonEnvironment::fromContext(ctx)->raiseZeroDivisionError(ctx);
-        return PROTO_NONE;
+    if (a->isInteger(ctx) || a->isDouble(ctx)) {
+        if ((b->isInteger(ctx) && b->asLong(ctx) == 0) || (b->isDouble(ctx) && b->asDouble(ctx) == 0.0)) {
+            PythonEnvironment::fromContext(ctx)->raiseZeroDivisionError(ctx);
+            return PROTO_NONE;
+        }
     }
     if (a->isInteger(ctx) && b->isInteger(ctx)) {
         return ctx->fromInteger(a->asLong(ctx) % b->asLong(ctx));
@@ -147,7 +202,24 @@ static const proto::ProtoObject* binaryModulo(proto::ProtoContext* ctx,
         double bb = b->isDouble(ctx) ? b->asDouble(ctx) : static_cast<double>(b->asLong(ctx));
         return ctx->fromDouble(std::fmod(aa, bb));
     }
-    return PROTO_NONE;
+    if (a->isString(ctx)) {
+        std::string tpl;
+        a->asString(ctx)->toUTF8String(ctx, tpl);
+        std::string valStr;
+        if (b->isString(ctx)) b->asString(ctx)->toUTF8String(ctx, valStr);
+        else if (b->isInteger(ctx)) valStr = std::to_string(b->asLong(ctx));
+        else if (b->isDouble(ctx)) valStr = std::to_string(b->asDouble(ctx));
+        else valStr = "<?>";
+
+        size_t pos = tpl.find("%s");
+        if (pos == std::string::npos) pos = tpl.find("%d");
+        if (pos != std::string::npos) {
+            tpl.replace(pos, 2, valStr);
+            return ctx->fromUTF8String(tpl.c_str());
+        }
+    }
+    const proto::ProtoObject* r = a->modulo(ctx, b);
+    return r ? r : PROTO_NONE;
 }
 
 static const proto::ProtoObject* binaryPower(proto::ProtoContext* ctx,
@@ -170,9 +242,11 @@ static const proto::ProtoObject* binaryPower(proto::ProtoContext* ctx,
 
 static const proto::ProtoObject* binaryFloorDivide(proto::ProtoContext* ctx,
     const proto::ProtoObject* a, const proto::ProtoObject* b) {
-    if ((b->isInteger(ctx) && b->asLong(ctx) == 0) || (b->isDouble(ctx) && b->asDouble(ctx) == 0.0)) {
-        PythonEnvironment::fromContext(ctx)->raiseZeroDivisionError(ctx);
-        return PROTO_NONE;
+    if (a->isInteger(ctx) || a->isDouble(ctx)) {
+        if ((b->isInteger(ctx) && b->asLong(ctx) == 0) || (b->isDouble(ctx) && b->asDouble(ctx) == 0.0)) {
+            PythonEnvironment::fromContext(ctx)->raiseZeroDivisionError(ctx);
+            return PROTO_NONE;
+        }
     }
     if (a->isInteger(ctx) && b->isInteger(ctx)) {
         long long aa = a->asLong(ctx);
@@ -187,6 +261,43 @@ static const proto::ProtoObject* binaryFloorDivide(proto::ProtoContext* ctx,
 static const proto::ProtoObject* compareOp(proto::ProtoContext* ctx,
     const proto::ProtoObject* a, const proto::ProtoObject* b, int op) {
     bool result = false;
+    if (op == 8) { // is
+        result = (a == b);
+        return result ? PROTO_TRUE : PROTO_FALSE;
+    }
+    if (op == 9) { // is not
+        result = (a != b);
+        return result ? PROTO_TRUE : PROTO_FALSE;
+    }
+    
+    if (op == 6 || op == 7) { // in, not in
+        bool found = false;
+        const proto::ProtoList* lst = b->asList(ctx);
+        if (!lst) {
+            // Try dictionary keys
+            PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+            const proto::ProtoObject* keysObj = b->getAttribute(ctx, env ? env->getKeysString() : proto::ProtoString::fromUTF8String(ctx, "__keys__"));
+            if (keysObj) lst = keysObj->asList(ctx);
+        }
+        
+        if (lst) {
+            for (size_t i = 0; i < lst->getSize(ctx); ++i) {
+                if (a->compare(ctx, lst->getAt(ctx, i)) == 0) {
+                    found = true;
+                    break;
+                }
+            }
+        } else if (b->isString(ctx) && a->isString(ctx)) {
+            std::string s_sub, s_full;
+            a->asString(ctx)->toUTF8String(ctx, s_sub);
+            b->asString(ctx)->toUTF8String(ctx, s_full);
+            found = (s_full.find(s_sub) != std::string::npos);
+        }
+        
+        result = (op == 6) ? found : !found;
+        return result ? PROTO_TRUE : PROTO_FALSE;
+    }
+
     int c = a->compare(ctx, b);
     if (op == 0) result = (c == 0);
     else if (op == 1) result = (c != 0);
@@ -224,6 +335,8 @@ static const proto::ProtoObject* invokeCallable(proto::ProtoContext* ctx,
     return callAttr->asMethod(ctx)(ctx, callable, nullptr, args, kwargs);
 }
 
+} // anonymous namespace
+
 const proto::ProtoObject* invokePythonCallable(proto::ProtoContext* ctx,
     const proto::ProtoObject* callable, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
     return invokeCallable(ctx, callable, args, kwargs);
@@ -240,12 +353,15 @@ const proto::ProtoObject* executeBytecodeRange(
     if (!ctx || !constants || !bytecode) return PROTO_NONE;
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (!env && std::getenv("PROTO_THREAD_DIAG")) std::cerr << "[proto-thread] executeBytecodeRange FAILED to get env from ctx=" << ctx << " tid=" << std::this_thread::get_id() << "\n" << std::flush;
+    
+    FrameScope fscope(frame);
     unsigned long n = bytecode->getSize(ctx);
     if (n == 0) return PROTO_NONE;
     if (pcEnd >= n) pcEnd = n - 1;
     /* 64-byte aligned execution state to avoid false sharing when multiple threads run tasks. */
     alignas(64) std::vector<const proto::ProtoObject*> stack;
     stack.reserve(64);
+    const bool sync_globals = (frame == PythonEnvironment::getCurrentGlobals());
     for (unsigned long i = pcStart; i <= pcEnd; ++i) {
         const proto::ProtoObject* instr = bytecode->getAt(ctx, static_cast<int>(i));
         if (std::getenv("PROTO_ENV_DIAG")) std::cerr << "[proto-engine] i=" << i << " instr=" << instr << " isInt=" << (instr ? instr->isInteger(ctx) : false) << "\n" << std::flush;
@@ -275,7 +391,7 @@ const proto::ProtoObject* executeBytecodeRange(
                         nameObj->asString(ctx)->toUTF8String(ctx, name);
                         std::cerr << "[proto-engine] LOAD_NAME name=" << name << " val=" << val << " env=" << env << "\n" << std::flush;
                     }
-                    if (val && val != PROTO_NONE) {
+                    if (val) {
                         stack.push_back(val);
                     } else {
                         if (env) {
@@ -302,8 +418,16 @@ const proto::ProtoObject* executeBytecodeRange(
                 const proto::ProtoObject* nameObj = names->getAt(ctx, arg);
                 const proto::ProtoObject* val = stack.back();
                 stack.pop_back();
-                if (nameObj->isString(ctx))
-                    frame->setAttribute(ctx, nameObj->asString(ctx), val);
+                if (nameObj->isString(ctx)) {
+                    std::string n; nameObj->asString(ctx)->toUTF8String(ctx, n);
+                    frame = const_cast<proto::ProtoObject*>(frame->setAttribute(ctx, nameObj->asString(ctx), val));
+                    if (std::getenv("PROTO_ENV_DIAG")) std::cerr << "[proto-engine] STORE_NAME " << n << " into frame=" << frame << "\n";
+                    PythonEnvironment::setCurrentFrame(frame);
+                    if (sync_globals) {
+                        PythonEnvironment::setCurrentGlobals(frame);
+                        if (std::getenv("PROTO_ENV_DIAG")) std::cerr << "[proto-engine]   (also synced globals)\n";
+                    }
+                }
             }
         } else if (op == OP_LOAD_FAST) {
             i++;
@@ -774,7 +898,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 const proto::ProtoObject* nameObj = names->getAt(ctx, arg);
                 if (nameObj->isString(ctx)) {
                     const proto::ProtoObject* val = obj->getAttribute(ctx, nameObj->asString(ctx));
-                    if (val && val != PROTO_NONE) {
+                    if (val) {
                         if (val->isMethod(ctx)) {
                             val = ctx->fromMethod(const_cast<proto::ProtoObject*>(obj), val->asMethod(ctx));
                         }
@@ -886,7 +1010,11 @@ const proto::ProtoObject* executeBytecodeRange(
             stack.pop_back();
             proto::ProtoObject* container = const_cast<proto::ProtoObject*>(stack.back());
             stack.pop_back();
-            const proto::ProtoObject* setitem = container->getAttribute(ctx, env ? env->getSetItemString() : proto::ProtoString::fromUTF8String(ctx, "__setitem__"));
+            const proto::ProtoString* setItemS = env ? env->getSetItemString() : proto::ProtoString::fromUTF8String(ctx, "__setitem__");
+            const proto::ProtoObject* setitem = container->getAttribute(ctx, setItemS);
+            if (std::getenv("PROTO_ENV_DIAG")) {
+                std::cerr << "[proto-engine] OP_STORE_SUBSCR container=" << container << " setitem=" << setitem << "\n" << std::flush;
+            }
             if (setitem && setitem->asMethod(ctx)) {
                 const proto::ProtoList* args = ctx->newList()->appendLast(ctx, key)->appendLast(ctx, value);
                 setitem->asMethod(ctx)(ctx, container, nullptr, args, nullptr);
@@ -989,6 +1117,62 @@ const proto::ProtoObject* executeBytecodeRange(
                 proto::ProtoObject* fn = createUserFunction(ctx, codeObj, frame);
                 if (fn) stack.push_back(fn);
             }
+        } else if (op == OP_BUILD_CLASS) {
+            // No argument for BUILD_CLASS
+            if (stack.size() >= 3 && frame) {
+                const proto::ProtoObject* body = stack.back();
+                stack.pop_back();
+                const proto::ProtoObject* bases = stack.back();
+                stack.pop_back();
+                const proto::ProtoObject* name = stack.back();
+                stack.pop_back();
+                
+                PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+                const proto::ProtoString* nameS = env ? env->getNameString() : proto::ProtoString::fromUTF8String(ctx, "__name__");
+                const proto::ProtoString* callS = env ? env->getCallString() : proto::ProtoString::fromUTF8String(ctx, "__call__");
+                
+                proto::ProtoObject* ns = const_cast<proto::ProtoObject*>(ctx->newObject(true));
+                ns = const_cast<proto::ProtoObject*>(ns->setAttribute(ctx, nameS, name));
+                
+                // Invoke body with ns as locals
+                if (body) {
+                    const proto::ProtoObject* codeObj = body->getAttribute(ctx, env ? env->getCodeString() : proto::ProtoString::fromUTF8String(ctx, "__code__"));
+                    if (codeObj && codeObj != PROTO_NONE) {
+                        runCodeObject(ctx, codeObj, ns);
+                    } else {
+                        const proto::ProtoObject* callM = body->getAttribute(ctx, callS);
+                        if (callM && callM->asMethod(ctx)) {
+                            callM->asMethod(ctx)(ctx, body, nullptr, ctx->newList(), nullptr);
+                        }
+                    }
+                }
+                
+                // Create class object (prototype)
+                proto::ProtoObject* targetClass = const_cast<proto::ProtoObject*>(ctx->newObject(true));
+                if (bases && bases->asTuple(ctx)) {
+                    auto bt = bases->asTuple(ctx);
+                    for (size_t j = 0; j < bt->getSize(ctx); ++j) {
+                        targetClass = const_cast<proto::ProtoObject*>(targetClass->addParent(ctx, bt->getAt(ctx, j)));
+                    }
+                }
+                
+                // Copy ns attributes to targetClass
+                const proto::ProtoSparseList* keys = ns->getAttributes(ctx);
+                if (keys) {
+                    for (size_t j = 0; j < keys->getSize(ctx); ++j) {
+                        const proto::ProtoObject* keyObj = keys->getAt(ctx, j);
+                        if (keyObj) {
+                            const proto::ProtoString* k = keyObj->asString(ctx);
+                            if (k) targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(ctx, k, ns->getAttribute(ctx, k)));
+                        }
+                    }
+                }
+                
+                // Set __call__ to support instantiation
+                targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(ctx, callS, ctx->fromMethod(targetClass, runUserClassCall)));
+
+                stack.push_back(targetClass);
+            }
         } else if (op == OP_GET_ITER) {
             i++;
             if (stack.empty()) continue;
@@ -1059,7 +1243,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 const proto::ProtoObject* nameObj = names->getAt(ctx, arg);
                 if (nameObj->isString(ctx)) {
                     const proto::ProtoObject* val = frame->getAttribute(ctx, nameObj->asString(ctx));
-                    if (val && val != PROTO_NONE) {
+                    if (val) {
                         stack.push_back(val);
                     } else {
                         PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
@@ -1086,8 +1270,11 @@ const proto::ProtoObject* executeBytecodeRange(
                 const proto::ProtoObject* nameObj = names->getAt(ctx, arg);
                 const proto::ProtoObject* val = stack.back();
                 stack.pop_back();
-                if (nameObj->isString(ctx))
-                    frame->setAttribute(ctx, nameObj->asString(ctx), val);
+                if (nameObj->isString(ctx)) {
+                    frame = const_cast<proto::ProtoObject*>(frame->setAttribute(ctx, nameObj->asString(ctx), val));
+                    PythonEnvironment::setCurrentFrame(frame);
+                    if (sync_globals) PythonEnvironment::setCurrentGlobals(frame);
+                }
             }
         } else if (op == OP_BUILD_SLICE) {
             i++;

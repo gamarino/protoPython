@@ -182,6 +182,7 @@ public:
     const proto::ProtoString* getSetItemString() const { return setItemString; }
     const proto::ProtoString* getDataString() const { return dataString; }
     const proto::ProtoString* getKeysString() const { return keysString; }
+    const proto::ProtoString* getInitString() const { return initString; }
 
     const proto::ProtoString* getStartString() const { return startString; }
     const proto::ProtoString* getStopString() const { return stopString; }
@@ -306,6 +307,36 @@ public:
     const proto::ProtoObject* takePendingException();
 
     /**
+     * @brief Sets the current execution frame for the current thread.
+     */
+    static void setCurrentFrame(const proto::ProtoObject* frame);
+
+    /**
+     * @brief Gets the current execution frame for the current thread.
+     */
+    static const proto::ProtoObject* getCurrentFrame();
+
+    /**
+     * @brief Sets the current globals for the current thread.
+     */
+    static void setCurrentGlobals(const proto::ProtoObject* globals);
+
+    /**
+     * @brief Gets the current globals for the current thread.
+     */
+    static const proto::ProtoObject* getCurrentGlobals();
+
+    /**
+     * @brief Sets the current code object for the current thread.
+     */
+    static void setCurrentCodeObject(const proto::ProtoObject* code);
+
+    /**
+     * @brief Gets the current code object for the current thread.
+     */
+    static const proto::ProtoObject* getCurrentCodeObject();
+
+    /**
      * @brief Returns true if there is a pending exception.
      */
     bool hasPendingException() const;
@@ -400,6 +431,9 @@ private:
     const proto::ProtoObject* boolPrototype;
     const proto::ProtoObject* sysModule;
     static thread_local PythonEnvironment* s_threadEnv;
+    static thread_local const proto::ProtoObject* s_currentFrame;
+    static thread_local const proto::ProtoObject* s_currentGlobals;
+    static thread_local const proto::ProtoObject* s_currentCodeObject;
     const proto::ProtoObject* builtinsModule;
     std::vector<std::string> argv_;
     int exitRequested_{0};
@@ -499,6 +533,7 @@ private:
     const proto::ProtoString* setItemString{nullptr};
     const proto::ProtoString* dataString{nullptr};
     const proto::ProtoString* keysString{nullptr};
+    const proto::ProtoString* initString{nullptr};
 
     const proto::ProtoString* startString{nullptr};
     const proto::ProtoString* stopString{nullptr};

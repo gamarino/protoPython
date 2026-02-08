@@ -24,8 +24,10 @@ add_library(protoPython SHARED
     NativeModuleProvider.cpp
     HPyModuleProvider.cpp
     SysModule.cpp
-    TimeModule.cpp
     ThreadModule.cpp
+    ThreadingStrategy.cpp
+    SignalModule.cpp
+    TimeModule.cpp
     BuiltinsModule.cpp
     IOModule.cpp
     CollectionsModule.cpp

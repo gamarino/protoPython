@@ -30,6 +30,12 @@ struct BinOpNode : ASTNode {
     std::unique_ptr<ASTNode> right;
 };
 
+struct CondExprNode : ASTNode {
+    std::unique_ptr<ASTNode> body;
+    std::unique_ptr<ASTNode> cond;
+    std::unique_ptr<ASTNode> orelse;
+};
+
 struct CallNode : ASTNode {
     std::unique_ptr<ASTNode> func;
     std::vector<std::unique_ptr<ASTNode>> args;
@@ -108,10 +114,18 @@ struct ReturnNode : ASTNode {
     std::unique_ptr<ASTNode> value;
 };
 
+/** class name[(bases)]: body. */
+struct ClassDefNode : ASTNode {
+    std::string name;
+    std::vector<std::unique_ptr<ASTNode>> bases;
+    std::unique_ptr<ASTNode> body;
+};
+
 /** import name [as rename]. */
 struct ImportNode : ASTNode {
     std::string moduleName;
     std::string alias;
+    bool isAs = false;
 };
 
 /** try: body except [type] [as name]: handler. simplified. */

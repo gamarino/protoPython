@@ -1,17 +1,32 @@
 #include <protoPython/BuiltinsModule.h>
-#include <protoPython/Compiler.h>
-#include <protoPython/Parser.h>
-#include <protoPython/Tokenizer.h>
 #include <protoPython/PythonEnvironment.h>
+#include <protoPython/ExecutionEngine.h>
+#include <protoPython/Parser.h>
+#include <protoPython/Compiler.h>
+#include <protoPython/Tokenizer.h>
+#include <protoCore.h>
+#include <iostream>
+#include <string>
+#include <vector>
+#include <algorithm>
+#include <memory>
 #include <cmath>
 #include <cstdio>
-#include <iostream>
-#include <algorithm>
-#include <vector>
-#include <string>
 
 namespace protoPython {
 namespace builtins {
+
+namespace {
+struct GlobalsScope {
+    GlobalsScope(const proto::ProtoObject* g) : old(PythonEnvironment::getCurrentGlobals()) {
+        PythonEnvironment::setCurrentGlobals(g);
+    }
+    ~GlobalsScope() {
+        PythonEnvironment::setCurrentGlobals(old);
+    }
+    const proto::ProtoObject* old;
+};
+}
 using protoPython::PythonEnvironment;
 
 static const proto::ProtoObject* py_import(
@@ -20,17 +35,26 @@ static const proto::ProtoObject* py_import(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
-    (void)self;
-    (void)parentLink;
-    (void)keywordParameters;
     if (positionalParameters->getSize(context) == 0) return PROTO_NONE;
     const proto::ProtoObject* nameObj = positionalParameters->getAt(context, 0);
     if (!nameObj->isString(context)) return PROTO_NONE;
     std::string moduleName;
     nameObj->asString(context)->toUTF8String(context, moduleName);
-    
+
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
-    return env ? env->resolve(moduleName) : PROTO_NONE;
+    const proto::ProtoObject* leaf = env ? env->resolve(moduleName) : PROTO_NONE;
+    
+    bool returnLeaf = false;
+    if (positionalParameters->getSize(context) > 1) {
+        returnLeaf = (positionalParameters->getAt(context, 1) == PROTO_TRUE);
+    }
+
+    if (!returnLeaf && moduleName.find('.') != std::string::npos) {
+        size_t dot = moduleName.find('.');
+        std::string topLevel = moduleName.substr(0, dot);
+        return env->resolve(topLevel);
+    }
+    return leaf;
 }
 
 static const proto::ProtoObject* py_id(
@@ -45,6 +69,13 @@ static const proto::ProtoObject* py_id(
     return context->fromInteger(reinterpret_cast<long long>(obj));
 }
 
+static const proto::ProtoObject* py_locals(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters);
+
 
 static const proto::ProtoObject* py_len(
     proto::ProtoContext* context,
@@ -55,28 +86,16 @@ static const proto::ProtoObject* py_len(
     if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
     
-    // 1. Try asList
-    if (obj->asList(context)) {
-        return context->fromInteger(obj->asList(context)->getSize(context));
-    }
-    // 2. Try asSparseList
-    if (obj->asSparseList(context)) {
-        return context->fromInteger(obj->asSparseList(context)->getSize(context));
-    }
-    // 3. Try asString
-    if (obj->isString(context)) {
-        return context->fromInteger(obj->asString(context)->getSize(context));
-    }
+    if (obj->asList(context)) return context->fromInteger(obj->asList(context)->getSize(context));
+    if (obj->asSparseList(context)) return context->fromInteger(obj->asSparseList(context)->getSize(context));
+    if (obj->isString(context)) return context->fromInteger(obj->asString(context)->getSize(context));
     
-    // 4. Fallback to __len__ dunder
-    ::protoPython::PythonEnvironment* env = ::protoPython::PythonEnvironment::fromContext(context);
-    const proto::ProtoString* lenS = env ? env->getLenString() : proto::ProtoString::fromUTF8String(context, "__len__");
-    const proto::ProtoObject* lenMethod = obj->getAttribute(context, lenS);
-    if (lenMethod && lenMethod->asMethod(context)) {
-        return lenMethod->asMethod(context)(context, obj, nullptr, env ? env->getEmptyList() : nullptr, nullptr);
-    }
-    
-    return PROTO_NONE;
+    // Fallback: count attributes (for objects acting as dicts)
+    const proto::ProtoSparseList* attrs = obj->getAttributes(context);
+    if (std::getenv("PROTO_ENV_DIAG")) std::cerr << "[proto-builtins] py_len fallback for obj=" << obj << " attrs=" << attrs << " size=" << (attrs ? attrs->getSize(context) : -1) << "\n" << std::flush;
+    if (attrs) return context->fromInteger(attrs->getSize(context));
+
+    return context->fromInteger(0);
 }
 
 
@@ -652,13 +671,10 @@ static const proto::ProtoObject* py_dir(
     if (positionalParameters->getSize(context) >= 1) {
         target = positionalParameters->getAt(context, 0);
     } else {
-        // Without args, dir() should show locals. In our environment, 
-        // we might not have easy access to the exact local frame here.
-        // Return an empty list for now or try to get it from PythonEnvironment.
-        return context->newList()->asObject(context);
+        target = py_locals(context, self, parentLink, positionalParameters, keywordParameters);
     }
 
-    if (!target) return context->newList()->asObject(context);
+    if (!target || target == PROTO_NONE) return context->newList()->asObject(context);
 
     std::vector<std::string> names;
     auto collect = [&](const proto::ProtoObject* obj) {
@@ -707,15 +723,25 @@ static const proto::ProtoObject* py_input(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
-    (void)self;
-    (void)parentLink;
-    (void)keywordParameters;
+    (void)self; (void)parentLink; (void)keywordParameters;
     if (positionalParameters->getSize(context) >= 1) {
         const proto::ProtoObject* promptObj = positionalParameters->getAt(context, 0);
-        if (promptObj && promptObj->isString(context)) {
-            std::string prompt;
-            promptObj->asString(context)->toUTF8String(context, prompt);
-            std::cout << prompt << std::flush;
+        if (promptObj) {
+            PythonEnvironment* env = PythonEnvironment::fromContext(context);
+            const proto::ProtoList* emptyL = env ? env->getEmptyList() : context->newList();
+            const proto::ProtoObject* strMethod = promptObj->getAttribute(context, env ? env->getStrString() : proto::ProtoString::fromUTF8String(context, "__str__"));
+            if (strMethod && strMethod->asMethod(context)) {
+                const proto::ProtoObject* s = strMethod->asMethod(context)(context, promptObj, nullptr, emptyL, nullptr);
+                if (s && s->isString(context)) {
+                    std::string prompt;
+                    s->asString(context)->toUTF8String(context, prompt);
+                    std::cout << prompt << std::flush;
+                }
+            } else if (promptObj->isString(context)) {
+                std::string prompt;
+                promptObj->asString(context)->toUTF8String(context, prompt);
+                std::cout << prompt << std::flush;
+            }
         }
     }
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
@@ -723,6 +749,11 @@ static const proto::ProtoObject* py_input(
     std::string line;
     if (in && std::getline(*in, line))
         return context->fromUTF8String(line.c_str());
+    
+    if (in && in->eof()) {
+        // Handle EOF? CPython raises EOFError.
+        // For now return empty string, but we should eventually raise EOFError.
+    }
     return context->fromUTF8String("");
 }
 
@@ -842,6 +873,7 @@ static const proto::ProtoObject* py_eval(
     }
     if (!frame) frame = const_cast<proto::ProtoObject*>(context->newObject(true));
 
+    GlobalsScope gscope(frame);
     return runCodeObject(context, codeObj, frame);
 }
 
@@ -870,11 +902,22 @@ static const proto::ProtoObject* py_help(
     }
 
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
+    const proto::ProtoObject* doc = obj->getAttribute(context, env ? env->getDocString() : proto::ProtoString::fromUTF8String(context, "__doc__"));
     const proto::ProtoObject* type = obj->getAttribute(context, env ? env->getClassString() : proto::ProtoString::fromUTF8String(context, "__class__"));
+    
     std::string typeName = "object";
     if (type) {
         const proto::ProtoObject* nameAttr = type->getAttribute(context, env ? env->getNameString() : proto::ProtoString::fromUTF8String(context, "__name__"));
         if (nameAttr && nameAttr->isString(context)) nameAttr->asString(context)->toUTF8String(context, typeName);
+    }
+    
+    std::cout << "Help on " << typeName << " object:\n\n";
+    if (doc && doc->isString(context)) {
+        std::string ds;
+        doc->asString(context)->toUTF8String(context, ds);
+        std::cout << ds << "\n";
+    } else {
+        std::cout << "(No documentation available)\n";
     }
 
     // Attempt to call __repr__
@@ -888,15 +931,6 @@ static const proto::ProtoObject* py_help(
             r->asString(context)->toUTF8String(context, s);
             std::cout << "  Value: " << s << "\n";
         }
-    }
-
-    const proto::ProtoObject* doc = obj->getAttribute(context, env ? env->getDocString() : proto::ProtoString::fromUTF8String(context, "__doc__"));
-    if (doc && doc->isString(context)) {
-        std::string s;
-        doc->asString(context)->toUTF8String(context, s);
-        std::cout << "\n  Docstring:\n    " << s << "\n";
-    } else {
-        std::cout << "\n  (No docstring found for this object)\n";
     }
 
     return PROTO_NONE;
@@ -991,6 +1025,7 @@ static const proto::ProtoObject* py_exec(
     }
     if (!frame) frame = const_cast<proto::ProtoObject*>(context->newObject(true));
 
+    GlobalsScope gscope(frame);
     const proto::ProtoObject* res = runCodeObject(context, codeObj, frame);
     return res;
 }
@@ -1002,11 +1037,16 @@ static const proto::ProtoObject* py_breakpoint(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
-    (void)context;
-    (void)self;
-    (void)parentLink;
-    (void)positionalParameters;
-    (void)keywordParameters;
+    (void)self; (void)parentLink; (void)keywordParameters; (void)positionalParameters;
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::ProtoObject* sys = env ? env->resolve("sys") : nullptr;
+    if (sys) {
+        const proto::ProtoObject* hook = sys->getAttribute(context, proto::ProtoString::fromUTF8String(context, "breakpointhook"));
+        if (hook && hook->asMethod(context)) {
+            return hook->asMethod(context)(context, sys, nullptr, env->getEmptyList(), nullptr);
+        }
+    }
+    std::cerr << "[proto-runtime] breakpoint() reached but sys.breakpointhook not found.\n" << std::flush;
     return PROTO_NONE;
 }
 
@@ -1017,16 +1057,12 @@ static const proto::ProtoObject* py_globals(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
-    (void)self;
-    (void)parentLink;
-    (void)positionalParameters;
-    (void)keywordParameters;
-    protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(context);
-    if (!env) return PROTO_NONE;
-    proto::ProtoObject* d = const_cast<proto::ProtoObject*>(env->getDictPrototype()->newChild(context, true));
-    d->setAttribute(context, env ? env->getKeysString() : proto::ProtoString::fromUTF8String(context, "__keys__"), context->newList()->asObject(context));
-    d->setAttribute(context, env ? env->getDataString() : proto::ProtoString::fromUTF8String(context, "__data__"), context->newSparseList()->asObject(context));
-    return d;
+    (void)self; (void)parentLink; (void)positionalParameters; (void)keywordParameters;
+    const proto::ProtoObject* g = PythonEnvironment::getCurrentGlobals();
+    if (std::getenv("PROTO_ENV_DIAG")) std::cerr << "[proto-builtins] globals() returning " << g << "\n" << std::flush;
+    if (g) return g;
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    return env ? env->getBuiltins() : PROTO_NONE;
 }
 
 /** locals(): stub returning empty dict; full impl needs frame access. */
@@ -1036,16 +1072,49 @@ static const proto::ProtoObject* py_locals(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
-    (void)self;
-    (void)parentLink;
-    (void)positionalParameters;
-    (void)keywordParameters;
-    protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(context);
-    if (!env) return PROTO_NONE;
-    proto::ProtoObject* d = const_cast<proto::ProtoObject*>(env->getDictPrototype()->newChild(context, true));
-    d->setAttribute(context, env ? env->getKeysString() : proto::ProtoString::fromUTF8String(context, "__keys__"), context->newList()->asObject(context));
-    d->setAttribute(context, env ? env->getDataString() : proto::ProtoString::fromUTF8String(context, "__data__"), context->newSparseList()->asObject(context));
-    return d;
+    (void)self; (void)parentLink; (void)positionalParameters; (void)keywordParameters;
+    const proto::ProtoObject* f = PythonEnvironment::getCurrentFrame();
+    const proto::ProtoObject* co = PythonEnvironment::getCurrentCodeObject();
+    
+    if (!f) {
+         PythonEnvironment* env = PythonEnvironment::fromContext(context);
+         return env ? env->getBuiltins() : PROTO_NONE;
+    }
+    
+    if (co && context->getAutomaticLocalsCount() > 0) {
+        // Build a snapshot for optimized locals
+        PythonEnvironment* env = PythonEnvironment::fromContext(context);
+        const proto::ProtoObject* co_varnames_obj = co->getAttribute(context, env ? env->getCoVarnamesString() : proto::ProtoString::fromUTF8String(context, "co_varnames"));
+        const proto::ProtoList* co_varnames = co_varnames_obj ? co_varnames_obj->asList(context) : nullptr;
+        
+        if (co_varnames) {
+            proto::ProtoObject* dict = const_cast<proto::ProtoObject*>(env && env->getDictPrototype() ? env->getDictPrototype()->newChild(context, true) : context->newObject(true));
+            const proto::ProtoObject** slots = context->getAutomaticLocals();
+            unsigned int nSlots = context->getAutomaticLocalsCount();
+            unsigned long nNames = co_varnames->getSize(context);
+            unsigned long count = (nNames < nSlots) ? nNames : nSlots;
+            
+            const proto::ProtoSparseList* data = context->newSparseList();
+            const proto::ProtoList* keys = context->newList();
+
+            for (unsigned long i = 0; i < count; ++i) {
+                const proto::ProtoObject* name = co_varnames->getAt(context, static_cast<int>(i));
+                const proto::ProtoObject* val = slots[i];
+                if (val && name->isString(context)) {
+                    data = data->setAt(context, name->getHash(context), val);
+                    keys = keys->appendLast(context, name);
+                }
+            }
+            dict->setAttribute(context, env ? env->getDataString() : proto::ProtoString::fromUTF8String(context, "__data__"), data->asObject(context));
+            dict->setAttribute(context, env ? env->getKeysString() : proto::ProtoString::fromUTF8String(context, "__keys__"), keys->asObject(context));
+            if (env && env->getDictPrototype()) {
+                dict->setAttribute(context, env->getClassString(), env->getDictPrototype());
+            }
+            return dict;
+        }
+    }
+    
+    return f;
 }
 
 /** vars([object]): return object.__dict__ if given; stub for no-arg (locals). */
@@ -1055,17 +1124,17 @@ static const proto::ProtoObject* py_vars(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
-    (void)parentLink;
-    (void)keywordParameters;
-    (void)self;
-    if (!positionalParameters || positionalParameters->getSize(context) == 0)
-        return PROTO_NONE;  // vars() without args: stub (would be caller locals)
+    if (!positionalParameters || positionalParameters->getSize(context) == 0) {
+        return py_locals(context, self, parentLink, positionalParameters, keywordParameters);
+    }
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     const proto::ProtoObject* d = obj->getAttribute(context, env ? env->getDictDunderString() : proto::ProtoString::fromUTF8String(context, "__dict__"));
     if (d && d != PROTO_NONE)
         return d;
-    return context->newSparseList()->asObject(context);
+    
+    if (env) env->raiseTypeError(context, "vars() argument must have __dict__ attribute");
+    return PROTO_NONE;
 }
 
 /** Compare two objects for sorting: int, string, else compare(). */

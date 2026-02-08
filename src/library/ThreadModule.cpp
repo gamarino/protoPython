@@ -41,6 +41,10 @@ static void mutex_finalizer(void* ptr) {
     delete static_cast<std::mutex*>(ptr);
 }
 
+static void rmutex_finalizer(void* ptr) {
+    delete static_cast<std::recursive_mutex*>(ptr);
+}
+
 /** Diagnostic: count distinct OS threads that enter thread_bootstrap (PROTO_THREAD_DIAG=1). Lock-free. */
 static std::atomic<int> s_bootstrapTidCount{0};
 static std::atomic<bool> s_bootstrapFirstLogged{false};
@@ -193,6 +197,52 @@ static const proto::ProtoObject* py_lock_release(
     return PROTO_NONE;
 }
 
+static const proto::ProtoObject* py_allocate_rlock(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* /*self*/,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* /*posArgs*/,
+    const proto::ProtoSparseList* /*kwargs*/) {
+    return ctx->fromExternalPointer(new std::recursive_mutex, rmutex_finalizer);
+}
+
+static const proto::ProtoObject* py_rlock_acquire(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* /*self*/,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList* /*kwargs*/) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_FALSE;
+    const proto::ProtoObject* handle = posArgs->getAt(ctx, 0);
+    const proto::ProtoExternalPointer* ext = handle->asExternalPointer(ctx);
+    if (!ext) return PROTO_FALSE;
+    std::recursive_mutex* m = static_cast<std::recursive_mutex*>(ext->getPointer(ctx));
+    if (!m) return PROTO_FALSE;
+    bool blocking = true;
+    if (posArgs->getSize(ctx) >= 2)
+        blocking = posArgs->getAt(ctx, 1) != PROTO_FALSE;
+    if (blocking) {
+        m->lock();
+        return PROTO_TRUE;
+    }
+    return m->try_lock() ? PROTO_TRUE : PROTO_FALSE;
+}
+
+static const proto::ProtoObject* py_rlock_release(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* /*self*/,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList* /*kwargs*/) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    const proto::ProtoObject* handle = posArgs->getAt(ctx, 0);
+    const proto::ProtoExternalPointer* ext = handle->asExternalPointer(ctx);
+    if (!ext) return PROTO_NONE;
+    std::recursive_mutex* m = static_cast<std::recursive_mutex*>(ext->getPointer(ctx));
+    if (m) m->unlock();
+    return PROTO_NONE;
+}
+
 static const proto::ProtoObject* py_get_ident(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
@@ -226,12 +276,36 @@ static const proto::ProtoObject* py_join_thread(
     return PROTO_NONE;
 }
 
+static const proto::ProtoObject* py_is_alive(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* /*self*/,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList* /*kwargs*/) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_FALSE;
+    const proto::ProtoObject* handle = posArgs->getAt(ctx, 0);
+    const proto::ProtoExternalPointer* ext = handle->asExternalPointer(ctx);
+    if (!ext) return PROTO_FALSE;
+    proto::ProtoThread* thread = static_cast<proto::ProtoThread*>(ext->getPointer(ctx));
+    if (!thread) return PROTO_FALSE;
+    
+    // Check if thread is in space->threads
+    unsigned long threadId = reinterpret_cast<uintptr_t>(thread);
+    const proto::ProtoSparseList* threads = ctx->space->threads;
+    if (threads && threads->getAt(ctx, threadId) != PROTO_NONE)
+        return PROTO_TRUE;
+    
+    return PROTO_FALSE;
+}
+
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     const proto::ProtoObject* mod = ctx->newObject(true);
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "start_new_thread"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_start_new_thread));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "join_thread"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_join_thread));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "is_alive"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_is_alive));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "get_ident"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_get_ident));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "getpid"),
@@ -244,6 +318,12 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_lock_acquire));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_lock_release"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_lock_release));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "allocate_rlock"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_allocate_rlock));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_rlock_acquire"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_rlock_acquire));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_rlock_release"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_rlock_release));
     return mod;
 }
 

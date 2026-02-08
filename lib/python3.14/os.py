@@ -1,24 +1,15 @@
-# os.py - Uses _os for getenv, getcwd, chdir, listdir, remove, rmdir when available.
+print("os.py START", flush=True)
 import sys
 
 name = 'os'
-
 pathsep = ':'
 sep = '/'
 
-# Import os.path so that os.path.join, os.path.isdir, etc. are available
+print("os.py about to import os.path", flush=True)
 try:
-    import os.path
-    path = os.path
+    import os.path as path
 except ImportError:
-    path = []
-
-_common_env_keys = (
-    'PATH', 'HOME', 'USER', 'LOGNAME', 'SHELL', 'PWD', 'LANG',
-    'TERM', 'DISPLAY', 'EDITOR', 'TMPDIR', 'TEMP', 'TMP',
-    'SINGLE_THREAD', 'PROTO_THREAD_DEBUG', 'PYTHONPATH',
-    'USERNAME', 'HOSTNAME', 'OLDPWD', 'LC_ALL', 'LC_CTYPE',
-)
+    path = None
 
 def _make_environ():
     d = {}
@@ -29,62 +20,116 @@ def _make_environ():
                 v = _os.getenv(k)
                 if v is not None:
                     d[k] = v
-        else:
-            for k in _common_env_keys:
-                v = _os.getenv(k)
-                if v is not None:
-                    d[k] = v
     except ImportError:
         pass
     return d
 
-environ = _make_environ()
+class _Environ:
+    def __init__(self, initial):
+        self._data = initial
+    def __getitem__(self, key):
+        return self._data[key]
+    def __setitem__(self, key, value):
+        print("DEBUG: os.environ.__setitem__(%s, %s)" % (key, value), flush=True)
+        self._data[key] = value
+        try:
+            import _os
+            print("DEBUG: calling _os.putenv", flush=True)
+            _os.putenv(key, value)
+        except Exception as e:
+            print("DEBUG: os.environ.__setitem__ failed: %s" % e, flush=True)
+            pass
+    def __delitem__(self, key):
+        del self._data[key]
+        try:
+            import _os
+            _os.unsetenv(key)
+        except: pass
+    def __contains__(self, key):
+        return key in self._data
+    def __repr__(self):
+        return repr(self._data)
+    def __len__(self):
+        return len(self._data)
+    def keys(self): return self._data.keys()
+    def values(self): return self._data.values()
+    def items(self): return self._data.items()
+    def get(self, key, default=None): return self._data.get(key, default)
 
-def getpid():
+environ = _Environ(_make_environ())
+
+def getenv(key, default=None):
     try:
-        import _thread
-        return _thread.getpid()
-    except ImportError:
-        return 0
+        import _os
+        v = _os.getenv(key)
+        return v if v is not None else default
+    except: return default
+
+def putenv(key, value):
+    try:
+        import _os
+        _os.putenv(key, value)
+        environ._data[key] = value
+    except: pass
+
+def unsetenv(key):
+    try:
+        import _os
+        _os.unsetenv(key)
+        if key in environ._data:
+            del environ._data[key]
+    except: pass
 
 def getcwd():
     try:
         import _os
-        cwd = _os.getcwd()
-        if cwd is not None:
-            return cwd
-    except ImportError:
-        pass
-    return "."
+        return _os.getcwd()
+    except: return "."
 
 def chdir(path):
     try:
         import _os
         _os.chdir(path)
-    except ImportError:
-        pass
+    except: pass
 
 def listdir(path='.'):
     try:
         import _os
-        if hasattr(_os, 'listdir'):
-            return _os.listdir(path)
-    except ImportError:
-        pass
-    return []
+        return _os.listdir(path)
+    except: return []
 
 def remove(path):
     try:
         import _os
-        if hasattr(_os, 'remove'):
-            _os.remove(path)
-    except ImportError:
-        pass
+        _os.remove(path)
+    except: pass
 
 def rmdir(path):
     try:
         import _os
-        if hasattr(_os, 'rmdir'):
-            _os.rmdir(path)
-    except ImportError:
-        pass
+        _os.rmdir(path)
+    except: pass
+
+def waitpid(pid, options):
+    try:
+        import _os
+        return _os.waitpid(pid, options)
+    except: return (0, 0)
+
+def kill(pid, sig):
+    try:
+        import _os
+        _os.kill(pid, sig)
+    except: pass
+
+def pipe():
+    try:
+        import _os
+        return _os.pipe()
+    except: return (0, 0)
+
+def getpid():
+    try:
+        import _thread
+        return _thread.getpid()
+    except: return 0

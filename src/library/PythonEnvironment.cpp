@@ -1,4 +1,5 @@
 #include <protoPython/PythonEnvironment.h>
+#include <protoPython/SignalModule.h>
 #include <protoPython/PythonModuleProvider.h>
 #include <protoPython/NativeModuleProvider.h>
 #include <protoPython/SysModule.h>
@@ -22,6 +23,8 @@
 #include <protoPython/CollectionsAbcModule.h>
 #include <protoPython/AtexitModule.h>
 #include <protoPython/ExecutionEngine.h>
+#include <protoPython/Parser.h>
+#include <protoPython/Compiler.h>
 #include <protoCore.h>
 #include <algorithm>
 #include <atomic>
@@ -34,6 +37,7 @@
 #include <fstream>
 #include <sstream>
 #include <vector>
+#include <unordered_set>
 
 namespace protoPython {
 
@@ -4421,6 +4425,8 @@ static const proto::ProtoObject* py_dict_popitem(
 
 /** thread_local member initialization */
 thread_local PythonEnvironment* PythonEnvironment::s_threadEnv = nullptr;
+thread_local const proto::ProtoObject* PythonEnvironment::s_currentFrame = nullptr;
+thread_local const proto::ProtoObject* PythonEnvironment::s_currentGlobals = nullptr;
 
 /** Thread-local trace function and pending exception (no mutex in hot path). */
 static thread_local const proto::ProtoObject* s_threadTraceFunction = nullptr;
@@ -4438,6 +4444,32 @@ void PythonEnvironment::registerContext(proto::ProtoContext* ctx, PythonEnvironm
 void PythonEnvironment::unregisterContext(proto::ProtoContext* ctx) {
     if (std::getenv("PROTO_THREAD_DIAG")) std::cerr << "[proto-thread] unregisterContext ctx=" << ctx << " tid=" << std::this_thread::get_id() << "\n" << std::flush;
     s_threadEnv = nullptr;
+}
+
+void PythonEnvironment::setCurrentFrame(const proto::ProtoObject* frame) {
+    s_currentFrame = frame;
+}
+
+const proto::ProtoObject* PythonEnvironment::getCurrentFrame() {
+    return s_currentFrame;
+}
+
+void PythonEnvironment::setCurrentGlobals(const proto::ProtoObject* globals) {
+    s_currentGlobals = globals;
+}
+
+const proto::ProtoObject* PythonEnvironment::getCurrentGlobals() {
+    return s_currentGlobals;
+}
+
+thread_local const proto::ProtoObject* PythonEnvironment::s_currentCodeObject = nullptr;
+
+void PythonEnvironment::setCurrentCodeObject(const proto::ProtoObject* code) {
+    s_currentCodeObject = code;
+}
+
+const proto::ProtoObject* PythonEnvironment::getCurrentCodeObject() {
+    return s_currentCodeObject;
 }
 
 PythonEnvironment* PythonEnvironment::fromContext(proto::ProtoContext* ctx) {
@@ -4922,6 +4954,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     dataString = proto::ProtoString::fromUTF8String(context, "__data__");
     keysString = proto::ProtoString::fromUTF8String(context, "__keys__");
     setItemString = proto::ProtoString::fromUTF8String(context, "__setitem__");
+    initString = proto::ProtoString::fromUTF8String(context, "__init__");
 
     rangeCurString = proto::ProtoString::fromUTF8String(context, "__range_cur__");
     rangeStopString = proto::ProtoString::fromUTF8String(context, "__range_stop__");
@@ -5354,6 +5387,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     nativeProvider->registerModule("math", [](proto::ProtoContext* ctx) { return math::initialize(ctx); });
     nativeProvider->registerModule("time", [](proto::ProtoContext* ctx) { return time_module::initialize(ctx); });
     nativeProvider->registerModule("_os", [](proto::ProtoContext* ctx) { return os_module::initialize(ctx); });
+    nativeProvider->registerModule("_signal", [](proto::ProtoContext* ctx) { return signal_module::initialize(ctx); });
     nativeProvider->registerModule("_thread", [](proto::ProtoContext* ctx) { return thread_module::initialize(ctx); });
     nativeProvider->registerModule("functools", [](proto::ProtoContext* ctx) { return functools::initialize(ctx); });
     nativeProvider->registerModule("itertools", [](proto::ProtoContext* ctx) { return itertools::initialize(ctx); });
@@ -5650,10 +5684,11 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain)
     const proto::ProtoString* fileKey = proto::ProtoString::fromUTF8String(context, "__file__");
     const proto::ProtoString* executedKey = proto::ProtoString::fromUTF8String(context, "__executed__");
     const proto::ProtoObject* fileObj = mod->getAttribute(context, fileKey);
-    const bool willExec = fileObj && fileObj->isString(context) && !mod->getAttribute(context, executedKey);
+    const proto::ProtoObject* execVal = mod->getAttribute(context, executedKey);
+    const bool willExec = fileObj && fileObj->isString(context) && (!execVal || execVal == PROTO_NONE || execVal == PROTO_FALSE);
     if (std::getenv("PROTO_THREAD_DIAG"))
         std::cerr << "[proto-thread-diag] executeModule " << moduleName << " willExec=" << (willExec ? 1 : 0) << "\n" << std::flush;
-    if (fileObj && fileObj->isString(context) && !mod->getAttribute(context, executedKey)) {
+    if (willExec) {
         std::string path;
         fileObj->asString(context)->toUTF8String(context, path);
         if (path.size() >= 3 && path.compare(path.size() - 3, 3, ".py") == 0) {
@@ -5665,28 +5700,48 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain)
                 buf << f.rdbuf();
                 std::string source = buf.str();
                 f.close();
-                if (builtinsModule) {
-                    const proto::ProtoObject* execFn = builtinsModule->getAttribute(context, proto::ProtoString::fromUTF8String(context, "exec"));
-                    if (execFn && execFn->asMethod(context)) {
+                Parser parser(source);
+                std::unique_ptr<ModuleNode> node = parser.parseModule();
+                if (std::getenv("PROTO_THREAD_DIAG"))
+                    std::cerr << "[proto-thread-diag] parseModule " << moduleName << " node=" << node.get() << " err=" << (parser.hasError() ? 1 : 0) << "\n" << std::flush;
+                if (!parser.hasError() && node) {
+                    Compiler compiler(context, path);
+                    bool compileOk = compiler.compileModule(node.get());
+                    if (std::getenv("PROTO_THREAD_DIAG"))
+                        std::cerr << "[proto-thread-diag] compileModule " << moduleName << " ok=" << (compileOk ? 1 : 0) << "\n" << std::flush;
+                    if (compileOk) {
+                        const proto::ProtoObject* codeObj = makeCodeObject(context, compiler.getConstants(), compiler.getNames(), compiler.getBytecode());
                         if (std::getenv("PROTO_THREAD_DIAG"))
-                            std::cerr << "[proto-thread-diag] about to exec sourceLen=" << source.size() << "\n" << std::flush;
-                        const proto::ProtoList* args = context->newList()
-                            ->appendLast(context, context->fromUTF8String(source.c_str()))
-                            ->appendLast(context, const_cast<proto::ProtoObject*>(mod));
-                        execFn->asMethod(context)(context, builtinsModule, nullptr, args, nullptr);
-                        if (std::getenv("PROTO_THREAD_DIAG"))
-                            std::cerr << "[proto-thread-diag] exec returned\n" << std::flush;
-                        const proto::ProtoObject* excAfterExec = takePendingException();
-                        if (excAfterExec && excAfterExec != PROTO_NONE) {
-                            handleException(excAfterExec, mod, std::cerr);
-                            return -2;
-                        }
-                        mod = mod->setAttribute(context, executedKey, PROTO_TRUE);
-                        if (std::getenv("PROTO_THREAD_DIAG")) {
-                            const proto::ProtoObject* mainRightAfter = mod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "main"));
-                            std::cerr << "[proto-thread-diag] right after exec mod.hasMain=" << (mainRightAfter && mainRightAfter != PROTO_NONE ? 1 : 0) << "\n" << std::flush;
+                            std::cerr << "[proto-thread-diag] makeCodeObject " << moduleName << " obj=" << codeObj << "\n" << std::flush;
+                        if (codeObj) {
+                            if (std::getenv("PROTO_THREAD_DIAG"))
+                                std::cerr << "[proto-thread-diag] about to execute " << moduleName << "\n" << std::flush;
+                            proto::ProtoObject* mutableMod = const_cast<proto::ProtoObject*>(mod);
+                            const proto::ProtoObject* oldGlobals = getCurrentGlobals();
+                            setCurrentGlobals(mutableMod);
+                            runCodeObject(context, codeObj, mutableMod);
+                            setCurrentGlobals(oldGlobals);
+                            mod = mutableMod;
+                            const proto::ProtoObject* excAfterExec = takePendingException();
+                            if (excAfterExec && excAfterExec != PROTO_NONE) {
+                                handleException(excAfterExec, mod, std::cerr);
+                                return -2;
+                            }
+                            mod = mod->setAttribute(context, executedKey, PROTO_TRUE);
+                            // Update sys.modules
+                            if (sysModule) {
+                                const proto::ProtoObject* mods = sysModule->getAttribute(context, proto::ProtoString::fromUTF8String(context, "modules"));
+                                if (mods) {
+                                    mods = mods->setAttribute(context, proto::ProtoString::fromUTF8String(context, moduleName.c_str()), mod);
+                                    sysModule = sysModule->setAttribute(context, proto::ProtoString::fromUTF8String(context, "modules"), mods);
+                                }
+                            }
+                            s_threadResolveCache[moduleName] = mod;
                         }
                     }
+                } else if (parser.hasError()) {
+                    handleException(takePendingException(), mod, std::cerr);
+                    return -1;
                 }
             }
         }
@@ -6129,8 +6184,8 @@ void PythonEnvironment::runRepl(std::istream& in, std::ostream& out) {
             continue;
         }
 
-        // Step 1345: Auto-indentation (Prepend current indent to line)
-        line = currentIndent + line;
+        // Step 1345: Auto-indentation (Prepend current indent to line if not empty)
+        if (!line.empty()) line = currentIndent + line;
         
         // Step 1315: Empty Line Handling
         if (buffer.empty() && line.empty()) continue;
@@ -6247,6 +6302,7 @@ bool PythonEnvironment::isCompleteBlock(const std::string& code) {
     int p = 0, s = 0, c = 0;
     bool inQuote = false;
     char quoteChar = 0;
+    bool seenTopLevelColon = false;
     
     for (size_t i = 0; i < code.size(); ++i) {
         char ch = code[i];
@@ -6260,6 +6316,22 @@ bool PythonEnvironment::isCompleteBlock(const std::string& code) {
             else if (ch == ']') s--;
             else if (ch == '{') c++;
             else if (ch == '}') c--;
+            else if (ch == '#' && !inQuote) {
+                // Skip comment until end of line
+                while (i < code.size() && code[i] != '\n') i++;
+            }
+            else if (ch == ':' && p == 0 && s == 0 && c == 0) {
+                // Check if this : is at the end of a line (started a compound block)
+                bool foundOnLine = false;
+                for (size_t j = i + 1; j < code.size(); ++j) {
+                    if (code[j] == '\n') break;
+                    if (!isspace(code[j]) && code[j] != '#') {
+                        foundOnLine = true;
+                        break;
+                    }
+                }
+                if (!foundOnLine) seenTopLevelColon = true;
+            }
         }
     }
     
@@ -6267,6 +6339,14 @@ bool PythonEnvironment::isCompleteBlock(const std::string& code) {
     
     size_t last = code.find_last_not_of(" \n\r\t");
     if (last != std::string::npos && code[last] == ':') return false;
+    
+    // If we started a block (top-level colon followed by newline), 
+    // we require an empty line to terminate the block in the REPL.
+    if (seenTopLevelColon) {
+        if (code.size() < 2 || code[code.size() - 2] != '\n') {
+            return false;
+        }
+    }
     
     return true;
 }
@@ -6302,11 +6382,34 @@ const proto::ProtoObject* PythonEnvironment::resolve(const std::string& name) {
         const proto::ProtoObject* modWrapper = context->space->getImportModule(name.c_str(), "val");
         if (modWrapper) {
             result = modWrapper->getAttribute(context, proto::ProtoString::fromUTF8String(context, "val"));
-            if (result && result != PROTO_NONE && sysModule) {
-                const proto::ProtoObject* mods = sysModule->getAttribute(context, proto::ProtoString::fromUTF8String(context, "modules"));
-                if (mods) {
-                    const proto::ProtoObject* updated = mods->setAttribute(context, proto::ProtoString::fromUTF8String(context, name.c_str()), result);
-                    sysModule = sysModule->setAttribute(context, proto::ProtoString::fromUTF8String(context, "modules"), updated);
+            if (std::getenv("PROTO_ENV_DIAG")) std::cerr << "[proto-env] resolve name=" << name << " modWrapper=" << modWrapper << " result=" << result << "\n" << std::flush;
+            if (result && result != PROTO_NONE) {
+                // Check if it's a Python module that needs execution
+                const proto::ProtoString* fileKey = proto::ProtoString::fromUTF8String(context, "__file__");
+                const proto::ProtoString* executedKey = proto::ProtoString::fromUTF8String(context, "__executed__");
+                const proto::ProtoObject* fileObj = result->getAttribute(context, fileKey);
+                const proto::ProtoObject* execVal = result->getAttribute(context, executedKey);
+                if (std::getenv("PROTO_ENV_DIAG")) {
+                    std::string fpath;
+                    if (fileObj && fileObj->isString(context)) fileObj->asString(context)->toUTF8String(context, fpath);
+                    std::cerr << "[proto-env] resolve name=" << name << " fileObj=" << fileObj << " path=" << fpath << " executed=" << (execVal && execVal != PROTO_NONE && execVal != PROTO_FALSE ? 1 : 0) << "\n" << std::flush;
+                }
+                if (fileObj && fileObj->isString(context) && (!execVal || execVal == PROTO_NONE || execVal == PROTO_FALSE)) {
+                    static thread_local std::unordered_set<std::string> resolving;
+                    if (resolving.find(name) == resolving.end()) {
+                        resolving.insert(name);
+                        executeModule(name, false);
+                        resolving.erase(name);
+                        result = modWrapper->getAttribute(context, proto::ProtoString::fromUTF8String(context, "val"));
+                    }
+                }
+
+                if (sysModule) {
+                    const proto::ProtoObject* mods = sysModule->getAttribute(context, proto::ProtoString::fromUTF8String(context, "modules"));
+                    if (mods) {
+                        const proto::ProtoObject* updated = mods->setAttribute(context, proto::ProtoString::fromUTF8String(context, name.c_str()), result);
+                        sysModule = sysModule->setAttribute(context, proto::ProtoString::fromUTF8String(context, "modules"), updated);
+                    }
                 }
             }
         }
@@ -6317,6 +6420,29 @@ const proto::ProtoObject* PythonEnvironment::resolve(const std::string& name) {
         if (builtinsModule) {
             const proto::ProtoObject* attr = builtinsModule->getAttribute(context, proto::ProtoString::fromUTF8String(context, name.c_str()));
             if (attr && attr != PROTO_NONE) result = attr;
+        }
+    }
+
+    // 3. Parent linkage for dotted modules (e.g. os.path)
+    if (result && result != PROTO_NONE && name.find('.') != std::string::npos) {
+        size_t lastDot = name.find_last_of('.');
+        std::string parentName = name.substr(0, lastDot);
+        std::string childName = name.substr(lastDot + 1);
+        const proto::ProtoObject* parent = resolve(parentName);
+        if (parent && parent != PROTO_NONE) {
+            const proto::ProtoObject* newParent = parent->setAttribute(context, proto::ProtoString::fromUTF8String(context, childName.c_str()), result);
+            if (newParent != parent) {
+                // Update sys.modules
+                if (sysModule) {
+                    const proto::ProtoObject* mods = sysModule->getAttribute(context, proto::ProtoString::fromUTF8String(context, "modules"));
+                    if (mods) {
+                        const proto::ProtoObject* updated = mods->setAttribute(context, proto::ProtoString::fromUTF8String(context, parentName.c_str()), newParent);
+                        sysModule = sysModule->setAttribute(context, proto::ProtoString::fromUTF8String(context, "modules"), updated);
+                    }
+                }
+                // Update cache
+                s_threadResolveCache[parentName] = newParent;
+            }
         }
     }
 

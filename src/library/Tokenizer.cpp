@@ -1,6 +1,7 @@
 #include <protoPython/Tokenizer.h>
 #include <cctype>
 #include <stdexcept>
+#include <iostream>
 
 namespace protoPython {
 
@@ -150,36 +151,51 @@ Token Tokenizer::next() {
     }
     /* After a newline we are at line start: count indentation and emit Indent/Dedent. */
     if (atLineStart_) {
-        atLineStart_ = false;
-        if (pos_ >= source_.size()) {
+        size_t tempPos = pos_;
+        int indent = 0;
+        while (tempPos < source_.size() && (source_[tempPos] == ' ' || source_[tempPos] == '\t')) {
+            indent += 1;
+            tempPos++;
+        }
+
+        if (tempPos >= source_.size()) {
+            if (indentStack_.size() > 1) {
+                indentStack_.pop_back();
+                atLineStart_ = true;
+                return makeToken(TokenType::Dedent);
+            }
+            pos_ = tempPos;
             return makeToken(TokenType::EndOfFile);
         }
-        int indent = 0;
-        while (pos_ < source_.size() && (source_[pos_] == ' ' || source_[pos_] == '\t')) {
-            indent += (source_[pos_] == '\t') ? 1 : 1;
-            pos_++;
-        }
-        if (pos_ < source_.size() && source_[pos_] == '#') {
-            /* Comment-only line: skip to newline and re-enter at line start. */
-            skipComment();
+
+        char nextC = source_[tempPos];
+        if (nextC == '\n' || nextC == '\r' || nextC == '#') {
+            pos_ = tempPos;
+            if (nextC == '#') skipComment();
+            if (pos_ < source_.size() && source_[pos_] == '\r') pos_++;
             if (pos_ < source_.size() && source_[pos_] == '\n') {
                 pos_++;
                 line_++;
                 lineStartPos_ = pos_;
-                atLineStart_ = true;
             }
+            atLineStart_ = true;
             return next();
         }
+
         if (indent > indentStack_.back()) {
+            pos_ = tempPos;
             indentStack_.push_back(indent);
+            atLineStart_ = false;
             return makeToken(TokenType::Indent);
         }
         if (indent < indentStack_.back()) {
-            if (indentStack_.size() > 1)
-                indentStack_.pop_back();
+            indentStack_.pop_back();
+            atLineStart_ = true;
             return makeToken(TokenType::Dedent);
         }
-        /* Same indent: fall through to read the next token (no skipWhitespace, we're past indent). */
+        // Same indent
+        pos_ = tempPos;
+        atLineStart_ = false;
     } else {
         skipWhitespace();
     }
@@ -232,8 +248,10 @@ Token Tokenizer::next() {
     if (std::isalpha(static_cast<unsigned char>(c)) || c == '_')
         return scanNameOrKeyword();
     pos_++;
-    Token t;
-    t.type = TokenType::EndOfFile;
+    Token t = makeToken(TokenType::Error);
+    t.value = "Unexpected character: '";
+    t.value += c;
+    t.value += "'";
     return t;
 }
 

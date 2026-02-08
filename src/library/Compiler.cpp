@@ -1,8 +1,12 @@
 #include <protoPython/Compiler.h>
 #include <protoPython/ExecutionEngine.h>
+#include <protoPython/PythonEnvironment.h>
 #include <iostream>
 
 namespace protoPython {
+
+static void collectGlobalsFromNode(ASTNode* node, std::unordered_set<std::string>& globalsOut);
+static void collectDefinedNames(ASTNode* node, std::unordered_set<std::string>& out);
 
 Compiler::Compiler(proto::ProtoContext* ctx, const std::string& filename)
     : ctx_(ctx), filename_(filename) {
@@ -245,25 +249,26 @@ bool Compiler::compileTupleLiteral(TupleLiteralNode* n) {
     return true;
 }
 
+bool Compiler::emitNameOp(const std::string& id, bool isStore) {
+    if (globalNames_.count(id)) {
+        int idx = addName(id);
+        emit(isStore ? OP_STORE_GLOBAL : OP_LOAD_GLOBAL, idx);
+        return true;
+    }
+    auto it = localSlotMap_.find(id);
+    if (it != localSlotMap_.end()) {
+        emit(isStore ? OP_STORE_FAST : OP_LOAD_FAST, it->second);
+        return true;
+    }
+    int idx = addName(id);
+    emit(isStore ? OP_STORE_NAME : OP_LOAD_NAME, idx);
+    return true;
+}
+
 bool Compiler::compileTarget(ASTNode* target, bool isStore) {
     if (!target) return false;
     if (auto* nm = dynamic_cast<NameNode*>(target)) {
-        if (globalNames_.count(nm->id)) {
-            int idx = addName(nm->id);
-            if (isStore) emit(OP_STORE_GLOBAL, idx);
-            else emit(OP_LOAD_GLOBAL, idx);
-            return true;
-        }
-        auto it = localSlotMap_.find(nm->id);
-        if (it != localSlotMap_.end()) {
-            if (isStore) emit(OP_STORE_FAST, it->second);
-            else emit(OP_LOAD_FAST, it->second);
-            return true;
-        }
-        int idx = addName(nm->id);
-        if (isStore) emit(OP_STORE_NAME, idx);
-        else emit(OP_LOAD_NAME, idx);
-        return true;
+        return emitNameOp(nm->id, isStore);
     }
     if (auto* att = dynamic_cast<AttributeNode*>(target)) {
         if (!compileNode(att->value.get())) return false;
@@ -358,12 +363,18 @@ bool Compiler::compileImport(ImportNode* n) {
     // Load module name string
     int idxMod = addConstant(ctx_->fromUTF8String(n->moduleName.c_str()));
     emit(OP_LOAD_CONST, idxMod);
-    // Call with 1 arg
-    emit(OP_CALL_FUNCTION, 1);
+    
+    if (n->isAs) {
+        // Pass True to return the leaf module
+        int idxTrue = addConstant(PROTO_TRUE);
+        emit(OP_LOAD_CONST, idxTrue);
+        emit(OP_CALL_FUNCTION, 2);
+    } else {
+        emit(OP_CALL_FUNCTION, 1);
+    }
+    
     // Store in alias
-    int idxAlias = addName(n->alias);
-    emit(OP_STORE_NAME, idxAlias);
-    return true;
+    return emitNameOp(n->alias, true);
 }
 
 bool Compiler::compileTry(TryNode* n) {
@@ -387,79 +398,78 @@ bool Compiler::statementLeavesValue(ASTNode* node) {
     return true;
 }
 
-static void collectLocalsFromNode(ASTNode* node,
-    std::unordered_set<std::string>& globalsOut,
-    std::unordered_set<std::string>& seenLocals,
-    std::vector<std::string>& localsOrdered) {
+static void collectGlobalsFromNode(ASTNode* node, std::unordered_set<std::string>& globalsOut) {
     if (!node) return;
     if (auto* g = dynamic_cast<GlobalNode*>(node)) {
         for (const auto& name : g->names) globalsOut.insert(name);
         return;
     }
-    if (auto* nm = dynamic_cast<NameNode*>(node)) {
-        if (!globalsOut.count(nm->id) && !seenLocals.count(nm->id)) {
-            seenLocals.insert(nm->id);
-            localsOrdered.push_back(nm->id);
-        }
-        return;
-    }
     if (auto* a = dynamic_cast<AssignNode*>(node)) {
-        collectLocalsFromNode(a->target.get(), globalsOut, seenLocals, localsOrdered);
-        collectLocalsFromNode(a->value.get(), globalsOut, seenLocals, localsOrdered);
+        collectGlobalsFromNode(a->target.get(), globalsOut);
+        collectGlobalsFromNode(a->value.get(), globalsOut);
         return;
     }
     if (auto* s = dynamic_cast<SuiteNode*>(node)) {
-        for (auto& st : s->statements)
-            collectLocalsFromNode(st.get(), globalsOut, seenLocals, localsOrdered);
+        for (auto& st : s->statements) collectGlobalsFromNode(st.get(), globalsOut);
         return;
     }
     if (auto* f = dynamic_cast<ForNode*>(node)) {
-        collectLocalsFromNode(f->target.get(), globalsOut, seenLocals, localsOrdered);
-        collectLocalsFromNode(f->iter.get(), globalsOut, seenLocals, localsOrdered);
-        collectLocalsFromNode(f->body.get(), globalsOut, seenLocals, localsOrdered);
+        collectGlobalsFromNode(f->target.get(), globalsOut);
+        collectGlobalsFromNode(f->iter.get(), globalsOut);
+        collectGlobalsFromNode(f->body.get(), globalsOut);
         return;
     }
     if (auto* iff = dynamic_cast<IfNode*>(node)) {
-        collectLocalsFromNode(iff->test.get(), globalsOut, seenLocals, localsOrdered);
-        collectLocalsFromNode(iff->body.get(), globalsOut, seenLocals, localsOrdered);
-        if (iff->orelse) collectLocalsFromNode(iff->orelse.get(), globalsOut, seenLocals, localsOrdered);
+        collectGlobalsFromNode(iff->test.get(), globalsOut);
+        collectGlobalsFromNode(iff->body.get(), globalsOut);
+        if (iff->orelse) collectGlobalsFromNode(iff->orelse.get(), globalsOut);
         return;
     }
-    if (dynamic_cast<FunctionDefNode*>(node)) {
+    if (auto* tr = dynamic_cast<TryNode*>(node)) {
+        collectGlobalsFromNode(tr->body.get(), globalsOut);
+        collectGlobalsFromNode(tr->handlers.get(), globalsOut);
+        if (tr->orelse) collectGlobalsFromNode(tr->orelse.get(), globalsOut);
+        if (tr->finalbody) collectGlobalsFromNode(tr->finalbody.get(), globalsOut);
         return;
     }
     if (auto* c = dynamic_cast<CallNode*>(node)) {
-        collectLocalsFromNode(c->func.get(), globalsOut, seenLocals, localsOrdered);
-        for (auto& arg : c->args) collectLocalsFromNode(arg.get(), globalsOut, seenLocals, localsOrdered);
+        collectGlobalsFromNode(c->func.get(), globalsOut);
+        for (auto& arg : c->args) collectGlobalsFromNode(arg.get(), globalsOut);
         return;
     }
     if (auto* att = dynamic_cast<AttributeNode*>(node)) {
-        collectLocalsFromNode(att->value.get(), globalsOut, seenLocals, localsOrdered);
+        collectGlobalsFromNode(att->value.get(), globalsOut);
         return;
     }
     if (auto* sub = dynamic_cast<SubscriptNode*>(node)) {
-        collectLocalsFromNode(sub->value.get(), globalsOut, seenLocals, localsOrdered);
-        collectLocalsFromNode(sub->index.get(), globalsOut, seenLocals, localsOrdered);
+        collectGlobalsFromNode(sub->value.get(), globalsOut);
+        collectGlobalsFromNode(sub->index.get(), globalsOut);
+        return;
+    }
+    if (auto* sl = dynamic_cast<SliceNode*>(node)) {
+        if (sl->start) collectGlobalsFromNode(sl->start.get(), globalsOut);
+        if (sl->stop) collectGlobalsFromNode(sl->stop.get(), globalsOut);
+        if (sl->step) collectGlobalsFromNode(sl->step.get(), globalsOut);
         return;
     }
     if (auto* b = dynamic_cast<BinOpNode*>(node)) {
-        collectLocalsFromNode(b->left.get(), globalsOut, seenLocals, localsOrdered);
-        collectLocalsFromNode(b->right.get(), globalsOut, seenLocals, localsOrdered);
+        collectGlobalsFromNode(b->left.get(), globalsOut);
+        collectGlobalsFromNode(b->right.get(), globalsOut);
         return;
     }
     if (auto* lst = dynamic_cast<ListLiteralNode*>(node)) {
-        for (auto& e : lst->elements) collectLocalsFromNode(e.get(), globalsOut, seenLocals, localsOrdered);
+        for (auto& e : lst->elements) collectGlobalsFromNode(e.get(), globalsOut);
         return;
     }
     if (auto* d = dynamic_cast<DictLiteralNode*>(node)) {
         for (size_t i = 0; i < d->keys.size(); ++i) {
-            collectLocalsFromNode(d->keys[i].get(), globalsOut, seenLocals, localsOrdered);
-            collectLocalsFromNode(d->values[i].get(), globalsOut, seenLocals, localsOrdered);
+            collectGlobalsFromNode(d->keys[i].get(), globalsOut);
+            collectGlobalsFromNode(d->values[i].get(), globalsOut);
         }
         return;
     }
     if (auto* tup = dynamic_cast<TupleLiteralNode*>(node)) {
-        for (auto& e : tup->elements) collectLocalsFromNode(e.get(), globalsOut, seenLocals, localsOrdered);
+        for (auto& e : tup->elements) collectGlobalsFromNode(e.get(), globalsOut);
         return;
     }
 }
@@ -469,8 +479,29 @@ void Compiler::collectLocalsFromBody(ASTNode* body,
     std::vector<std::string>& localsOrdered) {
     globalsOut.clear();
     localsOrdered.clear();
-    std::unordered_set<std::string> seenLocals;
-    collectLocalsFromNode(body, globalsOut, seenLocals, localsOrdered);
+    
+    // 1. First pass: find all 'global' declarations
+    collectGlobalsFromNode(body, globalsOut);
+    
+    // 2. Second pass: find all names that are assigned/stored (implicitly local)
+    std::unordered_set<std::string> defined;
+    collectDefinedNames(body, defined);
+    
+    // Filter out those explicitly declared global
+    std::unordered_set<std::string> seen;
+    // We want a stable order, so ideally we'd traverse the AST once more 
+    // to see the order of appearance of these 'defined' names that are NOT global.
+    // However, collectDefinedNames doesn't give us order.
+    // For now, let's just add them.
+    for (const auto& name : defined) {
+        if (globalsOut.find(name) == globalsOut.end()) {
+            if (seen.find(name) == seen.end()) {
+                if (std::getenv("PROTO_ENV_DIAG")) std::cerr << "[proto-compiler] found local: " << name << "\n";
+                localsOrdered.push_back(name);
+                seen.insert(name);
+            }
+        }
+    }
 }
 
 /** Collect names used (read or written) in node into out. */
@@ -564,12 +595,43 @@ static void collectDefinedNames(ASTNode* node, std::unordered_set<std::string>& 
         return;
     }
     if (auto* fn = dynamic_cast<FunctionDefNode*>(node)) {
+        out.insert(fn->name);
+        // Note: parameters are handled separately in compileFunctionDef, 
+        // but adding them here doesn't hurt if we want a complete set of locals.
         for (const auto& p : fn->parameters) out.insert(p);
-        collectDefinedNames(fn->body.get(), out);
+        // We do NOT recurse into fn->body because those are local to the NESTED function.
+        return;
+    }
+    if (auto* cl = dynamic_cast<ClassDefNode*>(node)) {
+        out.insert(cl->name);
+        // We do NOT recurse into cl->body.
+        return;
+    }
+    if (auto* imp = dynamic_cast<ImportNode*>(node)) {
+        if (imp->isAs) {
+            out.insert(imp->alias);
+        } else {
+            // For 'import a.b.c', 'a' is defining in the local scope.
+            std::string root = imp->moduleName;
+            size_t dot = root.find('.');
+            if (dot != std::string::npos) root = root.substr(0, dot);
+            out.insert(root);
+        }
+        return;
+    }
+    if (auto* t = dynamic_cast<TryNode*>(node)) {
+        collectDefinedNames(t->body.get(), out);
+        collectDefinedNames(t->handlers.get(), out);
+        if (t->orelse) collectDefinedNames(t->orelse.get(), out);
+        if (t->finalbody) collectDefinedNames(t->finalbody.get(), out);
         return;
     }
     if (auto* nm = dynamic_cast<NameNode*>(node)) {
         out.insert(nm->id);
+        return;
+    }
+    if (auto* tup = dynamic_cast<TupleLiteralNode*>(node)) {
+        for (auto& e : tup->elements) collectDefinedNames(e.get(), out);
         return;
     }
 }
@@ -669,6 +731,8 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
 
     std::string dynamicReason = getDynamicLocalsReason(n->body.get());
     const bool forceMapped = !dynamicReason.empty();
+    if (std::getenv("PROTO_ENV_DIAG") && forceMapped)
+        std::cerr << "[proto-compiler] forceMapped " << n->name << " reason: " << dynamicReason << "\n";
 
     std::vector<std::string> automaticNames;
     if (!forceMapped) {
@@ -705,8 +769,51 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
     int idx = addConstant(codeObj);
     emit(OP_LOAD_CONST, idx);
     emit(OP_BUILD_FUNCTION, 0);
-    int nameIdx = addName(n->name);
-    emit(OP_STORE_NAME, nameIdx);
+    return emitNameOp(n->name, true);
+}
+
+bool Compiler::compileClassDef(ClassDefNode* n) {
+    if (!n) return false;
+    
+    // 1. Name
+    int nameIdx = addConstant(proto::ProtoString::fromUTF8String(ctx_, n->name.c_str())->asObject(ctx_));
+    emit(OP_LOAD_CONST, nameIdx);
+    
+    // 2. Bases
+    for (auto& b : n->bases) {
+        if (!compileNode(b.get())) return false;
+    }
+    emit(OP_BUILD_TUPLE, static_cast<int>(n->bases.size()));
+    
+    // 3. Body
+    Compiler bodyCompiler(ctx_, filename_);
+    if (!bodyCompiler.compileNode(n->body.get())) return false;
+    bodyCompiler.emit(OP_RETURN_VALUE);
+    bodyCompiler.applyPatches();
+    
+    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode());
+    int coIdx = addConstant(codeObj);
+    emit(OP_LOAD_CONST, coIdx);
+    emit(OP_BUILD_FUNCTION, 0);
+    
+    // 4. Build
+    emit(OP_BUILD_CLASS);
+    
+    // 5. Store
+    return emitNameOp(n->name, true);
+}
+
+bool Compiler::compileCondExpr(CondExprNode* n) {
+    if (!n) return false;
+    if (!compileNode(n->cond.get())) return false;
+    emit(OP_POP_JUMP_IF_FALSE, 0);
+    int elseSlot = bytecodeOffset() - 1;
+    if (!compileNode(n->body.get())) return false;
+    emit(OP_JUMP_ABSOLUTE, 0);
+    int endSlot = bytecodeOffset() - 1;
+    addPatch(elseSlot, bytecodeOffset());
+    if (!compileNode(n->orelse.get())) return false;
+    addPatch(endSlot, bytecodeOffset());
     return true;
 }
 
@@ -714,6 +821,8 @@ bool Compiler::compileNode(ASTNode* node) {
     if (!node) return false;
     if (dynamic_cast<PassNode*>(node)) return true;
     if (auto* fn = dynamic_cast<FunctionDefNode*>(node)) return compileFunctionDef(fn);
+    if (auto* cl = dynamic_cast<ClassDefNode*>(node)) return compileClassDef(cl);
+    if (auto* ce = dynamic_cast<CondExprNode*>(node)) return compileCondExpr(ce);
     if (auto* c = dynamic_cast<ConstantNode*>(node)) return compileConstant(c);
     if (auto* nm = dynamic_cast<NameNode*>(node)) return compileName(nm);
     if (auto* b = dynamic_cast<BinOpNode*>(node)) return compileBinOp(b);
@@ -753,8 +862,8 @@ bool Compiler::compileModule(ModuleNode* mod) {
     }
     for (size_t i = 0; i < mod->body.size(); ++i) {
         if (!compileNode(mod->body[i].get())) return false;
-        if (i + 1 < mod->body.size())
-            bytecode_ = bytecode_->appendLast(ctx_, ctx_->fromInteger(static_cast<int>(OP_POP_TOP)));
+        if (i + 1 < mod->body.size() && statementLeavesValue(mod->body[i].get()))
+            emit(OP_POP_TOP, 0);
     }
     bytecode_ = bytecode_->appendLast(ctx_, ctx_->fromInteger(static_cast<int>(OP_RETURN_VALUE)));
     applyPatches();
@@ -779,15 +888,31 @@ const proto::ProtoObject* makeCodeObject(proto::ProtoContext* ctx,
     return code;
 }
 
+namespace {
+struct CodeObjectScope {
+    CodeObjectScope(const proto::ProtoObject* code) : oldCode(PythonEnvironment::getCurrentCodeObject()) {
+        PythonEnvironment::setCurrentCodeObject(code);
+    }
+    ~CodeObjectScope() {
+        PythonEnvironment::setCurrentCodeObject(oldCode);
+    }
+    const proto::ProtoObject* oldCode;
+};
+}
+
 const proto::ProtoObject* runCodeObject(proto::ProtoContext* ctx,
     const proto::ProtoObject* codeObj,
     proto::ProtoObject*& frame) {
     if (!ctx || !codeObj || !frame) return PROTO_NONE;
+    CodeObjectScope cscope(codeObj);
+
     const proto::ProtoObject* co_consts = codeObj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_consts"));
     const proto::ProtoObject* co_names = codeObj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_names"));
     const proto::ProtoObject* co_code = codeObj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_code"));
+
     if (!co_consts || !co_consts->asList(ctx) || !co_code || !co_code->asList(ctx))
         return PROTO_NONE;
+
     return executeBytecodeRange(ctx, co_consts->asList(ctx), co_code->asList(ctx),
         co_names ? co_names->asList(ctx) : nullptr, frame, 0, co_code->asList(ctx)->getSize(ctx));
 }

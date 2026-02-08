@@ -125,6 +125,8 @@ constexpr int OP_LOAD_FAST = 157;
 constexpr int OP_STORE_FAST = 158;
 /** CALL_FUNCTION_KW: pop name tuple, then kwargs, then positional args, then callable. */
 constexpr int OP_CALL_FUNCTION_KW = 159;
+/** BUILD_CLASS: pop body_callable, bases_tuple, name; build class, push class. */
+constexpr int OP_BUILD_CLASS = 160;
 
 /**
  * @brief Executes a range of bytecode (one basic block). No per-instruction
