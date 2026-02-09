@@ -383,6 +383,7 @@ public:
     void raiseKeyboardInterrupt(proto::ProtoContext* context);
     void raiseSyntaxError(proto::ProtoContext* context, const std::string& msg, int lineno, int offset, const std::string& text);
     void raiseSystemExit(proto::ProtoContext* context, int code);
+    void raiseEOFError(proto::ProtoContext* context);
     void raiseRecursionError(proto::ProtoContext* context);
     void raiseZeroDivisionError(proto::ProtoContext* context);
     void raiseIndexError(proto::ProtoContext* context, const std::string& msg);
@@ -467,6 +468,7 @@ private:
     const proto::ProtoObject* systemExitType{nullptr};
     const proto::ProtoObject* recursionErrorType{nullptr};
     const proto::ProtoObject* stopIterationType{nullptr};
+    const proto::ProtoObject* eofErrorType{nullptr};
     const proto::ProtoObject* zeroDivisionErrorType{nullptr};
     const proto::ProtoObject* indexErrorType{nullptr};
     const proto::ProtoString* iterString{nullptr};

@@ -107,6 +107,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx,
     const proto::ProtoString* py_recursionerror = proto::ProtoString::fromUTF8String(ctx, "RecursionError");
     const proto::ProtoString* py_zerodivisionerror = proto::ProtoString::fromUTF8String(ctx, "ZeroDivisionError");
     const proto::ProtoString* py_indexerror = proto::ProtoString::fromUTF8String(ctx, "IndexError");
+    const proto::ProtoString* py_eoferror = proto::ProtoString::fromUTF8String(ctx, "EOFError");
+    const proto::ProtoString* py_stopiteration = proto::ProtoString::fromUTF8String(ctx, "StopIteration");
 
     const proto::ProtoObject* exceptionType = make_exception_type(ctx, objectProto, typeProto, "Exception", objectProto);
     const proto::ProtoObject* keyErrorType = make_exception_type(ctx, objectProto, typeProto, "KeyError", exceptionType);
@@ -121,6 +123,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx,
     const proto::ProtoObject* recursionErrorType = make_exception_type(ctx, objectProto, typeProto, "RecursionError", exceptionType);
     const proto::ProtoObject* zeroDivisionErrorType = make_exception_type(ctx, objectProto, typeProto, "ZeroDivisionError", exceptionType);
     const proto::ProtoObject* indexErrorType = make_exception_type(ctx, objectProto, typeProto, "IndexError", exceptionType);
+    const proto::ProtoObject* eofErrorType = make_exception_type(ctx, objectProto, typeProto, "EOFError", exceptionType);
+    const proto::ProtoObject* stopIterationType = make_exception_type(ctx, objectProto, typeProto, "StopIteration", exceptionType);
 
     const proto::ProtoObject* mod = ctx->newObject(true);
     mod = mod->setAttribute(ctx, py_exception, exceptionType);
@@ -136,6 +140,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx,
     mod = mod->setAttribute(ctx, py_recursionerror, recursionErrorType);
     mod = mod->setAttribute(ctx, py_zerodivisionerror, zeroDivisionErrorType);
     mod = mod->setAttribute(ctx, py_indexerror, indexErrorType);
+    mod = mod->setAttribute(ctx, py_eoferror, eofErrorType);
+    mod = mod->setAttribute(ctx, py_stopiteration, stopIterationType);
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__name__"), ctx->fromUTF8String("exceptions"));
 
     return mod;

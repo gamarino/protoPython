@@ -100,10 +100,12 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
         frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getFBackString(), PythonEnvironment::getCurrentFrame()));
         frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getFCodeString(), codeObj));
         frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getFGlobalsString(), globalsObj));
+    }
+    frame = const_cast<proto::ProtoObject*>(frame->addParent(ctx, globalsObj));
+    if (env) {
         // locals is the frame itself for now
         frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getFLocalsString(), frame));
     }
-    frame = const_cast<proto::ProtoObject*>(frame->addParent(ctx, globalsObj));
     const proto::ProtoObject* result = nullptr;
     {
         GlobalsScope gscope(globalsObj);
@@ -1262,26 +1264,27 @@ const proto::ProtoObject* executeBytecodeRange(
                 stack.pop_back();
                 const proto::ProtoObject* name = stack.back();
                 stack.pop_back();
-                std::cerr << "[proto-engine] BUILD_CLASS entry: name=" << name << " stack=" << stack.size() << "\n";
+                
                 PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
                 const proto::ProtoString* nameS = env ? env->getNameString() : proto::ProtoString::fromUTF8String(ctx, "__name__");
                 const proto::ProtoString* callS = env ? env->getCallString() : proto::ProtoString::fromUTF8String(ctx, "__call__");
                 
                 proto::ProtoObject* ns = const_cast<proto::ProtoObject*>(ctx->newObject(true));
                 ns = const_cast<proto::ProtoObject*>(ns->setAttribute(ctx, nameS, name));
-                std::cerr << "[proto-engine] BUILD_CLASS ns created: " << ns << "\n";
+                if (env) {
+                    ns = const_cast<proto::ProtoObject*>(ns->setAttribute(ctx, env->getFBackString(), PythonEnvironment::getCurrentFrame()));
+                    ns = const_cast<proto::ProtoObject*>(ns->setAttribute(ctx, env->getFGlobalsString(), PythonEnvironment::getCurrentGlobals()));
+                    ns = const_cast<proto::ProtoObject*>(ns->setAttribute(ctx, env->getFLocalsString(), ns));
+                }
                 
                 // Invoke body with ns as locals
                 if (body) {
                     const proto::ProtoObject* codeObj = body->getAttribute(ctx, env ? env->getCodeString() : proto::ProtoString::fromUTF8String(ctx, "__code__"));
-                    std::cerr << "[proto-engine] BUILD_CLASS body codeObj: " << codeObj << "\n";
                     if (codeObj && codeObj != PROTO_NONE) {
                         runCodeObject(ctx, codeObj, ns);
-                        std::cerr << "[proto-engine] BUILD_CLASS runCodeObject returned, ns=" << ns << "\n";
                     } else {
                         const proto::ProtoObject* callM = body->getAttribute(ctx, callS);
                         if (callM && callM->asMethod(ctx)) {
-                            std::cerr << "[proto-engine] BUILD_CLASS invoking body method\n";
                             callM->asMethod(ctx)(ctx, body, nullptr, ctx->newList(), nullptr);
                         }
                     }
@@ -1302,7 +1305,6 @@ const proto::ProtoObject* executeBytecodeRange(
                 
                 // Copy ns attributes to targetClass
                 const proto::ProtoSparseList* keys = ns->getAttributes(ctx);
-                std::cerr << "[proto-engine] BUILD_CLASS: ns=" << ns << " keys=" << keys << " size=" << (keys ? keys->getSize(ctx) : 0) << "\n";
                 if (keys) {
                     auto it = keys->getIterator(ctx);
                     while (it && it->hasNext(ctx)) {
@@ -1310,19 +1312,12 @@ const proto::ProtoObject* executeBytecodeRange(
                         const proto::ProtoObject* keyObj = reinterpret_cast<const proto::ProtoObject*>(key);
                         if (keyObj && keyObj->isString(ctx)) {
                             const proto::ProtoString* k = keyObj->asString(ctx);
-                            std::string kname;
-                            k->toUTF8String(ctx, kname);
-                            const proto::ProtoObject* attrVal = ns->getAttribute(ctx, k);
-                            std::cerr << "[proto-engine] BUILD_CLASS copying: " << kname << " val=" << attrVal << "\n";
-                            targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(ctx, k, attrVal));
-                            
-                            // Verify set
-                            const proto::ProtoObject* verifyVal = targetClass->getAttribute(ctx, k);
-                            if (verifyVal != attrVal) {
-                                std::cerr << "[proto-engine] BUILD_CLASS ERROR: failed to verify attribute " << kname << "\n";
+                            if (env && (k == env->getFBackString() || k == env->getFLocalsString() || k == env->getFGlobalsString() || k == env->getFCodeString())) {
+                                it = const_cast<proto::ProtoSparseListIterator*>(it)->advance(ctx);
+                                continue;
                             }
-                        } else {
-                            std::cerr << "[proto-engine] BUILD_CLASS skipping key: " << key << " (obj=" << keyObj << ")\n";
+                            const proto::ProtoObject* attrVal = ns->getAttribute(ctx, k);
+                            targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(ctx, k, attrVal));
                         }
                         it = const_cast<proto::ProtoSparseListIterator*>(it)->advance(ctx);
                     }
@@ -1333,7 +1328,8 @@ const proto::ProtoObject* executeBytecodeRange(
 
                 stack.push_back(targetClass);
             }
-        } else if (op == OP_GET_ITER) {
+        }
+ else if (op == OP_GET_ITER) {
             i++;
             if (stack.empty()) continue;
             const proto::ProtoObject* iterable = stack.back();

@@ -790,8 +790,8 @@ static const proto::ProtoObject* py_input(
         return context->fromUTF8String(line.c_str());
     
     if (in && in->eof()) {
-        // Handle EOF? CPython raises EOFError.
-        // For now return empty string, but we should eventually raise EOFError.
+        if (env) env->raiseEOFError(context);
+        return PROTO_NONE;
     }
     return context->fromUTF8String("");
 }
@@ -1144,10 +1144,14 @@ static const proto::ProtoObject* py_globals(
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
     (void)self; (void)parentLink; (void)positionalParameters; (void)keywordParameters;
-    const proto::ProtoObject* g = PythonEnvironment::getCurrentGlobals();
-    if (std::getenv("PROTO_ENV_DIAG")) std::cerr << "[proto-builtins] globals() returning " << g << "\n" << std::flush;
-    if (g) return g;
+    const proto::ProtoObject* f = PythonEnvironment::getCurrentFrame();
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (f && f != PROTO_NONE && env) {
+        const proto::ProtoObject* g = f->getAttribute(context, env->getFGlobalsString());
+        if (g && g != PROTO_NONE) return g;
+    }
+    const proto::ProtoObject* g = PythonEnvironment::getCurrentGlobals();
+    if (g) return g;
     return env ? env->getBuiltins() : PROTO_NONE;
 }
 

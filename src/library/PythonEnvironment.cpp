@@ -4917,6 +4917,13 @@ void PythonEnvironment::raiseSyntaxError(proto::ProtoContext* ctx, const std::st
     }
 }
 
+void PythonEnvironment::raiseEOFError(proto::ProtoContext* ctx) {
+    if (!eofErrorType) return;
+    const proto::ProtoList* args = ctx->newList()->appendLast(ctx, ctx->fromUTF8String("EOF when reading a line"));
+    const proto::ProtoObject* exc = eofErrorType->call(ctx, nullptr, proto::ProtoString::fromUTF8String(ctx, "__call__"), eofErrorType, args, nullptr);
+    if (exc) setPendingException(exc);
+}
+
 void PythonEnvironment::raiseSystemExit(proto::ProtoContext* ctx, int code) {
     if (!systemExitType) return;
     const proto::ProtoList* args = ctx->newList()->appendLast(ctx, ctx->fromInteger(code));
@@ -5503,6 +5510,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     systemExitType = exceptionsMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "SystemExit"));
     recursionErrorType = exceptionsMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "RecursionError"));
     stopIterationType = exceptionsMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "StopIteration"));
+    eofErrorType = exceptionsMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "EOFError"));
     zeroDivisionErrorType = exceptionsMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "ZeroDivisionError"));
     indexErrorType = exceptionsMod->getAttribute(context, proto::ProtoString::fromUTF8String(context, "IndexError"));
     nativeProvider->registerModule("exceptions", [exceptionsMod](proto::ProtoContext*) { return exceptionsMod; });
@@ -5766,14 +5774,11 @@ int PythonEnvironment::executeString(const std::string& source, const std::strin
 int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain) {
     registerContext(context, this);
     
-    // Check resolve cache first to avoid re-triggering resolve() logic if already known
-    const proto::ProtoObject* mod = nullptr;
-    auto it = s_threadResolveCache.find(moduleName);
-    if (it != s_threadResolveCache.end()) mod = it->second;
-    
-    if (!mod) mod = resolve(moduleName);
-    if (mod == nullptr || mod == PROTO_NONE)
-        return -1;
+    // 1. Get/Load module object via ProtoSpace directly to avoid recursion with resolve()
+    const proto::ProtoObject* modWrapper = context->space->getImportModule(moduleName.c_str(), "val");
+    if (!modWrapper) return -1;
+    const proto::ProtoObject* mod = modWrapper->getAttribute(context, proto::ProtoString::fromUTF8String(context, "val"));
+    if (!mod || mod == PROTO_NONE) return -1;
 
     if (asMain) {
         const proto::ProtoString* nameS = proto::ProtoString::fromUTF8String(context, "__name__");
@@ -5817,6 +5822,13 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain)
                             if (std::getenv("PROTO_THREAD_DIAG"))
                                 std::cerr << "[proto-thread-diag] about to execute " << moduleName << "\n" << std::flush;
                             proto::ProtoObject* mutableMod = const_cast<proto::ProtoObject*>(mod);
+                            
+                            // Batch 1: Set frame attributes on module object
+                            mutableMod = const_cast<proto::ProtoObject*>(mutableMod->setAttribute(context, getFBackString(), PythonEnvironment::getCurrentFrame()));
+                            mutableMod = const_cast<proto::ProtoObject*>(mutableMod->setAttribute(context, getFCodeString(), codeObj));
+                            mutableMod = const_cast<proto::ProtoObject*>(mutableMod->setAttribute(context, getFGlobalsString(), mutableMod));
+                            mutableMod = const_cast<proto::ProtoObject*>(mutableMod->setAttribute(context, getFLocalsString(), mutableMod));
+
                             const proto::ProtoObject* oldGlobals = getCurrentGlobals();
                             setCurrentGlobals(mutableMod);
                             // Set executed flag early to prevent double execution if an error occurs

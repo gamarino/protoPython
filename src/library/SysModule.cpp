@@ -92,6 +92,41 @@ static const proto::ProtoObject* sys_gettrace(
     return PROTO_NONE; 
 }
 
+static const proto::ProtoObject* sys_getframe(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    (void)self;
+    (void)parentLink;
+    (void)keywordParameters;
+    int depth = 0;
+    if (positionalParameters->getSize(context) > 0) {
+        const proto::ProtoObject* arg = positionalParameters->getAt(context, 0);
+        if (arg->isInteger(context)) depth = static_cast<int>(arg->asLong(context));
+    }
+    
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (depth < 0) {
+        if (env) env->raiseValueError(context, context->fromUTF8String("_getframe() depth must be >= 0"));
+        return PROTO_NONE;
+    }
+
+    const proto::ProtoObject* frame = PythonEnvironment::getCurrentFrame();
+    const proto::ProtoString* f_back_s = env ? env->getFBackString() : proto::ProtoString::fromUTF8String(context, "f_back");
+    
+    for (int i = 0; i < depth; ++i) {
+        if (!frame || frame == PROTO_NONE) {
+            if (env) env->raiseValueError(context, context->fromUTF8String("call stack is not deep enough"));
+            return PROTO_NONE;
+        }
+        frame = frame->getAttribute(context, f_back_s);
+    }
+    
+    return frame ? frame : PROTO_NONE;
+}
+
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment* env,
                                      const std::vector<std::string>* argv) {
     const proto::ProtoObject* sys = ctx->newObject(true);
