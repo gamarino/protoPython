@@ -26,19 +26,9 @@ static const proto::ProtoObject* py_getenv(
     if (!keyObj->isString(ctx)) return PROTO_NONE;
     std::string key;
     keyObj->asString(ctx)->toUTF8String(ctx, key);
-#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
-    for (char** p = environ; p && *p; ++p) {
-        const char* eq = std::strchr(*p, '=');
-        if (eq && eq > *p) {
-            size_t klen = static_cast<size_t>(eq - *p);
-            if (klen == key.size() && std::strncmp(*p, key.c_str(), klen) == 0) {
-                return ctx->fromUTF8String(eq + 1);
-            }
-        }
-    }
-#endif
-    if (posArgs->getSize(ctx) >= 2)
-        return posArgs->getAt(ctx, 1);
+    const char* val = std::getenv(key.c_str());
+    if (val) return ctx->fromUTF8String(val);
+    if (posArgs->getSize(ctx) >= 2) return posArgs->getAt(ctx, 1);
     return PROTO_NONE;
 }
 
@@ -153,8 +143,10 @@ static const proto::ProtoObject* py_setenv(
     std::string key, val;
     keyObj->asString(ctx)->toUTF8String(ctx, key);
     valObj->asString(ctx)->toUTF8String(ctx, val);
-    if (std::getenv("PROTO_ENV_DIAG")) std::cerr << "[proto-os] setenv key=" << key << " val=" << val << "\n";
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        std::cerr << "[proto-os] setenv key=" << key << " val=" << val << "\n" << std::flush;
+    }
     setenv(key.c_str(), val.c_str(), 1);
 #endif
     return PROTO_NONE;
@@ -172,6 +164,9 @@ static const proto::ProtoObject* py_unsetenv(
     std::string key;
     keyObj->asString(ctx)->toUTF8String(ctx, key);
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        std::cerr << "[proto-os] unsetenv key=" << key << "\n" << std::flush;
+    }
     unsetenv(key.c_str());
 #endif
     return PROTO_NONE;
@@ -260,6 +255,10 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     const proto::ProtoObject* mod = ctx->newObject(true);
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "getenv"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_getenv));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "putenv"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_setenv));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "unsetenv"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_unsetenv));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "getcwd"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_getcwd));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "chdir"),
@@ -272,10 +271,6 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_rmdir));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "environ_keys"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_environ_keys));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "putenv"),
-        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_setenv));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "unsetenv"),
-        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_unsetenv));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "waitpid"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_waitpid));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "kill"),

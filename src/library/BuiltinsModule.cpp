@@ -1596,14 +1596,14 @@ static const proto::ProtoObject* py_ascii(
     std::string s;
     reprObj->asString(context)->toUTF8String(context, s);
     
-    // If obj was already a string, its repr() escaped non-ASCII.
-    // If obj was something else, it might have returned unicode.
-    // We escape any character that is not printable ASCII (32-126).
     std::string out;
     for (unsigned char c : s) {
         if (c >= 32 && c < 127) {
             out += c;
-        } else {
+        } else if (c == '\n') out += "\\n";
+        else if (c == '\r') out += "\\r";
+        else if (c == '\t') out += "\\t";
+        else {
             char buf[8];
             snprintf(buf, sizeof(buf), "\\x%02x", c);
             out += buf;

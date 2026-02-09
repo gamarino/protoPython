@@ -141,6 +141,7 @@ Token Tokenizer::scanNameOrKeyword() {
     else if (t.value == "is") t.type = TokenType::Is;
     else if (t.value == "yield") t.type = TokenType::Yield;
     else if (t.value == "pass") t.type = TokenType::Pass;
+    else if (t.value == "del") t.type = TokenType::Del;
     return t;
 }
 

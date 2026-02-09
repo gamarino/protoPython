@@ -382,6 +382,26 @@ static const proto::ProtoObject* py_list_setitem(
     return PROTO_NONE;
 }
 
+static const proto::ProtoObject* py_list_delitem(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoString* dataName = PythonEnvironment::fromContext(context)->getDataString();
+    const proto::ProtoObject* data = self->getAttribute(context, dataName);
+    if (!data || !data->asList(context)) return PROTO_NONE;
+    const proto::ProtoList* list = data->asList(context);
+    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    int index = static_cast<int>(positionalParameters->getAt(context, 0)->asLong(context));
+    unsigned long size = list->getSize(context);
+    if (index < 0) index += static_cast<int>(size);
+    if (index < 0 || static_cast<unsigned long>(index) >= size) return PROTO_NONE;
+    const proto::ProtoList* newList = list->removeAt(context, index);
+    self->setAttribute(context, dataName, newList->asObject(context));
+    return PROTO_NONE;
+}
+
 static const proto::ProtoObject* py_list_iter(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -631,7 +651,8 @@ static const proto::ProtoObject* py_dict_getitem(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
-    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "__data__");
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::ProtoString* dataName = env ? env->getDataString() : proto::ProtoString::fromUTF8String(context, "__data__");
     const proto::ProtoObject* data = self->getAttribute(context, dataName);
     if (!data || !data->asSparseList(context)) return PROTO_NONE;
 
@@ -653,7 +674,8 @@ static const proto::ProtoObject* py_dict_setitem(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
-    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "__data__");
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::ProtoString* dataName = env ? env->getDataString() : proto::ProtoString::fromUTF8String(context, "__data__");
     const proto::ProtoObject* data = self->getAttribute(context, dataName);
     if (!data || !data->asSparseList(context)) return PROTO_NONE;
     if (positionalParameters->getSize(context) < 2) return PROTO_NONE;
@@ -665,11 +687,48 @@ static const proto::ProtoObject* py_dict_setitem(
     self->setAttribute(context, dataName, newSparse->asObject(context));
 
     if (!hadKey) {
-        const proto::ProtoString* keysName = proto::ProtoString::fromUTF8String(context, "__keys__");
+        const proto::ProtoString* keysName = env ? env->getKeysString() : proto::ProtoString::fromUTF8String(context, "__keys__");
         const proto::ProtoObject* keysObj = self->getAttribute(context, keysName);
         const proto::ProtoList* keysList = keysObj && keysObj->asList(context) ? keysObj->asList(context) : context->newList();
         keysList = keysList->appendLast(context, key);
         self->setAttribute(context, keysName, keysList->asObject(context));
+    }
+    return PROTO_NONE;
+}
+
+static const proto::ProtoObject* py_dict_delitem(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::ProtoString* dataName = env->getDataString();
+    const proto::ProtoObject* data = self->getAttribute(context, dataName);
+    if (!data || !data->asSparseList(context)) return PROTO_NONE;
+    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    const proto::ProtoObject* key = positionalParameters->getAt(context, 0);
+    unsigned long hash = key->getHash(context);
+    
+    if (!data->asSparseList(context)->has(context, hash)) {
+        env->raiseKeyError(context, key);
+        return PROTO_NONE;
+    }
+
+    const proto::ProtoSparseList* newSparse = data->asSparseList(context)->removeAt(context, hash);
+    self->setAttribute(context, dataName, newSparse->asObject(context));
+
+    const proto::ProtoString* keysName = env->getKeysString();
+    const proto::ProtoObject* keysObj = self->getAttribute(context, keysName);
+    if (keysObj && keysObj->asList(context)) {
+        const proto::ProtoList* list = keysObj->asList(context);
+        for (int i = 0; i < list->getSize(context); ++i) {
+            if (list->getAt(context, i)->getHash(context) == hash) {
+                 list = list->removeAt(context, i);
+                 break;
+            }
+        }
+        self->setAttribute(context, keysName, list->asObject(context));
     }
     return PROTO_NONE;
 }
@@ -718,7 +777,12 @@ static const proto::ProtoObject* py_dict_contains(
     if (!data || !data->asSparseList(context)) return PROTO_FALSE;
     if (positionalParameters->getSize(context) < 1) return PROTO_FALSE;
     const proto::ProtoObject* key = positionalParameters->getAt(context, 0);
-    return data->asSparseList(context)->has(context, key->getHash(context)) ? PROTO_TRUE : PROTO_FALSE;
+    unsigned long h = key->getHash(context);
+    bool found = data->asSparseList(context)->has(context, h);
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        std::cerr << "[proto-dict] contains self=" << self << " key=" << (key->isString(context) ? "str" : "other") << " hash=" << h << " found=" << found << "\n" << std::flush;
+    }
+    return found ? PROTO_TRUE : PROTO_FALSE;
 }
 
 static const proto::ProtoObject* py_dict_eq(
@@ -4052,7 +4116,11 @@ static const proto::ProtoObject* py_dict_get(
     const proto::ProtoObject* data = self->getAttribute(context, dataName);
     const proto::ProtoSparseList* dict = data && data->asSparseList(context) ? data->asSparseList(context) : nullptr;
     if (!dict) return defaultVal;
-    const proto::ProtoObject* val = dict->getAt(context, key->getHash(context));
+    unsigned long hash = key->getHash(context);
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        std::cerr << "[proto-dict] get self=" << self << " key=" << (key->isString(context) ? "str" : "other") << " hash=" << hash << "\n" << std::flush;
+    }
+    const proto::ProtoObject* val = dict->getAt(context, hash);
     return val ? val : defaultVal;
 }
 
@@ -4648,6 +4716,7 @@ PythonEnvironment::~PythonEnvironment() {
         remove_if_match(reinterpret_cast<const proto::ProtoObject*>(__pos__));
         
         remove_if_match(reinterpret_cast<const proto::ProtoObject*>(setItemString));
+        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(delItemString));
         remove_if_match(reinterpret_cast<const proto::ProtoObject*>(dataString));
         remove_if_match(reinterpret_cast<const proto::ProtoObject*>(keysString));
         
@@ -4894,6 +4963,10 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     co_automatic_count = proto::ProtoString::fromUTF8String(context, "co_automatic_count");
     selfDunder = proto::ProtoString::fromUTF8String(context, "__self__");
     funcDunder = proto::ProtoString::fromUTF8String(context, "__func__");
+    f_back = proto::ProtoString::fromUTF8String(context, "f_back");
+    f_code = proto::ProtoString::fromUTF8String(context, "f_code");
+    f_globals = proto::ProtoString::fromUTF8String(context, "f_globals");
+    f_locals = proto::ProtoString::fromUTF8String(context, "f_locals");
 
     __iadd__ = proto::ProtoString::fromUTF8String(context, "__iadd__");
     __isub__ = proto::ProtoString::fromUTF8String(context, "__isub__");
@@ -4919,6 +4992,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     __pos__ = proto::ProtoString::fromUTF8String(context, "__pos__");
 
     setItemString = proto::ProtoString::fromUTF8String(context, "__setitem__");
+    delItemString = proto::ProtoString::fromUTF8String(context, "__delitem__");
     dataString = proto::ProtoString::fromUTF8String(context, "__data__");
     keysString = proto::ProtoString::fromUTF8String(context, "__keys__");
 
@@ -4967,9 +5041,10 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     setDunderString = proto::ProtoString::fromUTF8String(context, "__set__");
     delDunderString = proto::ProtoString::fromUTF8String(context, "__delete__");
     getItemString = proto::ProtoString::fromUTF8String(context, "__getitem__");
+    setItemString = proto::ProtoString::fromUTF8String(context, "__setitem__");
+    delItemString = proto::ProtoString::fromUTF8String(context, "__delitem__");
     dataString = proto::ProtoString::fromUTF8String(context, "__data__");
     keysString = proto::ProtoString::fromUTF8String(context, "__keys__");
-    setItemString = proto::ProtoString::fromUTF8String(context, "__setitem__");
     initString = proto::ProtoString::fromUTF8String(context, "__init__");
 
     rangeCurString = proto::ProtoString::fromUTF8String(context, "__range_cur__");
@@ -5159,6 +5234,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     listPrototype = listPrototype->setAttribute(context, py_len, context->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_len));
     listPrototype = listPrototype->setAttribute(context, py_getitem, context->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_getitem));
     listPrototype = listPrototype->setAttribute(context, py_setitem, context->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_setitem));
+    listPrototype = listPrototype->setAttribute(context, delItemString, context->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_delitem));
     listPrototype = listPrototype->setAttribute(context, py_iter, context->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_iter));
     listPrototype = listPrototype->setAttribute(context, py_contains, context->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_contains));
     listPrototype = listPrototype->setAttribute(context, py_eq, context->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_eq));
@@ -5203,6 +5279,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     dictPrototype = dictPrototype->setAttribute(context, py_name, context->fromUTF8String("dict"));
     dictPrototype = dictPrototype->setAttribute(context, py_getitem, context->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_getitem));
     dictPrototype = dictPrototype->setAttribute(context, py_setitem, context->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_setitem));
+    dictPrototype = dictPrototype->setAttribute(context, delItemString, context->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_delitem));
     dictPrototype = dictPrototype->setAttribute(context, py_len, context->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_len));
     dictPrototype = dictPrototype->setAttribute(context, py_iter, context->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_iter));
     dictPrototype = dictPrototype->setAttribute(context, py_iter_proto, listIterProto);
@@ -5588,6 +5665,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
         addRoot(reinterpret_cast<const proto::ProtoObject*>(__pos__));
         
         addRoot(reinterpret_cast<const proto::ProtoObject*>(setItemString));
+        addRoot(reinterpret_cast<const proto::ProtoObject*>(delItemString));
         addRoot(reinterpret_cast<const proto::ProtoObject*>(dataString));
         addRoot(reinterpret_cast<const proto::ProtoObject*>(keysString));
         

@@ -96,6 +96,13 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
 
     proto::ProtoObject* frame = const_cast<proto::ProtoObject*>(calleeCtx->newObject(true));
     if (!frame) return PROTO_NONE;
+    if (env) {
+        frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getFBackString(), PythonEnvironment::getCurrentFrame()));
+        frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getFCodeString(), codeObj));
+        frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getFGlobalsString(), globalsObj));
+        // locals is the frame itself for now
+        frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getFLocalsString(), frame));
+    }
     frame = const_cast<proto::ProtoObject*>(frame->addParent(ctx, globalsObj));
     const proto::ProtoObject* result = nullptr;
     {
@@ -425,6 +432,20 @@ static const proto::ProtoObject* invokeCallable(proto::ProtoContext* ctx,
 const proto::ProtoObject* invokePythonCallable(proto::ProtoContext* ctx,
     const proto::ProtoObject* callable, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
     return invokeCallable(ctx, callable, args, kwargs);
+}
+
+static const proto::ProtoObject* invokeDunder(proto::ProtoContext* ctx, const proto::ProtoObject* container, const proto::ProtoString* name, const proto::ProtoList* args) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    const proto::ProtoObject* method = env ? env->getAttribute(ctx, container, name) : container->getAttribute(ctx, name);
+    if (!method || method == PROTO_NONE) return nullptr;
+
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        std::string n;
+        name->toUTF8String(ctx, n);
+        std::cerr << "[proto-engine] invokeDunder container=" << container << " name=" << n << " method=" << method << " isMethod=" << method->isMethod(ctx) << " argsSize=" << args->getSize(ctx) << "\n" << std::flush;
+    }
+
+    return invokeCallable(ctx, method, args);
 }
 
 const proto::ProtoObject* executeBytecodeRange(
@@ -1059,23 +1080,31 @@ const proto::ProtoObject* executeBytecodeRange(
             stack.pop_back();
             const proto::ProtoObject* container = stack.back();
             stack.pop_back();
-            const proto::ProtoObject* getitem = container->getAttribute(ctx, env ? env->getGetItemString() : proto::ProtoString::fromUTF8String(ctx, "__getitem__"));
-            if (getitem && getitem->asMethod(ctx)) {
-                const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, key);
-                const proto::ProtoObject* result = getitem->asMethod(ctx)(ctx, container, nullptr, oneArg, nullptr);
-                if (result) stack.push_back(result);
+            
+            const proto::ProtoString* getItemS = env ? env->getGetItemString() : proto::ProtoString::fromUTF8String(ctx, "__getitem__");
+            const proto::ProtoList* args = ctx->newList()->appendLast(ctx, key);
+            const proto::ProtoObject* result = invokeDunder(ctx, container, getItemS, args);
+            
+            if (result) {
+                stack.push_back(result);
             } else {
+                // Fallback for minimal objects without __getitem__ (e.g. built-in lists/tuples if dunder is missing)
                 const proto::ProtoObject* data = container->getAttribute(ctx, env ? env->getDataString() : proto::ProtoString::fromUTF8String(ctx, "__data__"));
                 if (data && data->asList(ctx) && key->isInteger(ctx)) {
                     long long idx = key->asLong(ctx);
                     const proto::ProtoList* list = data->asList(ctx);
                     if (idx >= 0 && static_cast<unsigned long>(idx) < list->getSize(ctx)) {
                         stack.push_back(list->getAt(ctx, static_cast<int>(idx)));
+                    } else {
+                        stack.push_back(PROTO_NONE);
                     }
                 } else if (data && data->asSparseList(ctx)) {
                     unsigned long h = key->getHash(ctx);
                     const proto::ProtoObject* val = data->asSparseList(ctx)->getAt(ctx, h);
                     if (val) stack.push_back(val);
+                    else stack.push_back(PROTO_NONE);
+                } else {
+                    stack.push_back(PROTO_NONE);
                 }
             }
         } else if (op == OP_BUILD_MAP) {
@@ -1090,6 +1119,15 @@ const proto::ProtoObject* executeBytecodeRange(
                     const proto::ProtoObject* key = stack.back();
                     stack.pop_back();
                     unsigned long h = key->getHash(ctx);
+                    if (std::getenv("PROTO_ENV_DIAG")) {
+                        std::string kS = "other";
+                        if (key->isString(ctx)) {
+                            std::string ksRaw;
+                            key->asString(ctx)->toUTF8String(ctx, ksRaw);
+                            kS = "str(" + ksRaw + ")";
+                        } else if (key->isInteger(ctx)) kS = "int(" + std::to_string(key->asLong(ctx)) + ")";
+                        std::cerr << "[proto-engine] BUILD_MAP arg=" << arg << " j=" << j << " key=" << kS << " hash=" << h << " val=" << value << "\n" << std::flush;
+                    }
                     data = data->setAt(ctx, h, value);
                     keys = keys->appendLast(ctx, key);
                 }
@@ -1115,13 +1153,8 @@ const proto::ProtoObject* executeBytecodeRange(
             stack.pop_back();
             const proto::ProtoString* setItemS = env ? env->getSetItemString() : proto::ProtoString::fromUTF8String(ctx, "__setitem__");
             const proto::ProtoObject* setitem = container->getAttribute(ctx, setItemS);
-            if (std::getenv("PROTO_ENV_DIAG")) {
-                std::cerr << "[proto-engine] OP_STORE_SUBSCR container=" << container << " setitem=" << setitem << "\n" << std::flush;
-            }
-            if (setitem && setitem->asMethod(ctx)) {
-                const proto::ProtoList* args = ctx->newList()->appendLast(ctx, key)->appendLast(ctx, value);
-                setitem->asMethod(ctx)(ctx, container, nullptr, args, nullptr);
-            }
+            const proto::ProtoList* args = ctx->newList()->appendLast(ctx, key)->appendLast(ctx, value);
+            invokeDunder(ctx, container, setItemS, args);
             /* When container has no __setitem__, subscript assignment is a no-op (e.g. minimal bytecode with BUILD_MAP/BUILD_LIST objects). */
         } else if (op == OP_CALL_FUNCTION_KW) {
             i++;
@@ -1478,6 +1511,47 @@ const proto::ProtoObject* executeBytecodeRange(
         } else if (op == OP_POP_TOP) {
             if (!stack.empty())
                 stack.pop_back();
+        } else if (op == OP_DELETE_NAME || op == OP_DELETE_GLOBAL) {
+            i++;
+            if (frame) {
+                const proto::ProtoObject* nameObj = names->getAt(ctx, arg);
+                if (nameObj && nameObj->isString(ctx)) {
+                    frame->setAttribute(ctx, nameObj->asString(ctx), PROTO_NONE);
+                    // Also check __data__ if frame is a dict
+                    const proto::ProtoObject* data = frame->getAttribute(ctx, env ? env->getDataString() : proto::ProtoString::fromUTF8String(ctx, "__data__"));
+                    if (data && data->asSparseList(ctx)) {
+                        data->asSparseList(ctx)->removeAt(ctx, nameObj->getHash(ctx));
+                    }
+                }
+            }
+            if (env) env->invalidateResolveCache();
+        } else if (op == OP_DELETE_FAST) {
+            i++;
+            const unsigned int nSlots = ctx->getAutomaticLocalsCount();
+            if (arg >= 0 && static_cast<unsigned long>(arg) < nSlots) {
+                proto::ProtoObject** slots = const_cast<proto::ProtoObject**>(ctx->getAutomaticLocals());
+                slots[arg] = nullptr; 
+            }
+        } else if (op == OP_DELETE_ATTR) {
+            i++;
+            if (!stack.empty()) {
+                const proto::ProtoObject* obj = stack.back();
+                stack.pop_back();
+                const proto::ProtoObject* nameObj = names->getAt(ctx, arg);
+                if (nameObj && nameObj->isString(ctx)) {
+                    obj->setAttribute(ctx, nameObj->asString(ctx), PROTO_NONE);
+                }
+            }
+        } else if (op == OP_DELETE_SUBSCR) {
+            if (stack.size() >= 2) {
+                const proto::ProtoObject* key = stack.back();
+                stack.pop_back();
+                const proto::ProtoObject* container = stack.back();
+                stack.pop_back();
+                const proto::ProtoString* delItemS = env ? env->getDelItemString() : proto::ProtoString::fromUTF8String(ctx, "__delitem__");
+                const proto::ProtoList* args = ctx->newList()->appendLast(ctx, key);
+                invokeDunder(ctx, container, delItemS, args);
+            }
         }
     }
     return stack.empty() ? PROTO_NONE : stack.back();

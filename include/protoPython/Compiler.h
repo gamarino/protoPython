@@ -51,6 +51,7 @@ private:
     bool compileDictLiteral(DictLiteralNode* n);
     bool compileTupleLiteral(TupleLiteralNode* n);
     bool compileAssign(AssignNode* n);
+    bool compileDeleteNode(DeleteNode* n);
     bool compileFor(ForNode* n);
     bool compileIf(IfNode* n);
     bool compileGlobal(GlobalNode* n);
@@ -61,8 +62,9 @@ private:
     bool compileClassDef(ClassDefNode* n);
     bool compileCondExpr(CondExprNode* n);
     bool compileSuite(SuiteNode* n);
-    bool compileTarget(ASTNode* target, bool isStore);
-    bool emitNameOp(const std::string& id, bool isStore);
+    enum class TargetCtx { Load, Store, Delete };
+    bool compileTarget(ASTNode* target, TargetCtx ctx);
+    bool emitNameOp(const std::string& id, TargetCtx ctx);
     /** True if executing this node leaves a value on the stack (expression stmt). */
     static bool statementLeavesValue(ASTNode* node);
     /** Collect names from function body: globals from GlobalNode, locals (ordered) from Name/Assign. */

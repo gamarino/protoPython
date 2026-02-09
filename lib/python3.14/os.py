@@ -30,7 +30,6 @@ class _Environ:
     def __getitem__(self, key):
         return self._data[key]
     def __setitem__(self, key, value):
-        print("DEBUG: os.environ.__setitem__(%s, %s)" % (key, value), flush=True)
         self._data[key] = value
         try:
             import _os
@@ -40,11 +39,14 @@ class _Environ:
             print("DEBUG: os.environ.__setitem__ failed: %s" % e, flush=True)
             pass
     def __delitem__(self, key):
+        print("DEBUG: calling os.environ.__delitem__ for", key, flush=True)
         del self._data[key]
         try:
             import _os
             _os.unsetenv(key)
-        except: pass
+        except Exception as e:
+            print("DEBUG: os.environ.__delitem__ failed: %s" % e, flush=True)
+            pass
     def __contains__(self, key):
         return key in self._data
     def __repr__(self):

@@ -125,6 +125,8 @@ public:
     const proto::ProtoString* getNameString() const { return nameString; }
     const proto::ProtoString* getCallString() const { return callString; }
     const proto::ProtoString* getGetItemString() const { return getItemString; }
+    const proto::ProtoString* getSetItemString() const { return setItemString; }
+    const proto::ProtoString* getDelItemString() const { return delItemString; }
 
     const proto::ProtoString* getLenString() const { return lenString; }
     const proto::ProtoString* getBoolString() const { return boolString; }
@@ -163,6 +165,10 @@ public:
     const proto::ProtoString* getCoAutomaticCountString() const { return co_automatic_count; }
     const proto::ProtoString* getSelfDunderString() const { return selfDunder; }
     const proto::ProtoString* getFuncDunderString() const { return funcDunder; }
+    const proto::ProtoString* getFBackString() const { return f_back; }
+    const proto::ProtoString* getFCodeString() const { return f_code; }
+    const proto::ProtoString* getFGlobalsString() const { return f_globals; }
+    const proto::ProtoString* getFLocalsString() const { return f_locals; }
 
     const proto::ProtoString* getIAddString() const { return __iadd__; }
     const proto::ProtoString* getISubString() const { return __isub__; }
@@ -187,7 +193,6 @@ public:
     const proto::ProtoString* getInvertString() const { return __invert__; }
     const proto::ProtoString* getPosString() const { return __pos__; }
 
-    const proto::ProtoString* getSetItemString() const { return setItemString; }
     const proto::ProtoString* getDataString() const { return dataString; }
     const proto::ProtoString* getKeysString() const { return keysString; }
     const proto::ProtoString* getInitString() const { return initString; }
@@ -520,6 +525,10 @@ private:
     const proto::ProtoString* co_automatic_count{nullptr};
     const proto::ProtoString* selfDunder{nullptr};
     const proto::ProtoString* funcDunder{nullptr};
+    const proto::ProtoString* f_back{nullptr};
+    const proto::ProtoString* f_code{nullptr};
+    const proto::ProtoString* f_globals{nullptr};
+    const proto::ProtoString* f_locals{nullptr};
 
     const proto::ProtoString* __iadd__{nullptr};
     const proto::ProtoString* __isub__{nullptr};
@@ -545,6 +554,7 @@ private:
     const proto::ProtoString* __pos__{nullptr};
 
     const proto::ProtoString* setItemString{nullptr};
+    const proto::ProtoString* delItemString{nullptr};
     const proto::ProtoString* dataString{nullptr};
     const proto::ProtoString* keysString{nullptr};
     const proto::ProtoString* initString{nullptr};

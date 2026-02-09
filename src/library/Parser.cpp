@@ -397,6 +397,17 @@ std::unique_ptr<ASTNode> Parser::parseOrExpr() {
 
 std::unique_ptr<ASTNode> Parser::parseStatement() {
     skipNewlines();
+    if (cur_.type == TokenType::Del) {
+        advance();
+        auto d = std::make_unique<DeleteNode>();
+        d->targets.push_back(parsePrimary());
+        while (accept(TokenType::Comma)) {
+            auto t = parsePrimary();
+            if (t) d->targets.push_back(std::move(t));
+            else break;
+        }
+        return d;
+    }
     if (cur_.type == TokenType::Pass) {
         advance();
         return std::make_unique<PassNode>();

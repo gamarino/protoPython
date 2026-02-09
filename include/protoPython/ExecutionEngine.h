@@ -127,6 +127,16 @@ constexpr int OP_STORE_FAST = 158;
 constexpr int OP_CALL_FUNCTION_KW = 159;
 /** BUILD_CLASS: pop body_callable, bases_tuple, name; build class, push class. */
 constexpr int OP_BUILD_CLASS = 160;
+/** DELETE_NAME: delete frame[name] where name = names[index]. */
+constexpr int OP_DELETE_NAME = 161;
+/** DELETE_ATTR: pop obj, delete obj.attr where attr = names[index]. */
+constexpr int OP_DELETE_ATTR = 162;
+/** DELETE_SUBSCR: pop key, pop container; delete container[key]. */
+constexpr int OP_DELETE_SUBSCR = 163;
+/** DELETE_GLOBAL: delete globals[name]. */
+constexpr int OP_DELETE_GLOBAL = 164;
+/** DELETE_FAST: delete ctx->getAutomaticLocals()[arg]. */
+constexpr int OP_DELETE_FAST = 165;
 
 /**
  * @brief Executes a range of bytecode (one basic block). No per-instruction

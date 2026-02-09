@@ -136,6 +136,11 @@ struct TryNode : ASTNode {
     std::unique_ptr<ASTNode> finalbody;
 };
 
+/** del targets... */
+struct DeleteNode : ASTNode {
+    std::vector<std::unique_ptr<ASTNode>> targets;
+};
+
 /** pass (no-op). */
 struct PassNode : ASTNode {};
 

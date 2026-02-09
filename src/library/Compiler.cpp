@@ -47,7 +47,9 @@ void Compiler::emit(int op, int arg) {
                    op == OP_BUILD_SLICE || op == OP_FOR_ITER || op == OP_POP_JUMP_IF_FALSE ||
                    op == OP_JUMP_ABSOLUTE || op == OP_COMPARE_OP || op == OP_BINARY_SUBSCR ||
                    op == OP_STORE_SUBSCR || op == OP_CALL_FUNCTION_KW || 
-                   op == OP_BUILD_FUNCTION || op == OP_GET_ITER);
+                   op == OP_BUILD_FUNCTION || op == OP_GET_ITER ||
+                   op == OP_DELETE_NAME || op == OP_DELETE_GLOBAL || op == OP_DELETE_FAST ||
+                   op == OP_DELETE_ATTR);
     if (hasArg)
         bytecode_ = bytecode_->appendLast(ctx_, ctx_->fromInteger(arg));
 }
@@ -93,19 +95,7 @@ bool Compiler::compileConstant(ConstantNode* n) {
 
 bool Compiler::compileName(NameNode* n) {
     if (!n) return false;
-    if (globalNames_.count(n->id)) {
-        int idx = addName(n->id);
-        emit(OP_LOAD_GLOBAL, idx);
-        return true;
-    }
-    auto it = localSlotMap_.find(n->id);
-    if (it != localSlotMap_.end()) {
-        emit(OP_LOAD_FAST, it->second);
-        return true;
-    }
-    int idx = addName(n->id);
-    emit(OP_LOAD_NAME, idx);
-    return true;
+    return emitNameOp(n->id, TargetCtx::Load);
 }
 
 bool Compiler::compileBinOp(BinOpNode* n) {
@@ -234,7 +224,7 @@ bool Compiler::compileListLiteral(ListLiteralNode* n) {
 bool Compiler::compileDictLiteral(DictLiteralNode* n) {
     if (!n) return false;
     for (size_t i = 0; i < n->keys.size(); ++i) {
-        if (!compileNode(n->values[i].get()) || !compileNode(n->keys[i].get())) return false;
+        if (!compileNode(n->keys[i].get()) || !compileNode(n->values[i].get())) return false;
     }
     emit(OP_BUILD_MAP, static_cast<int>(n->keys.size()));
     return true;
@@ -249,51 +239,64 @@ bool Compiler::compileTupleLiteral(TupleLiteralNode* n) {
     return true;
 }
 
-bool Compiler::emitNameOp(const std::string& id, bool isStore) {
+bool Compiler::emitNameOp(const std::string& id, TargetCtx ctx) {
     if (globalNames_.count(id)) {
         int idx = addName(id);
-        emit(isStore ? OP_STORE_GLOBAL : OP_LOAD_GLOBAL, idx);
+        int op = OP_LOAD_GLOBAL;
+        if (ctx == TargetCtx::Store) op = OP_STORE_GLOBAL;
+        else if (ctx == TargetCtx::Delete) op = OP_DELETE_GLOBAL;
+        emit(op, idx);
         return true;
     }
     auto it = localSlotMap_.find(id);
     if (it != localSlotMap_.end()) {
-        emit(isStore ? OP_STORE_FAST : OP_LOAD_FAST, it->second);
+        int op = OP_LOAD_FAST;
+        if (ctx == TargetCtx::Store) op = OP_STORE_FAST;
+        else if (ctx == TargetCtx::Delete) op = OP_DELETE_FAST;
+        emit(op, it->second);
         return true;
     }
     int idx = addName(id);
-    emit(isStore ? OP_STORE_NAME : OP_LOAD_NAME, idx);
+    int op = OP_LOAD_NAME;
+    if (ctx == TargetCtx::Store) op = OP_STORE_NAME;
+    else if (ctx == TargetCtx::Delete) op = OP_DELETE_NAME;
+    emit(op, idx);
     return true;
 }
 
-bool Compiler::compileTarget(ASTNode* target, bool isStore) {
+bool Compiler::compileTarget(ASTNode* target, TargetCtx ctx) {
     if (!target) return false;
     if (auto* nm = dynamic_cast<NameNode*>(target)) {
-        return emitNameOp(nm->id, isStore);
+        return emitNameOp(nm->id, ctx);
     }
     if (auto* att = dynamic_cast<AttributeNode*>(target)) {
         if (!compileNode(att->value.get())) return false;
         int idx = addName(att->attr);
-        if (isStore)
+        if (ctx == TargetCtx::Store)
             emit(OP_STORE_ATTR, idx);
+        else if (ctx == TargetCtx::Delete)
+            emit(OP_DELETE_ATTR, idx);
         else
             emit(OP_LOAD_ATTR, idx);
         return true;
     }
     if (auto* sub = dynamic_cast<SubscriptNode*>(target)) {
         if (!compileNode(sub->value.get()) || !compileNode(sub->index.get())) return false;
-        if (isStore) {
+        if (ctx == TargetCtx::Store) {
             bytecode_ = bytecode_->appendLast(ctx_, ctx_->fromInteger(OP_ROT_THREE));
             emit(OP_STORE_SUBSCR, 0);
+        } else if (ctx == TargetCtx::Delete) {
+            emit(OP_DELETE_SUBSCR, 0);
         } else {
             emit(OP_BINARY_SUBSCR, 0);
         }
         return true;
     }
     if (auto* tup = dynamic_cast<TupleLiteralNode*>(target)) {
-        if (!isStore) return false;
+        if (ctx != TargetCtx::Store) return false;
         emit(OP_UNPACK_SEQUENCE, static_cast<int>(tup->elements.size()));
         for (auto it = tup->elements.rbegin(); it != tup->elements.rend(); ++it) {
-            if (!compileTarget(it->get(), true)) return false;
+            if (!compileTarget(it->get(), TargetCtx::Store)) return false;
         }
         return true;
     }
@@ -303,7 +306,15 @@ bool Compiler::compileTarget(ASTNode* target, bool isStore) {
 bool Compiler::compileAssign(AssignNode* n) {
     if (!n) return false;
     if (!compileNode(n->value.get())) return false;
-    return compileTarget(n->target.get(), true);
+    return compileTarget(n->target.get(), TargetCtx::Store);
+}
+
+bool Compiler::compileDeleteNode(DeleteNode* n) {
+    if (!n) return false;
+    for (auto& target : n->targets) {
+        if (!compileTarget(target.get(), TargetCtx::Delete)) return false;
+    }
+    return true;
 }
 
 bool Compiler::compileFor(ForNode* n) {
@@ -312,7 +323,7 @@ bool Compiler::compileFor(ForNode* n) {
     int loopStart = bytecodeOffset();
     emit(OP_FOR_ITER, 0);
     int argSlot = bytecodeOffset() - 1;
-    if (!compileTarget(n->target.get(), true)) return false;
+    if (!compileTarget(n->target.get(), TargetCtx::Store)) return false;
     if (!compileNode(n->body.get())) return false;
     emit(OP_JUMP_ABSOLUTE, loopStart);
     int afterLoop = bytecodeOffset();
@@ -374,7 +385,7 @@ bool Compiler::compileImport(ImportNode* n) {
     }
     
     // Store in alias
-    return emitNameOp(n->alias, true);
+    return emitNameOp(n->alias, TargetCtx::Store);
 }
 
 bool Compiler::compileTry(TryNode* n) {
@@ -769,7 +780,7 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
     int idx = addConstant(codeObj);
     emit(OP_LOAD_CONST, idx);
     emit(OP_BUILD_FUNCTION, 0);
-    return emitNameOp(n->name, true);
+    return emitNameOp(n->name, TargetCtx::Store);
 }
 
 bool Compiler::compileClassDef(ClassDefNode* n) {
@@ -800,7 +811,7 @@ bool Compiler::compileClassDef(ClassDefNode* n) {
     emit(OP_BUILD_CLASS);
     
     // 5. Store
-    return emitNameOp(n->name, true);
+    return emitNameOp(n->name, TargetCtx::Store);
 }
 
 bool Compiler::compileCondExpr(CondExprNode* n) {
@@ -834,6 +845,7 @@ bool Compiler::compileNode(ASTNode* node) {
     if (auto* d = dynamic_cast<DictLiteralNode*>(node)) return compileDictLiteral(d);
     if (auto* tup = dynamic_cast<TupleLiteralNode*>(node)) return compileTupleLiteral(tup);
     if (auto* a = dynamic_cast<AssignNode*>(node)) return compileAssign(a);
+    if (auto* d = dynamic_cast<DeleteNode*>(node)) return compileDeleteNode(d);
     if (auto* f = dynamic_cast<ForNode*>(node)) return compileFor(f);
     if (auto* iff = dynamic_cast<IfNode*>(node)) return compileIf(iff);
     if (auto* g = dynamic_cast<GlobalNode*>(node)) return compileGlobal(g);
