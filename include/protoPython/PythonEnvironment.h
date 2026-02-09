@@ -213,6 +213,7 @@ public:
     /**
      * @brief Invalidates the import resolution cache (e.g. after module reload).
      */
+    static PythonEnvironment* getCurrentEnvironment();
     void invalidateResolveCache();
 
     /**

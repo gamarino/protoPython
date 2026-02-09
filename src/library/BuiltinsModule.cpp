@@ -20,9 +20,13 @@ namespace {
 struct GlobalsScope {
     GlobalsScope(const proto::ProtoObject* g) : old(PythonEnvironment::getCurrentGlobals()) {
         PythonEnvironment::setCurrentGlobals(g);
+        PythonEnvironment* env = PythonEnvironment::getCurrentEnvironment();
+        if (env) env->invalidateResolveCache();
     }
     ~GlobalsScope() {
         PythonEnvironment::setCurrentGlobals(old);
+        PythonEnvironment* env = PythonEnvironment::getCurrentEnvironment();
+        if (env) env->invalidateResolveCache();
     }
     const proto::ProtoObject* old;
 };
@@ -321,6 +325,28 @@ static const proto::ProtoObject* py_repr(
         snprintf(buf, sizeof(buf), "%.15g", obj->asDouble(context));
         return context->fromUTF8String(buf);
     }
+    if (obj->isString(context)) {
+        std::string s;
+        obj->asString(context)->toUTF8String(context, s);
+        std::string out = "'";
+        for (unsigned char c : s) {
+            if (c == '\'') out += "\\'";
+            else if (c == '\\') out += "\\\\";
+            else if (c == '\n') out += "\\n";
+            else if (c == '\r') out += "\\r";
+            else if (c == '\t') out += "\\t";
+            else if (c < 32 || c >= 127) {
+                char buf[8];
+                snprintf(buf, sizeof(buf), "\\x%02x", c);
+                out += buf;
+            } else {
+                out += c;
+            }
+        }
+        out += "'";
+        return context->fromUTF8String(out.c_str());
+    }
+
     ::protoPython::PythonEnvironment* env = ::protoPython::PythonEnvironment::fromContext(context);
     const proto::ProtoString* reprS = env ? env->getReprString() : proto::ProtoString::fromUTF8String(context, "__repr__");
     const proto::ProtoList* emptyL = env ? env->getEmptyList() : context->newList();
@@ -343,6 +369,11 @@ static const proto::ProtoObject* py_format(
     if (obj->isDouble(context)) {
         char buf[64];
         snprintf(buf, sizeof(buf), "%.15g", obj->asDouble(context));
+        return context->fromUTF8String(buf);
+    }
+    if (obj->isInteger(context)) {
+        char buf[32];
+        snprintf(buf, sizeof(buf), "%lld", (long long)obj->asLong(context));
         return context->fromUTF8String(buf);
     }
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
@@ -870,19 +901,27 @@ static const proto::ProtoObject* py_eval(
     if (!compiler.compileExpression(expr.get())) return PROTO_NONE;
     const proto::ProtoObject* codeObj = makeCodeObject(context, compiler.getConstants(), compiler.getNames(), compiler.getBytecode());
     if (!codeObj) return PROTO_NONE;
-    proto::ProtoObject* frame = nullptr;
+    proto::ProtoObject* globals = nullptr;
+    proto::ProtoObject* locals = nullptr;
     if (positionalParameters->getSize(context) >= 2) {
         const proto::ProtoObject* g = positionalParameters->getAt(context, 1);
-        if (g && g != PROTO_NONE) frame = const_cast<proto::ProtoObject*>(g);
+        if (g && g != PROTO_NONE) globals = const_cast<proto::ProtoObject*>(g);
     }
-    if (!frame) {
+    if (positionalParameters->getSize(context) >= 3) {
+        const proto::ProtoObject* l = positionalParameters->getAt(context, 2);
+        if (l && l != PROTO_NONE) locals = const_cast<proto::ProtoObject*>(l);
+    }
+    if (!globals) {
         PythonEnvironment* env = PythonEnvironment::fromContext(context);
-        if (env) frame = const_cast<proto::ProtoObject*>(env->getGlobals());
+        if (env) globals = const_cast<proto::ProtoObject*>(env->getGlobals());
     }
-    if (!frame) frame = const_cast<proto::ProtoObject*>(context->newObject(true));
+    if (!globals) globals = const_cast<proto::ProtoObject*>(context->newObject(true));
+    if (!locals) locals = globals;
 
-    GlobalsScope gscope(frame);
-    return runCodeObject(context, codeObj, frame);
+    GlobalsScope gscope(globals);
+    // Note: currently runCodeObject runs in one frame/namespace. 
+    // If globals and locals are different, we primarily use locals for the execution frame.
+    return runCodeObject(context, codeObj, locals);
 }
 
 /** help(obj): stub returning None. */
@@ -1056,21 +1095,25 @@ static const proto::ProtoObject* py_exec(
     }
     const proto::ProtoObject* codeObj = makeCodeObject(context, compiler.getConstants(), compiler.getNames(), compiler.getBytecode());
     if (!codeObj) return PROTO_NONE;
-    proto::ProtoObject* frame = nullptr;
-    const proto::ProtoObject* g_obj = nullptr;
+    proto::ProtoObject* globals = nullptr;
+    proto::ProtoObject* locals = nullptr;
     if (positionalParameters->getSize(context) >= 2) {
-        g_obj = positionalParameters->getAt(context, 1);
-        if (g_obj && g_obj != PROTO_NONE) frame = const_cast<proto::ProtoObject*>(g_obj);
+        const proto::ProtoObject* g = positionalParameters->getAt(context, 1);
+        if (g && g != PROTO_NONE) globals = const_cast<proto::ProtoObject*>(g);
     }
-    if (!frame) {
+    if (positionalParameters->getSize(context) >= 3) {
+        const proto::ProtoObject* l = positionalParameters->getAt(context, 2);
+        if (l && l != PROTO_NONE) locals = const_cast<proto::ProtoObject*>(l);
+    }
+    if (!globals) {
         PythonEnvironment* env = PythonEnvironment::fromContext(context);
-        if (env) frame = const_cast<proto::ProtoObject*>(env->getGlobals());
+        if (env) globals = const_cast<proto::ProtoObject*>(env->getGlobals());
     }
-    if (!frame) frame = const_cast<proto::ProtoObject*>(context->newObject(true));
+    if (!globals) globals = const_cast<proto::ProtoObject*>(context->newObject(true));
+    if (!locals) locals = globals;
 
-    GlobalsScope gscope(frame);
-    const proto::ProtoObject* res = runCodeObject(context, codeObj, frame);
-    return res;
+    GlobalsScope gscope(globals);
+    return runCodeObject(context, codeObj, locals);
 }
 
 /** breakpoint(): no-op stub; real breakpoint requires debugger integration. */
@@ -1120,8 +1163,7 @@ static const proto::ProtoObject* py_locals(
     const proto::ProtoObject* co = PythonEnvironment::getCurrentCodeObject();
     
     if (!f) {
-         PythonEnvironment* env = PythonEnvironment::fromContext(context);
-         return env ? env->getBuiltins() : PROTO_NONE;
+         return py_globals(context, self, parentLink, positionalParameters, keywordParameters);
     }
     
     if (co && context->getAutomaticLocalsCount() > 0) {
@@ -1553,12 +1595,19 @@ static const proto::ProtoObject* py_ascii(
     if (!reprObj || !reprObj->isString(context)) return PROTO_NONE;
     std::string s;
     reprObj->asString(context)->toUTF8String(context, s);
+    
+    // If obj was already a string, its repr() escaped non-ASCII.
+    // If obj was something else, it might have returned unicode.
+    // We escape any character that is not printable ASCII (32-126).
     std::string out;
     for (unsigned char c : s) {
-        if (c >= 32 && c < 127 && c != '\\' && c != '\'') out += c;
-        else if (c == '\\') out += "\\\\";
-        else if (c == '\'') out += "\\'";
-        else { char buf[8]; snprintf(buf, sizeof(buf), "\\x%02x", c); out += buf; }
+        if (c >= 32 && c < 127) {
+            out += c;
+        } else {
+            char buf[8];
+            snprintf(buf, sizeof(buf), "\\x%02x", c);
+            out += buf;
+        }
     }
     return context->fromUTF8String(out.c_str());
 }

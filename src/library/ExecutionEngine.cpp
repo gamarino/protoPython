@@ -29,9 +29,13 @@ struct FrameScope {
 struct GlobalsScope {
     GlobalsScope(const proto::ProtoObject* globals) : oldGlobals(PythonEnvironment::getCurrentGlobals()) {
         PythonEnvironment::setCurrentGlobals(globals);
+        PythonEnvironment* env = PythonEnvironment::getCurrentEnvironment();
+        if (env) env->invalidateResolveCache();
     }
     ~GlobalsScope() {
         PythonEnvironment::setCurrentGlobals(oldGlobals);
+        PythonEnvironment* env = PythonEnvironment::getCurrentEnvironment();
+        if (env) env->invalidateResolveCache();
     }
     const proto::ProtoObject* oldGlobals;
 };
@@ -270,10 +274,29 @@ static const proto::ProtoObject* binaryModulo(proto::ProtoContext* ctx,
         std::string tpl;
         a->asString(ctx)->toUTF8String(ctx, tpl);
         std::string valStr;
-        if (b->isString(ctx)) b->asString(ctx)->toUTF8String(ctx, valStr);
-        else if (b->isInteger(ctx)) valStr = std::to_string(b->asLong(ctx));
-        else if (b->isDouble(ctx)) valStr = std::to_string(b->asDouble(ctx));
-        else valStr = "<?>";
+        if (b->isString(ctx)) {
+            b->asString(ctx)->toUTF8String(ctx, valStr);
+        } else if (b->isInteger(ctx)) {
+            valStr = std::to_string(b->asLong(ctx));
+        } else if (b->isDouble(ctx)) {
+            valStr = std::to_string(b->asDouble(ctx));
+        } else if (b == PROTO_TRUE) {
+            valStr = "True";
+        } else if (b == PROTO_FALSE) {
+            valStr = "False";
+        } else if (b == PROTO_NONE) {
+            valStr = "None";
+        } else {
+            PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+            const proto::ProtoObject* strM = b->getAttribute(ctx, env ? env->getStrString() : proto::ProtoString::fromUTF8String(ctx, "__str__"));
+            if (strM && strM->asMethod(ctx)) {
+                const proto::ProtoObject* rs = strM->asMethod(ctx)(ctx, b, nullptr, env ? env->getEmptyList() : ctx->newList(), nullptr);
+                if (rs && rs->isString(ctx)) rs->asString(ctx)->toUTF8String(ctx, valStr);
+                else valStr = "<object>";
+            } else {
+                valStr = "<object>";
+            }
+        }
 
         size_t pos = tpl.find("%s");
         if (pos == std::string::npos) pos = tpl.find("%d");
@@ -446,14 +469,20 @@ const proto::ProtoObject* executeBytecodeRange(
                 const proto::ProtoObject* nameObj = names->getAt(ctx, arg);
                 if (nameObj->isString(ctx)) {
                     const proto::ProtoObject* val = frame->getAttribute(ctx, nameObj->asString(ctx));
-                    if (val) {
+                    if (!val || val == PROTO_NONE) {
+                        const proto::ProtoObject* data = frame->getAttribute(ctx, env ? env->getDataString() : proto::ProtoString::fromUTF8String(ctx, "__data__"));
+                        if (data && data->asSparseList(ctx)) {
+                            val = data->asSparseList(ctx)->getAt(ctx, nameObj->getHash(ctx));
+                        }
+                    }
+                    if (val && val != PROTO_NONE) {
                         stack.push_back(val);
                     } else {
                         if (env) {
                             std::string name;
                             nameObj->asString(ctx)->toUTF8String(ctx, name);
                             val = env->resolve(name);
-                            if (val) {
+                            if (val && val != PROTO_NONE) {
                                 stack.push_back(val);
                             } else {
                                 env->raiseNameError(ctx, name);
@@ -473,8 +502,29 @@ const proto::ProtoObject* executeBytecodeRange(
                 const proto::ProtoObject* val = stack.back();
                 stack.pop_back();
                 if (nameObj->isString(ctx)) {
-                    std::string n; nameObj->asString(ctx)->toUTF8String(ctx, n);
-                    frame = const_cast<proto::ProtoObject*>(frame->setAttribute(ctx, nameObj->asString(ctx), val));
+                    const proto::ProtoString* dataName = env ? env->getDataString() : proto::ProtoString::fromUTF8String(ctx, "__data__");
+                    const proto::ProtoObject* dataObj = frame->getAttribute(ctx, dataName);
+                    if (dataObj && dataObj->asSparseList(ctx)) {
+                        unsigned long h = nameObj->getHash(ctx);
+                        const proto::ProtoSparseList* data = dataObj->asSparseList(ctx)->setAt(ctx, h, val);
+                        frame->setAttribute(ctx, dataName, data->asObject(ctx));
+                        
+                        const proto::ProtoString* keysName = env ? env->getKeysString() : proto::ProtoString::fromUTF8String(ctx, "__keys__");
+                        const proto::ProtoObject* keysObj = frame->getAttribute(ctx, keysName);
+                        if (keysObj && keysObj->asList(ctx)) {
+                            const proto::ProtoList* keys = keysObj->asList(ctx);
+                            bool found = false;
+                            for (unsigned long j = 0; j < keys->getSize(ctx); ++j) {
+                                if (keys->getAt(ctx, j)->getHash(ctx) == h) { found = true; break; }
+                            }
+                            if (!found) {
+                                keys = keys->appendLast(ctx, nameObj);
+                                frame->setAttribute(ctx, keysName, keys->asObject(ctx));
+                            }
+                        }
+                    } else {
+                        frame = const_cast<proto::ProtoObject*>(frame->setAttribute(ctx, nameObj->asString(ctx), val));
+                    }
                     PythonEnvironment::setCurrentFrame(frame);
                     if (sync_globals) {
                         PythonEnvironment::setCurrentGlobals(frame);

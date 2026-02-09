@@ -4465,6 +4465,10 @@ void PythonEnvironment::setCurrentGlobals(const proto::ProtoObject* globals) {
     s_currentGlobals = globals;
 }
 
+PythonEnvironment* PythonEnvironment::getCurrentEnvironment() {
+    return s_threadEnv;
+}
+
 const proto::ProtoObject* PythonEnvironment::getCurrentGlobals() {
     return s_currentGlobals;
 }
@@ -6472,7 +6476,24 @@ const proto::ProtoObject* PythonEnvironment::resolve(const std::string& name) {
         }
     }
 
-    // 2. Fall back to builtins (e.g. len, print, type as callable)
+    // 2. Try current module's globals
+    if (!result || result == PROTO_NONE) {
+        if (s_currentGlobals) {
+            result = s_currentGlobals->getAttribute(context, proto::ProtoString::fromUTF8String(context, name.c_str()));
+            if (!result || result == PROTO_NONE) {
+                const proto::ProtoObject* data = s_currentGlobals->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"));
+                if (data && data->asSparseList(context)) {
+                    unsigned long h = proto::ProtoString::fromUTF8String(context, name.c_str())->getHash(context);
+                    result = data->asSparseList(context)->getAt(context, h);
+                    if (std::getenv("PROTO_ENV_DIAG")) {
+                        std::cerr << "[proto-env] resolve(dict) name=" << name << " hash=" << h << " found=" << (result && result != PROTO_NONE) << "\n" << std::flush;
+                    }
+                }
+            }
+        }
+    }
+
+    // 3. Fall back to builtins (e.g. len, print, type as callable)
     if (!result || result == PROTO_NONE) {
         if (builtinsModule) {
             const proto::ProtoObject* attr = builtinsModule->getAttribute(context, proto::ProtoString::fromUTF8String(context, name.c_str()));
