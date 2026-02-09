@@ -214,21 +214,23 @@ static const proto::ProtoObject* thread_bootstrap(
         if (ep) {
             env = static_cast<protoPython::PythonEnvironment*>(ep->getPointer(context));
             if (env) {
-                protoPython::PythonEnvironment::registerContext(context, env);
                 callableIdx = 1;
             }
         }
     }
-    const proto::ProtoObject* callable = args->getAt(context, static_cast<int>(callableIdx));
-    const proto::ProtoList* argList = context->newList();
-    for (unsigned long i = callableIdx + 1; i < args->getSize(context); ++i)
-        argList = argList->appendLast(context, args->getAt(context, static_cast<int>(i)));
-    if (std::getenv("PROTO_THREAD_DIAG")) {
-        std::cerr << "[proto-thread-diag] thread_bootstrap calling callable=" << callable << " with args=" << argList->getSize(context) << "\n" << std::flush;
+
+    const proto::ProtoObject* result = nullptr;
+    {
+        protoPython::PythonEnvironment::ContextScope scope(env, context);
+        const proto::ProtoObject* callable = args->getAt(context, static_cast<int>(callableIdx));
+        const proto::ProtoList* argList = context->newList();
+        for (unsigned long i = callableIdx + 1; i < args->getSize(context); ++i)
+            argList = argList->appendLast(context, args->getAt(context, static_cast<int>(i)));
+        if (std::getenv("PROTO_THREAD_DIAG")) {
+            std::cerr << "[proto-thread-diag] thread_bootstrap calling callable=" << callable << " with args=" << argList->getSize(context) << "\n" << std::flush;
+        }
+        result = protoPython::invokePythonCallable(context, callable, argList, nullptr);
     }
-    const proto::ProtoObject* result = protoPython::invokePythonCallable(context, callable, argList, nullptr);
-    if (env)
-        protoPython::PythonEnvironment::unregisterContext(context);
     return result;
 }
 

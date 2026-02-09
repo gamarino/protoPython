@@ -65,6 +65,47 @@ static const proto::ProtoObject* py_object_call(
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters);
+
+// --- SafeImportLock Implementation ---
+
+PythonEnvironment::SafeImportLock::SafeImportLock(PythonEnvironment* env, proto::ProtoContext* ctx)
+    : env_(env), ctx_(ctx) {
+    if (ctx_ && ctx_->thread) {
+        auto* threadImpl = proto::toImpl<proto::ProtoThreadImplementation>(ctx_->thread);
+        auto* space = threadImpl->space;
+        
+        {
+            std::lock_guard<std::recursive_mutex> lock(proto::ProtoSpace::globalMutex);
+            space->parkedThreads++;
+            space->gcCV.notify_all();
+        }
+        
+        env_->importLock_.lock();
+        
+        {
+            std::unique_lock<std::recursive_mutex> lock(proto::ProtoSpace::globalMutex);
+            if (space->stwFlag.load()) {
+                space->gcCV.notify_all();
+                space->stopTheWorldCV.wait(lock, [space] { return !space->stwFlag.load(); });
+            }
+            space->parkedThreads--;
+        }
+    } else {
+        env_->importLock_.lock();
+    }
+}
+
+PythonEnvironment::SafeImportLock::~SafeImportLock() {
+    env_->importLock_.unlock();
+}
+
+/** object(): return new bare object instance (used when calling object()). */
+static const proto::ProtoObject* py_object_call(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
     (void)parentLink;
     (void)positionalParameters;
@@ -5728,7 +5769,7 @@ int PythonEnvironment::runModuleMain(const std::string& moduleName) {
 
 int PythonEnvironment::executeString(const std::string& source, const std::string& name) {
     proto::ProtoContext* context = s_threadContext ? s_threadContext : rootContext_;
-    registerContext(context, this);
+    ContextScope scope(this, context);
     const proto::ProtoObject* mod = resolve("__main__", context);
     if (mod == nullptr || mod == PROTO_NONE) {
         // Create a dummy __main__ if it doesn't exist
@@ -5767,10 +5808,10 @@ int PythonEnvironment::executeString(const std::string& source, const std::strin
 }
 
 int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain, proto::ProtoContext* ctx) {
-    std::lock_guard<std::recursive_mutex> lock(importLock_);
+    SafeImportLock lock(this, ctx);
     if (!ctx) ctx = s_threadContext;
     if (!ctx) ctx = rootContext_;
-    registerContext(ctx, this);
+    ContextScope scope(this, ctx);
     
     // 1. Get/Load module object via ProtoSpace directly to avoid recursion with resolve()
     const proto::ProtoObject* modWrapper = ctx->space->getImportModule(ctx, moduleName.c_str(), "val");
@@ -6222,6 +6263,7 @@ std::string PythonEnvironment::formatException(const proto::ProtoObject* exc, co
 void PythonEnvironment::runRepl(std::istream& in, std::ostream& out) {
     proto::ProtoContext* context = s_threadContext ? s_threadContext : rootContext_;
     if (!context || !builtinsModule) return;
+    ContextScope scope(this, context);
     setInteractive(true);
     
     // Install SIGINT handler (Step 1310)
@@ -6572,7 +6614,8 @@ const proto::ProtoObject* PythonEnvironment::resolve(const std::string& name, pr
     }
     
     // 0. Check thread-local cache
-    std::lock_guard<std::recursive_mutex> lock(importLock_);
+    SafeImportLock lock(this, ctx);
+    if (std::getenv("PROTO_THREAD_DIAG")) std::cerr << "[proto-env] resolve name=" << name << " ctx=" << ctx << "\n";
     if (name == "None") return nonePrototype;
     // Type shortcuts always use current env (no cache) so multiple envs per thread stay correct.
     if (name == "object") return objectPrototype;

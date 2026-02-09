@@ -598,6 +598,35 @@ public:
     static std::atomic<bool> s_sigintReceived;
     static std::thread::id s_mainThreadId;
     mutable std::recursive_mutex importLock_;
+
+    /** RAII scope for managing thread-local Python environment and context registration. */
+    class ContextScope {
+    public:
+        ContextScope(PythonEnvironment* env, proto::ProtoContext* ctx) : ctx_(ctx) {
+            prevEnv_ = PythonEnvironment::s_threadEnv;
+            prevCtx_ = PythonEnvironment::s_threadContext;
+            PythonEnvironment::registerContext(ctx, env);
+        }
+        ~ContextScope() {
+            if (std::getenv("PROTO_THREAD_DIAG")) std::cerr << "[proto-thread] ContextScope destruction ctx=" << ctx_ << " tid=" << std::this_thread::get_id() << "\n" << std::flush;
+            PythonEnvironment::s_threadEnv = prevEnv_;
+            PythonEnvironment::s_threadContext = prevCtx_;
+        }
+    private:
+        proto::ProtoContext* ctx_;
+        PythonEnvironment* prevEnv_;
+        proto::ProtoContext* prevCtx_;
+    };
+
+    /** RAII lock for importLock_ that is GC-aware (parks thread while waiting). */
+    class SafeImportLock {
+    public:
+        SafeImportLock(PythonEnvironment* env, proto::ProtoContext* ctx);
+        ~SafeImportLock();
+    private:
+        PythonEnvironment* env_;
+        proto::ProtoContext* ctx_;
+    };
 };
 
 } // namespace protoPython

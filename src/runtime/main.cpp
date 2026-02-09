@@ -4,6 +4,8 @@
  */
 
 #include <protoPython/PythonEnvironment.h>
+#include <protoCore.h>
+#include <proto_internal.h>
 #include <algorithm>
 #include <iostream>
 #include <string>
@@ -177,6 +179,17 @@ int executeModule(protoPython::PythonEnvironment& env, const std::string& module
     }
     if (ret == -3)
         return env.getExitRequested();
+
+    // Wait for worker threads to finish so env stays alive during their execution
+    auto* space = env.getSpace();
+    if (space) {
+        int count = 0;
+        while (space->runningThreads.load() > 1 && count < 100) { // Max 5s wait for stress tests
+            usleep(50000);
+            count++;
+        }
+    }
+
     return EXIT_OK;
 }
 
@@ -212,6 +225,12 @@ int main(int argc, char* argv[]) {
             env.enableDefaultTrace();
         }
         env.runRepl(std::cin, std::cout);
+        
+        auto* space = env.getSpace();
+        if (space) {
+            int count = 0;
+            while (space->runningThreads.load() > 1 && count < 100) { usleep(50000); count++; }
+        }
         return EXIT_OK;
     }
 
@@ -224,6 +243,13 @@ int main(int argc, char* argv[]) {
             env.enableDefaultTrace();
         }
         int ret = env.executeString(options.commandLine, "<string>");
+        
+        auto* space = env.getSpace();
+        if (space) {
+            int count = 0;
+            while (space->runningThreads.load() > 1 && count < 100) { usleep(50000); count++; }
+        }
+
         if (ret == -2) return EXIT_RUNTIME;
         return EXIT_OK;
     }
