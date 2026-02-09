@@ -36,10 +36,17 @@
 #include <cstdio>
 #include <fstream>
 #include <sstream>
+#include <proto_internal.h>
+#include <mutex>
 #include <vector>
 #include <unordered_set>
 
 namespace protoPython {
+
+static bool isEmbeddedValue(const proto::ProtoObject* obj) {
+    if (!obj || obj == PROTO_NONE) return false;
+    return (reinterpret_cast<uintptr_t>(obj) & 0x3FUL) == POINTER_TAG_EMBEDDED_VALUE;
+}
 
 // --- Dunder Methods Implementation ---
 
@@ -4881,6 +4888,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     co_varnames = proto::ProtoString::fromUTF8String(context, "co_varnames");
     co_nparams = proto::ProtoString::fromUTF8String(context, "co_nparams");
     co_automatic_count = proto::ProtoString::fromUTF8String(context, "co_automatic_count");
+    selfDunder = proto::ProtoString::fromUTF8String(context, "__self__");
+    funcDunder = proto::ProtoString::fromUTF8String(context, "__func__");
 
     __iadd__ = proto::ProtoString::fromUTF8String(context, "__iadd__");
     __isub__ = proto::ProtoString::fromUTF8String(context, "__isub__");
@@ -4950,6 +4959,9 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     classString = proto::ProtoString::fromUTF8String(context, "__class__");
     nameString = proto::ProtoString::fromUTF8String(context, "__name__");
     callString = proto::ProtoString::fromUTF8String(context, "__call__");
+    getDunderString = proto::ProtoString::fromUTF8String(context, "__get__");
+    setDunderString = proto::ProtoString::fromUTF8String(context, "__set__");
+    delDunderString = proto::ProtoString::fromUTF8String(context, "__delete__");
     getItemString = proto::ProtoString::fromUTF8String(context, "__getitem__");
     dataString = proto::ProtoString::fromUTF8String(context, "__data__");
     keysString = proto::ProtoString::fromUTF8String(context, "__keys__");
@@ -5671,7 +5683,13 @@ int PythonEnvironment::executeString(const std::string& source, const std::strin
 
 int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain) {
     registerContext(context, this);
-    const proto::ProtoObject* mod = resolve(moduleName);
+    
+    // Check resolve cache first to avoid re-triggering resolve() logic if already known
+    const proto::ProtoObject* mod = nullptr;
+    auto it = s_threadResolveCache.find(moduleName);
+    if (it != s_threadResolveCache.end()) mod = it->second;
+    
+    if (!mod) mod = resolve(moduleName);
     if (mod == nullptr || mod == PROTO_NONE)
         return -1;
 
@@ -5719,6 +5737,9 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain)
                             proto::ProtoObject* mutableMod = const_cast<proto::ProtoObject*>(mod);
                             const proto::ProtoObject* oldGlobals = getCurrentGlobals();
                             setCurrentGlobals(mutableMod);
+                            // Set executed flag early to prevent double execution if an error occurs
+                            mutableMod = const_cast<proto::ProtoObject*>(mutableMod->setAttribute(context, executedKey, PROTO_TRUE));
+                            s_threadResolveCache[moduleName] = mutableMod;
                             runCodeObject(context, codeObj, mutableMod);
                             setCurrentGlobals(oldGlobals);
                             mod = mutableMod;
@@ -5727,7 +5748,6 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain)
                                 handleException(excAfterExec, mod, std::cerr);
                                 return -2;
                             }
-                            mod = mod->setAttribute(context, executedKey, PROTO_TRUE);
                             // Update sys.modules
                             if (sysModule) {
                                 const proto::ProtoObject* mods = sysModule->getAttribute(context, proto::ProtoString::fromUTF8String(context, "modules"));
@@ -5736,7 +5756,6 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain)
                                     sysModule = sysModule->setAttribute(context, proto::ProtoString::fromUTF8String(context, "modules"), mods);
                                 }
                             }
-                            s_threadResolveCache[moduleName] = mod;
                         }
                     }
                 } else if (parser.hasError()) {
@@ -6349,6 +6368,44 @@ bool PythonEnvironment::isCompleteBlock(const std::string& code) {
     }
     
     return true;
+}
+
+const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* ctx, const proto::ProtoObject* obj, const proto::ProtoString* name) {
+    if (!obj) return nullptr;
+    if (isEmbeddedValue(obj)) return obj->getAttribute(ctx, name);
+
+    const proto::ProtoObject* val = obj->getAttribute(ctx, name);
+    if (!val) {
+        std::string nameStr;
+        name->toUTF8String(ctx, nameStr);
+        std::cerr << "getAttribute failed for: " << nameStr << std::endl;
+    }
+    if (val) {
+        const proto::ProtoObject* getM = val->getAttribute(ctx, getDunderString);
+        if (getM && getM->asMethod(ctx)) {
+            const proto::ProtoObject* typeObj = obj->getAttribute(ctx, classString);
+            const proto::ProtoList* getArgs = ctx->newList()->appendLast(ctx, obj)->appendLast(ctx, typeObj ? typeObj : PROTO_NONE);
+            return getM->asMethod(ctx)(ctx, val, nullptr, getArgs, nullptr);
+        } else if (val->isMethod(ctx)) {
+            return ctx->fromMethod(const_cast<proto::ProtoObject*>(obj), val->asMethod(ctx));
+        }
+    }
+    return val;
+}
+
+const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* ctx, const proto::ProtoObject* obj, const proto::ProtoString* name, const proto::ProtoObject* value) {
+    if (!obj) return nullptr;
+    if (isEmbeddedValue(obj)) return obj;
+
+    const proto::ProtoObject* descr = obj->getAttribute(ctx, name);
+    const proto::ProtoObject* setM = descr ? descr->getAttribute(ctx, setDunderString) : nullptr;
+    if (setM && setM->asMethod(ctx)) {
+        const proto::ProtoList* setArgs = ctx->newList()->appendLast(ctx, obj)->appendLast(ctx, value);
+        setM->asMethod(ctx)(ctx, descr, nullptr, setArgs, nullptr);
+        return obj;
+    } else {
+        return obj->setAttribute(ctx, name, value);
+    }
 }
 
 const proto::ProtoObject* PythonEnvironment::resolve(const std::string& name) {

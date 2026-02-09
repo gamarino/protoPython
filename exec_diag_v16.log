@@ -1,0 +1,813 @@
+[proto-thread] registerContext ctx=0x62644db777e0 env=0x7ffc8ca46490 tid=127154530192448
+[proto-env] initializeRootObjects setItemString=0x73a577a36606 via accessor=0x73a577a36606
+[proto-thread] registerContext ctx=0x62644db777e0 env=0x7ffc8ca46490 tid=127154530192448
+[proto-env] resolve name=verify_b1 modWrapper=0x73a5779aea40 result=0x73a5779a9e00
+[proto-env] resolve name=verify_b1 fileObj=0x73a577ae1a06 path=../test/verify_b1.py executed=0
+[proto-thread] registerContext ctx=0x62644db777e0 env=0x7ffc8ca46490 tid=127154530192448
+[proto-env] resolve name=verify_b1 modWrapper=0x73a5779aeb40 result=0x73a5779a9e00
+[proto-env] resolve name=verify_b1 fileObj=0x73a577ae1a06 path=../test/verify_b1.py executed=0
+[proto-thread-diag] executeModule verify_b1 willExec=1
+[proto-thread-diag] open path=../test/verify_b1.py good=1
+[proto-thread-diag] parseModule verify_b1 node=0x62644db7a830 err=0
+[proto-thread-diag] compileModule verify_b1 ok=1
+[proto-thread-diag] makeCodeObject verify_b1 obj=0x73a577cb78c0
+[proto-thread-diag] about to execute verify_b1
+[proto-engine] i=0 instr=0x19801 isInt=1
+[proto-engine] op=102 arg=0 stack=0
+[proto-engine] LOAD_NAME name=__import__ val=0 env=0x7ffc8ca46490
+[proto-engine] LOAD_NAME resolve=__import__ val=0x73a577b269cc
+[proto-engine] i=2 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=0 stack=1
+[proto-engine] i=4 instr=0x1a801 isInt=1
+[proto-engine] op=106 arg=1 stack=2
+[proto-engine] invokeCallable callable=0x73a577b269cc args=1
+[proto-env] resolve name=os modWrapper=0x73a5779d8bc0 result=0x73a5779b2c40
+[proto-env] resolve name=os fileObj=0x73a5779d7a06 path=/home/gamarino/Documentos/proyectos/protoPython/lib/python3.14/os.py executed=0
+[proto-thread] registerContext ctx=0x62644db777e0 env=0x7ffc8ca46490 tid=127154530192448
+[proto-env] resolve name=os modWrapper=0x73a5779d8cc0 result=0x73a5779b2c40
+[proto-env] resolve name=os fileObj=0x73a5779d7a06 path=/home/gamarino/Documentos/proyectos/protoPython/lib/python3.14/os.py executed=0
+[proto-thread-diag] executeModule os willExec=1
+[proto-thread-diag] open path=/home/gamarino/Documentos/proyectos/protoPython/lib/python3.14/os.py good=1
+[proto-thread-diag] parseModule os node=0x62644db7d720 err=0
+[proto-compiler] found local: v
+[proto-compiler] found local: k
+[proto-compiler] found local: _os
+[proto-compiler] found local: d
+[proto-compiler] found local: _os
+[proto-compiler] found local: _os
+[proto-compiler] found local: del
+[proto-compiler] found local: v
+[proto-compiler] found local: _os
+[proto-compiler] found local: _os
+[proto-compiler] found local: del
+[proto-compiler] found local: _os
+[proto-compiler] found local: _os
+[proto-compiler] found local: _os
+[proto-compiler] found local: _os
+[proto-compiler] found local: _os
+[proto-compiler] found local: _os
+[proto-compiler] found local: _os
+[proto-compiler] found local: _os
+[proto-compiler] found local: _os
+[proto-compiler] found local: _thread
+[proto-thread-diag] compileModule os ok=1
+[proto-thread-diag] makeCodeObject os obj=0x73a577f2a740
+[proto-thread-diag] about to execute os
+[proto-engine] i=0 instr=0x19801 isInt=1
+[proto-engine] op=102 arg=0 stack=0
+[proto-engine] LOAD_NAME name=print val=0 env=0x7ffc8ca46490
+[proto-engine] LOAD_NAME resolve=print val=0x73a577af80cc
+[proto-engine] i=2 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=0 stack=1
+[proto-engine] i=4 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=1 stack=2
+[proto-engine] i=6 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=2 stack=3
+[proto-engine] i=8 instr=0x27c01 isInt=1
+[proto-engine] op=159 arg=2 stack=4
+[proto-engine] invokeCallable callable=0x73a577af80cc args=1
+[proto-builtins] py_print called size=1
+os.py START
+[proto-engine] i=10 instr=0x21401 isInt=1
+[proto-engine] op=133 arg=102 stack=1
+[proto-engine] i=11 instr=0x19801 isInt=1
+[proto-engine] op=102 arg=1 stack=0
+[proto-engine] LOAD_NAME name=__import__ val=0 env=0x7ffc8ca46490
+[proto-engine] LOAD_NAME resolve=__import__ val=0x73a577b269cc
+[proto-engine] i=13 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=3 stack=1
+[proto-engine] i=15 instr=0x1a801 isInt=1
+[proto-engine] op=106 arg=1 stack=2
+[proto-engine] invokeCallable callable=0x73a577b269cc args=1
+[proto-env] resolve name=sys modWrapper=0x73a5779dae00 result=0x73a577aca700
+[proto-env] resolve name=sys fileObj=0 path= executed=0
+[proto-engine] i=17 instr=0x19c01 isInt=1
+[proto-engine] op=103 arg=2 stack=1
+[proto-engine] STORE_NAME sys into frame=0x73a5779b2c40
+[proto-engine]   (also synced globals)
+[proto-engine] i=19 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=4 stack=0
+[proto-engine] i=21 instr=0x19c01 isInt=1
+[proto-engine] op=103 arg=3 stack=1
+[proto-engine] STORE_NAME name into frame=0x73a5779b2c40
+[proto-engine]   (also synced globals)
+[proto-engine] i=23 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=5 stack=0
+[proto-engine] i=25 instr=0x19c01 isInt=1
+[proto-engine] op=103 arg=4 stack=1
+[proto-engine] STORE_NAME pathsep into frame=0x73a5779b2c40
+[proto-engine]   (also synced globals)
+[proto-engine] i=27 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=6 stack=0
+[proto-engine] i=29 instr=0x19c01 isInt=1
+[proto-engine] op=103 arg=5 stack=1
+[proto-engine] STORE_NAME sep into frame=0x73a5779b2c40
+[proto-engine]   (also synced globals)
+[proto-engine] i=31 instr=0x19801 isInt=1
+[proto-engine] op=102 arg=0 stack=0
+[proto-engine] LOAD_NAME name=print val=0 env=0x7ffc8ca46490
+[proto-engine] LOAD_NAME resolve=print val=0x73a577af80cc
+[proto-engine] i=33 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=7 stack=1
+[proto-engine] i=35 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=1 stack=2
+[proto-engine] i=37 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=2 stack=3
+[proto-engine] i=39 instr=0x27c01 isInt=1
+[proto-engine] op=159 arg=2 stack=4
+[proto-engine] invokeCallable callable=0x73a577af80cc args=1
+[proto-builtins] py_print called size=1
+os.py about to import os.path
+[proto-engine] i=41 instr=0x21401 isInt=1
+[proto-engine] op=133 arg=102 stack=1
+[proto-engine] i=42 instr=0x19801 isInt=1
+[proto-engine] op=102 arg=1 stack=0
+[proto-engine] LOAD_NAME name=__import__ val=0 env=0x7ffc8ca46490
+[proto-engine] LOAD_NAME resolve=__import__ val=0x73a577b269cc
+[proto-engine] i=44 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=8 stack=1
+[proto-engine] i=46 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=1 stack=2
+[proto-engine] i=48 instr=0x1a801 isInt=1
+[proto-engine] op=106 arg=2 stack=3
+[proto-engine] invokeCallable callable=0x73a577b269cc args=2
+[proto-env] resolve name=os.path modWrapper=0x73a5779dd8c0 result=0x73a5779dae80
+[proto-env] resolve name=os.path fileObj=0 path= executed=0
+[proto-engine] i=50 instr=0x19c01 isInt=1
+[proto-engine] op=103 arg=6 stack=1
+[proto-engine] STORE_NAME path into frame=0x73a5779b2c40
+[proto-engine]   (also synced globals)
+[proto-engine] i=52 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=9 stack=0
+[proto-engine] i=54 instr=0x27001 isInt=1
+[proto-engine] op=156 arg=0 stack=1
+[proto-engine] i=56 instr=0x19c01 isInt=1
+[proto-engine] op=103 arg=7 stack=1
+[proto-engine] STORE_NAME _make_environ into frame=0x73a5779b2c40
+[proto-engine]   (also synced globals)
+[proto-engine] i=58 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=10 stack=0
+[proto-engine] i=60 instr=0x1d801 isInt=1
+[proto-engine] op=118 arg=0 stack=1
+[proto-engine] i=62 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=11 stack=2
+[proto-engine] i=64 instr=0x27001 isInt=1
+[proto-engine] op=156 arg=0 stack=3
+[proto-engine] i=66 instr=0x28001 isInt=1
+[proto-engine] op=160 arg=103 stack=3
+[proto-engine] i=0 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=0 stack=0
+[proto-engine] i=2 instr=0x27001 isInt=1
+[proto-engine] op=156 arg=0 stack=1
+[proto-engine] i=4 instr=0x19c01 isInt=1
+[proto-engine] op=103 arg=0 stack=1
+[proto-engine] STORE_NAME __init__ into frame=0x73a577f3b2c0
+[proto-engine] i=6 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=1 stack=0
+[proto-engine] i=8 instr=0x27001 isInt=1
+[proto-engine] op=156 arg=0 stack=1
+[proto-engine] i=10 instr=0x19c01 isInt=1
+[proto-engine] op=103 arg=1 stack=1
+[proto-engine] STORE_NAME __getitem__ into frame=0x73a577f3b2c0
+[proto-engine] i=12 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=2 stack=0
+[proto-engine] i=14 instr=0x27001 isInt=1
+[proto-engine] op=156 arg=0 stack=1
+[proto-engine] i=16 instr=0x19c01 isInt=1
+[proto-engine] op=103 arg=2 stack=1
+[proto-engine] STORE_NAME __setitem__ into frame=0x73a577f3b2c0
+[proto-engine] i=18 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=3 stack=0
+[proto-engine] i=20 instr=0x27001 isInt=1
+[proto-engine] op=156 arg=0 stack=1
+[proto-engine] i=22 instr=0x19c01 isInt=1
+[proto-engine] op=103 arg=3 stack=1
+[proto-engine] STORE_NAME __delitem__ into frame=0x73a577f3b2c0
+[proto-engine] i=24 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=4 stack=0
+[proto-engine] i=26 instr=0x27001 isInt=1
+[proto-engine] op=156 arg=0 stack=1
+[proto-engine] i=28 instr=0x19c01 isInt=1
+[proto-engine] op=103 arg=4 stack=1
+[proto-engine] STORE_NAME __contains__ into frame=0x73a577f3b2c0
+[proto-engine] i=30 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=5 stack=0
+[proto-engine] i=32 instr=0x27001 isInt=1
+[proto-engine] op=156 arg=0 stack=1
+[proto-engine] i=34 instr=0x19c01 isInt=1
+[proto-engine] op=103 arg=5 stack=1
+[proto-engine] STORE_NAME __repr__ into frame=0x73a577f3b2c0
+[proto-engine] i=36 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=6 stack=0
+[proto-engine] i=38 instr=0x27001 isInt=1
+[proto-engine] op=156 arg=0 stack=1
+[proto-engine] i=40 instr=0x19c01 isInt=1
+[proto-engine] op=103 arg=6 stack=1
+[proto-engine] STORE_NAME __len__ into frame=0x73a577f3b2c0
+[proto-engine] i=42 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=7 stack=0
+[proto-engine] i=44 instr=0x27001 isInt=1
+[proto-engine] op=156 arg=0 stack=1
+[proto-engine] i=46 instr=0x19c01 isInt=1
+[proto-engine] op=103 arg=7 stack=1
+[proto-engine] STORE_NAME keys into frame=0x73a577f3b2c0
+[proto-engine] i=48 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=8 stack=0
+[proto-engine] i=50 instr=0x27001 isInt=1
+[proto-engine] op=156 arg=0 stack=1
+[proto-engine] i=52 instr=0x19c01 isInt=1
+[proto-engine] op=103 arg=8 stack=1
+[proto-engine] STORE_NAME values into frame=0x73a577f3b2c0
+[proto-engine] i=54 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=9 stack=0
+[proto-engine] i=56 instr=0x27001 isInt=1
+[proto-engine] op=156 arg=0 stack=1
+[proto-engine] i=58 instr=0x19c01 isInt=1
+[proto-engine] op=103 arg=9 stack=1
+[proto-engine] STORE_NAME items into frame=0x73a577f3b2c0
+[proto-engine] i=60 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=10 stack=0
+[proto-engine] i=62 instr=0x27001 isInt=1
+[proto-engine] op=156 arg=0 stack=1
+[proto-engine] i=64 instr=0x19c01 isInt=1
+[proto-engine] op=103 arg=10 stack=1
+[proto-engine] STORE_NAME get into frame=0x73a577f3b2c0
+[proto-engine] i=66 instr=0x19401 isInt=1
+[proto-engine] op=101 arg=0 stack=0
+[proto-engine] i=67 instr=0x19c01 isInt=1
+[proto-engine] op=103 arg=8 stack=1
+[proto-engine] STORE_NAME _Environ into frame=0x73a5779b2c40
+[proto-engine]   (also synced globals)
+[proto-engine] i=69 instr=0x21401 isInt=1
+[proto-engine] op=133 arg=102 stack=0
+[proto-engine] i=70 instr=0x19801 isInt=1
+[proto-engine] op=102 arg=8 stack=0
+[proto-engine] LOAD_NAME name=_Environ val=0x73a577f45080 env=0x7ffc8ca46490
+[proto-engine] i=72 instr=0x19801 isInt=1
+[proto-engine] op=102 arg=7 stack=1
+[proto-engine] LOAD_NAME name=_make_environ val=0x73a577f395c0 env=0x7ffc8ca46490
+[proto-engine] i=74 instr=0x1a801 isInt=1
+[proto-engine] op=106 arg=0 stack=2
+[proto-engine] invokeCallable callable=0x73a577f395c0 args=0
+[proto-engine] invokeCallable callAttr=0x73a577f39b8c
+[proto-engine] i=0 instr=0x1d001 isInt=1
+[proto-engine] op=116 arg=0 stack=0
+[proto-engine] i=2 instr=0x27801 isInt=1
+[proto-engine] op=158 arg=3 stack=1
+[proto-engine] i=4 instr=0x19801 isInt=1
+[proto-engine] op=102 arg=0 stack=0
+[proto-engine] LOAD_NAME name=__import__ val=0 env=0x7ffc8ca46490
+[proto-engine] LOAD_NAME resolve=__import__ val=0x73a577b269cc
+[proto-engine] i=6 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=0 stack=1
+[proto-engine] i=8 instr=0x1a801 isInt=1
+[proto-engine] op=106 arg=1 stack=2
+[proto-engine] invokeCallable callable=0x73a577b269cc args=1
+[proto-env] resolve name=_os modWrapper=0x73a5779e2300 result=0x73a5779dd940
+[proto-env] resolve name=_os fileObj=0 path= executed=0
+[proto-engine] i=10 instr=0x27801 isInt=1
+[proto-engine] op=158 arg=2 stack=1
+[proto-engine] i=12 instr=0x19801 isInt=1
+[proto-engine] op=102 arg=1 stack=0
+[proto-engine] LOAD_NAME name=hasattr val=0 env=0x7ffc8ca46490
+[proto-engine] LOAD_NAME resolve=hasattr val=0x73a577b1e48c
+[proto-engine] i=14 instr=0x27401 isInt=1
+[proto-engine] op=157 arg=2 stack=1
+[proto-engine] i=16 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=1 stack=2
+[proto-engine] i=18 instr=0x1a801 isInt=1
+[proto-engine] op=106 arg=2 stack=3
+[proto-engine] invokeCallable callable=0x73a577b1e48c args=2
+[proto-engine] i=20 instr=0x1b801 isInt=1
+[proto-engine] op=110 arg=63 stack=1
+[proto-engine] i=22 instr=0x27401 isInt=1
+[proto-engine] op=157 arg=2 stack=0
+[proto-engine] i=24 instr=0x1c001 isInt=1
+[proto-engine] op=112 arg=2 stack=1
+[proto-engine] i=26 instr=0x1a801 isInt=1
+[proto-engine] op=106 arg=0 stack=1
+[proto-engine] invokeCallable callable=0x73a577fa454c args=0
+[proto-engine] i=28 instr=0x1dc01 isInt=1
+[proto-engine] op=119 arg=0 stack=1
+[proto-engine] i=30 instr=0x1e001 isInt=1
+[proto-engine] op=120 arg=63 stack=0
+[proto-engine] i=32 instr=0x27801 isInt=1
+[proto-engine] op=158 arg=1 stack=0
+[proto-engine] i=34 instr=0x27401 isInt=1
+[proto-engine] op=157 arg=2 stack=0
+[proto-engine] i=36 instr=0x1c001 isInt=1
+[proto-engine] op=112 arg=3 stack=1
+[proto-engine] i=38 instr=0x27401 isInt=1
+[proto-engine] op=157 arg=1 stack=1
+[proto-engine] i=40 instr=0x1a801 isInt=1
+[proto-engine] op=106 arg=1 stack=1
+[proto-engine] i=42 instr=0x27801 isInt=1
+[proto-engine] op=158 arg=0 stack=1
+[proto-engine] i=44 instr=0x27401 isInt=1
+[proto-engine] op=157 arg=0 stack=0
+[proto-engine] i=46 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=2 stack=1
+[proto-engine] i=48 instr=0x1b401 isInt=1
+[proto-engine] op=109 arg=9 stack=2
+[proto-engine] i=50 instr=0x1b801 isInt=1
+[proto-engine] op=110 arg=61 stack=1
+[proto-engine] i=52 instr=0x27401 isInt=1
+[proto-engine] op=157 arg=0 stack=0
+[proto-engine] i=54 instr=0x27401 isInt=1
+[proto-engine] op=157 arg=3 stack=1
+[proto-engine] i=56 instr=0x27401 isInt=1
+[proto-engine] op=157 arg=1 stack=2
+[proto-engine] i=58 instr=0x26401 isInt=1
+[proto-engine] op=153 arg=117 stack=2
+[proto-engine] i=59 instr=0x1d401 isInt=1
+[proto-engine] op=117 arg=0 stack=2
+[proto-engine] i=61 instr=0x1bc01 isInt=1
+[proto-engine] op=111 arg=30 stack=2
+[proto-engine] i=30 instr=0x1e001 isInt=1
+[proto-engine] op=120 arg=63 stack=2
+[proto-engine] i=63 instr=0x27401 isInt=1
+[proto-engine] op=157 arg=3 stack=1
+[proto-engine] i=65 instr=0x19401 isInt=1
+[proto-engine] op=101 arg=101 stack=2
+[proto-engine] i=76 instr=0x1a801 isInt=1
+[proto-engine] op=106 arg=1 stack=2
+[proto-engine] invokeCallable callable=0x73a577f45080 args=1
+[proto-engine] invokeCallable callAttr=0x73a577f4664c
+[proto-engine] i=78 instr=0x19c01 isInt=1
+[proto-engine] op=103 arg=9 stack=1
+[proto-engine] STORE_NAME environ into frame=0x73a5779b2c40
+[proto-engine]   (also synced globals)
+[proto-engine] i=80 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=12 stack=0
+[proto-engine] i=82 instr=0x27001 isInt=1
+[proto-engine] op=156 arg=0 stack=1
+[proto-engine] i=84 instr=0x19c01 isInt=1
+[proto-engine] op=103 arg=10 stack=1
+[proto-engine] STORE_NAME getenv into frame=0x73a5779b2c40
+[proto-engine]   (also synced globals)
+[proto-engine] i=86 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=13 stack=0
+[proto-engine] i=88 instr=0x27001 isInt=1
+[proto-engine] op=156 arg=0 stack=1
+[proto-engine] i=90 instr=0x19c01 isInt=1
+[proto-engine] op=103 arg=11 stack=1
+[proto-engine] STORE_NAME putenv into frame=0x73a5779b2c40
+[proto-engine]   (also synced globals)
+[proto-engine] i=92 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=14 stack=0
+[proto-engine] i=94 instr=0x27001 isInt=1
+[proto-engine] op=156 arg=0 stack=1
+[proto-engine] i=96 instr=0x19c01 isInt=1
+[proto-engine] op=103 arg=12 stack=1
+[proto-engine] STORE_NAME unsetenv into frame=0x73a5779b2c40
+[proto-engine]   (also synced globals)
+[proto-engine] i=98 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=15 stack=0
+[proto-engine] i=100 instr=0x27001 isInt=1
+[proto-engine] op=156 arg=0 stack=1
+[proto-engine] i=102 instr=0x19c01 isInt=1
+[proto-engine] op=103 arg=13 stack=1
+[proto-engine] STORE_NAME getcwd into frame=0x73a5779b2c40
+[proto-engine]   (also synced globals)
+[proto-engine] i=104 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=16 stack=0
+[proto-engine] i=106 instr=0x27001 isInt=1
+[proto-engine] op=156 arg=0 stack=1
+[proto-engine] i=108 instr=0x19c01 isInt=1
+[proto-engine] op=103 arg=14 stack=1
+[proto-engine] STORE_NAME chdir into frame=0x73a5779b2c40
+[proto-engine]   (also synced globals)
+[proto-engine] i=110 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=17 stack=0
+[proto-engine] i=112 instr=0x27001 isInt=1
+[proto-engine] op=156 arg=0 stack=1
+[proto-engine] i=114 instr=0x19c01 isInt=1
+[proto-engine] op=103 arg=15 stack=1
+[proto-engine] STORE_NAME listdir into frame=0x73a5779b2c40
+[proto-engine]   (also synced globals)
+[proto-engine] i=116 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=18 stack=0
+[proto-engine] i=118 instr=0x27001 isInt=1
+[proto-engine] op=156 arg=0 stack=1
+[proto-engine] i=120 instr=0x19c01 isInt=1
+[proto-engine] op=103 arg=16 stack=1
+[proto-engine] STORE_NAME remove into frame=0x73a5779b2c40
+[proto-engine]   (also synced globals)
+[proto-engine] i=122 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=19 stack=0
+[proto-engine] i=124 instr=0x27001 isInt=1
+[proto-engine] op=156 arg=0 stack=1
+[proto-engine] i=126 instr=0x19c01 isInt=1
+[proto-engine] op=103 arg=17 stack=1
+[proto-engine] STORE_NAME rmdir into frame=0x73a5779b2c40
+[proto-engine]   (also synced globals)
+[proto-engine] i=128 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=20 stack=0
+[proto-engine] i=130 instr=0x27001 isInt=1
+[proto-engine] op=156 arg=0 stack=1
+[proto-engine] i=132 instr=0x19c01 isInt=1
+[proto-engine] op=103 arg=18 stack=1
+[proto-engine] STORE_NAME waitpid into frame=0x73a5779b2c40
+[proto-engine]   (also synced globals)
+[proto-engine] i=134 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=21 stack=0
+[proto-engine] i=136 instr=0x27001 isInt=1
+[proto-engine] op=156 arg=0 stack=1
+[proto-engine] i=138 instr=0x19c01 isInt=1
+[proto-engine] op=103 arg=19 stack=1
+[proto-engine] STORE_NAME kill into frame=0x73a5779b2c40
+[proto-engine]   (also synced globals)
+[proto-engine] i=140 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=22 stack=0
+[proto-engine] i=142 instr=0x27001 isInt=1
+[proto-engine] op=156 arg=0 stack=1
+[proto-engine] i=144 instr=0x19c01 isInt=1
+[proto-engine] op=103 arg=20 stack=1
+[proto-engine] STORE_NAME pipe into frame=0x73a5779b2c40
+[proto-engine]   (also synced globals)
+[proto-engine] i=146 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=23 stack=0
+[proto-engine] i=148 instr=0x27001 isInt=1
+[proto-engine] op=156 arg=0 stack=1
+[proto-engine] i=150 instr=0x19c01 isInt=1
+[proto-engine] op=103 arg=21 stack=1
+[proto-engine] STORE_NAME getpid into frame=0x73a5779b2c40
+[proto-engine]   (also synced globals)
+[proto-engine] i=152 instr=0x19401 isInt=1
+[proto-engine] op=101 arg=0 stack=0
+[proto-thread-diag] before runModuleMain hasMain=0 isMethod=0
+[proto-env] resolve name=atexit modWrapper=0x73a5779e8480 result=0x73a5779e43c0
+[proto-env] resolve name=atexit fileObj=0 path= executed=0
+[proto-engine] invokeCallable callable=0x73a5779e64cc args=0
+[proto-engine] i=6 instr=0x19c01 isInt=1
+[proto-engine] op=103 arg=1 stack=1
+[proto-engine] STORE_NAME os into frame=0x73a5779a9e00
+[proto-engine]   (also synced globals)
+[proto-engine] i=8 instr=0x19801 isInt=1
+[proto-engine] op=102 arg=0 stack=0
+[proto-engine] LOAD_NAME name=__import__ val=0 env=0x7ffc8ca46490
+[proto-engine] LOAD_NAME resolve=__import__ val=0x73a577b269cc
+[proto-engine] i=10 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=1 stack=1
+[proto-engine] i=12 instr=0x1a801 isInt=1
+[proto-engine] op=106 arg=1 stack=2
+[proto-engine] invokeCallable callable=0x73a577b269cc args=1
+[proto-env] resolve name=_thread modWrapper=0x73a5779fc040 result=0x73a5779e8500
+[proto-env] resolve name=_thread fileObj=0 path= executed=0
+[proto-engine] i=14 instr=0x19c01 isInt=1
+[proto-engine] op=103 arg=2 stack=1
+[proto-engine] STORE_NAME _thread into frame=0x73a5779a9e00
+[proto-engine]   (also synced globals)
+[proto-engine] i=16 instr=0x19801 isInt=1
+[proto-engine] op=102 arg=0 stack=0
+[proto-engine] LOAD_NAME name=__import__ val=0 env=0x7ffc8ca46490
+[proto-engine] LOAD_NAME resolve=__import__ val=0x73a577b269cc
+[proto-engine] i=18 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=2 stack=1
+[proto-engine] i=20 instr=0x1a801 isInt=1
+[proto-engine] op=106 arg=1 stack=2
+[proto-engine] invokeCallable callable=0x73a577b269cc args=1
+[proto-env] resolve name=signal modWrapper=0x73a578128780 result=0x73a5779fe100
+[proto-env] resolve name=signal fileObj=0x73a578127586 path=/home/gamarino/Documentos/proyectos/protoPython/lib/python3.14/signal.py executed=0
+[proto-thread] registerContext ctx=0x62644db777e0 env=0x7ffc8ca46490 tid=127154530192448
+[proto-env] resolve name=signal modWrapper=0x73a578128880 result=0x73a5779fe100
+[proto-env] resolve name=signal fileObj=0x73a578127586 path=/home/gamarino/Documentos/proyectos/protoPython/lib/python3.14/signal.py executed=0
+[proto-thread-diag] executeModule signal willExec=1
+[proto-thread-diag] open path=/home/gamarino/Documentos/proyectos/protoPython/lib/python3.14/signal.py good=1
+[proto-thread-diag] parseModule signal node=0x62644db7d820 err=0
+[proto-thread-diag] compileModule signal ok=1
+[proto-thread-diag] makeCodeObject signal obj=0x73a5781b2900
+[proto-thread-diag] about to execute signal
+[proto-engine] i=0 instr=0x19801 isInt=1
+[proto-engine] op=102 arg=0 stack=0
+[proto-engine] LOAD_NAME name=__import__ val=0 env=0x7ffc8ca46490
+[proto-engine] LOAD_NAME resolve=__import__ val=0x73a577b269cc
+[proto-engine] i=2 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=0 stack=1
+[proto-engine] i=4 instr=0x1a801 isInt=1
+[proto-engine] op=106 arg=1 stack=2
+[proto-engine] invokeCallable callable=0x73a577b269cc args=1
+[proto-env] resolve name=_signal modWrapper=0x73a57812aa80 result=0x73a578128900
+[proto-env] resolve name=_signal fileObj=0 path= executed=0
+[proto-engine] i=6 instr=0x19c01 isInt=1
+[proto-engine] op=103 arg=1 stack=1
+[proto-engine] STORE_NAME _signal into frame=0x73a5779fe100
+[proto-engine]   (also synced globals)
+[proto-engine] i=8 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=1 stack=0
+[proto-engine] i=10 instr=0x19c01 isInt=1
+[proto-engine] op=103 arg=2 stack=1
+[proto-engine] STORE_NAME _has_signal into frame=0x73a5779fe100
+[proto-engine]   (also synced globals)
+[proto-engine] i=12 instr=0x19801 isInt=1
+[proto-engine] op=102 arg=2 stack=0
+[proto-engine] LOAD_NAME name=_has_signal val=0x4c1 env=0x7ffc8ca46490
+[proto-engine] i=14 instr=0x1b801 isInt=1
+[proto-engine] op=110 arg=46 stack=1
+[proto-engine] i=16 instr=0x19801 isInt=1
+[proto-engine] op=102 arg=1 stack=0
+[proto-engine] LOAD_NAME name=_signal val=0x73a578128900 env=0x7ffc8ca46490
+[proto-engine] i=18 instr=0x1c001 isInt=1
+[proto-engine] op=112 arg=3 stack=1
+[proto-engine] i=20 instr=0x19c01 isInt=1
+[proto-engine] op=103 arg=3 stack=1
+[proto-engine] STORE_NAME SIGINT into frame=0x73a5779fe100
+[proto-engine]   (also synced globals)
+[proto-engine] i=22 instr=0x19801 isInt=1
+[proto-engine] op=102 arg=1 stack=0
+[proto-engine] LOAD_NAME name=_signal val=0x73a578128900 env=0x7ffc8ca46490
+[proto-engine] i=24 instr=0x1c001 isInt=1
+[proto-engine] op=112 arg=4 stack=1
+[proto-engine] i=26 instr=0x19c01 isInt=1
+[proto-engine] op=103 arg=4 stack=1
+[proto-engine] STORE_NAME SIGTERM into frame=0x73a5779fe100
+[proto-engine]   (also synced globals)
+[proto-engine] i=28 instr=0x19801 isInt=1
+[proto-engine] op=102 arg=1 stack=0
+[proto-engine] LOAD_NAME name=_signal val=0x73a578128900 env=0x7ffc8ca46490
+[proto-engine] i=30 instr=0x1c001 isInt=1
+[proto-engine] op=112 arg=5 stack=1
+[proto-engine] i=32 instr=0x19c01 isInt=1
+[proto-engine] op=103 arg=5 stack=1
+[proto-engine] STORE_NAME SIG_DFL into frame=0x73a5779fe100
+[proto-engine]   (also synced globals)
+[proto-engine] i=34 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=2 stack=0
+[proto-engine] i=36 instr=0x27001 isInt=1
+[proto-engine] op=156 arg=0 stack=1
+[proto-engine] i=38 instr=0x19c01 isInt=1
+[proto-engine] op=103 arg=6 stack=1
+[proto-engine] STORE_NAME signal into frame=0x73a5779fe100
+[proto-engine]   (also synced globals)
+[proto-engine] i=40 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=3 stack=0
+[proto-engine] i=42 instr=0x27001 isInt=1
+[proto-engine] op=156 arg=0 stack=1
+[proto-engine] i=44 instr=0x19c01 isInt=1
+[proto-engine] op=103 arg=7 stack=1
+[proto-engine] STORE_NAME getsignal into frame=0x73a5779fe100
+[proto-engine]   (also synced globals)
+[proto-engine] i=46 instr=0x1bc01 isInt=1
+[proto-engine] op=111 arg=72 stack=0
+[proto-engine] i=72 instr=0x19401 isInt=1
+[proto-engine] op=101 arg=0 stack=0
+[proto-thread-diag] before runModuleMain hasMain=0 isMethod=0
+[proto-engine] invokeCallable callable=0x73a5779e64cc args=0
+[proto-engine] i=22 instr=0x19c01 isInt=1
+[proto-engine] op=103 arg=3 stack=1
+[proto-engine] STORE_NAME signal into frame=0x73a5779a9e00
+[proto-engine]   (also synced globals)
+[proto-engine] i=24 instr=0x19801 isInt=1
+[proto-engine] op=102 arg=0 stack=0
+[proto-engine] LOAD_NAME name=__import__ val=0 env=0x7ffc8ca46490
+[proto-engine] LOAD_NAME resolve=__import__ val=0x73a577b269cc
+[proto-engine] i=26 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=3 stack=1
+[proto-engine] i=28 instr=0x1a801 isInt=1
+[proto-engine] op=106 arg=1 stack=2
+[proto-engine] invokeCallable callable=0x73a577b269cc args=1
+[proto-env] resolve name=time modWrapper=0x73a57812b200 result=0x73a57812ab00
+[proto-env] resolve name=time fileObj=0 path= executed=0
+[proto-engine] i=30 instr=0x19c01 isInt=1
+[proto-engine] op=103 arg=4 stack=1
+[proto-engine] STORE_NAME time into frame=0x73a5779a9e00
+[proto-engine]   (also synced globals)
+[proto-engine] i=32 instr=0x19801 isInt=1
+[proto-engine] op=102 arg=5 stack=0
+[proto-engine] LOAD_NAME name=print val=0 env=0x7ffc8ca46490
+[proto-engine] LOAD_NAME resolve=print val=0x73a577af80cc
+[proto-engine] i=34 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=4 stack=1
+[proto-engine] i=36 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=5 stack=2
+[proto-engine] i=38 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=6 stack=3
+[proto-engine] i=40 instr=0x27c01 isInt=1
+[proto-engine] op=159 arg=2 stack=4
+[proto-engine] invokeCallable callable=0x73a577af80cc args=1
+[proto-builtins] py_print called size=1
+--- Batch 1: Builtins & Reflection ---
+[proto-engine] i=42 instr=0x21401 isInt=1
+[proto-engine] op=133 arg=102 stack=1
+[proto-engine] i=43 instr=0x19801 isInt=1
+[proto-engine] op=102 arg=6 stack=0
+[proto-engine] LOAD_NAME name=globals val=0 env=0x7ffc8ca46490
+[proto-engine] LOAD_NAME resolve=globals val=0x73a577b20ccc
+[proto-engine] i=45 instr=0x1a801 isInt=1
+[proto-engine] op=106 arg=0 stack=1
+[proto-engine] invokeCallable callable=0x73a577b20ccc args=0
+[proto-builtins] globals() returning 0x73a5779a9e00
+[proto-engine] i=47 instr=0x19c01 isInt=1
+[proto-engine] op=103 arg=7 stack=1
+[proto-engine] STORE_NAME g into frame=0x73a5779a9e00
+[proto-engine]   (also synced globals)
+[proto-engine] i=49 instr=0x19801 isInt=1
+[proto-engine] op=102 arg=5 stack=0
+[proto-engine] LOAD_NAME name=print val=0 env=0x7ffc8ca46490
+[proto-engine] LOAD_NAME resolve=print val=0x73a577af80cc
+[proto-engine] i=51 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=7 stack=1
+[proto-engine] i=53 instr=0x19801 isInt=1
+[proto-engine] op=102 arg=8 stack=2
+[proto-engine] LOAD_NAME name=type val=0 env=0x7ffc8ca46490
+[proto-engine] LOAD_NAME resolve=type val=0x73a577a76e40
+[proto-engine] i=55 instr=0x19801 isInt=1
+[proto-engine] op=102 arg=7 stack=3
+[proto-engine] LOAD_NAME name=g val=0x73a5779a9e00 env=0x7ffc8ca46490
+[proto-engine] i=57 instr=0x1a801 isInt=1
+[proto-engine] op=106 arg=1 stack=4
+[proto-engine] invokeCallable callable=0x73a577a76e40 args=1
+[proto-engine] invokeCallable callAttr=0x73a577a7610c
+[proto-engine] i=59 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=5 stack=3
+[proto-engine] i=61 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=6 stack=4
+[proto-engine] i=63 instr=0x27c01 isInt=1
+[proto-engine] op=159 arg=3 stack=5
+[proto-engine] invokeCallable callable=0x73a577af80cc args=2
+[proto-builtins] py_print called size=2
+globals() type: [proto-builtins] py_print attr lookup: name=__str__ obj=0x73a5781c5f80 found=0x73a577a75e4c
+<object at 0x73a5781c5f80>
+[proto-engine] i=65 instr=0x21401 isInt=1
+[proto-engine] op=133 arg=102 stack=1
+[proto-engine] i=66 instr=0x19801 isInt=1
+[proto-engine] op=102 arg=5 stack=0
+[proto-engine] LOAD_NAME name=print val=0 env=0x7ffc8ca46490
+[proto-engine] LOAD_NAME resolve=print val=0x73a577af80cc
+[proto-engine] i=68 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=8 stack=1
+[proto-engine] i=70 instr=0x19801 isInt=1
+[proto-engine] op=102 arg=9 stack=2
+[proto-engine] LOAD_NAME name=len val=0 env=0x7ffc8ca46490
+[proto-engine] LOAD_NAME resolve=len val=0x73a577af440c
+[proto-engine] i=72 instr=0x19801 isInt=1
+[proto-engine] op=102 arg=7 stack=3
+[proto-engine] LOAD_NAME name=g val=0x73a5779a9e00 env=0x7ffc8ca46490
+[proto-engine] i=74 instr=0x1a801 isInt=1
+[proto-engine] op=106 arg=1 stack=4
+[proto-engine] invokeCallable callable=0x73a577af440c args=1
+[proto-builtins] py_len fallback for obj=0x73a5779a9e00 attrs=0x73a5779a9dc8 size=0
+[proto-engine] i=76 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=5 stack=3
+[proto-engine] i=78 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=6 stack=4
+[proto-engine] i=80 instr=0x27c01 isInt=1
+[proto-engine] op=159 arg=3 stack=5
+[proto-engine] invokeCallable callable=0x73a577af80cc args=2
+[proto-builtins] py_print called size=2
+globals() len: 0
+[proto-engine] i=82 instr=0x21401 isInt=1
+[proto-engine] op=133 arg=102 stack=1
+[proto-engine] i=83 instr=0x19801 isInt=1
+[proto-engine] op=102 arg=10 stack=0
+[proto-engine] LOAD_NAME name=locals val=0 env=0x7ffc8ca46490
+[proto-engine] LOAD_NAME resolve=locals val=0x73a577b211cc
+[proto-engine] i=85 instr=0x1a801 isInt=1
+[proto-engine] op=106 arg=0 stack=1
+[proto-engine] invokeCallable callable=0x73a577b211cc args=0
+[proto-engine] i=87 instr=0x19c01 isInt=1
+[proto-engine] op=103 arg=11 stack=1
+[proto-engine] STORE_NAME l into frame=0x73a5779a9e00
+[proto-engine]   (also synced globals)
+[proto-engine] i=89 instr=0x19801 isInt=1
+[proto-engine] op=102 arg=5 stack=0
+[proto-engine] LOAD_NAME name=print val=0 env=0x7ffc8ca46490
+[proto-engine] LOAD_NAME resolve=print val=0x73a577af80cc
+[proto-engine] i=91 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=9 stack=1
+[proto-engine] i=93 instr=0x19801 isInt=1
+[proto-engine] op=102 arg=11 stack=2
+[proto-engine] LOAD_NAME name=l val=0x73a5779a9e00 env=0x7ffc8ca46490
+[proto-engine] i=95 instr=0x19801 isInt=1
+[proto-engine] op=102 arg=7 stack=3
+[proto-engine] LOAD_NAME name=g val=0x73a5779a9e00 env=0x7ffc8ca46490
+[proto-engine] i=97 instr=0x1b401 isInt=1
+[proto-engine] op=109 arg=8 stack=4
+[proto-engine] i=99 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=5 stack=3
+[proto-engine] i=101 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=6 stack=4
+[proto-engine] i=103 instr=0x27c01 isInt=1
+[proto-engine] op=159 arg=3 stack=5
+[proto-engine] invokeCallable callable=0x73a577af80cc args=2
+[proto-builtins] py_print called size=2
+locals() is globals(): True
+[proto-engine] i=105 instr=0x21401 isInt=1
+[proto-engine] op=133 arg=102 stack=1
+[proto-engine] i=106 instr=0x19801 isInt=1
+[proto-engine] op=102 arg=5 stack=0
+[proto-engine] LOAD_NAME name=print val=0 env=0x7ffc8ca46490
+[proto-engine] LOAD_NAME resolve=print val=0x73a577af80cc
+[proto-engine] i=108 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=10 stack=1
+[proto-engine] i=110 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=5 stack=2
+[proto-engine] i=112 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=6 stack=3
+[proto-engine] i=114 instr=0x27c01 isInt=1
+[proto-engine] op=159 arg=2 stack=4
+[proto-engine] invokeCallable callable=0x73a577af80cc args=1
+[proto-builtins] py_print called size=1
+os.environ['TEST_VAR'] = 'Batch1'
+[proto-engine] i=116 instr=0x21401 isInt=1
+[proto-engine] op=133 arg=100 stack=1
+[proto-engine] i=117 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=11 stack=0
+[proto-engine] i=119 instr=0x19801 isInt=1
+[proto-engine] op=102 arg=1 stack=1
+[proto-engine] LOAD_NAME name=os val=0x73a5779b2c40 env=0x7ffc8ca46490
+[proto-engine] i=121 instr=0x1c001 isInt=1
+[proto-engine] op=112 arg=12 stack=2
+[proto-engine] i=123 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=12 stack=2
+[proto-engine] i=125 instr=0x26401 isInt=1
+[proto-engine] op=153 arg=117 stack=3
+[proto-engine] i=126 instr=0x1d401 isInt=1
+[proto-engine] op=117 arg=0 stack=3
+[proto-engine] OP_STORE_SUBSCR container=0x73a577f49840 key=0x73a577c631c6 val=0x31d18fa6185901
+[proto-engine]   found __setitem__=0
+[proto-engine] i=128 instr=0x19801 isInt=1
+[proto-engine] op=102 arg=5 stack=0
+[proto-engine] LOAD_NAME name=print val=0 env=0x7ffc8ca46490
+[proto-engine] LOAD_NAME resolve=print val=0x73a577af80cc
+[proto-engine] i=130 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=13 stack=1
+[proto-engine] i=132 instr=0x19801 isInt=1
+[proto-engine] op=102 arg=1 stack=2
+[proto-engine] LOAD_NAME name=os val=0x73a5779b2c40 env=0x7ffc8ca46490
+[proto-engine] i=134 instr=0x1c001 isInt=1
+[proto-engine] op=112 arg=13 stack=3
+[proto-engine] i=136 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=12 stack=3
+[proto-engine] i=138 instr=0x1a801 isInt=1
+[proto-engine] op=106 arg=1 stack=4
+[proto-engine] invokeCallable callable=0x73a577f49e80 args=1
+[proto-engine] invokeCallable callAttr=0x73a577f4a44c
+[proto-engine] i=0 instr=0x19801 isInt=1
+[proto-engine] op=102 arg=0 stack=0
+[proto-engine] LOAD_NAME name=__import__ val=0 env=0x7ffc8ca46490
+[proto-engine] LOAD_NAME resolve=__import__ val=0x73a577b269cc
+[proto-engine] i=2 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=0 stack=1
+[proto-engine] i=4 instr=0x1a801 isInt=1
+[proto-engine] op=106 arg=1 stack=2
+[proto-engine] invokeCallable callable=0x73a577b269cc args=1
+[proto-engine] i=6 instr=0x27801 isInt=1
+[proto-engine] op=158 arg=3 stack=1
+[proto-engine] i=8 instr=0x27401 isInt=1
+[proto-engine] op=157 arg=3 stack=0
+[proto-engine] i=10 instr=0x1c001 isInt=1
+[proto-engine] op=112 arg=1 stack=1
+[proto-engine] i=12 instr=0x27401 isInt=1
+[proto-engine] op=157 arg=0 stack=1
+[proto-engine] i=14 instr=0x1a801 isInt=1
+[proto-engine] op=106 arg=1 stack=2
+[proto-engine] invokeCallable callable=0x73a57822394c args=1
+[proto-engine] i=16 instr=0x27801 isInt=1
+[proto-engine] op=158 arg=2 stack=1
+[proto-engine] i=18 instr=0x27401 isInt=1
+[proto-engine] op=157 arg=2 stack=0
+[proto-engine] i=20 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=1 stack=0
+[proto-engine] i=22 instr=0x1b401 isInt=1
+[proto-engine] op=109 arg=9 stack=1
+[proto-engine] i=24 instr=0x1b801 isInt=1
+[proto-engine] op=110 arg=30 stack=1
+[proto-engine] i=30 instr=0x27401 isInt=1
+[proto-engine] op=157 arg=1 stack=0
+[proto-engine] i=32 instr=0x19401 isInt=1
+[proto-engine] op=101 arg=101 stack=0
+[proto-engine] i=140 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=5 stack=3
+[proto-engine] i=142 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=6 stack=4
+[proto-engine] i=144 instr=0x27c01 isInt=1
+[proto-engine] op=159 arg=3 stack=5
+[proto-engine] invokeCallable callable=0x73a577af80cc args=2
+[proto-builtins] py_print called size=2
+os.getenv('TEST_VAR'): None
+[proto-engine] i=146 instr=0x21401 isInt=1
+[proto-engine] op=133 arg=102 stack=1
+[proto-engine] i=147 instr=0x19801 isInt=1
+[proto-engine] op=102 arg=5 stack=0
+[proto-engine] LOAD_NAME name=print val=0 env=0x7ffc8ca46490
+[proto-engine] LOAD_NAME resolve=print val=0x73a577af80cc
+[proto-engine] i=149 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=14 stack=1
+[proto-engine] i=151 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=5 stack=2
+[proto-engine] i=153 instr=0x19001 isInt=1
+[proto-engine] op=100 arg=6 stack=3
+[proto-engine] i=155 instr=0x27c01 isInt=1
+[proto-engine] op=159 arg=2 stack=4
+[proto-engine] invokeCallable callable=0x73a577af80cc args=1
+[proto-builtins] py_print called size=1
+Batch 1 Done
+[proto-engine] i=157 instr=0x19401 isInt=1
+[proto-engine] op=101 arg=0 stack=1
+[proto-thread-diag] before runModuleMain hasMain=0 isMethod=0
+[proto-engine] invokeCallable callable=0x73a5779e64cc args=0
+[proto-thread-diag] executeModule verify_b1 willExec=0
+[proto-thread-diag] before runModuleMain hasMain=0 isMethod=0
+[proto-engine] invokeCallable callable=0x73a5779e64cc args=0
+[proto-thread] unregisterContext ctx=0x62644db777e0 tid=127154530192448

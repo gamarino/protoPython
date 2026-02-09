@@ -1,0 +1,1130 @@
+[proto-core] setAttribute obj=0x797d8a073bc0 name=__init__ ptr=0x797d8a047186 val=0x797d8a074bcc
+[proto-core] setAttribute obj=0x797d8a073bc0 name=__repr__ ptr=0x797d8a0397c6 val=0x797d8a074ccc
+[proto-core] setAttribute obj=0x797d8a073bc0 name=__str__ ptr=0x2fdfe5d39dfbfd01 val=0x797d8a074e0c
+[proto-core] setAttribute obj=0x797d8a073bc0 name=__format__ ptr=0x797d8a074a06 val=0x797d8a074f4c
+[proto-core] setAttribute obj=0x797d8a073bc0 name=__call__ ptr=0x797d8a041c86 val=0x797d8a0750cc
+[proto-core] setAttribute obj=0x797d8a075d40 name=__class__ ptr=0x797d8a0406c6 val=0x797d8a075d40
+[proto-core] setAttribute obj=0x797d8a073bc0 name=__class__ ptr=0x797d8a0406c6 val=0x797d8a075d40
+[proto-core] setAttribute obj=0x797d8a076280 name=__class__ ptr=0x797d8a0406c6 val=0x797d8a075d40
+[proto-core] setAttribute obj=0x797d8a076280 name=__name__ ptr=0x797d8a041186 val=0x3a6ed2d01
+[proto-core] setAttribute obj=0x797d8a076280 name=__call__ ptr=0x797d8a041c86 val=0x797d8a07718c
+[proto-core] setAttribute obj=0x797d8a076280 name=__hash__ ptr=0x797d8a03a2c6 val=0x797d8a077e8c
+[proto-core] setAttribute obj=0x797d8a076280 name=__format__ ptr=0x797d8a074a06 val=0x797d8a07804c
+[proto-core] setAttribute obj=0x797d8a076280 name=bit_length ptr=0x797d8a079006 val=0x797d8a0791cc
+[proto-core] setAttribute obj=0x797d8a076280 name=bit_count ptr=0x797d8a07a006 val=0x797d8a07944c
+[proto-core] setAttribute obj=0x797d8a076280 name=from_bytes ptr=0x797d8a07b146 val=0x797d8a07be0c
+[proto-core] setAttribute obj=0x797d8a076280 name=to_bytes ptr=0x797d8a07bc46 val=0x797d8a07c0cc
+[proto-core] setAttribute obj=0x797d8a07c3c0 name=__class__ ptr=0x797d8a0406c6 val=0x797d8a075d40
+[proto-core] setAttribute obj=0x797d8a07c3c0 name=__name__ ptr=0x797d8a041186 val=0x3974e6d01
+[proto-core] setAttribute obj=0x797d8a07c3c0 name=__iter__ ptr=0x797d8a03c346 val=0x797d8a07c80c
+[proto-core] setAttribute obj=0x797d8a07c3c0 name=__getitem__ ptr=0x797d8a043ec6 val=0x797d8a07c9cc
+[proto-core] setAttribute obj=0x797d8a07c3c0 name=__contains__ ptr=0x797d8a03b846 val=0x797d8a07cbcc
+[proto-core] setAttribute obj=0x797d8a07c3c0 name=__bool__ ptr=0x797d8a03d946 val=0x797d8a07cdcc
+[proto-core] setAttribute obj=0x797d8a07c3c0 name=upper ptr=0xe597870eb501 val=0x797d8a07cfcc
+[proto-core] setAttribute obj=0x797d8a07c3c0 name=lower ptr=0xe597befd9501 val=0x797d8a07d28c
+[proto-core] setAttribute obj=0x797d8a07c3c0 name=format ptr=0x74c3b796fcd901 val=0x797d8a07d4cc
+[proto-core] setAttribute obj=0x797d8a07c3c0 name=__format__ ptr=0x797d8a074a06 val=0x797d8a07d7cc
+[proto-core] setAttribute obj=0x797d8a07c3c0 name=__hash__ ptr=0x797d8a03a2c6 val=0x797d8a07db8c
+[proto-core] setAttribute obj=0x797d8a07c3c0 name=split ptr=0xe9a7670e7501 val=0x797d8a07ddcc
+[proto-core] setAttribute obj=0x797d8a07c3c0 name=join ptr=0x1bb4efd5101 val=0x797d8a07e18c
+[proto-core] setAttribute obj=0x797d8a07c3c0 name=strip ptr=0xe1a7974e7501 val=0x797d8a07e48c
+[proto-core] setAttribute obj=0x797d8a07c3c0 name=lstrip ptr=0x70d3cba73d9901 val=0x797d8a07e70c
+[proto-core] setAttribute obj=0x797d8a07c3c0 name=rstrip ptr=0x70d3cba73e5901 val=0x797d8a07e98c
+[proto-core] setAttribute obj=0x797d8a07c3c0 name=replace ptr=0x32e3c3b3865e5d01 val=0x797d8a07ed8c
+[proto-core] setAttribute obj=0x797d8a07c3c0 name=startswith ptr=0x797d8a072ec6 val=0x797d8a07f0cc
+[proto-core] setAttribute obj=0x797d8a07c3c0 name=endswith ptr=0x797d8a0739c6 val=0x797d8a07f34c
+[proto-core] setAttribute obj=0x797d8a07c3c0 name=find ptr=0x193769cd101 val=0x797d8a07f74c
+[proto-core] setAttribute obj=0x797d8a07c3c0 name=index ptr=0xf19726ed3501 val=0x797d8a07fa4c
+[proto-core] setAttribute obj=0x797d8a07c3c0 name=rfind ptr=0xc9bb4e6e5501 val=0x797d8a07fd8c
+[proto-core] setAttribute obj=0x797d8a07c3c0 name=rindex ptr=0x78cb93769e5901 val=0x797d8a08004c
+[proto-core] setAttribute obj=0x797d8a07c3c0 name=count ptr=0xe9bbaefc7501 val=0x797d8a08040c
+[proto-core] setAttribute obj=0x797d8a07c3c0 name=rsplit ptr=0x74d3b3873e5901 val=0x797d8a08074c
+[proto-core] setAttribute obj=0x797d8a07c3c0 name=splitlines ptr=0x797d8a081806 val=0x797d8a0809cc
+[proto-core] setAttribute obj=0x797d8a07c3c0 name=removeprefix ptr=0x797d8a083106 val=0x797d8a081d0c
+[proto-core] setAttribute obj=0x797d8a07c3c0 name=removesuffix ptr=0x797d8a084ac6 val=0x797d8a0836cc
+[proto-core] setAttribute obj=0x797d8a07c3c0 name=center ptr=0x72cbd3765c7901 val=0x797d8a086c8c
+[proto-core] setAttribute obj=0x797d8a07c3c0 name=ljust ptr=0xe9cfaead9501 val=0x797d8a086f0c
+[proto-core] setAttribute obj=0x797d8a07c3c0 name=rjust ptr=0xe9cfaeae5501 val=0x797d8a08730c
+[proto-core] setAttribute obj=0x797d8a07c3c0 name=zfill ptr=0xd9b34e6f5501 val=0x797d8a0875cc
+[proto-core] setAttribute obj=0x797d8a07c3c0 name=partition ptr=0x797d8a085b46 val=0x797d8a08788c
+[proto-core] setAttribute obj=0x797d8a07c3c0 name=rpartition ptr=0x797d8a086ac6 val=0x797d8a087c0c
+[proto-core] setAttribute obj=0x797d8a07c3c0 name=expandtabs ptr=0x797d8a088d86 val=0x797d8a088f4c
+[proto-core] setAttribute obj=0x797d8a07c3c0 name=capitalize ptr=0x797d8a08a0c6 val=0x797d8a08ad8c
+[proto-core] setAttribute obj=0x797d8a07c3c0 name=title ptr=0xcbb3a69e9501 val=0x797d8a08b10c
+[proto-core] setAttribute obj=0x797d8a07c3c0 name=swapcase ptr=0x797d8a08abc6 val=0x797d8a08b44c
+[proto-core] setAttribute obj=0x797d8a07c3c0 name=casefold ptr=0x797d8a08c106 val=0x797d8a08c2cc
+[proto-core] setAttribute obj=0x797d8a07c3c0 name=isalpha ptr=0x30e8e1b30f3d3d01 val=0x797d8a08c70c
+[proto-core] setAttribute obj=0x797d8a07c3c0 name=isdigit ptr=0x3a69cfa7273d3d01 val=0x797d8a08c98c
+[proto-core] setAttribute obj=0x797d8a07c3c0 name=isspace ptr=0x32e3c3c39f3d3d01 val=0x797d8a08cc0c
+[proto-core] setAttribute obj=0x797d8a07c3c0 name=isalnum ptr=0x36f5ddb30f3d3d01 val=0x797d8a08cecc
+[proto-core] setAttribute obj=0x797d8a07c3c0 name=isupper ptr=0x3965e1c3af3d3d01 val=0x797d8a08d30c
+[proto-core] setAttribute obj=0x797d8a07c3c0 name=islower ptr=0x3965efbf673d3d01 val=0x797d8a08d68c
+[proto-core] setAttribute obj=0x797d8a07c3c0 name=isidentifier ptr=0x797d8a08eec6 val=0x797d8a08dacc
+[proto-core] setAttribute obj=0x797d8a07c3c0 name=isprintable ptr=0x797d8a0904c6 val=0x797d8a08f3cc
+[proto-core] setAttribute obj=0x797d8a07c3c0 name=isascii ptr=0x34e9c7cf0f3d3d01 val=0x797d8a09094c
+[proto-core] setAttribute obj=0x797d8a07c3c0 name=isdecimal ptr=0x797d8a091946 val=0x797d8a090d8c
+[proto-core] setAttribute obj=0x797d8a07c3c0 name=isnumeric ptr=0x797d8a092a06 val=0x797d8a091e4c
+[proto-core] setAttribute obj=0x797d8a092f40 name=__class__ ptr=0x797d8a0406c6 val=0x797d8a075d40
+[proto-core] setAttribute obj=0x797d8a092f40 name=__name__ ptr=0x797d8a041186 val=0x1d39e9d9101
+[proto-core] setAttribute obj=0x797d8a092f40 name=append ptr=0x64dd97870c3901 val=0x797d8a09344c
+[proto-core] setAttribute obj=0x797d8a092f40 name=__len__ ptr=0x2fdfdd9765fbfd01 val=0x797d8a0936cc
+[proto-core] setAttribute obj=0x797d8a092f40 name=__getitem__ ptr=0x797d8a043ec6 val=0x797d8a0938cc
+[proto-core] setAttribute obj=0x797d8a092f40 name=__setitem__ ptr=0x797d8a034606 val=0x797d8a093acc
+[proto-core] setAttribute obj=0x797d8a092f40 name=__iter__ ptr=0x797d8a03c346 val=0x797d8a093ccc
+[proto-core] setAttribute obj=0x797d8a092f40 name=__contains__ ptr=0x797d8a03b846 val=0x797d8a09404c
+[proto-core] setAttribute obj=0x797d8a092f40 name=__eq__ ptr=0x5fbfc72dfbf901 val=0x797d8a09428c
+[proto-core] setAttribute obj=0x797d8a092f40 name=__lt__ ptr=0x5fbfd365fbf901 val=0x797d8a0944cc
+[proto-core] setAttribute obj=0x797d8a092f40 name=__le__ ptr=0x5fbf9765fbf901 val=0x797d8a0947cc
+[proto-core] setAttribute obj=0x797d8a092f40 name=__gt__ ptr=0x5fbfd33dfbf901 val=0x797d8a094acc
+[proto-core] setAttribute obj=0x797d8a092f40 name=__ge__ ptr=0x5fbf973dfbf901 val=0x797d8a094d4c
+[proto-core] setAttribute obj=0x797d8a092f40 name=__repr__ ptr=0x797d8a0397c6 val=0x797d8a09510c
+[proto-core] setAttribute obj=0x797d8a092f40 name=__str__ ptr=0x2fdfe5d39dfbfd01 val=0x797d8a0954cc
+[proto-core] setAttribute obj=0x797d8a092f40 name=__bool__ ptr=0x797d8a03d946 val=0x797d8a09574c
+[proto-core] setAttribute obj=0x797d8a092f40 name=pop ptr=0x386fe0d01 val=0x797d8a09598c
+[proto-core] setAttribute obj=0x797d8a092f40 name=extend ptr=0x64dd97a78cb901 val=0x797d8a095c0c
+[proto-core] setAttribute obj=0x797d8a092f40 name=insert ptr=0x74e5979eed3901 val=0x797d8a095e8c
+[proto-core] setAttribute obj=0x797d8a092f40 name=remove ptr=0x65edbf6e5e5901 val=0x797d8a0961cc
+[proto-core] setAttribute obj=0x797d8a092f40 name=clear ptr=0xe5872ecc7501 val=0x797d8a0965cc
+[proto-core] setAttribute obj=0x797d8a092f40 name=reverse ptr=0x32f3e597b65e5d01 val=0x797d8a09688c
+[proto-core] setAttribute obj=0x797d8a092f40 name=sort ptr=0x1d396fe7101 val=0x797d8a096b0c
+[proto-core] setAttribute obj=0x797d8a092f40 name=copy ptr=0x1e786fc7101 val=0x797d8a096f0c
+[proto-core] setAttribute obj=0x797d8a092f40 name=index ptr=0xf19726ed3501 val=0x797d8a09730c
+[proto-core] setAttribute obj=0x797d8a092f40 name=count ptr=0xe9bbaefc7501 val=0x797d8a09768c
+[proto-core] setAttribute obj=0x797d8a092f40 name=__mul__ ptr=0x2fdfd9d76dfbfd01 val=0x797d8a0985cc
+[proto-core] setAttribute obj=0x797d8a092f40 name=__rmul__ ptr=0x797d8a098406 val=0x797d8a09888c
+[proto-core] setAttribute obj=0x797d8a092f40 name=__iadd__ ptr=0x797d8a027886 val=0x797d8a098c0c
+[proto-core] setAttribute obj=0x797d8a099a40 name=__next__ ptr=0x797d8a03ce46 val=0x797d8a099c8c
+[proto-core] setAttribute obj=0x797d8a092f40 name=__iter_prototype__ ptr=0x797d8a070d06 val=0x797d8a099a40
+[proto-core] setAttribute obj=0x797d8a09a200 name=__next__ ptr=0x797d8a03ce46 val=0x797d8a09a44c
+[proto-core] setAttribute obj=0x797d8a092f40 name=__reversed_prototype__ ptr=0x797d8a09e546 val=0x797d8a09a200
+[proto-core] setAttribute obj=0x797d8a092f40 name=__reversed__ ptr=0x797d8a03f986 val=0x797d8a09ed4c
+[proto-core] setAttribute obj=0x797d8a0a06c0 name=__class__ ptr=0x797d8a0406c6 val=0x797d8a075d40
+[proto-core] setAttribute obj=0x797d8a0a06c0 name=__name__ ptr=0x797d8a041186 val=0x1d31e9c9101
+[proto-core] setAttribute obj=0x797d8a0a06c0 name=__getitem__ ptr=0x797d8a043ec6 val=0x797d8a0a0bcc
+[proto-core] setAttribute obj=0x797d8a0a06c0 name=__setitem__ ptr=0x797d8a034606 val=0x797d8a0a0e8c
+[proto-core] setAttribute obj=0x797d8a0a06c0 name=__len__ ptr=0x2fdfdd9765fbfd01 val=0x797d8a0a10cc
+[proto-core] setAttribute obj=0x797d8a0a06c0 name=__iter__ ptr=0x797d8a03c346 val=0x797d8a0a130c
+[proto-core] setAttribute obj=0x797d8a0a06c0 name=__iter_prototype__ ptr=0x797d8a070d06 val=0x797d8a099a40
+[proto-core] setAttribute obj=0x797d8a0a06c0 name=__contains__ ptr=0x797d8a03b846 val=0x797d8a0a1a4c
+[proto-core] setAttribute obj=0x797d8a0a06c0 name=__eq__ ptr=0x5fbfc72dfbf901 val=0x797d8a0a1ccc
+[proto-core] setAttribute obj=0x797d8a0a06c0 name=__lt__ ptr=0x5fbfd365fbf901 val=0x797d8a0a1f4c
+[proto-core] setAttribute obj=0x797d8a0a06c0 name=__le__ ptr=0x5fbf9765fbf901 val=0x797d8a0a234c
+[proto-core] setAttribute obj=0x797d8a0a06c0 name=__gt__ ptr=0x5fbfd33dfbf901 val=0x797d8a0a274c
+[proto-core] setAttribute obj=0x797d8a0a06c0 name=__ge__ ptr=0x5fbf973dfbf901 val=0x797d8a0a29cc
+[proto-core] setAttribute obj=0x797d8a0a06c0 name=__repr__ ptr=0x797d8a0397c6 val=0x797d8a0a2c8c
+[proto-core] setAttribute obj=0x797d8a0a06c0 name=__str__ ptr=0x2fdfe5d39dfbfd01 val=0x797d8a0a308c
+[proto-core] setAttribute obj=0x797d8a0a06c0 name=__bool__ ptr=0x797d8a03d946 val=0x797d8a0a334c
+[proto-core] setAttribute obj=0x797d8a0a06c0 name=keys ptr=0x1cfce5d7101 val=0x797d8a0a35cc
+[proto-core] setAttribute obj=0x797d8a0a06c0 name=values ptr=0x73cbd7661ed901 val=0x797d8a0a388c
+[proto-core] setAttribute obj=0x797d8a0a06c0 name=items ptr=0xe7b72f4d3501 val=0x797d8a0a3b4c
+[proto-core] setAttribute obj=0x797d8a0a06c0 name=get ptr=0x3a65ced01 val=0x797d8a0a3ecc
+[proto-core] setAttribute obj=0x797d8a0a06c0 name=setdefault ptr=0x797d8a071f06 val=0x797d8a0a424c
+[proto-core] setAttribute obj=0x797d8a0a06c0 name=pop ptr=0x386fe0d01 val=0x797d8a0a468c
+[proto-core] setAttribute obj=0x797d8a0a06c0 name=popitem ptr=0x36e5e9a786fe1d01 val=0x797d8a0a4a0c
+[proto-core] setAttribute obj=0x797d8a0a06c0 name=update ptr=0x65e987270eb901 val=0x797d8a0a4d8c
+[proto-core] setAttribute obj=0x797d8a0a06c0 name=clear ptr=0xe5872ecc7501 val=0x797d8a0a508c
+[proto-core] setAttribute obj=0x797d8a0a06c0 name=copy ptr=0x1e786fc7101 val=0x797d8a0a538c
+[proto-core] setAttribute obj=0x797d8a0a06c0 name=fromkeys ptr=0x797d8a0a6146 val=0x797d8a0a57cc
+[proto-core] setAttribute obj=0x797d8a0a06c0 name=__or__ ptr=0x5fbfcb7dfbf901 val=0x797d8a0a674c
+[proto-core] setAttribute obj=0x797d8a0a06c0 name=__ror__ ptr=0x2fdfe5bf95fbfd01 val=0x797d8a0a6a4c
+[proto-core] setAttribute obj=0x797d8a0a06c0 name=__ior__ ptr=0x2fdfe5bf4dfbfd01 val=0x797d8a0a6d0c
+[proto-core] setAttribute obj=0x797d8a0a06c0 name=__iror__ ptr=0x797d8a0a7986 val=0x797d8a0a700c
+[proto-core] setAttribute obj=0x797d8a0a7f00 name=__class__ ptr=0x797d8a0406c6 val=0x797d8a075d40
+[proto-core] setAttribute obj=0x797d8a0a7f00 name=__name__ ptr=0x797d8a041186 val=0xcbb3875e9501
+[proto-core] setAttribute obj=0x797d8a0a7f00 name=__len__ ptr=0x2fdfdd9765fbfd01 val=0x797d8a0a84cc
+[proto-core] setAttribute obj=0x797d8a0a7f00 name=__getitem__ ptr=0x797d8a043ec6 val=0x797d8a0a878c
+[proto-core] setAttribute obj=0x797d8a0a7f00 name=__iter__ ptr=0x797d8a03c346 val=0x797d8a0a89cc
+[proto-core] setAttribute obj=0x797d8a0a7f00 name=__contains__ ptr=0x797d8a03b846 val=0x797d8a0a8c0c
+[proto-core] setAttribute obj=0x797d8a0a7f00 name=__bool__ ptr=0x797d8a03d946 val=0x797d8a0a8f0c
+[proto-core] setAttribute obj=0x797d8a0a7f00 name=__hash__ ptr=0x797d8a03a2c6 val=0x797d8a0a918c
+[proto-core] setAttribute obj=0x797d8a0a7f00 name=index ptr=0xf19726ed3501 val=0x797d8a0a940c
+[proto-core] setAttribute obj=0x797d8a0a7f00 name=count ptr=0xe9bbaefc7501 val=0x797d8a0a97cc
+[proto-core] setAttribute obj=0x797d8a0a9a80 name=__next__ ptr=0x797d8a03ce46 val=0x797d8a0a9d0c
+[proto-core] setAttribute obj=0x797d8a0a7f00 name=__iter_prototype__ ptr=0x797d8a070d06 val=0x797d8a0a9a80
+[proto-core] setAttribute obj=0x797d8a0aa280 name=__class__ ptr=0x797d8a0406c6 val=0x797d8a075d40
+[proto-core] setAttribute obj=0x797d8a0aa280 name=__name__ ptr=0x797d8a041186 val=0x3a65e6d01
+[proto-core] setAttribute obj=0x797d8a0aa280 name=__len__ ptr=0x2fdfdd9765fbfd01 val=0x797d8a0aa84c
+[proto-core] setAttribute obj=0x797d8a0aa280 name=__call__ ptr=0x797d8a041c86 val=0x797d8a0aab0c
+[proto-core] setAttribute obj=0x797d8a0aa280 name=__contains__ ptr=0x797d8a03b846 val=0x797d8a0ab80c
+[proto-core] setAttribute obj=0x797d8a0aa280 name=__bool__ ptr=0x797d8a03d946 val=0x797d8a0aba4c
+[proto-core] setAttribute obj=0x797d8a0aa280 name=add ptr=0x3264c2d01 val=0x797d8a0abe0c
+[proto-core] setAttribute obj=0x797d8a0aa280 name=remove ptr=0x65edbf6e5e5901 val=0x797d8a0ac08c
+[proto-core] setAttribute obj=0x797d8a0aa280 name=__repr__ ptr=0x797d8a0397c6 val=0x797d8a0ac44c
+[proto-core] setAttribute obj=0x797d8a0aa280 name=pop ptr=0x386fe0d01 val=0x797d8a0ac84c
+[proto-core] setAttribute obj=0x797d8a0aa280 name=discard ptr=0x3272c38f9e9c9d01 val=0x797d8a0acb8c
+[proto-core] setAttribute obj=0x797d8a0aa280 name=copy ptr=0x1e786fc7101 val=0x797d8a0ace0c
+[proto-core] setAttribute obj=0x797d8a0aa280 name=clear ptr=0xe5872ecc7501 val=0x797d8a0ad14c
+[proto-core] setAttribute obj=0x797d8a0aa280 name=union ptr=0xddbf4eeeb501 val=0x797d8a0ad3cc
+[proto-core] setAttribute obj=0x797d8a0aa280 name=intersection ptr=0x797d8a0aebc6 val=0x797d8a0ad7cc
+[proto-core] setAttribute obj=0x797d8a0aa280 name=difference ptr=0x797d8a0afe46 val=0x797d8a0af00c
+[proto-core] setAttribute obj=0x797d8a0aa280 name=symmetric_difference ptr=0x797d8a0b3846 val=0x797d8a0b034c
+[proto-core] setAttribute obj=0x797d8a0aa280 name=issubset ptr=0x797d8a0b4a86 val=0x797d8a0b410c
+[proto-core] setAttribute obj=0x797d8a0aa280 name=issuperset ptr=0x797d8a0b5e86 val=0x797d8a0b504c
+[proto-core] setAttribute obj=0x797d8a0aa280 name=__iter__ ptr=0x797d8a03c346 val=0x797d8a0b638c
+[proto-core] setAttribute obj=0x797d8a0b6680 name=__next__ ptr=0x797d8a03ce46 val=0x797d8a0b690c
+[proto-core] setAttribute obj=0x797d8a0aa280 name=__iter_prototype__ ptr=0x797d8a070d06 val=0x797d8a0b6680
+[proto-core] setAttribute obj=0x797d8a0b7980 name=__class__ ptr=0x797d8a0406c6 val=0x797d8a075d40
+[proto-core] setAttribute obj=0x797d8a0b7980 name=__name__ ptr=0x797d8a041186 val=0x797d8a0b8906
+[proto-core] setAttribute obj=0x797d8a0b7980 name=__call__ ptr=0x797d8a041c86 val=0x797d8a0b8c4c
+[proto-core] setAttribute obj=0x797d8a0b7980 name=__len__ ptr=0x2fdfdd9765fbfd01 val=0x797d8a0b8f0c
+[proto-core] setAttribute obj=0x797d8a0b7980 name=__contains__ ptr=0x797d8a03b846 val=0x797d8a0b914c
+[proto-core] setAttribute obj=0x797d8a0b7980 name=__bool__ ptr=0x797d8a03d946 val=0x797d8a0b938c
+[proto-core] setAttribute obj=0x797d8a0b7980 name=__iter__ ptr=0x797d8a03c346 val=0x797d8a0b974c
+[proto-core] setAttribute obj=0x797d8a0b7980 name=__hash__ ptr=0x797d8a03a2c6 val=0x797d8a0b99cc
+[proto-core] setAttribute obj=0x797d8a0b7980 name=__iter_prototype__ ptr=0x797d8a070d06 val=0x797d8a0b6680
+[proto-core] setAttribute obj=0x797d8a0ba000 name=__class__ ptr=0x797d8a0406c6 val=0x797d8a075d40
+[proto-core] setAttribute obj=0x797d8a0ba000 name=__name__ ptr=0x797d8a041186 val=0xe797a79c5501
+[proto-core] setAttribute obj=0x797d8a0ba000 name=__len__ ptr=0x2fdfdd9765fbfd01 val=0x797d8a0ba5cc
+[proto-core] setAttribute obj=0x797d8a0ba000 name=__getitem__ ptr=0x797d8a043ec6 val=0x797d8a0ba88c
+[proto-core] setAttribute obj=0x797d8a0ba000 name=__iter__ ptr=0x797d8a03c346 val=0x797d8a0baacc
+[proto-core] setAttribute obj=0x797d8a0ba000 name=__call__ ptr=0x797d8a041c86 val=0x797d8a0bad0c
+[proto-core] setAttribute obj=0x797d8a0bb040 name=__next__ ptr=0x797d8a03ce46 val=0x797d8a0bb2cc
+[proto-core] setAttribute obj=0x797d8a0ba000 name=__iter_prototype__ ptr=0x797d8a070d06 val=0x797d8a0bb040
+[proto-core] setAttribute obj=0x797d8a07c3c0 name=encode ptr=0x65c9bf1eecb901 val=0x797d8a0bb68c
+[proto-core] setAttribute obj=0x797d8a0ba000 name=decode ptr=0x65c9bf1e5c9901 val=0x797d8a0bb90c
+[proto-core] setAttribute obj=0x797d8a0ba000 name=hex ptr=0x3c65d0d01 val=0x797d8a0bbccc
+[proto-core] setAttribute obj=0x797d8a0ba000 name=fromhex ptr=0x3c65d1b77f2cdd01 val=0x797d8a0bbf8c
+[proto-core] setAttribute obj=0x797d8a0ba000 name=find ptr=0x193769cd101 val=0x797d8a0bc28c
+[proto-core] setAttribute obj=0x797d8a0ba000 name=count ptr=0xe9bbaefc7501 val=0x797d8a0bc4cc
+[proto-core] setAttribute obj=0x797d8a0ba000 name=index ptr=0xf19726ed3501 val=0x797d8a0bc74c
+[proto-core] setAttribute obj=0x797d8a0ba000 name=rfind ptr=0xc9bb4e6e5501 val=0x797d8a0bca8c
+[proto-core] setAttribute obj=0x797d8a0ba000 name=rindex ptr=0x78cb93769e5901 val=0x797d8a0bce8c
+[proto-core] setAttribute obj=0x797d8a0ba000 name=startswith ptr=0x797d8a072ec6 val=0x797d8a0bd0cc
+[proto-core] setAttribute obj=0x797d8a0ba000 name=endswith ptr=0x797d8a0739c6 val=0x797d8a0be44c
+[proto-core] setAttribute obj=0x797d8a0ba000 name=strip ptr=0xe1a7974e7501 val=0x797d8a0bf30c
+[proto-core] setAttribute obj=0x797d8a0ba000 name=lstrip ptr=0x70d3cba73d9901 val=0x797d8a0bf70c
+[proto-core] setAttribute obj=0x797d8a0ba000 name=rstrip ptr=0x70d3cba73e5901 val=0x797d8a0bfb0c
+[proto-core] setAttribute obj=0x797d8a0ba000 name=split ptr=0xe9a7670e7501 val=0x797d8a0bfdcc
+[proto-core] setAttribute obj=0x797d8a0ba000 name=join ptr=0x1bb4efd5101 val=0x797d8a0c010c
+[proto-core] setAttribute obj=0x797d8a0ba000 name=replace ptr=0x32e3c3b3865e5d01 val=0x797d8a0c044c
+[proto-core] setAttribute obj=0x797d8a0ba000 name=isdigit ptr=0x3a69cfa7273d3d01 val=0x797d8a0c084c
+[proto-core] setAttribute obj=0x797d8a0ba000 name=isalpha ptr=0x30e8e1b30f3d3d01 val=0x797d8a0c0b0c
+[proto-core] setAttribute obj=0x797d8a0ba000 name=isascii ptr=0x34e9c7cf0f3d3d01 val=0x797d8a0c0dcc
+[proto-core] setAttribute obj=0x797d8a0ba000 name=removeprefix ptr=0x797d8a083106 val=0x797d8a0c114c
+[proto-core] setAttribute obj=0x797d8a0ba000 name=removesuffix ptr=0x797d8a084ac6 val=0x797d8a0c2a8c
+[proto-core] setAttribute obj=0x797d8a0c42c0 name=__class__ ptr=0x797d8a0406c6 val=0x797d8a075d40
+[proto-core] setAttribute obj=0x797d8a0c42c0 name=__name__ ptr=0x797d8a041186 val=0xcb8f4ece7501
+[proto-core] setAttribute obj=0x797d8a0c42c0 name=__call__ ptr=0x797d8a041c86 val=0x797d8a0c488c
+[proto-core] setAttribute obj=0x797d8a0c42c0 name=__repr__ ptr=0x797d8a0397c6 val=0x797d8a0c4b8c
+[proto-core] setAttribute obj=0x797d8a0c4e40 name=__class__ ptr=0x797d8a0406c6 val=0x797d8a075d40
+[proto-core] setAttribute obj=0x797d8a0c4e40 name=__name__ ptr=0x797d8a041186 val=0xe9877eccd501
+[proto-core] setAttribute obj=0x797d8a0c4e40 name=__call__ ptr=0x797d8a041c86 val=0x797d8a0c54cc
+[proto-core] setAttribute obj=0x797d8a0c4e40 name=is_integer ptr=0x797d8a0c65c6 val=0x797d8a0c678c
+[proto-core] setAttribute obj=0x797d8a0c4e40 name=as_integer_ratio ptr=0x797d8a0c8c46 val=0x797d8a0c8e0c
+[proto-core] setAttribute obj=0x797d8a0c4e40 name=hex ptr=0x3c65d0d01 val=0x797d8a0c914c
+[proto-core] setAttribute obj=0x797d8a0c4e40 name=fromhex ptr=0x3c65d1b77f2cdd01 val=0x797d8a0c93cc
+[proto-core] setAttribute obj=0x797d8a0c96c0 name=__class__ ptr=0x797d8a0406c6 val=0x797d8a075d40
+[proto-core] setAttribute obj=0x797d8a0c96c0 name=__name__ ptr=0x797d8a041186 val=0x1b37efc5101
+[proto-core] setAttribute obj=0x797d8a0c96c0 name=__call__ ptr=0x797d8a041c86 val=0x797d8a0c9d4c
+[proto-core] setAttribute(non-mutable) obj=0x797d8a0ca080 name=__class__ ptr=0x797d8a0406c6 val=0x797d8a075d40
+[proto-core] setAttribute(non-mutable) obj=0x797d8a0ca100 name=__name__ ptr=0x797d8a041186 val=0x797d8a0caa86
+[proto-core] setAttribute obj=0x797d8a0cad40 name=__env_ptr__ ptr=0x797d8a0cbe86 val=0x797d8a0cad8b
+[proto-core] setAttribute obj=0x797d8a0cad40 name=exit ptr=0x1d34f8cb101 val=0x797d8a0cc2cc
+[proto-core] setAttribute obj=0x797d8a0cad40 name=settrace ptr=0x797d8a0cce86 val=0x797d8a0cc50c
+[proto-core] setAttribute obj=0x797d8a0cad40 name=gettrace ptr=0x797d8a0cdbc6 val=0x797d8a0cd24c
+[proto-core] setAttribute obj=0x797d8a0cad40 name=getsizeof ptr=0x797d8a0ceb86 val=0x797d8a0cdfcc
+[proto-core] setAttribute obj=0x797d8a0cf040 name=__call__ ptr=0x797d8a041c86 val=0x797d8a0cf08c
+[proto-core] setAttribute obj=0x797d8a0cad40 name=_trace_default ptr=0x797d8a0d1886 val=0x797d8a0cf040
+[proto-core] setAttribute obj=0x797d8a0cad40 name=platform ptr=0x797d8a0d2646 val=0xf1d7769d9501
+[proto-core] setAttribute obj=0x797d8a0cad40 name=version ptr=0x376fd3cf965edd01 val=0x797d8a0d9f46
+[proto-core] setAttribute obj=0x797d8a0cad40 name=path ptr=0x1a3a61e1101 val=0x797d8a0da702
+[proto-core] setAttribute obj=0x797d8a0cad40 name=modules ptr=0x39e5d9d726fdbd01 val=0x797d8a0da9c0
+[proto-core] setAttribute obj=0x797d8a0cad40 name=argv ptr=0x1db3f2c3101 val=0x797d8a0e3602
+[proto-core] setAttribute obj=0x797d8a0cad40 name=version_info ptr=0x797d8a0e4e06 val=0x797d8a0e3a02
+[proto-core] setAttribute obj=0x797d8a0e53c0 name=calls ptr=0xe7b3661c7501 val=0x1
+[proto-core] setAttribute obj=0x797d8a0e53c0 name=objects_created ptr=0x797d8a0e74c6 val=0x1
+[proto-core] setAttribute obj=0x797d8a0cad40 name=stats ptr=0xe7d30f4e7501 val=0x797d8a0e53c0
+[proto-core] setAttribute obj=0x797d8a0cad40 name=executable ptr=0x797d8a0ead46 val=0x797d8a0e9d86
+[proto-core] setAttribute obj=0x797d8a0cad40 name=excepthook ptr=0x797d8a0ec146 val=0
+[proto-core] setAttribute obj=0x797d8a0cad40 name=last_type ptr=0x797d8a0ed006 val=0
+[proto-core] setAttribute obj=0x797d8a0cad40 name=last_value ptr=0x797d8a0ee106 val=0
+[proto-core] setAttribute obj=0x797d8a0cad40 name=last_traceback ptr=0x797d8a0efec6 val=0
+[proto-core] setAttribute obj=0x797d8a0f0240 name=open ptr=0x1bb2f0df101 val=0x797d8a0f028c
+[proto-core] setAttribute obj=0x797d8a0f0580 name=None ptr=0x19776f9d101 val=0x797d8a0cacc0
+[proto-core] setAttribute obj=0x797d8a0f0580 name=__io_module__ ptr=0x797d8a0374c6 val=0x797d8a0f0240
+[proto-core] setAttribute obj=0x797d8a0f0580 name=True ptr=0x197af2a9101 val=0x4c1
+[proto-core] setAttribute obj=0x797d8a0f0580 name=False ptr=0xcbcf6618d501 val=0xc1
+[proto-core] setAttribute obj=0x797d8a0f0580 name=object ptr=0x74c797562df901 val=0x797d8a073bc0
+[proto-core] setAttribute obj=0x797d8a0f0580 name=type ptr=0x197879e9101 val=0x797d8a0f2b8c
+[proto-core] setAttribute obj=0x797d8a0f0580 name=int ptr=0x3a6ed2d01 val=0x797d8a076280
+[proto-core] setAttribute obj=0x797d8a0f0580 name=str ptr=0x3974e6d01 val=0x797d8a07c3c0
+[proto-core] setAttribute obj=0x797d8a0f0580 name=list ptr=0x1d39e9d9101 val=0x797d8a092f40
+[proto-core] setAttribute obj=0x797d8a0f0580 name=dict ptr=0x1d31e9c9101 val=0x797d8a0a06c0
+[proto-core] setAttribute obj=0x797d8a0f0580 name=tuple ptr=0xcbb3875e9501 val=0x797d8a0a7f00
+[proto-core] setAttribute obj=0x797d8a0f0580 name=set ptr=0x3a65e6d01 val=0x797d8a0aa280
+[proto-core] setAttribute obj=0x797d8a0f0580 name=bytes ptr=0xe797a79c5501 val=0x797d8a0ba000
+[proto-core] setAttribute obj=0x797d8a0f0580 name=slice ptr=0xcb8f4ece7501 val=0x797d8a0c42c0
+[proto-core] setAttribute obj=0x797d8a0f0580 name=frozenset ptr=0x797d8a0b8906 val=0x797d8a0b7980
+[proto-core] setAttribute obj=0x797d8a0f0580 name=float ptr=0xe9877eccd501 val=0x797d8a0c4e40
+[proto-core] setAttribute obj=0x797d8a0f0580 name=bool ptr=0x1b37efc5101 val=0x797d8a0c96c0
+[proto-core] setAttribute obj=0x797d8a0f0580 name=len ptr=0x3765d8d01 val=0x797d8a0f5dcc
+[proto-core] setAttribute obj=0x797d8a0f0580 name=repr ptr=0x1cb865e5101 val=0x797d8a0f614c
+[proto-core] setAttribute obj=0x797d8a0f0580 name=format ptr=0x74c3b796fcd901 val=0x797d8a0f644c
+[proto-core] setAttribute obj=0x797d8a0f0580 name=__name__ ptr=0x797d8a041186 val=0x797d8a0f7146
+[proto-core] setAttribute obj=0x797d8a0f0580 name=__package__ ptr=0x797d8a0f9246 val=0x797d8a0f80c6
+[proto-core] setAttribute obj=0x797d8a0f0580 name=open ptr=0x1bb2f0df101 val=0x797d8a0f96cc
+[proto-core] setAttribute obj=0x797d8a0f0580 name=print ptr=0xe9bb4f2e1501 val=0x797d8a0f9b4c
+[proto-core] setAttribute obj=0x797d8a0f0580 name=dir ptr=0x3969c8d01 val=0x797d8a0f9f0c
+[proto-core] setAttribute obj=0x797d8a0f0580 name=id ptr=0x64d2901 val=0x797d8a0fa38c
+[proto-core] setAttribute obj=0x797d8a0f0580 name=getattr ptr=0x3974e987a65cfd01 val=0x797d8a0fa6cc
+[proto-core] setAttribute obj=0x797d8a0f0580 name=setattr ptr=0x3974e987a65e7d01 val=0x797d8a0faa8c
+[proto-core] setAttribute obj=0x797d8a0f0580 name=hasattr ptr=0x3974e9879e1d1d01 val=0x797d8a0fae4c
+[proto-core] setAttribute obj=0x797d8a0f0580 name=iter ptr=0x1cb2f4d3101 val=0x797d8a0fb18c
+[proto-core] setAttribute obj=0x797d8a0f0580 name=next ptr=0x1d3c65dd101 val=0x797d8a0fb60c
+[proto-core] setAttribute obj=0x797d8a0f0580 name=contains ptr=0x797d8a0fc346 val=0x797d8a0fb9cc
+[proto-core] setAttribute obj=0x797d8a0f0580 name=in ptr=0x6ed2901 val=0x797d8a0fc94c
+[proto-core] setAttribute obj=0x797d8a0f0580 name=isinstance ptr=0x797d8a0fdc46 val=0x797d8a0fce0c
+[proto-core] setAttribute obj=0x797d8a0f0580 name=issubclass ptr=0x797d8a0fef46 val=0x797d8a0fe10c
+[proto-core] setAttribute obj=0x797d8a0f0580 name=range ptr=0xcb9f761e5501 val=0x797d8a0ff4cc
+[proto-core] setAttribute obj=0x797d8a0f0580 name=enumerate ptr=0x797d8a1003c6 val=0x797d8a0ff80c
+[proto-core] setAttribute obj=0x797d8a0f0580 name=reversed ptr=0x797d8a101346 val=0x797d8a1009cc
+[proto-core] setAttribute obj=0x797d8a101900 name=__iter__ ptr=0x797d8a03c346 val=0x797d8a10194c
+[proto-core] setAttribute obj=0x797d8a101900 name=__next__ ptr=0x797d8a03ce46 val=0x797d8a1026cc
+[proto-core] setAttribute obj=0x797d8a0f0580 name=__zip_proto__ ptr=0x797d8a065886 val=0x797d8a101900
+[proto-core] setAttribute obj=0x797d8a0f0580 name=zip ptr=0x3869f4d01 val=0x797d8a10508c
+[proto-core] setAttribute obj=0x797d8a105540 name=__iter__ ptr=0x797d8a03c346 val=0x797d8a10558c
+[proto-core] setAttribute obj=0x797d8a105540 name=__next__ ptr=0x797d8a03ce46 val=0x797d8a10630c
+[proto-core] setAttribute obj=0x797d8a0f0580 name=__filter_proto__ ptr=0x797d8a067c86 val=0x797d8a105540
+[proto-core] setAttribute obj=0x797d8a0f0580 name=filter ptr=0x72cbd3669cd901 val=0x797d8a10984c
+[proto-core] setAttribute obj=0x797d8a109bc0 name=__iter__ ptr=0x797d8a03c346 val=0x797d8a109c0c
+[proto-core] setAttribute obj=0x797d8a109bc0 name=__next__ ptr=0x797d8a03ce46 val=0x797d8a10a98c
+[proto-core] setAttribute obj=0x797d8a0f0580 name=__map_proto__ ptr=0x797d8a069546 val=0x797d8a109bc0
+[proto-core] setAttribute obj=0x797d8a0f0580 name=map ptr=0x3861dad01 val=0x797d8a10d24c
+[proto-core] setAttribute obj=0x797d8a0f0580 name=sum ptr=0x36f5e6d01 val=0x797d8a10d70c
+[proto-core] setAttribute obj=0x797d8a0f0580 name=all ptr=0x366cc2d01 val=0x797d8a10da4c
+[proto-core] setAttribute obj=0x797d8a0f0580 name=any ptr=0x3ceec2d01 val=0x797d8a10de4c
+[proto-core] setAttribute obj=0x797d8a10e340 name=__iter__ ptr=0x797d8a03c346 val=0x797d8a10e38c
+[proto-core] setAttribute obj=0x797d8a10e340 name=__next__ ptr=0x797d8a03ce46 val=0x797d8a10f10c
+[proto-core] setAttribute obj=0x797d8a0f0580 name=__enumerate_proto__ ptr=0x797d8a060e86 val=0x797d8a10e340
+[proto-core] setAttribute obj=0x797d8a113500 name=__iter__ ptr=0x797d8a03c346 val=0x797d8a11354c
+[proto-core] setAttribute obj=0x797d8a113500 name=__next__ ptr=0x797d8a03ce46 val=0x797d8a1142cc
+[proto-core] setAttribute obj=0x797d8a0f0580 name=__reversed_proto__ ptr=0x797d8a063d86 val=0x797d8a113500
+[proto-core] setAttribute obj=0x797d8a1182c0 name=__iter__ ptr=0x797d8a03c346 val=0x797d8a11830c
+[proto-core] setAttribute obj=0x797d8a1182c0 name=__next__ ptr=0x797d8a03ce46 val=0x797d8a11908c
+[proto-core] setAttribute obj=0x797d8a0f0580 name=__range_proto__ ptr=0x797d8a06b546 val=0x797d8a1182c0
+[proto-core] setAttribute obj=0x797d8a0f0580 name=abs ptr=0x39e2c2d01 val=0x797d8a11c14c
+[proto-core] setAttribute obj=0x797d8a0f0580 name=min ptr=0x3769dad01 val=0x797d8a11c60c
+[proto-core] setAttribute obj=0x797d8a0f0580 name=max ptr=0x3c61dad01 val=0x797d8a11c9cc
+[proto-core] setAttribute obj=0x797d8a0f0580 name=pow ptr=0x3befe0d01 val=0x797d8a11cd4c
+[proto-core] setAttribute obj=0x797d8a0f0580 name=round ptr=0xc9bbaefe5501 val=0x797d8a11d18c
+[proto-core] setAttribute obj=0x797d8a0f0580 name=divmod ptr=0x64dfb7b69c9901 val=0x797d8a11d50c
+[proto-core] setAttribute obj=0x797d8a0f0580 name=ascii ptr=0xd3a71f3c3501 val=0x797d8a11d9cc
+[proto-core] setAttribute obj=0x797d8a0f0580 name=ord ptr=0x3272ded01 val=0x797d8a11dd0c
+[proto-core] setAttribute obj=0x797d8a0f0580 name=chr ptr=0x3968c6d01 val=0x797d8a11e10c
+[proto-core] setAttribute obj=0x797d8a0f0580 name=bin ptr=0x3769c4d01 val=0x797d8a11e44c
+[proto-core] setAttribute obj=0x797d8a0f0580 name=oct ptr=0x3a63ded01 val=0x797d8a11e78c
+[proto-core] setAttribute obj=0x797d8a0f0580 name=hex ptr=0x3c65d0d01 val=0x797d8a11eb0c
+[proto-core] setAttribute obj=0x797d8a0f0580 name=sorted ptr=0x64cbd396fe7901 val=0x797d8a11f00c
+[proto-core] setAttribute obj=0x797d8a0f0580 name=callable ptr=0x797d8a11fd06 val=0x797d8a11f38c
+[proto-core] setAttribute obj=0x797d8a0f0580 name=getattr ptr=0x3974e987a65cfd01 val=0x797d8a12038c
+[proto-core] setAttribute obj=0x797d8a0f0580 name=setattr ptr=0x3974e987a65e7d01 val=0x797d8a12064c
+[proto-core] setAttribute obj=0x797d8a0f0580 name=hasattr ptr=0x3974e9879e1d1d01 val=0x797d8a12094c
+[proto-core] setAttribute obj=0x797d8a0f0580 name=delattr ptr=0x3974e987665c9d01 val=0x797d8a120c8c
+[proto-core] setAttribute obj=0x797d8a0f0580 name=raise ptr=0xcbcf4e1e5501 val=0x797d8a12114c
+[proto-core] setAttribute obj=0x797d8a0f0580 name=dir ptr=0x3969c8d01 val=0x797d8a12148c
+[proto-core] setAttribute obj=0x797d8a0f0580 name=vars ptr=0x1cf961ed101 val=0x797d8a1216cc
+[proto-core] setAttribute obj=0x797d8a0f0580 name=input ptr=0xe9d786ed3501 val=0x797d8a121a4c
+[proto-core] setAttribute obj=0x797d8a0f0580 name=breakpoint ptr=0x797d8a122d86 val=0x797d8a121f4c
+[proto-core] setAttribute obj=0x797d8a0f0580 name=globals ptr=0x39ecc38b7eccfd01 val=0x797d8a12334c
+[proto-core] setAttribute obj=0x797d8a0f0580 name=locals ptr=0x73d9871efd9901 val=0x797d8a12368c
+[proto-core] setAttribute obj=0x797d8a0f0580 name=_tokenize_source ptr=0x797d8a125c86 val=0x797d8a123a0c
+[proto-core] setAttribute obj=0x797d8a0f0580 name=compile ptr=0x32ecd3c36efc7d01 val=0x797d8a12630c
+[proto-core] setAttribute obj=0x797d8a0f0580 name=eval ptr=0x1b30f6cb101 val=0x797d8a12668c
+[proto-core] setAttribute obj=0x797d8a0f0580 name=exec ptr=0x18f2f8cb101 val=0x797d8a126a0c
+[proto-core] setAttribute obj=0x797d8a0f0580 name=hash ptr=0x1a39e1d1101 val=0x797d8a126d8c
+[proto-core] setAttribute obj=0x797d8a0f0580 name=help ptr=0x1c3665d1101 val=0x797d8a1271cc
+[proto-core] setAttribute obj=0x797d8a0f0580 name=memoryview ptr=0x797d8a128386 val=0x797d8a12754c
+[proto-core] setAttribute obj=0x797d8a0f0580 name=super ptr=0xe597875e7501 val=0x797d8a128a0c
+[proto-core] setAttribute obj=0x797d8a0f0580 name=property ptr=0x797d8a129846 val=0x797d8a128ecc
+[proto-core] setAttribute obj=0x797d8a0f0580 name=classmethod ptr=0x797d8a12afc6 val=0x797d8a129ecc
+[proto-core] setAttribute obj=0x797d8a0f0580 name=staticmethod ptr=0x797d8a12c906 val=0x797d8a12b50c
+[proto-core] setAttribute obj=0x797d8a0f0580 name=__import__ ptr=0x797d8a12de06 val=0x797d8a12cfcc
+[proto-core] setAttribute obj=0x797d8a142fc0 name=__class__ ptr=0x797d8a0406c6 val=0x797d8a075d40
+[proto-core] setAttribute obj=0x797d8a142fc0 name=__name__ ptr=0x797d8a041186 val=0x797d8a12ef86
+[proto-core] setAttribute obj=0x797d8a142fc0 name=__init__ ptr=0x797d8a047186 val=0x797d8a14430c
+[proto-core] setAttribute obj=0x797d8a142fc0 name=__repr__ ptr=0x797d8a0397c6 val=0x797d8a14460c
+[proto-core] setAttribute obj=0x797d8a142fc0 name=__call__ ptr=0x797d8a041c86 val=0x797d8a14488c
+[proto-core] setAttribute obj=0x797d8a148300 name=__class__ ptr=0x797d8a0406c6 val=0x797d8a075d40
+[proto-core] setAttribute obj=0x797d8a148300 name=__name__ ptr=0x797d8a041186 val=0x797d8a12fa46
+[proto-core] setAttribute obj=0x797d8a148300 name=__init__ ptr=0x797d8a047186 val=0x797d8a14944c
+[proto-core] setAttribute obj=0x797d8a148300 name=__repr__ ptr=0x797d8a0397c6 val=0x797d8a14974c
+[proto-core] setAttribute obj=0x797d8a148300 name=__call__ ptr=0x797d8a041c86 val=0x797d8a1499cc
+[proto-core] setAttribute obj=0x797d8a14d440 name=__class__ ptr=0x797d8a0406c6 val=0x797d8a075d40
+[proto-core] setAttribute obj=0x797d8a14d440 name=__name__ ptr=0x797d8a041186 val=0x797d8a130a06
+[proto-core] setAttribute obj=0x797d8a14d440 name=__init__ ptr=0x797d8a047186 val=0x797d8a14ea4c
+[proto-core] setAttribute obj=0x797d8a14d440 name=__repr__ ptr=0x797d8a0397c6 val=0x797d8a14ed8c
+[proto-core] setAttribute obj=0x797d8a14d440 name=__call__ ptr=0x797d8a041c86 val=0x797d8a14f04c
+[proto-core] setAttribute obj=0x797d8a152b00 name=__class__ ptr=0x797d8a0406c6 val=0x797d8a075d40
+[proto-core] setAttribute obj=0x797d8a152b00 name=__name__ ptr=0x797d8a041186 val=0x797d8a131746
+[proto-core] setAttribute obj=0x797d8a152b00 name=__init__ ptr=0x797d8a047186 val=0x797d8a153f0c
+[proto-core] setAttribute obj=0x797d8a152b00 name=__repr__ ptr=0x797d8a0397c6 val=0x797d8a15424c
+[proto-core] setAttribute obj=0x797d8a152b00 name=__call__ ptr=0x797d8a041c86 val=0x797d8a15450c
+[proto-core] setAttribute obj=0x797d8a157fc0 name=__class__ ptr=0x797d8a0406c6 val=0x797d8a075d40
+[proto-core] setAttribute obj=0x797d8a157fc0 name=__name__ ptr=0x797d8a041186 val=0x797d8a133346
+[proto-core] setAttribute obj=0x797d8a157fc0 name=__init__ ptr=0x797d8a047186 val=0x797d8a15a30c
+[proto-core] setAttribute obj=0x797d8a157fc0 name=__repr__ ptr=0x797d8a0397c6 val=0x797d8a15a64c
+[proto-core] setAttribute obj=0x797d8a157fc0 name=__call__ ptr=0x797d8a041c86 val=0x797d8a15a90c
+[proto-core] setAttribute obj=0x797d8a15e3c0 name=__class__ ptr=0x797d8a0406c6 val=0x797d8a075d40
+[proto-core] setAttribute obj=0x797d8a15e3c0 name=__name__ ptr=0x797d8a041186 val=0x797d8a1345c6
+[proto-core] setAttribute obj=0x797d8a15e3c0 name=__init__ ptr=0x797d8a047186 val=0x797d8a15fd4c
+[proto-core] setAttribute obj=0x797d8a15e3c0 name=__repr__ ptr=0x797d8a0397c6 val=0x797d8a16008c
+[proto-core] setAttribute obj=0x797d8a15e3c0 name=__call__ ptr=0x797d8a041c86 val=0x797d8a16034c
+[proto-core] setAttribute obj=0x797d8a163e00 name=__class__ ptr=0x797d8a0406c6 val=0x797d8a075d40
+[proto-core] setAttribute obj=0x797d8a163e00 name=__name__ ptr=0x797d8a041186 val=0x797d8a135306
+[proto-core] setAttribute obj=0x797d8a163e00 name=__init__ ptr=0x797d8a047186 val=0x797d8a16520c
+[proto-core] setAttribute obj=0x797d8a163e00 name=__repr__ ptr=0x797d8a0397c6 val=0x797d8a16554c
+[proto-core] setAttribute obj=0x797d8a163e00 name=__call__ ptr=0x797d8a041c86 val=0x797d8a16580c
+[proto-core] setAttribute obj=0x797d8a1692c0 name=__class__ ptr=0x797d8a0406c6 val=0x797d8a075d40
+[proto-core] setAttribute obj=0x797d8a1692c0 name=__name__ ptr=0x797d8a041186 val=0x797d8a136546
+[proto-core] setAttribute obj=0x797d8a1692c0 name=__init__ ptr=0x797d8a047186 val=0x797d8a16ac4c
+[proto-core] setAttribute obj=0x797d8a1692c0 name=__repr__ ptr=0x797d8a0397c6 val=0x797d8a16af8c
+[proto-core] setAttribute obj=0x797d8a1692c0 name=__call__ ptr=0x797d8a041c86 val=0x797d8a16b24c
+[proto-core] setAttribute obj=0x797d8a16ed00 name=__class__ ptr=0x797d8a0406c6 val=0x797d8a075d40
+[proto-core] setAttribute obj=0x797d8a16ed00 name=__name__ ptr=0x797d8a041186 val=0x797d8a138d86
+[proto-core] setAttribute obj=0x797d8a16ed00 name=__init__ ptr=0x797d8a047186 val=0x797d8a171e8c
+[proto-core] setAttribute obj=0x797d8a16ed00 name=__repr__ ptr=0x797d8a0397c6 val=0x797d8a1721cc
+[proto-core] setAttribute obj=0x797d8a16ed00 name=__call__ ptr=0x797d8a041c86 val=0x797d8a17248c
+[proto-core] setAttribute obj=0x797d8a175f40 name=__class__ ptr=0x797d8a0406c6 val=0x797d8a075d40
+[proto-core] setAttribute obj=0x797d8a175f40 name=__name__ ptr=0x797d8a041186 val=0x797d8a139f86
+[proto-core] setAttribute obj=0x797d8a175f40 name=__init__ ptr=0x797d8a047186 val=0x797d8a17760c
+[proto-core] setAttribute obj=0x797d8a175f40 name=__repr__ ptr=0x797d8a0397c6 val=0x797d8a17794c
+[proto-core] setAttribute obj=0x797d8a175f40 name=__call__ ptr=0x797d8a041c86 val=0x797d8a177c0c
+[proto-core] setAttribute obj=0x797d8a17b6c0 name=__class__ ptr=0x797d8a0406c6 val=0x797d8a075d40
+[proto-core] setAttribute obj=0x797d8a17b6c0 name=__name__ ptr=0x797d8a041186 val=0x797d8a13bbc6
+[proto-core] setAttribute obj=0x797d8a17b6c0 name=__init__ ptr=0x797d8a047186 val=0x797d8a17da0c
+[proto-core] setAttribute obj=0x797d8a17b6c0 name=__repr__ ptr=0x797d8a0397c6 val=0x797d8a17dd4c
+[proto-core] setAttribute obj=0x797d8a17b6c0 name=__call__ ptr=0x797d8a041c86 val=0x797d8a17e00c
+[proto-core] setAttribute obj=0x797d8a181ac0 name=__class__ ptr=0x797d8a0406c6 val=0x797d8a075d40
+[proto-core] setAttribute obj=0x797d8a181ac0 name=__name__ ptr=0x797d8a041186 val=0x797d8a13e406
+[proto-core] setAttribute obj=0x797d8a181ac0 name=__init__ ptr=0x797d8a047186 val=0x797d8a184c4c
+[proto-core] setAttribute obj=0x797d8a181ac0 name=__repr__ ptr=0x797d8a0397c6 val=0x797d8a184f8c
+[proto-core] setAttribute obj=0x797d8a181ac0 name=__call__ ptr=0x797d8a041c86 val=0x797d8a18524c
+[proto-core] setAttribute obj=0x797d8a188d00 name=__class__ ptr=0x797d8a0406c6 val=0x797d8a075d40
+[proto-core] setAttribute obj=0x797d8a188d00 name=__name__ ptr=0x797d8a041186 val=0x797d8a13f606
+[proto-core] setAttribute obj=0x797d8a188d00 name=__init__ ptr=0x797d8a047186 val=0x797d8a18a3cc
+[proto-core] setAttribute obj=0x797d8a188d00 name=__repr__ ptr=0x797d8a0397c6 val=0x797d8a18a70c
+[proto-core] setAttribute obj=0x797d8a188d00 name=__call__ ptr=0x797d8a041c86 val=0x797d8a18a9cc
+[proto-core] setAttribute obj=0x797d8a18acc0 name=Exception ptr=0x797d8a12ef86 val=0x797d8a142fc0
+[proto-core] setAttribute obj=0x797d8a18acc0 name=KeyError ptr=0x797d8a12fa46 val=0x797d8a148300
+[proto-core] setAttribute obj=0x797d8a18acc0 name=ValueError ptr=0x797d8a130a06 val=0x797d8a14d440
+[proto-core] setAttribute obj=0x797d8a18acc0 name=NameError ptr=0x797d8a131746 val=0x797d8a152b00
+[proto-core] setAttribute obj=0x797d8a18acc0 name=AttributeError ptr=0x797d8a133346 val=0x797d8a157fc0
+[proto-core] setAttribute obj=0x797d8a18acc0 name=SyntaxError ptr=0x797d8a1345c6 val=0x797d8a15e3c0
+[proto-core] setAttribute obj=0x797d8a18acc0 name=TypeError ptr=0x797d8a135306 val=0x797d8a163e00
+[proto-core] setAttribute obj=0x797d8a18acc0 name=ImportError ptr=0x797d8a136546 val=0x797d8a1692c0
+[proto-core] setAttribute obj=0x797d8a18acc0 name=KeyboardInterrupt ptr=0x797d8a138d86 val=0x797d8a16ed00
+[proto-core] setAttribute obj=0x797d8a18acc0 name=SystemExit ptr=0x797d8a139f86 val=0x797d8a175f40
+[proto-core] setAttribute obj=0x797d8a18acc0 name=RecursionError ptr=0x797d8a13bbc6 val=0x797d8a17b6c0
+[proto-core] setAttribute obj=0x797d8a18acc0 name=ZeroDivisionError ptr=0x797d8a13e406 val=0x797d8a181ac0
+[proto-core] setAttribute obj=0x797d8a18acc0 name=IndexError ptr=0x797d8a13f606 val=0x797d8a188d00
+[proto-core] setAttribute obj=0x797d8a18acc0 name=__name__ ptr=0x797d8a041186 val=0x797d8a18e386
+[proto-core] getAttribute obj=0x797d8a18acc0 name=KeyError ptr=0x797d8a12fa46
+[proto-core] getAttribute FOUND obj=0x797d8a18acc0 name=KeyError res=0x797d8a148300
+[proto-core] getAttribute obj=0x797d8a18acc0 name=ValueError ptr=0x797d8a130a06
+[proto-core] getAttribute FOUND obj=0x797d8a18acc0 name=ValueError res=0x797d8a14d440
+[proto-core] getAttribute obj=0x797d8a18acc0 name=NameError ptr=0x797d8a131746
+[proto-core] getAttribute FOUND obj=0x797d8a18acc0 name=NameError res=0x797d8a152b00
+[proto-core] getAttribute obj=0x797d8a18acc0 name=AttributeError ptr=0x797d8a133346
+[proto-core] getAttribute FOUND obj=0x797d8a18acc0 name=AttributeError res=0x797d8a157fc0
+[proto-core] getAttribute obj=0x797d8a18acc0 name=SyntaxError ptr=0x797d8a1345c6
+[proto-core] getAttribute FOUND obj=0x797d8a18acc0 name=SyntaxError res=0x797d8a15e3c0
+[proto-core] getAttribute obj=0x797d8a18acc0 name=TypeError ptr=0x797d8a135306
+[proto-core] getAttribute FOUND obj=0x797d8a18acc0 name=TypeError res=0x797d8a163e00
+[proto-core] getAttribute obj=0x797d8a18acc0 name=ImportError ptr=0x797d8a136546
+[proto-core] getAttribute FOUND obj=0x797d8a18acc0 name=ImportError res=0x797d8a1692c0
+[proto-core] getAttribute obj=0x797d8a18acc0 name=KeyboardInterrupt ptr=0x797d8a138d86
+[proto-core] getAttribute FOUND obj=0x797d8a18acc0 name=KeyboardInterrupt res=0x797d8a16ed00
+[proto-core] getAttribute obj=0x797d8a18acc0 name=SystemExit ptr=0x797d8a139f86
+[proto-core] getAttribute FOUND obj=0x797d8a18acc0 name=SystemExit res=0x797d8a175f40
+[proto-core] getAttribute obj=0x797d8a18acc0 name=RecursionError ptr=0x797d8a13bbc6
+[proto-core] getAttribute FOUND obj=0x797d8a18acc0 name=RecursionError res=0x797d8a17b6c0
+[proto-core] getAttribute obj=0x797d8a18acc0 name=StopIteration ptr=0x797d8a19d406
+[proto-core] getAttribute NOT FOUND name=StopIteration
+[proto-core] getAttribute obj=0x797d8a18acc0 name=ZeroDivisionError ptr=0x797d8a13e406
+[proto-core] getAttribute FOUND obj=0x797d8a18acc0 name=ZeroDivisionError res=0x797d8a181ac0
+[proto-core] getAttribute obj=0x797d8a18acc0 name=IndexError ptr=0x797d8a13f606
+[proto-core] getAttribute FOUND obj=0x797d8a18acc0 name=IndexError res=0x797d8a188d00
+[proto-core] getAttribute obj=0x797d8a0cad40 name=path ptr=0x1a3a61e1101
+[proto-core] getAttribute FOUND obj=0x797d8a0cad40 name=path res=0x797d8a0da702
+[proto-core] setAttribute obj=0x797d8a0cad40 name=path ptr=0x1a3a61e1101 val=0x797d8a1bff02
+[proto-core] getAttribute obj=0x797d8a0cad40 name=modules ptr=0x39e5d9d726fdbd01
+[proto-core] getAttribute FOUND obj=0x797d8a0cad40 name=modules res=0x797d8a0da9c0
+[proto-core] setAttribute obj=0x797d8a0da9c0 name=sys ptr=0x39f9e6d01 val=0x797d8a0cad40
+[proto-core] setAttribute obj=0x797d8a0da9c0 name=builtins ptr=0x797d8a0f7146 val=0x797d8a0f0580
+[proto-core] setAttribute obj=0x797d8a0cad40 name=modules ptr=0x39e5d9d726fdbd01 val=0x797d8a0da9c0
+[proto-core] setAttribute obj=0x797d89fa7e00 name=__name__ ptr=0x797d8a041186 val=0x797d89fa9546
+[proto-core] setAttribute obj=0x797d89fa7e00 name=__file__ ptr=0x797d89fa7106 val=0x797d89fac4c6
+[proto-core] setAttribute(non-mutable) obj=0x797d89facb40 name=val ptr=0x3661ecd01 val=0x797d89fa7e00
+[proto-core] getAttribute obj=0x797d89facbc0 name=val ptr=0x3661ecd01
+[proto-core] getAttribute FOUND obj=0x797d89facbc0 name=val res=0x797d89fa7e00
+[proto-core] getAttribute obj=0x797d89fa7e00 name=__file__ ptr=0x797d89fa7106
+[proto-core] getAttribute FOUND obj=0x797d89fa7e00 name=__file__ res=0x797d89fac4c6
+[proto-core] getAttribute obj=0x797d89fa7e00 name=__executed__ ptr=0x797d8a1cae86
+[proto-core] getAttribute NOT FOUND name=__executed__
+[proto-core] setAttribute(non-mutable) obj=0x797d89facc40 name=val ptr=0x3661ecd01 val=0x797d89fa7e00
+[proto-core] getAttribute obj=0x797d89faccc0 name=val ptr=0x3661ecd01
+[proto-core] getAttribute FOUND obj=0x797d89faccc0 name=val res=0x797d89fa7e00
+[proto-core] getAttribute obj=0x797d89fa7e00 name=__file__ ptr=0x797d89fa7106
+[proto-core] getAttribute FOUND obj=0x797d89fa7e00 name=__file__ res=0x797d89fac4c6
+[proto-core] getAttribute obj=0x797d89fa7e00 name=__executed__ ptr=0x797d8a1cae86
+[proto-core] getAttribute NOT FOUND name=__executed__
+[proto-core] getAttribute obj=0x797d8a0cad40 name=modules ptr=0x39e5d9d726fdbd01
+[proto-core] getAttribute FOUND obj=0x797d8a0cad40 name=modules res=0x797d8a0da9c0
+[proto-core] setAttribute obj=0x797d8a0da9c0 name=verify_batch1 ptr=0x797d89fa9546 val=0x797d89fa7e00
+[proto-core] setAttribute obj=0x797d8a0cad40 name=modules ptr=0x39e5d9d726fdbd01 val=0x797d8a0da9c0
+[proto-core] getAttribute obj=0x797d89fa7e00 name=__file__ ptr=0x797d89fa7106
+[proto-core] getAttribute FOUND obj=0x797d89fa7e00 name=__file__ res=0x797d89fac4c6
+[proto-core] getAttribute obj=0x797d89fa7e00 name=__executed__ ptr=0x797d8a1cae86
+[proto-core] getAttribute NOT FOUND name=__executed__
+[proto-core] setAttribute obj=0x797d8a1d1c00 name=co_consts ptr=0x797d8a1d27c6 val=0x797d8a1d13c2
+[proto-core] setAttribute obj=0x797d8a1d1c00 name=co_names ptr=0x797d8a1d3546 val=0x797d8a1d1682
+[proto-core] setAttribute obj=0x797d8a1d1c00 name=co_code ptr=0x32e4df8efefc7d01 val=0x797d8a1d1b02
+[proto-core] setAttribute obj=0x797d8a1d1c00 name=co_varnames ptr=0x797d8a022ec6 val=0x797d8a1d1b82
+[proto-core] setAttribute obj=0x797d8a1d1c00 name=co_nparams ptr=0x797d8a023e86 val=0x401
+[proto-core] setAttribute obj=0x797d8a1d1c00 name=co_automatic_count ptr=0x797d8a026b46 val=0x401
+[proto-core] setAttribute obj=0x797d8a1db100 name=co_consts ptr=0x797d8a1d27c6 val=0x797d8a1da7c2
+[proto-core] setAttribute obj=0x797d8a1db100 name=co_names ptr=0x797d8a1d3546 val=0x797d8a1dab02
+[proto-core] setAttribute obj=0x797d8a1db100 name=co_code ptr=0x32e4df8efefc7d01 val=0x797d8a1daf82
+[proto-core] setAttribute obj=0x797d8a1db100 name=co_varnames ptr=0x797d8a022ec6 val=0x797d8a1db082
+[proto-core] setAttribute obj=0x797d8a1db100 name=co_nparams ptr=0x797d8a023e86 val=0x801
+[proto-core] setAttribute obj=0x797d8a1db100 name=co_automatic_count ptr=0x797d8a026b46 val=0x801
+[proto-core] setAttribute obj=0x797d8a1e4200 name=co_consts ptr=0x797d8a1d27c6 val=0x797d8a1e3b02
+[proto-core] setAttribute obj=0x797d8a1e4200 name=co_names ptr=0x797d8a1d3546 val=0x797d8a1e3c82
+[proto-core] setAttribute obj=0x797d8a1e4200 name=co_code ptr=0x32e4df8efefc7d01 val=0x797d8a1e4102
+[proto-core] setAttribute obj=0x797d8a1e4200 name=co_varnames ptr=0x797d8a022ec6 val=0x797d8a1e4182
+[proto-core] setAttribute obj=0x797d8a1e4200 name=co_nparams ptr=0x797d8a023e86 val=0x401
+[proto-core] setAttribute obj=0x797d8a1e4200 name=co_automatic_count ptr=0x797d8a026b46 val=0x401
+[proto-core] setAttribute obj=0x797d8a1f24c0 name=co_consts ptr=0x797d8a1d27c6 val=0x797d8a1ebd42
+[proto-core] setAttribute obj=0x797d8a1f24c0 name=co_names ptr=0x797d8a1d3546 val=0x797d8a1f0f42
+[proto-core] setAttribute obj=0x797d8a1f24c0 name=co_code ptr=0x32e4df8efefc7d01 val=0x797d8a1f2442
+[proto-core] setAttribute obj=0x797d8a1f24c0 name=co_varnames ptr=0x797d8a022ec6 val=0x797d8a1f4482
+[proto-core] setAttribute obj=0x797d8a1f24c0 name=co_nparams ptr=0x797d8a023e86 val=0x1
+[proto-core] setAttribute obj=0x797d8a1f24c0 name=co_automatic_count ptr=0x797d8a026b46 val=0x1
+[proto-core] setAttribute obj=0x797d8a1ff3c0 name=co_consts ptr=0x797d8a1d27c6 val=0x797d8a1fe002
+[proto-core] setAttribute obj=0x797d8a1ff3c0 name=co_names ptr=0x797d8a1d3546 val=0x797d8a1fd542
+[proto-core] setAttribute obj=0x797d8a1ff3c0 name=co_code ptr=0x32e4df8efefc7d01 val=0x797d8a1ff2c2
+[proto-core] setAttribute obj=0x797d8a1ff3c0 name=co_varnames ptr=0x797d8a022ec6 val=0x797d8a1ff342
+[proto-core] setAttribute obj=0x797d8a1ff3c0 name=co_nparams ptr=0x797d8a023e86 val=0x401
+[proto-core] setAttribute obj=0x797d8a1ff3c0 name=co_automatic_count ptr=0x797d8a026b46 val=0x401
+[proto-core] setAttribute obj=0x797d8a207640 name=co_consts ptr=0x797d8a1d27c6 val=0x797d8a206e82
+[proto-core] setAttribute obj=0x797d8a207640 name=co_names ptr=0x797d8a1d3546 val=0x797d8a207142
+[proto-core] setAttribute obj=0x797d8a207640 name=co_code ptr=0x32e4df8efefc7d01 val=0x797d8a2075c2
+[proto-core] setAttribute obj=0x797d8a207640 name=co_varnames ptr=0x797d8a022ec6 val=0x797d8a209602
+[proto-core] setAttribute obj=0x797d8a207640 name=co_nparams ptr=0x797d8a023e86 val=0x1
+[proto-core] setAttribute obj=0x797d8a207640 name=co_automatic_count ptr=0x797d8a026b46 val=0x1
+[proto-core] setAttribute obj=0x797d8a3148c0 name=co_consts ptr=0x797d8a1d27c6 val=0x797d8a2fe4c2
+[proto-core] setAttribute obj=0x797d8a3148c0 name=co_names ptr=0x797d8a1d3546 val=0x797d8a2cd8c2
+[proto-core] setAttribute obj=0x797d8a3148c0 name=co_code ptr=0x32e4df8efefc7d01 val=0x797d8a314842
+[proto-core] setAttribute obj=0x797d8a3148c0 name=co_varnames ptr=0x797d8a022ec6 val=0x797d8a316882
+[proto-core] setAttribute obj=0x797d8a3148c0 name=co_nparams ptr=0x797d8a023e86 val=0x1
+[proto-core] setAttribute obj=0x797d8a3148c0 name=co_automatic_count ptr=0x797d8a026b46 val=0x1
+[proto-core] getAttribute obj=0x797d8a3148c0 name=co_consts ptr=0x797d8a1d27c6
+[proto-core] getAttribute FOUND obj=0x797d8a3148c0 name=co_consts res=0x797d8a2fe4c2
+[proto-core] getAttribute obj=0x797d8a3148c0 name=co_names ptr=0x797d8a1d3546
+[proto-core] getAttribute FOUND obj=0x797d8a3148c0 name=co_names res=0x797d8a2cd8c2
+[proto-core] getAttribute obj=0x797d8a3148c0 name=co_code ptr=0x32e4df8efefc7d01
+[proto-core] getAttribute FOUND obj=0x797d8a3148c0 name=co_code res=0x797d8a314842
+[proto-core] setAttribute obj=0x797d8a31dc00 name=__data__ ptr=0x797d8a035106 val=0x797d8a0f8104
+[proto-core] setAttribute obj=0x797d8a31dc00 name=__class__ ptr=0x797d8a0406c6 val=0x797d8a0a7f00
+[proto-core] setAttribute obj=0x797d8a31e380 name=__code__ ptr=0x797d8a0209c6 val=0x797d8a1f24c0
+[proto-core] setAttribute obj=0x797d8a31e380 name=__globals__ ptr=0x797d8a021c46 val=0x797d89fa7e00
+[proto-core] setAttribute obj=0x797d8a31e380 name=__call__ ptr=0x797d8a041c86 val=0x797d8a31e8cc
+[proto-engine] BUILD_CLASS entry: name=0x1979e185101 stack=0
+[proto-core] setAttribute obj=0x797d8a31ec40 name=__name__ ptr=0x797d8a041186 val=0x1979e185101
+[proto-engine] BUILD_CLASS ns created: 0x797d8a31ec40
+[proto-core] getAttribute obj=0x797d8a31e380 name=__code__ ptr=0x797d8a0209c6
+[proto-core] getAttribute FOUND obj=0x797d8a31e380 name=__code__ res=0x797d8a1f24c0
+[proto-engine] BUILD_CLASS body codeObj: 0x797d8a1f24c0
+[proto-core] getAttribute obj=0x797d8a1f24c0 name=co_consts ptr=0x797d8a1d27c6
+[proto-core] getAttribute FOUND obj=0x797d8a1f24c0 name=co_consts res=0x797d8a1ebd42
+[proto-core] getAttribute obj=0x797d8a1f24c0 name=co_names ptr=0x797d8a1d3546
+[proto-core] getAttribute FOUND obj=0x797d8a1f24c0 name=co_names res=0x797d8a1f0f42
+[proto-core] getAttribute obj=0x797d8a1f24c0 name=co_code ptr=0x32e4df8efefc7d01
+[proto-core] getAttribute FOUND obj=0x797d8a1f24c0 name=co_code res=0x797d8a1f2442
+[proto-core] setAttribute obj=0x797d8a320700 name=__code__ ptr=0x797d8a0209c6 val=0x797d8a1d1c00
+[proto-core] setAttribute obj=0x797d8a320700 name=__globals__ ptr=0x797d8a021c46 val=0x797d8a31ec40
+[proto-core] setAttribute obj=0x797d8a320700 name=__call__ ptr=0x797d8a041c86 val=0x797d8a320c4c
+[proto-core] setAttribute obj=0x797d8a31ec40 name=__init__ ptr=0x797d8a047186 val=0x797d8a320700
+[proto-core] setAttribute obj=0x797d8a3211c0 name=__code__ ptr=0x797d8a0209c6 val=0x797d8a1db100
+[proto-core] setAttribute obj=0x797d8a3211c0 name=__globals__ ptr=0x797d8a021c46 val=0x797d8a31ec40
+[proto-core] setAttribute obj=0x797d8a3211c0 name=__call__ ptr=0x797d8a041c86 val=0x797d8a3216cc
+[proto-core] setAttribute obj=0x797d8a31ec40 name=set_val ptr=0x3661ed7fa65e7d01 val=0x797d8a3211c0
+[proto-core] setAttribute obj=0x797d8a321d40 name=__code__ ptr=0x797d8a0209c6 val=0x797d8a1e4200
+[proto-core] setAttribute obj=0x797d8a321d40 name=__globals__ ptr=0x797d8a021c46 val=0x797d8a31ec40
+[proto-core] setAttribute obj=0x797d8a321d40 name=__call__ ptr=0x797d8a041c86 val=0x797d8a32230c
+[proto-core] setAttribute obj=0x797d8a31ec40 name=get_val ptr=0x3661ed7fa65cfd01 val=0x797d8a321d40
+[proto-core] getAttribute obj=0x797d8a31ec40 name=property ptr=0x797d8a129846
+[proto-core] getAttribute NOT FOUND name=property
+[proto-core] getAttribute obj=0x797d8a0f0580 name=property ptr=0x797d8a129846
+[proto-core] getAttribute FOUND obj=0x797d8a0f0580 name=property res=0x797d8a128ecc
+[proto-core] getAttribute obj=0x797d8a31ec40 name=get_val ptr=0x3661ed7fa65cfd01
+[proto-core] getAttribute FOUND obj=0x797d8a31ec40 name=get_val res=0x797d8a321d40
+[proto-core] getAttribute obj=0x797d8a31ec40 name=set_val ptr=0x3661ed7fa65e7d01
+[proto-core] getAttribute FOUND obj=0x797d8a31ec40 name=set_val res=0x797d8a3211c0
+[proto-core] setAttribute obj=0x797d8a3234c0 name=fget ptr=0x1d32e7cd101 val=0x797d8a321d40
+[proto-core] setAttribute obj=0x797d8a3234c0 name=fset ptr=0x1d32f3cd101 val=0x797d8a3211c0
+[proto-core] setAttribute obj=0x797d8a3234c0 name=__get__ ptr=0x2fdfe9973dfbfd01 val=0x797d8a323a8c
+[proto-core] setAttribute obj=0x797d8a3234c0 name=__set__ ptr=0x2fdfe9979dfbfd01 val=0x797d8a323e0c
+[proto-core] setAttribute obj=0x797d8a31ec40 name=x ptr=0xf0501 val=0x797d8a3234c0
+[proto-engine] BUILD_CLASS runCodeObject returned, ns=0x797d8a31ec40
+[proto-core] setAttribute obj=0x797d8a3243c0 name=__class__ ptr=0x797d8a0406c6 val=0x797d8a075d40
+[proto-core] getAttribute obj=0x797d8a31dc00 name=__data__ ptr=0x797d8a035106
+[proto-core] getAttribute FOUND obj=0x797d8a31dc00 name=__data__ res=0x797d8a0f8104
+[proto-core] getAttribute obj=0x797d8a31dc00 name=__data__ ptr=0x797d8a035106
+[proto-core] getAttribute FOUND obj=0x797d8a31dc00 name=__data__ res=0x797d8a0f8104
+[proto-engine] BUILD_CLASS: ns=0x797d8a31ec40 keys=0x797d8a324188 size=5
+[proto-core] getAttribute obj=0x797d8a31ec40 name=x ptr=0xf0501
+[proto-core] getAttribute FOUND obj=0x797d8a31ec40 name=x res=0x797d8a3234c0
+[proto-engine] BUILD_CLASS copying: x val=0x797d8a3234c0
+[proto-core] setAttribute obj=0x797d8a3243c0 name=x ptr=0xf0501 val=0x797d8a3234c0
+[proto-core] getAttribute obj=0x797d8a3243c0 name=x ptr=0xf0501
+[proto-core] getAttribute FOUND obj=0x797d8a3243c0 name=x res=0x797d8a3234c0
+[proto-core] getAttribute obj=0x797d8a31ec40 name=__name__ ptr=0x797d8a041186
+[proto-core] getAttribute FOUND obj=0x797d8a31ec40 name=__name__ res=0x1979e185101
+[proto-engine] BUILD_CLASS copying: __name__ val=0x1979e185101
+[proto-core] setAttribute obj=0x797d8a3243c0 name=__name__ ptr=0x797d8a041186 val=0x1979e185101
+[proto-core] getAttribute obj=0x797d8a3243c0 name=__name__ ptr=0x797d8a041186
+[proto-core] getAttribute FOUND obj=0x797d8a3243c0 name=__name__ res=0x1979e185101
+[proto-core] getAttribute obj=0x797d8a31ec40 name=__init__ ptr=0x797d8a047186
+[proto-core] getAttribute FOUND obj=0x797d8a31ec40 name=__init__ res=0x797d8a320700
+[proto-engine] BUILD_CLASS copying: __init__ val=0x797d8a320700
+[proto-core] setAttribute obj=0x797d8a3243c0 name=__init__ ptr=0x797d8a047186 val=0x797d8a320700
+[proto-core] getAttribute obj=0x797d8a3243c0 name=__init__ ptr=0x797d8a047186
+[proto-core] getAttribute FOUND obj=0x797d8a3243c0 name=__init__ res=0x797d8a320700
+[proto-core] getAttribute obj=0x797d8a31ec40 name=get_val ptr=0x3661ed7fa65cfd01
+[proto-core] getAttribute FOUND obj=0x797d8a31ec40 name=get_val res=0x797d8a321d40
+[proto-engine] BUILD_CLASS copying: get_val val=0x797d8a321d40
+[proto-core] setAttribute obj=0x797d8a3243c0 name=get_val ptr=0x3661ed7fa65cfd01 val=0x797d8a321d40
+[proto-core] getAttribute obj=0x797d8a3243c0 name=get_val ptr=0x3661ed7fa65cfd01
+[proto-core] getAttribute FOUND obj=0x797d8a3243c0 name=get_val res=0x797d8a321d40
+[proto-core] getAttribute obj=0x797d8a31ec40 name=set_val ptr=0x3661ed7fa65e7d01
+[proto-core] getAttribute FOUND obj=0x797d8a31ec40 name=set_val res=0x797d8a3211c0
+[proto-engine] BUILD_CLASS copying: set_val val=0x797d8a3211c0
+[proto-core] setAttribute obj=0x797d8a3243c0 name=set_val ptr=0x3661ed7fa65e7d01 val=0x797d8a3211c0
+[proto-core] getAttribute obj=0x797d8a3243c0 name=set_val ptr=0x3661ed7fa65e7d01
+[proto-core] getAttribute FOUND obj=0x797d8a3243c0 name=set_val res=0x797d8a3211c0
+[proto-core] setAttribute obj=0x797d8a3243c0 name=__call__ ptr=0x797d8a041c86 val=0x797d8a326c8c
+[proto-core] setAttribute obj=0x797d89fa7e00 name=Base ptr=0x1979e185101 val=0x797d8a3243c0
+[proto-core] getAttribute obj=0x797d89fa7e00 name=Base ptr=0x1979e185101
+[proto-core] getAttribute FOUND obj=0x797d89fa7e00 name=Base res=0x797d8a3243c0
+[proto-core] setAttribute obj=0x797d8a327380 name=__data__ ptr=0x797d8a035106 val=0x797d8a3272c4
+[proto-core] setAttribute obj=0x797d8a327380 name=__class__ ptr=0x797d8a0406c6 val=0x797d8a0a7f00
+[proto-core] setAttribute obj=0x797d8a327bc0 name=__code__ ptr=0x797d8a0209c6 val=0x797d8a207640
+[proto-core] setAttribute obj=0x797d8a327bc0 name=__globals__ ptr=0x797d8a021c46 val=0x797d89fa7e00
+[proto-core] setAttribute obj=0x797d8a327bc0 name=__call__ ptr=0x797d8a041c86 val=0x797d8a32818c
+[proto-engine] BUILD_CLASS entry: name=0x3265eda796589d01 stack=0
+[proto-core] setAttribute obj=0x797d8a328540 name=__name__ ptr=0x797d8a041186 val=0x3265eda796589d01
+[proto-engine] BUILD_CLASS ns created: 0x797d8a328540
+[proto-core] getAttribute obj=0x797d8a327bc0 name=__code__ ptr=0x797d8a0209c6
+[proto-core] getAttribute FOUND obj=0x797d8a327bc0 name=__code__ res=0x797d8a207640
+[proto-engine] BUILD_CLASS body codeObj: 0x797d8a207640
+[proto-core] getAttribute obj=0x797d8a207640 name=co_consts ptr=0x797d8a1d27c6
+[proto-core] getAttribute FOUND obj=0x797d8a207640 name=co_consts res=0x797d8a206e82
+[proto-core] getAttribute obj=0x797d8a207640 name=co_names ptr=0x797d8a1d3546
+[proto-core] getAttribute FOUND obj=0x797d8a207640 name=co_names res=0x797d8a207142
+[proto-core] getAttribute obj=0x797d8a207640 name=co_code ptr=0x32e4df8efefc7d01
+[proto-core] getAttribute FOUND obj=0x797d8a207640 name=co_code res=0x797d8a2075c2
+[proto-core] setAttribute obj=0x797d8a32a040 name=__code__ ptr=0x797d8a0209c6 val=0x797d8a1ff3c0
+[proto-core] setAttribute obj=0x797d8a32a040 name=__globals__ ptr=0x797d8a021c46 val=0x797d8a328540
+[proto-core] setAttribute obj=0x797d8a32a040 name=__call__ ptr=0x797d8a041c86 val=0x797d8a32a60c
+[proto-core] setAttribute obj=0x797d8a328540 name=get_val ptr=0x3661ed7fa65cfd01 val=0x797d8a32a040
+[proto-engine] BUILD_CLASS runCodeObject returned, ns=0x797d8a328540
+[proto-core] setAttribute obj=0x797d8a32ac00 name=__class__ ptr=0x797d8a0406c6 val=0x797d8a075d40
+[proto-core] getAttribute obj=0x797d8a327380 name=__data__ ptr=0x797d8a035106
+[proto-core] getAttribute FOUND obj=0x797d8a327380 name=__data__ res=0x797d8a3272c4
+[proto-core] getAttribute obj=0x797d8a327380 name=__data__ ptr=0x797d8a035106
+[proto-core] getAttribute FOUND obj=0x797d8a327380 name=__data__ res=0x797d8a3272c4
+[proto-engine] BUILD_CLASS: ns=0x797d8a328540 keys=0x797d8a32a9c8 size=2
+[proto-core] getAttribute obj=0x797d8a328540 name=__name__ ptr=0x797d8a041186
+[proto-core] getAttribute FOUND obj=0x797d8a328540 name=__name__ res=0x3265eda796589d01
+[proto-engine] BUILD_CLASS copying: __name__ val=0x3265eda796589d01
+[proto-core] setAttribute obj=0x797d8a32ac00 name=__name__ ptr=0x797d8a041186 val=0x3265eda796589d01
+[proto-core] getAttribute obj=0x797d8a32ac00 name=__name__ ptr=0x797d8a041186
+[proto-core] getAttribute FOUND obj=0x797d8a32ac00 name=__name__ res=0x3265eda796589d01
+[proto-core] getAttribute obj=0x797d8a328540 name=get_val ptr=0x3661ed7fa65cfd01
+[proto-core] getAttribute FOUND obj=0x797d8a328540 name=get_val res=0x797d8a32a040
+[proto-engine] BUILD_CLASS copying: get_val val=0x797d8a32a040
+[proto-core] setAttribute obj=0x797d8a32ac00 name=get_val ptr=0x3661ed7fa65cfd01 val=0x797d8a32a040
+[proto-core] getAttribute obj=0x797d8a32ac00 name=get_val ptr=0x3661ed7fa65cfd01
+[proto-core] getAttribute FOUND obj=0x797d8a32ac00 name=get_val res=0x797d8a32a040
+[proto-core] setAttribute obj=0x797d8a32ac00 name=__call__ ptr=0x797d8a041c86 val=0x797d8a32cd4c
+[proto-core] setAttribute obj=0x797d89fa7e00 name=Derived ptr=0x3265eda796589d01 val=0x797d8a32ac00
+[proto-core] getAttribute obj=0x797d89fa7e00 name=print ptr=0xe9bb4f2e1501
+[proto-core] getAttribute NOT FOUND name=print
+[proto-core] getAttribute obj=0x797d8a0f0580 name=print ptr=0xe9bb4f2e1501
+[proto-core] getAttribute FOUND obj=0x797d8a0f0580 name=print res=0x797d8a0f9b4c
+Testing property and super...
+[proto-core] getAttribute obj=0x797d89fa7e00 name=Derived ptr=0x3265eda796589d01
+[proto-core] getAttribute FOUND obj=0x797d89fa7e00 name=Derived res=0x797d8a32ac00
+[proto-core] getAttribute obj=0x797d8a32ac00 name=__call__ ptr=0x797d8a041c86
+[proto-core] getAttribute FOUND obj=0x797d8a32ac00 name=__call__ res=0x797d8a32cd4c
+[proto-core] getAttribute obj=0x797d8a32d380 name=__init__ ptr=0x797d8a047186
+[proto-core] getAttribute UP obj=0x797d8a32d380 parentObj=0x797d8a32ac00
+[proto-core] getAttribute UP obj=0x797d8a32ac00 parentObj=0x797d8a3243c0
+[proto-core] getAttribute FOUND obj=0x797d8a32d380 name=__init__ res=0x797d8a320700
+[proto-core] getAttribute obj=0x797d8a320700 name=__call__ ptr=0x797d8a041c86
+[proto-core] getAttribute FOUND obj=0x797d8a320700 name=__call__ res=0x797d8a320c4c
+[proto-core] getAttribute obj=0x797d8a320700 name=__code__ ptr=0x797d8a0209c6
+[proto-core] getAttribute FOUND obj=0x797d8a320700 name=__code__ res=0x797d8a1d1c00
+[proto-core] getAttribute obj=0x797d8a320700 name=__globals__ ptr=0x797d8a021c46
+[proto-core] getAttribute FOUND obj=0x797d8a320700 name=__globals__ res=0x797d8a31ec40
+[proto-core] getAttribute obj=0x797d8a1d1c00 name=co_varnames ptr=0x797d8a022ec6
+[proto-core] getAttribute FOUND obj=0x797d8a1d1c00 name=co_varnames res=0x797d8a1d1b82
+[proto-core] getAttribute obj=0x797d8a1d1c00 name=co_nparams ptr=0x797d8a023e86
+[proto-core] getAttribute FOUND obj=0x797d8a1d1c00 name=co_nparams res=0x401
+[proto-core] getAttribute obj=0x797d8a1d1c00 name=co_automatic_count ptr=0x797d8a026b46
+[proto-core] getAttribute FOUND obj=0x797d8a1d1c00 name=co_automatic_count res=0x401
+[proto-core] getAttribute obj=0x797d8a1d1c00 name=co_consts ptr=0x797d8a1d27c6
+[proto-core] getAttribute FOUND obj=0x797d8a1d1c00 name=co_consts res=0x797d8a1d13c2
+[proto-core] getAttribute obj=0x797d8a1d1c00 name=co_names ptr=0x797d8a1d3546
+[proto-core] getAttribute FOUND obj=0x797d8a1d1c00 name=co_names res=0x797d8a1d1682
+[proto-core] getAttribute obj=0x797d8a1d1c00 name=co_code ptr=0x32e4df8efefc7d01
+[proto-core] getAttribute FOUND obj=0x797d8a1d1c00 name=co_code res=0x797d8a1d1b02
+[proto-core] setAttribute obj=0x797d89fa7e00 name=d ptr=0xc8501 val=0x797d8a32d380
+[proto-core] getAttribute obj=0x797d89fa7e00 name=d ptr=0xc8501
+[proto-core] getAttribute FOUND obj=0x797d89fa7e00 name=d res=0x797d8a32d380
+[proto-core] getAttribute obj=0x797d89fa7e00 name=print ptr=0xe9bb4f2e1501
+[proto-core] getAttribute NOT FOUND name=print
+[proto-core] getAttribute obj=0x797d89fa7e00 name=d ptr=0xc8501
+[proto-core] getAttribute FOUND obj=0x797d89fa7e00 name=d res=0x797d8a32d380
+[proto-core] getAttribute obj=0x797d8a32d380 name=x ptr=0xf0501
+[proto-core] getAttribute UP obj=0x797d8a32d380 parentObj=0x797d8a32ac00
+[proto-core] getAttribute UP obj=0x797d8a32ac00 parentObj=0x797d8a3243c0
+[proto-core] getAttribute FOUND obj=0x797d8a32d380 name=x res=0x797d8a3234c0
+[proto-core] getAttribute obj=0x797d8a3234c0 name=__get__ ptr=0x2fdfe9973dfbfd01
+[proto-core] getAttribute FOUND obj=0x797d8a3234c0 name=__get__ res=0x797d8a323a8c
+[proto-core] getAttribute obj=0x797d8a32d380 name=__class__ ptr=0x797d8a0406c6
+[proto-core] getAttribute UP obj=0x797d8a32d380 parentObj=0x797d8a32ac00
+[proto-core] getAttribute FOUND obj=0x797d8a32d380 name=__class__ res=0x797d8a075d40
+[proto-core] getAttribute obj=0x797d8a3234c0 name=fget ptr=0x1d32e7cd101
+[proto-core] getAttribute FOUND obj=0x797d8a3234c0 name=fget res=0x797d8a321d40
+[proto-core] getAttribute obj=0x797d8a321d40 name=__call__ ptr=0x797d8a041c86
+[proto-core] getAttribute FOUND obj=0x797d8a321d40 name=__call__ res=0x797d8a32230c
+[proto-core] getAttribute obj=0x797d8a321d40 name=__code__ ptr=0x797d8a0209c6
+[proto-core] getAttribute FOUND obj=0x797d8a321d40 name=__code__ res=0x797d8a1e4200
+[proto-core] getAttribute obj=0x797d8a321d40 name=__globals__ ptr=0x797d8a021c46
+[proto-core] getAttribute FOUND obj=0x797d8a321d40 name=__globals__ res=0x797d8a31ec40
+[proto-core] getAttribute obj=0x797d8a1e4200 name=co_varnames ptr=0x797d8a022ec6
+[proto-core] getAttribute FOUND obj=0x797d8a1e4200 name=co_varnames res=0x797d8a1e4182
+[proto-core] getAttribute obj=0x797d8a1e4200 name=co_nparams ptr=0x797d8a023e86
+[proto-core] getAttribute FOUND obj=0x797d8a1e4200 name=co_nparams res=0x401
+[proto-core] getAttribute obj=0x797d8a1e4200 name=co_automatic_count ptr=0x797d8a026b46
+[proto-core] getAttribute FOUND obj=0x797d8a1e4200 name=co_automatic_count res=0x401
+[proto-core] getAttribute obj=0x797d8a1e4200 name=co_consts ptr=0x797d8a1d27c6
+[proto-core] getAttribute FOUND obj=0x797d8a1e4200 name=co_consts res=0x797d8a1e3b02
+[proto-core] getAttribute obj=0x797d8a1e4200 name=co_names ptr=0x797d8a1d3546
+[proto-core] getAttribute FOUND obj=0x797d8a1e4200 name=co_names res=0x797d8a1e3c82
+[proto-core] getAttribute obj=0x797d8a1e4200 name=co_code ptr=0x32e4df8efefc7d01
+[proto-core] getAttribute FOUND obj=0x797d8a1e4200 name=co_code res=0x797d8a1e4102
+[proto-core] getAttribute obj=0x797d8a32d380 name=_val ptr=0x1b30f6bf101
+[proto-core] getAttribute UP obj=0x797d8a32d380 parentObj=0x797d8a32ac00
+[proto-core] getAttribute UP obj=0x797d8a32ac00 parentObj=0x797d8a3243c0
+[proto-core] getAttribute NOT FOUND name=_val
+getAttribute failed for: _val
+[proto-core] getAttribute obj=0x797d8a32d380 name=__class__ ptr=0x797d8a0406c6
+[proto-core] getAttribute UP obj=0x797d8a32d380 parentObj=0x797d8a32ac00
+[proto-core] getAttribute FOUND obj=0x797d8a32d380 name=__class__ res=0x797d8a075d40
+[proto-core] getAttribute obj=0x797d8a075d40 name=__name__ ptr=0x797d8a041186
+[proto-core] getAttribute UP obj=0x797d8a075d40 parentObj=0x797d8a073bc0
+[proto-core] getAttribute NOT FOUND name=__name__
+[proto-core] getAttribute obj=0x797d8a157fc0 name=__call__ ptr=0x797d8a041c86
+[proto-core] getAttribute FOUND obj=0x797d8a157fc0 name=__call__ res=0x797d8a15a90c
+[proto-core] setAttribute obj=0x797d8a4314c0 name=__class__ ptr=0x797d8a0406c6 val=0x797d8a157fc0
+[proto-core] setAttribute obj=0x797d8a4314c0 name=args ptr=0x1cf3f2c3101 val=0x797d8a432544
+[proto-core] getAttribute obj=0x797d8a157fc0 name=__init__ ptr=0x797d8a047186
+[proto-core] getAttribute FOUND obj=0x797d8a157fc0 name=__init__ res=0x797d8a15a30c
+[proto-core] setAttribute obj=0x797d8a4314c0 name=args ptr=0x1cf3f2c3101 val=0x797d8a432544
+[proto-core] setAttribute obj=0x797d8a4314c0 name=obj ptr=0x3562ded01 val=0x797d8a32d380
+[proto-core] setAttribute obj=0x797d8a4314c0 name=name ptr=0x1976e1dd101 val=0x1b30f6bf101
+[proto-core] getAttribute obj=0x797d8a32d380 name=__class__ ptr=0x797d8a0406c6
+[proto-core] getAttribute UP obj=0x797d8a32d380 parentObj=0x797d8a32ac00
+[proto-core] getAttribute FOUND obj=0x797d8a32d380 name=__class__ res=0x797d8a075d40
+[proto-core] getAttribute obj=0x797d8a075d40 name=__name__ ptr=0x797d8a041186
+[proto-core] getAttribute UP obj=0x797d8a075d40 parentObj=0x797d8a073bc0
+[proto-core] getAttribute NOT FOUND name=__name__
+[proto-core] getAttribute obj=0x797d8a157fc0 name=__call__ ptr=0x797d8a041c86
+[proto-core] getAttribute FOUND obj=0x797d8a157fc0 name=__call__ res=0x797d8a15a90c
+[proto-core] setAttribute obj=0x797d8a33cc00 name=__class__ ptr=0x797d8a0406c6 val=0x797d8a157fc0
+[proto-core] setAttribute obj=0x797d8a33cc00 name=args ptr=0x1cf3f2c3101 val=0x797d8a33dc84
+[proto-core] getAttribute obj=0x797d8a157fc0 name=__init__ ptr=0x797d8a047186
+[proto-core] getAttribute FOUND obj=0x797d8a157fc0 name=__init__ res=0x797d8a15a30c
+[proto-core] setAttribute obj=0x797d8a33cc00 name=args ptr=0x1cf3f2c3101 val=0x797d8a33dc84
+[proto-core] setAttribute obj=0x797d8a33cc00 name=obj ptr=0x3562ded01 val=0x797d8a32d380
+[proto-core] setAttribute obj=0x797d8a33cc00 name=name ptr=0x1976e1dd101 val=0xf0501
+[proto-core] getAttribute obj=0x797d8a33cc00 name=__class__ ptr=0x797d8a0406c6
+[proto-core] getAttribute FOUND obj=0x797d8a33cc00 name=__class__ res=0x797d8a157fc0
+[proto-core] setAttribute obj=0x797d8a0cad40 name=last_type ptr=0x797d8a0ed006 val=0x797d8a157fc0
+[proto-core] setAttribute obj=0x797d8a0cad40 name=last_value ptr=0x797d8a0ee106 val=0x797d8a33cc00
+[proto-core] setAttribute obj=0x797d8a0cad40 name=last_traceback ptr=0x797d8a0efec6 val=0
+[proto-core] getAttribute obj=0x797d8a0cad40 name=excepthook ptr=0x797d8a0ec146
+[proto-core] getAttribute NOT FOUND name=excepthook
+[proto-core] getAttribute obj=0x797d8a157fc0 name=__name__ ptr=0x797d8a041186
+[proto-core] getAttribute FOUND obj=0x797d8a157fc0 name=__name__ res=0x797d8a133346
+[proto-core] getAttribute obj=0x797d8a33cc00 name=__cause__ ptr=0x797d8a346786
+[proto-core] getAttribute UP obj=0x797d8a33cc00 parentObj=0x797d8a157fc0
+[proto-core] getAttribute UP obj=0x797d8a157fc0 parentObj=0x797d8a142fc0
+[proto-core] getAttribute UP obj=0x797d8a142fc0 parentObj=0x797d8a073bc0
+[proto-core] getAttribute NOT FOUND name=__cause__
+[proto-core] getAttribute obj=0x797d8a33cc00 name=__context__ ptr=0x797d8a3479c6
+[proto-core] getAttribute UP obj=0x797d8a33cc00 parentObj=0x797d8a157fc0
+[proto-core] getAttribute UP obj=0x797d8a157fc0 parentObj=0x797d8a142fc0
+[proto-core] getAttribute UP obj=0x797d8a142fc0 parentObj=0x797d8a073bc0
+[proto-core] getAttribute NOT FOUND name=__context__
+[proto-core] getAttribute obj=0x797d8a33cc00 name=__class__ ptr=0x797d8a0406c6
+[proto-core] getAttribute FOUND obj=0x797d8a33cc00 name=__class__ res=0x797d8a157fc0
+[proto-core] getAttribute obj=0x797d8a157fc0 name=__name__ ptr=0x797d8a041186
+[proto-core] getAttribute FOUND obj=0x797d8a157fc0 name=__name__ res=0x797d8a133346
+[proto-core] getAttribute obj=0x797d8a33cc00 name=args ptr=0x1cf3f2c3101
+[proto-core] getAttribute FOUND obj=0x797d8a33cc00 name=args res=0x797d8a33dc84
+[proto-core] getAttribute obj=0x797d8a33cc00 name=name ptr=0x1976e1dd101
+[proto-core] getAttribute FOUND obj=0x797d8a33cc00 name=name res=0xf0501
+[proto-core] getAttribute obj=0x797d8a33cc00 name=obj ptr=0x3562ded01
+[proto-core] getAttribute FOUND obj=0x797d8a33cc00 name=obj res=0x797d8a32d380
+[proto-core] getAttribute obj=0x797d8a33cc00 name=lineno ptr=0x6fdd97769d9901
+[proto-core] getAttribute UP obj=0x797d8a33cc00 parentObj=0x797d8a157fc0
+[proto-core] getAttribute UP obj=0x797d8a157fc0 parentObj=0x797d8a142fc0
+[proto-core] getAttribute UP obj=0x797d8a142fc0 parentObj=0x797d8a073bc0
+[proto-core] getAttribute NOT FOUND name=lineno
+[proto-core] getAttribute obj=0x797d8a33cc00 name=text ptr=0x1d3c65e9101
+[proto-core] getAttribute UP obj=0x797d8a33cc00 parentObj=0x797d8a157fc0
+[proto-core] getAttribute UP obj=0x797d8a157fc0 parentObj=0x797d8a142fc0
+[proto-core] getAttribute UP obj=0x797d8a142fc0 parentObj=0x797d8a073bc0
+[proto-core] getAttribute NOT FOUND name=text
+[proto-core] getAttribute obj=0x797d8a33cc00 name=offset ptr=0x74cbcf366df901
+[proto-core] getAttribute UP obj=0x797d8a33cc00 parentObj=0x797d8a157fc0
+[proto-core] getAttribute UP obj=0x797d8a157fc0 parentObj=0x797d8a142fc0
+[proto-core] getAttribute UP obj=0x797d8a142fc0 parentObj=0x797d8a073bc0
+[proto-core] getAttribute NOT FOUND name=offset
+Traceback (most recent call last):
+  File "<stdin>", in <module>
+AttributeError: 'object' object has no attribute 'x'
+[proto-core] getAttribute obj=0x797d89facbc0 name=val ptr=0x3661ecd01
+[proto-core] getAttribute FOUND obj=0x797d89facbc0 name=val res=0x797d89fa7e00
+[proto-core] getAttribute obj=0x797d8a0cad40 name=modules ptr=0x39e5d9d726fdbd01
+[proto-core] getAttribute FOUND obj=0x797d8a0cad40 name=modules res=0x797d8a0da9c0
+[proto-core] setAttribute obj=0x797d8a0da9c0 name=verify_batch1 ptr=0x797d89fa9546 val=0x797d89fa7e00
+[proto-core] setAttribute obj=0x797d8a0cad40 name=modules ptr=0x39e5d9d726fdbd01 val=0x797d8a0da9c0
+[proto-core] setAttribute obj=0x797d89fa7e00 name=__name__ ptr=0x797d8a041186 val=0x797d8a34c406
+[proto-core] getAttribute obj=0x797d89fa7e00 name=__file__ ptr=0x797d89fa7106
+[proto-core] getAttribute FOUND obj=0x797d89fa7e00 name=__file__ res=0x797d89fac4c6
+[proto-core] getAttribute obj=0x797d89fa7e00 name=__executed__ ptr=0x797d8a1cae86
+[proto-core] getAttribute NOT FOUND name=__executed__
+[proto-core] setAttribute obj=0x797d8a34f500 name=co_consts ptr=0x797d8a1d27c6 val=0x797d8a34ecc2
+[proto-core] setAttribute obj=0x797d8a34f500 name=co_names ptr=0x797d8a1d3546 val=0x797d8a34ef82
+[proto-core] setAttribute obj=0x797d8a34f500 name=co_code ptr=0x32e4df8efefc7d01 val=0x797d8a34f402
+[proto-core] setAttribute obj=0x797d8a34f500 name=co_varnames ptr=0x797d8a022ec6 val=0x797d8a34f482
+[proto-core] setAttribute obj=0x797d8a34f500 name=co_nparams ptr=0x797d8a023e86 val=0x401
+[proto-core] setAttribute obj=0x797d8a34f500 name=co_automatic_count ptr=0x797d8a026b46 val=0x401
+[proto-core] setAttribute obj=0x797d8a358b00 name=co_consts ptr=0x797d8a1d27c6 val=0x797d8a3581c2
+[proto-core] setAttribute obj=0x797d8a358b00 name=co_names ptr=0x797d8a1d3546 val=0x797d8a358502
+[proto-core] setAttribute obj=0x797d8a358b00 name=co_code ptr=0x32e4df8efefc7d01 val=0x797d8a358982
+[proto-core] setAttribute obj=0x797d8a358b00 name=co_varnames ptr=0x797d8a022ec6 val=0x797d8a358a82
+[proto-core] setAttribute obj=0x797d8a358b00 name=co_nparams ptr=0x797d8a023e86 val=0x801
+[proto-core] setAttribute obj=0x797d8a358b00 name=co_automatic_count ptr=0x797d8a026b46 val=0x801
+[proto-core] setAttribute obj=0x797d8a361d80 name=co_consts ptr=0x797d8a1d27c6 val=0x797d8a361682
+[proto-core] setAttribute obj=0x797d8a361d80 name=co_names ptr=0x797d8a1d3546 val=0x797d8a361802
+[proto-core] setAttribute obj=0x797d8a361d80 name=co_code ptr=0x32e4df8efefc7d01 val=0x797d8a361c82
+[proto-core] setAttribute obj=0x797d8a361d80 name=co_varnames ptr=0x797d8a022ec6 val=0x797d8a361d02
+[proto-core] setAttribute obj=0x797d8a361d80 name=co_nparams ptr=0x797d8a023e86 val=0x401
+[proto-core] setAttribute obj=0x797d8a361d80 name=co_automatic_count ptr=0x797d8a026b46 val=0x401
+[proto-core] setAttribute obj=0x797d8a3701c0 name=co_consts ptr=0x797d8a1d27c6 val=0x797d8a369a42
+[proto-core] setAttribute obj=0x797d8a3701c0 name=co_names ptr=0x797d8a1d3546 val=0x797d8a36ec42
+[proto-core] setAttribute obj=0x797d8a3701c0 name=co_code ptr=0x32e4df8efefc7d01 val=0x797d8a370142
+[proto-core] setAttribute obj=0x797d8a3701c0 name=co_varnames ptr=0x797d8a022ec6 val=0x797d8a372242
+[proto-core] setAttribute obj=0x797d8a3701c0 name=co_nparams ptr=0x797d8a023e86 val=0x1
+[proto-core] setAttribute obj=0x797d8a3701c0 name=co_automatic_count ptr=0x797d8a026b46 val=0x1
+[proto-core] setAttribute obj=0x797d8a37d240 name=co_consts ptr=0x797d8a1d27c6 val=0x797d8a37be82
+[proto-core] setAttribute obj=0x797d8a37d240 name=co_names ptr=0x797d8a1d3546 val=0x797d8a37b3c2
+[proto-core] setAttribute obj=0x797d8a37d240 name=co_code ptr=0x32e4df8efefc7d01 val=0x797d8a37d142
+[proto-core] setAttribute obj=0x797d8a37d240 name=co_varnames ptr=0x797d8a022ec6 val=0x797d8a37d1c2
+[proto-core] setAttribute obj=0x797d8a37d240 name=co_nparams ptr=0x797d8a023e86 val=0x401
+[proto-core] setAttribute obj=0x797d8a37d240 name=co_automatic_count ptr=0x797d8a026b46 val=0x401
+[proto-core] setAttribute obj=0x797d8a385640 name=co_consts ptr=0x797d8a1d27c6 val=0x797d8a384e82
+[proto-core] setAttribute obj=0x797d8a385640 name=co_names ptr=0x797d8a1d3546 val=0x797d8a385142
+[proto-core] setAttribute obj=0x797d8a385640 name=co_code ptr=0x32e4df8efefc7d01 val=0x797d8a3855c2
+[proto-core] setAttribute obj=0x797d8a385640 name=co_varnames ptr=0x797d8a022ec6 val=0x797d8a3876c2
+[proto-core] setAttribute obj=0x797d8a385640 name=co_nparams ptr=0x797d8a023e86 val=0x1
+[proto-core] setAttribute obj=0x797d8a385640 name=co_automatic_count ptr=0x797d8a026b46 val=0x1
+[proto-core] setAttribute obj=0x797d8a5927c0 name=co_consts ptr=0x797d8a1d27c6 val=0x797d8a57c3c2
+[proto-core] setAttribute obj=0x797d8a5927c0 name=co_names ptr=0x797d8a1d3546 val=0x797d8a54b802
+[proto-core] setAttribute obj=0x797d8a5927c0 name=co_code ptr=0x32e4df8efefc7d01 val=0x797d8a592742
+[proto-core] setAttribute obj=0x797d8a5927c0 name=co_varnames ptr=0x797d8a022ec6 val=0x797d8a594842
+[proto-core] setAttribute obj=0x797d8a5927c0 name=co_nparams ptr=0x797d8a023e86 val=0x1
+[proto-core] setAttribute obj=0x797d8a5927c0 name=co_automatic_count ptr=0x797d8a026b46 val=0x1
+[proto-core] getAttribute obj=0x797d8a5927c0 name=co_consts ptr=0x797d8a1d27c6
+[proto-core] getAttribute FOUND obj=0x797d8a5927c0 name=co_consts res=0x797d8a57c3c2
+[proto-core] getAttribute obj=0x797d8a5927c0 name=co_names ptr=0x797d8a1d3546
+[proto-core] getAttribute FOUND obj=0x797d8a5927c0 name=co_names res=0x797d8a54b802
+[proto-core] getAttribute obj=0x797d8a5927c0 name=co_code ptr=0x32e4df8efefc7d01
+[proto-core] getAttribute FOUND obj=0x797d8a5927c0 name=co_code res=0x797d8a592742
+[proto-core] setAttribute obj=0x797d8a59bc80 name=__data__ ptr=0x797d8a035106 val=0x797d8a0f8104
+[proto-core] setAttribute obj=0x797d8a59bc80 name=__class__ ptr=0x797d8a0406c6 val=0x797d8a0a7f00
+[proto-core] setAttribute obj=0x797d8a59c4c0 name=__code__ ptr=0x797d8a0209c6 val=0x797d8a3701c0
+[proto-core] setAttribute obj=0x797d8a59c4c0 name=__globals__ ptr=0x797d8a021c46 val=0x797d89fa7e00
+[proto-core] setAttribute obj=0x797d8a59c4c0 name=__call__ ptr=0x797d8a041c86 val=0x797d8a59ca8c
+[proto-engine] BUILD_CLASS entry: name=0x1979e185101 stack=0
+[proto-core] setAttribute obj=0x797d8a59ce40 name=__name__ ptr=0x797d8a041186 val=0x1979e185101
+[proto-engine] BUILD_CLASS ns created: 0x797d8a59ce40
+[proto-core] getAttribute obj=0x797d8a59c4c0 name=__code__ ptr=0x797d8a0209c6
+[proto-core] getAttribute FOUND obj=0x797d8a59c4c0 name=__code__ res=0x797d8a3701c0
+[proto-engine] BUILD_CLASS body codeObj: 0x797d8a3701c0
+[proto-core] getAttribute obj=0x797d8a3701c0 name=co_consts ptr=0x797d8a1d27c6
+[proto-core] getAttribute FOUND obj=0x797d8a3701c0 name=co_consts res=0x797d8a369a42
+[proto-core] getAttribute obj=0x797d8a3701c0 name=co_names ptr=0x797d8a1d3546
+[proto-core] getAttribute FOUND obj=0x797d8a3701c0 name=co_names res=0x797d8a36ec42
+[proto-core] getAttribute obj=0x797d8a3701c0 name=co_code ptr=0x32e4df8efefc7d01
+[proto-core] getAttribute FOUND obj=0x797d8a3701c0 name=co_code res=0x797d8a370142
+[proto-core] setAttribute obj=0x797d8a59e940 name=__code__ ptr=0x797d8a0209c6 val=0x797d8a34f500
+[proto-core] setAttribute obj=0x797d8a59e940 name=__globals__ ptr=0x797d8a021c46 val=0x797d8a59ce40
+[proto-core] setAttribute obj=0x797d8a59e940 name=__call__ ptr=0x797d8a041c86 val=0x797d8a59ef0c
+[proto-core] setAttribute obj=0x797d8a59ce40 name=__init__ ptr=0x797d8a047186 val=0x797d8a59e940
+[proto-core] setAttribute obj=0x797d8a59f500 name=__code__ ptr=0x797d8a0209c6 val=0x797d8a358b00
+[proto-core] setAttribute obj=0x797d8a59f500 name=__globals__ ptr=0x797d8a021c46 val=0x797d8a59ce40
+[proto-core] setAttribute obj=0x797d8a59f500 name=__call__ ptr=0x797d8a041c86 val=0x797d8a59facc
+[proto-core] setAttribute obj=0x797d8a59ce40 name=set_val ptr=0x3661ed7fa65e7d01 val=0x797d8a59f500
+[proto-core] setAttribute obj=0x797d8a5a01c0 name=__code__ ptr=0x797d8a0209c6 val=0x797d8a361d80
+[proto-core] setAttribute obj=0x797d8a5a01c0 name=__globals__ ptr=0x797d8a021c46 val=0x797d8a59ce40
+[proto-core] setAttribute obj=0x797d8a5a01c0 name=__call__ ptr=0x797d8a041c86 val=0x797d8a5a078c
+[proto-core] setAttribute obj=0x797d8a59ce40 name=get_val ptr=0x3661ed7fa65cfd01 val=0x797d8a5a01c0
+[proto-core] getAttribute obj=0x797d8a59ce40 name=property ptr=0x797d8a129846
+[proto-core] getAttribute NOT FOUND name=property
+[proto-core] getAttribute obj=0x797d8a59ce40 name=get_val ptr=0x3661ed7fa65cfd01
+[proto-core] getAttribute FOUND obj=0x797d8a59ce40 name=get_val res=0x797d8a5a01c0
+[proto-core] getAttribute obj=0x797d8a59ce40 name=set_val ptr=0x3661ed7fa65e7d01
+[proto-core] getAttribute FOUND obj=0x797d8a59ce40 name=set_val res=0x797d8a59f500
+[proto-core] setAttribute obj=0x797d8a5a0f00 name=fget ptr=0x1d32e7cd101 val=0x797d8a5a01c0
+[proto-core] setAttribute obj=0x797d8a5a0f00 name=fset ptr=0x1d32f3cd101 val=0x797d8a59f500
+[proto-core] setAttribute obj=0x797d8a5a0f00 name=__get__ ptr=0x2fdfe9973dfbfd01 val=0x797d8a5a14cc
+[proto-core] setAttribute obj=0x797d8a5a0f00 name=__set__ ptr=0x2fdfe9979dfbfd01 val=0x797d8a5a184c
+[proto-core] setAttribute obj=0x797d8a59ce40 name=x ptr=0xf0501 val=0x797d8a5a0f00
+[proto-engine] BUILD_CLASS runCodeObject returned, ns=0x797d8a59ce40
+[proto-core] setAttribute obj=0x797d8a5a1e40 name=__class__ ptr=0x797d8a0406c6 val=0x797d8a075d40
+[proto-core] getAttribute obj=0x797d8a59bc80 name=__data__ ptr=0x797d8a035106
+[proto-core] getAttribute FOUND obj=0x797d8a59bc80 name=__data__ res=0x797d8a0f8104
+[proto-core] getAttribute obj=0x797d8a59bc80 name=__data__ ptr=0x797d8a035106
+[proto-core] getAttribute FOUND obj=0x797d8a59bc80 name=__data__ res=0x797d8a0f8104
+[proto-engine] BUILD_CLASS: ns=0x797d8a59ce40 keys=0x797d8a5a1bc8 size=5
+[proto-core] getAttribute obj=0x797d8a59ce40 name=x ptr=0xf0501
+[proto-core] getAttribute FOUND obj=0x797d8a59ce40 name=x res=0x797d8a5a0f00
+[proto-engine] BUILD_CLASS copying: x val=0x797d8a5a0f00
+[proto-core] setAttribute obj=0x797d8a5a1e40 name=x ptr=0xf0501 val=0x797d8a5a0f00
+[proto-core] getAttribute obj=0x797d8a5a1e40 name=x ptr=0xf0501
+[proto-core] getAttribute FOUND obj=0x797d8a5a1e40 name=x res=0x797d8a5a0f00
+[proto-core] getAttribute obj=0x797d8a59ce40 name=__name__ ptr=0x797d8a041186
+[proto-core] getAttribute FOUND obj=0x797d8a59ce40 name=__name__ res=0x1979e185101
+[proto-engine] BUILD_CLASS copying: __name__ val=0x1979e185101
+[proto-core] setAttribute obj=0x797d8a5a1e40 name=__name__ ptr=0x797d8a041186 val=0x1979e185101
+[proto-core] getAttribute obj=0x797d8a5a1e40 name=__name__ ptr=0x797d8a041186
+[proto-core] getAttribute FOUND obj=0x797d8a5a1e40 name=__name__ res=0x1979e185101
+[proto-core] getAttribute obj=0x797d8a59ce40 name=__init__ ptr=0x797d8a047186
+[proto-core] getAttribute FOUND obj=0x797d8a59ce40 name=__init__ res=0x797d8a59e940
+[proto-engine] BUILD_CLASS copying: __init__ val=0x797d8a59e940
+[proto-core] setAttribute obj=0x797d8a5a1e40 name=__init__ ptr=0x797d8a047186 val=0x797d8a59e940
+[proto-core] getAttribute obj=0x797d8a5a1e40 name=__init__ ptr=0x797d8a047186
+[proto-core] getAttribute FOUND obj=0x797d8a5a1e40 name=__init__ res=0x797d8a59e940
+[proto-core] getAttribute obj=0x797d8a59ce40 name=get_val ptr=0x3661ed7fa65cfd01
+[proto-core] getAttribute FOUND obj=0x797d8a59ce40 name=get_val res=0x797d8a5a01c0
+[proto-engine] BUILD_CLASS copying: get_val val=0x797d8a5a01c0
+[proto-core] setAttribute obj=0x797d8a5a1e40 name=get_val ptr=0x3661ed7fa65cfd01 val=0x797d8a5a01c0
+[proto-core] getAttribute obj=0x797d8a5a1e40 name=get_val ptr=0x3661ed7fa65cfd01
+[proto-core] getAttribute FOUND obj=0x797d8a5a1e40 name=get_val res=0x797d8a5a01c0
+[proto-core] getAttribute obj=0x797d8a59ce40 name=set_val ptr=0x3661ed7fa65e7d01
+[proto-core] getAttribute FOUND obj=0x797d8a59ce40 name=set_val res=0x797d8a59f500
+[proto-engine] BUILD_CLASS copying: set_val val=0x797d8a59f500
+[proto-core] setAttribute obj=0x797d8a5a1e40 name=set_val ptr=0x3661ed7fa65e7d01 val=0x797d8a59f500
+[proto-core] getAttribute obj=0x797d8a5a1e40 name=set_val ptr=0x3661ed7fa65e7d01
+[proto-core] getAttribute FOUND obj=0x797d8a5a1e40 name=set_val res=0x797d8a59f500
+[proto-core] setAttribute obj=0x797d8a5a1e40 name=__call__ ptr=0x797d8a041c86 val=0x797d8a5a470c
+[proto-core] setAttribute obj=0x797d89fa7e00 name=Base ptr=0x1979e185101 val=0x797d8a5a1e40
+[proto-core] getAttribute obj=0x797d89fa7e00 name=Base ptr=0x1979e185101
+[proto-core] getAttribute FOUND obj=0x797d89fa7e00 name=Base res=0x797d8a5a1e40
+[proto-core] setAttribute obj=0x797d8a5a4d80 name=__data__ ptr=0x797d8a035106 val=0x797d8a5a4cc4
+[proto-core] setAttribute obj=0x797d8a5a4d80 name=__class__ ptr=0x797d8a0406c6 val=0x797d8a0a7f00
+[proto-core] setAttribute obj=0x797d8a5a55c0 name=__code__ ptr=0x797d8a0209c6 val=0x797d8a385640
+[proto-core] setAttribute obj=0x797d8a5a55c0 name=__globals__ ptr=0x797d8a021c46 val=0x797d89fa7e00
+[proto-core] setAttribute obj=0x797d8a5a55c0 name=__call__ ptr=0x797d8a041c86 val=0x797d8a5a5b8c
+[proto-engine] BUILD_CLASS entry: name=0x3265eda796589d01 stack=0
+[proto-core] setAttribute obj=0x797d8a5a5f40 name=__name__ ptr=0x797d8a041186 val=0x3265eda796589d01
+[proto-engine] BUILD_CLASS ns created: 0x797d8a5a5f40
+[proto-core] getAttribute obj=0x797d8a5a55c0 name=__code__ ptr=0x797d8a0209c6
+[proto-core] getAttribute FOUND obj=0x797d8a5a55c0 name=__code__ res=0x797d8a385640
+[proto-engine] BUILD_CLASS body codeObj: 0x797d8a385640
+[proto-core] getAttribute obj=0x797d8a385640 name=co_consts ptr=0x797d8a1d27c6
+[proto-core] getAttribute FOUND obj=0x797d8a385640 name=co_consts res=0x797d8a384e82
+[proto-core] getAttribute obj=0x797d8a385640 name=co_names ptr=0x797d8a1d3546
+[proto-core] getAttribute FOUND obj=0x797d8a385640 name=co_names res=0x797d8a385142
+[proto-core] getAttribute obj=0x797d8a385640 name=co_code ptr=0x32e4df8efefc7d01
+[proto-core] getAttribute FOUND obj=0x797d8a385640 name=co_code res=0x797d8a3855c2
+[proto-core] setAttribute obj=0x797d8a5a7a40 name=__code__ ptr=0x797d8a0209c6 val=0x797d8a37d240
+[proto-core] setAttribute obj=0x797d8a5a7a40 name=__globals__ ptr=0x797d8a021c46 val=0x797d8a5a5f40
+[proto-core] setAttribute obj=0x797d8a5a7a40 name=__call__ ptr=0x797d8a041c86 val=0x797d8a5a800c
+[proto-core] setAttribute obj=0x797d8a5a5f40 name=get_val ptr=0x3661ed7fa65cfd01 val=0x797d8a5a7a40
+[proto-engine] BUILD_CLASS runCodeObject returned, ns=0x797d8a5a5f40
+[proto-core] setAttribute obj=0x797d8a5a8600 name=__class__ ptr=0x797d8a0406c6 val=0x797d8a075d40
+[proto-core] getAttribute obj=0x797d8a5a4d80 name=__data__ ptr=0x797d8a035106
+[proto-core] getAttribute FOUND obj=0x797d8a5a4d80 name=__data__ res=0x797d8a5a4cc4
+[proto-core] getAttribute obj=0x797d8a5a4d80 name=__data__ ptr=0x797d8a035106
+[proto-core] getAttribute FOUND obj=0x797d8a5a4d80 name=__data__ res=0x797d8a5a4cc4
+[proto-engine] BUILD_CLASS: ns=0x797d8a5a5f40 keys=0x797d8a5a83c8 size=2
+[proto-core] getAttribute obj=0x797d8a5a5f40 name=__name__ ptr=0x797d8a041186
+[proto-core] getAttribute FOUND obj=0x797d8a5a5f40 name=__name__ res=0x3265eda796589d01
+[proto-engine] BUILD_CLASS copying: __name__ val=0x3265eda796589d01
+[proto-core] setAttribute obj=0x797d8a5a8600 name=__name__ ptr=0x797d8a041186 val=0x3265eda796589d01
+[proto-core] getAttribute obj=0x797d8a5a8600 name=__name__ ptr=0x797d8a041186
+[proto-core] getAttribute FOUND obj=0x797d8a5a8600 name=__name__ res=0x3265eda796589d01
+[proto-core] getAttribute obj=0x797d8a5a5f40 name=get_val ptr=0x3661ed7fa65cfd01
+[proto-core] getAttribute FOUND obj=0x797d8a5a5f40 name=get_val res=0x797d8a5a7a40
+[proto-engine] BUILD_CLASS copying: get_val val=0x797d8a5a7a40
+[proto-core] setAttribute obj=0x797d8a5a8600 name=get_val ptr=0x3661ed7fa65cfd01 val=0x797d8a5a7a40
+[proto-core] getAttribute obj=0x797d8a5a8600 name=get_val ptr=0x3661ed7fa65cfd01
+[proto-core] getAttribute FOUND obj=0x797d8a5a8600 name=get_val res=0x797d8a5a7a40
+[proto-core] setAttribute obj=0x797d8a5a8600 name=__call__ ptr=0x797d8a041c86 val=0x797d8a5aa74c
+[proto-core] setAttribute obj=0x797d89fa7e00 name=Derived ptr=0x3265eda796589d01 val=0x797d8a5a8600
+[proto-core] getAttribute obj=0x797d89fa7e00 name=print ptr=0xe9bb4f2e1501
+[proto-core] getAttribute NOT FOUND name=print
+Testing property and super...
+[proto-core] getAttribute obj=0x797d89fa7e00 name=Derived ptr=0x3265eda796589d01
+[proto-core] getAttribute FOUND obj=0x797d89fa7e00 name=Derived res=0x797d8a5a8600
+[proto-core] getAttribute obj=0x797d8a5a8600 name=__call__ ptr=0x797d8a041c86
+[proto-core] getAttribute FOUND obj=0x797d8a5a8600 name=__call__ res=0x797d8a5aa74c
+[proto-core] getAttribute obj=0x797d8a5aad80 name=__init__ ptr=0x797d8a047186
+[proto-core] getAttribute UP obj=0x797d8a5aad80 parentObj=0x797d8a5a8600
+[proto-core] getAttribute UP obj=0x797d8a5a8600 parentObj=0x797d8a5a1e40
+[proto-core] getAttribute FOUND obj=0x797d8a5aad80 name=__init__ res=0x797d8a59e940
+[proto-core] getAttribute obj=0x797d8a59e940 name=__call__ ptr=0x797d8a041c86
+[proto-core] getAttribute FOUND obj=0x797d8a59e940 name=__call__ res=0x797d8a59ef0c
+[proto-core] getAttribute obj=0x797d8a59e940 name=__code__ ptr=0x797d8a0209c6
+[proto-core] getAttribute FOUND obj=0x797d8a59e940 name=__code__ res=0x797d8a34f500
+[proto-core] getAttribute obj=0x797d8a59e940 name=__globals__ ptr=0x797d8a021c46
+[proto-core] getAttribute FOUND obj=0x797d8a59e940 name=__globals__ res=0x797d8a59ce40
+[proto-core] getAttribute obj=0x797d8a34f500 name=co_varnames ptr=0x797d8a022ec6
+[proto-core] getAttribute FOUND obj=0x797d8a34f500 name=co_varnames res=0x797d8a34f482
+[proto-core] getAttribute obj=0x797d8a34f500 name=co_nparams ptr=0x797d8a023e86
+[proto-core] getAttribute FOUND obj=0x797d8a34f500 name=co_nparams res=0x401
+[proto-core] getAttribute obj=0x797d8a34f500 name=co_automatic_count ptr=0x797d8a026b46
+[proto-core] getAttribute FOUND obj=0x797d8a34f500 name=co_automatic_count res=0x401
+[proto-core] getAttribute obj=0x797d8a34f500 name=co_consts ptr=0x797d8a1d27c6
+[proto-core] getAttribute FOUND obj=0x797d8a34f500 name=co_consts res=0x797d8a34ecc2
+[proto-core] getAttribute obj=0x797d8a34f500 name=co_names ptr=0x797d8a1d3546
+[proto-core] getAttribute FOUND obj=0x797d8a34f500 name=co_names res=0x797d8a34ef82
+[proto-core] getAttribute obj=0x797d8a34f500 name=co_code ptr=0x32e4df8efefc7d01
+[proto-core] getAttribute FOUND obj=0x797d8a34f500 name=co_code res=0x797d8a34f402
+[proto-core] setAttribute obj=0x797d89fa7e00 name=d ptr=0xc8501 val=0x797d8a5aad80
+[proto-core] getAttribute obj=0x797d89fa7e00 name=d ptr=0xc8501
+[proto-core] getAttribute FOUND obj=0x797d89fa7e00 name=d res=0x797d8a5aad80
+[proto-core] getAttribute obj=0x797d89fa7e00 name=print ptr=0xe9bb4f2e1501
+[proto-core] getAttribute NOT FOUND name=print
+[proto-core] getAttribute obj=0x797d89fa7e00 name=d ptr=0xc8501
+[proto-core] getAttribute FOUND obj=0x797d89fa7e00 name=d res=0x797d8a5aad80
+[proto-core] getAttribute obj=0x797d8a5aad80 name=x ptr=0xf0501
+[proto-core] getAttribute UP obj=0x797d8a5aad80 parentObj=0x797d8a5a8600
+[proto-core] getAttribute UP obj=0x797d8a5a8600 parentObj=0x797d8a5a1e40
+[proto-core] getAttribute FOUND obj=0x797d8a5aad80 name=x res=0x797d8a5a0f00
+[proto-core] getAttribute obj=0x797d8a5a0f00 name=__get__ ptr=0x2fdfe9973dfbfd01
+[proto-core] getAttribute FOUND obj=0x797d8a5a0f00 name=__get__ res=0x797d8a5a14cc
+[proto-core] getAttribute obj=0x797d8a5aad80 name=__class__ ptr=0x797d8a0406c6
+[proto-core] getAttribute UP obj=0x797d8a5aad80 parentObj=0x797d8a5a8600
+[proto-core] getAttribute FOUND obj=0x797d8a5aad80 name=__class__ res=0x797d8a075d40
+[proto-core] getAttribute obj=0x797d8a5a0f00 name=fget ptr=0x1d32e7cd101
+[proto-core] getAttribute FOUND obj=0x797d8a5a0f00 name=fget res=0x797d8a5a01c0
+[proto-core] getAttribute obj=0x797d8a5a01c0 name=__call__ ptr=0x797d8a041c86
+[proto-core] getAttribute FOUND obj=0x797d8a5a01c0 name=__call__ res=0x797d8a5a078c
+[proto-core] getAttribute obj=0x797d8a5a01c0 name=__code__ ptr=0x797d8a0209c6
+[proto-core] getAttribute FOUND obj=0x797d8a5a01c0 name=__code__ res=0x797d8a361d80
+[proto-core] getAttribute obj=0x797d8a5a01c0 name=__globals__ ptr=0x797d8a021c46
+[proto-core] getAttribute FOUND obj=0x797d8a5a01c0 name=__globals__ res=0x797d8a59ce40
+[proto-core] getAttribute obj=0x797d8a361d80 name=co_varnames ptr=0x797d8a022ec6
+[proto-core] getAttribute FOUND obj=0x797d8a361d80 name=co_varnames res=0x797d8a361d02
+[proto-core] getAttribute obj=0x797d8a361d80 name=co_nparams ptr=0x797d8a023e86
+[proto-core] getAttribute FOUND obj=0x797d8a361d80 name=co_nparams res=0x401
+[proto-core] getAttribute obj=0x797d8a361d80 name=co_automatic_count ptr=0x797d8a026b46
+[proto-core] getAttribute FOUND obj=0x797d8a361d80 name=co_automatic_count res=0x401
+[proto-core] getAttribute obj=0x797d8a361d80 name=co_consts ptr=0x797d8a1d27c6
+[proto-core] getAttribute FOUND obj=0x797d8a361d80 name=co_consts res=0x797d8a361682
+[proto-core] getAttribute obj=0x797d8a361d80 name=co_names ptr=0x797d8a1d3546
+[proto-core] getAttribute FOUND obj=0x797d8a361d80 name=co_names res=0x797d8a361802
+[proto-core] getAttribute obj=0x797d8a361d80 name=co_code ptr=0x32e4df8efefc7d01
+[proto-core] getAttribute FOUND obj=0x797d8a361d80 name=co_code res=0x797d8a361c82
+[proto-core] getAttribute obj=0x797d8a5aad80 name=_val ptr=0x1b30f6bf101
+[proto-core] getAttribute UP obj=0x797d8a5aad80 parentObj=0x797d8a5a8600
+[proto-core] getAttribute UP obj=0x797d8a5a8600 parentObj=0x797d8a5a1e40
+[proto-core] getAttribute NOT FOUND name=_val
+getAttribute failed for: _val
+[proto-core] getAttribute obj=0x797d8a5aad80 name=__class__ ptr=0x797d8a0406c6
+[proto-core] getAttribute UP obj=0x797d8a5aad80 parentObj=0x797d8a5a8600
+[proto-core] getAttribute FOUND obj=0x797d8a5aad80 name=__class__ res=0x797d8a075d40
+[proto-core] getAttribute obj=0x797d8a075d40 name=__name__ ptr=0x797d8a041186
+[proto-core] getAttribute UP obj=0x797d8a075d40 parentObj=0x797d8a073bc0
+[proto-core] getAttribute NOT FOUND name=__name__
+[proto-core] getAttribute obj=0x797d8a157fc0 name=__call__ ptr=0x797d8a041c86
+[proto-core] getAttribute FOUND obj=0x797d8a157fc0 name=__call__ res=0x797d8a15a90c
+[proto-core] setAttribute obj=0x797d8a6b1480 name=__class__ ptr=0x797d8a0406c6 val=0x797d8a157fc0
+[proto-core] setAttribute obj=0x797d8a6b1480 name=args ptr=0x1cf3f2c3101 val=0x797d8a432544
+[proto-core] getAttribute obj=0x797d8a157fc0 name=__init__ ptr=0x797d8a047186
+[proto-core] getAttribute FOUND obj=0x797d8a157fc0 name=__init__ res=0x797d8a15a30c
+[proto-core] setAttribute obj=0x797d8a6b1480 name=args ptr=0x1cf3f2c3101 val=0x797d8a432544
+[proto-core] setAttribute obj=0x797d8a6b1480 name=obj ptr=0x3562ded01 val=0x797d8a5aad80
+[proto-core] setAttribute obj=0x797d8a6b1480 name=name ptr=0x1976e1dd101 val=0x1b30f6bf101
+[proto-core] getAttribute obj=0x797d8a5aad80 name=__class__ ptr=0x797d8a0406c6
+[proto-core] getAttribute UP obj=0x797d8a5aad80 parentObj=0x797d8a5a8600
+[proto-core] getAttribute FOUND obj=0x797d8a5aad80 name=__class__ res=0x797d8a075d40
+[proto-core] getAttribute obj=0x797d8a075d40 name=__name__ ptr=0x797d8a041186
+[proto-core] getAttribute UP obj=0x797d8a075d40 parentObj=0x797d8a073bc0
+[proto-core] getAttribute NOT FOUND name=__name__
+[proto-core] getAttribute obj=0x797d8a157fc0 name=__call__ ptr=0x797d8a041c86
+[proto-core] getAttribute FOUND obj=0x797d8a157fc0 name=__call__ res=0x797d8a15a90c
+[proto-core] setAttribute obj=0x797d8a5ba5c0 name=__class__ ptr=0x797d8a0406c6 val=0x797d8a157fc0
+[proto-core] setAttribute obj=0x797d8a5ba5c0 name=args ptr=0x1cf3f2c3101 val=0x797d8a33dc84
+[proto-core] getAttribute obj=0x797d8a157fc0 name=__init__ ptr=0x797d8a047186
+[proto-core] getAttribute FOUND obj=0x797d8a157fc0 name=__init__ res=0x797d8a15a30c
+[proto-core] setAttribute obj=0x797d8a5ba5c0 name=args ptr=0x1cf3f2c3101 val=0x797d8a33dc84
+[proto-core] setAttribute obj=0x797d8a5ba5c0 name=obj ptr=0x3562ded01 val=0x797d8a5aad80
+[proto-core] setAttribute obj=0x797d8a5ba5c0 name=name ptr=0x1976e1dd101 val=0xf0501
+[proto-core] getAttribute obj=0x797d8a5ba5c0 name=__class__ ptr=0x797d8a0406c6
+[proto-core] getAttribute FOUND obj=0x797d8a5ba5c0 name=__class__ res=0x797d8a157fc0
+[proto-core] setAttribute obj=0x797d8a0cad40 name=last_type ptr=0x797d8a0ed006 val=0x797d8a157fc0
+[proto-core] setAttribute obj=0x797d8a0cad40 name=last_value ptr=0x797d8a0ee106 val=0x797d8a5ba5c0
+[proto-core] setAttribute obj=0x797d8a0cad40 name=last_traceback ptr=0x797d8a0efec6 val=0
+[proto-core] getAttribute obj=0x797d8a0cad40 name=excepthook ptr=0x797d8a0ec146
+[proto-core] getAttribute NOT FOUND name=excepthook
+[proto-core] getAttribute obj=0x797d8a157fc0 name=__name__ ptr=0x797d8a041186
+[proto-core] getAttribute FOUND obj=0x797d8a157fc0 name=__name__ res=0x797d8a133346
+[proto-core] getAttribute obj=0x797d8a5ba5c0 name=__cause__ ptr=0x797d8a346786
+[proto-core] getAttribute UP obj=0x797d8a5ba5c0 parentObj=0x797d8a157fc0
+[proto-core] getAttribute UP obj=0x797d8a157fc0 parentObj=0x797d8a142fc0
+[proto-core] getAttribute UP obj=0x797d8a142fc0 parentObj=0x797d8a073bc0
+[proto-core] getAttribute NOT FOUND name=__cause__
+[proto-core] getAttribute obj=0x797d8a5ba5c0 name=__context__ ptr=0x797d8a3479c6
+[proto-core] getAttribute UP obj=0x797d8a5ba5c0 parentObj=0x797d8a157fc0
+[proto-core] getAttribute UP obj=0x797d8a157fc0 parentObj=0x797d8a142fc0
+[proto-core] getAttribute UP obj=0x797d8a142fc0 parentObj=0x797d8a073bc0
+[proto-core] getAttribute NOT FOUND name=__context__
+[proto-core] getAttribute obj=0x797d8a5ba5c0 name=__class__ ptr=0x797d8a0406c6
+[proto-core] getAttribute FOUND obj=0x797d8a5ba5c0 name=__class__ res=0x797d8a157fc0
+[proto-core] getAttribute obj=0x797d8a157fc0 name=__name__ ptr=0x797d8a041186
+[proto-core] getAttribute FOUND obj=0x797d8a157fc0 name=__name__ res=0x797d8a133346
+[proto-core] getAttribute obj=0x797d8a5ba5c0 name=args ptr=0x1cf3f2c3101
+[proto-core] getAttribute FOUND obj=0x797d8a5ba5c0 name=args res=0x797d8a33dc84
+[proto-core] getAttribute obj=0x797d8a5ba5c0 name=name ptr=0x1976e1dd101
+[proto-core] getAttribute FOUND obj=0x797d8a5ba5c0 name=name res=0xf0501
+[proto-core] getAttribute obj=0x797d8a5ba5c0 name=obj ptr=0x3562ded01
+[proto-core] getAttribute FOUND obj=0x797d8a5ba5c0 name=obj res=0x797d8a5aad80
+[proto-core] getAttribute obj=0x797d8a5ba5c0 name=lineno ptr=0x6fdd97769d9901
+[proto-core] getAttribute UP obj=0x797d8a5ba5c0 parentObj=0x797d8a157fc0
+[proto-core] getAttribute UP obj=0x797d8a157fc0 parentObj=0x797d8a142fc0
+[proto-core] getAttribute UP obj=0x797d8a142fc0 parentObj=0x797d8a073bc0
+[proto-core] getAttribute NOT FOUND name=lineno
+[proto-core] getAttribute obj=0x797d8a5ba5c0 name=text ptr=0x1d3c65e9101
+[proto-core] getAttribute UP obj=0x797d8a5ba5c0 parentObj=0x797d8a157fc0
+[proto-core] getAttribute UP obj=0x797d8a157fc0 parentObj=0x797d8a142fc0
+[proto-core] getAttribute UP obj=0x797d8a142fc0 parentObj=0x797d8a073bc0
+[proto-core] getAttribute NOT FOUND name=text
+[proto-core] getAttribute obj=0x797d8a5ba5c0 name=offset ptr=0x74cbcf366df901
+[proto-core] getAttribute UP obj=0x797d8a5ba5c0 parentObj=0x797d8a157fc0
+[proto-core] getAttribute UP obj=0x797d8a157fc0 parentObj=0x797d8a142fc0
+[proto-core] getAttribute UP obj=0x797d8a142fc0 parentObj=0x797d8a073bc0
+[proto-core] getAttribute NOT FOUND name=offset
+Traceback (most recent call last):
+  File "<stdin>", in <module>
+AttributeError: 'object' object has no attribute 'x'
+protopy: module 'verify_batch1' exited with runtime error

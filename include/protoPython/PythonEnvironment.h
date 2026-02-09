@@ -138,6 +138,12 @@ public:
     const proto::ProtoString* getDictDunderString() const { return dictString; }
     const proto::ProtoString* getDocString() const { return docString; }
     const proto::ProtoString* getReversedString() const { return reversedString; }
+    const proto::ProtoString* getGetDunderString() const { return getDunderString; }
+    const proto::ProtoString* getSetDunderString() const { return setDunderString; }
+    const proto::ProtoString* getDelDunderString() const { return delDunderString; }
+
+    const proto::ProtoObject* getAttribute(proto::ProtoContext* ctx, const proto::ProtoObject* obj, const proto::ProtoString* name);
+    const proto::ProtoObject* setAttribute(proto::ProtoContext* ctx, const proto::ProtoObject* obj, const proto::ProtoString* name, const proto::ProtoObject* value);
 
     const proto::ProtoString* getEnumProtoString() const { return enumProtoS; }
     const proto::ProtoString* getRevProtoString() const { return revProtoS; }
@@ -155,6 +161,8 @@ public:
     const proto::ProtoString* getCoVarnamesString() const { return co_varnames; }
     const proto::ProtoString* getCoNparamsString() const { return co_nparams; }
     const proto::ProtoString* getCoAutomaticCountString() const { return co_automatic_count; }
+    const proto::ProtoString* getSelfDunderString() const { return selfDunder; }
+    const proto::ProtoString* getFuncDunderString() const { return funcDunder; }
 
     const proto::ProtoString* getIAddString() const { return __iadd__; }
     const proto::ProtoString* getISubString() const { return __isub__; }
@@ -491,6 +499,9 @@ private:
     const proto::ProtoString* dictString{nullptr};
     const proto::ProtoString* docString{nullptr};
     const proto::ProtoString* reversedString{nullptr};
+    const proto::ProtoString* getDunderString{nullptr};
+    const proto::ProtoString* setDunderString{nullptr};
+    const proto::ProtoString* delDunderString{nullptr};
 
     const proto::ProtoString* enumProtoS{nullptr};
     const proto::ProtoString* revProtoS{nullptr};
@@ -506,6 +517,8 @@ private:
     const proto::ProtoString* co_varnames{nullptr};
     const proto::ProtoString* co_nparams{nullptr};
     const proto::ProtoString* co_automatic_count{nullptr};
+    const proto::ProtoString* selfDunder{nullptr};
+    const proto::ProtoString* funcDunder{nullptr};
 
     const proto::ProtoString* __iadd__{nullptr};
     const proto::ProtoString* __isub__{nullptr};

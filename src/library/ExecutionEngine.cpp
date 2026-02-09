@@ -85,8 +85,9 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
         unsigned long toCopy = (argCount < static_cast<unsigned long>(nparams)) ? argCount : static_cast<unsigned long>(nparams);
         if (toCopy > nSlots) toCopy = nSlots;
         proto::ProtoObject** slots = const_cast<proto::ProtoObject**>(calleeCtx->getAutomaticLocals());
-        for (unsigned long i = 0; i < toCopy; ++i)
+        for (unsigned long i = 0; i < toCopy; ++i) {
             slots[i] = const_cast<proto::ProtoObject*>(args->getAt(calleeCtx, static_cast<int>(i)));
+        }
     }
 
     proto::ProtoObject* frame = const_cast<proto::ProtoObject*>(calleeCtx->newObject(true));
@@ -101,6 +102,54 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
     return result;
 }
 
+static const proto::ProtoObject* runBoundMethodCall(proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* args,
+    const proto::ProtoSparseList* kwargs) {
+    if (!ctx || !self) return PROTO_NONE;
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!env) return PROTO_NONE;
+
+    const proto::ProtoObject* im_self = self->getAttribute(ctx, env->getSelfDunderString());
+    const proto::ProtoObject* im_func = self->getAttribute(ctx, env->getFuncDunderString());
+    if (!im_self || !im_func) return PROTO_NONE;
+
+    // Prepend im_self to args
+    const proto::ProtoList* newArgs = ctx->newList()->appendLast(ctx, im_self);
+    if (args) {
+        for (unsigned long i = 0; i < args->getSize(ctx); ++i) {
+            newArgs = newArgs->appendLast(ctx, args->getAt(ctx, static_cast<int>(i)));
+        }
+    }
+
+    return invokePythonCallable(ctx, im_func, newArgs, kwargs);
+}
+
+static const proto::ProtoObject* py_function_get(proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* args,
+    const proto::ProtoSparseList* /*kwargs*/) {
+    if (!ctx || !self || !args || args->getSize(ctx) < 1) return self;
+    const proto::ProtoObject* instance = args->getAt(ctx, 0);
+    // In Python, calling __get__ on a class (instance == None) returns the function itself.
+    if (!instance || instance == PROTO_NONE) return self;
+
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!env) return self;
+
+    proto::ProtoObject* bound = const_cast<proto::ProtoObject*>(ctx->newObject(true));
+    // Set __self__, __func__, and __call__
+    bound = const_cast<proto::ProtoObject*>(bound->setAttribute(ctx, env->getSelfDunderString(), instance));
+    bound = const_cast<proto::ProtoObject*>(bound->setAttribute(ctx, env->getFuncDunderString(), self));
+    bound = const_cast<proto::ProtoObject*>(bound->setAttribute(ctx, env->getCallString(),
+        ctx->fromMethod(bound, runBoundMethodCall)));
+    
+    // Also set __class__ to something reasonable if possible, but for now just Return
+    return bound;
+}
+
 /** Create a callable object with __code__, __globals__, and __call__. */
 static proto::ProtoObject* createUserFunction(proto::ProtoContext* ctx, const proto::ProtoObject* codeObj, proto::ProtoObject* globalsFrame) {
     if (!ctx || !codeObj || !globalsFrame) return nullptr;
@@ -110,6 +159,8 @@ static proto::ProtoObject* createUserFunction(proto::ProtoContext* ctx, const pr
     fn = fn->setAttribute(ctx, env ? env->getGlobalsString() : proto::ProtoString::fromUTF8String(ctx, "__globals__"), globalsFrame);
     fn = fn->setAttribute(ctx, env ? env->getCallString() : proto::ProtoString::fromUTF8String(ctx, "__call__"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(fn), runUserFunctionCall));
+    fn = fn->setAttribute(ctx, env ? env->getGetDunderString() : proto::ProtoString::fromUTF8String(ctx, "__get__"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(fn), py_function_get));
     return const_cast<proto::ProtoObject*>(fn);
 }
 
@@ -128,7 +179,7 @@ static const proto::ProtoObject* runUserClassCall(proto::ProtoContext* ctx,
     
     // Invoke __init__ if present
     const proto::ProtoString* initS = env ? env->getInitString() : proto::ProtoString::fromUTF8String(ctx, "__init__");
-    const proto::ProtoObject* initM = obj->getAttribute(ctx, initS);
+    const proto::ProtoObject* initM = env ? env->getAttribute(ctx, obj, initS) : obj->getAttribute(ctx, initS);
     if (initM) {
         invokeCallable(ctx, initM, args, kwargs);
     }
@@ -147,6 +198,10 @@ static const proto::ProtoObject* binaryAdd(proto::ProtoContext* ctx,
     const proto::ProtoObject* a, const proto::ProtoObject* b) {
     if (a->isInteger(ctx) && b->isInteger(ctx))
         return ctx->fromInteger(a->asLong(ctx) + b->asLong(ctx));
+    if (a->isDouble(ctx) || b->isDouble(ctx)) {
+        if ((a->isDouble(ctx) || a->isInteger(ctx)) && (b->isDouble(ctx) || b->isInteger(ctx)))
+             return ctx->fromDouble(a->asDouble(ctx) + b->asDouble(ctx));
+    }
     if (a->isString(ctx) && b->isString(ctx)) {
         std::string sa, sb;
         a->asString(ctx)->toUTF8String(ctx, sa);
@@ -160,6 +215,10 @@ static const proto::ProtoObject* binarySubtract(proto::ProtoContext* ctx,
     const proto::ProtoObject* a, const proto::ProtoObject* b) {
     if (a->isInteger(ctx) && b->isInteger(ctx))
         return ctx->fromInteger(a->asLong(ctx) - b->asLong(ctx));
+    if (a->isDouble(ctx) || b->isDouble(ctx)) {
+        if ((a->isDouble(ctx) || a->isInteger(ctx)) && (b->isDouble(ctx) || b->isInteger(ctx)))
+            return ctx->fromDouble(a->asDouble(ctx) - b->asDouble(ctx));
+    }
     return PROTO_NONE;
 }
 
@@ -169,6 +228,11 @@ static const proto::ProtoObject* binaryMultiply(proto::ProtoContext* ctx,
     return r ? r : PROTO_NONE;
 }
 
+static const proto::ProtoObject* binaryUnaryNegative(proto::ProtoContext* ctx, const proto::ProtoObject* a) {
+    if (a->isInteger(ctx)) return ctx->fromInteger(-a->asLong(ctx));
+    if (a->isDouble(ctx)) return ctx->fromDouble(-a->asDouble(ctx));
+    return PROTO_NONE;
+}
 static const proto::ProtoObject* binaryTrueDivide(proto::ProtoContext* ctx,
     const proto::ProtoObject* a, const proto::ProtoObject* b) {
     if (a->isInteger(ctx) || a->isDouble(ctx)) {
@@ -320,14 +384,12 @@ static bool isTruthy(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
 
 static const proto::ProtoObject* invokeCallable(proto::ProtoContext* ctx,
     const proto::ProtoObject* callable, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs = nullptr) {
-    if (std::getenv("PROTO_ENV_DIAG")) std::cerr << "[proto-engine] invokeCallable callable=" << callable << " args=" << (args ? args->getSize(ctx) : -1) << "\n" << std::flush;
     if (callable->isMethod(ctx)) {
         const auto* cell = proto::toImpl<const proto::ProtoMethodCell>(callable);
         return cell->method(ctx, const_cast<proto::ProtoObject*>(cell->self), nullptr, args, kwargs);
     }
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     const proto::ProtoObject* callAttr = callable->getAttribute(ctx, env ? env->getCallString() : proto::ProtoString::fromUTF8String(ctx, "__call__"));
-    if (std::getenv("PROTO_ENV_DIAG")) std::cerr << "[proto-engine] invokeCallable callAttr=" << callAttr << "\n" << std::flush;
     if (!callAttr || !callAttr->asMethod(ctx)) {
         if (env) env->raiseTypeError(ctx, "object is not callable");
         return PROTO_NONE;
@@ -364,12 +426,10 @@ const proto::ProtoObject* executeBytecodeRange(
     const bool sync_globals = (frame == PythonEnvironment::getCurrentGlobals());
     for (unsigned long i = pcStart; i <= pcEnd; ++i) {
         const proto::ProtoObject* instr = bytecode->getAt(ctx, static_cast<int>(i));
-        if (std::getenv("PROTO_ENV_DIAG")) std::cerr << "[proto-engine] i=" << i << " instr=" << instr << " isInt=" << (instr ? instr->isInteger(ctx) : false) << "\n" << std::flush;
         if (!instr || !instr->isInteger(ctx)) continue;
         int op = static_cast<int>(instr->asLong(ctx));
         int arg = (i + 1 < n && bytecode->getAt(ctx, static_cast<int>(i + 1))->isInteger(ctx))
             ? static_cast<int>(bytecode->getAt(ctx, static_cast<int>(i + 1))->asLong(ctx)) : 0;
-        if (std::getenv("PROTO_ENV_DIAG")) std::cerr << "[proto-engine] op=" << op << " arg=" << arg << " stack=" << stack.size() << "\n" << std::flush;
 
         if (op == OP_LOAD_CONST) {
             i++;
@@ -386,11 +446,6 @@ const proto::ProtoObject* executeBytecodeRange(
                 const proto::ProtoObject* nameObj = names->getAt(ctx, arg);
                 if (nameObj->isString(ctx)) {
                     const proto::ProtoObject* val = frame->getAttribute(ctx, nameObj->asString(ctx));
-                    if (std::getenv("PROTO_ENV_DIAG")) {
-                        std::string name;
-                        nameObj->asString(ctx)->toUTF8String(ctx, name);
-                        std::cerr << "[proto-engine] LOAD_NAME name=" << name << " val=" << val << " env=" << env << "\n" << std::flush;
-                    }
                     if (val) {
                         stack.push_back(val);
                     } else {
@@ -398,7 +453,6 @@ const proto::ProtoObject* executeBytecodeRange(
                             std::string name;
                             nameObj->asString(ctx)->toUTF8String(ctx, name);
                             val = env->resolve(name);
-                            if (std::getenv("PROTO_ENV_DIAG")) std::cerr << "[proto-engine] LOAD_NAME resolve=" << name << " val=" << val << "\n" << std::flush;
                             if (val) {
                                 stack.push_back(val);
                             } else {
@@ -421,11 +475,9 @@ const proto::ProtoObject* executeBytecodeRange(
                 if (nameObj->isString(ctx)) {
                     std::string n; nameObj->asString(ctx)->toUTF8String(ctx, n);
                     frame = const_cast<proto::ProtoObject*>(frame->setAttribute(ctx, nameObj->asString(ctx), val));
-                    if (std::getenv("PROTO_ENV_DIAG")) std::cerr << "[proto-engine] STORE_NAME " << n << " into frame=" << frame << "\n";
                     PythonEnvironment::setCurrentFrame(frame);
                     if (sync_globals) {
                         PythonEnvironment::setCurrentGlobals(frame);
-                        if (std::getenv("PROTO_ENV_DIAG")) std::cerr << "[proto-engine]   (also synced globals)\n";
                     }
                 }
             }
@@ -454,7 +506,7 @@ const proto::ProtoObject* executeBytecodeRange(
             const proto::ProtoObject* a = stack.back();
             stack.pop_back();
             const proto::ProtoObject* r = binaryAdd(ctx, a, b);
-            if (r) stack.push_back(r);
+            stack.push_back(r);
         } else if (op == OP_INPLACE_ADD) {
             if (stack.size() < 2) continue;
             const proto::ProtoObject* b = stack.back();
@@ -468,7 +520,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 if (result) stack.push_back(result);
             } else {
                 const proto::ProtoObject* r = binaryAdd(ctx, a, b);
-                if (r) stack.push_back(r);
+                stack.push_back(r);
             }
         } else if (op == OP_BINARY_SUBTRACT) {
             if (stack.size() < 2) continue;
@@ -477,7 +529,7 @@ const proto::ProtoObject* executeBytecodeRange(
             const proto::ProtoObject* a = stack.back();
             stack.pop_back();
             const proto::ProtoObject* r = binarySubtract(ctx, a, b);
-            if (r) stack.push_back(r);
+            stack.push_back(r);
         } else if (op == OP_INPLACE_SUBTRACT) {
             if (stack.size() < 2) continue;
             const proto::ProtoObject* b = stack.back();
@@ -491,7 +543,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 if (result) stack.push_back(result);
             } else {
                 const proto::ProtoObject* r = binarySubtract(ctx, a, b);
-                if (r) stack.push_back(r);
+                stack.push_back(r);
             }
         } else if (op == OP_BINARY_MULTIPLY) {
             if (stack.size() < 2) continue;
@@ -500,7 +552,7 @@ const proto::ProtoObject* executeBytecodeRange(
             const proto::ProtoObject* a = stack.back();
             stack.pop_back();
             const proto::ProtoObject* r = binaryMultiply(ctx, a, b);
-            if (r) stack.push_back(r);
+            stack.push_back(r);
         } else if (op == OP_INPLACE_MULTIPLY) {
             if (stack.size() < 2) continue;
             const proto::ProtoObject* b = stack.back();
@@ -514,7 +566,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 if (result) stack.push_back(result);
             } else {
                 const proto::ProtoObject* r = binaryMultiply(ctx, a, b);
-                if (r) stack.push_back(r);
+                stack.push_back(r);
             }
         } else if (op == OP_BINARY_TRUE_DIVIDE) {
             if (stack.size() < 2) continue;
@@ -523,7 +575,7 @@ const proto::ProtoObject* executeBytecodeRange(
             const proto::ProtoObject* a = stack.back();
             stack.pop_back();
             const proto::ProtoObject* r = binaryTrueDivide(ctx, a, b);
-            if (r) stack.push_back(r);
+            stack.push_back(r);
         } else if (op == OP_BINARY_MODULO) {
             if (stack.size() < 2) continue;
             const proto::ProtoObject* b = stack.back();
@@ -531,7 +583,7 @@ const proto::ProtoObject* executeBytecodeRange(
             const proto::ProtoObject* a = stack.back();
             stack.pop_back();
             const proto::ProtoObject* r = binaryModulo(ctx, a, b);
-            if (r) stack.push_back(r);
+            stack.push_back(r);
         } else if (op == OP_BINARY_POWER) {
             if (stack.size() < 2) continue;
             const proto::ProtoObject* b = stack.back();
@@ -539,7 +591,7 @@ const proto::ProtoObject* executeBytecodeRange(
             const proto::ProtoObject* a = stack.back();
             stack.pop_back();
             const proto::ProtoObject* r = binaryPower(ctx, a, b);
-            if (r) stack.push_back(r);
+            stack.push_back(r);
         } else if (op == OP_BINARY_FLOOR_DIVIDE) {
             if (stack.size() < 2) continue;
             const proto::ProtoObject* b = stack.back();
@@ -547,7 +599,7 @@ const proto::ProtoObject* executeBytecodeRange(
             const proto::ProtoObject* a = stack.back();
             stack.pop_back();
             const proto::ProtoObject* r = binaryFloorDivide(ctx, a, b);
-            if (r) stack.push_back(r);
+            stack.push_back(r);
         } else if (op == OP_INPLACE_TRUE_DIVIDE) {
             if (stack.size() < 2) continue;
             const proto::ProtoObject* b = stack.back();
@@ -561,7 +613,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 if (result) stack.push_back(result);
             } else {
                 const proto::ProtoObject* r = binaryTrueDivide(ctx, a, b);
-                if (r) stack.push_back(r);
+                stack.push_back(r);
             }
         } else if (op == OP_INPLACE_FLOOR_DIVIDE) {
             if (stack.size() < 2) continue;
@@ -576,7 +628,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 if (result) stack.push_back(result);
             } else {
                 const proto::ProtoObject* r = binaryFloorDivide(ctx, a, b);
-                if (r) stack.push_back(r);
+                stack.push_back(r);
             }
         } else if (op == OP_INPLACE_MODULO) {
             if (stack.size() < 2) continue;
@@ -591,7 +643,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 if (result) stack.push_back(result);
             } else {
                 const proto::ProtoObject* r = binaryModulo(ctx, a, b);
-                if (r) stack.push_back(r);
+                stack.push_back(r);
             }
         } else if (op == OP_INPLACE_POWER) {
             if (stack.size() < 2) continue;
@@ -606,7 +658,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 if (result) stack.push_back(result);
             } else {
                 const proto::ProtoObject* r = binaryPower(ctx, a, b);
-                if (r) stack.push_back(r);
+                stack.push_back(r);
             }
         } else if (op == OP_INPLACE_LSHIFT) {
             if (stack.size() < 2) continue;
@@ -897,11 +949,8 @@ const proto::ProtoObject* executeBytecodeRange(
                 stack.pop_back();
                 const proto::ProtoObject* nameObj = names->getAt(ctx, arg);
                 if (nameObj->isString(ctx)) {
-                    const proto::ProtoObject* val = obj->getAttribute(ctx, nameObj->asString(ctx));
+                    const proto::ProtoObject* val = env ? env->getAttribute(ctx, obj, nameObj->asString(ctx)) : obj->getAttribute(ctx, nameObj->asString(ctx));
                     if (val) {
-                        if (val->isMethod(ctx)) {
-                            val = ctx->fromMethod(const_cast<proto::ProtoObject*>(obj), val->asMethod(ctx));
-                        }
                         stack.push_back(val);
                     } else {
                         PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
@@ -915,14 +964,18 @@ const proto::ProtoObject* executeBytecodeRange(
         } else if (op == OP_STORE_ATTR) {
             i++;
             if (names && stack.size() >= 2 && static_cast<unsigned long>(arg) < names->getSize(ctx)) {
-                const proto::ProtoObject* val = stack.back();
-                stack.pop_back();
                 const proto::ProtoObject* obj = stack.back();
+                stack.pop_back();
+                const proto::ProtoObject* val = stack.back();
                 stack.pop_back();
                 const proto::ProtoObject* nameObj = names->getAt(ctx, arg);
                 if (nameObj->isString(ctx)) {
-                    proto::ProtoObject* mutableObj = const_cast<proto::ProtoObject*>(obj);
-                    mutableObj = const_cast<proto::ProtoObject*>(mutableObj->setAttribute(ctx, nameObj->asString(ctx), val));
+                    if (env) {
+                        obj = const_cast<proto::ProtoObject*>(env->setAttribute(ctx, obj, nameObj->asString(ctx), val));
+                    } else {
+                        proto::ProtoObject* mutableObj = const_cast<proto::ProtoObject*>(obj);
+                        obj = const_cast<proto::ProtoObject*>(mutableObj->setAttribute(ctx, nameObj->asString(ctx), val));
+                    }
                 }
             }
         } else if (op == OP_BUILD_LIST) {
@@ -1126,22 +1179,26 @@ const proto::ProtoObject* executeBytecodeRange(
                 stack.pop_back();
                 const proto::ProtoObject* name = stack.back();
                 stack.pop_back();
-                
+                std::cerr << "[proto-engine] BUILD_CLASS entry: name=" << name << " stack=" << stack.size() << "\n";
                 PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
                 const proto::ProtoString* nameS = env ? env->getNameString() : proto::ProtoString::fromUTF8String(ctx, "__name__");
                 const proto::ProtoString* callS = env ? env->getCallString() : proto::ProtoString::fromUTF8String(ctx, "__call__");
                 
                 proto::ProtoObject* ns = const_cast<proto::ProtoObject*>(ctx->newObject(true));
                 ns = const_cast<proto::ProtoObject*>(ns->setAttribute(ctx, nameS, name));
+                std::cerr << "[proto-engine] BUILD_CLASS ns created: " << ns << "\n";
                 
                 // Invoke body with ns as locals
                 if (body) {
                     const proto::ProtoObject* codeObj = body->getAttribute(ctx, env ? env->getCodeString() : proto::ProtoString::fromUTF8String(ctx, "__code__"));
+                    std::cerr << "[proto-engine] BUILD_CLASS body codeObj: " << codeObj << "\n";
                     if (codeObj && codeObj != PROTO_NONE) {
                         runCodeObject(ctx, codeObj, ns);
+                        std::cerr << "[proto-engine] BUILD_CLASS runCodeObject returned, ns=" << ns << "\n";
                     } else {
                         const proto::ProtoObject* callM = body->getAttribute(ctx, callS);
                         if (callM && callM->asMethod(ctx)) {
+                            std::cerr << "[proto-engine] BUILD_CLASS invoking body method\n";
                             callM->asMethod(ctx)(ctx, body, nullptr, ctx->newList(), nullptr);
                         }
                     }
@@ -1149,6 +1206,10 @@ const proto::ProtoObject* executeBytecodeRange(
                 
                 // Create class object (prototype)
                 proto::ProtoObject* targetClass = const_cast<proto::ProtoObject*>(ctx->newObject(true));
+                if (env && env->getTypePrototype()) {
+                    targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(ctx, env->getClassString(), env->getTypePrototype()));
+                }
+                
                 if (bases && bases->asTuple(ctx)) {
                     auto bt = bases->asTuple(ctx);
                     for (size_t j = 0; j < bt->getSize(ctx); ++j) {
@@ -1158,13 +1219,29 @@ const proto::ProtoObject* executeBytecodeRange(
                 
                 // Copy ns attributes to targetClass
                 const proto::ProtoSparseList* keys = ns->getAttributes(ctx);
+                std::cerr << "[proto-engine] BUILD_CLASS: ns=" << ns << " keys=" << keys << " size=" << (keys ? keys->getSize(ctx) : 0) << "\n";
                 if (keys) {
-                    for (size_t j = 0; j < keys->getSize(ctx); ++j) {
-                        const proto::ProtoObject* keyObj = keys->getAt(ctx, j);
-                        if (keyObj) {
+                    auto it = keys->getIterator(ctx);
+                    while (it && it->hasNext(ctx)) {
+                        unsigned long key = it->nextKey(ctx);
+                        const proto::ProtoObject* keyObj = reinterpret_cast<const proto::ProtoObject*>(key);
+                        if (keyObj && keyObj->isString(ctx)) {
                             const proto::ProtoString* k = keyObj->asString(ctx);
-                            if (k) targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(ctx, k, ns->getAttribute(ctx, k)));
+                            std::string kname;
+                            k->toUTF8String(ctx, kname);
+                            const proto::ProtoObject* attrVal = ns->getAttribute(ctx, k);
+                            std::cerr << "[proto-engine] BUILD_CLASS copying: " << kname << " val=" << attrVal << "\n";
+                            targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(ctx, k, attrVal));
+                            
+                            // Verify set
+                            const proto::ProtoObject* verifyVal = targetClass->getAttribute(ctx, k);
+                            if (verifyVal != attrVal) {
+                                std::cerr << "[proto-engine] BUILD_CLASS ERROR: failed to verify attribute " << kname << "\n";
+                            }
+                        } else {
+                            std::cerr << "[proto-engine] BUILD_CLASS skipping key: " << key << " (obj=" << keyObj << ")\n";
                         }
+                        it = const_cast<proto::ProtoSparseListIterator*>(it)->advance(ctx);
                     }
                 }
                 

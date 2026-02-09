@@ -632,8 +632,9 @@ static const proto::ProtoObject* py_getattr(
     /* Use canonical ProtoString from content so getAttribute matches setAttribute storage. */
     std::string nameStr;
     nameObj->asString(context)->toUTF8String(context, nameStr);
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
     const proto::ProtoString* key = proto::ProtoString::fromUTF8String(context, nameStr.c_str());
-    const proto::ProtoObject* attr = obj->getAttribute(context, key);
+    const proto::ProtoObject* attr = env ? env->getAttribute(context, obj, key) : obj->getAttribute(context, key);
     if (attr && attr != PROTO_NONE) return attr;
     if (positionalParameters->getSize(context) >= 3) return positionalParameters->getAt(context, 2);
     return PROTO_NONE;
@@ -650,11 +651,12 @@ static const proto::ProtoObject* py_setattr(
     const proto::ProtoObject* nameObj = positionalParameters->getAt(context, 1);
     const proto::ProtoObject* value = positionalParameters->getAt(context, 2);
     if (!nameObj->isString(context)) return PROTO_NONE;
-    /* Use canonical ProtoString from content so getAttribute matches setAttribute storage. */
     std::string nameStr;
     nameObj->asString(context)->toUTF8String(context, nameStr);
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
     const proto::ProtoString* key = proto::ProtoString::fromUTF8String(context, nameStr.c_str());
-    obj->setAttribute(context, key, value);
+    if (env) env->setAttribute(context, obj, key, value);
+    else obj->setAttribute(context, key, value);
     return PROTO_NONE;
 }
 
@@ -677,7 +679,7 @@ static const proto::ProtoObject* py_dir(
     if (!target || target == PROTO_NONE) return context->newList()->asObject(context);
 
     std::vector<std::string> names;
-    auto collect = [&](const proto::ProtoObject* obj) {
+    std::function<void(const proto::ProtoObject*)> collect = [&](const proto::ProtoObject* obj) {
         if (!obj) return;
         const proto::ProtoSparseList* attrs = obj->getAttributes(context);
         if (attrs) {
@@ -691,6 +693,12 @@ static const proto::ProtoObject* py_dir(
                     if (!name.empty()) names.push_back(name);
                 }
                 it = const_cast<proto::ProtoSparseListIterator*>(it->advance(context));
+            }
+        }
+        const proto::ProtoList* parents = obj->getParents(context);
+        if (parents) {
+            for (size_t i = 0; i < parents->getSize(context); ++i) {
+                collect(parents->getAt(context, i));
             }
         }
     };
@@ -950,18 +958,53 @@ static const proto::ProtoObject* py_memoryview(
     return PROTO_NONE;
 }
 
-/** super(): stub returning None; full impl requires MRO and type. */
+static const proto::ProtoObject* py_super_getattr(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    const proto::ProtoObject* nameObj = positionalParameters->getAt(context, 0);
+    if (!nameObj->isString(context)) return PROTO_NONE;
+    
+    const proto::ProtoObject* obj = self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "obj"));
+    const proto::ProtoObject* type = self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "type"));
+    if (!obj || !type) return PROTO_NONE;
+
+    const proto::ProtoList* parents = type->getParents(context);
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (parents) {
+        for (size_t i = 0; i < parents->getSize(context); ++i) {
+            const proto::ProtoObject* parent = parents->getAt(context, i);
+            const proto::ProtoObject* val = env ? env->getAttribute(context, parent, nameObj->asString(context)) 
+                                                : parent->getAttribute(context, nameObj->asString(context));
+            if (val) {
+                return val;
+            }
+        }
+    }
+    return PROTO_NONE;
+}
+
 static const proto::ProtoObject* py_super(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
-    (void)self;
-    (void)parentLink;
-    (void)positionalParameters;
-    (void)keywordParameters;
-    return PROTO_NONE;
+    if (positionalParameters->getSize(context) < 2) return PROTO_NONE;
+    const proto::ProtoObject* type = positionalParameters->getAt(context, 0);
+    const proto::ProtoObject* obj = positionalParameters->getAt(context, 1);
+    
+    proto::ProtoObject* proxy = const_cast<proto::ProtoObject*>(context->newObject(true));
+    proxy->setAttribute(context, proto::ProtoString::fromUTF8String(context, "type"), type);
+    proxy->setAttribute(context, proto::ProtoString::fromUTF8String(context, "obj"), obj);
+    
+    // Wire up __getattr__ or similar if ExecutionEngine supported it. 
+    // For now, we manually implement a getattr-like method.
+    proxy->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__getattr__"), context->fromMethod(proxy, py_super_getattr));
+    return proxy;
 }
 
 /** exec(source, globals=None, locals=None): compile and run source. */
@@ -1286,6 +1329,17 @@ static const proto::ProtoObject* py_type(
     return cls ? cls : PROTO_NONE;
 }
 
+static bool checkInterfaceInstanceOf(proto::ProtoContext* context, const proto::ProtoObject* obj, const proto::ProtoObject* cls) {
+    if (cls->isTuple(context)) {
+        const proto::ProtoTuple* tup = cls->asTuple(context);
+        for (size_t i = 0; i < tup->getSize(context); ++i) {
+            if (checkInterfaceInstanceOf(context, obj, tup->getAt(context, i))) return true;
+        }
+        return false;
+    }
+    return obj->isInstanceOf(context, cls) == PROTO_TRUE;
+}
+
 static const proto::ProtoObject* py_isinstance(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -1296,13 +1350,15 @@ static const proto::ProtoObject* py_isinstance(
     if (positionalParameters->getSize(context) < 2) return PROTO_FALSE;
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
     const proto::ProtoObject* cls = positionalParameters->getAt(context, 1);
+    
     if (obj == PROTO_TRUE || obj == PROTO_FALSE) {
         const proto::ProtoObject* boolType = self->getAttribute(context, env ? env->getBoolTypeNameString() : proto::ProtoString::fromUTF8String(context, "bool"));
         const proto::ProtoObject* intType = self->getAttribute(context, env ? env->getIntTypeNameString() : proto::ProtoString::fromUTF8String(context, "int"));
         if (cls == boolType || cls == intType) return PROTO_TRUE;
-        if (intType && cls->isInstanceOf(context, intType)) return PROTO_TRUE;
+        if (intType && checkInterfaceInstanceOf(context, intType, cls)) return PROTO_TRUE;
     }
-    return obj->isInstanceOf(context, cls);
+    
+    return checkInterfaceInstanceOf(context, obj, cls) ? PROTO_TRUE : PROTO_FALSE;
 }
 
 static const proto::ProtoObject* py_issubclass(
@@ -1315,7 +1371,7 @@ static const proto::ProtoObject* py_issubclass(
     const proto::ProtoObject* cls = positionalParameters->getAt(context, 0);
     const proto::ProtoObject* base = positionalParameters->getAt(context, 1);
     
-    return cls->isInstanceOf(context, base);
+    return checkInterfaceInstanceOf(context, cls, base) ? PROTO_TRUE : PROTO_FALSE;
 }
 
 static const proto::ProtoObject* py_abs(
@@ -1325,8 +1381,83 @@ static const proto::ProtoObject* py_abs(
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
     if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
-    long long v = positionalParameters->getAt(context, 0)->asLong(context);
-    return context->fromInteger(v < 0 ? -v : v);
+    const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
+    const proto::ProtoObject* absM = obj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__abs__"));
+    if (absM && absM->asMethod(context)) {
+        return absM->call(context, nullptr, nullptr, obj, context->newList(), nullptr);
+    }
+    if (obj->isInteger(context)) {
+        long long v = obj->asLong(context);
+        return context->fromInteger(v < 0 ? -v : v);
+    }
+    if (obj->isDouble(context)) {
+        return context->fromDouble(std::abs(obj->asDouble(context)));
+    }
+    return PROTO_NONE;
+}
+
+static const proto::ProtoObject* py_min_max(
+    proto::ProtoContext* context,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters,
+    bool isMax) {
+    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    
+    const proto::ProtoObject* keyFunc = nullptr;
+    if (keywordParameters) {
+        keyFunc = keywordParameters->getAt(context, reinterpret_cast<unsigned long>(proto::ProtoString::fromUTF8String(context, "key")));
+    }
+
+    std::vector<const proto::ProtoObject*> items;
+    if (positionalParameters->getSize(context) == 1) {
+        // Handle iterable
+        const proto::ProtoObject* iterable = positionalParameters->getAt(context, 0);
+        const proto::ProtoObject* iterObj = py_iter(context, nullptr, nullptr, context->newList()->appendLast(context, iterable), nullptr);
+        if (iterObj && iterObj != PROTO_NONE) {
+            while (true) {
+                const proto::ProtoObject* item = py_next(context, nullptr, nullptr, context->newList()->appendLast(context, iterObj), nullptr);
+                if (!item || item == PROTO_NONE) break;
+                items.push_back(item);
+            }
+        }
+    } else {
+        for (size_t i = 0; i < positionalParameters->getSize(context); ++i) {
+            items.push_back(positionalParameters->getAt(context, i));
+        }
+    }
+
+    if (items.empty()) return PROTO_NONE;
+
+    const proto::ProtoObject* bestItem = items[0];
+    const proto::ProtoObject* bestVal = bestItem;
+    if (keyFunc && keyFunc != PROTO_NONE) {
+        bestVal = keyFunc->call(context, nullptr, nullptr, keyFunc, context->newList()->appendLast(context, bestItem), nullptr);
+    }
+
+    for (size_t i = 1; i < items.size(); ++i) {
+        const proto::ProtoObject* currentItem = items[i];
+        const proto::ProtoObject* currentVal = currentItem;
+        if (keyFunc && keyFunc != PROTO_NONE) {
+            currentVal = keyFunc->call(context, nullptr, nullptr, keyFunc, context->newList()->appendLast(context, currentItem), nullptr);
+        }
+
+        // Use sorted_compare or similar?
+        // For simplicity, let's assume integers for now or use the environment's comparison.
+        bool better = false;
+        if (currentVal->isInteger(context) && bestVal->isInteger(context)) {
+            better = isMax ? (currentVal->asLong(context) > bestVal->asLong(context)) : (currentVal->asLong(context) < bestVal->asLong(context));
+        } else {
+            // Fallback to basic comparison? 
+            // Better: use the compare system if available.
+        }
+        
+        if (better) {
+            bestItem = currentItem;
+            bestVal = currentVal;
+        }
+    }
+
+    return bestItem;
 }
 
 static const proto::ProtoObject* py_min(
@@ -1335,13 +1466,7 @@ static const proto::ProtoObject* py_min(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
-    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
-    long long m = positionalParameters->getAt(context, 0)->asLong(context);
-    for (unsigned long i = 1; i < positionalParameters->getSize(context); ++i) {
-        long long v = positionalParameters->getAt(context, static_cast<int>(i))->asLong(context);
-        if (v < m) m = v;
-    }
-    return context->fromInteger(m);
+    return py_min_max(context, positionalParameters, keywordParameters, false);
 }
 
 static const proto::ProtoObject* py_max(
@@ -1350,13 +1475,7 @@ static const proto::ProtoObject* py_max(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
-    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
-    long long m = positionalParameters->getAt(context, 0)->asLong(context);
-    for (unsigned long i = 1; i < positionalParameters->getSize(context); ++i) {
-        long long v = positionalParameters->getAt(context, static_cast<int>(i))->asLong(context);
-        if (v > m) m = v;
-    }
-    return context->fromInteger(m);
+    return py_min_max(context, positionalParameters, keywordParameters, true);
 }
 
 static const proto::ProtoObject* py_pow(
@@ -1476,6 +1595,113 @@ static const proto::ProtoObject* py_ord(
         return context->fromInteger(cp);
     }
     return context->fromInteger(static_cast<long long>(first));
+}
+
+static const proto::ProtoObject* py_property_get(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
+    if (obj == PROTO_NONE) return self;
+    const proto::ProtoObject* fget = self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "fget"));
+    if (fget && fget != PROTO_NONE) {
+        const proto::ProtoList* args = context->newList()->appendLast(context, obj);
+        return fget->call(context, nullptr, proto::ProtoString::fromUTF8String(context, "__call__"), fget, args, nullptr);
+    }
+    return PROTO_NONE;
+}
+
+static const proto::ProtoObject* py_property_set(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    if (positionalParameters->getSize(context) < 2) return PROTO_NONE;
+    const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
+    const proto::ProtoObject* val = positionalParameters->getAt(context, 1);
+    const proto::ProtoObject* fset = self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "fset"));
+    if (fset && fset != PROTO_NONE) {
+        const proto::ProtoList* args = context->newList()->appendLast(context, obj)->appendLast(context, val);
+        fset->call(context, nullptr, proto::ProtoString::fromUTF8String(context, "__call__"), fset, args, nullptr);
+    }
+    return PROTO_NONE;
+}
+
+static const proto::ProtoObject* py_property(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    proto::ProtoObject* prop = const_cast<proto::ProtoObject*>(context->newObject(true));
+    if (positionalParameters->getSize(context) >= 1) {
+        prop->setAttribute(context, proto::ProtoString::fromUTF8String(context, "fget"), positionalParameters->getAt(context, 0));
+    }
+    if (positionalParameters->getSize(context) >= 2) {
+        prop->setAttribute(context, proto::ProtoString::fromUTF8String(context, "fset"), positionalParameters->getAt(context, 1));
+    }
+    prop->setAttribute(context, env->getGetDunderString(), context->fromMethod(prop, py_property_get));
+    prop->setAttribute(context, env->getSetDunderString(), context->fromMethod(prop, py_property_set));
+    return prop;
+}
+
+static const proto::ProtoObject* py_classmethod_get(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    if (positionalParameters->getSize(context) < 2) return PROTO_NONE;
+    const proto::ProtoObject* type = positionalParameters->getAt(context, 1);
+    const proto::ProtoObject* func = self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "func"));
+    if (func && func->asMethod(context)) {
+        return context->fromMethod(const_cast<proto::ProtoObject*>(type), func->asMethod(context));
+    }
+    return func;
+}
+
+static const proto::ProtoObject* py_classmethod(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    proto::ProtoObject* cm = const_cast<proto::ProtoObject*>(context->newObject(true));
+    if (positionalParameters->getSize(context) >= 1) {
+        cm->setAttribute(context, proto::ProtoString::fromUTF8String(context, "func"), positionalParameters->getAt(context, 0));
+    }
+    cm->setAttribute(context, env->getGetDunderString(), context->fromMethod(cm, py_classmethod_get));
+    return cm;
+}
+
+static const proto::ProtoObject* py_staticmethod_get(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    return self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "func"));
+}
+
+static const proto::ProtoObject* py_staticmethod(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    proto::ProtoObject* sm = const_cast<proto::ProtoObject*>(context->newObject(true));
+    if (positionalParameters->getSize(context) >= 1) {
+        sm->setAttribute(context, proto::ProtoString::fromUTF8String(context, "func"), positionalParameters->getAt(context, 0));
+    }
+    sm->setAttribute(context, env->getGetDunderString(), context->fromMethod(sm, py_staticmethod_get));
+    return sm;
 }
 
 static const proto::ProtoObject* py_chr(
@@ -1600,23 +1826,18 @@ static const proto::ProtoObject* py_round(
     if (positionalParameters->getSize(context) >= 2) {
         ndigits = static_cast<int>(positionalParameters->getAt(context, 1)->asLong(context));
     }
-    if (n->isInteger(context)) {
-        if (ndigits == 0) return n;
-        double d = static_cast<double>(n->asLong(context));
+    double d = n->isDouble(context) ? n->asDouble(context) : static_cast<double>(n->asLong(context));
+    if (ndigits > 0) {
         for (int i = 0; i < ndigits; ++i) d *= 10.0;
         d = std::round(d);
         for (int i = 0; i < ndigits; ++i) d /= 10.0;
-        return context->fromDouble(d);
-    }
-    if (n->isDouble(context)) {
-        double d = n->asDouble(context);
-        if (ndigits == 0) return context->fromDouble(std::round(d));
-        for (int i = 0; i < ndigits; ++i) d *= 10.0;
+    } else if (ndigits < 0) {
+        double power = std::pow(10.0, -ndigits);
+        d = std::round(d / power) * power;
+    } else {
         d = std::round(d);
-        for (int i = 0; i < ndigits; ++i) d /= 10.0;
-        return context->fromDouble(d);
     }
-    return PROTO_NONE;
+    return context->fromDouble(d);
 }
 
 static const proto::ProtoObject* py_range_next(
@@ -2001,6 +2222,9 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "help"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_help));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "memoryview"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_memoryview));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "super"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_super));
+    builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "property"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_property));
+    builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "classmethod"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_classmethod));
+    builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "staticmethod"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_staticmethod));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__import__"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_import));
 
     return builtins;
