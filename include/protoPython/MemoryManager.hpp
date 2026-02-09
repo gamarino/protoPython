@@ -39,17 +39,16 @@ public:
                  const proto::ProtoList* localNames,
                  const proto::ProtoList* args,
                  const proto::ProtoSparseList* kwargs)
-        : parent_(parent)
-        , thread_(parent ? parent->thread : nullptr)
+        : parent_(parent ? parent : PythonEnvironment::getCurrentContext())
         , constructed_(false) {
-        new (storage_) proto::ProtoContext(space, parent, parameterNames, localNames, args, kwargs);
+        new (storage_) proto::ProtoContext(space, parent_, parameterNames, localNames, args, kwargs);
+        PythonEnvironment::setCurrentContext(context());
         constructed_ = true;
     }
 
     ~ContextScope() {
         if (constructed_) {
-            if (thread_)
-                thread_->setCurrentContext(parent_);
+            PythonEnvironment::setCurrentContext(parent_);
             context()->proto::ProtoContext::~ProtoContext();
             constructed_ = false;
         }

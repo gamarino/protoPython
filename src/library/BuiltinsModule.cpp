@@ -46,7 +46,7 @@ static const proto::ProtoObject* py_import(
     nameObj->asString(context)->toUTF8String(context, moduleName);
 
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
-    const proto::ProtoObject* leaf = env ? env->resolve(moduleName) : PROTO_NONE;
+    const proto::ProtoObject* leaf = env ? env->resolve(moduleName, context) : PROTO_NONE;
     
     bool returnLeaf = false;
     if (positionalParameters->getSize(context) > 1) {
@@ -56,7 +56,7 @@ static const proto::ProtoObject* py_import(
     if (!returnLeaf && moduleName.find('.') != std::string::npos) {
         size_t dot = moduleName.find('.');
         std::string topLevel = moduleName.substr(0, dot);
-        return env->resolve(topLevel);
+        return env->resolve(topLevel, context);
     }
     return leaf;
 }
@@ -1125,7 +1125,7 @@ static const proto::ProtoObject* py_breakpoint(
     const proto::ProtoSparseList* keywordParameters) {
     (void)self; (void)parentLink; (void)keywordParameters; (void)positionalParameters;
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
-    const proto::ProtoObject* sys = env ? env->resolve("sys") : nullptr;
+    const proto::ProtoObject* sys = env ? env->resolve("sys", context) : nullptr;
     if (sys) {
         const proto::ProtoObject* hook = sys->getAttribute(context, proto::ProtoString::fromUTF8String(context, "breakpointhook"));
         if (hook && hook->asMethod(context)) {

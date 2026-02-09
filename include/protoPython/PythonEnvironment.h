@@ -7,6 +7,7 @@
 #include <iostream>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <vector>
 
@@ -35,7 +36,7 @@ public:
     /**
      * @brief Returns the root context.
      */
-    proto::ProtoContext* getContext() { return context; }
+    proto::ProtoContext* getContext() { return rootContext_; }
 
     /**
      * @brief Gets the Python 'object' base prototype.
@@ -99,7 +100,7 @@ public:
     /**
      * @brief Utility to resolve symbols in this environment.
      */
-    const proto::ProtoObject* resolve(const std::string& name);
+    const proto::ProtoObject* resolve(const std::string& name, proto::ProtoContext* ctx = nullptr);
     
     /**
      * @brief Accessors for frequently used dunder strings (performance).
@@ -233,7 +234,7 @@ public:
      * @param moduleName Module name (as used by resolve).
      * @return 0 on success, -1 on resolve failure, -2 on runtime failure.
      */
-    int executeModule(const std::string& moduleName, bool asMain = false);
+    int executeModule(const std::string& moduleName, bool asMain = false, proto::ProtoContext* ctx = nullptr);
     
     /**
      * @brief Executes a string of Python code in the current environment's __main__ context.
@@ -349,6 +350,11 @@ public:
      * @brief Gets the current code object for the current thread.
      */
     static const proto::ProtoObject* getCurrentCodeObject();
+    
+    /** Sets the current thread-local context (for RAII management). */
+    static void setCurrentContext(proto::ProtoContext* ctx) { s_threadContext = ctx; }
+    /** Gets the current thread-local context. */
+    static proto::ProtoContext* getCurrentContext() { return s_threadContext; }
 
     /**
      * @brief Returns true if there is a pending exception.
@@ -428,7 +434,7 @@ private:
     bool isCompleteBlock(const std::string& code);
 
     proto::ProtoSpace* space_;
-    proto::ProtoContext* context;
+    proto::ProtoContext* rootContext_;
 
     const proto::ProtoObject* objectPrototype;
     const proto::ProtoObject* typePrototype;
@@ -446,6 +452,7 @@ private:
     const proto::ProtoObject* boolPrototype;
     const proto::ProtoObject* sysModule;
     static thread_local PythonEnvironment* s_threadEnv;
+    static thread_local proto::ProtoContext* s_threadContext;
     static thread_local const proto::ProtoObject* s_currentFrame;
     static thread_local const proto::ProtoObject* s_currentGlobals;
     static thread_local const proto::ProtoObject* s_currentCodeObject;
@@ -589,6 +596,8 @@ private:
 public:
     /** Signal handling flag (Step 1310). */
     static std::atomic<bool> s_sigintReceived;
+    static std::thread::id s_mainThreadId;
+    mutable std::recursive_mutex importLock_;
 };
 
 } // namespace protoPython

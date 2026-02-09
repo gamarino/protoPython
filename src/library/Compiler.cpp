@@ -739,7 +739,7 @@ bool Compiler::compileSuite(SuiteNode* n) {
     if (!n || n->statements.empty()) return false;
     for (size_t i = 0; i < n->statements.size(); ++i) {
         if (!compileNode(n->statements[i].get())) return false;
-        if (i + 1 < n->statements.size() && statementLeavesValue(n->statements[i].get()))
+        if (statementLeavesValue(n->statements[i].get()))
             emit(OP_POP_TOP, 0);
     }
     return true;
@@ -786,7 +786,12 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
     bodyCompiler.globalNames_ = bodyGlobals;
     bodyCompiler.localSlotMap_ = slotMap;
     if (!bodyCompiler.compileNode(n->body.get())) return false;
-    bodyCompiler.bytecode_ = bodyCompiler.bytecode_->appendLast(ctx_, ctx_->fromInteger(static_cast<int>(OP_RETURN_VALUE)));
+    
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx_);
+    int noneIdx = bodyCompiler.addConstant(env ? env->getNonePrototype() : PROTO_NONE);
+    bodyCompiler.emit(OP_LOAD_CONST, noneIdx);
+    bodyCompiler.emit(OP_RETURN_VALUE);
+    
     bodyCompiler.applyPatches();
 
     const proto::ProtoList* co_varnames = ctx_->newList();
@@ -884,18 +889,17 @@ bool Compiler::compileExpression(ASTNode* expr) {
 bool Compiler::compileModule(ModuleNode* mod) {
     if (!mod || mod->body.empty()) return false;
     globalNames_.clear();
-    if (mod->body.size() == 1) {
-        if (!compileNode(mod->body[0].get())) return false;
-        bytecode_ = bytecode_->appendLast(ctx_, ctx_->fromInteger(static_cast<int>(OP_RETURN_VALUE)));
-        applyPatches();
-        return true;
-    }
+    
     for (size_t i = 0; i < mod->body.size(); ++i) {
         if (!compileNode(mod->body[i].get())) return false;
-        if (i + 1 < mod->body.size() && statementLeavesValue(mod->body[i].get()))
+        if (statementLeavesValue(mod->body[i].get()))
             emit(OP_POP_TOP, 0);
     }
-    bytecode_ = bytecode_->appendLast(ctx_, ctx_->fromInteger(static_cast<int>(OP_RETURN_VALUE)));
+    
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx_);
+    int noneIdx = addConstant(env ? env->getNonePrototype() : PROTO_NONE);
+    emit(OP_LOAD_CONST, noneIdx);
+    emit(OP_RETURN_VALUE);
     applyPatches();
     return true;
 }
