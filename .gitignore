@@ -1,2 +1,5 @@
 build/
 .idea/
+# Evitar que los diagnósticos de ejecución entren al repo
+*.log
+exec_diag_*
