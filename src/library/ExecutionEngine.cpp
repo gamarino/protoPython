@@ -65,10 +65,28 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
     int automatic_count = (co_automatic_obj && co_automatic_obj->isInteger(ctx)) ? static_cast<int>(co_automatic_obj->asLong(ctx)) : 0;
     if (automatic_count < 0) automatic_count = 0;
     if (nparams < 0) nparams = 0;
+    if (std::getenv("PROTO_THREAD_DIAG") && args) {
+        std::cerr << "[proto-thread-diag] runUserFunctionCall nparams=" << nparams << " auto=" << automatic_count << " args=" << args->getSize(ctx) << ": ";
+        for (unsigned long i = 0; i < args->getSize(ctx); ++i) {
+            std::cerr << args->getAt(ctx, i) << " ";
+        }
+        std::cerr << "\n" << std::flush;
+    }
+    if (std::getenv("PROTO_THREAD_DIAG")) {
+        std::cerr << "[proto-thread-diag] runUserFunctionCall nparams=" << nparams << " auto=" << automatic_count << " args=" << (args ? args->getSize(ctx) : 0) << "\n" << std::flush;
+    }
 
     const proto::ProtoList* parameterNames = nullptr;
     const proto::ProtoList* localNames = nullptr;
     if (co_varnames && automatic_count > 0 && static_cast<unsigned long>(automatic_count) <= co_varnames->getSize(ctx)) {
+        if (std::getenv("PROTO_THREAD_DIAG")) {
+            std::cerr << "[proto-thread-diag] varnames: ";
+            for (unsigned long i = 0; i < co_varnames->getSize(ctx); ++i) {
+                std::string vn; co_varnames->getAt(ctx, i)->asString(ctx)->toUTF8String(ctx, vn);
+                std::cerr << vn << " ";
+            }
+            std::cerr << "\n" << std::flush;
+        }
         parameterNames = (nparams > 0 && static_cast<unsigned long>(nparams) <= co_varnames->getSize(ctx))
             ? ctx->newList() : nullptr;
         if (parameterNames) {
@@ -421,10 +439,16 @@ static const proto::ProtoObject* invokeCallable(proto::ProtoContext* ctx,
         return cell->method(ctx, const_cast<proto::ProtoObject*>(cell->self), nullptr, args, kwargs);
     }
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (std::getenv("PROTO_THREAD_DIAG")) {
+        std::cerr << "[proto-thread-diag] invokeCallable callable=" << callable << " isMethod=" << callable->isMethod(ctx) << " args=" << (args ? args->getSize(ctx) : 0) << "\n" << std::flush;
+    }
     const proto::ProtoObject* callAttr = callable->getAttribute(ctx, env ? env->getCallString() : proto::ProtoString::fromUTF8String(ctx, "__call__"));
     if (!callAttr || !callAttr->asMethod(ctx)) {
         if (env) env->raiseTypeError(ctx, "object is not callable");
         return PROTO_NONE;
+    }
+    if (std::getenv("PROTO_THREAD_DIAG")) {
+         std::cerr << "[proto-thread-diag] calling __call__=" << callAttr << " method=" << (void*)callAttr->asMethod(ctx) << "\n" << std::flush;
     }
     return callAttr->asMethod(ctx)(ctx, callable, nullptr, args, kwargs);
 }

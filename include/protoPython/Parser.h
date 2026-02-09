@@ -30,6 +30,11 @@ struct BinOpNode : ASTNode {
     std::unique_ptr<ASTNode> right;
 };
 
+struct UnaryOpNode : ASTNode {
+    TokenType op = TokenType::Not;
+    std::unique_ptr<ASTNode> operand;
+};
+
 struct CondExprNode : ASTNode {
     std::unique_ptr<ASTNode> body;
     std::unique_ptr<ASTNode> cond;
@@ -180,6 +185,7 @@ private:
     void skipNewlines();
     std::unique_ptr<ASTNode> parseOrExpr();
     std::unique_ptr<ASTNode> parseAndExpr();
+    std::unique_ptr<ASTNode> parseNotExpr();
     std::unique_ptr<ASTNode> parseCompareExpr();
     std::unique_ptr<ASTNode> parseAddExpr();
     std::unique_ptr<ASTNode> parseMulExpr();

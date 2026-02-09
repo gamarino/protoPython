@@ -43,6 +43,7 @@ private:
     bool compileConstant(ConstantNode* n);
     bool compileName(NameNode* n);
     bool compileBinOp(BinOpNode* n);
+    bool compileUnaryOp(UnaryOpNode* n);
     bool compileCall(CallNode* n);
     bool compileAttribute(AttributeNode* n);
     bool compileSubscript(SubscriptNode* n);

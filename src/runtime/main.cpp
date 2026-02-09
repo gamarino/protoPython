@@ -261,5 +261,5 @@ int main(int argc, char* argv[]) {
         });
         env.enableDefaultTrace();
     }
-    return executeModule(env, options.moduleName);
+    return executeModule(env, options.moduleName, true);
 }

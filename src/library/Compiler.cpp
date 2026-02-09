@@ -148,6 +148,15 @@ bool Compiler::compileBinOp(BinOpNode* n) {
     return true;
 }
 
+bool Compiler::compileUnaryOp(UnaryOpNode* n) {
+    if (!n || !compileNode(n->operand.get())) return false;
+    if (n->op == TokenType::Not) {
+        emit(OP_UNARY_NOT, 0); // OP_UNARY_NOT does not take an argument, but emit adds 0 if not specified.
+        return true;
+    }
+    return false;
+}
+
 bool Compiler::compileCall(CallNode* n) {
     if (!n || !compileNode(n->func.get())) return false;
     for (auto& arg : n->args) {
@@ -468,6 +477,10 @@ static void collectGlobalsFromNode(ASTNode* node, std::unordered_set<std::string
         collectGlobalsFromNode(b->right.get(), globalsOut);
         return;
     }
+    if (auto* u = dynamic_cast<UnaryOpNode*>(node)) {
+        collectGlobalsFromNode(u->operand.get(), globalsOut);
+        return;
+    }
     if (auto* lst = dynamic_cast<ListLiteralNode*>(node)) {
         for (auto& e : lst->elements) collectGlobalsFromNode(e.get(), globalsOut);
         return;
@@ -565,6 +578,10 @@ static void collectUsedNames(ASTNode* node, std::unordered_set<std::string>& out
     if (auto* b = dynamic_cast<BinOpNode*>(node)) {
         collectUsedNames(b->left.get(), out);
         collectUsedNames(b->right.get(), out);
+        return;
+    }
+    if (auto* u = dynamic_cast<UnaryOpNode*>(node)) {
+        collectUsedNames(u->operand.get(), out);
         return;
     }
     if (auto* lst = dynamic_cast<ListLiteralNode*>(node)) {
@@ -837,6 +854,7 @@ bool Compiler::compileNode(ASTNode* node) {
     if (auto* c = dynamic_cast<ConstantNode*>(node)) return compileConstant(c);
     if (auto* nm = dynamic_cast<NameNode*>(node)) return compileName(nm);
     if (auto* b = dynamic_cast<BinOpNode*>(node)) return compileBinOp(b);
+    if (auto* u = dynamic_cast<UnaryOpNode*>(node)) return compileUnaryOp(u);
     if (auto* cl = dynamic_cast<CallNode*>(node)) return compileCall(cl);
     if (auto* att = dynamic_cast<AttributeNode*>(node)) return compileAttribute(att);
     if (auto* sub = dynamic_cast<SubscriptNode*>(node)) return compileSubscript(sub);

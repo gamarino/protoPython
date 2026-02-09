@@ -164,6 +164,9 @@ std::unique_ptr<ASTNode> Parser::parseAtom() {
         return n;
     }
     if (accept(TokenType::LParen)) {
+        if (accept(TokenType::RParen)) {
+            return std::make_unique<TupleLiteralNode>();
+        }
         auto e = parseOrExpr();
         if (accept(TokenType::Comma)) {
             auto tup = std::make_unique<TupleLiteralNode>();
@@ -364,11 +367,11 @@ std::unique_ptr<ASTNode> Parser::parseCompareExpr() {
 }
 
 std::unique_ptr<ASTNode> Parser::parseAndExpr() {
-    auto left = parseCompareExpr();
+    auto left = parseNotExpr();
     if (!left) return nullptr;
     while (cur_.type == TokenType::And) {
         advance();
-        auto right = parseCompareExpr();
+        auto right = parseNotExpr();
         if (!right) return left;
         auto bin = std::make_unique<BinOpNode>();
         bin->left = std::move(left);
@@ -377,6 +380,18 @@ std::unique_ptr<ASTNode> Parser::parseAndExpr() {
         left = std::move(bin);
     }
     return left;
+}
+
+std::unique_ptr<ASTNode> Parser::parseNotExpr() {
+    if (accept(TokenType::Not)) {
+        auto operand = parseNotExpr();
+        if (!operand) return nullptr;
+        auto n = std::make_unique<UnaryOpNode>();
+        n->op = TokenType::Not;
+        n->operand = std::move(operand);
+        return n;
+    }
+    return parseCompareExpr();
 }
 
 std::unique_ptr<ASTNode> Parser::parseOrExpr() {
