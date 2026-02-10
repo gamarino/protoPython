@@ -6079,6 +6079,7 @@ static void sigint_handler(int) {
 
 std::string PythonEnvironment::formatTraceback(const proto::ProtoContext* ctx) {
     if (!ctx) ctx = s_threadContext ? s_threadContext : rootContext_;
+    proto::ProtoContext* nonConstCtx = const_cast<proto::ProtoContext*>(ctx);
     std::string out = "Traceback (most recent call last):\n";
     
     // Walk the frame stack using f_back
@@ -6086,7 +6087,7 @@ std::string PythonEnvironment::formatTraceback(const proto::ProtoContext* ctx) {
     std::vector<const proto::ProtoObject*> frames;
     while (frame && frame != PROTO_NONE) {
         frames.push_back(frame);
-        frame = frame->getAttribute(ctx, getFBackString());
+        frame = frame->getAttribute(nonConstCtx, getFBackString());
         if (frames.size() > 50) break; // Safety limit
     }
     
@@ -6097,16 +6098,16 @@ std::string PythonEnvironment::formatTraceback(const proto::ProtoContext* ctx) {
         std::string filename = "<unknown>";
         std::string funcName = "<module>";
         
-        const proto::ProtoObject* codeObj = f->getAttribute(ctx, getFCodeString());
+        const proto::ProtoObject* codeObj = f->getAttribute(nonConstCtx, getFCodeString());
         if (codeObj && codeObj != PROTO_NONE) {
-            const proto::ProtoObject* fileObj = codeObj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_filename"));
-            if (fileObj && fileObj->isString(ctx)) {
-                fileObj->asString(ctx)->toUTF8String(ctx, filename);
+            const proto::ProtoObject* fileObj = codeObj->getAttribute(nonConstCtx, proto::ProtoString::fromUTF8String(nonConstCtx, "co_filename"));
+            if (fileObj && fileObj->isString(nonConstCtx)) {
+                fileObj->asString(nonConstCtx)->toUTF8String(nonConstCtx, filename);
             }
             
-            const proto::ProtoObject* nameObj = codeObj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_name"));
-            if (nameObj && nameObj->isString(ctx)) {
-                nameObj->asString(ctx)->toUTF8String(ctx, funcName);
+            const proto::ProtoObject* nameObj = codeObj->getAttribute(nonConstCtx, proto::ProtoString::fromUTF8String(nonConstCtx, "co_name"));
+            if (nameObj && nameObj->isString(nonConstCtx)) {
+                nameObj->asString(nonConstCtx)->toUTF8String(nonConstCtx, funcName);
             }
         }
         
@@ -6381,6 +6382,25 @@ void PythonEnvironment::runRepl(std::istream& in, std::ostream& out) {
     out << "protoPython 0.1.0 (" << __DATE__ << ") [HPy Integrated]\n"
         << "Type \"help\", \"copyright\", \"credits\" or \"license\" for more information.\n";
         
+    // Step 1429: History persistence
+    std::string historyDir = std::getenv("HOME") ? std::getenv("HOME") : ".";
+    std::string historyPath = historyDir + "/.protopy_history";
+    {
+        std::ifstream hf(historyPath);
+        if (hf) {
+            std::string hline;
+            while (std::getline(hf, hline)) {
+                if (!hline.empty()) replHistory_.push_back(hline + "\n");
+            }
+        }
+    }
+    std::ofstream historyOut(historyPath, std::ios::app);
+    if (!historyOut) {
+        std::cerr << "[proto-repl-diag] FAILED to open history file: " << historyPath << "\n";
+    } else {
+        if (std::getenv("PROTO_ENV_DIAG")) std::cerr << "[proto-repl-diag] Opened history file: " << historyPath << "\n";
+    }
+        
     std::string buffer;
     std::string line;
     std::string currentIndent = "";
@@ -6450,6 +6470,26 @@ void PythonEnvironment::runRepl(std::istream& in, std::ostream& out) {
             }
             continue;
         }
+
+        // Step 1433: %complete magic
+        if (line.compare(0, 10, "%complete ") == 0) {
+            std::string prefix = line.substr(10);
+            const proto::ProtoObject* completeFn = builtinsModule->getAttribute(context, proto::ProtoString::fromUTF8String(context, "_complete"));
+            if (completeFn && completeFn->asMethod(context)) {
+                const proto::ProtoList* args = context->newList()->appendLast(context, context->fromUTF8String(prefix.c_str()))->appendLast(context, frame);
+                const proto::ProtoObject* resp = completeFn->asMethod(context)(context, const_cast<proto::ProtoObject*>(builtinsModule), nullptr, args, nullptr);
+                if (resp && resp->asList(context)) {
+                    const proto::ProtoList* rl = resp->asList(context);
+                    for (unsigned long i = 0; i < rl->getSize(context); ++i) {
+                        std::string n;
+                        rl->getAt(context, static_cast<int>(i))->asString(context)->toUTF8String(context, n);
+                        out << n << " ";
+                    }
+                    out << "\n";
+                }
+            }
+            continue;
+        }
         
         // Step 1349: %debug magic
         if (line == "%debug") {
@@ -6495,6 +6535,11 @@ void PythonEnvironment::runRepl(std::istream& in, std::ostream& out) {
         
         // Step 1311: History (Simple in-memory for now)
         replHistory_.push_back(buffer);
+        if (historyOut) {
+            historyOut << buffer;
+            if (buffer.back() != '\n') historyOut << "\n";
+            historyOut.flush();
+        }
         
         const proto::ProtoObject* source = context->fromUTF8String(buffer.c_str());
         const proto::ProtoList* args = context->newList()->appendLast(context, source)->appendLast(context, frame)->appendLast(context, frame);

@@ -241,10 +241,7 @@ static const proto::ProtoObject* binaryAdd(proto::ProtoContext* ctx,
              return ctx->fromDouble(a->asDouble(ctx) + b->asDouble(ctx));
     }
     if (a->isString(ctx) && b->isString(ctx)) {
-        std::string sa, sb;
-        a->asString(ctx)->toUTF8String(ctx, sa);
-        b->asString(ctx)->toUTF8String(ctx, sb);
-        return ctx->fromUTF8String((sa + sb).c_str());
+        return a->asString(ctx)->appendLast(ctx, b->asString(ctx))->asObject(ctx);
     }
     return PROTO_NONE;
 }

@@ -169,6 +169,7 @@ public:
     const std::string& getLastErrorMsg() const { return lastErrorMsg_; }
     int getLastErrorLine() const { return lastErrorLine_; }
     int getLastErrorColumn() const { return lastErrorColumn_; }
+    bool atEOF() const { return cur_.type == TokenType::EndOfFile; }
 
 private:
     Tokenizer tok_;

@@ -21,7 +21,11 @@ The heart of the project, providing the runtime infrastructure.
 - **Object Model**:
     - Implements the base `object` class.
     - Implements fundamental dunder methods (`__init__`, `__new__`, `__call__`, `__getattr__`, etc.).
-    - Maps Python types (int, str, list, dict, set) to `protoCore` optimized structures (e.g., `ProtoSparseList`, `ProtoSet`).
+    - Maps Python types (int, str, list, dict, set) to `protoCore` optimized structures:
+        - **list**: `ProtoList` (balanced AVL binary tree, $O(\log N)$ access/modification).
+        - **str**: `ProtoString` (rope structure based on `ProtoTuple`, $O(1)$ concatenation).
+        - **dict**: `ProtoSparseList`.
+        - **set**: `ProtoSet`.
 - **Import Logic**: A `protoCore`-native import system capable of loading both Python modules (compiled) and native C++ modules.
 - **Runtime Objects**: Implementation of frames, generators, coroutines, and exceptions using `protoCore` threading and fiber models.
 

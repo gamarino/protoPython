@@ -1,30 +1,28 @@
 import sys
 
-def test_frame():
+def test_frames():
+    print("--- test_frames START ---")
     f = sys._getframe(0)
-    print("Frame:", f)
-    print("f_back:", f.f_back)
-    print("f_code:", f.f_code)
-    print("f_globals:", f.f_globals)
-    print("f_locals is f:", f.f_locals == f)
+    print("Frame level 0:", f)
     
-    print("globals() matches f.f_globals:", globals() == f.f_globals)
-    # locals() in test_frame should include 'f' and 'inner'
-    locs = locals()
-    print("locals() has 'f':", 'f' in locs)
-    print("locals() has 'inner':", 'inner' in locs)
-
-    print("\nStarting inner test...")
-    def inner(outer_f):
-        x = 42
-        f_inner = sys._getframe(0)
-        print("Inner Frame:", f_inner)
-        locs_inner = locals()
-        print("Inner locals() has 'x':", 'x' in locs_inner)
-        print("Inner locals()['x'] == 42:", locs_inner['x'] == 42)
-        print("Inner f_back matches outer frame:", f_inner.f_back == outer_f)
+    g = globals()
+    l = locals()
+    print("globals() type:", type(g))
+    print("locals() type:", type(l))
+    
+    def inner(x):
+        y = x + 1
+        inner_locals = locals()
+        print("Inner locals:", inner_locals)
+        print("Inner locals['x']:", inner_locals['x'])
+        print("Inner locals['y']:", inner_locals['y'])
         
-    inner(f)
+        outer_frame = sys._getframe(1)
+        print("Outer frame from inner:", outer_frame)
+        return inner_locals
 
-print("Basic object:", object())
-test_frame()
+    res = inner(42)
+    print("--- test_frames END ---")
+
+if __name__ == "__main__":
+    test_frames()
