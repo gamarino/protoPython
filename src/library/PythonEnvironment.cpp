@@ -6544,6 +6544,10 @@ void PythonEnvironment::runRepl(std::istream& in, std::ostream& out) {
         const proto::ProtoObject* source = context->fromUTF8String(buffer.c_str());
         const proto::ProtoList* args = context->newList()->appendLast(context, source)->appendLast(context, frame)->appendLast(context, frame);
         const proto::ProtoObject* result = PROTO_NONE;
+
+        if (std::getenv("PROTO_REPL_DIAG")) {
+            std::cerr << "[proto-repl-diag] command=\"" << buffer << "\" frame=" << frame << "\n" << std::flush;
+        }
         
         try {
             // Check for pending exceptions before execution

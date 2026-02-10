@@ -660,6 +660,7 @@ const proto::ProtoObject* executeBytecodeRange(
                         std::string n; nameObj->asString(ctx)->toUTF8String(ctx, n);
                         std::cerr << "[proto-exec-diag] OP_STORE_NAME " << n << "=" << val << " on frame=" << frame << "\n";
                     }
+                    if (env) env->invalidateResolveCache();
                 }
             }
         } else if (op == OP_LOAD_FAST) {
@@ -1600,6 +1601,7 @@ const proto::ProtoObject* executeBytecodeRange(
                     frame = const_cast<proto::ProtoObject*>(frame->setAttribute(ctx, nameObj->asString(ctx), val));
                     PythonEnvironment::setCurrentFrame(frame);
                     if (sync_globals) PythonEnvironment::setCurrentGlobals(frame);
+                    if (env) env->invalidateResolveCache();
                 }
             }
         } else if (op == OP_BUILD_SLICE) {
