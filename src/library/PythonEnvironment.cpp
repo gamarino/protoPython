@@ -6437,7 +6437,7 @@ void PythonEnvironment::runRepl(std::istream& in, std::ostream& out) {
             if (ps2Obj && ps2Obj->isString(context)) ps2Obj->asString(context)->toUTF8String(context, secondaryPrompt_);
         }
 
-        out << (buffer.empty() ? primaryPrompt_ : secondaryPrompt_) << currentIndent << std::flush;
+        out << (buffer.empty() ? primaryPrompt_ : secondaryPrompt_) << std::flush;
         
         if (!std::getline(in, line)) {
             if (in.eof()) break;
@@ -6504,9 +6504,6 @@ void PythonEnvironment::runRepl(std::istream& in, std::ostream& out) {
             }
             continue;
         }
-
-        // Step 1345: Auto-indentation (Prepend current indent to line if not empty)
-        if (!line.empty()) line = currentIndent + line;
         
         // Step 1315: Empty Line Handling
         if (buffer.empty() && line.empty()) continue;
@@ -6514,20 +6511,6 @@ void PythonEnvironment::runRepl(std::istream& in, std::ostream& out) {
         buffer += line + "\n";
         
         if (!isCompleteBlock(buffer)) {
-            // Calculate indentation for next line
-            currentIndent = "";
-            size_t i = 0;
-            while (i < line.size() && (line[i] == ' ' || line[i] == '\t')) {
-                currentIndent += line[i];
-                i++;
-            }
-            // If ends with ':', increase (heuristic)
-            std::string trimmed = line;
-            trimmed.erase(0, trimmed.find_first_not_of(" \t\r\n"));
-            trimmed.erase(trimmed.find_last_not_of(" \t\r\n") + 1);
-            if (!trimmed.empty() && trimmed.back() == ':') {
-                currentIndent += "    "; // 4 spaces
-            }
             continue;
         }
         
