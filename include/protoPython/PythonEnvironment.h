@@ -43,6 +43,7 @@ public:
      */
     const proto::ProtoObject* getObjectPrototype() const { return objectPrototype; }
 
+
     /**
      * @brief Gets the Python 'type' prototype.
      */
@@ -92,6 +93,9 @@ public:
      * @brief Gets the Python 'None' prototype.
      */
     const proto::ProtoObject* getNonePrototype() const { return nonePrototype; }
+    /** @brief Gets the frame prototype. */
+    const proto::ProtoObject* getFramePrototype() const { return framePrototype; }
+
     const proto::ProtoObject* getGlobals() const;
 
     /** @brief Gets the builtins module object. */
@@ -446,6 +450,7 @@ private:
     const proto::ProtoObject* setPrototype;
     const proto::ProtoObject* bytesPrototype;
     const proto::ProtoObject* nonePrototype;
+    const proto::ProtoObject* framePrototype;
     const proto::ProtoObject* sliceType;
     const proto::ProtoObject* frozensetPrototype;
     const proto::ProtoObject* floatPrototype;

@@ -913,6 +913,10 @@ const proto::ProtoObject* makeCodeObject(proto::ProtoContext* ctx,
     int automatic_count) {
     if (!ctx || !constants || !bytecode) return nullptr;
     const proto::ProtoObject* code = ctx->newObject(true);
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (env && env->getObjectPrototype()) {
+        code = code->addParent(ctx, env->getObjectPrototype());
+    }
     code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_consts"), reinterpret_cast<const proto::ProtoObject*>(constants));
     code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_names"), names ? reinterpret_cast<const proto::ProtoObject*>(names) : reinterpret_cast<const proto::ProtoObject*>(ctx->newList()));
     code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_code"), reinterpret_cast<const proto::ProtoObject*>(bytecode));

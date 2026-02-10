@@ -130,6 +130,9 @@ static const proto::ProtoObject* sys_getframe(
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment* env,
                                      const std::vector<std::string>* argv) {
     const proto::ProtoObject* sys = ctx->newObject(true);
+    if (env && env->getObjectPrototype()) {
+        sys = sys->addParent(ctx, env->getObjectPrototype());
+    }
 
     // Store env pointer for trace functions and exit
     sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__env_ptr__"), ctx->fromExternalPointer(env));
@@ -140,6 +143,9 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "getsizeof"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_getsizeof));
     sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_getframe"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_getframe));
     const proto::ProtoObject* traceDefault = ctx->newObject(true);
+    if (env && env->getObjectPrototype()) {
+        traceDefault = traceDefault->addParent(ctx, env->getObjectPrototype());
+    }
     traceDefault = traceDefault->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__call__"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(traceDefault), sys_trace_default));
     sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_trace_default"), traceDefault);
@@ -180,6 +186,9 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "version_info"), vi->asObject(ctx));
 
     const proto::ProtoObject* stats = ctx->newObject(true);
+    if (env && env->getObjectPrototype()) {
+        stats = stats->addParent(ctx, env->getObjectPrototype());
+    }
     stats = stats->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "calls"), ctx->fromInteger(0));
     stats = stats->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "objects_created"), ctx->fromInteger(0));
     sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "stats"), stats);

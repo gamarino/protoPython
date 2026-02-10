@@ -52,6 +52,9 @@ const proto::ProtoObject* PythonModuleProvider::tryLoad(const std::string& logic
         if (fileExists(pyPath)) {
             /* Mutable so exec() STORE_NAME updates the same module object (proto setAttribute on mutable returns this). */
             const proto::ProtoObject* module = ctx->newObject(true);
+            if (ctx->space->objectPrototype) {
+                module = module->addParent(ctx, ctx->space->objectPrototype);
+            }
             module = module->setAttribute(ctx, nameKey, ctx->fromUTF8String(logicalPath.c_str()));
             module = module->setAttribute(ctx, fileKey, ctx->fromUTF8String(pyPath.c_str()));
             return module;
@@ -61,6 +64,9 @@ const proto::ProtoObject* PythonModuleProvider::tryLoad(const std::string& logic
         std::string initPath = joinPath(basePath, relPath + "/__init__.py");
         if (fileExists(initPath)) {
             const proto::ProtoObject* module = ctx->newObject(true);
+            if (ctx->space->objectPrototype) {
+                module = module->addParent(ctx, ctx->space->objectPrototype);
+            }
             module = module->setAttribute(ctx, nameKey, ctx->fromUTF8String(logicalPath.c_str()));
             module = module->setAttribute(ctx, fileKey, ctx->fromUTF8String(initPath.c_str()));
             

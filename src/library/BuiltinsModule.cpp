@@ -142,10 +142,11 @@ static const proto::ProtoObject* py_print(
         } else if (obj == PROTO_FALSE) {
             strObj = context->fromUTF8String("False");
         } else {
+            const proto::ProtoString* strS = env->getStrString();
+            const proto::ProtoString* reprS = env->getReprString();
             const proto::ProtoObject* strMethod = obj->getAttribute(context, strS);
-            if (get_env_diag()) {
-                std::string sname; strS->toUTF8String(context, sname);
-                std::cerr << "[proto-builtins] py_print attr lookup: name=" << sname << " obj=" << obj << " found=" << strMethod << "\n" << std::flush;
+            if (!strMethod) {
+                strMethod = obj->getAttribute(context, reprS);
             }
             if (strMethod && strMethod->asMethod(context)) {
                 strObj = strMethod->asMethod(context)(context, obj, nullptr, emptyL, nullptr);
@@ -2168,6 +2169,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
                                    const proto::ProtoObject* floatProto, const proto::ProtoObject* boolProto,
                                    const proto::ProtoObject* ioModule) {
     const proto::ProtoObject* builtins = ctx->newObject(true);
+    if (objectProto) builtins = builtins->addParent(ctx, objectProto);
     if (noneProto) {
         builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "None"), noneProto);
     }
@@ -2214,16 +2216,19 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "enumerate"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_enumerate));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "reversed"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_reversed));
     const proto::ProtoObject* zipProto = ctx->newObject(true);
+    if (objectProto) zipProto = zipProto->addParent(ctx, objectProto);
     zipProto = zipProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iter__"), ctx->fromMethod(const_cast<proto::ProtoObject*>(zipProto), py_iter_self));
     zipProto = zipProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__next__"), ctx->fromMethod(const_cast<proto::ProtoObject*>(zipProto), py_zip_next));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__zip_proto__"), zipProto);
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "zip"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_zip));
     const proto::ProtoObject* filterProto = ctx->newObject(true);
+    if (objectProto) filterProto = filterProto->addParent(ctx, objectProto);
     filterProto = filterProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iter__"), ctx->fromMethod(const_cast<proto::ProtoObject*>(filterProto), py_iter_self));
     filterProto = filterProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__next__"), ctx->fromMethod(const_cast<proto::ProtoObject*>(filterProto), py_filter_next));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__filter_proto__"), filterProto);
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "filter"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_filter));
     const proto::ProtoObject* mapProto = ctx->newObject(true);
+    if (objectProto) mapProto = mapProto->addParent(ctx, objectProto);
     mapProto = mapProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iter__"), ctx->fromMethod(const_cast<proto::ProtoObject*>(mapProto), py_iter_self));
     mapProto = mapProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__next__"), ctx->fromMethod(const_cast<proto::ProtoObject*>(mapProto), py_map_next));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__map_proto__"), mapProto);
@@ -2233,16 +2238,19 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "any"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_any));
 
     const proto::ProtoObject* enumProto = ctx->newObject(true);
+    if (objectProto) enumProto = enumProto->addParent(ctx, objectProto);
     enumProto = enumProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iter__"), ctx->fromMethod(const_cast<proto::ProtoObject*>(enumProto), py_iter_self));
     enumProto = enumProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__next__"), ctx->fromMethod(const_cast<proto::ProtoObject*>(enumProto), py_enumerate_next));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__enumerate_proto__"), enumProto);
 
     const proto::ProtoObject* revProto = ctx->newObject(true);
+    if (objectProto) revProto = revProto->addParent(ctx, objectProto);
     revProto = revProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iter__"), ctx->fromMethod(const_cast<proto::ProtoObject*>(revProto), py_iter_self));
     revProto = revProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__next__"), ctx->fromMethod(const_cast<proto::ProtoObject*>(revProto), py_reversed_next));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__reversed_proto__"), revProto);
 
     const proto::ProtoObject* rangeProto = ctx->newObject(true);
+    if (objectProto) rangeProto = rangeProto->addParent(ctx, objectProto);
     rangeProto = rangeProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iter__"), ctx->fromMethod(const_cast<proto::ProtoObject*>(rangeProto), py_iter_self));
     rangeProto = rangeProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__next__"), ctx->fromMethod(const_cast<proto::ProtoObject*>(rangeProto), py_range_next));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__range_proto__"), rangeProto);

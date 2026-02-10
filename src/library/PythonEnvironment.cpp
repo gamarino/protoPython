@@ -136,6 +136,30 @@ static const proto::ProtoObject* py_object_call(
     return self->newChild(context, true);
 }
 
+static const proto::ProtoObject* py_frame_repr(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    (void)parentLink; (void)positionalParameters; (void)keywordParameters;
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (get_env_diag()) std::cerr << "[proto-env] py_frame_repr self=" << self << " env=" << env << "\n" << std::flush;
+    const proto::ProtoObject* code = self->getAttribute(context, env->getFCodeString());
+    std::string name = "<unknown>";
+    std::string filename = "<unknown>";
+    if (code) {
+        const proto::ProtoObject* co_name = code->getAttribute(context, env->getNameString());
+        if (co_name && co_name->isString(context)) co_name->asString(context)->toUTF8String(context, name);
+        const proto::ProtoObject* co_filename = code->getAttribute(context, proto::ProtoString::fromUTF8String(context, "co_filename"));
+        if (co_filename && co_filename->isString(context)) co_filename->asString(context)->toUTF8String(context, filename);
+    }
+    char buf[256];
+    snprintf(buf, sizeof(buf), "<frame at %p, file '%s', code %s>", 
+             (void*)self, filename.c_str(), name.c_str());
+    return context->fromUTF8String(buf);
+}
+
 static const proto::ProtoObject* py_object_repr(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -5182,6 +5206,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
 
     // 1. Create 'object' base
     objectPrototype = rootContext_->newObject(true);
+
     const proto::ProtoString* py_format_dunder = proto::ProtoString::fromUTF8String(rootContext_, "__format__");
     objectPrototype = objectPrototype->setAttribute(rootContext_, py_init, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(objectPrototype), py_object_init));
     objectPrototype = objectPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(objectPrototype), py_object_repr));
@@ -5197,7 +5222,14 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     // 3. Circularity: object's class is type
     objectPrototype = objectPrototype->setAttribute(rootContext_, py_class, typePrototype);
 
-    // 4. Basic types
+    // 4. Create 'frame' prototype
+    framePrototype = rootContext_->newObject(true);
+    framePrototype = framePrototype->addParent(rootContext_, objectPrototype);
+    framePrototype = framePrototype->setAttribute(rootContext_, py_class, typePrototype);
+    framePrototype = framePrototype->setAttribute(rootContext_, py_name, rootContext_->fromUTF8String("frame"));
+    framePrototype = framePrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(framePrototype), py_frame_repr));
+
+    // 5. Basic types
     intPrototype = rootContext_->newObject(true);
     intPrototype = intPrototype->addParent(rootContext_, objectPrototype);
     const proto::ProtoString* py_hash = proto::ProtoString::fromUTF8String(rootContext_, "__hash__");
