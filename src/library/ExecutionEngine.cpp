@@ -507,7 +507,7 @@ static void checkSTW(proto::ProtoContext* ctx) {
         if (ctx->space->gcThread && std::this_thread::get_id() == ctx->space->gcThread->get_id()) return;
         ctx->space->parkedThreads++;
         {
-            std::unique_lock<std::recursive_mutex> lock(proto::ProtoSpace::globalMutex);
+            std::unique_lock<std::mutex> lock(proto::ProtoSpace::globalMutex);
             ctx->space->gcCV.notify_all();
             ctx->space->stopTheWorldCV.wait(lock, [ctx] { return !ctx->space->stwFlag.load(); });
         }
@@ -550,7 +550,7 @@ const proto::ProtoObject* executeBytecodeRange(
     stack.reserve(64);
     const bool sync_globals = (frame == PythonEnvironment::getCurrentGlobals());
     for (unsigned long i = pcStart; i <= pcEnd; ++i) {
-        if ((i & 0x7F) == 0) checkSTW(ctx);
+        if ((i & 0x7FF) == 0) checkSTW(ctx);
         const proto::ProtoObject* instr = bytecode->getAt(ctx, static_cast<int>(i));
         if (!instr || !instr->isInteger(ctx)) continue;
         int op = static_cast<int>(instr->asLong(ctx));
@@ -576,6 +576,9 @@ const proto::ProtoObject* executeBytecodeRange(
                 const proto::ProtoObject* nameObj = names->getAt(ctx, arg);
                 if (nameObj->isString(ctx)) {
                     std::string name; nameObj->asString(ctx)->toUTF8String(ctx, name);
+                    if (name == "range") {
+                        // found
+                    }
                     const proto::ProtoObject* val = frame->getAttribute(ctx, nameObj->asString(ctx));
                     if (get_env_diag()) {
                         std::cerr << "[proto-exec-diag] OP_LOAD_NAME " << name << " frame=" << frame << " found=" << (val && val != PROTO_NONE) << "\n";
@@ -587,6 +590,7 @@ const proto::ProtoObject* executeBytecodeRange(
                         }
                     }
                     if (val && val != PROTO_NONE) {
+                        if (name == "range") { /* found */ }
                         if (get_env_diag()) {
                             std::string n; nameObj->asString(ctx)->toUTF8String(ctx, n);
                             std::cerr << "[proto-exec-diag] OP_LOAD_NAME FOUND " << n << "=" << val << "\n";
@@ -1463,6 +1467,7 @@ const proto::ProtoObject* executeBytecodeRange(
             const proto::ProtoList* emptyL = env ? env->getEmptyList() : ctx->newList();
             
             const proto::ProtoObject* iterM = env ? env->getAttribute(ctx, iterable, iterS) : iterable->getAttribute(ctx, iterS);
+            
             if (!iterM || !iterM->asMethod(ctx)) {
                 if (get_env_diag()) std::cerr << "[proto-exec-diag] OP_GET_ITER NO __iter__ for " << iterable << ", pushing self as fallback\n";
                 stack.push_back(iterable);
@@ -1480,6 +1485,23 @@ const proto::ProtoObject* executeBytecodeRange(
             i++;
             if (stack.empty()) continue;
             const proto::ProtoObject* iterator = stack.back();
+
+            // FAST PATH: RangeIterator
+            proto::ProtoObjectPointer ptr{iterator};
+            if (ptr.op.pointer_tag == POINTER_TAG_RANGE_ITERATOR) {
+                 // Use const_cast because we need to modify the iterator state (current)
+                 auto* impl = const_cast<proto::ProtoRangeIteratorImplementation*>(proto::toImpl<proto::ProtoRangeIteratorImplementation>(iterator));
+                 const proto::ProtoObject* val = impl->implNext(ctx); // Direct C++ call
+                 if (val) {
+                     stack.push_back(val);
+                 } else {
+                     stack.pop_back();
+                     if (arg >= 0 && static_cast<unsigned long>(arg) < n)
+                        i = static_cast<unsigned long>(arg) - 1;
+                 }
+                 continue;
+            }
+
             PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
             const proto::ProtoString* nextS = env ? env->getNextString() : proto::ProtoString::fromUTF8String(ctx, "__next__");
             const proto::ProtoList* emptyL = env ? env->getEmptyList() : ctx->newList();
@@ -1540,8 +1562,13 @@ const proto::ProtoObject* executeBytecodeRange(
             if (names && frame && static_cast<unsigned long>(arg) < names->getSize(ctx)) {
                 const proto::ProtoObject* nameObj = names->getAt(ctx, arg);
                 if (nameObj->isString(ctx)) {
+                    std::string name; nameObj->asString(ctx)->toUTF8String(ctx, name);
+                    if (name == "range") {
+                         std::cerr << "DEBUG: OP_LOAD_GLOBAL range lookup frame=" << frame << "\n";
+                    }
                     const proto::ProtoObject* val = frame->getAttribute(ctx, nameObj->asString(ctx));
                     if (val) {
+                        if (name == "range") { /* found */ }
                         stack.push_back(val);
                     } else {
                         PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
@@ -1550,6 +1577,7 @@ const proto::ProtoObject* executeBytecodeRange(
                             nameObj->asString(ctx)->toUTF8String(ctx, name);
                             val = env->resolve(name, ctx);
                             if (val) {
+                                if (name == "range") { /* found */ }
                                 stack.push_back(val);
                             } else {
                                 env->raiseNameError(ctx, name);

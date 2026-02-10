@@ -5,6 +5,7 @@
 #include <protoPython/Compiler.h>
 #include <protoPython/Tokenizer.h>
 #include <protoCore.h>
+#include <proto_internal.h>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -2005,7 +2006,57 @@ static const proto::ProtoObject* py_round(
 static const proto::ProtoObject* py_range_next(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*);
+    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    
+    // Fast path for specialized iterator
+    proto::ProtoObjectPointer p{};
+    p.oid = self;
+    if (p.op.pointer_tag == POINTER_TAG_RANGE_ITERATOR) {
+        auto* ri = const_cast<proto::ProtoRangeIteratorImplementation*>(proto::toImpl<proto::ProtoRangeIteratorImplementation>(self));
+        return ri->implNext(context);
+    }
+
+    // Fallback for old range objects
+    ::protoPython::PythonEnvironment* env = ::protoPython::PythonEnvironment::fromContext(context);
+    const proto::ProtoString* curS = env ? env->getRangeCurString() : proto::ProtoString::fromUTF8String(context, "__range_cur__");
+    const proto::ProtoString* stopS = env ? env->getRangeStopString() : proto::ProtoString::fromUTF8String(context, "__range_stop__");
+    const proto::ProtoString* stepS = env ? env->getRangeStepString() : proto::ProtoString::fromUTF8String(context, "__range_step__");
+
+    const proto::ProtoObject* curObj = self->getAttribute(context, curS);
+    if (!curObj) return PROTO_NONE;
+    long long cur = curObj->asLong(context);
+    long long stop = self->getAttribute(context, stopS)->asLong(context);
+    long long step = self->getAttribute(context, stepS)->asLong(context);
+
+    if ((step > 0 && cur >= stop) || (step < 0 && cur <= stop)) return PROTO_NONE;
+
+    self->setAttribute(context, curS, context->fromInteger(cur + step));
+    return context->fromInteger(cur);
+}
+
+static const proto::ProtoObject* py_range_iter(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    
+    ::protoPython::PythonEnvironment* env = ::protoPython::PythonEnvironment::fromContext(context);
+    const proto::ProtoString* curS = env ? env->getRangeCurString() : proto::ProtoString::fromUTF8String(context, "__range_cur__");
+    const proto::ProtoString* stopS = env ? env->getRangeStopString() : proto::ProtoString::fromUTF8String(context, "__range_stop__");
+    const proto::ProtoString* stepS = env ? env->getRangeStepString() : proto::ProtoString::fromUTF8String(context, "__range_step__");
+
+    const proto::ProtoObject* curObj = self->getAttribute(context, curS);
+    if (!curObj) return PROTO_NONE;
+    long long start = curObj->asLong(context);
+    long long stop = self->getAttribute(context, stopS)->asLong(context);
+    long long step = self->getAttribute(context, stepS)->asLong(context);
+
+    // Create specialized iterator
+    auto* ri = new(context) proto::ProtoRangeIteratorImplementation(context, start, stop, step);
+    const proto::ProtoObject* ret = ri->implAsObject(context);
+    return ret;
+}
 
 static const proto::ProtoObject* py_range(
     proto::ProtoContext* context,
@@ -2013,6 +2064,7 @@ static const proto::ProtoObject* py_range(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
+    
     long long start = 0;
     long long stop = 0;
     long long step = 1;
@@ -2042,6 +2094,10 @@ static const proto::ProtoObject* py_range(
     rangeObj->setAttribute(context, curS, context->fromInteger(start));
     rangeObj->setAttribute(context, stopS, context->fromInteger(stop));
     rangeObj->setAttribute(context, stepS, context->fromInteger(step));
+    
+    // Ensure the range object has our new __iter__ method
+    rangeObj->setAttribute(context, env->getIterString(), context->fromMethod(const_cast<proto::ProtoObject*>(rangeObj), py_range_iter));
+    
     return rangeObj;
 }
 
@@ -2237,29 +2293,6 @@ static const proto::ProtoObject* py_map_next(
     const proto::ProtoList* oneArg = context->newList()->appendLast(context, val);
     return call->asMethod(context)(context, func, nullptr, oneArg, nullptr);
 }
-static const proto::ProtoObject* py_range_next(
-    proto::ProtoContext* context,
-    const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
-    ::protoPython::PythonEnvironment* env = ::protoPython::PythonEnvironment::fromContext(context);
-    const proto::ProtoString* curS = env ? env->getRangeCurString() : proto::ProtoString::fromUTF8String(context, "__range_cur__");
-    const proto::ProtoString* stopS = env ? env->getRangeStopString() : proto::ProtoString::fromUTF8String(context, "__range_stop__");
-    const proto::ProtoString* stepS = env ? env->getRangeStepString() : proto::ProtoString::fromUTF8String(context, "__range_step__");
-
-    const proto::ProtoObject* curObj = self->getAttribute(context, curS);
-    const proto::ProtoObject* stopObj = self->getAttribute(context, stopS);
-    const proto::ProtoObject* stepObj = self->getAttribute(context, stepS);
-    if (!curObj || !stopObj || !stepObj) return PROTO_NONE;
-    long long cur = curObj->asLong(context);
-    long long stop = stopObj->asLong(context);
-    long long step = stepObj->asLong(context);
-
-    bool done = (step > 0 && cur >= stop) || (step < 0 && cur <= stop);
-    if (done) return PROTO_NONE;
-
-    self->setAttribute(context, curS, context->fromInteger(cur + step));
-    return context->fromInteger(cur);
-}
 
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::ProtoObject* objectProto,
                                    const proto::ProtoObject* typeProto, const proto::ProtoObject* intProto,
@@ -2353,9 +2386,16 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
 
     const proto::ProtoObject* rangeProto = ctx->newObject(true);
     if (objectProto) rangeProto = rangeProto->addParent(ctx, objectProto);
-    rangeProto = rangeProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iter__"), ctx->fromMethod(const_cast<proto::ProtoObject*>(rangeProto), py_iter_self));
+    rangeProto = rangeProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iter__"), ctx->fromMethod(const_cast<proto::ProtoObject*>(rangeProto), py_range_iter));
     rangeProto = rangeProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__next__"), ctx->fromMethod(const_cast<proto::ProtoObject*>(rangeProto), py_range_next));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__range_proto__"), rangeProto);
+
+    // Initialize specialized RangeIterator prototype
+    if (ctx->space->rangeIteratorPrototype) {
+        proto::ProtoObject* rip = const_cast<proto::ProtoObject*>(ctx->space->rangeIteratorPrototype);
+        rip->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iter__"), ctx->fromMethod(rip, py_iter_self));
+        rip->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__next__"), ctx->fromMethod(rip, py_range_next));
+    }
 
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "abs"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_abs));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "min"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_min));

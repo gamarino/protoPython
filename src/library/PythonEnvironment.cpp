@@ -89,7 +89,7 @@ PythonEnvironment::SafeImportLock::SafeImportLock(PythonEnvironment* env, proto:
         auto* space = threadImpl->space;
         
         {
-            std::lock_guard<std::recursive_mutex> lock(proto::ProtoSpace::globalMutex);
+            std::lock_guard<std::mutex> lock(proto::ProtoSpace::globalMutex);
             space->parkedThreads++;
             space->gcCV.notify_all();
         }
@@ -99,7 +99,7 @@ PythonEnvironment::SafeImportLock::SafeImportLock(PythonEnvironment* env, proto:
         if (std::getenv("PROTO_THREAD_DIAG")) std::cerr << "[proto-lock] SafeImportLock acquired importLock_\n" << std::flush;
         
         {
-            std::unique_lock<std::recursive_mutex> lock(proto::ProtoSpace::globalMutex);
+            std::unique_lock<std::mutex> lock(proto::ProtoSpace::globalMutex);
             if (space->stwFlag.load()) {
                 if (std::getenv("PROTO_THREAD_DIAG")) std::cerr << "[proto-lock] SafeImportLock waiting for STW clear\n" << std::flush;
                 space->gcCV.notify_all();
