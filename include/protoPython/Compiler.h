@@ -95,6 +95,7 @@ const proto::ProtoObject* makeCodeObject(proto::ProtoContext* ctx,
     const proto::ProtoList* constants,
     const proto::ProtoList* names,
     const proto::ProtoList* bytecode,
+    const proto::ProtoString* filename = nullptr,
     const proto::ProtoList* varnames = nullptr,
     int nparams = 0,
     int automatic_count = 0);

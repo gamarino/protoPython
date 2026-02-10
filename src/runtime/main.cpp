@@ -196,6 +196,7 @@ int executeModule(protoPython::PythonEnvironment& env, const std::string& module
 } // namespace
 
 int main(int argc, char* argv[]) {
+    std::cout << "[protopy-debug] Starting main..." << std::endl;
     CliOptions options;
     std::string parseError;
     if (!parseArgs(argc, argv, options, parseError)) {

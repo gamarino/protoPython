@@ -47,7 +47,7 @@ void Compiler::emit(int op, int arg) {
                    op == OP_BUILD_SLICE || op == OP_FOR_ITER || op == OP_POP_JUMP_IF_FALSE ||
                    op == OP_JUMP_ABSOLUTE || op == OP_COMPARE_OP || op == OP_BINARY_SUBSCR ||
                    op == OP_STORE_SUBSCR || op == OP_CALL_FUNCTION_KW || 
-                   op == OP_BUILD_FUNCTION || op == OP_GET_ITER ||
+                   op == OP_BUILD_FUNCTION || 
                    op == OP_DELETE_NAME || op == OP_DELETE_GLOBAL || op == OP_DELETE_FAST ||
                    op == OP_DELETE_ATTR);
     if (hasArg)
@@ -328,7 +328,7 @@ bool Compiler::compileDeleteNode(DeleteNode* n) {
 
 bool Compiler::compileFor(ForNode* n) {
     if (!n || !compileNode(n->iter.get())) return false;
-    emit(OP_GET_ITER, 0);
+    emit(OP_GET_ITER);
     int loopStart = bytecodeOffset();
     emit(OP_FOR_ITER, 0);
     int argSlot = bytecodeOffset() - 1;
@@ -797,7 +797,7 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
     const proto::ProtoList* co_varnames = ctx_->newList();
     for (const auto& name : automaticNames)
         co_varnames = co_varnames->appendLast(ctx_, ctx_->fromUTF8String(name.c_str()));
-    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), co_varnames, nparams, automatic_count);
+    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), ctx_->fromUTF8String(filename_.c_str())->asString(ctx_), co_varnames, nparams, automatic_count);
     if (!codeObj) return false;
     int idx = addConstant(codeObj);
     emit(OP_LOAD_CONST, idx);
@@ -824,7 +824,7 @@ bool Compiler::compileClassDef(ClassDefNode* n) {
     bodyCompiler.emit(OP_RETURN_VALUE);
     bodyCompiler.applyPatches();
     
-    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode());
+    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), ctx_->fromUTF8String(filename_.c_str())->asString(ctx_));
     int coIdx = addConstant(codeObj);
     emit(OP_LOAD_CONST, coIdx);
     emit(OP_BUILD_FUNCTION, 0);
@@ -908,18 +908,17 @@ const proto::ProtoObject* makeCodeObject(proto::ProtoContext* ctx,
     const proto::ProtoList* constants,
     const proto::ProtoList* names,
     const proto::ProtoList* bytecode,
+    const proto::ProtoString* filename,
     const proto::ProtoList* varnames,
     int nparams,
     int automatic_count) {
-    if (!ctx || !constants || !bytecode) return nullptr;
+    if (!ctx) return PROTO_NONE;
     const proto::ProtoObject* code = ctx->newObject(true);
-    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    if (env && env->getObjectPrototype()) {
-        code = code->addParent(ctx, env->getObjectPrototype());
-    }
+    // Optional: add a 'code_proto' if we want to share methods like .exec()
     code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_consts"), reinterpret_cast<const proto::ProtoObject*>(constants));
     code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_names"), names ? reinterpret_cast<const proto::ProtoObject*>(names) : reinterpret_cast<const proto::ProtoObject*>(ctx->newList()));
     code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_code"), reinterpret_cast<const proto::ProtoObject*>(bytecode));
+    code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_filename"), filename ? reinterpret_cast<const proto::ProtoObject*>(filename) : reinterpret_cast<const proto::ProtoObject*>(ctx->fromUTF8String("<stdin>")));
     code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_varnames"), varnames ? reinterpret_cast<const proto::ProtoObject*>(varnames) : reinterpret_cast<const proto::ProtoObject*>(ctx->newList()));
     code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_nparams"), ctx->fromInteger(nparams));
     code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_automatic_count"), ctx->fromInteger(automatic_count));

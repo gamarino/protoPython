@@ -1143,7 +1143,6 @@ static const proto::ProtoObject* py_breakpoint(
     return PROTO_NONE;
 }
 
-/** globals(): stub returning empty dict; full impl needs frame access. */
 static const proto::ProtoObject* py_globals(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -1151,18 +1150,20 @@ static const proto::ProtoObject* py_globals(
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
     (void)self; (void)parentLink; (void)positionalParameters; (void)keywordParameters;
-    const proto::ProtoObject* f = PythonEnvironment::getCurrentFrame();
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::ProtoObject* f = PythonEnvironment::getCurrentFrame();
+    
     if (f && f != PROTO_NONE && env) {
         const proto::ProtoObject* g = f->getAttribute(context, env->getFGlobalsString());
         if (g && g != PROTO_NONE) return g;
     }
+    
+    // Fallback if no frame exists (unlikely during active execution)
     const proto::ProtoObject* g = PythonEnvironment::getCurrentGlobals();
-    if (g) return g;
+    if (g && g != PROTO_NONE) return g;
     return env ? env->getBuiltins() : PROTO_NONE;
 }
 
-/** locals(): stub returning empty dict; full impl needs frame access. */
 static const proto::ProtoObject* py_locals(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -1170,16 +1171,17 @@ static const proto::ProtoObject* py_locals(
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
     (void)self; (void)parentLink; (void)positionalParameters; (void)keywordParameters;
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
     const proto::ProtoObject* f = PythonEnvironment::getCurrentFrame();
     const proto::ProtoObject* co = PythonEnvironment::getCurrentCodeObject();
     
-    if (!f) {
+    if (!f || f == PROTO_NONE) {
          return py_globals(context, self, parentLink, positionalParameters, keywordParameters);
     }
     
-    if (co && context->getAutomaticLocalsCount() > 0) {
-        // Build a snapshot for optimized locals
-        PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    // If we have a code object with varnish names, it's a function frame with optimized locals.
+    // We must return a snapshot as per Python behavior for locals().
+    if (co && co != PROTO_NONE && context->getAutomaticLocalsCount() > 0) {
         const proto::ProtoObject* co_varnames_obj = co->getAttribute(context, env ? env->getCoVarnamesString() : proto::ProtoString::fromUTF8String(context, "co_varnames"));
         const proto::ProtoList* co_varnames = co_varnames_obj ? co_varnames_obj->asList(context) : nullptr;
         
@@ -1209,6 +1211,11 @@ static const proto::ProtoObject* py_locals(
             return dict;
         }
     }
+    
+    // Otherwise (module/global scope), f_locals *is* the globals dictionary (or the module object).
+    // In our implementation, we set f_locals to the frame object itself for efficiency in executeModule.
+    const proto::ProtoObject* l = f->getAttribute(context, env ? env->getFLocalsString() : proto::ProtoString::fromUTF8String(context, "f_locals"));
+    if (l && l != PROTO_NONE) return l;
     
     return f;
 }

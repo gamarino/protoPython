@@ -26,6 +26,9 @@ static const proto::ProtoObject* py_getenv(
     if (!keyObj->isString(ctx)) return PROTO_NONE;
     std::string key;
     keyObj->asString(ctx)->toUTF8String(ctx, key);
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        std::cerr << "[proto-os] getenv key=" << key << "\n" << std::flush;
+    }
     const char* val = std::getenv(key.c_str());
     if (val) return ctx->fromUTF8String(val);
     if (posArgs->getSize(ctx) >= 2) return posArgs->getAt(ctx, 1);
@@ -237,22 +240,83 @@ static const proto::ProtoObject* py_environ_keys(
     const proto::ProtoList* /*posArgs*/,
     const proto::ProtoSparseList* /*kwargs*/) {
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+    std::cerr << "[proto-os] py_environ_keys START\n" << std::flush;
     const proto::ProtoList* result = ctx->newList();
     for (char** p = environ; p && *p; ++p) {
         const char* eq = strchr(*p, '=');
         if (eq && eq > *p) {
             std::string key(*p, static_cast<size_t>(eq - *p));
+            if (std::getenv("PROTO_ENV_DIAG")) {
+                std::cerr << "[proto-os] py_environ_keys key=" << key << "\n" << std::flush;
+            }
             result = result->appendLast(ctx, ctx->fromUTF8String(key.c_str()));
         }
     }
+    std::cerr << "[proto-os] py_environ_keys DONE resultSize=" << result->getSize(ctx) << "\n" << std::flush;
     return result->asObject(ctx);
 #else
     return ctx->newList()->asObject(ctx);
 #endif
 }
 
+static const proto::ProtoObject* py_environ_getitem(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* /*self*/,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList* /*kwargs*/) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    return py_getenv(ctx, nullptr, nullptr, posArgs, nullptr);
+}
+
+static const proto::ProtoObject* py_environ_setitem(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* /*self*/,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList* /*kwargs*/) {
+    if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
+    return py_setenv(ctx, nullptr, nullptr, posArgs, nullptr);
+}
+
+static const proto::ProtoObject* py_environ_delitem(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* /*self*/,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList* /*kwargs*/) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    return py_unsetenv(ctx, nullptr, nullptr, posArgs, nullptr);
+}
+
+static const proto::ProtoObject* py_environ_keys_method(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* /*self*/,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* /*posArgs*/,
+    const proto::ProtoSparseList* /*kwargs*/) {
+    return py_environ_keys(ctx, nullptr, nullptr, nullptr, nullptr);
+}
+
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     const proto::ProtoObject* mod = ctx->newObject(true);
+    
+    // Create Environ object
+    const proto::ProtoObject* environProt = ctx->newObject(true);
+    environProt = environProt->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__getitem__"), 
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(environProt), py_environ_getitem));
+    environProt = environProt->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__setitem__"), 
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(environProt), py_environ_setitem));
+    environProt = environProt->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__delitem__"), 
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(environProt), py_environ_delitem));
+    environProt = environProt->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "keys"), 
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(environProt), py_environ_keys_method));
+
+    const proto::ProtoObject* environObj = ctx->newObject(true);
+    environObj = environObj->addParent(ctx, environProt);
+
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "environ"), environObj);
+
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "getenv"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_getenv));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "putenv"),

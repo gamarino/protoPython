@@ -326,7 +326,8 @@ static const proto::ProtoObject* binaryModulo(proto::ProtoContext* ctx,
                 return "None";
             } else {
                 PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-                const proto::ProtoObject* strM = obj->getAttribute(ctx, env ? env->getStrString() : proto::ProtoString::fromUTF8String(ctx, "__str__"));
+                const proto::ProtoString* strS = env ? env->getStrString() : proto::ProtoString::fromUTF8String(ctx, "__str__");
+                const proto::ProtoObject* strM = env ? env->getAttribute(ctx, obj, strS) : obj->getAttribute(ctx, strS);
                 if (strM && strM->asMethod(ctx)) {
                     const proto::ProtoObject* rs = strM->asMethod(ctx)(ctx, obj, nullptr, env ? env->getEmptyList() : ctx->newList(), nullptr);
                     std::string s;
@@ -577,7 +578,11 @@ const proto::ProtoObject* executeBytecodeRange(
             if (names && frame && static_cast<unsigned long>(arg) < names->getSize(ctx)) {
                 const proto::ProtoObject* nameObj = names->getAt(ctx, arg);
                 if (nameObj->isString(ctx)) {
+                    std::string name; nameObj->asString(ctx)->toUTF8String(ctx, name);
                     const proto::ProtoObject* val = frame->getAttribute(ctx, nameObj->asString(ctx));
+                    if (get_env_diag()) {
+                        std::cerr << "[proto-exec-diag] OP_LOAD_NAME " << name << " frame=" << frame << " found=" << (val && val != PROTO_NONE) << "\n";
+                    }
                     if (!val || val == PROTO_NONE) {
                         const proto::ProtoObject* data = frame->getAttribute(ctx, env ? env->getDataString() : proto::ProtoString::fromUTF8String(ctx, "__data__"));
                         if (data && data->asSparseList(ctx)) {
@@ -619,12 +624,16 @@ const proto::ProtoObject* executeBytecodeRange(
                 const proto::ProtoObject* val = stack.back();
                 stack.pop_back();
                 if (nameObj->isString(ctx)) {
+                    std::string name; nameObj->asString(ctx)->toUTF8String(ctx, name);
+                    if (get_env_diag()) {
+                        std::cerr << "[proto-exec-diag] OP_STORE_NAME " << name << " frame=" << frame << "\n";
+                    }
                     const proto::ProtoString* dataName = env ? env->getDataString() : proto::ProtoString::fromUTF8String(ctx, "__data__");
-                    const proto::ProtoObject* dataObj = frame->getAttribute(ctx, dataName);
+                    const proto::ProtoObject* dataObj = env ? env->getAttribute(ctx, frame, dataName) : frame->getAttribute(ctx, dataName);
                     if (dataObj && dataObj->asSparseList(ctx)) {
                         unsigned long h = nameObj->getHash(ctx);
                         const proto::ProtoSparseList* data = dataObj->asSparseList(ctx)->setAt(ctx, h, val);
-                        frame->setAttribute(ctx, dataName, data->asObject(ctx));
+                        frame = const_cast<proto::ProtoObject*>(frame->setAttribute(ctx, dataName, data->asObject(ctx)));
                         
                         const proto::ProtoString* keysName = env ? env->getKeysString() : proto::ProtoString::fromUTF8String(ctx, "__keys__");
                         const proto::ProtoObject* keysObj = frame->getAttribute(ctx, keysName);
@@ -1448,7 +1457,6 @@ const proto::ProtoObject* executeBytecodeRange(
             }
         }
  else if (op == OP_GET_ITER) {
-            i++;
             if (stack.empty()) continue;
             const proto::ProtoObject* iterable = stack.back();
             stack.pop_back();
@@ -1457,14 +1465,19 @@ const proto::ProtoObject* executeBytecodeRange(
             
             const proto::ProtoList* emptyL = env ? env->getEmptyList() : ctx->newList();
             
-            const proto::ProtoObject* iterM = iterable->getAttribute(ctx, iterS);
-            if (!iterM || !iterM->asMethod(ctx)) continue;
+            const proto::ProtoObject* iterM = env ? env->getAttribute(ctx, iterable, iterS) : iterable->getAttribute(ctx, iterS);
+            if (!iterM || !iterM->asMethod(ctx)) {
+                if (get_env_diag()) std::cerr << "[proto-exec-diag] OP_GET_ITER NO __iter__ for " << iterable << ", pushing self as fallback\n";
+                stack.push_back(iterable);
+                continue;
+            }
             const proto::ProtoObject* it = iterM->asMethod(ctx)(ctx, iterable, nullptr, emptyL, nullptr);
             if (it) {
                 if (get_env_diag()) std::cerr << "[proto-exec-diag] OP_GET_ITER created iterator=" << it << " for iterable=" << iterable << "\n";
                 stack.push_back(it);
             } else {
-                if (get_env_diag()) std::cerr << "[proto-exec-diag] OP_GET_ITER FAILED for iterable=" << iterable << "\n";
+                if (get_env_diag()) std::cerr << "[proto-exec-diag] OP_GET_ITER FAILED (returned null) for iterable=" << iterable << ", pushing self\n";
+                stack.push_back(iterable);
             }
         } else if (op == OP_FOR_ITER) {
             i++;
@@ -1474,7 +1487,7 @@ const proto::ProtoObject* executeBytecodeRange(
             const proto::ProtoString* nextS = env ? env->getNextString() : proto::ProtoString::fromUTF8String(ctx, "__next__");
             const proto::ProtoList* emptyL = env ? env->getEmptyList() : ctx->newList();
             
-            const proto::ProtoObject* nextM = iterator->getAttribute(ctx, nextS);
+            const proto::ProtoObject* nextM = env ? env->getAttribute(ctx, iterator, nextS) : iterator->getAttribute(ctx, nextS);
             if (get_env_diag()) {
                 std::string ns; nextS->toUTF8String(ctx, ns);
                 if (get_env_diag()) {

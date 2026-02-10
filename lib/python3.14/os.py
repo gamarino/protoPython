@@ -4,10 +4,10 @@ name = 'os'
 pathsep = ':'
 sep = '/'
 
-try:
-    import os.path as path
-except ImportError:
-    path = None
+# try:
+#     import os.path as path
+# except ImportError:
+path = None
 
 def _make_environ():
     d = {}
@@ -20,7 +20,7 @@ def _make_environ():
                 v = getenv(k)
                 if v is not None:
                     d[k] = v
-    except ImportError:
+    except Exception:
         pass
     return d
 
@@ -33,19 +33,15 @@ class _Environ:
         self._data[key] = value
         try:
             import _os
-            print("DEBUG: calling _os.putenv", flush=True)
             _os.putenv(key, value)
         except Exception as e:
-            print("DEBUG: os.environ.__setitem__ failed: %s" % e, flush=True)
             pass
     def __delitem__(self, key):
-        print("DEBUG: calling os.environ.__delitem__ for", key, flush=True)
         del self._data[key]
         try:
             import _os
             _os.unsetenv(key)
         except Exception as e:
-            print("DEBUG: os.environ.__delitem__ failed: %s" % e, flush=True)
             pass
     def __contains__(self, key):
         return key in self._data

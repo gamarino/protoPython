@@ -1,0 +1,53 @@
+
+# Consider dependencies only in project.
+set(CMAKE_DEPENDS_IN_PROJECT_ONLY OFF)
+
+# The set of languages for which implicit dependencies are needed:
+set(CMAKE_DEPENDS_LANGUAGES
+  )
+
+# The set of dependency files which are needed:
+set(CMAKE_DEPENDS_DEPENDENCY_FILES
+  "/home/gamarino/Documentos/proyectos/protoCore/core/Cell.cpp" "protoCore/CMakeFiles/protoCore.dir/core/Cell.cpp.o" "gcc" "protoCore/CMakeFiles/protoCore.dir/core/Cell.cpp.o.d"
+  "/home/gamarino/Documentos/proyectos/protoCore/core/Double.cpp" "protoCore/CMakeFiles/protoCore.dir/core/Double.cpp.o" "gcc" "protoCore/CMakeFiles/protoCore.dir/core/Double.cpp.o.d"
+  "/home/gamarino/Documentos/proyectos/protoCore/core/Integer.cpp" "protoCore/CMakeFiles/protoCore.dir/core/Integer.cpp.o" "gcc" "protoCore/CMakeFiles/protoCore.dir/core/Integer.cpp.o.d"
+  "/home/gamarino/Documentos/proyectos/protoCore/core/LargeInteger.cpp" "protoCore/CMakeFiles/protoCore.dir/core/LargeInteger.cpp.o" "gcc" "protoCore/CMakeFiles/protoCore.dir/core/LargeInteger.cpp.o.d"
+  "/home/gamarino/Documentos/proyectos/protoCore/core/ModuleCache.cpp" "protoCore/CMakeFiles/protoCore.dir/core/ModuleCache.cpp.o" "gcc" "protoCore/CMakeFiles/protoCore.dir/core/ModuleCache.cpp.o.d"
+  "/home/gamarino/Documentos/proyectos/protoCore/core/ModuleProvider.cpp" "protoCore/CMakeFiles/protoCore.dir/core/ModuleProvider.cpp.o" "gcc" "protoCore/CMakeFiles/protoCore.dir/core/ModuleProvider.cpp.o.d"
+  "/home/gamarino/Documentos/proyectos/protoCore/core/ModuleResolver.cpp" "protoCore/CMakeFiles/protoCore.dir/core/ModuleResolver.cpp.o" "gcc" "protoCore/CMakeFiles/protoCore.dir/core/ModuleResolver.cpp.o.d"
+  "/home/gamarino/Documentos/proyectos/protoCore/core/ParentLink.cpp" "protoCore/CMakeFiles/protoCore.dir/core/ParentLink.cpp.o" "gcc" "protoCore/CMakeFiles/protoCore.dir/core/ParentLink.cpp.o.d"
+  "/home/gamarino/Documentos/proyectos/protoCore/core/Proto.cpp" "protoCore/CMakeFiles/protoCore.dir/core/Proto.cpp.o" "gcc" "protoCore/CMakeFiles/protoCore.dir/core/Proto.cpp.o.d"
+  "/home/gamarino/Documentos/proyectos/protoCore/core/ProtoByteBuffer.cpp" "protoCore/CMakeFiles/protoCore.dir/core/ProtoByteBuffer.cpp.o" "gcc" "protoCore/CMakeFiles/protoCore.dir/core/ProtoByteBuffer.cpp.o.d"
+  "/home/gamarino/Documentos/proyectos/protoCore/core/ProtoContext.cpp" "protoCore/CMakeFiles/protoCore.dir/core/ProtoContext.cpp.o" "gcc" "protoCore/CMakeFiles/protoCore.dir/core/ProtoContext.cpp.o.d"
+  "/home/gamarino/Documentos/proyectos/protoCore/core/ProtoExternalBuffer.cpp" "protoCore/CMakeFiles/protoCore.dir/core/ProtoExternalBuffer.cpp.o" "gcc" "protoCore/CMakeFiles/protoCore.dir/core/ProtoExternalBuffer.cpp.o.d"
+  "/home/gamarino/Documentos/proyectos/protoCore/core/ProtoExternalPointer.cpp" "protoCore/CMakeFiles/protoCore.dir/core/ProtoExternalPointer.cpp.o" "gcc" "protoCore/CMakeFiles/protoCore.dir/core/ProtoExternalPointer.cpp.o.d"
+  "/home/gamarino/Documentos/proyectos/protoCore/core/ProtoList.cpp" "protoCore/CMakeFiles/protoCore.dir/core/ProtoList.cpp.o" "gcc" "protoCore/CMakeFiles/protoCore.dir/core/ProtoList.cpp.o.d"
+  "/home/gamarino/Documentos/proyectos/protoCore/core/ProtoMethodCell.cpp" "protoCore/CMakeFiles/protoCore.dir/core/ProtoMethodCell.cpp.o" "gcc" "protoCore/CMakeFiles/protoCore.dir/core/ProtoMethodCell.cpp.o.d"
+  "/home/gamarino/Documentos/proyectos/protoCore/core/ProtoMultiset.cpp" "protoCore/CMakeFiles/protoCore.dir/core/ProtoMultiset.cpp.o" "gcc" "protoCore/CMakeFiles/protoCore.dir/core/ProtoMultiset.cpp.o.d"
+  "/home/gamarino/Documentos/proyectos/protoCore/core/ProtoObjectCell.cpp" "protoCore/CMakeFiles/protoCore.dir/core/ProtoObjectCell.cpp.o" "gcc" "protoCore/CMakeFiles/protoCore.dir/core/ProtoObjectCell.cpp.o.d"
+  "/home/gamarino/Documentos/proyectos/protoCore/core/ProtoSet.cpp" "protoCore/CMakeFiles/protoCore.dir/core/ProtoSet.cpp.o" "gcc" "protoCore/CMakeFiles/protoCore.dir/core/ProtoSet.cpp.o.d"
+  "/home/gamarino/Documentos/proyectos/protoCore/core/ProtoSpace.cpp" "protoCore/CMakeFiles/protoCore.dir/core/ProtoSpace.cpp.o" "gcc" "protoCore/CMakeFiles/protoCore.dir/core/ProtoSpace.cpp.o.d"
+  "/home/gamarino/Documentos/proyectos/protoCore/core/ProtoSparseList.cpp" "protoCore/CMakeFiles/protoCore.dir/core/ProtoSparseList.cpp.o" "gcc" "protoCore/CMakeFiles/protoCore.dir/core/ProtoSparseList.cpp.o.d"
+  "/home/gamarino/Documentos/proyectos/protoCore/core/ProtoString.cpp" "protoCore/CMakeFiles/protoCore.dir/core/ProtoString.cpp.o" "gcc" "protoCore/CMakeFiles/protoCore.dir/core/ProtoString.cpp.o.d"
+  "/home/gamarino/Documentos/proyectos/protoCore/core/ProtoTuple.cpp" "protoCore/CMakeFiles/protoCore.dir/core/ProtoTuple.cpp.o" "gcc" "protoCore/CMakeFiles/protoCore.dir/core/ProtoTuple.cpp.o.d"
+  "/home/gamarino/Documentos/proyectos/protoCore/core/ProviderRegistry.cpp" "protoCore/CMakeFiles/protoCore.dir/core/ProviderRegistry.cpp.o" "gcc" "protoCore/CMakeFiles/protoCore.dir/core/ProviderRegistry.cpp.o.d"
+  "/home/gamarino/Documentos/proyectos/protoCore/core/Thread.cpp" "protoCore/CMakeFiles/protoCore.dir/core/Thread.cpp.o" "gcc" "protoCore/CMakeFiles/protoCore.dir/core/Thread.cpp.o.d"
+  )
+
+# Pairs of files generated by the same build rule.
+set(CMAKE_MULTIPLE_OUTPUT_PAIRS
+  "/home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/protoCore/libprotoCore.so" "/home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/protoCore/libprotoCore.so.1.0.0"
+  "/home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/protoCore/libprotoCore.so.1" "/home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/protoCore/libprotoCore.so.1.0.0"
+  )
+
+
+# Targets to which this target links which contain Fortran sources.
+set(CMAKE_Fortran_TARGET_LINKED_INFO_FILES
+  )
+
+# Targets to which this target links which contain Fortran sources.
+set(CMAKE_Fortran_TARGET_FORWARD_LINKED_INFO_FILES
+  )
+
+# Fortran module output directory.
+set(CMAKE_Fortran_TARGET_MODULE_DIR "")
