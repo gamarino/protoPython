@@ -550,6 +550,7 @@ src/library/CMakeFiles/protoPython.dir/BasicBlockAnalysis.cpp.o: /home/gamarino/
 
 src/library/CMakeFiles/protoPython.dir/BuiltinsModule.cpp.o: /home/gamarino/Documentos/proyectos/protoPython/src/library/BuiltinsModule.cpp \
   /home/gamarino/Documentos/proyectos/protoCore/headers/protoCore.h \
+  /home/gamarino/Documentos/proyectos/protoCore/headers/proto_internal.h \
   /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/BuiltinsModule.h \
   /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/Compiler.h \
   /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/ExecutionEngine.h \

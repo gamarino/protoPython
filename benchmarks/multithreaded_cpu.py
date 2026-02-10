@@ -21,11 +21,11 @@ def cpu_chunk(worker_index=None):
 
 def main():
     import sys
-    try:
-        sys.stdout.write("main_entered\n")
-        sys.stdout.flush()
-    except Exception:
-        pass
+    # try:
+    #     sys.stdout.write("main_entered\n")
+    #     sys.stdout.flush()
+    # except Exception:
+    #     pass
     # Always try to log pid/tid from main thread (diagnostic).
     try:
         import _thread
@@ -37,11 +37,11 @@ def main():
         has_thread = getattr(threading, "_has_thread", False)
     except ImportError:
         has_thread = False
-    try:
-        sys.stdout.write("has_thread=%s\n" % has_thread)
-        sys.stdout.flush()
-    except Exception:
-        pass
+    # try:
+    #     sys.stdout.write("has_thread=%s\n" % has_thread)
+    #     sys.stdout.flush()
+    # except Exception:
+    #     pass
     if has_thread:
         try:
             import _thread

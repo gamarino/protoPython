@@ -231,8 +231,10 @@ src/library/CMakeFiles/protoPython.dir/BuiltinsModule.cpp.o: \
  /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/Tokenizer.h \
  /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/Compiler.h \
  /usr/include/c++/13/unordered_set \
- /usr/include/c++/13/bits/unordered_set.h /usr/include/c++/13/algorithm \
- /usr/include/c++/13/bits/ranges_algo.h \
+ /usr/include/c++/13/bits/unordered_set.h \
+ /home/gamarino/Documentos/proyectos/protoCore/headers/proto_internal.h \
+ /home/gamarino/Documentos/proyectos/protoCore/headers/protoCore.h \
+ /usr/include/c++/13/algorithm /usr/include/c++/13/bits/ranges_algo.h \
  /usr/include/c++/13/pstl/glue_algorithm_defs.h /usr/include/c++/13/cmath \
  /usr/include/math.h /usr/include/x86_64-linux-gnu/bits/math-vector.h \
  /usr/include/x86_64-linux-gnu/bits/libm-simd-decl-stubs.h \
