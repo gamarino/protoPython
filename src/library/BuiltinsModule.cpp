@@ -16,6 +16,11 @@
 namespace protoPython {
 namespace builtins {
 
+static bool get_env_diag() {
+    static bool diag = std::getenv("PROTO_ENV_DIAG") != nullptr;
+    return diag;
+}
+
 namespace {
 struct GlobalsScope {
     GlobalsScope(const proto::ProtoObject* g) : old(PythonEnvironment::getCurrentGlobals()) {
@@ -44,6 +49,7 @@ static const proto::ProtoObject* py_import(
     if (!nameObj->isString(context)) return PROTO_NONE;
     std::string moduleName;
     nameObj->asString(context)->toUTF8String(context, moduleName);
+    if (get_env_diag()) std::cerr << "[proto-builtins] __import__(" << moduleName << ")\n" << std::flush;
 
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     const proto::ProtoObject* leaf = env ? env->resolve(moduleName, context) : PROTO_NONE;
@@ -96,7 +102,7 @@ static const proto::ProtoObject* py_len(
     
     // Fallback: count attributes (for objects acting as dicts)
     const proto::ProtoSparseList* attrs = obj->getAttributes(context);
-    if (std::getenv("PROTO_ENV_DIAG")) std::cerr << "[proto-builtins] py_len fallback for obj=" << obj << " attrs=" << attrs << " size=" << (attrs ? attrs->getSize(context) : -1) << "\n" << std::flush;
+    if (get_env_diag()) std::cerr << "[proto-builtins] py_len fallback for obj=" << obj << " attrs=" << attrs << " size=" << (attrs ? attrs->getSize(context) : -1) << "\n" << std::flush;
     if (attrs) return context->fromInteger(attrs->getSize(context));
 
     return context->fromInteger(0);
@@ -112,7 +118,7 @@ static const proto::ProtoObject* py_print(
     (void)keywordParameters;
     std::string sep = " ";
     std::string end = "\n";
-    if (std::getenv("PROTO_ENV_DIAG")) std::cerr << "[proto-builtins] py_print called size=" << positionalParameters->getSize(context) << "\n" << std::flush;
+    if (get_env_diag()) std::cerr << "[proto-builtins] py_print called size=" << positionalParameters->getSize(context) << "\n" << std::flush;
 
     ::protoPython::PythonEnvironment* env = ::protoPython::PythonEnvironment::fromContext(context);
     const proto::ProtoString* strS = env ? env->getStrString() : proto::ProtoString::fromUTF8String(context, "__str__");
@@ -137,7 +143,7 @@ static const proto::ProtoObject* py_print(
             strObj = context->fromUTF8String("False");
         } else {
             const proto::ProtoObject* strMethod = obj->getAttribute(context, strS);
-            if (std::getenv("PROTO_ENV_DIAG")) {
+            if (get_env_diag()) {
                 std::string sname; strS->toUTF8String(context, sname);
                 std::cerr << "[proto-builtins] py_print attr lookup: name=" << sname << " obj=" << obj << " found=" << strMethod << "\n" << std::flush;
             }

@@ -1,11 +1,9 @@
-print("os.py START", flush=True)
 import sys
 
 name = 'os'
 pathsep = ':'
 sep = '/'
 
-print("os.py about to import os.path", flush=True)
 try:
     import os.path as path
 except ImportError:
@@ -16,8 +14,10 @@ def _make_environ():
     try:
         import _os
         if hasattr(_os, 'environ_keys'):
-            for k in _os.environ_keys():
-                v = _os.getenv(k)
+            getenv = _os.getenv
+            keys = _os.environ_keys()
+            for k in keys:
+                v = getenv(k)
                 if v is not None:
                     d[k] = v
     except ImportError:

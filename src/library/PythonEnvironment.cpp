@@ -41,6 +41,16 @@
 #include <vector>
 #include <unordered_set>
 
+static bool get_thread_diag() {
+    static bool diag = std::getenv("PROTO_THREAD_DIAG") != nullptr;
+    return diag;
+}
+
+static bool get_env_diag() {
+    static bool diag = std::getenv("PROTO_ENV_DIAG") != nullptr;
+    return diag;
+}
+
 namespace protoPython {
 
 static bool isEmbeddedValue(const proto::ProtoObject* obj) {
@@ -69,9 +79,12 @@ static const proto::ProtoObject* py_object_call(
 
 // --- SafeImportLock Implementation ---
 
+static thread_local int s_importLockRecursionDepth = 0;
+
 PythonEnvironment::SafeImportLock::SafeImportLock(PythonEnvironment* env, proto::ProtoContext* ctx)
     : env_(env), ctx_(ctx) {
-    if (ctx_ && ctx_->thread) {
+    if (get_thread_diag()) std::cerr << "[proto-lock] SafeImportLock enter ctx=" << ctx << "\n" << std::flush;
+    if (s_importLockRecursionDepth == 0 && ctx_ && ctx_->thread) {
         auto* threadImpl = proto::toImpl<proto::ProtoThreadImplementation>(ctx_->thread);
         auto* space = threadImpl->space;
         
@@ -81,22 +94,32 @@ PythonEnvironment::SafeImportLock::SafeImportLock(PythonEnvironment* env, proto:
             space->gcCV.notify_all();
         }
         
+        if (std::getenv("PROTO_THREAD_DIAG")) std::cerr << "[proto-lock] SafeImportLock waiting for importLock_\n" << std::flush;
         env_->importLock_.lock();
+        if (std::getenv("PROTO_THREAD_DIAG")) std::cerr << "[proto-lock] SafeImportLock acquired importLock_\n" << std::flush;
         
         {
             std::unique_lock<std::recursive_mutex> lock(proto::ProtoSpace::globalMutex);
             if (space->stwFlag.load()) {
+                if (std::getenv("PROTO_THREAD_DIAG")) std::cerr << "[proto-lock] SafeImportLock waiting for STW clear\n" << std::flush;
                 space->gcCV.notify_all();
                 space->stopTheWorldCV.wait(lock, [space] { return !space->stwFlag.load(); });
             }
             space->parkedThreads--;
         }
     } else {
+        if (std::getenv("PROTO_THREAD_DIAG")) std::cerr << "[proto-lock] SafeImportLock nested lock depth=" << s_importLockRecursionDepth << "\n" << std::flush;
         env_->importLock_.lock();
     }
+    s_importLockRecursionDepth++;
 }
 
 PythonEnvironment::SafeImportLock::~SafeImportLock() {
+    s_importLockRecursionDepth--;
+    if (s_importLockRecursionDepth == 0 && ctx_ && ctx_->thread) {
+        // No special parking needed on unlock, but we must ensure we don't 
+        // leave parkedThreads incremented if we weren't outermost (handled by if above).
+    }
     env_->importLock_.unlock();
 }
 
@@ -6546,18 +6569,21 @@ bool PythonEnvironment::isCompleteBlock(const std::string& code) {
 
 const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* ctx, const proto::ProtoObject* obj, const proto::ProtoString* name) {
     if (!obj) return nullptr;
-    if (std::getenv("PROTO_ENV_DIAG")) {
+    static bool envDiag = std::getenv("PROTO_ENV_DIAG") != nullptr;
+    if (envDiag) {
         proto::ProtoObjectPointer p{};
         p.oid = reinterpret_cast<const proto::ProtoObject*>(name);
-        std::cerr << "[getAttribute-diag] name=" << name << " tag=" << p.op.pointer_tag << " init=" << initString << " class=" << classString << "\n" << std::flush;
+        std::cerr << "[getAttribute-diag] name=" << name << " tag=" << p.op.pointer_tag << "\n" << std::flush;
     }
     if (isEmbeddedValue(obj)) return obj->getAttribute(ctx, name);
 
     const proto::ProtoObject* val = name ? obj->getAttribute(ctx, name) : nullptr;
     if (!val && name) {
-        std::string nameStr;
-        name->toUTF8String(ctx, nameStr);
-        std::cerr << "getAttribute failed for: " << nameStr << std::endl;
+        if (envDiag) {
+            std::string nameStr;
+            name->toUTF8String(ctx, nameStr);
+            std::cerr << "getAttribute failed for: " << nameStr << std::endl;
+        }
     }
     if (val && name) {
         // In Python, instance attributes are NOT automatically bound if they are functions/descriptors.
@@ -6577,7 +6603,7 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
         }
         
         bool isM = val->isMethod(ctx);
-        if (std::getenv("PROTO_THREAD_DIAG")) {
+        if (get_thread_diag()) {
             std::string n; name->toUTF8String(ctx, n);
             std::cerr << "[proto-thread-diag] getAttribute name=" << n << " isM=" << isM << " isOwn=" << isOwn << " obj=" << obj << " val=" << val << " val_asM=" << (void*)val->asMethod(ctx) << "\n" << std::flush;
         }
@@ -6605,6 +6631,17 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
 }
 
 const proto::ProtoObject* PythonEnvironment::resolve(const std::string& name, proto::ProtoContext* ctx) {
+    static thread_local int resolveDepth = 0;
+    if (++resolveDepth > 100) {
+        std::cerr << "[proto-env] resolve EXCEEDED DEPTH for " << name << "\n" << std::flush;
+        --resolveDepth;
+        return PROTO_NONE;
+    }
+    struct DepthGuard {
+        int& d;
+        DepthGuard(int& d) : d(d) {}
+        ~DepthGuard() { --d; }
+    } dg(resolveDepth);
     if (!ctx) ctx = s_threadContext;
     if (!ctx) {
         ctx = rootContext_;
@@ -6612,10 +6649,8 @@ const proto::ProtoObject* PythonEnvironment::resolve(const std::string& name, pr
              std::cerr << "[proto-thread-diag] WARNING: resolve('" << name << "') using rootContext_ from worker thread " << std::this_thread::get_id() << "\n" << std::flush;
         }
     }
-    
-    // 0. Check thread-local cache
     SafeImportLock lock(this, ctx);
-    if (std::getenv("PROTO_THREAD_DIAG")) std::cerr << "[proto-env] resolve name=" << name << " ctx=" << ctx << "\n";
+    if (get_env_diag()) std::cerr << "[proto-env] resolve name=" << name << " START ctx=" << ctx << "\n" << std::flush;
     if (name == "None") return nonePrototype;
     // Type shortcuts always use current env (no cache) so multiple envs per thread stay correct.
     if (name == "object") return objectPrototype;
@@ -6644,6 +6679,7 @@ const proto::ProtoObject* PythonEnvironment::resolve(const std::string& name, pr
     //    not a builtins attribute (e.g. a method) that would cause type mismatch in getAttribute
     if (!result || result == PROTO_NONE) {
         const proto::ProtoObject* modWrapper = ctx->space->getImportModule(ctx, name.c_str(), "val");
+        if (std::getenv("PROTO_ENV_DIAG")) std::cerr << "[proto-env] resolve name=" << name << " getImportModule returns " << modWrapper << "\n" << std::flush;
         if (modWrapper) {
             result = modWrapper->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "val"));
             if (std::getenv("PROTO_ENV_DIAG")) std::cerr << "[proto-env] resolve name=" << name << " modWrapper=" << modWrapper << " result=" << result << "\n" << std::flush;
