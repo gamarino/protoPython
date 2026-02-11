@@ -1,110 +1,66 @@
-# Installation and Packaging Guide
+# Installing protoPython
 
-This document provides detailed instructions for building, installing, and packaging `protoPython` from source.
+This guide describes how to build and install `protoPython` from source on Linux, macOS, and Windows.
 
 ## Prerequisites
 
-- **CMake**: Version 3.20 or higher.
-- **C++ Compiler**: A compiler with support for C++20 (e.g., GCC 11+, Clang 13+, or MSVC 2022+).
-- **protoCore**: The foundational library must be located in a sibling directory named `protoCore`.
-
-```bash
-git clone <protoCore_url> ../protoCore
-```
+- **CMake** (3.20 or higher)
+- **C++ Compiler** with C++20 support (GCC 11+, Clang 13+, or MSVC 2022+)
+- **Git**
 
 ## Building from Source
 
-### Linux and macOS
+### 1. Clone the repository
 
-1.  **Configure the build**:
-    ```bash
-    cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
-    ```
-
-2.  **Build the project**:
-    ```bash
-    cmake --build build -j$(nproc)
-    ```
-
-### Windows
-
-1.  **Configure the build** (using Visual Studio generator):
-    ```powershell
-    cmake -B build -S . -A x64
-    ```
-
-2.  **Build the project**:
-    ```powershell
-    cmake --build build --config Release
-    ```
-
----
-
-## Installation
-
-Once the build is complete, you can install `protoPython` to your system (or a specific prefix).
-
-### Default Installation
 ```bash
-sudo cmake --install build
+git clone --recursive https://github.com/proto-language/protoPython.git
+cd protoPython
 ```
 
-### Custom Installation Prefix
+### 2. Configure the build
+
+Use CMake to generate the build files. It is recommended to use a separate build directory.
+
 ```bash
-cmake -B build -S . -DCMAKE_INSTALL_PREFIX=/path/to/custom/dir
+cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
+```
+
+#### Custom Installation Prefix
+
+You can specify where `protoPython` should be installed using `CMAKE_INSTALL_PREFIX`:
+
+```bash
+cmake -B build -S . -DCMAKE_INSTALL_PREFIX=/usr/local
+```
+
+### 3. Build and Install
+
+```bash
 cmake --build build --target install
 ```
 
-### Installed Components
-- **Binaries**: `protopy` and `protopyc` are installed to `bin/`.
-- **Library**: `libprotoPython` is installed to `lib/`.
-- **Headers**: Public headers are installed to `include/protoPython/`.
-- **Standard Library**: Core Python files are installed to `share/protoPython/lib/python3.14/`.
+This will install:
+- `protopy` executable to `bin/`
+- `protoPython` shared library to `lib/` (or `bin/` on Windows)
+- Python Standard Library to `lib/protoPython/python3.14/`
 
----
+## Post-Installation
 
-## Packaging (CPack)
+The `protopy` executable automatically resolves the location of its standard library relative to its own path. 
 
-`protoPython` uses CPack to generate platform-specific installers and packages.
+### Linux/macOS
 
-### Linux
-Generates `.deb`, `.rpm`, and `.tar.gz` packages.
+Ensure the `bin` directory is in your `PATH`:
+
 ```bash
-cd build
-cpack -G "DEB;RPM;TGZ"
-```
-
-### macOS
-Generates a `.dmg` (DragNDrop) installer.
-```bash
-cd build
-cpack -G DragNDrop
+export PATH=/usr/local/bin:$PATH
 ```
 
 ### Windows
-Generates an `.exe` (NSIS) installer and a `.zip` archive.
-```powershell
-cd build
-cpack -G "NSIS;ZIP"
-```
 
----
+The installation layout on Windows follows standard conventions, ensuring that the `protoPython` DLL and `protopy.exe` are in the same directory.
 
-## Verification
+## Site-Packages
 
-After installation, verify that the runtime and compiler are functional:
-
-1.  **Check version**:
-    ```bash
-    protopy --version
-    ```
-
-2.  **Run a simple script**:
-    ```bash
-    protopy -c "print('protoPython is ready')"
-    ```
-
-3.  **Verify the compiler**:
-    ```bash
-    protopyc --help
-    ```
+`protoPython` also looks for modules in the following user-specific directory on Linux:
+`~/.local/lib/protoPython/python3.14/site-packages`

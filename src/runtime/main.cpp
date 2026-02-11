@@ -238,7 +238,6 @@ int main(int argc, char* argv[]) {
         printUsage(argv[0]);
         return EXIT_OK;
     }
-
     std::string exePath = getExecutablePath();
     std::string exeDir = exePath.empty() ? "." : dirName(exePath);
 
@@ -249,7 +248,7 @@ int main(int argc, char* argv[]) {
         stdLibPath = exeDir + "/" + stdLibPath;
     }
 
-    std::vector<std::string> searchPaths = {"."};
+    std::vector<std::string> searchPaths;
     
     // Support user directories (e.g., ~/.local/lib/protoPython/3.14/site-packages)
 #ifdef __linux__
@@ -266,7 +265,9 @@ int main(int argc, char* argv[]) {
     for (int i = 0; i < argc; ++i) argvVec.push_back(argv[i]);
 
     if (options.repl) {
-        protoPython::PythonEnvironment env(stdLibPath, searchPaths, argvVec);
+        std::vector<std::string> replPaths = searchPaths;
+        replPaths.insert(replPaths.begin(), ".");
+        protoPython::PythonEnvironment env(stdLibPath, replPaths, argvVec);
         if (options.trace) {
             env.setExecutionHook([](const std::string& name, int phase) {
                 std::cerr << (phase == 0 ? "[trace] enter " : "[trace] leave ") << name << std::endl;
@@ -284,7 +285,9 @@ int main(int argc, char* argv[]) {
     }
 
     if (!options.commandLine.empty()) {
-        protoPython::PythonEnvironment env(stdLibPath, searchPaths, argvVec);
+        std::vector<std::string> cmdPaths = searchPaths;
+        cmdPaths.insert(cmdPaths.begin(), ".");
+        protoPython::PythonEnvironment env(stdLibPath, cmdPaths, argvVec);
         if (options.trace) {
             env.setExecutionHook([](const std::string& name, int phase) {
                 std::cerr << (phase == 0 ? "[trace] enter " : "[trace] leave ") << name << std::endl;
