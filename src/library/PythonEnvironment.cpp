@@ -5776,13 +5776,22 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     
     // a. Update sys.path
     const proto::ProtoObject* pathListObj = sysModule->getAttribute(rootContext_, py_path);
-    if (pathListObj && pathListObj->asList(rootContext_)) {
-        const proto::ProtoList* pList = pathListObj->asList(rootContext_);
-        for (const auto& p : allPaths) {
-            pList = pList->appendLast(rootContext_, rootContext_->fromUTF8String(p.c_str()));
-        }
-        sysModule = sysModule->setAttribute(rootContext_, py_path, pList->asObject(rootContext_));
+    const proto::ProtoList* pList = (pathListObj && pathListObj->asList(rootContext_)) 
+        ? pathListObj->asList(rootContext_) : rootContext_->newList();
+    
+    // If it's a Python list object, unwrap it
+    const proto::ProtoObject* dataAttr = pathListObj ? pathListObj->getAttribute(rootContext_, dataString) : nullptr;
+    if (dataAttr && dataAttr->asList(rootContext_)) pList = dataAttr->asList(rootContext_);
+
+    for (const auto& p : allPaths) {
+        pList = pList->appendLast(rootContext_, rootContext_->fromUTF8String(p.c_str()));
     }
+    
+    // Wrap back in a Python list object
+    const proto::ProtoObject* newListObj = rootContext_->newObject(true);
+    if (listPrototype) newListObj = newListObj->addParent(rootContext_, listPrototype);
+    newListObj = newListObj->setAttribute(rootContext_, dataString, pList->asObject(rootContext_));
+    sysModule = sysModule->setAttribute(rootContext_, py_path, newListObj);
     
     // b. Create sys.modules and add sys/builtins
     const proto::ProtoObject* modulesDictObj = sysModule->getAttribute(rootContext_, py_modules);

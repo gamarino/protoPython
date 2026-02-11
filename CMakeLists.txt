@@ -76,7 +76,7 @@ install(DIRECTORY include/protoPython
 )
 
 install(DIRECTORY lib/python3.14
-    DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/protoPython
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/protoPython
     USE_SOURCE_PERMISSIONS
     COMPONENT protoPython
 )

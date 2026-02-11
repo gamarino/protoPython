@@ -18,7 +18,36 @@
 #define DEFAULT_STDLIB ""
 #endif
 
+#include <limits.h>
+#ifdef __linux__
+#include <unistd.h>
+#endif
+#ifdef _WIN32
+#include <windows.h>
+#endif
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#endif
+
 namespace {
+
+static std::string getExecutablePath() {
+#ifdef __linux__
+    char result[PATH_MAX];
+    ssize_t count = readlink("/proc/self/exe", result, PATH_MAX);
+    if (count > 0) return std::string(result, count);
+#elif defined(_WIN32)
+    char result[MAX_PATH];
+    DWORD count = GetModuleFileNameA(NULL, result, MAX_PATH);
+    if (count > 0) return std::string(result, count);
+#elif defined(__APPLE__)
+    char result[PATH_MAX];
+    uint32_t size = sizeof(result);
+    if (_NSGetExecutablePath(result, &size) == 0)
+        return std::string(result);
+#endif
+    return "";
+}
 
 constexpr int EXIT_OK = 0;
 constexpr int EXIT_USAGE = 64;
@@ -210,8 +239,27 @@ int main(int argc, char* argv[]) {
         return EXIT_OK;
     }
 
+    std::string exePath = getExecutablePath();
+    std::string exeDir = exePath.empty() ? "." : dirName(exePath);
+
     std::string stdLibPath = !options.stdLibPath.empty() ? options.stdLibPath : DEFAULT_STDLIB;
+    
+    // Resolve relative DEFAULT_STDLIB against executable directory
+    if (!stdLibPath.empty() && stdLibPath[0] != '/' && stdLibPath.find(":\\") == std::string::npos) {
+        stdLibPath = exeDir + "/" + stdLibPath;
+    }
+
     std::vector<std::string> searchPaths = {"."};
+    
+    // Support user directories (e.g., ~/.local/lib/protoPython/3.14/site-packages)
+#ifdef __linux__
+    const char* home = std::getenv("HOME");
+    if (home) {
+        std::string userLib = std::string(home) + "/.local/lib/protoPython/python3.14/site-packages";
+        searchPaths.push_back(userLib);
+    }
+#endif
+
     searchPaths.insert(searchPaths.end(), options.searchPaths.begin(), options.searchPaths.end());
 
     std::vector<std::string> argvVec;
