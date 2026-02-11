@@ -10,6 +10,8 @@ namespace protoPython {
 
 struct ASTNode {
     virtual ~ASTNode() = default;
+    int line = 0;
+    int column = 0;
 };
 
 struct ConstantNode : ASTNode {
@@ -214,6 +216,14 @@ public:
     bool atEOF() const { return cur_.type == TokenType::EndOfFile; }
 
 private:
+    template<typename T, typename... Args>
+    std::unique_ptr<T> createNode(Args&&... args) {
+        auto node = std::make_unique<T>(std::forward<Args>(args)...);
+        node->line = cur_.line;
+        node->column = cur_.column;
+        return node;
+    }
+
     Tokenizer tok_;
     Token cur_;
     bool hasError_ = false;
