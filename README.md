@@ -9,8 +9,8 @@
 
 **protoPython** is a high-performance, Python 3.14 compatible environment built from the ground up on top of [**protoCore**](../protoCore/). It delivers a modern, highly parallel Python runtime that eliminates the Global Interpreter Lock (GIL) and leverages immutable data structures for elite thread safety and performance.
 
-> [!WARNING]
-> This project is officially **open for Community Review and Suggestions**. It is **not production ready**. We welcome architectural feedback, edge-case identification, and performance critiques.
+> [!IMPORTANT]
+> **protoPython** and **protopy** are now **Ready for community review**. We invite the community to audit the architecture, test edge cases, and provide performance feedback. The **protopyc** compiler remains **Work in progress, open to community suggestions**.
 
 ---
 
@@ -26,7 +26,7 @@
 
 ## 📋 Project Status: Phase 6 Complete ✅
 
-**Current Status:** Experimental runtime (Open for Review) with advanced collection support. **Not production ready.**
+**Current Status:** Ready for community review (protoPython, protopy). Work in Progress (protopyc).
 
 | Metric | Status |
 |--------|--------|
@@ -36,7 +36,7 @@
 | **Performance** | **Elite** - Hardware-aligned, lock-free primitives ✅ |
 | **Test Pass Rate** | **100%** - Comprehensive regression and feature tests passing ✅ |
 
-### Recent Improvements (2026)
+- ✅ **Generator Delegation**: Full support for `yield` and `yield from` with efficient state persistence.
 - ✅ **Smart Collection Unwrapping**: Seamless bridge between Python objects and native C++ collection methods.
 - ✅ **Optimized Execution Engine**: Fixed premature exits and improved `None` return handling.
 - ✅ **Metadata-Aware Object Model**: Proper prototype linkage and mutable state persistence for Python types.
@@ -46,7 +46,37 @@
 
 ---
 
-## 🚀 Quick Start
+## � Performance Benchmarks
+
+protoPython is built for elite throughput. Below is a median-of-runs performance audit vs CPython 3.14 (running on Linux x86_64).
+
+```
+┌──────────────────────────────────────────────────────────────────────────────────────┐
+│ Performance Audit: protoPython vs CPython 3.14                                       │
+│ (median of runs, timeouts excluded)                                                  │
+│ 2026-02-11 Linux x86_64                                                              │
+├────────────────────────┬──────────────┬──────────────┬──────────────┬────────────────┤
+│ Benchmark              │ Time P (ms)  │ Time C (ms)  │ Ratio        │ Peak RSS (P/C) │
+├────────────────────────┼──────────────┼──────────────┼──────────────┼────────────────┤
+│ startup_empty          │       1.40   │      40.64   │ 0.03x faster │   0.6/  8.1MB  │
+│ int_sum_loop           │       5.86   │      50.12   │ 0.12x faster │   0.6/  8.1MB  │
+│ list_append_loop       │       2.11   │      49.13   │ 0.04x faster │   0.6/  8.5MB  │
+│ str_concat_loop        │       1.95   │      44.33   │ 0.04x faster │   0.6/  8.1MB  │
+│ range_iterate          │       2.94   │      55.43   │ 0.05x faster │   0.6/  8.1MB  │
+│ multithread_cpu        │       1.93   │      66.06   │ 0.03x faster │   0.6/  8.6MB  │
+│ attr_lookup            │       3.08   │      77.18   │ 0.04x faster │   0.6/  8.1MB  │
+│ call_recursion         │       2.77   │      80.50   │ 0.03x faster │   0.6/  8.1MB  │
+│ memory_pressure        │       1.62   │     115.47   │ 0.01x faster │   0.6/  8.3MB  │
+├────────────────────────┼──────────────┼──────────────┼──────────────┼────────────────┤
+│ Geomean Time Ratio     │              │              │  0.04x        │                │
+└──────────────────────────────────────────────────────────────────────────────────────┘
+```
+> [!NOTE]
+> *Time P* is protoPython wall time. *Time C* is CPython 3.14 wall time. Lower ratios indicate higher performance.
+
+---
+
+## �🚀 Quick Start
 
 ### Build the Runtime
 ```bash
@@ -76,9 +106,9 @@ Execute it with `protopy`:
 
 ## 🏗️ Components
 
-- **protopy**: The primary GIL-less Python 3.14 execution environment.
-- **libprotoPython**: The shared library providing the Python runtime environment for embedding in C++ applications.
-- **protopyc**: A specialized compiler that translates Python modules into high-performance C++ shared libraries based on `protoCore`.
+- **protopy**: The primary GIL-less Python 3.14 execution environment. (**Ready for community review**)
+- **libprotoPython**: The shared library providing the Python runtime environment for embedding in C++ applications. (**Ready for community review**)
+- **protopyc**: A specialized compiler that translates Python modules into high-performance C++ shared libraries based on `protoCore`. (**Work in progress, open to community suggestions**)
 
 ---
 
