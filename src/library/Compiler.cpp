@@ -44,12 +44,14 @@ void Compiler::emit(int op, int arg) {
                    op == OP_CALL_FUNCTION || op == OP_LOAD_ATTR || op == OP_STORE_ATTR ||
                    op == OP_BUILD_LIST || op == OP_BUILD_MAP || op == OP_BUILD_TUPLE ||
                    op == OP_UNPACK_SEQUENCE || op == OP_LOAD_GLOBAL || op == OP_STORE_GLOBAL ||
-                   op == OP_BUILD_SLICE || op == OP_FOR_ITER || op == OP_POP_JUMP_IF_FALSE ||
+                   op == OP_BUILD_SLICE || op == OP_FOR_ITER || op == OP_POP_JUMP_IF_FALSE || op == OP_POP_JUMP_IF_TRUE ||
                    op == OP_JUMP_ABSOLUTE || op == OP_COMPARE_OP || op == OP_BINARY_SUBSCR ||
                    op == OP_STORE_SUBSCR || op == OP_CALL_FUNCTION_KW || 
                    op == OP_BUILD_FUNCTION || 
                    op == OP_DELETE_NAME || op == OP_DELETE_GLOBAL || op == OP_DELETE_FAST ||
-                   op == OP_DELETE_ATTR);
+                   op == OP_DELETE_ATTR || op == OP_RAISE_VARARGS ||
+                   op == OP_LIST_APPEND || op == OP_MAP_ADD ||
+                   op == OP_SET_ADD || op == OP_BUILD_SET);
     if (hasArg)
         bytecode_ = bytecode_->appendLast(ctx_, ctx_->fromInteger(arg));
 }
@@ -326,6 +328,28 @@ bool Compiler::compileDeleteNode(DeleteNode* n) {
     return true;
 }
 
+bool Compiler::compileAssert(AssertNode* n) {
+    if (!n || !compileNode(n->test.get())) return false;
+    // if test is true, jump to end
+    emit(OP_POP_JUMP_IF_TRUE, 0);
+    int jumpToEndSlot = bytecodeOffset() - 1;
+    
+    // if test is false, raise AssertionError
+    int idxAlt = addName("AssertionError");
+    emit(OP_LOAD_GLOBAL, idxAlt);
+    if (n->msg) {
+        if (!compileNode(n->msg.get())) return false;
+        emit(OP_CALL_FUNCTION, 1);
+    } else {
+        emit(OP_CALL_FUNCTION, 0);
+    }
+    emit(OP_RAISE_VARARGS, 1);
+    
+    int endTarget = bytecodeOffset();
+    addPatch(jumpToEndSlot, endTarget);
+    return true;
+}
+
 bool Compiler::compileFor(ForNode* n) {
     if (!n || !compileNode(n->iter.get())) return false;
     emit(OP_GET_ITER);
@@ -373,6 +397,80 @@ bool Compiler::compileReturn(ReturnNode* n) {
         emit(OP_LOAD_CONST, idx);
     }
     emit(OP_RETURN_VALUE);
+    return true;
+}
+
+bool Compiler::compileListComp(ListCompNode* n) {
+    if (!n) return false;
+    emit(OP_BUILD_LIST, 0);
+    int nGen = static_cast<int>(n->generators.size());
+    
+    auto inner = [&]() -> bool {
+        if (!compileNode(n->elt.get())) return false;
+        emit(OP_LIST_APPEND, nGen + 1);
+        return true;
+    };
+    
+    return compileComprehension(n->generators, 0, inner);
+}
+
+bool Compiler::compileDictComp(DictCompNode* n) {
+    if (!n) return false;
+    emit(OP_BUILD_MAP, 0);
+    int nGen = static_cast<int>(n->generators.size());
+    
+    auto inner = [&]() -> bool {
+        if (!compileNode(n->value.get())) return false;
+        if (!compileNode(n->key.get())) return false;
+        emit(OP_MAP_ADD, nGen + 1);
+        return true;
+    };
+    
+    return compileComprehension(n->generators, 0, inner);
+}
+
+bool Compiler::compileSetComp(SetCompNode* n) {
+    if (!n) return false;
+    emit(OP_BUILD_SET, 0);
+    int nGen = static_cast<int>(n->generators.size());
+    
+    auto inner = [&]() -> bool {
+        if (!compileNode(n->elt.get())) return false;
+        emit(OP_SET_ADD, nGen + 1);
+        return true;
+    };
+    
+    return compileComprehension(n->generators, 0, inner);
+}
+
+bool Compiler::compileComprehension(const std::vector<Comprehension>& generators, size_t index, std::function<bool()> innerBody) {
+    if (index == generators.size()) {
+        return innerBody();
+    }
+    
+    const auto& gen = generators[index];
+    if (!compileNode(gen.iter.get())) return false;
+    emit(OP_GET_ITER);
+    int loopStart = bytecodeOffset();
+    emit(OP_FOR_ITER, 0);
+    int endSlot = bytecodeOffset() - 1;
+    if (!compileTarget(gen.target.get(), TargetCtx::Store)) return false;
+    
+    std::vector<int> ifSlots;
+    for (const auto& condition : gen.ifs) {
+        if (!compileNode(condition.get())) return false;
+        emit(OP_POP_JUMP_IF_FALSE, 0);
+        ifSlots.push_back(bytecodeOffset() - 1);
+    }
+    
+    if (!compileComprehension(generators, index + 1, innerBody)) return false;
+    
+    emit(OP_JUMP_ABSOLUTE, loopStart);
+    int loopEnd = bytecodeOffset();
+    addPatch(endSlot, loopEnd);
+    for (int slot : ifSlots) {
+        addPatch(slot, loopStart);
+    }
     return true;
 }
 
@@ -868,6 +966,10 @@ bool Compiler::compileNode(ASTNode* node) {
     if (auto* d = dynamic_cast<DictLiteralNode*>(node)) return compileDictLiteral(d);
     if (auto* tup = dynamic_cast<TupleLiteralNode*>(node)) return compileTupleLiteral(tup);
     if (auto* a = dynamic_cast<AssignNode*>(node)) return compileAssign(a);
+    if (auto* an = dynamic_cast<AssertNode*>(node)) return compileAssert(an);
+    if (auto* lc = dynamic_cast<ListCompNode*>(node)) return compileListComp(lc);
+    if (auto* dc = dynamic_cast<DictCompNode*>(node)) return compileDictComp(dc);
+    if (auto* sc = dynamic_cast<SetCompNode*>(node)) return compileSetComp(sc);
     if (auto* d = dynamic_cast<DeleteNode*>(node)) return compileDeleteNode(d);
     if (auto* f = dynamic_cast<ForNode*>(node)) return compileFor(f);
     if (auto* iff = dynamic_cast<IfNode*>(node)) return compileIf(iff);

@@ -137,6 +137,18 @@ constexpr int OP_DELETE_SUBSCR = 163;
 constexpr int OP_DELETE_GLOBAL = 164;
 /** DELETE_FAST: delete ctx->getAutomaticLocals()[arg]. */
 constexpr int OP_DELETE_FAST = 165;
+/** RAISE_VARARGS: arg=number of args (0 or 1 supported here). Pop exception and raise it. */
+constexpr int OP_RAISE_VARARGS = 166;
+/** POP_JUMP_IF_TRUE: if top is truthy, jump to arg (bytecode index). */
+constexpr int OP_POP_JUMP_IF_TRUE = 167;
+/** LIST_APPEND: arg=stack depth. Append TOS to list at TOS-arg. */
+constexpr int OP_LIST_APPEND = 168;
+/** MAP_ADD: arg=stack depth. Set key=TOS, value=TOS-1 in map at TOS-(arg+1). */
+constexpr int OP_MAP_ADD = 169;
+/** SET_ADD: arg=stack depth. Add TOS to set at TOS-arg. */
+constexpr int OP_SET_ADD = 170;
+/** BUILD_SET: pop arg values from stack, build set, push set. */
+constexpr int OP_BUILD_SET = 171;
 
 /**
  * @brief Executes a range of bytecode (one basic block). No per-instruction

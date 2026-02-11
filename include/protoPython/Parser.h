@@ -82,6 +82,31 @@ struct TupleLiteralNode : ASTNode {
     std::vector<std::unique_ptr<ASTNode>> elements;
 };
 
+struct Comprehension {
+    std::unique_ptr<ASTNode> target;
+    std::unique_ptr<ASTNode> iter;
+    std::vector<std::unique_ptr<ASTNode>> ifs;
+};
+
+/** List comprehension [elt for ...]. */
+struct ListCompNode : ASTNode {
+    std::unique_ptr<ASTNode> elt;
+    std::vector<Comprehension> generators;
+};
+
+/** Dict comprehension {key: value for ...}. */
+struct DictCompNode : ASTNode {
+    std::unique_ptr<ASTNode> key;
+    std::unique_ptr<ASTNode> value;
+    std::vector<Comprehension> generators;
+};
+
+/** Set comprehension {elt for ...}. */
+struct SetCompNode : ASTNode {
+    std::unique_ptr<ASTNode> elt;
+    std::vector<Comprehension> generators;
+};
+
 /** Assignment: target = expr. Target is Name, Attribute, or Subscript. */
 struct AssignNode : ASTNode {
     std::unique_ptr<ASTNode> target;
@@ -146,6 +171,12 @@ struct DeleteNode : ASTNode {
     std::vector<std::unique_ptr<ASTNode>> targets;
 };
 
+/** assert test [, msg]. */
+struct AssertNode : ASTNode {
+    std::unique_ptr<ASTNode> test;
+    std::unique_ptr<ASTNode> msg; /* optional */
+};
+
 /** pass (no-op). */
 struct PassNode : ASTNode {};
 
@@ -198,6 +229,8 @@ private:
     std::unique_ptr<ASTNode> parseStatement();
     /** Suite: after ':', either Newline+Indent+statements+Dedent or single statement. */
     std::unique_ptr<ASTNode> parseSuite();
+    /** Target list: e.g. x, y (for loops, comprehensions). Returns TupleLiteralNode if more than one. */
+    std::unique_ptr<ASTNode> parseTargetList();
 };
 
 } // namespace protoPython

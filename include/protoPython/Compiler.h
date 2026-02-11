@@ -8,6 +8,7 @@
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <functional>
 
 namespace protoPython {
 
@@ -53,6 +54,10 @@ private:
     bool compileTupleLiteral(TupleLiteralNode* n);
     bool compileAssign(AssignNode* n);
     bool compileDeleteNode(DeleteNode* n);
+    bool compileAssert(AssertNode* n);
+    bool compileListComp(ListCompNode* n);
+    bool compileDictComp(DictCompNode* n);
+    bool compileSetComp(SetCompNode* n);
     bool compileFor(ForNode* n);
     bool compileIf(IfNode* n);
     bool compileGlobal(GlobalNode* n);
@@ -62,6 +67,7 @@ private:
     bool compileFunctionDef(FunctionDefNode* n);
     bool compileClassDef(ClassDefNode* n);
     bool compileCondExpr(CondExprNode* n);
+    bool compileComprehension(const std::vector<Comprehension>& generators, size_t index, std::function<bool()> innerBody);
     bool compileSuite(SuiteNode* n);
     enum class TargetCtx { Load, Store, Delete };
     bool compileTarget(ASTNode* target, TargetCtx ctx);

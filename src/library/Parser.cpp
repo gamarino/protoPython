@@ -184,16 +184,101 @@ std::unique_ptr<ASTNode> Parser::parseAtom() {
         return e;
     }
     if (accept(TokenType::LSquare)) {
+        auto first = parseOrExpr();
+        if (cur_.type == TokenType::For) {
+            auto lc = std::make_unique<ListCompNode>();
+            lc->elt = std::move(first);
+            while (cur_.type == TokenType::For) {
+                Comprehension c;
+                advance(); // for
+                c.target = parseTargetList();
+                expect(TokenType::In);
+                c.iter = parseOrExpr();
+                while (accept(TokenType::If)) {
+                    c.ifs.push_back(parseOrExpr());
+                }
+                lc->generators.push_back(std::move(c));
+            }
+            expect(TokenType::RSquare);
+            return lc;
+        }
         auto lst = std::make_unique<ListLiteralNode>();
-        while (cur_.type != TokenType::RSquare && cur_.type != TokenType::EndOfFile) {
-            lst->elements.push_back(parseExpression());
-            if (!accept(TokenType::Comma)) break;
+        if (first) {
+            lst->elements.push_back(std::move(first));
+            if (accept(TokenType::Comma)) {
+                while (cur_.type != TokenType::RSquare && cur_.type != TokenType::EndOfFile) {
+                    lst->elements.push_back(parseExpression());
+                    if (!accept(TokenType::Comma)) break;
+                }
+            }
         }
         expect(TokenType::RSquare);
         return lst;
     }
     if (accept(TokenType::LCurly)) {
+        auto key = parseExpression();
+        if (cur_.type == TokenType::For) {
+            auto sc = std::make_unique<SetCompNode>();
+            sc->elt = std::move(key);
+            while (cur_.type == TokenType::For) {
+                Comprehension c;
+                advance(); // for
+                c.target = parseTargetList();
+                expect(TokenType::In);
+                c.iter = parseOrExpr();
+                while (accept(TokenType::If)) {
+                    c.ifs.push_back(parseOrExpr());
+                }
+                sc->generators.push_back(std::move(c));
+            }
+            expect(TokenType::RCurly);
+            return sc;
+        }
+        if (accept(TokenType::Colon)) {
+            auto val = parseExpression();
+            if (cur_.type == TokenType::For) {
+                auto dc = std::make_unique<DictCompNode>();
+                dc->key = std::move(key);
+                dc->value = std::move(val);
+                while (cur_.type == TokenType::For) {
+                    Comprehension c;
+                    advance(); // for
+                    c.target = parseTargetList();
+                    expect(TokenType::In);
+                    c.iter = parseOrExpr();
+                    while (accept(TokenType::If)) {
+                        c.ifs.push_back(parseOrExpr());
+                    }
+                    dc->generators.push_back(std::move(c));
+                }
+                expect(TokenType::RCurly);
+                return dc;
+            }
+            auto d = std::make_unique<DictLiteralNode>();
+            d->keys.push_back(std::move(key));
+            d->values.push_back(std::move(val));
+            if (accept(TokenType::Comma)) {
+                while (cur_.type != TokenType::RCurly && cur_.type != TokenType::EndOfFile) {
+                    auto k = parseExpression();
+                    if (!expect(TokenType::Colon)) return nullptr;
+                    auto v = parseExpression();
+                    d->keys.push_back(std::move(k));
+                    d->values.push_back(std::move(v));
+                    if (!accept(TokenType::Comma)) break;
+                }
+            }
+            expect(TokenType::RCurly);
+            return d;
+        }
+        // Set literal or empty dict?
+        // {} is empty dict.
+        // {x} is set literal.
+        // For now, let's just keep original dict literal logic if possible, 
+        // but handle the case where key was already parsed.
         auto d = std::make_unique<DictLiteralNode>();
+        // If we got here, it's either an empty dict or a set literal (unsupported).
+        // Original code:
+        /*
         while (cur_.type != TokenType::RCurly && cur_.type != TokenType::EndOfFile) {
             auto k = parseExpression();
             if (!expect(TokenType::Colon)) return nullptr;
@@ -201,6 +286,13 @@ std::unique_ptr<ASTNode> Parser::parseAtom() {
             d->keys.push_back(std::move(k));
             d->values.push_back(std::move(v));
             if (!accept(TokenType::Comma)) break;
+        }
+        */
+        // Let's stick to dicts for now.
+        if (key) {
+            // key exists but no colon? error.
+            error("expected ':' in dict literal");
+            return nullptr;
         }
         expect(TokenType::RCurly);
         return d;
@@ -412,6 +504,15 @@ std::unique_ptr<ASTNode> Parser::parseOrExpr() {
 
 std::unique_ptr<ASTNode> Parser::parseStatement() {
     skipNewlines();
+    if (cur_.type == TokenType::Assert) {
+        advance();
+        auto a = std::make_unique<AssertNode>();
+        a->test = parseExpression();
+        if (accept(TokenType::Comma)) {
+            a->msg = parseExpression();
+        }
+        return a;
+    }
     if (cur_.type == TokenType::Del) {
         advance();
         auto d = std::make_unique<DeleteNode>();
@@ -487,7 +588,7 @@ std::unique_ptr<ASTNode> Parser::parseStatement() {
     }
     if (cur_.type == TokenType::For) {
         advance();
-        auto target = parsePrimary();
+        auto target = parseTargetList();
         if (!target || !expect(TokenType::In)) return nullptr;
         auto iter = parseExpression();
         if (!iter || !expect(TokenType::Colon)) return nullptr;
@@ -652,6 +753,20 @@ std::unique_ptr<ModuleNode> Parser::parseModule() {
         if (hasError_) break;
     }
     return mod;
+}
+
+std::unique_ptr<ASTNode> Parser::parseTargetList() {
+    auto left = parseAddExpr();
+    if (cur_.type == TokenType::Comma) {
+        auto t = std::make_unique<TupleLiteralNode>();
+        t->elements.push_back(std::move(left));
+        while (accept(TokenType::Comma)) {
+            if (cur_.type == TokenType::In) break;
+            t->elements.push_back(parseAddExpr());
+        }
+        return t;
+    }
+    return left;
 }
 
 } // namespace protoPython

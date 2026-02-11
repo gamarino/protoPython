@@ -448,14 +448,10 @@ static const proto::ProtoObject* compareOp(proto::ProtoContext* ctx,
         result = (op == 6) ? found : !found;
         return result ? PROTO_TRUE : PROTO_FALSE;
     }
-
-    int c = a->compare(ctx, b);
-    if (op == 0) result = (c == 0);
-    else if (op == 1) result = (c != 0);
-    else if (op == 2) result = (c < 0);
-    else if (op == 3) result = (c <= 0);
-    else if (op == 4) result = (c > 0);
-    else if (op == 5) result = (c >= 0);
+    if (op >= 0 && op <= 5) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+        if (env) return env->compareObjects(ctx, a, b, op);
+    }
     return result ? PROTO_TRUE : PROTO_FALSE;
 }
 
@@ -1096,6 +1092,19 @@ const proto::ProtoObject* executeBytecodeRange(
                     if (result) stack.push_back(result);
                 }
             }
+        } else if (op == OP_RAISE_VARARGS) {
+            const proto::ProtoObject* exc = nullptr;
+            if (arg == 1) {
+                if (!stack.empty()) {
+                    exc = stack.back();
+                    stack.pop_back();
+                }
+            }
+            if (env) {
+                if (exc) env->setPendingException(exc);
+                // Note: arg == 0 (re-raise) not yet fully implemented for all cases
+            }
+            return PROTO_NONE;
         } else if (op == OP_POP_TOP) {
             if (!stack.empty()) {
                 stack.pop_back();
@@ -1129,6 +1138,75 @@ const proto::ProtoObject* executeBytecodeRange(
             stack.pop_back();
             if (!isTruthy(ctx, top) && arg >= 0 && static_cast<unsigned long>(arg) < n)
                 i = static_cast<unsigned long>(arg) - 1;
+        } else if (op == OP_POP_JUMP_IF_TRUE) {
+            i++;
+            if (stack.empty()) continue;
+            const proto::ProtoObject* top = stack.back();
+            stack.pop_back();
+            if (isTruthy(ctx, top) && arg >= 0 && static_cast<unsigned long>(arg) < n)
+                i = static_cast<unsigned long>(arg) - 1;
+        } else if (op == OP_LIST_APPEND) {
+            i++;
+            if (stack.size() >= static_cast<size_t>(arg)) {
+                const proto::ProtoObject* val = stack.back();
+                stack.pop_back();
+                proto::ProtoObject* lstObj = const_cast<proto::ProtoObject*>(stack[stack.size() - arg]);
+                const proto::ProtoObject* data = lstObj->getAttribute(ctx, env ? env->getDataString() : proto::ProtoString::fromUTF8String(ctx, "__data__"));
+                if (data && data->asList(ctx)) {
+                    const proto::ProtoList* lst = data->asList(ctx);
+                    lst = lst->appendLast(ctx, val);
+                    lstObj->setAttribute(ctx, env ? env->getDataString() : proto::ProtoString::fromUTF8String(ctx, "__data__"), lst->asObject(ctx));
+                }
+            }
+        } else if (op == OP_MAP_ADD) {
+            i++;
+            if (stack.size() >= static_cast<size_t>(arg)) {
+                const proto::ProtoObject* key = stack.back();
+                stack.pop_back();
+                const proto::ProtoObject* val = stack.back();
+                stack.pop_back();
+                proto::ProtoObject* mapObj = const_cast<proto::ProtoObject*>(stack[stack.size() - arg]);
+                const proto::ProtoString* dataString = env ? env->getDataString() : proto::ProtoString::fromUTF8String(ctx, "__data__");
+                const proto::ProtoObject* data = mapObj->getAttribute(ctx, dataString);
+                if (data && data->asSparseList(ctx)) {
+                    const proto::ProtoSparseList* sl = data->asSparseList(ctx);
+                    unsigned long h = key->getHash(ctx);
+                    bool isNew = !sl->has(ctx, h);
+                    sl = sl->setAt(ctx, h, val);
+                    mapObj->setAttribute(ctx, dataString, sl->asObject(ctx));
+                    if (isNew) {
+                         const proto::ProtoString* keysString = proto::ProtoString::fromUTF8String(ctx, "__keys__");
+                         const proto::ProtoObject* keysObj = mapObj->getAttribute(ctx, keysString);
+                         const proto::ProtoList* keys = (keysObj && keysObj->asList(ctx)) ? keysObj->asList(ctx) : ctx->newList();
+                         keys = keys->appendLast(ctx, key);
+                         mapObj->setAttribute(ctx, keysString, keys->asObject(ctx));
+                    }
+                }
+            }
+        } else if (op == OP_SET_ADD) {
+            i++;
+            if (stack.size() >= static_cast<size_t>(arg)) {
+                const proto::ProtoObject* val = stack.back();
+                stack.pop_back();
+                proto::ProtoObject* setObj = const_cast<proto::ProtoObject*>(stack[stack.size() - arg]);
+                const proto::ProtoString* dataString = env ? env->getDataString() : proto::ProtoString::fromUTF8String(ctx, "__data__");
+                const proto::ProtoObject* data = setObj->getAttribute(ctx, dataString);
+                const proto::ProtoSet* s = (data && data->asSet(ctx)) ? data->asSet(ctx) : ctx->newSet();
+                s = s->add(ctx, val);
+                setObj->setAttribute(ctx, dataString, s->asObject(ctx));
+            }
+        } else if (op == OP_BUILD_SET) {
+            i++;
+            proto::ProtoObject* setObj = const_cast<proto::ProtoObject*>(ctx->newObject(true));
+            if (env) setObj->addParent(ctx, env->getSetPrototype());
+            const proto::ProtoSet* data = ctx->newSet();
+            for (int j = 0; j < arg; ++j) {
+                const proto::ProtoObject* val = stack.back();
+                stack.pop_back();
+                data = data->add(ctx, val);
+            }
+            setObj->setAttribute(ctx, env ? env->getDataString() : proto::ProtoString::fromUTF8String(ctx, "__data__"), data->asObject(ctx));
+            stack.push_back(setObj);
         } else if (op == OP_JUMP_ABSOLUTE) {
             i++;
             if (arg >= 0 && static_cast<unsigned long>(arg) < n)
