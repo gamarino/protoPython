@@ -213,10 +213,30 @@ Token Tokenizer::next() {
         atLineStart_ = true;
         return t;
     }
-    if (c == '+') { Token t = makeToken(TokenType::Plus); pos_++; return t; }
-    if (c == '-') { Token t = makeToken(TokenType::Minus); pos_++; return t; }
-    if (c == '*') { Token t = makeToken(TokenType::Star); pos_++; return t; }
-    if (c == '/') { Token t = makeToken(TokenType::Slash); pos_++; return t; }
+    if (c == '+') {
+        if (pos_ + 1 < source_.size() && source_[pos_ + 1] == '=') {
+            Token t = makeToken(TokenType::PlusAssign); pos_ += 2; return t;
+        }
+        Token t = makeToken(TokenType::Plus); pos_++; return t;
+    }
+    if (c == '-') {
+        if (pos_ + 1 < source_.size() && source_[pos_ + 1] == '=') {
+            Token t = makeToken(TokenType::MinusAssign); pos_ += 2; return t;
+        }
+        Token t = makeToken(TokenType::Minus); pos_++; return t;
+    }
+    if (c == '*') {
+        if (pos_ + 1 < source_.size() && source_[pos_ + 1] == '=') {
+            Token t = makeToken(TokenType::StarAssign); pos_ += 2; return t;
+        }
+        Token t = makeToken(TokenType::Star); pos_++; return t;
+    }
+    if (c == '/') {
+        if (pos_ + 1 < source_.size() && source_[pos_ + 1] == '=') {
+            Token t = makeToken(TokenType::SlashAssign); pos_ += 2; return t;
+        }
+        Token t = makeToken(TokenType::Slash); pos_++; return t;
+    }
     if (c == '(') { Token t = makeToken(TokenType::LParen); pos_++; return t; }
     if (c == ')') { Token t = makeToken(TokenType::RParen); pos_++; return t; }
     if (c == ',') { Token t = makeToken(TokenType::Comma); pos_++; return t; }
@@ -228,6 +248,7 @@ Token Tokenizer::next() {
     if (c == ':') { Token t = makeToken(TokenType::Colon); pos_++; return t; }
     if (c == ';') { Token t = makeToken(TokenType::Semicolon); pos_++; return t; }
     if (c == '%') { Token t = makeToken(TokenType::Modulo); pos_++; return t; }
+    if (c == '~') { Token t = makeToken(TokenType::Tilde); pos_++; return t; }
     if (c == '!' && pos_ + 1 < source_.size() && source_[pos_ + 1] == '=') {
         Token t = makeToken(TokenType::NotEqual); pos_ += 2; return t;
     }

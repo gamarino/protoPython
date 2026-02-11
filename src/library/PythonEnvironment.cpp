@@ -5209,6 +5209,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     zipItersString = proto::ProtoString::fromUTF8String(rootContext_, "_iters");
     filterFuncString = proto::ProtoString::fromUTF8String(rootContext_, "_func");
     filterIterString = proto::ProtoString::fromUTF8String(rootContext_, "_iter");
+    enterString = proto::ProtoString::fromUTF8String(rootContext_, "__enter__");
+    exitString = proto::ProtoString::fromUTF8String(rootContext_, "__exit__");
     classString = proto::ProtoString::fromUTF8String(rootContext_, "__class__");
     nameString = proto::ProtoString::fromUTF8String(rootContext_, "__name__");
     callString = proto::ProtoString::fromUTF8String(rootContext_, "__call__");
@@ -5955,6 +5957,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
 }
 
 const proto::ProtoObject* PythonEnvironment::getGlobals() const {
+    if (s_currentGlobals) return s_currentGlobals;
     proto::ProtoContext* ctx = s_threadContext ? s_threadContext : const_cast<PythonEnvironment*>(this)->rootContext_;
     return const_cast<PythonEnvironment*>(this)->resolve("__main__", ctx);
 }
@@ -7084,7 +7087,8 @@ bool PythonEnvironment::objectsEqual(proto::ProtoContext* ctx, const proto::Prot
 
 
 const proto::ProtoObject* PythonEnvironment::binaryOp(const proto::ProtoObject* a, TokenType op, const proto::ProtoObject* b) {
-    proto::ProtoContext* ctx = rootContext_;
+    proto::ProtoContext* ctx = getCurrentContext();
+    if (!ctx) ctx = rootContext_;
     if (!a || !b) return PROTO_NONE;
 
     if (a->isInteger(ctx) && b->isInteger(ctx)) {
@@ -7133,7 +7137,8 @@ const proto::ProtoObject* PythonEnvironment::binaryOp(const proto::ProtoObject* 
 }
 
 const proto::ProtoObject* PythonEnvironment::lookupName(const std::string& name) {
-    proto::ProtoContext* ctx = rootContext_;
+    proto::ProtoContext* ctx = getCurrentContext();
+    if (!ctx) ctx = rootContext_;
     const proto::ProtoObject* frame = getCurrentFrame();
     const proto::ProtoString* nameS = proto::ProtoString::fromUTF8String(ctx, name.c_str());
     if (frame) {
@@ -7144,7 +7149,8 @@ const proto::ProtoObject* PythonEnvironment::lookupName(const std::string& name)
 }
 
 void PythonEnvironment::storeName(const std::string& name, const proto::ProtoObject* val) {
-    proto::ProtoContext* ctx = rootContext_;
+    proto::ProtoContext* ctx = getCurrentContext();
+    if (!ctx) ctx = rootContext_;
     proto::ProtoObject* frame = const_cast<proto::ProtoObject*>(getCurrentFrame());
     if (frame) {
         frame->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, name.c_str()), val);
@@ -7221,6 +7227,159 @@ void PythonEnvironment::setAttr(const proto::ProtoObject* obj, const std::string
     proto::ProtoContext* ctx = rootContext_;
     if (!obj) return;
     const_cast<proto::ProtoObject*>(obj)->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, attr.c_str()), val);
+}
+
+const proto::ProtoObject* PythonEnvironment::unaryOp(TokenType op, const proto::ProtoObject* a) {
+    proto::ProtoContext* ctx = rootContext_;
+    if (!a) return PROTO_NONE;
+
+    if (a->isInteger(ctx)) {
+        long long v = a->asLong(ctx);
+        switch (op) {
+            case TokenType::Plus: return a;
+            case TokenType::Minus: return ctx->fromInteger(-v);
+            case TokenType::Tilde: return ctx->fromInteger(~v);
+            default: break;
+        }
+    } else if (a->isDouble(ctx)) {
+        double v = a->asDouble(ctx);
+        switch (op) {
+            case TokenType::Plus: return a;
+            case TokenType::Minus: return ctx->fromDouble(-v);
+            default: break;
+        }
+    }
+
+    // Fallback to dunder methods
+    const proto::ProtoString* dunder = nullptr;
+    switch (op) {
+        case TokenType::Plus: dunder = proto::ProtoString::fromUTF8String(ctx, "__pos__"); break;
+        case TokenType::Minus: dunder = proto::ProtoString::fromUTF8String(ctx, "__neg__"); break;
+        case TokenType::Tilde: dunder = proto::ProtoString::fromUTF8String(ctx, "__invert__"); break;
+        case TokenType::Not: {
+            return isTrue(a) ? PROTO_FALSE : PROTO_TRUE;
+        }
+        default: break;
+    }
+
+    if (dunder) {
+        const proto::ProtoObject* method = a->getAttribute(ctx, dunder);
+        if (method && method->asMethod(ctx)) {
+            return method->asMethod(ctx)(ctx, a, nullptr, getEmptyList(), nullptr);
+        }
+    }
+
+    return PROTO_NONE;
+}
+
+const proto::ProtoObject* PythonEnvironment::iter(const proto::ProtoObject* obj) {
+    if (!obj || obj == PROTO_NONE) return PROTO_NONE;
+    proto::ProtoContext* ctx = getCurrentContext();
+    if (!ctx) ctx = rootContext_;
+    const proto::ProtoObject* method = obj->getAttribute(ctx, getIterString());
+    if (method && method->asMethod(ctx)) {
+        return method->asMethod(ctx)(ctx, obj, nullptr, getEmptyList(), nullptr);
+    }
+    return obj; 
+}
+
+const proto::ProtoObject* PythonEnvironment::next(const proto::ProtoObject* obj) {
+    if (!obj || obj == PROTO_NONE) return PROTO_NONE;
+    proto::ProtoContext* ctx = getCurrentContext();
+    if (!ctx) ctx = rootContext_;
+    
+    // FAST PATH: Check if it's a native iterator that we can advance directly
+    const proto::ProtoObject* method = obj->getAttribute(ctx, getNextString());
+    if (method && method->asMethod(ctx)) {
+        return method->asMethod(ctx)(ctx, obj, nullptr, getEmptyList(), nullptr);
+    }
+    return PROTO_NONE;
+}
+
+void PythonEnvironment::raiseException(const proto::ProtoObject* exc) {
+    setPendingException(exc);
+}
+
+bool PythonEnvironment::isException(const proto::ProtoObject* exc, const proto::ProtoObject* type) {
+    if (!exc || !type || exc == PROTO_NONE || type == PROTO_NONE) return false;
+    proto::ProtoContext* ctx = rootContext_;
+    
+    if (type->isTuple(ctx)) {
+        const proto::ProtoTuple* tup = type->asTuple(ctx);
+        for (unsigned long i = 0; i < tup->getSize(ctx); ++i) {
+            if (isException(exc, tup->getAt(ctx, i))) return true;
+        }
+        return false;
+    }
+    
+    return isTrue(exc->isInstanceOf(ctx, type));
+}
+
+void PythonEnvironment::augAssignName(const std::string& name, TokenType op, const proto::ProtoObject* value) {
+    TokenType binOp;
+    switch (op) {
+        case TokenType::PlusAssign: binOp = TokenType::Plus; break;
+        case TokenType::MinusAssign: binOp = TokenType::Minus; break;
+        case TokenType::StarAssign: binOp = TokenType::Star; break;
+        case TokenType::SlashAssign: binOp = TokenType::Slash; break;
+        default: return;
+    }
+    const proto::ProtoObject* oldVal = lookupName(name);
+    const proto::ProtoObject* newVal = binaryOp(oldVal, binOp, value);
+    storeName(name, newVal);
+}
+
+void PythonEnvironment::augAssignAttr(const proto::ProtoObject* obj, const std::string& attr, TokenType op, const proto::ProtoObject* value) {
+    TokenType binOp;
+    switch (op) {
+        case TokenType::PlusAssign: binOp = TokenType::Plus; break;
+        case TokenType::MinusAssign: binOp = TokenType::Minus; break;
+        case TokenType::StarAssign: binOp = TokenType::Star; break;
+        case TokenType::SlashAssign: binOp = TokenType::Slash; break;
+        default: return;
+    }
+    const proto::ProtoObject* oldVal = getAttr(obj, attr);
+    const proto::ProtoObject* newVal = binaryOp(oldVal, binOp, value);
+    setAttr(obj, attr, newVal);
+}
+
+void PythonEnvironment::augAssignItem(const proto::ProtoObject* container, const proto::ProtoObject* key, TokenType op, const proto::ProtoObject* value) {
+    TokenType binOp;
+    switch (op) {
+        case TokenType::PlusAssign: binOp = TokenType::Plus; break;
+        case TokenType::MinusAssign: binOp = TokenType::Minus; break;
+        case TokenType::StarAssign: binOp = TokenType::Star; break;
+        case TokenType::SlashAssign: binOp = TokenType::Slash; break;
+        default: return;
+    }
+    const proto::ProtoObject* oldVal = getItem(container, key);
+    const proto::ProtoObject* newVal = binaryOp(oldVal, binOp, value);
+    setItem(container, key, newVal);
+}
+
+bool PythonEnvironment::isTrue(const proto::ProtoObject* obj) {
+    if (!obj || obj == PROTO_NONE || obj == PROTO_FALSE) return false;
+    if (obj == PROTO_TRUE) return true;
+    proto::ProtoContext* ctx = rootContext_;
+    if (obj->isInteger(ctx)) return obj->asLong(ctx) != 0;
+    if (obj->isDouble(ctx)) return obj->asDouble(ctx) != 0.0;
+    if (obj->asList(ctx)) return obj->asList(ctx)->getSize(ctx) > 0;
+    if (obj->asSparseList(ctx)) return obj->asSparseList(ctx)->getSize(ctx) > 0;
+    if (obj->isTuple(ctx)) return obj->asTuple(ctx)->getSize(ctx) > 0;
+
+    // Check for __bool__ or __len__
+    const proto::ProtoObject* boolMethod = obj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__bool__"));
+    if (boolMethod && boolMethod->asMethod(ctx)) {
+        const proto::ProtoObject* res = boolMethod->asMethod(ctx)(ctx, obj, nullptr, getEmptyList(), nullptr);
+        return res && res->isBoolean(ctx) && res->asBoolean(ctx);
+    }
+    const proto::ProtoObject* lenMethod = obj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__len__"));
+    if (lenMethod && lenMethod->asMethod(ctx)) {
+        const proto::ProtoObject* res = lenMethod->asMethod(ctx)(ctx, obj, nullptr, getEmptyList(), nullptr);
+        return res && res->isInteger(ctx) && res->asLong(ctx) > 0;
+    }
+
+    return true; // Any non-empty object is true
 }
 
 } // namespace protoPython

@@ -363,17 +363,15 @@ std::unique_ptr<ASTNode> Parser::parsePrimary() {
 }
 
 std::unique_ptr<ASTNode> Parser::parseUnary() {
-    if (cur_.type == TokenType::Minus) {
+    if (cur_.type == TokenType::Minus || cur_.type == TokenType::Plus || cur_.type == TokenType::Tilde) {
+        TokenType op = cur_.type;
         advance();
-        auto u = parseUnary();
-        if (!u) return nullptr;
-        auto bin = createNode<BinOpNode>();
-        bin->left = createNode<ConstantNode>();
-        static_cast<ConstantNode*>(bin->left.get())->intVal = 0;
-        static_cast<ConstantNode*>(bin->left.get())->constType = ConstantNode::ConstType::Int;
-        bin->op = TokenType::Minus;
-        bin->right = std::move(u);
-        return bin;
+        auto operand = parseUnary();
+        if (!operand) return nullptr;
+        auto u = createNode<UnaryOpNode>();
+        u->op = op;
+        u->operand = std::move(operand);
+        return u;
     }
     return parsePrimary();
 }
@@ -443,7 +441,12 @@ std::unique_ptr<ASTNode> Parser::parseCompareExpr() {
         }
         
         if (matched) {
-            if (op == TokenType::EqEqual) advance();
+            // If it's one of the simple comparison ops we haven't advanced yet
+            if (op == TokenType::EqEqual || op == TokenType::NotEqual ||
+                op == TokenType::Less || op == TokenType::LessEqual ||
+                op == TokenType::Greater || op == TokenType::GreaterEqual) {
+                advance();
+            }
             auto right = parseAddExpr();
             if (!right) return left;
             auto bin = createNode<BinOpNode>();
@@ -616,6 +619,22 @@ std::unique_ptr<ASTNode> Parser::parseStatement() {
         }
         return iff;
     }
+    if (cur_.type == TokenType::While) {
+        advance();
+        auto test = parseExpression();
+        if (!test || !expect(TokenType::Colon)) return nullptr;
+        auto body = parseSuite();
+        if (!body) return nullptr;
+        auto w = createNode<WhileNode>();
+        w->test = std::move(test);
+        w->body = std::move(body);
+        skipNewlines();
+        if (accept(TokenType::Else)) {
+            if (!expect(TokenType::Colon)) return nullptr;
+            w->orelse = parseSuite();
+        }
+        return w;
+    }
     if (cur_.type == TokenType::Return) {
         advance();
         auto ret = createNode<ReturnNode>();
@@ -664,14 +683,26 @@ std::unique_ptr<ASTNode> Parser::parseStatement() {
         t->body = parseSuite();
         skipNewlines();
         while (accept(TokenType::Except)) {
-            if (cur_.type == TokenType::Name) {
-                advance(); // Simple skip exception type
+            ExceptHandler h;
+            if (cur_.type != TokenType::Colon) {
+                h.type = parseExpression();
                 if (accept(TokenType::As)) {
-                    if (cur_.type == TokenType::Name) advance();
+                    if (cur_.type == TokenType::Name) {
+                        h.name = cur_.value;
+                        advance();
+                    } else {
+                        error("expected name after 'as' in except");
+                    }
                 }
             }
             if (!expect(TokenType::Colon)) return nullptr;
-            t->handlers = parseSuite(); // For now just keep the last one or skip
+            h.body = parseSuite();
+            t->handlers.push_back(std::move(h));
+            skipNewlines();
+        }
+        if (accept(TokenType::Else)) {
+            if (!expect(TokenType::Colon)) return nullptr;
+            t->orelse = parseSuite();
             skipNewlines();
         }
         if (accept(TokenType::Finally)) {
@@ -679,6 +710,33 @@ std::unique_ptr<ASTNode> Parser::parseStatement() {
             t->finalbody = parseSuite();
         }
         return t;
+    }
+    if (cur_.type == TokenType::Raise) {
+        advance();
+        auto r = createNode<RaiseNode>();
+        if (cur_.type != TokenType::Newline && cur_.type != TokenType::Dedent && cur_.type != TokenType::EndOfFile && cur_.type != TokenType::Semicolon) {
+            r->exc = parseExpression();
+            if (accept(TokenType::From)) {
+                r->cause = parseExpression();
+            }
+        }
+        return r;
+    }
+    if (cur_.type == TokenType::With) {
+        advance();
+        auto w = createNode<WithNode>();
+        for (;;) {
+            WithItem item;
+            item.context_expr = parseExpression();
+            if (accept(TokenType::As)) {
+                item.optional_vars = parseTargetList();
+            }
+            w->items.push_back(std::move(item));
+            if (!accept(TokenType::Comma)) break;
+        }
+        if (!expect(TokenType::Colon)) return nullptr;
+        w->body = parseSuite();
+        return w;
     }
     auto expr = parseExpression();
     if (!expr) {
@@ -698,6 +756,18 @@ std::unique_ptr<ASTNode> Parser::parseStatement() {
         if (!value) return nullptr;
         auto a = createNode<AssignNode>();
         a->target = std::move(expr);
+        a->value = std::move(value);
+        return a;
+    }
+    if (cur_.type == TokenType::PlusAssign || cur_.type == TokenType::MinusAssign ||
+        cur_.type == TokenType::StarAssign || cur_.type == TokenType::SlashAssign) {
+        TokenType op = cur_.type;
+        advance();
+        auto value = parseExpression();
+        if (!value) return nullptr;
+        auto a = createNode<AugAssignNode>();
+        a->target = std::move(expr);
+        a->op = op;
         a->value = std::move(value);
         return a;
     }

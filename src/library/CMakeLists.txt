@@ -25,7 +25,6 @@ add_library(protoPython SHARED
     HPyModuleProvider.cpp
     SysModule.cpp
     ThreadModule.cpp
-    ThreadingStrategy.cpp
     SignalModule.cpp
     TimeModule.cpp
     BuiltinsModule.cpp

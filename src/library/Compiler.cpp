@@ -42,20 +42,6 @@ int Compiler::addName(const std::string& name) {
 
 void Compiler::emit(int op, int arg) {
     bytecode_ = bytecode_->appendLast(ctx_, ctx_->fromInteger(op));
-    bool hasArg = (op == OP_LOAD_CONST || op == OP_LOAD_NAME || op == OP_STORE_NAME ||
-                   op == OP_LOAD_FAST || op == OP_STORE_FAST ||
-                   op == OP_CALL_FUNCTION || op == OP_LOAD_ATTR || op == OP_STORE_ATTR ||
-                   op == OP_BUILD_LIST || op == OP_BUILD_MAP || op == OP_BUILD_TUPLE ||
-                   op == OP_UNPACK_SEQUENCE || op == OP_LOAD_GLOBAL || op == OP_STORE_GLOBAL ||
-                   op == OP_BUILD_SLICE || op == OP_FOR_ITER || op == OP_POP_JUMP_IF_FALSE || op == OP_POP_JUMP_IF_TRUE ||
-                   op == OP_JUMP_ABSOLUTE || op == OP_COMPARE_OP || op == OP_BINARY_SUBSCR ||
-                   op == OP_STORE_SUBSCR || op == OP_CALL_FUNCTION_KW || 
-                   op == OP_BUILD_FUNCTION || 
-                   op == OP_DELETE_NAME || op == OP_DELETE_GLOBAL || op == OP_DELETE_FAST ||
-                   op == OP_DELETE_ATTR || op == OP_RAISE_VARARGS ||
-                   op == OP_LIST_APPEND || op == OP_MAP_ADD ||
-                   op == OP_SET_ADD || op == OP_BUILD_SET);
-    if (hasArg)
         bytecode_ = bytecode_->appendLast(ctx_, ctx_->fromInteger(arg));
 }
 
@@ -297,7 +283,7 @@ bool Compiler::compileTarget(ASTNode* target, TargetCtx ctx) {
     if (auto* sub = dynamic_cast<SubscriptNode*>(target)) {
         if (!compileNode(sub->value.get()) || !compileNode(sub->index.get())) return false;
         if (ctx == TargetCtx::Store) {
-            bytecode_ = bytecode_->appendLast(ctx_, ctx_->fromInteger(OP_ROT_THREE));
+            emit(OP_ROT_THREE, 0);
             emit(OP_STORE_SUBSCR, 0);
         } else if (ctx == TargetCtx::Delete) {
             emit(OP_DELETE_SUBSCR, 0);
@@ -353,6 +339,36 @@ bool Compiler::compileAssert(AssertNode* n) {
     return true;
 }
 
+bool Compiler::compileWhile(WhileNode* n) {
+    if (!n || !n->test) return false;
+    int startPC = bytecodeOffset();
+    
+    loopStack_.push_back({startPC, {}});
+    
+    if (!compileNode(n->test.get())) return false;
+    
+    emit(OP_POP_JUMP_IF_FALSE, 0);
+    int jumpToEndSlot = bytecodeOffset() - 1;
+    
+    if (!compileNode(n->body.get())) return false;
+    emit(OP_JUMP_ABSOLUTE, startPC);
+    
+    int afterLoopBody = bytecodeOffset();
+    addPatch(jumpToEndSlot, afterLoopBody);
+    
+    if (n->orelse) {
+        if (!compileNode(n->orelse.get())) return false;
+    }
+    
+    int endPC = bytecodeOffset();
+    for (int patchIdx : loopStack_.back().breakPatches) {
+        addPatch(patchIdx, endPC);
+    }
+    loopStack_.pop_back();
+    
+    return true;
+}
+
 bool Compiler::compileFor(ForNode* n) {
     if (!n || !compileNode(n->iter.get())) return false;
     emit(OP_GET_ITER);
@@ -368,8 +384,10 @@ bool Compiler::compileFor(ForNode* n) {
     int afterLoop = bytecodeOffset();
     addPatch(argSlot, afterLoop);
     
+    // We don't have for-else in AST yet, but if we did, it would go here.
+    
     for (int patchIdx : loopStack_.back().breakPatches) {
-        addPatch(patchIdx, afterLoop);
+        addPatch(patchIdx, bytecodeOffset());
     }
     loopStack_.pop_back();
     
@@ -541,23 +559,99 @@ bool Compiler::compileImport(ImportNode* n) {
 }
 
 bool Compiler::compileTry(TryNode* n) {
-    // Simple pass-through: compile body, skip handlers for now (benchmarks usually don't fail)
+    if (!n || !n->body) return false;
+    
     if (!compileNode(n->body.get())) return false;
+    
+    // Jump to orelse/finally if no exception
+    emit(OP_JUMP_ABSOLUTE, 0); 
+    int jumpToPostHandlersSlot = bytecodeOffset() - 1;
+    
+    if (!n->handlers.empty()) {
+        for (auto& h : n->handlers) {
+            // Note: True except selection requires exception stack matching.
+            // For now, we at least compile them and skip them on success.
+            if (h.type) {
+                 // compileNode(h.type.get()); // would push exception type to check
+            }
+            if (!compileNode(h.body.get())) return false;
+        }
+    }
+    
+    addPatch(jumpToPostHandlersSlot, bytecodeOffset());
+
+    if (n->orelse) {
+        if (!compileNode(n->orelse.get())) return false;
+    }
+    
     if (n->finalbody) {
         if (!compileNode(n->finalbody.get())) return false;
     }
     return true;
 }
 
+bool Compiler::compileRaise(RaiseNode* n) {
+    if (n->exc) {
+        if (!compileNode(n->exc.get())) return false;
+        emit(OP_RAISE_VARARGS, 1);
+    } else {
+        emit(OP_RAISE_VARARGS, 0); // re-raise
+    }
+    return true;
+}
+
+bool Compiler::compileWith(WithNode* n) {
+    for (auto& item : n->items) {
+        if (!compileNode(item.context_expr.get())) return false;
+        emit(OP_SETUP_WITH, 0);
+    }
+    if (!compileNode(n->body.get())) return false;
+    for (size_t i = 0; i < n->items.size(); ++i) {
+        emit(OP_WITH_CLEANUP);
+    }
+    return true;
+}
+
+bool Compiler::compileAugAssign(AugAssignNode* n) {
+    if (!n || !n->target) return false;
+    // Load old value
+    if (!compileNode(n->target.get())) return false;
+    // Load value to add/sub/...
+    if (!compileNode(n->value.get())) return false;
+    
+    // Perform operation
+    int op = OP_INPLACE_ADD;
+    switch (n->op) {
+        case TokenType::PlusAssign: op = OP_INPLACE_ADD; break;
+        case TokenType::MinusAssign: op = OP_INPLACE_SUBTRACT; break;
+        case TokenType::StarAssign: op = OP_INPLACE_MULTIPLY; break;
+        case TokenType::SlashAssign: op = OP_INPLACE_TRUE_DIVIDE; break;
+        default: return false;
+    }
+    emit(op, 0);
+    
+    // Store back
+    if (auto* name = dynamic_cast<NameNode*>(n->target.get())) {
+        return emitNameOp(name->id, TargetCtx::Store);
+    } else if (auto* att = dynamic_cast<AttributeNode*>(n->target.get())) {
+        if (!compileNode(att->value.get())) return false;
+        int nameIdx = addName(att->attr);
+        emit(OP_STORE_ATTR, nameIdx);
+        return true;
+    }
+    // TODO: support subscript aug assign
+    return false;
+}
+
 bool Compiler::statementLeavesValue(ASTNode* node) {
     if (!node) return false;
-    if (dynamic_cast<AssignNode*>(node) || dynamic_cast<ForNode*>(node) ||
-        dynamic_cast<IfNode*>(node) || dynamic_cast<GlobalNode*>(node) ||
-        dynamic_cast<PassNode*>(node) || dynamic_cast<FunctionDefNode*>(node) ||
-        dynamic_cast<ReturnNode*>(node) || dynamic_cast<ImportNode*>(node) ||
-        dynamic_cast<TryNode*>(node) ||
-        dynamic_cast<SuiteNode*>(node))
-        return false;
+    if (dynamic_cast<AssignNode*>(node) || dynamic_cast<AugAssignNode*>(node) || dynamic_cast<ForNode*>(node) ||
+        dynamic_cast<IfNode*>(node) || dynamic_cast<FunctionDefNode*>(node) ||
+        dynamic_cast<ClassDefNode*>(node) || dynamic_cast<WhileNode*>(node) ||
+        dynamic_cast<ImportNode*>(node) || dynamic_cast<GlobalNode*>(node) ||
+        dynamic_cast<ReturnNode*>(node) || dynamic_cast<DeleteNode*>(node) ||
+        dynamic_cast<TryNode*>(node) || dynamic_cast<WithNode*>(node) ||
+        dynamic_cast<AssertNode*>(node)) return false;
     return true;
 }
 
@@ -590,9 +684,25 @@ static void collectGlobalsFromNode(ASTNode* node, std::unordered_set<std::string
     }
     if (auto* tr = dynamic_cast<TryNode*>(node)) {
         collectGlobalsFromNode(tr->body.get(), globalsOut);
-        collectGlobalsFromNode(tr->handlers.get(), globalsOut);
+        for (auto& h : tr->handlers) {
+            if (h.type) collectGlobalsFromNode(h.type.get(), globalsOut);
+            collectGlobalsFromNode(h.body.get(), globalsOut);
+        }
         if (tr->orelse) collectGlobalsFromNode(tr->orelse.get(), globalsOut);
         if (tr->finalbody) collectGlobalsFromNode(tr->finalbody.get(), globalsOut);
+        return;
+    }
+    if (auto* r = dynamic_cast<RaiseNode*>(node)) {
+        if (r->exc) collectGlobalsFromNode(r->exc.get(), globalsOut);
+        if (r->cause) collectGlobalsFromNode(r->cause.get(), globalsOut);
+        return;
+    }
+    if (auto* w = dynamic_cast<WithNode*>(node)) {
+        for (auto& item : w->items) {
+            collectGlobalsFromNode(item.context_expr.get(), globalsOut);
+            if (item.optional_vars) collectGlobalsFromNode(item.optional_vars.get(), globalsOut);
+        }
+        collectGlobalsFromNode(w->body.get(), globalsOut);
         return;
     }
     if (auto* c = dynamic_cast<CallNode*>(node)) {
@@ -792,9 +902,18 @@ static void collectDefinedNames(ASTNode* node, std::unordered_set<std::string>& 
     }
     if (auto* t = dynamic_cast<TryNode*>(node)) {
         collectDefinedNames(t->body.get(), out);
-        collectDefinedNames(t->handlers.get(), out);
+        for (auto& h : t->handlers) {
+            collectDefinedNames(h.body.get(), out);
+        }
         if (t->orelse) collectDefinedNames(t->orelse.get(), out);
         if (t->finalbody) collectDefinedNames(t->finalbody.get(), out);
+        return;
+    }
+    if (auto* w = dynamic_cast<WithNode*>(node)) {
+        for (auto& item : w->items) {
+            if (item.optional_vars) collectDefinedNames(item.optional_vars.get(), out);
+        }
+        collectDefinedNames(w->body.get(), out);
         return;
     }
     if (auto* nm = dynamic_cast<NameNode*>(node)) {
@@ -1011,11 +1130,13 @@ bool Compiler::compileNode(ASTNode* node) {
     if (auto* d = dynamic_cast<DictLiteralNode*>(node)) return compileDictLiteral(d);
     if (auto* tup = dynamic_cast<TupleLiteralNode*>(node)) return compileTupleLiteral(tup);
     if (auto* a = dynamic_cast<AssignNode*>(node)) return compileAssign(a);
+    if (auto* aa = dynamic_cast<AugAssignNode*>(node)) return compileAugAssign(aa);
     if (auto* an = dynamic_cast<AssertNode*>(node)) return compileAssert(an);
     if (auto* lc = dynamic_cast<ListCompNode*>(node)) return compileListComp(lc);
     if (auto* dc = dynamic_cast<DictCompNode*>(node)) return compileDictComp(dc);
     if (auto* sc = dynamic_cast<SetCompNode*>(node)) return compileSetComp(sc);
     if (auto* d = dynamic_cast<DeleteNode*>(node)) return compileDeleteNode(d);
+    if (auto* w = dynamic_cast<WhileNode*>(node)) return compileWhile(w);
     if (auto* f = dynamic_cast<ForNode*>(node)) return compileFor(f);
     if (dynamic_cast<BreakNode*>(node)) return compileBreak(static_cast<BreakNode*>(node));
     if (dynamic_cast<ContinueNode*>(node)) return compileContinue(static_cast<ContinueNode*>(node));
@@ -1025,13 +1146,15 @@ bool Compiler::compileNode(ASTNode* node) {
     if (auto* y = dynamic_cast<YieldNode*>(node)) return compileYield(y);
     if (auto* imp = dynamic_cast<ImportNode*>(node)) return compileImport(imp);
     if (auto* t = dynamic_cast<TryNode*>(node)) return compileTry(t);
+    if (auto* r = dynamic_cast<RaiseNode*>(node)) return compileRaise(r);
+    if (auto* w = dynamic_cast<WithNode*>(node)) return compileWith(w);
     if (auto* s = dynamic_cast<SuiteNode*>(node)) return compileSuite(s);
     return false;
 }
 
 bool Compiler::compileExpression(ASTNode* expr) {
     if (!compileNode(expr)) return false;
-    bytecode_ = bytecode_->appendLast(ctx_, ctx_->fromInteger(static_cast<int>(OP_RETURN_VALUE)));
+    emit(OP_RETURN_VALUE, 0);
     applyPatches();
     return true;
 }

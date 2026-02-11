@@ -53,11 +53,13 @@ private:
     bool compileDictLiteral(DictLiteralNode* n);
     bool compileTupleLiteral(TupleLiteralNode* n);
     bool compileAssign(AssignNode* n);
+    bool compileAugAssign(AugAssignNode* n);
     bool compileDeleteNode(DeleteNode* n);
     bool compileAssert(AssertNode* n);
     bool compileListComp(ListCompNode* n);
     bool compileDictComp(DictCompNode* n);
     bool compileSetComp(SetCompNode* n);
+    bool compileWhile(WhileNode* n);
     bool compileFor(ForNode* n);
     bool compileBreak(BreakNode* n);
     bool compileContinue(ContinueNode* n);
@@ -67,6 +69,8 @@ private:
     bool compileYield(YieldNode* n);
     bool compileImport(ImportNode* n);
     bool compileTry(TryNode* n);
+    bool compileRaise(RaiseNode* n);
+    bool compileWith(WithNode* n);
     bool compileFunctionDef(FunctionDefNode* n);
     bool compileClassDef(ClassDefNode* n);
     bool compileCondExpr(CondExprNode* n);
