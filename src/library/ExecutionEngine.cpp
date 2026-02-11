@@ -13,6 +13,7 @@
 #include <vector>
 
 namespace protoPython {
+static bool get_env_diag();
 
 namespace {
 
@@ -48,6 +49,8 @@ struct GlobalsScope {
  * Reads co_varnames, co_nparams, co_automatic_count from code object to size automatic slots and bind args. */
 static const proto::ProtoObject* invokeCallable(proto::ProtoContext* ctx,
     const proto::ProtoObject* callable, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs);
+
+
 
 static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
@@ -126,11 +129,41 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
         frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getFCodeString(), codeObj));
         frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getFGlobalsString(), globalsObj));
     }
-    frame = const_cast<proto::ProtoObject*>(frame->addParent(ctx, globalsObj));
     if (env) {
         // locals is the frame itself for now
         frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getFLocalsString(), frame));
     }
+
+    const proto::ProtoObject* isGenObj = codeObj->getAttribute(calleeCtx, env ? env->getCoIsGeneratorString() : proto::ProtoString::fromUTF8String(calleeCtx, "co_is_generator"));
+    bool isGenerator = isGenObj && isGenObj->isBoolean(calleeCtx) && isGenObj->asBoolean(calleeCtx);
+
+    if (isGenerator) {
+        proto::ProtoObject* gen = const_cast<proto::ProtoObject*>(calleeCtx->newObject(true));
+        if (env && env->getGeneratorPrototype()) {
+            gen = const_cast<proto::ProtoObject*>(gen->addParent(calleeCtx, env->getGeneratorPrototype()));
+        }
+        gen->setAttribute(calleeCtx, env ? env->getGiCodeString() : proto::ProtoString::fromUTF8String(calleeCtx, "gi_code"), codeObj);
+        gen->setAttribute(calleeCtx, env ? env->getGiFrameString() : proto::ProtoString::fromUTF8String(calleeCtx, "gi_frame"), frame);
+        gen->setAttribute(calleeCtx, env ? env->getGiRunningString() : proto::ProtoString::fromUTF8String(calleeCtx, "gi_running"), PROTO_FALSE);
+        gen->setAttribute(calleeCtx, env ? env->getGiPCString() : proto::ProtoString::fromUTF8String(calleeCtx, "gi_pc"), calleeCtx->fromInteger(0));
+        
+        const proto::ProtoList* emptyStack = calleeCtx->newList();
+        gen->setAttribute(calleeCtx, env ? env->getGiStackString() : proto::ProtoString::fromUTF8String(calleeCtx, "gi_stack"), reinterpret_cast<const proto::ProtoObject*>(emptyStack));
+        
+        const proto::ProtoList* localList = calleeCtx->newList();
+        unsigned int nSlots = calleeCtx->getAutomaticLocalsCount();
+        const proto::ProtoObject** slots = calleeCtx->getAutomaticLocals();
+        if (slots) {
+            for (unsigned int i = 0; i < nSlots; ++i) {
+                localList = localList->appendLast(calleeCtx, slots[i]);
+            }
+        }
+        gen->setAttribute(calleeCtx, env ? env->getGiLocalsString() : proto::ProtoString::fromUTF8String(calleeCtx, "gi_locals"), reinterpret_cast<const proto::ProtoObject*>(localList));
+        
+        promote(calleeCtx, gen);
+        return gen;
+    }
+
     const proto::ProtoObject* result = nullptr;
     {
         GlobalsScope gscope(globalsObj);
@@ -488,6 +521,208 @@ static const proto::ProtoObject* invokeCallable(proto::ProtoContext* ctx,
 
 } // anonymous namespace
 
+const proto::ProtoObject* py_generator_send_impl(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ProtoObject* sendVal,
+    const proto::ProtoObject* throwExc = nullptr) {
+    
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!env) return PROTO_NONE;
+
+    // 1. Check if running
+    const proto::ProtoObject* runningAttr = self->getAttribute(ctx, env->getGiRunningString());
+    if (runningAttr == PROTO_TRUE) {
+        env->raiseValueError(ctx, ctx->fromUTF8String("generator already executing"));
+        return PROTO_NONE;
+    }
+
+    // 2. Get state
+    const proto::ProtoObject* codeObj = self->getAttribute(ctx, env->getGiCodeString());
+    proto::ProtoObject* frame = const_cast<proto::ProtoObject*>(self->getAttribute(ctx, env->getGiFrameString()));
+    const proto::ProtoObject* pcObj = self->getAttribute(ctx, env->getGiPCString());
+    const proto::ProtoObject* stackObj = self->getAttribute(ctx, env->getGiStackString());
+
+    if (!codeObj || !frame || !pcObj || !stackObj) return PROTO_NONE;
+
+    unsigned long pc = static_cast<unsigned long>(pcObj->asLong(ctx));
+    const proto::ProtoList* co_code_list = codeObj->getAttribute(ctx, env->getCoCodeString())->asList(ctx);
+    if (!co_code_list) return PROTO_NONE;
+    
+    if (pc >= co_code_list->getSize(ctx)) {
+        env->raiseStopIteration(ctx, PROTO_NONE);
+        return PROTO_NONE;
+    }
+
+    // 3. Restore stack
+    std::vector<const proto::ProtoObject*> stack;
+    const proto::ProtoList* slist = stackObj->asList(ctx);
+    if (slist) {
+        for (unsigned long i = 0; i < slist->getSize(ctx); ++i)
+            stack.push_back(slist->getAt(ctx, static_cast<int>(i)));
+    }
+
+    // 4. If sendVal is provided, push it (unless it's the very first call and None)
+    if (pc > 0) {
+        stack.push_back(sendVal);
+    } else if (sendVal != PROTO_NONE) {
+        env->raiseTypeError(ctx, "can't send non-None value to a just-started generator");
+        return PROTO_NONE;
+    }
+
+    // 5. Run
+    self->setAttribute(ctx, env->getGiRunningString(), PROTO_TRUE);
+    if (throwExc) {
+        env->setPendingException(throwExc);
+    }
+    
+    unsigned long nextPc = pc; // Default to current if we exception immediately
+    bool yielded = false;
+    
+    if (get_env_diag()) {
+        std::cerr << "[proto-exec-diag] Resuming generator " << self << " with code " << codeObj << " at pc=" << pc << " sendVal=" << sendVal << "\n";
+    }
+    
+    const proto::ProtoObject* result = nullptr;
+    {
+        const proto::ProtoObject* co_varnames_obj = codeObj->getAttribute(ctx, env->getCoVarnamesString());
+        const proto::ProtoList* co_varnames = co_varnames_obj ? co_varnames_obj->asList(ctx) : nullptr;
+        const proto::ProtoObject* co_automatic_obj = codeObj->getAttribute(ctx, env->getCoAutomaticCountString());
+        int automatic_count = co_automatic_obj ? static_cast<int>(co_automatic_obj->asLong(ctx)) : 0;
+        
+        const proto::ProtoList* localNames = ctx->newList();
+        if (co_varnames) {
+            for (int i = 0; i < automatic_count; ++i) {
+                localNames = localNames->appendLast(ctx, co_varnames->getAt(ctx, i));
+            }
+        }
+        
+        ContextScope scope(ctx->space, ctx, nullptr, localNames, nullptr, nullptr);
+        proto::ProtoContext* calleeCtx = scope.context();
+        
+        const proto::ProtoList* savedLocals = self->getAttribute(ctx, env->getGiLocalsString())->asList(ctx);
+        if (savedLocals) {
+            proto::ProtoObject** slots = const_cast<proto::ProtoObject**>(calleeCtx->getAutomaticLocals());
+            for (unsigned int i = 0; i < calleeCtx->getAutomaticLocalsCount() && i < savedLocals->getSize(ctx); ++i) {
+                slots[i] = const_cast<proto::ProtoObject*>(savedLocals->getAt(ctx, i));
+            }
+        }
+        
+        const proto::ProtoObject* globals = frame->getAttribute(calleeCtx, env->getFGlobalsString());
+        if (!globals) globals = env->getGlobals();
+        GlobalsScope gscope(globals);
+        
+        const proto::ProtoList* co_consts = codeObj->getAttribute(calleeCtx, env->getCoConstsString())->asList(calleeCtx);
+        const proto::ProtoList* co_names = codeObj->getAttribute(calleeCtx, env->getCoNamesString())->asList(calleeCtx);
+
+        if (get_env_diag()) {
+            std::cerr << "[proto-exec-diag] Resuming generator " << self << " with code " << codeObj << " at pc=" << pc << " sendVal=" << sendVal << "\n";
+            std::cerr << "[proto-exec-diag] constants=" << co_consts << " size=" << (co_consts ? co_consts->getSize(calleeCtx) : 0) << "\n";
+            if (co_consts && co_consts->getSize(calleeCtx) > 0) {
+                std::cerr << "[proto-exec-diag] const[0]=" << co_consts->getAt(calleeCtx, 0) << "\n";
+            }
+        }
+        
+        result = executeBytecodeRange(calleeCtx, 
+            co_consts,
+            co_code_list,
+            co_names,
+            frame,
+            pc,
+            co_code_list->getSize(calleeCtx),
+            &stack,
+            &nextPc,
+            &yielded);
+            
+        const proto::ProtoList* newLocals = calleeCtx->newList();
+        const proto::ProtoObject** updatedSlots = calleeCtx->getAutomaticLocals();
+        for (unsigned int i = 0; i < calleeCtx->getAutomaticLocalsCount(); ++i) {
+            newLocals = newLocals->appendLast(calleeCtx, updatedSlots[i]);
+        }
+        self->setAttribute(calleeCtx, env->getGiLocalsString(), reinterpret_cast<const proto::ProtoObject*>(newLocals));
+    }
+
+    self->setAttribute(ctx, env->getGiRunningString(), PROTO_FALSE);
+    self->setAttribute(ctx, env->getGiPCString(), ctx->fromInteger(nextPc));
+
+    // 6. Save stack back
+    const proto::ProtoList* newStack = ctx->newList();
+    for (const auto* obj : stack)
+        newStack = newStack->appendLast(ctx, obj);
+    self->setAttribute(ctx, env->getGiStackString(), reinterpret_cast<const proto::ProtoObject*>(newStack));
+
+    if (!yielded && !env->hasPendingException()) {
+        env->raiseStopIteration(ctx, result);
+        return PROTO_NONE;
+    }
+
+    return result;
+}
+
+const proto::ProtoObject* py_generator_iter(
+    proto::ProtoContext*,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    return self;
+}
+
+const proto::ProtoObject* py_generator_next(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    return py_generator_send_impl(ctx, self, PROTO_NONE);
+}
+
+const proto::ProtoObject* py_generator_send(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoObject* val = (posArgs && posArgs->getSize(ctx) > 0) ? posArgs->getAt(ctx, 0) : PROTO_NONE;
+    return py_generator_send_impl(ctx, self, val);
+}
+
+const proto::ProtoObject* py_generator_throw(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoObject* exc = (posArgs && posArgs->getSize(ctx) > 0) ? posArgs->getAt(ctx, 0) : PROTO_NONE;
+    return py_generator_send_impl(ctx, self, PROTO_NONE, exc);
+}
+
+const proto::ProtoObject* py_generator_close(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!env) return PROTO_NONE;
+    
+    // Check if already closed
+    const proto::ProtoObject* pcObj = self->getAttribute(ctx, env->getGiPCString());
+    const proto::ProtoObject* codeObj = self->getAttribute(ctx, env->getGiCodeString());
+    if (pcObj && codeObj && pcObj->isInteger(ctx) && codeObj->getAttribute(ctx, env->getCoCodeString())->asList(ctx)) {
+        unsigned long pc = static_cast<unsigned long>(pcObj->asLong(ctx));
+        if (pc >= codeObj->getAttribute(ctx, env->getCoCodeString())->asList(ctx)->getSize(ctx)) {
+            return PROTO_NONE;
+        }
+    }
+
+    // Raise GeneratorExit
+    const proto::ProtoObject* genExitType = env->getAttribute(ctx, env->getGlobals(), proto::ProtoString::fromUTF8String(ctx, "GeneratorExit"));
+    if (!genExitType || genExitType == PROTO_NONE) {
+        // Fallback: create it if missing? For now just skip.
+        return PROTO_NONE;
+    }
+    const proto::ProtoObject* genExit = ctx->newObject(true);
+    genExit = genExit->addParent(ctx, genExitType);
+    
+    try {
+        py_generator_send_impl(ctx, self, PROTO_NONE, genExit);
+    } catch (...) {
+        // In Python, GeneratorExit is special.
+    }
+    return PROTO_NONE;
+}
+
 const proto::ProtoObject* invokePythonCallable(proto::ProtoContext* ctx,
     const proto::ProtoObject* callable, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
     return invokeCallable(ctx, callable, args, kwargs);
@@ -532,7 +767,10 @@ const proto::ProtoObject* executeBytecodeRange(
     const proto::ProtoList* names,
     proto::ProtoObject*& frame,
     unsigned long pcStart,
-    unsigned long pcEnd) {
+    unsigned long pcEnd,
+    std::vector<const proto::ProtoObject*>* externalStack,
+    unsigned long* outPc,
+    bool* yielded) {
     if (!ctx || !constants || !bytecode) return PROTO_NONE;
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (!env && std::getenv("PROTO_THREAD_DIAG")) std::cerr << "[proto-thread] executeBytecodeRange FAILED to get env from ctx=" << ctx << " tid=" << std::this_thread::get_id() << "\n" << std::flush;
@@ -542,10 +780,14 @@ const proto::ProtoObject* executeBytecodeRange(
     if (n == 0) return PROTO_NONE;
     if (pcEnd >= n) pcEnd = n - 1;
     /* 64-byte aligned execution state to avoid false sharing when multiple threads run tasks. */
-    alignas(64) std::vector<const proto::ProtoObject*> stack;
-    stack.reserve(64);
+    alignas(64) std::vector<const proto::ProtoObject*> localStack;
+    std::vector<const proto::ProtoObject*>& stack = externalStack ? *externalStack : localStack;
+    if (!externalStack) {
+        stack.reserve(64);
+    }
     const bool sync_globals = (frame == PythonEnvironment::getCurrentGlobals());
     for (unsigned long i = pcStart; i <= pcEnd; ++i) {
+        if (env && env->hasPendingException()) return PROTO_NONE;
         if ((i & 0x7FF) == 0) checkSTW(ctx);
         const proto::ProtoObject* instr = bytecode->getAt(ctx, static_cast<int>(i));
         if (!instr || !instr->isInteger(ctx)) continue;
@@ -554,18 +796,89 @@ const proto::ProtoObject* executeBytecodeRange(
             ? static_cast<int>(bytecode->getAt(ctx, static_cast<int>(i + 1))->asLong(ctx)) : 0;
 
         if (get_env_diag()) {
+            std::cerr << "[proto-exec-diag] EXEC op=" << op << " arg=" << arg << " i=" << i << " frame=" << frame << "\n";
+        }
+
+        if (get_env_diag()) {
              std::cerr << "[proto-exec-trace] i=" << i << " op=" << op << " arg=" << arg << " stack=" << stack.size() << "\n";
         }
 
         if (op == OP_LOAD_CONST) {
             i++;
-            if (static_cast<unsigned long>(arg) < constants->getSize(ctx))
+            if (static_cast<unsigned long>(arg) < constants->getSize(ctx)) {
                 stack.push_back(constants->getAt(ctx, arg));
+            }
         } else if (op == OP_RETURN_VALUE) {
             if (stack.empty()) return PROTO_NONE;
             const proto::ProtoObject* ret = stack.back();
             ctx->returnValue = ret;
+            if (outPc) *outPc = pcEnd + 1; // Mark finished
             return ret;  /* exit block immediately; destructor will promote */
+        } else if (op == OP_YIELD_VALUE) {
+            if (stack.empty()) return PROTO_NONE;
+            const proto::ProtoObject* ret = stack.back();
+            stack.pop_back();
+            ctx->returnValue = ret;
+            if (yielded) *yielded = true;
+            if (outPc) *outPc = i + 1;
+            return ret;
+        } else if (op == OP_GET_YIELD_FROM_ITER) {
+            if (stack.empty()) continue;
+            const proto::ProtoObject* obj = stack.back();
+            stack.pop_back();
+            const proto::ProtoObject* iterator = nullptr;
+            const proto::ProtoObject* iterMethod = env ? env->getAttribute(ctx, obj, env->getIterString()) : obj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iter__"));
+            if (iterMethod && iterMethod != PROTO_NONE) {
+                iterator = invokePythonCallable(ctx, iterMethod, ctx->newList(), nullptr);
+            } else {
+                iterator = obj;
+            }
+            stack.push_back(iterator);
+        } else if (op == OP_YIELD_FROM) {
+            if (stack.size() < 2) continue;
+            const proto::ProtoObject* sendVal = stack.back();
+            stack.pop_back();
+            const proto::ProtoObject* subIter = stack.back();
+            
+            const proto::ProtoString* sendS = env ? env->getSendString() : proto::ProtoString::fromUTF8String(ctx, "send");
+            const proto::ProtoObject* sendMethod = subIter->getAttribute(ctx, sendS);
+            const proto::ProtoObject* result = nullptr;
+            
+            if (sendMethod && sendMethod != PROTO_NONE) {
+                const proto::ProtoList* args = ctx->newList()->appendLast(ctx, sendVal);
+                result = subIter->call(ctx, nullptr, sendS, subIter, args, nullptr);
+            } else {
+                if (sendVal != PROTO_NONE) {
+                    if (env) env->raiseTypeError(ctx, "can't send non-None value to a plain iterator");
+                    return PROTO_NONE;
+                }
+                const proto::ProtoString* nextS = env ? env->getNextString() : proto::ProtoString::fromUTF8String(ctx, "__next__");
+                result = subIter->call(ctx, nullptr, nextS, subIter, ctx->newList(), nullptr);
+            }
+
+            if (env && env->hasPendingException()) {
+                const proto::ProtoObject* exc = env->peekPendingException();
+                if (get_env_diag()) std::cerr << "[proto-exec-diag] OP_YIELD_FROM exc=" << exc << "\n";
+                if (env->isStopIteration(exc)) {
+                    const proto::ProtoObject* stopVal = env->getStopIterationValue(ctx, exc);
+                    if (get_env_diag()) std::cerr << "[proto-exec-diag] OP_YIELD_FROM StopIteration value=" << stopVal << "\n";
+                    env->clearPendingException();
+                    stack.pop_back(); // Remove subIter
+                    stack.push_back(stopVal);
+                    // Will continue to i+1
+                } else {
+                    return PROTO_NONE;
+                }
+            } else {
+                // Yielded. subIter is still at stack.back().
+                if (get_env_diag()) {
+                    std::cerr << "[proto-exec-diag] OP_YIELD_FROM Yielded result=" << result << "\n";
+                }
+                ctx->returnValue = result;
+                if (yielded) *yielded = true;
+                if (outPc) *outPc = i; // RESTAY
+                return result;
+            }
         } else if (op == OP_LOAD_NAME) {
             i++;
             if (names && frame && static_cast<unsigned long>(arg) < names->getSize(ctx)) {

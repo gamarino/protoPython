@@ -70,6 +70,7 @@ enum class TokenType {
     Yield,
     Semicolon,
     Del,
+    Assert,
     Error,
 };
 

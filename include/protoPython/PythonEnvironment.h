@@ -95,6 +95,8 @@ public:
     const proto::ProtoObject* getNonePrototype() const { return nonePrototype; }
     /** @brief Gets the frame prototype. */
     const proto::ProtoObject* getFramePrototype() const { return framePrototype; }
+    /** @brief Gets the generator prototype. */
+    const proto::ProtoObject* getGeneratorPrototype() const { return generatorPrototype; }
 
     const proto::ProtoObject* getGlobals() const;
 
@@ -148,9 +150,18 @@ public:
     const proto::ProtoString* getGetDunderString() const { return getDunderString; }
     const proto::ProtoString* getSetDunderString() const { return setDunderString; }
     const proto::ProtoString* getDelDunderString() const { return delDunderString; }
+    const proto::ProtoString* getEqString() const { return py_eq_s; }
+    const proto::ProtoString* getNeString() const { return py_ne_s; }
+    const proto::ProtoString* getLtString() const { return py_lt_s; }
+    const proto::ProtoString* getLeString() const { return py_le_s; }
+    const proto::ProtoString* getGtString() const { return py_gt_s; }
+    const proto::ProtoString* getGeString() const { return py_ge_s; }
 
     const proto::ProtoObject* getAttribute(proto::ProtoContext* ctx, const proto::ProtoObject* obj, const proto::ProtoString* name);
     const proto::ProtoObject* setAttribute(proto::ProtoContext* ctx, const proto::ProtoObject* obj, const proto::ProtoString* name, const proto::ProtoObject* value);
+
+    const proto::ProtoObject* compareObjects(proto::ProtoContext* ctx, const proto::ProtoObject* a, const proto::ProtoObject* b, int op);
+    bool objectsEqual(proto::ProtoContext* ctx, const proto::ProtoObject* a, const proto::ProtoObject* b);
 
     const proto::ProtoString* getEnumProtoString() const { return enumProtoS; }
     const proto::ProtoString* getRevProtoString() const { return revProtoS; }
@@ -168,12 +179,27 @@ public:
     const proto::ProtoString* getCoVarnamesString() const { return co_varnames; }
     const proto::ProtoString* getCoNparamsString() const { return co_nparams; }
     const proto::ProtoString* getCoAutomaticCountString() const { return co_automatic_count; }
+    const proto::ProtoString* getCoIsGeneratorString() const { return co_is_generator; }
+    const proto::ProtoString* getCoConstsString() const { return co_consts; }
+    const proto::ProtoString* getCoNamesString() const { return co_names; }
+    const proto::ProtoString* getCoCodeString() const { return co_code; }
+    const proto::ProtoString* getSendString() const { return sendString; }
+    const proto::ProtoString* getThrowString() const { return throwString; }
+    const proto::ProtoString* getCloseString() const { return closeString; }
     const proto::ProtoString* getSelfDunderString() const { return selfDunder; }
     const proto::ProtoString* getFuncDunderString() const { return funcDunder; }
     const proto::ProtoString* getFBackString() const { return f_back; }
     const proto::ProtoString* getFCodeString() const { return f_code; }
     const proto::ProtoString* getFGlobalsString() const { return f_globals; }
     const proto::ProtoString* getFLocalsString() const { return f_locals; }
+
+    const proto::ProtoString* getGiCodeString() const { return gi_code; }
+    const proto::ProtoString* getGiFrameString() const { return gi_frame; }
+    const proto::ProtoString* getGiRunningString() const { return gi_running; }
+    const proto::ProtoString* getGiYieldFromString() const { return gi_yieldfrom; }
+    const proto::ProtoString* getGiPCString() const { return gi_pc; }
+    const proto::ProtoString* getGiStackString() const { return gi_stack; }
+    const proto::ProtoString* getGiLocalsString() const { return gi_locals; }
 
     const proto::ProtoString* getIAddString() const { return __iadd__; }
     const proto::ProtoString* getISubString() const { return __isub__; }
@@ -393,11 +419,27 @@ public:
     void raiseKeyboardInterrupt(proto::ProtoContext* context);
     void raiseSyntaxError(proto::ProtoContext* context, const std::string& msg, int lineno, int offset, const std::string& text);
     void raiseSystemExit(proto::ProtoContext* context, int code);
-    void raiseEOFError(proto::ProtoContext* context);
+    void raiseEOFError(proto::ProtoContext* ctx);
     void raiseRecursionError(proto::ProtoContext* context);
-    void raiseZeroDivisionError(proto::ProtoContext* context);
+    void raiseAssertionError(proto::ProtoContext* ctx, const proto::ProtoObject* msg = nullptr);
+    void raiseZeroDivisionError(proto::ProtoContext* ctx);
     void raiseIndexError(proto::ProtoContext* context, const std::string& msg);
-    void raiseStopIteration(proto::ProtoContext* context);
+    void raiseStopIteration(proto::ProtoContext* context, const proto::ProtoObject* value = nullptr);
+
+    /**
+     * @brief Returns true if the object is a StopIteration exception.
+     */
+    bool isStopIteration(const proto::ProtoObject* exc) const;
+
+    /**
+     * @brief Extracts the return value from a StopIteration exception.
+     */
+    const proto::ProtoObject* getStopIterationValue(proto::ProtoContext* ctx, const proto::ProtoObject* exc) const;
+
+    /**
+     * @brief Clears the pending exception.
+     */
+    void clearPendingException();
 
     /**
      * @brief Returns true if this environment is running in interactive mode.
@@ -451,6 +493,7 @@ private:
     const proto::ProtoObject* bytesPrototype;
     const proto::ProtoObject* nonePrototype;
     const proto::ProtoObject* framePrototype;
+    const proto::ProtoObject* generatorPrototype;
     const proto::ProtoObject* sliceType;
     const proto::ProtoObject* frozensetPrototype;
     const proto::ProtoObject* floatPrototype;
@@ -479,9 +522,10 @@ private:
     const proto::ProtoObject* keyboardInterruptType{nullptr};
     const proto::ProtoObject* systemExitType{nullptr};
     const proto::ProtoObject* recursionErrorType{nullptr};
-    const proto::ProtoObject* stopIterationType{nullptr};
-    const proto::ProtoObject* eofErrorType{nullptr};
-    const proto::ProtoObject* zeroDivisionErrorType{nullptr};
+    const proto::ProtoObject* stopIterationType = nullptr;
+    const proto::ProtoObject* eofErrorType = nullptr;
+    const proto::ProtoObject* assertionErrorType = nullptr;
+    const proto::ProtoObject* zeroDivisionErrorType = nullptr;
     const proto::ProtoObject* indexErrorType{nullptr};
     const proto::ProtoString* iterString{nullptr};
     const proto::ProtoString* nextString{nullptr};
@@ -537,12 +581,26 @@ private:
     const proto::ProtoString* co_varnames{nullptr};
     const proto::ProtoString* co_nparams{nullptr};
     const proto::ProtoString* co_automatic_count{nullptr};
+    const proto::ProtoString* co_is_generator{nullptr};
+    const proto::ProtoString* co_consts{nullptr};
+    const proto::ProtoString* co_names{nullptr};
+    const proto::ProtoString* co_code{nullptr};
+    const proto::ProtoString* sendString{nullptr};
+    const proto::ProtoString* throwString{nullptr};
+    const proto::ProtoString* closeString{nullptr};
     const proto::ProtoString* selfDunder{nullptr};
     const proto::ProtoString* funcDunder{nullptr};
     const proto::ProtoString* f_back{nullptr};
     const proto::ProtoString* f_code{nullptr};
     const proto::ProtoString* f_globals{nullptr};
     const proto::ProtoString* f_locals{nullptr};
+    const proto::ProtoString* gi_code{nullptr};
+    const proto::ProtoString* gi_frame{nullptr};
+    const proto::ProtoString* gi_running{nullptr};
+    const proto::ProtoString* gi_yieldfrom{nullptr};
+    const proto::ProtoString* gi_pc{nullptr};
+    const proto::ProtoString* gi_stack{nullptr};
+    const proto::ProtoString* gi_locals{nullptr};
 
     const proto::ProtoString* __iadd__{nullptr};
     const proto::ProtoString* __isub__{nullptr};
@@ -593,7 +651,13 @@ private:
     const proto::ProtoString* boolS{nullptr};
     const proto::ProtoString* objectS{nullptr};
     const proto::ProtoString* typeS{nullptr};
-    const proto::ProtoString* __dict_dunder__{nullptr};
+    const proto::ProtoString* py_eq_s{nullptr};
+    const proto::ProtoString* py_ne_s{nullptr};
+    const proto::ProtoString* py_lt_s{nullptr};
+    const proto::ProtoString* py_le_s{nullptr};
+    const proto::ProtoString* py_gt_s{nullptr};
+    const proto::ProtoString* py_ge_s{nullptr};
+
     /** Incremented on invalidateResolveCache(); per-thread caches check this (lock-free). */
     mutable std::atomic<uint64_t> resolveCacheGeneration_{0};
     std::istream* stdin_{&std::cin};

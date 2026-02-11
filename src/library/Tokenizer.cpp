@@ -142,6 +142,7 @@ Token Tokenizer::scanNameOrKeyword() {
     else if (t.value == "yield") t.type = TokenType::Yield;
     else if (t.value == "pass") t.type = TokenType::Pass;
     else if (t.value == "del") t.type = TokenType::Del;
+    else if (t.value == "assert") t.type = TokenType::Assert;
     return t;
 }
 
@@ -248,6 +249,21 @@ Token Tokenizer::next() {
         return scanNumber();
     if (std::isalpha(static_cast<unsigned char>(c)) || c == '_')
         return scanNameOrKeyword();
+    if (c == '\\') {
+        pos_++;
+        skipWhitespaceNoNewline();
+        if (pos_ < source_.size() && source_[pos_] == '\n') {
+            pos_++;
+            line_++;
+            lineStartPos_ = pos_;
+            atLineStart_ = true;
+            return next();
+        }
+        // If not followed by newline, it's an error
+        Token t = makeToken(TokenType::Error);
+        t.value = "Unexpected character: '\\'";
+        return t;
+    }
     pos_++;
     Token t = makeToken(TokenType::Error);
     t.value = "Unexpected character: '";

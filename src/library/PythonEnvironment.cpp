@@ -4746,6 +4746,35 @@ const proto::ProtoObject* PythonEnvironment::peekPendingException() const {
     return s_threadPendingException;
 }
 
+void PythonEnvironment::clearPendingException() {
+    s_threadPendingException = nullptr;
+}
+
+bool PythonEnvironment::isStopIteration(const proto::ProtoObject* exc) const {
+    if (!exc || !stopIterationType) return false;
+    // We use rootContext_ as a base, but ideally we'd use the current context.
+    const proto::ProtoObject* res = exc->isInstanceOf(rootContext_, stopIterationType);
+    return res == PROTO_TRUE;
+}
+
+const proto::ProtoObject* PythonEnvironment::getStopIterationValue(proto::ProtoContext* ctx, const proto::ProtoObject* exc) const {
+    if (!exc) return PROTO_NONE;
+    const proto::ProtoObject* val = exc->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "value"));
+    if (val && val != PROTO_NONE) return val;
+    
+    const proto::ProtoObject* argsObj = exc->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "args"));
+    if (argsObj) {
+        if (argsObj->asList(ctx)) {
+            const proto::ProtoList* args = argsObj->asList(ctx);
+            if (args->getSize(ctx) > 0) return args->getAt(ctx, 0);
+        } else if (argsObj->isTuple(ctx)) {
+            const proto::ProtoTuple* args = argsObj->asTuple(ctx);
+            if (args->getSize(ctx) > 0) return args->getAt(ctx, 0);
+        }
+    }
+    return PROTO_NONE;
+}
+
 proto::ProtoSpace* PythonEnvironment::getProcessSpace() {
     static proto::ProtoSpace s_processSpace;
     return &s_processSpace;
@@ -4975,28 +5004,12 @@ void PythonEnvironment::raiseNameError(proto::ProtoContext* ctx, const std::stri
     if (!nameErrorType) return;
     std::string msg = "name '" + name + "' is not defined";
 
-    std::string suggestion;
-    // Check builtins first
-    if (builtinsModule) suggestion = suggestSimilarName(ctx, name, builtinsModule);
-    
-    // Also check __main__
-    const proto::ProtoObject* mainMod = resolve("__main__", ctx);
-    if (mainMod) {
-        std::string mainSug = suggestSimilarName(ctx, name, mainMod);
-        if (!mainSug.empty()) {
-            if (suggestion.empty() || levenshtein_distance(name, mainSug) < levenshtein_distance(name, suggestion)) {
-                suggestion = mainSug;
-            }
-        }
-    }
-
-    if (!suggestion.empty()) {
-        msg += ". Did you mean: '" + suggestion + "'?";
-    }
-
     const proto::ProtoList* args = ctx->newList()->appendLast(ctx, ctx->fromUTF8String(msg.c_str()));
     const proto::ProtoObject* exc = nameErrorType->call(ctx, nullptr, proto::ProtoString::fromUTF8String(ctx, "__call__"), nameErrorType, args, nullptr);
-    if (exc) setPendingException(exc);
+    if (exc) {
+        exc = exc->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "name"), ctx->fromUTF8String(name.c_str()));
+        setPendingException(exc);
+    }
 }
 
 void PythonEnvironment::raiseAttributeError(proto::ProtoContext* ctx, const proto::ProtoObject* obj, const std::string& attr) {
@@ -5007,23 +5020,17 @@ void PythonEnvironment::raiseAttributeError(proto::ProtoContext* ctx, const prot
         const proto::ProtoObject* nameAttr = cls->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__name__"));
         if (nameAttr && nameAttr->isString(ctx)) nameAttr->asString(ctx)->toUTF8String(ctx, typeName);
     } else {
-        // Fallback for objects that don't have __class__ explicitly but might have a parent that does or is a core type
         if (obj->isInteger(ctx)) typeName = "int";
         else if (obj->isString(ctx)) typeName = "str";
         else if (obj->asList(ctx)) typeName = "list";
     }
     std::string msg = "'" + typeName + "' object has no attribute '" + attr + "'";
     
-    std::string suggestion = suggestSimilarName(ctx, attr, obj);
-    if (!suggestion.empty()) {
-        msg += ". Did you mean: '" + suggestion + "'?";
-    }
-
     const proto::ProtoList* args = ctx->newList()->appendLast(ctx, ctx->fromUTF8String(msg.c_str()));
     const proto::ProtoObject* exc = attributeErrorType->call(ctx, nullptr, proto::ProtoString::fromUTF8String(ctx, "__call__"), attributeErrorType, args, nullptr);
     if (exc) {
-        exc = exc->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "obj"), obj);
         exc = exc->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "name"), ctx->fromUTF8String(attr.c_str()));
+        exc = exc->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "obj"), obj);
         setPendingException(exc);
     }
 }
@@ -5128,9 +5135,10 @@ void PythonEnvironment::raiseIndexError(proto::ProtoContext* ctx, const std::str
     if (exc) setPendingException(exc);
 }
 
-void PythonEnvironment::raiseStopIteration(proto::ProtoContext* ctx) {
+void PythonEnvironment::raiseStopIteration(proto::ProtoContext* ctx, const proto::ProtoObject* value) {
     if (!stopIterationType) return;
     const proto::ProtoList* args = ctx->newList();
+    if (value) args = args->appendLast(ctx, value);
     const proto::ProtoObject* exc = stopIterationType->call(ctx, nullptr, proto::ProtoString::fromUTF8String(ctx, "__call__"), stopIterationType, args, nullptr);
     if (exc) setPendingException(exc);
 }
@@ -5141,12 +5149,26 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     co_varnames = proto::ProtoString::fromUTF8String(rootContext_, "co_varnames");
     co_nparams = proto::ProtoString::fromUTF8String(rootContext_, "co_nparams");
     co_automatic_count = proto::ProtoString::fromUTF8String(rootContext_, "co_automatic_count");
+    co_is_generator = proto::ProtoString::fromUTF8String(rootContext_, "co_is_generator");
+    co_consts = proto::ProtoString::fromUTF8String(rootContext_, "co_consts");
+    co_names = proto::ProtoString::fromUTF8String(rootContext_, "co_names");
+    co_code = proto::ProtoString::fromUTF8String(rootContext_, "co_code");
+    sendString = proto::ProtoString::fromUTF8String(rootContext_, "send");
+    throwString = proto::ProtoString::fromUTF8String(rootContext_, "throw");
+    closeString = proto::ProtoString::fromUTF8String(rootContext_, "close");
     selfDunder = proto::ProtoString::fromUTF8String(rootContext_, "__self__");
     funcDunder = proto::ProtoString::fromUTF8String(rootContext_, "__func__");
     f_back = proto::ProtoString::fromUTF8String(rootContext_, "f_back");
     f_code = proto::ProtoString::fromUTF8String(rootContext_, "f_code");
     f_globals = proto::ProtoString::fromUTF8String(rootContext_, "f_globals");
     f_locals = proto::ProtoString::fromUTF8String(rootContext_, "f_locals");
+    gi_code = proto::ProtoString::fromUTF8String(rootContext_, "gi_code");
+    gi_frame = proto::ProtoString::fromUTF8String(rootContext_, "gi_frame");
+    gi_running = proto::ProtoString::fromUTF8String(rootContext_, "gi_running");
+    gi_yieldfrom = proto::ProtoString::fromUTF8String(rootContext_, "gi_yieldfrom");
+    gi_pc = proto::ProtoString::fromUTF8String(rootContext_, "gi_pc");
+    gi_stack = proto::ProtoString::fromUTF8String(rootContext_, "gi_stack");
+    gi_locals = proto::ProtoString::fromUTF8String(rootContext_, "gi_locals");
 
     __iadd__ = proto::ProtoString::fromUTF8String(rootContext_, "__iadd__");
     __isub__ = proto::ProtoString::fromUTF8String(rootContext_, "__isub__");
@@ -5316,7 +5338,19 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     framePrototype = framePrototype->setAttribute(rootContext_, py_name, rootContext_->fromUTF8String("frame"));
     framePrototype = framePrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(framePrototype), py_frame_repr));
 
-    // 5. Basic types
+    // 5. Create 'generator' prototype
+    generatorPrototype = rootContext_->newObject(true);
+    generatorPrototype = generatorPrototype->addParent(rootContext_, objectPrototype);
+    generatorPrototype = generatorPrototype->setAttribute(rootContext_, py_class, typePrototype);
+    generatorPrototype = generatorPrototype->setAttribute(rootContext_, py_name, rootContext_->fromUTF8String("generator"));
+    
+    generatorPrototype = generatorPrototype->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(generatorPrototype), py_generator_iter));
+    generatorPrototype = generatorPrototype->setAttribute(rootContext_, py_next, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(generatorPrototype), py_generator_next));
+    generatorPrototype = generatorPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "send"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(generatorPrototype), py_generator_send));
+    generatorPrototype = generatorPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "throw"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(generatorPrototype), py_generator_throw));
+    generatorPrototype = generatorPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "close"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(generatorPrototype), py_generator_close));
+
+    // 6. Basic types
     intPrototype = rootContext_->newObject(true);
     intPrototype = intPrototype->addParent(rootContext_, objectPrototype);
     const proto::ProtoString* py_hash = proto::ProtoString::fromUTF8String(rootContext_, "__hash__");
@@ -6219,53 +6253,49 @@ std::string PythonEnvironment::formatTraceback(const proto::ProtoContext* ctx) {
 
 std::vector<std::string> PythonEnvironment::collectCandidates(const proto::ProtoObject* frame, const proto::ProtoObject* targetObj) {
     proto::ProtoContext* context = s_threadContext ? s_threadContext : rootContext_;
-    std::vector<std::string> candidates = {
+    std::unordered_set<std::string> uniqueCandidates = {
         "print", "len", "range", "str", "int", "float", "list", "dict", "tuple", "set", "exit", "quit", "help", "input", "eval", "exec", "open",
         "append", "extend", "insert", "remove", "pop", "clear", "index", "count", "sort", "reverse", "copy",
-        "keys", "values", "items", "get", "update", "split", "join", "strip", "replace", "find", "lower", "upper"
+        "keys", "values", "items", "get", "update", "split", "join", "strip", "replace", "find", "lower", "upper",
+        "True", "False", "None"
     };
     
     auto collectFromObj = [&](const proto::ProtoObject* obj) {
-        if (!obj) return;
+        if (!obj || obj == PROTO_NONE) return;
         
-        // Collect own attributes
-        const proto::ProtoSparseList* attrs = obj->getOwnAttributes(context);
-        if (attrs) {
-            auto* it = const_cast<proto::ProtoSparseListIterator*>(attrs->getIterator(context));
-            while (it && it->hasNext(context)) {
-                unsigned long key = it->nextKey(context);
-                const proto::ProtoString* s = reinterpret_cast<const proto::ProtoString*>(key);
-                if (s) {
-                    std::string name;
-                    s->toUTF8String(context, name);
-                    if (!name.empty() && name[0] != '_') candidates.push_back(name);
-                }
-                it = const_cast<proto::ProtoSparseListIterator*>(it->advance(context));
-            }
-        }
+        std::vector<const proto::ProtoObject*> worklist = {obj};
+        std::unordered_set<const proto::ProtoObject*> seen;
+        int depth = 0;
         
-        // Collect attributes from parents (depth-limited for performance)
-        const proto::ProtoList* parents = obj->getParents(context);
-        if (parents) {
-            for (unsigned long i = 0; i < parents->getSize(context); ++i) {
-                const proto::ProtoObject* p = parents->getAt(context, static_cast<int>(i));
-                if (p) {
-                    const proto::ProtoSparseList* pAttrs = p->getOwnAttributes(context);
-                    if (pAttrs) {
-                        auto* it = const_cast<proto::ProtoSparseListIterator*>(pAttrs->getIterator(context));
-                        while (it && it->hasNext(context)) {
-                            unsigned long key = it->nextKey(context);
-                            const proto::ProtoString* s = reinterpret_cast<const proto::ProtoString*>(key);
-                            if (s) {
-                                std::string name;
-                                s->toUTF8String(context, name);
-                                if (!name.empty() && name[0] != '_') candidates.push_back(name);
-                            }
-                            it = const_cast<proto::ProtoSparseListIterator*>(it->advance(context));
+        while (!worklist.empty() && depth < 3) {
+            std::vector<const proto::ProtoObject*> nextLayer;
+            for (const auto* current : worklist) {
+                if (!current || !seen.insert(current).second) continue;
+                
+                const proto::ProtoSparseList* attrs = current->getOwnAttributes(context);
+                if (attrs) {
+                    auto* it = const_cast<proto::ProtoSparseListIterator*>(attrs->getIterator(context));
+                    while (it && it->hasNext(context)) {
+                        unsigned long key = it->nextKey(context);
+                        const proto::ProtoString* s = reinterpret_cast<const proto::ProtoString*>(key);
+                        if (s) {
+                            std::string name;
+                            s->toUTF8String(context, name);
+                            if (!name.empty() && name[0] != '_') uniqueCandidates.insert(name);
                         }
+                        it = const_cast<proto::ProtoSparseListIterator*>(it->advance(context));
+                    }
+                }
+                
+                const proto::ProtoList* parents = current->getParents(context);
+                if (parents) {
+                    for (unsigned long i = 0; i < parents->getSize(context); ++i) {
+                        nextLayer.push_back(parents->getAt(context, static_cast<int>(i)));
                     }
                 }
             }
+            worklist = std::move(nextLayer);
+            depth++;
         }
     };
 
@@ -6274,9 +6304,10 @@ std::vector<std::string> PythonEnvironment::collectCandidates(const proto::Proto
     } else {
         collectFromObj(builtinsModule);
         collectFromObj(frame);
+        collectFromObj(getCurrentGlobals());
     }
     
-    return candidates;
+    return std::vector<std::string>(uniqueCandidates.begin(), uniqueCandidates.end());
 }
 
 void PythonEnvironment::handleException(const proto::ProtoObject* exc, const proto::ProtoObject* frame, std::ostream& out) {
@@ -6320,20 +6351,6 @@ void PythonEnvironment::handleException(const proto::ProtoObject* exc, const pro
     out << formatException(exc, frame) << std::flush;
 }
 
-static int levenshtein(const std::string& s1, const std::string& s2) {
-    const size_t len1 = s1.size(), len2 = s2.size();
-    if (len1 == 0) return len2;
-    if (len2 == 0) return len1;
-    std::vector<std::vector<int>> d(len1 + 1, std::vector<int>(len2 + 1));
-    for (size_t i = 0; i <= len1; ++i) d[i][0] = i;
-    for (size_t j = 0; j <= len2; ++j) d[0][j] = j;
-    for (size_t i = 1; i <= len1; ++i) {
-        for (size_t j = 1; j <= len2; ++j) {
-            d[i][j] = std::min({d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (s1[i - 1] == s2[j - 1] ? 0 : 1)});
-        }
-    }
-    return d[len1][len2];
-}
 
 std::string PythonEnvironment::formatException(const proto::ProtoObject* exc, const proto::ProtoObject* frame) {
     if (!exc) return "";
@@ -6406,24 +6423,22 @@ std::string PythonEnvironment::formatException(const proto::ProtoObject* exc, co
     // Suggestions (Step 1327)
     if (typeName == "NameError" || typeName == "AttributeError") {
         std::string target;
+        const proto::ProtoObject* targetObj = nullptr;
         if (typeName == "NameError") {
             const proto::ProtoObject* nameObj = exc->getAttribute(context, proto::ProtoString::fromUTF8String(context, "name"));
             if (nameObj && nameObj->isString(context)) nameObj->asString(context)->toUTF8String(context, target);
         } else {
             const proto::ProtoObject* nameObj = exc->getAttribute(context, proto::ProtoString::fromUTF8String(context, "name"));
             if (nameObj && nameObj->isString(context)) nameObj->asString(context)->toUTF8String(context, target);
+            targetObj = exc->getAttribute(context, proto::ProtoString::fromUTF8String(context, "obj"));
         }
 
         if (!target.empty()) {
-            const proto::ProtoObject* targetObj = nullptr;
-            if (typeName == "AttributeError") {
-                targetObj = exc->getAttribute(context, proto::ProtoString::fromUTF8String(context, "obj"));
-            }
             std::vector<std::string> candidates = collectCandidates(frame, targetObj);
             std::string best;
             int bestDist = 100;
             for (const auto& c : candidates) {
-                int d = levenshtein(target, c);
+                int d = levenshtein_distance(target, c);
                 if (d < bestDist && d <= 2) {
                     bestDist = d;
                     best = c;
@@ -6717,22 +6732,42 @@ bool PythonEnvironment::isCompleteBlock(const std::string& code) {
     if (code.empty()) return true;
     int p = 0, s = 0, c = 0;
     bool inQuote = false;
+    bool inTripleQuote = false;
     char quoteChar = 0;
     bool seenTopLevelColon = false;
+    bool hasPendingBackslash = false;
     
     for (size_t i = 0; i < code.size(); ++i) {
         char ch = code[i];
-        if (inQuote) {
+        
+        if (inTripleQuote) {
+            if (ch == quoteChar && i + 2 < code.size() && code[i+1] == quoteChar && code[i+2] == quoteChar) {
+                inTripleQuote = false;
+                i += 2;
+            }
+        } else if (inQuote) {
             if (ch == quoteChar && (i == 0 || code[i-1] != '\\')) inQuote = false;
         } else {
-            if (ch == '\'' || ch == '"') { inQuote = true; quoteChar = ch; }
-            else if (ch == '(') p++;
-            else if (ch == ')') p--;
-            else if (ch == '[') s++;
-            else if (ch == ']') s--;
-            else if (ch == '{') c++;
-            else if (ch == '}') c--;
-            else if (ch == '#' && !inQuote) {
+            if (ch == '\\') {
+                // Simple heuristic: if we see a backslash, assume it's a continuation 
+                // until we see a newline or non-whitespace.
+                hasPendingBackslash = true;
+            } else if ((ch == '\'' || ch == '"') && i + 2 < code.size() && code[i+1] == ch && code[i+2] == ch) {
+                inTripleQuote = true;
+                quoteChar = ch;
+                i += 2;
+                hasPendingBackslash = false;
+            } else if (ch == '\'' || ch == '"') {
+                inQuote = true;
+                quoteChar = ch;
+                hasPendingBackslash = false;
+            } else if (ch == '(') { p++; hasPendingBackslash = false; }
+            else if (ch == ')') { p--; hasPendingBackslash = false; }
+            else if (ch == '[') { s++; hasPendingBackslash = false; }
+            else if (ch == ']') { s--; hasPendingBackslash = false; }
+            else if (ch == '{') { c++; hasPendingBackslash = false; }
+            else if (ch == '}') { c--; hasPendingBackslash = false; }
+            else if (ch == '#' && !inQuote && !inTripleQuote) {
                 // Skip comment until end of line
                 while (i < code.size() && code[i] != '\n') i++;
             }
@@ -6747,10 +6782,16 @@ bool PythonEnvironment::isCompleteBlock(const std::string& code) {
                     }
                 }
                 if (!foundOnLine) seenTopLevelColon = true;
+                hasPendingBackslash = false;
+            } else if (ch == '\n') {
+                // Keep hasPendingBackslash true if it was set on this line
+            } else if (!isspace(ch)) {
+                hasPendingBackslash = false;
             }
         }
     }
     
+    if (inTripleQuote || inQuote || hasPendingBackslash) return false;
     if (p > 0 || s > 0 || c > 0) return false;
     
     size_t last = code.find_last_not_of(" \n\r\t");

@@ -59,9 +59,12 @@ private:
     bool compileDictComp(DictCompNode* n);
     bool compileSetComp(SetCompNode* n);
     bool compileFor(ForNode* n);
+    bool compileBreak(BreakNode* n);
+    bool compileContinue(ContinueNode* n);
     bool compileIf(IfNode* n);
     bool compileGlobal(GlobalNode* n);
     bool compileReturn(ReturnNode* n);
+    bool compileYield(YieldNode* n);
     bool compileImport(ImportNode* n);
     bool compileTry(TryNode* n);
     bool compileFunctionDef(FunctionDefNode* n);
@@ -88,11 +91,17 @@ private:
     std::unordered_set<std::string> globalNames_;
     /** Optional: name -> slot index for LOAD_FAST/STORE_FAST. Set when compiling a function body. */
     std::unordered_map<std::string, int> localSlotMap_;
+    bool isGenerator_ = false;
     int bytecodeOffset() const;
     /** Record a jump arg slot to be patched later with target (bytecode list index). */
     void addPatch(int argSlotIndex, int targetBytecodeIndex);
     void applyPatches();
     std::vector<std::pair<int, int>> patches_;
+    struct LoopInfo {
+        int start;
+        std::vector<int> breakPatches;
+    };
+    std::vector<LoopInfo> loopStack_;
 };
 
 /** Build a code object (ProtoObject with co_consts, co_names, co_code) from compiler output.
@@ -104,7 +113,8 @@ const proto::ProtoObject* makeCodeObject(proto::ProtoContext* ctx,
     const proto::ProtoString* filename = nullptr,
     const proto::ProtoList* varnames = nullptr,
     int nparams = 0,
-    int automatic_count = 0);
+    int automatic_count = 0,
+    bool isGenerator = false);
 
 /** Run a code object with the given frame. Returns execution result. */
 const proto::ProtoObject* runCodeObject(proto::ProtoContext* ctx,

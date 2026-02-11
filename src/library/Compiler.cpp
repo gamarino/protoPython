@@ -24,6 +24,9 @@ int Compiler::addConstant(const proto::ProtoObject* obj) {
     }
     int idx = n;
     constants_ = constants_->appendLast(ctx_, obj);
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        std::cerr << "[proto-compiler-diag] addConstant obj=" << obj << " idx=" << idx << " size=" << constants_->getSize(ctx_) << "\n";
+    }
     return idx;
 }
 
@@ -354,6 +357,9 @@ bool Compiler::compileFor(ForNode* n) {
     if (!n || !compileNode(n->iter.get())) return false;
     emit(OP_GET_ITER);
     int loopStart = bytecodeOffset();
+    
+    loopStack_.push_back({loopStart, {}});
+    
     emit(OP_FOR_ITER, 0);
     int argSlot = bytecodeOffset() - 1;
     if (!compileTarget(n->target.get(), TargetCtx::Store)) return false;
@@ -361,6 +367,25 @@ bool Compiler::compileFor(ForNode* n) {
     emit(OP_JUMP_ABSOLUTE, loopStart);
     int afterLoop = bytecodeOffset();
     addPatch(argSlot, afterLoop);
+    
+    for (int patchIdx : loopStack_.back().breakPatches) {
+        addPatch(patchIdx, afterLoop);
+    }
+    loopStack_.pop_back();
+    
+    return true;
+}
+
+bool Compiler::compileBreak(BreakNode* n) {
+    if (loopStack_.empty()) return false;
+    emit(OP_JUMP_ABSOLUTE, 0);
+    loopStack_.back().breakPatches.push_back(bytecodeOffset() - 1);
+    return true;
+}
+
+bool Compiler::compileContinue(ContinueNode* n) {
+    if (loopStack_.empty()) return false;
+    emit(OP_JUMP_ABSOLUTE, loopStack_.back().start);
     return true;
 }
 
@@ -397,6 +422,26 @@ bool Compiler::compileReturn(ReturnNode* n) {
         emit(OP_LOAD_CONST, idx);
     }
     emit(OP_RETURN_VALUE);
+    return true;
+}
+
+bool Compiler::compileYield(YieldNode* n) {
+    isGenerator_ = true;
+    if (n->value) {
+        if (!compileNode(n->value.get())) return false;
+    } else {
+        int idx = addConstant(PROTO_NONE);
+        emit(OP_LOAD_CONST, idx);
+    }
+    
+    if (n->isFrom) {
+        emit(OP_GET_YIELD_FROM_ITER);
+        int noneIdx = addConstant(PROTO_NONE);
+        emit(OP_LOAD_CONST, noneIdx); // Initial send value is None
+        emit(OP_YIELD_FROM);
+    } else {
+        emit(OP_YIELD_VALUE);
+    }
     return true;
 }
 
@@ -895,7 +940,7 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
     const proto::ProtoList* co_varnames = ctx_->newList();
     for (const auto& name : automaticNames)
         co_varnames = co_varnames->appendLast(ctx_, ctx_->fromUTF8String(name.c_str()));
-    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), ctx_->fromUTF8String(filename_.c_str())->asString(ctx_), co_varnames, nparams, automatic_count);
+    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), ctx_->fromUTF8String(filename_.c_str())->asString(ctx_), co_varnames, nparams, automatic_count, bodyCompiler.isGenerator_);
     if (!codeObj) return false;
     int idx = addConstant(codeObj);
     emit(OP_LOAD_CONST, idx);
@@ -922,7 +967,7 @@ bool Compiler::compileClassDef(ClassDefNode* n) {
     bodyCompiler.emit(OP_RETURN_VALUE);
     bodyCompiler.applyPatches();
     
-    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), ctx_->fromUTF8String(filename_.c_str())->asString(ctx_));
+    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), ctx_->fromUTF8String(filename_.c_str())->asString(ctx_), nullptr, 0, 0, bodyCompiler.isGenerator_);
     int coIdx = addConstant(codeObj);
     emit(OP_LOAD_CONST, coIdx);
     emit(OP_BUILD_FUNCTION, 0);
@@ -972,9 +1017,12 @@ bool Compiler::compileNode(ASTNode* node) {
     if (auto* sc = dynamic_cast<SetCompNode*>(node)) return compileSetComp(sc);
     if (auto* d = dynamic_cast<DeleteNode*>(node)) return compileDeleteNode(d);
     if (auto* f = dynamic_cast<ForNode*>(node)) return compileFor(f);
+    if (dynamic_cast<BreakNode*>(node)) return compileBreak(static_cast<BreakNode*>(node));
+    if (dynamic_cast<ContinueNode*>(node)) return compileContinue(static_cast<ContinueNode*>(node));
     if (auto* iff = dynamic_cast<IfNode*>(node)) return compileIf(iff);
     if (auto* g = dynamic_cast<GlobalNode*>(node)) return compileGlobal(g);
     if (auto* ret = dynamic_cast<ReturnNode*>(node)) return compileReturn(ret);
+    if (auto* y = dynamic_cast<YieldNode*>(node)) return compileYield(y);
     if (auto* imp = dynamic_cast<ImportNode*>(node)) return compileImport(imp);
     if (auto* t = dynamic_cast<TryNode*>(node)) return compileTry(t);
     if (auto* s = dynamic_cast<SuiteNode*>(node)) return compileSuite(s);
@@ -1013,8 +1061,15 @@ const proto::ProtoObject* makeCodeObject(proto::ProtoContext* ctx,
     const proto::ProtoString* filename,
     const proto::ProtoList* varnames,
     int nparams,
-    int automatic_count) {
+    int automatic_count,
+    bool isGenerator) {
     if (!ctx) return PROTO_NONE;
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        std::cerr << "[proto-compiler-diag] makeCodeObject constants=" << constants << " size=" << (constants ? constants->getSize(ctx) : 0) << "\n";
+        if (constants && constants->getSize(ctx) > 0) {
+            std::cerr << "[proto-compiler-diag] makeCodeObject constants[0]=" << constants->getAt(ctx, 0) << "\n";
+        }
+    }
     const proto::ProtoObject* code = ctx->newObject(true);
     // Optional: add a 'code_proto' if we want to share methods like .exec()
     code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_consts"), reinterpret_cast<const proto::ProtoObject*>(constants));
@@ -1024,6 +1079,7 @@ const proto::ProtoObject* makeCodeObject(proto::ProtoContext* ctx,
     code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_varnames"), varnames ? reinterpret_cast<const proto::ProtoObject*>(varnames) : reinterpret_cast<const proto::ProtoObject*>(ctx->newList()));
     code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_nparams"), ctx->fromInteger(nparams));
     code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_automatic_count"), ctx->fromInteger(automatic_count));
+    code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_is_generator"), ctx->fromBoolean(isGenerator));
     return code;
 }
 

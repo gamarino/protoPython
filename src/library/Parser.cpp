@@ -624,6 +624,14 @@ std::unique_ptr<ASTNode> Parser::parseStatement() {
         }
         return ret;
     }
+    if (cur_.type == TokenType::Break) {
+        advance();
+        return std::make_unique<BreakNode>();
+    }
+    if (cur_.type == TokenType::Continue) {
+        advance();
+        return std::make_unique<ContinueNode>();
+    }
     if (cur_.type == TokenType::Import) {
         advance();
         if (cur_.type != TokenType::Name) return nullptr;
@@ -672,7 +680,7 @@ std::unique_ptr<ASTNode> Parser::parseStatement() {
         }
         return t;
     }
-    auto expr = parseOrExpr();
+    auto expr = parseExpression();
     if (!expr) {
         if (hasError_) return nullptr;
         std::string msg = "Unexpected token at statement start: ";
@@ -696,7 +704,28 @@ std::unique_ptr<ASTNode> Parser::parseStatement() {
     return expr;
 }
 
+std::unique_ptr<ASTNode> Parser::parseYieldExpression() {
+    advance(); // yield
+    auto node = std::make_unique<YieldNode>();
+    if (accept(TokenType::From)) {
+        node->isFrom = true;
+        node->value = parseExpression();
+    } else {
+        // yield is allowed without value
+        if (cur_.type != TokenType::Newline && cur_.type != TokenType::Dedent &&
+            cur_.type != TokenType::RParen && cur_.type != TokenType::RSquare &&
+            cur_.type != TokenType::RCurly && cur_.type != TokenType::Comma && 
+            cur_.type != TokenType::Semicolon && cur_.type != TokenType::EndOfFile) {
+            node->value = parseExpression();
+        }
+    }
+    return node;
+}
+
 std::unique_ptr<ASTNode> Parser::parseExpression() {
+    if (cur_.type == TokenType::Yield) {
+        return parseYieldExpression();
+    }
     auto node = parseOrExpr();
     if (accept(TokenType::If)) {
         auto c = std::make_unique<CondExprNode>();

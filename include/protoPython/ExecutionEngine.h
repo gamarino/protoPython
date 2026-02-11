@@ -149,6 +149,16 @@ constexpr int OP_MAP_ADD = 169;
 constexpr int OP_SET_ADD = 170;
 /** BUILD_SET: pop arg values from stack, build set, push set. */
 constexpr int OP_BUILD_SET = 171;
+/** YIELD_VALUE: pop TOS and yield it from generator. Resume at PC+1. */
+constexpr int OP_YIELD_VALUE = 172;
+/** SETUP_WITH: pop context manager, push __exit__, call __enter__, push __enter__ result. Jump to arg on exception. */
+constexpr int OP_SETUP_WITH = 173;
+/** WITH_CLEANUP: pop __exit__ result, discard it. */
+constexpr int OP_WITH_CLEANUP = 174;
+/** GET_YIELD_FROM_ITER: replace TOS with iter(TOS); optimized for generator delegation. */
+constexpr int OP_GET_YIELD_FROM_ITER = 175;
+/** YIELD_FROM: implementation of yield from delegation. */
+constexpr int OP_YIELD_FROM = 176;
 
 /**
  * @brief Executes a range of bytecode (one basic block). No per-instruction
@@ -162,7 +172,19 @@ const proto::ProtoObject* executeBytecodeRange(
     const proto::ProtoList* names,
     proto::ProtoObject*& frame,
     unsigned long pcStart,
-    unsigned long pcEnd);
+    unsigned long pcEnd,
+    std::vector<const proto::ProtoObject*>* externalStack = nullptr,
+    unsigned long* outPc = nullptr,
+    bool* yielded = nullptr);
+
+/**
+ * @brief Python-compatible generator methods.
+ */
+const proto::ProtoObject* py_generator_iter(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs);
+const proto::ProtoObject* py_generator_next(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs);
+const proto::ProtoObject* py_generator_send(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs);
+const proto::ProtoObject* py_generator_throw(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs);
+const proto::ProtoObject* py_generator_close(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs);
 
 /**
  * @brief Executes bytecode: LOAD_CONST, RETURN_VALUE, LOAD_NAME, STORE_NAME,

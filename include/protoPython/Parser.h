@@ -144,6 +144,12 @@ struct ReturnNode : ASTNode {
     std::unique_ptr<ASTNode> value;
 };
 
+/** yield [expr]. */
+struct YieldNode : ASTNode {
+    std::unique_ptr<ASTNode> value; /* optional */
+    bool isFrom = false;           /* yield from */
+};
+
 /** class name[(bases)]: body. */
 struct ClassDefNode : ASTNode {
     std::string name;
@@ -177,6 +183,10 @@ struct AssertNode : ASTNode {
     std::unique_ptr<ASTNode> msg; /* optional */
 };
 
+/** break statement. */
+struct BreakNode : ASTNode {};
+/** continue statement. */
+struct ContinueNode : ASTNode {};
 /** pass (no-op). */
 struct PassNode : ASTNode {};
 
@@ -195,6 +205,7 @@ public:
     explicit Parser(const std::string& source);
     std::unique_ptr<ModuleNode> parseModule();
     std::unique_ptr<ASTNode> parseExpression();
+    std::unique_ptr<ASTNode> parseYieldExpression();
 
     bool hasError() const { return hasError_; }
     const std::string& getLastErrorMsg() const { return lastErrorMsg_; }
