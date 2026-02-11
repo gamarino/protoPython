@@ -38,6 +38,7 @@ This directory contains the technical documentation for protoPython, a high-perf
 | [DESIGN_DECISIONS.md](DESIGN_DECISIONS.md) | Consolidated summary of main architectural decisions. |
 | [L_SHAPE_ARCHITECTURE.md](L_SHAPE_ARCHITECTURE.md) | Memory topology, M:N threads, context stack, lock-free hot path. |
 | [POST_REFACTOR_AUDIT.md](POST_REFACTOR_AUDIT.md) | L-Shape refactor outcomes, mutex/atomic audit, slot fallback. |
+| [TECHNICAL_AUDIT.md](TECHNICAL_AUDIT.md) | Deep technical audit: architecture, build, safety, concurrency, testing, packaging. |
 | [REARCHITECTURE_PROTOCORE.md](REARCHITECTURE_PROTOCORE.md) | Target architecture for full protoCore integration. |
 
 ### Implementation

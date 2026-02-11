@@ -16,6 +16,10 @@ namespace protoPython {
 static bool get_env_diag();
 
 namespace {
+struct Block {
+    unsigned long handlerPc;
+    size_t stackDepth;
+};
 
 struct FrameScope {
     FrameScope(const proto::ProtoObject* frame) : oldFrame(PythonEnvironment::getCurrentFrame()) {
@@ -782,12 +786,26 @@ const proto::ProtoObject* executeBytecodeRange(
     /* 64-byte aligned execution state to avoid false sharing when multiple threads run tasks. */
     alignas(64) std::vector<const proto::ProtoObject*> localStack;
     std::vector<const proto::ProtoObject*>& stack = externalStack ? *externalStack : localStack;
+    std::vector<Block> blockStack;
     if (!externalStack) {
         stack.reserve(64);
     }
     const bool sync_globals = (frame == PythonEnvironment::getCurrentGlobals());
     for (unsigned long i = pcStart; i <= pcEnd; ++i) {
-        if (env && env->hasPendingException()) return PROTO_NONE;
+        if (env && env->hasPendingException()) {
+            if (!blockStack.empty()) {
+                Block b = blockStack.back();
+                blockStack.pop_back();
+                while (stack.size() > b.stackDepth) stack.pop_back();
+                // Push the exception object to stack for handlers to inspect
+                const proto::ProtoObject* exc = env->peekPendingException();
+                if (exc) stack.push_back(exc);
+                env->clearPendingException();
+                i = b.handlerPc - 1; // -1 because loop will i++
+                continue;
+            }
+            return PROTO_NONE;
+        }
         if ((i & 0x7FF) == 0) checkSTW(ctx);
         const proto::ProtoObject* instr = bytecode->getAt(ctx, static_cast<int>(i));
         if (!instr || !instr->isInteger(ctx)) continue;
@@ -1563,7 +1581,7 @@ const proto::ProtoObject* executeBytecodeRange(
                         std::string attr;
                         nameObj->asString(ctx)->toUTF8String(ctx, attr);
                         if (env) env->raiseAttributeError(ctx, obj, attr);
-                        return PROTO_NONE;
+                        continue;
                     }
                 }
             }
@@ -1796,7 +1814,7 @@ const proto::ProtoObject* executeBytecodeRange(
             if (!stack.empty() && frame) {
                 const proto::ProtoObject* codeObj = stack.back();
                 stack.pop_back();
-                proto::ProtoObject* fn = createUserFunction(ctx, codeObj, frame);
+                proto::ProtoObject* fn = createUserFunction(ctx, codeObj, const_cast<proto::ProtoObject*>(PythonEnvironment::getCurrentGlobals()));
                 if (fn) stack.push_back(fn);
             }
         } else if (op == OP_BUILD_CLASS) {
@@ -2135,6 +2153,10 @@ const proto::ProtoObject* executeBytecodeRange(
                 const proto::ProtoList* args = ctx->newList()->appendLast(ctx, key);
                 invokeDunder(ctx, container, delItemS, args);
             }
+        } else if (op == OP_SETUP_FINALLY) {
+            blockStack.push_back({static_cast<unsigned long>(arg), stack.size()});
+        } else if (op == OP_POP_BLOCK) {
+            if (!blockStack.empty()) blockStack.pop_back();
         }
     }
     return stack.empty() ? PROTO_NONE : stack.back();

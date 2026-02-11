@@ -4,17 +4,25 @@ This guide describes how to build and install `protoPython` from source on Linux
 
 ## Prerequisites
 
+- **protoCore** — Required. The build expects protoCore to be available; the standard layout is to have protoCore as a sibling directory (e.g. `../protoCore`). Build protoCore first. See [protoCore](https://github.com/numaes/protoCore) or your local clone.
 - **CMake** (3.20 or higher)
 - **C++ Compiler** with C++20 support (GCC 11+, Clang 13+, or MSVC 2022+)
 - **Git**
 
 ## Building from Source
 
-### 1. Clone the repository
+### 1. Clone the repository and protoCore
+
+Ensure protoCore is present next to protoPython so CMake can use `add_subdirectory(../protoCore)`:
 
 ```bash
 git clone --recursive https://github.com/proto-language/protoPython.git
 cd protoPython
+# If protoCore is not a submodule, clone it beside protoPython:
+# git clone https://github.com/numaes/protoCore.git ../protoCore
+# Build protoCore first:
+# cmake -B ../protoCore/build -S ../protoCore
+# cmake --build ../protoCore/build --target protoCore
 ```
 
 ### 2. Configure the build

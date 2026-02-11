@@ -67,6 +67,20 @@ bool CppGenerator::generateNode(ASTNode* node) {
         return generateDictLiteral(n);
     } else if (auto* n = dynamic_cast<TupleLiteralNode*>(node)) {
         return generateTupleLiteral(n);
+    } else if (auto* n = dynamic_cast<WhileNode*>(node)) {
+        return generateWhile(n);
+    } else if (auto* n = dynamic_cast<UnaryOpNode*>(node)) {
+        return generateUnaryOp(n);
+    } else if (auto* n = dynamic_cast<AugAssignNode*>(node)) {
+        return generateAugAssign(n);
+    } else if (auto* n = dynamic_cast<ForNode*>(node)) {
+        return generateFor(n);
+    } else if (auto* n = dynamic_cast<TryNode*>(node)) {
+        return generateTry(n);
+    } else if (auto* n = dynamic_cast<RaiseNode*>(node)) {
+        return generateRaise(n);
+    } else if (auto* n = dynamic_cast<WithNode*>(node)) {
+        return generateWith(n);
     }
     
     out_ << "/* Unsupported node: " << typeid(*node).name() << " */";
@@ -152,6 +166,47 @@ bool CppGenerator::generateIf(IfNode* n) {
     return true;
 }
 
+bool CppGenerator::generateWhile(WhileNode* n) {
+    if (n->orelse) {
+        // While-else: need a flag to check if we broke out
+        static int whileId = 0;
+        int id = whileId++;
+        out_ << "bool __while_else_" << id << " = true;\n    ";
+        out_ << "while (env->isTrue(";
+        if (!generateNode(n->test.get())) return false;
+        out_ << ")) {\n        ";
+        // To properly support break in while-else, we'd need to intercept break nodes.
+        // For Phase 1, let's just emit the basic loop.
+        if (!generateNode(n->body.get())) return false;
+        out_ << ";\n    }\n    ";
+        out_ << "if (__while_else_" << id << ") {\n        ";
+        if (!generateNode(n->orelse.get())) return false;
+        out_ << ";\n    }";
+    } else {
+        out_ << "while (env->isTrue(";
+        if (!generateNode(n->test.get())) return false;
+        out_ << ")) {\n";
+        if (!generateNode(n->body.get())) return false;
+        out_ << ";\n    }";
+    }
+    return true;
+}
+
+bool CppGenerator::generateUnaryOp(UnaryOpNode* n) {
+    out_ << "env->unaryOp(";
+    switch (n->op) {
+        case TokenType::Plus: out_ << "protoPython::TokenType::Plus"; break;
+        case TokenType::Minus: out_ << "protoPython::TokenType::Minus"; break;
+        case TokenType::Not: out_ << "protoPython::TokenType::Not"; break;
+        case TokenType::Tilde: out_ << "protoPython::TokenType::Tilde"; break;
+        default: out_ << "protoPython::TokenType::Plus /* Unsupported uop */"; break;
+    }
+    out_ << ", ";
+    if (!generateNode(n->operand.get())) return false;
+    out_ << ")";
+    return true;
+}
+
 bool CppGenerator::generateBinOp(BinOpNode* n) {
     out_ << "env->binaryOp(";
     if (!generateNode(n->left.get())) return false;
@@ -206,6 +261,37 @@ bool CppGenerator::generateFunctionDef(FunctionDefNode* n) {
     out_ << "        return PROTO_NONE;\n";
     out_ << "    });\n";
     out_ << "    env->storeName(\"" << n->name << "\", func_" << n->name << ");\n";
+    return true;
+}
+
+bool CppGenerator::generateAugAssign(AugAssignNode* n) {
+    if (auto* nameNode = dynamic_cast<NameNode*>(n->target.get())) {
+        out_ << "env->augAssignName(\"" << nameNode->id << "\", ";
+    } else if (auto* attrNode = dynamic_cast<AttributeNode*>(n->target.get())) {
+        out_ << "env->augAssignAttr(";
+        if (!generateNode(attrNode->value.get())) return false;
+        out_ << ", \"" << attrNode->attr << "\", ";
+    } else if (auto* subNode = dynamic_cast<SubscriptNode*>(n->target.get())) {
+        out_ << "env->augAssignItem(";
+        if (!generateNode(subNode->value.get())) return false;
+        out_ << ", ";
+        if (!generateNode(subNode->index.get())) return false;
+        out_ << ", ";
+    } else {
+        out_ << "/* Unsupported augAssign target */";
+        return true;
+    }
+    
+    switch (n->op) {
+        case TokenType::PlusAssign: out_ << "protoPython::TokenType::PlusAssign"; break;
+        case TokenType::MinusAssign: out_ << "protoPython::TokenType::MinusAssign"; break;
+        case TokenType::StarAssign: out_ << "protoPython::TokenType::StarAssign"; break;
+        case TokenType::SlashAssign: out_ << "protoPython::TokenType::SlashAssign"; break;
+        default: out_ << "protoPython::TokenType::PlusAssign"; break;
+    }
+    out_ << ", ";
+    if (!generateNode(n->value.get())) return false;
+    out_ << ")";
     return true;
 }
 
@@ -286,6 +372,84 @@ bool CppGenerator::generateTupleLiteral(TupleLiteralNode* n) {
     out_ << "        if (env->getTuplePrototype()) tupObj->addParent(ctx, env->getTuplePrototype());\n";
     out_ << "        return (const proto::ProtoObject*)tupObj;\n";
     out_ << "    })()";
+    return true;
+}
+
+bool CppGenerator::generateFor(ForNode* n) {
+    static int forId = 0;
+    int id = forId++;
+    out_ << "{\n";
+    out_ << "        auto* __iter_" << id << " = env->iter(";
+    if (!generateNode(n->iter.get())) return false;
+    out_ << ");\n";
+    out_ << "        while (true) {\n";
+    out_ << "            auto* __val_" << id << " = env->next(__iter_" << id << ");\n";
+    out_ << "            if (env->hasPendingException()) {\n";
+    out_ << "                (void)env->takePendingException();\n";
+    out_ << "                break;\n";
+    out_ << "            }\n";
+    out_ << "            if (!__val_" << id << " || __val_" << id << " == PROTO_NONE) break;\n";
+    
+    // Bind target
+    if (auto* nameNode = dynamic_cast<NameNode*>(n->target.get())) {
+        out_ << "            env->storeName(\"" << nameNode->id << "\", __val_" << id << ");\n";
+    }
+    
+    if (!generateNode(n->body.get())) return false;
+    out_ << "        }\n";
+    out_ << "    }";
+    return true;
+}
+
+bool CppGenerator::generateTry(TryNode* n) {
+    out_ << "{\n";
+    if (!generateNode(n->body.get())) return false;
+    out_ << "        if (env->hasPendingException()) {\n";
+    out_ << "            auto* __exc = env->takePendingException();\n";
+    out_ << "            bool __handled = false;\n";
+    for (auto& h : n->handlers) {
+        out_ << "            if (!__handled";
+        if (h.type) {
+            out_ << " && env->isException(__exc, ";
+            if (!generateNode(h.type.get())) return false;
+            out_ << ")";
+        }
+        out_ << ") {\n";
+        out_ << "                __handled = true;\n";
+        if (!h.name.empty()) {
+            out_ << "                env->storeName(\"" << h.name << "\", __exc);\n";
+        }
+        if (!generateNode(h.body.get())) return false;
+        out_ << "            }\n";
+    }
+    out_ << "            if (!__handled) env->raiseException(__exc);\n";
+    out_ << "        }\n";
+    if (n->finalbody) {
+        out_ << "        // finally\n";
+        if (!generateNode(n->finalbody.get())) return false;
+    }
+    out_ << "    }";
+    return true;
+}
+
+bool CppGenerator::generateRaise(RaiseNode* n) {
+    if (n->exc) {
+        out_ << "env->raiseException(";
+        if (!generateNode(n->exc.get())) return false;
+        out_ << ")";
+    } else {
+        out_ << "/* re-raise unsupported */";
+    }
+    return true;
+}
+
+bool CppGenerator::generateWith(WithNode* n) {
+    out_ << "/* with statement simplified */\n";
+    for (auto& item : n->items) {
+        if (!generateNode(item.context_expr.get())) return false;
+        out_ << ";\n";
+    }
+    if (!generateNode(n->body.get())) return false;
     return true;
 }
 

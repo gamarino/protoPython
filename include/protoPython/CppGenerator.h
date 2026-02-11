@@ -22,17 +22,24 @@ private:
     bool generateCall(CallNode* n);
     bool generateAssign(AssignNode* n);
     bool generateIf(IfNode* n);
+    bool generateWhile(WhileNode* n);
     bool generateBinOp(BinOpNode* n);
+    bool generateUnaryOp(UnaryOpNode* n);
     bool generatePass(PassNode* n);
     bool generateBreak(BreakNode* n);
     bool generateContinue(ContinueNode* n);
     bool generateFunctionDef(FunctionDefNode* n);
     bool generateReturn(ReturnNode* n);
+    bool generateAugAssign(AugAssignNode* n);
     bool generateAttribute(AttributeNode* n);
     bool generateSubscript(SubscriptNode* n);
     bool generateListLiteral(ListLiteralNode* n);
     bool generateDictLiteral(DictLiteralNode* n);
     bool generateTupleLiteral(TupleLiteralNode* n);
+    bool generateFor(ForNode* n);
+    bool generateTry(TryNode* n);
+    bool generateRaise(RaiseNode* n);
+    bool generateWith(WithNode* n);
 };
 
 } // namespace protoPython

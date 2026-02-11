@@ -157,8 +157,11 @@ constexpr int OP_SETUP_WITH = 173;
 constexpr int OP_WITH_CLEANUP = 174;
 /** GET_YIELD_FROM_ITER: replace TOS with iter(TOS); optimized for generator delegation. */
 constexpr int OP_GET_YIELD_FROM_ITER = 175;
-/** YIELD_FROM: implementation of yield from delegation. */
 constexpr int OP_YIELD_FROM = 176;
+/** Push a block to the stack: {PC offset of handler, stack depth}. Jump to handler on exception. */
+constexpr int OP_SETUP_FINALLY = 177;
+/** Pop the top block from the stack. Used when leaving try/finally/with blocks. */
+constexpr int OP_POP_BLOCK = 178;
 
 /**
  * @brief Executes a range of bytecode (one basic block). No per-instruction

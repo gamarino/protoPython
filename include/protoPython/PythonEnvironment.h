@@ -128,6 +128,8 @@ public:
     const proto::ProtoString* getZipItersString() const { return zipItersString; }
     const proto::ProtoString* getFilterFuncString() const { return filterFuncString; }
     const proto::ProtoString* getFilterIterString() const { return filterIterString; }
+    const proto::ProtoString* getEnterString() const { return enterString; }
+    const proto::ProtoString* getExitString() const { return exitString; }
 
     const proto::ProtoString* getClassString() const { return classString; }
     const proto::ProtoString* getNameString() const { return nameString; }
@@ -167,13 +169,22 @@ public:
     // Helpers for C++ generated code
     static PythonEnvironment* get(proto::ProtoContext* ctx) { return fromContext(ctx); }
     const proto::ProtoObject* binaryOp(const proto::ProtoObject* a, TokenType op, const proto::ProtoObject* b);
+    const proto::ProtoObject* unaryOp(TokenType op, const proto::ProtoObject* a);
+    const proto::ProtoObject* iter(const proto::ProtoObject* obj);
+    const proto::ProtoObject* next(const proto::ProtoObject* obj);
+    void raiseException(const proto::ProtoObject* exc);
+    bool isException(const proto::ProtoObject* exc, const proto::ProtoObject* type);
     const proto::ProtoObject* lookupName(const std::string& name);
     void storeName(const std::string& name, const proto::ProtoObject* val);
+    void augAssignName(const std::string& name, TokenType op, const proto::ProtoObject* value);
+    void augAssignAttr(const proto::ProtoObject* obj, const std::string& attr, TokenType op, const proto::ProtoObject* value);
+    void augAssignItem(const proto::ProtoObject* container, const proto::ProtoObject* key, TokenType op, const proto::ProtoObject* value);
     const proto::ProtoObject* callObject(const proto::ProtoObject* callable, const std::vector<const proto::ProtoObject*>& args);
     const proto::ProtoObject* getItem(const proto::ProtoObject* container, const proto::ProtoObject* key);
     void setItem(const proto::ProtoObject* container, const proto::ProtoObject* key, const proto::ProtoObject* value);
     const proto::ProtoObject* getAttr(const proto::ProtoObject* obj, const std::string& attr);
     void setAttr(const proto::ProtoObject* obj, const std::string& attr, const proto::ProtoObject* val);
+    bool isTrue(const proto::ProtoObject* obj);
 
     const proto::ProtoString* getEnumProtoString() const { return enumProtoS; }
     const proto::ProtoString* getRevProtoString() const { return revProtoS; }
@@ -555,6 +566,8 @@ private:
     const proto::ProtoString* zipItersString{nullptr};
     const proto::ProtoString* filterFuncString{nullptr};
     const proto::ProtoString* filterIterString{nullptr};
+    const proto::ProtoString* enterString{nullptr};
+    const proto::ProtoString* exitString{nullptr};
 
     const proto::ProtoString* classString{nullptr};
     const proto::ProtoString* nameString{nullptr};

@@ -115,6 +115,13 @@ struct AssignNode : ASTNode {
     std::unique_ptr<ASTNode> value;
 };
 
+/** Augmented assignment: target += expr. */
+struct AugAssignNode : ASTNode {
+    std::unique_ptr<ASTNode> target;
+    TokenType op = TokenType::PlusAssign;
+    std::unique_ptr<ASTNode> value;
+};
+
 /** for target in iter: body (single statement body). */
 struct ForNode : ASTNode {
     std::unique_ptr<ASTNode> target;  /* NameNode or TupleLiteralNode for unpacking */
@@ -124,6 +131,13 @@ struct ForNode : ASTNode {
 
 /** if test: body else: orelse (single statement each). */
 struct IfNode : ASTNode {
+    std::unique_ptr<ASTNode> test;
+    std::unique_ptr<ASTNode> body;
+    std::unique_ptr<ASTNode> orelse;  /* optional */
+};
+
+/** while test: body else: orelse. */
+struct WhileNode : ASTNode {
     std::unique_ptr<ASTNode> test;
     std::unique_ptr<ASTNode> body;
     std::unique_ptr<ASTNode> orelse;  /* optional */
@@ -166,12 +180,37 @@ struct ImportNode : ASTNode {
     bool isAs = false;
 };
 
-/** try: body except [type] [as name]: handler. simplified. */
+/** except [type] [as name]: body. */
+struct ExceptHandler {
+    std::unique_ptr<ASTNode> type;
+    std::string name;
+    std::unique_ptr<ASTNode> body;
+};
+
+/** try: body except ... [finally: finalbody]. */
 struct TryNode : ASTNode {
     std::unique_ptr<ASTNode> body;
-    std::unique_ptr<ASTNode> handlers; /* SuiteNode of handlers or similar */
+    std::vector<ExceptHandler> handlers;
     std::unique_ptr<ASTNode> orelse;
     std::unique_ptr<ASTNode> finalbody;
+};
+
+/** raise [exc [from cause]]. */
+struct RaiseNode : ASTNode {
+    std::unique_ptr<ASTNode> exc;
+    std::unique_ptr<ASTNode> cause;
+};
+
+/** item in with statement: context_expr [as optional_vars]. */
+struct WithItem {
+    std::unique_ptr<ASTNode> context_expr;
+    std::unique_ptr<ASTNode> optional_vars;
+};
+
+/** with items: body. */
+struct WithNode : ASTNode {
+    std::vector<WithItem> items;
+    std::unique_ptr<ASTNode> body;
 };
 
 /** del targets... */

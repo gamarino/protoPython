@@ -561,20 +561,35 @@ bool Compiler::compileImport(ImportNode* n) {
 bool Compiler::compileTry(TryNode* n) {
     if (!n || !n->body) return false;
     
+    // Setup exception handler
+    emit(OP_SETUP_FINALLY, 0);
+    int setupFinallySlot = bytecodeOffset() - 1;
+    
     if (!compileNode(n->body.get())) return false;
     
-    // Jump to orelse/finally if no exception
+    // No exception: pop the block and jump over handlers
+    emit(OP_POP_BLOCK, 0);
     emit(OP_JUMP_ABSOLUTE, 0); 
     int jumpToPostHandlersSlot = bytecodeOffset() - 1;
     
+    // Exception handler starts here
+    addPatch(setupFinallySlot, bytecodeOffset());
+    
     if (!n->handlers.empty()) {
         for (auto& h : n->handlers) {
-            // Note: True except selection requires exception stack matching.
-            // For now, we at least compile them and skip them on success.
-            if (h.type) {
-                 // compileNode(h.type.get()); // would push exception type to check
+            // For now, we don't push exception to match type, 
+            // but the engine pushed the exception object to the stack.
+            // We should POP it if we don't bind it.
+            if (h.name.empty()) {
+                emit(OP_POP_TOP, 0); 
+            } else {
+                emitNameOp(h.name, TargetCtx::Store);
             }
+            
             if (!compileNode(h.body.get())) return false;
+            
+            // After one handler matched/executed, jump to post-handlers
+            // (In a more complete impl, we'd check exception type)
         }
     }
     

@@ -69,6 +69,11 @@ enum class TokenType {
     GreaterEqual,
     Yield,
     Semicolon,
+    PlusAssign,    /* += */
+    MinusAssign,   /* -= */
+    StarAssign,    /* *= */
+    SlashAssign,   /* /= */
+    Tilde,         /* ~ */
     Del,
     Assert,
     Error,
