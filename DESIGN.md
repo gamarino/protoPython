@@ -46,6 +46,13 @@ A static compiler for Python code.
 - **Optimization**: Performs type inference (where possible) and optimizes calls to `protoCore` and `protoPython` APIs.
 - **Packaging**: Compiles a directory of Python modules into a single shared library (`.so`) that can be loaded by `protopy` or linked directly by C++ applications.
 
+### 2.4. Bytecode Representation
+The `protopyc` compiler and execution engine utilize a standardized **2-byte instruction format**:
+- **OpCode (1 byte)**: The operation to perform.
+- **Argument (1 byte)**: An operand for the operation (e.g., constant index, name index, jump target).
+
+Instructions always consume 2 bytes from the bytecode stream, ensuring predictable alignment and simplified instruction pointer management (`i++`).
+
 ### 2.4. Standard Library Integration
 - **Overlay Architecture**: Pure-Python modules are used directly from CPython 3.14.
 - **C-to-C++ Transition**: Modules traditionally implemented in C (e.g., `_io`, `_socket`) are re-implemented in C++ for `protoPython` to ensure GIL-less performance and a clean API.
