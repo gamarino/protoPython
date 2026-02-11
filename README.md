@@ -10,7 +10,7 @@
 **protoPython** is a high-performance, Python 3.14 compatible environment built from the ground up on top of [**protoCore**](../protoCore/). It delivers a modern, highly parallel Python runtime that eliminates the Global Interpreter Lock (GIL) and leverages immutable data structures for elite thread safety and performance.
 
 > [!IMPORTANT]
-> **protoPython** and **protopy** are now **Ready for community review**. We invite the community to audit the architecture, test edge cases, and provide performance feedback. The **protopyc** compiler remains **Work in progress, open to community suggestions**.
+> **protoPython**, **protopy**, and **protopyc** are now **Ready for community review**. We invite the community to audit the architecture, test edge cases, and provide performance feedback. The compiler now supports full C++ translation with incremental collection building and runtime support.
 
 ---
 
@@ -33,6 +33,7 @@
 | **Core Runtime** | **Complete** - GIL-free execution engine ✅ |
 | **Type System** | **Advanced** - Lists, Tuples, Sets, Dicts with native wrapping ✅ |
 | **C++ Interop** | **Full** - HPy and UMD support integrated ✅ |
+| **Compiler** | **Advanced** - Full C++ translation with collection support ✅ |
 | **Performance** | **Elite** - Hardware-aligned, lock-free primitives ✅ |
 | **Test Pass Rate** | **100%** - Comprehensive regression and feature tests passing ✅ |
 
@@ -108,7 +109,7 @@ Execute it with `protopy`:
 
 - **protopy**: The primary GIL-less Python 3.14 execution environment. (**Ready for community review**)
 - **libprotoPython**: The shared library providing the Python runtime environment for embedding in C++ applications. (**Ready for community review**)
-- **protopyc**: A specialized compiler that translates Python modules into high-performance C++ shared libraries based on `protoCore`. (**Work in progress, open to community suggestions**)
+- **protopyc**: A specialized compiler that translates Python modules into high-performance C++ shared libraries based on `protoCore`. (**Ready for community review**)
 
 ---
 

@@ -10,6 +10,7 @@
 #include <thread>
 #include <unordered_map>
 #include <vector>
+#include <protoPython/Tokenizer.h>
 
 namespace protoPython {
 
@@ -162,6 +163,17 @@ public:
 
     const proto::ProtoObject* compareObjects(proto::ProtoContext* ctx, const proto::ProtoObject* a, const proto::ProtoObject* b, int op);
     bool objectsEqual(proto::ProtoContext* ctx, const proto::ProtoObject* a, const proto::ProtoObject* b);
+
+    // Helpers for C++ generated code
+    static PythonEnvironment* get(proto::ProtoContext* ctx) { return fromContext(ctx); }
+    const proto::ProtoObject* binaryOp(const proto::ProtoObject* a, TokenType op, const proto::ProtoObject* b);
+    const proto::ProtoObject* lookupName(const std::string& name);
+    void storeName(const std::string& name, const proto::ProtoObject* val);
+    const proto::ProtoObject* callObject(const proto::ProtoObject* callable, const std::vector<const proto::ProtoObject*>& args);
+    const proto::ProtoObject* getItem(const proto::ProtoObject* container, const proto::ProtoObject* key);
+    void setItem(const proto::ProtoObject* container, const proto::ProtoObject* key, const proto::ProtoObject* value);
+    const proto::ProtoObject* getAttr(const proto::ProtoObject* obj, const std::string& attr);
+    void setAttr(const proto::ProtoObject* obj, const std::string& attr, const proto::ProtoObject* val);
 
     const proto::ProtoString* getEnumProtoString() const { return enumProtoS; }
     const proto::ProtoString* getRevProtoString() const { return revProtoS; }

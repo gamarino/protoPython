@@ -56,7 +56,7 @@ if(PROTOPY_BENCHMARKS)
     endif()
 endif()
 
-# add_subdirectory(src/compiler) # Not yet ready
+add_subdirectory(src/compiler)
 
 # --- Install rules ---
 include(GNUInstallDirs)

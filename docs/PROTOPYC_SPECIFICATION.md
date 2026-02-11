@@ -33,5 +33,25 @@ The compiler must implement a robust Import Resolution Engine that mirrors Pytho
     - Runtime stack traces to report errors in the context of the original Python logic.
 - **Code Legibility:** The output C++ must be clean and human-readable, utilizing protoPython's native abstractions (e.g., `py::list`, `py::actor`). This allows the generated code to serve as a reference or a base for manually optimized native extensions.
 
-## 6. Optimization & Performance
 - **Static Type Inference:** Where possible, `protopyc` should infer types to bypass the overhead of dynamic dispatch, mapping Python variables to native protoCore cell types.
+
+## 7. Implementation Details: Runtime Support & Patterns
+
+### 7.1 PythonEnvironment Helper Layer
+To keep the generated C++ code concise and handle Python's dynamic nature, `protopyc` relies on a set of helper methods in the `protoPython::PythonEnvironment` class:
+- **`binaryOp(a, op, b)`**: Centralizes operator dispatch, including support for Python's dunder methods (`__add__`, `__mul__`, etc.) and basic type optimization for integers and floats.
+- **`getItem(container, key)` / `setItem(container, key, value)`**: Abstracts collection access, handling `ProtoList`, `ProtoSparseList`, and user-defined `__getitem__`/`__setitem__`.
+- **`getAttr(obj, name)` / `setAttr(obj, name, value)`**: Standardizes attribute access via `ProtoString` mapping.
+- **`callObject(callable, args)`**: Handles the complexity of invoking Python objects with varying argument lists.
+
+### 7.2 Native Collection Mapping
+Python collection literals are translated into efficient `protoCore` incremental builders:
+- **Lists**: Created via `ctx->newList()` and populated using `appendLast()`.
+- **Dictionaries**: Implemented using `ctx->newSparseList()` for data storage and `ctx->newList()` for key tracking, ensuring $O(1)$ average access for small keys while maintaining Python's insertion order and `__data__`/`__keys__` attribute structure.
+- **Tuples**: Built as lists and finalized using `ctx->newTupleFromList()`.
+
+### 7.3 API Standardization
+Generated code must strictly adhere to the `protoCore` and `protoPython` memory model:
+- **Const Correctness**: Most objects are passed as `const proto::ProtoObject*`.
+- **Context Access**: The execution context is retrieved via `protoPython::PythonEnvironment::getCurrentContext()` during module initialization.
+- **Macro Usage**: Standard Python values use global macros: `PROTO_NONE`, `PROTO_TRUE`, `PROTO_FALSE`.
