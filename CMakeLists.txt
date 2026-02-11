@@ -59,17 +59,19 @@ endif()
 add_subdirectory(src/compiler)
 
 # --- Install rules ---
+# --- Install rules ---
 include(GNUInstallDirs)
 set(CMAKE_INSTALL_COMPONENT "protoPython")
 
-install(TARGETS protopy
+install(TARGETS protopy protoPython protopyc
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     COMPONENT protoPython
 )
 
-install(TARGETS protoPython
-    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+install(DIRECTORY include/protoPython
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
     COMPONENT protoPython
 )
 
@@ -79,18 +81,30 @@ install(DIRECTORY lib/python3.14
     COMPONENT protoPython
 )
 
-# --- CPack (DEB, RPM, etc.) ---
+# --- CPack Configuration ---
 set(CPACK_PACKAGE_NAME "protopython")
 set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION})
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "protoPython - GIL-less Python 3.14 compatible runtime")
 set(CPACK_PACKAGE_VENDOR "protoPython")
+set(CPACK_PACKAGE_CONTACT "gamarino@gmail.com")
 set(CPACK_RESOURCE_FILE_README "${CMAKE_CURRENT_SOURCE_DIR}/README.md")
+# set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE") # Ensure this file exists
 set(CPACK_COMPONENTS_ALL protoPython)
 
-set(CPACK_DEBIAN_PACKAGE_MAINTAINER "gamarino@gmail.com")
-set(CPACK_DEBIAN_PACKAGE_SECTION "interpreters")
-
-set(CPACK_RPM_PACKAGE_LICENSE "MIT")
-set(CPACK_RPM_PACKAGE_GROUP "Development/Languages")
+# Platform-specific configurations
+if(UNIX)
+    if(APPLE)
+        set(CPACK_GENERATOR "DragNDrop")
+    else()
+        set(CPACK_GENERATOR "DEB;RPM;TGZ")
+        set(CPACK_DEBIAN_PACKAGE_MAINTAINER "gamarino@gmail.com")
+        set(CPACK_DEBIAN_PACKAGE_SECTION "interpreters")
+        set(CPACK_RPM_PACKAGE_LICENSE "MIT")
+        set(CPACK_RPM_PACKAGE_GROUP "Development/Languages")
+    endif()
+elseif(WIN32)
+    set(CPACK_GENERATOR "NSIS;ZIP")
+    set(CPACK_NSIS_HELP_LINK "https://github.com/gamarino/protoPython")
+endif()
 
 include(CPack)

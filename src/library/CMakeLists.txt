@@ -35,11 +35,17 @@ add_library(protoPython SHARED
 )
 
 target_include_directories(protoPython PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../include
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../include>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 
 # Target the parent directory for protoCore headers
 # (The root CMakeLists.txt already handles basic include dirs, but let's be explicit if needed)
 target_link_libraries(protoPython PUBLIC
     protoCore
+)
+
+set_target_properties(protoPython PROPERTIES
+    VERSION ${PROJECT_VERSION}
+    SOVERSION 0
 )

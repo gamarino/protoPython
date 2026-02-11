@@ -79,12 +79,14 @@ protoPython is built for elite throughput. Below is a median-of-runs performance
 
 ## �🚀 Quick Start
 
-### Build the Runtime
+### Build and Install
+For detailed, platform-specific instructions, see the [**Installation Guide**](docs/INSTALLATION.md).
+
 ```bash
-# Ensure protoCore is in the sibling directory
+# Basic build steps
 git clone <protoCore_url> ../protoCore
 cmake -B build -S .
-cmake --build build --target protopy
+cmake --build build --target install
 ```
 
 ### Run a Python Script

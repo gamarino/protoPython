@@ -11,4 +11,7 @@ target_compile_definitions(protopy PRIVATE
     STDLIB_PATH="${_stdlib_path}"
 )
 # Allow default stdlib path to be overridden by caller if needed
-target_include_directories(protopy PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../include)
+target_include_directories(protopy PRIVATE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../include>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+)
