@@ -268,6 +268,7 @@ Token Tokenizer::next() {
         return scanString(c);
     if (std::isdigit(static_cast<unsigned char>(c)))
         return scanNumber();
+    if (c == '@') { Token t = makeToken(TokenType::At); pos_++; return t; }
     if (std::isalpha(static_cast<unsigned char>(c)) || c == '_')
         return scanNameOrKeyword();
     if (c == '\\') {

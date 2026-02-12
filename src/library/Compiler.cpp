@@ -558,6 +558,55 @@ bool Compiler::compileImport(ImportNode* n) {
     return emitNameOp(n->alias, TargetCtx::Store);
 }
 
+bool Compiler::compileImportFrom(ImportFromNode* n) {
+    // Load __import__
+    int idxImport = addName("__import__");
+    emit(OP_LOAD_NAME, idxImport);
+    
+    // name
+    int idxMod = addConstant(ctx_->fromUTF8String(n->moduleName.c_str()));
+    emit(OP_LOAD_CONST, idxMod);
+    
+    // globals (None for now or actual globals object)
+    emit(OP_LOAD_CONST, addConstant(PROTO_NONE));
+    // locals (None)
+    emit(OP_LOAD_CONST, addConstant(PROTO_NONE));
+    
+    // fromlist: list of names
+    std::vector<const proto::ProtoObject*> fromNames;
+    for (auto& p : n->names) {
+        fromNames.push_back(ctx_->fromUTF8String(p.first.c_str()));
+    }
+    const proto::ProtoList* fromList = ctx_->newList();
+    for (auto* s : fromNames) fromList = fromList->appendLast(ctx_, s);
+    emit(OP_LOAD_CONST, addConstant(fromList->asObject(ctx_)));
+    
+    // level
+    emit(OP_LOAD_CONST, addConstant(ctx_->fromInteger(n->level)));
+    
+    emit(OP_CALL_FUNCTION, 5);
+    
+    if (n->names.size() == 1 && n->names[0].first == "*") {
+        // star import: engine needs to copy all attrs. 
+        // For now, we can only do this if we have an OP_IMPORT_STAR.
+        // Simplified: push module, call import_star helper if exists.
+        emit(OP_POP_TOP, 0); // Discard for now as not fully supported
+        return true;
+    }
+    
+    // Stack has module object.
+    for (auto& p : n->names) {
+        emit(OP_DUP_TOP, 0);
+        int idxAttr = addName(p.first);
+        emit(OP_LOAD_ATTR, idxAttr);
+        std::string alias = p.second.empty() ? p.first : p.second;
+        emitNameOp(alias, TargetCtx::Store);
+    }
+    
+    emit(OP_POP_TOP, 0);
+    return true;
+}
+
 bool Compiler::compileTry(TryNode* n) {
     if (!n || !n->body) return false;
     
@@ -788,7 +837,6 @@ void Compiler::collectLocalsFromBody(ASTNode* body,
     for (const auto& name : defined) {
         if (globalsOut.find(name) == globalsOut.end()) {
             if (seen.find(name) == seen.end()) {
-                if (std::getenv("PROTO_ENV_DIAG")) std::cerr << "[proto-compiler] found local: " << name << "\n";
                 localsOrdered.push_back(name);
                 seen.insert(name);
             }
@@ -852,8 +900,42 @@ static void collectUsedNames(ASTNode* node, std::unordered_set<std::string>& out
         collectUsedNames(u->operand.get(), out);
         return;
     }
+    if (auto* ret = dynamic_cast<ReturnNode*>(node)) {
+        collectUsedNames(ret->value.get(), out);
+        return;
+    }
+    if (auto* y = dynamic_cast<YieldNode*>(node)) {
+        collectUsedNames(y->value.get(), out);
+        return;
+    }
+    if (auto* t = dynamic_cast<TryNode*>(node)) {
+        collectUsedNames(t->body.get(), out);
+        for (auto& h : t->handlers) {
+            collectUsedNames(h.body.get(), out);
+            collectUsedNames(h.type.get(), out);
+        }
+        if (t->orelse) collectUsedNames(t->orelse.get(), out);
+        if (t->finalbody) collectUsedNames(t->finalbody.get(), out);
+        return;
+    }
+    if (auto* w = dynamic_cast<WhileNode*>(node)) {
+        collectUsedNames(w->test.get(), out);
+        collectUsedNames(w->body.get(), out);
+        if (w->orelse) collectUsedNames(w->orelse.get(), out);
+        return;
+    }
+    if (auto* cond = dynamic_cast<CondExprNode*>(node)) {
+        collectUsedNames(cond->body.get(), out);
+        collectUsedNames(cond->cond.get(), out);
+        collectUsedNames(cond->orelse.get(), out);
+        return;
+    }
     if (auto* lst = dynamic_cast<ListLiteralNode*>(node)) {
         for (auto& e : lst->elements) collectUsedNames(e.get(), out);
+        return;
+    }
+    if (auto* tup = dynamic_cast<TupleLiteralNode*>(node)) {
+        for (auto& e : tup->elements) collectUsedNames(e.get(), out);
         return;
     }
     if (auto* d = dynamic_cast<DictLiteralNode*>(node)) {
@@ -979,36 +1061,51 @@ bool Compiler::hasDynamicLocalsAccess(ASTNode* node) {
     return !getDynamicLocalsReason(node).empty();
 }
 
-void Compiler::collectCapturedNames(ASTNode* body,
+void Compiler::collectCapturedNames(ASTNode* node,
     const std::unordered_set<std::string>& globalsInScope,
-    const std::vector<std::string>& paramsInScope,
     std::unordered_set<std::string>& capturedOut) {
-    capturedOut.clear();
-    if (!body) return;
-    if (auto* s = dynamic_cast<SuiteNode*>(body)) {
-        for (auto& st : s->statements) {
-            if (auto* fn = dynamic_cast<FunctionDefNode*>(st.get())) {
-                std::unordered_set<std::string> used, defined;
-                collectUsedNames(fn->body.get(), used);
-                collectDefinedNames(fn->body.get(), defined);
-                for (const auto& name : used) {
-                    if (!defined.count(name) && !globalsInScope.count(name))
-                        capturedOut.insert(name);
-                }
-                collectCapturedNames(fn->body.get(), globalsInScope, fn->parameters, capturedOut);
-            }
-        }
-        return;
+    if (!node) return;
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        std::cerr << "[proto-compiler] collectCapturedNames node type: " << typeid(*node).name() << "\n";
     }
-    if (auto* fn = dynamic_cast<FunctionDefNode*>(body)) {
+
+    if (auto* fn = dynamic_cast<FunctionDefNode*>(node)) {
         std::unordered_set<std::string> used, defined;
+        for (const auto& p : fn->parameters) defined.insert(p);
         collectUsedNames(fn->body.get(), used);
         collectDefinedNames(fn->body.get(), defined);
-        for (const auto& name : used) {
-            if (!defined.count(name) && !globalsInScope.count(name))
-                capturedOut.insert(name);
+        
+        if (std::getenv("PROTO_ENV_DIAG")) {
+            std::cerr << "[proto-compiler] Analyzing nested function: " << fn->name << "\n";
+            for (auto& u : used) std::cerr << "  uses: " << u << "\n";
+            for (auto& d : defined) std::cerr << "  defines: " << d << "\n";
         }
-        collectCapturedNames(fn->body.get(), globalsInScope, fn->parameters, capturedOut);
+
+        for (const auto& name : used) {
+            if (!defined.count(name) && !globalsInScope.count(name)) {
+                if (std::getenv("PROTO_ENV_DIAG")) std::cerr << "[proto-compiler]   FOUND CAPTURE: " << name << "\n";
+                capturedOut.insert(name);
+            }
+        }
+        // Grandchildren can capture from this level too
+        collectCapturedNames(fn->body.get(), globalsInScope, capturedOut);
+        return;
+    }
+
+    if (auto* s = dynamic_cast<SuiteNode*>(node)) {
+        for (auto& st : s->statements) collectCapturedNames(st.get(), globalsInScope, capturedOut);
+    } else if (auto* iff = dynamic_cast<IfNode*>(node)) {
+        collectCapturedNames(iff->body.get(), globalsInScope, capturedOut);
+        if (iff->orelse) collectCapturedNames(iff->orelse.get(), globalsInScope, capturedOut);
+    } else if (auto* f = dynamic_cast<ForNode*>(node)) {
+        collectCapturedNames(f->body.get(), globalsInScope, capturedOut);
+    } else if (auto* w = dynamic_cast<WhileNode*>(node)) {
+        collectCapturedNames(w->body.get(), globalsInScope, capturedOut);
+    } else if (auto* t = dynamic_cast<TryNode*>(node)) {
+        collectCapturedNames(t->body.get(), globalsInScope, capturedOut);
+        for (auto& h : t->handlers) collectCapturedNames(h.body.get(), globalsInScope, capturedOut);
+        if (t->orelse) collectCapturedNames(t->orelse.get(), globalsInScope, capturedOut);
+        if (t->finalbody) collectCapturedNames(t->finalbody.get(), globalsInScope, capturedOut);
     }
 }
 
@@ -1032,32 +1129,48 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
         for (const auto& p : n->parameters) params.push_back(p);
     }
     std::unordered_set<std::string> captured;
-    collectCapturedNames(n->body.get(), bodyGlobals, params, captured);
+    collectCapturedNames(n->body.get(), bodyGlobals, captured);
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        std::cerr << "[proto-compiler] Function " << n->name << " capture count: " << captured.size() << std::endl;
+        for (const auto& c : captured) std::cerr << "  captured: " << c << std::endl;
+    }
 
     std::string dynamicReason = getDynamicLocalsReason(n->body.get());
-    const bool forceMapped = !dynamicReason.empty();
+    const bool forceMapped = !dynamicReason.empty() || !captured.empty();
     if (std::getenv("PROTO_ENV_DIAG") && forceMapped)
         std::cerr << "[proto-compiler] forceMapped " << n->name << " reason: " << dynamicReason << "\n";
 
-    std::vector<std::string> automaticNames;
+    std::vector<std::string> varnamesOrdered;
+    // Parameters first
+    for (const auto& p : params) {
+        varnamesOrdered.push_back(p);
+    }
+    // Then locals that are not parameters
+    for (const auto& loc : localsOrdered) {
+        bool isParam = false;
+        for (const auto& p : params) if (p == loc) isParam = true;
+        if (!isParam) varnamesOrdered.push_back(loc);
+    }
+
+    std::unordered_map<std::string, int> slotMap;
+    int automatic_count = 0;
     if (!forceMapped) {
-        for (const auto& p : params)
-            automaticNames.push_back(p);
-        for (const auto& loc : localsOrdered) {
-            if (!bodyGlobals.count(loc) && !captured.count(loc))
-                automaticNames.push_back(loc);
+        for (size_t i = 0; i < varnamesOrdered.size(); ++i) {
+            slotMap[varnamesOrdered[i]] = static_cast<int>(i);
+        }
+        automatic_count = static_cast<int>(varnamesOrdered.size());
+    } else {
+        if (std::getenv("PROTO_ENV_DIAG")) {
+            std::cerr << "[protoPython] Slot fallback: function=" << n->name << " reason=" << (dynamicReason.empty() ? "capture" : dynamicReason);
+            if (!captured.empty()) {
+                std::cerr << "(";
+                for(const auto& c : captured) std::cerr << c << " ";
+                std::cerr << ")";
+            }
+            std::cerr << std::endl;
         }
     }
-    if (forceMapped) {
-        std::cerr << "[protoPython] Slot fallback: function=" << n->name << " reason=" << dynamicReason << std::endl;
-    } else if (!captured.empty()) {
-        std::cerr << "[protoPython] Slot fallback: function=" << n->name << " reason=capture" << std::endl;
-    }
-    std::unordered_map<std::string, int> slotMap;
-    for (size_t i = 0; i < automaticNames.size(); ++i)
-        slotMap[automaticNames[i]] = static_cast<int>(i);
     int nparams = static_cast<int>(params.size());
-    int automatic_count = static_cast<int>(automaticNames.size());
 
     Compiler bodyCompiler(ctx_, filename_);
     bodyCompiler.globalNames_ = bodyGlobals;
@@ -1072,13 +1185,23 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
     bodyCompiler.applyPatches();
 
     const proto::ProtoList* co_varnames = ctx_->newList();
-    for (const auto& name : automaticNames)
+    for (const auto& name : varnamesOrdered)
         co_varnames = co_varnames->appendLast(ctx_, ctx_->fromUTF8String(name.c_str()));
     const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), ctx_->fromUTF8String(filename_.c_str())->asString(ctx_), co_varnames, nparams, automatic_count, bodyCompiler.isGenerator_);
     if (!codeObj) return false;
     int idx = addConstant(codeObj);
     emit(OP_LOAD_CONST, idx);
     emit(OP_BUILD_FUNCTION, 0);
+    
+    // Apply decorators Bottom-to-Top
+    if (!n->decorator_list.empty()) {
+        for (auto it = n->decorator_list.rbegin(); it != n->decorator_list.rend(); ++it) {
+            if (!compileNode(it->get())) return false;
+            emit(OP_ROT_TWO, 0);
+            emit(OP_CALL_FUNCTION, 1);
+        }
+    }
+    
     return emitNameOp(n->name, TargetCtx::Store);
 }
 
@@ -1108,6 +1231,15 @@ bool Compiler::compileClassDef(ClassDefNode* n) {
     
     // 4. Build
     emit(OP_BUILD_CLASS);
+    
+    // Apply decorators Bottom-to-Top
+    if (!n->decorator_list.empty()) {
+        for (auto it = n->decorator_list.rbegin(); it != n->decorator_list.rend(); ++it) {
+            if (!compileNode(it->get())) return false;
+            emit(OP_ROT_TWO, 0);
+            emit(OP_CALL_FUNCTION, 1);
+        }
+    }
     
     // 5. Store
     return emitNameOp(n->name, TargetCtx::Store);
@@ -1160,6 +1292,7 @@ bool Compiler::compileNode(ASTNode* node) {
     if (auto* ret = dynamic_cast<ReturnNode*>(node)) return compileReturn(ret);
     if (auto* y = dynamic_cast<YieldNode*>(node)) return compileYield(y);
     if (auto* imp = dynamic_cast<ImportNode*>(node)) return compileImport(imp);
+    if (auto* imf = dynamic_cast<ImportFromNode*>(node)) return compileImportFrom(imf);
     if (auto* t = dynamic_cast<TryNode*>(node)) return compileTry(t);
     if (auto* r = dynamic_cast<RaiseNode*>(node)) return compileRaise(r);
     if (auto* w = dynamic_cast<WithNode*>(node)) return compileWith(w);

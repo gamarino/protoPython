@@ -81,6 +81,12 @@ bool CppGenerator::generateNode(ASTNode* node) {
         return generateRaise(n);
     } else if (auto* n = dynamic_cast<WithNode*>(node)) {
         return generateWith(n);
+    } else if (auto* n = dynamic_cast<ImportNode*>(node)) {
+        return generateImport(n);
+    } else if (auto* n = dynamic_cast<ImportFromNode*>(node)) {
+        return generateImportFrom(n);
+    } else if (auto* n = dynamic_cast<ClassDefNode*>(node)) {
+        return generateClassDef(n);
     }
     
     out_ << "/* Unsupported node: " << typeid(*node).name() << " */";
@@ -260,7 +266,90 @@ bool CppGenerator::generateFunctionDef(FunctionDefNode* n) {
     out_ << "        } catch (const proto::ProtoObject* retVal) { return retVal; }\n";
     out_ << "        return PROTO_NONE;\n";
     out_ << "    });\n";
+    
+    // Apply decorators Bottom-to-Top
+    if (!n->decorator_list.empty()) {
+        for (auto it = n->decorator_list.rbegin(); it != n->decorator_list.rend(); ++it) {
+            out_ << "    func_" << n->name << " = env->callObject(";
+            if (!generateNode(it->get())) return false;
+            out_ << ", {func_" << n->name << "});\n";
+        }
+    }
+
     out_ << "    env->storeName(\"" << n->name << "\", func_" << n->name << ");\n";
+    return true;
+}
+
+bool CppGenerator::generateClassDef(ClassDefNode* n) {
+    out_ << "\n    // Class definition: " << n->name << "\n";
+    out_ << "    const proto::ProtoObject* class_name_" << n->name << " = ctx->fromUTF8String(\"" << n->name << "\");\n";
+    
+    // Bases
+    out_ << "    std::vector<const proto::ProtoObject*> bases_" << n->name << ";\n";
+    for (auto& b : n->bases) {
+        out_ << "    bases_" << n->name << ".push_back(";
+        if (!generateNode(b.get())) return false;
+        out_ << ");\n";
+    }
+
+    // Namespace and Body
+    out_ << "    auto* ns_" << n->name << " = const_cast<proto::ProtoObject*>(ctx->newObject(true));\n";
+    out_ << "    ns_" << n->name << "->setAttribute(ctx, env->getNameString(), class_name_" << n->name << ");\n";
+    out_ << "    {\n";
+    out_ << "        auto* oldFrame = protoPython::PythonEnvironment::getCurrentFrame();\n";
+    out_ << "        protoPython::PythonEnvironment::setCurrentFrame(ns_" << n->name << ");\n";
+    if (!generateNode(n->body.get())) return false;
+    out_ << "        protoPython::PythonEnvironment::setCurrentFrame(oldFrame);\n";
+    out_ << "    }\n";
+
+    // Create Class Object
+    out_ << "    auto* cls_" << n->name << " = const_cast<proto::ProtoObject*>(ctx->newObject(true));\n";
+    out_ << "    if (env->getTypePrototype()) cls_" << n->name << "->setAttribute(ctx, env->getClassString(), env->getTypePrototype());\n";
+    out_ << "    for (auto* b : bases_" << n->name << ") cls_" << n->name << "->addParent(ctx, b);\n";
+    
+    // Copy attributes from namespace to class
+    out_ << "    {\n";
+    out_ << "        const proto::ProtoSparseList* keys = ns_" << n->name << "->getAttributes(ctx);\n";
+    out_ << "        if (keys) {\n";
+    out_ << "            auto it = keys->getIterator(ctx);\n";
+    out_ << "            while (it && it->hasNext(ctx)) {\n";
+    out_ << "                unsigned long key = it->nextKey(ctx);\n";
+    out_ << "                const proto::ProtoObject* keyObj = reinterpret_cast<const proto::ProtoObject*>(key);\n";
+    out_ << "                if (keyObj && keyObj->isString(ctx)) {\n";
+    out_ << "                    const proto::ProtoString* k = keyObj->asString(ctx);\n";
+    out_ << "                    cls_" << n->name << "->setAttribute(ctx, k, ns_" << n->name << "->getAttribute(ctx, k));\n";
+    out_ << "                }\n";
+    out_ << "                it = const_cast<proto::ProtoSparseListIterator*>(it)->advance(ctx);\n";
+    out_ << "            }\n";
+    out_ << "        }\n";
+    out_ << "    }\n";
+    
+    // Set __call__ for instantiation
+    out_ << "    cls_" << n->name << "->setAttribute(ctx, env->getCallString(), ctx->fromMethod(cls_" << n->name << ", [](proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) -> const proto::ProtoObject* {\n";
+    out_ << "        auto* env = protoPython::PythonEnvironment::get(ctx);\n";
+    out_ << "        auto* obj = const_cast<proto::ProtoObject*>(ctx->newObject(true));\n";
+    out_ << "        obj->addParent(ctx, self);\n";
+    out_ << "        const proto::ProtoObject* init = env->getAttribute(ctx, obj, env->getInitString());\n";
+    out_ << "        if (init && init != PROTO_NONE) {\n";
+    out_ << "            std::vector<const proto::ProtoObject*> vargs;\n";
+    out_ << "            for (unsigned long i = 0; i < args->getSize(ctx); ++i) vargs.push_back(args->getAt(ctx, i));\n";
+    out_ << "            env->callObject(init, vargs);\n";
+    out_ << "        }\n";
+    out_ << "        return obj;\n";
+    out_ << "    }));\n";
+
+    out_ << "    auto var_cls_" << n->name << " = static_cast<const proto::ProtoObject*>(cls_" << n->name << ");\n";
+
+    // Apply decorators Bottom-to-Top
+    if (!n->decorator_list.empty()) {
+        for (auto it = n->decorator_list.rbegin(); it != n->decorator_list.rend(); ++it) {
+            out_ << "    var_cls_" << n->name << " = env->callObject(";
+            if (!generateNode(it->get())) return false;
+            out_ << ", {var_cls_" << n->name << "});\n";
+        }
+    }
+
+    out_ << "    env->storeName(\"" << n->name << "\", var_cls_" << n->name << ");\n";
     return true;
 }
 
@@ -450,6 +539,40 @@ bool CppGenerator::generateWith(WithNode* n) {
         out_ << ";\n";
     }
     if (!generateNode(n->body.get())) return false;
+    return true;
+}
+
+bool CppGenerator::generateImport(ImportNode* n) {
+    out_ << "{\n";
+    out_ << "        const proto::ProtoObject* __mod = env->importModule(\"" << n->moduleName << "\");\n";
+    if (n->isAs) {
+        out_ << "        env->storeName(\"" << n->alias << "\", __mod);\n";
+    } else {
+        size_t dot = n->moduleName.find('.');
+        std::string root = (dot == std::string::npos) ? n->moduleName : n->moduleName.substr(0, dot);
+        out_ << "        env->storeName(\"" << root << "\", __mod);\n";
+    }
+    out_ << "    }";
+    return true;
+}
+
+bool CppGenerator::generateImportFrom(ImportFromNode* n) {
+    out_ << "{\n";
+    out_ << "        const proto::ProtoObject* __mod = env->importModule(\"" << n->moduleName << "\", " << n->level << ", {";
+    for (size_t i = 0; i < n->names.size(); ++i) {
+        out_ << "\"" << n->names[i].first << "\"";
+        if (i < n->names.size() - 1) out_ << ", ";
+    }
+    out_ << "});\n";
+    if (n->names.size() == 1 && n->names[0].first == "*") {
+        out_ << "        env->importStar(__mod);\n";
+    } else {
+        for (auto& p : n->names) {
+            std::string alias = p.second.empty() ? p.first : p.second;
+            out_ << "        env->storeName(\"" << alias << "\", env->getAttr(__mod, \"" << p.first << "\"));\n";
+        }
+    }
+    out_ << "    }";
     return true;
 }
 

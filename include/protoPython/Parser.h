@@ -153,6 +153,7 @@ struct FunctionDefNode : ASTNode {
     std::string name;
     std::vector<std::string> parameters;
     std::unique_ptr<ASTNode> body;
+    std::vector<std::unique_ptr<ASTNode>> decorator_list;
 };
 
 /** return expr. */
@@ -171,6 +172,7 @@ struct ClassDefNode : ASTNode {
     std::string name;
     std::vector<std::unique_ptr<ASTNode>> bases;
     std::unique_ptr<ASTNode> body;
+    std::vector<std::unique_ptr<ASTNode>> decorator_list;
 };
 
 /** import name [as rename]. */
@@ -178,6 +180,13 @@ struct ImportNode : ASTNode {
     std::string moduleName;
     std::string alias;
     bool isAs = false;
+};
+
+/** from module import name [as alias], ... */
+struct ImportFromNode : ASTNode {
+    std::string moduleName;
+    std::vector<std::pair<std::string, std::string>> names; // {name, alias}
+    int level = 0; // for relative imports
 };
 
 /** except [type] [as name]: body. */

@@ -112,24 +112,53 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
     ContextScope scope(ctx->space, ctx, parameterNames, localNames, args, kwargs);
     proto::ProtoContext* calleeCtx = scope.context();
 
-    if (calleeCtx->getAutomaticLocalsCount() > 0 && args) {
-        unsigned long argCount = args->getSize(calleeCtx);
-        unsigned int nSlots = calleeCtx->getAutomaticLocalsCount();
-        unsigned long toCopy = (argCount < static_cast<unsigned long>(nparams)) ? argCount : static_cast<unsigned long>(nparams);
-        if (toCopy > nSlots) toCopy = nSlots;
-        proto::ProtoObject** slots = const_cast<proto::ProtoObject**>(calleeCtx->getAutomaticLocals());
-        for (unsigned long i = 0; i < toCopy; ++i) {
-            slots[i] = const_cast<proto::ProtoObject*>(args->getAt(calleeCtx, static_cast<int>(i)));
-        }
-    }
 
     proto::ProtoObject* frame = const_cast<proto::ProtoObject*>(calleeCtx->newObject(true));
     if (env && env->getFramePrototype()) {
         frame = const_cast<proto::ProtoObject*>(frame->addParent(calleeCtx, env->getFramePrototype()));
     }
+    
+    if (args && nparams > 0) {
+        unsigned long argCount = args->getSize(calleeCtx);
+        unsigned long toCopy = (argCount < static_cast<unsigned long>(nparams)) ? argCount : static_cast<unsigned long>(nparams);
+        
+        if (automatic_count > 0) {
+            unsigned int nSlots = calleeCtx->getAutomaticLocalsCount();
+            if (toCopy > nSlots) toCopy = nSlots;
+            proto::ProtoObject** slots = const_cast<proto::ProtoObject**>(calleeCtx->getAutomaticLocals());
+            for (unsigned long i = 0; i < toCopy; ++i) {
+                slots[i] = const_cast<proto::ProtoObject*>(args->getAt(calleeCtx, static_cast<int>(i)));
+            }
+        } else if (co_varnames) {
+            // Store in frame's __data__ or attributes
+            const proto::ProtoString* dName = env ? env->getDataString() : proto::ProtoString::fromUTF8String(calleeCtx, "__data__");
+            const proto::ProtoObject* dataObj = env ? env->getAttribute(calleeCtx, frame, dName) : frame->getAttribute(calleeCtx, dName);
+            
+            if (get_env_diag()) {
+                std::cerr << "[proto-exec-diag] Storing params in __data__ for frame " << frame << " toCopy=" << toCopy << " co_varnames size=" << (co_varnames ? co_varnames->getSize(calleeCtx) : 0) << "\n";
+            }
+            for (unsigned long i = 0; i < toCopy; ++i) {
+                const proto::ProtoObject* nameObj = co_varnames->getAt(calleeCtx, static_cast<int>(i));
+                if (nameObj->isString(calleeCtx)) {
+                    const proto::ProtoObject* val = args->getAt(calleeCtx, static_cast<int>(i));
+                    if (dataObj && dataObj->asSparseList(calleeCtx)) {
+                        unsigned long h = nameObj->getHash(calleeCtx);
+                        const proto::ProtoSparseList* data = dataObj->asSparseList(calleeCtx)->setAt(calleeCtx, h, val);
+                        frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, dName, data->asObject(calleeCtx)));
+                    } else {
+                        frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, nameObj->asString(calleeCtx), val));
+                    }
+                }
+            }
+        }
+    }
     if (!frame) return PROTO_NONE;
     if (env) {
         frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getFBackString(), PythonEnvironment::getCurrentFrame()));
+        const proto::ProtoObject* closure = self->getAttribute(calleeCtx, env->getClosureString());
+        if (closure && closure != PROTO_NONE) {
+            frame = const_cast<proto::ProtoObject*>(frame->addParent(calleeCtx, closure));
+        }
         frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getFCodeString(), codeObj));
         frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getFGlobalsString(), globalsObj));
     }
@@ -226,12 +255,15 @@ static const proto::ProtoObject* py_function_get(proto::ProtoContext* ctx,
 }
 
 /** Create a callable object with __code__, __globals__, and __call__. */
-static proto::ProtoObject* createUserFunction(proto::ProtoContext* ctx, const proto::ProtoObject* codeObj, proto::ProtoObject* globalsFrame) {
+static proto::ProtoObject* createUserFunction(proto::ProtoContext* ctx, const proto::ProtoObject* codeObj, proto::ProtoObject* globalsFrame, const proto::ProtoObject* closureFrame = nullptr) {
     if (!ctx || !codeObj || !globalsFrame) return nullptr;
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     const proto::ProtoObject* fn = ctx->newObject(true);
     fn = fn->setAttribute(ctx, env ? env->getCodeString() : proto::ProtoString::fromUTF8String(ctx, "__code__"), codeObj);
     fn = fn->setAttribute(ctx, env ? env->getGlobalsString() : proto::ProtoString::fromUTF8String(ctx, "__globals__"), globalsFrame);
+    if (closureFrame && env) {
+        fn = fn->setAttribute(ctx, env->getClosureString(), closureFrame);
+    }
     fn = fn->setAttribute(ctx, env ? env->getCallString() : proto::ProtoString::fromUTF8String(ctx, "__call__"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(fn), runUserFunctionCall));
     fn = fn->setAttribute(ctx, env ? env->getGetDunderString() : proto::ProtoString::fromUTF8String(ctx, "__get__"),
@@ -904,34 +936,34 @@ const proto::ProtoObject* executeBytecodeRange(
                 const proto::ProtoObject* nameObj = names->getAt(ctx, arg);
                 if (nameObj->isString(ctx)) {
                     std::string name; nameObj->asString(ctx)->toUTF8String(ctx, name);
-                    if (name == "range") {
-                        // found
-                    }
-                    const proto::ProtoObject* val = frame->getAttribute(ctx, nameObj->asString(ctx));
-                    if (get_env_diag()) {
-                        std::cerr << "[proto-exec-diag] OP_LOAD_NAME " << name << " frame=" << frame << " found=" << (val && val != PROTO_NONE) << "\n";
-                    }
-                    if (!val || val == PROTO_NONE) {
-                        const proto::ProtoObject* data = frame->getAttribute(ctx, env ? env->getDataString() : proto::ProtoString::fromUTF8String(ctx, "__data__"));
-                        if (data && data->asSparseList(ctx)) {
-                            val = data->asSparseList(ctx)->getAt(ctx, nameObj->getHash(ctx));
+                    const proto::ProtoString* nameS = nameObj->asString(ctx);
+                    unsigned long h = nameObj->getHash(ctx);
+                    
+                    const proto::ProtoObject* val = PROTO_NONE;
+                    const proto::ProtoObject* curr = frame;
+                    while (curr && curr != PROTO_NONE) {
+                        val = curr->getAttribute(ctx, nameS);
+                        if (val && val != PROTO_NONE) break;
+                        
+                        const proto::ProtoString* dName = env ? env->getDataString() : proto::ProtoString::fromUTF8String(ctx, "__data__");
+                        const proto::ProtoObject* dataObj = curr->getAttribute(ctx, dName);
+                        if (dataObj && dataObj->asSparseList(ctx)) {
+                            val = dataObj->asSparseList(ctx)->getAt(ctx, h);
+                            if (val && val != PROTO_NONE) break;
+                        }
+                        const proto::ProtoList* parents = curr->getParents(ctx);
+                        if (parents && parents->getSize(ctx) > 0) {
+                            // Traverse first parent (prototype or closure)
+                            curr = parents->getAt(ctx, 0);
+                        } else {
+                            curr = nullptr;
                         }
                     }
+
                     if (val && val != PROTO_NONE) {
-                        if (name == "range") { /* found */ }
-                        if (get_env_diag()) {
-                            std::string n; nameObj->asString(ctx)->toUTF8String(ctx, n);
-                            std::cerr << "[proto-exec-diag] OP_LOAD_NAME FOUND " << n << "=" << val << "\n";
-                        }
                         stack.push_back(val);
                     } else {
-                        if (get_env_diag()) {
-                            std::string n; nameObj->asString(ctx)->toUTF8String(ctx, n);
-                            std::cerr << "[proto-exec-diag] OP_LOAD_NAME NOT FOUND " << n << "\n";
-                        }
                         if (env) {
-                            std::string name;
-                            nameObj->asString(ctx)->toUTF8String(ctx, name);
                             val = env->resolve(name, ctx);
                             if (val && val != PROTO_NONE) {
                                 stack.push_back(val);
@@ -1814,7 +1846,7 @@ const proto::ProtoObject* executeBytecodeRange(
             if (!stack.empty() && frame) {
                 const proto::ProtoObject* codeObj = stack.back();
                 stack.pop_back();
-                proto::ProtoObject* fn = createUserFunction(ctx, codeObj, const_cast<proto::ProtoObject*>(PythonEnvironment::getCurrentGlobals()));
+                proto::ProtoObject* fn = createUserFunction(ctx, codeObj, const_cast<proto::ProtoObject*>(PythonEnvironment::getCurrentGlobals()), frame);
                 if (fn) stack.push_back(fn);
             }
         } else if (op == OP_BUILD_CLASS) {

@@ -40,6 +40,9 @@ private:
     bool generateTry(TryNode* n);
     bool generateRaise(RaiseNode* n);
     bool generateWith(WithNode* n);
+    bool generateImport(ImportNode* n);
+    bool generateImportFrom(ImportFromNode* n);
+    bool generateClassDef(ClassDefNode* n);
 };
 
 } // namespace protoPython

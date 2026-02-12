@@ -21,6 +21,7 @@ add_library(protoPython SHARED
     AtexitModule.cpp
     PythonEnvironment.cpp
     PythonModuleProvider.cpp
+    CompiledModuleProvider.cpp
     NativeModuleProvider.cpp
     HPyModuleProvider.cpp
     SysModule.cpp

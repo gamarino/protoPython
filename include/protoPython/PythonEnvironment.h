@@ -185,6 +185,8 @@ public:
     const proto::ProtoObject* getAttr(const proto::ProtoObject* obj, const std::string& attr);
     void setAttr(const proto::ProtoObject* obj, const std::string& attr, const proto::ProtoObject* val);
     bool isTrue(const proto::ProtoObject* obj);
+    const proto::ProtoObject* importModule(const std::string& name, int level = 0, const std::vector<std::string>& fromList = {});
+    void importStar(const proto::ProtoObject* mod);
 
     const proto::ProtoString* getEnumProtoString() const { return enumProtoS; }
     const proto::ProtoString* getRevProtoString() const { return revProtoS; }
@@ -215,6 +217,7 @@ public:
     const proto::ProtoString* getFCodeString() const { return f_code; }
     const proto::ProtoString* getFGlobalsString() const { return f_globals; }
     const proto::ProtoString* getFLocalsString() const { return f_locals; }
+    const proto::ProtoString* getClosureString() const { return __closure__; }
 
     const proto::ProtoString* getGiCodeString() const { return gi_code; }
     const proto::ProtoString* getGiFrameString() const { return gi_frame; }
@@ -591,6 +594,7 @@ private:
     const proto::ProtoString* getDunderString{nullptr};
     const proto::ProtoString* setDunderString{nullptr};
     const proto::ProtoString* delDunderString{nullptr};
+    const proto::ProtoString* __closure__{nullptr};
 
     const proto::ProtoString* enumProtoS{nullptr};
     const proto::ProtoString* revProtoS{nullptr};

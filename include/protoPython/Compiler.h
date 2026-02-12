@@ -68,6 +68,7 @@ private:
     bool compileReturn(ReturnNode* n);
     bool compileYield(YieldNode* n);
     bool compileImport(ImportNode* n);
+    bool compileImportFrom(ImportFromNode* n);
     bool compileTry(TryNode* n);
     bool compileRaise(RaiseNode* n);
     bool compileWith(WithNode* n);
@@ -88,7 +89,6 @@ private:
     /** Collect names that are free in any nested def (captured by closures). */
     static void collectCapturedNames(ASTNode* body,
         const std::unordered_set<std::string>& globalsInScope,
-        const std::vector<std::string>& paramsInScope,
         std::unordered_set<std::string>& capturedOut);
     /** True if body contains locals(), exec(), or eval()—dynamic locals access that forces MAPPED. */
     static bool hasDynamicLocalsAccess(ASTNode* node);

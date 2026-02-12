@@ -2,6 +2,7 @@
 #include <protoPython/Tokenizer.h>
 #include <protoPython/SignalModule.h>
 #include <protoPython/PythonModuleProvider.h>
+#include <protoPython/CompiledModuleProvider.h>
 #include <protoPython/NativeModuleProvider.h>
 #include <protoPython/SysModule.h>
 #include <protoPython/HPyModuleProvider.h>
@@ -5163,6 +5164,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     f_code = proto::ProtoString::fromUTF8String(rootContext_, "f_code");
     f_globals = proto::ProtoString::fromUTF8String(rootContext_, "f_globals");
     f_locals = proto::ProtoString::fromUTF8String(rootContext_, "f_locals");
+    __closure__ = proto::ProtoString::fromUTF8String(rootContext_, "__closure__");
     gi_code = proto::ProtoString::fromUTF8String(rootContext_, "gi_code");
     gi_frame = proto::ProtoString::fromUTF8String(rootContext_, "gi_frame");
     gi_running = proto::ProtoString::fromUTF8String(rootContext_, "gi_running");
@@ -5770,6 +5772,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     for (const auto& p : searchPaths) allPaths.push_back(p);
     
     registry.registerProvider(std::make_unique<PythonModuleProvider>(allPaths));
+    registry.registerProvider(std::make_unique<CompiledModuleProvider>(allPaths));
     registry.registerProvider(std::make_unique<HPyModuleProvider>(allPaths));
     
     // 7. Populate sys.path and sys.modules
@@ -5811,6 +5814,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     if (chain) {
         chain = chain->insertAt(rootContext_, 0, rootContext_->fromUTF8String("provider:python_stdlib"));
         chain = chain->insertAt(rootContext_, 0, rootContext_->fromUTF8String("provider:hpy"));
+        chain = chain->insertAt(rootContext_, 0, rootContext_->fromUTF8String("provider:compiled"));
         chain = chain->insertAt(rootContext_, 0, rootContext_->fromUTF8String("provider:native"));
         rootContext_->space->setResolutionChain(chain->asObject(rootContext_));
     }
@@ -7380,6 +7384,51 @@ bool PythonEnvironment::isTrue(const proto::ProtoObject* obj) {
     }
 
     return true; // Any non-empty object is true
+}
+
+const proto::ProtoObject* PythonEnvironment::importModule(const std::string& name, int level, const std::vector<std::string>& fromList) {
+    proto::ProtoContext* ctx = s_threadContext ? s_threadContext : rootContext_;
+    const proto::ProtoObject* imp = resolve("__import__", ctx);
+    if (!imp) return PROTO_NONE;
+    
+    std::vector<const proto::ProtoObject*> args;
+    args.push_back(ctx->fromUTF8String(name.c_str()));
+    args.push_back(getGlobals()); // globals
+    args.push_back(PROTO_NONE);    // locals
+    
+    const proto::ProtoList* fl = ctx->newList();
+    for (const auto& s : fromList) {
+        fl = fl->appendLast(ctx, ctx->fromUTF8String(s.c_str()));
+    }
+    args.push_back(fl->asObject(ctx)); // fromlist
+    args.push_back(ctx->fromInteger(level));
+    
+    return callObject(imp, args);
+}
+
+void PythonEnvironment::importStar(const proto::ProtoObject* mod) {
+    if (!mod || mod == PROTO_NONE) return;
+    proto::ProtoContext* ctx = s_threadContext ? s_threadContext : rootContext_;
+    const proto::ProtoObject* globals = getGlobals();
+    if (!globals) return;
+    
+    // Copy all attributes from mod to globals, excluding those starting with _
+    const proto::ProtoSparseList* attrs = mod->getAttributes(ctx);
+    if (!attrs) return;
+    
+    auto* it = const_cast<proto::ProtoSparseListIterator*>(attrs->getIterator(ctx));
+    while (it && it->hasNext(ctx)) {
+        unsigned long key = it->nextKey(ctx);
+        const proto::ProtoString* s = reinterpret_cast<const proto::ProtoString*>(key);
+        if (s) {
+            std::string name;
+            s->toUTF8String(ctx, name);
+            if (!name.empty() && name[0] != '_') {
+                const_cast<proto::ProtoObject*>(globals)->setAttribute(ctx, s, mod->getAttribute(ctx, s));
+            }
+        }
+        it = const_cast<proto::ProtoSparseListIterator*>(it->advance(ctx));
+    }
 }
 
 } // namespace protoPython

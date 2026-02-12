@@ -531,6 +531,29 @@ std::unique_ptr<ASTNode> Parser::parseStatement() {
         advance();
         return createNode<PassNode>();
     }
+    if (cur_.type == TokenType::At) {
+        std::vector<std::unique_ptr<ASTNode>> decorators;
+        while (accept(TokenType::At)) {
+            decorators.push_back(parsePrimary());
+            skipNewlines();
+        }
+        if (cur_.type == TokenType::Def) {
+            auto node = parseStatement();
+            if (auto fn = dynamic_cast<FunctionDefNode*>(node.get())) {
+                fn->decorator_list = std::move(decorators);
+            }
+            return node;
+        } else if (cur_.type == TokenType::Class) {
+            auto node = parseStatement();
+            if (auto cl = dynamic_cast<ClassDefNode*>(node.get())) {
+                cl->decorator_list = std::move(decorators);
+            }
+            return node;
+        } else {
+            error("expected 'def' or 'class' after decorator");
+            return nullptr;
+        }
+    }
     if (cur_.type == TokenType::Def) {
         advance();
         if (cur_.type != TokenType::Name) return nullptr;
@@ -673,6 +696,42 @@ std::unique_ptr<ASTNode> Parser::parseStatement() {
             size_t dot = modName.find('.');
             imp->alias = (dot == std::string::npos) ? modName : modName.substr(0, dot);
             imp->isAs = false;
+        }
+        return imp;
+    }
+    if (cur_.type == TokenType::From) {
+        advance();
+        auto imp = createNode<ImportFromNode>();
+        while (accept(TokenType::Dot)) {
+            imp->level++;
+        }
+        if (cur_.type == TokenType::Name) {
+            imp->moduleName = cur_.value;
+            advance();
+            while (accept(TokenType::Dot)) {
+                if (cur_.type != TokenType::Name) return nullptr;
+                imp->moduleName += ".";
+                imp->moduleName += cur_.value;
+                advance();
+            }
+        }
+        if (!expect(TokenType::Import)) return nullptr;
+        if (accept(TokenType::Star)) {
+             imp->names.push_back({"*", ""});
+        } else {
+            for (;;) {
+                if (cur_.type != TokenType::Name) break;
+                std::string name = cur_.value;
+                advance();
+                std::string alias;
+                if (accept(TokenType::As)) {
+                    if (cur_.type != TokenType::Name) return nullptr;
+                    alias = cur_.value;
+                    advance();
+                }
+                imp->names.push_back({name, alias});
+                if (!accept(TokenType::Comma)) break;
+            }
         }
         return imp;
     }

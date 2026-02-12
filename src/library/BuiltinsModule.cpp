@@ -55,6 +55,26 @@ static const proto::ProtoObject* py_import(
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     const proto::ProtoObject* leaf = env ? env->resolve(moduleName, context) : PROTO_NONE;
     
+    // Handle fromlist (4th argument)
+    if (positionalParameters->getSize(context) >= 4 && leaf && leaf != PROTO_NONE) {
+        const proto::ProtoObject* fromListObj = positionalParameters->getAt(context, 3);
+        if (fromListObj && fromListObj->asList(context)) {
+            const proto::ProtoList* fromList = fromListObj->asList(context);
+            unsigned long fromSize = fromList->getSize(context);
+            for (unsigned long i = 0; i < fromSize; ++i) {
+                const proto::ProtoObject* itemObj = fromList->getAt(context, i);
+                if (itemObj && itemObj->isString(context)) {
+                    std::string itemName;
+                    itemObj->asString(context)->toUTF8String(context, itemName);
+                    if (itemName == "*") continue;
+                    // Check if itemName is a submodule of moduleName
+                    std::string subModuleName = moduleName + "." + itemName;
+                    if (env) env->resolve(subModuleName, context);
+                }
+            }
+        }
+    }
+
     bool returnLeaf = false;
     if (positionalParameters->getSize(context) > 1) {
         returnLeaf = (positionalParameters->getAt(context, 1) == PROTO_TRUE);

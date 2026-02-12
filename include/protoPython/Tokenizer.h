@@ -76,6 +76,7 @@ enum class TokenType {
     Tilde,         /* ~ */
     Del,
     Assert,
+    At,            /* @ */
     Error,
 };
 
