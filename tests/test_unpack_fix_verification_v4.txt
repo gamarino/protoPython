@@ -1,0 +1,10 @@
+[protopy-debug] Starting main...
+Checking int type: <object at 0x7489fbf00180>
+Checking float type: <object at 0x7489fbf083c0>
+Checking str type: <object at 0x7489fbf10280>
+Checking list type: <object at 0x7489fbf18140>
+Checking dict type: <object at 0x7489fbf20000>
+Checking tuple type: <object at 0x7489fbf27f00>
+Checking set type: <object at 0x7489fbf2fd80>
+Checking bytes type: <object at 0x7489fbf37c00>
+Checking None type: <object at 0x7489fbf3fb00>

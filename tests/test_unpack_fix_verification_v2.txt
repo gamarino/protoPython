@@ -1,0 +1,13 @@
+[protopy-debug] Starting main...
+Checking int type: <object at 0x77cdcc73c180>
+Checking float type: <object at 0x77cdcc7443c0>
+Checking str type: <object at 0x77cdcc74c2c0>
+Checking list type: <object at 0x77cdcc754140>
+Checking dict type: <object at 0x77cdcc75c080>
+Checking tuple type: <object at 0x77cdcc763ec0>
+Checking set type: <object at 0x77cdcc76bdc0>
+Checking bytes type: <object at 0x77cdcc773c40>
+Traceback (most recent call last):
+NameError: name 'obj' is not defined
+Did you mean: 'obj'?
+protopy: module 'test_unpack' exited with runtime error

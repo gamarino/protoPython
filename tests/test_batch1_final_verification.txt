@@ -1,0 +1,21 @@
+[protopy-debug] Starting main...
+--- Testing repr() and ascii() ---
+repr(s): 'hello\nworld\'"'
+ascii(s): 'hello\nworld'"'
+repr(s2): 'hxc3xa9llo'
+ascii(s2): 'hxc3xa9llo'
+--- Testing format() ---
+format(42): 42
+--- Testing locals() and vars() ---
+x in locals(): True
+y in locals(): True
+--- Testing eval() and exec() ---
+Before exec: y in g = True
+g.get('y') = 100
+INSIDE exec: y = 100
+l['x'] after exec: 101
+eval result: 102
+--- Testing os.environ ---
+Traceback (most recent call last):
+AttributeError: 'object' object has no attribute 'environ'
+protopy: module 'test_batch1_final' exited with runtime error
