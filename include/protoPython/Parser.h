@@ -84,6 +84,16 @@ struct TupleLiteralNode : ASTNode {
     std::vector<std::unique_ptr<ASTNode>> elements;
 };
 
+/** Part of an f-string that contains an expression to be formatted. */
+struct FormattedValueNode : ASTNode {
+    std::unique_ptr<ASTNode> value;
+};
+
+/** An f-string containing constant parts and FormattedValueNodes. */
+struct JoinedStrNode : ASTNode {
+    std::vector<std::unique_ptr<ASTNode>> values;
+};
+
 struct Comprehension {
     std::unique_ptr<ASTNode> target;
     std::unique_ptr<ASTNode> iter;
@@ -105,6 +115,12 @@ struct DictCompNode : ASTNode {
 
 /** Set comprehension {elt for ...}. */
 struct SetCompNode : ASTNode {
+    std::unique_ptr<ASTNode> elt;
+    std::vector<Comprehension> generators;
+};
+
+/** Generator expression (elt for ...). */
+struct GeneratorExpNode : ASTNode {
     std::unique_ptr<ASTNode> elt;
     std::vector<Comprehension> generators;
 };
@@ -148,12 +164,17 @@ struct GlobalNode : ASTNode {
     std::vector<std::string> names;
 };
 
-/** def name(params): body. params is list of parameter names in order. */
 struct FunctionDefNode : ASTNode {
     std::string name;
     std::vector<std::string> parameters;
     std::unique_ptr<ASTNode> body;
     std::vector<std::unique_ptr<ASTNode>> decorator_list;
+};
+
+/** lambda params: body. */
+struct LambdaNode : ASTNode {
+    std::vector<std::string> parameters;
+    std::unique_ptr<ASTNode> body;
 };
 
 /** return expr. */
@@ -250,12 +271,21 @@ struct ModuleNode : ASTNode {
 };
 
 /** Minimal parser: expressions and single-expression module for eval. */
+struct NonlocalNode : ASTNode {
+    std::vector<std::string> names;
+};
+
 class Parser {
 public:
     explicit Parser(const std::string& source);
     std::unique_ptr<ModuleNode> parseModule();
     std::unique_ptr<ASTNode> parseExpression();
     std::unique_ptr<ASTNode> parseYieldExpression();
+    std::unique_ptr<ASTNode> parseGlobal();
+    std::unique_ptr<ASTNode> parseNonlocal();
+    std::unique_ptr<ASTNode> parseReturn();
+    std::unique_ptr<ASTNode> parseLambda();
+    std::unique_ptr<ASTNode> parseFString();
 
     bool hasError() const { return hasError_; }
     const std::string& getLastErrorMsg() const { return lastErrorMsg_; }

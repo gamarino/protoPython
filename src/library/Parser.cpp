@@ -157,6 +157,9 @@ std::unique_ptr<ASTNode> Parser::parseAtom() {
         advance();
         return n;
     }
+    if (cur_.type == TokenType::FString) {
+        return parseFString();
+    }
     if (cur_.type == TokenType::Name) {
         auto n = createNode<NameNode>();
         n->id = cur_.value;
@@ -168,6 +171,23 @@ std::unique_ptr<ASTNode> Parser::parseAtom() {
             return createNode<TupleLiteralNode>();
         }
         auto e = parseOrExpr();
+        if (cur_.type == TokenType::For) {
+            auto ge = createNode<GeneratorExpNode>();
+            ge->elt = std::move(e);
+            while (cur_.type == TokenType::For) {
+                Comprehension c;
+                advance(); // for
+                c.target = parseTargetList();
+                expect(TokenType::In);
+                c.iter = parseOrExpr();
+                while (accept(TokenType::If)) {
+                    c.ifs.push_back(parseOrExpr());
+                }
+                ge->generators.push_back(std::move(c));
+            }
+            expect(TokenType::RParen);
+            return ge;
+        }
         if (accept(TokenType::Comma)) {
             auto tup = createNode<TupleLiteralNode>();
             tup->elements.push_back(std::move(e));
@@ -184,6 +204,9 @@ std::unique_ptr<ASTNode> Parser::parseAtom() {
         return e;
     }
     if (accept(TokenType::LSquare)) {
+        if (accept(TokenType::RSquare)) {
+            return createNode<ListLiteralNode>();
+        }
         auto first = parseOrExpr();
         if (cur_.type == TokenType::For) {
             auto lc = createNode<ListCompNode>();
@@ -216,6 +239,9 @@ std::unique_ptr<ASTNode> Parser::parseAtom() {
         return lst;
     }
     if (accept(TokenType::LCurly)) {
+        if (accept(TokenType::RCurly)) {
+            return createNode<DictLiteralNode>();
+        }
         auto key = parseExpression();
         if (cur_.type == TokenType::For) {
             auto sc = createNode<SetCompNode>();
@@ -309,6 +335,16 @@ std::unique_ptr<ASTNode> Parser::parseAtom() {
         n->constType = ConstantNode::ConstType::None;
         advance();
         return n;
+    }
+    if (cur_.type == TokenType::Lambda) {
+        return parseLambda();
+    }
+    
+    if (!hasError_) {
+        std::string msg = "expected expression, but got ";
+        msg += tokenToName(cur_.type);
+        if (!cur_.value.empty()) msg += " ('" + cur_.value + "')";
+        error(msg);
     }
     return nullptr;
 }
@@ -601,16 +637,10 @@ std::unique_ptr<ASTNode> Parser::parseStatement() {
         return cl;
     }
     if (cur_.type == TokenType::Global) {
-        advance();
-        auto g = createNode<GlobalNode>();
-        if (cur_.type != TokenType::Name) return nullptr;
-        g->names.push_back(cur_.value);
-        advance();
-        while (accept(TokenType::Comma) && cur_.type == TokenType::Name) {
-            g->names.push_back(cur_.value);
-            advance();
-        }
-        return g;
+        return parseGlobal();
+    }
+    if (cur_.type == TokenType::Nonlocal) {
+        return parseNonlocal();
     }
     if (cur_.type == TokenType::For) {
         advance();
@@ -855,6 +885,9 @@ std::unique_ptr<ASTNode> Parser::parseExpression() {
     if (cur_.type == TokenType::Yield) {
         return parseYieldExpression();
     }
+    if (cur_.type == TokenType::Lambda) {
+        return parseLambda();
+    }
     auto node = parseOrExpr();
     if (accept(TokenType::If)) {
         auto c = createNode<CondExprNode>();
@@ -925,6 +958,129 @@ std::unique_ptr<ASTNode> Parser::parseTargetList() {
         return t;
     }
     return left;
+}
+
+std::unique_ptr<ASTNode> Parser::parseLambda() {
+    auto node = createNode<LambdaNode>();
+    advance(); // lambda
+    
+    if (cur_.type != TokenType::Colon) {
+        while (cur_.type == TokenType::Name) {
+            node->parameters.push_back(cur_.value);
+            advance();
+            if (accept(TokenType::Comma)) continue;
+            else break;
+        }
+    }
+    
+    if (!expect(TokenType::Colon)) return nullptr;
+    node->body = parseExpression();
+    return node;
+}
+
+std::unique_ptr<ASTNode> Parser::parseFString() {
+    std::string raw = cur_.value;
+    auto joined = createNode<JoinedStrNode>();
+    advance(); // FString token
+    
+    size_t i = 0;
+    while (i < raw.size()) {
+        size_t nextOpen = raw.find('{', i);
+        size_t nextClose = raw.find('}', i);
+        
+        if (nextOpen == std::string::npos && nextClose == std::string::npos) {
+            auto part = createNode<ConstantNode>();
+            part->constType = ConstantNode::ConstType::Str;
+            part->strVal = raw.substr(i);
+            joined->values.push_back(std::move(part));
+            break;
+        }
+        
+        size_t next = std::min(nextOpen == std::string::npos ? (size_t)-1 : nextOpen, 
+                               nextClose == std::string::npos ? (size_t)-1 : nextClose);
+        
+        if (next > i) {
+            auto part = createNode<ConstantNode>();
+            part->constType = ConstantNode::ConstType::Str;
+            part->strVal = raw.substr(i, next - i);
+            joined->values.push_back(std::move(part));
+            i = next;
+        }
+        
+        if (i < raw.size() && raw[i] == '{') {
+            if (i + 1 < raw.size() && raw[i + 1] == '{') {
+                auto part = createNode<ConstantNode>();
+                part->constType = ConstantNode::ConstType::Str;
+                part->strVal = "{";
+                joined->values.push_back(std::move(part));
+                i += 2;
+            } else {
+                i++;
+                size_t closeBrace = raw.find('}', i);
+                if (closeBrace == std::string::npos) {
+                    error("f-string: missing '}'");
+                    return nullptr;
+                }
+                std::string exprStr = raw.substr(i, closeBrace - i);
+                i = closeBrace + 1;
+                
+                Parser subParser(exprStr);
+                auto expr = subParser.parseExpression();
+                if (subParser.hasError()) {
+                    error("f-string expression error: " + subParser.getLastErrorMsg());
+                    return nullptr;
+                }
+                auto fv = createNode<FormattedValueNode>();
+                fv->value = std::move(expr);
+                joined->values.push_back(std::move(fv));
+            }
+        } else if (i < raw.size() && raw[i] == '}') {
+            if (i + 1 < raw.size() && raw[i + 1] == '}') {
+                auto part = createNode<ConstantNode>();
+                part->constType = ConstantNode::ConstType::Str;
+                part->strVal = "}";
+                joined->values.push_back(std::move(part));
+                i += 2;
+            } else {
+                error("f-string: single '}' is not allowed");
+                return nullptr;
+            }
+        }
+    }
+    return joined;
+}
+
+
+std::unique_ptr<ASTNode> Parser::parseGlobal() {
+    advance(); // global
+    auto g = createNode<GlobalNode>();
+    if (cur_.type != TokenType::Name) {
+        error("global: expected name");
+        return nullptr;
+    }
+    g->names.push_back(cur_.value);
+    advance();
+    while (accept(TokenType::Comma) && cur_.type == TokenType::Name) {
+        g->names.push_back(cur_.value);
+        advance();
+    }
+    return g;
+}
+
+std::unique_ptr<ASTNode> Parser::parseNonlocal() {
+    advance(); // nonlocal
+    auto n = createNode<NonlocalNode>();
+    if (cur_.type != TokenType::Name) {
+        error("nonlocal: expected name");
+        return nullptr;
+    }
+    n->names.push_back(cur_.value);
+    advance();
+    while (accept(TokenType::Comma) && cur_.type == TokenType::Name) {
+        n->names.push_back(cur_.value);
+        advance();
+    }
+    return n;
 }
 
 } // namespace protoPython

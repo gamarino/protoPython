@@ -162,6 +162,12 @@ constexpr int OP_YIELD_FROM = 176;
 constexpr int OP_SETUP_FINALLY = 177;
 /** Pop the top block from the stack. Used when leaving try/finally/with blocks. */
 constexpr int OP_POP_BLOCK = 178;
+/** Pop arg values from stack, join into one string, push. */
+constexpr int OP_BUILD_STRING = 179;
+/** Load a variable from an enclosing scope (closure). */
+constexpr int OP_LOAD_DEREF = 180;
+/** Store a value into a variable in an enclosing scope (closure). */
+constexpr int OP_STORE_DEREF = 181;
 
 /**
  * @brief Executes a range of bytecode (one basic block). No per-instruction

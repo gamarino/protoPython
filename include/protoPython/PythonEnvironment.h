@@ -180,6 +180,7 @@ public:
     void augAssignAttr(const proto::ProtoObject* obj, const std::string& attr, TokenType op, const proto::ProtoObject* value);
     void augAssignItem(const proto::ProtoObject* container, const proto::ProtoObject* key, TokenType op, const proto::ProtoObject* value);
     const proto::ProtoObject* callObject(const proto::ProtoObject* callable, const std::vector<const proto::ProtoObject*>& args);
+    const proto::ProtoObject* buildString(const std::vector<const proto::ProtoObject*>& parts);
     const proto::ProtoObject* getItem(const proto::ProtoObject* container, const proto::ProtoObject* key);
     void setItem(const proto::ProtoObject* container, const proto::ProtoObject* key, const proto::ProtoObject* value);
     const proto::ProtoObject* getAttr(const proto::ProtoObject* obj, const std::string& attr);

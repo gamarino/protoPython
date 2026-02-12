@@ -10,6 +10,7 @@ namespace protoPython {
 enum class TokenType {
     Number,
     String,
+    FString,
     Name,
     Plus,
     Minus,
@@ -76,6 +77,7 @@ enum class TokenType {
     Tilde,         /* ~ */
     Del,
     Assert,
+    Nonlocal,
     At,            /* @ */
     Error,
 };

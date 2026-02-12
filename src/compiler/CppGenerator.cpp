@@ -87,6 +87,12 @@ bool CppGenerator::generateNode(ASTNode* node) {
         return generateImportFrom(n);
     } else if (auto* n = dynamic_cast<ClassDefNode*>(node)) {
         return generateClassDef(n);
+    } else if (auto* n = dynamic_cast<LambdaNode*>(node)) {
+        return generateLambda(n);
+    } else if (auto* n = dynamic_cast<JoinedStrNode*>(node)) {
+        return generateJoinedStr(n);
+    } else if (auto* n = dynamic_cast<FormattedValueNode*>(node)) {
+        return generateFormattedValue(n);
     }
     
     out_ << "/* Unsupported node: " << typeid(*node).name() << " */";
@@ -574,6 +580,37 @@ bool CppGenerator::generateImportFrom(ImportFromNode* n) {
     }
     out_ << "    }";
     return true;
+}
+
+bool CppGenerator::generateLambda(LambdaNode* n) {
+    if (!n) return false;
+    out_ << "ctx->fromMethod(nullptr, [](proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) -> const proto::ProtoObject* {\n";
+    out_ << "        auto* env = protoPython::PythonEnvironment::get(ctx);\n";
+    out_ << "        // Bind parameters\n";
+    for (size_t i = 0; i < n->parameters.size(); ++i) {
+        out_ << "        if (args->getSize(ctx) > " << i << ") env->storeName(\"" << n->parameters[i] << "\", args->getAt(ctx, " << i << "));\n";
+    }
+    out_ << "        return ";
+    if (!generateNode(n->body.get())) return false;
+    out_ << ";\n";
+    out_ << "    })";
+    return true;
+}
+
+bool CppGenerator::generateJoinedStr(JoinedStrNode* n) {
+    if (!n) return false;
+    out_ << "env->buildString({";
+    for (size_t i = 0; i < n->values.size(); ++i) {
+        if (!generateNode(n->values[i].get())) return false;
+        if (i < n->values.size() - 1) out_ << ", ";
+    }
+    out_ << "})";
+    return true;
+}
+
+bool CppGenerator::generateFormattedValue(FormattedValueNode* n) {
+    if (!n) return false;
+    return generateNode(n->value.get());
 }
 
 } // namespace protoPython

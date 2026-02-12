@@ -7152,6 +7152,43 @@ const proto::ProtoObject* PythonEnvironment::lookupName(const std::string& name)
     return resolve(name, ctx);
 }
 
+const proto::ProtoObject* PythonEnvironment::buildString(const std::vector<const proto::ProtoObject*>& parts) {
+    proto::ProtoContext* ctx = getCurrentContext();
+    if (!ctx) ctx = rootContext_;
+    std::string result;
+    result.reserve(parts.size() * 16);
+    for (const auto* obj : parts) {
+        if (!obj || obj == PROTO_NONE) {
+            result += "None";
+        } else if (obj->isString(ctx)) {
+            std::string s; obj->asString(ctx)->toUTF8String(ctx, s);
+            result += s;
+        } else if (obj->isInteger(ctx)) {
+            result += std::to_string(obj->asLong(ctx));
+        } else if (obj->isDouble(ctx)) {
+            result += std::to_string(obj->asDouble(ctx));
+        } else if (obj == PROTO_TRUE) {
+            result += "True";
+        } else if (obj == PROTO_FALSE) {
+            result += "False";
+        } else {
+            const proto::ProtoObject* strFunc = resolve("str", ctx);
+            if (strFunc) {
+                const proto::ProtoObject* sObj = callObject(strFunc, {obj});
+                if (sObj && sObj->isString(ctx)) {
+                    std::string s; sObj->asString(ctx)->toUTF8String(ctx, s);
+                    result += s;
+                } else {
+                    result += "<object>";
+                }
+            } else {
+                result += "<object>";
+            }
+        }
+    }
+    return ctx->fromUTF8String(result.c_str());
+}
+
 void PythonEnvironment::storeName(const std::string& name, const proto::ProtoObject* val) {
     proto::ProtoContext* ctx = getCurrentContext();
     if (!ctx) ctx = rootContext_;

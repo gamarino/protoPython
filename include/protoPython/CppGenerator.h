@@ -43,6 +43,9 @@ private:
     bool generateImport(ImportNode* n);
     bool generateImportFrom(ImportFromNode* n);
     bool generateClassDef(ClassDefNode* n);
+    bool generateLambda(LambdaNode* n);
+    bool generateJoinedStr(JoinedStrNode* n);
+    bool generateFormattedValue(FormattedValueNode* n);
 };
 
 } // namespace protoPython

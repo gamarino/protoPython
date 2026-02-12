@@ -143,6 +143,7 @@ Token Tokenizer::scanNameOrKeyword() {
     else if (t.value == "pass") t.type = TokenType::Pass;
     else if (t.value == "del") t.type = TokenType::Del;
     else if (t.value == "assert") t.type = TokenType::Assert;
+    else if (t.value == "nonlocal") t.type = TokenType::Nonlocal;
     return t;
 }
 
@@ -269,8 +270,30 @@ Token Tokenizer::next() {
     if (std::isdigit(static_cast<unsigned char>(c)))
         return scanNumber();
     if (c == '@') { Token t = makeToken(TokenType::At); pos_++; return t; }
-    if (std::isalpha(static_cast<unsigned char>(c)) || c == '_')
+    if (std::isalpha(static_cast<unsigned char>(c)) || c == '_') {
+        // Check for string prefixes: f, r, b, u, fr, rf, rb, br...
+        size_t tempPos = pos_;
+        bool isF = false;
+        bool isR = false;
+        bool isB = false;
+        while (tempPos < source_.size()) {
+            char p = source_[tempPos];
+            if (p == 'f' || p == 'F') isF = true;
+            else if (p == 'r' || p == 'R') isR = true;
+            else if (p == 'b' || p == 'B') isB = true;
+            else if (p == 'u' || p == 'U') {}
+            else break;
+            tempPos++;
+        }
+        if (tempPos < source_.size() && (source_[tempPos] == '"' || source_[tempPos] == '\'')) {
+            char quote = source_[tempPos];
+            pos_ = tempPos;
+            Token t = scanString(quote);
+            if (isF) t.type = TokenType::FString;
+            return t;
+        }
         return scanNameOrKeyword();
+    }
     if (c == '\\') {
         pos_++;
         skipWhitespaceNoNewline();

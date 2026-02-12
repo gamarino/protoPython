@@ -248,6 +248,13 @@ bool Compiler::emitNameOp(const std::string& id, TargetCtx ctx) {
         emit(op, idx);
         return true;
     }
+    if (nonlocalNames_.count(id)) {
+        int idx = addName(id);
+        int op = OP_LOAD_DEREF;
+        if (ctx == TargetCtx::Store) op = OP_STORE_DEREF;
+        emit(op, idx);
+        return true;
+    }
     auto it = localSlotMap_.find(id);
     if (it != localSlotMap_.end()) {
         int op = OP_LOAD_FAST;
@@ -465,45 +472,170 @@ bool Compiler::compileYield(YieldNode* n) {
 
 bool Compiler::compileListComp(ListCompNode* n) {
     if (!n) return false;
-    emit(OP_BUILD_LIST, 0);
+    
+    // Python 3: List comprehensions have their own scope
+    // [elt for target in iter] -> (__listcomp)(iter)
+    
+    if (!compileNode(n->generators[0].iter.get())) return false;
+    emit(OP_GET_ITER);
+    
+    Compiler bodyCompiler(ctx_, filename_);
+    bodyCompiler.localSlotMap_[".0"] = 0;
+    
+    // Create the list inside the function
+    bodyCompiler.emit(OP_BUILD_LIST, 0);
+    
+    auto oldIter = std::move(n->generators[0].iter);
+    auto itNode = std::make_unique<NameNode>();
+    itNode->id = ".0";
+    n->generators[0].iter = std::move(itNode);
+    
     int nGen = static_cast<int>(n->generators.size());
-    
-    auto inner = [&]() -> bool {
-        if (!compileNode(n->elt.get())) return false;
-        emit(OP_LIST_APPEND, nGen + 1);
+    auto innerOk = bodyCompiler.compileComprehension(n->generators, 0, [&]() {
+        if (!bodyCompiler.compileNode(n->elt.get())) return false;
+        bodyCompiler.emit(OP_LIST_APPEND, nGen + 1);
         return true;
-    };
+    });
     
-    return compileComprehension(n->generators, 0, inner);
+    n->generators[0].iter = std::move(oldIter);
+    if (!innerOk) return false;
+    
+    bodyCompiler.emit(OP_RETURN_VALUE);
+    bodyCompiler.applyPatches();
+    
+    // Create code object
+    const proto::ProtoList* co_varnames = ctx_->newList();
+    co_varnames = co_varnames->appendLast(ctx_, ctx_->fromUTF8String(".0"));
+    
+    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), ctx_->fromUTF8String(filename_.c_str())->asString(ctx_), co_varnames, 1, 1, false);
+    emit(OP_LOAD_CONST, addConstant(codeObj));
+    emit(OP_BUILD_FUNCTION, 0);
+    emit(OP_ROT_TWO);
+    emit(OP_CALL_FUNCTION, 1);
+    
+    return true;
 }
 
 bool Compiler::compileDictComp(DictCompNode* n) {
     if (!n) return false;
-    emit(OP_BUILD_MAP, 0);
+    
+    if (!compileNode(n->generators[0].iter.get())) return false;
+    emit(OP_GET_ITER);
+    
+    Compiler bodyCompiler(ctx_, filename_);
+    bodyCompiler.localSlotMap_[".0"] = 0;
+    bodyCompiler.emit(OP_BUILD_MAP, 0);
+    
+    auto oldIter = std::move(n->generators[0].iter);
+    auto itNode = std::make_unique<NameNode>();
+    itNode->id = ".0";
+    n->generators[0].iter = std::move(itNode);
+    
     int nGen = static_cast<int>(n->generators.size());
-    
-    auto inner = [&]() -> bool {
-        if (!compileNode(n->value.get())) return false;
-        if (!compileNode(n->key.get())) return false;
-        emit(OP_MAP_ADD, nGen + 1);
+    auto innerOk = bodyCompiler.compileComprehension(n->generators, 0, [&]() {
+        if (!bodyCompiler.compileNode(n->value.get())) return false;
+        if (!bodyCompiler.compileNode(n->key.get())) return false;
+        bodyCompiler.emit(OP_MAP_ADD, nGen + 1);
         return true;
-    };
+    });
     
-    return compileComprehension(n->generators, 0, inner);
+    n->generators[0].iter = std::move(oldIter);
+    if (!innerOk) return false;
+    
+    bodyCompiler.emit(OP_RETURN_VALUE);
+    bodyCompiler.applyPatches();
+    
+    const proto::ProtoList* co_varnames = ctx_->newList();
+    co_varnames = co_varnames->appendLast(ctx_, ctx_->fromUTF8String(".0"));
+    
+    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), ctx_->fromUTF8String(filename_.c_str())->asString(ctx_), co_varnames, 1, 1, false);
+    emit(OP_LOAD_CONST, addConstant(codeObj));
+    emit(OP_BUILD_FUNCTION, 0);
+    emit(OP_ROT_TWO);
+    emit(OP_CALL_FUNCTION, 1);
+    
+    return true;
 }
 
 bool Compiler::compileSetComp(SetCompNode* n) {
     if (!n) return false;
-    emit(OP_BUILD_SET, 0);
+    
+    if (!compileNode(n->generators[0].iter.get())) return false;
+    emit(OP_GET_ITER);
+    
+    Compiler bodyCompiler(ctx_, filename_);
+    bodyCompiler.localSlotMap_[".0"] = 0;
+    bodyCompiler.emit(OP_BUILD_SET, 0);
+    
+    auto oldIter = std::move(n->generators[0].iter);
+    auto itNode = std::make_unique<NameNode>();
+    itNode->id = ".0";
+    n->generators[0].iter = std::move(itNode);
+    
     int nGen = static_cast<int>(n->generators.size());
-    
-    auto inner = [&]() -> bool {
-        if (!compileNode(n->elt.get())) return false;
-        emit(OP_SET_ADD, nGen + 1);
+    auto innerOk = bodyCompiler.compileComprehension(n->generators, 0, [&]() {
+        if (!bodyCompiler.compileNode(n->elt.get())) return false;
+        bodyCompiler.emit(OP_SET_ADD, nGen + 1);
         return true;
-    };
+    });
     
-    return compileComprehension(n->generators, 0, inner);
+    n->generators[0].iter = std::move(oldIter);
+    if (!innerOk) return false;
+    
+    bodyCompiler.emit(OP_RETURN_VALUE);
+    bodyCompiler.applyPatches();
+    
+    const proto::ProtoList* co_varnames = ctx_->newList();
+    co_varnames = co_varnames->appendLast(ctx_, ctx_->fromUTF8String(".0"));
+    
+    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), ctx_->fromUTF8String(filename_.c_str())->asString(ctx_), co_varnames, 1, 1, false);
+    emit(OP_LOAD_CONST, addConstant(codeObj));
+    emit(OP_BUILD_FUNCTION, 0);
+    emit(OP_ROT_TWO);
+    emit(OP_CALL_FUNCTION, 1);
+    
+    return true;
+}
+
+bool Compiler::compileGeneratorExp(GeneratorExpNode* n) {
+    if (!n) return false;
+    
+    if (!compileNode(n->generators[0].iter.get())) return false;
+    emit(OP_GET_ITER);
+    
+    Compiler bodyCompiler(ctx_, filename_);
+    bodyCompiler.isGenerator_ = true;
+    bodyCompiler.localSlotMap_[".0"] = 0;
+    
+    auto oldIter = std::move(n->generators[0].iter);
+    auto itNode = std::make_unique<NameNode>();
+    itNode->id = ".0";
+    n->generators[0].iter = std::move(itNode);
+    
+    auto innerOk = bodyCompiler.compileComprehension(n->generators, 0, [&]() {
+        if (!bodyCompiler.compileNode(n->elt.get())) return false;
+        bodyCompiler.emit(OP_YIELD_VALUE);
+        bodyCompiler.emit(OP_POP_TOP);
+        return true;
+    });
+    
+    n->generators[0].iter = std::move(oldIter);
+    if (!innerOk) return false;
+    
+    bodyCompiler.emit(OP_LOAD_CONST, bodyCompiler.addConstant(PROTO_NONE));
+    bodyCompiler.emit(OP_RETURN_VALUE);
+    bodyCompiler.applyPatches();
+    
+    const proto::ProtoList* co_varnames = ctx_->newList();
+    co_varnames = co_varnames->appendLast(ctx_, ctx_->fromUTF8String(".0"));
+    
+    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), ctx_->fromUTF8String(filename_.c_str())->asString(ctx_), co_varnames, 1, 1, true);
+    emit(OP_LOAD_CONST, addConstant(codeObj));
+    emit(OP_BUILD_FUNCTION, 0);
+    emit(OP_ROT_TWO);
+    emit(OP_CALL_FUNCTION, 1);
+    
+    return true;
 }
 
 bool Compiler::compileComprehension(const std::vector<Comprehension>& generators, size_t index, std::function<bool()> innerBody) {
@@ -719,6 +851,51 @@ bool Compiler::statementLeavesValue(ASTNode* node) {
     return true;
 }
 
+static void collectNonlocalsFromNode(ASTNode* node, std::unordered_set<std::string>& out) {
+    if (!node) return;
+    if (auto* n = dynamic_cast<NonlocalNode*>(node)) {
+        for (const auto& name : n->names) out.insert(name);
+        return;
+    }
+    if (auto* a = dynamic_cast<AssignNode*>(node)) {
+        collectNonlocalsFromNode(a->target.get(), out);
+        collectNonlocalsFromNode(a->value.get(), out);
+        return;
+    }
+    if (auto* s = dynamic_cast<SuiteNode*>(node)) {
+        for (auto& st : s->statements) collectNonlocalsFromNode(st.get(), out);
+        return;
+    }
+    if (auto* f = dynamic_cast<ForNode*>(node)) {
+        collectNonlocalsFromNode(f->target.get(), out);
+        collectNonlocalsFromNode(f->iter.get(), out);
+        collectNonlocalsFromNode(f->body.get(), out);
+        return;
+    }
+    if (auto* iff = dynamic_cast<IfNode*>(node)) {
+        collectNonlocalsFromNode(iff->test.get(), out);
+        collectNonlocalsFromNode(iff->body.get(), out);
+        if (iff->orelse) collectNonlocalsFromNode(iff->orelse.get(), out);
+        return;
+    }
+    if (auto* tr = dynamic_cast<TryNode*>(node)) {
+        collectNonlocalsFromNode(tr->body.get(), out);
+        for (auto& h : tr->handlers) collectNonlocalsFromNode(h.body.get(), out);
+        if (tr->finalbody) collectNonlocalsFromNode(tr->finalbody.get(), out);
+        return;
+    }
+    if (auto* w = dynamic_cast<WithNode*>(node)) {
+        collectNonlocalsFromNode(w->body.get(), out);
+        return;
+    }
+    if (auto* wh = dynamic_cast<WhileNode*>(node)) {
+        collectNonlocalsFromNode(wh->test.get(), out);
+        collectNonlocalsFromNode(wh->body.get(), out);
+        if (wh->orelse) collectNonlocalsFromNode(wh->orelse.get(), out);
+        return;
+    }
+}
+
 static void collectGlobalsFromNode(ASTNode* node, std::unordered_set<std::string>& globalsOut) {
     if (!node) return;
     if (auto* g = dynamic_cast<GlobalNode*>(node)) {
@@ -817,12 +994,15 @@ static void collectGlobalsFromNode(ASTNode* node, std::unordered_set<std::string
 
 void Compiler::collectLocalsFromBody(ASTNode* body,
     std::unordered_set<std::string>& globalsOut,
+    std::unordered_set<std::string>& nonlocalsOut,
     std::vector<std::string>& localsOrdered) {
     globalsOut.clear();
+    nonlocalsOut.clear();
     localsOrdered.clear();
     
-    // 1. First pass: find all 'global' declarations
+    // 1. First pass: find all 'global' and 'nonlocal' declarations
     collectGlobalsFromNode(body, globalsOut);
+    collectNonlocalsFromNode(body, nonlocalsOut);
     
     // 2. Second pass: find all names that are assigned/stored (implicitly local)
     std::unordered_set<std::string> defined;
@@ -835,7 +1015,7 @@ void Compiler::collectLocalsFromBody(ASTNode* body,
     // However, collectDefinedNames doesn't give us order.
     // For now, let's just add them.
     for (const auto& name : defined) {
-        if (globalsOut.find(name) == globalsOut.end()) {
+        if (globalsOut.find(name) == globalsOut.end() && nonlocalsOut.find(name) == nonlocalsOut.end()) {
             if (seen.find(name) == seen.end()) {
                 localsOrdered.push_back(name);
                 seen.insert(name);
@@ -945,8 +1125,9 @@ static void collectUsedNames(ASTNode* node, std::unordered_set<std::string>& out
         }
         return;
     }
-    if (auto* tup = dynamic_cast<TupleLiteralNode*>(node)) {
-        for (auto& e : tup->elements) collectUsedNames(e.get(), out);
+    if (auto* lam = dynamic_cast<LambdaNode*>(node)) {
+        for (const auto& p : lam->parameters) out.insert(p);
+        collectUsedNames(lam->body.get(), out);
         return;
     }
 }
@@ -1017,8 +1198,9 @@ static void collectDefinedNames(ASTNode* node, std::unordered_set<std::string>& 
         out.insert(nm->id);
         return;
     }
-    if (auto* tup = dynamic_cast<TupleLiteralNode*>(node)) {
-        for (auto& e : tup->elements) collectDefinedNames(e.get(), out);
+    if (auto* lam = dynamic_cast<LambdaNode*>(node)) {
+        for (const auto& p : lam->parameters) out.insert(p);
+        collectDefinedNames(lam->body.get(), out);
         return;
     }
 }
@@ -1070,25 +1252,49 @@ void Compiler::collectCapturedNames(ASTNode* node,
     }
 
     if (auto* fn = dynamic_cast<FunctionDefNode*>(node)) {
-        std::unordered_set<std::string> used, defined;
+        std::unordered_set<std::string> used, defined, nonlocals;
         for (const auto& p : fn->parameters) defined.insert(p);
         collectUsedNames(fn->body.get(), used);
         collectDefinedNames(fn->body.get(), defined);
+        collectNonlocalsFromNode(fn->body.get(), nonlocals);
         
         if (std::getenv("PROTO_ENV_DIAG")) {
             std::cerr << "[proto-compiler] Analyzing nested function: " << fn->name << "\n";
             for (auto& u : used) std::cerr << "  uses: " << u << "\n";
             for (auto& d : defined) std::cerr << "  defines: " << d << "\n";
+            for (auto& nl : nonlocals) std::cerr << "  nonlocals: " << nl << "\n";
         }
 
+        for (const auto& name : nonlocals) {
+            capturedOut.insert(name);
+        }
         for (const auto& name : used) {
-            if (!defined.count(name) && !globalsInScope.count(name)) {
+            if (!defined.count(name) && !globalsInScope.count(name) && !nonlocals.count(name)) {
                 if (std::getenv("PROTO_ENV_DIAG")) std::cerr << "[proto-compiler]   FOUND CAPTURE: " << name << "\n";
                 capturedOut.insert(name);
             }
         }
         // Grandchildren can capture from this level too
         collectCapturedNames(fn->body.get(), globalsInScope, capturedOut);
+        return;
+    }
+
+    if (auto* lam = dynamic_cast<LambdaNode*>(node)) {
+        std::unordered_set<std::string> used, defined, nonlocals;
+        for (const auto& p : lam->parameters) defined.insert(p);
+        collectUsedNames(lam->body.get(), used);
+        collectDefinedNames(lam->body.get(), defined);
+        collectNonlocalsFromNode(lam->body.get(), nonlocals);
+        
+        for (const auto& name : nonlocals) {
+            capturedOut.insert(name);
+        }
+        for (const auto& name : used) {
+            if (!defined.count(name) && !globalsInScope.count(name) && !nonlocals.count(name)) {
+                capturedOut.insert(name);
+            }
+        }
+        collectCapturedNames(lam->body.get(), globalsInScope, capturedOut);
         return;
     }
 
@@ -1106,6 +1312,16 @@ void Compiler::collectCapturedNames(ASTNode* node,
         for (auto& h : t->handlers) collectCapturedNames(h.body.get(), globalsInScope, capturedOut);
         if (t->orelse) collectCapturedNames(t->orelse.get(), globalsInScope, capturedOut);
         if (t->finalbody) collectCapturedNames(t->finalbody.get(), globalsInScope, capturedOut);
+    } else if (auto* a = dynamic_cast<AssignNode*>(node)) {
+        collectCapturedNames(a->value.get(), globalsInScope, capturedOut);
+    } else if (auto* b = dynamic_cast<BinOpNode*>(node)) {
+        collectCapturedNames(b->left.get(), globalsInScope, capturedOut);
+        collectCapturedNames(b->right.get(), globalsInScope, capturedOut);
+    } else if (auto* c = dynamic_cast<CallNode*>(node)) {
+        collectCapturedNames(c->func.get(), globalsInScope, capturedOut);
+        for (auto& arg : c->args) collectCapturedNames(arg.get(), globalsInScope, capturedOut);
+    } else if (auto* ret = dynamic_cast<ReturnNode*>(node)) {
+        collectCapturedNames(ret->value.get(), globalsInScope, capturedOut);
     }
 }
 
@@ -1122,8 +1338,9 @@ bool Compiler::compileSuite(SuiteNode* n) {
 bool Compiler::compileFunctionDef(FunctionDefNode* n) {
     if (!n) return false;
     std::unordered_set<std::string> bodyGlobals;
+    std::unordered_set<std::string> bodyNonlocals;
     std::vector<std::string> localsOrdered;
-    collectLocalsFromBody(n->body.get(), bodyGlobals, localsOrdered);
+    collectLocalsFromBody(n->body.get(), bodyGlobals, bodyNonlocals, localsOrdered);
     std::vector<std::string> params;
     if (!n->parameters.empty()) {
         for (const auto& p : n->parameters) params.push_back(p);
@@ -1174,6 +1391,7 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
 
     Compiler bodyCompiler(ctx_, filename_);
     bodyCompiler.globalNames_ = bodyGlobals;
+    bodyCompiler.nonlocalNames_ = bodyNonlocals;
     bodyCompiler.localSlotMap_ = slotMap;
     if (!bodyCompiler.compileNode(n->body.get())) return false;
     
@@ -1203,6 +1421,51 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
     }
     
     return emitNameOp(n->name, TargetCtx::Store);
+}
+
+bool Compiler::compileLambda(LambdaNode* n) {
+    if (!n) return false;
+    
+    std::unordered_set<std::string> bodyGlobals;
+    std::vector<std::string> localsOrdered;
+    std::vector<std::string> params = n->parameters;
+    
+    std::unordered_set<std::string> captured;
+    collectCapturedNames(n->body.get(), bodyGlobals, captured);
+    
+    const bool forceMapped = !captured.empty();
+    std::vector<std::string> varnamesOrdered = params;
+    
+    std::unordered_map<std::string, int> slotMap;
+    int automatic_count = 0;
+    if (!forceMapped) {
+        for (size_t i = 0; i < varnamesOrdered.size(); ++i) {
+            slotMap[varnamesOrdered[i]] = static_cast<int>(i);
+        }
+        automatic_count = static_cast<int>(varnamesOrdered.size());
+    }
+    
+    int nparams = static_cast<int>(params.size());
+
+    Compiler bodyCompiler(ctx_, filename_);
+    bodyCompiler.globalNames_ = bodyGlobals;
+    bodyCompiler.localSlotMap_ = slotMap;
+    
+    if (!bodyCompiler.compileNode(n->body.get())) return false;
+    bodyCompiler.emit(OP_RETURN_VALUE);
+    bodyCompiler.applyPatches();
+
+    const proto::ProtoList* co_varnames = ctx_->newList();
+    for (const auto& name : varnamesOrdered)
+        co_varnames = co_varnames->appendLast(ctx_, ctx_->fromUTF8String(name.c_str()));
+        
+    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), ctx_->fromUTF8String(filename_.c_str())->asString(ctx_), co_varnames, nparams, automatic_count, false);
+    if (!codeObj) return false;
+    int idx = addConstant(codeObj);
+    emit(OP_LOAD_CONST, idx);
+    emit(OP_BUILD_FUNCTION, 0);
+    
+    return true;
 }
 
 bool Compiler::compileClassDef(ClassDefNode* n) {
@@ -1282,6 +1545,10 @@ bool Compiler::compileNode(ASTNode* node) {
     if (auto* lc = dynamic_cast<ListCompNode*>(node)) return compileListComp(lc);
     if (auto* dc = dynamic_cast<DictCompNode*>(node)) return compileDictComp(dc);
     if (auto* sc = dynamic_cast<SetCompNode*>(node)) return compileSetComp(sc);
+    if (auto* ge = dynamic_cast<GeneratorExpNode*>(node)) return compileGeneratorExp(ge);
+    if (auto* lam = dynamic_cast<LambdaNode*>(node)) return compileLambda(lam);
+    if (auto* js = dynamic_cast<JoinedStrNode*>(node)) return compileJoinedStr(js);
+    if (auto* fv = dynamic_cast<FormattedValueNode*>(node)) return compileFormattedValue(fv);
     if (auto* d = dynamic_cast<DeleteNode*>(node)) return compileDeleteNode(d);
     if (auto* w = dynamic_cast<WhileNode*>(node)) return compileWhile(w);
     if (auto* f = dynamic_cast<ForNode*>(node)) return compileFor(f);
@@ -1289,7 +1556,8 @@ bool Compiler::compileNode(ASTNode* node) {
     if (dynamic_cast<ContinueNode*>(node)) return compileContinue(static_cast<ContinueNode*>(node));
     if (auto* iff = dynamic_cast<IfNode*>(node)) return compileIf(iff);
     if (auto* g = dynamic_cast<GlobalNode*>(node)) return compileGlobal(g);
-    if (auto* ret = dynamic_cast<ReturnNode*>(node)) return compileReturn(ret);
+    if (auto* nl = dynamic_cast<NonlocalNode*>(node)) return compileNonlocal(nl);
+    if (auto* r = dynamic_cast<ReturnNode*>(node)) return compileReturn(r);
     if (auto* y = dynamic_cast<YieldNode*>(node)) return compileYield(y);
     if (auto* imp = dynamic_cast<ImportNode*>(node)) return compileImport(imp);
     if (auto* imf = dynamic_cast<ImportFromNode*>(node)) return compileImportFrom(imf);
@@ -1381,6 +1649,25 @@ const proto::ProtoObject* runCodeObject(proto::ProtoContext* ctx,
 
     return executeBytecodeRange(ctx, co_consts->asList(ctx), co_code->asList(ctx),
         co_names ? co_names->asList(ctx) : nullptr, frame, 0, co_code->asList(ctx)->getSize(ctx));
+}
+
+bool Compiler::compileJoinedStr(JoinedStrNode* n) {
+    if (!n) return false;
+    for (const auto& val : n->values) {
+        if (!compileNode(val.get())) return false;
+    }
+    emit(OP_BUILD_STRING, static_cast<int>(n->values.size()));
+    return true;
+}
+
+bool Compiler::compileFormattedValue(FormattedValueNode* n) {
+    if (!n) return false;
+    return compileNode(n->value.get());
+}
+
+bool Compiler::compileNonlocal(NonlocalNode* n) {
+    // Nonlocals are handled in collectLocalsFromBody / emitNameOp
+    return true;
 }
 
 } // namespace protoPython

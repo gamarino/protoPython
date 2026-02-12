@@ -1594,6 +1594,113 @@ const proto::ProtoObject* executeBytecodeRange(
             }
             setObj->setAttribute(ctx, env ? env->getDataString() : proto::ProtoString::fromUTF8String(ctx, "__data__"), data->asObject(ctx));
             stack.push_back(setObj);
+        } else if (op == OP_BUILD_STRING) {
+            std::vector<const proto::ProtoObject*> parts;
+            for (int j = 0; j < arg; ++j) {
+                parts.push_back(stack.back());
+                stack.pop_back();
+            }
+            std::reverse(parts.begin(), parts.end());
+            stack.push_back(env->buildString(parts));
+        } else if (op == OP_LOAD_DEREF) {
+            if (names && frame && static_cast<unsigned long>(arg) < names->getSize(ctx)) {
+                const proto::ProtoObject* nameObj = names->getAt(ctx, arg);
+                if (nameObj->isString(ctx)) {
+                    const proto::ProtoString* nameS = nameObj->asString(ctx);
+                    unsigned long h = nameObj->getHash(ctx);
+                    const proto::ProtoObject* val = PROTO_NONE;
+                    
+                    std::vector<const proto::ProtoObject*> worklist;
+                    const proto::ProtoList* ps = frame->getParents(ctx);
+                    if (ps) {
+                        for (unsigned long j = 0; j < ps->getSize(ctx); ++j) worklist.push_back(ps->getAt(ctx, j));
+                    }
+                    
+                    bool found = false;
+                    while (!worklist.empty()) {
+                        const proto::ProtoObject* curr = worklist.back();
+                        worklist.pop_back();
+                        if (!curr || curr == PROTO_NONE) continue;
+                        
+                        val = curr->getAttribute(ctx, nameS);
+                        if (val && val != PROTO_NONE) { found = true; break; }
+                        
+                        const proto::ProtoString* dName = env ? env->getDataString() : proto::ProtoString::fromUTF8String(ctx, "__data__");
+                        const proto::ProtoObject* dataObj = curr->getAttribute(ctx, dName);
+                        if (dataObj && dataObj->asSparseList(ctx)) {
+                            val = dataObj->asSparseList(ctx)->getAt(ctx, h);
+                            if (val && val != PROTO_NONE) { found = true; break; }
+                        }
+
+                        const proto::ProtoList* parents = curr->getParents(ctx);
+                        if (parents) {
+                            for (unsigned long j = 0; j < parents->getSize(ctx); ++j) { worklist.push_back(parents->getAt(ctx, j)); }
+                        }
+                    }
+                    if (!found) {
+                        if (env) {
+                            std::string s; nameS->toUTF8String(ctx, s);
+                            env->raiseNameError(ctx, s);
+                            continue;
+                        }
+                    }
+                    stack.push_back(val);
+                }
+            }
+        } else if (op == OP_STORE_DEREF) {
+            if (names && stack.size() >= 1 && static_cast<unsigned long>(arg) < names->getSize(ctx)) {
+                const proto::ProtoObject* val = stack.back();
+                stack.pop_back();
+                const proto::ProtoObject* nameObj = names->getAt(ctx, arg);
+                if (nameObj->isString(ctx)) {
+                    const proto::ProtoString* nameS = nameObj->asString(ctx);
+                    std::string s; nameS->toUTF8String(ctx, s);
+                    unsigned long h = nameObj->getHash(ctx);
+                    
+                    std::vector<proto::ProtoObject*> worklist;
+                    const proto::ProtoList* ps = frame ? frame->getParents(ctx) : nullptr;
+                    if (ps) {
+                        for (unsigned long j = 0; j < ps->getSize(ctx); ++j) 
+                            worklist.push_back(const_cast<proto::ProtoObject*>(ps->getAt(ctx, j)));
+                    }
+                    
+                    bool found = false;
+                    while (!worklist.empty()) {
+                        proto::ProtoObject* curr = worklist.back();
+                        worklist.pop_back();
+                        if (!curr || curr == PROTO_NONE) continue;
+                        
+                        if (std::getenv("PROTO_ENV_DIAG")) std::cerr << "  checking curr=" << curr << "\n";
+                        const proto::ProtoString* dName = env ? env->getDataString() : proto::ProtoString::fromUTF8String(ctx, "__data__");
+                        const proto::ProtoObject* dataObj = curr->getAttribute(ctx, dName);
+                        if (dataObj && dataObj->asSparseList(ctx)) {
+                            if (dataObj->asSparseList(ctx)->getAt(ctx, h) != PROTO_NONE) {
+                                const proto::ProtoSparseList* newData = dataObj->asSparseList(ctx)->setAt(ctx, h, val);
+                                curr->setAttribute(ctx, dName, newData->asObject(ctx));
+                                found = true;
+                                break;
+                            }
+                        }
+                        if (curr->getAttribute(ctx, nameS)) {
+                            curr->setAttribute(ctx, nameS, val);
+                            found = true;
+                            break;
+                        }
+                        const proto::ProtoList* parents = curr->getParents(ctx);
+                        if (parents) {
+                            for (unsigned long j = 0; j < parents->getSize(ctx); ++j) {
+                                worklist.push_back(const_cast<proto::ProtoObject*>(parents->getAt(ctx, j)));
+                            }
+                        }
+                    }
+                    if (!found) {
+                        if (env) {
+                            env->raiseNameError(ctx, "nonlocal " + s + " not found");
+                            continue;
+                        }
+                    }
+                }
+            }
         } else if (op == OP_JUMP_ABSOLUTE) {
             // i++;
             if (arg >= 0 && static_cast<unsigned long>(arg) < n)
@@ -1988,6 +2095,19 @@ const proto::ProtoObject* executeBytecodeRange(
             }
             
             const proto::ProtoObject* val = nextM->asMethod(ctx)(ctx, iterator, nullptr, emptyL, nullptr);
+            if (env && env->hasPendingException()) {
+                const proto::ProtoObject* exc = env->takePendingException();
+                if (env->isStopIteration(exc)) {
+                    if (get_env_diag()) std::cerr << "[proto-exec-diag] OP_FOR_ITER caught StopIteration, exhausted\n";
+                    stack.pop_back();
+                    if (arg >= 0 && static_cast<unsigned long>(arg) < n)
+                        i = static_cast<unsigned long>(arg) - 1;
+                    continue;
+                } else {
+                    env->setPendingException(exc);
+                    return nullptr;
+                }
+            }
             if (val && val != (env ? env->getNonePrototype() : nullptr)) {
                 if (get_env_diag()) std::cerr << "[proto-exec-diag] OP_FOR_ITER got val=" << val << "\n";
                 stack.push_back(val);

@@ -59,12 +59,17 @@ private:
     bool compileListComp(ListCompNode* n);
     bool compileDictComp(DictCompNode* n);
     bool compileSetComp(SetCompNode* n);
+    bool compileGeneratorExp(GeneratorExpNode* n);
+    bool compileLambda(LambdaNode* n);
+    bool compileJoinedStr(JoinedStrNode* n);
+    bool compileFormattedValue(FormattedValueNode* n);
     bool compileWhile(WhileNode* n);
     bool compileFor(ForNode* n);
     bool compileBreak(BreakNode* n);
     bool compileContinue(ContinueNode* n);
     bool compileIf(IfNode* n);
     bool compileGlobal(GlobalNode* n);
+    bool compileNonlocal(NonlocalNode* n);
     bool compileReturn(ReturnNode* n);
     bool compileYield(YieldNode* n);
     bool compileImport(ImportNode* n);
@@ -85,6 +90,7 @@ private:
     /** Collect names from function body: globals from GlobalNode, locals (ordered) from Name/Assign. */
     static void collectLocalsFromBody(ASTNode* body,
         std::unordered_set<std::string>& globalsOut,
+        std::unordered_set<std::string>& nonlocalsOut,
         std::vector<std::string>& localsOrdered);
     /** Collect names that are free in any nested def (captured by closures). */
     static void collectCapturedNames(ASTNode* body,
@@ -93,6 +99,7 @@ private:
     /** True if body contains locals(), exec(), or eval()—dynamic locals access that forces MAPPED. */
     static bool hasDynamicLocalsAccess(ASTNode* node);
     std::unordered_set<std::string> globalNames_;
+    std::unordered_set<std::string> nonlocalNames_;
     /** Optional: name -> slot index for LOAD_FAST/STORE_FAST. Set when compiling a function body. */
     std::unordered_map<std::string, int> localSlotMap_;
     bool isGenerator_ = false;
