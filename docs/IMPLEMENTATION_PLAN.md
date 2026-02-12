@@ -1,6 +1,6 @@
 # ProtoPython: Comprehensive Implementation Plan
 
-**Status (2026-02):** Phase 5 (HPy, REPL, error reporting) complete. Phase 6 (v73–v77: full stubs, threading, networking) in progress. See [tasks/todo.md](../tasks/todo.md) for step-level tracking.
+**Status (2026-02):** Phase 7 (*args, **kwargs, language completeness) complete. Phase 8 (Performance & Standard Library) in progress. See [tasks/todo.md](../tasks/todo.md) for step-level tracking.
 
 This document outlines the roadmap for turning `protoPython` into a GIL-less, high-performance Python 3.14 replacement built on `protoCore`.
 
@@ -32,8 +32,9 @@ The foundation of the runtime must be fully compatible with Python 3.14's semant
 - [x] **Phase 2: HPy universal ABI** (v64): Support loading HPy modules built against the universal ABI. `HPyModuleProvider` implemented. Done (v64).
 - [x] **Phase 3: HPy API coverage** (v65–v66): Implement additional HPy ABI (Object creation, numeric/string, protocols, collections, type creation). Done (v66).
 - [x] **Phase 4: Ecosystem compatibility** (v67): Documented build/distribute; final tests. Done (v67).
-- [x] **Phase 5: Interactive REPL & UX** (v68–v72): Implement CPython-style REPL, high-quality error messages, and final project polish. Phase 5.4 done (v71: advanced REPL features, help/dir, auto-indent, %debug). Phase 5.5 pending (v72).
-- [ ] **Phase 6: Implementation Completion & Full Stubs** (v73–v77): Complete core builtins, full native threading, networking foundation, and comprehensive stub implementation. 100 steps (1385–1484). See [tasks/todo.md](../tasks/todo.md).
+- [x] **Phase 6: Core Language Completeness** (v73–v77): Implementation of Slicing, `del` statement, `assert` functionality, f-strings, and `nonlocal` support correctly integrated into both `protopy` (bytecode) and `protopyc` (native). Done (v77).
+- [x] **Phase 7: Full Compatibility & Advanced Data Structures** (v78–v82): Implementation of `*args` and `**kwargs` support, including correct dictionary key representation and tuple length fixes. Optimized variable argument packing via `OP_LIST_EXTEND`. Done (v82).
+- [ ] **Phase 8: Implementation Completion & Full Stubs**: Complete core builtins, full native threading, networking foundation, and comprehensive stub implementation. 100 steps (1385–1484). See [tasks/todo.md](../tasks/todo.md).
 
 *References: [HPy Documentation](https://docs.hpyproject.org/), [HPy API](https://docs.hpyproject.org/en/latest/api.html), [HPY_INTEGRATION_PLAN.md](HPY_INTEGRATION_PLAN.md).*
 

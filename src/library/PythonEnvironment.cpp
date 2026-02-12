@@ -4912,7 +4912,8 @@ PythonEnvironment::~PythonEnvironment() {
         remove_if_match(reinterpret_cast<const proto::ProtoObject*>(co_varnames));
         remove_if_match(reinterpret_cast<const proto::ProtoObject*>(co_nparams));
         remove_if_match(reinterpret_cast<const proto::ProtoObject*>(co_automatic_count));
-        
+        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(co_is_generator));
+        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(co_flags));
         remove_if_match(reinterpret_cast<const proto::ProtoObject*>(__iadd__));
         remove_if_match(reinterpret_cast<const proto::ProtoObject*>(__isub__));
         remove_if_match(reinterpret_cast<const proto::ProtoObject*>(__imul__));
@@ -5177,6 +5178,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     co_nparams = proto::ProtoString::fromUTF8String(rootContext_, "co_nparams");
     co_automatic_count = proto::ProtoString::fromUTF8String(rootContext_, "co_automatic_count");
     co_is_generator = proto::ProtoString::fromUTF8String(rootContext_, "co_is_generator");
+    co_flags = proto::ProtoString::fromUTF8String(rootContext_, "co_flags");
     co_consts = proto::ProtoString::fromUTF8String(rootContext_, "co_consts");
     co_names = proto::ProtoString::fromUTF8String(rootContext_, "co_names");
     co_code = proto::ProtoString::fromUTF8String(rootContext_, "co_code");
@@ -6134,7 +6136,7 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain,
                     if (compileOk) {
                         if (std::getenv("PROTO_ENV_DIAG"))
                             std::cerr << "[proto-env] executeModule: compiling " << moduleName << "\n" << std::flush;
-                        const proto::ProtoObject* codeObj = makeCodeObject(ctx, compiler.getConstants(), compiler.getNames(), compiler.getBytecode(), ctx->fromUTF8String(path.c_str())->asString(ctx));
+                        const proto::ProtoObject* codeObj = makeCodeObject(ctx, compiler.getConstants(), compiler.getNames(), compiler.getBytecode(), ctx->fromUTF8String(path.c_str())->asString(ctx), nullptr, 0, 0, 0, false);
                         if (codeObj) {
                             if (std::getenv("PROTO_ENV_DIAG"))
                                 std::cerr << "[proto-env] executeModule: about to run " << moduleName << "\n" << std::flush;
@@ -7546,6 +7548,21 @@ void PythonEnvironment::delName(const std::string& name) {
         const_cast<proto::ProtoObject*>(frame)->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, name.c_str()), PROTO_NONE);
     }
     invalidateResolveCache();
+}
+
+void PythonEnvironment::pushKwNames(const proto::ProtoTuple* names) {
+    kwNamesStack.push_back(names);
+}
+
+void PythonEnvironment::popKwNames() {
+    if (!kwNamesStack.empty()) {
+        kwNamesStack.pop_back();
+    }
+}
+
+const proto::ProtoTuple* PythonEnvironment::getCurrentKwNames() const {
+    if (kwNamesStack.empty()) return nullptr;
+    return kwNamesStack.back();
 }
 
 } // namespace protoPython

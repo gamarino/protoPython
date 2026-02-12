@@ -80,6 +80,7 @@ enum class TokenType {
     Nonlocal,
     At,            /* @ */
     Error,
+    DoubleStar,    /* ** */
 };
 
 struct Token {

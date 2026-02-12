@@ -62,6 +62,34 @@ This document is the Phase 3 execution engine audit: for each opcode, whether it
 | ROT_THREE | 153 | Y | RotThree |
 | ROT_FOUR | 154 | Y | RotFour |
 | DUP_TOP_TWO | 155 | Y | DupTopTwo |
+| BUILD_FUNCTION | 156 | Y | none |
+| LOAD_FAST | 157 | Y | none |
+| STORE_FAST | 158 | Y | none |
+| CALL_FUNCTION_KW | 159 | Y | none |
+| BUILD_CLASS | 160 | Y | none |
+| DELETE_NAME | 161 | Y | none |
+| DELETE_ATTR | 162 | Y | none |
+| DELETE_SUBSCR | 163 | Y | none |
+| DELETE_GLOBAL | 164 | Y | none |
+| DELETE_FAST | 165 | Y | none |
+| RAISE_VARARGS | 166 | Y | none |
+| POP_JUMP_IF_TRUE | 167 | Y | none |
+| LIST_APPEND | 168 | Y | none |
+| MAP_ADD | 169 | Y | none |
+| SET_ADD | 170 | Y | none |
+| BUILD_SET | 171 | Y | none |
+| YIELD_VALUE | 172 | Y | none |
+| SETUP_WITH | 173 | Y | none |
+| WITH_CLEANUP | 174 | Y | none |
+| GET_YIELD_FROM_ITER | 175 | Y | none |
+| YIELD_FROM | 176 | Y | none |
+| SETUP_FINALLY | 177 | Y | none |
+| POP_BLOCK | 178 | Y | none |
+| BUILD_STRING | 179 | Y | none |
+| LOAD_DEREF | 180 | Y | none |
+| STORE_DEREF | 181 | Y | none |
+| CALL_FUNCTION_EX | 182 | Y | none |
+| LIST_EXTEND | 183 | Y | none |
 
 ## Gaps (resolved in Step 2)
 

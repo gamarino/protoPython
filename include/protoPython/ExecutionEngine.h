@@ -168,6 +168,10 @@ constexpr int OP_BUILD_STRING = 179;
 constexpr int OP_LOAD_DEREF = 180;
 /** Store a value into a variable in an enclosing scope (closure). */
 constexpr int OP_STORE_DEREF = 181;
+// CALL_FUNCTION_EX: pop kwargs (if flag&1), then starargs, then callable.
+constexpr int OP_CALL_FUNCTION_EX = 182;
+/** LIST_EXTEND: pop iterable, pop list, extend list, push list. */
+constexpr int OP_LIST_EXTEND = 183;
 
 /**
  * @brief Executes a range of bytecode (one basic block). No per-instruction

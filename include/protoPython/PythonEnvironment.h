@@ -211,6 +211,7 @@ public:
     const proto::ProtoString* getCoNparamsString() const { return co_nparams; }
     const proto::ProtoString* getCoAutomaticCountString() const { return co_automatic_count; }
     const proto::ProtoString* getCoIsGeneratorString() const { return co_is_generator; }
+    const proto::ProtoString* getCoFlagsString() const { return co_flags; }
     const proto::ProtoString* getCoConstsString() const { return co_consts; }
     const proto::ProtoString* getCoNamesString() const { return co_names; }
     const proto::ProtoString* getCoCodeString() const { return co_code; }
@@ -497,6 +498,11 @@ public:
      * @brief Formats a traceback starting from the given context (Step 1329).
      */
     std::string formatTraceback(const proto::ProtoContext* ctx);
+    
+    // Keyword Names Stack management (for **kwargs refinement)
+    void pushKwNames(const proto::ProtoTuple* names);
+    void popKwNames();
+    const proto::ProtoTuple* getCurrentKwNames() const;
 
     /**
      * @brief Collects candidate names for fuzzy matching suggestions.
@@ -597,6 +603,9 @@ private:
     const proto::ProtoString* dictString{nullptr};
     const proto::ProtoString* docString{nullptr};
     const proto::ProtoString* reversedString{nullptr};
+    
+    // Keyword Names Stack (thread-local per Environment)
+    std::vector<const proto::ProtoTuple*> kwNamesStack;
     const proto::ProtoString* getDunderString{nullptr};
     const proto::ProtoString* setDunderString{nullptr};
     const proto::ProtoString* delDunderString{nullptr};
@@ -617,6 +626,7 @@ private:
     const proto::ProtoString* co_nparams{nullptr};
     const proto::ProtoString* co_automatic_count{nullptr};
     const proto::ProtoString* co_is_generator{nullptr};
+    const proto::ProtoString* co_flags{nullptr};
     const proto::ProtoString* co_consts{nullptr};
     const proto::ProtoString* co_names{nullptr};
     const proto::ProtoString* co_code{nullptr};

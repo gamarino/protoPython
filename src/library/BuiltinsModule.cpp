@@ -205,6 +205,7 @@ static const proto::ProtoObject* py_len(
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
     
     if (obj->asList(context)) return context->fromInteger(obj->asList(context)->getSize(context));
+    if (obj->asTuple(context)) return context->fromInteger(obj->asTuple(context)->getSize(context));
     if (obj->asSparseList(context)) return context->fromInteger(obj->asSparseList(context)->getSize(context));
     if (obj->isString(context)) return context->fromInteger(obj->asString(context)->getSize(context));
     
@@ -974,7 +975,7 @@ static const proto::ProtoObject* py_compile(
         std::unique_ptr<ModuleNode> mod = parser.parseModule();
         if (!mod || mod->body.empty() || !compiler.compileModule(mod.get())) return PROTO_NONE;
     }
-    return makeCodeObject(context, compiler.getConstants(), compiler.getNames(), compiler.getBytecode());
+    return makeCodeObject(context, compiler.getConstants(), compiler.getNames(), compiler.getBytecode(), nullptr, nullptr, 0, 0, 0, false);
 }
 
 /** eval(expr, globals=None, locals=None): compile and run expression. */
@@ -1018,7 +1019,7 @@ static const proto::ProtoObject* py_eval(
     }
     Compiler compiler(context, "<string>");
     if (!compiler.compileExpression(expr.get())) return PROTO_NONE;
-    const proto::ProtoObject* codeObj = makeCodeObject(context, compiler.getConstants(), compiler.getNames(), compiler.getBytecode());
+    const proto::ProtoObject* codeObj = makeCodeObject(context, compiler.getConstants(), compiler.getNames(), compiler.getBytecode(), nullptr, nullptr, 0, 0, 0, false);
     if (!codeObj) return PROTO_NONE;
     proto::ProtoObject* globals = nullptr;
     proto::ProtoObject* locals = nullptr;
@@ -1216,7 +1217,7 @@ static const proto::ProtoObject* py_exec(
             std::cerr << "[proto-thread-diag] exec: compileModule failed\n" << std::flush;
         return PROTO_NONE;
     }
-    const proto::ProtoObject* codeObj = makeCodeObject(context, compiler.getConstants(), compiler.getNames(), compiler.getBytecode());
+    const proto::ProtoObject* codeObj = makeCodeObject(context, compiler.getConstants(), compiler.getNames(), compiler.getBytecode(), nullptr, nullptr, 0, 0, 0, false);
     if (!codeObj) return PROTO_NONE;
     proto::ProtoObject* globals = nullptr;
     proto::ProtoObject* locals = nullptr;

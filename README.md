@@ -2,7 +2,7 @@
 
 [![Language](https://img.shields.io/badge/Language-C%2B%2B20-blue.svg)](https://isocpp.org/)
 [![Build System](https://img.shields.io/badge/Build-CMake-green.svg)](https://cmake.org/)
-[![Status](https://img.shields.io/badge/Status-Phase%206%20Complete-green.svg)]()
+[![Status](https://img.shields.io/badge/Status-Phase%207%20Complete-green.svg)]()
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 > **"The GIL is no longer a limit. Immutability is no longer a constraint. Speed is no longer a trade-off. Welcome to the era of the Swarm of One."**
@@ -24,7 +24,7 @@
 
 ---
 
-## 📋 Project Status: Phase 6 Complete ✅
+## 📋 Project Status: Phase 7 Support ✅
 
 **Current Status:** Ready for community review (protoPython, protopy). Work in Progress (protopyc).
 
@@ -45,6 +45,7 @@
 - ✅ **Balanced Collection Core**: `ProtoList` now uses AVL balancing for $O(\log N)$ stability.
 - ✅ **Optimized String Ropes**: High-performance string concatenation using native `protoCore` ropes.
 - ✅ **Core Language Completeness**: Full support for Slicing, `del` statement, and `assert` functionality integrated.
+- ✅ **Variable Arguments Support**: Full implementation of `*args` and `**kwargs` with support for both function definitions and calls, including correct dictionary key string representation.
 
 ---
 

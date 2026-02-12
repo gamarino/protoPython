@@ -380,14 +380,22 @@ std::unique_ptr<ASTNode> Parser::parsePrimary() {
             auto call = createNode<CallNode>();
             call->func = std::move(left);
             while (cur_.type != TokenType::RParen && cur_.type != TokenType::EndOfFile) {
-                if (cur_.type == TokenType::Name && tok_.peek().type == TokenType::Assign) {
+                if (cur_.type == TokenType::Star) {
+                    advance();
+                    if (call->star_args) error("Only one *args allowed in call");
+                    call->star_args = parseExpression();
+                } else if (cur_.type == TokenType::DoubleStar) {
+                    advance();
+                    if (call->kw_args) error("Only one **kwargs allowed in call");
+                    call->kw_args = parseExpression();
+                } else if (cur_.type == TokenType::Name && tok_.peek().type == TokenType::Assign) {
                     std::string kwname = cur_.value;
                     advance(); // name
                     advance(); // =
                     call->keywords.push_back({kwname, parseExpression()});
                 } else {
-                    if (!call->keywords.empty()) {
-                        error("positional argument follows keyword argument");
+                    if (!call->keywords.empty() || call->star_args || call->kw_args) {
+                        error("positional argument follows keyword or unpacking argument");
                     }
                     call->args.push_back(parseExpression());
                 }
@@ -602,12 +610,30 @@ std::unique_ptr<ASTNode> Parser::parseStatement() {
         if (!expect(TokenType::LParen)) return nullptr;
         auto fn = createNode<FunctionDefNode>();
         fn->name = funcName;
-        while (cur_.type == TokenType::Name) {
-            fn->parameters.push_back(cur_.value);
-            advance();
-            if (accept(TokenType::Assign)) {
-                auto defaultVal = parseExpression();
-                (void)defaultVal; // Defaults not yet supported in compiler, just skipping
+        while (cur_.type == TokenType::Name || cur_.type == TokenType::Star || cur_.type == TokenType::DoubleStar) {
+            if (cur_.type == TokenType::Star) {
+                advance();
+                if (cur_.type != TokenType::Name) {
+                    error("Expected name after *");
+                    return nullptr;
+                }
+                fn->vararg = cur_.value;
+                advance();
+            } else if (cur_.type == TokenType::DoubleStar) {
+                advance();
+                if (cur_.type != TokenType::Name) {
+                    error("Expected name after **");
+                    return nullptr;
+                }
+                fn->kwarg = cur_.value;
+                advance();
+            } else {
+                fn->parameters.push_back(cur_.value);
+                advance();
+                if (accept(TokenType::Assign)) {
+                    auto defaultVal = parseExpression();
+                    (void)defaultVal; // Defaults not yet supported in compiler, just skipping
+                }
             }
             if (!accept(TokenType::Comma)) break;
         }
@@ -969,11 +995,20 @@ std::unique_ptr<ASTNode> Parser::parseLambda() {
     advance(); // lambda
     
     if (cur_.type != TokenType::Colon) {
-        while (cur_.type == TokenType::Name) {
-            node->parameters.push_back(cur_.value);
-            advance();
-            if (accept(TokenType::Comma)) continue;
-            else break;
+        while (cur_.type == TokenType::Name || cur_.type == TokenType::Star || cur_.type == TokenType::DoubleStar) {
+            if (cur_.type == TokenType::Star) {
+                advance();
+                node->vararg = cur_.value;
+                advance();
+            } else if (cur_.type == TokenType::DoubleStar) {
+                advance();
+                node->kwarg = cur_.value;
+                advance();
+            } else {
+                node->parameters.push_back(cur_.value);
+                advance();
+            }
+            if (!accept(TokenType::Comma)) break;
         }
     }
     

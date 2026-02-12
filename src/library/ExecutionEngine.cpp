@@ -63,93 +63,148 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
     const proto::ProtoSparseList* kwargs) {
     if (!ctx || !self || !args) return PROTO_NONE;
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    const proto::ProtoObject* codeObj = self->getAttribute(ctx, env ? env->getCodeString() : proto::ProtoString::fromUTF8String(ctx, "__code__"));
+    const proto::ProtoString* code_name = env ? env->getCodeString() : proto::ProtoString::fromUTF8String(ctx, "__code__");
+    const proto::ProtoObject* codeObj = self->getAttribute(ctx, code_name);
     if (!codeObj || codeObj == PROTO_NONE) return PROTO_NONE;
-    const proto::ProtoObject* globalsObj = self->getAttribute(ctx, env ? env->getGlobalsString() : proto::ProtoString::fromUTF8String(ctx, "__globals__"));
+
+    const proto::ProtoString* globals_name = env ? env->getGlobalsString() : proto::ProtoString::fromUTF8String(ctx, "__globals__");
+    const proto::ProtoObject* globalsObj = self->getAttribute(ctx, globals_name);
     if (!globalsObj || globalsObj == PROTO_NONE) return PROTO_NONE;
 
-    const proto::ProtoObject* co_varnames_obj = codeObj->getAttribute(ctx, env ? env->getCoVarnamesString() : proto::ProtoString::fromUTF8String(ctx, "co_varnames"));
-    const proto::ProtoObject* co_nparams_obj = codeObj->getAttribute(ctx, env ? env->getCoNparamsString() : proto::ProtoString::fromUTF8String(ctx, "co_nparams"));
-    const proto::ProtoObject* co_automatic_obj = codeObj->getAttribute(ctx, env ? env->getCoAutomaticCountString() : proto::ProtoString::fromUTF8String(ctx, "co_automatic_count"));
+    const proto::ProtoString* co_flags_name = env ? env->getCoFlagsString() : proto::ProtoString::fromUTF8String(ctx, "co_flags");
+    const proto::ProtoObject* co_flags_obj = codeObj->getAttribute(ctx, co_flags_name);
+    int co_flags = (co_flags_obj && co_flags_obj->isInteger(ctx)) ? static_cast<int>(co_flags_obj->asLong(ctx)) : 0;
+
+    const proto::ProtoString* co_varnames_name = env ? env->getCoVarnamesString() : proto::ProtoString::fromUTF8String(ctx, "co_varnames");
+    const proto::ProtoString* co_nparams_name = env ? env->getCoNparamsString() : proto::ProtoString::fromUTF8String(ctx, "co_nparams");
+    const proto::ProtoString* co_automatic_name = env ? env->getCoAutomaticCountString() : proto::ProtoString::fromUTF8String(ctx, "co_automatic_count");
+
+    const proto::ProtoObject* co_varnames_obj = codeObj->getAttribute(ctx, co_varnames_name);
+    const proto::ProtoObject* co_nparams_obj = codeObj->getAttribute(ctx, co_nparams_name);
+    const proto::ProtoObject* co_automatic_obj = codeObj->getAttribute(ctx, co_automatic_name);
+
     const proto::ProtoList* co_varnames = co_varnames_obj && co_varnames_obj->asList(ctx) ? co_varnames_obj->asList(ctx) : nullptr;
     int nparams = (co_nparams_obj && co_nparams_obj->isInteger(ctx)) ? static_cast<int>(co_nparams_obj->asLong(ctx)) : 0;
     int automatic_count = (co_automatic_obj && co_automatic_obj->isInteger(ctx)) ? static_cast<int>(co_automatic_obj->asLong(ctx)) : 0;
-    if (automatic_count < 0) automatic_count = 0;
-    if (nparams < 0) nparams = 0;
-    if (std::getenv("PROTO_THREAD_DIAG") && args) {
-        std::cerr << "[proto-thread-diag] runUserFunctionCall nparams=" << nparams << " auto=" << automatic_count << " args=" << args->getSize(ctx) << ": ";
-        for (unsigned long i = 0; i < args->getSize(ctx); ++i) {
-            std::cerr << args->getAt(ctx, i) << " ";
-        }
-        std::cerr << "\n" << std::flush;
-    }
-    if (std::getenv("PROTO_THREAD_DIAG")) {
-        std::cerr << "[proto-thread-diag] runUserFunctionCall nparams=" << nparams << " auto=" << automatic_count << " args=" << (args ? args->getSize(ctx) : 0) << "\n" << std::flush;
-    }
 
     const proto::ProtoList* parameterNames = nullptr;
     const proto::ProtoList* localNames = nullptr;
-    if (co_varnames && automatic_count > 0 && static_cast<unsigned long>(automatic_count) <= co_varnames->getSize(ctx)) {
-        if (std::getenv("PROTO_THREAD_DIAG")) {
-            std::cerr << "[proto-thread-diag] varnames: ";
-            for (unsigned long i = 0; i < co_varnames->getSize(ctx); ++i) {
-                std::string vn; co_varnames->getAt(ctx, i)->asString(ctx)->toUTF8String(ctx, vn);
-                std::cerr << vn << " ";
-            }
-            std::cerr << "\n" << std::flush;
-        }
-        parameterNames = (nparams > 0 && static_cast<unsigned long>(nparams) <= co_varnames->getSize(ctx))
-            ? ctx->newList() : nullptr;
-        if (parameterNames) {
+    if (co_varnames) {
+        int co_varnames_size = static_cast<int>(co_varnames->getSize(ctx));
+        if (nparams > 0 && nparams <= co_varnames_size) {
+            parameterNames = ctx->newList();
             for (int i = 0; i < nparams; ++i)
                 parameterNames = parameterNames->appendLast(ctx, co_varnames->getAt(ctx, i));
         }
-        localNames = ctx->newList();
-        for (int i = 0; i < automatic_count; ++i)
-            localNames = localNames->appendLast(ctx, co_varnames->getAt(ctx, i));
+        if (automatic_count > 0 && automatic_count <= co_varnames_size) {
+            localNames = ctx->newList();
+            for (int i = 0; i < automatic_count; ++i)
+                localNames = localNames->appendLast(ctx, co_varnames->getAt(ctx, i));
+        }
     }
 
-    ContextScope scope(ctx->space, ctx, parameterNames, localNames, args, kwargs);
+    // We pass nullptr for args and kwargs to skip ProtoContext's internal binding,
+    // as we handle it manually below to support Python-specific semantics like *args and **kwargs.
+    ContextScope scope(ctx->space, ctx, parameterNames, localNames, nullptr, nullptr);
     proto::ProtoContext* calleeCtx = scope.context();
-
 
     proto::ProtoObject* frame = const_cast<proto::ProtoObject*>(calleeCtx->newObject(true));
     if (env && env->getFramePrototype()) {
         frame = const_cast<proto::ProtoObject*>(frame->addParent(calleeCtx, env->getFramePrototype()));
     }
     
-    if (args && nparams > 0) {
-        unsigned long argCount = args->getSize(calleeCtx);
-        unsigned long toCopy = (argCount < static_cast<unsigned long>(nparams)) ? argCount : static_cast<unsigned long>(nparams);
+    // Bind parameters
+    if (automatic_count > 0) {
+        proto::ProtoObject** slots = const_cast<proto::ProtoObject**>(calleeCtx->getAutomaticLocals());
+        unsigned int nSlots = calleeCtx->getAutomaticLocalsCount();
+        if (std::getenv("PROTO_ENV_DIAG")) std::cerr << "[runUserFunctionCall] slots=" << slots << " nSlots=" << nSlots << "\n";
+        unsigned long argCount = args ? args->getSize(calleeCtx) : 0;
         
-        if (automatic_count > 0) {
-            unsigned int nSlots = calleeCtx->getAutomaticLocalsCount();
-            if (toCopy > nSlots) toCopy = nSlots;
-            proto::ProtoObject** slots = const_cast<proto::ProtoObject**>(calleeCtx->getAutomaticLocals());
-            for (unsigned long i = 0; i < toCopy; ++i) {
-                slots[i] = const_cast<proto::ProtoObject*>(args->getAt(calleeCtx, static_cast<int>(i)));
-            }
-        } else if (co_varnames) {
-            // Store in frame's __data__ or attributes
-            const proto::ProtoString* dName = env ? env->getDataString() : proto::ProtoString::fromUTF8String(calleeCtx, "__data__");
-            const proto::ProtoObject* dataObj = env ? env->getAttribute(calleeCtx, frame, dName) : frame->getAttribute(calleeCtx, dName);
-            
-            if (get_env_diag()) {
-                std::cerr << "[proto-exec-diag] Storing params in __data__ for frame " << frame << " toCopy=" << toCopy << " co_varnames size=" << (co_varnames ? co_varnames->getSize(calleeCtx) : 0) << "\n";
-            }
-            for (unsigned long i = 0; i < toCopy; ++i) {
-                const proto::ProtoObject* nameObj = co_varnames->getAt(calleeCtx, static_cast<int>(i));
-                if (nameObj->isString(calleeCtx)) {
-                    const proto::ProtoObject* val = args->getAt(calleeCtx, static_cast<int>(i));
-                    if (dataObj && dataObj->asSparseList(calleeCtx)) {
-                        unsigned long h = nameObj->getHash(calleeCtx);
-                        const proto::ProtoSparseList* data = dataObj->asSparseList(calleeCtx)->setAt(calleeCtx, h, val);
-                        frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, dName, data->asObject(calleeCtx)));
-                    } else {
-                        frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, nameObj->asString(calleeCtx), val));
-                    }
+        // 1. Positional arguments
+        unsigned long toCopy = (argCount < static_cast<unsigned long>(nparams)) ? argCount : static_cast<unsigned long>(nparams);
+        if (toCopy > nSlots) toCopy = nSlots;
+        for (unsigned long i = 0; i < toCopy; ++i) {
+            slots[i] = const_cast<proto::ProtoObject*>(args->getAt(calleeCtx, static_cast<int>(i)));
+        }
+        
+        // 2. Keyword arguments to positional slots
+        std::unordered_set<int> boundIndices;
+        for (unsigned long i = 0; i < toCopy; ++i) boundIndices.insert(static_cast<int>(i));
+        
+        if (kwargs) {
+            for (int i = 0; i < nparams; ++i) {
+                if (boundIndices.count(i)) continue;
+                std::string pName; co_varnames->getAt(calleeCtx, i)->asString(calleeCtx)->toUTF8String(calleeCtx, pName);
+                const proto::ProtoObject* val = kwargs->getAt(calleeCtx, ctx->fromUTF8String(pName.c_str())->getHash(calleeCtx));
+                if (val && val != PROTO_NONE) {
+                    slots[i] = const_cast<proto::ProtoObject*>(val);
+                    boundIndices.insert(i);
                 }
             }
+        }
+
+        // 3. *args
+        int varargIdx = -1;
+        if (co_flags & CO_VARARGS) {
+            varargIdx = nparams;
+            const proto::ProtoList* starArgs = calleeCtx->newList();
+            if (argCount > static_cast<unsigned long>(nparams)) {
+                for (unsigned long i = nparams; i < argCount; ++i) {
+                    starArgs = starArgs->appendLast(calleeCtx, args->getAt(calleeCtx, static_cast<int>(i)));
+                }
+            }
+            const proto::ProtoObject* tup = calleeCtx->newTupleFromList(starArgs)->asObject(calleeCtx);
+            if (varargIdx < static_cast<int>(nSlots)) slots[varargIdx] = const_cast<proto::ProtoObject*>(tup);
+        }
+
+        // 4. **kwargs
+        if (co_flags & CO_VARKEYWORDS) {
+            int kwargIdx = (co_flags & CO_VARARGS) ? nparams + 1 : nparams;
+            proto::ProtoObject* kwDict = const_cast<proto::ProtoObject*>(calleeCtx->newObject(true));
+            if (env && env->getDictPrototype()) kwDict = const_cast<proto::ProtoObject*>(kwDict->addParent(calleeCtx, env->getDictPrototype()));
+            
+            const proto::ProtoString* dataName = env ? env->getDataString() : proto::ProtoString::fromUTF8String(calleeCtx, "__data__");
+            const proto::ProtoString* keysName = proto::ProtoString::fromUTF8String(calleeCtx, "__keys__");
+            
+            const proto::ProtoSparseList* data = calleeCtx->newSparseList();
+            const proto::ProtoList* keys = calleeCtx->newList();
+            const proto::ProtoTuple* kwNames = env ? env->getCurrentKwNames() : nullptr;
+            
+            if (kwargs) {
+                auto it = kwargs->getIterator(calleeCtx);
+                while (it && it->hasNext(calleeCtx)) {
+                    unsigned long key = it->nextKey(calleeCtx);
+                    const proto::ProtoObject* val = it->nextValue(calleeCtx);
+                    
+                    // Only add if not already bound to a positional param
+                    bool alreadyBound = false;
+                    for (int i = 0; i < nparams; ++i) {
+                         const proto::ProtoObject* paramName = co_varnames->getAt(calleeCtx, i);
+                         if (paramName && paramName->getHash(calleeCtx) == key) {
+                             alreadyBound = true;
+                             break;
+                         }
+                    }
+                    if (!alreadyBound) {
+                        data = data->setAt(calleeCtx, key, val);
+                        const proto::ProtoObject* keyObj = reinterpret_cast<const proto::ProtoObject*>(key);
+                        if (kwNames) {
+                            for (unsigned long i = 0; i < kwNames->getSize(calleeCtx); ++i) {
+                                const proto::ProtoObject* kn = kwNames->getAt(calleeCtx, i);
+                                if (kn && kn->getHash(calleeCtx) == key) {
+                                    keyObj = kn;
+                                    break;
+                                }
+                            }
+                        }
+                        keys = keys->appendLast(calleeCtx, keyObj);
+                    }
+                    it = const_cast<proto::ProtoSparseListIterator*>(it)->advance(calleeCtx);
+                }
+            }
+            kwDict->setAttribute(calleeCtx, dataName, data->asObject(calleeCtx));
+            kwDict->setAttribute(calleeCtx, keysName, keys->asObject(calleeCtx));
+            if (kwargIdx < static_cast<int>(nSlots)) slots[kwargIdx] = kwDict;
         }
     }
     if (!frame) return PROTO_NONE;
@@ -496,7 +551,8 @@ static const proto::ProtoObject* compareOp(proto::ProtoContext* ctx,
         if (!lst) {
             // Try dictionary keys
             PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-            const proto::ProtoObject* keysObj = b->getAttribute(ctx, env ? env->getKeysString() : proto::ProtoString::fromUTF8String(ctx, "__keys__"));
+            const proto::ProtoString* keys_name = env ? env->getKeysString() : proto::ProtoString::fromUTF8String(ctx, "__keys__");
+            const proto::ProtoObject* keysObj = b->getAttribute(ctx, keys_name);
             if (keysObj) lst = keysObj->asList(ctx);
         }
         
@@ -549,10 +605,14 @@ static const proto::ProtoObject* invokeCallable(proto::ProtoContext* ctx,
         if (env) env->raiseTypeError(ctx, "object is not callable");
         return PROTO_NONE;
     }
-    if (std::getenv("PROTO_THREAD_DIAG")) {
-         std::cerr << "[proto-thread-diag] calling __call__=" << callAttr << " method=" << (void*)callAttr->asMethod(ctx) << "\n" << std::flush;
+    if (std::getenv("PROTO_ENV_DIAG")) {
+         std::cerr << "[invokeCallable] calling __call__=" << callAttr << " method=" << (void*)callAttr->asMethod(ctx) << "\n" << std::flush;
     }
-    return callAttr->asMethod(ctx)(ctx, callable, nullptr, args, kwargs);
+    const proto::ProtoObject* result = callAttr->asMethod(ctx)(ctx, callable, nullptr, args, kwargs);
+    if (std::getenv("PROTO_ENV_DIAG")) {
+         std::cerr << "[invokeCallable] result=" << result << "\n" << std::flush;
+    }
+    return result;
 }
 
 } // anonymous namespace
@@ -1931,8 +1991,9 @@ const proto::ProtoObject* executeBytecodeRange(
                     kwMap = kwMap->setAt(ctx, nameStr->getHash(ctx), kwVals[k]);
             }
 
+            if (env) env->pushKwNames(namesTuple);
             const proto::ProtoObject* result = invokeCallable(ctx, callable, plArgs, kwMap);
-            PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+            if (env) env->popKwNames();
             if (result) {
                 stack.push_back(result);
             } else if (env && env->hasPendingException()) {
@@ -1964,6 +2025,60 @@ const proto::ProtoObject* executeBytecodeRange(
                 // Return value was None (nullptr) but no exception.
                 stack.push_back(PROTO_NONE);
             }
+        } else if (op == OP_CALL_FUNCTION_EX) {
+            const proto::ProtoObject* kwargs = (arg & 1) ? stack.back() : nullptr;
+            if (arg & 1) stack.pop_back();
+            const proto::ProtoObject* starargs = stack.back();
+            stack.pop_back();
+            const proto::ProtoObject* callable = stack.back();
+            stack.pop_back();
+            
+            const proto::ProtoList* posArgs = nullptr;
+            if (starargs && starargs->asList(ctx)) {
+                posArgs = starargs->asList(ctx);
+            } else if (starargs && starargs != PROTO_NONE) {
+                // Fallback: use getIter
+                if (env) {
+                    const proto::ProtoObject* it = env->iter(starargs);
+                    if (it) {
+                        const proto::ProtoList* L = ctx->newList();
+                        while (const proto::ProtoObject* next = env->next(it)) {
+                            L = L->appendLast(ctx, next);
+                        }
+                        posArgs = L;
+                    }
+                }
+            }
+            if (!posArgs) posArgs = ctx->newList();
+            
+            const proto::ProtoSparseList* kwArgs = nullptr;
+            if (kwargs && kwargs->asSparseList(ctx)) {
+                kwArgs = kwargs->asSparseList(ctx);
+            } else if (kwargs && kwargs != PROTO_NONE && env) {
+                 // Fallback: check if it has __data__ (for dict objects)
+                 const proto::ProtoString* dName = env->getDataString();
+                 const proto::ProtoObject* data = kwargs->getAttribute(ctx, dName);
+                 if (data && data->asSparseList(ctx)) kwArgs = data->asSparseList(ctx);
+            }
+            
+            bool pushed = false;
+            if (kwargs && env) {
+                 const proto::ProtoObject* keysListObj = kwargs->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__keys__"));
+                 if (keysListObj && keysListObj->asList(ctx)) {
+                     env->pushKwNames(ctx->newTupleFromList(keysListObj->asList(ctx)));
+                     pushed = true;
+                 }
+            }
+
+            const proto::ProtoObject* result = invokePythonCallable(ctx, callable, posArgs, kwArgs);
+            if (pushed && env) env->popKwNames();
+            if (result) {
+                stack.push_back(result);
+            } else if (env && env->hasPendingException()) {
+                return PROTO_NONE;
+            } else {
+                stack.push_back(env ? env->getNonePrototype() : PROTO_NONE);
+            }
         } else if (op == OP_BUILD_TUPLE) {
             // i++;
             if (stack.size() >= static_cast<size_t>(arg)) {
@@ -1992,7 +2107,10 @@ const proto::ProtoObject* executeBytecodeRange(
                 const proto::ProtoObject* codeObj = stack.back();
                 stack.pop_back();
                 proto::ProtoObject* fn = createUserFunction(ctx, codeObj, const_cast<proto::ProtoObject*>(PythonEnvironment::getCurrentGlobals()), frame);
-                if (fn) stack.push_back(fn);
+                if (fn) {
+                    // Store flags if needed, though they are usually in code object
+                    stack.push_back(fn);
+                }
             }
         } else if (op == OP_BUILD_CLASS) {
             // No argument for BUILD_CLASS
@@ -2286,6 +2404,30 @@ const proto::ProtoObject* executeBytecodeRange(
                 stack.push_back(a);
                 stack.push_back(d);
             }
+        } else if (op == OP_LIST_EXTEND) {
+            const proto::ProtoObject* iterable = stack.back();
+            stack.pop_back();
+            const proto::ProtoObject* listObj = stack.back();
+            stack.pop_back();
+
+            const proto::ProtoList* L = listObj ? listObj->asList(ctx) : nullptr;
+            if (L && env) {
+                if (iterable->asList(ctx)) {
+                    const proto::ProtoList* other = iterable->asList(ctx);
+                    unsigned long otherSize = other->getSize(ctx);
+                    for (unsigned long i = 0; i < otherSize; ++i) {
+                        L = L->appendLast(ctx, other->getAt(ctx, static_cast<int>(i)));
+                    }
+                } else {
+                    const proto::ProtoObject* it = env->iter(iterable);
+                    if (it) {
+                        while (const proto::ProtoObject* next = env->next(it)) {
+                            L = L->appendLast(ctx, next);
+                        }
+                    }
+                }
+            }
+            stack.push_back(L ? L->asObject(ctx) : PROTO_NONE);
         } else if (op == OP_DUP_TOP_TWO) {
             if (stack.size() >= 2) {
                 const proto::ProtoObject* b = stack.back();
@@ -2310,7 +2452,8 @@ const proto::ProtoObject* executeBytecodeRange(
                 if (nameObj && nameObj->isString(ctx)) {
                     frame->setAttribute(ctx, nameObj->asString(ctx), PROTO_NONE);
                     // Also check __data__ if frame is a dict
-                    const proto::ProtoObject* data = frame->getAttribute(ctx, env ? env->getDataString() : proto::ProtoString::fromUTF8String(ctx, "__data__"));
+                    const proto::ProtoString* data_name = env ? env->getDataString() : proto::ProtoString::fromUTF8String(ctx, "__data__");
+                    const proto::ProtoObject* data = frame->getAttribute(ctx, data_name);
                     if (data && data->asSparseList(ctx)) {
                         data->asSparseList(ctx)->removeAt(ctx, nameObj->getHash(ctx));
                     }
@@ -2345,7 +2488,8 @@ const proto::ProtoObject* executeBytecodeRange(
                 const proto::ProtoObject* result = invokeDunder(ctx, container, delItemS, args);
                 if (!result) {
                     // Fallback for list/dict
-                    const proto::ProtoObject* data = container->getAttribute(ctx, env ? env->getDataString() : proto::ProtoString::fromUTF8String(ctx, "__data__"));
+                    const proto::ProtoString* data_name = env ? env->getDataString() : proto::ProtoString::fromUTF8String(ctx, "__data__");
+                    const proto::ProtoObject* data = container->getAttribute(ctx, data_name);
                     if (data) {
                         if (data->asList(ctx) && key->isInteger(ctx)) {
                             long long idx = key->asLong(ctx);
@@ -2357,7 +2501,8 @@ const proto::ProtoObject* executeBytecodeRange(
                                         newList = newList->appendLast(ctx, list->getAt(ctx, static_cast<int>(j)));
                                     }
                                 }
-                                const_cast<proto::ProtoObject*>(container)->setAttribute(ctx, env ? env->getDataString() : proto::ProtoString::fromUTF8String(ctx, "__data__"), newList->asObject(ctx));
+                                const proto::ProtoString* data_name = env ? env->getDataString() : proto::ProtoString::fromUTF8String(ctx, "__data__");
+                                const_cast<proto::ProtoObject*>(container)->setAttribute(ctx, data_name, newList->asObject(ctx));
                             }
                         } else if (data->asSparseList(ctx)) {
                             data->asSparseList(ctx)->removeAt(ctx, key->getHash(ctx));

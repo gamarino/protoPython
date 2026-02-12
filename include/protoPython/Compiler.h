@@ -11,6 +11,9 @@
 #include <functional>
 
 namespace protoPython {
+    
+constexpr int CO_VARARGS = 4;
+constexpr int CO_VARKEYWORDS = 8;
 
 /** Compiles AST to protoPython bytecode (constants list, names list, flat bytecode). */
 class Compiler {
@@ -125,6 +128,7 @@ const proto::ProtoObject* makeCodeObject(proto::ProtoContext* ctx,
     const proto::ProtoList* varnames = nullptr,
     int nparams = 0,
     int automatic_count = 0,
+    int flags = 0,
     bool isGenerator = false);
 
 /** Run a code object with the given frame. Returns execution result. */

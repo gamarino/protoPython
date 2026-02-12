@@ -47,6 +47,8 @@ struct CallNode : ASTNode {
     std::unique_ptr<ASTNode> func;
     std::vector<std::unique_ptr<ASTNode>> args;
     std::vector<std::pair<std::string, std::unique_ptr<ASTNode>>> keywords;
+    std::unique_ptr<ASTNode> star_args;
+    std::unique_ptr<ASTNode> kw_args;
 };
 
 /** Attribute access: expr.attr (load or store context). */
@@ -169,12 +171,16 @@ struct FunctionDefNode : ASTNode {
     std::vector<std::string> parameters;
     std::unique_ptr<ASTNode> body;
     std::vector<std::unique_ptr<ASTNode>> decorator_list;
+    std::string vararg;
+    std::string kwarg;
 };
 
 /** lambda params: body. */
 struct LambdaNode : ASTNode {
     std::vector<std::string> parameters;
     std::unique_ptr<ASTNode> body;
+    std::string vararg;
+    std::string kwarg;
 };
 
 /** return expr. */

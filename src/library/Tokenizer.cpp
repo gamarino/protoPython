@@ -230,6 +230,9 @@ Token Tokenizer::next() {
         if (pos_ + 1 < source_.size() && source_[pos_ + 1] == '=') {
             Token t = makeToken(TokenType::StarAssign); pos_ += 2; return t;
         }
+        if (pos_ + 1 < source_.size() && source_[pos_ + 1] == '*') {
+            Token t = makeToken(TokenType::DoubleStar); pos_ += 2; return t;
+        }
         Token t = makeToken(TokenType::Star); pos_++; return t;
     }
     if (c == '/') {

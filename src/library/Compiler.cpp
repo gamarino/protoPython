@@ -150,9 +150,39 @@ bool Compiler::compileUnaryOp(UnaryOpNode* n) {
 
 bool Compiler::compileCall(CallNode* n) {
     if (!n || !compileNode(n->func.get())) return false;
+    if (n->star_args || n->kw_args) {
+        // Handle positional arguments: fixed + star_args
+        if (!n->args.empty()) {
+            for (auto& arg : n->args) {
+                if (!compileNode(arg.get())) return false;
+            }
+            emit(OP_BUILD_LIST, static_cast<int>(n->args.size()));
+            if (n->star_args) {
+                if (!compileNode(n->star_args.get())) return false;
+                emit(OP_LIST_EXTEND, 0);
+            }
+        } else {
+            if (n->star_args) {
+                if (!compileNode(n->star_args.get())) return false;
+            } else {
+                emit(OP_BUILD_TUPLE, 0);
+            }
+        }
+
+        int flags = 0;
+        if (n->kw_args) {
+            if (!compileNode(n->kw_args.get())) return false;
+            flags |= 1;
+        }
+        
+        emit(OP_CALL_FUNCTION_EX, flags);
+        return true;
+    }
+
     for (auto& arg : n->args) {
         if (!compileNode(arg.get())) return false;
     }
+
     if (n->keywords.empty()) {
         emit(OP_CALL_FUNCTION, static_cast<int>(n->args.size()));
     } else {
@@ -161,9 +191,9 @@ bool Compiler::compileCall(CallNode* n) {
             if (!compileNode(kw.second.get())) return false;
             kwList = kwList->appendLast(ctx_, ctx_->fromUTF8String(kw.first.c_str()));
         }
-        const proto::ProtoTuple* nameTuple = ctx_->newTupleFromList(kwList);
+        const proto::ProtoObject* nameTuple = ctx_->newTupleFromList(kwList)->asObject(ctx_);
         
-        int idx = addConstant(nameTuple->asObject(ctx_));
+        int idx = addConstant(nameTuple);
         emit(OP_LOAD_CONST, idx);
         emit(OP_CALL_FUNCTION_KW, static_cast<int>(n->args.size() + n->keywords.size()));
     }
@@ -506,7 +536,7 @@ bool Compiler::compileListComp(ListCompNode* n) {
     const proto::ProtoList* co_varnames = ctx_->newList();
     co_varnames = co_varnames->appendLast(ctx_, ctx_->fromUTF8String(".0"));
     
-    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), ctx_->fromUTF8String(filename_.c_str())->asString(ctx_), co_varnames, 1, 1, false);
+    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), ctx_->fromUTF8String(filename_.c_str())->asString(ctx_), co_varnames, 1, 1, 0, false);
     emit(OP_LOAD_CONST, addConstant(codeObj));
     emit(OP_BUILD_FUNCTION, 0);
     emit(OP_ROT_TWO);
@@ -547,7 +577,7 @@ bool Compiler::compileDictComp(DictCompNode* n) {
     const proto::ProtoList* co_varnames = ctx_->newList();
     co_varnames = co_varnames->appendLast(ctx_, ctx_->fromUTF8String(".0"));
     
-    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), ctx_->fromUTF8String(filename_.c_str())->asString(ctx_), co_varnames, 1, 1, false);
+    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), ctx_->fromUTF8String(filename_.c_str())->asString(ctx_), co_varnames, 1, 1, 0, false);
     emit(OP_LOAD_CONST, addConstant(codeObj));
     emit(OP_BUILD_FUNCTION, 0);
     emit(OP_ROT_TWO);
@@ -587,7 +617,7 @@ bool Compiler::compileSetComp(SetCompNode* n) {
     const proto::ProtoList* co_varnames = ctx_->newList();
     co_varnames = co_varnames->appendLast(ctx_, ctx_->fromUTF8String(".0"));
     
-    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), ctx_->fromUTF8String(filename_.c_str())->asString(ctx_), co_varnames, 1, 1, false);
+    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), ctx_->fromUTF8String(filename_.c_str())->asString(ctx_), co_varnames, 1, 1, 0, false);
     emit(OP_LOAD_CONST, addConstant(codeObj));
     emit(OP_BUILD_FUNCTION, 0);
     emit(OP_ROT_TWO);
@@ -628,7 +658,7 @@ bool Compiler::compileGeneratorExp(GeneratorExpNode* n) {
     const proto::ProtoList* co_varnames = ctx_->newList();
     co_varnames = co_varnames->appendLast(ctx_, ctx_->fromUTF8String(".0"));
     
-    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), ctx_->fromUTF8String(filename_.c_str())->asString(ctx_), co_varnames, 1, 1, true);
+    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), ctx_->fromUTF8String(filename_.c_str())->asString(ctx_), co_varnames, 1, 1, 0, true);
     emit(OP_LOAD_CONST, addConstant(codeObj));
     emit(OP_BUILD_FUNCTION, 0);
     emit(OP_ROT_TWO);
@@ -1361,11 +1391,15 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
     for (const auto& p : params) {
         varnamesOrdered.push_back(p);
     }
-    // Then locals that are not parameters
+    // Then vararg and kwarg (to match ExecutionEngine's expectation of index nparams and nparams+1)
+    if (!n->vararg.empty()) varnamesOrdered.push_back(n->vararg);
+    if (!n->kwarg.empty()) varnamesOrdered.push_back(n->kwarg);
+
+    // Then other locals
     for (const auto& loc : localsOrdered) {
-        bool isParam = false;
-        for (const auto& p : params) if (p == loc) isParam = true;
-        if (!isParam) varnamesOrdered.push_back(loc);
+        bool alreadyIn = false;
+        for (const auto& v : varnamesOrdered) if (v == loc) alreadyIn = true;
+        if (!alreadyIn) varnamesOrdered.push_back(loc);
     }
 
     std::unordered_map<std::string, int> slotMap;
@@ -1404,11 +1438,16 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
     const proto::ProtoList* co_varnames = ctx_->newList();
     for (const auto& name : varnamesOrdered)
         co_varnames = co_varnames->appendLast(ctx_, ctx_->fromUTF8String(name.c_str()));
-    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), ctx_->fromUTF8String(filename_.c_str())->asString(ctx_), co_varnames, nparams, automatic_count, bodyCompiler.isGenerator_);
+        
+    int co_flags = 0;
+    if (!n->vararg.empty()) co_flags |= CO_VARARGS;
+    if (!n->kwarg.empty()) co_flags |= CO_VARKEYWORDS;
+    
+    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), ctx_->fromUTF8String(filename_.c_str())->asString(ctx_), co_varnames, nparams, automatic_count, co_flags, bodyCompiler.isGenerator_);
     if (!codeObj) return false;
     int idx = addConstant(codeObj);
     emit(OP_LOAD_CONST, idx);
-    emit(OP_BUILD_FUNCTION, 0);
+    emit(OP_BUILD_FUNCTION, co_flags);
     
     // Apply decorators Bottom-to-Top
     if (!n->decorator_list.empty()) {
@@ -1434,6 +1473,8 @@ bool Compiler::compileLambda(LambdaNode* n) {
     
     const bool forceMapped = !captured.empty();
     std::vector<std::string> varnamesOrdered = params;
+    if (!n->vararg.empty()) varnamesOrdered.push_back(n->vararg);
+    if (!n->kwarg.empty()) varnamesOrdered.push_back(n->kwarg);
     
     std::unordered_map<std::string, int> slotMap;
     int automatic_count = 0;
@@ -1458,7 +1499,7 @@ bool Compiler::compileLambda(LambdaNode* n) {
     for (const auto& name : varnamesOrdered)
         co_varnames = co_varnames->appendLast(ctx_, ctx_->fromUTF8String(name.c_str()));
         
-    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), ctx_->fromUTF8String(filename_.c_str())->asString(ctx_), co_varnames, nparams, automatic_count, false);
+    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), ctx_->fromUTF8String(filename_.c_str())->asString(ctx_), co_varnames, nparams, automatic_count, 0, false);
     if (!codeObj) return false;
     int idx = addConstant(codeObj);
     emit(OP_LOAD_CONST, idx);
@@ -1486,7 +1527,7 @@ bool Compiler::compileClassDef(ClassDefNode* n) {
     bodyCompiler.emit(OP_RETURN_VALUE);
     bodyCompiler.applyPatches();
     
-    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), ctx_->fromUTF8String(filename_.c_str())->asString(ctx_), nullptr, 0, 0, bodyCompiler.isGenerator_);
+    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), ctx_->fromUTF8String(filename_.c_str())->asString(ctx_), nullptr, 0, 0, 0, bodyCompiler.isGenerator_);
     int coIdx = addConstant(codeObj);
     emit(OP_LOAD_CONST, coIdx);
     emit(OP_BUILD_FUNCTION, 0);
@@ -1600,6 +1641,7 @@ const proto::ProtoObject* makeCodeObject(proto::ProtoContext* ctx,
     const proto::ProtoList* varnames,
     int nparams,
     int automatic_count,
+    int flags,
     bool isGenerator) {
     if (!ctx) return PROTO_NONE;
     if (std::getenv("PROTO_ENV_DIAG")) {
@@ -1617,6 +1659,7 @@ const proto::ProtoObject* makeCodeObject(proto::ProtoContext* ctx,
     code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_varnames"), varnames ? reinterpret_cast<const proto::ProtoObject*>(varnames) : reinterpret_cast<const proto::ProtoObject*>(ctx->newList()));
     code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_nparams"), ctx->fromInteger(nparams));
     code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_automatic_count"), ctx->fromInteger(automatic_count));
+    code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_flags"), ctx->fromInteger(flags));
     code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_is_generator"), ctx->fromBoolean(isGenerator));
     return code;
 }
