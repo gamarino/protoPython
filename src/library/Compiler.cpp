@@ -7,6 +7,8 @@ namespace protoPython {
 
 static void collectGlobalsFromNode(ASTNode* node, std::unordered_set<std::string>& globalsOut);
 static void collectDefinedNames(ASTNode* node, std::unordered_set<std::string>& out);
+// Buffer to reserve on the VM stack for GC-visible operand storage
+constexpr int PYTHON_STACK_BUFFER = 1024;
 
 Compiler::Compiler(proto::ProtoContext* ctx, const std::string& filename)
     : ctx_(ctx), filename_(filename) {
@@ -243,37 +245,126 @@ bool Compiler::compileSlice(SliceNode* n) {
 
 bool Compiler::compileListLiteral(ListLiteralNode* n) {
     if (!n) return false;
+    bool hasStarred = false;
     for (auto& e : n->elements) {
-        if (!compileNode(e.get())) return false;
+        if (auto* u = dynamic_cast<UnaryOpNode*>(e.get())) {
+            if (u->op == TokenType::Star) { hasStarred = true; break; }
+        }
     }
-    emit(OP_BUILD_LIST, static_cast<int>(n->elements.size()));
+
+    if (!hasStarred) {
+        for (auto& e : n->elements) {
+            if (!compileNode(e.get())) return false;
+        }
+        emit(OP_BUILD_LIST, static_cast<int>(n->elements.size()));
+    } else {
+        emit(OP_BUILD_LIST, 0);
+        for (auto& e : n->elements) {
+            if (auto* u = dynamic_cast<UnaryOpNode*>(e.get())) {
+                if (u->op == TokenType::Star) {
+                    if (!compileNode(u->operand.get())) return false;
+                    emit(OP_LIST_EXTEND, 1);
+                    continue;
+                }
+            }
+            if (!compileNode(e.get())) return false;
+            emit(OP_LIST_APPEND, 1);
+        }
+    }
     return true;
 }
 
 bool Compiler::compileDictLiteral(DictLiteralNode* n) {
     if (!n) return false;
-    for (size_t i = 0; i < n->keys.size(); ++i) {
-        if (!compileNode(n->keys[i].get()) || !compileNode(n->values[i].get())) return false;
+    bool hasUnpacking = false;
+    for (auto& k : n->keys) {
+        if (k == nullptr) { hasUnpacking = true; break; }
     }
-    emit(OP_BUILD_MAP, static_cast<int>(n->keys.size()));
+
+    if (!hasUnpacking) {
+        for (size_t i = 0; i < n->keys.size(); ++i) {
+            if (!compileNode(n->keys[i].get()) || !compileNode(n->values[i].get())) return false;
+        }
+        emit(OP_BUILD_MAP, static_cast<int>(n->keys.size()));
+    } else {
+        emit(OP_BUILD_MAP, 0);
+        for (size_t i = 0; i < n->keys.size(); ++i) {
+            if (n->keys[i] == nullptr) {
+                if (auto* u = dynamic_cast<UnaryOpNode*>(n->values[i].get())) {
+                    if (!compileNode(u->operand.get())) return false;
+                    emit(OP_DICT_UPDATE, 1);
+                }
+            } else {
+                if (!compileNode(n->keys[i].get()) || !compileNode(n->values[i].get())) return false;
+                emit(OP_MAP_ADD, 1);
+            }
+        }
+    }
     return true;
 }
 
 bool Compiler::compileTupleLiteral(TupleLiteralNode* n) {
     if (!n) return false;
+    bool hasStarred = false;
     for (auto& e : n->elements) {
-        if (!compileNode(e.get())) return false;
+        if (auto* u = dynamic_cast<UnaryOpNode*>(e.get())) {
+            if (u->op == TokenType::Star) { hasStarred = true; break; }
+        }
     }
-    emit(OP_BUILD_TUPLE, static_cast<int>(n->elements.size()));
+
+    if (!hasStarred) {
+        for (auto& e : n->elements) {
+            if (!compileNode(e.get())) return false;
+        }
+        emit(OP_BUILD_TUPLE, static_cast<int>(n->elements.size()));
+    } else {
+        // Tuples are slightly harder since we can't easily extend them
+        // So we build a list and convert to tuple at the end.
+        emit(OP_BUILD_LIST, 0);
+        for (auto& e : n->elements) {
+            if (auto* u = dynamic_cast<UnaryOpNode*>(e.get())) {
+                if (u->op == TokenType::Star) {
+                    if (!compileNode(u->operand.get())) return false;
+                    emit(OP_LIST_EXTEND, 1);
+                    continue;
+                }
+            }
+            if (!compileNode(e.get())) return false;
+            emit(OP_LIST_APPEND, 1);
+        }
+        emit(OP_LIST_TO_TUPLE, 0);
+    }
     return true;
 }
 
 bool Compiler::compileSetLiteral(SetLiteralNode* n) {
     if (!n) return false;
+    bool hasStarred = false;
     for (auto& e : n->elements) {
-        if (!compileNode(e.get())) return false;
+        if (auto* u = dynamic_cast<UnaryOpNode*>(e.get())) {
+            if (u->op == TokenType::Star) { hasStarred = true; break; }
+        }
     }
-    emit(OP_BUILD_SET, static_cast<int>(n->elements.size()));
+
+    if (!hasStarred) {
+        for (auto& e : n->elements) {
+            if (!compileNode(e.get())) return false;
+        }
+        emit(OP_BUILD_SET, static_cast<int>(n->elements.size()));
+    } else {
+        emit(OP_BUILD_SET, 0);
+        for (auto& e : n->elements) {
+            if (auto* u = dynamic_cast<UnaryOpNode*>(e.get())) {
+                if (u->op == TokenType::Star) {
+                    if (!compileNode(u->operand.get())) return false;
+                    emit(OP_SET_UPDATE, 1);
+                    continue;
+                }
+            }
+            if (!compileNode(e.get())) return false;
+            emit(OP_SET_ADD, 1);
+        }
+    }
     return true;
 }
 
@@ -588,7 +679,6 @@ bool Compiler::compileDictComp(DictCompNode* n) {
     n->generators[0].iter = std::move(oldIter);
     if (!innerOk) return false;
     
-    bodyCompiler.emit(OP_RETURN_VALUE);
     bodyCompiler.applyPatches();
     
     const proto::ProtoList* co_varnames = ctx_->newList();
@@ -628,7 +718,6 @@ bool Compiler::compileSetComp(SetCompNode* n) {
     n->generators[0].iter = std::move(oldIter);
     if (!innerOk) return false;
     
-    bodyCompiler.emit(OP_RETURN_VALUE);
     bodyCompiler.applyPatches();
     
     const proto::ProtoList* co_varnames = ctx_->newList();
@@ -1516,7 +1605,7 @@ bool Compiler::compileLambda(LambdaNode* n) {
     for (const auto& name : varnamesOrdered)
         co_varnames = co_varnames->appendLast(ctx_, ctx_->fromUTF8String(name.c_str()));
         
-    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), ctx_->fromUTF8String(filename_.c_str())->asString(ctx_), co_varnames, nparams, automatic_count, 0, false);
+    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), ctx_->fromUTF8String(filename_.c_str())->asString(ctx_), co_varnames, nparams, automatic_count + PYTHON_STACK_BUFFER, 0, false);
     if (!codeObj) return false;
     int idx = addConstant(codeObj);
     emit(OP_LOAD_CONST, idx);
@@ -1676,7 +1765,7 @@ const proto::ProtoObject* makeCodeObject(proto::ProtoContext* ctx,
     code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_filename"), filename ? reinterpret_cast<const proto::ProtoObject*>(filename) : reinterpret_cast<const proto::ProtoObject*>(ctx->fromUTF8String("<stdin>")));
     code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_varnames"), varnames ? reinterpret_cast<const proto::ProtoObject*>(varnames) : reinterpret_cast<const proto::ProtoObject*>(ctx->newList()));
     code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_nparams"), ctx->fromInteger(nparams));
-    code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_automatic_count"), ctx->fromInteger(automatic_count));
+    code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_automatic_count"), ctx->fromInteger(automatic_count + PYTHON_STACK_BUFFER));
     code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_flags"), ctx->fromInteger(flags));
     code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_is_generator"), ctx->fromBoolean(isGenerator));
     return code;
@@ -1703,12 +1792,39 @@ const proto::ProtoObject* runCodeObject(proto::ProtoContext* ctx,
     const proto::ProtoObject* co_consts = codeObj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_consts"));
     const proto::ProtoObject* co_names = codeObj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_names"));
     const proto::ProtoObject* co_code = codeObj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_code"));
+    const proto::ProtoObject* co_varnames = codeObj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_varnames"));
 
     if (!co_consts || !co_consts->asList(ctx) || !co_code || !co_code->asList(ctx))
         return PROTO_NONE;
 
-    return executeBytecodeRange(ctx, co_consts->asList(ctx), co_code->asList(ctx),
-        co_names ? co_names->asList(ctx) : nullptr, frame, 0, co_code->asList(ctx)->getSize(ctx));
+    const proto::ProtoObject* co_automatic_obj = codeObj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_automatic_count"));
+    int automatic_count = (co_automatic_obj && co_automatic_obj->isInteger(ctx)) ? static_cast<int>(co_automatic_obj->asLong(ctx)) : 0;
+
+    proto::ProtoContext* execCtx = ctx;
+    proto::ProtoContext* subCtx = nullptr;
+    if (ctx->getAutomaticLocalsCount() < (unsigned int)automatic_count) {
+        const proto::ProtoList* localNames = ctx->newList();
+        const proto::ProtoList* vlist = co_varnames ? co_varnames->asList(ctx) : nullptr;
+        unsigned long vcount = vlist ? vlist->getSize(ctx) : 0;
+        for (int i = 0; i < automatic_count; ++i) {
+            const proto::ProtoObject* name = (vlist && i < (int)vcount) ? vlist->getAt(ctx, i) : PROTO_NONE;
+            localNames = localNames->appendLast(ctx, name);
+        }
+        subCtx = new proto::ProtoContext(ctx->space, ctx, nullptr, localNames, nullptr, nullptr);
+        execCtx = subCtx;
+    }
+
+    unsigned long stackOffset = (co_varnames && co_varnames->asList(execCtx)) ? co_varnames->asList(execCtx)->getSize(execCtx) : 0;
+
+    const proto::ProtoObject* result = executeBytecodeRange(execCtx, co_consts->asList(execCtx), co_code->asList(execCtx),
+        co_names ? co_names->asList(execCtx) : nullptr, frame, 0, co_code->asList(execCtx)->getSize(execCtx),
+        stackOffset);
+
+    if (subCtx) {
+        subCtx->returnValue = result;
+        delete subCtx;
+    }
+    return result;
 }
 
 bool Compiler::compileJoinedStr(JoinedStrNode* n) {
@@ -1722,7 +1838,22 @@ bool Compiler::compileJoinedStr(JoinedStrNode* n) {
 
 bool Compiler::compileFormattedValue(FormattedValueNode* n) {
     if (!n) return false;
-    return compileNode(n->value.get());
+    if (n->conversion == 'r') {
+        emit(OP_LOAD_NAME, addName("repr"));
+        if (!compileNode(n->value.get())) return false;
+        emit(OP_CALL_FUNCTION, 1);
+    } else if (n->conversion == 's') {
+        emit(OP_LOAD_NAME, addName("str"));
+        if (!compileNode(n->value.get())) return false;
+        emit(OP_CALL_FUNCTION, 1);
+    } else if (n->conversion == 'a') {
+        emit(OP_LOAD_NAME, addName("ascii"));
+        if (!compileNode(n->value.get())) return false;
+        emit(OP_CALL_FUNCTION, 1);
+    } else {
+        if (!compileNode(n->value.get())) return false;
+    }
+    return true;
 }
 
 bool Compiler::compileNonlocal(NonlocalNode* n) {

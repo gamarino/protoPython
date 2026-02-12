@@ -1950,6 +1950,34 @@ static const proto::ProtoObject* py_set_symmetric_difference(
     return result;
 }
 
+static const proto::ProtoObject* py_set_or(
+    proto::ProtoContext* context, const proto::ProtoObject* self,
+    const proto::ParentLink* parent, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+    if (args->getSize(context) != 1) return PROTO_NONE;
+    return py_set_union(context, self, parent, args, kwargs);
+}
+
+static const proto::ProtoObject* py_set_and(
+    proto::ProtoContext* context, const proto::ProtoObject* self,
+    const proto::ParentLink* parent, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+    if (args->getSize(context) != 1) return PROTO_NONE;
+    return py_set_intersection(context, self, parent, args, kwargs);
+}
+
+static const proto::ProtoObject* py_set_sub(
+    proto::ProtoContext* context, const proto::ProtoObject* self,
+    const proto::ParentLink* parent, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+    if (args->getSize(context) != 1) return PROTO_NONE;
+    return py_set_difference(context, self, parent, args, kwargs);
+}
+
+static const proto::ProtoObject* py_set_xor(
+    proto::ProtoContext* context, const proto::ProtoObject* self,
+    const proto::ParentLink* parent, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+    if (args->getSize(context) != 1) return PROTO_NONE;
+    return py_set_symmetric_difference(context, self, parent, args, kwargs);
+}
+
 static bool set_contains_all(proto::ProtoContext* context, const proto::ProtoObject* container, const proto::ProtoSet* elements) {
     const proto::ProtoSetIterator* it = elements->getIterator(context);
     while (it->hasNext(context)) {
@@ -4978,6 +5006,41 @@ PythonEnvironment::~PythonEnvironment() {
         remove_if_match(reinterpret_cast<const proto::ProtoObject*>(co_automatic_count));
         remove_if_match(reinterpret_cast<const proto::ProtoObject*>(co_is_generator));
         remove_if_match(reinterpret_cast<const proto::ProtoObject*>(co_flags));
+        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(co_consts));
+        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(co_names));
+        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(co_code));
+        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(sendString));
+        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(throwString));
+        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(closeString));
+        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(f_back));
+        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(f_code));
+        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(f_globals));
+        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(f_locals));
+        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(__closure__));
+        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(gi_code));
+        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(gi_frame));
+        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(gi_running));
+        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(gi_yieldfrom));
+        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(gi_pc));
+        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(gi_stack));
+        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(gi_locals));
+        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(py_eq_s));
+        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(py_ne_s));
+        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(py_lt_s));
+        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(py_le_s));
+        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(py_gt_s));
+        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(py_ge_s));
+        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(getDunderString));
+        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(setDunderString));
+        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(delDunderString));
+        
+        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(__code__));
+        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(__globals__));
+        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(co_varnames));
+        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(co_nparams));
+        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(co_automatic_count));
+        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(co_is_generator));
+        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(co_flags));
         remove_if_match(reinterpret_cast<const proto::ProtoObject*>(__iadd__));
         remove_if_match(reinterpret_cast<const proto::ProtoObject*>(__isub__));
         remove_if_match(reinterpret_cast<const proto::ProtoObject*>(__imul__));
@@ -5422,6 +5485,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
 
     // 1. Create 'object' base
     objectPrototype = rootContext_->newObject(true);
+    objectPrototype = objectPrototype->setAttribute(rootContext_, py_name, rootContext_->fromUTF8String("object"));
 
     const proto::ProtoString* py_format_dunder = proto::ProtoString::fromUTF8String(rootContext_, "__format__");
     objectPrototype = objectPrototype->setAttribute(rootContext_, py_init, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(objectPrototype), py_object_init));
@@ -5675,6 +5739,10 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     setPrototype = setPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "symmetric_difference"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(setPrototype), py_set_symmetric_difference));
     setPrototype = setPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "issubset"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(setPrototype), py_set_issubset));
     setPrototype = setPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "issuperset"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(setPrototype), py_set_issuperset));
+    setPrototype = setPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__or__"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(setPrototype), py_set_or));
+    setPrototype = setPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__and__"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(setPrototype), py_set_and));
+    setPrototype = setPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__sub__"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(setPrototype), py_set_sub));
+    setPrototype = setPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__xor__"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(setPrototype), py_set_xor));
     setPrototype = setPrototype->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(setPrototype), py_set_iter));
 
     const proto::ProtoObject* setIterProto = rootContext_->newObject(true);
@@ -6014,6 +6082,35 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
         addRoot(reinterpret_cast<const proto::ProtoObject*>(co_varnames));
         addRoot(reinterpret_cast<const proto::ProtoObject*>(co_nparams));
         addRoot(reinterpret_cast<const proto::ProtoObject*>(co_automatic_count));
+        addRoot(reinterpret_cast<const proto::ProtoObject*>(co_is_generator));
+        addRoot(reinterpret_cast<const proto::ProtoObject*>(co_flags));
+        addRoot(reinterpret_cast<const proto::ProtoObject*>(co_consts));
+        addRoot(reinterpret_cast<const proto::ProtoObject*>(co_names));
+        addRoot(reinterpret_cast<const proto::ProtoObject*>(co_code));
+        addRoot(reinterpret_cast<const proto::ProtoObject*>(sendString));
+        addRoot(reinterpret_cast<const proto::ProtoObject*>(throwString));
+        addRoot(reinterpret_cast<const proto::ProtoObject*>(closeString));
+        addRoot(reinterpret_cast<const proto::ProtoObject*>(f_back));
+        addRoot(reinterpret_cast<const proto::ProtoObject*>(f_code));
+        addRoot(reinterpret_cast<const proto::ProtoObject*>(f_globals));
+        addRoot(reinterpret_cast<const proto::ProtoObject*>(f_locals));
+        addRoot(reinterpret_cast<const proto::ProtoObject*>(__closure__));
+        addRoot(reinterpret_cast<const proto::ProtoObject*>(gi_code));
+        addRoot(reinterpret_cast<const proto::ProtoObject*>(gi_frame));
+        addRoot(reinterpret_cast<const proto::ProtoObject*>(gi_running));
+        addRoot(reinterpret_cast<const proto::ProtoObject*>(gi_yieldfrom));
+        addRoot(reinterpret_cast<const proto::ProtoObject*>(gi_pc));
+        addRoot(reinterpret_cast<const proto::ProtoObject*>(gi_stack));
+        addRoot(reinterpret_cast<const proto::ProtoObject*>(gi_locals));
+        addRoot(reinterpret_cast<const proto::ProtoObject*>(py_eq_s));
+        addRoot(reinterpret_cast<const proto::ProtoObject*>(py_ne_s));
+        addRoot(reinterpret_cast<const proto::ProtoObject*>(py_lt_s));
+        addRoot(reinterpret_cast<const proto::ProtoObject*>(py_le_s));
+        addRoot(reinterpret_cast<const proto::ProtoObject*>(py_gt_s));
+        addRoot(reinterpret_cast<const proto::ProtoObject*>(py_ge_s));
+        addRoot(reinterpret_cast<const proto::ProtoObject*>(getDunderString));
+        addRoot(reinterpret_cast<const proto::ProtoObject*>(setDunderString));
+        addRoot(reinterpret_cast<const proto::ProtoObject*>(delDunderString));
         
         addRoot(reinterpret_cast<const proto::ProtoObject*>(__iadd__));
         addRoot(reinterpret_cast<const proto::ProtoObject*>(__isub__));
@@ -7257,12 +7354,13 @@ const proto::ProtoObject* PythonEnvironment::lookupName(const std::string& name)
     return result;
 }
 
-const proto::ProtoObject* PythonEnvironment::buildString(const std::vector<const proto::ProtoObject*>& parts) {
+const proto::ProtoObject* PythonEnvironment::buildString(const proto::ProtoObject** parts, size_t count) {
     proto::ProtoContext* ctx = getCurrentContext();
     if (!ctx) ctx = rootContext_;
     std::string result;
-    result.reserve(parts.size() * 16);
-    for (const auto* obj : parts) {
+    result.reserve(count * 16);
+    for (size_t i = 0; i < count; ++i) {
+        const proto::ProtoObject* obj = parts[i];
         if (!obj || obj == PROTO_NONE) {
             result += "None";
         } else if (obj->isString(ctx)) {
@@ -7291,7 +7389,7 @@ const proto::ProtoObject* PythonEnvironment::buildString(const std::vector<const
             }
         }
     }
-    return ctx->fromUTF8String(result.c_str());
+    return proto::ProtoString::fromUTF8String(ctx, result.c_str())->asObject(ctx);
 }
 
 void PythonEnvironment::storeName(const std::string& name, const proto::ProtoObject* val) {
