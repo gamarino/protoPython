@@ -94,6 +94,8 @@ struct TupleLiteralNode : ASTNode {
 /** Part of an f-string that contains an expression to be formatted. */
 struct FormattedValueNode : ASTNode {
     std::unique_ptr<ASTNode> value;
+    char conversion = 0; // 'r', 's', 'a'
+    std::string format_spec;
 };
 
 /** An f-string containing constant parts and FormattedValueNodes. */

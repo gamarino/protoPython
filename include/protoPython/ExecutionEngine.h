@@ -168,10 +168,16 @@ constexpr int OP_BUILD_STRING = 179;
 constexpr int OP_LOAD_DEREF = 180;
 /** Store a value into a variable in an enclosing scope (closure). */
 constexpr int OP_STORE_DEREF = 181;
-// CALL_FUNCTION_EX: pop kwargs (if flag&1), then starargs, then callable.
+/** CALL_FUNCTION_EX: pop kwargs (if flag&1), then starargs, then callable. */
 constexpr int OP_CALL_FUNCTION_EX = 182;
 /** LIST_EXTEND: pop iterable, pop list, extend list, push list. */
 constexpr int OP_LIST_EXTEND = 183;
+/** DICT_UPDATE: pop iterable, pop dict, update dict, push dict. */
+constexpr int OP_DICT_UPDATE = 184;
+/** SET_UPDATE: pop iterable, pop set, update set, push set. */
+constexpr int OP_SET_UPDATE = 185;
+/** LIST_TO_TUPLE: pop list, convert to tuple, push tuple. */
+constexpr int OP_LIST_TO_TUPLE = 186;
 
 /**
  * @brief Executes a range of bytecode (one basic block). No per-instruction
@@ -186,6 +192,7 @@ const proto::ProtoObject* executeBytecodeRange(
     proto::ProtoObject*& frame,
     unsigned long pcStart,
     unsigned long pcEnd,
+    unsigned long stackOffset = 0,
     std::vector<const proto::ProtoObject*>* externalStack = nullptr,
     unsigned long* outPc = nullptr,
     bool* yielded = nullptr);

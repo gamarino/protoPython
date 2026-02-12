@@ -187,7 +187,7 @@ public:
                                           const std::vector<std::pair<std::string, const proto::ProtoObject*>>& keywords,
                                           const proto::ProtoObject* starargs = nullptr,
                                           const proto::ProtoObject* kwargs = nullptr);
-    const proto::ProtoObject* buildString(const std::vector<const proto::ProtoObject*>& parts);
+    const proto::ProtoObject* buildString(const proto::ProtoObject** parts, size_t count);
     const proto::ProtoObject* getItem(const proto::ProtoObject* container, const proto::ProtoObject* key);
     void setItem(const proto::ProtoObject* container, const proto::ProtoObject* key, const proto::ProtoObject* value);
     const proto::ProtoObject* getAttr(const proto::ProtoObject* obj, const std::string& attr);
