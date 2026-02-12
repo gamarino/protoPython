@@ -50,12 +50,16 @@ static const proto::ProtoObject* py_import(
     if (!nameObj->isString(context)) return PROTO_NONE;
     std::string moduleName;
     nameObj->asString(context)->toUTF8String(context, moduleName);
-    if (get_env_diag()) std::cerr << "[proto-builtins] __import__(" << moduleName << ")\n" << std::flush;
 
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     const proto::ProtoObject* leaf = env ? env->resolve(moduleName, context) : PROTO_NONE;
     
-    // Handle fromlist (4th argument)
+    if (!leaf || leaf == PROTO_NONE) {
+        if (env) {
+            env->raiseImportError("No module named '" + moduleName + "'");
+        }
+        return PROTO_NONE;
+    }
     if (positionalParameters->getSize(context) >= 4 && leaf && leaf != PROTO_NONE) {
         const proto::ProtoObject* fromListObj = positionalParameters->getAt(context, 3);
         if (fromListObj && fromListObj->asList(context)) {
@@ -575,14 +579,14 @@ static const proto::ProtoObject* py_enumerate_next(
 
     const proto::ProtoObject* it = self->getAttribute(context, itS);
     const proto::ProtoObject* idxObj = self->getAttribute(context, idxS);
-    if (!it || !idxObj) return PROTO_NONE;
+    if (!it || !idxObj) return nullptr;
 
     const proto::ProtoObject* nextMethod = it->getAttribute(context, nextS);
-    if (!nextMethod || !nextMethod->asMethod(context)) return PROTO_NONE;
+    if (!nextMethod || !nextMethod->asMethod(context)) return nullptr;
     
     const proto::ProtoList* emptyL = env ? env->getEmptyList() : context->newList();
     const proto::ProtoObject* value = nextMethod->asMethod(context)(context, it, nullptr, emptyL, nullptr);
-    if (!value || value == (env ? env->getNonePrototype() : nullptr)) return PROTO_NONE;
+    if (!value) return nullptr;
 
     long long idx = idxObj->asLong(context);
     self->setAttribute(context, idxS, context->fromInteger(idx + 1));
@@ -643,9 +647,9 @@ static const proto::ProtoObject* py_reversed_next(
 
     const proto::ProtoObject* obj = self->getAttribute(context, objS);
     const proto::ProtoObject* idxObj = self->getAttribute(context, idxS);
-    if (!obj || !idxObj) return PROTO_NONE;
+    if (!obj || !idxObj) return nullptr;
     long long idx = idxObj->asLong(context);
-    if (idx < 0) return PROTO_NONE;
+    if (idx < 0) return nullptr;
 
     const proto::ProtoObject* getitemMethod = obj->getAttribute(context, getitemS);
     if (!getitemMethod || !getitemMethod->asMethod(context)) return PROTO_NONE;
@@ -2049,7 +2053,7 @@ static const proto::ProtoObject* py_range_next(
     long long stop = self->getAttribute(context, stopS)->asLong(context);
     long long step = self->getAttribute(context, stepS)->asLong(context);
 
-    if ((step > 0 && cur >= stop) || (step < 0 && cur <= stop)) return PROTO_NONE;
+    if ((step > 0 && cur >= stop) || (step < 0 && cur <= stop)) return nullptr;
 
     self->setAttribute(context, curS, context->fromInteger(cur + step));
     return context->fromInteger(cur);
@@ -2174,7 +2178,7 @@ static const proto::ProtoObject* py_zip_next(
         const proto::ProtoObject* nextM = it ? it->getAttribute(context, nextS) : nullptr;
         if (!nextM || !nextM->asMethod(context)) return PROTO_NONE;
         const proto::ProtoObject* val = nextM->asMethod(context)(context, it, nullptr, emptyL, nullptr);
-        if (!val || val == (env ? env->getNonePrototype() : nullptr)) return PROTO_NONE;
+        if (!val) return nullptr;
         resList = resList->appendLast(context, val);
     }
     return context->newTupleFromList(resList)->asObject(context);
@@ -2249,7 +2253,7 @@ static const proto::ProtoObject* py_filter_next(
 
     for (;;) {
         const proto::ProtoObject* val = nextM->asMethod(context)(context, it, nullptr, emptyL, nullptr);
-        if (!val || val == noneObj) return PROTO_NONE;
+        if (!val) return nullptr;
         
         const proto::ProtoList* args = context->newList()->appendLast(context, val);
         const proto::ProtoObject* result = call->asMethod(context)(context, func, nullptr, args, nullptr);
@@ -2310,7 +2314,7 @@ static const proto::ProtoObject* py_map_next(
     
     const proto::ProtoList* emptyL = env ? env->getEmptyList() : context->newList();
     const proto::ProtoObject* val = nextM->asMethod(context)(context, it, nullptr, emptyL, nullptr);
-    if (!val || val == (env ? env->getNonePrototype() : nullptr)) return PROTO_NONE;
+    if (!val) return nullptr;
     const proto::ProtoList* oneArg = context->newList()->appendLast(context, val);
     return call->asMethod(context)(context, func, nullptr, oneArg, nullptr);
 }

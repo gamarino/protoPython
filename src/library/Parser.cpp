@@ -118,6 +118,11 @@ void Parser::skipNewlines() {
         advance();
 }
 
+void Parser::skipTrash() {
+    while (cur_.type == TokenType::Newline || cur_.type == TokenType::Indent || cur_.type == TokenType::Dedent)
+        advance();
+}
+
 std::unique_ptr<ASTNode> Parser::parseSubscript() {
     if (cur_.type == TokenType::RSquare) {
         advance();
@@ -132,13 +137,17 @@ std::unique_ptr<ASTNode> Parser::parseSubscript() {
         }
     } else {
         advance(); // Consume the first ':'
+        skipTrash();
     }
 
     /* Slice: [start:] [stop] [ :step] */
     auto sl = createNode<SliceNode>();
+    skipTrash();
     sl->start = std::move(first);
-    if (cur_.type != TokenType::Colon && cur_.type != TokenType::RSquare)
+    if (cur_.type != TokenType::Colon && cur_.type != TokenType::RSquare) {
         sl->stop = parseExpression();
+        skipTrash();
+    }
     if (accept(TokenType::Colon) && cur_.type != TokenType::RSquare)
         sl->step = parseExpression();
     expect(TokenType::RSquare);
@@ -171,6 +180,7 @@ std::unique_ptr<ASTNode> Parser::parseAtom() {
         return n;
     }
     if (accept(TokenType::LParen)) {
+        skipTrash();
         if (accept(TokenType::RParen)) {
             return createNode<TupleLiteralNode>();
         }
@@ -193,13 +203,16 @@ std::unique_ptr<ASTNode> Parser::parseAtom() {
             return ge;
         }
         if (accept(TokenType::Comma)) {
+            skipTrash();
             auto tup = createNode<TupleLiteralNode>();
             tup->elements.push_back(std::move(e));
             while (cur_.type != TokenType::RParen && cur_.type != TokenType::EndOfFile) {
                 auto next = parseExpression();
                 if (!next) break;
                 tup->elements.push_back(std::move(next));
+                skipTrash();
                 if (!accept(TokenType::Comma)) break;
+                skipTrash();
             }
             expect(TokenType::RParen);
             return tup;
@@ -208,6 +221,7 @@ std::unique_ptr<ASTNode> Parser::parseAtom() {
         return e;
     }
     if (accept(TokenType::LSquare)) {
+        skipTrash();
         if (accept(TokenType::RSquare)) {
             return createNode<ListLiteralNode>();
         }
@@ -232,10 +246,14 @@ std::unique_ptr<ASTNode> Parser::parseAtom() {
         auto lst = createNode<ListLiteralNode>();
         if (first) {
             lst->elements.push_back(std::move(first));
+            skipTrash();
             if (accept(TokenType::Comma)) {
+                skipTrash();
                 while (cur_.type != TokenType::RSquare && cur_.type != TokenType::EndOfFile) {
                     lst->elements.push_back(parseExpression());
+                    skipTrash();
                     if (!accept(TokenType::Comma)) break;
+                    skipTrash();
                 }
             }
         }
@@ -243,6 +261,7 @@ std::unique_ptr<ASTNode> Parser::parseAtom() {
         return lst;
     }
     if (accept(TokenType::LCurly)) {
+        skipTrash();
         if (accept(TokenType::RCurly)) {
             return createNode<DictLiteralNode>();
         }
@@ -288,44 +307,36 @@ std::unique_ptr<ASTNode> Parser::parseAtom() {
             d->keys.push_back(std::move(key));
             d->values.push_back(std::move(val));
             if (accept(TokenType::Comma)) {
+                skipTrash();
                 while (cur_.type != TokenType::RCurly && cur_.type != TokenType::EndOfFile) {
                     auto k = parseExpression();
                     if (!expect(TokenType::Colon)) return nullptr;
+                    skipTrash();
                     auto v = parseExpression();
                     d->keys.push_back(std::move(k));
                     d->values.push_back(std::move(v));
+                    skipTrash();
                     if (!accept(TokenType::Comma)) break;
+                    skipTrash();
                 }
             }
             expect(TokenType::RCurly);
             return d;
         }
-        // Set literal or empty dict?
-        // {} is empty dict.
-        // {x} is set literal.
-        // For now, let's just keep original dict literal logic if possible, 
-        // but handle the case where key was already parsed.
-        auto d = createNode<DictLiteralNode>();
-        // If we got here, it's either an empty dict or a set literal (unsupported).
-        // Original code:
-        /*
-        while (cur_.type != TokenType::RCurly && cur_.type != TokenType::EndOfFile) {
-            auto k = parseExpression();
-            if (!expect(TokenType::Colon)) return nullptr;
-            auto v = parseExpression();
-            d->keys.push_back(std::move(k));
-            d->values.push_back(std::move(v));
-            if (!accept(TokenType::Comma)) break;
-        }
-        */
-        // Let's stick to dicts for now.
-        if (key) {
-            // key exists but no colon? error.
-            error("expected ':' in dict literal");
-            return nullptr;
+        // Set literal or set comprehension (set comp handled above)
+        auto s = createNode<SetLiteralNode>();
+        s->elements.push_back(std::move(key));
+        if (accept(TokenType::Comma)) {
+            skipTrash();
+            while (cur_.type != TokenType::RCurly && cur_.type != TokenType::EndOfFile) {
+                s->elements.push_back(parseExpression());
+                skipTrash();
+                if (!accept(TokenType::Comma)) break;
+                skipTrash();
+            }
         }
         expect(TokenType::RCurly);
-        return d;
+        return s;
     }
     if (cur_.type == TokenType::True || cur_.type == TokenType::False) {
         auto n = createNode<ConstantNode>();
@@ -377,9 +388,11 @@ std::unique_ptr<ASTNode> Parser::parsePrimary() {
         }
         if (cur_.type == TokenType::LParen) {
             advance();
+            skipTrash();
             auto call = createNode<CallNode>();
             call->func = std::move(left);
             while (cur_.type != TokenType::RParen && cur_.type != TokenType::EndOfFile) {
+                skipTrash();
                 if (cur_.type == TokenType::Star) {
                     advance();
                     if (call->star_args) error("Only one *args allowed in call");
@@ -400,6 +413,7 @@ std::unique_ptr<ASTNode> Parser::parsePrimary() {
                     call->args.push_back(parseExpression());
                 }
                 if (!accept(TokenType::Comma)) break;
+                skipTrash();
             }
             expect(TokenType::RParen);
             left = std::move(call);

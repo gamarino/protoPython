@@ -132,14 +132,44 @@ bool CppGenerator::generateName(NameNode* n) {
 }
 
 bool CppGenerator::generateCall(CallNode* n) {
-    out_ << "env->callObject(";
-    if (!generateNode(n->func.get())) return false;
-    out_ << ", {";
-    for (size_t i = 0; i < n->args.size(); ++i) {
-        if (i > 0) out_ << ", ";
-        if (!generateNode(n->args[i].get())) return false;
+    if (n->keywords.empty() && !n->star_args && !n->kw_args) {
+        out_ << "env->callObject(";
+        if (!generateNode(n->func.get())) return false;
+        out_ << ", {";
+        for (size_t i = 0; i < n->args.size(); ++i) {
+            if (i > 0) out_ << ", ";
+            if (!generateNode(n->args[i].get())) return false;
+        }
+        out_ << "})";
+    } else {
+        out_ << "env->callObjectEx(";
+        if (!generateNode(n->func.get())) return false;
+        out_ << ", {";
+        for (size_t i = 0; i < n->args.size(); ++i) {
+            if (i > 0) out_ << ", ";
+            if (!generateNode(n->args[i].get())) return false;
+        }
+        out_ << "}, {";
+        for (size_t i = 0; i < n->keywords.size(); ++i) {
+            if (i > 0) out_ << ", ";
+            out_ << "{\"" << n->keywords[i].first << "\", ";
+            if (!generateNode(n->keywords[i].second.get())) return false;
+            out_ << "}";
+        }
+        out_ << "}, ";
+        if (n->star_args) {
+            if (!generateNode(n->star_args.get())) return false;
+        } else {
+            out_ << "nullptr";
+        }
+        out_ << ", ";
+        if (n->kw_args) {
+            if (!generateNode(n->kw_args.get())) return false;
+        } else {
+            out_ << "nullptr";
+        }
+        out_ << ")";
     }
-    out_ << "})";
     return true;
 }
 
@@ -269,9 +299,29 @@ bool CppGenerator::generateFunctionDef(FunctionDefNode* n) {
     out_ << "\n    auto func_" << n->name << " = ctx->fromMethod(nullptr, [](proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) -> const proto::ProtoObject* {\n";
     out_ << "        auto* env = protoPython::PythonEnvironment::get(ctx);\n";
     out_ << "        // Bind parameters\n";
+    out_ << "        unsigned long nPos = args ? args->getSize(ctx) : 0;\n";
     for (size_t i = 0; i < n->parameters.size(); ++i) {
-        out_ << "        if (args->getSize(ctx) > " << i << ") env->storeName(\"" << n->parameters[i] << "\", args->getAt(ctx, " << i << "));\n";
+        out_ << "        if (nPos > " << i << ") env->storeName(\"" << n->parameters[i] << "\", args->getAt(ctx, " << i << "));\n";
     }
+
+    if (!n->vararg.empty()) {
+        out_ << "        const proto::ProtoList* vaList = ctx->newList();\n";
+        out_ << "        for (unsigned long i = " << n->parameters.size() << "; i < nPos; ++i) vaList = vaList->appendLast(ctx, args->getAt(ctx, i));\n";
+        out_ << "        auto* vaTup = static_cast<const proto::ProtoObject*>(ctx->newObject(true));\n";
+        out_ << "        vaTup->setAttribute(ctx, env->getDataString(), (const proto::ProtoObject*)ctx->newTupleFromList(vaList));\n";
+        out_ << "        if (env->getTuplePrototype()) vaTup->addParent(ctx, env->getTuplePrototype());\n";
+        out_ << "        env->storeName(\"" << n->vararg << "\", vaTup);\n";
+    }
+
+    if (!n->kwarg.empty()) {
+        out_ << "        auto* kaDict = static_cast<const proto::ProtoObject*>(ctx->newObject(true));\n";
+        out_ << "        kaDict->setAttribute(ctx, env->getDataString(), (const proto::ProtoObject*)(kwargs ? kwargs : ctx->newSparseList()));\n";
+        out_ << "        const proto::ProtoTuple* kwNames = env->getCurrentKwNames();\n";
+        out_ << "        if (kwNames) kaDict->setAttribute(ctx, env->getKeysString(), (const proto::ProtoObject*)kwNames->asList(ctx));\n";
+        out_ << "        if (env->getDictPrototype()) kaDict->addParent(ctx, env->getDictPrototype());\n";
+        out_ << "        env->storeName(\"" << n->kwarg << "\", kaDict);\n";
+    }
+
     out_ << "        try {\n";
     if (n->body->line > 0) emitLineDirective(n->body->line, "source.py");
     if (!generateNode(n->body.get())) return false;
@@ -593,9 +643,29 @@ bool CppGenerator::generateLambda(LambdaNode* n) {
     out_ << "ctx->fromMethod(nullptr, [](proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* pl, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) -> const proto::ProtoObject* {\n";
     out_ << "        auto* env = protoPython::PythonEnvironment::get(ctx);\n";
     out_ << "        // Bind parameters\n";
+    out_ << "        unsigned long nPos = args ? args->getSize(ctx) : 0;\n";
     for (size_t i = 0; i < n->parameters.size(); ++i) {
-        out_ << "        if (args->getSize(ctx) > " << i << ") env->storeName(\"" << n->parameters[i] << "\", args->getAt(ctx, " << i << "));\n";
+        out_ << "        if (nPos > " << i << ") env->storeName(\"" << n->parameters[i] << "\", args->getAt(ctx, " << i << "));\n";
     }
+
+    if (!n->vararg.empty()) {
+        out_ << "        const proto::ProtoList* vaList = ctx->newList();\n";
+        out_ << "        for (unsigned long i = " << n->parameters.size() << "; i < nPos; ++i) vaList = vaList->appendLast(ctx, args->getAt(ctx, i));\n";
+        out_ << "        auto* vaTup = static_cast<const proto::ProtoObject*>(ctx->newObject(true));\n";
+        out_ << "        vaTup->setAttribute(ctx, env->getDataString(), (const proto::ProtoObject*)ctx->newTupleFromList(vaList));\n";
+        out_ << "        if (env->getTuplePrototype()) vaTup->addParent(ctx, env->getTuplePrototype());\n";
+        out_ << "        env->storeName(\"" << n->vararg << "\", vaTup);\n";
+    }
+
+    if (!n->kwarg.empty()) {
+        out_ << "        auto* kaDict = static_cast<const proto::ProtoObject*>(ctx->newObject(true));\n";
+        out_ << "        kaDict->setAttribute(ctx, env->getDataString(), (const proto::ProtoObject*)(kwargs ? kwargs : ctx->newSparseList()));\n";
+        out_ << "        const proto::ProtoTuple* kwNames = env->getCurrentKwNames();\n";
+        out_ << "        if (kwNames) kaDict->setAttribute(ctx, env->getKeysString(), (const proto::ProtoObject*)kwNames->asList(ctx));\n";
+        out_ << "        if (env->getDictPrototype()) kaDict->addParent(ctx, env->getDictPrototype());\n";
+        out_ << "        env->storeName(\"" << n->kwarg << "\", kaDict);\n";
+    }
+
     out_ << "        return ";
     if (!generateNode(n->body.get())) return false;
     out_ << ";\n";

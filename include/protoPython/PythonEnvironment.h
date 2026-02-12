@@ -108,6 +108,7 @@ public:
      * @brief Utility to resolve symbols in this environment.
      */
     const proto::ProtoObject* resolve(const std::string& name, proto::ProtoContext* ctx = nullptr);
+    bool isResolved(const std::string& name, proto::ProtoContext* ctx = nullptr);
     
     /**
      * @brief Accessors for frequently used dunder strings (performance).
@@ -173,6 +174,7 @@ public:
     const proto::ProtoObject* iter(const proto::ProtoObject* obj);
     const proto::ProtoObject* next(const proto::ProtoObject* obj);
     void raiseException(const proto::ProtoObject* exc);
+    void raiseImportError(const std::string& msg);
     bool isException(const proto::ProtoObject* exc, const proto::ProtoObject* type);
     const proto::ProtoObject* lookupName(const std::string& name);
     void storeName(const std::string& name, const proto::ProtoObject* val);
@@ -180,6 +182,11 @@ public:
     void augAssignAttr(const proto::ProtoObject* obj, const std::string& attr, TokenType op, const proto::ProtoObject* value);
     void augAssignItem(const proto::ProtoObject* container, const proto::ProtoObject* key, TokenType op, const proto::ProtoObject* value);
     const proto::ProtoObject* callObject(const proto::ProtoObject* callable, const std::vector<const proto::ProtoObject*>& args);
+    const proto::ProtoObject* callObjectEx(const proto::ProtoObject* callable, 
+                                          const std::vector<const proto::ProtoObject*>& args,
+                                          const std::vector<std::pair<std::string, const proto::ProtoObject*>>& keywords,
+                                          const proto::ProtoObject* starargs = nullptr,
+                                          const proto::ProtoObject* kwargs = nullptr);
     const proto::ProtoObject* buildString(const std::vector<const proto::ProtoObject*>& parts);
     const proto::ProtoObject* getItem(const proto::ProtoObject* container, const proto::ProtoObject* key);
     void setItem(const proto::ProtoObject* container, const proto::ProtoObject* key, const proto::ProtoObject* value);
@@ -202,6 +209,9 @@ public:
     const proto::ProtoString* getRangeProtoString() const { return rangeProtoS; }
     const proto::ProtoString* getBoolTypeString() const { return boolTypeS; }
     const proto::ProtoString* getFilterBoolString() const { return filterBoolS; }
+    const proto::ProtoObject* getImportErrorType() const { return importErrorType; }
+    const proto::ProtoObject* getAttributeErrorType() const { return attributeErrorType; }
+    const proto::ProtoObject* getNameErrorType() const { return nameErrorType; }
     const proto::ProtoObject* getZeroInteger() const { return zeroInteger; }
     const proto::ProtoObject* getOneInteger() const { return oneInteger; }
 

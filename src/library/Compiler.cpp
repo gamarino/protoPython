@@ -268,6 +268,15 @@ bool Compiler::compileTupleLiteral(TupleLiteralNode* n) {
     return true;
 }
 
+bool Compiler::compileSetLiteral(SetLiteralNode* n) {
+    if (!n) return false;
+    for (auto& e : n->elements) {
+        if (!compileNode(e.get())) return false;
+    }
+    emit(OP_BUILD_SET, static_cast<int>(n->elements.size()));
+    return true;
+}
+
 bool Compiler::emitNameOp(const std::string& id, TargetCtx ctx) {
     if (globalNames_.count(id)) {
         int idx = addName(id);
@@ -331,8 +340,16 @@ bool Compiler::compileTarget(ASTNode* target, TargetCtx ctx) {
     if (auto* tup = dynamic_cast<TupleLiteralNode*>(target)) {
         if (ctx != TargetCtx::Store) return false;
         emit(OP_UNPACK_SEQUENCE, static_cast<int>(tup->elements.size()));
-        for (auto it = tup->elements.rbegin(); it != tup->elements.rend(); ++it) {
-            if (!compileTarget(it->get(), TargetCtx::Store)) return false;
+        for (auto& e : tup->elements) {
+            if (!compileTarget(e.get(), TargetCtx::Store)) return false;
+        }
+        return true;
+    }
+    if (auto* lst = dynamic_cast<ListLiteralNode*>(target)) {
+        if (ctx != TargetCtx::Store) return false;
+        emit(OP_UNPACK_SEQUENCE, static_cast<int>(lst->elements.size()));
+        for (auto& e : lst->elements) {
+            if (!compileTarget(e.get(), TargetCtx::Store)) return false;
         }
         return true;
     }
@@ -1579,6 +1596,7 @@ bool Compiler::compileNode(ASTNode* node) {
     if (auto* lst = dynamic_cast<ListLiteralNode*>(node)) return compileListLiteral(lst);
     if (auto* d = dynamic_cast<DictLiteralNode*>(node)) return compileDictLiteral(d);
     if (auto* tup = dynamic_cast<TupleLiteralNode*>(node)) return compileTupleLiteral(tup);
+    if (auto* set = dynamic_cast<SetLiteralNode*>(node)) return compileSetLiteral(set);
     if (auto* a = dynamic_cast<AssignNode*>(node)) return compileAssign(a);
     if (auto* aa = dynamic_cast<AugAssignNode*>(node)) return compileAugAssign(aa);
     if (auto* an = dynamic_cast<AssertNode*>(node)) return compileAssert(an);

@@ -7,6 +7,8 @@
 #include <protoCore.h>
 #include <proto_internal.h>
 #include <algorithm>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -243,9 +245,19 @@ int main(int argc, char* argv[]) {
 
     std::string stdLibPath = !options.stdLibPath.empty() ? options.stdLibPath : DEFAULT_STDLIB;
     
-    // Resolve relative DEFAULT_STDLIB against executable directory
+    // but ONLY if it doesn't already exist relative to current working directory.
     if (!stdLibPath.empty() && stdLibPath[0] != '/' && stdLibPath.find(":\\") == std::string::npos) {
-        stdLibPath = exeDir + "/" + stdLibPath;
+        if (!std::filesystem::exists(stdLibPath)) {
+            std::string altPath = exeDir + "/" + stdLibPath;
+            if (std::filesystem::exists(altPath)) {
+                stdLibPath = altPath;
+            } else {
+                // Special case for development: check ./lib/python3.14
+                if (std::filesystem::exists("lib/python3.14")) {
+                    stdLibPath = "lib/python3.14";
+                }
+            }
+        }
     }
 
     std::vector<std::string> searchPaths;

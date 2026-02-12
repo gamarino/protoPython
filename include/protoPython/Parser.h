@@ -81,6 +81,11 @@ struct DictLiteralNode : ASTNode {
     std::vector<std::unique_ptr<ASTNode>> values;
 };
 
+/** Set literal {a, b, c}. */
+struct SetLiteralNode : ASTNode {
+    std::vector<std::unique_ptr<ASTNode>> elements;
+};
+
 /** Tuple literal (a,) or (a, b). */
 struct TupleLiteralNode : ASTNode {
     std::vector<std::unique_ptr<ASTNode>> elements;
@@ -320,6 +325,7 @@ private:
     bool accept(TokenType t);
     bool expect(TokenType t);
     void skipNewlines();
+    void skipTrash();
     std::unique_ptr<ASTNode> parseOrExpr();
     std::unique_ptr<ASTNode> parseAndExpr();
     std::unique_ptr<ASTNode> parseNotExpr();

@@ -55,6 +55,7 @@ private:
     bool compileListLiteral(ListLiteralNode* n);
     bool compileDictLiteral(DictLiteralNode* n);
     bool compileTupleLiteral(TupleLiteralNode* n);
+    bool compileSetLiteral(SetLiteralNode* n);
     bool compileAssign(AssignNode* n);
     bool compileAugAssign(AugAssignNode* n);
     bool compileDeleteNode(DeleteNode* n);
