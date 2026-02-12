@@ -190,17 +190,16 @@ bool Compiler::compileSubscript(SubscriptNode* n) {
 
 bool Compiler::compileSlice(SliceNode* n) {
     if (!n) return false;
-    const proto::ProtoObject* noneObj = ctx_->newObject(true);
     if (n->start) {
         if (!compileNode(n->start.get())) return false;
     } else {
-        int idx = addConstant(noneObj);
+        int idx = addConstant(PROTO_NONE);
         emit(OP_LOAD_CONST, idx);
     }
     if (n->stop) {
         if (!compileNode(n->stop.get())) return false;
     } else {
-        int idx = addConstant(noneObj);
+        int idx = addConstant(PROTO_NONE);
         emit(OP_LOAD_CONST, idx);
     }
     if (n->step) {

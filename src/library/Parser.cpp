@@ -124,13 +124,17 @@ std::unique_ptr<ASTNode> Parser::parseSubscript() {
         return nullptr;
     }
     std::unique_ptr<ASTNode> first;
-    if (cur_.type != TokenType::Colon)
+    if (cur_.type != TokenType::Colon) {
         first = parseExpression();
-    if (first && !accept(TokenType::Colon)) {
-        expect(TokenType::RSquare);
-        return first;
+        if (!accept(TokenType::Colon)) {
+            expect(TokenType::RSquare);
+            return first;
+        }
+    } else {
+        advance(); // Consume the first ':'
     }
-    /* Slice: [start:] [stop] [ step] */
+
+    /* Slice: [start:] [stop] [ :step] */
     auto sl = createNode<SliceNode>();
     sl->start = std::move(first);
     if (cur_.type != TokenType::Colon && cur_.type != TokenType::RSquare)

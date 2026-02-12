@@ -969,10 +969,10 @@ const proto::ProtoObject* executeBytecodeRange(
                                 stack.push_back(val);
                             } else {
                                 env->raiseNameError(ctx, name);
-                                return PROTO_NONE;
+                                continue;
                             }
                         } else {
-                            return PROTO_NONE;
+                            continue;
                         }
                     }
                 }
@@ -1468,7 +1468,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 if (exc) env->setPendingException(exc);
                 // Note: arg == 0 (re-raise) not yet fully implemented for all cases
             }
-            return PROTO_NONE;
+            continue;
         } else if (op == OP_SETUP_WITH) {
             // i++;
             if (stack.size() < 1) continue;
@@ -1791,6 +1791,44 @@ const proto::ProtoObject* executeBytecodeRange(
                         } else {
                             stack.push_back(PROTO_NONE);
                         }
+                    } else if (data->asList(ctx) && env && env->getSliceType() && key->isInstanceOf(ctx, env->getSliceType()) == PROTO_TRUE) {
+                        // List Slicing
+                        const proto::ProtoList* list = data->asList(ctx);
+                        long long size = static_cast<long long>(list->getSize(ctx));
+                        
+                        const proto::ProtoObject* startObj = key->getAttribute(ctx, env->getStartString());
+                        const proto::ProtoObject* stopObj = key->getAttribute(ctx, env->getStopString());
+                        const proto::ProtoObject* stepObj = key->getAttribute(ctx, env->getStepString());
+                        
+                        long long start = (startObj && startObj != PROTO_NONE) ? startObj->asLong(ctx) : 0;
+                        long long stop = (stopObj && stopObj != PROTO_NONE) ? stopObj->asLong(ctx) : size;
+                        long long step = (stepObj && stepObj != PROTO_NONE) ? stepObj->asLong(ctx) : 1;
+                        
+                        if (get_env_diag()) {
+                            std::cerr << "[proto-engine] LIST_SLICE start=" << start << " stop=" << stop << " step=" << step << " size=" << size << "\n" << std::flush;
+                        }
+                        
+                        if (start < 0) start += size;
+                        if (stop < 0) stop += size;
+                        if (start < 0) start = 0; if (start > size) start = size;
+                        if (stop < 0) stop = 0; if (stop > size) stop = size;
+                        
+                        proto::ProtoObject* newListObj = const_cast<proto::ProtoObject*>(ctx->newObject(true));
+                        const proto::ProtoList* newList = ctx->newList();
+                        
+                        if (step > 0) {
+                            for (long long i = start; i < stop; i += step) {
+                                newList = newList->appendLast(ctx, list->getAt(ctx, static_cast<int>(i)));
+                            }
+                        } else if (step < 0) {
+                            for (long long i = start; i > stop; i += step) {
+                                newList = newList->appendLast(ctx, list->getAt(ctx, static_cast<int>(i)));
+                            }
+                        }
+                        
+                        newListObj->setAttribute(ctx, env->getDataString(), newList->asObject(ctx));
+                        if (env->getListPrototype()) newListObj->addParent(ctx, env->getListPrototype());
+                        stack.push_back(newListObj);
                     } else if (data->asSparseList(ctx)) {
                         unsigned long h = key->getHash(ctx);
                         const proto::ProtoObject* val = data->asSparseList(ctx)->getAt(ctx, h);
@@ -2167,10 +2205,10 @@ const proto::ProtoObject* executeBytecodeRange(
                                 stack.push_back(val);
                             } else {
                                 env->raiseNameError(ctx, name);
-                                return PROTO_NONE;
+                                continue;
                             }
                         } else {
-                            return PROTO_NONE;
+                            continue;
                         }
                     }
                 }
@@ -2210,6 +2248,7 @@ const proto::ProtoObject* executeBytecodeRange(
             sliceObj = const_cast<proto::ProtoObject*>(sliceObj->setAttribute(ctx, env ? env->getStartString() : proto::ProtoString::fromUTF8String(ctx, "start"), startObj));
             sliceObj = const_cast<proto::ProtoObject*>(sliceObj->setAttribute(ctx, env ? env->getStopString() : proto::ProtoString::fromUTF8String(ctx, "stop"), stopObj));
             sliceObj = const_cast<proto::ProtoObject*>(sliceObj->setAttribute(ctx, env ? env->getStepString() : proto::ProtoString::fromUTF8String(ctx, "step"), stepObj));
+            if (env && env->getSliceType()) sliceObj->addParent(ctx, env->getSliceType());
             stack.push_back(sliceObj);
         } else if (op == OP_ROT_TWO) {
             if (stack.size() >= 2) {
@@ -2303,7 +2342,28 @@ const proto::ProtoObject* executeBytecodeRange(
                 stack.pop_back();
                 const proto::ProtoString* delItemS = env ? env->getDelItemString() : proto::ProtoString::fromUTF8String(ctx, "__delitem__");
                 const proto::ProtoList* args = ctx->newList()->appendLast(ctx, key);
-                invokeDunder(ctx, container, delItemS, args);
+                const proto::ProtoObject* result = invokeDunder(ctx, container, delItemS, args);
+                if (!result) {
+                    // Fallback for list/dict
+                    const proto::ProtoObject* data = container->getAttribute(ctx, env ? env->getDataString() : proto::ProtoString::fromUTF8String(ctx, "__data__"));
+                    if (data) {
+                        if (data->asList(ctx) && key->isInteger(ctx)) {
+                            long long idx = key->asLong(ctx);
+                            const proto::ProtoList* list = data->asList(ctx);
+                            if (idx >= 0 && static_cast<unsigned long>(idx) < list->getSize(ctx)) {
+                                const proto::ProtoList* newList = ctx->newList();
+                                for (unsigned long j = 0; j < list->getSize(ctx); ++j) {
+                                    if (static_cast<long long>(j) != idx) {
+                                        newList = newList->appendLast(ctx, list->getAt(ctx, static_cast<int>(j)));
+                                    }
+                                }
+                                const_cast<proto::ProtoObject*>(container)->setAttribute(ctx, env ? env->getDataString() : proto::ProtoString::fromUTF8String(ctx, "__data__"), newList->asObject(ctx));
+                            }
+                        } else if (data->asSparseList(ctx)) {
+                            data->asSparseList(ctx)->removeAt(ctx, key->getHash(ctx));
+                        }
+                    }
+                }
             }
         } else if (op == OP_SETUP_FINALLY) {
             blockStack.push_back({static_cast<unsigned long>(arg), stack.size()});

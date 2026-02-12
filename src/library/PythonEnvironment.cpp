@@ -375,23 +375,34 @@ static const proto::ProtoObject* py_list_len(
 struct SliceBounds { bool isSlice; long long start, stop, step; };
 
 static SliceBounds get_slice_bounds(proto::ProtoContext* context, const proto::ProtoObject* indexObj, long long size) {
-    SliceBounds sb{false, 0, 0, 1};
-    const proto::ProtoString* startName = proto::ProtoString::fromUTF8String(context, "start");
-    const proto::ProtoString* stopName = proto::ProtoString::fromUTF8String(context, "stop");
-    const proto::ProtoString* stepName = proto::ProtoString::fromUTF8String(context, "step");
+    SliceBounds sb{false, 0, size, 1};
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::ProtoString* startName = env ? env->getStartString() : proto::ProtoString::fromUTF8String(context, "start");
+    const proto::ProtoString* stopName = env ? env->getStopString() : proto::ProtoString::fromUTF8String(context, "stop");
+    const proto::ProtoString* stepName = env ? env->getStepString() : proto::ProtoString::fromUTF8String(context, "step");
+    
+    // Check if it's a slice object by looking for these attributes if sliceType is not available or not used as parent
     const proto::ProtoObject* startObj = indexObj->getAttribute(context, startName);
     const proto::ProtoObject* stopObj = indexObj->getAttribute(context, stopName);
-    if (!stopObj || stopObj == PROTO_NONE) return sb;
+    const proto::ProtoObject* stepObj = indexObj->getAttribute(context, stepName);
+    
+    if (!startObj && !stopObj && !stepObj) return sb;
+
     sb.isSlice = true;
     sb.start = (startObj && startObj != PROTO_NONE && startObj->isInteger(context)) ? startObj->asLong(context) : 0;
     sb.stop = (stopObj && stopObj != PROTO_NONE && stopObj->isInteger(context)) ? stopObj->asLong(context) : size;
-    const proto::ProtoObject* stepObj = indexObj->getAttribute(context, stepName);
     sb.step = (stepObj && stepObj != PROTO_NONE && stepObj->isInteger(context)) ? stepObj->asLong(context) : 1;
+    
     if (sb.start < 0) sb.start += size;
     if (sb.stop < 0) sb.stop += size;
     if (sb.start < 0) sb.start = 0;
     if (sb.stop > size) sb.stop = size;
-    if (sb.start > sb.stop) sb.start = sb.stop;
+    
+    // For positive step, start > stop means empty slice
+    // For negative step, start < stop means empty slice
+    if (sb.step > 0 && sb.start > sb.stop) sb.start = sb.stop;
+    else if (sb.step < 0 && sb.start < sb.stop) sb.start = sb.stop;
+    
     return sb;
 }
 
@@ -440,12 +451,24 @@ static const proto::ProtoObject* py_list_getitem(
     }
 
     SliceBounds sb = get_slice_bounds(context, indexObj, size);
-    if (sb.isSlice && sb.step == 1) {
-        const proto::ProtoList* result = context->newList();
-        for (long long i = sb.start; i < sb.stop; i += sb.step) {
-            result = result->appendLast(context, list->getAt(context, static_cast<int>(i)));
+    if (sb.isSlice) {
+        proto::ProtoObject* newListObj = const_cast<proto::ProtoObject*>(context->newObject(true));
+        const proto::ProtoList* newList = context->newList();
+        PythonEnvironment* env = PythonEnvironment::fromContext(context);
+
+        if (sb.step > 0) {
+            for (long long i = sb.start; i < sb.stop; i += sb.step) {
+                newList = newList->appendLast(context, list->getAt(context, static_cast<int>(i)));
+            }
+        } else if (sb.step < 0) {
+            for (long long i = sb.start; i > sb.stop; i += sb.step) {
+                newList = newList->appendLast(context, list->getAt(context, static_cast<int>(i)));
+            }
         }
-        return result->asObject(context);
+
+        newListObj->setAttribute(context, env ? env->getDataString() : proto::ProtoString::fromUTF8String(context, "__data__"), newList->asObject(context));
+        if (env && env->getListPrototype()) newListObj->addParent(context, env->getListPrototype());
+        return newListObj;
     }
 
     return PROTO_NONE;
@@ -3173,9 +3196,10 @@ static const proto::ProtoObject* py_slice_call(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
-    const proto::ProtoString* startName = proto::ProtoString::fromUTF8String(context, "start");
-    const proto::ProtoString* stopName = proto::ProtoString::fromUTF8String(context, "stop");
-    const proto::ProtoString* stepName = proto::ProtoString::fromUTF8String(context, "step");
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::ProtoString* startName = env ? env->getStartString() : proto::ProtoString::fromUTF8String(context, "start");
+    const proto::ProtoString* stopName = env ? env->getStopString() : proto::ProtoString::fromUTF8String(context, "stop");
+    const proto::ProtoString* stepName = env ? env->getStepString() : proto::ProtoString::fromUTF8String(context, "step");
     unsigned long n = positionalParameters->getSize(context);
     const proto::ProtoObject* start = PROTO_NONE;
     const proto::ProtoObject* stop = PROTO_NONE;
@@ -3199,9 +3223,10 @@ static const proto::ProtoObject* py_slice_repr(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
-    const proto::ProtoObject* start = self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "start"));
-    const proto::ProtoObject* stop = self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "stop"));
-    const proto::ProtoObject* step = self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "step"));
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::ProtoObject* start = self->getAttribute(context, env ? env->getStartString() : proto::ProtoString::fromUTF8String(context, "start"));
+    const proto::ProtoObject* stop = self->getAttribute(context, env ? env->getStopString() : proto::ProtoString::fromUTF8String(context, "stop"));
+    const proto::ProtoObject* step = self->getAttribute(context, env ? env->getStepString() : proto::ProtoString::fromUTF8String(context, "step"));
     std::string s_start = (!start || start == PROTO_NONE) ? "None" : (start->isInteger(context) ? std::to_string(start->asLong(context)) : "None");
     std::string s_stop = (!stop || stop == PROTO_NONE) ? "None" : (stop->isInteger(context) ? std::to_string(stop->asLong(context)) : "None");
     std::string out = "slice(" + s_start + ", " + s_stop;
@@ -5247,6 +5272,9 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     delDunderString = proto::ProtoString::fromUTF8String(rootContext_, "__delete__");
     dataString = proto::ProtoString::fromUTF8String(rootContext_, "__data__");
     keysString = proto::ProtoString::fromUTF8String(rootContext_, "__keys__");
+    startString = proto::ProtoString::fromUTF8String(rootContext_, "start");
+    stopString = proto::ProtoString::fromUTF8String(rootContext_, "stop");
+    stepString = proto::ProtoString::fromUTF8String(rootContext_, "step");
     openString = proto::ProtoString::fromUTF8String(rootContext_, "open");
     listS = proto::ProtoString::fromUTF8String(rootContext_, "list");
     dictS = proto::ProtoString::fromUTF8String(rootContext_, "dict");
@@ -7137,6 +7165,21 @@ const proto::ProtoObject* PythonEnvironment::binaryOp(const proto::ProtoObject* 
         }
     }
 
+    // Handle comparisons
+    int compOp = -1;
+    switch (op) {
+        case TokenType::EqEqual: compOp = 0; break;
+        case TokenType::NotEqual: compOp = 1; break;
+        case TokenType::Less: compOp = 2; break;
+        case TokenType::LessEqual: compOp = 3; break;
+        case TokenType::Greater: compOp = 4; break;
+        case TokenType::GreaterEqual: compOp = 5; break;
+        default: break;
+    }
+    if (compOp != -1) {
+        return compareObjects(ctx, a, b, compOp);
+    }
+
     return PROTO_NONE;
 }
 
@@ -7147,9 +7190,13 @@ const proto::ProtoObject* PythonEnvironment::lookupName(const std::string& name)
     const proto::ProtoString* nameS = proto::ProtoString::fromUTF8String(ctx, name.c_str());
     if (frame) {
         const proto::ProtoObject* val = frame->getAttribute(ctx, nameS);
-        if (val) return val;
+        if (val && val != PROTO_NONE) return val;
     }
-    return resolve(name, ctx);
+    const proto::ProtoObject* result = resolve(name, ctx);
+    if (!result || result == PROTO_NONE) {
+        raiseNameError(ctx, name);
+    }
+    return result;
 }
 
 const proto::ProtoObject* PythonEnvironment::buildString(const std::vector<const proto::ProtoObject*>& parts) {
@@ -7222,13 +7269,7 @@ const proto::ProtoObject* PythonEnvironment::getItem(const proto::ProtoObject* c
     proto::ProtoContext* ctx = rootContext_;
     if (!container || !key) return PROTO_NONE;
     
-    if (container->asList(ctx)) {
-        return container->asList(ctx)->getAt(ctx, (int)key->asLong(ctx));
-    } else if (container->asSparseList(ctx)) {
-        return container->asSparseList(ctx)->getAt(ctx, (unsigned long)key->asLong(ctx));
-    } else if (container->isTuple(ctx)) {
-        return container->asTuple(ctx)->getAt(ctx, (int)key->asLong(ctx));
-    }
+    // No shortcuts here to ensure we always trigger __getitem__ which handles slices and exceptions
     
     const proto::ProtoObject* method = container->getAttribute(ctx, getItemString);
     if (method && method->asMethod(ctx)) {
@@ -7242,14 +7283,7 @@ void PythonEnvironment::setItem(const proto::ProtoObject* container, const proto
     proto::ProtoContext* ctx = rootContext_;
     if (!container || !key || !value) return;
 
-    const proto::ProtoObject* data = container->getAttribute(ctx, dataString);
-    if (data) {
-        if (data->asSparseList(ctx)) {
-            const proto::ProtoSparseList* newData = data->asSparseList(ctx)->setAt(ctx, (unsigned long)key->asLong(ctx), value);
-            const_cast<proto::ProtoObject*>(container)->setAttribute(ctx, dataString, newData->asObject(ctx));
-            return;
-        }
-    }
+    // No shortcuts here to ensure we always trigger __setitem__ or fallback
 
     const proto::ProtoObject* method = container->getAttribute(ctx, setItemString);
     if (method && method->asMethod(ctx)) {
@@ -7260,8 +7294,13 @@ void PythonEnvironment::setItem(const proto::ProtoObject* container, const proto
 
 const proto::ProtoObject* PythonEnvironment::getAttr(const proto::ProtoObject* obj, const std::string& attr) {
     proto::ProtoContext* ctx = rootContext_;
-    if (!obj) return PROTO_NONE;
-    return obj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, attr.c_str()));
+    if (!obj || obj == PROTO_NONE) return PROTO_NONE;
+    const proto::ProtoObject* result = obj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, attr.c_str()));
+    if (!result || result == PROTO_NONE) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+        if (env) env->raiseAttributeError(ctx, obj, attr);
+    }
+    return result;
 }
 
 void PythonEnvironment::setAttr(const proto::ProtoObject* obj, const std::string& attr, const proto::ProtoObject* val) {
@@ -7466,6 +7505,47 @@ void PythonEnvironment::importStar(const proto::ProtoObject* mod) {
         }
         it = const_cast<proto::ProtoSparseListIterator*>(it->advance(ctx));
     }
+}
+
+const proto::ProtoObject* PythonEnvironment::buildSlice(const proto::ProtoObject* start, const proto::ProtoObject* stop, const proto::ProtoObject* step) {
+    proto::ProtoContext* ctx = rootContext_;
+    proto::ProtoObject* sliceObj = const_cast<proto::ProtoObject*>(ctx->newObject(true));
+    sliceObj->setAttribute(ctx, startString, start ? start : PROTO_NONE);
+    sliceObj->setAttribute(ctx, stopString, stop ? stop : PROTO_NONE);
+    sliceObj->setAttribute(ctx, stepString, step ? step : PROTO_NONE);
+    if (sliceType) sliceObj->addParent(ctx, sliceType);
+    return sliceObj;
+}
+
+void PythonEnvironment::delItem(const proto::ProtoObject* container, const proto::ProtoObject* key) {
+    proto::ProtoContext* ctx = rootContext_;
+    if (!container || !key) return;
+    
+    const proto::ProtoList* args = ctx->newList()->appendLast(ctx, key);
+    const proto::ProtoObject* method = container->getAttribute(ctx, delItemString);
+    if (method && method->asMethod(ctx)) {
+        method->asMethod(ctx)(ctx, container, nullptr, args, nullptr);
+    } else {
+        const proto::ProtoObject* data = container->getAttribute(ctx, dataString);
+        if (data && data->asSparseList(ctx)) {
+            data->asSparseList(ctx)->removeAt(ctx, key->getHash(ctx));
+        }
+    }
+}
+
+void PythonEnvironment::delAttr(const proto::ProtoObject* obj, const std::string& attr) {
+    proto::ProtoContext* ctx = rootContext_;
+    if (!obj) return;
+    const_cast<proto::ProtoObject*>(obj)->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, attr.c_str()), PROTO_NONE);
+}
+
+void PythonEnvironment::delName(const std::string& name) {
+    proto::ProtoContext* ctx = rootContext_;
+    const proto::ProtoObject* frame = getCurrentFrame();
+    if (frame) {
+        const_cast<proto::ProtoObject*>(frame)->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, name.c_str()), PROTO_NONE);
+    }
+    invalidateResolveCache();
 }
 
 } // namespace protoPython

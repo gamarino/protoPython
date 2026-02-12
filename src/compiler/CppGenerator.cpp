@@ -93,6 +93,12 @@ bool CppGenerator::generateNode(ASTNode* node) {
         return generateJoinedStr(n);
     } else if (auto* n = dynamic_cast<FormattedValueNode*>(node)) {
         return generateFormattedValue(n);
+    } else if (auto* n = dynamic_cast<SliceNode*>(node)) {
+        return generateSlice(n);
+    } else if (auto* n = dynamic_cast<DeleteNode*>(node)) {
+        return generateDeleteNode(n);
+    } else if (auto* n = dynamic_cast<AssertNode*>(node)) {
+        return generateAssert(n);
     }
     
     out_ << "/* Unsupported node: " << typeid(*node).name() << " */";
@@ -611,6 +617,48 @@ bool CppGenerator::generateJoinedStr(JoinedStrNode* n) {
 bool CppGenerator::generateFormattedValue(FormattedValueNode* n) {
     if (!n) return false;
     return generateNode(n->value.get());
+}
+
+bool CppGenerator::generateSlice(SliceNode* n) {
+    out_ << "env->buildSlice(";
+    if (n->start) { if (!generateNode(n->start.get())) return false; } else { out_ << "PROTO_NONE"; }
+    out_ << ", ";
+    if (n->stop) { if (!generateNode(n->stop.get())) return false; } else { out_ << "PROTO_NONE"; }
+    out_ << ", ";
+    if (n->step) { if (!generateNode(n->step.get())) return false; } else { out_ << "PROTO_NONE"; }
+    out_ << ")";
+    return true;
+}
+
+bool CppGenerator::generateDeleteNode(DeleteNode* n) {
+    for (auto& target : n->targets) {
+        if (auto* nm = dynamic_cast<NameNode*>(target.get())) {
+            out_ << "env->delName(\"" << nm->id << "\")";
+        } else if (auto* att = dynamic_cast<AttributeNode*>(target.get())) {
+            out_ << "env->delAttr(";
+            if (!generateNode(att->value.get())) return false;
+            out_ << ", \"" << att->attr << "\")";
+        } else if (auto* sub = dynamic_cast<SubscriptNode*>(target.get())) {
+            out_ << "env->delItem(";
+            if (!generateNode(sub->value.get())) return false;
+            out_ << ", ";
+            if (!generateNode(sub->index.get())) return false;
+            out_ << ")";
+        }
+        out_ << ";\n";
+    }
+    return true;
+}
+
+bool CppGenerator::generateAssert(AssertNode* n) {
+    out_ << "if (!env->isTrue(";
+    if (!generateNode(n->test.get())) return false;
+    out_ << ")) {\n";
+    out_ << "        env->raiseAssertionError(ctx, ";
+    if (n->msg) { if (!generateNode(n->msg.get())) return false; } else { out_ << "nullptr"; }
+    out_ << ");\n";
+    out_ << "    }";
+    return true;
 }
 
 } // namespace protoPython

@@ -189,6 +189,11 @@ public:
     const proto::ProtoObject* importModule(const std::string& name, int level = 0, const std::vector<std::string>& fromList = {});
     void importStar(const proto::ProtoObject* mod);
 
+    const proto::ProtoObject* buildSlice(const proto::ProtoObject* start, const proto::ProtoObject* stop, const proto::ProtoObject* step);
+    void delItem(const proto::ProtoObject* container, const proto::ProtoObject* key);
+    void delAttr(const proto::ProtoObject* obj, const std::string& attr);
+    void delName(const std::string& name);
+
     const proto::ProtoString* getEnumProtoString() const { return enumProtoS; }
     const proto::ProtoString* getRevProtoString() const { return revProtoS; }
     const proto::ProtoString* getZipProtoString() const { return zipProtoS; }

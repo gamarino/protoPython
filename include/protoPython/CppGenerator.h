@@ -46,6 +46,9 @@ private:
     bool generateLambda(LambdaNode* n);
     bool generateJoinedStr(JoinedStrNode* n);
     bool generateFormattedValue(FormattedValueNode* n);
+    bool generateSlice(SliceNode* n);
+    bool generateDeleteNode(DeleteNode* n);
+    bool generateAssert(AssertNode* n);
 };
 
 } // namespace protoPython
