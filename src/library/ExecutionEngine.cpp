@@ -562,6 +562,46 @@ static bool isTruthy(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
     return true;
 }
 
+struct RecursionScope {
+    RecursionScope(PythonEnvironment* env, proto::ProtoContext* ctx) : env_(env), ctx_(ctx) {
+        if (!env_) return;
+        
+        int limit = env_->getRecursionLimit();
+
+        // If we are already raising a recursion error, allow more depth (up to a hard limit)
+        if (PythonEnvironment::s_inRecursionError) {
+            if (PythonEnvironment::s_recursionDepth >= limit + 100) {
+                overflowed_ = true;
+                return;
+            }
+            PythonEnvironment::s_recursionDepth++;
+            incremented_ = true;
+            return;
+        }
+
+        if (PythonEnvironment::s_recursionDepth >= limit) {
+            PythonEnvironment::s_inRecursionError = true;
+            env_->raiseRecursionError(ctx_);
+            PythonEnvironment::s_inRecursionError = false;
+            overflowed_ = true;
+        } else {
+            PythonEnvironment::s_recursionDepth++;
+            incremented_ = true;
+        }
+    }
+    ~RecursionScope() {
+        if (incremented_) {
+            PythonEnvironment::s_recursionDepth--;
+        }
+    }
+    bool overflowed() const { return overflowed_; }
+private:
+    PythonEnvironment* env_;
+    proto::ProtoContext* ctx_;
+    bool overflowed_ = false;
+    bool incremented_ = false;
+};
+
 static const proto::ProtoObject* invokeCallable(proto::ProtoContext* ctx,
     const proto::ProtoObject* callable, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs = nullptr) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
@@ -569,6 +609,9 @@ static const proto::ProtoObject* invokeCallable(proto::ProtoContext* ctx,
         if (env) env->raiseTypeError(ctx, "object is not callable (nullptr)");
         return nullptr;
     }
+
+    RecursionScope recScope(env, ctx);
+    if (recScope.overflowed()) return nullptr;
 
     if (callable->isMethod(ctx)) {
         const auto* cell = proto::toImpl<const proto::ProtoMethodCell>(callable);
@@ -602,6 +645,12 @@ const proto::ProtoObject* py_generator_send_impl(
     
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (!env) return PROTO_NONE;
+
+    RecursionScope recScope(env, ctx);
+    if (recScope.overflowed()) {
+        if (std::getenv("PROTO_ENV_DIAG")) std::cerr << "[proto-gen-diag] RECURSION LIMIT HIT in send_impl self=" << self << " depth=" << PythonEnvironment::s_recursionDepth << "\n";
+        return nullptr;
+    }
 
     // 1. Check if running
     const proto::ProtoObject* runningAttr = self->getAttribute(ctx, env->getGiRunningString());
@@ -937,11 +986,13 @@ const proto::ProtoObject* executeBytecodeRange(
         if (!instr || !instr->isInteger(ctx)) continue;
         int op = static_cast<int>(instr->asLong(ctx));
         // fprintf(stderr, "PC=%lu OP=%d Stack=%lu\n", i, op, stack.size());
-        if (1) {
+        if (static bool trace = std::getenv("PROTO_EXEC_TRACE") != nullptr; trace) {
              fprintf(stderr, "PC=%lu OP=%d Stack=%lu ExternalStack=%s\n", i, op, stack.size(), externalStack ? "Yes" : "No");
         }
-        if (ctx->thread && (reinterpret_cast<uintptr_t>(ctx->thread) & 0x3F) == 48) {
-             fprintf(stderr, "FATAL: CORRUPTION DETECTED BEFORE OP=%d AT PC=%lu! thread=%p\n", op, i, ctx->thread);
+        if (static bool check = std::getenv("PROTO_CORRUPTION_CHECK") != nullptr; check) {
+            if (ctx->thread && (reinterpret_cast<uintptr_t>(ctx->thread) & 0x3F) == 48) {
+                 fprintf(stderr, "FATAL: CORRUPTION DETECTED BEFORE OP=%d AT PC=%lu! thread=%p\n", op, i, ctx->thread);
+            }
         }
         int arg = (i + 1 < n && bytecode->getAt(ctx, static_cast<int>(i + 1))->isInteger(ctx))
             ? static_cast<int>(bytecode->getAt(ctx, static_cast<int>(i + 1))->asLong(ctx)) : 0;
@@ -1015,7 +1066,7 @@ const proto::ProtoObject* executeBytecodeRange(
             if (env && env->hasPendingException()) {
                 const proto::ProtoObject* exc = env->peekPendingException();
                 if (get_env_diag()) std::cerr << "[proto-exec-diag] OP_YIELD_FROM exc=" << exc << "\n";
-                if (env->isStopIteration(exc)) {
+                if (env->isStopIteration(ctx, exc)) {
                     const proto::ProtoObject* stopVal = env->getStopIterationValue(ctx, exc);
                     if (get_env_diag()) {
                         proto::ProtoObjectPointer p; p.oid = stopVal;
@@ -2329,7 +2380,7 @@ const proto::ProtoObject* executeBytecodeRange(
             const proto::ProtoObject* val = nextM->asMethod(ctx)(ctx, iterator, nullptr, emptyL, nullptr);
             if (env && env->hasPendingException()) {
                 const proto::ProtoObject* exc = env->takePendingException();
-                if (env->isStopIteration(exc)) {
+                if (env->isStopIteration(ctx, exc)) {
                     if (get_env_diag()) std::cerr << "[proto-exec-diag] OP_FOR_ITER caught StopIteration, exhausted\n";
                     stack.pop_back();
                     if (arg >= 0 && static_cast<unsigned long>(arg) < n)
@@ -2337,7 +2388,7 @@ const proto::ProtoObject* executeBytecodeRange(
                     continue;
                 } else {
                     env->setPendingException(exc);
-                    return nullptr;
+                    continue;
                 }
             }
             if (val != nullptr) {

@@ -369,6 +369,11 @@ public:
      * @brief Sets the exit code requested by sys.exit (for execution engine).
      */
     void setExitRequested(int code) { exitRequested_ = code; }
+    
+    /** Sets the recursion limit (sys.setrecursionlimit). */
+    void setRecursionLimit(int limit) { recursionLimit_ = limit; }
+    /** Gets the recursion limit (sys.getrecursionlimit). */
+    int getRecursionLimit() const { return recursionLimit_; }
 
     /**
      * @brief Sets the input stream for builtins.input(). Defaults to std::cin.
@@ -444,6 +449,14 @@ public:
     static void setCurrentContext(proto::ProtoContext* ctx) { s_threadContext = ctx; }
     /** Gets the current thread-local context. */
     static proto::ProtoContext* getCurrentContext() { return s_threadContext; }
+    
+    static thread_local PythonEnvironment* s_threadEnv;
+    static thread_local proto::ProtoContext* s_threadContext;
+    static thread_local int s_recursionDepth;
+    static thread_local bool s_inRecursionError;
+    static thread_local const proto::ProtoObject* s_currentFrame;
+    static thread_local const proto::ProtoObject* s_currentGlobals;
+    static thread_local const proto::ProtoObject* s_currentCodeObject;
 
     /**
      * @brief Returns true if there is a pending exception.
@@ -489,7 +502,7 @@ public:
     /**
      * @brief Returns true if the object is a StopIteration exception.
      */
-    bool isStopIteration(const proto::ProtoObject* exc) const;
+    bool isStopIteration(proto::ProtoContext* ctx, const proto::ProtoObject* exc) const;
 
     /**
      * @brief Extracts the return value from a StopIteration exception.
@@ -564,11 +577,6 @@ private:
     const proto::ProtoObject* floatPrototype;
     const proto::ProtoObject* boolPrototype;
     const proto::ProtoObject* sysModule;
-    static thread_local PythonEnvironment* s_threadEnv;
-    static thread_local proto::ProtoContext* s_threadContext;
-    static thread_local const proto::ProtoObject* s_currentFrame;
-    static thread_local const proto::ProtoObject* s_currentGlobals;
-    static thread_local const proto::ProtoObject* s_currentCodeObject;
     const proto::ProtoObject* builtinsModule;
     std::vector<std::string> argv_;
     int exitRequested_{0};
@@ -598,6 +606,7 @@ private:
     const proto::ProtoString* iterString{nullptr};
     const proto::ProtoString* nextString{nullptr};
     const proto::ProtoList* emptyList{nullptr};
+    int recursionLimit_{1000};
 
     const proto::ProtoString* rangeCurString{nullptr};
     const proto::ProtoString* rangeStopString{nullptr};
@@ -718,6 +727,9 @@ private:
 
     const proto::ProtoString* ioModuleString{nullptr};
     const proto::ProtoString* openString{nullptr};
+    const proto::ProtoString* exceptionRootS{nullptr};
+
+    const proto::ProtoString* getExceptionRootString() const { return exceptionRootS; }
 
     const proto::ProtoObject* zeroInteger{nullptr};
     const proto::ProtoObject* oneInteger{nullptr};

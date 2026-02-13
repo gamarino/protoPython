@@ -4780,9 +4780,12 @@ static const proto::ProtoObject* py_dict_popitem(
 /** thread_local member initialization */
 thread_local PythonEnvironment* PythonEnvironment::s_threadEnv = nullptr;
 thread_local proto::ProtoContext* PythonEnvironment::s_threadContext = nullptr;
+thread_local int PythonEnvironment::s_recursionDepth = 0;
+thread_local bool PythonEnvironment::s_inRecursionError = false;
 thread_local const proto::ProtoObject* PythonEnvironment::s_currentFrame = nullptr;
 std::thread::id PythonEnvironment::s_mainThreadId;
 thread_local const proto::ProtoObject* PythonEnvironment::s_currentGlobals = nullptr;
+thread_local const proto::ProtoObject* PythonEnvironment::s_currentCodeObject = nullptr;
 
 /** Thread-local trace function and pending exception (no mutex in hot path). */
 static thread_local const proto::ProtoObject* s_threadTraceFunction = nullptr;
@@ -4824,8 +4827,6 @@ const proto::ProtoObject* PythonEnvironment::getCurrentGlobals() {
     return s_currentGlobals;
 }
 
-thread_local const proto::ProtoObject* PythonEnvironment::s_currentCodeObject = nullptr;
-
 void PythonEnvironment::setCurrentCodeObject(const proto::ProtoObject* code) {
     s_currentCodeObject = code;
 }
@@ -4848,11 +4849,32 @@ const proto::ProtoObject* PythonEnvironment::getTraceFunction() const {
 }
 
 void PythonEnvironment::setPendingException(const proto::ProtoObject* exc) {
+    if (s_threadPendingException == exc) return;
+    
+    // Explicitly root/unroot from ProtoSpace moduleRoots to survive GC
+    if (s_threadEnv && s_threadEnv->space_) {
+        std::lock_guard<std::mutex> lock(s_threadEnv->space_->moduleRootsMutex);
+        if (s_threadPendingException) {
+            auto& roots = s_threadEnv->space_->moduleRoots;
+            roots.erase(std::remove(roots.begin(), roots.end(), s_threadPendingException), roots.end());
+        }
+        if (exc) {
+            s_threadEnv->space_->moduleRoots.push_back(exc);
+        }
+    }
+    
     s_threadPendingException = exc;
 }
 
 const proto::ProtoObject* PythonEnvironment::takePendingException() {
     const proto::ProtoObject* e = s_threadPendingException;
+    if (e) {
+        if (s_threadEnv && s_threadEnv->space_) {
+            std::lock_guard<std::mutex> lock(s_threadEnv->space_->moduleRootsMutex);
+            auto& roots = s_threadEnv->space_->moduleRoots;
+            roots.erase(std::remove(roots.begin(), roots.end(), e), roots.end());
+        }
+    }
     s_threadPendingException = nullptr;
     return e;
 }
@@ -4866,14 +4888,24 @@ const proto::ProtoObject* PythonEnvironment::peekPendingException() const {
 }
 
 void PythonEnvironment::clearPendingException() {
+    if (s_threadPendingException) {
+        if (s_threadEnv && s_threadEnv->space_) {
+            std::lock_guard<std::mutex> lock(s_threadEnv->space_->moduleRootsMutex);
+            auto& roots = s_threadEnv->space_->moduleRoots;
+            roots.erase(std::remove(roots.begin(), roots.end(), s_threadPendingException), roots.end());
+        }
+    }
     s_threadPendingException = nullptr;
 }
 
-bool PythonEnvironment::isStopIteration(const proto::ProtoObject* exc) const {
-    if (!exc || !stopIterationType) return false;
-    // We use rootContext_ as a base, but ideally we'd use the current context.
-    const proto::ProtoObject* res = exc->isInstanceOf(rootContext_, stopIterationType);
-    return res == PROTO_TRUE;
+bool PythonEnvironment::isStopIteration(proto::ProtoContext* ctx, const proto::ProtoObject* exc) const {
+    if (!ctx || !exc || reinterpret_cast<uintptr_t>(exc) < 4096 || !stopIterationType) return false;
+    try {
+        const proto::ProtoObject* res = exc->isInstanceOf(ctx, stopIterationType);
+        return res == PROTO_TRUE;
+    } catch (...) {
+        return false;
+    }
 }
 
 const proto::ProtoObject* PythonEnvironment::getStopIterationValue(proto::ProtoContext* ctx, const proto::ProtoObject* exc) const {
@@ -5342,6 +5374,12 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     gi_stack = proto::ProtoString::fromUTF8String(rootContext_, "gi_stack");
     gi_locals = proto::ProtoString::fromUTF8String(rootContext_, "gi_locals");
     giNativeCallbackString = proto::ProtoString::fromUTF8String(rootContext_, "gi_native_callback");
+    exceptionRootS = proto::ProtoString::fromUTF8String(rootContext_, "__exception_root__");
+
+    {
+        std::lock_guard<std::mutex> lock(space_->moduleRootsMutex);
+        space_->moduleRoots.push_back(reinterpret_cast<const proto::ProtoObject*>(exceptionRootS));
+    }
 
     __iadd__ = proto::ProtoString::fromUTF8String(rootContext_, "__iadd__");
     __isub__ = proto::ProtoString::fromUTF8String(rootContext_, "__isub__");
@@ -7803,7 +7841,7 @@ const proto::ProtoObject* PythonEnvironment::runUntilComplete(const proto::Proto
                 addTask(task);
             } catch (const proto::ProtoObject* exc) {
                 // If it raised StopIteration, the coroutine is finished.
-                if (isStopIteration(exc)) {
+                if (isStopIteration(rootContext_, exc)) {
                     lastResult = getStopIterationValue(rootContext_, exc);
                     // Finished - don't add back to queue.
                 } else {
