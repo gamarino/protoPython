@@ -62,7 +62,7 @@ void generateMakefile(const fs::path& outRoot, const std::vector<fs::path>& sour
 
     outFile << "CXX = g++\n";
     outFile << "CXXFLAGS = -O3 -fPIC -std=c++20\n";
-    outFile << "INCLUDES = -I/home/gamarino/Documentos/proyectos/protoPython/include -I/home/gamarino/Documentos/proyectos/protoCore/headers\n";
+    outFile << "INCLUDES = -I/home/gamarino/Documentos/proyectos/protoPython/include -I/home/gamarino/Documentos/proyectos/protoCore/headers -I/home/gamarino/Documentos/proyectos/protoCore/include\n";
     outFile << "LDFLAGS = -L/home/gamarino/Documentos/proyectos/protoPython/build/src/library -L/home/gamarino/Documentos/proyectos/protoPython/build/protoCore\n";
     outFile << "LIBS = -lprotoPython -lprotoCore\n\n";
     

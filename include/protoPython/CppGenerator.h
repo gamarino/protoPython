@@ -4,17 +4,28 @@
 #include <protoPython/Parser.h>
 #include <string>
 #include <iostream>
+#include <sstream>
+#include <unordered_set>
+#include <vector>
+#include <memory>
 
 namespace protoPython {
 
 class CppGenerator {
 public:
-    explicit CppGenerator(std::ostream& out) : out_(out) {}
+    explicit CppGenerator(std::ostream& out) : finalOut_(out) {}
     
     bool generate(ModuleNode* module, const std::string& filename);
+    
+    // Collectors
+    void collectLocals(ASTNode* node, std::unordered_set<std::string>& locals);
+    bool containsYieldOrAwait(ASTNode* node);
 
 private:
-    std::ostream& out_;
+    std::ostream& finalOut_;
+    std::ostringstream header_;
+    std::ostringstream body_;
+    std::ostream* out_ = &body_; // Current output target
     void emitLineDirective(int line, const std::string& filename);
     bool generateNode(ASTNode* node);
     bool generateConstant(ConstantNode* n);
@@ -29,7 +40,17 @@ private:
     bool generateBreak(BreakNode* n);
     bool generateContinue(ContinueNode* n);
     bool generateFunctionDef(FunctionDefNode* n);
+    bool generateAsyncFunctionDef(AsyncFunctionDefNode* n);
+    bool generateFunctionInternal(const std::string& name, 
+                                 const std::vector<std::string>& parameters,
+                                 const std::string& vararg,
+                                 const std::string& kwarg,
+                                 ASTNode* body,
+                                 const std::vector<std::unique_ptr<ASTNode>>& decorator_list,
+                                 bool isAsync);
     bool generateReturn(ReturnNode* n);
+    bool generateYield(YieldNode* n);
+    bool generateAwait(AwaitNode* n);
     bool generateAugAssign(AugAssignNode* n);
     bool generateAttribute(AttributeNode* n);
     bool generateSubscript(SubscriptNode* n);
@@ -49,6 +70,11 @@ private:
     bool generateSlice(SliceNode* n);
     bool generateDeleteNode(DeleteNode* n);
     bool generateAssert(AssertNode* n);
+    
+    bool inStateMachine_ = false;
+    int stateCount_ = 0;
+    std::unordered_set<std::string> localVars_;
+    std::vector<std::string> orderedLocalVars_;
 };
 
 } // namespace protoPython

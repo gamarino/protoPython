@@ -111,6 +111,16 @@ public:
     bool isResolved(const std::string& name, proto::ProtoContext* ctx = nullptr);
     
     /**
+     * @brief Runs the event loop until the given coroutine is complete.
+     */
+    const proto::ProtoObject* runUntilComplete(const proto::ProtoObject* coro);
+
+    /**
+     * @brief Schedules a coroutine task to be run by the event loop.
+     */
+    void addTask(const proto::ProtoObject* coro);
+
+    /**
      * @brief Accessors for frequently used dunder strings (performance).
      */
     const proto::ProtoString* getIterString() const { return iterString; }
@@ -261,6 +271,7 @@ public:
     const proto::ProtoString* getANextString() const { return anextString; }
     const proto::ProtoString* getAEnterString() const { return aenterString; }
     const proto::ProtoString* getAExitString() const { return aexitString; }
+    const proto::ProtoString* getGiNativeCallbackString() const { return giNativeCallbackString; }
 
     const proto::ProtoString* getAndString() const { return __and__; }
     const proto::ProtoString* getRAndString() const { return __rand__; }
@@ -583,6 +594,7 @@ private:
     const proto::ProtoObject* zeroDivisionErrorType = nullptr;
     const proto::ProtoObject* indexErrorType{nullptr};
     const proto::ProtoObject* stopAsyncIterationType{nullptr};
+    const proto::ProtoList* taskQueue{nullptr};
     const proto::ProtoString* iterString{nullptr};
     const proto::ProtoString* nextString{nullptr};
     const proto::ProtoList* emptyList{nullptr};
@@ -648,6 +660,7 @@ private:
     const proto::ProtoString* co_consts{nullptr};
     const proto::ProtoString* co_names{nullptr};
     const proto::ProtoString* co_code{nullptr};
+    const proto::ProtoString* giNativeCallbackString{nullptr};
     const proto::ProtoString* sendString{nullptr};
     const proto::ProtoString* throwString{nullptr};
     const proto::ProtoString* closeString{nullptr};

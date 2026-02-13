@@ -5341,6 +5341,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     gi_pc = proto::ProtoString::fromUTF8String(rootContext_, "gi_pc");
     gi_stack = proto::ProtoString::fromUTF8String(rootContext_, "gi_stack");
     gi_locals = proto::ProtoString::fromUTF8String(rootContext_, "gi_locals");
+    giNativeCallbackString = proto::ProtoString::fromUTF8String(rootContext_, "gi_native_callback");
 
     __iadd__ = proto::ProtoString::fromUTF8String(rootContext_, "__iadd__");
     __isub__ = proto::ProtoString::fromUTF8String(rootContext_, "__isub__");
@@ -6053,6 +6054,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
 
         addRoot(reinterpret_cast<const proto::ProtoObject*>(iterString));
         addRoot(reinterpret_cast<const proto::ProtoObject*>(nextString));
+        addRoot(reinterpret_cast<const proto::ProtoObject*>(taskQueue));
         addRoot(reinterpret_cast<const proto::ProtoObject*>(emptyList));
         addRoot(reinterpret_cast<const proto::ProtoObject*>(rangeCurString));
         addRoot(reinterpret_cast<const proto::ProtoObject*>(rangeStopString));
@@ -6103,6 +6105,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
         addRoot(reinterpret_cast<const proto::ProtoObject*>(co_consts));
         addRoot(reinterpret_cast<const proto::ProtoObject*>(co_names));
         addRoot(reinterpret_cast<const proto::ProtoObject*>(co_code));
+        addRoot(reinterpret_cast<const proto::ProtoObject*>(giNativeCallbackString));
         addRoot(reinterpret_cast<const proto::ProtoObject*>(sendString));
         addRoot(reinterpret_cast<const proto::ProtoObject*>(throwString));
         addRoot(reinterpret_cast<const proto::ProtoObject*>(closeString));
@@ -7774,6 +7777,50 @@ void PythonEnvironment::popKwNames() {
 const proto::ProtoTuple* PythonEnvironment::getCurrentKwNames() const {
     if (kwNamesStack.empty()) return nullptr;
     return kwNamesStack.back();
+}
+
+const proto::ProtoObject* PythonEnvironment::runUntilComplete(const proto::ProtoObject* coro) {
+    if (!coro) return PROTO_NONE;
+    
+    // Add the initial coroutine as a task
+    addTask(coro);
+    
+    const proto::ProtoObject* lastResult = PROTO_NONE;
+    
+    while (taskQueue && taskQueue->getSize(rootContext_) > 0) {
+        // Simple FIFO queue: pull the first task
+        const proto::ProtoObject* task = taskQueue->getAt(rootContext_, 0);
+        taskQueue = taskQueue->removeAt(rootContext_, 0);
+        
+        // Resume the coroutine by calling .send(None)
+        const proto::ProtoObject* sendMethod = getAttr(task, "send");
+        if (sendMethod && sendMethod != PROTO_NONE) {
+            try {
+                lastResult = callObject(sendMethod, {PROTO_NONE});
+                
+                // If callObject returns successfully, it means the coroutine yielded.
+                // In a minimal loop, we just put it back at the end of the queue to be resumed later.
+                addTask(task);
+            } catch (const proto::ProtoObject* exc) {
+                // If it raised StopIteration, the coroutine is finished.
+                if (isStopIteration(exc)) {
+                    lastResult = getStopIterationValue(rootContext_, exc);
+                    // Finished - don't add back to queue.
+                } else {
+                    // A real error occurred - report and re-raise.
+                    handleException(exc);
+                    throw exc;
+                }
+            }
+        }
+    }
+    
+    return lastResult;
+}
+
+void PythonEnvironment::addTask(const proto::ProtoObject* coro) {
+    if (!taskQueue) taskQueue = rootContext_->newList();
+    taskQueue = taskQueue->appendLast(rootContext_, coro);
 }
 
 } // namespace protoPython

@@ -610,7 +610,30 @@ const proto::ProtoObject* py_generator_send_impl(
         return PROTO_NONE;
     }
 
-    // 2. Get state
+    // 2. Check for native callback
+    const proto::ProtoObject* nativeCb = self->getAttribute(ctx, env->getGiNativeCallbackString());
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        std::cerr << "[py_generator_send_impl] self=" << self << " nativeCb=" << nativeCb << "\n" << std::flush;
+    }
+    if (nativeCb && nativeCb != PROTO_NONE) {
+        // Native generators use a C++ callback that handles state.
+        // We pass self (the generator) and sendVal (the value being sent).
+        // The callback is responsible for updating gi_pc and gi_locals/stack on self.
+        
+        // 1. Mark as running
+        self->setAttribute(ctx, env->getGiRunningString(), PROTO_TRUE);
+        
+        try {
+            const proto::ProtoObject* result = env->callObject(nativeCb, {self, sendVal});
+            self->setAttribute(ctx, env->getGiRunningString(), PROTO_FALSE);
+            return result;
+        } catch (const proto::ProtoObject* exc) {
+            self->setAttribute(ctx, env->getGiRunningString(), PROTO_FALSE);
+            throw exc;
+        }
+    }
+
+    // 3. Get bytecode state
     const proto::ProtoObject* codeObj = self->getAttribute(ctx, env->getGiCodeString());
     proto::ProtoObject* frame = const_cast<proto::ProtoObject*>(self->getAttribute(ctx, env->getGiFrameString()));
     const proto::ProtoObject* pcObj = self->getAttribute(ctx, env->getGiPCString());
