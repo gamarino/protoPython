@@ -82,7 +82,11 @@ private:
     bool compileRaise(RaiseNode* n);
     bool compileWith(WithNode* n);
     bool compileFunctionDef(FunctionDefNode* n);
+    bool compileAsyncFunctionDef(AsyncFunctionDefNode* n);
     bool compileClassDef(ClassDefNode* n);
+    bool compileAwait(AwaitNode* n);
+    bool compileAsyncFor(AsyncForNode* n);
+    bool compileAsyncWith(AsyncWithNode* n);
     bool compileCondExpr(CondExprNode* n);
     bool compileComprehension(const std::vector<Comprehension>& generators, size_t index, std::function<bool()> innerBody);
     bool compileSuite(SuiteNode* n);

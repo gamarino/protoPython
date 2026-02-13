@@ -892,21 +892,42 @@ bool Compiler::compileTry(TryNode* n) {
     addPatch(setupFinallySlot, bytecodeOffset());
     
     if (!n->handlers.empty()) {
+        std::vector<int> jumpToEndLocations;
         for (auto& h : n->handlers) {
-            // For now, we don't push exception to match type, 
-            // but the engine pushed the exception object to the stack.
-            // We should POP it if we don't bind it.
-            if (h.name.empty()) {
-                emit(OP_POP_TOP, 0); 
-            } else {
-                emitNameOp(h.name, TargetCtx::Store);
+            int nextHandlerSlot = -1;
+            if (h.type) {
+                if (!compileNode(h.type.get())) return false;
+                emit(OP_EXCEPTION_MATCH);
+                nextHandlerSlot = bytecodeOffset();
+                emit(OP_POP_JUMP_IF_FALSE, 0);
             }
-            
+
+            // Bind exception to name if present
+            if (!h.name.empty()) {
+                if (!emitNameOp(h.name, TargetCtx::Store)) return false;
+            } else {
+                emit(OP_POP_TOP);
+            }
+
             if (!compileNode(h.body.get())) return false;
             
-            // After one handler matched/executed, jump to post-handlers
-            // (In a more complete impl, we'd check exception type)
+            int endJumpSlot = bytecodeOffset();
+            emit(OP_JUMP_ABSOLUTE, 0); 
+            jumpToEndLocations.push_back(endJumpSlot);
+
+            if (nextHandlerSlot != -1) {
+                addPatch(nextHandlerSlot + 1, bytecodeOffset());
+            }
         }
+        // If we fall through all handlers, re-raise the exception
+        emit(OP_RAISE_VARARGS, 0);
+
+        for (int locSlot : jumpToEndLocations) {
+            addPatch(locSlot + 1, bytecodeOffset());
+        }
+    } else {
+        // No handlers: re-raise whatever was caught
+        emit(OP_RAISE_VARARGS, 0);
     }
     
     addPatch(jumpToPostHandlersSlot, bytecodeOffset());
@@ -1514,7 +1535,7 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
         for (size_t i = 0; i < varnamesOrdered.size(); ++i) {
             slotMap[varnamesOrdered[i]] = static_cast<int>(i);
         }
-        automatic_count = static_cast<int>(varnamesOrdered.size());
+        automatic_count = static_cast<int>(varnamesOrdered.size()) + 256; // Add space for stack
     } else {
         if (std::getenv("PROTO_ENV_DIAG")) {
             std::cerr << "[protoPython] Slot fallback: function=" << n->name << " reason=" << (dynamicReason.empty() ? "capture" : dynamicReason);
@@ -1588,7 +1609,7 @@ bool Compiler::compileLambda(LambdaNode* n) {
         for (size_t i = 0; i < varnamesOrdered.size(); ++i) {
             slotMap[varnamesOrdered[i]] = static_cast<int>(i);
         }
-        automatic_count = static_cast<int>(varnamesOrdered.size());
+        automatic_count = static_cast<int>(varnamesOrdered.size()) + 256; // Add space for stack
     }
     
     int nparams = static_cast<int>(params.size());
@@ -1611,6 +1632,229 @@ bool Compiler::compileLambda(LambdaNode* n) {
     emit(OP_LOAD_CONST, idx);
     emit(OP_BUILD_FUNCTION, 0);
     
+    return true;
+}
+
+bool Compiler::compileAsyncFunctionDef(AsyncFunctionDefNode* n) {
+    if (!n) return false;
+    std::unordered_set<std::string> bodyGlobals;
+    std::unordered_set<std::string> bodyNonlocals;
+    std::vector<std::string> localsOrdered;
+    collectLocalsFromBody(n->body.get(), bodyGlobals, bodyNonlocals, localsOrdered);
+    std::vector<std::string> params;
+    if (!n->parameters.empty()) {
+        for (const auto& p : n->parameters) params.push_back(p);
+    }
+    std::unordered_set<std::string> captured;
+    collectCapturedNames(n->body.get(), bodyGlobals, captured);
+    
+    std::string dynamicReason = getDynamicLocalsReason(n->body.get());
+    const bool forceMapped = !dynamicReason.empty() || !captured.empty();
+
+    std::vector<std::string> varnamesOrdered;
+    // Parameters first
+    for (const auto& p : params) {
+        varnamesOrdered.push_back(p);
+    }
+    if (!n->vararg.empty()) varnamesOrdered.push_back(n->vararg);
+    if (!n->kwarg.empty()) varnamesOrdered.push_back(n->kwarg);
+
+    // Then other locals
+    for (const auto& loc : localsOrdered) {
+        bool alreadyIn = false;
+        for (const auto& v : varnamesOrdered) if (v == loc) alreadyIn = true;
+        if (!alreadyIn) varnamesOrdered.push_back(loc);
+    }
+
+    std::unordered_map<std::string, int> slotMap;
+    int automatic_count = 0;
+    if (!forceMapped) {
+        for (size_t i = 0; i < varnamesOrdered.size(); ++i) {
+            slotMap[varnamesOrdered[i]] = static_cast<int>(i);
+        }
+        automatic_count = static_cast<int>(varnamesOrdered.size()) + 256; // Add space for stack
+    }
+    int nparams = static_cast<int>(params.size());
+
+    Compiler bodyCompiler(ctx_, filename_);
+    bodyCompiler.globalNames_ = bodyGlobals;
+    bodyCompiler.nonlocalNames_ = bodyNonlocals;
+    bodyCompiler.localSlotMap_ = slotMap;
+    if (!bodyCompiler.compileNode(n->body.get())) return false;
+    
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx_);
+    int noneIdx = bodyCompiler.addConstant(env ? env->getNonePrototype() : PROTO_NONE);
+    bodyCompiler.emit(OP_LOAD_CONST, noneIdx);
+    bodyCompiler.emit(OP_RETURN_VALUE);
+    
+    bodyCompiler.applyPatches();
+
+    const proto::ProtoList* co_varnames = ctx_->newList();
+    for (const auto& name : varnamesOrdered)
+        co_varnames = co_varnames->appendLast(ctx_, ctx_->fromUTF8String(name.c_str()));
+    
+    // 0x80 is CO_COROUTINE
+    int co_flags = 128; 
+    if (!n->vararg.empty()) co_flags |= CO_VARARGS;
+    if (!n->kwarg.empty()) co_flags |= CO_VARKEYWORDS;
+    if (bodyCompiler.isGenerator_) co_flags |= 0x20; // CO_GENERATOR if it yields. Then it's an async generator.
+
+    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), ctx_->fromUTF8String(filename_.c_str())->asString(ctx_), co_varnames, nparams, automatic_count + PYTHON_STACK_BUFFER, co_flags, bodyCompiler.isGenerator_);
+    if (!codeObj) return false;
+    int idx = addConstant(codeObj);
+    emit(OP_LOAD_CONST, idx);
+    emit(OP_BUILD_FUNCTION, co_flags);
+    
+    if (!n->decorator_list.empty()) {
+        for (auto it = n->decorator_list.rbegin(); it != n->decorator_list.rend(); ++it) {
+            if (!compileNode(it->get())) return false;
+            emit(OP_ROT_TWO, 0);
+            emit(OP_CALL_FUNCTION, 1);
+        }
+    }
+    
+    return emitNameOp(n->name, TargetCtx::Store);
+}
+
+bool Compiler::compileAwait(AwaitNode* n) {
+    if (!n || !compileNode(n->value.get())) return false;
+    emit(OP_GET_AWAITABLE, 0);
+    emit(OP_LOAD_CONST, addConstant(PROTO_NONE));
+    emit(OP_YIELD_FROM, 0);
+    return true;
+}
+
+bool Compiler::compileAsyncFor(AsyncForNode* n) {
+    if (!n) return false;
+
+    // 1. iter = GET_AITER(n->iter)
+    if (!compileNode(n->iter.get())) return false;
+    emit(OP_GET_AITER);
+
+    int loopStart = bytecodeOffset();
+
+    // 2. SETUP_FINALLY to catch StopAsyncIteration
+    int setupFinallySlot = bytecodeOffset();
+    emit(OP_SETUP_FINALLY, 0);
+
+    // 3. val = await anext(iter)
+    emit(OP_GET_ANEXT);
+    emit(OP_GET_AWAITABLE);
+    emit(OP_LOAD_CONST, addConstant(PROTO_NONE));
+    emit(OP_YIELD_FROM);
+
+    // 4. Success: pop block and store
+    emit(OP_POP_BLOCK);
+    if (!compileTarget(n->target.get(), TargetCtx::Store)) return false;
+
+    // 5. Body
+    if (!compileNode(n->body.get())) return false;
+    emit(OP_JUMP_ABSOLUTE, loopStart);
+
+    // 6. Handler (StopAsyncIteration)
+    int handlerTarget = bytecodeOffset();
+    addPatch(setupFinallySlot + 1, handlerTarget);
+
+    int idx = addName("StopAsyncIteration");
+    emit(OP_LOAD_GLOBAL, idx);
+    emit(OP_EXCEPTION_MATCH);
+    
+    int popJumpSlot = bytecodeOffset();
+    emit(OP_POP_JUMP_IF_FALSE, 0);
+
+    // If matches StopAsyncIteration:
+    emit(OP_POP_TOP); // pop exception
+    emit(OP_POP_TOP); // pop internal aiter
+    
+    int endJumpSlot = bytecodeOffset();
+    emit(OP_JUMP_ABSOLUTE, 0);
+
+    // If NOT matches:
+    int reraiseTarget = bytecodeOffset();
+    addPatch(popJumpSlot + 1, reraiseTarget);
+    emit(OP_RAISE_VARARGS, 1);
+
+    int endTarget = bytecodeOffset();
+    addPatch(endJumpSlot + 1, endTarget);
+
+    return true;
+}
+
+bool Compiler::compileAsyncWith(AsyncWithNode* n) {
+    if (!n || n->items.empty()) return true;
+    auto& item = n->items[0];
+
+    // 1. context_manager = context_expr
+    if (!compileNode(item.context_expr.get())) return false;
+    emit(OP_DUP_TOP);
+    
+    // 2. exit = context_manager.__aexit__
+    emit(OP_LOAD_ATTR, addName("__aexit__"));
+    emit(OP_ROT_TWO); // [..., exit, manager]
+    
+    // 3. enter_res = await context_manager.__aenter__()
+    emit(OP_LOAD_ATTR, addName("__aenter__"));
+    emit(OP_CALL_FUNCTION, 0);
+    emit(OP_GET_AWAITABLE);
+    emit(OP_LOAD_CONST, addConstant(PROTO_NONE));
+    emit(OP_YIELD_FROM);
+    
+    // [..., exit, enter_res]
+    
+    // 4. SETUP_FINALLY to catch exceptions in body
+    int setupFinallySlot = bytecodeOffset();
+    emit(OP_SETUP_FINALLY, 0);
+
+    // 5. Store enter_res in target
+    if (item.optional_vars) {
+        if (!compileTarget(item.optional_vars.get(), TargetCtx::Store)) return false;
+    } else {
+        emit(OP_POP_TOP);
+    }
+    
+    // 6. Body
+    if (!compileNode(n->body.get())) return false;
+    
+    // 7. Success: POP_BLOCK and call exit(None, None, None)
+    emit(OP_POP_BLOCK);
+    
+    emit(OP_LOAD_CONST, addConstant(PROTO_NONE));
+    emit(OP_LOAD_CONST, addConstant(PROTO_NONE));
+    emit(OP_LOAD_CONST, addConstant(PROTO_NONE));
+    emit(OP_CALL_FUNCTION, 3);
+    emit(OP_GET_AWAITABLE);
+    emit(OP_LOAD_CONST, addConstant(PROTO_NONE));
+    emit(OP_YIELD_FROM);
+    emit(OP_POP_TOP);
+    
+    int endJumpSlot = bytecodeOffset();
+    emit(OP_JUMP_ABSOLUTE, 0);
+
+    // 8. Handler: call exit(type, exc, None) and reraise
+    int handlerTarget = bytecodeOffset();
+    addPatch(setupFinallySlot + 1, handlerTarget);
+    
+    // [..., exit, exc]
+    emit(OP_DUP_TOP); // exc
+    emit(OP_LOAD_ATTR, addName("__class__")); // type
+    emit(OP_ROT_TWO); // [..., type, exc]
+    emit(OP_LOAD_CONST, addConstant(PROTO_NONE)); // [..., type, exc, None]
+    
+    // Stack is now [..., exit, type, exc, None]
+    emit(OP_CALL_FUNCTION, 3);
+    emit(OP_GET_AWAITABLE);
+    emit(OP_LOAD_CONST, addConstant(PROTO_NONE));
+    emit(OP_YIELD_FROM);
+    emit(OP_POP_TOP); // discard exit result
+    
+    // Reraise original exception (we need to have kept it)
+    // For now we just raise the last one or allow propagation if we didn't clear it.
+    // ExecutionEngine cleared it. So we need to raise it again.
+    emit(OP_RAISE_VARARGS, 1);
+
+    int endTarget = bytecodeOffset();
+    addPatch(endJumpSlot + 1, endTarget);
+
     return true;
 }
 
@@ -1672,6 +1916,10 @@ bool Compiler::compileNode(ASTNode* node) {
     if (!node) return false;
     if (dynamic_cast<PassNode*>(node)) return true;
     if (auto* fn = dynamic_cast<FunctionDefNode*>(node)) return compileFunctionDef(fn);
+    if (auto* afn = dynamic_cast<AsyncFunctionDefNode*>(node)) return compileAsyncFunctionDef(afn);
+    if (auto* aw = dynamic_cast<AwaitNode*>(node)) return compileAwait(aw);
+    if (auto* afor = dynamic_cast<AsyncForNode*>(node)) return compileAsyncFor(afor);
+    if (auto* awith = dynamic_cast<AsyncWithNode*>(node)) return compileAsyncWith(awith);
     if (auto* cl = dynamic_cast<ClassDefNode*>(node)) return compileClassDef(cl);
     if (auto* ce = dynamic_cast<CondExprNode*>(node)) return compileCondExpr(ce);
     if (auto* c = dynamic_cast<ConstantNode*>(node)) return compileConstant(c);
@@ -1767,7 +2015,8 @@ const proto::ProtoObject* makeCodeObject(proto::ProtoContext* ctx,
     code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_nparams"), ctx->fromInteger(nparams));
     code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_automatic_count"), ctx->fromInteger(automatic_count + PYTHON_STACK_BUFFER));
     code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_flags"), ctx->fromInteger(flags));
-    code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_is_generator"), ctx->fromBoolean(isGenerator));
+    bool isGenOrCoro = isGenerator || (flags & 0x80);
+    code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_is_generator"), ctx->fromBoolean(isGenOrCoro));
     return code;
 }
 
@@ -1802,6 +2051,8 @@ const proto::ProtoObject* runCodeObject(proto::ProtoContext* ctx,
 
     proto::ProtoContext* execCtx = ctx;
     proto::ProtoContext* subCtx = nullptr;
+    proto::ProtoContext* oldCtx = PythonEnvironment::getCurrentContext();
+
     if (ctx->getAutomaticLocalsCount() < (unsigned int)automatic_count) {
         const proto::ProtoList* localNames = ctx->newList();
         const proto::ProtoList* vlist = co_varnames ? co_varnames->asList(ctx) : nullptr;
@@ -1812,6 +2063,7 @@ const proto::ProtoObject* runCodeObject(proto::ProtoContext* ctx,
         }
         subCtx = new proto::ProtoContext(ctx->space, ctx, nullptr, localNames, nullptr, nullptr);
         execCtx = subCtx;
+        PythonEnvironment::setCurrentContext(execCtx);
     }
 
     unsigned long stackOffset = (co_varnames && co_varnames->asList(execCtx)) ? co_varnames->asList(execCtx)->getSize(execCtx) : 0;
@@ -1821,6 +2073,7 @@ const proto::ProtoObject* runCodeObject(proto::ProtoContext* ctx,
         stackOffset);
 
     if (subCtx) {
+        PythonEnvironment::setCurrentContext(oldCtx);
         subCtx->returnValue = result;
         delete subCtx;
     }

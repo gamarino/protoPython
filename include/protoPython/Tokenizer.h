@@ -81,6 +81,8 @@ enum class TokenType {
     At,            /* @ */
     Error,
     DoubleStar,    /* ** */
+    Async,
+    Await,
 };
 
 struct Token {

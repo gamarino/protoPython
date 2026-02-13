@@ -110,6 +110,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx,
     const proto::ProtoString* py_eoferror = proto::ProtoString::fromUTF8String(ctx, "EOFError");
     const proto::ProtoString* py_assertionerror = proto::ProtoString::fromUTF8String(ctx, "AssertionError");
     const proto::ProtoString* py_stopiteration = proto::ProtoString::fromUTF8String(ctx, "StopIteration");
+    const proto::ProtoString* py_stopasynciteration = proto::ProtoString::fromUTF8String(ctx, "StopAsyncIteration");
 
     const proto::ProtoObject* exceptionType = make_exception_type(ctx, objectProto, typeProto, "Exception", objectProto);
     const proto::ProtoObject* keyErrorType = make_exception_type(ctx, objectProto, typeProto, "KeyError", exceptionType);
@@ -127,6 +128,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx,
     const proto::ProtoObject* eofErrorType = make_exception_type(ctx, objectProto, typeProto, "EOFError", exceptionType);
     const proto::ProtoObject* assertionErrorType = make_exception_type(ctx, objectProto, typeProto, "AssertionError", exceptionType);
     const proto::ProtoObject* stopIterationType = make_exception_type(ctx, objectProto, typeProto, "StopIteration", exceptionType);
+    const proto::ProtoObject* stopAsyncIterationType = make_exception_type(ctx, objectProto, typeProto, "StopAsyncIteration", exceptionType);
 
     const proto::ProtoObject* mod = ctx->newObject(true);
     mod = mod->setAttribute(ctx, py_exception, exceptionType);
@@ -144,7 +146,26 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx,
     mod = mod->setAttribute(ctx, py_indexerror, indexErrorType);
     mod = mod->setAttribute(ctx, py_eoferror, eofErrorType);
     mod = mod->setAttribute(ctx, py_assertionerror, assertionErrorType);
+
+    // StopIteration custom init
+    const proto::ProtoString* py_init = proto::ProtoString::fromUTF8String(ctx, "__init__");
+    proto::ProtoObject* stopIterMutable = const_cast<proto::ProtoObject*>(stopIterationType);
+    stopIterMutable->setAttribute(ctx, py_init, ctx->fromMethod(stopIterMutable, [](proto::ProtoContext* context, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* positionalParameters, const proto::ProtoSparseList* keywordParameters) -> const proto::ProtoObject* {
+        exception_init(context, self, parentLink, positionalParameters, keywordParameters);
+        const proto::ProtoObject* value = PROTO_NONE;
+        if (positionalParameters && positionalParameters->getSize(context) > 0) {
+            if (positionalParameters->getSize(context) == 1) {
+                value = positionalParameters->getAt(context, 0);
+            } else {
+                 value = context->newTupleFromList(positionalParameters)->asObject(context);
+            }
+        }
+        self->setAttribute(context, proto::ProtoString::fromUTF8String(context, "value"), value);
+        return PROTO_NONE;
+    }));
+
     mod = mod->setAttribute(ctx, py_stopiteration, stopIterationType);
+    mod = mod->setAttribute(ctx, py_stopasynciteration, stopAsyncIterationType);
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__name__"), ctx->fromUTF8String("exceptions"));
 
     return mod;

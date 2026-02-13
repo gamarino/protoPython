@@ -30,45 +30,34 @@ inline void promote(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
  */
 class ContextScope {
 public:
-    /** Construct a new context with previous = parent, and set it as current on parent's thread.
-     * Parameters match ProtoContext(space, previous, parameterNames, localNames, args, kwargs).
-     * May throw if ProtoContext constructor throws. */
     ContextScope(proto::ProtoSpace* space,
                  proto::ProtoContext* parent,
                  const proto::ProtoList* parameterNames,
                  const proto::ProtoList* localNames,
                  const proto::ProtoList* args,
                  const proto::ProtoSparseList* kwargs)
-        : parent_(parent ? parent : PythonEnvironment::getCurrentContext())
-        , constructed_(false) {
-        new (storage_) proto::ProtoContext(space, parent_, parameterNames, localNames, args, kwargs);
-        PythonEnvironment::setCurrentContext(context());
-        constructed_ = true;
+        : parent_(parent ? parent : PythonEnvironment::getCurrentContext()) {
+        ctx_ = new proto::ProtoContext(space, parent_, parameterNames, localNames, args, kwargs);
+        PythonEnvironment::setCurrentContext(ctx_);
     }
 
     ~ContextScope() {
-        if (constructed_) {
+        if (ctx_) {
             PythonEnvironment::setCurrentContext(parent_);
-            context()->proto::ProtoContext::~ProtoContext();
-            constructed_ = false;
+            delete ctx_;
+            ctx_ = nullptr;
         }
     }
 
     ContextScope(const ContextScope&) = delete;
     ContextScope& operator=(const ContextScope&) = delete;
 
-    proto::ProtoContext* context() {
-        return reinterpret_cast<proto::ProtoContext*>(storage_);
-    }
-    const proto::ProtoContext* context() const {
-        return reinterpret_cast<const proto::ProtoContext*>(storage_);
-    }
+    proto::ProtoContext* context() { return ctx_; }
+    const proto::ProtoContext* context() const { return ctx_; }
 
 private:
     proto::ProtoContext* parent_;
-    proto::ProtoThread* thread_;
-    bool constructed_;
-    alignas(proto::ProtoContext) unsigned char storage_[sizeof(proto::ProtoContext)];
+    proto::ProtoContext* ctx_;
 };
 
 } // namespace protoPython

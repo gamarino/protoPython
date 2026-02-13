@@ -242,6 +242,11 @@ static const proto::ProtoObject* py_print(
         const proto::ProtoObject* obj = positionalParameters->getAt(context, static_cast<int>(i));
 
         const proto::ProtoObject* strObj = PROTO_NONE;
+        if (std::getenv("PROTO_ENV_DIAG")) {
+            proto::ProtoObjectPointer pa{};
+            pa.oid = obj;
+            std::cerr << "[py_print] obj=" << obj << " tag=" << pa.op.pointer_tag << " type=" << pa.op.embedded_type << " isInt=" << (obj?obj->isInteger(context):0) << "\n";
+        }
         if (!obj || obj == PROTO_NONE || (env && obj == env->getNonePrototype())) {
             strObj = context->fromUTF8String("None");
         } else if (obj->isInteger(context)) {
@@ -255,14 +260,14 @@ static const proto::ProtoObject* py_print(
         } else if (obj == PROTO_FALSE) {
             strObj = context->fromUTF8String("False");
         } else {
-            const proto::ProtoString* strS = env->getStrString();
-            const proto::ProtoString* reprS = env->getReprString();
+            const proto::ProtoString* strS = env ? env->getStrString() : proto::ProtoString::fromUTF8String(context, "__str__");
+            const proto::ProtoString* reprS = env ? env->getReprString() : proto::ProtoString::fromUTF8String(context, "__repr__");
             const proto::ProtoObject* strMethod = obj->getAttribute(context, strS);
-            if (!strMethod) {
+            if (!strMethod || strMethod == PROTO_NONE) {
                 strMethod = obj->getAttribute(context, reprS);
             }
-            if (strMethod && strMethod->asMethod(context)) {
-                strObj = strMethod->asMethod(context)(context, obj, nullptr, emptyL, nullptr);
+            if (strMethod && strMethod != PROTO_NONE) {
+                strObj = obj->call(context, nullptr, strS, obj, emptyL, nullptr);
             }
         }
 

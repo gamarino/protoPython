@@ -144,6 +144,8 @@ Token Tokenizer::scanNameOrKeyword() {
     else if (t.value == "del") t.type = TokenType::Del;
     else if (t.value == "assert") t.type = TokenType::Assert;
     else if (t.value == "nonlocal") t.type = TokenType::Nonlocal;
+    else if (t.value == "async") t.type = TokenType::Async;
+    else if (t.value == "await") t.type = TokenType::Await;
     return t;
 }
 

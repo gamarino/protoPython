@@ -163,6 +163,12 @@ std::unique_ptr<ASTNode> Parser::parseAtom() {
         advance();
         return n;
     }
+    if (cur_.type == TokenType::Await) {
+        advance();
+        auto a = createNode<AwaitNode>();
+        a->value = parsePrimary(); 
+        return a;
+    }
     if (cur_.type == TokenType::String) {
         auto n = createNode<ConstantNode>();
         n->constType = ConstantNode::ConstType::Str;
@@ -793,21 +799,112 @@ std::unique_ptr<ASTNode> Parser::parseStatement() {
         f->body = std::move(body);
         return f;
     }
+    if (cur_.type == TokenType::Async) {
+        advance();
+        if (cur_.type == TokenType::Def) {
+            advance();
+            if (cur_.type != TokenType::Name) return nullptr;
+            std::string funcName = cur_.value;
+            advance();
+            if (!expect(TokenType::LParen)) return nullptr;
+            auto fn = createNode<AsyncFunctionDefNode>();
+            fn->name = funcName;
+            
+            while (cur_.type == TokenType::Name || cur_.type == TokenType::Star || cur_.type == TokenType::DoubleStar) {
+                if (cur_.type == TokenType::Star) {
+                    advance();
+                    if (cur_.type != TokenType::Name) {
+                        error("Expected name after *");
+                        return nullptr;
+                    }
+                    fn->vararg = cur_.value;
+                    advance();
+                } else if (cur_.type == TokenType::DoubleStar) {
+                    advance();
+                    if (cur_.type != TokenType::Name) {
+                        error("Expected name after **");
+                        return nullptr;
+                    }
+                    fn->kwarg = cur_.value;
+                    advance();
+                } else {
+                    fn->parameters.push_back(cur_.value);
+                    advance();
+                    if (accept(TokenType::Assign)) {
+                         auto defaultVal = parseExpression();
+                        (void)defaultVal; 
+                    }
+                }
+                if (!accept(TokenType::Comma)) break;
+            }
+            if (!expect(TokenType::RParen)) return nullptr;
+            if (!expect(TokenType::Colon)) return nullptr;
+            auto body = parseSuite();
+            if(!body) return nullptr;
+            fn->body = std::move(body);
+            return fn;
+        } else if (cur_.type == TokenType::With) {
+             advance();
+             auto w = createNode<AsyncWithNode>();
+             for (;;) {
+                 auto ctx = parseExpression();
+                 std::unique_ptr<ASTNode> vars;
+                 if (accept(TokenType::As)) {
+                     vars = parseTargetList(); 
+                 }
+                 w->items.push_back({std::move(ctx), std::move(vars)});
+                 if (!accept(TokenType::Comma)) break;
+             }
+             if (!expect(TokenType::Colon)) return nullptr;
+             w->body = parseSuite();
+             return w;
+        } else if (cur_.type == TokenType::For) {
+             advance();
+             auto target = parseTargetList();
+             if (!target || !expect(TokenType::In)) return nullptr;
+             auto iter = parseExpression();
+             if (!iter || !expect(TokenType::Colon)) return nullptr;
+             auto body = parseSuite();
+             
+             auto f = createNode<AsyncForNode>();
+             f->target = std::move(target);
+             f->iter = std::move(iter);
+             f->body = std::move(body);
+             return f;
+        }
+        error("Expected def, with, or for after async");
+        return nullptr;
+    }
     if (cur_.type == TokenType::If) {
         advance();
         auto test = parseExpression();
         if (!test || !expect(TokenType::Colon)) return nullptr;
         auto body = parseSuite();
-        if (!body) return nullptr;
-        auto iff = createNode<IfNode>();
-        iff->test = std::move(test);
-        iff->body = std::move(body);
-        skipNewlines();
-        if (accept(TokenType::Else)) {
-            if (!expect(TokenType::Colon)) return nullptr;
-            iff->orelse = parseSuite();
+        auto i = createNode<IfNode>();
+        i->test = std::move(test);
+        i->body = std::move(body);
+        if (cur_.type == TokenType::Else) {
+             advance();
+             skipTrash(); 
+             /* 
+                If it's 'elif', the scanner might return Else (if logic conflates) or Name 'elif'. 
+                Python scanner usually makes 'elif' a token or keyword.
+                Our scanner doesn't have Elif, so 'else if' is manual.
+             */
+             if (cur_.type == TokenType::If) {
+                  // This is an 'else if' -> orelse is a new IfNode
+                  i->orelse = parseStatement();
+             } else {
+                  if (cur_.type != TokenType::Colon) {
+                      // implicit colon? No, expect it.
+                      expect(TokenType::Colon);
+                  } else {
+                      advance();
+                  }
+                  i->orelse = parseSuite(); 
+             }
         }
-        return iff;
+        return i;
     }
     if (cur_.type == TokenType::While) {
         advance();
@@ -1259,6 +1356,18 @@ std::unique_ptr<ASTNode> Parser::parseNonlocal() {
         advance();
     }
     return n;
+}
+
+
+std::unique_ptr<ASTNode> Parser::parseReturn() {
+    advance(); // return
+    auto r = createNode<ReturnNode>();
+    // Check if there is a value; heuristics: not newline/dedent/eof/semicolon
+    if (cur_.type != TokenType::Newline && cur_.type != TokenType::Dedent && 
+        cur_.type != TokenType::EndOfFile && cur_.type != TokenType::Semicolon) {
+        r->value = parseTargetList();
+    }
+    return r;
 }
 
 } // namespace protoPython

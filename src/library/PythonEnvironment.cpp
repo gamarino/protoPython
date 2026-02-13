@@ -5306,6 +5306,13 @@ void PythonEnvironment::raiseStopIteration(proto::ProtoContext* ctx, const proto
     if (exc) setPendingException(exc);
 }
 
+void PythonEnvironment::raiseStopAsyncIteration(proto::ProtoContext* ctx) {
+    if (!stopAsyncIterationType) return;
+    const proto::ProtoList* args = ctx->newList();
+    const proto::ProtoObject* exc = stopAsyncIterationType->call(ctx, nullptr, proto::ProtoString::fromUTF8String(ctx, "__call__"), stopAsyncIterationType, args, nullptr);
+    if (exc) setPendingException(exc);
+}
+
 void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, const std::vector<std::string>& searchPaths) {
     __code__ = proto::ProtoString::fromUTF8String(rootContext_, "__code__");
     __globals__ = proto::ProtoString::fromUTF8String(rootContext_, "__globals__");
@@ -5357,6 +5364,11 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
 
     __invert__ = proto::ProtoString::fromUTF8String(rootContext_, "__invert__");
     __pos__ = proto::ProtoString::fromUTF8String(rootContext_, "__pos__");
+    awaitString = proto::ProtoString::fromUTF8String(rootContext_, "__await__");
+    aiterString = proto::ProtoString::fromUTF8String(rootContext_, "__aiter__");
+    anextString = proto::ProtoString::fromUTF8String(rootContext_, "__anext__");
+    aenterString = proto::ProtoString::fromUTF8String(rootContext_, "__aenter__");
+    aexitString = proto::ProtoString::fromUTF8String(rootContext_, "__aexit__");
 
     iterString = proto::ProtoString::fromUTF8String(rootContext_, "__iter__");
     nextString = proto::ProtoString::fromUTF8String(rootContext_, "__next__");
@@ -5890,6 +5902,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     nativeProvider->registerModule("atexit", [](proto::ProtoContext* ctx) { return atexit_module::initialize(ctx); });
 
     const proto::ProtoObject* exceptionsMod = exceptions::initialize(rootContext_, objectPrototype, typePrototype);
+    exceptionType = exceptionsMod->getAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "Exception"));
     keyErrorType = exceptionsMod->getAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "KeyError"));
     valueErrorType = exceptionsMod->getAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "ValueError"));
     nameErrorType = exceptionsMod->getAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "NameError"));
@@ -5901,6 +5914,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     systemExitType = exceptionsMod->getAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "SystemExit"));
     recursionErrorType = exceptionsMod->getAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "RecursionError"));
     stopIterationType = exceptionsMod->getAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "StopIteration"));
+    stopAsyncIterationType = exceptionsMod->getAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "StopAsyncIteration"));
     eofErrorType = exceptionsMod->getAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "EOFError"));
     assertionErrorType = exceptionsMod->getAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "AssertionError"));
     zeroDivisionErrorType = exceptionsMod->getAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "ZeroDivisionError"));
@@ -5909,6 +5923,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     // Expose all exceptions in builtins
     if (builtinsModule) {
         static const std::vector<std::pair<std::string, const proto::ProtoObject**>> excMap = {
+            {"Exception", &exceptionType},
             {"KeyError", &keyErrorType},
             {"ValueError", &valueErrorType},
             {"NameError", &nameErrorType},
@@ -5920,6 +5935,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
             {"SystemExit", &systemExitType},
             {"RecursionError", &recursionErrorType},
             {"StopIteration", &stopIterationType},
+            {"StopAsyncIteration", &stopAsyncIterationType},
             {"EOFError", &eofErrorType},
             {"AssertionError", &assertionErrorType},
             {"ZeroDivisionError", &zeroDivisionErrorType},
@@ -7124,9 +7140,7 @@ const proto::ProtoObject* PythonEnvironment::resolve(const std::string& name, pr
         }
     }
     SafeImportLock lock(this, ctx);
-    if (get_env_diag()) std::cerr << "[proto-env] resolve name=" << name << " START ctx=" << ctx << "\n" << std::flush;
     if (name == "None") return nonePrototype;
-    // Type shortcuts always use current env (no cache) so multiple envs per thread stay correct.
     if (name == "object") return objectPrototype;
     if (name == "type") return typePrototype;
     if (name == "int") return intPrototype;

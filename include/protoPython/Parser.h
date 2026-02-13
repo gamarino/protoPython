@@ -209,6 +209,30 @@ struct ClassDefNode : ASTNode {
     std::vector<std::unique_ptr<ASTNode>> decorator_list;
 };
 
+/** await expr. */
+struct AwaitNode : ASTNode {
+    std::unique_ptr<ASTNode> value;
+};
+
+/** async def name(params): body. */
+struct AsyncFunctionDefNode : ASTNode {
+        std::string name;
+        std::vector<std::string> parameters;
+        std::unique_ptr<ASTNode> body;
+        std::vector<std::unique_ptr<ASTNode>> decorator_list;
+        std::string vararg;
+        std::string kwarg;
+};
+
+/** async for target in iter: body else: orelse. */
+struct AsyncForNode : ASTNode {
+    std::unique_ptr<ASTNode> target;
+    std::unique_ptr<ASTNode> iter;
+    std::unique_ptr<ASTNode> body;
+    std::unique_ptr<ASTNode> orelse;
+};
+
+
 /** import name [as rename]. */
 struct ImportNode : ASTNode {
     std::string moduleName;
@@ -252,6 +276,12 @@ struct WithItem {
 
 /** with items: body. */
 struct WithNode : ASTNode {
+    std::vector<WithItem> items;
+    std::unique_ptr<ASTNode> body;
+};
+
+/** async with items: body. */
+struct AsyncWithNode : ASTNode {
     std::vector<WithItem> items;
     std::unique_ptr<ASTNode> body;
 };

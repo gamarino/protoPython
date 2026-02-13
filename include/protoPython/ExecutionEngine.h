@@ -178,6 +178,16 @@ constexpr int OP_DICT_UPDATE = 184;
 constexpr int OP_SET_UPDATE = 185;
 /** LIST_TO_TUPLE: pop list, convert to tuple, push tuple. */
 constexpr int OP_LIST_TO_TUPLE = 186;
+/** GET_AWAITABLE: implements `await` logic (get iterator/awaitable). */
+constexpr int OP_GET_AWAITABLE = 187;
+/** GET_AITER: implements `async for` iterator retrieval. */
+constexpr int OP_GET_AITER = 188;
+/** GET_ANEXT: implements `async for` next item retrieval. */
+constexpr int OP_GET_ANEXT = 189;
+/** EXCEPTION_MATCH: pop type, peek exc, push bool if isinstance(exc, type). */
+constexpr int OP_EXCEPTION_MATCH = 190;
+/** SETUP_ASYNC_WITH: specialized setup for async with. */
+constexpr int OP_SETUP_ASYNC_WITH = 191;
 
 /**
  * @brief Executes a range of bytecode (one basic block). No per-instruction

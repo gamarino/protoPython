@@ -256,6 +256,11 @@ public:
     const proto::ProtoString* getIAndString() const { return __iand__; }
     const proto::ProtoString* getIOrString() const { return __ior__; }
     const proto::ProtoString* getIXorString() const { return __ixor__; }
+    const proto::ProtoString* getAwaitString() const { return awaitString; }
+    const proto::ProtoString* getAIterString() const { return aiterString; }
+    const proto::ProtoString* getANextString() const { return anextString; }
+    const proto::ProtoString* getAEnterString() const { return aenterString; }
+    const proto::ProtoString* getAExitString() const { return aexitString; }
 
     const proto::ProtoString* getAndString() const { return __and__; }
     const proto::ProtoString* getRAndString() const { return __rand__; }
@@ -468,6 +473,7 @@ public:
     void raiseZeroDivisionError(proto::ProtoContext* ctx);
     void raiseIndexError(proto::ProtoContext* context, const std::string& msg);
     void raiseStopIteration(proto::ProtoContext* context, const proto::ProtoObject* value = nullptr);
+    void raiseStopAsyncIteration(proto::ProtoContext* context);
 
     /**
      * @brief Returns true if the object is a StopIteration exception.
@@ -560,6 +566,7 @@ private:
     std::string primaryPrompt_{">>> "};
     std::string secondaryPrompt_{"... "};
     ExecutionHook executionHook;
+    const proto::ProtoObject* exceptionType{nullptr};
     const proto::ProtoObject* keyErrorType{nullptr};
     const proto::ProtoObject* valueErrorType{nullptr};
     const proto::ProtoObject* nameErrorType{nullptr};
@@ -575,6 +582,7 @@ private:
     const proto::ProtoObject* assertionErrorType = nullptr;
     const proto::ProtoObject* zeroDivisionErrorType = nullptr;
     const proto::ProtoObject* indexErrorType{nullptr};
+    const proto::ProtoObject* stopAsyncIterationType{nullptr};
     const proto::ProtoString* iterString{nullptr};
     const proto::ProtoString* nextString{nullptr};
     const proto::ProtoList* emptyList{nullptr};
@@ -679,6 +687,11 @@ private:
 
     const proto::ProtoString* __invert__{nullptr};
     const proto::ProtoString* __pos__{nullptr};
+    const proto::ProtoString* awaitString{nullptr};
+    const proto::ProtoString* aiterString{nullptr};
+    const proto::ProtoString* anextString{nullptr};
+    const proto::ProtoString* aenterString{nullptr};
+    const proto::ProtoString* aexitString{nullptr};
 
     const proto::ProtoString* setItemString{nullptr};
     const proto::ProtoString* delItemString{nullptr};
