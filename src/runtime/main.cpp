@@ -265,7 +265,7 @@ int main(int argc, char* argv[]) {
 #ifdef __linux__
     const char* home = std::getenv("HOME");
     if (home) {
-        std::string userLib = std::string(home) + "/.local/lib/protoPython/python3.14/site-packages";
+        std::string userLib = std::string(home) + "/.local/lib/python3.14/site-packages";
         searchPaths.push_back(userLib);
     }
 #endif

@@ -6092,7 +6092,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     // 6. Initialize StdLib Module Provider
     std::vector<std::string> allPaths;
     if (!stdLibPath.empty()) allPaths.push_back(stdLibPath);
-    else allPaths.push_back("./lib/python3.14");
+    else allPaths.push_back("../lib/python3.14");
     for (const auto& p : searchPaths) allPaths.push_back(p);
     
     registry.registerProvider(std::make_unique<PythonModuleProvider>(allPaths));

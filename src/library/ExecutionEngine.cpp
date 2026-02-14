@@ -2600,46 +2600,62 @@ const proto::ProtoObject* executeBytecodeRange(
                     i = static_cast<unsigned long>(arg) - 2;
             }
         } else if (op == OP_UNPACK_SEQUENCE) {
-            if (get_env_diag()) {
-                if (get_env_diag()) {
-                }
-            }
             if (stack.empty() || arg <= 0) continue;
             const proto::ProtoObject* seq = stack.back();
             stack.pop_back();
-            const proto::ProtoList* list = nullptr;
-            const proto::ProtoTuple* tup = nullptr;
-            if (seq->asList(ctx)) list = seq->asList(ctx);
-            else if (seq->asTuple(ctx)) tup = seq->asTuple(ctx);
-            else {
-                const proto::ProtoObject* data = seq->getAttribute(ctx, env ? env->getDataString() : proto::ProtoString::fromUTF8String(ctx, "__data__"));
-                if (data) {
-                    if (data->asList(ctx)) list = data->asList(ctx);
-                    else if (data->asTuple(ctx)) tup = data->asTuple(ctx);
-                }
+            const proto::ProtoList* list = seq->asList(ctx);
+            const proto::ProtoTuple* tup = seq->asTuple(ctx);
+            if (!list && !tup) {
+                 const proto::ProtoObject* data = seq->getAttribute(ctx, env ? env->getDataString() : proto::ProtoString::fromUTF8String(ctx, "__data__"));
+                 if (data) {
+                     list = data->asList(ctx);
+                     tup = data->asTuple(ctx);
+                 }
             }
             if (list) {
-                if (get_env_diag()) {
-                }
                 if (static_cast<int>(list->getSize(ctx)) < arg) continue;
                 for (int j = arg - 1; j >= 0; --j) {
-                    const proto::ProtoObject* elem = list->getAt(ctx, j);
-                    if (get_env_diag()) {
-                        // log removed
-                    }
-                    stack.push_back(elem);
+                    stack.push_back(list->getAt(ctx, j));
                 }
             } else if (tup) {
-                if (get_env_diag()) {
-                }
                 if (static_cast<int>(tup->getSize(ctx)) < arg) continue;
                 for (int j = arg - 1; j >= 0; --j) {
-                    const proto::ProtoObject* elem = tup->getAt(ctx, j);
-                    if (get_env_diag()) {
-                        // log removed
-                    }
-                    stack.push_back(elem);
+                    stack.push_back(tup->getAt(ctx, j));
                 }
+            }
+        } else if (op == OP_UNPACK_EX) {
+            if (stack.empty()) continue;
+            int num_before = arg & 0xFF;
+            int num_after = (arg >> 8) & 0xFF;
+            const proto::ProtoObject* seq = stack.back();
+            stack.pop_back();
+
+            std::vector<const proto::ProtoObject*> all;
+            const proto::ProtoList* list = seq->asList(ctx);
+            const proto::ProtoTuple* tup = seq->asTuple(ctx);
+            if (list) {
+                for (size_t i = 0; i < list->getSize(ctx); ++i) all.push_back(list->getAt(ctx, i));
+            } else if (tup) {
+                for (size_t i = 0; i < tup->getSize(ctx); ++i) all.push_back(tup->getAt(ctx, i));
+            } else {
+                continue;
+            }
+
+            if (static_cast<int>(all.size()) < num_before + num_after) continue;
+
+            // Push after elements (in reverse order for stack)
+            for (int i = static_cast<int>(all.size()) - 1; i >= static_cast<int>(all.size()) - num_after; --i) {
+                stack.push_back(all[i]);
+            }
+            // Push middle list
+            const proto::ProtoList* middle = ctx->newList();
+            for (int i = num_before; i < static_cast<int>(all.size()) - num_after; ++i) {
+                middle = middle->appendLast(ctx, all[i]);
+            }
+            stack.push_back(middle->asObject(ctx));
+            // Push before elements (in reverse order)
+            for (int i = num_before - 1; i >= 0; --i) {
+                stack.push_back(all[i]);
             }
         } else if (op == OP_LOAD_GLOBAL) {
                 if (names && frame && static_cast<unsigned long>(arg) < names->getSize(ctx)) {

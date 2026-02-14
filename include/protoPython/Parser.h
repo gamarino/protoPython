@@ -155,6 +155,20 @@ struct AssignNode : ASTNode {
     std::unique_ptr<ASTNode> value;
 };
 
+struct TypeParamNode : ASTNode {
+    enum class Kind { TypeVar, TypeVarTuple, ParamSpec };
+    Kind kind = Kind::TypeVar;
+    std::string name;
+    std::unique_ptr<ASTNode> bound;
+    std::unique_ptr<ASTNode> default_val;
+};
+
+struct TypeAliasNode : ASTNode {
+    std::string name;
+    std::vector<std::unique_ptr<TypeParamNode>> type_params;
+    std::unique_ptr<ASTNode> value;
+};
+
 /** Annotated assignment: target: annotation [= value]. */
 struct AnnAssignNode : ASTNode {
     std::unique_ptr<ASTNode> target;
@@ -198,6 +212,7 @@ struct GlobalNode : ASTNode {
 
 struct FunctionDefNode : ASTNode {
     std::string name;
+    std::vector<std::unique_ptr<TypeParamNode>> type_params;
     std::vector<std::string> parameters; // positional (can include pos-only)
     std::vector<std::string> kwonlyargs;
     std::vector<std::unique_ptr<ASTNode>> defaults;
@@ -239,6 +254,7 @@ struct YieldNode : ASTNode {
 /** class name[(bases)]: body. */
 struct ClassDefNode : ASTNode {
     std::string name;
+    std::vector<std::unique_ptr<TypeParamNode>> type_params;
     std::vector<std::unique_ptr<ASTNode>> bases;
     std::vector<std::pair<std::string, std::unique_ptr<ASTNode>>> keywords;
     std::unique_ptr<ASTNode> body;
@@ -253,6 +269,7 @@ struct AwaitNode : ASTNode {
 /** async def name(params): body. */
 struct AsyncFunctionDefNode : ASTNode {
     std::string name;
+    std::vector<std::unique_ptr<TypeParamNode>> type_params;
     std::vector<std::string> parameters;
     std::vector<std::string> kwonlyargs;
     std::vector<std::unique_ptr<ASTNode>> defaults;
@@ -415,6 +432,9 @@ private:
     std::unique_ptr<ASTNode> parseFunctionDef();
     std::unique_ptr<ASTNode> parseClassDef();
     std::unique_ptr<ASTNode> parseAsync();
+    std::unique_ptr<ASTNode> parseTypeAlias();
+    std::unique_ptr<ASTNode> parseMatch();
+    std::vector<std::unique_ptr<TypeParamNode>> parseTypeParams();
     std::unique_ptr<ASTNode> parseLambda();
     std::unique_ptr<ASTNode> parseFString();
     std::unique_ptr<ASTNode> parseOrExpr();

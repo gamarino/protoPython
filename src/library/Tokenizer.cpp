@@ -173,18 +173,29 @@ Token Tokenizer::scanString(char quote, const std::string& prefix) {
             break;
         }
         char c = source_[pos_++];
-        if (!isRaw && c == '\\' && pos_ < source_.size()) {
-            char e = source_[pos_++];
-            if (e == 'n') s += '\n';
-            else if (e == 't') s += '\t';
-            else if (e == 'r') s += '\r';
-            else if (e == quote) s += quote;
-            else if (e == '\\') s += '\\';
-            else if (e == '\n') {
-                line_++;
-                lineStartPos_ = pos_;
+        if (c == '\\' && pos_ < source_.size()) {
+            if (!isRaw) {
+                char e = source_[pos_++];
+                if (e == 'n') s += '\n';
+                else if (e == 't') s += '\t';
+                else if (e == 'r') s += '\r';
+                else if (e == quote) s += quote;
+                else if (e == '\\') s += '\\';
+                else if (e == '\n') {
+                    line_++;
+                    lineStartPos_ = pos_;
+                }
+                else s += e;
+            } else {
+                // In raw strings, a backslash followed by a quote does NOT end the string.
+                // Both characters are added to the value.
+                if (source_[pos_] == quote || source_[pos_] == '\\') {
+                    s += '\\';
+                    s += source_[pos_++];
+                } else {
+                    s += '\\';
+                }
             }
-            else s += e;
         } else {
             if (c == '\n') {
                 line_++;
@@ -232,11 +243,15 @@ Token Tokenizer::scanNameOrKeyword() {
     else if (t.value == "raise") t.type = TokenType::Raise;
     else if (t.value == "break") t.type = TokenType::Break;
     else if (t.value == "continue") t.type = TokenType::Continue;
+    else if (t.value == "type") t.type = TokenType::Type;
+    else if (t.value == "match") t.type = TokenType::Match;
+    else if (t.value == "case") t.type = TokenType::Case;
     else if (t.value == "lambda") t.type = TokenType::Lambda;
     else if (t.value == "with") t.type = TokenType::With;
     else if (t.value == "as") t.type = TokenType::As;
     else if (t.value == "is") t.type = TokenType::Is;
     else if (t.value == "yield") t.type = TokenType::Yield;
+    else if (t.value == "type") t.type = TokenType::Type;
     else if (t.value == "pass") t.type = TokenType::Pass;
     else if (t.value == "del") t.type = TokenType::Del;
     else if (t.value == "assert") t.type = TokenType::Assert;

@@ -139,6 +139,8 @@ constexpr int OP_DELETE_GLOBAL = 164;
 constexpr int OP_DELETE_FAST = 165;
 /** RAISE_VARARGS: arg=number of args (0 or 1 supported here). Pop exception and raise it. */
 constexpr int OP_RAISE_VARARGS = 166;
+/** UNPACK_EX: arg = (counts_after << 8) | counts_before. Pop sequence, push before, then a list of middle, then after. */
+constexpr int OP_UNPACK_EX = 167;
 /** POP_JUMP_IF_TRUE: if top is truthy, jump to arg (bytecode index). */
 constexpr int OP_POP_JUMP_IF_TRUE = 167;
 /** LIST_APPEND: arg=stack depth. Append TOS to list at TOS-arg. */

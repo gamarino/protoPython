@@ -102,6 +102,9 @@ enum class TokenType {
     AtAssign,      /* @= */
     ModuloAssign,  /* %= */
     DoubleStarAssign, /* **= */
+    Type,          /* type (PEP 695) */
+    Match,         /* match (soft keyword) */
+    Case,          /* case (soft keyword) */
 };
 
 struct Token {

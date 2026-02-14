@@ -243,7 +243,7 @@ std::unique_ptr<ASTNode> Parser::parseAtom() {
             return res;
         }
     }
-    if (cur_.type == TokenType::Name) {
+    if (cur_.type == TokenType::Name || cur_.type == TokenType::Type || cur_.type == TokenType::Match || cur_.type == TokenType::Case) {
         auto n = createNode<NameNode>();
         n->id = cur_.value;
         advance();
@@ -332,7 +332,7 @@ std::unique_ptr<ASTNode> Parser::parseAtom() {
             first = std::move(star);
             isStarred = true;
         } else {
-            first = parseOrExpr();
+            first = parseExpression();
         }
 
         if (!isStarred && cur_.type == TokenType::For) {
@@ -527,7 +527,7 @@ std::unique_ptr<ASTNode> Parser::parsePrimary() {
     if (!left) return nullptr;
     for (;;) {
         if (accept(TokenType::Dot)) {
-            if (cur_.type != TokenType::Name) return left;
+            if (cur_.type != TokenType::Name && cur_.type != TokenType::Type && cur_.type != TokenType::Match && cur_.type != TokenType::Case) return left;
             auto att = createNode<AttributeNode>();
             att->value = std::move(left);
             att->attr = cur_.value;
@@ -813,14 +813,14 @@ std::unique_ptr<ASTNode> Parser::parseOrExpr() {
 bool Parser::parseParameters(FunctionDefNode* fn) {
     if (!expect(TokenType::LParen)) return false;
     bool isKwOnly = false;
-    while (cur_.type == TokenType::Name || cur_.type == TokenType::Star || cur_.type == TokenType::DoubleStar || cur_.type == TokenType::Slash) {
+    while (cur_.type == TokenType::Name || cur_.type == TokenType::Type || cur_.type == TokenType::Match || cur_.type == TokenType::Case || cur_.type == TokenType::Star || cur_.type == TokenType::DoubleStar || cur_.type == TokenType::Slash) {
         // printf("DEBUG: parseParameters loop cur=%s val=%s\n", tokenToName(cur_.type), cur_.value.c_str());
         if (cur_.type == TokenType::Slash) {
             advance();
             fn->posonlyargcount = static_cast<int>(fn->parameters.size());
         } else if (cur_.type == TokenType::Star) {
             advance();
-            if (cur_.type == TokenType::Name) {
+            if (cur_.type == TokenType::Name || cur_.type == TokenType::Type || cur_.type == TokenType::Match || cur_.type == TokenType::Case) {
                 fn->vararg = cur_.value;
                 std::string varName = fn->vararg;
                 advance();
@@ -833,7 +833,7 @@ bool Parser::parseParameters(FunctionDefNode* fn) {
             }
         } else if (cur_.type == TokenType::DoubleStar) {
             advance();
-            if (cur_.type != TokenType::Name) {
+            if (cur_.type != TokenType::Name && cur_.type != TokenType::Type && cur_.type != TokenType::Match && cur_.type != TokenType::Case) {
                 error("Expected name after **");
                 return false;
             }
@@ -843,7 +843,7 @@ bool Parser::parseParameters(FunctionDefNode* fn) {
             if (accept(TokenType::Colon)) {
                 fn->parameter_annotations[kwName] = parseExpression();
             }
-        } else if (cur_.type == TokenType::Name) {
+        } else if (cur_.type == TokenType::Name || cur_.type == TokenType::Type || cur_.type == TokenType::Match || cur_.type == TokenType::Case) {
             std::string paramName = cur_.value;
             advance();
             if (accept(TokenType::Colon)) {
@@ -869,6 +869,8 @@ std::unique_ptr<ASTNode> Parser::parseStatement() {
     if (cur_.type == TokenType::Assert) return parseAssert();
     if (cur_.type == TokenType::Del) return parseDelete();
     if (cur_.type == TokenType::Pass) { advance(); return createNode<PassNode>(); }
+    if (cur_.type == TokenType::Type && tok_.peek().type == TokenType::Name) return parseTypeAlias();
+    if (cur_.type == TokenType::Match) return parseMatch();
     if (cur_.type == TokenType::At) {
         std::vector<std::unique_ptr<ASTNode>> decorators;
         while (accept(TokenType::At)) {
@@ -1005,9 +1007,9 @@ std::unique_ptr<ASTNode> Parser::parseExpression() {
         return ne;
     }
     if (accept(TokenType::If)) {
-        auto c = createNode<CondExprNode>();
+        auto c = createNode<ConditionalExprNode>();
         c->body = std::move(node);
-        c->cond = parseOrExpr();
+        c->test = parseOrExpr();
         if (expect(TokenType::Else)) {
             c->orelse = parseExpression();
         }
@@ -1322,7 +1324,7 @@ std::unique_ptr<ASTNode> Parser::parseReturn() {
 bool Parser::isCompound(TokenType t) {
     return t == TokenType::Def || t == TokenType::Class || t == TokenType::For ||
            t == TokenType::Async || t == TokenType::If || t == TokenType::Elif || t == TokenType::Else ||
-           t == TokenType::While || t == TokenType::Try || t == TokenType::With;
+           t == TokenType::While || t == TokenType::Try || t == TokenType::With || t == TokenType::Match;
 }
 
 
@@ -1599,7 +1601,7 @@ std::unique_ptr<ASTNode> Parser::parseImportFrom() {
 
 std::unique_ptr<ASTNode> Parser::parseFunctionDef() {
     advance(); // def
-    if (cur_.type != TokenType::Name) {
+    if (cur_.type != TokenType::Name && cur_.type != TokenType::Type && cur_.type != TokenType::Match && cur_.type != TokenType::Case) {
         error("expected name after 'def'");
         return nullptr;
     }
@@ -1607,6 +1609,7 @@ std::unique_ptr<ASTNode> Parser::parseFunctionDef() {
     advance();
     auto fn = createNode<FunctionDefNode>();
     fn->name = funcName;
+    fn->type_params = parseTypeParams();
     if (!parseParameters(fn.get())) return nullptr;
     if (accept(TokenType::Arrow)) {
         fn->returns = parseExpression();
@@ -1621,15 +1624,16 @@ std::unique_ptr<ASTNode> Parser::parseFunctionDef() {
 
 std::unique_ptr<ASTNode> Parser::parseClassDef() {
     advance(); // class
-    if (cur_.type != TokenType::Name) return nullptr;
+    if (cur_.type != TokenType::Name && cur_.type != TokenType::Type && cur_.type != TokenType::Match && cur_.type != TokenType::Case) return nullptr;
     std::string className = cur_.value;
     advance();
     auto cl = createNode<ClassDefNode>();
     cl->name = className;
+    cl->type_params = parseTypeParams();
     if (accept(TokenType::LParen)) {
         while (cur_.type != TokenType::RParen && cur_.type != TokenType::EndOfFile) {
             skipTrash();
-            if (cur_.type == TokenType::Name && tok_.peek().type == TokenType::Assign) {
+            if ((cur_.type == TokenType::Name || cur_.type == TokenType::Type || cur_.type == TokenType::Match || cur_.type == TokenType::Case) && tok_.peek().type == TokenType::Assign) {
                 std::string kwname = cur_.value;
                 advance(); // name
                 advance(); // =
@@ -1662,6 +1666,7 @@ std::unique_ptr<ASTNode> Parser::parseAsync() {
         std::string funcName = cur_.value;
         advance();
         auto tmpFn = createNode<FunctionDefNode>();
+        tmpFn->type_params = parseTypeParams();
         if (!parseParameters(tmpFn.get())) return nullptr;
         if (!expect(TokenType::Colon)) return nullptr;
         auto body = parseSuite();
@@ -1669,6 +1674,7 @@ std::unique_ptr<ASTNode> Parser::parseAsync() {
         
         auto fn = createNode<AsyncFunctionDefNode>();
         fn->name = funcName;
+        fn->type_params = std::move(tmpFn->type_params);
         if (accept(TokenType::Arrow)) {
             fn->returns = parseExpression();
         }
@@ -1739,6 +1745,84 @@ std::vector<Comprehension> Parser::parseComprehensions() {
         generators.push_back(std::move(c));
     }
     return generators;
+}
+
+std::vector<std::unique_ptr<TypeParamNode>> Parser::parseTypeParams() {
+    std::vector<std::unique_ptr<TypeParamNode>> params;
+    if (accept(TokenType::LSquare)) {
+        while (cur_.type != TokenType::RSquare && cur_.type != TokenType::EndOfFile) {
+            auto param = createNode<TypeParamNode>();
+            if (accept(TokenType::Star)) {
+                if (accept(TokenType::Star)) {
+                    param->kind = TypeParamNode::Kind::ParamSpec;
+                } else {
+                    param->kind = TypeParamNode::Kind::TypeVarTuple;
+                }
+            } else {
+                param->kind = TypeParamNode::Kind::TypeVar;
+            }
+            if (cur_.type != TokenType::Name) {
+                error("expected name in type parameters");
+                return {};
+            }
+            param->name = cur_.value;
+            advance();
+            
+            if (accept(TokenType::Colon)) {
+                param->bound = parseExpression();
+            } else if (accept(TokenType::Assign)) {
+                param->default_val = parseExpression();
+            }
+            
+            params.push_back(std::move(param));
+            if (!accept(TokenType::Comma)) break;
+        }
+        expect(TokenType::RSquare);
+    }
+    return params;
+}
+
+std::unique_ptr<ASTNode> Parser::parseTypeAlias() {
+    advance(); // type
+    if (cur_.type != TokenType::Name) {
+        error("expected name after 'type'");
+        return nullptr;
+    }
+    std::string name = cur_.value;
+    advance();
+    auto n = createNode<TypeAliasNode>();
+    n->name = name;
+    n->type_params = parseTypeParams();
+    if (!expect(TokenType::Assign)) return nullptr;
+    n->value = parseExpression();
+    return n;
+}
+
+std::unique_ptr<ASTNode> Parser::parseMatch() {
+    advance(); // match
+    auto subject = parseExpression();
+    if (!expect(TokenType::Colon)) return nullptr;
+    skipNewlines();
+    if (!expect(TokenType::Indent)) return nullptr;
+    while (cur_.type != TokenType::Dedent && cur_.type != TokenType::EndOfFile) {
+        skipTrash();
+        if (cur_.type == TokenType::Case) {
+             advance(); // case
+             // Match pattern can be complex, skip to colon
+             while (cur_.type != TokenType::Colon && cur_.type != TokenType::EndOfFile) advance();
+             if (!expect(TokenType::Colon)) return nullptr;
+             auto s = parseSuite();
+             if (!s) return nullptr;
+        } else if (cur_.type == TokenType::Newline || cur_.type == TokenType::Indent) {
+            advance();
+        } else {
+            error(std::string("expected 'case' in match block, got ") + tokenToName(cur_.type));
+            break;
+        }
+        skipNewlines();
+    }
+    expect(TokenType::Dedent);
+    return createNode<PassNode>(); 
 }
 
 } // namespace protoPython

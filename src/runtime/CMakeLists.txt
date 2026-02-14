@@ -3,8 +3,8 @@
 if(DEFINED STDLIB_INSTALL_PATH)
     set(_stdlib_path "${STDLIB_INSTALL_PATH}")
 else()
-    # Relative path from CMAKE_INSTALL_BINDIR to lib/protoPython/python3.14
-    set(_stdlib_path "../${CMAKE_INSTALL_LIBDIR}/protoPython/python3.14")
+    # Relative path from CMAKE_INSTALL_BINDIR to lib/python3.14
+    set(_stdlib_path "../${CMAKE_INSTALL_LIBDIR}/python3.14")
 endif()
 
 # For local development in build tree, we might want a different default

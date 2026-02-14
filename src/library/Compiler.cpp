@@ -77,6 +77,8 @@ bool Compiler::compileConstant(ConstantNode* n) {
         obj = PROTO_NONE;
     else if (n->constType == ConstantNode::ConstType::Bool)
         obj = n->intVal ? PROTO_TRUE : PROTO_FALSE;
+    else if (n->constType == ConstantNode::ConstType::Ellipsis)
+        obj = ctx_->fromUTF8String("...");
     if (!obj && n->constType != ConstantNode::ConstType::None) return false;
     int idx = addConstant(obj);
     emit(OP_LOAD_CONST, idx);
@@ -448,23 +450,57 @@ bool Compiler::compileTarget(ASTNode* target, TargetCtx ctx) {
     }
     if (auto* tup = dynamic_cast<TupleLiteralNode*>(target)) {
         if (ctx == TargetCtx::Store) {
-            emit(OP_UNPACK_SEQUENCE, static_cast<int>(tup->elements.size()));
+            int starredIdx = -1;
+            for (int i = 0; i < static_cast<int>(tup->elements.size()); ++i) {
+                if (dynamic_cast<StarredNode*>(tup->elements[i].get())) {
+                    starredIdx = i;
+                    break;
+                }
+            }
+            if (starredIdx == -1) {
+                emit(OP_UNPACK_SEQUENCE, static_cast<int>(tup->elements.size()));
+            } else {
+                int before = starredIdx;
+                int after = static_cast<int>(tup->elements.size()) - 1 - starredIdx;
+                emit(OP_UNPACK_EX, (after << 8) | before);
+            }
         } else if (ctx != TargetCtx::Delete) {
             return false;
         }
         for (auto& e : tup->elements) {
-            if (!compileTarget(e.get(), ctx)) return false;
+            if (auto* sn = dynamic_cast<StarredNode*>(e.get())) {
+                if (!compileTarget(sn->value.get(), ctx)) return false;
+            } else {
+                if (!compileTarget(e.get(), ctx)) return false;
+            }
         }
         return true;
     }
     if (auto* lst = dynamic_cast<ListLiteralNode*>(target)) {
         if (ctx == TargetCtx::Store) {
-            emit(OP_UNPACK_SEQUENCE, static_cast<int>(lst->elements.size()));
+            int starredIdx = -1;
+            for (int i = 0; i < static_cast<int>(lst->elements.size()); ++i) {
+                if (dynamic_cast<StarredNode*>(lst->elements[i].get())) {
+                    starredIdx = i;
+                    break;
+                }
+            }
+            if (starredIdx == -1) {
+                emit(OP_UNPACK_SEQUENCE, static_cast<int>(lst->elements.size()));
+            } else {
+                int before = starredIdx;
+                int after = static_cast<int>(lst->elements.size()) - 1 - starredIdx;
+                emit(OP_UNPACK_EX, (after << 8) | before);
+            }
         } else if (ctx != TargetCtx::Delete) {
             return false;
         }
         for (auto& e : lst->elements) {
-            if (!compileTarget(e.get(), ctx)) return false;
+            if (auto* sn = dynamic_cast<StarredNode*>(e.get())) {
+                if (!compileTarget(sn->value.get(), ctx)) return false;
+            } else {
+                if (!compileTarget(e.get(), ctx)) return false;
+            }
         }
         return true;
     }
@@ -2031,9 +2067,9 @@ bool Compiler::compileClassDef(ClassDefNode* n) {
     return emitNameOp(n->name, TargetCtx::Store);
 }
 
-bool Compiler::compileCondExpr(CondExprNode* n) {
+bool Compiler::compileCondExpr(ConditionalExprNode* n) {
     if (!n) return false;
-    if (!compileNode(n->cond.get())) return false;
+    if (!compileNode(n->test.get())) return false;
     emit(OP_POP_JUMP_IF_FALSE, 0);
     int elseSlot = bytecodeOffset() - 1;
     if (!compileNode(n->body.get())) return false;
@@ -2055,7 +2091,7 @@ bool Compiler::compileNode(ASTNode* node) {
     else if (auto* afor = dynamic_cast<AsyncForNode*>(node)) result = compileAsyncFor(afor);
     else if (auto* awith = dynamic_cast<AsyncWithNode*>(node)) result = compileAsyncWith(awith);
     else if (auto* cl = dynamic_cast<ClassDefNode*>(node)) result = compileClassDef(cl);
-    else if (auto* ce = dynamic_cast<CondExprNode*>(node)) result = compileCondExpr(ce);
+    else if (auto* ce = dynamic_cast<ConditionalExprNode*>(node)) result = compileCondExpr(ce);
     else if (auto* c = dynamic_cast<ConstantNode*>(node)) result = compileConstant(c);
     else if (auto* nm = dynamic_cast<NameNode*>(node)) result = compileName(nm);
     else if (auto* b = dynamic_cast<BinOpNode*>(node)) result = compileBinOp(b);
@@ -2097,6 +2133,7 @@ bool Compiler::compileNode(ASTNode* node) {
     else if (auto* w = dynamic_cast<WithNode*>(node)) result = compileWith(w);
     else if (auto* s = dynamic_cast<SuiteNode*>(node)) result = compileSuite(s);
     else if (auto* ne = dynamic_cast<NamedExprNode*>(node)) result = compileNamedExpr(ne);
+    else if (auto* ta = dynamic_cast<TypeAliasNode*>(node)) result = compileTypeAlias(ta);
 
     if (!result) {
         std::cerr << "Compiler::compileNode FAILED for node type " << typeid(*node).name() << " at line " << node->line << "\n";
@@ -2258,6 +2295,14 @@ bool Compiler::compileFormattedValue(FormattedValueNode* n) {
 bool Compiler::compileNonlocal(NonlocalNode* n) {
     // Nonlocals are handled in collectLocalsFromBody / emitNameOp
     return true;
+}
+
+bool Compiler::compileTypeAlias(TypeAliasNode* n) {
+    if (!n) return false;
+    // PEP 695: type Alias[T] = Value.
+    // For now, we compile the value and store it to the name.
+    if (!compileNode(n->value.get())) return false;
+    return emitNameOp(n->name, TargetCtx::Store);
 }
 
 } // namespace protoPython
