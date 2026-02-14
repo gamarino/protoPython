@@ -552,6 +552,17 @@ static const proto::ProtoObject* compareOp(proto::ProtoContext* ctx,
     if (op >= 0 && op <= 5) {
         PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
         if (env) return env->compareObjects(ctx, a, b, op);
+        
+        // Fallback for null environment (e.g. unit tests)
+        int c = a->compare(ctx, b);
+        bool r = false;
+        if (op == 0) r = (c == 0); // ==
+        else if (op == 1) r = (c != 0); // !=
+        else if (op == 2) r = (c < 0); // <
+        else if (op == 3) r = (c <= 0); // <=
+        else if (op == 4) r = (c > 0); // >
+        else if (op == 5) r = (c >= 0); // >=
+        return r ? PROTO_TRUE : PROTO_FALSE;
     }
     return result ? PROTO_TRUE : PROTO_FALSE;
 }
@@ -979,7 +990,22 @@ const proto::ProtoObject* executeBytecodeRange(
 
     unsigned int nSlots = ctx->getAutomaticLocalsCount();
     proto::ProtoObject** allSlots = const_cast<proto::ProtoObject**>(ctx->getAutomaticLocals());
-    GCStack stack(allSlots + stackOffset, nSlots > stackOffset ? nSlots - stackOffset : 0);
+    
+    // Fallback stack for contexts without pre-allocated slots (e.g. some unit tests)
+    std::vector<const proto::ProtoObject*> fallbackStack;
+    proto::ProtoObject** stackBase = nullptr;
+    size_t stackCap = 0;
+    
+    if (allSlots && nSlots > stackOffset) {
+        stackBase = allSlots + stackOffset;
+        stackCap = nSlots - stackOffset;
+    } else {
+        fallbackStack.resize(1024); // Default capacity for manual/test execution
+        stackBase = const_cast<proto::ProtoObject**>(fallbackStack.data());
+        stackCap = fallbackStack.size();
+    }
+    
+    GCStack stack(stackBase, stackCap);
 
     if (externalStack) {
         for (const auto* obj : *externalStack) {
@@ -1008,29 +1034,12 @@ const proto::ProtoObject* executeBytecodeRange(
         const proto::ProtoObject* instr = bytecode->getAt(ctx, static_cast<int>(i));
         if (!instr || !instr->isInteger(ctx)) continue;
         int op = static_cast<int>(instr->asLong(ctx));
-        // fprintf(stderr, "PC=%lu OP=%d Stack=%lu\n", i, op, stack.size());
-        if (static bool trace = std::getenv("PROTO_EXEC_TRACE") != nullptr; trace) {
-             fprintf(stderr, "PC=%lu OP=%d Stack=%lu ExternalStack=%s\n", i, op, stack.size(), externalStack ? "Yes" : "No");
-        }
-        if (static bool check = std::getenv("PROTO_CORRUPTION_CHECK") != nullptr; check) {
-            if (ctx->thread && (reinterpret_cast<uintptr_t>(ctx->thread) & 0x3F) == 48) {
-                 fprintf(stderr, "FATAL: CORRUPTION DETECTED BEFORE OP=%d AT PC=%lu! thread=%p\n", op, i, ctx->thread);
-            }
-        }
         int arg = (i + 1 < n && bytecode->getAt(ctx, static_cast<int>(i + 1))->isInteger(ctx))
             ? static_cast<int>(bytecode->getAt(ctx, static_cast<int>(i + 1))->asLong(ctx)) : 0;
-        i++; // Standard 2-byte instruction format
 
-        if (get_env_diag()) {
-            std::cerr << "[proto-exec-diag] EXEC op=" << op << " arg=" << arg << " i=" << i << " frame=" << frame << "\n";
-        }
-
-        if (get_env_diag()) {
-             std::cerr << "[proto-exec-trace] i=" << i << " op=" << op << " arg=" << arg << " stack=" << stack.size() << "\n";
-        }
 
         if (op == OP_LOAD_CONST) {
-            // i++;
+            i++;
             if (static_cast<unsigned long>(arg) < constants->getSize(ctx)) {
                 stack.push_back(constants->getAt(ctx, arg));
             }
@@ -1118,7 +1127,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 return result;
             }
         } else if (op == OP_LOAD_NAME) {
-            // i++;
+            i++;
             if (names && frame && static_cast<unsigned long>(arg) < names->getSize(ctx)) {
                 const proto::ProtoObject* nameObj = names->getAt(ctx, arg);
                 if (nameObj->isString(ctx)) {
@@ -1182,7 +1191,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 }
             }
         } else if (op == OP_STORE_NAME) {
-            // i++;
+            i++;
             if (names && frame && static_cast<unsigned long>(arg) < names->getSize(ctx)) {
                 if (stack.empty()) continue;
                 const proto::ProtoObject* nameObj = names->getAt(ctx, arg);
@@ -1208,7 +1217,7 @@ const proto::ProtoObject* executeBytecodeRange(
 
             }
         } else if (op == OP_LOAD_FAST) {
-            // i++;
+            i++;
             const unsigned int nSlots = ctx->getAutomaticLocalsCount();
             if (arg >= 0 && static_cast<unsigned long>(arg) < nSlots) {
                 const proto::ProtoObject** slots = ctx->getAutomaticLocals();
@@ -1221,7 +1230,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 stack.push_back(PROTO_NONE);
             }
         } else if (op == OP_STORE_FAST) {
-            // i++;
+            i++;
             if (stack.empty()) continue;
             const unsigned int nSlots = ctx->getAutomaticLocalsCount();
             if (arg >= 0 && static_cast<unsigned long>(arg) < nSlots) {
@@ -1641,6 +1650,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 }
             }
         } else if (op == OP_RAISE_VARARGS) {
+            i++;
             const proto::ProtoObject* exc = nullptr;
             if (arg == 1) {
                 if (!stack.empty()) {
@@ -1657,6 +1667,7 @@ const proto::ProtoObject* executeBytecodeRange(
             }
             continue;
         } else if (op == OP_SETUP_WITH) {
+            i++;
             if (stack.size() < 1) continue;
             const proto::ProtoObject* manager = stack.back();
             stack.pop_back();
@@ -1669,15 +1680,9 @@ const proto::ProtoObject* executeBytecodeRange(
             
             const proto::ProtoObject* enterResult = PROTO_NONE;
             const proto::ProtoObject* enterM = env ? env->getAttribute(ctx, manager, enterS) : manager->getAttribute(ctx, enterS);
-            if (std::getenv("PROTO_EXEC_DIAG")) {
-                std::cerr << "[OP_SETUP_WITH] manager=" << manager << " enterM=" << enterM << " exitM=" << (env ? env->getAttribute(ctx, manager, exitS) : manager->getAttribute(ctx, exitS)) << "\n";
-            }
             if (enterM && enterM != PROTO_NONE) {
                 const proto::ProtoList* emptyL = env ? env->getEmptyList() : ctx->newList();
                 enterResult = invokeCallable(ctx, enterM, emptyL);
-                if (std::getenv("PROTO_EXEC_DIAG")) {
-                    std::cerr << "[OP_SETUP_WITH] enterResult=" << enterResult << "\n";
-                }
             } else {
                 enterResult = manager;
             }
@@ -1729,7 +1734,7 @@ const proto::ProtoObject* executeBytecodeRange(
             }
         } else if (op == OP_NOP) {
         } else if (op == OP_COMPARE_OP) {
-            // i++;
+            i++;
             if (stack.size() < 2) continue;
             const proto::ProtoObject* b = stack.back();
             stack.pop_back();
@@ -1738,21 +1743,21 @@ const proto::ProtoObject* executeBytecodeRange(
             const proto::ProtoObject* r = compareOp(ctx, a, b, arg);
             if (r) stack.push_back(r);
         } else if (op == OP_POP_JUMP_IF_FALSE) {
-            // i++;
+            i++;
             if (stack.empty()) continue;
             const proto::ProtoObject* top = stack.back();
             stack.pop_back();
             if (!isTruthy(ctx, top) && arg >= 0 && static_cast<unsigned long>(arg) < n)
                 i = static_cast<unsigned long>(arg) - 1;
         } else if (op == OP_POP_JUMP_IF_TRUE) {
-            // i++;
+            i++;
             if (stack.empty()) continue;
             const proto::ProtoObject* top = stack.back();
             stack.pop_back();
             if (isTruthy(ctx, top) && arg >= 0 && static_cast<unsigned long>(arg) < n)
                 i = static_cast<unsigned long>(arg) - 1;
         } else if (op == OP_LIST_APPEND) {
-            // i++;
+            i++;
             if (stack.size() >= static_cast<size_t>(arg)) {
                 const proto::ProtoObject* val = stack.back();
                 stack.pop_back();
@@ -1778,7 +1783,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 }
             }
         } else if (op == OP_MAP_ADD) {
-            // i++;
+            i++;
             if (stack.size() >= static_cast<size_t>(arg)) {
                 const proto::ProtoObject* key = stack.back();
                 stack.pop_back();
@@ -1836,6 +1841,7 @@ const proto::ProtoObject* executeBytecodeRange(
             for (int j = 0; j < arg + 2; ++j) stack.pop_back();
             stack.push_back(finalSet);
         } else if (op == OP_BUILD_STRING) {
+            i++;
             if (stack.size() < static_cast<size_t>(arg)) continue;
             // GC safe: elements remain on stack until buildString returns
             const proto::ProtoObject** partsPtr = (const proto::ProtoObject**)(&stack[stack.size() - arg]);
@@ -1947,11 +1953,11 @@ const proto::ProtoObject* executeBytecodeRange(
                 }
             }
         } else if (op == OP_JUMP_ABSOLUTE) {
-            // i++;
+            i++;
             if (arg >= 0 && static_cast<unsigned long>(arg) < n)
                 i = static_cast<unsigned long>(arg) - 1;
         } else if (op == OP_LOAD_ATTR) {
-            // i++;
+            i++;
             if (names && stack.size() >= 1 && static_cast<unsigned long>(arg) < names->getSize(ctx)) {
                 const proto::ProtoObject* obj = stack.back();
                 stack.pop_back();
@@ -1971,11 +1977,11 @@ const proto::ProtoObject* executeBytecodeRange(
                 }
             }
         } else if (op == OP_STORE_ATTR) {
-            // i++;
+            i++;
             if (names && stack.size() >= 2 && static_cast<unsigned long>(arg) < names->getSize(ctx)) {
-                const proto::ProtoObject* obj = stack.back();
-                stack.pop_back();
                 const proto::ProtoObject* val = stack.back();
+                stack.pop_back();
+                const proto::ProtoObject* obj = stack.back();
                 stack.pop_back();
                 const proto::ProtoObject* nameObj = names->getAt(ctx, arg);
                 if (nameObj->isString(ctx)) {
@@ -1988,6 +1994,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 }
             }
         } else if (op == OP_BUILD_LIST) {
+            i++;
             if (stack.size() < static_cast<size_t>(arg)) continue;
             const proto::ProtoList* lst = ctx->newList();
             stack.push_back(lst->asObject(ctx)); // Root lst
@@ -2085,6 +2092,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 }
             }
         } else if (op == OP_BUILD_MAP) {
+            i++;
             if (stack.size() < static_cast<size_t>(arg * 2)) continue;
             const proto::ProtoSparseList* data = ctx->newSparseList();
             stack.push_back(data->asObject(ctx)); // Root data
@@ -2138,7 +2146,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 }
             }
         } else if (op == OP_CALL_FUNCTION_KW) {
-            // i++;
+            i++;
             if (stack.size() < 2) continue; // at least callable and names_tuple
             const proto::ProtoObject* namesTupleObj = stack.back();
             stack.pop_back();
@@ -2182,7 +2190,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 stack.push_back(env ? env->getNonePrototype() : PROTO_NONE);
             }
         } else if (op == OP_CALL_FUNCTION) {
-            // i++;
+            i++;
             if (stack.size() < static_cast<size_t>(arg) + 1) continue;
             std::vector<const proto::ProtoObject*> argVec(arg);
             for (int j = arg - 1; j >= 0; --j) {
@@ -2260,6 +2268,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 stack.push_back(env ? env->getNonePrototype() : PROTO_NONE);
             }
         } else if (op == OP_BUILD_TUPLE) {
+            i++;
             if (stack.size() < static_cast<size_t>(arg)) continue;
             // i++;
             const proto::ProtoList* lst = ctx->newList();
@@ -2282,7 +2291,7 @@ const proto::ProtoObject* executeBytecodeRange(
             for (int j = 0; j < arg + 2; ++j) stack.pop_back();
             stack.push_back(finalTup);
         } else if (op == OP_BUILD_FUNCTION) {
-            // i++;
+            i++;
             if (!stack.empty() && frame) {
                 const proto::ProtoObject* codeObj = stack.back();
                 stack.pop_back();
@@ -2371,7 +2380,8 @@ const proto::ProtoObject* executeBytecodeRange(
                 stack.push_back(targetClass);
             }
         }
- else if (op == OP_GET_ITER) {
+        else if (op == OP_GET_ITER) {
+            i++;
             if (stack.empty()) continue;
             const proto::ProtoObject* iterable = stack.back();
             stack.pop_back();
@@ -2383,8 +2393,7 @@ const proto::ProtoObject* executeBytecodeRange(
             const proto::ProtoObject* iterM = env ? env->getAttribute(ctx, iterable, iterS) : iterable->getAttribute(ctx, iterS);
             
             if (!iterM || !iterM->asMethod(ctx)) {
-                if (get_env_diag()) std::cerr << "[proto-exec-diag] OP_GET_ITER NO __iter__ for " << iterable << ", pushing self as fallback\n";
-                stack.push_back(iterable);
+                stack.push_back(PROTO_NONE);
                 continue;
             }
             const proto::ProtoObject* it = iterM->asMethod(ctx)(ctx, iterable, nullptr, emptyL, nullptr);
@@ -2396,7 +2405,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 stack.push_back(iterable);
             }
         } else if (op == OP_FOR_ITER) {
-            // i++;
+            i++;
             if (stack.empty()) continue;
             const proto::ProtoObject* iterator = stack.back();
 
@@ -2807,6 +2816,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 }
             }
         } else if (op == OP_SETUP_FINALLY) {
+            i++;
             blockStack.push_back({static_cast<unsigned long>(arg), stack.size()});
         } else if (op == OP_POP_BLOCK) {
             if (!blockStack.empty()) blockStack.pop_back();
