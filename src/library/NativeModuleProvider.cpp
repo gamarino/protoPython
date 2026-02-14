@@ -1,4 +1,5 @@
 #include <protoPython/NativeModuleProvider.h>
+#include <iostream>
 
 namespace protoPython {
 
@@ -12,7 +13,11 @@ void NativeModuleProvider::registerModule(const std::string& name, ModuleInitial
 const proto::ProtoObject* NativeModuleProvider::tryLoad(const std::string& logicalPath, proto::ProtoContext* ctx) {
     auto it = modules_.find(logicalPath);
     if (it != modules_.end()) {
-        return it->second(ctx);
+        const proto::ProtoObject* res = it->second(ctx);
+        if (std::getenv("PROTO_ENV_DIAG")) {
+            std::cerr << "[proto-diag] NativeModuleProvider::tryLoad found '" << logicalPath << "' -> " << res << "\n" << std::flush;
+        }
+        return res;
     }
     return PROTO_NONE;
 }
