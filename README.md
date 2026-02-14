@@ -145,11 +145,14 @@ This project was built using **extensive AI-augmentation tools** to empower huma
 
 ## 📚 Documentation
 
-- [**Documentation Index**](docs/README.md) — Entry point for all documentation; start here if you are new.
-- [**Design Decisions**](docs/DESIGN_DECISIONS.md) — Main architectural choices and rationale.
-- [**Installation Guide**](docs/INSTALLATION.md) — Platform-specific build and deploy instructions.
-- [**HPy User Guide**](docs/HPY_USER_GUIDE.md) — How to load and use HPy extensions.
-- [**HPy Developer Guide**](docs/HPY_DEVELOPER_GUIDE.md) — How to write HPy modules for protoPython.
+- [**User Guide**](docs/USER_GUIDE.md) — Comprehensive guide for Python developers.
+- [**Python Compatibility**](docs/PYTHON_COMPATIBILITY.md) — Supported features and differences from CPython.
+- [**C++ API Reference**](docs/CPP_API_REFERENCE.md) — Documentation for embedding and native extensions.
+- [**Internals Deep Dive**](docs/INTERNALS_DEEP_DIVE.md) — Technical exploration of the GIL-free runtime.
+- [**Design Decisions**](docs/DESIGN_DECISIONS.md) — Architectural rationale and history.
+- [**Installation Guide**](docs/INSTALLATION.md) — Platform-specific build instructions.
+- [**HPy Guides**](docs/HPY_USER_GUIDE.md) — Loading and developing HPy extensions.
+- [**Regression Audit**](docs/EXECUTION_ENGINE_REGRESSIONS.md) — Record of execution engine fixes.
 
 ---
 

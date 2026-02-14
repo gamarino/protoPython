@@ -68,7 +68,9 @@ export PATH=/usr/local/bin:$PATH
 
 The installation layout on Windows follows standard conventions, ensuring that the `protoPython` DLL and `protopy.exe` are in the same directory.
 
-## Site-Packages
+## Next Steps
 
-`protoPython` also looks for modules in the following user-specific directory on Linux:
-`~/.local/lib/protoPython/python3.14/site-packages`
+Once installed, we recommend exploring:
+- [**User Guide**](USER_GUIDE.md) — Learn how to use the `protopy` CLI.
+- [**Examples**](../examples/) — Explore illustrative scripts and embedding samples.
+- [**C++ API Reference**](CPP_API_REFERENCE.md) — Integrate ProtoPython into your host application.
