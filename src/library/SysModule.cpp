@@ -127,6 +127,44 @@ static const proto::ProtoObject* sys_getframe(
     return frame ? frame : PROTO_NONE;
 }
 
+static const proto::ProtoObject* sys_setrecursionlimit(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoObject* envPtr = self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__env_ptr__"));
+    if (envPtr && envPtr->asExternalPointer(context)) {
+        auto* env = static_cast<PythonEnvironment*>(envPtr->asExternalPointer(context)->getPointer(context));
+        if (positionalParameters->getSize(context) > 0) {
+            const proto::ProtoObject* arg = positionalParameters->getAt(context, 0);
+            if (arg->isInteger(context)) {
+                int limit = static_cast<int>(arg->asLong(context));
+                if (limit <= 0) {
+                    if (env) env->raiseValueError(context, context->fromUTF8String("recursion limit must be > 0"));
+                    return PROTO_NONE;
+                }
+                if (env) env->setRecursionLimit(limit);
+            }
+        }
+    }
+    return PROTO_NONE;
+}
+
+static const proto::ProtoObject* sys_getrecursionlimit(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoObject* envPtr = self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__env_ptr__"));
+    if (envPtr && envPtr->asExternalPointer(context)) {
+        auto* env = static_cast<PythonEnvironment*>(envPtr->asExternalPointer(context)->getPointer(context));
+        if (env) return context->fromInteger(env->getRecursionLimit());
+    }
+    return context->fromInteger(1000);
+}
+
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment* env,
                                      const std::vector<std::string>* argv) {
     const proto::ProtoObject* sys = ctx->newObject(true);
@@ -142,6 +180,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "gettrace"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_gettrace));
     sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "getsizeof"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_getsizeof));
     sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_getframe"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_getframe));
+    sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "setrecursionlimit"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_setrecursionlimit));
+    sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "getrecursionlimit"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_getrecursionlimit));
     const proto::ProtoObject* traceDefault = ctx->newObject(true);
     if (env && env->getObjectPrototype()) {
         traceDefault = traceDefault->addParent(ctx, env->getObjectPrototype());

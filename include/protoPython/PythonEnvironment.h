@@ -94,10 +94,18 @@ public:
      * @brief Gets the Python 'None' prototype.
      */
     const proto::ProtoObject* getNonePrototype() const { return nonePrototype; }
+    /** @brief Gets the Python 'NoneType' prototype. */
+    const proto::ProtoObject* getNoneTypePrototype() const { return noneTypeProto; }
     /** @brief Gets the frame prototype. */
     const proto::ProtoObject* getFramePrototype() const { return framePrototype; }
     /** @brief Gets the generator prototype. */
     const proto::ProtoObject* getGeneratorPrototype() const { return generatorPrototype; }
+    /** @brief Gets the frozenset prototype. */
+    const proto::ProtoObject* getFrozensetPrototype() const { return frozensetPrototype; }
+    /** @brief Gets the float prototype. */
+    const proto::ProtoObject* getFloatPrototype() const { return floatPrototype; }
+    /** @brief Gets the bool prototype. */
+    const proto::ProtoObject* getBoolPrototype() const { return boolPrototype; }
 
     const proto::ProtoObject* getGlobals() const;
 
@@ -233,6 +241,7 @@ public:
     const proto::ProtoString* getCoIsGeneratorString() const { return co_is_generator; }
     const proto::ProtoString* getCoFlagsString() const { return co_flags; }
     const proto::ProtoString* getCoConstsString() const { return co_consts; }
+    const proto::ProtoString* getCoNameString() const { return co_name; }
     const proto::ProtoString* getCoNamesString() const { return co_names; }
     const proto::ProtoString* getCoCodeString() const { return co_code; }
     const proto::ProtoString* getSendString() const { return sendString; }
@@ -570,6 +579,7 @@ private:
     const proto::ProtoObject* setPrototype;
     const proto::ProtoObject* bytesPrototype;
     const proto::ProtoObject* nonePrototype;
+    const proto::ProtoObject* noneTypeProto;
     const proto::ProtoObject* framePrototype;
     const proto::ProtoObject* generatorPrototype;
     const proto::ProtoObject* sliceType;
@@ -667,6 +677,7 @@ private:
     const proto::ProtoString* co_is_generator{nullptr};
     const proto::ProtoString* co_flags{nullptr};
     const proto::ProtoString* co_consts{nullptr};
+    const proto::ProtoString* co_name{nullptr};
     const proto::ProtoString* co_names{nullptr};
     const proto::ProtoString* co_code{nullptr};
     const proto::ProtoString* giNativeCallbackString{nullptr};

@@ -1052,7 +1052,7 @@ std::unique_ptr<ASTNode> Parser::parseStatement() {
             WithItem item;
             item.context_expr = parseExpression();
             if (accept(TokenType::As)) {
-                item.optional_vars = parseTargetList();
+                item.optional_vars = parseAddExpr();
             }
             w->items.push_back(std::move(item));
             if (!accept(TokenType::Comma)) break;

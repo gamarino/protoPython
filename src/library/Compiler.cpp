@@ -953,14 +953,51 @@ bool Compiler::compileRaise(RaiseNode* n) {
 }
 
 bool Compiler::compileWith(WithNode* n) {
-    for (auto& item : n->items) {
-        if (!compileNode(item.context_expr.get())) return false;
-        emit(OP_SETUP_WITH, 0);
+    if (!n) return false;
+    return compileWithItems(n->items, 0, n->body.get());
+}
+
+bool Compiler::compileWithItems(const std::vector<WithItem>& items, size_t index, ASTNode* body) {
+    if (index == items.size()) {
+        return compileNode(body);
     }
-    if (!compileNode(n->body.get())) return false;
-    for (size_t i = 0; i < n->items.size(); ++i) {
-        emit(OP_WITH_CLEANUP);
+    
+    const auto& item = items[index];
+    if (!compileNode(item.context_expr.get())) return false;
+    
+    emit(OP_SETUP_WITH, 0); // Handler to be patched
+    int setupSlot = bytecodeOffset() - 1;
+    
+    if (item.optional_vars) {
+        if (!compileTarget(item.optional_vars.get(), TargetCtx::Store)) return false;
+    } else {
+        emit(OP_POP_TOP);
     }
+    
+    if (!compileWithItems(items, index + 1, body)) return false;
+    
+    // Normal exit
+    emit(OP_POP_BLOCK);
+    int noneIdx = addConstant(PROTO_NONE);
+    emit(OP_LOAD_CONST, noneIdx);
+    emit(OP_WITH_CLEANUP);
+    emit(OP_POP_TOP); // pop suppression flag
+    
+    emit(OP_JUMP_ABSOLUTE, 0); // Jump over cleanup
+    int jumpOverCleanupSlot = bytecodeOffset() - 1;
+    
+    // Cleanup/Exception exit handler
+    int cleanupLabel = bytecodeOffset();
+    addPatch(setupSlot, cleanupLabel);
+    emit(OP_WITH_CLEANUP);
+    emit(OP_POP_JUMP_IF_TRUE, 0); // if suppressed, jump to done
+    int suppressedJumpSlot = bytecodeOffset() - 1;
+    emit(OP_RAISE_VARARGS, 0);
+    
+    int postWithLabel = bytecodeOffset();
+    addPatch(jumpOverCleanupSlot, postWithLabel);
+    addPatch(suppressedJumpSlot, postWithLabel);
+    
     return true;
 }
 
@@ -1570,7 +1607,7 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
     if (!n->vararg.empty()) co_flags |= CO_VARARGS;
     if (!n->kwarg.empty()) co_flags |= CO_VARKEYWORDS;
     
-    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), ctx_->fromUTF8String(filename_.c_str())->asString(ctx_), co_varnames, nparams, automatic_count, co_flags, bodyCompiler.isGenerator_);
+    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), ctx_->fromUTF8String(filename_.c_str())->asString(ctx_), co_varnames, nparams, automatic_count, co_flags, bodyCompiler.isGenerator_, ctx_->fromUTF8String(n->name.c_str())->asString(ctx_));
     if (!codeObj) return false;
     int idx = addConstant(codeObj);
     emit(OP_LOAD_CONST, idx);
@@ -1626,7 +1663,7 @@ bool Compiler::compileLambda(LambdaNode* n) {
     for (const auto& name : varnamesOrdered)
         co_varnames = co_varnames->appendLast(ctx_, ctx_->fromUTF8String(name.c_str()));
         
-    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), ctx_->fromUTF8String(filename_.c_str())->asString(ctx_), co_varnames, nparams, automatic_count + PYTHON_STACK_BUFFER, 0, false);
+    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), ctx_->fromUTF8String(filename_.c_str())->asString(ctx_), co_varnames, nparams, automatic_count + PYTHON_STACK_BUFFER, 0, false, ctx_->fromUTF8String("<lambda>")->asString(ctx_));
     if (!codeObj) return false;
     int idx = addConstant(codeObj);
     emit(OP_LOAD_CONST, idx);
@@ -1699,7 +1736,7 @@ bool Compiler::compileAsyncFunctionDef(AsyncFunctionDefNode* n) {
     if (!n->kwarg.empty()) co_flags |= CO_VARKEYWORDS;
     if (bodyCompiler.isGenerator_) co_flags |= 0x20; // CO_GENERATOR if it yields. Then it's an async generator.
 
-    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), ctx_->fromUTF8String(filename_.c_str())->asString(ctx_), co_varnames, nparams, automatic_count + PYTHON_STACK_BUFFER, co_flags, bodyCompiler.isGenerator_);
+    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), ctx_->fromUTF8String(filename_.c_str())->asString(ctx_), co_varnames, nparams, automatic_count + PYTHON_STACK_BUFFER, co_flags, bodyCompiler.isGenerator_, ctx_->fromUTF8String(n->name.c_str())->asString(ctx_));
     if (!codeObj) return false;
     int idx = addConstant(codeObj);
     emit(OP_LOAD_CONST, idx);
@@ -1877,7 +1914,7 @@ bool Compiler::compileClassDef(ClassDefNode* n) {
     bodyCompiler.emit(OP_RETURN_VALUE);
     bodyCompiler.applyPatches();
     
-    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), ctx_->fromUTF8String(filename_.c_str())->asString(ctx_), nullptr, 0, 0, 0, bodyCompiler.isGenerator_);
+    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), ctx_->fromUTF8String(filename_.c_str())->asString(ctx_), nullptr, 0, 0, 0, bodyCompiler.isGenerator_, ctx_->fromUTF8String(n->name.c_str())->asString(ctx_));
     int coIdx = addConstant(codeObj);
     emit(OP_LOAD_CONST, coIdx);
     emit(OP_BUILD_FUNCTION, 0);
@@ -1997,7 +2034,8 @@ const proto::ProtoObject* makeCodeObject(proto::ProtoContext* ctx,
     int nparams,
     int automatic_count,
     int flags,
-    bool isGenerator) {
+    bool isGenerator,
+    const proto::ProtoString* co_name) {
     if (!ctx) return PROTO_NONE;
     if (std::getenv("PROTO_ENV_DIAG")) {
         std::cerr << "[proto-compiler-diag] makeCodeObject constants=" << constants << " size=" << (constants ? constants->getSize(ctx) : 0) << "\n";
@@ -2017,6 +2055,7 @@ const proto::ProtoObject* makeCodeObject(proto::ProtoContext* ctx,
     code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_flags"), ctx->fromInteger(flags));
     bool isGenOrCoro = isGenerator || (flags & 0x80);
     code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_is_generator"), ctx->fromBoolean(isGenOrCoro));
+    code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_name"), co_name ? reinterpret_cast<const proto::ProtoObject*>(co_name) : reinterpret_cast<const proto::ProtoObject*>(ctx->fromUTF8String("<module>")));
     return code;
 }
 

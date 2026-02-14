@@ -89,6 +89,7 @@ private:
     bool compileAsyncWith(AsyncWithNode* n);
     bool compileCondExpr(CondExprNode* n);
     bool compileComprehension(const std::vector<Comprehension>& generators, size_t index, std::function<bool()> innerBody);
+    bool compileWithItems(const std::vector<WithItem>& items, size_t index, ASTNode* body);
     bool compileSuite(SuiteNode* n);
     enum class TargetCtx { Load, Store, Delete };
     bool compileTarget(ASTNode* target, TargetCtx ctx);
@@ -134,7 +135,8 @@ const proto::ProtoObject* makeCodeObject(proto::ProtoContext* ctx,
     int nparams = 0,
     int automatic_count = 0,
     int flags = 0,
-    bool isGenerator = false);
+    bool isGenerator = false,
+    const proto::ProtoString* co_name = nullptr);
 
 /** Run a code object with the given frame. Returns execution result. */
 const proto::ProtoObject* runCodeObject(proto::ProtoContext* ctx,

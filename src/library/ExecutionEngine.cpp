@@ -196,6 +196,7 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
         proto::ProtoObject* gen = const_cast<proto::ProtoObject*>(calleeCtx->newObject(true));
         if (env && env->getGeneratorPrototype()) {
             gen = const_cast<proto::ProtoObject*>(gen->addParent(calleeCtx, env->getGeneratorPrototype()));
+            gen->setAttribute(calleeCtx, env->getClassString(), env->getGeneratorPrototype());
         }
         gen->setAttribute(calleeCtx, env ? env->getGiCodeString() : proto::ProtoString::fromUTF8String(calleeCtx, "gi_code"), codeObj);
         gen->setAttribute(calleeCtx, env ? env->getGiFrameString() : proto::ProtoString::fromUTF8String(calleeCtx, "gi_frame"), frame);
@@ -328,7 +329,10 @@ static const proto::ProtoObject* binaryAdd(proto::ProtoContext* ctx,
              return ctx->fromDouble(a->asDouble(ctx) + b->asDouble(ctx));
     }
     if (a->isString(ctx) && b->isString(ctx)) {
-        return a->asString(ctx)->appendLast(ctx, b->asString(ctx))->asObject(ctx);
+        std::string s1, s2;
+        a->asString(ctx)->toUTF8String(ctx, s1);
+        b->asString(ctx)->toUTF8String(ctx, s2);
+        return ctx->fromUTF8String((s1 + s2).c_str());
     }
     return PROTO_NONE;
 }
@@ -805,11 +809,30 @@ const proto::ProtoObject* py_generator_send_impl(
     return result;
 }
 
-const proto::ProtoObject* py_generator_iter(
+const proto::ProtoObject* py_self_iter(
     proto::ProtoContext*,
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
     return self;
+}
+
+const proto::ProtoObject* py_generator_repr(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!env) return ctx->fromUTF8String("<generator object>");
+
+    const proto::ProtoObject* code = self->getAttribute(ctx, env->getGiCodeString());
+    std::string name = "<unknown>";
+    if (code) {
+        const proto::ProtoObject* co_name = code->getAttribute(ctx, env->getCoNameString());
+        if (co_name && co_name->isString(ctx)) co_name->asString(ctx)->toUTF8String(ctx, name);
+    }
+    
+    char buf[128];
+    snprintf(buf, sizeof(buf), "<generator object %s at %p>", name.c_str(), (void*)self);
+    return ctx->fromUTF8String(buf);
 }
 
 const proto::ProtoObject* py_generator_next(
@@ -1624,14 +1647,16 @@ const proto::ProtoObject* executeBytecodeRange(
                     exc = stack.back();
                     stack.pop_back();
                 }
+            } else if (arg == 0) {
+                // Re-raise: if there's an exception on the stack (TOS), use it.
+                // This is common in 'with' cleanup handlers.
+                if (!stack.empty()) exc = stack.back();
             }
             if (env) {
                 if (exc) env->setPendingException(exc);
-                // Note: arg == 0 (re-raise) not yet fully implemented for all cases
             }
             continue;
         } else if (op == OP_SETUP_WITH) {
-            // i++;
             if (stack.size() < 1) continue;
             const proto::ProtoObject* manager = stack.back();
             stack.pop_back();
@@ -1639,20 +1664,53 @@ const proto::ProtoObject* executeBytecodeRange(
             const proto::ProtoString* enterS = env ? env->getEnterString() : proto::ProtoString::fromUTF8String(ctx, "__enter__");
             const proto::ProtoString* exitS = env ? env->getExitString() : proto::ProtoString::fromUTF8String(ctx, "__exit__");
             
-            const proto::ProtoObject* exitM = manager->getAttribute(ctx, exitS);
+            const proto::ProtoObject* exitM = env ? env->getAttribute(ctx, manager, exitS) : manager->getAttribute(ctx, exitS);
             stack.push_back(exitM ? exitM : (const proto::ProtoObject*)PROTO_NONE);
             
-            const proto::ProtoObject* enterM = manager->getAttribute(ctx, enterS);
             const proto::ProtoObject* enterResult = PROTO_NONE;
-            if (enterM && enterM->asMethod(ctx)) {
-                enterResult = enterM->asMethod(ctx)(ctx, manager, nullptr, env ? env->getEmptyList() : ctx->newList(), nullptr);
+            const proto::ProtoObject* enterM = env ? env->getAttribute(ctx, manager, enterS) : manager->getAttribute(ctx, enterS);
+            if (std::getenv("PROTO_EXEC_DIAG")) {
+                std::cerr << "[OP_SETUP_WITH] manager=" << manager << " enterM=" << enterM << " exitM=" << (env ? env->getAttribute(ctx, manager, exitS) : manager->getAttribute(ctx, exitS)) << "\n";
+            }
+            if (enterM && enterM != PROTO_NONE) {
+                const proto::ProtoList* emptyL = env ? env->getEmptyList() : ctx->newList();
+                enterResult = invokeCallable(ctx, enterM, emptyL);
+                if (std::getenv("PROTO_EXEC_DIAG")) {
+                    std::cerr << "[OP_SETUP_WITH] enterResult=" << enterResult << "\n";
+                }
             } else {
                 enterResult = manager;
             }
+            
+            // Push block pointing to handler at arg (absolute PC)
+            blockStack.push_back({static_cast<unsigned long>(arg), stack.size()});
+            
             stack.push_back(enterResult);
         } else if (op == OP_WITH_CLEANUP) {
-            // Discard result of __exit__
-            if (!stack.empty()) stack.pop_back();
+            // Stack: [..., __exit__, (None or Exc)]
+            if (stack.size() < 2) continue;
+            const proto::ProtoObject* excOrNone = stack.back();
+            stack.pop_back();
+            const proto::ProtoObject* exitM = stack.back();
+            stack.pop_back();
+            
+            const proto::ProtoObject* res = PROTO_FALSE;
+            if (exitM && exitM != PROTO_NONE) {
+                const proto::ProtoList* args = ctx->newList();
+                if (excOrNone != PROTO_NONE && excOrNone != nullptr) {
+                    const proto::ProtoObject* type = excOrNone->getPrototype(ctx);
+                    args = args->appendLast(ctx, type);
+                    args = args->appendLast(ctx, excOrNone);
+                    args = args->appendLast(ctx, PROTO_NONE); // traceback
+                } else {
+                    args = args->appendLast(ctx, PROTO_NONE);
+                    args = args->appendLast(ctx, PROTO_NONE);
+                    args = args->appendLast(ctx, PROTO_NONE);
+                }
+                res = invokeCallable(ctx, exitM, args);
+            }
+            // Push suppression flag
+            stack.push_back(res ? res : PROTO_FALSE);
         } else if (op == OP_POP_TOP) {
             if (!stack.empty()) {
                 stack.pop_back();
@@ -2347,10 +2405,10 @@ const proto::ProtoObject* executeBytecodeRange(
             if (ptr.op.pointer_tag == POINTER_TAG_RANGE_ITERATOR) {
                  // Use const_cast because we need to modify the iterator state (current)
                  auto* impl = const_cast<proto::ProtoRangeIteratorImplementation*>(proto::toImpl<proto::ProtoRangeIteratorImplementation>(iterator));
-                 const proto::ProtoObject* val = impl->implNext(ctx); // Direct C++ call
-                 if (val) {
-                     stack.push_back(val);
-                 } else {
+                  const proto::ProtoObject* val = impl->implNext(ctx); // Direct C++ call
+                  if (val) {
+                      stack.push_back(val);
+                  } else {
                      stack.pop_back();
                      if (arg >= 0 && static_cast<unsigned long>(arg) < n)
                         i = static_cast<unsigned long>(arg) - 1;

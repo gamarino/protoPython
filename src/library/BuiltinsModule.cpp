@@ -424,7 +424,8 @@ static const proto::ProtoObject* py_bool(
     const proto::ProtoString* boolS = env ? env->getBoolString() : proto::ProtoString::fromUTF8String(context, "__bool__");
     const proto::ProtoList* emptyL = env ? env->getEmptyList() : context->newList();
 
-    const proto::ProtoObject* boolMethod = obj->getAttribute(context, boolS);
+    const proto::ProtoObject* cls = obj->getAttribute(context, env ? env->getClassString() : proto::ProtoString::fromUTF8String(context, "__class__"));
+    const proto::ProtoObject* boolMethod = cls ? cls->getAttribute(context, boolS) : obj->getAttribute(context, boolS);
     if (boolMethod && boolMethod->asMethod(context)) {
         return boolMethod->asMethod(context)(context, obj, nullptr, emptyL, nullptr);
     }
@@ -440,6 +441,8 @@ static const proto::ProtoObject* py_repr(
     const proto::ProtoSparseList* keywordParameters) {
     if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
+    if (obj == PROTO_TRUE) return context->fromUTF8String("True");
+    if (obj == PROTO_FALSE) return context->fromUTF8String("False");
     if (obj->isInteger(context)) {
         char buf[32];
         snprintf(buf, sizeof(buf), "%lld", (long long)obj->asLong(context));
@@ -476,7 +479,8 @@ static const proto::ProtoObject* py_repr(
     const proto::ProtoString* reprS = env ? env->getReprString() : proto::ProtoString::fromUTF8String(context, "__repr__");
     const proto::ProtoList* emptyL = env ? env->getEmptyList() : context->newList();
 
-    const proto::ProtoObject* reprMethod = obj->getAttribute(context, reprS);
+    const proto::ProtoObject* cls = obj->getAttribute(context, env ? env->getClassString() : proto::ProtoString::fromUTF8String(context, "__class__"));
+    const proto::ProtoObject* reprMethod = cls ? cls->getAttribute(context, reprS) : obj->getAttribute(context, reprS);
     if (reprMethod && reprMethod->asMethod(context)) {
         return reprMethod->asMethod(context)(context, obj, nullptr, emptyL, nullptr);
     }
@@ -529,8 +533,8 @@ static const proto::ProtoObject* py_open(
     return openFunc->asMethod(context)(context, ioMod, nullptr, positionalParameters, keywordParameters);
 }
 
-static const proto::ProtoObject* py_iter_self(
-    proto::ProtoContext* context,
+static const proto::ProtoObject* py_self_iter(
+    proto::ProtoContext*,
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
     return self;
@@ -1493,26 +1497,23 @@ static const proto::ProtoObject* py_type(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
+    if (!positionalParameters || positionalParameters->getSize(context) == 0) {
+        // ... (handle type() call with 0 args or return something)
+        return PROTO_NONE;
+    }
     if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
     protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(context);
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
-    if (obj->isDouble(context)) {
-        const proto::ProtoObject* fp = self->getAttribute(context, env ? env->getFloatTypeNameString() : proto::ProtoString::fromUTF8String(context, "float"));
-        if (env && fp && fp != PROTO_NONE) env->getBuiltins()->setAttribute(context, env->getFloatTypeNameString(), fp);
-        return fp ? fp : PROTO_NONE;
+    const proto::ProtoObject* ret = PROTO_NONE;
+    if (obj->isInteger(context)) ret = env ? env->getIntPrototype() : PROTO_NONE;
+    else if (obj->isDouble(context)) ret = env ? env->getFloatPrototype() : PROTO_NONE;
+    else if (obj == PROTO_TRUE || obj == PROTO_FALSE) ret = env ? env->getBoolPrototype() : PROTO_NONE;
+    else if (obj->isString(context)) ret = env ? env->getStrPrototype() : PROTO_NONE;
+    else if (obj == PROTO_NONE) ret = env ? env->getNoneTypePrototype() : PROTO_NONE;
+    else {
+        ret = obj->getAttribute(context, env ? env->getClassString() : proto::ProtoString::fromUTF8String(context, "__class__"));
     }
-    if (obj == PROTO_TRUE || obj == PROTO_FALSE) {
-        const proto::ProtoObject* bp = self->getAttribute(context, env ? env->getBoolTypeNameString() : proto::ProtoString::fromUTF8String(context, "bool"));
-        if (env && bp && bp != PROTO_NONE) env->getBuiltins()->setAttribute(context, env->getBoolTypeNameString(), bp);
-        return bp ? bp : PROTO_NONE;
-    }
-    if (obj->isString(context)) {
-        const proto::ProtoObject* sp = self->getAttribute(context, env ? env->getStrTypeNameString() : proto::ProtoString::fromUTF8String(context, "str"));
-        if (env && sp && sp != PROTO_NONE) env->getBuiltins()->setAttribute(context, env->getStrTypeNameString(), sp);
-        return sp ? sp : PROTO_NONE;
-    }
-    const proto::ProtoObject* cls = obj->getAttribute(context, env ? env->getClassString() : proto::ProtoString::fromUTF8String(context, "__class__"));
-    return cls ? cls : PROTO_NONE;
+    return ret ? ret : PROTO_NONE;
 }
 
 static bool checkInterfaceInstanceOf(proto::ProtoContext* context, const proto::ProtoObject* obj, const proto::ProtoObject* cls) {
@@ -2345,7 +2346,12 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "True"), PROTO_TRUE);
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "False"), PROTO_FALSE);
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "object"), objectProto);
-    builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "type"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_type));
+    if (typeProto) {
+        const_cast<proto::ProtoObject*>(typeProto)->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__call__"), ctx->fromMethod(const_cast<proto::ProtoObject*>(typeProto), py_type));
+        builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "type"), typeProto);
+    } else {
+        builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "type"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_type));
+    }
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "int"), intProto);
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "str"), strProto);
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "list"), listProto);
@@ -2382,19 +2388,19 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "reversed"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_reversed));
     const proto::ProtoObject* zipProto = ctx->newObject(true);
     if (objectProto) zipProto = zipProto->addParent(ctx, objectProto);
-    zipProto = zipProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iter__"), ctx->fromMethod(const_cast<proto::ProtoObject*>(zipProto), py_iter_self));
+    zipProto = zipProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iter__"), ctx->fromMethod(const_cast<proto::ProtoObject*>(zipProto), py_self_iter));
     zipProto = zipProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__next__"), ctx->fromMethod(const_cast<proto::ProtoObject*>(zipProto), py_zip_next));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__zip_proto__"), zipProto);
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "zip"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_zip));
     const proto::ProtoObject* filterProto = ctx->newObject(true);
     if (objectProto) filterProto = filterProto->addParent(ctx, objectProto);
-    filterProto = filterProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iter__"), ctx->fromMethod(const_cast<proto::ProtoObject*>(filterProto), py_iter_self));
+    filterProto = filterProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iter__"), ctx->fromMethod(const_cast<proto::ProtoObject*>(filterProto), py_self_iter));
     filterProto = filterProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__next__"), ctx->fromMethod(const_cast<proto::ProtoObject*>(filterProto), py_filter_next));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__filter_proto__"), filterProto);
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "filter"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_filter));
     const proto::ProtoObject* mapProto = ctx->newObject(true);
     if (objectProto) mapProto = mapProto->addParent(ctx, objectProto);
-    mapProto = mapProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iter__"), ctx->fromMethod(const_cast<proto::ProtoObject*>(mapProto), py_iter_self));
+    mapProto = mapProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iter__"), ctx->fromMethod(const_cast<proto::ProtoObject*>(mapProto), py_self_iter));
     mapProto = mapProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__next__"), ctx->fromMethod(const_cast<proto::ProtoObject*>(mapProto), py_map_next));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__map_proto__"), mapProto);
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "map"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_map));
@@ -2404,13 +2410,13 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
 
     const proto::ProtoObject* enumProto = ctx->newObject(true);
     if (objectProto) enumProto = enumProto->addParent(ctx, objectProto);
-    enumProto = enumProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iter__"), ctx->fromMethod(const_cast<proto::ProtoObject*>(enumProto), py_iter_self));
+    enumProto = enumProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iter__"), ctx->fromMethod(const_cast<proto::ProtoObject*>(enumProto), py_self_iter));
     enumProto = enumProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__next__"), ctx->fromMethod(const_cast<proto::ProtoObject*>(enumProto), py_enumerate_next));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__enumerate_proto__"), enumProto);
 
     const proto::ProtoObject* revProto = ctx->newObject(true);
     if (objectProto) revProto = revProto->addParent(ctx, objectProto);
-    revProto = revProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iter__"), ctx->fromMethod(const_cast<proto::ProtoObject*>(revProto), py_iter_self));
+    revProto = revProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iter__"), ctx->fromMethod(const_cast<proto::ProtoObject*>(revProto), py_self_iter));
     revProto = revProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__next__"), ctx->fromMethod(const_cast<proto::ProtoObject*>(revProto), py_reversed_next));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__reversed_proto__"), revProto);
 
@@ -2423,7 +2429,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     // Initialize specialized RangeIterator prototype
     if (ctx->space->rangeIteratorPrototype) {
         proto::ProtoObject* rip = const_cast<proto::ProtoObject*>(ctx->space->rangeIteratorPrototype);
-        rip->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iter__"), ctx->fromMethod(rip, py_iter_self));
+        rip->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iter__"), ctx->fromMethod(rip, py_self_iter));
         rip->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__next__"), ctx->fromMethod(rip, py_range_next));
     }
 
