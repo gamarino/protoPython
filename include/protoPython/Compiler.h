@@ -57,7 +57,10 @@ private:
     bool compileTupleLiteral(TupleLiteralNode* n);
     bool compileSetLiteral(SetLiteralNode* n);
     bool compileAssign(AssignNode* n);
+    bool compileAnnAssign(AnnAssignNode* n);
+    bool compileNamedExpr(NamedExprNode* n);
     bool compileAugAssign(AugAssignNode* n);
+    bool compileStarred(StarredNode* n);
     bool compileDeleteNode(DeleteNode* n);
     bool compileAssert(AssertNode* n);
     bool compileListComp(ListCompNode* n);
@@ -133,6 +136,7 @@ const proto::ProtoObject* makeCodeObject(proto::ProtoContext* ctx,
     const proto::ProtoString* filename = nullptr,
     const proto::ProtoList* varnames = nullptr,
     int nparams = 0,
+    int kwonlyargcount = 0,
     int automatic_count = 0,
     int flags = 0,
     bool isGenerator = false,

@@ -6513,6 +6513,9 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain,
                             // Update the wrapper's "val" so future resolves for this module see it as populated
                             const_cast<proto::ProtoObject*>(modWrapper)->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "val"), mod);
                         }
+                    } else {
+                        std::cerr << "protopy: compilation error in '" << path << "'\n";
+                        return -2;
                     }
                 } else if (parser.hasError()) {
                     std::cerr << "protopy: syntax error in '" << path << "': " << parser.getLastErrorMsg() << " at line " << parser.getLastErrorLine() << ":" << parser.getLastErrorColumn() << "\n";

@@ -82,10 +82,13 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
 
     const proto::ProtoObject* co_varnames_obj = codeObj->getAttribute(ctx, co_varnames_name);
     const proto::ProtoObject* co_nparams_obj = codeObj->getAttribute(ctx, co_nparams_name);
+    const proto::ProtoString* co_kwonly_name = env ? env->getCoKwonlyargcountString() : proto::ProtoString::fromUTF8String(ctx, "co_kwonlyargcount");
+    const proto::ProtoObject* co_kwonly_obj = codeObj->getAttribute(ctx, co_kwonly_name);
     const proto::ProtoObject* co_automatic_obj = codeObj->getAttribute(ctx, co_automatic_name);
 
     const proto::ProtoList* co_varnames = co_varnames_obj && co_varnames_obj->asList(ctx) ? co_varnames_obj->asList(ctx) : nullptr;
     int nparams_count = (co_nparams_obj && co_nparams_obj->isInteger(ctx)) ? static_cast<int>(co_nparams_obj->asLong(ctx)) : 0;
+    int kwonly_count = (co_kwonly_obj && co_kwonly_obj->isInteger(ctx)) ? static_cast<int>(co_kwonly_obj->asLong(ctx)) : 0;
     int automatic_count = (co_automatic_obj && co_automatic_obj->isInteger(ctx)) ? static_cast<int>(co_automatic_obj->asLong(ctx)) : 0;
 
     const proto::ProtoList* parameterNames = nullptr;
@@ -127,12 +130,28 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
             slots[i] = const_cast<proto::ProtoObject*>(args->getAt(calleeCtx, static_cast<int>(i)));
         }
 
-        // 3. *args
+        // 3. Keyword-only arguments
+        if (kwonly_count > 0 && kwargs) {
+            for (int i = 0; i < kwonly_count; ++i) {
+                int slotIdx = nparams_count + i;
+                if (slotIdx >= static_cast<int>(nSlots)) break;
+                const proto::ProtoObject* paramName = co_varnames->getAt(calleeCtx, slotIdx);
+                if (paramName) {
+                    unsigned long key = paramName->getHash(calleeCtx);
+                    const proto::ProtoObject* val = kwargs->getAt(calleeCtx, key);
+                    if (val) {
+                        slots[slotIdx] = const_cast<proto::ProtoObject*>(val);
+                    }
+                }
+            }
+        }
+
+        // 4. *args
         if (co_flags & CO_VARARGS) {
-            int varargIdx = static_cast<int>(nparams_to_bind);
+            int varargIdx = nparams_count + kwonly_count;
             const proto::ProtoList* starArgs = calleeCtx->newList();
-            if (argCount > nparams_to_bind) {
-                for (unsigned long i = nparams_to_bind; i < argCount; ++i) {
+            if (argCount > (unsigned long)nparams_count) {
+                for (unsigned long i = nparams_count; i < argCount; ++i) {
                     starArgs = starArgs->appendLast(calleeCtx, args->getAt(calleeCtx, static_cast<int>(i)));
                 }
             }
@@ -140,9 +159,9 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
             if (varargIdx < static_cast<int>(nSlots)) slots[varargIdx] = const_cast<proto::ProtoObject*>(tup);
         }
 
-        // 4. **kwargs
+        // 5. **kwargs
         if (co_flags & CO_VARKEYWORDS) {
-            int kwargIdx = (co_flags & CO_VARARGS) ? static_cast<int>(nparams_to_bind) + 1 : static_cast<int>(nparams_to_bind);
+            int kwargIdx = nparams_count + kwonly_count + ((co_flags & CO_VARARGS) ? 1 : 0);
             proto::ProtoObject* kwDict = const_cast<proto::ProtoObject*>(calleeCtx->newObject(true));
             if (env && env->getDictPrototype()) kwDict = const_cast<proto::ProtoObject*>(kwDict->addParent(calleeCtx, env->getDictPrototype()));
             
@@ -157,9 +176,9 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
                     unsigned long key = it->nextKey(calleeCtx);
                     const proto::ProtoObject* val = it->nextValue(calleeCtx);
                     
-                    // Only add if not already bound to a positional param
+                    // Only add if not already bound to a positional or kwonly param
                     bool alreadyBound = false;
-                    for (unsigned long i = 0; i < nparams_to_bind; ++i) {
+                    for (unsigned long i = 0; i < (unsigned long)(nparams_count + kwonly_count); ++i) {
                          const proto::ProtoObject* paramName = co_varnames->getAt(calleeCtx, i);
                          if (paramName && paramName->getHash(calleeCtx) == key) {
                              alreadyBound = true;
@@ -1317,13 +1336,47 @@ const proto::ProtoObject* executeBytecodeRange(
             const proto::ProtoObject* r = binaryTrueDivide(ctx, a, b);
             stack.push_back(r);
         } else if (op == OP_BINARY_MODULO) {
-            if (stack.size() < 2) continue;
-            const proto::ProtoObject* b = stack.back();
-            stack.pop_back();
-            const proto::ProtoObject* a = stack.back();
-            stack.pop_back();
-            const proto::ProtoObject* r = binaryModulo(ctx, a, b);
-            stack.push_back(r);
+            const proto::ProtoObject* right = stack.back(); stack.pop_back();
+            const proto::ProtoObject* left = stack.back(); stack.pop_back();
+            stack.push_back(left->modulo(ctx, right));
+        } else if (op == OP_BINARY_MATRIX_MULTIPLY) {
+            const proto::ProtoObject* right = stack.back(); stack.pop_back();
+            const proto::ProtoObject* left = stack.back(); stack.pop_back();
+            // TODO: properly implement matmul in protoCore. For now, stub as error or special attr
+            const proto::ProtoString* matmulS = proto::ProtoString::fromUTF8String(ctx, "__matmul__");
+            const proto::ProtoObject* matmul = left->getAttribute(ctx, matmulS);
+            if (matmul && matmul != PROTO_NONE) {
+                stack.push_back(invokePythonCallable(ctx, matmul, ctx->newList()->appendLast(ctx, right)));
+            } else {
+                env->setPendingException(ctx->fromUTF8String("TypeError: '@' operator not supported (stubbed)"));
+            }
+        } else if (op == OP_INPLACE_MATRIX_MULTIPLY) {
+            const proto::ProtoObject* right = stack.back(); stack.pop_back();
+            const proto::ProtoObject* left = stack.back(); stack.pop_back();
+            const proto::ProtoString* imatmulS = proto::ProtoString::fromUTF8String(ctx, "__imatmul__");
+            const proto::ProtoObject* imatmul = left->getAttribute(ctx, imatmulS);
+            if (imatmul && imatmul != PROTO_NONE) {
+                stack.push_back(invokePythonCallable(ctx, imatmul, ctx->newList()->appendLast(ctx, right)));
+            } else {
+                // fallback to matmul
+                const proto::ProtoString* matmulS = proto::ProtoString::fromUTF8String(ctx, "__matmul__");
+                const proto::ProtoObject* matmul = left->getAttribute(ctx, matmulS);
+                if (matmul && matmul != PROTO_NONE) {
+                    stack.push_back(invokePythonCallable(ctx, matmul, ctx->newList()->appendLast(ctx, right)));
+                } else {
+                    env->setPendingException(ctx->fromUTF8String("TypeError: '@=' operator not supported (stubbed)"));
+                }
+            }
+        } else if (op == OP_RERAISE) {
+            // Re-raise the exception on top of block stack
+            if (!env) return nullptr;
+            // stub: if we have a pending exception, just return nullptr to trigger handler search
+            return nullptr;
+        } else if (op == OP_JUMP_FORWARD) {
+            i += arg;
+        } else if (op == OP_POP_EXCEPT) {
+            // Restore previous exception state if we tracked it, 
+            // but for now just a NOP since we handle it in blockStack
         } else if (op == OP_BINARY_POWER) {
             if (stack.size() < 2) continue;
             const proto::ProtoObject* b = stack.back();
@@ -1803,7 +1856,79 @@ const proto::ProtoObject* executeBytecodeRange(
                 setObj->setAttribute(ctx, dataString, s->asObject(ctx));
                 stack.pop_back();
             }
-        } else if (op == OP_BUILD_SET) {
+        } else if (op == OP_DICT_UPDATE) {
+            if (stack.size() >= static_cast<size_t>(arg + 1)) {
+                const proto::ProtoObject* from = stack.back();
+                stack.pop_back();
+                proto::ProtoObject* toObj = const_cast<proto::ProtoObject*>(stack[stack.size() - arg]);
+                const proto::ProtoString* dataString = env ? env->getDataString() : proto::ProtoString::fromUTF8String(ctx, "__data__");
+                const proto::ProtoObject* toData = toObj->getAttribute(ctx, dataString);
+                if (toData && toData->asSparseList(ctx)) {
+                    const proto::ProtoSparseList* toSL = toData->asSparseList(ctx);
+                    const proto::ProtoObject* fromData = from->getAttribute(ctx, dataString);
+                    if (fromData && fromData->asSparseList(ctx)) {
+                        const proto::ProtoSparseList* fromSL = fromData->asSparseList(ctx);
+                        const proto::ProtoString* keysName = proto::ProtoString::fromUTF8String(ctx, "__keys__");
+                        const proto::ProtoObject* fromKeysObj = from->getAttribute(ctx, keysName);
+                        if (fromKeysObj && fromKeysObj->asList(ctx)) {
+                            const proto::ProtoList* fromKeys = fromKeysObj->asList(ctx);
+                            const proto::ProtoObject* toKeysObj = toObj->getAttribute(ctx, keysName);
+                            const proto::ProtoList* toKeys = (toKeysObj && toKeysObj->asList(ctx)) ? toKeysObj->asList(ctx) : ctx->newList();
+                            for (unsigned long j = 0; j < fromKeys->getSize(ctx); ++j) {
+                                const proto::ProtoObject* k = fromKeys->getAt(ctx, j);
+                                unsigned long h = k->getHash(ctx);
+                                const proto::ProtoObject* v = fromSL->getAt(ctx, h);
+                                bool isNew = !toSL->has(ctx, h);
+                                toSL = toSL->setAt(ctx, h, v);
+                                if (isNew) toKeys = toKeys->appendLast(ctx, k);
+                            }
+                            toObj->setAttribute(ctx, keysName, toKeys->asObject(ctx));
+                            toObj->setAttribute(ctx, dataString, toSL->asObject(ctx));
+                        }
+                    }
+                }
+            }
+        } else if (op == OP_LIST_EXTEND) {
+            if (stack.size() >= static_cast<size_t>(arg + 1)) {
+                const proto::ProtoObject* iterable = stack.back();
+                stack.pop_back();
+                proto::ProtoObject* lstObj = const_cast<proto::ProtoObject*>(stack[stack.size() - arg]);
+                const proto::ProtoString* dataString = env ? env->getDataString() : proto::ProtoString::fromUTF8String(ctx, "__data__");
+                const proto::ProtoObject* dataObj = lstObj->getAttribute(ctx, dataString);
+                if (dataObj && dataObj->asList(ctx)) {
+                    const proto::ProtoList* lst = dataObj->asList(ctx);
+                    // iterable can be list or other iterable. For now, check if it has __data__ as list
+                    const proto::ProtoObject* fromData = iterable->getAttribute(ctx, dataString);
+                    const proto::ProtoList* fromList = (fromData && fromData->asList(ctx)) ? fromData->asList(ctx) : iterable->asList(ctx);
+                    if (fromList) {
+                        for (unsigned long j = 0; j < fromList->getSize(ctx); ++j) {
+                            lst = lst->appendLast(ctx, fromList->getAt(ctx, j));
+                        }
+                        lstObj->setAttribute(ctx, dataString, lst->asObject(ctx));
+                    }
+                }
+            }
+        } else if (op == OP_SET_UPDATE) {
+            if (stack.size() >= static_cast<size_t>(arg + 1)) {
+                const proto::ProtoObject* iterable = stack.back();
+                stack.pop_back();
+                proto::ProtoObject* setObj = const_cast<proto::ProtoObject*>(stack[stack.size() - arg]);
+                const proto::ProtoString* dataString = env ? env->getDataString() : proto::ProtoString::fromUTF8String(ctx, "__data__");
+                const proto::ProtoObject* dataObj = setObj->getAttribute(ctx, dataString);
+                if (dataObj && dataObj->asSet(ctx)) {
+                    const proto::ProtoSet* s = dataObj->asSet(ctx);
+                    const proto::ProtoObject* fromData = iterable->getAttribute(ctx, dataString);
+                    const proto::ProtoList* fromList = (fromData && fromData->asList(ctx)) ? fromData->asList(ctx) : iterable->asList(ctx);
+                    if (fromList) {
+                        for (unsigned long j = 0; j < fromList->getSize(ctx); ++j) {
+                            s = s->add(ctx, fromList->getAt(ctx, j));
+                        }
+                        setObj->setAttribute(ctx, dataString, s->asObject(ctx));
+                    }
+                }
+            }
+        }
+ else if (op == OP_BUILD_SET) {
             if (stack.size() < static_cast<size_t>(arg)) continue;
             proto::ProtoObject* setObj = const_cast<proto::ProtoObject*>(ctx->newObject(true));
             stack.push_back(setObj); // Root setObj

@@ -186,8 +186,18 @@ constexpr int OP_GET_AITER = 188;
 constexpr int OP_GET_ANEXT = 189;
 /** EXCEPTION_MATCH: pop type, peek exc, push bool if isinstance(exc, type). */
 constexpr int OP_EXCEPTION_MATCH = 190;
-/** SETUP_ASYNC_WITH: specialized setup for async with. */
 constexpr int OP_SETUP_ASYNC_WITH = 191;
+constexpr int OP_BINARY_MATRIX_MULTIPLY = 192;
+constexpr int OP_INPLACE_MATRIX_MULTIPLY = 193;
+constexpr int OP_RERAISE = 194;
+constexpr int OP_JUMP_FORWARD = 195;
+constexpr int OP_FORMAT_VALUE = 196;
+constexpr int OP_GEN_START = 197;
+constexpr int OP_GET_LEN = 198;
+constexpr int OP_MATCH_MAPPING = 199;
+constexpr int OP_MATCH_SEQUENCE = 200;
+constexpr int OP_EXTENDED_ARG = 201;
+constexpr int OP_POP_EXCEPT = 202;
 
 /**
  * @brief Executes a range of bytecode (one basic block). No per-instruction

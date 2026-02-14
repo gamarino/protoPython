@@ -127,6 +127,12 @@ bool Compiler::compileBinOp(BinOpNode* n) {
         return true;
     } else if (n->op == TokenType::Modulo) {
         op = OP_BINARY_MODULO;
+    } else if (n->op == TokenType::DoubleSlash) {
+        op = OP_BINARY_FLOOR_DIVIDE;
+    } else if (n->op == TokenType::DoubleStar) {
+        op = OP_BINARY_POWER;
+    } else if (n->op == TokenType::At) {
+        op = OP_BINARY_MATRIX_MULTIPLY;
     } else if (n->op == TokenType::And) {
         emit(OP_BINARY_AND, 0);
         return true;
@@ -140,41 +146,63 @@ bool Compiler::compileBinOp(BinOpNode* n) {
 
 bool Compiler::compileUnaryOp(UnaryOpNode* n) {
     if (!n || !compileNode(n->operand.get())) return false;
-    if (n->op == TokenType::Not) {
-        emit(OP_UNARY_NOT, 0); // OP_UNARY_NOT does not take an argument, but emit adds 0 if not specified.
-        return true;
-    }
-    return false;
+    int op = OP_UNARY_NOT;
+    if (n->op == TokenType::Minus) op = OP_UNARY_NEGATIVE;
+    else if (n->op == TokenType::Plus) op = OP_UNARY_POSITIVE;
+    else if (n->op == TokenType::Tilde) op = OP_UNARY_INVERT;
+    else if (n->op == TokenType::Not) op = OP_UNARY_NOT;
+    else return false;
+    emit(op, 0);
+    return true;
+}
+
+bool Compiler::compileStarred(StarredNode* n) {
+    if (!n) return false;
+    return compileNode(n->value.get());
 }
 
 bool Compiler::compileCall(CallNode* n) {
     if (!n || !compileNode(n->func.get())) return false;
-    if (n->star_args || n->kw_args) {
-        // Handle positional arguments: fixed + star_args
-        if (!n->args.empty()) {
-            for (auto& arg : n->args) {
-                if (!compileNode(arg.get())) return false;
-            }
-            emit(OP_BUILD_LIST, static_cast<int>(n->args.size()));
-            if (n->star_args) {
-                if (!compileNode(n->star_args.get())) return false;
-                emit(OP_LIST_EXTEND, 0);
-            }
-        } else {
-            if (n->star_args) {
-                if (!compileNode(n->star_args.get())) return false;
+    
+    bool hasUnpacking = false;
+    for (auto& a : n->args) if (dynamic_cast<StarredNode*>(a.get())) { hasUnpacking = true; break; }
+    if (!hasUnpacking) {
+        for (auto& kw : n->keywords) if (kw.first.empty()) { hasUnpacking = true; break; }
+    }
+
+    if (hasUnpacking) {
+        // Build positional args tuple
+        emit(OP_BUILD_LIST, 0);
+        for (auto& a : n->args) {
+            if (auto* s = dynamic_cast<StarredNode*>(a.get())) {
+                if (!compileNode(s->value.get())) return false;
+                emit(OP_LIST_EXTEND, 1);
             } else {
-                emit(OP_BUILD_TUPLE, 0);
+                if (!compileNode(a.get())) return false;
+                emit(OP_LIST_APPEND, 1);
             }
+        }
+        emit(OP_LIST_TO_TUPLE, 0);
+
+        // Build keyword args dict
+        bool hasKw = false;
+        if (!n->keywords.empty()) {
+            emit(OP_BUILD_MAP, 0);
+            for (auto& kw : n->keywords) {
+                if (kw.first.empty()) {
+                    if (!compileNode(kw.second.get())) return false;
+                    emit(OP_DICT_UPDATE, 1);
+                } else {
+                    int nameIdx = addConstant(ctx_->fromUTF8String(kw.first.c_str()));
+                    emit(OP_LOAD_CONST, nameIdx);
+                    if (!compileNode(kw.second.get())) return false;
+                    emit(OP_MAP_ADD, 1);
+                }
+            }
+            hasKw = true;
         }
 
-        int flags = 0;
-        if (n->kw_args) {
-            if (!compileNode(n->kw_args.get())) return false;
-            flags |= 1;
-        }
-        
-        emit(OP_CALL_FUNCTION_EX, flags);
+        emit(OP_CALL_FUNCTION_EX, hasKw ? 1 : 0);
         return true;
     }
 
@@ -244,9 +272,7 @@ bool Compiler::compileListLiteral(ListLiteralNode* n) {
     if (!n) return false;
     bool hasStarred = false;
     for (auto& e : n->elements) {
-        if (auto* u = dynamic_cast<UnaryOpNode*>(e.get())) {
-            if (u->op == TokenType::Star) { hasStarred = true; break; }
-        }
+        if (dynamic_cast<StarredNode*>(e.get())) { hasStarred = true; break; }
     }
 
     if (!hasStarred) {
@@ -257,12 +283,10 @@ bool Compiler::compileListLiteral(ListLiteralNode* n) {
     } else {
         emit(OP_BUILD_LIST, 0);
         for (auto& e : n->elements) {
-            if (auto* u = dynamic_cast<UnaryOpNode*>(e.get())) {
-                if (u->op == TokenType::Star) {
-                    if (!compileNode(u->operand.get())) return false;
-                    emit(OP_LIST_EXTEND, 1);
-                    continue;
-                }
+            if (auto* s = dynamic_cast<StarredNode*>(e.get())) {
+                if (!compileNode(s->value.get())) return false;
+                emit(OP_LIST_EXTEND, 1);
+                continue;
             }
             if (!compileNode(e.get())) return false;
             emit(OP_LIST_APPEND, 1);
@@ -287,9 +311,14 @@ bool Compiler::compileDictLiteral(DictLiteralNode* n) {
         emit(OP_BUILD_MAP, 0);
         for (size_t i = 0; i < n->keys.size(); ++i) {
             if (n->keys[i] == nullptr) {
-                if (auto* u = dynamic_cast<UnaryOpNode*>(n->values[i].get())) {
-                    if (!compileNode(u->operand.get())) return false;
+                // Unpacking: **v
+                if (auto* u = dynamic_cast<StarredNode*>(n->values[i].get())) {
+                    if (!compileNode(u->value.get())) return false;
                     emit(OP_DICT_UPDATE, 1);
+                } else if (auto* uold = dynamic_cast<UnaryOpNode*>(n->values[i].get())) {
+                    // Fallback for old UnaryOpNode if any
+                     if (!compileNode(uold->operand.get())) return false;
+                     emit(OP_DICT_UPDATE, 1);
                 }
             } else {
                 if (!compileNode(n->keys[i].get()) || !compileNode(n->values[i].get())) return false;
@@ -304,9 +333,7 @@ bool Compiler::compileTupleLiteral(TupleLiteralNode* n) {
     if (!n) return false;
     bool hasStarred = false;
     for (auto& e : n->elements) {
-        if (auto* u = dynamic_cast<UnaryOpNode*>(e.get())) {
-            if (u->op == TokenType::Star) { hasStarred = true; break; }
-        }
+        if (dynamic_cast<StarredNode*>(e.get())) { hasStarred = true; break; }
     }
 
     if (!hasStarred) {
@@ -319,12 +346,10 @@ bool Compiler::compileTupleLiteral(TupleLiteralNode* n) {
         // So we build a list and convert to tuple at the end.
         emit(OP_BUILD_LIST, 0);
         for (auto& e : n->elements) {
-            if (auto* u = dynamic_cast<UnaryOpNode*>(e.get())) {
-                if (u->op == TokenType::Star) {
-                    if (!compileNode(u->operand.get())) return false;
-                    emit(OP_LIST_EXTEND, 1);
-                    continue;
-                }
+            if (auto* s = dynamic_cast<StarredNode*>(e.get())) {
+                if (!compileNode(s->value.get())) return false;
+                emit(OP_LIST_EXTEND, 1);
+                continue;
             }
             if (!compileNode(e.get())) return false;
             emit(OP_LIST_APPEND, 1);
@@ -338,9 +363,7 @@ bool Compiler::compileSetLiteral(SetLiteralNode* n) {
     if (!n) return false;
     bool hasStarred = false;
     for (auto& e : n->elements) {
-        if (auto* u = dynamic_cast<UnaryOpNode*>(e.get())) {
-            if (u->op == TokenType::Star) { hasStarred = true; break; }
-        }
+        if (dynamic_cast<StarredNode*>(e.get())) { hasStarred = true; break; }
     }
 
     if (!hasStarred) {
@@ -351,12 +374,10 @@ bool Compiler::compileSetLiteral(SetLiteralNode* n) {
     } else {
         emit(OP_BUILD_SET, 0);
         for (auto& e : n->elements) {
-            if (auto* u = dynamic_cast<UnaryOpNode*>(e.get())) {
-                if (u->op == TokenType::Star) {
-                    if (!compileNode(u->operand.get())) return false;
-                    emit(OP_SET_UPDATE, 1);
-                    continue;
-                }
+            if (auto* s = dynamic_cast<StarredNode*>(e.get())) {
+                if (!compileNode(s->value.get())) return false;
+                emit(OP_SET_UPDATE, 1);
+                continue;
             }
             if (!compileNode(e.get())) return false;
             emit(OP_SET_ADD, 1);
@@ -426,18 +447,24 @@ bool Compiler::compileTarget(ASTNode* target, TargetCtx ctx) {
         return true;
     }
     if (auto* tup = dynamic_cast<TupleLiteralNode*>(target)) {
-        if (ctx != TargetCtx::Store) return false;
-        emit(OP_UNPACK_SEQUENCE, static_cast<int>(tup->elements.size()));
+        if (ctx == TargetCtx::Store) {
+            emit(OP_UNPACK_SEQUENCE, static_cast<int>(tup->elements.size()));
+        } else if (ctx != TargetCtx::Delete) {
+            return false;
+        }
         for (auto& e : tup->elements) {
-            if (!compileTarget(e.get(), TargetCtx::Store)) return false;
+            if (!compileTarget(e.get(), ctx)) return false;
         }
         return true;
     }
     if (auto* lst = dynamic_cast<ListLiteralNode*>(target)) {
-        if (ctx != TargetCtx::Store) return false;
-        emit(OP_UNPACK_SEQUENCE, static_cast<int>(lst->elements.size()));
+        if (ctx == TargetCtx::Store) {
+            emit(OP_UNPACK_SEQUENCE, static_cast<int>(lst->elements.size()));
+        } else if (ctx != TargetCtx::Delete) {
+            return false;
+        }
         for (auto& e : lst->elements) {
-            if (!compileTarget(e.get(), TargetCtx::Store)) return false;
+            if (!compileTarget(e.get(), ctx)) return false;
         }
         return true;
     }
@@ -445,9 +472,32 @@ bool Compiler::compileTarget(ASTNode* target, TargetCtx ctx) {
 }
 
 bool Compiler::compileAssign(AssignNode* n) {
-    if (!n) return false;
+    if (!n || n->targets.empty()) return false;
     if (!compileNode(n->value.get())) return false;
-    return compileTarget(n->target.get(), TargetCtx::Store);
+    for (size_t i = 0; i < n->targets.size(); ++i) {
+        if (i + 1 < n->targets.size()) {
+            emit(OP_DUP_TOP, 0);
+        }
+        if (!compileTarget(n->targets[i].get(), TargetCtx::Store)) return false;
+    }
+    return true;
+}
+
+bool Compiler::compileNamedExpr(NamedExprNode* n) {
+    if (!n || !compileNode(n->value.get())) return false;
+    emit(OP_DUP_TOP, 0);
+    if (!compileTarget(n->target.get(), TargetCtx::Store)) return false;
+    return true;
+}
+
+bool Compiler::compileAnnAssign(AnnAssignNode* n) {
+    if (!n) return false;
+    if (n->value) {
+        if (!compileNode(n->value.get())) return false;
+        return compileTarget(n->target.get(), TargetCtx::Store);
+    }
+    // Just an annotation like x: int, nothing to do at runtime usually
+    return true;
 }
 
 bool Compiler::compileDeleteNode(DeleteNode* n) {
@@ -525,7 +575,9 @@ bool Compiler::compileFor(ForNode* n) {
     int afterLoop = bytecodeOffset();
     addPatch(argSlot, afterLoop);
     
-    // We don't have for-else in AST yet, but if we did, it would go here.
+    if (n->orelse) {
+        if (!compileNode(n->orelse.get())) return false;
+    }
     
     for (int patchIdx : loopStack_.back().breakPatches) {
         addPatch(patchIdx, bytecodeOffset());
@@ -1012,6 +1064,15 @@ bool Compiler::compileAugAssign(AugAssignNode* n) {
         case TokenType::MinusAssign: op = OP_INPLACE_SUBTRACT; break;
         case TokenType::StarAssign: op = OP_INPLACE_MULTIPLY; break;
         case TokenType::SlashAssign: op = OP_INPLACE_TRUE_DIVIDE; break;
+        case TokenType::ModuloAssign: op = OP_INPLACE_MODULO; break;
+        case TokenType::AndAssign: op = OP_INPLACE_AND; break;
+        case TokenType::OrAssign: op = OP_INPLACE_OR; break;
+        case TokenType::XorAssign: op = OP_INPLACE_XOR; break;
+        case TokenType::LShiftAssign: op = OP_INPLACE_LSHIFT; break;
+        case TokenType::RShiftAssign: op = OP_INPLACE_RSHIFT; break;
+        case TokenType::DoubleStarAssign: op = OP_INPLACE_POWER; break;
+        case TokenType::DoubleSlashAssign: op = OP_INPLACE_FLOOR_DIVIDE; break;
+        case TokenType::AtAssign: op = OP_INPLACE_MATRIX_MULTIPLY; break;
         default: return false;
     }
     emit(op, 0);
@@ -1048,7 +1109,7 @@ static void collectNonlocalsFromNode(ASTNode* node, std::unordered_set<std::stri
         return;
     }
     if (auto* a = dynamic_cast<AssignNode*>(node)) {
-        collectNonlocalsFromNode(a->target.get(), out);
+        for (auto& t : a->targets) collectNonlocalsFromNode(t.get(), out);
         collectNonlocalsFromNode(a->value.get(), out);
         return;
     }
@@ -1093,7 +1154,7 @@ static void collectGlobalsFromNode(ASTNode* node, std::unordered_set<std::string
         return;
     }
     if (auto* a = dynamic_cast<AssignNode*>(node)) {
-        collectGlobalsFromNode(a->target.get(), globalsOut);
+        for (auto& t : a->targets) collectGlobalsFromNode(t.get(), globalsOut);
         collectGlobalsFromNode(a->value.get(), globalsOut);
         return;
     }
@@ -1222,7 +1283,7 @@ static void collectUsedNames(ASTNode* node, std::unordered_set<std::string>& out
         return;
     }
     if (auto* a = dynamic_cast<AssignNode*>(node)) {
-        collectUsedNames(a->target.get(), out);
+        for (auto& t : a->targets) collectUsedNames(t.get(), out);
         collectUsedNames(a->value.get(), out);
         return;
     }
@@ -1326,7 +1387,7 @@ static void collectUsedNames(ASTNode* node, std::unordered_set<std::string>& out
 static void collectDefinedNames(ASTNode* node, std::unordered_set<std::string>& out) {
     if (!node) return;
     if (auto* a = dynamic_cast<AssignNode*>(node)) {
-        collectDefinedNames(a->target.get(), out);
+        for (auto& t : a->targets) collectDefinedNames(t.get(), out);
         return;
     }
     if (auto* s = dynamic_cast<SuiteNode*>(node)) {
@@ -1511,7 +1572,8 @@ void Compiler::collectCapturedNames(ASTNode* node,
 }
 
 bool Compiler::compileSuite(SuiteNode* n) {
-    if (!n || n->statements.empty()) return false;
+    if (!n) return false;
+    if (n->statements.empty()) return true;
     for (size_t i = 0; i < n->statements.size(); ++i) {
         if (!compileNode(n->statements[i].get())) return false;
         if (statementLeavesValue(n->statements[i].get()))
@@ -1585,15 +1647,29 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
     
     bodyCompiler.applyPatches();
 
-    const proto::ProtoList* co_varnames = ctx_->newList();
-    for (const auto& name : varnamesOrdered)
-        co_varnames = co_varnames->appendLast(ctx_, ctx_->fromUTF8String(name.c_str()));
-        
     int co_flags = 0;
     if (!n->vararg.empty()) co_flags |= CO_VARARGS;
     if (!n->kwarg.empty()) co_flags |= CO_VARKEYWORDS;
     
-    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), ctx_->fromUTF8String(filename_.c_str())->asString(ctx_), co_varnames, nparams, automatic_count, co_flags, bodyCompiler.isGenerator_, ctx_->fromUTF8String(n->name.c_str())->asString(ctx_));
+    int kwonlyargcount = static_cast<int>(n->kwonlyargs.size());
+    // Append kwonlyargs to varnames
+    for (const auto& kw : n->kwonlyargs) {
+        bool alreadyIn = false;
+        for (const auto& v : varnamesOrdered) if (v == kw) alreadyIn = true;
+        if (!alreadyIn) varnamesOrdered.push_back(kw);
+    }
+    // Update slotMap for kwonlyargs if needed
+    if (!forceMapped) {
+        for (size_t i = 0; i < varnamesOrdered.size(); ++i) {
+            slotMap[varnamesOrdered[i]] = static_cast<int>(i);
+        }
+    }
+
+    const proto::ProtoList* co_varnames_list = ctx_->newList();
+    for (const auto& name : varnamesOrdered)
+        co_varnames_list = co_varnames_list->appendLast(ctx_, ctx_->fromUTF8String(name.c_str()));
+
+    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), ctx_->fromUTF8String(filename_.c_str())->asString(ctx_), co_varnames_list, nparams, kwonlyargcount, automatic_count, co_flags, bodyCompiler.isGenerator_, ctx_->fromUTF8String(n->name.c_str())->asString(ctx_));
     if (!codeObj) return false;
     int idx = addConstant(codeObj);
     emit(OP_LOAD_CONST, idx);
@@ -1787,18 +1863,25 @@ bool Compiler::compileAsyncFor(AsyncForNode* n) {
 
     // If matches StopAsyncIteration:
     emit(OP_POP_TOP); // pop exception
-    emit(OP_POP_TOP); // pop internal aiter
+    emit(OP_POP_TOP); // pop value
+    emit(OP_POP_TOP); // pop traceback
+    emit(OP_POP_EXCEPT);
     
     int endJumpSlot = bytecodeOffset();
-    emit(OP_JUMP_ABSOLUTE, 0);
+    emit(OP_JUMP_FORWARD, 0);
+    
+    // If NOT StopAsyncIteration
+    int notStopAsyncSlot = bytecodeOffset();
+    addPatch(popJumpSlot + 1, notStopAsyncSlot);
+    emit(OP_RERAISE, 0);
 
-    // If NOT matches:
-    int reraiseTarget = bytecodeOffset();
-    addPatch(popJumpSlot + 1, reraiseTarget);
-    emit(OP_RAISE_VARARGS, 1);
+    // After loop (normal termination)
+    int afterLoop = bytecodeOffset();
+    addPatch(endJumpSlot + 1, afterLoop);
 
-    int endTarget = bytecodeOffset();
-    addPatch(endJumpSlot + 1, endTarget);
+    if (n->orelse) {
+        if (!compileNode(n->orelse.get())) return false;
+    }
 
     return true;
 }
@@ -1937,53 +2020,61 @@ bool Compiler::compileCondExpr(CondExprNode* n) {
 
 bool Compiler::compileNode(ASTNode* node) {
     if (!node) return false;
-    if (dynamic_cast<PassNode*>(node)) return true;
-    if (auto* fn = dynamic_cast<FunctionDefNode*>(node)) return compileFunctionDef(fn);
-    if (auto* afn = dynamic_cast<AsyncFunctionDefNode*>(node)) return compileAsyncFunctionDef(afn);
-    if (auto* aw = dynamic_cast<AwaitNode*>(node)) return compileAwait(aw);
-    if (auto* afor = dynamic_cast<AsyncForNode*>(node)) return compileAsyncFor(afor);
-    if (auto* awith = dynamic_cast<AsyncWithNode*>(node)) return compileAsyncWith(awith);
-    if (auto* cl = dynamic_cast<ClassDefNode*>(node)) return compileClassDef(cl);
-    if (auto* ce = dynamic_cast<CondExprNode*>(node)) return compileCondExpr(ce);
-    if (auto* c = dynamic_cast<ConstantNode*>(node)) return compileConstant(c);
-    if (auto* nm = dynamic_cast<NameNode*>(node)) return compileName(nm);
-    if (auto* b = dynamic_cast<BinOpNode*>(node)) return compileBinOp(b);
-    if (auto* u = dynamic_cast<UnaryOpNode*>(node)) return compileUnaryOp(u);
-    if (auto* cl = dynamic_cast<CallNode*>(node)) return compileCall(cl);
-    if (auto* att = dynamic_cast<AttributeNode*>(node)) return compileAttribute(att);
-    if (auto* sub = dynamic_cast<SubscriptNode*>(node)) return compileSubscript(sub);
-    if (auto* sl = dynamic_cast<SliceNode*>(node)) return compileSlice(sl);
-    if (auto* lst = dynamic_cast<ListLiteralNode*>(node)) return compileListLiteral(lst);
-    if (auto* d = dynamic_cast<DictLiteralNode*>(node)) return compileDictLiteral(d);
-    if (auto* tup = dynamic_cast<TupleLiteralNode*>(node)) return compileTupleLiteral(tup);
-    if (auto* set = dynamic_cast<SetLiteralNode*>(node)) return compileSetLiteral(set);
-    if (auto* a = dynamic_cast<AssignNode*>(node)) return compileAssign(a);
-    if (auto* aa = dynamic_cast<AugAssignNode*>(node)) return compileAugAssign(aa);
-    if (auto* an = dynamic_cast<AssertNode*>(node)) return compileAssert(an);
-    if (auto* lc = dynamic_cast<ListCompNode*>(node)) return compileListComp(lc);
-    if (auto* dc = dynamic_cast<DictCompNode*>(node)) return compileDictComp(dc);
-    if (auto* sc = dynamic_cast<SetCompNode*>(node)) return compileSetComp(sc);
-    if (auto* ge = dynamic_cast<GeneratorExpNode*>(node)) return compileGeneratorExp(ge);
-    if (auto* lam = dynamic_cast<LambdaNode*>(node)) return compileLambda(lam);
-    if (auto* js = dynamic_cast<JoinedStrNode*>(node)) return compileJoinedStr(js);
-    if (auto* fv = dynamic_cast<FormattedValueNode*>(node)) return compileFormattedValue(fv);
-    if (auto* d = dynamic_cast<DeleteNode*>(node)) return compileDeleteNode(d);
-    if (auto* w = dynamic_cast<WhileNode*>(node)) return compileWhile(w);
-    if (auto* f = dynamic_cast<ForNode*>(node)) return compileFor(f);
-    if (dynamic_cast<BreakNode*>(node)) return compileBreak(static_cast<BreakNode*>(node));
-    if (dynamic_cast<ContinueNode*>(node)) return compileContinue(static_cast<ContinueNode*>(node));
-    if (auto* iff = dynamic_cast<IfNode*>(node)) return compileIf(iff);
-    if (auto* g = dynamic_cast<GlobalNode*>(node)) return compileGlobal(g);
-    if (auto* nl = dynamic_cast<NonlocalNode*>(node)) return compileNonlocal(nl);
-    if (auto* r = dynamic_cast<ReturnNode*>(node)) return compileReturn(r);
-    if (auto* y = dynamic_cast<YieldNode*>(node)) return compileYield(y);
-    if (auto* imp = dynamic_cast<ImportNode*>(node)) return compileImport(imp);
-    if (auto* imf = dynamic_cast<ImportFromNode*>(node)) return compileImportFrom(imf);
-    if (auto* t = dynamic_cast<TryNode*>(node)) return compileTry(t);
-    if (auto* r = dynamic_cast<RaiseNode*>(node)) return compileRaise(r);
-    if (auto* w = dynamic_cast<WithNode*>(node)) return compileWith(w);
-    if (auto* s = dynamic_cast<SuiteNode*>(node)) return compileSuite(s);
-    return false;
+    bool result = false;
+    if (dynamic_cast<PassNode*>(node)) result = true;
+    else if (auto* fn = dynamic_cast<FunctionDefNode*>(node)) result = compileFunctionDef(fn);
+    else if (auto* afn = dynamic_cast<AsyncFunctionDefNode*>(node)) result = compileAsyncFunctionDef(afn);
+    else if (auto* aw = dynamic_cast<AwaitNode*>(node)) result = compileAwait(aw);
+    else if (auto* afor = dynamic_cast<AsyncForNode*>(node)) result = compileAsyncFor(afor);
+    else if (auto* awith = dynamic_cast<AsyncWithNode*>(node)) result = compileAsyncWith(awith);
+    else if (auto* cl = dynamic_cast<ClassDefNode*>(node)) result = compileClassDef(cl);
+    else if (auto* ce = dynamic_cast<CondExprNode*>(node)) result = compileCondExpr(ce);
+    else if (auto* c = dynamic_cast<ConstantNode*>(node)) result = compileConstant(c);
+    else if (auto* nm = dynamic_cast<NameNode*>(node)) result = compileName(nm);
+    else if (auto* b = dynamic_cast<BinOpNode*>(node)) result = compileBinOp(b);
+    else if (auto* u = dynamic_cast<UnaryOpNode*>(node)) result = compileUnaryOp(u);
+    else if (auto* cl = dynamic_cast<CallNode*>(node)) result = compileCall(cl);
+    else if (auto* sn = dynamic_cast<StarredNode*>(node)) result = compileStarred(sn);
+    else if (auto* att = dynamic_cast<AttributeNode*>(node)) result = compileAttribute(att);
+    else if (auto* sub = dynamic_cast<SubscriptNode*>(node)) result = compileSubscript(sub);
+    else if (auto* sl = dynamic_cast<SliceNode*>(node)) result = compileSlice(sl);
+    else if (auto* lst = dynamic_cast<ListLiteralNode*>(node)) result = compileListLiteral(lst);
+    else if (auto* d = dynamic_cast<DictLiteralNode*>(node)) result = compileDictLiteral(d);
+    else if (auto* tup = dynamic_cast<TupleLiteralNode*>(node)) result = compileTupleLiteral(tup);
+    else if (auto* set = dynamic_cast<SetLiteralNode*>(node)) result = compileSetLiteral(set);
+    else if (auto* a = dynamic_cast<AssignNode*>(node)) result = compileAssign(a);
+    else if (auto* aa = dynamic_cast<AnnAssignNode*>(node)) result = compileAnnAssign(aa);
+    else if (auto* aa = dynamic_cast<AugAssignNode*>(node)) result = compileAugAssign(aa);
+    else if (auto* an = dynamic_cast<AssertNode*>(node)) result = compileAssert(an);
+    else if (auto* lc = dynamic_cast<ListCompNode*>(node)) result = compileListComp(lc);
+    else if (auto* dc = dynamic_cast<DictCompNode*>(node)) result = compileDictComp(dc);
+    else if (auto* sc = dynamic_cast<SetCompNode*>(node)) result = compileSetComp(sc);
+    else if (auto* ge = dynamic_cast<GeneratorExpNode*>(node)) result = compileGeneratorExp(ge);
+    else if (auto* lam = dynamic_cast<LambdaNode*>(node)) result = compileLambda(lam);
+    else if (auto* js = dynamic_cast<JoinedStrNode*>(node)) result = compileJoinedStr(js);
+    else if (auto* fv = dynamic_cast<FormattedValueNode*>(node)) result = compileFormattedValue(fv);
+    else if (auto* d = dynamic_cast<DeleteNode*>(node)) result = compileDeleteNode(d);
+    else if (auto* w = dynamic_cast<WhileNode*>(node)) result = compileWhile(w);
+    else if (auto* f = dynamic_cast<ForNode*>(node)) result = compileFor(f);
+    else if (auto* b = dynamic_cast<BreakNode*>(node)) result = compileBreak(b);
+    else if (auto* c = dynamic_cast<ContinueNode*>(node)) result = compileContinue(c);
+    else if (auto* iff = dynamic_cast<IfNode*>(node)) result = compileIf(iff);
+    else if (auto* g = dynamic_cast<GlobalNode*>(node)) result = compileGlobal(g);
+    else if (auto* nl = dynamic_cast<NonlocalNode*>(node)) result = compileNonlocal(nl);
+    else if (auto* r = dynamic_cast<ReturnNode*>(node)) result = compileReturn(r);
+    else if (auto* y = dynamic_cast<YieldNode*>(node)) result = compileYield(y);
+    else if (auto* imp = dynamic_cast<ImportNode*>(node)) result = compileImport(imp);
+    else if (auto* imf = dynamic_cast<ImportFromNode*>(node)) result = compileImportFrom(imf);
+    else if (auto* t = dynamic_cast<TryNode*>(node)) result = compileTry(t);
+    else if (auto* r = dynamic_cast<RaiseNode*>(node)) result = compileRaise(r);
+    else if (auto* w = dynamic_cast<WithNode*>(node)) result = compileWith(w);
+    else if (auto* s = dynamic_cast<SuiteNode*>(node)) result = compileSuite(s);
+    else if (auto* ne = dynamic_cast<NamedExprNode*>(node)) result = compileNamedExpr(ne);
+
+    if (!result) {
+        std::cerr << "Compiler::compileNode FAILED for node type " << typeid(*node).name() << " at line " << node->line << "\n";
+    }
+    return result;
 }
 
 bool Compiler::compileExpression(ASTNode* expr) {
@@ -2018,6 +2109,7 @@ const proto::ProtoObject* makeCodeObject(proto::ProtoContext* ctx,
     const proto::ProtoString* filename,
     const proto::ProtoList* varnames,
     int nparams,
+    int kwonlyargcount,
     int automatic_count,
     int flags,
     bool isGenerator,
@@ -2031,6 +2123,7 @@ const proto::ProtoObject* makeCodeObject(proto::ProtoContext* ctx,
     code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_filename"), filename ? reinterpret_cast<const proto::ProtoObject*>(filename) : reinterpret_cast<const proto::ProtoObject*>(ctx->fromUTF8String("<stdin>")));
     code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_varnames"), varnames ? reinterpret_cast<const proto::ProtoObject*>(varnames) : reinterpret_cast<const proto::ProtoObject*>(ctx->newList()));
     code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_nparams"), ctx->fromInteger(nparams));
+    code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_kwonlyargcount"), ctx->fromInteger(kwonlyargcount));
     code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_automatic_count"), ctx->fromInteger(automatic_count + PYTHON_STACK_BUFFER));
     code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_flags"), ctx->fromInteger(flags));
     bool isGenOrCoro = isGenerator || (flags & 0x80);
@@ -2062,8 +2155,15 @@ const proto::ProtoObject* runCodeObject(proto::ProtoContext* ctx,
     const proto::ProtoObject* co_code = codeObj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_code"));
     const proto::ProtoObject* co_varnames = codeObj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_varnames"));
 
-    if (!co_consts || !co_consts->asList(ctx) || !co_code || !co_code->asList(ctx))
+    if (!co_consts || !co_consts->asList(ctx) || !co_code || !co_code->asList(ctx)) {
+        if (std::getenv("PROTO_ENV_DIAG")) {
+            std::cerr << "[proto-diag] runCodeObject: co_consts or co_code missing or not a list\n" << std::flush;
+        }
         return PROTO_NONE;
+    }
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        std::cerr << "[proto-diag] runCodeObject: bytecode size=" << co_code->asList(ctx)->getSize(ctx) << "\n" << std::flush;
+    }
 
     const proto::ProtoObject* co_automatic_obj = codeObj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_automatic_count"));
     int automatic_count = (co_automatic_obj && co_automatic_obj->isInteger(ctx)) ? static_cast<int>(co_automatic_obj->asLong(ctx)) : 0;
