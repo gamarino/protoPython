@@ -90,7 +90,8 @@ private:
     bool compileAwait(AwaitNode* n);
     bool compileAsyncFor(AsyncForNode* n);
     bool compileAsyncWith(AsyncWithNode* n);
-    bool compileCondExpr(CondExprNode* n);
+    bool compileCondExpr(ConditionalExprNode* n);
+    bool compileTypeAlias(TypeAliasNode* n);
     bool compileComprehension(const std::vector<Comprehension>& generators, size_t index, std::function<bool()> innerBody);
     bool compileWithItems(const std::vector<WithItem>& items, size_t index, ASTNode* body);
     bool compileSuite(SuiteNode* n);
