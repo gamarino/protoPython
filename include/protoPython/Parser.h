@@ -5,6 +5,7 @@
 #include <memory>
 #include <vector>
 #include <string>
+#include <map>
 
 namespace protoPython {
 
@@ -43,12 +44,14 @@ struct CondExprNode : ASTNode {
     std::unique_ptr<ASTNode> orelse;
 };
 
+struct StarredNode : ASTNode {
+    std::unique_ptr<ASTNode> value;
+};
+
 struct CallNode : ASTNode {
     std::unique_ptr<ASTNode> func;
-    std::vector<std::unique_ptr<ASTNode>> args;
-    std::vector<std::pair<std::string, std::unique_ptr<ASTNode>>> keywords;
-    std::unique_ptr<ASTNode> star_args;
-    std::unique_ptr<ASTNode> kw_args;
+    std::vector<std::unique_ptr<ASTNode>> args; // can contain StarredNode
+    std::vector<std::pair<std::string, std::unique_ptr<ASTNode>>> keywords; // "" name for **kwargs
 };
 
 /** Attribute access: expr.attr (load or store context). */
@@ -103,6 +106,12 @@ struct JoinedStrNode : ASTNode {
     std::vector<std::unique_ptr<ASTNode>> values;
 };
 
+/** target := value (PEP 572). */
+struct NamedExprNode : ASTNode {
+    std::unique_ptr<ASTNode> target;
+    std::unique_ptr<ASTNode> value;
+};
+
 struct Comprehension {
     std::unique_ptr<ASTNode> target;
     std::unique_ptr<ASTNode> iter;
@@ -136,8 +145,15 @@ struct GeneratorExpNode : ASTNode {
 
 /** Assignment: target = expr. Target is Name, Attribute, or Subscript. */
 struct AssignNode : ASTNode {
-    std::unique_ptr<ASTNode> target;
+    std::vector<std::unique_ptr<ASTNode>> targets;
     std::unique_ptr<ASTNode> value;
+};
+
+/** Annotated assignment: target: annotation [= value]. */
+struct AnnAssignNode : ASTNode {
+    std::unique_ptr<ASTNode> target;
+    std::unique_ptr<ASTNode> annotation;
+    std::unique_ptr<ASTNode> value; /* optional */
 };
 
 /** Augmented assignment: target += expr. */
@@ -152,6 +168,7 @@ struct ForNode : ASTNode {
     std::unique_ptr<ASTNode> target;  /* NameNode or TupleLiteralNode for unpacking */
     std::unique_ptr<ASTNode> iter;
     std::unique_ptr<ASTNode> body;
+    std::unique_ptr<ASTNode> orelse;  /* optional */
 };
 
 /** if test: body else: orelse (single statement each). */
@@ -175,19 +192,31 @@ struct GlobalNode : ASTNode {
 
 struct FunctionDefNode : ASTNode {
     std::string name;
-    std::vector<std::string> parameters;
+    std::vector<std::string> parameters; // positional (can include pos-only)
+    std::vector<std::string> kwonlyargs;
+    std::vector<std::unique_ptr<ASTNode>> defaults;
+    std::vector<std::unique_ptr<ASTNode>> kw_defaults;
     std::unique_ptr<ASTNode> body;
     std::vector<std::unique_ptr<ASTNode>> decorator_list;
     std::string vararg;
     std::string kwarg;
+    int posonlyargcount = 0;
+    std::unique_ptr<ASTNode> returns;
+    std::map<std::string, std::unique_ptr<ASTNode>> parameter_annotations;
 };
 
 /** lambda params: body. */
 struct LambdaNode : ASTNode {
     std::vector<std::string> parameters;
+    std::vector<std::string> kwonlyargs;
+    std::vector<std::unique_ptr<ASTNode>> defaults;
+    std::vector<std::unique_ptr<ASTNode>> kw_defaults;
     std::unique_ptr<ASTNode> body;
     std::string vararg;
     std::string kwarg;
+    int posonlyargcount = 0;
+    std::unique_ptr<ASTNode> returns;
+    std::map<std::string, std::unique_ptr<ASTNode>> parameter_annotations;
 };
 
 /** return expr. */
@@ -205,6 +234,7 @@ struct YieldNode : ASTNode {
 struct ClassDefNode : ASTNode {
     std::string name;
     std::vector<std::unique_ptr<ASTNode>> bases;
+    std::vector<std::pair<std::string, std::unique_ptr<ASTNode>>> keywords;
     std::unique_ptr<ASTNode> body;
     std::vector<std::unique_ptr<ASTNode>> decorator_list;
 };
@@ -216,12 +246,18 @@ struct AwaitNode : ASTNode {
 
 /** async def name(params): body. */
 struct AsyncFunctionDefNode : ASTNode {
-        std::string name;
-        std::vector<std::string> parameters;
-        std::unique_ptr<ASTNode> body;
-        std::vector<std::unique_ptr<ASTNode>> decorator_list;
-        std::string vararg;
-        std::string kwarg;
+    std::string name;
+    std::vector<std::string> parameters;
+    std::vector<std::string> kwonlyargs;
+    std::vector<std::unique_ptr<ASTNode>> defaults;
+    std::vector<std::unique_ptr<ASTNode>> kw_defaults;
+    std::unique_ptr<ASTNode> body;
+    std::vector<std::unique_ptr<ASTNode>> decorator_list;
+    std::string vararg;
+    std::string kwarg;
+    int posonlyargcount = 0;
+    std::unique_ptr<ASTNode> returns;
+    std::map<std::string, std::unique_ptr<ASTNode>> parameter_annotations;
 };
 
 /** async for target in iter: body else: orelse. */
@@ -229,7 +265,7 @@ struct AsyncForNode : ASTNode {
     std::unique_ptr<ASTNode> target;
     std::unique_ptr<ASTNode> iter;
     std::unique_ptr<ASTNode> body;
-    std::unique_ptr<ASTNode> orelse;
+    std::unique_ptr<ASTNode> orelse; /* optional */
 };
 
 
@@ -252,6 +288,7 @@ struct ExceptHandler {
     std::unique_ptr<ASTNode> type;
     std::string name;
     std::unique_ptr<ASTNode> body;
+    bool isStar = false;
 };
 
 /** try: body except ... [finally: finalbody]. */
@@ -323,12 +360,8 @@ public:
     explicit Parser(const std::string& source);
     std::unique_ptr<ModuleNode> parseModule();
     std::unique_ptr<ASTNode> parseExpression();
-    std::unique_ptr<ASTNode> parseYieldExpression();
-    std::unique_ptr<ASTNode> parseGlobal();
-    std::unique_ptr<ASTNode> parseNonlocal();
-    std::unique_ptr<ASTNode> parseReturn();
-    std::unique_ptr<ASTNode> parseLambda();
-    std::unique_ptr<ASTNode> parseFString();
+    std::unique_ptr<ASTNode> parseTestList();
+    bool isCompound(TokenType t);
 
     bool hasError() const { return hasError_; }
     const std::string& getLastErrorMsg() const { return lastErrorMsg_; }
@@ -358,13 +391,38 @@ private:
     bool expect(TokenType t);
     void skipNewlines();
     void skipTrash();
+    bool parseParameters(FunctionDefNode* fn);
+    std::unique_ptr<ASTNode> parseYieldExpression();
+    std::unique_ptr<ASTNode> parseGlobal();
+    std::unique_ptr<ASTNode> parseNonlocal();
+    std::unique_ptr<ASTNode> parseReturn();
+    std::unique_ptr<ASTNode> parseRaise();
+    std::unique_ptr<ASTNode> parseWith();
+    std::unique_ptr<ASTNode> parseTry();
+    std::unique_ptr<ASTNode> parseIf();
+    std::unique_ptr<ASTNode> parseWhile();
+    std::unique_ptr<ASTNode> parseFor();
+    std::unique_ptr<ASTNode> parseImport();
+    std::unique_ptr<ASTNode> parseImportFrom();
+    std::unique_ptr<ASTNode> parseAssert();
+    std::unique_ptr<ASTNode> parseDelete();
+    std::unique_ptr<ASTNode> parseFunctionDef();
+    std::unique_ptr<ASTNode> parseClassDef();
+    std::unique_ptr<ASTNode> parseAsync();
+    std::unique_ptr<ASTNode> parseLambda();
+    std::unique_ptr<ASTNode> parseFString();
     std::unique_ptr<ASTNode> parseOrExpr();
     std::unique_ptr<ASTNode> parseAndExpr();
     std::unique_ptr<ASTNode> parseNotExpr();
     std::unique_ptr<ASTNode> parseCompareExpr();
+    std::unique_ptr<ASTNode> parseBitOr();
+    std::unique_ptr<ASTNode> parseBitXor();
+    std::unique_ptr<ASTNode> parseBitAnd();
+    std::unique_ptr<ASTNode> parseShiftExpr();
     std::unique_ptr<ASTNode> parseAddExpr();
     std::unique_ptr<ASTNode> parseMulExpr();
     std::unique_ptr<ASTNode> parseUnary();
+    std::unique_ptr<ASTNode> parsePower();
     std::unique_ptr<ASTNode> parsePrimary();
     std::unique_ptr<ASTNode> parseAtom();
     std::unique_ptr<ASTNode> parseSubscript();
@@ -372,6 +430,7 @@ private:
     std::unique_ptr<ASTNode> parseStatement();
     /** Suite: after ':', either Newline+Indent+statements+Dedent or single statement. */
     std::unique_ptr<ASTNode> parseSuite();
+    std::vector<Comprehension> parseComprehensions();
     /** Target list: e.g. x, y (for loops, comprehensions). Returns TupleLiteralNode if more than one. */
     std::unique_ptr<ASTNode> parseTargetList();
 };

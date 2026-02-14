@@ -1052,11 +1052,23 @@ bool Compiler::compileWithItems(const std::vector<WithItem>& items, size_t index
 
 bool Compiler::compileAugAssign(AugAssignNode* n) {
     if (!n || !n->target) return false;
-    // Load old value
-    if (!compileNode(n->target.get())) return false;
+
+    if (auto* sub = dynamic_cast<SubscriptNode*>(n->target.get())) {
+        // 1. Compile value (base) and index
+        if (!compileNode(sub->value.get())) return false;
+        if (!compileNode(sub->index.get())) return false;
+        // 2. Duplicate them for later storage
+        emit(OP_DUP_TOP_TWO, 0);
+        // 3. Load currently stored value
+        emit(OP_BINARY_SUBSCR, 0);
+    } else {
+        // Load old value
+        if (!compileNode(n->target.get())) return false;
+    }
+
     // Load value to add/sub/...
     if (!compileNode(n->value.get())) return false;
-    
+
     // Perform operation
     int op = OP_INPLACE_ADD;
     switch (n->op) {
@@ -1076,7 +1088,7 @@ bool Compiler::compileAugAssign(AugAssignNode* n) {
         default: return false;
     }
     emit(op, 0);
-    
+
     // Store back
     if (auto* name = dynamic_cast<NameNode*>(n->target.get())) {
         return emitNameOp(name->id, TargetCtx::Store);
@@ -1084,6 +1096,9 @@ bool Compiler::compileAugAssign(AugAssignNode* n) {
         if (!compileNode(att->value.get())) return false;
         int nameIdx = addName(att->attr);
         emit(OP_STORE_ATTR, nameIdx);
+        return true;
+    } else if (auto* sub = dynamic_cast<SubscriptNode*>(n->target.get())) {
+        emit(OP_STORE_SUBSCR, 0);
         return true;
     }
     // TODO: support subscript aug assign
@@ -1976,6 +1991,18 @@ bool Compiler::compileClassDef(ClassDefNode* n) {
         if (!compileNode(b.get())) return false;
     }
     emit(OP_BUILD_TUPLE, static_cast<int>(n->bases.size()));
+    
+    // 2.5 Keywords
+    if (!n->keywords.empty()) {
+        for (auto& kw : n->keywords) {
+            int kIdx = addConstant(proto::ProtoString::fromUTF8String(ctx_, kw.first.c_str())->asObject(ctx_));
+            emit(OP_LOAD_CONST, kIdx);
+            if (!compileNode(kw.second.get())) return false;
+        }
+        emit(OP_BUILD_MAP, static_cast<int>(n->keywords.size()));
+    } else {
+        emit(OP_LOAD_CONST, addConstant(PROTO_NONE));
+    }
     
     // 3. Body
     Compiler bodyCompiler(ctx_, filename_);

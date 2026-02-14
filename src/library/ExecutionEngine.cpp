@@ -2418,8 +2418,10 @@ const proto::ProtoObject* executeBytecodeRange(
             }
         } else if (op == OP_BUILD_CLASS) {
             // No argument for BUILD_CLASS
-            if (stack.size() >= 3 && frame) {
+            if (stack.size() >= 4 && frame) {
                 const proto::ProtoObject* body = stack.back();
+                stack.pop_back();
+                const proto::ProtoObject* kwds = stack.back();
                 stack.pop_back();
                 const proto::ProtoObject* bases = stack.back();
                 stack.pop_back();
@@ -2452,12 +2454,19 @@ const proto::ProtoObject* executeBytecodeRange(
                 }
                 
                 // Create class object (prototype)
+                const proto::ProtoObject* metaclass = nullptr;
+                if (kwds && kwds != PROTO_NONE) {
+                    metaclass = kwds->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "metaclass"));
+                }
+
                 proto::ProtoObject* targetClass = const_cast<proto::ProtoObject*>(ctx->newObject(true));
                 if (env && env->getObjectPrototype()) {
                     targetClass = const_cast<proto::ProtoObject*>(targetClass->addParent(ctx, env->getObjectPrototype()));
                 }
-                if (env && env->getTypePrototype()) {
-                    targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(ctx, env->getClassString(), env->getTypePrototype()));
+                
+                const proto::ProtoObject* class_cell = (metaclass && metaclass != PROTO_NONE) ? metaclass : (env ? env->getTypePrototype() : nullptr);
+                if (class_cell) {
+                    targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(ctx, env ? env->getClassString() : proto::ProtoString::fromUTF8String(ctx, "__class__"), class_cell));
                 }
                 // Step V75: Explicitly set __name__ on the class object
                 targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(ctx, nameS, name));
