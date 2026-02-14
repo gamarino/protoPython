@@ -215,7 +215,9 @@ static const proto::ProtoObject* py_len(
     
     // Fallback: count attributes (for objects acting as dicts)
     const proto::ProtoSparseList* attrs = obj->getAttributes(context);
-    if (get_env_diag()) std::cerr << "[proto-builtins] py_len fallback for obj=" << obj << " attrs=" << attrs << " size=" << (attrs ? attrs->getSize(context) : -1) << "\n" << std::flush;
+    // py_len fallback diagnostic removed
+    if (get_env_diag()) {
+    }
     if (attrs) return context->fromInteger(attrs->getSize(context));
 
     return context->fromInteger(0);
@@ -231,7 +233,6 @@ static const proto::ProtoObject* py_print(
     (void)keywordParameters;
     std::string sep = " ";
     std::string end = "\n";
-    if (get_env_diag()) std::cerr << "[proto-builtins] py_print called size=" << positionalParameters->getSize(context) << "\n" << std::flush;
 
     ::protoPython::PythonEnvironment* env = ::protoPython::PythonEnvironment::fromContext(context);
     const proto::ProtoString* strS = env ? env->getStrString() : proto::ProtoString::fromUTF8String(context, "__str__");
@@ -242,11 +243,6 @@ static const proto::ProtoObject* py_print(
         const proto::ProtoObject* obj = positionalParameters->getAt(context, static_cast<int>(i));
 
         const proto::ProtoObject* strObj = PROTO_NONE;
-        if (std::getenv("PROTO_ENV_DIAG")) {
-            proto::ProtoObjectPointer pa{};
-            pa.oid = obj;
-            std::cerr << "[py_print] obj=" << obj << " tag=" << pa.op.pointer_tag << " type=" << pa.op.embedded_type << " isInt=" << (obj?obj->isInteger(context):0) << "\n";
-        }
         if (!obj || obj == PROTO_NONE || (env && obj == env->getNonePrototype())) {
             strObj = context->fromUTF8String("None");
         } else if (obj->isInteger(context)) {
@@ -1220,14 +1216,8 @@ static const proto::ProtoObject* py_exec(
     if (!mod || mod->body.empty()) {
         return PROTO_NONE;
     }
-    if (std::getenv("PROTO_THREAD_DIAG")) {
-        size_t n = mod->body.size();
-        std::cerr << "[proto-thread-diag] exec: parsed " << n << " statements\n" << std::flush;
-    }
     Compiler compiler(context, "<string>");
     if (!compiler.compileModule(mod.get())) {
-        if (std::getenv("PROTO_THREAD_DIAG"))
-            std::cerr << "[proto-thread-diag] exec: compileModule failed\n" << std::flush;
         return PROTO_NONE;
     }
     const proto::ProtoObject* codeObj = makeCodeObject(context, compiler.getConstants(), compiler.getNames(), compiler.getBytecode(), nullptr, nullptr, 0, 0, 0, false);
@@ -1269,7 +1259,6 @@ static const proto::ProtoObject* py_breakpoint(
             return hook->asMethod(context)(context, sys, nullptr, env->getEmptyList(), nullptr);
         }
     }
-    std::cerr << "[proto-runtime] breakpoint() reached but sys.breakpointhook not found.\n" << std::flush;
     return PROTO_NONE;
 }
 
@@ -2371,6 +2360,9 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__name__"), ctx->fromUTF8String("builtins"));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__package__"), ctx->fromUTF8String(""));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "open"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_open));
+    // print registration diagnostic removed
+    if (std::getenv("PROTO_ENV_DIAG")) {
+    }
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "print"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_print));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "dir"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_dir));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "id"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_id));

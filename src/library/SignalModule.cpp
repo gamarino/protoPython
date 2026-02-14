@@ -20,7 +20,7 @@ static void global_signal_handler(int sig) {
         // For protoPython, we'll try to invoke it if we have a context, but this is DANGEROUS.
         // Better: just log that it happened for now until we have a proper signal delivery flag.
         if (std::getenv("PROTO_SIGNAL_DIAG")) {
-            std::cerr << "[proto-signal] Signal " << sig << " received.\n" << std::flush;
+            // log removed
         }
     }
 }

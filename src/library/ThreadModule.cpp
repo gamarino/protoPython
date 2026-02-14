@@ -181,20 +181,7 @@ static const proto::ProtoObject* py_rlock_locked(
 static std::atomic<int> s_bootstrapTidCount{0};
 static std::atomic<bool> s_bootstrapFirstLogged{false};
 static std::once_flag s_bootstrapDiagOnce;
-static void diagPrintBootstrapTids() {
-    int n = s_bootstrapTidCount.load(std::memory_order_relaxed);
-    if (n > 0)
-        std::cerr << "[proto-thread-diag] thread_bootstrap distinct_os_threads=" << n << std::endl;
-}
 static void diagBootstrapTid() {
-    if (!std::getenv("PROTO_THREAD_DIAG")) return;
-    std::call_once(s_bootstrapDiagOnce, []{ std::atexit(diagPrintBootstrapTids); });
-    static thread_local bool s_counted = false;
-    if (s_counted) return;
-    s_counted = true;
-    s_bootstrapTidCount.fetch_add(1, std::memory_order_relaxed);
-    if (!s_bootstrapFirstLogged.exchange(true, std::memory_order_relaxed))
-        std::cerr << "[proto-thread-diag] first thread_bootstrap tid=" << current_thread_id() << std::endl;
 }
 
 static const proto::ProtoObject* thread_bootstrap(
@@ -203,7 +190,6 @@ static const proto::ProtoObject* thread_bootstrap(
     const proto::ParentLink* /*parentLink*/,
     const proto::ProtoList* args,
     const proto::ProtoSparseList* /*kwargs*/) {
-    std::cerr << "[thread_bootstrap] ENTERING tid=" << current_thread_id() << "\n" << std::flush;
     diagBootstrapTid();
     if (!args || args->getSize(context) < 1) return PROTO_NONE;
     unsigned long callableIdx = 0;
@@ -226,9 +212,6 @@ static const proto::ProtoObject* thread_bootstrap(
         const proto::ProtoList* argList = context->newList();
         for (unsigned long i = callableIdx + 1; i < args->getSize(context); ++i)
             argList = argList->appendLast(context, args->getAt(context, static_cast<int>(i)));
-        if (std::getenv("PROTO_THREAD_DIAG")) {
-            std::cerr << "[proto-thread-diag] thread_bootstrap calling callable=" << callable << " with args=" << argList->getSize(context) << "\n" << std::flush;
-        }
         result = protoPython::invokePythonCallable(context, callable, argList, nullptr);
     }
     return result;
@@ -240,17 +223,8 @@ static const proto::ProtoObject* py_start_new_thread(
     const proto::ParentLink* /*parentLink*/,
     const proto::ProtoList* posArgs,
     const proto::ProtoSparseList* /*kwargs*/) {
-    if (std::getenv("PROTO_THREAD_DIAG"))
-        std::cerr << "[proto-thread-diag] start_new_thread called\n" << std::flush;
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* callable = posArgs->getAt(ctx, 0);
-    if (std::getenv("PROTO_THREAD_DIAG")) {
-        std::cerr << "[proto-thread-diag] py_start_new_thread callable=" << callable << " isMethod=" << (callable ? callable->isMethod(ctx) : 0) << " posArgs=" << posArgs->getSize(ctx) << ": ";
-        for (unsigned long i = 0; i < posArgs->getSize(ctx); ++i) {
-            std::cerr << posArgs->getAt(ctx, i) << " ";
-        }
-        std::cerr << "\n" << std::flush;
-    }
     protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(ctx);
     const proto::ProtoList* argsForThread = ctx->newList();
     if (env)
@@ -277,15 +251,7 @@ static const proto::ProtoObject* py_log_thread_ident(
     const proto::ParentLink* /*parentLink*/,
     const proto::ProtoList* posArgs,
     const proto::ProtoSparseList* /*kwargs*/) {
-    if (posArgs && posArgs->getSize(ctx) >= 1 && posArgs->getAt(ctx, 0)->isString(ctx)) {
-        std::string s;
-        posArgs->getAt(ctx, 0)->asString(ctx)->toUTF8String(ctx, s);
-        std::cerr << "[thread_ident] " << (s.empty() ? "thread" : s) << " pid=" << current_process_id()
-                  << " tid=" << current_thread_id() << "\n" << std::flush;
-    } else {
-        std::cerr << "[thread_ident] thread pid=" << current_process_id()
-                  << " tid=" << current_thread_id() << "\n" << std::flush;
-    }
+    return PROTO_NONE;
     return PROTO_NONE;
 }
 

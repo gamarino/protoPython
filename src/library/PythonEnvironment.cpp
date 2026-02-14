@@ -56,7 +56,8 @@ static bool get_env_diag() {
 namespace protoPython {
 
 static bool isEmbeddedValue(const proto::ProtoObject* obj) {
-    if (!obj || obj == PROTO_NONE) return false;
+    if (!obj) return false;
+    // V73: PROTO_NONE is now an embedded value (tag 1).
     return (reinterpret_cast<uintptr_t>(obj) & 0x3FUL) == POINTER_TAG_EMBEDDED_VALUE;
 }
 
@@ -88,7 +89,8 @@ static thread_local int s_importLockRecursionDepth = 0;
 
 PythonEnvironment::SafeImportLock::SafeImportLock(PythonEnvironment* env, proto::ProtoContext* ctx)
     : env_(env), ctx_(ctx) {
-    if (get_thread_diag()) std::cerr << "[proto-lock] SafeImportLock enter ctx=" << ctx << "\n" << std::flush;
+    if (get_thread_diag()) {
+    }
     if (s_importLockRecursionDepth == 0 && ctx_ && ctx_->thread) {
         auto* threadImpl = proto::toImpl<proto::ProtoThreadImplementation>(ctx_->thread);
         auto* space = threadImpl->space;
@@ -99,21 +101,25 @@ PythonEnvironment::SafeImportLock::SafeImportLock(PythonEnvironment* env, proto:
             space->gcCV.notify_all();
         }
         
-        if (std::getenv("PROTO_THREAD_DIAG")) std::cerr << "[proto-lock] SafeImportLock waiting for importLock_\n" << std::flush;
+        if (std::getenv("PROTO_THREAD_DIAG")) {
+        }
         env_->importLock_.lock();
-        if (std::getenv("PROTO_THREAD_DIAG")) std::cerr << "[proto-lock] SafeImportLock acquired importLock_\n" << std::flush;
+        if (std::getenv("PROTO_THREAD_DIAG")) {
+        }
         
         {
             std::unique_lock<std::recursive_mutex> lock(proto::ProtoSpace::globalMutex);
             if (space->stwFlag.load()) {
-                if (std::getenv("PROTO_THREAD_DIAG")) std::cerr << "[proto-lock] SafeImportLock waiting for STW clear\n" << std::flush;
+                if (std::getenv("PROTO_THREAD_DIAG")) {
+                }
                 space->gcCV.notify_all();
                 space->stopTheWorldCV.wait(lock, [space] { return !space->stwFlag.load(); });
             }
             space->parkedThreads--;
         }
     } else {
-        if (std::getenv("PROTO_THREAD_DIAG")) std::cerr << "[proto-lock] SafeImportLock nested lock depth=" << s_importLockRecursionDepth << "\n" << std::flush;
+        if (std::getenv("PROTO_THREAD_DIAG")) {
+        }
         env_->importLock_.lock();
     }
     s_importLockRecursionDepth++;
@@ -149,7 +155,6 @@ static const proto::ProtoObject* py_frame_repr(
     const proto::ProtoSparseList* keywordParameters) {
     (void)parentLink; (void)positionalParameters; (void)keywordParameters;
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
-    if (get_env_diag()) std::cerr << "[proto-env] py_frame_repr self=" << self << " env=" << env << "\n" << std::flush;
     const proto::ProtoObject* code = self->getAttribute(context, env->getFCodeString());
     std::string name = "<unknown>";
     std::string filename = "<unknown>";
@@ -332,6 +337,7 @@ static const proto::ProtoObject* py_bool_call(
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_FALSE;
     const proto::ProtoObject* obj = posArgs->getAt(ctx, 0);
+    if (obj == PROTO_NONE) return PROTO_FALSE;
     if (obj->isString(ctx)) return obj->asString(ctx)->getSize(ctx) > 0 ? PROTO_TRUE : PROTO_FALSE;
     if (obj->isInteger(ctx)) return obj->asLong(ctx) != 0 ? PROTO_TRUE : PROTO_FALSE;
     if (obj->isDouble(ctx)) return obj->asDouble(ctx) != 0.0 ? PROTO_TRUE : PROTO_FALSE;
@@ -358,6 +364,7 @@ static const proto::ProtoObject* py_object_str(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
+    if (self == PROTO_NONE) return context->fromUTF8String("None");
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
 
     if (self == PROTO_NONE || (env && self == env->getNonePrototype())) return context->fromUTF8String("None");
@@ -953,7 +960,7 @@ static const proto::ProtoObject* py_dict_contains(
     unsigned long h = key->getHash(context);
     bool found = data->asSparseList(context)->has(context, h);
     if (std::getenv("PROTO_ENV_DIAG")) {
-        std::cerr << "[proto-dict] contains self=" << self << " key=" << (key->isString(context) ? "str" : "other") << " hash=" << h << " found=" << found << "\n" << std::flush;
+        // dict contains diagnostic removed
     }
     return found ? PROTO_TRUE : PROTO_FALSE;
 }
@@ -4263,19 +4270,15 @@ static const proto::ProtoObject* py_str_join(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    std::cerr << "py_str_join: starting self=" << (void*)self << std::endl;
-    std::cout << "DEBUG: py_str_join: starting self=" << (void*)self << std::endl;
     const proto::ProtoString* sep = str_from_self(context, self);
     if (!sep || !posArgs || posArgs->getSize(context) < 1) {
-        std::cerr << "py_str_join: early return sep=" << (void*)sep << " posArgsSize=" << (posArgs ? posArgs->getSize(context) : -1) << std::endl;
         return PROTO_NONE;
     }
     std::string sepStr;
     sep->toUTF8String(context, sepStr);
     const proto::ProtoObject* iterable = posArgs->getAt(context, 0);
-    std::cerr << "py_str_join: iterable=" << (void*)iterable << std::endl;
-    const proto::ProtoObject* iterM = iterable->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__iter__"));
-    std::cerr << "py_str_join: iterM=" << (void*)iterM << std::endl;
+    const proto::ProtoString* iterS = proto::ProtoString::fromUTF8String(context, "__iter__");
+    const proto::ProtoObject* iterM = iterable->getAttribute(context, iterS);
     if (!iterM || !iterM->asMethod(context)) {
         PythonEnvironment* env = PythonEnvironment::fromContext(context);
         if (env) env->raiseTypeError(context, "join() arg must be an iterable");
@@ -4283,32 +4286,20 @@ static const proto::ProtoObject* py_str_join(
     }
     const proto::ProtoObject* it = iterM->asMethod(context)(context, iterable, nullptr, context->newList(), nullptr);
     if (!it || it == PROTO_NONE) {
-        std::cerr << "py_str_join: it is null" << std::endl;
-        std::cout << "DEBUG: py_str_join: it is null" << std::endl;
         return context->fromUTF8String("");
     }
-    std::cerr << "py_str_join: got iterator" << std::endl;
-    std::cout << "DEBUG: py_str_join: got iterator" << std::endl;
-    const proto::ProtoObject* nextM = it->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__next__"));
+    const proto::ProtoString* nextS = proto::ProtoString::fromUTF8String(context, "__next__");
+    const proto::ProtoObject* nextM = it->getAttribute(context, nextS);
     if (!nextM || !nextM->asMethod(context)) {
-        std::cerr << "py_str_join: nextM is null or not a method" << std::endl;
-        std::cout << "DEBUG: py_str_join: nextM is null" << std::endl;
         return context->fromUTF8String("");
     }
-    std::cerr << "py_str_join: got nextM" << std::endl;
-    std::cout << "DEBUG: py_str_join: got nextM" << std::endl;
+    auto nextFn = nextM->asMethod(context);
     std::string out;
     bool first = true;
     for (int i = 0; ; i++) {
-        std::cerr << "py_str_join: loop iter " << i << std::endl;
-        std::cout << "DEBUG: py_str_join: loop iter " << i << std::endl;
-        const proto::ProtoObject* item = nextM->asMethod(context)(context, it, nullptr, context->newList(), nullptr);
-        std::cerr << "py_str_join: iter " << i << " item: " << (void*)item << std::endl;
-        std::cout << "DEBUG: py_str_join: iter " << i << " item: " << (void*)item << std::endl;
+        const proto::ProtoObject* item = nextFn(context, it, nullptr, context->newList(), nullptr);
         if (!item || item == PROTO_NONE) break;
         if (!item->isString(context)) {
-            std::cerr << "py_str_join: item is not string" << std::endl;
-            std::cout << "DEBUG: py_str_join: item is not string" << std::endl;
             PythonEnvironment* env = PythonEnvironment::fromContext(context);
             if (env) env->raiseTypeError(context, "sequence item: expected str instance");
             return PROTO_NONE;
@@ -4317,12 +4308,8 @@ static const proto::ProtoObject* py_str_join(
         first = false;
         std::string part;
         item->asString(context)->toUTF8String(context, part);
-        std::cerr << "py_str_join: iter " << i << " part: " << part << std::endl;
-        std::cout << "DEBUG: py_str_join: iter " << i << " part: " << part << std::endl;
         out += part;
     }
-    std::cerr << "py_str_join: done loop, out size: " << out.size() << std::endl;
-    std::cout << "DEBUG: py_str_join: done loop, out size: " << out.size() << std::endl;
     return context->fromUTF8String(out.c_str());
 }
 
@@ -4458,7 +4445,7 @@ static const proto::ProtoObject* py_dict_get(
     if (!dict) return defaultVal;
     unsigned long hash = key->getHash(context);
     if (std::getenv("PROTO_ENV_DIAG")) {
-        std::cerr << "[proto-dict] get self=" << self << " key=" << (key->isString(context) ? "str" : "other") << " hash=" << hash << "\n" << std::flush;
+        // dict get diagnostic removed
     }
     const proto::ProtoObject* val = dict->getAt(context, hash);
     return val ? val : defaultVal;
@@ -4857,13 +4844,15 @@ static thread_local std::unordered_map<std::string, const proto::ProtoObject*> s
 static thread_local uint64_t s_threadResolveCacheGeneration = 0;
 
 void PythonEnvironment::registerContext(proto::ProtoContext* ctx, PythonEnvironment* env) {
-    if (std::getenv("PROTO_THREAD_DIAG")) std::cerr << "[proto-thread] registerContext ctx=" << ctx << " env=" << env << " tid=" << std::this_thread::get_id() << "\n" << std::flush;
+    if (std::getenv("PROTO_THREAD_DIAG")) {
+    }
     s_threadEnv = env;
     s_threadContext = ctx;
 }
 
 void PythonEnvironment::unregisterContext(proto::ProtoContext* ctx) {
-    if (std::getenv("PROTO_THREAD_DIAG")) std::cerr << "[proto-thread] unregisterContext ctx=" << ctx << " tid=" << std::this_thread::get_id() << "\n" << std::flush;
+    if (std::getenv("PROTO_THREAD_DIAG")) {
+    }
     s_threadEnv = nullptr;
     s_threadContext = nullptr;
 }
@@ -4897,7 +4886,8 @@ const proto::ProtoObject* PythonEnvironment::getCurrentCodeObject() {
 }
 
 PythonEnvironment* PythonEnvironment::fromContext(proto::ProtoContext* ctx) {
-    if (!s_threadEnv && std::getenv("PROTO_THREAD_DIAG")) std::cerr << "[proto-thread] fromContext FAILED ctx=" << ctx << " tid=" << std::this_thread::get_id() << "\n" << std::flush;
+    if (!s_threadEnv && std::getenv("PROTO_THREAD_DIAG")) {
+    }
     return s_threadEnv;
 }
 
@@ -4998,10 +4988,7 @@ static std::atomic<int> s_pythonEnvInstanceCount{0};
 PythonEnvironment::PythonEnvironment(const std::string& stdLibPath, const std::vector<std::string>& searchPaths,
                                      const std::vector<std::string>& argv) : space_(getProcessSpace()), rootContext_(new proto::ProtoContext(space_)), argv_(argv) {
     int prev = s_pythonEnvInstanceCount.fetch_add(1, std::memory_order_relaxed);
-    if (prev > 0) {
-        std::cerr << "[protoPython] WARNING: Multiple PythonEnvironment instances (count=" << (prev + 1)
-                  << "). L-Shape mandates single ProtoSpace per process." << std::endl;
-    }
+    // Multiple instances check removed for silence
     s_mainThreadId = std::this_thread::get_id();
     registerContext(rootContext_, this);
     initializeRootObjects(stdLibPath, searchPaths);
@@ -5905,7 +5892,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     bytesIterProto = bytesIterProto->setAttribute(rootContext_, py_next, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(bytesIterProto), py_bytes_iter_next));
     bytesIterProto = bytesIterProto->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(bytesIterProto), py_self_iter));
     bytesPrototype = bytesPrototype->setAttribute(rootContext_, py_iter_proto, bytesIterProto);
-    std::cerr << "[py-proto-diag] int=" << intPrototype << " list=" << listPrototype << " dict=" << dictPrototype << " str=" << strPrototype << "\n";
+    // Prototype initialization diagnostic removed
     const proto::ProtoString* py_encode = proto::ProtoString::fromUTF8String(rootContext_, "encode");
     const proto::ProtoString* py_decode = proto::ProtoString::fromUTF8String(rootContext_, "decode");
     strPrototype = strPrototype->setAttribute(rootContext_, py_encode, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_encode));
@@ -6305,7 +6292,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
         addRoot(reinterpret_cast<const proto::ProtoObject*>(typeS));
         addRoot(reinterpret_cast<const proto::ProtoObject*>(dictString));
     }
-    std::cerr << "[py-proto-final-diag] int=" << intPrototype << " list=" << listPrototype << " dict=" << dictPrototype << " str=" << strPrototype << "\n";
+    // Final prototype initialization diagnostic removed
 }
 
 const proto::ProtoObject* PythonEnvironment::getGlobals() const {
@@ -6325,8 +6312,6 @@ int PythonEnvironment::runModuleMain(const std::string& moduleName) {
         return 0;
     const proto::ProtoList* emptyArgs = context->newList();
     if (mainAttr->isMethod(context)) {
-        if (std::getenv("PROTO_THREAD_DIAG"))
-            std::cerr << "[proto-thread-diag] runModuleMain calling main (native)\n" << std::flush;
         mainAttr->asMethod(context)(context, const_cast<proto::ProtoObject*>(m), nullptr, emptyArgs, nullptr);
         return 0;
     }
@@ -6334,8 +6319,6 @@ int PythonEnvironment::runModuleMain(const std::string& moduleName) {
     const proto::ProtoString* callName = proto::ProtoString::fromUTF8String(context, "__call__");
     const proto::ProtoObject* callAttr = mainAttr->getAttribute(context, callName);
     if (callAttr && callAttr->asMethod(context)) {
-        if (std::getenv("PROTO_THREAD_DIAG"))
-            std::cerr << "[proto-thread-diag] runModuleMain calling main (user def)\n" << std::flush;
         callAttr->asMethod(context)(context, const_cast<proto::ProtoObject*>(mainAttr), nullptr, emptyArgs, nullptr);
         return 0;
     }
@@ -6374,7 +6357,7 @@ int PythonEnvironment::executeString(const std::string& source, const std::strin
             execFn->asMethod(context)(context, const_cast<proto::ProtoObject*>(builtinsModule), nullptr, args, nullptr);
             const proto::ProtoObject* excAfterExec = takePendingException();
             if (excAfterExec && excAfterExec != PROTO_NONE) {
-                handleException(excAfterExec, mod, std::cerr);
+                // log removed
                 result = -2;
             }
         }
@@ -6390,16 +6373,10 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain,
     
     // 1. Get/Load module object via ProtoSpace directly to avoid recursion with resolve()
     const proto::ProtoObject* modWrapper = ctx->space->getImportModule(ctx, moduleName.c_str(), "val");
-    if (std::getenv("PROTO_ENV_DIAG"))
-        std::cerr << "[proto-env] executeModule " << moduleName << " modWrapper=" << modWrapper << "\n" << std::flush;
     if (!modWrapper || modWrapper == PROTO_NONE) {
-        if (std::getenv("PROTO_ENV_DIAG"))
-            std::cerr << "[proto-env] executeModule: getImportModule failed for " << moduleName << "\n" << std::flush;
         return -1;
     }
     const proto::ProtoObject* mod = modWrapper->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "val"));
-    if (std::getenv("PROTO_ENV_DIAG"))
-        std::cerr << "[proto-env] executeModule " << moduleName << " mod=" << mod << "\n" << std::flush;
     if (!mod || mod == PROTO_NONE) return -1;
 
     if (asMain) {
@@ -6409,13 +6386,6 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain,
         // Step V74: Update the wrapper's "val" so future resolves for this module 
         // (even if called via the original module name) see it as __main__.
         const_cast<proto::ProtoObject*>(modWrapper)->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "val"), mod);
-        
-        if (std::getenv("PROTO_THREAD_DIAG")) {
-            const proto::ProtoObject* nObj = mod->getAttribute(ctx, nameS);
-            std::string nVal;
-            if (nObj && nObj->isString(ctx)) nObj->asString(ctx)->toUTF8String(ctx, nVal);
-            std::cerr << "[proto-thread-diag] executeModule " << moduleName << " SET asMain=true, new __name__=" << nVal << "\n" << std::flush;
-        }
     }
 
     const proto::ProtoString* fileKey = proto::ProtoString::fromUTF8String(ctx, "__file__");
@@ -6423,15 +6393,11 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain,
     const proto::ProtoObject* fileObj = mod->getAttribute(ctx, fileKey);
     const proto::ProtoObject* execVal = mod->getAttribute(ctx, executedKey);
     const bool willExec = fileObj && fileObj->isString(ctx) && (!execVal || execVal == PROTO_NONE || execVal == PROTO_FALSE);
-    if (std::getenv("PROTO_THREAD_DIAG"))
-        std::cerr << "[proto-thread-diag] executeModule " << moduleName << " willExec=" << (willExec ? 1 : 0) << "\n" << std::flush;
     if (willExec) {
         std::string path;
         fileObj->asString(ctx)->toUTF8String(ctx, path);
         if (path.size() >= 3 && path.compare(path.size() - 3, 3, ".py") == 0) {
             std::ifstream f(path);
-            if (std::getenv("PROTO_THREAD_DIAG"))
-                std::cerr << "[proto-thread-diag] open path=" << path << " good=" << (f ? 1 : 0) << "\n" << std::flush;
             if (f) {
                 std::stringstream buf;
                 buf << f.rdbuf();
@@ -6439,25 +6405,12 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain,
                 f.close();
                 Parser parser(source);
                 std::unique_ptr<ModuleNode> node = parser.parseModule();
-                if (std::getenv("PROTO_THREAD_DIAG")) {
-                    std::cerr << "[proto-thread-diag] parseModule " << moduleName << " node=" << node.get() << " err=" << (parser.hasError() ? 1 : 0) << "\n" << std::flush;
-                    if (parser.hasError()) {
-                        std::cerr << "[proto-thread-diag] parseModule " << moduleName << " ERROR: " << parser.getLastErrorMsg() 
-                                  << " at line " << parser.getLastErrorLine() << ":" << parser.getLastErrorColumn() << "\n" << std::flush;
-                    }
-                }
                 if (!parser.hasError() && node) {
                     Compiler compiler(ctx, path);
                     bool compileOk = compiler.compileModule(node.get());
-                    if (std::getenv("PROTO_THREAD_DIAG"))
-                        std::cerr << "[proto-thread-diag] compileModule " << moduleName << " ok=" << (compileOk ? 1 : 0) << "\n" << std::flush;
                     if (compileOk) {
-                        if (std::getenv("PROTO_ENV_DIAG"))
-                            std::cerr << "[proto-env] executeModule: compiling " << moduleName << "\n" << std::flush;
                         const proto::ProtoObject* codeObj = makeCodeObject(ctx, compiler.getConstants(), compiler.getNames(), compiler.getBytecode(), ctx->fromUTF8String(path.c_str())->asString(ctx), nullptr, 0, 0, 0, false);
                         if (codeObj) {
-                            if (std::getenv("PROTO_ENV_DIAG"))
-                                std::cerr << "[proto-env] executeModule: about to run " << moduleName << "\n" << std::flush;
                             proto::ProtoObject* mutableMod = const_cast<proto::ProtoObject*>(mod);
                             
                             // Batch 1: Set frame attributes on module object
@@ -6471,18 +6424,12 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain,
                             // Set executed flag early to prevent double execution if an error occurs
                             mutableMod = const_cast<proto::ProtoObject*>(mutableMod->setAttribute(ctx, executedKey, PROTO_TRUE));
                             s_threadResolveCache[moduleName] = mutableMod;
-                            if (std::getenv("PROTO_THREAD_DIAG")) {
-                                const proto::ProtoObject* nObj = mutableMod->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__name__"));
-                                std::string nVal;
-                                if (nObj && nObj->isString(ctx)) nObj->asString(ctx)->toUTF8String(ctx, nVal);
-                                std::cerr << "[proto-thread-diag] BEFORE runCodeObject " << moduleName << " __name__=" << nVal << "\n" << std::flush;
-                            }
                             runCodeObject(ctx, codeObj, mutableMod);
                             setCurrentGlobals(oldGlobals);
                             mod = mutableMod;
                             const proto::ProtoObject* excAfterExec = takePendingException();
                             if (excAfterExec && excAfterExec != PROTO_NONE) {
-                                handleException(excAfterExec, mod, std::cerr);
+                                // log removed
                                 return -2;
                             }
                             // Update sys.modules
@@ -6498,9 +6445,7 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain,
                         }
                     }
                 } else if (parser.hasError()) {
-                    if (std::getenv("PROTO_ENV_DIAG"))
-                        std::cerr << "[proto-env] executeModule: parser error for " << moduleName << "\n" << std::flush;
-                    handleException(takePendingException(), mod, std::cerr);
+                    // log removed
                     return -1;
                 }
             }
@@ -6522,13 +6467,6 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain,
         }
     }
 
-    if (std::getenv("PROTO_THREAD_DIAG")) {
-        const proto::ProtoObject* m = resolve(moduleName, ctx);
-        const proto::ProtoObject* mainAttr = m && m != PROTO_NONE
-            ? m->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "main")) : nullptr;
-        std::cerr << "[proto-thread-diag] before runModuleMain hasMain=" << (mainAttr && mainAttr != PROTO_NONE ? 1 : 0)
-                  << " isMethod=" << (mainAttr && mainAttr->isMethod(ctx) ? 1 : 0) << "\n" << std::flush;
-    }
     int ret = runModuleMain(moduleName);
     if (ret != 0) {
         if (executionHook) executionHook(moduleName, 1);
@@ -6877,9 +6815,9 @@ void PythonEnvironment::runRepl(std::istream& in, std::ostream& out) {
     }
     std::ofstream historyOut(historyPath, std::ios::app);
     if (!historyOut) {
-        std::cerr << "[proto-repl-diag] FAILED to open history file: " << historyPath << "\n";
+        // log removed
     } else {
-        if (std::getenv("PROTO_ENV_DIAG")) std::cerr << "[proto-repl-diag] Opened history file: " << historyPath << "\n";
+        // log removed
     }
         
     std::string buffer;
@@ -7010,7 +6948,7 @@ void PythonEnvironment::runRepl(std::istream& in, std::ostream& out) {
         const proto::ProtoObject* result = PROTO_NONE;
 
         if (std::getenv("PROTO_REPL_DIAG")) {
-            std::cerr << "[proto-repl-diag] command=\"" << buffer << "\" frame=" << frame << "\n" << std::flush;
+            // log removed
         }
         
         try {
@@ -7174,17 +7112,11 @@ bool PythonEnvironment::isCompleteBlock(const std::string& code) {
 }
 
 const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* ctx, const proto::ProtoObject* obj, const proto::ProtoString* name) {
-    if (!obj) return nullptr;
-    static bool envDiag = std::getenv("PROTO_ENV_DIAG") != nullptr;
-    if (envDiag) {
-        proto::ProtoObjectPointer p{};
-        p.oid = reinterpret_cast<const proto::ProtoObject*>(name);
-        std::cerr << "[getAttribute-diag] name=" << name << " tag=" << p.op.pointer_tag << "\n" << std::flush;
-    }
+    if (!obj || obj == PROTO_NONE) return nullptr;
     if (isEmbeddedValue(obj)) return obj->getAttribute(ctx, name);
 
     const proto::ProtoObject* val = name ? obj->getAttribute(ctx, name) : nullptr;
-    if (!val && name && !isEmbeddedValue(obj)) {
+    if ((!val || val == PROTO_NONE) && name && !isEmbeddedValue(obj)) {
         if (obj->asList(ctx)) {
             val = listPrototype ? listPrototype->getAttribute(ctx, name) : nullptr;
         } else if (obj->asSparseList(ctx)) {
@@ -7196,14 +7128,9 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
         }
     }
 
-    if (!val && name) {
-        if (envDiag) {
-            std::string nameStr;
-            name->toUTF8String(ctx, nameStr);
-            std::cerr << "getAttribute failed for: " << nameStr << " on " << obj << std::endl;
-        }
+    if ((!val || val == PROTO_NONE) && name) {
     }
-    if (val && name) {
+    if (val && val != PROTO_NONE && name) {
         // In Python, instance attributes are NOT automatically bound if they are functions/descriptors.
         // Only class attributes (retrieved via prototype chain) are bound.
         // ProtoCore's getAttribute returns the first found, so we check if it belongs to obj itself.
@@ -7213,7 +7140,7 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
         // If it's a descriptor AND NOT an own attribute, call __get__
         if (!isOwn) {
             const proto::ProtoObject* getM = val->getAttribute(ctx, getDunderString);
-            if (getM && getM->asMethod(ctx)) {
+            if (getM && getM != PROTO_NONE && getM->asMethod(ctx)) {
                 const proto::ProtoObject* typeObj = obj->getAttribute(ctx, classString);
                 const proto::ProtoList* getArgs = ctx->newList()->appendLast(ctx, obj)->appendLast(ctx, typeObj ? typeObj : PROTO_NONE);
                 return getM->asMethod(ctx)(ctx, val, nullptr, getArgs, nullptr);
@@ -7221,10 +7148,6 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
         }
         
         bool isM = val->isMethod(ctx);
-        if (get_thread_diag()) {
-            std::string n; name->toUTF8String(ctx, n);
-            std::cerr << "[proto-thread-diag] getAttribute name=" << n << " isM=" << isM << " isOwn=" << isOwn << " obj=" << obj << " val=" << val << " val_asM=" << (void*)val->asMethod(ctx) << "\n" << std::flush;
-        }
         if (isM && !isOwn) {
              // This is a class method. Bind it.
              return ctx->fromMethod(const_cast<proto::ProtoObject*>(obj), val->asMethod(ctx));
@@ -7251,7 +7174,6 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
 const proto::ProtoObject* PythonEnvironment::resolve(const std::string& name, proto::ProtoContext* ctx) {
     static thread_local int resolveDepth = 0;
     if (++resolveDepth > 100) {
-        std::cerr << "[proto-env] resolve EXCEEDED DEPTH for " << name << "\n" << std::flush;
         --resolveDepth;
         return nullptr;
     }
@@ -7263,9 +7185,6 @@ const proto::ProtoObject* PythonEnvironment::resolve(const std::string& name, pr
     if (!ctx) ctx = s_threadContext;
     if (!ctx) {
         ctx = rootContext_;
-        if (std::getenv("PROTO_THREAD_DIAG") && std::this_thread::get_id() != s_mainThreadId) {
-             std::cerr << "[proto-thread-diag] WARNING: resolve('" << name << "') using rootContext_ from worker thread " << std::this_thread::get_id() << "\n" << std::flush;
-        }
     }
     SafeImportLock lock(this, ctx);
     if (name == "None") return nonePrototype;
@@ -7291,10 +7210,22 @@ const proto::ProtoObject* PythonEnvironment::resolve(const std::string& name, pr
 
     const proto::ProtoObject* result = nullptr;
 
+    // 0. Check sys.modules for already cached/builtin modules
+    if (sysModule) {
+        const proto::ProtoObject* modules = sysModule->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "modules"));
+        if (modules && modules != PROTO_NONE) {
+            result = modules->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, name.c_str()));
+            if (result && result != PROTO_NONE) {
+                s_threadResolveCache[name] = result;
+                return result;
+            }
+        }
+    }
+
     // 1. Try current module's globals
-    if (result == nullptr && s_currentGlobals) {
+    if ((result == nullptr || result == PROTO_NONE) && s_currentGlobals) {
         result = s_currentGlobals->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, name.c_str()));
-        if (result == nullptr) {
+        if (result == nullptr || result == PROTO_NONE) {
             const proto::ProtoObject* data = s_currentGlobals->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__data__"));
             if (data && data->asSparseList(ctx)) {
                 unsigned long h = proto::ProtoString::fromUTF8String(ctx, name.c_str())->getHash(ctx);
@@ -7304,7 +7235,7 @@ const proto::ProtoObject* PythonEnvironment::resolve(const std::string& name, pr
     }
 
     // 2. Builtins (e.g. len, print, type as callable)
-    if (result == nullptr && builtinsModule) {
+    if ((result == nullptr || result == PROTO_NONE) && builtinsModule) {
         const proto::ProtoString* key = proto::ProtoString::fromUTF8String(ctx, name.c_str());
         result = builtinsModule->getAttribute(ctx, key);
     }

@@ -55,7 +55,7 @@ static const proto::ProtoObject* sys_trace_default(
     if (positionalParameters->getSize(context) >= 2 && positionalParameters->getAt(context, 1)->isString(context)) {
         std::string ev;
         positionalParameters->getAt(context, 1)->asString(context)->toUTF8String(context, ev);
-        std::cerr << "[settrace] event=" << ev << std::endl;
+        // log removed
     }
     return PROTO_NONE;
 }

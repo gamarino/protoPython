@@ -27,7 +27,7 @@ static const proto::ProtoObject* py_getenv(
     std::string key;
     keyObj->asString(ctx)->toUTF8String(ctx, key);
     if (std::getenv("PROTO_ENV_DIAG")) {
-        std::cerr << "[proto-os] getenv key=" << key << "\n" << std::flush;
+        // log removed
     }
     const char* val = std::getenv(key.c_str());
     if (val) return ctx->fromUTF8String(val);
@@ -148,7 +148,7 @@ static const proto::ProtoObject* py_setenv(
     valObj->asString(ctx)->toUTF8String(ctx, val);
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
     if (std::getenv("PROTO_ENV_DIAG")) {
-        std::cerr << "[proto-os] setenv key=" << key << " val=" << val << "\n" << std::flush;
+        // log removed
     }
     setenv(key.c_str(), val.c_str(), 1);
 #endif
@@ -168,7 +168,7 @@ static const proto::ProtoObject* py_unsetenv(
     keyObj->asString(ctx)->toUTF8String(ctx, key);
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
     if (std::getenv("PROTO_ENV_DIAG")) {
-        std::cerr << "[proto-os] unsetenv key=" << key << "\n" << std::flush;
+        // log removed
     }
     unsetenv(key.c_str());
 #endif
@@ -240,19 +240,19 @@ static const proto::ProtoObject* py_environ_keys(
     const proto::ProtoList* /*posArgs*/,
     const proto::ProtoSparseList* /*kwargs*/) {
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
-    std::cerr << "[proto-os] py_environ_keys START\n" << std::flush;
+    // log removed
     const proto::ProtoList* result = ctx->newList();
     for (char** p = environ; p && *p; ++p) {
         const char* eq = strchr(*p, '=');
         if (eq && eq > *p) {
             std::string key(*p, static_cast<size_t>(eq - *p));
             if (std::getenv("PROTO_ENV_DIAG")) {
-                std::cerr << "[proto-os] py_environ_keys key=" << key << "\n" << std::flush;
+                // log removed
             }
             result = result->appendLast(ctx, ctx->fromUTF8String(key.c_str()));
         }
     }
-    std::cerr << "[proto-os] py_environ_keys DONE resultSize=" << result->getSize(ctx) << "\n" << std::flush;
+    // log removed
     return result->asObject(ctx);
 #else
     return ctx->newList()->asObject(ctx);

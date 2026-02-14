@@ -21,12 +21,6 @@ std::string joinPath(const std::string& base, const std::string& logicalPath) {
 bool fileExists(const std::string& path) {
     struct stat st;
     int res = stat(path.c_str(), &st);
-    if (std::getenv("PROTO_ENV_DIAG")) {
-        std::cerr << "[proto-env] stat(" << path << ") = " << res;
-        if (res != 0) std::cerr << " errno=" << errno;
-        else std::cerr << " mode=" << std::hex << st.st_mode << std::dec << " is_reg=" << S_ISREG(st.st_mode);
-        std::cerr << "\n" << std::flush;
-    }
     return res == 0 && S_ISREG(st.st_mode);
 }
 
@@ -47,8 +41,6 @@ const proto::ProtoObject* PythonModuleProvider::tryLoad(const std::string& logic
     for (const auto& basePath : basePaths_) {
         // 2. Try <base>/<path>.py
         std::string pyPath = joinPath(basePath, relPath + ".py");
-        if (std::getenv("PROTO_ENV_DIAG"))
-            std::cerr << "[proto-env] PythonModuleProvider checking: " << pyPath << "\n" << std::flush;
         if (fileExists(pyPath)) {
             /* Mutable so exec() STORE_NAME updates the same module object (proto setAttribute on mutable returns this). */
             const proto::ProtoObject* module = ctx->newObject(true);

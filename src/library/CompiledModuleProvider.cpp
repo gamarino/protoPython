@@ -17,18 +17,12 @@ CompiledModuleProvider::~CompiledModuleProvider() {
 }
 
 const proto::ProtoObject* CompiledModuleProvider::tryLoad(const std::string& logicalPath, proto::ProtoContext* ctx) {
-    if (std::getenv("PROTO_ENV_DIAG")) {
-        std::cerr << "[proto-env] CompiledModuleProvider::tryLoad(" << logicalPath << ") searchPaths: ";
-        for (const auto& p : basePaths_) std::cerr << p << " ";
-        std::cerr << "\n";
-    }
     std::string filename = logicalPath;
     std::replace(filename.begin(), filename.end(), '.', '/');
 
     std::string foundPath;
     for (const auto& basePath : basePaths_) {
         std::string p = (std::filesystem::path(basePath) / (filename + ".so")).string();
-        if (std::getenv("PROTO_ENV_DIAG")) std::cerr << "[proto-env] CompiledModuleProvider: checking " << p << "\n";
         if (std::filesystem::exists(p)) {
             foundPath = p;
             break;
@@ -36,15 +30,11 @@ const proto::ProtoObject* CompiledModuleProvider::tryLoad(const std::string& log
     }
 
     if (foundPath.empty()) {
-        if (std::getenv("PROTO_ENV_DIAG")) std::cerr << "[proto-env] CompiledModuleProvider: NOT FOUND " << logicalPath << "\n" << std::flush;
         return PROTO_NONE;
     }
 
-    if (std::getenv("PROTO_ENV_DIAG")) std::cerr << "[proto-env] CompiledModuleProvider: found " << foundPath << " for " << logicalPath << "\n" << std::flush;
-
     void* handle = dlopen(foundPath.c_str(), RTLD_NOW | RTLD_GLOBAL);
     if (!handle) {
-        if (std::getenv("PROTO_ENV_DIAG")) std::cerr << "[proto-env] CompiledModuleProvider: dlopen FAILED for " << foundPath << ": " << dlerror() << "\n" << std::flush;
         return PROTO_NONE;
     }
 
@@ -52,7 +42,6 @@ const proto::ProtoObject* CompiledModuleProvider::tryLoad(const std::string& log
     using InitFunc = void* (*)();
     InitFunc initFunc = (InitFunc)dlsym(handle, "proto_module_init");
     if (!initFunc) {
-        if (std::getenv("PROTO_ENV_DIAG")) std::cerr << "[proto-env] CompiledModuleProvider: proto_module_init NOT FOUND in " << foundPath << "\n" << std::flush;
         dlclose(handle);
         return PROTO_NONE;
     }

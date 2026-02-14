@@ -52,15 +52,14 @@ const proto::ProtoObject* HPyModuleProvider::tryLoad(const std::string& logicalP
     // Step 1220: CLI Flags for HPy (Debug)
     bool debug = std::getenv("PROTO_HPY_DEBUG") != nullptr;
     if (debug) {
-        std::cout << "[HPy] Attempting to load " << foundPath << " for " << logicalPath << std::endl;
+        // log removed
     }
 
     // Step 1205: Implement logic to load .so and .hpy.so files
     void* handle = dlopen(foundPath.c_str(), RTLD_NOW | RTLD_GLOBAL);
     if (!handle) {
-        if (debug || true) { // Always show load errors in Phase 4/Industrialization
-            std::cerr << "HPyModuleProvider: Failed to load " << foundPath 
-                      << " (logical name: " << logicalPath << "): " << dlerror() << std::endl;
+        if (debug) {
+            // log removed
         }
         return PROTO_NONE;
     }
@@ -83,11 +82,12 @@ const proto::ProtoObject* HPyModuleProvider::tryLoad(const std::string& logicalP
     // In a real scenario, we might check for a 'HPy_ABI_VERSION' symbol
     int* abiVersion = (int*)dlsym(handle, "HPy_ABI_VERSION");
     if (abiVersion && *abiVersion > 0) {
-        if (debug) std::cout << "[HPy] Module " << logicalPath << " uses ABI version " << *abiVersion << std::endl;
+        if (debug) {
+        }
     }
 
     if (!initFunc) {
-        std::cerr << "HPyModuleProvider: Failed to find symbol " << initName << " in " << foundPath << ": " << dlerror() << std::endl;
+        // log removed
         return PROTO_NONE;
     }
 
@@ -96,7 +96,7 @@ const proto::ProtoObject* HPyModuleProvider::tryLoad(const std::string& logicalP
     HPy hMod = initFunc(&hctx);
 
     if (hMod == HPy_NULL) {
-        std::cerr << "HPyModuleProvider: Module initialization failed for " << logicalPath << std::endl;
+        // log removed
         return PROTO_NONE;
     }
 

@@ -26,9 +26,6 @@ int Compiler::addConstant(const proto::ProtoObject* obj) {
     }
     int idx = n;
     constants_ = constants_->appendLast(ctx_, obj);
-    if (std::getenv("PROTO_ENV_DIAG")) {
-        std::cerr << "[proto-compiler-diag] addConstant obj=" << obj << " idx=" << idx << " size=" << constants_->getSize(ctx_) << "\n";
-    }
     return idx;
 }
 
@@ -1440,9 +1437,7 @@ void Compiler::collectCapturedNames(ASTNode* node,
     const std::unordered_set<std::string>& globalsInScope,
     std::unordered_set<std::string>& capturedOut) {
     if (!node) return;
-    if (std::getenv("PROTO_ENV_DIAG")) {
-        std::cerr << "[proto-compiler] collectCapturedNames node type: " << typeid(*node).name() << "\n";
-    }
+        // collectCapturedNames node type logging removed
 
     if (auto* fn = dynamic_cast<FunctionDefNode*>(node)) {
         std::unordered_set<std::string> used, defined, nonlocals;
@@ -1451,11 +1446,8 @@ void Compiler::collectCapturedNames(ASTNode* node,
         collectDefinedNames(fn->body.get(), defined);
         collectNonlocalsFromNode(fn->body.get(), nonlocals);
         
+        // Nested function analysis removal
         if (std::getenv("PROTO_ENV_DIAG")) {
-            std::cerr << "[proto-compiler] Analyzing nested function: " << fn->name << "\n";
-            for (auto& u : used) std::cerr << "  uses: " << u << "\n";
-            for (auto& d : defined) std::cerr << "  defines: " << d << "\n";
-            for (auto& nl : nonlocals) std::cerr << "  nonlocals: " << nl << "\n";
         }
 
         for (const auto& name : nonlocals) {
@@ -1463,7 +1455,7 @@ void Compiler::collectCapturedNames(ASTNode* node,
         }
         for (const auto& name : used) {
             if (!defined.count(name) && !globalsInScope.count(name) && !nonlocals.count(name)) {
-                if (std::getenv("PROTO_ENV_DIAG")) std::cerr << "[proto-compiler]   FOUND CAPTURE: " << name << "\n";
+                // FOUND CAPTURE logging removed
                 capturedOut.insert(name);
             }
         }
@@ -1541,14 +1533,14 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
     std::unordered_set<std::string> captured;
     collectCapturedNames(n->body.get(), bodyGlobals, captured);
     if (std::getenv("PROTO_ENV_DIAG")) {
-        std::cerr << "[proto-compiler] Function " << n->name << " capture count: " << captured.size() << std::endl;
-        for (const auto& c : captured) std::cerr << "  captured: " << c << std::endl;
+        // Function capture count logging removed
     }
 
     std::string dynamicReason = getDynamicLocalsReason(n->body.get());
     const bool forceMapped = !dynamicReason.empty() || !captured.empty();
-    if (std::getenv("PROTO_ENV_DIAG") && forceMapped)
-        std::cerr << "[proto-compiler] forceMapped " << n->name << " reason: " << dynamicReason << "\n";
+    if (std::getenv("PROTO_ENV_DIAG") && forceMapped) {
+        // forceMapped reason logging removed
+    }
 
     std::vector<std::string> varnamesOrdered;
     // Parameters first
@@ -1575,13 +1567,7 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
         automatic_count = static_cast<int>(varnamesOrdered.size()) + 256; // Add space for stack
     } else {
         if (std::getenv("PROTO_ENV_DIAG")) {
-            std::cerr << "[protoPython] Slot fallback: function=" << n->name << " reason=" << (dynamicReason.empty() ? "capture" : dynamicReason);
-            if (!captured.empty()) {
-                std::cerr << "(";
-                for(const auto& c : captured) std::cerr << c << " ";
-                std::cerr << ")";
-            }
-            std::cerr << std::endl;
+            // log removed
         }
     }
     int nparams = static_cast<int>(params.size());
@@ -2037,12 +2023,6 @@ const proto::ProtoObject* makeCodeObject(proto::ProtoContext* ctx,
     bool isGenerator,
     const proto::ProtoString* co_name) {
     if (!ctx) return PROTO_NONE;
-    if (std::getenv("PROTO_ENV_DIAG")) {
-        std::cerr << "[proto-compiler-diag] makeCodeObject constants=" << constants << " size=" << (constants ? constants->getSize(ctx) : 0) << "\n";
-        if (constants && constants->getSize(ctx) > 0) {
-            std::cerr << "[proto-compiler-diag] makeCodeObject constants[0]=" << constants->getAt(ctx, 0) << "\n";
-        }
-    }
     const proto::ProtoObject* code = ctx->newObject(true);
     // Optional: add a 'code_proto' if we want to share methods like .exec()
     code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_consts"), reinterpret_cast<const proto::ProtoObject*>(constants));

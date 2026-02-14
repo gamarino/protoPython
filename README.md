@@ -56,22 +56,22 @@ protoPython is built for elite throughput. Below is a median-of-runs performance
 ```
 ┌──────────────────────────────────────────────────────────────────────────────────────┐
 │ Performance Audit: protoPython vs CPython 3.14                                       │
-│ (median of runs, timeouts excluded)                                                  │
-│ 2026-02-11 Linux x86_64                                                              │
+│ (median of 5 runs, timeouts excluded)                                                │
+│ 2026-02-14 Linux x86_64                                                              │
 ├────────────────────────┬──────────────┬──────────────┬──────────────┬────────────────┤
 │ Benchmark              │ Time P (ms)  │ Time C (ms)  │ Ratio        │ Peak RSS (P/C) │
 ├────────────────────────┼──────────────┼──────────────┼──────────────┼────────────────┤
-│ startup_empty          │       1.40   │      40.64   │ 0.03x faster │   0.6/  8.1MB  │
-│ int_sum_loop           │       5.86   │      50.12   │ 0.12x faster │   0.6/  8.1MB  │
-│ list_append_loop       │       2.11   │      49.13   │ 0.04x faster │   0.6/  8.5MB  │
-│ str_concat_loop        │       1.95   │      44.33   │ 0.04x faster │   0.6/  8.1MB  │
-│ range_iterate          │       2.94   │      55.43   │ 0.05x faster │   0.6/  8.1MB  │
-│ multithread_cpu        │       1.93   │      66.06   │ 0.03x faster │   0.6/  8.6MB  │
-│ attr_lookup            │       3.08   │      77.18   │ 0.04x faster │   0.6/  8.1MB  │
-│ call_recursion         │       2.77   │      80.50   │ 0.03x faster │   0.6/  8.1MB  │
-│ memory_pressure        │       1.62   │     115.47   │ 0.01x faster │   0.6/  8.3MB  │
+│ startup_empty          │      45.95   │      62.66   │ 0.73x faster │  21.8/ 10.6MB  │
+│ int_sum_loop           │      43.45   │      48.58   │ 0.89x faster │  21.8/ 10.6MB  │
+│ list_append_loop       │      38.74   │      43.25   │ 0.90x faster │  21.8/ 11.0MB  │
+│ str_concat_loop        │      43.33   │      49.88   │ 0.87x faster │  21.8/ 10.8MB  │
+│ range_iterate          │      39.03   │      53.96   │ 0.72x faster │  21.8/ 10.8MB  │
+│ multithread_cpu        │      47.81   │      50.39   │ 0.95x faster │  21.9/ 11.0MB  │
+│ attr_lookup            │    1223.76   │      52.94   │ 23.11x slower │  21.9/ 10.8MB  │
+│ call_recursion         │      45.63   │      63.11   │ 0.72x faster │  21.8/ 10.6MB  │
+│ memory_pressure        │    1211.80   │      70.07   │ 17.30x slower │  21.8/ 10.9MB  │
 ├────────────────────────┼──────────────┼──────────────┼──────────────┼────────────────┤
-│ Geomean Time Ratio     │              │              │  0.04x        │                │
+│ Geomean Time Ratio     │              │              │  1.67x        │                │
 └──────────────────────────────────────────────────────────────────────────────────────┘
 ```
 > [!NOTE]

@@ -570,10 +570,10 @@ void HPy_Dump(HPyContext* hctx, HPy h) {
     if (!hctx || !hctx->ctx) return;
     const proto::ProtoObject* o = hctx->asProtoObject(h);
     if (!o) {
-        std::cerr << "[HPy] Dump: NULL handle" << std::endl;
+        // log removed
         return;
     }
-    std::cerr << "[HPy] Dump handle=" << static_cast<size_t>(h) << " object=" << o << std::endl;
+    // log removed
 }
 
 } // namespace protoPython
