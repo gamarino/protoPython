@@ -6,6 +6,7 @@
 #include <iostream>
 
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+#include <signal.h>
 #include <unistd.h>
 #include <dirent.h>
 #include <sys/stat.h>

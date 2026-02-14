@@ -43,6 +43,9 @@
 #include <vector>
 #include <unordered_set>
 #include <cstring>
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+#include <unistd.h>
+#endif
 
 static bool get_thread_diag() {
     static bool diag = std::getenv("PROTO_THREAD_DIAG") != nullptr;
@@ -5420,6 +5423,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     __globals__ = proto::ProtoString::fromUTF8String(rootContext_, "__globals__");
     co_varnames = proto::ProtoString::fromUTF8String(rootContext_, "co_varnames");
     co_nparams = proto::ProtoString::fromUTF8String(rootContext_, "co_nparams");
+    co_kwonlyargcount = proto::ProtoString::fromUTF8String(rootContext_, "co_kwonlyargcount");
     co_automatic_count = proto::ProtoString::fromUTF8String(rootContext_, "co_automatic_count");
     co_is_generator = proto::ProtoString::fromUTF8String(rootContext_, "co_is_generator");
     co_flags = proto::ProtoString::fromUTF8String(rootContext_, "co_flags");
@@ -6445,12 +6449,28 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain,
                 buf << f.rdbuf();
                 std::string source = buf.str();
                 f.close();
+                bool diagnostics = std::getenv("PROTO_ENV_DIAG") != nullptr;
+                if (diagnostics) {
+                    std::cerr << "[proto-diag] executeModule: parsing " << path << "\n";
+                }
                 Parser parser(source);
                 std::unique_ptr<ModuleNode> node = parser.parseModule();
+                if (diagnostics) {
+                    std::cerr << "[proto-diag] executeModule: parse finished, hasError=" << parser.hasError() << "\n";
+                }
                 if (!parser.hasError() && node) {
+                    if (diagnostics) {
+                        std::cerr << "[proto-diag] executeModule: compiling " << path << "\n";
+                    }
                     Compiler compiler(ctx, path);
                     bool compileOk = compiler.compileModule(node.get());
+                    if (diagnostics) {
+                        std::cerr << "[proto-diag] executeModule: compile finished, compileOk=" << compileOk << "\n";
+                    }
                     if (compileOk) {
+                        if (diagnostics) {
+                            std::cerr << "[proto-diag] executeModule: executing " << path << "\n";
+                        }
                         const proto::ProtoObject* codeObj = makeCodeObject(ctx, compiler.getConstants(), compiler.getNames(), compiler.getBytecode(), ctx->fromUTF8String(path.c_str())->asString(ctx), nullptr, 0, 0, 0, false);
                         if (codeObj) {
                             proto::ProtoObject* mutableMod = const_cast<proto::ProtoObject*>(mod);
@@ -6495,7 +6515,7 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain,
                         }
                     }
                 } else if (parser.hasError()) {
-                    // log removed
+                    std::cerr << "protopy: syntax error in '" << path << "': " << parser.getLastErrorMsg() << " at line " << parser.getLastErrorLine() << ":" << parser.getLastErrorColumn() << "\n";
                     return -1;
                 }
             }

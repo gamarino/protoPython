@@ -7,7 +7,7 @@
 
 > **"The GIL is no longer a limit. Immutability is no longer a constraint. Speed is no longer a trade-off. Welcome to the era of the Swarm of One."**
 
-**protoPython** is a high-performance, Python 3.14 compatible environment built from the ground up on top of [**protoCore**](../protoCore/). It delivers a modern, highly parallel Python runtime that eliminates the Global Interpreter Lock (GIL) and leverages immutable data structures for elite thread safety and performance.
+**protoPython** is a high-performance, Python 3.14 compatible environment built from the ground up on top of [**protoCore**](https://github.com/numaes/protoCore). It delivers a modern, highly parallel Python runtime that eliminates the Global Interpreter Lock (GIL) and leverages immutable data structures for elite thread safety and performance.
 
 > [!IMPORTANT]
 > **protoPython**, **protopy**, and **protopyc** are now **Ready for community review**. We invite the community to audit the architecture, test edge cases, and provide performance feedback. The compiler now supports full C++ translation with incremental collection building and runtime support.
@@ -82,14 +82,22 @@ protoPython is built for elite throughput. Below is a median-of-runs performance
 ## �🚀 Quick Start
 
 ### Build and Install
-For detailed, platform-specific instructions, see the [**Installation Guide**](docs/INSTALLATION.md).
+For detailed, platform-specific instructions (including install prefix and library path), see the [**Installation Guide**](docs/INSTALLATION.md).
 
 ```bash
-# Basic build steps
-git clone <protoCore_url> ../protoCore
+# Clone protoPython and protoCore (protoCore can be a sibling directory or installed separately)
+git clone https://github.com/numaes/protoPython.git
+cd protoPython
+git clone https://github.com/numaes/protoCore.git ../protoCore
+
+# Configure and build (install is optional; see docs for install location and prefix)
 cmake -B build -S .
-cmake --build build --target install
+cmake --build build
+# Optional: install to a prefix (default /usr/local; use -DCMAKE_INSTALL_PREFIX=... for a local install)
+# cmake --build build --target install
 ```
+
+**Running without installing:** You can run from the build tree; RPATH is set so the executables find the shared libraries without setting `LD_LIBRARY_PATH` or `DYLD_LIBRARY_PATH`. See the [Installation Guide](docs/INSTALLATION.md#running-from-the-build-tree).
 
 ### Run a Python Script
 ```python
@@ -102,9 +110,11 @@ s = "Hello World"
 print("Starts with 'Hello':", s.startswith("Hello"))
 ```
 
-Execute it with `protopy`:
+Execute it with `protopy` (from the build tree or from your `PATH` after install):
 ```bash
-./build/protopy example.py
+# From build tree (see Installation Guide for library path on macOS/Linux)
+./build/src/runtime/protopy example.py
+# Or, after install: protopy example.py
 ```
 
 ---
