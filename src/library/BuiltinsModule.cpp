@@ -53,6 +53,9 @@ static const proto::ProtoObject* py_import(
 
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     const proto::ProtoObject* leaf = env ? env->resolve(moduleName, context) : PROTO_NONE;
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        std::cerr << "[proto-diag] py_import: moduleName='" << moduleName << "' leaf=" << leaf << "\n" << std::flush;
+    }
     
     if (!leaf || leaf == PROTO_NONE) {
         if (env) {
@@ -91,6 +94,9 @@ static const proto::ProtoObject* py_import(
     }
     return leaf;
 }
+
+
+
 
 static const proto::ProtoObject* py_id(
     proto::ProtoContext* context,
@@ -231,6 +237,7 @@ static const proto::ProtoObject* py_print(
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
     (void)keywordParameters;
+    std::cerr << "[proto-diag] py_print called with " << positionalParameters->getSize(context) << " args\n" << std::flush;
     std::string sep = " ";
     std::string end = "\n";
 
@@ -258,11 +265,18 @@ static const proto::ProtoObject* py_print(
         } else {
             const proto::ProtoString* strS = env ? env->getStrString() : proto::ProtoString::fromUTF8String(context, "__str__");
             const proto::ProtoString* reprS = env ? env->getReprString() : proto::ProtoString::fromUTF8String(context, "__repr__");
-            const proto::ProtoObject* strMethod = obj->getAttribute(context, strS);
+            
+            // Try __str__ first, then __repr__
+            const proto::ProtoObject* strMethod = env ? env->getAttribute(context, obj, strS) : obj->getAttribute(context, strS);
             if (!strMethod || strMethod == PROTO_NONE) {
-                strMethod = obj->getAttribute(context, reprS);
+                strMethod = env ? env->getAttribute(context, obj, reprS) : obj->getAttribute(context, reprS);
             }
-            if (strMethod && strMethod != PROTO_NONE) {
+
+            if (strMethod && strMethod != PROTO_NONE && env) {
+                // If we have an environment, use callObject which handles descriptors and bound methods correctly
+                strObj = env->callObject(strMethod, {});
+            } else if (strMethod && strMethod != PROTO_NONE) {
+                // Fallback for minimal runtime
                 strObj = obj->call(context, nullptr, strS, obj, emptyL, nullptr);
             }
         }
@@ -790,9 +804,11 @@ static const proto::ProtoObject* py_getattr(
     nameObj->asString(context)->toUTF8String(context, nameStr);
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     const proto::ProtoString* key = proto::ProtoString::fromUTF8String(context, nameStr.c_str());
-    const proto::ProtoObject* attr = env ? env->getAttribute(context, obj, key) : obj->getAttribute(context, key);
-    if (attr && attr != PROTO_NONE) return attr;
+    if (obj->hasAttribute(context, key) == PROTO_TRUE) {
+        return env ? env->getAttribute(context, obj, key) : obj->getAttribute(context, key);
+    }
     if (positionalParameters->getSize(context) >= 3) return positionalParameters->getAt(context, 2);
+    if (env) env->raiseAttributeError(context, obj, nameStr);
     return PROTO_NONE;
 }
 
@@ -1189,14 +1205,23 @@ static const proto::ProtoObject* py_exec(
     (void)self;
     (void)parentLink;
     (void)keywordParameters;
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        std::cerr << "[proto-diag] py_exec called with " << positionalParameters->getSize(context) << " args\n" << std::flush;
+    }
     if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
     const proto::ProtoObject* sourceObj = positionalParameters->getAt(context, 0);
     if (!sourceObj->isString(context)) return PROTO_NONE;
     std::string source;
     sourceObj->asString(context)->toUTF8String(context, source);
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        std::cerr << "[proto-diag] py_exec: source='" << source << "'\n" << std::flush;
+    }
     Parser parser(source);
     std::unique_ptr<ModuleNode> mod = parser.parseModule();
     if (parser.hasError()) {
+        if (std::getenv("PROTO_ENV_DIAG")) {
+            std::cerr << "[proto-diag] py_exec: PARSER ERROR: " << parser.getLastErrorMsg() << "\n" << std::flush;
+        }
         PythonEnvironment* env = PythonEnvironment::fromContext(context);
         if (env) {
             std::string lineText = source;
@@ -1204,8 +1229,7 @@ static const proto::ProtoObject* py_exec(
             size_t start = 0;
             for (int i = 1; i < line; ++i) {
                 size_t next = source.find('\n', start);
-                if (next == std::string::npos) break;
-                start = next + 1;
+                start = (next == std::string::npos) ? start : next + 1;
             }
             size_t end = source.find('\n', start);
             lineText = source.substr(start, end == std::string::npos ? std::string::npos : end - start);
@@ -1214,14 +1238,28 @@ static const proto::ProtoObject* py_exec(
         return PROTO_NONE;
     }
     if (!mod || mod->body.empty()) {
+        if (std::getenv("PROTO_ENV_DIAG")) {
+            std::cerr << "[proto-diag] py_exec: module body is EMPTY\n" << std::flush;
+        }
         return PROTO_NONE;
     }
     Compiler compiler(context, "<string>");
     if (!compiler.compileModule(mod.get())) {
+        if (std::getenv("PROTO_ENV_DIAG")) {
+            std::cerr << "[proto-diag] py_exec: COMPILER ERROR\n" << std::flush;
+        }
         return PROTO_NONE;
     }
     const proto::ProtoObject* codeObj = makeCodeObject(context, compiler.getConstants(), compiler.getNames(), compiler.getBytecode(), nullptr, nullptr, 0, 0, 0, false);
-    if (!codeObj) return PROTO_NONE;
+    if (!codeObj) {
+        if (std::getenv("PROTO_ENV_DIAG")) {
+            std::cerr << "[proto-diag] py_exec: FAILED to make code object\n" << std::flush;
+        }
+        return PROTO_NONE;
+    }
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        std::cerr << "[proto-diag] py_exec: calling runCodeObject\n" << std::flush;
+    }
     proto::ProtoObject* globals = nullptr;
     proto::ProtoObject* locals = nullptr;
     if (positionalParameters->getSize(context) >= 2) {
@@ -1448,8 +1486,7 @@ static const proto::ProtoObject* py_hasattr(
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
     const proto::ProtoObject* nameObj = positionalParameters->getAt(context, 1);
     if (!nameObj->isString(context)) return PROTO_FALSE;
-    const proto::ProtoObject* attr = obj->getAttribute(context, nameObj->asString(context));
-    return (attr && attr != PROTO_NONE) ? PROTO_TRUE : PROTO_FALSE;
+    return obj->hasAttribute(context, nameObj->asString(context)) == PROTO_TRUE ? PROTO_TRUE : PROTO_FALSE;
 }
 
 static const proto::ProtoObject* py_raise(
@@ -2091,12 +2128,31 @@ static const proto::ProtoObject* py_range(
 
     unsigned long argsSize = positionalParameters->getSize(context);
     if (argsSize == 1) {
-        stop = positionalParameters->getAt(context, 0)->asLong(context);
+        const proto::ProtoObject* stopObj = positionalParameters->getAt(context, 0);
+        if (!stopObj->isInteger(context)) {
+            PythonEnvironment* env = PythonEnvironment::fromContext(context);
+            if (env) env->raiseTypeError(context, "range() integer stop argument expected");
+            return PROTO_NONE;
+        }
+        stop = stopObj->asLong(context);
     } else if (argsSize >= 2) {
-        start = positionalParameters->getAt(context, 0)->asLong(context);
-        stop = positionalParameters->getAt(context, 1)->asLong(context);
+        const proto::ProtoObject* startObj = positionalParameters->getAt(context, 0);
+        const proto::ProtoObject* stopObj = positionalParameters->getAt(context, 1);
+        if (!startObj->isInteger(context) || !stopObj->isInteger(context)) {
+            PythonEnvironment* env = PythonEnvironment::fromContext(context);
+            if (env) env->raiseTypeError(context, "range() integer arguments expected");
+            return PROTO_NONE;
+        }
+        start = startObj->asLong(context);
+        stop = stopObj->asLong(context);
         if (argsSize >= 3) {
-            step = positionalParameters->getAt(context, 2)->asLong(context);
+            const proto::ProtoObject* stepObj = positionalParameters->getAt(context, 2);
+            if (!stepObj->isInteger(context)) {
+                PythonEnvironment* env = PythonEnvironment::fromContext(context);
+                if (env) env->raiseTypeError(context, "range() integer step argument expected");
+                return PROTO_NONE;
+            }
+            step = stepObj->asLong(context);
         }
     }
 

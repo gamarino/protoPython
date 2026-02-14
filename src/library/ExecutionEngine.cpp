@@ -15,6 +15,7 @@
 namespace protoPython {
 static bool get_env_diag();
 
+
 namespace {
 struct Block {
     unsigned long handlerPc;
@@ -262,6 +263,8 @@ static const proto::ProtoObject* py_function_get(proto::ProtoContext* ctx,
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (!env) return self;
 
+    if (std::getenv("PROTO_ENV_DIAG")) std::cerr << "[proto-diag] py_function_get: binding " << self << " to " << instance << "\n";
+
     proto::ProtoObject* bound = const_cast<proto::ProtoObject*>(ctx->newObject(true));
     // Set __self__, __func__, and __call__
     bound = const_cast<proto::ProtoObject*>(bound->setAttribute(ctx, env->getSelfDunderString(), instance));
@@ -300,14 +303,24 @@ static const proto::ProtoObject* runUserClassCall(proto::ProtoContext* ctx,
     
     // Create new object instance
     proto::ProtoObject* obj = const_cast<proto::ProtoObject*>(ctx->newObject(true));
+    
     // Class acts as prototype/parent
     obj = const_cast<proto::ProtoObject*>(obj->addParent(ctx, self));
     
+    // Step V74: Explicitly set __class__ to the class itself
+    const proto::ProtoString* classS = env ? env->getClassString() : proto::ProtoString::fromUTF8String(ctx, "__class__");
+    obj = const_cast<proto::ProtoObject*>(obj->setAttribute(ctx, classS, self));
+    
     // Invoke __init__ if present
     const proto::ProtoString* initS = env ? env->getInitString() : proto::ProtoString::fromUTF8String(ctx, "__init__");
+    
+    // Step V75: Use env->getAttribute to get a BOUND method, ensuring 'self' is passed!
     const proto::ProtoObject* initM = env ? env->getAttribute(ctx, obj, initS) : obj->getAttribute(ctx, initS);
-    if (initM) {
+    if (initM && initM != PROTO_NONE) {
+        if (std::getenv("PROTO_ENV_DIAG")) std::cerr << "[proto-diag] runUserClassCall: calling __init__ for " << obj << "\n";
         invokeCallable(ctx, initM, args, kwargs);
+    } else {
+        if (std::getenv("PROTO_ENV_DIAG")) std::cerr << "[proto-diag] runUserClassCall: __init__ not found for " << obj << "\n";
     }
     
     return obj;
@@ -954,6 +967,10 @@ struct GCStack {
         slots[top++] = const_cast<proto::ProtoObject*>(obj);
     }
     void pop_back() { if (top > 0) top--; }
+    proto::ProtoObject*& back() { 
+        if (top == 0) throw std::runtime_error("Python stack underflow");
+        return slots[top - 1]; 
+    }
     const proto::ProtoObject* back() const { return top > 0 ? slots[top - 1] : nullptr; }
     size_t size() const { return top; }
     bool empty() const { return top == 0; }
@@ -986,6 +1003,9 @@ const proto::ProtoObject* executeBytecodeRange(
     unsigned long n = bytecode->getSize(ctx);
     if (n == 0) return nullptr;
     if (pcEnd >= n) pcEnd = n - 1;
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        std::cerr << "[proto-diag] executeBytecodeRange: pcStart=" << pcStart << " pcEnd=" << pcEnd << " bytecodeSize=" << n << "\n" << std::flush;
+    }
 
     unsigned int nSlots = ctx->getAutomaticLocalsCount();
     proto::ProtoObject** allSlots = const_cast<proto::ProtoObject**>(ctx->getAutomaticLocals());
@@ -1037,6 +1057,9 @@ const proto::ProtoObject* executeBytecodeRange(
         int op = static_cast<int>(instr->asLong(ctx));
         int arg = (i + 1 < n && bytecode->getAt(ctx, static_cast<int>(i + 1))->isInteger(ctx))
             ? static_cast<int>(bytecode->getAt(ctx, static_cast<int>(i + 1))->asLong(ctx)) : 0;
+        if (std::getenv("PROTO_ENV_DIAG")) {
+            std::cerr << "[proto-diag] execute: i=" << i << " op=" << op << " arg=" << arg << "\n" << std::flush;
+        }
 
 
         if (op == OP_LOAD_CONST) {
@@ -1132,63 +1155,44 @@ const proto::ProtoObject* executeBytecodeRange(
             if (names && frame && static_cast<unsigned long>(arg) < names->getSize(ctx)) {
                 const proto::ProtoObject* nameObj = names->getAt(ctx, arg);
                 if (nameObj->isString(ctx)) {
-                    std::string* namePtr = new std::string();
-                    nameObj->asString(ctx)->toUTF8String(ctx, *namePtr);
-                    std::unique_ptr<std::string> nameGuard(namePtr);
-                    
                     const proto::ProtoString* nameS = nameObj->asString(ctx);
-                    unsigned long h = nameObj->getHash(ctx);
-                    
-                    const proto::ProtoObject* val = PROTO_NONE;
-                    const proto::ProtoObject* curr = frame;
+                    std::string nStr;
+                    nameS->toUTF8String(ctx, nStr);
+                    if (std::getenv("PROTO_ENV_DIAG")) {
+                        std::cerr << "[proto-diag] OP_LOAD_NAME: name='" << nStr << "'\n" << std::flush;
+                    }
+                    const proto::ProtoObject* val = nullptr;
                     bool found = false;
-                    while (curr && curr != PROTO_NONE) {
-                        val = curr->getAttribute(ctx, nameS);
-                        if (val != nullptr && val != PROTO_NONE) {
-                            found = true;
-                            break;
-                        }
-                        // hasOwnAttribute fallback check (likely redundant but kept for safety)
-                        if (curr->hasOwnAttribute(ctx, nameS) == PROTO_TRUE) {
-                            val = curr->getAttribute(ctx, nameS); 
-                            found = true;
-                            break;
-                        }
-                        
-                        const proto::ProtoString* dName = env ? env->getDataString() : proto::ProtoString::fromUTF8String(ctx, "__data__");
-                        const proto::ProtoObject* dataObj = curr->getAttribute(ctx, dName);
-                        if (dataObj && dataObj->asSparseList(ctx)) {
-                            const proto::ProtoSparseList* sl = dataObj->asSparseList(ctx);
-                            if (sl->has(ctx, h)) {
-                                val = sl->getAt(ctx, h);
-                                found = true;
-                                break;
-                            }
-                        }
-                        const proto::ProtoList* parents = curr->getParents(ctx);
-                        if (parents && parents->getSize(ctx) > 0) {
-                            curr = parents->getAt(ctx, 0);
-                        } else {
-                            curr = nullptr;
-                        }
+                    if (frame->hasAttribute(ctx, nameS) == PROTO_TRUE) {
+                        val = frame->getAttribute(ctx, nameS);
+                        found = true;
+                    }
+                    if (std::getenv("PROTO_ENV_DIAG")) {
+                        std::cerr << "[proto-diag] OP_LOAD_NAME: val=" << val << " found=" << (found ? "1" : "0") << "\n" << std::flush;
                     }
 
                     if (found) {
                         stack.push_back(val);
-                    } else {
-                        if (env) {
-                            const proto::ProtoObject* r = env->resolve(*namePtr, ctx);
-                            if (r != nullptr) {
+                    } else if (env) {
+                        const proto::ProtoObject* r = env->resolve(nameS, ctx);
+                        if (r != nullptr || (nStr == "None" && r == PROTO_NONE)) { // Special case for None literal if needed, but resolve should return it
+                            if (r == nullptr && nStr == "None") r = PROTO_NONE; 
+                            if (r) {
                                 stack.push_back(r);
                             } else {
-                                env->raiseNameError(ctx, *namePtr);
-                                if (outPc) *outPc = i;
-                                continue;
+                                env->raiseNameError(ctx, nStr);
+                                return nullptr;
                             }
                         } else {
-                            stack.push_back(PROTO_NONE);
+                            env->raiseNameError(ctx, nStr);
+                            return nullptr;
                         }
+                    } else {
+                        std::cerr << "Engine Error: env is NULL in OP_LOAD_NAME for '" << nStr << "'\n";
+                        return nullptr;
                     }
+                } else {
+                    stack.push_back(PROTO_NONE);
                 }
             }
         } else if (op == OP_STORE_NAME) {
@@ -1198,23 +1202,21 @@ const proto::ProtoObject* executeBytecodeRange(
                 const proto::ProtoObject* val = stack.back();
                 stack.pop_back();
                 if (nameObj->isString(ctx)) {
-                    std::string* namePtr = new std::string();
-                    nameObj->asString(ctx)->toUTF8String(ctx, *namePtr);
-                    std::unique_ptr<std::string> nameGuard(namePtr);
-                    std::string& name = *namePtr;
-                    
-                    
-                    
+                    if (std::getenv("PROTO_ENV_DIAG")) {
+                        std::string n;
+                        nameObj->asString(ctx)->toUTF8String(ctx, n);
+                        std::cerr << "[proto-diag] OP_STORE_NAME: name='" << n << "' val=" << val << "\n" << std::flush;
+                    }
                     // Update frame (CoW support)
                     const proto::ProtoObject* newFrame = frame->setAttribute(ctx, nameObj->asString(ctx), val);
                     frame = const_cast<proto::ProtoObject*>(newFrame);
                     
                     if (env) {
                         PythonEnvironment::setCurrentFrame(frame);
+                        if (sync_globals) PythonEnvironment::setCurrentGlobals(frame);
                         env->invalidateResolveCache();
                     }
                 }
-
             }
         } else if (op == OP_LOAD_FAST) {
             const unsigned int nSlots = ctx->getAutomaticLocalsCount();
@@ -1758,7 +1760,8 @@ const proto::ProtoObject* executeBytecodeRange(
                 if (data && data->asList(ctx)) {
                     const proto::ProtoList* lst = data->asList(ctx);
                     lst = lst->appendLast(ctx, val);
-                    lstObj->setAttribute(ctx, env ? env->getDataString() : proto::ProtoString::fromUTF8String(ctx, "__data__"), lst->asObject(ctx));
+                    const proto::ProtoObject* newLst = lstObj->setAttribute(ctx, env ? env->getDataString() : proto::ProtoString::fromUTF8String(ctx, "__data__"), lst->asObject(ctx));
+                    stack[stack.size() - arg] = const_cast<proto::ProtoObject*>(newLst);
                 }
             }
         } else if (op == OP_MAP_ADD) {
@@ -1775,13 +1778,15 @@ const proto::ProtoObject* executeBytecodeRange(
                     unsigned long h = key->getHash(ctx);
                     bool isNew = !sl->has(ctx, h);
                     sl = sl->setAt(ctx, h, val);
-                    mapObj->setAttribute(ctx, dataString, sl->asObject(ctx));
+                    const proto::ProtoObject* newMap = mapObj->setAttribute(ctx, dataString, sl->asObject(ctx));
+                    stack[stack.size() - arg] = const_cast<proto::ProtoObject*>(newMap);
                     if (isNew) {
                          const proto::ProtoString* keysString = proto::ProtoString::fromUTF8String(ctx, "__keys__");
-                         const proto::ProtoObject* keysObj = mapObj->getAttribute(ctx, keysString);
+                         const proto::ProtoObject* keysObj = newMap->getAttribute(ctx, keysString);
                          const proto::ProtoList* keys = (keysObj && keysObj->asList(ctx)) ? keysObj->asList(ctx) : ctx->newList();
                          keys = keys->appendLast(ctx, key);
-                         mapObj->setAttribute(ctx, keysString, keys->asObject(ctx));
+                         const proto::ProtoObject* finalMap = newMap->setAttribute(ctx, keysString, keys->asObject(ctx));
+                         stack[stack.size() - arg] = const_cast<proto::ProtoObject*>(finalMap);
                     }
                 }
             }
@@ -1940,13 +1945,14 @@ const proto::ProtoObject* executeBytecodeRange(
                 stack.pop_back();
                 const proto::ProtoObject* nameObj = names->getAt(ctx, arg);
                 if (nameObj->isString(ctx)) {
-                    const proto::ProtoObject* val = env ? env->getAttribute(ctx, obj, nameObj->asString(ctx)) : obj->getAttribute(ctx, nameObj->asString(ctx));
-                    if (val != nullptr && val != PROTO_NONE) {
+                    const proto::ProtoString* attrName = nameObj->asString(ctx);
+                    if (obj->hasAttribute(ctx, attrName)) {
+                        const proto::ProtoObject* val = env ? env->getAttribute(ctx, obj, attrName) : obj->getAttribute(ctx, attrName);
                         stack.push_back(val);
                     } else {
                         PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
                         std::string* attrPtr = new std::string();
-                        nameObj->asString(ctx)->toUTF8String(ctx, *attrPtr);
+                        attrName->toUTF8String(ctx, *attrPtr);
                         if (env) env->raiseAttributeError(ctx, obj, *attrPtr);
                         delete attrPtr;
                         continue;
@@ -1955,17 +1961,23 @@ const proto::ProtoObject* executeBytecodeRange(
             }
         } else if (op == OP_STORE_ATTR) {
             if (names && stack.size() >= 2 && static_cast<unsigned long>(arg) < names->getSize(ctx)) {
-                const proto::ProtoObject* val = stack.back();
-                stack.pop_back();
                 const proto::ProtoObject* obj = stack.back();
+                stack.pop_back();
+                const proto::ProtoObject* val = stack.back();
                 stack.pop_back();
                 const proto::ProtoObject* nameObj = names->getAt(ctx, arg);
                 if (nameObj->isString(ctx)) {
+                    const proto::ProtoString* nameS = nameObj->asString(ctx);
+                    if (std::getenv("PROTO_ENV_DIAG")) {
+                        std::string n;
+                        nameS->toUTF8String(ctx, n);
+                        std::cerr << "[proto-diag] OP_STORE_ATTR: obj=" << obj << " name='" << n << "' val=" << val << "\n";
+                    }
                     if (env) {
-                        obj = const_cast<proto::ProtoObject*>(env->setAttribute(ctx, obj, nameObj->asString(ctx), val));
+                        obj = const_cast<proto::ProtoObject*>(env->setAttribute(ctx, obj, nameS, val));
                     } else {
                         proto::ProtoObject* mutableObj = const_cast<proto::ProtoObject*>(obj);
-                        obj = const_cast<proto::ProtoObject*>(mutableObj->setAttribute(ctx, nameObj->asString(ctx), val));
+                        obj = const_cast<proto::ProtoObject*>(mutableObj->setAttribute(ctx, nameS, val));
                     }
                 }
             }
@@ -2085,13 +2097,18 @@ const proto::ProtoObject* executeBytecodeRange(
             
             proto::ProtoObject* dictObj = const_cast<proto::ProtoObject*>(ctx->newObject(true));
             stack.push_back(dictObj); // Root dictObj
-            if (env && env->getDictPrototype()) dictObj = const_cast<proto::ProtoObject*>(dictObj->addParent(ctx, env->getDictPrototype()));
+            if (env && env->getDictPrototype()) {
+                dictObj = const_cast<proto::ProtoObject*>(dictObj->addParent(ctx, env->getDictPrototype()));
+                stack.back() = dictObj;
+            }
             
             const proto::ProtoString* dataName = env ? env->getDataString() : proto::ProtoString::fromUTF8String(ctx, "__data__");
             const proto::ProtoString* keysName = env ? env->getKeysString() : proto::ProtoString::fromUTF8String(ctx, "__keys__");
             
-            dictObj->setAttribute(ctx, dataName, data->asObject(ctx));
-            dictObj->setAttribute(ctx, keysName, keys->asObject(ctx));
+            dictObj = const_cast<proto::ProtoObject*>(dictObj->setAttribute(ctx, dataName, data->asObject(ctx)));
+            stack.back() = dictObj;
+            dictObj = const_cast<proto::ProtoObject*>(dictObj->setAttribute(ctx, keysName, keys->asObject(ctx)));
+            stack.back() = dictObj;
             
             const proto::ProtoObject* finalDict = dictObj;
             for (int k = 0; k < 2 * arg + 3; ++k) stack.pop_back();
@@ -2171,6 +2188,9 @@ const proto::ProtoObject* executeBytecodeRange(
             }
             const proto::ProtoObject* callable = stack.back();
             stack.pop_back();
+            if (std::getenv("PROTO_ENV_DIAG")) {
+                std::cerr << "[proto-diag] OP_CALL_FUNCTION: callable=" << callable << " isMethod=" << (callable && callable->isMethod(ctx)) << "\n" << std::flush;
+            }
             const proto::ProtoList* args = ctx->newList();
             for (int j = 0; j < arg; ++j)
                 args = args->appendLast(ctx, argVec[j]);
@@ -2308,9 +2328,17 @@ const proto::ProtoObject* executeBytecodeRange(
                 
                 // Create class object (prototype)
                 proto::ProtoObject* targetClass = const_cast<proto::ProtoObject*>(ctx->newObject(true));
+                if (env && env->getObjectPrototype()) {
+                    targetClass = const_cast<proto::ProtoObject*>(targetClass->addParent(ctx, env->getObjectPrototype()));
+                }
                 if (env && env->getTypePrototype()) {
                     targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(ctx, env->getClassString(), env->getTypePrototype()));
                 }
+                // Step V75: Explicitly set __name__ on the class object
+                targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(ctx, nameS, name));
+                
+                // Set runUserClassCall as __call__
+                targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(ctx, callS, ctx->fromMethod(targetClass, runUserClassCall)));
                 
                 if (bases && bases->asTuple(ctx)) {
                     auto bt = bases->asTuple(ctx);
@@ -2345,6 +2373,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 // For now, the co_names approach is much safer than the hash cast.
                 
                 // Set __call__ to support instantiation
+                if (std::getenv("PROTO_ENV_DIAG")) std::cerr << "[proto-diag] OP_BUILD_CLASS: setting __call__ for " << targetClass << "\n";
                 targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(ctx, callS, ctx->fromMethod(targetClass, runUserClassCall)));
 
                 stack.push_back(targetClass);
@@ -2482,13 +2511,14 @@ const proto::ProtoObject* executeBytecodeRange(
                 if (names && frame && static_cast<unsigned long>(arg) < names->getSize(ctx)) {
                 const proto::ProtoObject* nameObj = names->getAt(ctx, arg);
                 if (nameObj->isString(ctx)) {
-                    std::string* namePtr = new std::string();
-                    nameObj->asString(ctx)->toUTF8String(ctx, *namePtr);
-                    std::unique_ptr<std::string> nameGuard(namePtr);
-                    std::string& name = *namePtr;
-                    
-                    const proto::ProtoObject* val = frame->getAttribute(ctx, nameObj->asString(ctx));
-                    bool found = (val != nullptr && val != PROTO_NONE);
+                    const proto::ProtoString* nameS = nameObj->asString(ctx);
+                    if (std::getenv("PROTO_ENV_DIAG")) {
+                        std::string n;
+                        nameS->toUTF8String(ctx, n);
+                        std::cerr << "[proto-diag] OP_LOAD_GLOBAL: name='" << n << "'\n" << std::flush;
+                    }
+                    const proto::ProtoObject* val = frame->getAttribute(ctx, nameS);
+                    bool found = (val != nullptr);
                     if (!found) {
                         const proto::ProtoString* dName = env ? env->getDataString() : proto::ProtoString::fromUTF8String(ctx, "__data__");
                         const proto::ProtoObject* dataObj = frame->getAttribute(ctx, dName);
@@ -2502,18 +2532,14 @@ const proto::ProtoObject* executeBytecodeRange(
                     if (found) {
                         stack.push_back(val);
                     } else {
-                        PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
                         if (env) {
-                            std::string* nPtr = new std::string();
-                            nameObj->asString(ctx)->toUTF8String(ctx, *nPtr);
-                            std::unique_ptr<std::string> nGuard(nPtr);
-                            val = env->resolve(*nPtr, ctx);
-                            bool resolved = (val != nullptr) || env->isResolved(*nPtr, ctx);
-
-                            if (resolved) {
+                            val = env->resolve(nameS, ctx);
+                            if (val != nullptr) {
                                 stack.push_back(val);
                             } else {
-                                env->raiseNameError(ctx, *nPtr);
+                                std::string n;
+                                nameS->toUTF8String(ctx, n);
+                                env->raiseNameError(ctx, n);
                                 continue;
                             }
                         } else {
@@ -2529,6 +2555,11 @@ const proto::ProtoObject* executeBytecodeRange(
                 const proto::ProtoObject* val = stack.back();
                 stack.pop_back();
                 if (nameObj->isString(ctx)) {
+                    if (std::getenv("PROTO_ENV_DIAG")) {
+                        std::string n;
+                        nameObj->asString(ctx)->toUTF8String(ctx, n);
+                        std::cerr << "[proto-diag] OP_STORE_GLOBAL: name='" << n << "' val=" << val << "\n" << std::flush;
+                    }
                     frame = const_cast<proto::ProtoObject*>(frame->setAttribute(ctx, nameObj->asString(ctx), val));
                     PythonEnvironment::setCurrentFrame(frame);
                     if (sync_globals) PythonEnvironment::setCurrentGlobals(frame);
