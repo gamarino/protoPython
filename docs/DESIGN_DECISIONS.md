@@ -61,3 +61,12 @@ This document consolidates the main architectural decisions for onboarding new c
 **Rationale:** CPython's C API exposes refcounting and GIL. HPy provides handles, type/attr/call operations, and number/sequence protocols in a GIL-agnostic way. Enables ecosystem compatibility without compromising the GIL-less runtime.
 
 **Reference:** [HPY_INTEGRATION_PLAN.md](HPY_INTEGRATION_PLAN.md)
+---
+
+## Type Representations and Metadata
+
+**Decision:** Standardize `__repr__` and `__str__` lookups in `PythonEnvironment`; include metadata like `co_name` in code objects for improved introspection. Ensure `type(None)` correctly returns `NoneType`.
+
+**Rationale:** Improves REPL UX and diagnostic clarity. `co_name` allows generators and functions to report their actual names in tracebacks and `repr()`. Standardizing dunder lookups ensures consistency across builtin and user-defined types.
+
+**Reference:** [architecture/core_object_model.md](architecture/core_object_model.md)
