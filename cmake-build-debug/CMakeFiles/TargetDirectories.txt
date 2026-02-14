@@ -106,3 +106,13 @@
 /home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/test/regression/CMakeFiles/install.dir
 /home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/test/regression/CMakeFiles/install/local.dir
 /home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/test/regression/CMakeFiles/install/strip.dir
+/home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/src/compiler/CMakeFiles/protopyc.dir
+/home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/src/compiler/CMakeFiles/package.dir
+/home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/src/compiler/CMakeFiles/package_source.dir
+/home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/src/compiler/CMakeFiles/test.dir
+/home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/src/compiler/CMakeFiles/edit_cache.dir
+/home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/src/compiler/CMakeFiles/rebuild_cache.dir
+/home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/src/compiler/CMakeFiles/list_install_components.dir
+/home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/src/compiler/CMakeFiles/install.dir
+/home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/src/compiler/CMakeFiles/install/local.dir
+/home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/src/compiler/CMakeFiles/install/strip.dir

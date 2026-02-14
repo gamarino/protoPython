@@ -1,0 +1,6 @@
+g = (x for x in range(1))
+print("Generator:", g)
+print("Generator type:", type(g))
+print("Generator __name__:", getattr(g, "__name__", "MISSING"))
+print("Generator type __name__:", getattr(type(g), "__name__", "MISSING"))
+print("Generator __repr__:", g.__repr__)

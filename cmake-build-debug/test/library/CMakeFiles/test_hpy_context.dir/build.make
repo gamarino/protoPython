@@ -92,7 +92,7 @@ test_hpy_context_EXTERNAL_OBJECTS =
 
 test/library/test_hpy_context: test/library/CMakeFiles/test_hpy_context.dir/TestHPyContext.cpp.o
 test/library/test_hpy_context: test/library/CMakeFiles/test_hpy_context.dir/build.make
-test/library/test_hpy_context: src/library/libprotoPython.so
+test/library/test_hpy_context: src/library/libprotoPython.so.0.2.0
 test/library/test_hpy_context: protoCore/libprotoCore.so.1.0.0
 test/library/test_hpy_context: lib/libgtest_main.a
 test/library/test_hpy_context: lib/libgtest.a

@@ -1,0 +1,2862 @@
+[proto-diag] executeModule: ENTER moduleName='range_iterate' asMain=1
+[proto-diag] executeModule: calling getImportModule for range_iterate
+[proto-diag] executeModule: getImportModule returned 0x7f713f2f1780
+[proto-diag] executeModule: mod=0x7f713f2eca80
+[proto-diag] executeModule: setting __name__ to __main__
+[proto-diag] executeModule: fileObj=0x7f713f1f3cc6 execVal=0x141
+[proto-diag] runCodeObject: bytecode size=74
+[proto-diag] executeBytecodeRange: pcStart=0 pcEnd=73 bytecodeSize=74
+[proto-diag] execute: i=0 op=102 arg=0
+[proto-diag] OP_LOAD_NAME: name='__import__'
+[proto-diag] OP_LOAD_NAME: val=0x141 found=0
+[proto-diag] execute: i=2 op=100 arg=0
+[proto-diag] execute: i=4 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f23984c isMethod=1
+[proto-diag] executeModule: ENTER moduleName='os' asMain=0
+[proto-diag] executeModule: calling getImportModule for os
+[proto-diag] executeModule: getImportModule returned 0x7f713f444e40
+[proto-diag] executeModule: mod=0x7f713f440f40
+[proto-diag] executeModule: fileObj=0x7f713f443246 execVal=0x141
+[proto-diag] runCodeObject: bytecode size=128
+[proto-diag] executeBytecodeRange: pcStart=0 pcEnd=127 bytecodeSize=128
+[proto-diag] execute: i=0 op=102 arg=0
+[proto-diag] OP_LOAD_NAME: name='__import__'
+[proto-diag] OP_LOAD_NAME: val=0x141 found=0
+[proto-diag] execute: i=2 op=100 arg=0
+[proto-diag] execute: i=4 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f23984c isMethod=1
+[proto-diag] py_import: moduleName='sys' leaf=0x7f713f1dd140
+[proto-diag] execute: i=6 op=103 arg=1
+[proto-diag] execute: i=8 op=100 arg=1
+[proto-diag] execute: i=10 op=103 arg=2
+[proto-diag] execute: i=12 op=100 arg=2
+[proto-diag] execute: i=14 op=103 arg=3
+[proto-diag] execute: i=16 op=100 arg=3
+[proto-diag] execute: i=18 op=103 arg=4
+[proto-diag] execute: i=20 op=100 arg=4
+[proto-diag] execute: i=22 op=103 arg=5
+[proto-diag] execute: i=24 op=100 arg=5
+[proto-diag] execute: i=26 op=156 arg=0
+[proto-diag] execute: i=28 op=103 arg=6
+[proto-diag] execute: i=30 op=100 arg=6
+[proto-diag] execute: i=32 op=118 arg=0
+[proto-diag] execute: i=34 op=100 arg=7
+[proto-diag] execute: i=36 op=156 arg=0
+[proto-diag] execute: i=38 op=160 arg=0
+[proto-diag] runCodeObject: bytecode size=68
+[proto-diag] executeBytecodeRange: pcStart=0 pcEnd=67 bytecodeSize=68
+[proto-diag] execute: i=0 op=100 arg=0
+[proto-diag] execute: i=2 op=156 arg=0
+[proto-diag] execute: i=4 op=103 arg=0
+[proto-diag] execute: i=6 op=100 arg=1
+[proto-diag] execute: i=8 op=156 arg=0
+[proto-diag] execute: i=10 op=103 arg=1
+[proto-diag] execute: i=12 op=100 arg=2
+[proto-diag] execute: i=14 op=156 arg=0
+[proto-diag] execute: i=16 op=103 arg=2
+[proto-diag] execute: i=18 op=100 arg=3
+[proto-diag] execute: i=20 op=156 arg=0
+[proto-diag] execute: i=22 op=103 arg=3
+[proto-diag] execute: i=24 op=100 arg=4
+[proto-diag] execute: i=26 op=156 arg=0
+[proto-diag] execute: i=28 op=103 arg=4
+[proto-diag] execute: i=30 op=100 arg=5
+[proto-diag] execute: i=32 op=156 arg=0
+[proto-diag] execute: i=34 op=103 arg=5
+[proto-diag] execute: i=36 op=100 arg=6
+[proto-diag] execute: i=38 op=156 arg=0
+[proto-diag] execute: i=40 op=103 arg=6
+[proto-diag] execute: i=42 op=100 arg=7
+[proto-diag] execute: i=44 op=156 arg=0
+[proto-diag] execute: i=46 op=103 arg=7
+[proto-diag] execute: i=48 op=100 arg=8
+[proto-diag] execute: i=50 op=156 arg=0
+[proto-diag] execute: i=52 op=103 arg=8
+[proto-diag] execute: i=54 op=100 arg=9
+[proto-diag] execute: i=56 op=156 arg=0
+[proto-diag] execute: i=58 op=103 arg=9
+[proto-diag] execute: i=60 op=100 arg=10
+[proto-diag] execute: i=62 op=156 arg=0
+[proto-diag] execute: i=64 op=103 arg=10
+[proto-diag] execute: i=66 op=101 arg=0
+[proto-diag] OP_BUILD_CLASS: setting __call__ for 0x7f713f648c40
+[proto-diag] execute: i=40 op=103 arg=7
+[proto-diag] execute: i=42 op=102 arg=7
+[proto-diag] OP_LOAD_NAME: name='_Environ'
+[proto-diag] OP_LOAD_NAME: val=0x7f713f648c40 found=1
+[proto-diag] execute: i=44 op=102 arg=6
+[proto-diag] OP_LOAD_NAME: name='_make_environ'
+[proto-diag] OP_LOAD_NAME: val=0x7f713f633ec0 found=1
+[proto-diag] execute: i=46 op=106 arg=0
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f633ec0 isMethod=0
+[proto-diag] runCodeObject: bytecode size=100
+[proto-diag] executeBytecodeRange: pcStart=0 pcEnd=99 bytecodeSize=100
+[proto-diag] execute: i=0 op=116 arg=0
+[proto-diag] execute: i=2 op=158 arg=5
+[proto-diag] execute: i=4 op=177 arg=78
+[proto-diag] execute: i=6 op=102 arg=0
+[proto-diag] OP_LOAD_NAME: name='__import__'
+[proto-diag] OP_LOAD_NAME: val=0x141 found=0
+[proto-diag] execute: i=8 op=100 arg=0
+[proto-diag] execute: i=10 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f23984c isMethod=1
+[proto-diag] NativeModuleProvider::tryLoad found '_os' -> 0x7f713f7c4d00
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f7ced00
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f7d1c00
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f7d4b00
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f7d7a00
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f7da900
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f7dd800
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f7e0700
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f7e3600
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f7e6500
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f7e9400
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f7ec300
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f7ef200
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f7f2100
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f7f5000
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f7f7f00
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f7fae00
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f7fdd00
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f800c00
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f803b00
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f806a00
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f809900
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f80c800
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f80f700
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f812600
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f815500
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f818400
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f81b300
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f81e200
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f821100
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f824000
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f826f00
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f829e00
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f82cd00
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f82fc00
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f832b00
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f835a00
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f838900
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f83b800
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f83e700
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f841600
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f844500
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f847400
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f84a300
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f84d200
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f850100
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f853000
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f855f00
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f858e00
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f85bd00
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f85ec00
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f861b00
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f864a00
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f867900
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f86a800
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f86d700
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f870600
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f873500
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f876400
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f879300
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f87c200
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f87f100
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f882000
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f884f00
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f887e00
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f88ad00
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f88dc00
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f890b00
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f893a00
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f896900
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f899800
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f89c700
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f89f600
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f8a2500
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f8a5400
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f8a8300
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f8ab200
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f8ae100
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f8b1000
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f8b3f00
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f8b6e00
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f8b9d00
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f8bcc00
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f8bfb00
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f8c2a00
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f8c5900
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f8c8800
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f8cb700
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f8ce600
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f8d1500
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f8d4400
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f8d7300
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f8da200
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f8dd100
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f8e0000
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f8e2f00
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f8e5e00
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f8e8d00
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f8ebc00
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f713f8eeb00
+[proto-diag] executeModule: mod=0x7f713f7c4d00
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] NativeModuleProvider::tryLoad found 'atexit' -> 0x7f713f8f0680
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713f8f52c0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] py_import: moduleName='_os' leaf=0x7f713f7c4d00
+[proto-diag] execute: i=12 op=158 arg=4
+[proto-diag] execute: i=14 op=102 arg=1
+[proto-diag] OP_LOAD_NAME: name='hasattr'
+[proto-diag] OP_LOAD_NAME: val=0x141 found=0
+[proto-diag] execute: i=16 op=157 arg=4
+[proto-diag] execute: i=18 op=100 arg=1
+[proto-diag] execute: i=20 op=106 arg=2
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f22d9cc isMethod=1
+[proto-diag] execute: i=22 op=110 arg=74
+[proto-diag] execute: i=24 op=157 arg=4
+[proto-diag] execute: i=26 op=112 arg=2
+[proto-diag] execute: i=28 op=158 arg=3
+[proto-diag] execute: i=30 op=157 arg=4
+[proto-diag] execute: i=32 op=112 arg=3
+[proto-diag] execute: i=34 op=106 arg=0
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f9760cc isMethod=1
+[proto-diag] execute: i=36 op=158 arg=2
+[proto-diag] execute: i=38 op=157 arg=2
+[proto-diag] execute: i=40 op=119 arg=0
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f97608c isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=74 op=178 arg=0
+[proto-diag] execute: i=76 op=111 arg=92
+[proto-diag] execute: i=92 op=157 arg=5
+[proto-diag] execute: i=94 op=101 arg=0
+[proto-diag] execute: i=48 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f648c40 isMethod=0
+[proto-diag] py_function_get: binding 0x7f713f63b5c0 to 0x7f713f745c40
+[proto-diag] runUserClassCall: calling __init__ for 0x7f713f745c40
+[proto-diag] runCodeObject: bytecode size=10
+[proto-diag] executeBytecodeRange: pcStart=0 pcEnd=9 bytecodeSize=10
+[proto-diag] execute: i=0 op=157 arg=1
+[proto-diag] execute: i=2 op=157 arg=0
+[proto-diag] execute: i=4 op=113 arg=0
+[proto-diag] OP_STORE_ATTR: obj=0x7f713f745c40 name='_data' val=0x7f713f7c4380
+[proto-diag] execute: i=6 op=100 arg=0
+[proto-diag] execute: i=8 op=101 arg=0
+[proto-diag] execute: i=50 op=103 arg=8
+[proto-diag] execute: i=52 op=100 arg=8
+[proto-diag] execute: i=54 op=156 arg=0
+[proto-diag] execute: i=56 op=103 arg=9
+[proto-diag] execute: i=58 op=100 arg=9
+[proto-diag] execute: i=60 op=156 arg=0
+[proto-diag] execute: i=62 op=103 arg=10
+[proto-diag] execute: i=64 op=100 arg=10
+[proto-diag] execute: i=66 op=156 arg=0
+[proto-diag] execute: i=68 op=103 arg=11
+[proto-diag] execute: i=70 op=100 arg=11
+[proto-diag] execute: i=72 op=156 arg=0
+[proto-diag] execute: i=74 op=103 arg=12
+[proto-diag] execute: i=76 op=100 arg=12
+[proto-diag] execute: i=78 op=156 arg=0
+[proto-diag] execute: i=80 op=103 arg=13
+[proto-diag] execute: i=82 op=100 arg=13
+[proto-diag] execute: i=84 op=156 arg=0
+[proto-diag] execute: i=86 op=103 arg=14
+[proto-diag] execute: i=88 op=100 arg=14
+[proto-diag] execute: i=90 op=156 arg=0
+[proto-diag] execute: i=92 op=103 arg=15
+[proto-diag] execute: i=94 op=100 arg=15
+[proto-diag] execute: i=96 op=156 arg=0
+[proto-diag] execute: i=98 op=103 arg=16
+[proto-diag] execute: i=100 op=100 arg=16
+[proto-diag] execute: i=102 op=156 arg=0
+[proto-diag] execute: i=104 op=103 arg=17
+[proto-diag] execute: i=106 op=100 arg=17
+[proto-diag] execute: i=108 op=156 arg=0
+[proto-diag] execute: i=110 op=103 arg=18
+[proto-diag] execute: i=112 op=100 arg=18
+[proto-diag] execute: i=114 op=156 arg=0
+[proto-diag] execute: i=116 op=103 arg=19
+[proto-diag] execute: i=118 op=100 arg=19
+[proto-diag] execute: i=120 op=156 arg=0
+[proto-diag] execute: i=122 op=103 arg=20
+[proto-diag] execute: i=124 op=100 arg=20
+[proto-diag] execute: i=126 op=101 arg=0
+[proto-diag] executeModule: moduleName='os' mod changed: 0x7f713f440f40 -> 0x7f713f440f40
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713fe50bc0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713fe53ac0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713fe569c0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713fe598c0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713fe5c7c0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713fe5f6c0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713fe625c0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713fe654c0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713fe683c0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713fe6b2c0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713fe6e1c0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713fe710c0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713fe73fc0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713fe76ec0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713fe79dc0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713fe7ccc0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713fe7fbc0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713fe82ac0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713fe859c0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713fe888c0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713fe8b7c0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713fe8e6c0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713fe915c0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713fe944c0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713fe973c0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713fe9a2c0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713fe9d1c0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713fea00c0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713fea2fc0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713fea5ec0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713fea8dc0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713feabcc0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713feaebc0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713feb1ac0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713feb49c0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713feb78c0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713feba7c0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713febd6c0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713ff405c0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713ff434c0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713ff463c0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713ff492c0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713ff4c1c0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713ff4f0c0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713ff51fc0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713ff54ec0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713ff57dc0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713ff5acc0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713ff5dbc0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713ff60ac0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713ff639c0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713ff668c0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713ff697c0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713ff6c6c0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713ff6f5c0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713ff724c0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713ff753c0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713ff782c0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713ff7b1c0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713ff7e0c0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713ff80fc0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713ff83ec0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713ff86dc0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713ff89cc0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713ff8cbc0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713ff8fac0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713ff929c0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713ff958c0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713ff987c0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713ff9b6c0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713ff9e5c0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713ffa14c0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713ffa43c0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713ffa72c0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713ffaa1c0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713ffad0c0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713ffaffc0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713ffb2ec0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713ffb5dc0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713ffb8cc0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713ffbbbc0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713ffbeac0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713ffc19c0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713ffc48c0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713ffc77c0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713ffca6c0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713ffcd5c0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713ffd04c0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713ffd33c0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713ffd62c0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713ffd91c0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713ffdc0c0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713ffdefc0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713ffe1ec0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713ffe4dc0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713ffe7cc0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713ffeabc0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713ffedac0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f713fff09c0
+[proto-diag] executeModule: mod=0x7f713f8f0680
+[proto-diag] executeModule: fileObj=0x141 execVal=0x141
+[proto-diag] py_import: moduleName='os' leaf=0x7f713f440f40
+[proto-diag] execute: i=6 op=103 arg=1
+[proto-diag] execute: i=8 op=102 arg=2
+[proto-diag] OP_LOAD_NAME: name='print'
+[proto-diag] OP_LOAD_NAME: val=0x141 found=0
+[proto-diag] execute: i=10 op=100 arg=1
+[proto-diag] execute: i=12 op=102 arg=1
+[proto-diag] OP_LOAD_NAME: name='os'
+[proto-diag] OP_LOAD_NAME: val=0x7f713f440f40 found=1
+[proto-diag] execute: i=14 op=106 arg=2
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f20abcc isMethod=1
+[proto-diag] py_print called with 2 args
+DEBUG: os is <class 'os'>
+[proto-diag] execute: i=16 op=133 arg=0
+[proto-diag] execute: i=18 op=102 arg=2
+[proto-diag] OP_LOAD_NAME: name='print'
+[proto-diag] OP_LOAD_NAME: val=0x141 found=0
+[proto-diag] execute: i=20 op=100 arg=2
+[proto-diag] execute: i=22 op=102 arg=3
+[proto-diag] OP_LOAD_NAME: name='type'
+[proto-diag] OP_LOAD_NAME: val=0x141 found=0
+[proto-diag] execute: i=24 op=102 arg=1
+[proto-diag] OP_LOAD_NAME: name='os'
+[proto-diag] OP_LOAD_NAME: val=0x7f713f440f40 found=1
+[proto-diag] execute: i=26 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f186a80 isMethod=0
+[proto-diag] execute: i=28 op=106 arg=2
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f20abcc isMethod=1
+[proto-diag] py_print called with 2 args
+DEBUG: type(os) is <class 'type'>
+[proto-diag] execute: i=30 op=133 arg=0
+[proto-diag] execute: i=32 op=102 arg=4
+[proto-diag] OP_LOAD_NAME: name='int'
+[proto-diag] OP_LOAD_NAME: val=0x141 found=0
+[proto-diag] execute: i=34 op=102 arg=1
+[proto-diag] OP_LOAD_NAME: name='os'
+[proto-diag] OP_LOAD_NAME: val=0x7f713f440f40 found=1
+[proto-diag] execute: i=36 op=112 arg=5
+[proto-diag] execute: i=38 op=112 arg=6
+[proto-diag] py_function_get: binding 0x7f713f647880 to 0x7f713f745c40
+[proto-diag] execute: i=40 op=100 arg=3
+[proto-diag] execute: i=42 op=100 arg=4
+[proto-diag] execute: i=44 op=106 arg=2
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f7140073200 isMethod=0
+[proto-diag] runCodeObject: bytecode size=18
+[proto-diag] executeBytecodeRange: pcStart=0 pcEnd=17 bytecodeSize=18
+[proto-diag] execute: i=0 op=157 arg=0
+[proto-diag] execute: i=2 op=112 arg=0
+[proto-diag] execute: i=4 op=112 arg=1
+[proto-diag] execute: i=6 op=157 arg=1
+[proto-diag] execute: i=8 op=157 arg=2
+[proto-diag] execute: i=10 op=106 arg=2
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f8c518c isMethod=1
+[proto-diag] execute: i=12 op=101 arg=0
+[proto-diag] execute: i=46 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f189a00 isMethod=0
+[proto-diag] execute: i=48 op=103 arg=7
+[proto-diag] execute: i=50 op=100 arg=5
+[proto-diag] execute: i=52 op=156 arg=0
+[proto-diag] execute: i=54 op=103 arg=8
+[proto-diag] execute: i=56 op=102 arg=9
+[proto-diag] OP_LOAD_NAME: name='__name__'
+[proto-diag] OP_LOAD_NAME: val=0x7f713f2f2a46 found=1
+[proto-diag] execute: i=58 op=100 arg=6
+[proto-diag] execute: i=60 op=109 arg=0
+[proto-diag] execute: i=62 op=110 arg=70
+[proto-diag] execute: i=64 op=102 arg=8
+[proto-diag] OP_LOAD_NAME: name='main'
+[proto-diag] OP_LOAD_NAME: val=0x7f713f86d9c0 found=1
+[proto-diag] execute: i=66 op=106 arg=0
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f86d9c0 isMethod=0
+[proto-diag] runCodeObject: bytecode size=34
+[proto-diag] executeBytecodeRange: pcStart=0 pcEnd=33 bytecodeSize=34
+[proto-diag] execute: i=0 op=100 arg=0
+[proto-diag] execute: i=2 op=158 arg=1
+[proto-diag] execute: i=4 op=102 arg=0
+[proto-diag] OP_LOAD_NAME: name='range'
+[proto-diag] OP_LOAD_NAME: val=0x141 found=0
+[proto-diag] execute: i=6 op=102 arg=1
+[proto-diag] OP_LOAD_NAME: name='N'
+[proto-diag] OP_LOAD_NAME: val=0x141 found=0
+[proto-diag] executeModule: ENTER moduleName='N' asMain=0
+[proto-diag] executeModule: calling getImportModule for N
+[proto-diag] executeModule: getImportModule returned 0x141
+[proto-diag] execute: i=8 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f713f2100cc isMethod=1
+terminate called after throwing an instance of 'std::runtime_error'
+  what():  Object is not an integer type.

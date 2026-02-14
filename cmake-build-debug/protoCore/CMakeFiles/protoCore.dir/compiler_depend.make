@@ -1288,6 +1288,7 @@ protoCore/CMakeFiles/protoCore.dir/core/ModuleCache.cpp.o: /home/gamarino/Docume
   /usr/include/c++/13/string \
   /usr/include/c++/13/string_view \
   /usr/include/c++/13/system_error \
+  /usr/include/c++/13/thread \
   /usr/include/c++/13/tuple \
   /usr/include/c++/13/type_traits \
   /usr/include/c++/13/typeinfo \
@@ -1565,6 +1566,7 @@ protoCore/CMakeFiles/protoCore.dir/core/ModuleProvider.cpp.o: /home/gamarino/Doc
   /usr/include/c++/13/string \
   /usr/include/c++/13/string_view \
   /usr/include/c++/13/system_error \
+  /usr/include/c++/13/thread \
   /usr/include/c++/13/tuple \
   /usr/include/c++/13/type_traits \
   /usr/include/c++/13/typeinfo \
@@ -6471,6 +6473,7 @@ protoCore/CMakeFiles/protoCore.dir/core/ProviderRegistry.cpp.o: /home/gamarino/D
   /usr/include/c++/13/string \
   /usr/include/c++/13/string_view \
   /usr/include/c++/13/system_error \
+  /usr/include/c++/13/thread \
   /usr/include/c++/13/tuple \
   /usr/include/c++/13/type_traits \
   /usr/include/c++/13/typeinfo \

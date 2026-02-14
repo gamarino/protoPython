@@ -349,6 +349,30 @@ CollectionsModule.cpp.s:
 	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/CollectionsModule.cpp.s
 .PHONY : CollectionsModule.cpp.s
 
+CompiledModuleProvider.o: CompiledModuleProvider.cpp.o
+.PHONY : CompiledModuleProvider.o
+
+# target to build an object file
+CompiledModuleProvider.cpp.o:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/CompiledModuleProvider.cpp.o
+.PHONY : CompiledModuleProvider.cpp.o
+
+CompiledModuleProvider.i: CompiledModuleProvider.cpp.i
+.PHONY : CompiledModuleProvider.i
+
+# target to preprocess a source file
+CompiledModuleProvider.cpp.i:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/CompiledModuleProvider.cpp.i
+.PHONY : CompiledModuleProvider.cpp.i
+
+CompiledModuleProvider.s: CompiledModuleProvider.cpp.s
+.PHONY : CompiledModuleProvider.s
+
+# target to generate assembly for a file
+CompiledModuleProvider.cpp.s:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/CompiledModuleProvider.cpp.s
+.PHONY : CompiledModuleProvider.cpp.s
+
 Compiler.o: Compiler.cpp.o
 .PHONY : Compiler.o
 
@@ -1007,6 +1031,9 @@ help:
 	@echo "... CollectionsModule.o"
 	@echo "... CollectionsModule.i"
 	@echo "... CollectionsModule.s"
+	@echo "... CompiledModuleProvider.o"
+	@echo "... CompiledModuleProvider.i"
+	@echo "... CompiledModuleProvider.s"
 	@echo "... Compiler.o"
 	@echo "... Compiler.i"
 	@echo "... Compiler.s"

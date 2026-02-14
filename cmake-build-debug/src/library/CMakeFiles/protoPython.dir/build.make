@@ -377,10 +377,24 @@ src/library/CMakeFiles/protoPython.dir/PythonModuleProvider.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/protoPython.dir/PythonModuleProvider.cpp.s"
 	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/src/library && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/gamarino/Documentos/proyectos/protoPython/src/library/PythonModuleProvider.cpp -o CMakeFiles/protoPython.dir/PythonModuleProvider.cpp.s
 
+src/library/CMakeFiles/protoPython.dir/CompiledModuleProvider.cpp.o: src/library/CMakeFiles/protoPython.dir/flags.make
+src/library/CMakeFiles/protoPython.dir/CompiledModuleProvider.cpp.o: /home/gamarino/Documentos/proyectos/protoPython/src/library/CompiledModuleProvider.cpp
+src/library/CMakeFiles/protoPython.dir/CompiledModuleProvider.cpp.o: src/library/CMakeFiles/protoPython.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/CMakeFiles --progress-num=$(CMAKE_PROGRESS_23) "Building CXX object src/library/CMakeFiles/protoPython.dir/CompiledModuleProvider.cpp.o"
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/src/library && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/library/CMakeFiles/protoPython.dir/CompiledModuleProvider.cpp.o -MF CMakeFiles/protoPython.dir/CompiledModuleProvider.cpp.o.d -o CMakeFiles/protoPython.dir/CompiledModuleProvider.cpp.o -c /home/gamarino/Documentos/proyectos/protoPython/src/library/CompiledModuleProvider.cpp
+
+src/library/CMakeFiles/protoPython.dir/CompiledModuleProvider.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/protoPython.dir/CompiledModuleProvider.cpp.i"
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/src/library && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/gamarino/Documentos/proyectos/protoPython/src/library/CompiledModuleProvider.cpp > CMakeFiles/protoPython.dir/CompiledModuleProvider.cpp.i
+
+src/library/CMakeFiles/protoPython.dir/CompiledModuleProvider.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/protoPython.dir/CompiledModuleProvider.cpp.s"
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/src/library && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/gamarino/Documentos/proyectos/protoPython/src/library/CompiledModuleProvider.cpp -o CMakeFiles/protoPython.dir/CompiledModuleProvider.cpp.s
+
 src/library/CMakeFiles/protoPython.dir/NativeModuleProvider.cpp.o: src/library/CMakeFiles/protoPython.dir/flags.make
 src/library/CMakeFiles/protoPython.dir/NativeModuleProvider.cpp.o: /home/gamarino/Documentos/proyectos/protoPython/src/library/NativeModuleProvider.cpp
 src/library/CMakeFiles/protoPython.dir/NativeModuleProvider.cpp.o: src/library/CMakeFiles/protoPython.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/CMakeFiles --progress-num=$(CMAKE_PROGRESS_23) "Building CXX object src/library/CMakeFiles/protoPython.dir/NativeModuleProvider.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/CMakeFiles --progress-num=$(CMAKE_PROGRESS_24) "Building CXX object src/library/CMakeFiles/protoPython.dir/NativeModuleProvider.cpp.o"
 	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/src/library && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/library/CMakeFiles/protoPython.dir/NativeModuleProvider.cpp.o -MF CMakeFiles/protoPython.dir/NativeModuleProvider.cpp.o.d -o CMakeFiles/protoPython.dir/NativeModuleProvider.cpp.o -c /home/gamarino/Documentos/proyectos/protoPython/src/library/NativeModuleProvider.cpp
 
 src/library/CMakeFiles/protoPython.dir/NativeModuleProvider.cpp.i: cmake_force
@@ -394,7 +408,7 @@ src/library/CMakeFiles/protoPython.dir/NativeModuleProvider.cpp.s: cmake_force
 src/library/CMakeFiles/protoPython.dir/HPyModuleProvider.cpp.o: src/library/CMakeFiles/protoPython.dir/flags.make
 src/library/CMakeFiles/protoPython.dir/HPyModuleProvider.cpp.o: /home/gamarino/Documentos/proyectos/protoPython/src/library/HPyModuleProvider.cpp
 src/library/CMakeFiles/protoPython.dir/HPyModuleProvider.cpp.o: src/library/CMakeFiles/protoPython.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/CMakeFiles --progress-num=$(CMAKE_PROGRESS_24) "Building CXX object src/library/CMakeFiles/protoPython.dir/HPyModuleProvider.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/CMakeFiles --progress-num=$(CMAKE_PROGRESS_25) "Building CXX object src/library/CMakeFiles/protoPython.dir/HPyModuleProvider.cpp.o"
 	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/src/library && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/library/CMakeFiles/protoPython.dir/HPyModuleProvider.cpp.o -MF CMakeFiles/protoPython.dir/HPyModuleProvider.cpp.o.d -o CMakeFiles/protoPython.dir/HPyModuleProvider.cpp.o -c /home/gamarino/Documentos/proyectos/protoPython/src/library/HPyModuleProvider.cpp
 
 src/library/CMakeFiles/protoPython.dir/HPyModuleProvider.cpp.i: cmake_force
@@ -408,7 +422,7 @@ src/library/CMakeFiles/protoPython.dir/HPyModuleProvider.cpp.s: cmake_force
 src/library/CMakeFiles/protoPython.dir/SysModule.cpp.o: src/library/CMakeFiles/protoPython.dir/flags.make
 src/library/CMakeFiles/protoPython.dir/SysModule.cpp.o: /home/gamarino/Documentos/proyectos/protoPython/src/library/SysModule.cpp
 src/library/CMakeFiles/protoPython.dir/SysModule.cpp.o: src/library/CMakeFiles/protoPython.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/CMakeFiles --progress-num=$(CMAKE_PROGRESS_25) "Building CXX object src/library/CMakeFiles/protoPython.dir/SysModule.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/CMakeFiles --progress-num=$(CMAKE_PROGRESS_26) "Building CXX object src/library/CMakeFiles/protoPython.dir/SysModule.cpp.o"
 	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/src/library && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/library/CMakeFiles/protoPython.dir/SysModule.cpp.o -MF CMakeFiles/protoPython.dir/SysModule.cpp.o.d -o CMakeFiles/protoPython.dir/SysModule.cpp.o -c /home/gamarino/Documentos/proyectos/protoPython/src/library/SysModule.cpp
 
 src/library/CMakeFiles/protoPython.dir/SysModule.cpp.i: cmake_force
@@ -422,7 +436,7 @@ src/library/CMakeFiles/protoPython.dir/SysModule.cpp.s: cmake_force
 src/library/CMakeFiles/protoPython.dir/ThreadModule.cpp.o: src/library/CMakeFiles/protoPython.dir/flags.make
 src/library/CMakeFiles/protoPython.dir/ThreadModule.cpp.o: /home/gamarino/Documentos/proyectos/protoPython/src/library/ThreadModule.cpp
 src/library/CMakeFiles/protoPython.dir/ThreadModule.cpp.o: src/library/CMakeFiles/protoPython.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/CMakeFiles --progress-num=$(CMAKE_PROGRESS_26) "Building CXX object src/library/CMakeFiles/protoPython.dir/ThreadModule.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/CMakeFiles --progress-num=$(CMAKE_PROGRESS_27) "Building CXX object src/library/CMakeFiles/protoPython.dir/ThreadModule.cpp.o"
 	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/src/library && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/library/CMakeFiles/protoPython.dir/ThreadModule.cpp.o -MF CMakeFiles/protoPython.dir/ThreadModule.cpp.o.d -o CMakeFiles/protoPython.dir/ThreadModule.cpp.o -c /home/gamarino/Documentos/proyectos/protoPython/src/library/ThreadModule.cpp
 
 src/library/CMakeFiles/protoPython.dir/ThreadModule.cpp.i: cmake_force
@@ -436,7 +450,7 @@ src/library/CMakeFiles/protoPython.dir/ThreadModule.cpp.s: cmake_force
 src/library/CMakeFiles/protoPython.dir/SignalModule.cpp.o: src/library/CMakeFiles/protoPython.dir/flags.make
 src/library/CMakeFiles/protoPython.dir/SignalModule.cpp.o: /home/gamarino/Documentos/proyectos/protoPython/src/library/SignalModule.cpp
 src/library/CMakeFiles/protoPython.dir/SignalModule.cpp.o: src/library/CMakeFiles/protoPython.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/CMakeFiles --progress-num=$(CMAKE_PROGRESS_27) "Building CXX object src/library/CMakeFiles/protoPython.dir/SignalModule.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/CMakeFiles --progress-num=$(CMAKE_PROGRESS_28) "Building CXX object src/library/CMakeFiles/protoPython.dir/SignalModule.cpp.o"
 	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/src/library && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/library/CMakeFiles/protoPython.dir/SignalModule.cpp.o -MF CMakeFiles/protoPython.dir/SignalModule.cpp.o.d -o CMakeFiles/protoPython.dir/SignalModule.cpp.o -c /home/gamarino/Documentos/proyectos/protoPython/src/library/SignalModule.cpp
 
 src/library/CMakeFiles/protoPython.dir/SignalModule.cpp.i: cmake_force
@@ -450,7 +464,7 @@ src/library/CMakeFiles/protoPython.dir/SignalModule.cpp.s: cmake_force
 src/library/CMakeFiles/protoPython.dir/TimeModule.cpp.o: src/library/CMakeFiles/protoPython.dir/flags.make
 src/library/CMakeFiles/protoPython.dir/TimeModule.cpp.o: /home/gamarino/Documentos/proyectos/protoPython/src/library/TimeModule.cpp
 src/library/CMakeFiles/protoPython.dir/TimeModule.cpp.o: src/library/CMakeFiles/protoPython.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/CMakeFiles --progress-num=$(CMAKE_PROGRESS_28) "Building CXX object src/library/CMakeFiles/protoPython.dir/TimeModule.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/CMakeFiles --progress-num=$(CMAKE_PROGRESS_29) "Building CXX object src/library/CMakeFiles/protoPython.dir/TimeModule.cpp.o"
 	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/src/library && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/library/CMakeFiles/protoPython.dir/TimeModule.cpp.o -MF CMakeFiles/protoPython.dir/TimeModule.cpp.o.d -o CMakeFiles/protoPython.dir/TimeModule.cpp.o -c /home/gamarino/Documentos/proyectos/protoPython/src/library/TimeModule.cpp
 
 src/library/CMakeFiles/protoPython.dir/TimeModule.cpp.i: cmake_force
@@ -464,7 +478,7 @@ src/library/CMakeFiles/protoPython.dir/TimeModule.cpp.s: cmake_force
 src/library/CMakeFiles/protoPython.dir/BuiltinsModule.cpp.o: src/library/CMakeFiles/protoPython.dir/flags.make
 src/library/CMakeFiles/protoPython.dir/BuiltinsModule.cpp.o: /home/gamarino/Documentos/proyectos/protoPython/src/library/BuiltinsModule.cpp
 src/library/CMakeFiles/protoPython.dir/BuiltinsModule.cpp.o: src/library/CMakeFiles/protoPython.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/CMakeFiles --progress-num=$(CMAKE_PROGRESS_29) "Building CXX object src/library/CMakeFiles/protoPython.dir/BuiltinsModule.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/CMakeFiles --progress-num=$(CMAKE_PROGRESS_30) "Building CXX object src/library/CMakeFiles/protoPython.dir/BuiltinsModule.cpp.o"
 	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/src/library && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/library/CMakeFiles/protoPython.dir/BuiltinsModule.cpp.o -MF CMakeFiles/protoPython.dir/BuiltinsModule.cpp.o.d -o CMakeFiles/protoPython.dir/BuiltinsModule.cpp.o -c /home/gamarino/Documentos/proyectos/protoPython/src/library/BuiltinsModule.cpp
 
 src/library/CMakeFiles/protoPython.dir/BuiltinsModule.cpp.i: cmake_force
@@ -478,7 +492,7 @@ src/library/CMakeFiles/protoPython.dir/BuiltinsModule.cpp.s: cmake_force
 src/library/CMakeFiles/protoPython.dir/IOModule.cpp.o: src/library/CMakeFiles/protoPython.dir/flags.make
 src/library/CMakeFiles/protoPython.dir/IOModule.cpp.o: /home/gamarino/Documentos/proyectos/protoPython/src/library/IOModule.cpp
 src/library/CMakeFiles/protoPython.dir/IOModule.cpp.o: src/library/CMakeFiles/protoPython.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/CMakeFiles --progress-num=$(CMAKE_PROGRESS_30) "Building CXX object src/library/CMakeFiles/protoPython.dir/IOModule.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/CMakeFiles --progress-num=$(CMAKE_PROGRESS_31) "Building CXX object src/library/CMakeFiles/protoPython.dir/IOModule.cpp.o"
 	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/src/library && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/library/CMakeFiles/protoPython.dir/IOModule.cpp.o -MF CMakeFiles/protoPython.dir/IOModule.cpp.o.d -o CMakeFiles/protoPython.dir/IOModule.cpp.o -c /home/gamarino/Documentos/proyectos/protoPython/src/library/IOModule.cpp
 
 src/library/CMakeFiles/protoPython.dir/IOModule.cpp.i: cmake_force
@@ -492,7 +506,7 @@ src/library/CMakeFiles/protoPython.dir/IOModule.cpp.s: cmake_force
 src/library/CMakeFiles/protoPython.dir/CollectionsModule.cpp.o: src/library/CMakeFiles/protoPython.dir/flags.make
 src/library/CMakeFiles/protoPython.dir/CollectionsModule.cpp.o: /home/gamarino/Documentos/proyectos/protoPython/src/library/CollectionsModule.cpp
 src/library/CMakeFiles/protoPython.dir/CollectionsModule.cpp.o: src/library/CMakeFiles/protoPython.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/CMakeFiles --progress-num=$(CMAKE_PROGRESS_31) "Building CXX object src/library/CMakeFiles/protoPython.dir/CollectionsModule.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/CMakeFiles --progress-num=$(CMAKE_PROGRESS_32) "Building CXX object src/library/CMakeFiles/protoPython.dir/CollectionsModule.cpp.o"
 	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/src/library && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/library/CMakeFiles/protoPython.dir/CollectionsModule.cpp.o -MF CMakeFiles/protoPython.dir/CollectionsModule.cpp.o.d -o CMakeFiles/protoPython.dir/CollectionsModule.cpp.o -c /home/gamarino/Documentos/proyectos/protoPython/src/library/CollectionsModule.cpp
 
 src/library/CMakeFiles/protoPython.dir/CollectionsModule.cpp.i: cmake_force
@@ -506,7 +520,7 @@ src/library/CMakeFiles/protoPython.dir/CollectionsModule.cpp.s: cmake_force
 src/library/CMakeFiles/protoPython.dir/ExceptionsModule.cpp.o: src/library/CMakeFiles/protoPython.dir/flags.make
 src/library/CMakeFiles/protoPython.dir/ExceptionsModule.cpp.o: /home/gamarino/Documentos/proyectos/protoPython/src/library/ExceptionsModule.cpp
 src/library/CMakeFiles/protoPython.dir/ExceptionsModule.cpp.o: src/library/CMakeFiles/protoPython.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/CMakeFiles --progress-num=$(CMAKE_PROGRESS_32) "Building CXX object src/library/CMakeFiles/protoPython.dir/ExceptionsModule.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/CMakeFiles --progress-num=$(CMAKE_PROGRESS_33) "Building CXX object src/library/CMakeFiles/protoPython.dir/ExceptionsModule.cpp.o"
 	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/src/library && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT src/library/CMakeFiles/protoPython.dir/ExceptionsModule.cpp.o -MF CMakeFiles/protoPython.dir/ExceptionsModule.cpp.o.d -o CMakeFiles/protoPython.dir/ExceptionsModule.cpp.o -c /home/gamarino/Documentos/proyectos/protoPython/src/library/ExceptionsModule.cpp
 
 src/library/CMakeFiles/protoPython.dir/ExceptionsModule.cpp.i: cmake_force
@@ -541,6 +555,7 @@ protoPython_OBJECTS = \
 "CMakeFiles/protoPython.dir/AtexitModule.cpp.o" \
 "CMakeFiles/protoPython.dir/PythonEnvironment.cpp.o" \
 "CMakeFiles/protoPython.dir/PythonModuleProvider.cpp.o" \
+"CMakeFiles/protoPython.dir/CompiledModuleProvider.cpp.o" \
 "CMakeFiles/protoPython.dir/NativeModuleProvider.cpp.o" \
 "CMakeFiles/protoPython.dir/HPyModuleProvider.cpp.o" \
 "CMakeFiles/protoPython.dir/SysModule.cpp.o" \
@@ -555,43 +570,51 @@ protoPython_OBJECTS = \
 # External object files for target protoPython
 protoPython_EXTERNAL_OBJECTS =
 
-src/library/libprotoPython.so: src/library/CMakeFiles/protoPython.dir/HPyContext.cpp.o
-src/library/libprotoPython.so: src/library/CMakeFiles/protoPython.dir/BytecodeLoader.cpp.o
-src/library/libprotoPython.so: src/library/CMakeFiles/protoPython.dir/Compiler.cpp.o
-src/library/libprotoPython.so: src/library/CMakeFiles/protoPython.dir/ExecutionEngine.cpp.o
-src/library/libprotoPython.so: src/library/CMakeFiles/protoPython.dir/ThreadingStrategy.cpp.o
-src/library/libprotoPython.so: src/library/CMakeFiles/protoPython.dir/BasicBlockAnalysis.cpp.o
-src/library/libprotoPython.so: src/library/CMakeFiles/protoPython.dir/Parser.cpp.o
-src/library/libprotoPython.so: src/library/CMakeFiles/protoPython.dir/Tokenizer.cpp.o
-src/library/libprotoPython.so: src/library/CMakeFiles/protoPython.dir/FunctoolsModule.cpp.o
-src/library/libprotoPython.so: src/library/CMakeFiles/protoPython.dir/ItertoolsModule.cpp.o
-src/library/libprotoPython.so: src/library/CMakeFiles/protoPython.dir/JsonModule.cpp.o
-src/library/libprotoPython.so: src/library/CMakeFiles/protoPython.dir/LoggingModule.cpp.o
-src/library/libprotoPython.so: src/library/CMakeFiles/protoPython.dir/MathModule.cpp.o
-src/library/libprotoPython.so: src/library/CMakeFiles/protoPython.dir/OperatorModule.cpp.o
-src/library/libprotoPython.so: src/library/CMakeFiles/protoPython.dir/ReModule.cpp.o
-src/library/libprotoPython.so: src/library/CMakeFiles/protoPython.dir/OsModule.cpp.o
-src/library/libprotoPython.so: src/library/CMakeFiles/protoPython.dir/OsPathModule.cpp.o
-src/library/libprotoPython.so: src/library/CMakeFiles/protoPython.dir/PathlibModule.cpp.o
-src/library/libprotoPython.so: src/library/CMakeFiles/protoPython.dir/CollectionsAbcModule.cpp.o
-src/library/libprotoPython.so: src/library/CMakeFiles/protoPython.dir/AtexitModule.cpp.o
-src/library/libprotoPython.so: src/library/CMakeFiles/protoPython.dir/PythonEnvironment.cpp.o
-src/library/libprotoPython.so: src/library/CMakeFiles/protoPython.dir/PythonModuleProvider.cpp.o
-src/library/libprotoPython.so: src/library/CMakeFiles/protoPython.dir/NativeModuleProvider.cpp.o
-src/library/libprotoPython.so: src/library/CMakeFiles/protoPython.dir/HPyModuleProvider.cpp.o
-src/library/libprotoPython.so: src/library/CMakeFiles/protoPython.dir/SysModule.cpp.o
-src/library/libprotoPython.so: src/library/CMakeFiles/protoPython.dir/ThreadModule.cpp.o
-src/library/libprotoPython.so: src/library/CMakeFiles/protoPython.dir/SignalModule.cpp.o
-src/library/libprotoPython.so: src/library/CMakeFiles/protoPython.dir/TimeModule.cpp.o
-src/library/libprotoPython.so: src/library/CMakeFiles/protoPython.dir/BuiltinsModule.cpp.o
-src/library/libprotoPython.so: src/library/CMakeFiles/protoPython.dir/IOModule.cpp.o
-src/library/libprotoPython.so: src/library/CMakeFiles/protoPython.dir/CollectionsModule.cpp.o
-src/library/libprotoPython.so: src/library/CMakeFiles/protoPython.dir/ExceptionsModule.cpp.o
-src/library/libprotoPython.so: src/library/CMakeFiles/protoPython.dir/build.make
-src/library/libprotoPython.so: protoCore/libprotoCore.so.1.0.0
-src/library/libprotoPython.so: src/library/CMakeFiles/protoPython.dir/link.txt
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/CMakeFiles --progress-num=$(CMAKE_PROGRESS_33) "Linking CXX shared library libprotoPython.so"
+src/library/libprotoPython.so.0.2.0: src/library/CMakeFiles/protoPython.dir/HPyContext.cpp.o
+src/library/libprotoPython.so.0.2.0: src/library/CMakeFiles/protoPython.dir/BytecodeLoader.cpp.o
+src/library/libprotoPython.so.0.2.0: src/library/CMakeFiles/protoPython.dir/Compiler.cpp.o
+src/library/libprotoPython.so.0.2.0: src/library/CMakeFiles/protoPython.dir/ExecutionEngine.cpp.o
+src/library/libprotoPython.so.0.2.0: src/library/CMakeFiles/protoPython.dir/ThreadingStrategy.cpp.o
+src/library/libprotoPython.so.0.2.0: src/library/CMakeFiles/protoPython.dir/BasicBlockAnalysis.cpp.o
+src/library/libprotoPython.so.0.2.0: src/library/CMakeFiles/protoPython.dir/Parser.cpp.o
+src/library/libprotoPython.so.0.2.0: src/library/CMakeFiles/protoPython.dir/Tokenizer.cpp.o
+src/library/libprotoPython.so.0.2.0: src/library/CMakeFiles/protoPython.dir/FunctoolsModule.cpp.o
+src/library/libprotoPython.so.0.2.0: src/library/CMakeFiles/protoPython.dir/ItertoolsModule.cpp.o
+src/library/libprotoPython.so.0.2.0: src/library/CMakeFiles/protoPython.dir/JsonModule.cpp.o
+src/library/libprotoPython.so.0.2.0: src/library/CMakeFiles/protoPython.dir/LoggingModule.cpp.o
+src/library/libprotoPython.so.0.2.0: src/library/CMakeFiles/protoPython.dir/MathModule.cpp.o
+src/library/libprotoPython.so.0.2.0: src/library/CMakeFiles/protoPython.dir/OperatorModule.cpp.o
+src/library/libprotoPython.so.0.2.0: src/library/CMakeFiles/protoPython.dir/ReModule.cpp.o
+src/library/libprotoPython.so.0.2.0: src/library/CMakeFiles/protoPython.dir/OsModule.cpp.o
+src/library/libprotoPython.so.0.2.0: src/library/CMakeFiles/protoPython.dir/OsPathModule.cpp.o
+src/library/libprotoPython.so.0.2.0: src/library/CMakeFiles/protoPython.dir/PathlibModule.cpp.o
+src/library/libprotoPython.so.0.2.0: src/library/CMakeFiles/protoPython.dir/CollectionsAbcModule.cpp.o
+src/library/libprotoPython.so.0.2.0: src/library/CMakeFiles/protoPython.dir/AtexitModule.cpp.o
+src/library/libprotoPython.so.0.2.0: src/library/CMakeFiles/protoPython.dir/PythonEnvironment.cpp.o
+src/library/libprotoPython.so.0.2.0: src/library/CMakeFiles/protoPython.dir/PythonModuleProvider.cpp.o
+src/library/libprotoPython.so.0.2.0: src/library/CMakeFiles/protoPython.dir/CompiledModuleProvider.cpp.o
+src/library/libprotoPython.so.0.2.0: src/library/CMakeFiles/protoPython.dir/NativeModuleProvider.cpp.o
+src/library/libprotoPython.so.0.2.0: src/library/CMakeFiles/protoPython.dir/HPyModuleProvider.cpp.o
+src/library/libprotoPython.so.0.2.0: src/library/CMakeFiles/protoPython.dir/SysModule.cpp.o
+src/library/libprotoPython.so.0.2.0: src/library/CMakeFiles/protoPython.dir/ThreadModule.cpp.o
+src/library/libprotoPython.so.0.2.0: src/library/CMakeFiles/protoPython.dir/SignalModule.cpp.o
+src/library/libprotoPython.so.0.2.0: src/library/CMakeFiles/protoPython.dir/TimeModule.cpp.o
+src/library/libprotoPython.so.0.2.0: src/library/CMakeFiles/protoPython.dir/BuiltinsModule.cpp.o
+src/library/libprotoPython.so.0.2.0: src/library/CMakeFiles/protoPython.dir/IOModule.cpp.o
+src/library/libprotoPython.so.0.2.0: src/library/CMakeFiles/protoPython.dir/CollectionsModule.cpp.o
+src/library/libprotoPython.so.0.2.0: src/library/CMakeFiles/protoPython.dir/ExceptionsModule.cpp.o
+src/library/libprotoPython.so.0.2.0: src/library/CMakeFiles/protoPython.dir/build.make
+src/library/libprotoPython.so.0.2.0: protoCore/libprotoCore.so.1.0.0
+src/library/libprotoPython.so.0.2.0: src/library/CMakeFiles/protoPython.dir/link.txt
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/CMakeFiles --progress-num=$(CMAKE_PROGRESS_34) "Linking CXX shared library libprotoPython.so"
 	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/src/library && $(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/protoPython.dir/link.txt --verbose=$(VERBOSE)
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/src/library && $(CMAKE_COMMAND) -E cmake_symlink_library libprotoPython.so.0.2.0 libprotoPython.so.0 libprotoPython.so
+
+src/library/libprotoPython.so.0: src/library/libprotoPython.so.0.2.0
+	@$(CMAKE_COMMAND) -E touch_nocreate src/library/libprotoPython.so.0
+
+src/library/libprotoPython.so: src/library/libprotoPython.so.0.2.0
+	@$(CMAKE_COMMAND) -E touch_nocreate src/library/libprotoPython.so
 
 # Rule to build all files generated by this target.
 src/library/CMakeFiles/protoPython.dir/build: src/library/libprotoPython.so

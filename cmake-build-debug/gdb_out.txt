@@ -1,0 +1,42 @@
+
+This GDB supports auto-downloading debuginfo from the following URLs:
+  <https://debuginfod.ubuntu.com>
+Enable debuginfod for this session? (y or [n]) [answered N; input not from terminal]
+Debuginfod has been disabled.
+To make this setting permanent, add 'set debuginfod enabled off' to .gdbinit.
+[Depuración de hilo usando libthread_db enabled]
+Using host libthread_db library "/lib/x86_64-linux-gnu/libthread_db.so.1".
+[protopy-debug] Starting main...
+[Nuevo Thread 0x7ffff661b6c0 (LWP 4174859)]
+Initial recursion limit: 1000
+Testing limit 10...
+Current recursion limit: 10
+Success: Caught RecursionError for depth 20 with limit 10
+
+Testing limit 100...
+Current recursion limit: 100
+Success: recurse(50) returned bottom
+Testing overflow with limit 100...
+Success: Caught RecursionError for depth 150 with limit 100
+
+Testing recursion in generators...
+Current recursion limit: 10
+Running gen_recurse(20)...
+
+Thread 1 "protopy" received signal SIGSEGV, Segmentation fault.
+0x00007ffff776fea4 in proto::ParentLinkImplementation::getParent(proto::ProtoContext*) const () from /home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/protoCore/libprotoCore.so.1
+#0  0x00007ffff776fea4 in proto::ParentLinkImplementation::getParent(proto::ProtoContext*) const () from /home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/protoCore/libprotoCore.so.1
+#1  0x00007ffff777069f in proto::ProtoObject::isInstanceOf(proto::ProtoContext*, proto::ProtoObject const*) const () from /home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/protoCore/libprotoCore.so.1
+#2  0x00007ffff7ef3e6c in protoPython::PythonEnvironment::isStopIteration(proto::ProtoContext*, proto::ProtoObject const*) const () from /home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/src/library/libprotoPython.so.0
+#3  0x00007ffff7e56d27 in protoPython::executeBytecodeRange(proto::ProtoContext*, proto::ProtoList const*, proto::ProtoList const*, proto::ProtoList const*, proto::ProtoObject*&, unsigned long, unsigned long, unsigned long, std::vector<proto::ProtoObject const*, std::allocator<proto::ProtoObject const*> >*, unsigned long*, bool*) () from /home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/src/library/libprotoPython.so.0
+#4  0x00007ffff7e54daa in protoPython::py_generator_send_impl(proto::ProtoContext*, proto::ProtoObject const*, proto::ProtoObject const*, proto::ProtoObject const*) () from /home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/src/library/libprotoPython.so.0
+#5  0x00007ffff7e55318 in protoPython::py_generator_send(proto::ProtoContext*, proto::ProtoObject const*, proto::ParentLink const*, proto::ProtoList const*, proto::ProtoSparseList const*) () from /home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/src/library/libprotoPython.so.0
+#6  0x00007ffff777040a in proto::ProtoObject::call(proto::ProtoContext*, proto::ParentLink const*, proto::ProtoString const*, proto::ProtoObject const*, proto::ProtoList const*, proto::ProtoSparseList const*) const () from /home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/protoCore/libprotoCore.so.1
+#7  0x00007ffff7e56b5f in protoPython::executeBytecodeRange(proto::ProtoContext*, proto::ProtoList const*, proto::ProtoList const*, proto::ProtoList const*, proto::ProtoObject*&, unsigned long, unsigned long, unsigned long, std::vector<proto::ProtoObject const*, std::allocator<proto::ProtoObject const*> >*, unsigned long*, bool*) () from /home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/src/library/libprotoPython.so.0
+#8  0x00007ffff7e54daa in protoPython::py_generator_send_impl(proto::ProtoContext*, proto::ProtoObject const*, proto::ProtoObject const*, proto::ProtoObject const*) () from /home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/src/library/libprotoPython.so.0
+#9  0x00007ffff7e5529b in protoPython::py_generator_next(proto::ProtoContext*, proto::ProtoObject const*, proto::ParentLink const*, proto::ProtoList const*, proto::ProtoSparseList const*) () from /home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/src/library/libprotoPython.so.0
+#10 0x00007ffff7e6061d in protoPython::executeBytecodeRange(proto::ProtoContext*, proto::ProtoList const*, proto::ProtoList const*, proto::ProtoList const*, proto::ProtoObject*&, unsigned long, unsigned long, unsigned long, std::vector<proto::ProtoObject const*, std::allocator<proto::ProtoObject const*> >*, unsigned long*, bool*) () from /home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/src/library/libprotoPython.so.0
+#11 0x00007ffff7e40153 in protoPython::runCodeObject(proto::ProtoContext*, proto::ProtoObject const*, proto::ProtoObject*&) () from /home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/src/library/libprotoPython.so.0
+#12 0x00007ffff7f05966 in protoPython::PythonEnvironment::executeModule(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, bool, proto::ProtoContext*) () from /home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/src/library/libprotoPython.so.0
+#13 0x000055555555f691 in (anonymous namespace)::executeModule(protoPython::PythonEnvironment&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, bool) ()
+#14 0x000055555556078a in main ()

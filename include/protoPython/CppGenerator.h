@@ -57,6 +57,8 @@ private:
     bool generateListLiteral(ListLiteralNode* n);
     bool generateDictLiteral(DictLiteralNode* n);
     bool generateTupleLiteral(TupleLiteralNode* n);
+    bool generateSetLiteral(SetLiteralNode* n);
+    bool generateNamedExpr(NamedExprNode* n);
     bool generateFor(ForNode* n);
     bool generateTry(TryNode* n);
     bool generateRaise(RaiseNode* n);
@@ -70,6 +72,9 @@ private:
     bool generateSlice(SliceNode* n);
     bool generateDeleteNode(DeleteNode* n);
     bool generateAssert(AssertNode* n);
+    bool generateStarred(StarredNode* n);
+    bool generateAnnAssign(AnnAssignNode* n);
+    bool generateAssignToTarget(ASTNode* target, const std::string& valueExpr);
     
     bool inStateMachine_ = false;
     int stateCount_ = 0;

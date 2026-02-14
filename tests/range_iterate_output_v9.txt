@@ -1,0 +1,1941 @@
+[proto-diag] executeModule: ENTER moduleName='range_iterate' asMain=1
+[proto-diag] executeModule: calling getImportModule for range_iterate
+[proto-diag] executeModule: getImportModule returned 0x7f97037e3940
+[proto-diag] executeModule: mod=0x7f97037dec40
+[proto-diag] executeModule: setting __name__ to __main__
+[proto-diag] runCodeObject: bytecode size=74
+[proto-diag] executeBytecodeRange: pcStart=0 pcEnd=73 bytecodeSize=74
+[proto-diag] execute: i=0 op=102 arg=0
+[proto-diag] OP_LOAD_NAME: name='__import__'
+[proto-diag] OP_LOAD_NAME: val=0 found=0
+[proto-resolve] resolve(ProtoString) name='__import__'
+[proto-resolve] found in builtins: __import__
+[proto-diag] execute: i=2 op=100 arg=0
+[proto-diag] execute: i=4 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f970372ba0c isMethod=1
+[proto-resolve] resolve(string) name='os'
+[proto-resolve] resolve(ProtoString) name='os'
+[proto-resolve] triggering executeModule for: os
+[proto-diag] executeModule: ENTER moduleName='os' asMain=0
+[proto-diag] executeModule: calling getImportModule for os
+[proto-diag] executeModule: getImportModule returned 0x7f9703935e40
+[proto-diag] executeModule: mod=0x7f9703931f40
+[proto-diag] runCodeObject: bytecode size=128
+[proto-diag] executeBytecodeRange: pcStart=0 pcEnd=127 bytecodeSize=128
+[proto-diag] execute: i=0 op=102 arg=0
+[proto-diag] OP_LOAD_NAME: name='__import__'
+[proto-diag] OP_LOAD_NAME: val=0 found=0
+[proto-resolve] resolve(ProtoString) name='__import__'
+[proto-resolve] found in builtins: __import__
+[proto-diag] execute: i=2 op=100 arg=0
+[proto-diag] execute: i=4 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f970372ba0c isMethod=1
+[proto-resolve] resolve(string) name='sys'
+[proto-resolve] resolve(ProtoString) name='sys'
+[proto-resolve] found in sys.modules: sys
+[proto-diag] py_import: moduleName='sys' leaf=0x7f97036cf300
+[proto-diag] execute: i=6 op=103 arg=1
+[proto-diag] OP_STORE_NAME: name='sys' val=0x7f97036cf300
+[proto-diag] execute: i=8 op=100 arg=1
+[proto-diag] execute: i=10 op=103 arg=2
+[proto-diag] OP_STORE_NAME: name='name' val=0x73de901
+[proto-diag] execute: i=12 op=100 arg=2
+[proto-diag] execute: i=14 op=103 arg=3
+[proto-diag] OP_STORE_NAME: name='pathsep' val=0x74501
+[proto-diag] execute: i=16 op=100 arg=3
+[proto-diag] execute: i=18 op=103 arg=4
+[proto-diag] OP_STORE_NAME: name='sep' val=0x5e501
+[proto-diag] execute: i=20 op=100 arg=4
+[proto-diag] execute: i=22 op=103 arg=5
+[proto-diag] OP_STORE_NAME: name='path' val=0x141
+[proto-diag] execute: i=24 op=100 arg=5
+[proto-diag] execute: i=26 op=156 arg=0
+[proto-diag] execute: i=28 op=103 arg=6
+[proto-diag] OP_STORE_NAME: name='_make_environ' val=0x7f9703b23980
+[proto-diag] execute: i=30 op=100 arg=6
+[proto-diag] execute: i=32 op=118 arg=0
+[proto-diag] execute: i=34 op=100 arg=7
+[proto-diag] execute: i=36 op=156 arg=0
+[proto-diag] execute: i=38 op=160 arg=0
+[proto-diag] runCodeObject: bytecode size=68
+[proto-diag] executeBytecodeRange: pcStart=0 pcEnd=67 bytecodeSize=68
+[proto-diag] execute: i=0 op=100 arg=0
+[proto-diag] execute: i=2 op=156 arg=0
+[proto-diag] execute: i=4 op=103 arg=0
+[proto-diag] OP_STORE_NAME: name='__init__' val=0x7f9703b2b080
+[proto-diag] execute: i=6 op=100 arg=1
+[proto-diag] execute: i=8 op=156 arg=0
+[proto-diag] execute: i=10 op=103 arg=1
+[proto-diag] OP_STORE_NAME: name='__getitem__' val=0x7f9703b2c300
+[proto-diag] execute: i=12 op=100 arg=2
+[proto-diag] execute: i=14 op=156 arg=0
+[proto-diag] execute: i=16 op=103 arg=2
+[proto-diag] OP_STORE_NAME: name='__setitem__' val=0x7f9703b2d680
+[proto-diag] execute: i=18 op=100 arg=3
+[proto-diag] execute: i=20 op=156 arg=0
+[proto-diag] execute: i=22 op=103 arg=3
+[proto-diag] OP_STORE_NAME: name='__delitem__' val=0x7f9703b2e940
+[proto-diag] execute: i=24 op=100 arg=4
+[proto-diag] execute: i=26 op=156 arg=0
+[proto-diag] execute: i=28 op=103 arg=4
+[proto-diag] OP_STORE_NAME: name='__contains__' val=0x7f9703b2fcc0
+[proto-diag] execute: i=30 op=100 arg=5
+[proto-diag] execute: i=32 op=156 arg=0
+[proto-diag] execute: i=34 op=103 arg=5
+[proto-diag] OP_STORE_NAME: name='__repr__' val=0x7f9703b30fc0
+[proto-diag] execute: i=36 op=100 arg=6
+[proto-diag] execute: i=38 op=156 arg=0
+[proto-diag] execute: i=40 op=103 arg=6
+[proto-diag] OP_STORE_NAME: name='__len__' val=0x7f9703b32380
+[proto-diag] execute: i=42 op=100 arg=7
+[proto-diag] execute: i=44 op=156 arg=0
+[proto-diag] execute: i=46 op=103 arg=7
+[proto-diag] OP_STORE_NAME: name='keys' val=0x7f9703b33740
+[proto-diag] execute: i=48 op=100 arg=8
+[proto-diag] execute: i=50 op=156 arg=0
+[proto-diag] execute: i=52 op=103 arg=8
+[proto-diag] OP_STORE_NAME: name='values' val=0x7f9703b34a40
+[proto-diag] execute: i=54 op=100 arg=9
+[proto-diag] execute: i=56 op=156 arg=0
+[proto-diag] execute: i=58 op=103 arg=9
+[proto-diag] OP_STORE_NAME: name='items' val=0x7f9703b35ec0
+[proto-diag] execute: i=60 op=100 arg=10
+[proto-diag] execute: i=62 op=156 arg=0
+[proto-diag] execute: i=64 op=103 arg=10
+[proto-diag] OP_STORE_NAME: name='get' val=0x7f9703b37340
+[proto-diag] execute: i=66 op=101 arg=0
+[proto-diag] OP_BUILD_CLASS: setting __call__ for 0x7f9703b38700
+[proto-diag] execute: i=40 op=103 arg=7
+[proto-diag] OP_STORE_NAME: name='_Environ' val=0x7f9703b38700
+[proto-diag] execute: i=42 op=102 arg=7
+[proto-diag] OP_LOAD_NAME: name='_Environ'
+[proto-diag] OP_LOAD_NAME: val=0x7f9703b38700 found=1
+[proto-diag] execute: i=44 op=102 arg=6
+[proto-diag] OP_LOAD_NAME: name='_make_environ'
+[proto-diag] OP_LOAD_NAME: val=0x7f9703b23980 found=1
+[proto-diag] execute: i=46 op=106 arg=0
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703b23980 isMethod=0
+[proto-diag] runCodeObject: bytecode size=100
+[proto-diag] executeBytecodeRange: pcStart=0 pcEnd=99 bytecodeSize=100
+[proto-diag] execute: i=0 op=116 arg=0
+[proto-diag] execute: i=2 op=158 arg=5
+[proto-diag] execute: i=4 op=177 arg=78
+[proto-diag] execute: i=6 op=102 arg=0
+[proto-diag] OP_LOAD_NAME: name='__import__'
+[proto-diag] OP_LOAD_NAME: val=0 found=0
+[proto-resolve] resolve(ProtoString) name='__import__'
+[proto-resolve] found in builtins: __import__
+[proto-diag] execute: i=8 op=100 arg=0
+[proto-diag] execute: i=10 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f970372ba0c isMethod=1
+[proto-resolve] resolve(string) name='_os'
+[proto-resolve] resolve(ProtoString) name='_os'
+[proto-diag] NativeModuleProvider::tryLoad found '_os' -> 0x7f9703cb5d00
+[proto-resolve] triggering executeModule for: _os
+[proto-diag] executeModule: ENTER moduleName='_os' asMain=0
+[proto-diag] executeModule: calling getImportModule for _os
+[proto-diag] executeModule: getImportModule returned 0x7f9703cbfd00
+[proto-diag] executeModule: mod=0x7f9703cb5d00
+[proto-resolve] resolve(string) name='_os'
+[proto-resolve] resolve(ProtoString) name='_os'
+[proto-resolve] found via ImportModule: _os
+[proto-resolve] resolve(string) name='atexit'
+[proto-resolve] resolve(ProtoString) name='atexit'
+[proto-diag] NativeModuleProvider::tryLoad found 'atexit' -> 0x7f9703cc1d40
+[proto-resolve] triggering executeModule for: atexit
+[proto-diag] executeModule: ENTER moduleName='atexit' asMain=0
+[proto-diag] executeModule: calling getImportModule for atexit
+[proto-diag] executeModule: getImportModule returned 0x7f9703cc6980
+[proto-diag] executeModule: mod=0x7f9703cc1d40
+[proto-resolve] resolve(string) name='atexit'
+[proto-resolve] resolve(ProtoString) name='atexit'
+[proto-resolve] found via ImportModule: atexit
+[proto-resolve] resolve(string) name='atexit'
+[proto-resolve] found via ImportModule: atexit
+[proto-resolve] found via ImportModule: _os
+[proto-diag] py_import: moduleName='_os' leaf=0x7f9703cb5d00
+[proto-diag] execute: i=12 op=158 arg=4
+[proto-diag] execute: i=14 op=102 arg=1
+[proto-diag] OP_LOAD_NAME: name='hasattr'
+[proto-diag] OP_LOAD_NAME: val=0 found=0
+[proto-resolve] resolve(ProtoString) name='hasattr'
+[proto-resolve] found in builtins: hasattr
+[proto-diag] execute: i=16 op=157 arg=4
+[proto-diag] execute: i=18 op=100 arg=1
+[proto-diag] execute: i=20 op=106 arg=2
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f970371fb8c isMethod=1
+[proto-diag] execute: i=22 op=110 arg=74
+[proto-diag] execute: i=24 op=157 arg=4
+[proto-diag] execute: i=26 op=112 arg=2
+[proto-diag] execute: i=28 op=158 arg=3
+[proto-diag] execute: i=30 op=157 arg=4
+[proto-diag] execute: i=32 op=112 arg=3
+[proto-diag] execute: i=34 op=106 arg=0
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb40c isMethod=1
+[proto-diag] execute: i=36 op=158 arg=2
+[proto-diag] execute: i=38 op=157 arg=2
+[proto-diag] execute: i=40 op=119 arg=0
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=44 op=158 arg=0
+[proto-diag] execute: i=46 op=157 arg=3
+[proto-diag] execute: i=48 op=157 arg=0
+[proto-diag] execute: i=50 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703ccb3cc isMethod=1
+[proto-diag] execute: i=52 op=158 arg=1
+[proto-diag] execute: i=54 op=157 arg=1
+[proto-diag] execute: i=56 op=100 arg=2
+[proto-diag] execute: i=58 op=109 arg=9
+[proto-diag] execute: i=60 op=110 arg=72
+[proto-diag] execute: i=62 op=157 arg=1
+[proto-diag] execute: i=64 op=157 arg=5
+[proto-diag] execute: i=66 op=157 arg=0
+[proto-diag] execute: i=68 op=153 arg=0
+[proto-diag] execute: i=70 op=117 arg=0
+[proto-diag] execute: i=72 op=111 arg=42
+[proto-diag] execute: i=42 op=120 arg=74
+[proto-diag] execute: i=74 op=178 arg=0
+[proto-diag] execute: i=76 op=111 arg=92
+[proto-diag] execute: i=92 op=157 arg=5
+[proto-diag] execute: i=94 op=101 arg=0
+[proto-diag] execute: i=48 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703b38700 isMethod=0
+[proto-diag] py_function_get: binding 0x7f9703b2b080 to 0x7f9703c35700
+[proto-diag] runUserClassCall: calling __init__ for 0x7f9703c35700
+[proto-diag] runCodeObject: bytecode size=10
+[proto-diag] executeBytecodeRange: pcStart=0 pcEnd=9 bytecodeSize=10
+[proto-diag] execute: i=0 op=157 arg=1
+[proto-diag] execute: i=2 op=157 arg=0
+[proto-diag] execute: i=4 op=113 arg=0
+[proto-diag] OP_STORE_ATTR: obj=0x7f9703c35700 name='_data' val=0x7f9703cb5380
+[proto-diag] execute: i=6 op=100 arg=0
+[proto-diag] execute: i=8 op=101 arg=0
+[proto-diag] execute: i=50 op=103 arg=8
+[proto-diag] OP_STORE_NAME: name='environ' val=0x7f9703c35700
+[proto-diag] execute: i=52 op=100 arg=8
+[proto-diag] execute: i=54 op=156 arg=0
+[proto-diag] execute: i=56 op=103 arg=9
+[proto-diag] OP_STORE_NAME: name='getenv' val=0x7f97041af100
+[proto-diag] execute: i=58 op=100 arg=9
+[proto-diag] execute: i=60 op=156 arg=0
+[proto-diag] execute: i=62 op=103 arg=10
+[proto-diag] OP_STORE_NAME: name='putenv' val=0x7f9704230580
+[proto-diag] execute: i=64 op=100 arg=10
+[proto-diag] execute: i=66 op=156 arg=0
+[proto-diag] execute: i=68 op=103 arg=11
+[proto-diag] OP_STORE_NAME: name='unsetenv' val=0x7f9704231ac0
+[proto-diag] execute: i=70 op=100 arg=11
+[proto-diag] execute: i=72 op=156 arg=0
+[proto-diag] execute: i=74 op=103 arg=12
+[proto-diag] OP_STORE_NAME: name='getcwd' val=0x7f9704232f40
+[proto-diag] execute: i=76 op=100 arg=12
+[proto-diag] execute: i=78 op=156 arg=0
+[proto-diag] execute: i=80 op=103 arg=13
+[proto-diag] OP_STORE_NAME: name='chdir' val=0x7f9704234480
+[proto-diag] execute: i=82 op=100 arg=13
+[proto-diag] execute: i=84 op=156 arg=0
+[proto-diag] execute: i=86 op=103 arg=14
+[proto-diag] OP_STORE_NAME: name='listdir' val=0x7f97042359c0
+[proto-diag] execute: i=88 op=100 arg=14
+[proto-diag] execute: i=90 op=156 arg=0
+[proto-diag] execute: i=92 op=103 arg=15
+[proto-diag] OP_STORE_NAME: name='remove' val=0x7f9704236e40
+[proto-diag] execute: i=94 op=100 arg=15
+[proto-diag] execute: i=96 op=156 arg=0
+[proto-diag] execute: i=98 op=103 arg=16
+[proto-diag] OP_STORE_NAME: name='rmdir' val=0x7f9704238300
+[proto-diag] execute: i=100 op=100 arg=16
+[proto-diag] execute: i=102 op=156 arg=0
+[proto-diag] execute: i=104 op=103 arg=17
+[proto-diag] OP_STORE_NAME: name='waitpid' val=0x7f9704239900
+[proto-diag] execute: i=106 op=100 arg=17
+[proto-diag] execute: i=108 op=156 arg=0
+[proto-diag] execute: i=110 op=103 arg=18
+[proto-diag] OP_STORE_NAME: name='kill' val=0x7f970423adc0
+[proto-diag] execute: i=112 op=100 arg=18
+[proto-diag] execute: i=114 op=156 arg=0
+[proto-diag] execute: i=116 op=103 arg=19
+[proto-diag] OP_STORE_NAME: name='pipe' val=0x7f970423c3c0
+[proto-diag] execute: i=118 op=100 arg=19
+[proto-diag] execute: i=120 op=156 arg=0
+[proto-diag] execute: i=122 op=103 arg=20
+[proto-diag] OP_STORE_NAME: name='getpid' val=0x7f970423d900
+[proto-diag] execute: i=124 op=100 arg=4
+[proto-diag] execute: i=126 op=101 arg=0
+[proto-diag] executeModule: moduleName='os' mod changed: 0x7f9703931f40 -> 0x7f9703931f40
+[proto-resolve] resolve(string) name='os'
+[proto-resolve] resolve(ProtoString) name='os'
+[proto-resolve] found in sys.modules: os
+[proto-resolve] resolve(string) name='atexit'
+[proto-resolve] resolve(ProtoString) name='atexit'
+[proto-resolve] found via ImportModule: atexit
+[proto-resolve] found via ImportModule: os
+[proto-diag] py_import: moduleName='os' leaf=0x7f9703931f40
+[proto-diag] execute: i=6 op=103 arg=1
+[proto-diag] OP_STORE_NAME: name='os' val=0x7f9703931f40
+[proto-diag] execute: i=8 op=102 arg=2
+[proto-diag] OP_LOAD_NAME: name='print'
+[proto-diag] OP_LOAD_NAME: val=0 found=0
+[proto-resolve] resolve(ProtoString) name='print'
+[proto-resolve] found in builtins: print
+[proto-diag] execute: i=10 op=100 arg=1
+[proto-diag] execute: i=12 op=102 arg=1
+[proto-diag] OP_LOAD_NAME: name='os'
+[proto-diag] OP_LOAD_NAME: val=0x7f9703931f40 found=1
+[proto-diag] execute: i=14 op=106 arg=2
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f97036fcd8c isMethod=1
+[proto-diag] py_print called with 2 args
+DEBUG: os is <class 'os'>
+[proto-diag] execute: i=16 op=133 arg=0
+[proto-diag] execute: i=18 op=102 arg=2
+[proto-diag] OP_LOAD_NAME: name='print'
+[proto-diag] OP_LOAD_NAME: val=0 found=0
+[proto-resolve] resolve(ProtoString) name='print'
+[proto-resolve] found in builtins: print
+[proto-diag] execute: i=20 op=100 arg=2
+[proto-diag] execute: i=22 op=102 arg=3
+[proto-diag] OP_LOAD_NAME: name='type'
+[proto-diag] OP_LOAD_NAME: val=0 found=0
+[proto-resolve] resolve(ProtoString) name='type'
+[proto-resolve] found in builtins: type
+[proto-diag] execute: i=24 op=102 arg=1
+[proto-diag] OP_LOAD_NAME: name='os'
+[proto-diag] OP_LOAD_NAME: val=0x7f9703931f40 found=1
+[proto-diag] execute: i=26 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9703678c40 isMethod=0
+[proto-diag] execute: i=28 op=106 arg=2
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f97036fcd8c isMethod=1
+[proto-diag] py_print called with 2 args
+DEBUG: type(os) is <class 'type'>
+[proto-diag] execute: i=30 op=133 arg=0
+[proto-diag] execute: i=32 op=102 arg=4
+[proto-diag] OP_LOAD_NAME: name='int'
+[proto-diag] OP_LOAD_NAME: val=0 found=0
+[proto-resolve] resolve(ProtoString) name='int'
+[proto-resolve] found in builtins: int
+[proto-diag] execute: i=34 op=102 arg=1
+[proto-diag] OP_LOAD_NAME: name='os'
+[proto-diag] OP_LOAD_NAME: val=0x7f9703931f40 found=1
+[proto-diag] execute: i=36 op=112 arg=5
+[proto-diag] execute: i=38 op=112 arg=6
+[proto-diag] py_function_get: binding 0x7f9703b37340 to 0x7f9703c35700
+[proto-diag] execute: i=40 op=100 arg=3
+[proto-diag] execute: i=42 op=100 arg=4
+[proto-diag] execute: i=44 op=106 arg=2
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f9704242080 isMethod=0
+[proto-diag] runCodeObject: bytecode size=18
+[proto-diag] executeBytecodeRange: pcStart=0 pcEnd=17 bytecodeSize=18
+[proto-diag] execute: i=0 op=157 arg=0
+[proto-diag] execute: i=2 op=112 arg=0
+[proto-diag] execute: i=4 op=112 arg=1
+[proto-diag] execute: i=6 op=157 arg=1
+[proto-diag] execute: i=8 op=157 arg=2
+[proto-diag] execute: i=10 op=106 arg=2
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f97043b52cc isMethod=1
+[proto-diag] py_dict_get: key=0x275f910e74585d01 hash=60624757215 val=0x141 default=0x3060c183063901
+[proto-diag] execute: i=12 op=101 arg=0
+[proto-diag] execute: i=46 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x7f970367bbc0 isMethod=0
+[proto-diag] executeModule: moduleName='range_iterate' mod changed: 0x7f97038146c0 -> 0x7f97038146c0
+protopy: unhandled exception in module execution:
+Traceback (most recent call last):
+TypeError: int() argument must be a string, a bytes-like object or a number
+
+protopy: module 'range_iterate' exited with runtime error

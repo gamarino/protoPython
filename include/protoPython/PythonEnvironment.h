@@ -116,6 +116,7 @@ public:
      * @brief Utility to resolve symbols in this environment.
      */
     const proto::ProtoObject* resolve(const std::string& name, proto::ProtoContext* ctx = nullptr);
+    const proto::ProtoObject* resolve(const proto::ProtoString* name, proto::ProtoContext* ctx = nullptr);
     bool isResolved(const std::string& name, proto::ProtoContext* ctx = nullptr);
     
     /**
@@ -153,6 +154,7 @@ public:
     const proto::ProtoString* getClassString() const { return classString; }
     const proto::ProtoString* getNameString() const { return nameString; }
     const proto::ProtoString* getCallString() const { return callString; }
+    const proto::ProtoString* getExecutedString() const { return executedString; }
     const proto::ProtoString* getGetItemString() const { return getItemString; }
     const proto::ProtoString* getSetItemString() const { return setItemString; }
     const proto::ProtoString* getDelItemString() const { return delItemString; }
@@ -237,6 +239,7 @@ public:
     const proto::ProtoString* getGlobalsString() const { return __globals__; }
     const proto::ProtoString* getCoVarnamesString() const { return co_varnames; }
     const proto::ProtoString* getCoNparamsString() const { return co_nparams; }
+    const proto::ProtoString* getCoKwonlyargcountString() const { return co_kwonlyargcount; }
     const proto::ProtoString* getCoAutomaticCountString() const { return co_automatic_count; }
     const proto::ProtoString* getCoIsGeneratorString() const { return co_is_generator; }
     const proto::ProtoString* getCoFlagsString() const { return co_flags; }
@@ -673,6 +676,7 @@ private:
     const proto::ProtoString* __globals__{nullptr};
     const proto::ProtoString* co_varnames{nullptr};
     const proto::ProtoString* co_nparams{nullptr};
+    const proto::ProtoString* co_kwonlyargcount{nullptr};
     const proto::ProtoString* co_automatic_count{nullptr};
     const proto::ProtoString* co_is_generator{nullptr};
     const proto::ProtoString* co_flags{nullptr};
@@ -731,6 +735,7 @@ private:
     const proto::ProtoString* dataString{nullptr};
     const proto::ProtoString* keysString{nullptr};
     const proto::ProtoString* initString{nullptr};
+    const proto::ProtoString* executedString{nullptr};
 
     const proto::ProtoString* startString{nullptr};
     const proto::ProtoString* stopString{nullptr};

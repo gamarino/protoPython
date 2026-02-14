@@ -4,6 +4,7 @@
 test/library/CMakeFiles/test_minimal.dir/TestMinimal.cpp.o: /home/gamarino/Documentos/proyectos/protoPython/test/library/TestMinimal.cpp \
   /home/gamarino/Documentos/proyectos/protoCore/headers/protoCore.h \
   /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/PythonEnvironment.h \
+  /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/Tokenizer.h \
   /usr/include/alloca.h \
   /usr/include/asm-generic/errno-base.h \
   /usr/include/asm-generic/errno.h \
@@ -315,7 +316,9 @@ test/library/CMakeFiles/test_minimal.dir/TestMinimal.cpp.o: /home/gamarino/Docum
 
 /usr/include/x86_64-linux-gnu/bits/xopen_lim.h:
 
-/usr/include/c++/13/ext/concurrence.h:
+/usr/include/x86_64-linux-gnu/c++/13/bits/atomic_word.h:
+
+/usr/include/x86_64-linux-gnu/bits/wordsize.h:
 
 /usr/include/c++/13/cctype:
 
@@ -395,12 +398,6 @@ test/library/CMakeFiles/test_minimal.dir/TestMinimal.cpp.o: /home/gamarino/Docum
 
 /usr/include/c++/13/bits/erase_if.h:
 
-/usr/include/c++/13/bits/this_thread_sleep.h:
-
-/usr/include/c++/13/bits/shared_ptr.h:
-
-/usr/include/x86_64-linux-gnu/bits/struct_mutex.h:
-
 /usr/include/c++/13/bits/semaphore_base.h:
 
 /usr/include/c++/13/bits/locale_facets.tcc:
@@ -429,17 +426,7 @@ test/library/CMakeFiles/test_minimal.dir/TestMinimal.cpp.o: /home/gamarino/Docum
 
 /usr/include/c++/13/bits/parse_numbers.h:
 
-/usr/include/c++/13/bits/streambuf_iterator.h:
-
-/usr/include/c++/13/ostream:
-
-/usr/include/x86_64-linux-gnu/bits/confname.h:
-
-/usr/include/c++/13/bits/cpp_type_traits.h:
-
-/usr/include/x86_64-linux-gnu/bits/types.h:
-
-/usr/include/c++/13/bits/move.h:
+/usr/include/c++/13/bits/ostream_insert.h:
 
 /usr/include/c++/13/bits/istream.tcc:
 
@@ -513,20 +500,6 @@ test/library/CMakeFiles/test_minimal.dir/TestMinimal.cpp.o: /home/gamarino/Docum
 
 /usr/include/x86_64-linux-gnu/bits/types/mbstate_t.h:
 
-/usr/include/c++/13/bits/uses_allocator_args.h:
-
-/usr/include/c++/13/bits/stl_uninitialized.h:
-
-/usr/include/c++/13/bits/new_allocator.h:
-
-/usr/include/c++/13/bits/atomic_base.h:
-
-/usr/include/c++/13/bits/algorithmfwd.h:
-
-/usr/include/x86_64-linux-gnu/bits/long-double.h:
-
-/home/gamarino/Documentos/proyectos/protoCore/headers/protoCore.h:
-
 /usr/include/c++/13/system_error:
 
 /usr/include/c++/13/compare:
@@ -543,17 +516,37 @@ test/library/CMakeFiles/test_minimal.dir/TestMinimal.cpp.o: /home/gamarino/Docum
 
 /usr/include/c++/13/bits/localefwd.h:
 
-/usr/include/x86_64-linux-gnu/sys/select.h:
+/usr/include/c++/13/bits/this_thread_sleep.h:
 
-/usr/include/c++/13/cwchar:
+/usr/include/c++/13/bits/shared_ptr.h:
 
-/usr/include/c++/13/cwctype:
+/usr/include/x86_64-linux-gnu/bits/struct_mutex.h:
 
 /usr/include/c++/13/bits/unique_lock.h:
 
 /usr/include/c++/13/mutex:
 
 /usr/include/c++/13/backward/auto_ptr.h:
+
+/usr/include/c++/13/bits/uses_allocator_args.h:
+
+/usr/include/c++/13/bits/stl_uninitialized.h:
+
+/usr/include/c++/13/bits/new_allocator.h:
+
+/usr/include/c++/13/bits/atomic_base.h:
+
+/usr/include/c++/13/bits/algorithmfwd.h:
+
+/usr/include/x86_64-linux-gnu/bits/long-double.h:
+
+/home/gamarino/Documentos/proyectos/protoCore/headers/protoCore.h:
+
+/usr/include/x86_64-linux-gnu/sys/select.h:
+
+/usr/include/c++/13/cwchar:
+
+/usr/include/c++/13/cwctype:
 
 /usr/include/c++/13/bits/stringfwd.h:
 
@@ -563,9 +556,23 @@ test/library/CMakeFiles/test_minimal.dir/TestMinimal.cpp.o: /home/gamarino/Docum
 
 /usr/include/c++/13/bits/shared_ptr_base.h:
 
+/home/gamarino/Documentos/proyectos/protoPython/include/protoPython/Tokenizer.h:
+
 /usr/include/c++/13/bits/basic_ios.h:
 
 /usr/include/x86_64-linux-gnu/bits/time64.h:
+
+/usr/include/c++/13/bits/streambuf_iterator.h:
+
+/usr/include/c++/13/ostream:
+
+/usr/include/x86_64-linux-gnu/bits/confname.h:
+
+/usr/include/c++/13/bits/cpp_type_traits.h:
+
+/usr/include/x86_64-linux-gnu/bits/types.h:
+
+/usr/include/c++/13/bits/move.h:
 
 /usr/include/c++/13/bits/cxxabi_forced.h:
 
@@ -609,8 +616,6 @@ test/library/CMakeFiles/test_minimal.dir/TestMinimal.cpp.o: /home/gamarino/Docum
 
 /usr/include/c++/13/bits/hashtable.h:
 
-/usr/include/c++/13/bits/ostream_insert.h:
-
 /usr/include/c++/13/bits/ios_base.h:
 
 /usr/include/c++/13/bits/ostream.tcc:
@@ -634,6 +639,8 @@ test/library/CMakeFiles/test_minimal.dir/TestMinimal.cpp.o: /home/gamarino/Docum
 /usr/include/x86_64-linux-gnu/gnu/stubs-64.h:
 
 /usr/include/c++/13/bits/node_handle.h:
+
+/usr/include/c++/13/ext/concurrence.h:
 
 /usr/include/c++/13/bits/stl_iterator.h:
 
@@ -668,10 +675,6 @@ test/library/CMakeFiles/test_minimal.dir/TestMinimal.cpp.o: /home/gamarino/Docum
 /usr/include/x86_64-linux-gnu/bits/struct_rwlock.h:
 
 /usr/include/c++/13/pstl/pstl_config.h:
-
-/usr/include/x86_64-linux-gnu/c++/13/bits/atomic_word.h:
-
-/usr/include/x86_64-linux-gnu/bits/wordsize.h:
 
 /usr/include/c++/13/stdexcept:
 

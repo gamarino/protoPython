@@ -92,7 +92,7 @@ protopy_EXTERNAL_OBJECTS =
 
 src/runtime/protopy: src/runtime/CMakeFiles/protopy.dir/main.cpp.o
 src/runtime/protopy: src/runtime/CMakeFiles/protopy.dir/build.make
-src/runtime/protopy: src/library/libprotoPython.so
+src/runtime/protopy: src/library/libprotoPython.so.0.2.0
 src/runtime/protopy: protoCore/libprotoCore.so.1.0.0
 src/runtime/protopy: src/runtime/CMakeFiles/protopy.dir/link.txt
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Linking CXX executable protopy"

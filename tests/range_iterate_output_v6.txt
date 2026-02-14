@@ -1,0 +1,53 @@
+[proto-diag] executeModule: ENTER moduleName='range_iterate' asMain=1
+[proto-diag] executeModule: calling getImportModule for range_iterate
+[proto-diag] executeModule: getImportModule returned 0x7ac6fab3d940
+[proto-diag] executeModule: mod=0x7ac6fab38c40
+[proto-diag] executeModule: setting __name__ to __main__
+[proto-diag] runCodeObject: bytecode size=74
+[proto-diag] executeBytecodeRange: pcStart=0 pcEnd=73 bytecodeSize=74
+[proto-diag] execute: i=0 op=102 arg=0
+[proto-diag] OP_LOAD_NAME: name='__import__'
+[proto-diag] OP_LOAD_NAME: val=0x141 found=1
+[proto-diag] execute: i=2 op=100 arg=0
+[proto-diag] execute: i=4 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x141 isMethod=0
+[proto-diag] execute: i=6 op=103 arg=1
+[proto-diag] OP_STORE_NAME: name='os' val=0x7ac6fac8a100
+[proto-diag] execute: i=8 op=102 arg=2
+[proto-diag] OP_LOAD_NAME: name='print'
+[proto-diag] OP_LOAD_NAME: val=0x141 found=1
+[proto-diag] execute: i=10 op=100 arg=1
+[proto-diag] execute: i=12 op=102 arg=1
+[proto-diag] OP_LOAD_NAME: name='os'
+[proto-diag] OP_LOAD_NAME: val=0x7ac6fac8a100 found=1
+[proto-diag] execute: i=14 op=106 arg=2
+[proto-diag] OP_CALL_FUNCTION: callable=0x141 isMethod=0
+[proto-diag] execute: i=16 op=133 arg=0
+[proto-diag] execute: i=18 op=102 arg=2
+[proto-diag] OP_LOAD_NAME: name='print'
+[proto-diag] OP_LOAD_NAME: val=0x141 found=1
+[proto-diag] execute: i=20 op=100 arg=2
+[proto-diag] execute: i=22 op=102 arg=3
+[proto-diag] OP_LOAD_NAME: name='type'
+[proto-diag] OP_LOAD_NAME: val=0x141 found=1
+[proto-diag] execute: i=24 op=102 arg=1
+[proto-diag] OP_LOAD_NAME: name='os'
+[proto-diag] OP_LOAD_NAME: val=0x7ac6fac8a100 found=1
+[proto-diag] execute: i=26 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x141 isMethod=0
+[proto-diag] execute: i=28 op=106 arg=2
+[proto-diag] OP_CALL_FUNCTION: callable=0x141 isMethod=0
+[proto-diag] execute: i=30 op=133 arg=0
+[proto-diag] execute: i=32 op=102 arg=4
+[proto-diag] OP_LOAD_NAME: name='int'
+[proto-diag] OP_LOAD_NAME: val=0x141 found=1
+[proto-diag] execute: i=34 op=102 arg=1
+[proto-diag] OP_LOAD_NAME: name='os'
+[proto-diag] OP_LOAD_NAME: val=0x7ac6fac8a100 found=1
+[proto-diag] execute: i=36 op=112 arg=5
+[proto-diag] executeModule: moduleName='range_iterate' mod changed: 0x7ac6fab6e6c0 -> 0x7ac6fab6e6c0
+protopy: unhandled exception in module execution:
+Traceback (most recent call last):
+AttributeError: 'None' object has no attribute 'environ'
+
+protopy: module 'range_iterate' exited with runtime error

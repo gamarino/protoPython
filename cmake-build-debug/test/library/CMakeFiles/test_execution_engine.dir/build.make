@@ -92,7 +92,7 @@ test_execution_engine_EXTERNAL_OBJECTS =
 
 test/library/test_execution_engine: test/library/CMakeFiles/test_execution_engine.dir/TestExecutionEngine.cpp.o
 test/library/test_execution_engine: test/library/CMakeFiles/test_execution_engine.dir/build.make
-test/library/test_execution_engine: src/library/libprotoPython.so
+test/library/test_execution_engine: src/library/libprotoPython.so.0.2.0
 test/library/test_execution_engine: protoCore/libprotoCore.so.1.0.0
 test/library/test_execution_engine: lib/libgtest_main.a
 test/library/test_execution_engine: lib/libgtest.a

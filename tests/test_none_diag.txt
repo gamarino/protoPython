@@ -1,0 +1,118 @@
+[proto-diag] executeModule: ENTER moduleName='test_none' asMain=1
+[proto-diag] executeModule: calling getImportModule for test_none
+[proto-diag] executeModule: getImportModule returned 0x76acd39cb540
+[proto-diag] executeModule: mod=0x76acd39c8c00
+[proto-diag] executeModule: setting __name__ to __main__
+[proto-diag] runCodeObject: bytecode size=144
+[proto-diag] executeBytecodeRange: pcStart=0 pcEnd=143 bytecodeSize=144
+[proto-diag] execute: i=0 op=102 arg=0
+[proto-diag] OP_LOAD_NAME: name='__import__'
+[proto-diag] OP_LOAD_NAME: val=0x141 found=1
+[proto-diag] execute: i=2 op=100 arg=0
+[proto-diag] execute: i=4 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x141 isMethod=0
+[proto-diag] execute: i=6 op=103 arg=1
+[proto-diag] OP_STORE_NAME: name='os' val=0x76acd3b1d100
+[proto-diag] execute: i=8 op=102 arg=0
+[proto-diag] OP_LOAD_NAME: name='__import__'
+[proto-diag] OP_LOAD_NAME: val=0x141 found=1
+[proto-diag] execute: i=10 op=100 arg=1
+[proto-diag] execute: i=12 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x141 isMethod=0
+[proto-diag] execute: i=14 op=103 arg=2
+[proto-diag] OP_STORE_NAME: name='_os' val=0x76acd3b1d780
+[proto-diag] execute: i=16 op=100 arg=2
+[proto-diag] execute: i=18 op=103 arg=3
+[proto-diag] OP_STORE_NAME: name='k' val=0x275f9f527d2a1d01
+[proto-diag] execute: i=20 op=102 arg=2
+[proto-diag] OP_LOAD_NAME: name='_os'
+[proto-diag] OP_LOAD_NAME: val=0x76acd3b1d780 found=1
+[proto-diag] execute: i=22 op=112 arg=4
+[proto-diag] execute: i=24 op=102 arg=3
+[proto-diag] OP_LOAD_NAME: name='k'
+[proto-diag] OP_LOAD_NAME: val=0x275f9f527d2a1d01 found=1
+[proto-diag] execute: i=26 op=106 arg=1
+[proto-diag] OP_CALL_FUNCTION: callable=0x141 isMethod=0
+[proto-diag] execute: i=28 op=103 arg=5
+[proto-diag] OP_STORE_NAME: name='v' val=0x76acd3b1e280
+[proto-diag] execute: i=30 op=102 arg=6
+[proto-diag] OP_LOAD_NAME: name='print'
+[proto-diag] OP_LOAD_NAME: val=0x141 found=1
+[proto-diag] execute: i=32 op=100 arg=3
+[proto-diag] execute: i=34 op=102 arg=5
+[proto-diag] OP_LOAD_NAME: name='v'
+[proto-diag] OP_LOAD_NAME: val=0x76acd3b1e280 found=1
+[proto-diag] execute: i=36 op=106 arg=2
+[proto-diag] OP_CALL_FUNCTION: callable=0x141 isMethod=0
+[proto-diag] execute: i=38 op=133 arg=0
+[proto-diag] execute: i=40 op=102 arg=6
+[proto-diag] OP_LOAD_NAME: name='print'
+[proto-diag] OP_LOAD_NAME: val=0x141 found=1
+[proto-diag] execute: i=42 op=100 arg=4
+[proto-diag] execute: i=44 op=100 arg=5
+[proto-diag] execute: i=46 op=106 arg=2
+[proto-diag] OP_CALL_FUNCTION: callable=0x141 isMethod=0
+[proto-diag] execute: i=48 op=133 arg=0
+[proto-diag] execute: i=50 op=102 arg=6
+[proto-diag] OP_LOAD_NAME: name='print'
+[proto-diag] OP_LOAD_NAME: val=0x141 found=1
+[proto-diag] execute: i=52 op=100 arg=6
+[proto-diag] execute: i=54 op=102 arg=5
+[proto-diag] OP_LOAD_NAME: name='v'
+[proto-diag] OP_LOAD_NAME: val=0x76acd3b1e280 found=1
+[proto-diag] execute: i=56 op=100 arg=5
+[proto-diag] execute: i=58 op=109 arg=8
+[proto-diag] execute: i=60 op=106 arg=2
+[proto-diag] OP_CALL_FUNCTION: callable=0x141 isMethod=0
+[proto-diag] execute: i=62 op=133 arg=0
+[proto-diag] execute: i=64 op=102 arg=6
+[proto-diag] OP_LOAD_NAME: name='print'
+[proto-diag] OP_LOAD_NAME: val=0x141 found=1
+[proto-diag] execute: i=66 op=100 arg=7
+[proto-diag] execute: i=68 op=102 arg=5
+[proto-diag] OP_LOAD_NAME: name='v'
+[proto-diag] OP_LOAD_NAME: val=0x76acd3b1e280 found=1
+[proto-diag] execute: i=70 op=100 arg=5
+[proto-diag] execute: i=72 op=109 arg=9
+[proto-diag] execute: i=74 op=106 arg=2
+[proto-diag] OP_CALL_FUNCTION: callable=0x141 isMethod=0
+[proto-diag] execute: i=76 op=133 arg=0
+[proto-diag] execute: i=78 op=102 arg=6
+[proto-diag] OP_LOAD_NAME: name='print'
+[proto-diag] OP_LOAD_NAME: val=0x141 found=1
+[proto-diag] execute: i=80 op=100 arg=8
+[proto-diag] execute: i=82 op=100 arg=2
+[proto-diag] execute: i=84 op=102 arg=1
+[proto-diag] OP_LOAD_NAME: name='os'
+[proto-diag] OP_LOAD_NAME: val=0x76acd3b1d100 found=1
+[proto-diag] execute: i=86 op=112 arg=7
+[proto-diag] execute: i=88 op=109 arg=6
+[proto-diag] execute: i=90 op=106 arg=2
+[proto-diag] OP_CALL_FUNCTION: callable=0x141 isMethod=0
+[proto-diag] execute: i=92 op=133 arg=0
+[proto-diag] execute: i=94 op=100 arg=2
+[proto-diag] execute: i=96 op=102 arg=1
+[proto-diag] OP_LOAD_NAME: name='os'
+[proto-diag] OP_LOAD_NAME: val=0x76acd3b1d100 found=1
+[proto-diag] execute: i=98 op=112 arg=7
+[proto-diag] execute: i=100 op=109 arg=6
+[proto-diag] execute: i=102 op=110 arg=120
+[proto-diag] execute: i=120 op=102 arg=6
+[proto-diag] OP_LOAD_NAME: name='print'
+[proto-diag] OP_LOAD_NAME: val=0x141 found=1
+[proto-diag] execute: i=122 op=100 arg=10
+[proto-diag] execute: i=124 op=102 arg=1
+[proto-diag] OP_LOAD_NAME: name='os'
+[proto-diag] OP_LOAD_NAME: val=0x76acd3b1d100 found=1
+[proto-diag] execute: i=126 op=112 arg=7
+[proto-diag] execute: i=128 op=112 arg=8
+[proto-diag] execute: i=130 op=100 arg=2
+[proto-diag] execute: i=132 op=100 arg=11
+[proto-diag] execute: i=134 op=106 arg=2
+[proto-diag] OP_CALL_FUNCTION: callable=0 isMethod=0
+[proto-diag] executeModule: moduleName='test_none' mod changed: 0x76acd39fd280 -> 0x76acd39fd280
+protopy: unhandled exception in module execution:
+Traceback (most recent call last):
+TypeError: object is not callable (nullptr)
+
+protopy: module 'test_none' exited with runtime error

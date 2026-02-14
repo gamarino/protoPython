@@ -425,6 +425,19 @@ test_regr/fast:
 	$(MAKE) $(MAKESILENT) -f test/regression/CMakeFiles/test_regr.dir/build.make test/regression/CMakeFiles/test_regr.dir/build
 .PHONY : test_regr/fast
 
+#=============================================================================
+# Target rules for targets named protopyc
+
+# Build rule for target.
+protopyc: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 protopyc
+.PHONY : protopyc
+
+# fast build rule for target.
+protopyc/fast:
+	$(MAKE) $(MAKESILENT) -f src/compiler/CMakeFiles/protopyc.dir/build.make src/compiler/CMakeFiles/protopyc.dir/build
+.PHONY : protopyc/fast
+
 # Help Target
 help:
 	@echo "The following are some of the valid targets for this Makefile:"
@@ -450,6 +463,7 @@ help:
 	@echo "... protoPython"
 	@echo "... proto_tests"
 	@echo "... protopy"
+	@echo "... protopyc"
 	@echo "... test_basic_block_analysis"
 	@echo "... test_execution_engine"
 	@echo "... test_foundation"

@@ -9,4 +9,8 @@ def main():
     return len(lst)
 
 if __name__ == "__main__":
-    main()
+    result = main()
+    # import sys
+    # sys.stdout.write("result=%d\n" % result)
+    # sys.stdout.flush()
+    print("done loop")

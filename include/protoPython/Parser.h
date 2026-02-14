@@ -16,7 +16,7 @@ struct ASTNode {
 };
 
 struct ConstantNode : ASTNode {
-    enum class ConstType { Int, Float, Str, None, Bool };
+    enum class ConstType { Int, Float, Str, None, Bool, Ellipsis };
     ConstType constType = ConstType::Int;
     long long intVal = 0;
     double floatVal = 0.0;
@@ -110,6 +110,12 @@ struct JoinedStrNode : ASTNode {
 struct NamedExprNode : ASTNode {
     std::unique_ptr<ASTNode> target;
     std::unique_ptr<ASTNode> value;
+};
+
+struct ConditionalExprNode : ASTNode {
+    std::unique_ptr<ASTNode> body;
+    std::unique_ptr<ASTNode> test;
+    std::unique_ptr<ASTNode> orelse;
 };
 
 struct Comprehension {

@@ -308,4 +308,5 @@ test/regression/CMakeFiles/test_regr.dir/test_regr.cpp.o: \
  /home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/_deps/googletest-src/googletest/include/gtest/gtest_prod.h \
  /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/PythonEnvironment.h \
  /home/gamarino/Documentos/proyectos/protoCore/headers/protoCore.h \
- /usr/include/c++/13/thread
+ /usr/include/c++/13/thread \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/Tokenizer.h

@@ -33,6 +33,7 @@ enum class TokenType {
     For,
     In,
     If,
+    Elif,
     Else,
     Global,
     Def,
@@ -69,6 +70,8 @@ enum class TokenType {
     LessEqual,
     GreaterEqual,
     Yield,
+    Ellipsis,
+    Error,
     Semicolon,
     PlusAssign,    /* += */
     MinusAssign,   /* -= */
@@ -79,10 +82,26 @@ enum class TokenType {
     Assert,
     Nonlocal,
     At,            /* @ */
-    Error,
     DoubleStar,    /* ** */
     Async,
     Await,
+    BitAnd,        /* & */
+    BitOr,         /* | */
+    BitXor,        /* ^ */
+    LShift,        /* << */
+    RShift,        /* >> */
+    AndAssign,     /* &= */
+    OrAssign,      /* |= */
+    XorAssign,     /* ^= */
+    LShiftAssign,  /* <<= */
+    RShiftAssign,  /* >>= */
+    Arrow,         /* -> */
+    DoubleSlash,    /* // */
+    DoubleSlashAssign, /* //= */
+    Walrus,        /* := */
+    AtAssign,      /* @= */
+    ModuloAssign,  /* %= */
+    DoubleStarAssign, /* **= */
 };
 
 struct Token {
@@ -115,11 +134,12 @@ private:
     bool hasPeeked_ = false;
     bool atLineStart_ = true;
     std::vector<int> indentStack_;
+    int nestingLevel_ = 0;
     void skipWhitespace();
     void skipWhitespaceNoNewline();
     void skipComment();
     Token scanNumber();
-    Token scanString(char quote);
+    Token scanString(char quote, const std::string& prefix = "");
     Token scanNameOrKeyword();
     Token makeToken(TokenType type);
 };

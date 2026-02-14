@@ -1,4 +1,5 @@
 file(REMOVE_RECURSE
+  ".0"
   "CMakeFiles/protoPython.dir/AtexitModule.cpp.o"
   "CMakeFiles/protoPython.dir/AtexitModule.cpp.o.d"
   "CMakeFiles/protoPython.dir/BasicBlockAnalysis.cpp.o"
@@ -11,6 +12,8 @@ file(REMOVE_RECURSE
   "CMakeFiles/protoPython.dir/CollectionsAbcModule.cpp.o.d"
   "CMakeFiles/protoPython.dir/CollectionsModule.cpp.o"
   "CMakeFiles/protoPython.dir/CollectionsModule.cpp.o.d"
+  "CMakeFiles/protoPython.dir/CompiledModuleProvider.cpp.o"
+  "CMakeFiles/protoPython.dir/CompiledModuleProvider.cpp.o.d"
   "CMakeFiles/protoPython.dir/Compiler.cpp.o"
   "CMakeFiles/protoPython.dir/Compiler.cpp.o.d"
   "CMakeFiles/protoPython.dir/ExceptionsModule.cpp.o"
@@ -65,6 +68,8 @@ file(REMOVE_RECURSE
   "CMakeFiles/protoPython.dir/Tokenizer.cpp.o.d"
   "libprotoPython.pdb"
   "libprotoPython.so"
+  "libprotoPython.so.0"
+  "libprotoPython.so.0.2.0"
 )
 
 # Per-language clean rules from dependency scanning.

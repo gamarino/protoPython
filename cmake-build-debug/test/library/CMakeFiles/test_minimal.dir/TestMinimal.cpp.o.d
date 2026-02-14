@@ -208,7 +208,8 @@ test/library/CMakeFiles/test_minimal.dir/TestMinimal.cpp.o: \
  /usr/include/c++/13/bits/ranges_algobase.h \
  /usr/include/c++/13/pstl/glue_memory_defs.h \
  /usr/include/c++/13/pstl/execution_defs.h /usr/include/c++/13/mutex \
- /usr/include/c++/13/vector /usr/include/c++/13/bits/stl_vector.h \
+ /usr/include/c++/13/thread /usr/include/c++/13/vector \
+ /usr/include/c++/13/bits/stl_vector.h \
  /usr/include/c++/13/bits/stl_bvector.h \
  /usr/include/c++/13/bits/vector.tcc /usr/include/c++/13/functional \
  /usr/include/c++/13/bits/std_function.h \
@@ -224,4 +225,4 @@ test/library/CMakeFiles/test_minimal.dir/TestMinimal.cpp.o: \
  /usr/include/c++/13/bits/stl_heap.h \
  /usr/include/c++/13/bits/uniform_int_dist.h /usr/include/c++/13/iostream \
  /usr/include/c++/13/istream /usr/include/c++/13/bits/istream.tcc \
- /usr/include/c++/13/thread
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/Tokenizer.h
