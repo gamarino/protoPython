@@ -164,6 +164,45 @@ static const proto::ProtoObject* sys_intern(
     return PROTO_NONE;
 }
 
+static const proto::ProtoObject* sys_getfilesystemencoding(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    (void)self;
+    (void)parentLink;
+    (void)positionalParameters;
+    (void)keywordParameters;
+    return context->fromUTF8String("utf-8");
+}
+
+static const proto::ProtoObject* sys_getfilesystemencodeerrors(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    (void)self;
+    (void)parentLink;
+    (void)positionalParameters;
+    (void)keywordParameters;
+    return context->fromUTF8String("surrogateescape");
+}
+
+static const proto::ProtoObject* sys_get_cpu_count_config(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    (void)self;
+    (void)parentLink;
+    (void)positionalParameters;
+    (void)keywordParameters;
+    return context->fromInteger(-1);
+}
+
 static const proto::ProtoObject* sys_getrecursionlimit(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -195,6 +234,9 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_getframe"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_getframe));
     sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "setrecursionlimit"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_setrecursionlimit));
     sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "getrecursionlimit"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_getrecursionlimit));
+    sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "getfilesystemencoding"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_getfilesystemencoding));
+    sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "getfilesystemencodeerrors"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_getfilesystemencodeerrors));
+    sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_get_cpu_count_config"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_get_cpu_count_config));
     sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "intern"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_intern));
     const proto::ProtoObject* traceDefault = ctx->newObject(true);
     if (env && env->getObjectPrototype()) {
@@ -255,6 +297,19 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     stats = stats->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "objects_created"), ctx->fromInteger(0));
     sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "stats"), stats);
 
+    // sys.builtin_module_names
+    const proto::ProtoList* builtinsList = ctx->newList();
+    const char* builtin_names[] = {
+        "builtins", "sys", "_io", "_os", "posix", "nt", "time", "_thread", 
+        "_signal", "re", "_weakref", "_collections", "logging", "operator", 
+        "_operator", "math", "functools", "itertools", "json", "atexit", 
+        "_collections_abc", "exceptions", "_codecs"
+    };
+    for (const char* name : builtin_names) {
+        builtinsList = builtinsList->appendLast(ctx, ctx->fromUTF8String(name));
+    }
+    sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "builtin_module_names"), builtinsList->asObject(ctx));
+
     // sys.executable
     const char* exe_path = (argv && !argv->empty()) ? (*argv)[0].c_str() : "/usr/bin/protopy";
     sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "executable"), ctx->fromUTF8String(exe_path));
@@ -268,6 +323,9 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "last_type"), PROTO_NONE);
     sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "last_value"), PROTO_NONE);
     sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "last_traceback"), PROTO_NONE);
+
+    // sys.maxsize (64-bit signed max)
+    sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "maxsize"), ctx->fromInteger(9223372036854775807LL));
 
     return sys;
 }

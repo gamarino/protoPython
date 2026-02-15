@@ -244,19 +244,30 @@ int main(int argc, char* argv[]) {
 
     std::string stdLibPath = !options.stdLibPath.empty() ? options.stdLibPath : DEFAULT_STDLIB;
     
-    // but ONLY if it doesn't already exist relative to current working directory.
-    if (!stdLibPath.empty() && stdLibPath[0] != '/' && stdLibPath.find(":\\") == std::string::npos) {
-        if (!std::filesystem::exists(stdLibPath)) {
+    bool resolved = false;
+    if (!stdLibPath.empty()) {
+        if (stdLibPath[0] == '/' || stdLibPath.find(":\\") != std::string::npos) {
+            resolved = true;
+        } else if (std::filesystem::exists(stdLibPath)) {
+            resolved = true;
+        } else {
             std::string altPath = exeDir + "/" + stdLibPath;
             if (std::filesystem::exists(altPath)) {
                 stdLibPath = altPath;
-            } else {
-                // Special case for development: check ./lib/python3.14
-                if (std::filesystem::exists("lib/python3.14")) {
-                    stdLibPath = "lib/python3.14";
-                }
+                resolved = true;
             }
         }
+    }
+
+    if (!resolved) {
+        // Special case for development: check ./lib/python3.14
+        if (std::filesystem::exists("lib/python3.14")) {
+            stdLibPath = "lib/python3.14";
+        }
+    }
+
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        std::cerr << "[proto-diag] main: stdLibPath='" << stdLibPath << "'\n";
     }
 
     std::vector<std::string> searchPaths;

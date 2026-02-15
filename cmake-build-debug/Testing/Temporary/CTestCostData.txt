@@ -1,4 +1,0 @@
-regrtest_protopy_script 1 0.110169
-regrtest_persistence 1 0.124587
-test_regr 1 0.0394335
----

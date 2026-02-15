@@ -111,6 +111,25 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_match));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "search"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_search));
+
+    // Regex flags
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "IGNORECASE"), ctx->fromInteger(2));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "I"), ctx->fromInteger(2));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "LOCALE"), ctx->fromInteger(4));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "L"), ctx->fromInteger(4));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "MULTILINE"), ctx->fromInteger(8));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "M"), ctx->fromInteger(8));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "DOTALL"), ctx->fromInteger(16));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "S"), ctx->fromInteger(16));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "UNICODE"), ctx->fromInteger(32));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "U"), ctx->fromInteger(32));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "VERBOSE"), ctx->fromInteger(64));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "X"), ctx->fromInteger(64));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "DEBUG"), ctx->fromInteger(128));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "ASCII"), ctx->fromInteger(256));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "A"), ctx->fromInteger(256));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "NOFLAG"), ctx->fromInteger(0));
+
     return mod;
 }
 

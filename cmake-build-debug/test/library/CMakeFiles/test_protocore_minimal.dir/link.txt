@@ -1,1 +1,0 @@
-/usr/bin/c++ CMakeFiles/test_protocore_minimal.dir/TestProtoCoreMinimal.cpp.o -o test_protocore_minimal  -Wl,-rpath,/home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/protoCore ../../protoCore/libprotoCore.so.1.0.0 

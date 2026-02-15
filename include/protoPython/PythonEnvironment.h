@@ -500,6 +500,7 @@ public:
     void raiseValueError(proto::ProtoContext* context, const proto::ProtoObject* msg);
     void raiseNameError(proto::ProtoContext* context, const std::string& name);
     void raiseAttributeError(proto::ProtoContext* context, const proto::ProtoObject* obj, const std::string& attr);
+    void raiseRuntimeError(proto::ProtoContext* context, const std::string& msg);
     void raiseTypeError(proto::ProtoContext* context, const std::string& msg);
     void raiseImportError(proto::ProtoContext* context, const std::string& msg);
     void raiseKeyboardInterrupt(proto::ProtoContext* context);
@@ -512,6 +513,11 @@ public:
     void raiseIndexError(proto::ProtoContext* context, const std::string& msg);
     void raiseStopIteration(proto::ProtoContext* context, const proto::ProtoObject* value = nullptr);
     void raiseStopAsyncIteration(proto::ProtoContext* context);
+    
+    /**
+     * @brief Returns the string representation of an object (Step 1120).
+     */
+    static std::string reprObject(proto::ProtoContext* context, const proto::ProtoObject* obj);
 
     /**
      * @brief Returns true if the object is a StopIteration exception.
@@ -607,6 +613,7 @@ private:
     const proto::ProtoObject* attributeErrorType{nullptr};
     const proto::ProtoObject* syntaxErrorType{nullptr};
     const proto::ProtoObject* typeErrorType{nullptr};
+    const proto::ProtoObject* runtimeErrorType{nullptr};
     const proto::ProtoObject* importErrorType{nullptr};
     const proto::ProtoObject* keyboardInterruptType{nullptr};
     const proto::ProtoObject* systemExitType{nullptr};

@@ -1,0 +1,37 @@
+
+This GDB supports auto-downloading debuginfo from the following URLs:
+  <https://debuginfod.ubuntu.com>
+Enable debuginfod for this session? (y or [n]) [answered N; input not from terminal]
+Debuginfod has been disabled.
+To make this setting permanent, add 'set debuginfod enabled off' to .gdbinit.
+[Depuración de hilo usando libthread_db enabled]
+Using host libthread_db library "/lib/x86_64-linux-gnu/libthread_db.so.1".
+[Nuevo Thread 0x7ffff65e96c0 (LWP 2327577)]
+
+Thread 1 "protopy" received signal SIGSEGV, Segmentation fault.
+0x00007ffff774cef3 in proto::ProtoListImplementation::implGetAt(proto::ProtoContext*, int) const () from /home/gamarino/Documentos/proyectos/protoPython/build/protoCore/libprotoCore.so.1
+#0  0x00007ffff774cef3 in proto::ProtoListImplementation::implGetAt(proto::ProtoContext*, int) const () from /home/gamarino/Documentos/proyectos/protoPython/build/protoCore/libprotoCore.so.1
+#1  0x00007ffff774cf88 in proto::ProtoListImplementation::implGetAt(proto::ProtoContext*, int) const () from /home/gamarino/Documentos/proyectos/protoPython/build/protoCore/libprotoCore.so.1
+#2  0x00007ffff774cf88 in proto::ProtoListImplementation::implGetAt(proto::ProtoContext*, int) const () from /home/gamarino/Documentos/proyectos/protoPython/build/protoCore/libprotoCore.so.1
+#3  0x00007ffff7741880 in proto::ProtoList::getAt(proto::ProtoContext*, int) const () from /home/gamarino/Documentos/proyectos/protoPython/build/protoCore/libprotoCore.so.1
+#4  0x00007ffff7e3e6f4 in protoPython::(anonymous namespace)::runUserFunctionCall(proto::ProtoContext*, proto::ProtoObject const*, proto::ParentLink const*, proto::ProtoList const*, proto::ProtoSparseList const*) () from /home/gamarino/Documentos/proyectos/protoPython/build/src/library/libprotoPython.so.0
+#5  0x00007ffff7e41e70 in protoPython::(anonymous namespace)::invokeCallable(proto::ProtoContext*, proto::ProtoObject const*, proto::ProtoList const*, proto::ProtoSparseList const*) () from /home/gamarino/Documentos/proyectos/protoPython/build/src/library/libprotoPython.so.0
+#6  0x00007ffff7e4d9ee in protoPython::executeBytecodeRange(proto::ProtoContext*, proto::ProtoList const*, proto::ProtoList const*, proto::ProtoList const*, proto::ProtoObject*&, unsigned long, unsigned long, unsigned long, std::vector<proto::ProtoObject const*, std::allocator<proto::ProtoObject const*> >*, unsigned long*, bool*) () from /home/gamarino/Documentos/proyectos/protoPython/build/src/library/libprotoPython.so.0
+#7  0x00007ffff7e2cc1d in protoPython::runCodeObject(proto::ProtoContext*, proto::ProtoObject const*, proto::ProtoObject*&) () from /home/gamarino/Documentos/proyectos/protoPython/build/src/library/libprotoPython.so.0
+#8  0x00007ffff7f00eda in protoPython::PythonEnvironment::executeModule(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, bool, proto::ProtoContext*) () from /home/gamarino/Documentos/proyectos/protoPython/build/src/library/libprotoPython.so.0
+#9  0x00007ffff7f077ae in protoPython::PythonEnvironment::resolve(proto::ProtoString const*, proto::ProtoContext*) () from /home/gamarino/Documentos/proyectos/protoPython/build/src/library/libprotoPython.so.0
+#10 0x00007ffff7f06f04 in protoPython::PythonEnvironment::resolve(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, proto::ProtoContext*) () from /home/gamarino/Documentos/proyectos/protoPython/build/src/library/libprotoPython.so.0
+#11 0x00007ffff7f2ad98 in protoPython::builtins::py_import(proto::ProtoContext*, proto::ProtoObject const*, proto::ParentLink const*, proto::ProtoList const*, proto::ProtoSparseList const*) () from /home/gamarino/Documentos/proyectos/protoPython/build/src/library/libprotoPython.so.0
+#12 0x00007ffff7e41d30 in protoPython::(anonymous namespace)::invokeCallable(proto::ProtoContext*, proto::ProtoObject const*, proto::ProtoList const*, proto::ProtoSparseList const*) () from /home/gamarino/Documentos/proyectos/protoPython/build/src/library/libprotoPython.so.0
+#13 0x00007ffff7e4d9ee in protoPython::executeBytecodeRange(proto::ProtoContext*, proto::ProtoList const*, proto::ProtoList const*, proto::ProtoList const*, proto::ProtoObject*&, unsigned long, unsigned long, unsigned long, std::vector<proto::ProtoObject const*, std::allocator<proto::ProtoObject const*> >*, unsigned long*, bool*) () from /home/gamarino/Documentos/proyectos/protoPython/build/src/library/libprotoPython.so.0
+#14 0x00007ffff7e2cc1d in protoPython::runCodeObject(proto::ProtoContext*, proto::ProtoObject const*, proto::ProtoObject*&) () from /home/gamarino/Documentos/proyectos/protoPython/build/src/library/libprotoPython.so.0
+#15 0x00007ffff7f00eda in protoPython::PythonEnvironment::executeModule(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, bool, proto::ProtoContext*) () from /home/gamarino/Documentos/proyectos/protoPython/build/src/library/libprotoPython.so.0
+#16 0x00007ffff7f077ae in protoPython::PythonEnvironment::resolve(proto::ProtoString const*, proto::ProtoContext*) () from /home/gamarino/Documentos/proyectos/protoPython/build/src/library/libprotoPython.so.0
+#17 0x00007ffff7f06f04 in protoPython::PythonEnvironment::resolve(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, proto::ProtoContext*) () from /home/gamarino/Documentos/proyectos/protoPython/build/src/library/libprotoPython.so.0
+#18 0x00007ffff7f2ad98 in protoPython::builtins::py_import(proto::ProtoContext*, proto::ProtoObject const*, proto::ParentLink const*, proto::ProtoList const*, proto::ProtoSparseList const*) () from /home/gamarino/Documentos/proyectos/protoPython/build/src/library/libprotoPython.so.0
+#19 0x00007ffff7e41d30 in protoPython::(anonymous namespace)::invokeCallable(proto::ProtoContext*, proto::ProtoObject const*, proto::ProtoList const*, proto::ProtoSparseList const*) () from /home/gamarino/Documentos/proyectos/protoPython/build/src/library/libprotoPython.so.0
+#20 0x00007ffff7e4d9ee in protoPython::executeBytecodeRange(proto::ProtoContext*, proto::ProtoList const*, proto::ProtoList const*, proto::ProtoList const*, proto::ProtoObject*&, unsigned long, unsigned long, unsigned long, std::vector<proto::ProtoObject const*, std::allocator<proto::ProtoObject const*> >*, unsigned long*, bool*) () from /home/gamarino/Documentos/proyectos/protoPython/build/src/library/libprotoPython.so.0
+#21 0x00007ffff7e2cc1d in protoPython::runCodeObject(proto::ProtoContext*, proto::ProtoObject const*, proto::ProtoObject*&) () from /home/gamarino/Documentos/proyectos/protoPython/build/src/library/libprotoPython.so.0
+#22 0x00007ffff7f32cd7 in protoPython::builtins::py_exec(proto::ProtoContext*, proto::ProtoObject const*, proto::ParentLink const*, proto::ProtoList const*, proto::ProtoSparseList const*) () from /home/gamarino/Documentos/proyectos/protoPython/build/src/library/libprotoPython.so.0
+#23 0x00007ffff7f00225 in protoPython::PythonEnvironment::executeString(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&) () from /home/gamarino/Documentos/proyectos/protoPython/build/src/library/libprotoPython.so.0
+#24 0x0000555555560428 in main ()

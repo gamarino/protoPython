@@ -1,5 +1,14 @@
-build/
-.idea/
 # Evitar que los diagnósticos de ejecución entren al repo
 *.log
 exec_diag_*
+
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Build artifacts
+build/
+cmake-build-debug/
+.idea/
