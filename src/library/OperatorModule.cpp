@@ -244,6 +244,49 @@ static const proto::ProtoObject* py_index(
     return PROTO_NONE;
 }
 
+static const proto::ProtoObject* py_itemgetter_call(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    const proto::ProtoObject* obj = posArgs->getAt(ctx, 0);
+    const proto::ProtoObject* itemsObj = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__items__"));
+    if (!itemsObj || !itemsObj->asList(ctx)) return PROTO_NONE;
+    const proto::ProtoList* items = itemsObj->asList(ctx);
+    
+    auto getItem = [&](const proto::ProtoObject* key) -> const proto::ProtoObject* {
+        const proto::ProtoString* getItemS = proto::ProtoString::fromUTF8String(ctx, "__getitem__");
+        const proto::ProtoObject* method = obj->getAttribute(ctx, getItemS);
+        if (method && method->asMethod(ctx)) {
+            const proto::ProtoList* args = ctx->newList()->appendLast(ctx, key);
+            return method->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(obj), nullptr, args, nullptr);
+        }
+        return PROTO_NONE;
+    };
+
+    if (items->getSize(ctx) == 1) {
+        return getItem(items->getAt(ctx, 0));
+    } else {
+        const proto::ProtoList* results = ctx->newList();
+        for (unsigned long i = 0; i < items->getSize(ctx); ++i) {
+            results = results->appendLast(ctx, getItem(items->getAt(ctx, i)));
+        }
+        const proto::ProtoTuple* tup = ctx->newTupleFromList(results);
+        return tup ? tup->asObject(ctx) : PROTO_NONE;
+    }
+}
+
+static const proto::ProtoObject* py_itemgetter(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    
+    proto::ProtoObject* getter = const_cast<proto::ProtoObject*>(ctx->newObject(true));
+    getter->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__items__"), posArgs->asObject(ctx));
+    getter->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__call__"),
+        ctx->fromMethod(getter, py_itemgetter_call));
+    return getter;
+}
+
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     const proto::ProtoObject* mod = ctx->newObject(true);
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "add"),
@@ -282,6 +325,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_xor));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "index"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_index));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "itemgetter"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_itemgetter));
     return mod;
 }
 

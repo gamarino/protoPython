@@ -401,6 +401,7 @@ def namedtuple(typename, field_names, *, rename=False, defaults=None, module=Non
 
     for name in [typename] + field_names:
         if type(name) is not str:
+            print(f"DEBUG: name={name!r}, type(name)={type(name)!r}, str={str!r}, match={type(name) is str}")
             raise TypeError('Type names and field names must be strings')
         if not name.isidentifier():
             raise ValueError('Type names and field names must be valid '

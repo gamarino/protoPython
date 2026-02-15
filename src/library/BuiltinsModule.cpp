@@ -59,6 +59,7 @@ static const proto::ProtoObject* py_import(
     
     if (!leaf || leaf == PROTO_NONE) {
         if (env) {
+            if (env->hasPendingException()) return nullptr;
             env->raiseImportError("No module named '" + moduleName + "'");
         }
         return PROTO_NONE;
@@ -671,7 +672,7 @@ static const proto::ProtoObject* py_reversed_next(
     if (idx < 0) return nullptr;
 
     const proto::ProtoObject* getitemMethod = obj->getAttribute(context, getitemS);
-    if (!getitemMethod || !getitemMethod->asMethod(context)) return PROTO_NONE;
+    if (!getitemMethod || !getitemMethod->asMethod(context)) return nullptr;
     const proto::ProtoList* args = context->newList()->appendLast(context, context->fromInteger(idx));
     const proto::ProtoObject* value = getitemMethod->asMethod(context)(context, obj, nullptr, args, nullptr);
     self->setAttribute(context, idxS, context->fromInteger(idx - 1));
@@ -2080,10 +2081,12 @@ static const proto::ProtoObject* py_range_next(
     const proto::ProtoString* stepS = env ? env->getRangeStepString() : proto::ProtoString::fromUTF8String(context, "__range_step__");
 
     const proto::ProtoObject* curObj = self->getAttribute(context, curS);
-    if (!curObj) return PROTO_NONE;
+    const proto::ProtoObject* stopObj = self->getAttribute(context, stopS);
+    const proto::ProtoObject* stepObj = self->getAttribute(context, stepS);
+    if (!curObj || !stopObj || !stepObj) return nullptr;
     long long cur = curObj->asLong(context);
-    long long stop = self->getAttribute(context, stopS)->asLong(context);
-    long long step = self->getAttribute(context, stepS)->asLong(context);
+    long long stop = stopObj->asLong(context);
+    long long step = stepObj->asLong(context);
 
     if ((step > 0 && cur >= stop) || (step < 0 && cur <= stop)) return nullptr;
 
@@ -2216,10 +2219,10 @@ static const proto::ProtoObject* py_zip_next(
     const proto::ProtoString* nextS = env ? env->getNextString() : proto::ProtoString::fromUTF8String(context, "__next__");
 
     const proto::ProtoObject* itersObj = self->getAttribute(context, itersS);
-    if (!itersObj || !itersObj->asList(context)) return PROTO_NONE;
+    if (!itersObj || !itersObj->asList(context)) return nullptr;
     const proto::ProtoList* iters = itersObj->asList(context);
     unsigned long n = iters->getSize(context);
-    if (n == 0) return PROTO_NONE;
+    if (n == 0) return nullptr;
 
     const proto::ProtoList* resList = context->newList();
     const proto::ProtoList* emptyL = env ? env->getEmptyList() : context->newList();
@@ -2227,7 +2230,7 @@ static const proto::ProtoObject* py_zip_next(
     for (unsigned long i = 0; i < n; ++i) {
         const proto::ProtoObject* it = iters->getAt(context, static_cast<int>(i));
         const proto::ProtoObject* nextM = it ? it->getAttribute(context, nextS) : nullptr;
-        if (!nextM || !nextM->asMethod(context)) return PROTO_NONE;
+        if (!nextM || !nextM->asMethod(context)) return nullptr;
         const proto::ProtoObject* val = nextM->asMethod(context)(context, it, nullptr, emptyL, nullptr);
         if (!val) return nullptr;
         resList = resList->appendLast(context, val);
@@ -2294,10 +2297,10 @@ static const proto::ProtoObject* py_filter_next(
 
     const proto::ProtoObject* func = self->getAttribute(context, funcS);
     const proto::ProtoObject* it = self->getAttribute(context, iterS);
-    if (!func || !it) return PROTO_NONE;
+    if (!func || !it) return nullptr;
     const proto::ProtoObject* call = func->getAttribute(context, callS);
     const proto::ProtoObject* nextM = it->getAttribute(context, nextS);
-    if (!call || !call->asMethod(context) || !nextM || !nextM->asMethod(context)) return PROTO_NONE;
+    if (!call || !call->asMethod(context) || !nextM || !nextM->asMethod(context)) return nullptr;
 
     const proto::ProtoList* emptyL = env ? env->getEmptyList() : context->newList();
     const proto::ProtoObject* noneObj = env ? env->getNonePrototype() : nullptr;
@@ -2358,10 +2361,10 @@ static const proto::ProtoObject* py_map_next(
 
     const proto::ProtoObject* func = self->getAttribute(context, funcS);
     const proto::ProtoObject* it = self->getAttribute(context, iterS);
-    if (!func || !it) return PROTO_NONE;
+    if (!func || !it) return nullptr;
     const proto::ProtoObject* call = func->getAttribute(context, callS);
     const proto::ProtoObject* nextM = it->getAttribute(context, nextS);
-    if (!call || !call->asMethod(context) || !nextM || !nextM->asMethod(context)) return PROTO_NONE;
+    if (!call || !call->asMethod(context) || !nextM || !nextM->asMethod(context)) return nullptr;
     
     const proto::ProtoList* emptyL = env ? env->getEmptyList() : context->newList();
     const proto::ProtoObject* val = nextM->asMethod(context)(context, it, nullptr, emptyL, nullptr);

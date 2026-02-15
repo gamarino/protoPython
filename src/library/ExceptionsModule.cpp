@@ -111,6 +111,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx,
     const proto::ProtoString* py_assertionerror = proto::ProtoString::fromUTF8String(ctx, "AssertionError");
     const proto::ProtoString* py_stopiteration = proto::ProtoString::fromUTF8String(ctx, "StopIteration");
     const proto::ProtoString* py_stopasynciteration = proto::ProtoString::fromUTF8String(ctx, "StopAsyncIteration");
+    const proto::ProtoString* py_systemerror = proto::ProtoString::fromUTF8String(ctx, "SystemError");
 
     const proto::ProtoObject* exceptionType = make_exception_type(ctx, objectProto, typeProto, "Exception", objectProto);
     const proto::ProtoObject* keyErrorType = make_exception_type(ctx, objectProto, typeProto, "KeyError", exceptionType);
@@ -129,6 +130,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx,
     const proto::ProtoObject* assertionErrorType = make_exception_type(ctx, objectProto, typeProto, "AssertionError", exceptionType);
     const proto::ProtoObject* stopIterationType = make_exception_type(ctx, objectProto, typeProto, "StopIteration", exceptionType);
     const proto::ProtoObject* stopAsyncIterationType = make_exception_type(ctx, objectProto, typeProto, "StopAsyncIteration", exceptionType);
+    const proto::ProtoObject* systemErrorType = make_exception_type(ctx, objectProto, typeProto, "SystemError", exceptionType);
 
     const proto::ProtoObject* mod = ctx->newObject(true);
     mod = mod->setAttribute(ctx, py_exception, exceptionType);
@@ -166,6 +168,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx,
 
     mod = mod->setAttribute(ctx, py_stopiteration, stopIterationType);
     mod = mod->setAttribute(ctx, py_stopasynciteration, stopAsyncIterationType);
+    mod = mod->setAttribute(ctx, py_systemerror, systemErrorType);
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__name__"), ctx->fromUTF8String("exceptions"));
 
     return mod;

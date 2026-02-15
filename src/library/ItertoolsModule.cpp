@@ -54,12 +54,12 @@ static const proto::ProtoObject* py_islice_next(
     if (!it || !stopObj || !idxObj) return PROTO_NONE;
     long long idx = idxObj->asLong(ctx);
     long long stop = stopObj->asLong(ctx);
-    if (idx >= stop) return PROTO_NONE;
+    if (idx >= stop) return nullptr;
 
     const proto::ProtoObject* nextM = it->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__next__"));
-    if (!nextM || !nextM->asMethod(ctx)) return PROTO_NONE;
+    if (!nextM || !nextM->asMethod(ctx)) return nullptr;
     const proto::ProtoObject* val = nextM->asMethod(ctx)(ctx, it, nullptr, ctx->newList(), nullptr);
-    if (!val || val == PROTO_NONE) return PROTO_NONE;
+    if (!val || val == PROTO_NONE) return nullptr;
     self->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__islice_idx__"), ctx->fromInteger(idx + 1));
     return val;
 }
@@ -108,7 +108,7 @@ static const proto::ProtoObject* py_chain_next(
     const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
     const proto::ProtoObject* itersObj = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__chain_iters__"));
     const proto::ProtoObject* idxObj = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__chain_idx__"));
-    if (!itersObj || !itersObj->asList(ctx) || !idxObj || !idxObj->isInteger(ctx)) return PROTO_NONE;
+    if (!itersObj || !itersObj->asList(ctx) || !idxObj || !idxObj->isInteger(ctx)) return nullptr;
     const proto::ProtoList* iters = itersObj->asList(ctx);
     long long idx = idxObj->asLong(ctx);
     unsigned long n = iters->getSize(ctx);
@@ -125,7 +125,7 @@ static const proto::ProtoObject* py_chain_next(
         idx++;
         self->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__chain_idx__"), ctx->fromInteger(idx));
     }
-    return PROTO_NONE;
+    return nullptr;
 }
 
 static const proto::ProtoObject* py_repeat_next(
@@ -139,7 +139,7 @@ static const proto::ProtoObject* py_repeat_next(
     if (timesObj != PROTO_NONE && timesObj->isInteger(ctx)) {
         long long times = timesObj->asLong(ctx);
         long long count = countObj->isInteger(ctx) ? countObj->asLong(ctx) : 0;
-        if (count >= times) return PROTO_NONE;
+        if (count >= times) return nullptr;
         self->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__repeat_count__"), ctx->fromInteger(count + 1));
     }
     return obj;
@@ -181,10 +181,10 @@ static const proto::ProtoObject* py_cycle_next(
         return val;
     }
     const proto::ProtoObject* nextM = it->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__next__"));
-    if (!nextM || !nextM->asMethod(ctx)) return PROTO_NONE;
+    if (!nextM || !nextM->asMethod(ctx)) return nullptr;
     const proto::ProtoObject* val = nextM->asMethod(ctx)(ctx, it, nullptr, ctx->newList(), nullptr);
     if (!val || val == PROTO_NONE) {
-        if (cache->getSize(ctx) == 0) return PROTO_NONE;
+        if (cache->getSize(ctx) == 0) return nullptr;
         self->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__cycle_idx__"), ctx->fromInteger(1));
         return cache->getAt(ctx, 0);
     }
@@ -221,16 +221,16 @@ static const proto::ProtoObject* py_takewhile_next(
     const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
     const proto::ProtoObject* pred = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__takewhile_pred__"));
     const proto::ProtoObject* it = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__takewhile_it__"));
-    if (!pred || !pred->asMethod(ctx) || !it) return PROTO_NONE;
+    if (!pred || !pred->asMethod(ctx) || !it) return nullptr;
     const proto::ProtoObject* nextM = it->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__next__"));
-    if (!nextM || !nextM->asMethod(ctx)) return PROTO_NONE;
+    if (!nextM || !nextM->asMethod(ctx)) return nullptr;
     const proto::ProtoObject* val = nextM->asMethod(ctx)(ctx, it, nullptr, ctx->newList(), nullptr);
-    if (!val || val == PROTO_NONE) return PROTO_NONE;
+    if (!val || val == PROTO_NONE) return nullptr;
     const proto::ProtoList* predArgs = ctx->newList()->appendLast(ctx, val);
     const proto::ProtoObject* predResult = pred->asMethod(ctx)(ctx, pred, nullptr, predArgs, nullptr);
     bool ok = (predResult && predResult != PROTO_NONE && predResult != PROTO_FALSE);
     if (predResult && predResult->isInteger(ctx) && predResult->asLong(ctx) != 0) ok = true;
-    if (!ok) return PROTO_NONE;
+    if (!ok) return nullptr;
     return val;
 }
 
@@ -360,27 +360,27 @@ static const proto::ProtoObject* py_accumulate_next(
     const proto::ProtoObject* it = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__accum_it__"));
     const proto::ProtoObject* totalObj = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__accum_total__"));
     const proto::ProtoObject* func = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__accum_func__"));
-    if (!it) return PROTO_NONE;
+    if (!it) return nullptr;
     const proto::ProtoObject* nextM = it->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__next__"));
-    if (!nextM || !nextM->asMethod(ctx)) return PROTO_NONE;
+    if (!nextM || !nextM->asMethod(ctx)) return nullptr;
 
     if (!totalObj || totalObj == PROTO_NONE) {
         const proto::ProtoObject* first = nextM->asMethod(ctx)(ctx, it, nullptr, ctx->newList(), nullptr);
-        if (!first || first == PROTO_NONE) return PROTO_NONE;
+        if (!first || first == PROTO_NONE) return nullptr;
         self->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__accum_total__"), first);
         return first;
     }
     const proto::ProtoObject* nextVal = nextM->asMethod(ctx)(ctx, it, nullptr, ctx->newList(), nullptr);
-    if (!nextVal || nextVal == PROTO_NONE) return PROTO_NONE;
+    if (!nextVal || nextVal == PROTO_NONE) return nullptr;
     const proto::ProtoObject* newTotal;
     if (func && func != PROTO_NONE) {
         const proto::ProtoList* args = ctx->newList()->appendLast(ctx, totalObj)->appendLast(ctx, nextVal);
         const proto::ProtoObject* callResult = func->call(ctx, nullptr, proto::ProtoString::fromUTF8String(ctx, "__call__"), func, args, nullptr);
-        if (!callResult || callResult == PROTO_NONE) return PROTO_NONE;
+        if (!callResult || callResult == PROTO_NONE) return nullptr;
         newTotal = callResult;
     } else {
         newTotal = accumulate_add(ctx, totalObj, nextVal);
-        if (!newTotal || newTotal == PROTO_NONE) return PROTO_NONE;
+        if (!newTotal || newTotal == PROTO_NONE) return nullptr;
     }
     self->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__accum_total__"), newTotal);
     return newTotal;
@@ -431,6 +431,64 @@ static const proto::ProtoObject* py_combinations_with_replacement_stub(
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
     (void)posArgs;
     return empty_iterator(ctx, self);
+}
+
+static const proto::ProtoObject* py_starmap_next(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoObject* func = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__starmap_func__"));
+    const proto::ProtoObject* it = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__starmap_it__"));
+    if (!func || !it) return nullptr;
+    const proto::ProtoObject* nextM = it->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__next__"));
+    if (!nextM || !nextM->asMethod(ctx)) return nullptr;
+    const proto::ProtoObject* argsObj = nextM->asMethod(ctx)(ctx, it, nullptr, ctx->newList(), nullptr);
+    if (!argsObj || argsObj == PROTO_NONE) return nullptr;
+
+    const proto::ProtoList* args = argsObj->asList(ctx);
+    if (!args) {
+        // If it's not a list, try converting it to one
+        const proto::ProtoObject* iterM = argsObj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iter__"));
+        if (iterM && iterM->asMethod(ctx)) {
+            const proto::ProtoObject* tempIt = iterM->asMethod(ctx)(ctx, argsObj, nullptr, ctx->newList(), nullptr);
+            if (tempIt) {
+                const proto::ProtoList* L = ctx->newList();
+                const proto::ProtoObject* nAttr = tempIt->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__next__"));
+                if (nAttr && nAttr->asMethod(ctx)) {
+                    while (const proto::ProtoObject* val = nAttr->asMethod(ctx)(ctx, tempIt, nullptr, ctx->newList(), nullptr)) {
+                        L = L->appendLast(ctx, val);
+                    }
+                }
+                args = L;
+            }
+        }
+    }
+    if (!args) return nullptr;
+
+    const proto::ProtoObject* callM = func->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__call__"));
+    if (!callM || !callM->asMethod(ctx)) return nullptr;
+    return callM->asMethod(ctx)(ctx, func, nullptr, args, nullptr);
+}
+
+static const proto::ProtoObject* py_starmap(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
+    const proto::ProtoObject* func = posArgs->getAt(ctx, 0);
+    const proto::ProtoObject* iterable = posArgs->getAt(ctx, 1);
+    const proto::ProtoObject* iterM = iterable->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iter__"));
+    if (!iterM || !iterM->asMethod(ctx)) return PROTO_NONE;
+    const proto::ProtoObject* it = iterM->asMethod(ctx)(ctx, iterable, nullptr, ctx->newList(), nullptr);
+    if (!it) return PROTO_NONE;
+    const proto::ProtoObject* proto = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__starmap_proto__"));
+    if (!proto) return PROTO_NONE;
+    const proto::ProtoObject* sm = proto->newChild(ctx, true);
+    sm = sm->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__starmap_func__"), func);
+    sm = sm->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__starmap_it__"), it);
+    return sm;
 }
 
 static const proto::ProtoObject* py_permutations_stub(
@@ -549,6 +607,15 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_combinations_with_replacement_stub));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "permutations"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_permutations_stub));
+
+    const proto::ProtoObject* starmapProto = ctx->newObject(true);
+    starmapProto = starmapProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iter__"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(starmapProto), py_iter_self));
+    starmapProto = starmapProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__next__"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(starmapProto), py_starmap_next));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__starmap_proto__"), starmapProto);
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "starmap"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_starmap));
 
     return mod;
 }

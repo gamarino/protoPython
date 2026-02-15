@@ -31,7 +31,9 @@ add_library(protoPython SHARED
     BuiltinsModule.cpp
     IOModule.cpp
     CollectionsModule.cpp
+    CodecsModule.cpp
     ExceptionsModule.cpp
+    WeakrefModule.cpp
 )
 
 target_include_directories(protoPython PUBLIC

@@ -13,6 +13,15 @@ struct DequeState {
     std::mutex mutex;
 };
 
+static const proto::ProtoObject* py_collections_dummy(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList*,
+    const proto::ProtoSparseList*) {
+    return self->newChild(ctx, true);
+}
+
 static void deque_finalizer(void* ptr) {
     delete static_cast<DequeState*>(ptr);
 }
@@ -229,6 +238,25 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
                                  ctx->fromMethod(const_cast<proto::ProtoObject*>(defaultdictMod), py_defaultdict_new));
     module = module->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "OrderedDict"),
                                  ctx->fromMethod(const_cast<proto::ProtoObject*>(ordereddictMod), py_ordereddict_new));
+
+    // Dummy _deque_iterator and _tuplegetter to satisfy collections/__init__.py
+    const proto::ProtoObject* tuplegetter = ctx->newObject(true);
+    tuplegetter = tuplegetter->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__name__"), ctx->fromUTF8String("_tuplegetter"));
+    tuplegetter = tuplegetter->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__class__"), tuplegetter);
+    module = module->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_tuplegetter"), tuplegetter);
+
+    const proto::ProtoObject* deque_iterator = ctx->newObject(true);
+    deque_iterator = deque_iterator->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__name__"), ctx->fromUTF8String("_deque_iterator"));
+    deque_iterator = deque_iterator->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__class__"), deque_iterator);
+    module = module->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_deque_iterator"), deque_iterator);
+
+    // Dummy _count_elements for Counter
+    module = module->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_count_elements"),
+                                 ctx->fromMethod(const_cast<proto::ProtoObject*>(module), py_collections_dummy));
+
+    // Set __class__ on the module for better diagnostics
+    module = module->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__class__"), module);
+    module = module->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__name__"), ctx->fromUTF8String("_collections"));
 
     return module;
 }

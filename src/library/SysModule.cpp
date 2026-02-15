@@ -151,6 +151,19 @@ static const proto::ProtoObject* sys_setrecursionlimit(
     return PROTO_NONE;
 }
 
+static const proto::ProtoObject* sys_intern(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    (void)self; (void)parentLink; (void)keywordParameters;
+    if (positionalParameters->getSize(context) > 0) {
+        return positionalParameters->getAt(context, 0);
+    }
+    return PROTO_NONE;
+}
+
 static const proto::ProtoObject* sys_getrecursionlimit(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -182,6 +195,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_getframe"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_getframe));
     sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "setrecursionlimit"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_setrecursionlimit));
     sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "getrecursionlimit"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_getrecursionlimit));
+    sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "intern"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_intern));
     const proto::ProtoObject* traceDefault = ctx->newObject(true);
     if (env && env->getObjectPrototype()) {
         traceDefault = traceDefault->addParent(ctx, env->getObjectPrototype());
@@ -199,6 +213,14 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     const char* plat = "linux";
 #endif
     sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "platform"), ctx->fromUTF8String(plat));
+    
+    // sys.byteorder
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+    const char* bo = "big";
+#else
+    const char* bo = "little";
+#endif
+    sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "byteorder"), ctx->fromUTF8String(bo));
     
     // sys.version
     sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "version"), ctx->fromUTF8String("3.14.0 (protoPython, Feb 2026)"));

@@ -257,6 +257,8 @@ public:
     const proto::ProtoString* getFGlobalsString() const { return f_globals; }
     const proto::ProtoString* getFLocalsString() const { return f_locals; }
     const proto::ProtoString* getClosureString() const { return __closure__; }
+    const proto::ProtoString* getDefaultsString() const { return __defaults__; }
+    const proto::ProtoString* getKwdefaultsString() const { return __kwdefaults__; }
 
     const proto::ProtoString* getGiCodeString() const { return gi_code; }
     const proto::ProtoString* getGiFrameString() const { return gi_frame; }
@@ -614,6 +616,7 @@ private:
     const proto::ProtoObject* assertionErrorType = nullptr;
     const proto::ProtoObject* zeroDivisionErrorType = nullptr;
     const proto::ProtoObject* indexErrorType{nullptr};
+    const proto::ProtoObject* systemErrorType{nullptr};
     const proto::ProtoObject* stopAsyncIterationType{nullptr};
     const proto::ProtoList* taskQueue{nullptr};
     const proto::ProtoString* iterString{nullptr};
@@ -662,6 +665,8 @@ private:
     const proto::ProtoString* setDunderString{nullptr};
     const proto::ProtoString* delDunderString{nullptr};
     const proto::ProtoString* __closure__{nullptr};
+    const proto::ProtoString* __defaults__{nullptr};
+    const proto::ProtoString* __kwdefaults__{nullptr};
 
     const proto::ProtoString* enumProtoS{nullptr};
     const proto::ProtoString* revProtoS{nullptr};

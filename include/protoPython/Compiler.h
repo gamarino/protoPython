@@ -12,8 +12,11 @@
 
 namespace protoPython {
     
+constexpr int CO_OPTIMIZED = 1;
+constexpr int CO_NEWLOCALS = 2;
 constexpr int CO_VARARGS = 4;
 constexpr int CO_VARKEYWORDS = 8;
+constexpr int CO_NESTED = 16;
 
 /** Compiles AST to protoPython bytecode (constants list, names list, flat bytecode). */
 class Compiler {
@@ -32,13 +35,18 @@ public:
 private:
     proto::ProtoContext* ctx_ = nullptr;
     std::string filename_;
-    const proto::ProtoList* constants_ = nullptr;
-    const proto::ProtoList* names_ = nullptr;
-    const proto::ProtoList* bytecode_ = nullptr;
+    std::vector<const proto::ProtoObject*> constantsVec_;
+    std::vector<const proto::ProtoObject*> namesVec_;
+    std::vector<const proto::ProtoObject*> bytecodeVec_;
     std::unordered_map<std::string, int> namesIndex_;
     std::unordered_map<long long, int> constIntIndex_;
     std::unordered_map<double, int> constFloatIndex_;
     std::unordered_map<std::string, int> constStrIndex_;
+
+    // Result holders for get*() methods
+    const proto::ProtoList* constants_ = nullptr;
+    const proto::ProtoList* names_ = nullptr;
+    const proto::ProtoList* bytecode_ = nullptr;
 
     int addConstant(const proto::ProtoObject* obj);
     int addName(const std::string& name);

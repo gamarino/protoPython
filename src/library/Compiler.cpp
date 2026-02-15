@@ -6,46 +6,98 @@
 namespace protoPython {
 
 static void collectGlobalsFromNode(ASTNode* node, std::unordered_set<std::string>& globalsOut);
+static void collectUsedNames(ASTNode* node, std::unordered_set<std::string>& out);
 static void collectDefinedNames(ASTNode* node, std::unordered_set<std::string>& out);
+static void collectNonlocalsFromNode(ASTNode* node, std::unordered_set<std::string>& out);
 // Buffer to reserve on the VM stack for GC-visible operand storage
 constexpr int PYTHON_STACK_BUFFER = 1024;
 
 Compiler::Compiler(proto::ProtoContext* ctx, const std::string& filename)
     : ctx_(ctx), filename_(filename) {
-    constants_ = ctx_->newList();
-    names_ = ctx_->newList();
-    bytecode_ = ctx_->newList();
 }
 
 int Compiler::addConstant(const proto::ProtoObject* obj) {
-    if (!constants_) return -1;
-    // Basic de-duplication to save space and potentially speed up comparisons
-    int n = static_cast<int>(constants_->getSize(ctx_));
+    if (obj == PROTO_NONE) {
+        auto it = constStrIndex_.find("None");
+        if (it != constStrIndex_.end()) return it->second;
+        int idx = static_cast<int>(constantsVec_.size());
+        constantsVec_.push_back(obj);
+        constStrIndex_["None"] = idx;
+        return idx;
+    }
+    if (obj == PROTO_TRUE) {
+        auto it = constStrIndex_.find("True");
+        if (it != constStrIndex_.end()) return it->second;
+        int idx = static_cast<int>(constantsVec_.size());
+        constantsVec_.push_back(obj);
+        constStrIndex_["True"] = idx;
+        return idx;
+    }
+    if (obj == PROTO_FALSE) {
+        auto it = constStrIndex_.find("False");
+        if (it != constStrIndex_.end()) return it->second;
+        int idx = static_cast<int>(constantsVec_.size());
+        constantsVec_.push_back(obj);
+        constStrIndex_["False"] = idx;
+        return idx;
+    }
+
+    if (obj->isInteger(ctx_)) {
+        long long val = obj->asLong(ctx_);
+        auto it = constIntIndex_.find(val);
+        if (it != constIntIndex_.end()) return it->second;
+        int idx = static_cast<int>(constantsVec_.size());
+        constantsVec_.push_back(obj);
+        constIntIndex_[val] = idx;
+        return idx;
+    }
+    if (obj->isDouble(ctx_)) {
+        double val = obj->asDouble(ctx_);
+        auto it = constFloatIndex_.find(val);
+        if (it != constFloatIndex_.end()) return it->second;
+        int idx = static_cast<int>(constantsVec_.size());
+        constantsVec_.push_back(obj);
+        constFloatIndex_[val] = idx;
+        return idx;
+    }
+    if (obj->isString(ctx_)) {
+        std::string val;
+        obj->asString(ctx_)->toUTF8String(ctx_, val);
+        auto it = constStrIndex_.find(val);
+        if (it != constStrIndex_.end()) return it->second;
+        int idx = static_cast<int>(constantsVec_.size());
+        constantsVec_.push_back(obj);
+        constStrIndex_[val] = idx;
+        return idx;
+    }
+
+    // Fallback for other objects (should be rare for constants)
+    int n = static_cast<int>(constantsVec_.size());
     for (int i = 0; i < n; ++i) {
-        if (constants_->getAt(ctx_, i) == obj) return i;
+        if (constantsVec_[i] == obj) return i;
     }
     int idx = n;
-    constants_ = constants_->appendLast(ctx_, obj);
+    constantsVec_.push_back(obj);
     return idx;
 }
 
 int Compiler::addName(const std::string& name) {
     auto it = namesIndex_.find(name);
     if (it != namesIndex_.end()) return it->second;
-    int idx = static_cast<int>(names_->getSize(ctx_));
+    int idx = static_cast<int>(namesVec_.size());
     const proto::ProtoString* str = proto::ProtoString::fromUTF8String(ctx_, name.c_str());
-    names_ = names_->appendLast(ctx_, reinterpret_cast<const proto::ProtoObject*>(str));
+    namesVec_.push_back(reinterpret_cast<const proto::ProtoObject*>(str));
     namesIndex_[name] = idx;
     return idx;
 }
 
 void Compiler::emit(int op, int arg) {
-    bytecode_ = bytecode_->appendLast(ctx_, ctx_->fromInteger(op));
-        bytecode_ = bytecode_->appendLast(ctx_, ctx_->fromInteger(arg));
+    bytecodeVec_.push_back(ctx_->fromInteger(op));
+    bytecodeVec_.push_back(ctx_->fromInteger(arg));
 }
 
 int Compiler::bytecodeOffset() const {
-    return static_cast<int>(bytecode_ ? bytecode_->getSize(ctx_) : 0);
+    return static_cast<int>(bytecodeVec_.size());
 }
 
 void Compiler::addPatch(int argSlotIndex, int targetBytecodeIndex) {
@@ -54,15 +106,41 @@ void Compiler::addPatch(int argSlotIndex, int targetBytecodeIndex) {
 
 void Compiler::applyPatches() {
     for (const auto& p : patches_) {
-        if (bytecode_ && p.first >= 0 && static_cast<unsigned long>(p.first) < bytecode_->getSize(ctx_))
-            bytecode_ = bytecode_->setAt(ctx_, p.first, ctx_->fromInteger(p.second));
+        if (p.first >= 0 && static_cast<unsigned long>(p.first) < bytecodeVec_.size())
+            bytecodeVec_[p.first] = ctx_->fromInteger(p.second);
     }
     patches_.clear();
 }
 
-const proto::ProtoList* Compiler::getConstants() { return constants_; }
-const proto::ProtoList* Compiler::getNames() { return names_; }
-const proto::ProtoList* Compiler::getBytecode() { return bytecode_; }
+const proto::ProtoList* Compiler::getConstants() {
+    if (!constants_) {
+        constants_ = ctx_->newList();
+        for (auto it = constantsVec_.rbegin(); it != constantsVec_.rend(); ++it) {
+            constants_ = constants_->appendFirst(ctx_, *it);
+        }
+    }
+    return constants_;
+}
+
+const proto::ProtoList* Compiler::getNames() {
+    if (!names_) {
+        names_ = ctx_->newList();
+        for (auto it = namesVec_.rbegin(); it != namesVec_.rend(); ++it) {
+            names_ = names_->appendFirst(ctx_, *it);
+        }
+    }
+    return names_;
+}
+
+const proto::ProtoList* Compiler::getBytecode() {
+    if (!bytecode_) {
+        bytecode_ = ctx_->newList();
+        for (auto it = bytecodeVec_.rbegin(); it != bytecodeVec_.rend(); ++it) {
+            bytecode_ = bytecode_->appendFirst(ctx_, *it);
+        }
+    }
+    return bytecode_;
+}
 
 bool Compiler::compileConstant(ConstantNode* n) {
     if (!n) return false;
@@ -703,6 +781,35 @@ bool Compiler::compileListComp(ListCompNode* n) {
     
     Compiler bodyCompiler(ctx_, filename_);
     bodyCompiler.localSlotMap_[".0"] = 0;
+    bodyCompiler.globalNames_ = globalNames_;
+    
+    // Collect locals and nonlocals for comprehension scope
+    std::unordered_set<std::string> compLocals;
+    for (const auto& gen : n->generators) collectDefinedNames(gen.target.get(), compLocals);
+    collectDefinedNames(n->elt.get(), compLocals);
+    
+    std::unordered_set<std::string> compUsed;
+    for (const auto& gen : n->generators) {
+        collectUsedNames(gen.iter.get(), compUsed);
+        collectUsedNames(gen.target.get(), compUsed);
+        for (const auto& i : gen.ifs) collectUsedNames(i.get(), compUsed);
+    }
+    collectUsedNames(n->elt.get(), compUsed);
+    
+    for (const auto& name : compUsed) {
+        if (!compLocals.count(name) && !bodyCompiler.globalNames_.count(name)) {
+            bodyCompiler.nonlocalNames_.insert(name);
+        }
+    }
+    
+    std::vector<std::string> orderedLocals = {".0"};
+    int slot = 1;
+    for (const auto& name : compLocals) {
+        if (bodyCompiler.localSlotMap_.find(name) == bodyCompiler.localSlotMap_.end()) {
+            bodyCompiler.localSlotMap_[name] = slot++;
+            orderedLocals.push_back(name);
+        }
+    }
     
     // Create the list inside the function
     bodyCompiler.emit(OP_BUILD_LIST, 0);
@@ -727,9 +834,15 @@ bool Compiler::compileListComp(ListCompNode* n) {
     
     // Create code object
     const proto::ProtoList* co_varnames = ctx_->newList();
-    co_varnames = co_varnames->appendLast(ctx_, ctx_->fromUTF8String(".0"));
+    for (const auto& name : orderedLocals)
+        co_varnames = co_varnames->appendLast(ctx_, ctx_->fromUTF8String(name.c_str()));
     
-    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), ctx_->fromUTF8String(filename_.c_str())->asString(ctx_), co_varnames, 1, 1, 0, false);
+    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, 
+        bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), 
+        ctx_->fromUTF8String(filename_.c_str())->asString(ctx_), 
+        co_varnames, 1, 0, static_cast<int>(orderedLocals.size()), 
+        CO_OPTIMIZED | CO_NEWLOCALS, false, 
+        ctx_->fromUTF8String("<listcomp>")->asString(ctx_));
     emit(OP_LOAD_CONST, addConstant(codeObj));
     emit(OP_BUILD_FUNCTION, 0);
     emit(OP_ROT_TWO);
@@ -746,6 +859,38 @@ bool Compiler::compileDictComp(DictCompNode* n) {
     
     Compiler bodyCompiler(ctx_, filename_);
     bodyCompiler.localSlotMap_[".0"] = 0;
+    bodyCompiler.globalNames_ = globalNames_;
+    
+    // Collect locals and nonlocals for comprehension scope
+    std::unordered_set<std::string> compLocals;
+    for (const auto& gen : n->generators) collectDefinedNames(gen.target.get(), compLocals);
+    collectDefinedNames(n->key.get(), compLocals);
+    collectDefinedNames(n->value.get(), compLocals);
+    
+    std::unordered_set<std::string> compUsed;
+    for (const auto& gen : n->generators) {
+        collectUsedNames(gen.iter.get(), compUsed);
+        collectUsedNames(gen.target.get(), compUsed);
+        for (const auto& i : gen.ifs) collectUsedNames(i.get(), compUsed);
+    }
+    collectUsedNames(n->key.get(), compUsed);
+    collectUsedNames(n->value.get(), compUsed);
+    
+    for (const auto& name : compUsed) {
+        if (!compLocals.count(name) && !bodyCompiler.globalNames_.count(name)) {
+            bodyCompiler.nonlocalNames_.insert(name);
+        }
+    }
+    
+    std::vector<std::string> orderedLocals = {".0"};
+    int slot = 1;
+    for (const auto& name : compLocals) {
+        if (bodyCompiler.localSlotMap_.find(name) == bodyCompiler.localSlotMap_.end()) {
+            bodyCompiler.localSlotMap_[name] = slot++;
+            orderedLocals.push_back(name);
+        }
+    }
+    
     bodyCompiler.emit(OP_BUILD_MAP, 0);
     
     auto oldIter = std::move(n->generators[0].iter);
@@ -764,12 +909,19 @@ bool Compiler::compileDictComp(DictCompNode* n) {
     n->generators[0].iter = std::move(oldIter);
     if (!innerOk) return false;
     
+    bodyCompiler.emit(OP_RETURN_VALUE);
     bodyCompiler.applyPatches();
     
     const proto::ProtoList* co_varnames = ctx_->newList();
-    co_varnames = co_varnames->appendLast(ctx_, ctx_->fromUTF8String(".0"));
+    for (const auto& name : orderedLocals)
+        co_varnames = co_varnames->appendLast(ctx_, ctx_->fromUTF8String(name.c_str()));
     
-    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), ctx_->fromUTF8String(filename_.c_str())->asString(ctx_), co_varnames, 1, 1, 0, false);
+    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, 
+        bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), 
+        ctx_->fromUTF8String(filename_.c_str())->asString(ctx_), 
+        co_varnames, 1, 0, static_cast<int>(orderedLocals.size()), 
+        CO_OPTIMIZED | CO_NEWLOCALS, false, 
+        ctx_->fromUTF8String("<dictcomp>")->asString(ctx_));
     emit(OP_LOAD_CONST, addConstant(codeObj));
     emit(OP_BUILD_FUNCTION, 0);
     emit(OP_ROT_TWO);
@@ -786,6 +938,36 @@ bool Compiler::compileSetComp(SetCompNode* n) {
     
     Compiler bodyCompiler(ctx_, filename_);
     bodyCompiler.localSlotMap_[".0"] = 0;
+    bodyCompiler.globalNames_ = globalNames_;
+    
+    // Collect locals and nonlocals for comprehension scope
+    std::unordered_set<std::string> compLocals;
+    for (const auto& gen : n->generators) collectDefinedNames(gen.target.get(), compLocals);
+    collectDefinedNames(n->elt.get(), compLocals);
+    
+    std::unordered_set<std::string> compUsed;
+    for (const auto& gen : n->generators) {
+        collectUsedNames(gen.iter.get(), compUsed);
+        collectUsedNames(gen.target.get(), compUsed);
+        for (const auto& i : gen.ifs) collectUsedNames(i.get(), compUsed);
+    }
+    collectUsedNames(n->elt.get(), compUsed);
+    
+    for (const auto& name : compUsed) {
+        if (!compLocals.count(name) && !bodyCompiler.globalNames_.count(name)) {
+            bodyCompiler.nonlocalNames_.insert(name);
+        }
+    }
+    
+    std::vector<std::string> orderedLocals = {".0"};
+    int slot = 1;
+    for (const auto& name : compLocals) {
+        if (bodyCompiler.localSlotMap_.find(name) == bodyCompiler.localSlotMap_.end()) {
+            bodyCompiler.localSlotMap_[name] = slot++;
+            orderedLocals.push_back(name);
+        }
+    }
+    
     bodyCompiler.emit(OP_BUILD_SET, 0);
     
     auto oldIter = std::move(n->generators[0].iter);
@@ -803,12 +985,19 @@ bool Compiler::compileSetComp(SetCompNode* n) {
     n->generators[0].iter = std::move(oldIter);
     if (!innerOk) return false;
     
+    bodyCompiler.emit(OP_RETURN_VALUE);
     bodyCompiler.applyPatches();
     
     const proto::ProtoList* co_varnames = ctx_->newList();
-    co_varnames = co_varnames->appendLast(ctx_, ctx_->fromUTF8String(".0"));
+    for (const auto& name : orderedLocals)
+        co_varnames = co_varnames->appendLast(ctx_, ctx_->fromUTF8String(name.c_str()));
     
-    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), ctx_->fromUTF8String(filename_.c_str())->asString(ctx_), co_varnames, 1, 1, 0, false);
+    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, 
+        bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), 
+        ctx_->fromUTF8String(filename_.c_str())->asString(ctx_), 
+        co_varnames, 1, 0, static_cast<int>(orderedLocals.size()), 
+        CO_OPTIMIZED | CO_NEWLOCALS, false, 
+        ctx_->fromUTF8String("<setcomp>")->asString(ctx_));
     emit(OP_LOAD_CONST, addConstant(codeObj));
     emit(OP_BUILD_FUNCTION, 0);
     emit(OP_ROT_TWO);
@@ -826,6 +1015,35 @@ bool Compiler::compileGeneratorExp(GeneratorExpNode* n) {
     Compiler bodyCompiler(ctx_, filename_);
     bodyCompiler.isGenerator_ = true;
     bodyCompiler.localSlotMap_[".0"] = 0;
+    bodyCompiler.globalNames_ = globalNames_;
+    
+    // Collect locals and nonlocals for generator expression scope
+    std::unordered_set<std::string> compLocals;
+    for (const auto& gen : n->generators) collectDefinedNames(gen.target.get(), compLocals);
+    collectDefinedNames(n->elt.get(), compLocals);
+    
+    std::unordered_set<std::string> compUsed;
+    for (const auto& gen : n->generators) {
+        collectUsedNames(gen.iter.get(), compUsed);
+        collectUsedNames(gen.target.get(), compUsed);
+        for (const auto& i : gen.ifs) collectUsedNames(i.get(), compUsed);
+    }
+    collectUsedNames(n->elt.get(), compUsed);
+    
+    for (const auto& name : compUsed) {
+        if (!compLocals.count(name) && !bodyCompiler.globalNames_.count(name)) {
+            bodyCompiler.nonlocalNames_.insert(name);
+        }
+    }
+    
+    std::vector<std::string> orderedLocals = {".0"};
+    int slot = 1;
+    for (const auto& name : compLocals) {
+        if (bodyCompiler.localSlotMap_.find(name) == bodyCompiler.localSlotMap_.end()) {
+            bodyCompiler.localSlotMap_[name] = slot++;
+            orderedLocals.push_back(name);
+        }
+    }
     
     auto oldIter = std::move(n->generators[0].iter);
     auto itNode = std::make_unique<NameNode>();
@@ -847,9 +1065,15 @@ bool Compiler::compileGeneratorExp(GeneratorExpNode* n) {
     bodyCompiler.applyPatches();
     
     const proto::ProtoList* co_varnames = ctx_->newList();
-    co_varnames = co_varnames->appendLast(ctx_, ctx_->fromUTF8String(".0"));
+    for (const auto& name : orderedLocals)
+        co_varnames = co_varnames->appendLast(ctx_, ctx_->fromUTF8String(name.c_str()));
     
-    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), ctx_->fromUTF8String(filename_.c_str())->asString(ctx_), co_varnames, 1, 1, 0, true);
+    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, 
+        bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), 
+        ctx_->fromUTF8String(filename_.c_str())->asString(ctx_), 
+        co_varnames, 1, 0, static_cast<int>(orderedLocals.size()), 
+        CO_OPTIMIZED | CO_NEWLOCALS, true, 
+        ctx_->fromUTF8String("<genexpr>")->asString(ctx_));
     emit(OP_LOAD_CONST, addConstant(codeObj));
     emit(OP_BUILD_FUNCTION, 0);
     emit(OP_ROT_TWO);
@@ -939,10 +1163,7 @@ bool Compiler::compileImportFrom(ImportFromNode* n) {
     emit(OP_CALL_FUNCTION, 5);
     
     if (n->names.size() == 1 && n->names[0].first == "*") {
-        // star import: engine needs to copy all attrs. 
-        // For now, we can only do this if we have an OP_IMPORT_STAR.
-        // Simplified: push module, call import_star helper if exists.
-        emit(OP_POP_TOP, 0); // Discard for now as not fully supported
+        emit(OP_IMPORT_STAR, 0);
         return true;
     }
     
@@ -1432,6 +1653,43 @@ static void collectUsedNames(ASTNode* node, std::unordered_set<std::string>& out
         collectUsedNames(lam->body.get(), out);
         return;
     }
+    if (auto* lc = dynamic_cast<ListCompNode*>(node)) {
+        for (const auto& g : lc->generators) {
+            collectUsedNames(g.target.get(), out);
+            collectUsedNames(g.iter.get(), out);
+            for (auto& cond : g.ifs) collectUsedNames(cond.get(), out);
+        }
+        collectUsedNames(lc->elt.get(), out);
+        return;
+    }
+    if (auto* dc = dynamic_cast<DictCompNode*>(node)) {
+        for (const auto& g : dc->generators) {
+            collectUsedNames(g.target.get(), out);
+            collectUsedNames(g.iter.get(), out);
+            for (auto& cond : g.ifs) collectUsedNames(cond.get(), out);
+        }
+        collectUsedNames(dc->key.get(), out);
+        collectUsedNames(dc->value.get(), out);
+        return;
+    }
+    if (auto* sc = dynamic_cast<SetCompNode*>(node)) {
+        for (const auto& g : sc->generators) {
+            collectUsedNames(g.target.get(), out);
+            collectUsedNames(g.iter.get(), out);
+            for (auto& cond : g.ifs) collectUsedNames(cond.get(), out);
+        }
+        collectUsedNames(sc->elt.get(), out);
+        return;
+    }
+    if (auto* ge = dynamic_cast<GeneratorExpNode*>(node)) {
+        for (const auto& g : ge->generators) {
+            collectUsedNames(g.target.get(), out);
+            collectUsedNames(g.iter.get(), out);
+            for (auto& cond : g.ifs) collectUsedNames(cond.get(), out);
+        }
+        collectUsedNames(ge->elt.get(), out);
+        return;
+    }
 }
 
 /** Collect names defined in node (assigned or are params of a nested def). */
@@ -1457,15 +1715,14 @@ static void collectDefinedNames(ASTNode* node, std::unordered_set<std::string>& 
     }
     if (auto* fn = dynamic_cast<FunctionDefNode*>(node)) {
         out.insert(fn->name);
-        // Note: parameters are handled separately in compileFunctionDef, 
-        // but adding them here doesn't hurt if we want a complete set of locals.
         for (const auto& p : fn->parameters) out.insert(p);
-        // We do NOT recurse into fn->body because those are local to the NESTED function.
+        // Recurse to find captures for outer scopes
+        collectUsedNames(fn->body.get(), out);
         return;
     }
     if (auto* cl = dynamic_cast<ClassDefNode*>(node)) {
         out.insert(cl->name);
-        // We do NOT recurse into cl->body.
+        collectUsedNames(cl->body.get(), out);
         return;
     }
     if (auto* imp = dynamic_cast<ImportNode*>(node)) {
@@ -1498,6 +1755,14 @@ static void collectDefinedNames(ASTNode* node, std::unordered_set<std::string>& 
     }
     if (auto* nm = dynamic_cast<NameNode*>(node)) {
         out.insert(nm->id);
+        return;
+    }
+    if (auto* tup = dynamic_cast<TupleLiteralNode*>(node)) {
+        for (auto& elt : tup->elements) collectDefinedNames(elt.get(), out);
+        return;
+    }
+    if (auto* lst = dynamic_cast<ListLiteralNode*>(node)) {
+        for (auto& elt : lst->elements) collectDefinedNames(elt.get(), out);
         return;
     }
     if (auto* lam = dynamic_cast<LambdaNode*>(node)) {
@@ -1619,6 +1884,55 @@ void Compiler::collectCapturedNames(ASTNode* node,
         for (auto& arg : c->args) collectCapturedNames(arg.get(), globalsInScope, capturedOut);
     } else if (auto* ret = dynamic_cast<ReturnNode*>(node)) {
         collectCapturedNames(ret->value.get(), globalsInScope, capturedOut);
+    } else if (auto* lc = dynamic_cast<ListCompNode*>(node)) {
+        for (const auto& g : lc->generators) {
+            collectCapturedNames(g.iter.get(), globalsInScope, capturedOut);
+            collectCapturedNames(g.target.get(), globalsInScope, capturedOut);
+        }
+        collectCapturedNames(lc->elt.get(), globalsInScope, capturedOut);
+    } else if (auto* dc = dynamic_cast<DictCompNode*>(node)) {
+        for (const auto& g : dc->generators) {
+            collectCapturedNames(g.iter.get(), globalsInScope, capturedOut);
+            collectCapturedNames(g.target.get(), globalsInScope, capturedOut);
+        }
+        collectCapturedNames(dc->key.get(), globalsInScope, capturedOut);
+        collectCapturedNames(dc->value.get(), globalsInScope, capturedOut);
+    } else if (auto* sc = dynamic_cast<SetCompNode*>(node)) {
+        for (const auto& g : sc->generators) {
+            collectCapturedNames(g.iter.get(), globalsInScope, capturedOut);
+            collectCapturedNames(g.target.get(), globalsInScope, capturedOut);
+        }
+        collectCapturedNames(sc->elt.get(), globalsInScope, capturedOut);
+    } else if (auto* ge = dynamic_cast<GeneratorExpNode*>(node)) {
+        for (const auto& g : ge->generators) {
+            collectCapturedNames(g.iter.get(), globalsInScope, capturedOut);
+            collectCapturedNames(g.target.get(), globalsInScope, capturedOut);
+        }
+        collectCapturedNames(ge->elt.get(), globalsInScope, capturedOut);
+    } else if (auto* nm = dynamic_cast<NameNode*>(node)) {
+        if (!globalsInScope.count(nm->id)) {
+            capturedOut.insert(nm->id);
+        }
+    } else if (auto* att = dynamic_cast<AttributeNode*>(node)) {
+        collectCapturedNames(att->value.get(), globalsInScope, capturedOut);
+    } else if (auto* sub = dynamic_cast<SubscriptNode*>(node)) {
+        collectCapturedNames(sub->value.get(), globalsInScope, capturedOut);
+        collectCapturedNames(sub->index.get(), globalsInScope, capturedOut);
+    } else if (auto* sl = dynamic_cast<SliceNode*>(node)) {
+        if (sl->start) collectCapturedNames(sl->start.get(), globalsInScope, capturedOut);
+        if (sl->stop) collectCapturedNames(sl->stop.get(), globalsInScope, capturedOut);
+        if (sl->step) collectCapturedNames(sl->step.get(), globalsInScope, capturedOut);
+    } else if (auto* u = dynamic_cast<UnaryOpNode*>(node)) {
+        collectCapturedNames(u->operand.get(), globalsInScope, capturedOut);
+    } else if (auto* lst = dynamic_cast<ListLiteralNode*>(node)) {
+        for (auto& e : lst->elements) collectCapturedNames(e.get(), globalsInScope, capturedOut);
+    } else if (auto* tup = dynamic_cast<TupleLiteralNode*>(node)) {
+        for (auto& e : tup->elements) collectCapturedNames(e.get(), globalsInScope, capturedOut);
+    } else if (auto* d = dynamic_cast<DictLiteralNode*>(node)) {
+        for (size_t i = 0; i < d->keys.size(); ++i) {
+            if (d->keys[i]) collectCapturedNames(d->keys[i].get(), globalsInScope, capturedOut);
+            collectCapturedNames(d->values[i].get(), globalsInScope, capturedOut);
+        }
     }
 }
 
@@ -1643,28 +1957,50 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
     if (!n->parameters.empty()) {
         for (const auto& p : n->parameters) params.push_back(p);
     }
+    std::unordered_set<std::string> combinedGlobals = bodyGlobals;
+    for (const auto& g : globalNames_) combinedGlobals.insert(g);
+
     std::unordered_set<std::string> captured;
-    collectCapturedNames(n->body.get(), bodyGlobals, captured);
-    if (std::getenv("PROTO_ENV_DIAG")) {
-        // Function capture count logging removed
+    collectCapturedNames(n->body.get(), combinedGlobals, captured);
+    // Captured names that are NOT defined in this function are its nonlocals.
+    // Captured names that ARE defined here just trigger forceMapped.
+    for (const auto& c : captured) {
+        bool isLocal = false;
+        for (const auto& p : params) if (p == c) isLocal = true;
+        for (const auto& kw : n->kwonlyargs) if (kw == c) isLocal = true;
+        if (n->vararg == c) isLocal = true;
+        if (n->kwarg == c) isLocal = true;
+        for (const auto& l : localsOrdered) if (l == c) isLocal = true;
+        if (!isLocal) bodyNonlocals.insert(c);
     }
 
     std::string dynamicReason = getDynamicLocalsReason(n->body.get());
     const bool forceMapped = !dynamicReason.empty() || !captured.empty();
-    if (std::getenv("PROTO_ENV_DIAG") && forceMapped) {
-        // forceMapped reason logging removed
-    }
 
     std::vector<std::string> varnamesOrdered;
-    // Parameters first
+    // 1. Positional Parameters
     for (const auto& p : params) {
         varnamesOrdered.push_back(p);
     }
-    // Then vararg and kwarg (to match ExecutionEngine's expectation of index nparams and nparams+1)
-    if (!n->vararg.empty()) varnamesOrdered.push_back(n->vararg);
-    if (!n->kwarg.empty()) varnamesOrdered.push_back(n->kwarg);
+    // 2. Keyword-only Parameters
+    for (const auto& kw : n->kwonlyargs) {
+        bool alreadyIn = false;
+        for (const auto& v : varnamesOrdered) if (v == kw) alreadyIn = true;
+        if (!alreadyIn) varnamesOrdered.push_back(kw);
+    }
+    // 3. vararg and kwarg
+    if (!n->vararg.empty()) {
+        bool alreadyIn = false;
+        for (const auto& v : varnamesOrdered) if (v == n->vararg) alreadyIn = true;
+        if (!alreadyIn) varnamesOrdered.push_back(n->vararg);
+    }
+    if (!n->kwarg.empty()) {
+        bool alreadyIn = false;
+        for (const auto& v : varnamesOrdered) if (v == n->kwarg) alreadyIn = true;
+        if (!alreadyIn) varnamesOrdered.push_back(n->kwarg);
+    }
 
-    // Then other locals
+    // 4. Then other locals
     for (const auto& loc : localsOrdered) {
         bool alreadyIn = false;
         for (const auto& v : varnamesOrdered) if (v == loc) alreadyIn = true;
@@ -1678,15 +2014,14 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
             slotMap[varnamesOrdered[i]] = static_cast<int>(i);
         }
         automatic_count = static_cast<int>(varnamesOrdered.size()) + 256; // Add space for stack
-    } else {
-        if (std::getenv("PROTO_ENV_DIAG")) {
-            // log removed
-        }
     }
+
     int nparams = static_cast<int>(params.size());
+    int kwonlyargcount = static_cast<int>(n->kwonlyargs.size());
 
     Compiler bodyCompiler(ctx_, filename_);
-    bodyCompiler.globalNames_ = bodyGlobals;
+    bodyCompiler.globalNames_ = globalNames_;
+    for (const auto& g : bodyGlobals) bodyCompiler.globalNames_.insert(g);
     bodyCompiler.nonlocalNames_ = bodyNonlocals;
     bodyCompiler.localSlotMap_ = slotMap;
     if (!bodyCompiler.compileNode(n->body.get())) return false;
@@ -1698,23 +2033,11 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
     
     bodyCompiler.applyPatches();
 
-    int co_flags = 0;
+    int co_flags = CO_NEWLOCALS;
+    if (!forceMapped) co_flags |= CO_OPTIMIZED;
+    if (!captured.empty()) co_flags |= CO_NESTED;
     if (!n->vararg.empty()) co_flags |= CO_VARARGS;
     if (!n->kwarg.empty()) co_flags |= CO_VARKEYWORDS;
-    
-    int kwonlyargcount = static_cast<int>(n->kwonlyargs.size());
-    // Append kwonlyargs to varnames
-    for (const auto& kw : n->kwonlyargs) {
-        bool alreadyIn = false;
-        for (const auto& v : varnamesOrdered) if (v == kw) alreadyIn = true;
-        if (!alreadyIn) varnamesOrdered.push_back(kw);
-    }
-    // Update slotMap for kwonlyargs if needed
-    if (!forceMapped) {
-        for (size_t i = 0; i < varnamesOrdered.size(); ++i) {
-            slotMap[varnamesOrdered[i]] = static_cast<int>(i);
-        }
-    }
 
     const proto::ProtoList* co_varnames_list = ctx_->newList();
     for (const auto& name : varnamesOrdered)
@@ -1724,7 +2047,32 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
     if (!codeObj) return false;
     int idx = addConstant(codeObj);
     emit(OP_LOAD_CONST, idx);
-    emit(OP_BUILD_FUNCTION, co_flags);
+
+    int make_fn_flags = 0;
+    if (!n->defaults.empty()) {
+        for (auto& d : n->defaults) {
+            if (!compileNode(d.get())) return false;
+        }
+        emit(OP_BUILD_TUPLE, static_cast<int>(n->defaults.size()));
+        make_fn_flags |= 0x01;
+    }
+    if (!n->kw_defaults.empty()) {
+        int actual_count = 0;
+        for (size_t i = 0; i < n->kw_defaults.size() && i < n->kwonlyargs.size(); ++i) {
+            if (n->kw_defaults[i]) {
+                const std::string& name = n->kwonlyargs[i];
+                int nameIdx = addConstant(ctx_->fromUTF8String(name.c_str()));
+                emit(OP_LOAD_CONST, nameIdx);
+                if (!compileNode(n->kw_defaults[i].get())) return false;
+                actual_count++;
+            }
+        }
+        if (actual_count > 0) {
+            emit(OP_BUILD_MAP, actual_count);
+            make_fn_flags |= 0x02;
+        }
+    }
+    emit(OP_BUILD_FUNCTION, make_fn_flags);
     
     // Apply decorators Bottom-to-Top
     if (!n->decorator_list.empty()) {
@@ -1745,13 +2093,45 @@ bool Compiler::compileLambda(LambdaNode* n) {
     std::vector<std::string> localsOrdered;
     std::vector<std::string> params = n->parameters;
     
+    std::unordered_set<std::string> combinedGlobals = bodyGlobals;
+    for (const auto& g : globalNames_) combinedGlobals.insert(g);
+
     std::unordered_set<std::string> captured;
-    collectCapturedNames(n->body.get(), bodyGlobals, captured);
+    collectCapturedNames(n->body.get(), combinedGlobals, captured);
     
+    std::unordered_set<std::string> bodyNonlocals;
+    for (const auto& c : captured) {
+        bool isParam = false;
+        for (const auto& p : params) if (p == c) isParam = true;
+        for (const auto& kw : n->kwonlyargs) if (kw == c) isParam = true;
+        if (n->vararg == c) isParam = true;
+        if (n->kwarg == c) isParam = true;
+        if (!isParam) bodyNonlocals.insert(c);
+    }
+
     const bool forceMapped = !captured.empty();
-    std::vector<std::string> varnamesOrdered = params;
-    if (!n->vararg.empty()) varnamesOrdered.push_back(n->vararg);
-    if (!n->kwarg.empty()) varnamesOrdered.push_back(n->kwarg);
+    std::vector<std::string> varnamesOrdered;
+    // 1. Positional Parameters
+    for (const auto& p : params) {
+        varnamesOrdered.push_back(p);
+    }
+    // 2. Keyword-only Parameters
+    for (const auto& kw : n->kwonlyargs) {
+        bool alreadyIn = false;
+        for (const auto& v : varnamesOrdered) if (v == kw) alreadyIn = true;
+        if (!alreadyIn) varnamesOrdered.push_back(kw);
+    }
+    // 3. vararg and kwarg
+    if (!n->vararg.empty()) {
+        bool alreadyIn = false;
+        for (const auto& v : varnamesOrdered) if (v == n->vararg) alreadyIn = true;
+        if (!alreadyIn) varnamesOrdered.push_back(n->vararg);
+    }
+    if (!n->kwarg.empty()) {
+        bool alreadyIn = false;
+        for (const auto& v : varnamesOrdered) if (v == n->kwarg) alreadyIn = true;
+        if (!alreadyIn) varnamesOrdered.push_back(n->kwarg);
+    }
     
     std::unordered_map<std::string, int> slotMap;
     int automatic_count = 0;
@@ -1763,9 +2143,12 @@ bool Compiler::compileLambda(LambdaNode* n) {
     }
     
     int nparams = static_cast<int>(params.size());
+    int kwonlyargcount = static_cast<int>(n->kwonlyargs.size());
 
     Compiler bodyCompiler(ctx_, filename_);
-    bodyCompiler.globalNames_ = bodyGlobals;
+    bodyCompiler.globalNames_ = globalNames_;
+    for (const auto& g : bodyGlobals) bodyCompiler.globalNames_.insert(g);
+    bodyCompiler.nonlocalNames_ = bodyNonlocals;
     bodyCompiler.localSlotMap_ = slotMap;
     
     if (!bodyCompiler.compileNode(n->body.get())) return false;
@@ -1776,11 +2159,40 @@ bool Compiler::compileLambda(LambdaNode* n) {
     for (const auto& name : varnamesOrdered)
         co_varnames = co_varnames->appendLast(ctx_, ctx_->fromUTF8String(name.c_str()));
         
-    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), ctx_->fromUTF8String(filename_.c_str())->asString(ctx_), co_varnames, nparams, automatic_count + PYTHON_STACK_BUFFER, 0, false, ctx_->fromUTF8String("<lambda>")->asString(ctx_));
+    int co_flags = CO_NEWLOCALS;
+    if (!forceMapped) co_flags |= CO_OPTIMIZED;
+    if (!captured.empty()) co_flags |= CO_NESTED;
+
+    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), ctx_->fromUTF8String(filename_.c_str())->asString(ctx_), co_varnames, nparams, kwonlyargcount, automatic_count, co_flags, false, ctx_->fromUTF8String("<lambda>")->asString(ctx_));
     if (!codeObj) return false;
     int idx = addConstant(codeObj);
     emit(OP_LOAD_CONST, idx);
-    emit(OP_BUILD_FUNCTION, 0);
+
+    int make_fn_flags = 0;
+    if (!n->defaults.empty()) {
+        for (auto& d : n->defaults) {
+            if (!compileNode(d.get())) return false;
+        }
+        emit(OP_BUILD_TUPLE, static_cast<int>(n->defaults.size()));
+        make_fn_flags |= 0x01;
+    }
+    if (!n->kw_defaults.empty()) {
+        int actual_count = 0;
+        for (size_t i = 0; i < n->kw_defaults.size() && i < n->kwonlyargs.size(); ++i) {
+            if (n->kw_defaults[i]) {
+                const std::string& name = n->kwonlyargs[i];
+                int nameIdx = addConstant(ctx_->fromUTF8String(name.c_str()));
+                emit(OP_LOAD_CONST, nameIdx);
+                if (!compileNode(n->kw_defaults[i].get())) return false;
+                actual_count++;
+            }
+        }
+        if (actual_count > 0) {
+            emit(OP_BUILD_MAP, actual_count);
+            make_fn_flags |= 0x02;
+        }
+    }
+    emit(OP_BUILD_FUNCTION, make_fn_flags);
     
     return true;
 }
@@ -1795,21 +2207,48 @@ bool Compiler::compileAsyncFunctionDef(AsyncFunctionDefNode* n) {
     if (!n->parameters.empty()) {
         for (const auto& p : n->parameters) params.push_back(p);
     }
+    std::unordered_set<std::string> combinedGlobals = bodyGlobals;
+    for (const auto& g : globalNames_) combinedGlobals.insert(g);
+
     std::unordered_set<std::string> captured;
-    collectCapturedNames(n->body.get(), bodyGlobals, captured);
+    collectCapturedNames(n->body.get(), combinedGlobals, captured);
+    for (const auto& c : captured) {
+        bool isLocal = false;
+        for (const auto& p : params) if (p == c) isLocal = true;
+        for (const auto& kw : n->kwonlyargs) if (kw == c) isLocal = true;
+        if (n->vararg == c) isLocal = true;
+        if (n->kwarg == c) isLocal = true;
+        for (const auto& l : localsOrdered) if (l == c) isLocal = true;
+        if (!isLocal) bodyNonlocals.insert(c);
+    }
     
     std::string dynamicReason = getDynamicLocalsReason(n->body.get());
     const bool forceMapped = !dynamicReason.empty() || !captured.empty();
 
     std::vector<std::string> varnamesOrdered;
-    // Parameters first
+    // 1. Positional Parameters
     for (const auto& p : params) {
         varnamesOrdered.push_back(p);
     }
-    if (!n->vararg.empty()) varnamesOrdered.push_back(n->vararg);
-    if (!n->kwarg.empty()) varnamesOrdered.push_back(n->kwarg);
+    // 2. Keyword-only Parameters
+    for (const auto& kw : n->kwonlyargs) {
+        bool alreadyIn = false;
+        for (const auto& v : varnamesOrdered) if (v == kw) alreadyIn = true;
+        if (!alreadyIn) varnamesOrdered.push_back(kw);
+    }
+    // 3. vararg and kwarg
+    if (!n->vararg.empty()) {
+        bool alreadyIn = false;
+        for (const auto& v : varnamesOrdered) if (v == n->vararg) alreadyIn = true;
+        if (!alreadyIn) varnamesOrdered.push_back(n->vararg);
+    }
+    if (!n->kwarg.empty()) {
+        bool alreadyIn = false;
+        for (const auto& v : varnamesOrdered) if (v == n->kwarg) alreadyIn = true;
+        if (!alreadyIn) varnamesOrdered.push_back(n->kwarg);
+    }
 
-    // Then other locals
+    // 4. Then other locals
     for (const auto& loc : localsOrdered) {
         bool alreadyIn = false;
         for (const auto& v : varnamesOrdered) if (v == loc) alreadyIn = true;
@@ -1825,9 +2264,11 @@ bool Compiler::compileAsyncFunctionDef(AsyncFunctionDefNode* n) {
         automatic_count = static_cast<int>(varnamesOrdered.size()) + 256; // Add space for stack
     }
     int nparams = static_cast<int>(params.size());
+    int kwonlyargcount = static_cast<int>(n->kwonlyargs.size());
 
     Compiler bodyCompiler(ctx_, filename_);
-    bodyCompiler.globalNames_ = bodyGlobals;
+    bodyCompiler.globalNames_ = globalNames_;
+    for (const auto& g : bodyGlobals) bodyCompiler.globalNames_.insert(g);
     bodyCompiler.nonlocalNames_ = bodyNonlocals;
     bodyCompiler.localSlotMap_ = slotMap;
     if (!bodyCompiler.compileNode(n->body.get())) return false;
@@ -1844,16 +2285,43 @@ bool Compiler::compileAsyncFunctionDef(AsyncFunctionDefNode* n) {
         co_varnames = co_varnames->appendLast(ctx_, ctx_->fromUTF8String(name.c_str()));
     
     // 0x80 is CO_COROUTINE
-    int co_flags = 128; 
+    int co_flags = 128 | CO_NEWLOCALS; 
+    if (!forceMapped) co_flags |= CO_OPTIMIZED;
+    if (!captured.empty()) co_flags |= CO_NESTED;
     if (!n->vararg.empty()) co_flags |= CO_VARARGS;
     if (!n->kwarg.empty()) co_flags |= CO_VARKEYWORDS;
-    if (bodyCompiler.isGenerator_) co_flags |= 0x20; // CO_GENERATOR if it yields. Then it's an async generator.
+    if (bodyCompiler.isGenerator_) co_flags |= 0x20; // CO_GENERATOR
 
-    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), ctx_->fromUTF8String(filename_.c_str())->asString(ctx_), co_varnames, nparams, automatic_count + PYTHON_STACK_BUFFER, co_flags, bodyCompiler.isGenerator_, ctx_->fromUTF8String(n->name.c_str())->asString(ctx_));
+    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), ctx_->fromUTF8String(filename_.c_str())->asString(ctx_), co_varnames, nparams, kwonlyargcount, automatic_count, co_flags, bodyCompiler.isGenerator_, ctx_->fromUTF8String(n->name.c_str())->asString(ctx_));
     if (!codeObj) return false;
     int idx = addConstant(codeObj);
     emit(OP_LOAD_CONST, idx);
-    emit(OP_BUILD_FUNCTION, co_flags);
+
+    int make_fn_flags = 0;
+    if (!n->defaults.empty()) {
+        for (auto& d : n->defaults) {
+            if (!compileNode(d.get())) return false;
+        }
+        emit(OP_BUILD_TUPLE, static_cast<int>(n->defaults.size()));
+        make_fn_flags |= 0x01;
+    }
+    if (!n->kw_defaults.empty()) {
+        int actual_count = 0;
+        for (size_t i = 0; i < n->kw_defaults.size() && i < n->kwonlyargs.size(); ++i) {
+            if (n->kw_defaults[i]) {
+                const std::string& name = n->kwonlyargs[i];
+                int nameIdx = addConstant(ctx_->fromUTF8String(name.c_str()));
+                emit(OP_LOAD_CONST, nameIdx);
+                if (!compileNode(n->kw_defaults[i].get())) return false;
+                actual_count++;
+            }
+        }
+        if (actual_count > 0) {
+            emit(OP_BUILD_MAP, actual_count);
+            make_fn_flags |= 0x02;
+        }
+    }
+    emit(OP_BUILD_FUNCTION, make_fn_flags);
     
     if (!n->decorator_list.empty()) {
         for (auto it = n->decorator_list.rbegin(); it != n->decorator_list.rend(); ++it) {
@@ -2042,6 +2510,8 @@ bool Compiler::compileClassDef(ClassDefNode* n) {
     
     // 3. Body
     Compiler bodyCompiler(ctx_, filename_);
+    bodyCompiler.globalNames_ = globalNames_;
+    bodyCompiler.nonlocalNames_ = nonlocalNames_;
     if (!bodyCompiler.compileNode(n->body.get())) return false;
     bodyCompiler.emit(OP_RETURN_VALUE);
     bodyCompiler.applyPatches();
@@ -2212,6 +2682,39 @@ const proto::ProtoObject* runCodeObject(proto::ProtoContext* ctx,
     const proto::ProtoObject* codeObj,
     proto::ProtoObject*& frame) {
     if (!ctx || !codeObj || !frame) return PROTO_NONE;
+    
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        const proto::ProtoObject* fnObj = codeObj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_filename"));
+        std::string fileName = "unknown";
+        if (fnObj && fnObj->isString(ctx)) fnObj->asString(ctx)->toUTF8String(ctx, fileName);
+        
+        const proto::ProtoObject* co_names_obj = codeObj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_names"));
+        const proto::ProtoList* names = co_names_obj ? co_names_obj->asList(ctx) : nullptr;
+        
+        if (fileName.find("token.py") != std::string::npos || fileName.find("tokenize.py") != std::string::npos) {
+            std::cerr << "[proto-diag] runCodeObject: fileName='" << fileName << "' namesSize=" << (names ? names->getSize(ctx) : 0) << "\n";
+            if (names) {
+                for (unsigned long i = 0; i < names->getSize(ctx); ++i) {
+                    std::string n;
+                    const proto::ProtoObject* item = names->getAt(ctx, static_cast<int>(i));
+                    if (item && item->isString(ctx)) item->asString(ctx)->toUTF8String(ctx, n);
+                    std::cerr << "  name[" << i << "]='" << n << "'\n";
+                }
+            }
+            const proto::ProtoObject* co_consts_obj = codeObj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_consts"));
+            const proto::ProtoList* constants = co_consts_obj ? co_consts_obj->asList(ctx) : nullptr;
+            std::cerr << "  constantsSize=" << (constants ? constants->getSize(ctx) : 0) << "\n";
+            if (constants) {
+                for (unsigned long i = 0; i < constants->getSize(ctx); ++i) {
+                    const proto::ProtoObject* c = constants->getAt(ctx, static_cast<int>(i));
+                    std::cerr << "  const[" << i << "]=" << c;
+                    if (c && c->isInteger(ctx)) std::cerr << " (int=" << c->asLong(ctx) << ")";
+                    std::cerr << "\n";
+                }
+            }
+        }
+    }
+    
     CodeObjectScope cscope(codeObj);
 
     const proto::ProtoObject* co_consts = codeObj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_consts"));
@@ -2232,11 +2735,18 @@ const proto::ProtoObject* runCodeObject(proto::ProtoContext* ctx,
     const proto::ProtoObject* co_automatic_obj = codeObj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_automatic_count"));
     int automatic_count = (co_automatic_obj && co_automatic_obj->isInteger(ctx)) ? static_cast<int>(co_automatic_obj->asLong(ctx)) : 0;
 
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        std::cerr << "[proto-diag] runCodeObject: ctx=" << ctx << " localsCount=" << ctx->getAutomaticLocalsCount() << " automatic_count=" << automatic_count << "\n";
+    }
+
     proto::ProtoContext* execCtx = ctx;
     proto::ProtoContext* subCtx = nullptr;
     proto::ProtoContext* oldCtx = PythonEnvironment::getCurrentContext();
 
     if (ctx->getAutomaticLocalsCount() < (unsigned int)automatic_count) {
+        if (std::getenv("PROTO_ENV_DIAG")) {
+            std::cerr << "[proto-diag] runCodeObject: CREATING SUB-CONTEXT\n";
+        }
         const proto::ProtoList* localNames = ctx->newList();
         const proto::ProtoList* vlist = co_varnames ? co_varnames->asList(ctx) : nullptr;
         unsigned long vcount = vlist ? vlist->getSize(ctx) : 0;

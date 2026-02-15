@@ -412,6 +412,8 @@ private:
     void advance();
     bool accept(TokenType t);
     bool expect(TokenType t);
+    bool isName(TokenType t);
+    bool acceptName();
     void skipNewlines();
     void skipTrash();
     bool parseParameters(FunctionDefNode* fn);

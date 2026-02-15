@@ -153,6 +153,7 @@ Token Tokenizer::scanString(char quote, const std::string& prefix) {
         char lc = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
         if (lc == 'r') isRaw = true;
         if (lc == 'f') isF = true;
+        if (lc == 't') { /* Handle Template String prefix if needed, for now just allow it */ }
     }
     if (isF) t.type = TokenType::FString;
     
@@ -473,7 +474,7 @@ Token Tokenizer::next() {
         size_t tempPos = pos_;
         while (tempPos < source_.size()) {
             char p = static_cast<char>(std::tolower(static_cast<unsigned char>(source_[tempPos])));
-            if (p == 'f' || p == 'r' || p == 'b' || p == 'u') tempPos++;
+            if (p == 'f' || p == 'r' || p == 'b' || p == 'u' || p == 't') tempPos++;
             else break;
         }
         if (tempPos < source_.size() && (source_[tempPos] == '"' || source_[tempPos] == '\'')) {

@@ -140,9 +140,9 @@ constexpr int OP_DELETE_FAST = 165;
 /** RAISE_VARARGS: arg=number of args (0 or 1 supported here). Pop exception and raise it. */
 constexpr int OP_RAISE_VARARGS = 166;
 /** UNPACK_EX: arg = (counts_after << 8) | counts_before. Pop sequence, push before, then a list of middle, then after. */
-constexpr int OP_UNPACK_EX = 167;
+constexpr int OP_UNPACK_EX = 205;
 /** POP_JUMP_IF_TRUE: if top is truthy, jump to arg (bytecode index). */
-constexpr int OP_POP_JUMP_IF_TRUE = 167;
+constexpr int OP_POP_JUMP_IF_TRUE = 204;
 /** LIST_APPEND: arg=stack depth. Append TOS to list at TOS-arg. */
 constexpr int OP_LIST_APPEND = 168;
 /** MAP_ADD: arg=stack depth. Set key=TOS, value=TOS-1 in map at TOS-(arg+1). */
@@ -200,6 +200,8 @@ constexpr int OP_MATCH_MAPPING = 199;
 constexpr int OP_MATCH_SEQUENCE = 200;
 constexpr int OP_EXTENDED_ARG = 201;
 constexpr int OP_POP_EXCEPT = 202;
+/** Pop module, copy all attributes to current frame (globals/locals). */
+constexpr int OP_IMPORT_STAR = 203;
 
 /**
  * @brief Executes a range of bytecode (one basic block). No per-instruction
