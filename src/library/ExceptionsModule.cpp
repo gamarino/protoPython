@@ -13,7 +13,7 @@ static const proto::ProtoObject* exception_init(
     const proto::ProtoObject* args = (positionalParameters && positionalParameters->getSize(context) > 0)
         ? context->newTupleFromList(positionalParameters)->asObject(context)
         : context->newTuple()->asObject(context);
-    self->setAttribute(context, argsName, args);
+    self = self->setAttribute(context, argsName, args);
     return PROTO_NONE;
 }
 
@@ -24,17 +24,36 @@ static const proto::ProtoObject* exception_call(
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
     const proto::ProtoObject* instance = self->newChild(context, true);
-    instance->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__class__"), self);
+    instance = instance->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__class__"), self);
     const proto::ProtoString* argsName = proto::ProtoString::fromUTF8String(context, "args");
     const proto::ProtoObject* args = positionalParameters 
         ? context->newTupleFromList(positionalParameters)->asObject(context) 
         : context->newTuple()->asObject(context);
-    instance->setAttribute(context, argsName, args);
+    instance = instance->setAttribute(context, argsName, args);
     const proto::ProtoObject* init = self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__init__"));
     if (init && init->asMethod(context)) {
         init->asMethod(context)(context, instance, nullptr, positionalParameters ? positionalParameters : context->newList(), keywordParameters);
     }
     return instance;
+}
+
+static const proto::ProtoObject* exception_str(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoString* argsName = proto::ProtoString::fromUTF8String(context, "args");
+    const proto::ProtoObject* argsObj = self->getAttribute(context, argsName);
+    const proto::ProtoTuple* args = argsObj && argsObj->isTuple(context) ? argsObj->asTuple(context) : context->newTuple();
+    if (args->getSize(context) == 0) {
+        return context->fromUTF8String("");
+    }
+    if (args->getSize(context) == 1) {
+        const proto::ProtoObject* firstArg = args->getAt(context, 0);
+        return firstArg;
+    }
+    return args->asObject(context);
 }
 
 static const proto::ProtoObject* exception_repr(
@@ -77,6 +96,7 @@ static const proto::ProtoObject* make_exception_type(proto::ProtoContext* ctx,
                                                 const proto::ProtoObject* base) {
     const proto::ProtoString* py_init = proto::ProtoString::fromUTF8String(ctx, "__init__");
     const proto::ProtoString* py_repr = proto::ProtoString::fromUTF8String(ctx, "__repr__");
+    const proto::ProtoString* py_str = proto::ProtoString::fromUTF8String(ctx, "__str__");
     const proto::ProtoString* py_name = proto::ProtoString::fromUTF8String(ctx, "__name__");
     const proto::ProtoString* py_call = proto::ProtoString::fromUTF8String(ctx, "__call__");
     const proto::ProtoString* py_class = proto::ProtoString::fromUTF8String(ctx, "__class__");
@@ -85,8 +105,10 @@ static const proto::ProtoObject* make_exception_type(proto::ProtoContext* ctx,
     exc = exc->addParent(ctx, base);
     exc = exc->setAttribute(ctx, py_class, typeProto);
     exc = exc->setAttribute(ctx, py_name, ctx->fromUTF8String(name));
+    exc = exc->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__module__"), ctx->fromUTF8String("builtins"));
     exc = exc->setAttribute(ctx, py_init, ctx->fromMethod(const_cast<proto::ProtoObject*>(exc), exception_init));
     exc = exc->setAttribute(ctx, py_repr, ctx->fromMethod(const_cast<proto::ProtoObject*>(exc), exception_repr));
+    exc = exc->setAttribute(ctx, py_str, ctx->fromMethod(const_cast<proto::ProtoObject*>(exc), exception_str));
     exc = exc->setAttribute(ctx, py_call, ctx->fromMethod(const_cast<proto::ProtoObject*>(exc), exception_call));
     return exc;
 }
@@ -165,7 +187,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx,
                  value = context->newTupleFromList(positionalParameters)->asObject(context);
             }
         }
-        self->setAttribute(context, proto::ProtoString::fromUTF8String(context, "value"), value);
+        self = self->setAttribute(context, proto::ProtoString::fromUTF8String(context, "value"), value);
         return PROTO_NONE;
     }));
 

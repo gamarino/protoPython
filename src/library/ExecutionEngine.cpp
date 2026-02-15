@@ -17,11 +17,6 @@ static bool get_env_diag();
 
 
 namespace {
-struct Block {
-    unsigned long handlerPc;
-    size_t stackDepth;
-};
-
 struct FrameScope {
     FrameScope(const proto::ProtoObject* frame) : oldFrame(PythonEnvironment::getCurrentFrame()) {
         PythonEnvironment::setCurrentFrame(frame);
@@ -794,12 +789,21 @@ static const proto::ProtoObject* invokeCallable(proto::ProtoContext* ctx,
         }
         return cell->method(ctx, const_cast<proto::ProtoObject*>(cell->self), nullptr, args, kwargs);
     }
-    const proto::ProtoObject* callAttr = callable->getAttribute(ctx, env ? env->getCallString() : proto::ProtoString::fromUTF8String(ctx, "__call__"));
+    const proto::ProtoObject* callAttr = env ? env->getAttribute(ctx, callable, env->getCallString()) : callable->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__call__"));
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        std::cerr << "[proto-diag] invokeCallable: callable=" << callable << " callAttr=" << callAttr << " from " << __builtin_return_address(0) << "\n" << std::flush;
+    }
     if (!callAttr || !callAttr->asMethod(ctx)) {
-        if (env) env->raiseTypeError(ctx, "object is not callable");
+        if (env) {
+            std::string repr = PythonEnvironment::reprObject(ctx, callable);
+            env->raiseTypeError(ctx, "'" + repr + "' object is not callable");
+        }
         return nullptr; // Return nullptr on error
     }
     const proto::ProtoObject* result = callAttr->asMethod(ctx)(ctx, callable, nullptr, args, kwargs);
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        std::cerr << "[proto-diag] invokeCallable: result=" << result << "\n" << std::flush;
+    }
     return result;
 }
 
@@ -854,8 +858,28 @@ const proto::ProtoObject* py_generator_send_impl(
     proto::ProtoObject* frame = const_cast<proto::ProtoObject*>(self->getAttribute(ctx, env->getGiFrameString()));
     const proto::ProtoObject* pcObj = self->getAttribute(ctx, env->getGiPCString());
     const proto::ProtoObject* stackObj = self->getAttribute(ctx, env->getGiStackString());
+    const proto::ProtoObject* blocksObj = self->getAttribute(ctx, env->getGiBlocksString());
 
     if (!codeObj || !frame || !pcObj || !stackObj) return PROTO_NONE;
+
+    // Restore blockStack
+    std::vector<Block> blockStack;
+    const proto::ProtoList* blist = blocksObj ? blocksObj->asList(ctx) : nullptr;
+    if (blist) {
+        unsigned long size = blist->getSize(ctx);
+        for (unsigned long i = 0; i < size; ++i) {
+            const proto::ProtoObject* item = blist->getAt(ctx, static_cast<int>(i));
+            if (item && item->isTuple(ctx)) {
+                const proto::ProtoTuple* t = item->asTuple(ctx);
+                if (t->getSize(ctx) >= 2) {
+                    blockStack.push_back({
+                        static_cast<unsigned long>(t->getAt(ctx, 0)->asLong(ctx)),
+                        static_cast<size_t>(t->getAt(ctx, 1)->asLong(ctx))
+                    });
+                }
+            }
+        }
+    }
 
     unsigned long pc = (pcObj && pcObj->isInteger(ctx)) ? static_cast<unsigned long>(pcObj->asLong(ctx)) : 0;
     const proto::ProtoList* co_code_list = codeObj->getAttribute(ctx, env->getCoCodeString())->asList(ctx);
@@ -944,7 +968,8 @@ const proto::ProtoObject* py_generator_send_impl(
             stackOffset,
             &stack,
             &nextPc,
-            &yielded);
+            &yielded,
+            &blockStack);
             
         const proto::ProtoList* newLocals = calleeCtx->newList();
         const proto::ProtoObject** updatedSlots = calleeCtx->getAutomaticLocals();
@@ -963,6 +988,17 @@ const proto::ProtoObject* py_generator_send_impl(
     for (const auto* obj : stack)
         newStack = newStack->appendLast(ctx, obj);
     self->setAttribute(ctx, env->getGiStackString(), newStack->asObject(ctx));
+
+    // Save blockStack back
+    const proto::ProtoList* newBlocks = ctx->newList();
+    for (const auto& b : blockStack) {
+        const proto::ProtoList* tempL = ctx->newList();
+        tempL = tempL->appendLast(ctx, ctx->fromInteger(b.handlerPc));
+        tempL = tempL->appendLast(ctx, ctx->fromInteger(b.stackDepth));
+        const proto::ProtoObject* bTup = ctx->newTupleFromList(tempL)->asObject(ctx);
+        newBlocks = newBlocks->appendLast(ctx, bTup);
+    }
+    self->setAttribute(ctx, env->getGiBlocksString(), newBlocks->asObject(ctx));
 
     if (!yielded && !env->hasPendingException()) {
         env->raiseStopIteration(ctx, result);
@@ -1134,7 +1170,8 @@ const proto::ProtoObject* executeBytecodeRange(
     unsigned long stackOffset,
     std::vector<const proto::ProtoObject*>* externalStack,
     unsigned long* outPc,
-    bool* yielded) {
+    bool* yielded,
+    std::vector<Block>* externalBlockStack) {
     if (!ctx || !constants || !bytecode) return nullptr;
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (!env && std::getenv("PROTO_THREAD_DIAG")) {
@@ -1172,12 +1209,22 @@ const proto::ProtoObject* executeBytecodeRange(
     }
     
     std::vector<Block> blockStack;
+    if (externalBlockStack) {
+        blockStack = *externalBlockStack;
+    }
     const bool sync_globals = (frame == PythonEnvironment::getCurrentGlobals());
     for (unsigned long i = pcStart; i <= pcEnd; i += 2) {
         if (env && env->hasPendingException()) {
+            if (get_env_diag()) {
+                const proto::ProtoObject* exc = env->peekPendingException();
+                std::cerr << "[proto-diag] Exception pending at top-of-loop: exc=" << exc << " blockStackSize=" << blockStack.size() << "\n" << std::flush;
+            }
             if (!blockStack.empty()) {
                 Block b = blockStack.back();
                 blockStack.pop_back();
+                if (get_env_diag()) {
+                    std::cerr << "[proto-diag] Found exception handler: jump to " << b.handlerPc << " stackDepth=" << b.stackDepth << "\n" << std::flush;
+                }
                 while (stack.size() > b.stackDepth) stack.pop_back();
                 // Push the exception object to stack for handlers to inspect
                 const proto::ProtoObject* exc = env->peekPendingException();
@@ -1185,6 +1232,9 @@ const proto::ProtoObject* executeBytecodeRange(
                 env->clearPendingException();
                 i = b.handlerPc - 2; // -2 because loop will i += 2
                 continue;
+            }
+            if (get_env_diag()) {
+                std::cerr << "[proto-diag] No exception handler found in current frame, returning nullptr\n" << std::flush;
             }
             return nullptr;
         }
@@ -1285,6 +1335,9 @@ const proto::ProtoObject* executeBytecodeRange(
                     externalStack->clear();
                     for (size_t j = 0; j < stack.size(); ++j) externalStack->push_back(stack[j]);
                 }
+                if (externalBlockStack) {
+                    *externalBlockStack = blockStack;
+                }
                 return result;
             }
         } else if (op == OP_LOAD_NAME) {
@@ -1312,6 +1365,7 @@ const proto::ProtoObject* executeBytecodeRange(
                     } else if (env) {
                         const proto::ProtoObject* r = env->resolve(nameS, ctx);
                         if (r) {
+                            if (std::getenv("PROTO_ENV_DIAG")) std::cerr << "[proto-diag] OP_LOAD_NAME: resolved '" << nStr << "' to " << r << "\n";
                             stack.push_back(r);
                         } else {
                             if (!env->hasPendingException()) env->raiseNameError(ctx, nStr);
@@ -1825,6 +1879,11 @@ const proto::ProtoObject* executeBytecodeRange(
                 if (!stack.empty()) {
                     exc = stack.back();
                     stack.pop_back();
+
+                    if (env && env->getTypePrototype() && exc->getAttribute(ctx, env->getClassString()) == env->getTypePrototype()) {
+                        const proto::ProtoString* callS = env->getCallString();
+                        exc = exc->call(ctx, nullptr, callS, exc, ctx->newList(), nullptr);
+                    }
                 }
             } else if (arg == 0) {
                 // Re-raise: if there's an exception on the stack (TOS), use it.
@@ -2236,14 +2295,13 @@ const proto::ProtoObject* executeBytecodeRange(
                 if (nameObj->isString(ctx)) {
                     const proto::ProtoString* attrName = nameObj->asString(ctx);
                     const proto::ProtoObject* val = env ? env->getAttribute(ctx, obj, attrName) : obj->getAttribute(ctx, attrName);
-                    if (val && val != PROTO_NONE) {
+                    if (val) {
                         stack.push_back(val);
                     } else {
-                        std::string* attrPtr = new std::string();
-                        attrName->toUTF8String(ctx, *attrPtr);
-                        if (env) env->raiseAttributeError(ctx, obj, *attrPtr);
-                        delete attrPtr;
-                        continue;
+                        std::string attr;
+                        attrName->toUTF8String(ctx, attr);
+                        if (env) env->raiseAttributeError(ctx, obj, attr);
+                        return nullptr;
                     }
                 }
             }
@@ -2607,6 +2665,13 @@ const proto::ProtoObject* executeBytecodeRange(
                 
                 proto::ProtoObject* ns = const_cast<proto::ProtoObject*>(ctx->newObject(true));
                 ns = const_cast<proto::ProtoObject*>(ns->setAttribute(ctx, nameS, name));
+                                
+                const proto::ProtoObject* globals = env ? env->getCurrentGlobals() : nullptr;
+                const proto::ProtoObject* moduleName = globals ? globals->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__name__")) : nullptr;
+                if (moduleName) {
+                    ns = const_cast<proto::ProtoObject*>(ns->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__module__"), moduleName));
+                }
+
                 if (env) {
                     ns = const_cast<proto::ProtoObject*>(ns->setAttribute(ctx, env->getFBackString(), PythonEnvironment::getCurrentFrame()));
                     ns = const_cast<proto::ProtoObject*>(ns->setAttribute(ctx, env->getFGlobalsString(), PythonEnvironment::getCurrentGlobals()));
@@ -2643,6 +2708,9 @@ const proto::ProtoObject* executeBytecodeRange(
                 }
                 // Step V75: Explicitly set __name__ on the class object
                 targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(ctx, nameS, name));
+                if (moduleName) {
+                    targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__module__"), moduleName));
+                }
                 
                 // Set runUserClassCall as __call__
                 targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(ctx, callS, ctx->fromMethod(targetClass, runUserClassCall)));
@@ -3144,12 +3212,20 @@ const proto::ProtoObject* executeBytecodeRange(
         } else if (op == OP_GET_ANEXT) {
             if (stack.empty()) continue;
             const proto::ProtoObject* aiter = stack.back();
+            if (std::getenv("PROTO_ENV_DIAG")) {
+                std::cerr << "[proto-diag] OP_GET_ANEXT: aiter=" << aiter << "\n" << std::flush;
+            }
             const proto::ProtoString* anextS = env ? env->getANextString() : proto::ProtoString::fromUTF8String(ctx, "__anext__");
             const proto::ProtoObject* awaitable = invokeDunder(ctx, aiter, anextS, ctx->newList());
             if (awaitable) {
                 stack.push_back(awaitable);
             } else {
-                if (env) env->raiseTypeError(ctx, "async for item must be an async iterator");
+                if (env && !env->hasPendingException()) {
+                    env->raiseTypeError(ctx, "async for item must be an async iterator");
+                }
+                if (get_env_diag() && env && env->hasPendingException()) {
+                    std::cerr << "[proto-diag] OP_GET_ANEXT failed, pending exception: " << env->peekPendingException() << "\n" << std::flush;
+                }
                 continue;
             }
         } else if (op == OP_EXCEPTION_MATCH) {

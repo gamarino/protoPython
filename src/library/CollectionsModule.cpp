@@ -401,11 +401,13 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, protoPython::Pyth
     dequePrototype = dequePrototype->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__reversed__"), 
                                                  ctx->fromMethod(nullptr, py_deque_reversed));
     
+    dequePrototype = dequePrototype->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__call__"),
+                                                 ctx->fromMethod(nullptr, py_deque_new));
+    
     // Store prototype in module
     module = module->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__deque_prototype__"), dequePrototype);
 
-    module = module->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "deque"),
-                                 ctx->fromMethod(nullptr, py_deque_new));
+    module = module->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "deque"), dequePrototype);
 
     const proto::ProtoString* py_getitem = proto::ProtoString::fromUTF8String(ctx, "__getitem__");
     const proto::ProtoObject* defaultdictPrototype = ctx->newObject(true);
@@ -427,7 +429,6 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, protoPython::Pyth
                                  ctx->fromMethod(nullptr, py_defaultdict_new));
     module = module->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "OrderedDict"),
                                  ctx->fromMethod(nullptr, py_ordereddict_new));
-    module = module->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "deque"), dequePrototype);
 
     // Dummy _deque_iterator and _tuplegetter to satisfy collections/__init__.py
     const proto::ProtoObject* tuplegetter = ctx->newObject(true);
@@ -438,24 +439,24 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, protoPython::Pyth
 
     const proto::ProtoObject* deque_iterator = ctx->newObject(true);
     deque_iterator = deque_iterator->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__name__"), ctx->fromUTF8String("_deque_iterator"));
-    deque_iterator = deque_iterator->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__next__"),
+    deque_iterator = deque_iterator->setAttribute(ctx, env->getNextString(),
                                                  ctx->fromMethod(nullptr, py_deque_iterator_next));
-    deque_iterator = deque_iterator->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iter__"),
+    deque_iterator = deque_iterator->setAttribute(ctx, env->getIterString(),
                                                  ctx->fromMethod(nullptr, py_collections_dummy)); // self iter
     
-    dequePrototype = dequePrototype->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iter__"),
+    dequePrototype = dequePrototype->setAttribute(ctx, env->getIterString(),
                                                  ctx->fromMethod(nullptr, py_deque_iter));
-    dequePrototype = dequePrototype->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__repr__"),
+    dequePrototype = dequePrototype->setAttribute(ctx, env->getReprString(),
                                                  ctx->fromMethod(nullptr, py_deque_repr));
-    dequePrototype = dequePrototype->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__str__"),
+    dequePrototype = dequePrototype->setAttribute(ctx, env->getStrString(),
                                                  ctx->fromMethod(nullptr, py_deque_repr));
     dequePrototype = dequePrototype->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__deque_iterator_proto__"), deque_iterator);
 
     const proto::ProtoObject* deque_reverse_iterator = ctx->newObject(true);
     deque_reverse_iterator = deque_reverse_iterator->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__name__"), ctx->fromUTF8String("_deque_reverse_iterator"));
-    deque_reverse_iterator = deque_reverse_iterator->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__next__"),
+    deque_reverse_iterator = deque_reverse_iterator->setAttribute(ctx, env->getNextString(),
                                                   ctx->fromMethod(nullptr, py_deque_reverse_iterator_next));
-    deque_reverse_iterator = deque_reverse_iterator->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iter__"),
+    deque_reverse_iterator = deque_reverse_iterator->setAttribute(ctx, env->getIterString(),
                                                   ctx->fromMethod(nullptr, py_collections_dummy)); // self iter
     
     dequePrototype = dequePrototype->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__deque_reverse_iterator_proto__"), deque_reverse_iterator);

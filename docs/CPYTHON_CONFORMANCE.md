@@ -58,8 +58,13 @@ Tests for features that are not primary targets for `protoPython`'s performance 
     - Systemic fix for `return nullptr` in opcodes (`OP_FOR_ITER`, `OP_CALL_FUNCTION`, etc.), ensuring `try...except` works across frame boundaries.
     - Verified proper propagation of `RuntimeError` and `AttributeError`.
 - **Core Types & Collections**:
+    - Stabilized `dict` comprehensions by implementing non-commutative tuple hashing and fixing hash dispatch for wrapped objects in `protoCore`.
+    - Resolved `KeyError` in `dict.items()` iteration and lookups.
     - Stabilized `deque` implementation with mutation detection during iteration.
     - Fixed `sys.path` initialization and `list` MRO/prototype logic.
+- **Iteration Protocol**:
+    - Fixed Range Iteration Protocol in `protoCore`, ensuring correct `nullptr` termination in `OP_FOR_ITER` for exhausted ranges.
+    - Verified proper handling of nested and filtered comprehensions.
 - **Compiler Conformance**: 
     - Full support for `//`, `@`, `**` operators and augmented assignments.
     - Implemented Walrus operator (`:=`) support.

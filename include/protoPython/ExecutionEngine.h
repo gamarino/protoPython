@@ -208,6 +208,11 @@ constexpr int OP_IMPORT_STAR = 203;
  *        scheduler dispatch; runs until pc exits [pcStart, pcEnd] or RETURN_VALUE.
  *        Uses direct protoCore types (zero-copy). See REARCHITECTURE_PROTOCORE.md.
  */
+struct Block {
+    unsigned long handlerPc;
+    size_t stackDepth;
+};
+
 const proto::ProtoObject* executeBytecodeRange(
     proto::ProtoContext* ctx,
     const proto::ProtoList* constants,
@@ -219,7 +224,8 @@ const proto::ProtoObject* executeBytecodeRange(
     unsigned long stackOffset = 0,
     std::vector<const proto::ProtoObject*>* externalStack = nullptr,
     unsigned long* outPc = nullptr,
-    bool* yielded = nullptr);
+    bool* yielded = nullptr,
+    std::vector<Block>* externalBlockStack = nullptr);
 
 /**
  * @brief Python-compatible generator methods.

@@ -234,6 +234,8 @@ public:
     const proto::ProtoObject* getNameErrorType() const { return nameErrorType; }
     const proto::ProtoObject* getZeroInteger() const { return zeroInteger; }
     const proto::ProtoObject* getOneInteger() const { return oneInteger; }
+    const proto::ProtoObject* getRangeIteratorProto() const { return rangeIteratorProto; }
+    void setRangeIteratorProto(const proto::ProtoObject* p) { rangeIteratorProto = p; }
 
     const proto::ProtoString* getCodeString() const { return __code__; }
     const proto::ProtoString* getGlobalsString() const { return __globals__; }
@@ -259,6 +261,24 @@ public:
     const proto::ProtoString* getClosureString() const { return __closure__; }
     const proto::ProtoString* getDefaultsString() const { return __defaults__; }
     const proto::ProtoString* getKwdefaultsString() const { return __kwdefaults__; }
+
+    const proto::ProtoString* getRangeString() const { return rangeS; }
+    const proto::ProtoString* getItemsString() const { return itemsS; }
+    const proto::ProtoString* getValuesString() const { return valuesS; }
+    const proto::ProtoString* getKeysSString() const { return keysS; }
+    const proto::ProtoString* getAssertionErrorSString() const { return assertionErrorS; }
+    const proto::ProtoString* getRuntimeErrorSString() const { return runtimeErrorS; }
+    const proto::ProtoString* getTypeErrorSString() const { return typeErrorS; }
+    const proto::ProtoString* getKeyErrorSString() const { return keyErrorS; }
+    const proto::ProtoString* getValueErrorSString() const { return valueErrorS; }
+    const proto::ProtoString* getStopIterationSString() const { return stopIterationS; }
+    const proto::ProtoString* getStopAsyncIterationSString() const { return stopAsyncIterationS; }
+    const proto::ProtoString* getExceptionSString() const { return exceptionS; }
+    const proto::ProtoString* getNameErrorSString() const { return nameErrorS; }
+    const proto::ProtoString* getAttributeErrorSString() const { return attributeErrorS; }
+    const proto::ProtoString* getSyntaxErrorSString() const { return syntaxErrorS; }
+    const proto::ProtoString* getImportErrorSString() const { return importErrorS; }
+    const proto::ProtoString* getIndexErrorSString() const { return indexErrorS; }
 
     const proto::ProtoString* getGiCodeString() const { return gi_code; }
     const proto::ProtoString* getGiFrameString() const { return gi_frame; }
@@ -318,6 +338,7 @@ public:
     const proto::ProtoString* getBoolTypeNameString() const { return boolS; }
     const proto::ProtoString* getObjectString() const { return objectS; }
     const proto::ProtoString* getTypeString() const { return typeS; }
+    const proto::ProtoString* getGiBlocksString() const { return gi_blocks; }
 
     /**
      * @brief Invalidates the import resolution cache (e.g. after module reload).
@@ -579,6 +600,7 @@ private:
 
     proto::ProtoSpace* space_;
     proto::ProtoContext* rootContext_;
+    const proto::ProtoObject* rangeIteratorProto{nullptr};
 
     const proto::ProtoObject* objectPrototype;
     const proto::ProtoObject* typePrototype;
@@ -646,6 +668,24 @@ private:
     const proto::ProtoString* enterString{nullptr};
     const proto::ProtoString* exitString{nullptr};
 
+    const proto::ProtoString* rangeS{nullptr};
+    const proto::ProtoString* itemsS{nullptr};
+    const proto::ProtoString* valuesS{nullptr};
+    const proto::ProtoString* keysS{nullptr};
+    const proto::ProtoString* assertionErrorS{nullptr};
+    const proto::ProtoString* runtimeErrorS{nullptr};
+    const proto::ProtoString* typeErrorS{nullptr};
+    const proto::ProtoString* keyErrorS{nullptr};
+    const proto::ProtoString* valueErrorS{nullptr};
+    const proto::ProtoString* stopIterationS{nullptr};
+    const proto::ProtoString* stopAsyncIterationS{nullptr};
+    const proto::ProtoString* exceptionS{nullptr};
+    const proto::ProtoString* nameErrorS{nullptr};
+    const proto::ProtoString* attributeErrorS{nullptr};
+    const proto::ProtoString* syntaxErrorS{nullptr};
+    const proto::ProtoString* importErrorS{nullptr};
+    const proto::ProtoString* indexErrorS{nullptr};
+
     const proto::ProtoString* classString{nullptr};
     const proto::ProtoString* nameString{nullptr};
     const proto::ProtoString* callString{nullptr};
@@ -712,6 +752,7 @@ private:
     const proto::ProtoString* gi_yieldfrom{nullptr};
     const proto::ProtoString* gi_pc{nullptr};
     const proto::ProtoString* gi_stack{nullptr};
+    const proto::ProtoString* gi_blocks{nullptr};
     const proto::ProtoString* gi_locals{nullptr};
 
     const proto::ProtoString* __iadd__{nullptr};
@@ -752,6 +793,8 @@ private:
     const proto::ProtoString* startString{nullptr};
     const proto::ProtoString* stopString{nullptr};
     const proto::ProtoString* stepString{nullptr};
+    const proto::ProtoString* moduleString{nullptr};
+    const proto::ProtoString* builtinsString{nullptr};
 
     const proto::ProtoString* ioModuleString{nullptr};
     const proto::ProtoString* openString{nullptr};
