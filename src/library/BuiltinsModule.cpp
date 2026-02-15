@@ -2260,12 +2260,12 @@ static const proto::ProtoObject* py_range(
     const proto::ProtoObject* rangeProto = self->getAttribute(context, rangeProtoS);
     if (!rangeProto) return PROTO_NONE;
     const proto::ProtoObject* rangeObj = rangeProto->newChild(context, true);
-    rangeObj->setAttribute(context, curS, context->fromInteger(start));
-    rangeObj->setAttribute(context, stopS, context->fromInteger(stop));
-    rangeObj->setAttribute(context, stepS, context->fromInteger(step));
+    rangeObj = rangeObj->setAttribute(context, curS, context->fromInteger(start));
+    rangeObj = rangeObj->setAttribute(context, stopS, context->fromInteger(stop));
+    rangeObj = rangeObj->setAttribute(context, stepS, context->fromInteger(step));
     
     // Ensure the range object has our new __iter__ method
-    rangeObj->setAttribute(context, env->getIterString(), context->fromMethod(const_cast<proto::ProtoObject*>(rangeObj), py_range_iter));
+    rangeObj = rangeObj->setAttribute(context, env->getIterString(), context->fromMethod(const_cast<proto::ProtoObject*>(rangeObj), py_range_iter));
     
     return rangeObj;
 }

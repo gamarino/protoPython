@@ -8139,12 +8139,7 @@ const proto::ProtoObject* PythonEnvironment::iter(const proto::ProtoObject* obj)
         return method->asMethod(ctx)(ctx, obj, nullptr, getEmptyList(), nullptr);
     }
 
-    if (std::getenv("PROTO_ENV_DIAG")) {
-        const proto::ProtoSparseList* attrs = obj->getAttributes(ctx);
-        if (attrs) {
-            std::cerr << "[proto-diag] iter: attributes of " << obj << " (size=" << attrs->getSize(ctx) << ")\n";
-        }
-    }
+
 
     // Optimization: if it already has __next__, it's an iterator (return self)
     const proto::ProtoObject* nextMethod = obj->getAttribute(ctx, getNextString());
