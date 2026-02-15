@@ -1,0 +1,12 @@
+{
+  "passed": 9,
+  "failed": 3,
+  "total": 12,
+  "compatibility_pct": 75.0,
+  "timestamp": "2026-02-15T15:15:22.158534+00:00",
+  "failed_tests": [
+    "/home/gamarino/Documentos/proyectos/protoPython/tests/test_async_for.py",
+    "/home/gamarino/Documentos/proyectos/protoPython/tests/test_deque_robust.py",
+    "/home/gamarino/Documentos/proyectos/protoPython/tests/test_sys.py"
+  ]
+}

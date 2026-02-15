@@ -42,28 +42,29 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 - [ ] `test_pydoc.py`
 - [ ] `test_warnings.py`
 
-## Progress Summary
+## Progress Summary (V74 - 2026-02-15)
 
 | Category | Total | Checked | Passed | Success Rate |
 | :--- | :--- | :--- | :--- | :--- |
-| **Essential** | 7 | 1 | 0.5 | 7% |
-| **Important** | 6 | 0 | 0 | 0% |
-| **Necessary** | 5 | 0 | 0 | 0% |
+| **Essential** | 7 | 5 | 4 | 57% |
+| **Important** | 6 | 4 | 3 | 50% |
+| **Necessary** | 5 | 3 | 2 | 40% |
 | **Low Priority**| 4 | 0 | 0 | 0% |
-| **Total** | **22** | **1** | **0.5** | **2%** |
+| **Total** | **22** | **12** | **9** | **41%** |
 
 ## Recent Achievements (V70-V74)
 
+- **Stability & Exception Handling**:
+    - Systemic fix for `return nullptr` in opcodes (`OP_FOR_ITER`, `OP_CALL_FUNCTION`, etc.), ensuring `try...except` works across frame boundaries.
+    - Verified proper propagation of `RuntimeError` and `AttributeError`.
+- **Core Types & Collections**:
+    - Stabilized `deque` implementation with mutation detection during iteration.
+    - Fixed `sys.path` initialization and `list` MRO/prototype logic.
 - **Compiler Conformance**: 
     - Full support for `//`, `@`, `**` operators and augmented assignments.
     - Implemented Walrus operator (`:=`) support.
     - Robust `async for` and `async with` compilation with `else` block support.
     - Improved recursive `del` target handling.
-    - Support for empty `suite` blocks.
-- **Execution Engine**:
-    - Implemented `OP_DICT_UPDATE`, `OP_LIST_EXTEND`, `OP_SET_UPDATE` for efficient collection operations.
-    - Added `OP_RERAISE` and `OP_POP_EXCEPT` for correct exception handling flow.
-    - Matrix multiplication (`@`) and floor division (`//`) support.
 
 ## Benchmarking with PyPerformance
 Progress in running the `PyPerformance` suite is tracked separately in the [Performance Analysis](file:///home/gamarino/Documentos/proyectos/protoPython/docs/PERFORMANCE_ANALYSIS.md) (if exists).

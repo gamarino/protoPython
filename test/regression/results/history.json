@@ -1,0 +1,225 @@
+[
+  {
+    "passed": 0,
+    "failed": 1,
+    "total": 1,
+    "compatibility_pct": 0.0,
+    "timestamp": "2026-02-04T03:01:36.471088+00:00",
+    "failed_tests": [
+      "/home/gamarino/Documentos/proyectos/protoPython/build/src/runtime/protopy"
+    ]
+  },
+  {
+    "passed": 0,
+    "failed": 1,
+    "total": 1,
+    "compatibility_pct": 0.0,
+    "timestamp": "2026-02-04T03:01:51.188081+00:00",
+    "failed_tests": [
+      "/home/gamarino/Documentos/proyectos/protoPython/build/src/runtime/protopy"
+    ]
+  },
+  {
+    "passed": 0,
+    "failed": 1,
+    "total": 1,
+    "compatibility_pct": 0.0,
+    "timestamp": "2026-02-04T03:06:05.062746+00:00",
+    "failed_tests": [
+      "/home/gamarino/Documentos/proyectos/protoPython/build/src/runtime/protopy"
+    ]
+  },
+  {
+    "passed": 0,
+    "failed": 1,
+    "total": 1,
+    "compatibility_pct": 0.0,
+    "timestamp": "2026-02-04T04:08:12.135166+00:00",
+    "failed_tests": [
+      "/home/gamarino/Documentos/proyectos/protoPython/build/src/runtime/protopy"
+    ]
+  },
+  {
+    "passed": 0,
+    "failed": 1,
+    "total": 1,
+    "compatibility_pct": 0.0,
+    "timestamp": "2026-02-04T21:14:53.046849+00:00",
+    "failed_tests": [
+      "/home/gamarino/Documentos/proyectos/protoPython/build/src/runtime/protopy"
+    ]
+  },
+  {
+    "passed": 0,
+    "failed": 1,
+    "total": 1,
+    "compatibility_pct": 0.0,
+    "timestamp": "2026-02-04T21:19:03.231241+00:00",
+    "failed_tests": [
+      "/home/gamarino/Documentos/proyectos/protoPython/build/src/runtime/protopy"
+    ]
+  },
+  {
+    "passed": 0,
+    "failed": 1,
+    "total": 1,
+    "compatibility_pct": 0.0,
+    "timestamp": "2026-02-04T21:27:08.817087+00:00",
+    "failed_tests": [
+      "/home/gamarino/Documentos/proyectos/protoPython/build/src/runtime/protopy"
+    ]
+  },
+  {
+    "passed": 0,
+    "failed": 1,
+    "total": 1,
+    "compatibility_pct": 0.0,
+    "timestamp": "2026-02-04T21:28:23.195859+00:00",
+    "failed_tests": [
+      "/home/gamarino/Documentos/proyectos/protoPython/build/src/runtime/protopy"
+    ]
+  },
+  {
+    "passed": 0,
+    "failed": 1,
+    "total": 1,
+    "compatibility_pct": 0.0,
+    "timestamp": "2026-02-04T23:27:35.734374+00:00",
+    "failed_tests": [
+      "/home/gamarino/Documentos/proyectos/protoPython/build/src/runtime/protopy"
+    ]
+  },
+  {
+    "passed": 0,
+    "failed": 1,
+    "total": 1,
+    "compatibility_pct": 0.0,
+    "timestamp": "2026-02-04T23:36:46.757290+00:00",
+    "failed_tests": [
+      "/home/gamarino/Documentos/proyectos/protoPython/build/src/runtime/protopy"
+    ]
+  },
+  {
+    "passed": 0,
+    "failed": 1,
+    "total": 1,
+    "compatibility_pct": 0.0,
+    "timestamp": "2026-02-05T13:49:54.327357+00:00",
+    "failed_tests": [
+      "/home/gamarino/Documentos/proyectos/protoPython/build/src/runtime/protopy"
+    ]
+  },
+  {
+    "passed": 0,
+    "failed": 1,
+    "total": 1,
+    "compatibility_pct": 0.0,
+    "timestamp": "2026-02-05T14:06:28.895022+00:00",
+    "failed_tests": [
+      "/home/gamarino/Documentos/proyectos/protoPython/build/src/runtime/protopy"
+    ]
+  },
+  {
+    "passed": 0,
+    "failed": 1,
+    "total": 1,
+    "compatibility_pct": 0.0,
+    "timestamp": "2026-02-05T14:28:39.946426+00:00",
+    "failed_tests": [
+      "/home/gamarino/Documentos/proyectos/protoPython/build/src/runtime/protopy"
+    ]
+  },
+  {
+    "passed": 0,
+    "failed": 1,
+    "total": 1,
+    "compatibility_pct": 0.0,
+    "timestamp": "2026-02-05T14:35:42.392086+00:00",
+    "failed_tests": [
+      "/home/gamarino/Documentos/proyectos/protoPython/build/src/runtime/protopy"
+    ]
+  },
+  {
+    "passed": 0,
+    "failed": 1,
+    "total": 1,
+    "compatibility_pct": 0.0,
+    "timestamp": "2026-02-05T14:56:21.471355+00:00",
+    "failed_tests": [
+      "/home/gamarino/Documentos/proyectos/protoPython/build/src/runtime/protopy"
+    ]
+  },
+  {
+    "passed": 0,
+    "failed": 1,
+    "total": 1,
+    "compatibility_pct": 0.0,
+    "timestamp": "2026-02-06T02:18:54.589861+00:00",
+    "failed_tests": [
+      "/home/gamarino/Documentos/proyectos/protoPython/build/src/runtime/protopy"
+    ]
+  },
+  {
+    "passed": 0,
+    "failed": 1,
+    "total": 1,
+    "compatibility_pct": 0.0,
+    "timestamp": "2026-02-14T03:02:20.476634+00:00",
+    "failed_tests": [
+      "/home/gamarino/Documentos/proyectos/protoPython/cmake-build-debug/src/runtime/protopy"
+    ]
+  },
+  {
+    "passed": 0,
+    "failed": 1,
+    "total": 1,
+    "compatibility_pct": 0.0,
+    "timestamp": "2026-02-15T15:13:50.585351+00:00",
+    "failed_tests": [
+      "/home/gamarino/Documentos/proyectos/protoPython/test/regression/regrtest_runner.py"
+    ]
+  },
+  {
+    "passed": 1,
+    "failed": 0,
+    "total": 1,
+    "compatibility_pct": 100.0,
+    "timestamp": "2026-02-15T15:14:14.178809+00:00",
+    "failed_tests": []
+  },
+  {
+    "passed": 0,
+    "failed": 14,
+    "total": 14,
+    "compatibility_pct": 0.0,
+    "timestamp": "2026-02-15T15:15:08.191032+00:00",
+    "failed_tests": [
+      "tests/test_async.py",
+      "tests/test_async_for.py",
+      "tests/test_async_with.py",
+      "tests/test_class.py",
+      "tests/test_decorator.py",
+      "tests/test_deque_robust.py",
+      "tests/test_final_stability.py",
+      "tests/test_grammar.py",
+      "tests/test_lambda.py",
+      "tests/test_oop.py",
+      "tests/test_re.py",
+      "tests/test_runtime_error.py",
+      "tests/test_sys.py",
+      "tests/test_yield_from.py"
+    ]
+  },
+  {
+    "passed": 9,
+    "failed": 3,
+    "total": 12,
+    "compatibility_pct": 75.0,
+    "timestamp": "2026-02-15T15:15:22.158534+00:00",
+    "failed_tests": [
+      "/home/gamarino/Documentos/proyectos/protoPython/tests/test_async_for.py",
+      "/home/gamarino/Documentos/proyectos/protoPython/tests/test_deque_robust.py",
+      "/home/gamarino/Documentos/proyectos/protoPython/tests/test_sys.py"
+    ]
+  }
+]
