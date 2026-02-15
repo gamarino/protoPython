@@ -789,6 +789,9 @@ static const proto::ProtoObject* invokeCallable(proto::ProtoContext* ctx,
 
     if (callable->isMethod(ctx)) {
         const auto* cell = proto::toImpl<const proto::ProtoMethodCell>(callable);
+        if (std::getenv("PROTO_ENV_DIAG")) {
+            std::cerr << "[proto-diag] invokeCallable: method=" << callable << " self=" << cell->self << " func=" << (void*)cell->method << "\n";
+        }
         return cell->method(ctx, const_cast<proto::ProtoObject*>(cell->self), nullptr, args, kwargs);
     }
     const proto::ProtoObject* callAttr = callable->getAttribute(ctx, env ? env->getCallString() : proto::ProtoString::fromUTF8String(ctx, "__call__"));
@@ -1142,9 +1145,6 @@ const proto::ProtoObject* executeBytecodeRange(
     unsigned long n = bytecode->getSize(ctx);
     if (n == 0) return nullptr;
     if (pcEnd >= n) pcEnd = n - 1;
-    if (std::getenv("PROTO_ENV_DIAG")) {
-        std::cerr << "[proto-diag] executeBytecodeRange: pcStart=" << pcStart << " pcEnd=" << pcEnd << " bytecodeSize=" << n << "\n" << std::flush;
-    }
 
     unsigned int nSlots = ctx->getAutomaticLocalsCount();
     proto::ProtoObject** allSlots = const_cast<proto::ProtoObject**>(ctx->getAutomaticLocals());
@@ -1196,9 +1196,6 @@ const proto::ProtoObject* executeBytecodeRange(
         int op = static_cast<int>(instr->asLong(ctx));
         int arg = (i + 1 < n && bytecode->getAt(ctx, static_cast<int>(i + 1))->isInteger(ctx))
             ? static_cast<int>(bytecode->getAt(ctx, static_cast<int>(i + 1))->asLong(ctx)) : 0;
-        if (std::getenv("PROTO_ENV_DIAG")) {
-            std::cerr << "[proto-diag] execute: i=" << i << " op=" << op << " arg=" << arg << "\n" << std::flush;
-        }
 
 
         if (op == OP_LOAD_CONST) {
@@ -1954,7 +1951,7 @@ const proto::ProtoObject* executeBytecodeRange(
             const proto::ProtoObject* a = stack.back();
             stack.pop_back();
             const proto::ProtoObject* r = compareOp(ctx, a, b, arg);
-            if (r) stack.push_back(r); else if (env && env->hasPendingException()) return nullptr;
+            if (r) stack.push_back(r); else if (env && env->hasPendingException()) continue;
         } else if (op == OP_POP_JUMP_IF_FALSE) {
             if (stack.empty()) continue;
             const proto::ProtoObject* top = stack.back();
@@ -2239,10 +2236,6 @@ const proto::ProtoObject* executeBytecodeRange(
                 if (nameObj->isString(ctx)) {
                     const proto::ProtoString* attrName = nameObj->asString(ctx);
                     const proto::ProtoObject* val = env ? env->getAttribute(ctx, obj, attrName) : obj->getAttribute(ctx, attrName);
-                    if (std::getenv("PROTO_ENV_DIAG")) {
-                        std::string n; attrName->toUTF8String(ctx, n);
-                        std::cerr << "[proto-diag] OP_LOAD_ATTR: obj=" << obj << " name='" << n << "' val=" << val << "\n" << std::flush;
-                    }
                     if (val && val != PROTO_NONE) {
                         stack.push_back(val);
                     } else {
@@ -2250,7 +2243,7 @@ const proto::ProtoObject* executeBytecodeRange(
                         attrName->toUTF8String(ctx, *attrPtr);
                         if (env) env->raiseAttributeError(ctx, obj, *attrPtr);
                         delete attrPtr;
-                        return nullptr;
+                        continue;
                     }
                 }
             }
@@ -2473,7 +2466,7 @@ const proto::ProtoObject* executeBytecodeRange(
             if (result) {
                 stack.push_back(result);
             } else if (env && env->hasPendingException()) {
-                return nullptr;
+                continue;
             } else {
                 stack.push_back(env ? env->getNonePrototype() : PROTO_NONE);
             }
@@ -2486,21 +2479,15 @@ const proto::ProtoObject* executeBytecodeRange(
             }
             const proto::ProtoObject* callable = stack.back();
             stack.pop_back();
-            if (std::getenv("PROTO_ENV_DIAG")) {
-                std::cerr << "[proto-diag] OP_CALL_FUNCTION: callable=" << callable << " isMethod=" << (callable && callable->isMethod(ctx)) << "\n" << std::flush;
-            }
             const proto::ProtoList* args = ctx->newList();
             for (int j = 0; j < arg; ++j)
                 args = args->appendLast(ctx, argVec[j]);
             const proto::ProtoObject* result = invokeCallable(ctx, callable, args);
-            if (std::getenv("PROTO_ENV_DIAG")) {
-                std::cerr << "[proto-diag] OP_CALL_FUNCTION: result=" << result << "\n" << std::flush;
-            }
             PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
             if (result) {
                 stack.push_back(result);
             } else if (env && env->hasPendingException()) {
-                return nullptr;
+                continue;
             } else {
                 // Return value was None (nullptr) but no exception.
                 stack.push_back(env ? env->getNonePrototype() : PROTO_NONE);
@@ -2529,7 +2516,7 @@ const proto::ProtoObject* executeBytecodeRange(
                             const proto::ProtoObject* exc = env->takePendingException();
                             if (!env->isStopIteration(ctx, exc)) {
                                 env->setPendingException(exc);
-                                return nullptr;
+                                continue;
                             }
                         }
                         posArgs = L;
@@ -2693,7 +2680,6 @@ const proto::ProtoObject* executeBytecodeRange(
                 // For now, the co_names approach is much safer than the hash cast.
                 
                 // Set __call__ to support instantiation
-                if (std::getenv("PROTO_ENV_DIAG")) std::cerr << "[proto-diag] OP_BUILD_CLASS: setting __call__ for " << targetClass << "\n";
                 targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(ctx, callS, ctx->fromMethod(targetClass, runUserClassCall)));
 
                 stack.push_back(targetClass);
@@ -2736,19 +2722,13 @@ const proto::ProtoObject* executeBytecodeRange(
             }
 
             PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-            if (std::getenv("PROTO_ENV_DIAG")) {
-                std::cerr << "[proto-diag] OP_FOR_ITER entry: env=" << env << " iterator=" << iterator << "\n";
-            }
             const proto::ProtoObject* val = env ? env->next(iterator) : nullptr;
             
             if (val) {
                 stack.push_back(val);
             } else {
                 if (env && env->hasPendingException()) {
-                    if (std::getenv("PROTO_ENV_DIAG")) {
-                        std::cerr << "[proto-diag] OP_FOR_ITER: caught REAL exception (not StopIteration) during iteration.\n";
-                    }
-                    return nullptr;
+                    continue;
                 }
                 // exhaustion
                 stack.pop_back();
@@ -2821,11 +2801,6 @@ const proto::ProtoObject* executeBytecodeRange(
                 const proto::ProtoObject* nameObj = names->getAt(ctx, arg);
                 if (nameObj->isString(ctx)) {
                     const proto::ProtoString* nameS = nameObj->asString(ctx);
-                    if (std::getenv("PROTO_ENV_DIAG")) {
-                        std::string n;
-                        nameS->toUTF8String(ctx, n);
-                        std::cerr << "[proto-diag] OP_LOAD_GLOBAL: name='" << n << "'\n" << std::flush;
-                    }
                     const proto::ProtoObject* val = frame->getAttribute(ctx, nameS);
                     bool found = (val != nullptr);
                     if (!found) {
@@ -2851,7 +2826,7 @@ const proto::ProtoObject* executeBytecodeRange(
                                     nameS->toUTF8String(ctx, n);
                                     env->raiseNameError(ctx, n);
                                 }
-                                return nullptr;
+                                continue;
                             }
                         } else {
                             continue;
@@ -2866,11 +2841,6 @@ const proto::ProtoObject* executeBytecodeRange(
                 const proto::ProtoObject* val = stack.back();
                 stack.pop_back();
                 if (nameObj->isString(ctx)) {
-                    if (std::getenv("PROTO_ENV_DIAG")) {
-                        std::string n;
-                        nameObj->asString(ctx)->toUTF8String(ctx, n);
-                        std::cerr << "[proto-diag] OP_STORE_GLOBAL: name='" << n << "' val=" << val << "\n" << std::flush;
-                    }
                     frame = const_cast<proto::ProtoObject*>(frame->setAttribute(ctx, nameObj->asString(ctx), val));
                     PythonEnvironment::setCurrentFrame(frame);
                     if (sync_globals) PythonEnvironment::setCurrentGlobals(frame);
@@ -3180,7 +3150,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 stack.push_back(awaitable);
             } else {
                 if (env) env->raiseTypeError(ctx, "async for item must be an async iterator");
-                return PROTO_NONE;
+                continue;
             }
         } else if (op == OP_EXCEPTION_MATCH) {
              if (stack.size() < 2) continue;

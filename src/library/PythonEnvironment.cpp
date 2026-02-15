@@ -112,6 +112,13 @@ static const proto::ProtoObject* py_dict_call(
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters);
 
+static const proto::ProtoObject* py_str_maketrans(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters);
+
 // --- SafeImportLock Implementation ---
 
 static thread_local int s_importLockRecursionDepth = 0;
@@ -1083,8 +1090,7 @@ static const proto::ProtoObject* py_dict_ge(
     return PROTO_NONE;
 }
 
-static std::string repr_object(proto::ProtoContext* context, const proto::ProtoObject* obj) {
-
+std::string PythonEnvironment::reprObject(proto::ProtoContext* context, const proto::ProtoObject* obj) {
     if (!obj || obj == PROTO_NONE) {
         return "None";
     }
@@ -1105,9 +1111,17 @@ static std::string repr_object(proto::ProtoContext* context, const proto::ProtoO
     if (!obj->isCell(context)) {
         return "<value>";
     }
-    const proto::ProtoObject* reprMethod = obj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__repr__"));
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::ProtoString* reprS = env ? env->getReprString() : proto::ProtoString::fromUTF8String(context, "__repr__");
+    const proto::ProtoObject* reprMethod = env ? env->getAttribute(context, obj, reprS) : obj->getAttribute(context, reprS);
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        std::cerr << "[proto-diag] reprObject: obj=" << obj << " reprMethod=" << reprMethod << "\n";
+    }
     if (reprMethod && reprMethod->asMethod(context)) {
         const proto::ProtoObject* out = reprMethod->asMethod(context)(context, obj, nullptr, nullptr, nullptr);
+        if (std::getenv("PROTO_ENV_DIAG")) {
+            std::cerr << "[proto-diag] reprObject: call returned=" << out << " type=" << (out ? out->isString(context) : 0) << "\n";
+        }
         if (out && out->isString(context)) {
             std::string s;
             out->asString(context)->toUTF8String(context, s);
@@ -1126,6 +1140,14 @@ static const proto::ProtoObject* py_list_repr(
     const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "__data__");
     const proto::ProtoObject* data = self->getAttribute(context, dataName);
     const proto::ProtoList* list = data && data->asList(context) ? data->asList(context) : nullptr;
+    
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        std::cerr << "[proto-diag] py_list_repr: self=" << self << " data=" << data << " list=" << list << "\n";
+        if (list) {
+            std::cerr << "[proto-diag]   list.size=" << list->getSize(context) << "\n";
+        }
+    }
+
     if (!list) return context->fromUTF8String("[]");
 
     unsigned long size = list->getSize(context);
@@ -1133,7 +1155,12 @@ static const proto::ProtoObject* py_list_repr(
     std::string out = "[";
     for (unsigned long i = 0; i < size && i < limit; ++i) {
         if (i > 0) out += ", ";
-        out += repr_object(context, list->getAt(context, static_cast<int>(i)));
+        const proto::ProtoObject* item = list->getAt(context, static_cast<int>(i));
+        std::string r = PythonEnvironment::reprObject(context, item);
+        if (std::getenv("PROTO_ENV_DIAG")) {
+            std::cerr << "[proto-diag]   item[" << i << "]=" << item << " repr='" << r << "'\n";
+        }
+        out += r;
     }
     if (size > limit) out += ", ...";
     out += "]";
@@ -1166,7 +1193,7 @@ static const proto::ProtoObject* py_tuple_repr(
     std::string out = "(";
     for (unsigned long i = 0; i < size && i < limit; ++i) {
         if (i > 0) out += ", ";
-        out += repr_object(context, list->getAt(context, static_cast<int>(i)));
+        out += PythonEnvironment::reprObject(context, list->getAt(context, static_cast<int>(i)));
     }
     if (size == 1) out += ",";
     if (size > limit) out += ", ...";
@@ -1818,6 +1845,7 @@ static const proto::ProtoObject* py_list_call(
     }
 
     instance->setAttribute(context, dataName, l->asObject(context));
+    instance->setAttribute(context, env ? env->getClassString() : proto::ProtoString::fromUTF8String(context, "__class__"), self);
     return instance;
 }
 
@@ -1953,7 +1981,19 @@ static const proto::ProtoObject* py_dict_call(
 
     instance->setAttribute(context, dataName, d->asObject(context));
     instance->setAttribute(context, keysName, keysList->asObject(context));
+    instance->setAttribute(context, env ? env->getClassString() : proto::ProtoString::fromUTF8String(context, "__class__"), self);
     return instance;
+}
+
+static const proto::ProtoObject* py_str_maketrans(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    (void)context; (void)self; (void)parentLink; (void)positionalParameters; (void)keywordParameters;
+    // return a dummy mapping or None if just satisfying import
+    return context->newSparseList()->asObject(context);
 }
 
 static const proto::ProtoObject* py_set_len(
@@ -4571,9 +4611,9 @@ static const proto::ProtoObject* py_dict_repr(
         if (i > 0) out += ", ";
         const proto::ProtoObject* key = keys->getAt(context, static_cast<int>(i));
         const proto::ProtoObject* value = dict->getAt(context, key->getHash(context));
-        out += repr_object(context, key);
+        out += PythonEnvironment::reprObject(context, key);
         out += ": ";
-        out += repr_object(context, value);
+        out += PythonEnvironment::reprObject(context, value);
     }
     if (size > limit) out += ", ...";
     out += "}";
@@ -5551,6 +5591,13 @@ void PythonEnvironment::raiseTypeError(proto::ProtoContext* ctx, const std::stri
     if (exc) setPendingException(exc);
 }
 
+void PythonEnvironment::raiseRuntimeError(proto::ProtoContext* ctx, const std::string& msg) {
+    if (!runtimeErrorType) return;
+    const proto::ProtoList* args = ctx->newList()->appendLast(ctx, ctx->fromUTF8String(msg.c_str()));
+    const proto::ProtoObject* exc = runtimeErrorType->call(ctx, nullptr, proto::ProtoString::fromUTF8String(ctx, "__call__"), runtimeErrorType, args, nullptr);
+    if (exc) setPendingException(exc);
+}
+
 void PythonEnvironment::raiseImportError(proto::ProtoContext* ctx, const std::string& msg) {
     if (!importErrorType) return;
     std::string hintMsg = msg;
@@ -5855,6 +5902,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     const proto::ProtoString* py_replace = proto::ProtoString::fromUTF8String(rootContext_, "replace");
     const proto::ProtoString* py_startswith = proto::ProtoString::fromUTF8String(rootContext_, "startswith");
     const proto::ProtoString* py_endswith = proto::ProtoString::fromUTF8String(rootContext_, "endswith");
+    const proto::ProtoString* py_maketrans = proto::ProtoString::fromUTF8String(rootContext_, "maketrans");
     const proto::ProtoString* py_add = addString;
 
     // 1. Create 'object' base
@@ -5862,18 +5910,18 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     objectPrototype = objectPrototype->setAttribute(rootContext_, py_name, rootContext_->fromUTF8String("object"));
 
     const proto::ProtoString* py_format_dunder = proto::ProtoString::fromUTF8String(rootContext_, "__format__");
-    objectPrototype = objectPrototype->setAttribute(rootContext_, py_init, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(objectPrototype), py_object_init));
-    objectPrototype = objectPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(objectPrototype), py_object_repr));
-    objectPrototype = objectPrototype->setAttribute(rootContext_, py_str, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(objectPrototype), py_object_str));
-    objectPrototype = objectPrototype->setAttribute(rootContext_, py_format_dunder, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(objectPrototype), py_object_format));
-    objectPrototype = objectPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__call__"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(objectPrototype), py_object_call));
+    objectPrototype = objectPrototype->setAttribute(rootContext_, py_init, rootContext_->fromMethod(nullptr, py_object_init));
+    objectPrototype = objectPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_object_repr));
+    objectPrototype = objectPrototype->setAttribute(rootContext_, py_str, rootContext_->fromMethod(nullptr, py_object_str));
+    objectPrototype = objectPrototype->setAttribute(rootContext_, py_format_dunder, rootContext_->fromMethod(nullptr, py_object_format));
+    objectPrototype = objectPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__call__"), rootContext_->fromMethod(nullptr, py_object_call));
 
     // 2. Create 'type'
     typePrototype = rootContext_->newObject(true);
     typePrototype = typePrototype->addParent(rootContext_, objectPrototype);
     typePrototype = typePrototype->setAttribute(rootContext_, py_class, typePrototype);
     typePrototype = typePrototype->setAttribute(rootContext_, py_name, rootContext_->fromUTF8String("type"));
-    typePrototype = typePrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(typePrototype), py_type_repr));
+    typePrototype = typePrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_type_repr));
 
     // 3. Circularity: object's class is type
     objectPrototype = objectPrototype->setAttribute(rootContext_, py_class, typePrototype);
@@ -5883,7 +5931,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     framePrototype = framePrototype->addParent(rootContext_, objectPrototype);
     framePrototype = framePrototype->setAttribute(rootContext_, py_class, typePrototype);
     framePrototype = framePrototype->setAttribute(rootContext_, py_name, rootContext_->fromUTF8String("frame"));
-    framePrototype = framePrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(framePrototype), py_frame_repr));
+    framePrototype = framePrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_frame_repr));
 
     // 5. Create 'generator' prototype
     generatorPrototype = rootContext_->newObject(true);
@@ -5891,12 +5939,12 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     generatorPrototype = generatorPrototype->setAttribute(rootContext_, py_class, typePrototype);
     generatorPrototype = generatorPrototype->setAttribute(rootContext_, py_name, rootContext_->fromUTF8String("generator"));
     
-    generatorPrototype = generatorPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(generatorPrototype), py_generator_repr));
-    generatorPrototype = generatorPrototype->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(generatorPrototype), py_self_iter));
-    generatorPrototype = generatorPrototype->setAttribute(rootContext_, py_next, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(generatorPrototype), py_generator_next));
-    generatorPrototype = generatorPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "send"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(generatorPrototype), py_generator_send));
-    generatorPrototype = generatorPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "throw"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(generatorPrototype), py_generator_throw));
-    generatorPrototype = generatorPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "close"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(generatorPrototype), py_generator_close));
+    generatorPrototype = generatorPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_generator_repr));
+    generatorPrototype = generatorPrototype->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_self_iter));
+    generatorPrototype = generatorPrototype->setAttribute(rootContext_, py_next, rootContext_->fromMethod(nullptr, py_generator_next));
+    generatorPrototype = generatorPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "send"), rootContext_->fromMethod(nullptr, py_generator_send));
+    generatorPrototype = generatorPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "throw"), rootContext_->fromMethod(nullptr, py_generator_throw));
+    generatorPrototype = generatorPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "close"), rootContext_->fromMethod(nullptr, py_generator_close));
 
     // 6. Basic types
     intPrototype = rootContext_->newObject(true);
@@ -5904,241 +5952,242 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     const proto::ProtoString* py_hash = proto::ProtoString::fromUTF8String(rootContext_, "__hash__");
     intPrototype = intPrototype->setAttribute(rootContext_, py_class, typePrototype);
     intPrototype = intPrototype->setAttribute(rootContext_, py_name, rootContext_->fromUTF8String("int"));
-    intPrototype = intPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(intPrototype), py_type_repr));
-    intPrototype = intPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__call__"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(intPrototype), py_int_call));
-    intPrototype = intPrototype->setAttribute(rootContext_, py_hash, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(intPrototype), py_int_hash));
-    intPrototype = intPrototype->setAttribute(rootContext_, py_bool, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(intPrototype), py_int_bool));
-    intPrototype = intPrototype->setAttribute(rootContext_, py_format_dunder, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(intPrototype), py_int_format));
+    intPrototype = intPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_type_repr));
+    intPrototype = intPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__call__"), rootContext_->fromMethod(nullptr, py_int_call));
+    intPrototype = intPrototype->setAttribute(rootContext_, py_hash, rootContext_->fromMethod(nullptr, py_int_hash));
+    intPrototype = intPrototype->setAttribute(rootContext_, py_bool, rootContext_->fromMethod(nullptr, py_int_bool));
+    intPrototype = intPrototype->setAttribute(rootContext_, py_format_dunder, rootContext_->fromMethod(nullptr, py_int_format));
     const proto::ProtoString* py_bit_length = proto::ProtoString::fromUTF8String(rootContext_, "bit_length");
-    intPrototype = intPrototype->setAttribute(rootContext_, py_bit_length, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(intPrototype), py_int_bit_length));
-    intPrototype = intPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "bit_count"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(intPrototype), py_int_bit_count));
+    intPrototype = intPrototype->setAttribute(rootContext_, py_bit_length, rootContext_->fromMethod(nullptr, py_int_bit_length));
+    intPrototype = intPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "bit_count"), rootContext_->fromMethod(nullptr, py_int_bit_count));
     const proto::ProtoString* py_from_bytes = proto::ProtoString::fromUTF8String(rootContext_, "from_bytes");
     const proto::ProtoString* py_to_bytes = proto::ProtoString::fromUTF8String(rootContext_, "to_bytes");
-    intPrototype = intPrototype->setAttribute(rootContext_, py_from_bytes, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(intPrototype), py_int_from_bytes));
-    intPrototype = intPrototype->setAttribute(rootContext_, py_to_bytes, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(intPrototype), py_int_to_bytes));
+    intPrototype = intPrototype->setAttribute(rootContext_, py_from_bytes, rootContext_->fromMethod(nullptr, py_int_from_bytes));
+    intPrototype = intPrototype->setAttribute(rootContext_, py_to_bytes, rootContext_->fromMethod(nullptr, py_int_to_bytes));
 
     strPrototype = rootContext_->newObject(true);
     strPrototype = strPrototype->addParent(rootContext_, objectPrototype);
     strPrototype = strPrototype->setAttribute(rootContext_, py_class, typePrototype);
     strPrototype = strPrototype->setAttribute(rootContext_, py_name, rootContext_->fromUTF8String("str"));
-    strPrototype = strPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_type_repr));
-    strPrototype = strPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__call__"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_call));
-    strPrototype = strPrototype->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_iter));
-    strPrototype = strPrototype->setAttribute(rootContext_, py_getitem, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_getitem));
-    strPrototype = strPrototype->setAttribute(rootContext_, py_contains, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_contains));
-    strPrototype = strPrototype->setAttribute(rootContext_, py_bool, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_bool));
-    strPrototype = strPrototype->setAttribute(rootContext_, py_upper, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_upper));
-    strPrototype = strPrototype->setAttribute(rootContext_, py_lower, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_lower));
-    strPrototype = strPrototype->setAttribute(rootContext_, py_format, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_format));
-    strPrototype = strPrototype->setAttribute(rootContext_, py_format_dunder, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_format_dunder));
-    strPrototype = strPrototype->setAttribute(rootContext_, py_hash, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_hash));
-    strPrototype = strPrototype->setAttribute(rootContext_, py_split, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_split));
-    strPrototype = strPrototype->setAttribute(rootContext_, py_join, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_join));
-    strPrototype = strPrototype->setAttribute(rootContext_, py_strip, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_strip));
-    strPrototype = strPrototype->setAttribute(rootContext_, py_lstrip, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_lstrip));
-    strPrototype = strPrototype->setAttribute(rootContext_, py_rstrip, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_rstrip));
-    strPrototype = strPrototype->setAttribute(rootContext_, py_replace, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_replace));
-    strPrototype = strPrototype->setAttribute(rootContext_, py_startswith, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_startswith));
-    strPrototype = strPrototype->setAttribute(rootContext_, py_endswith, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_endswith));
+    strPrototype = strPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_type_repr));
+    strPrototype = strPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__call__"), rootContext_->fromMethod(nullptr, py_str_call));
+    strPrototype = strPrototype->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_str_iter));
+    strPrototype = strPrototype->setAttribute(rootContext_, py_getitem, rootContext_->fromMethod(nullptr, py_str_getitem));
+    strPrototype = strPrototype->setAttribute(rootContext_, py_contains, rootContext_->fromMethod(nullptr, py_str_contains));
+    strPrototype = strPrototype->setAttribute(rootContext_, py_bool, rootContext_->fromMethod(nullptr, py_str_bool));
+    strPrototype = strPrototype->setAttribute(rootContext_, py_upper, rootContext_->fromMethod(nullptr, py_str_upper));
+    strPrototype = strPrototype->setAttribute(rootContext_, py_lower, rootContext_->fromMethod(nullptr, py_str_lower));
+    strPrototype = strPrototype->setAttribute(rootContext_, py_format, rootContext_->fromMethod(nullptr, py_str_format));
+    strPrototype = strPrototype->setAttribute(rootContext_, py_format_dunder, rootContext_->fromMethod(nullptr, py_str_format_dunder));
+    strPrototype = strPrototype->setAttribute(rootContext_, py_hash, rootContext_->fromMethod(nullptr, py_str_hash));
+    strPrototype = strPrototype->setAttribute(rootContext_, py_split, rootContext_->fromMethod(nullptr, py_str_split));
+    strPrototype = strPrototype->setAttribute(rootContext_, py_join, rootContext_->fromMethod(nullptr, py_str_join));
+    strPrototype = strPrototype->setAttribute(rootContext_, py_strip, rootContext_->fromMethod(nullptr, py_str_strip));
+    strPrototype = strPrototype->setAttribute(rootContext_, py_lstrip, rootContext_->fromMethod(nullptr, py_str_lstrip));
+    strPrototype = strPrototype->setAttribute(rootContext_, py_rstrip, rootContext_->fromMethod(nullptr, py_str_rstrip));
+    strPrototype = strPrototype->setAttribute(rootContext_, py_replace, rootContext_->fromMethod(nullptr, py_str_replace));
+    strPrototype = strPrototype->setAttribute(rootContext_, py_startswith, rootContext_->fromMethod(nullptr, py_str_startswith));
+    strPrototype = strPrototype->setAttribute(rootContext_, py_endswith, rootContext_->fromMethod(nullptr, py_str_endswith));
+    strPrototype = strPrototype->setAttribute(rootContext_, py_maketrans, rootContext_->fromMethod(nullptr, py_str_maketrans));
     const proto::ProtoString* py_find = proto::ProtoString::fromUTF8String(rootContext_, "find");
     const proto::ProtoString* py_index = proto::ProtoString::fromUTF8String(rootContext_, "index");
-    strPrototype = strPrototype->setAttribute(rootContext_, py_find, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_find));
-    strPrototype = strPrototype->setAttribute(rootContext_, py_index, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_index));
-    strPrototype = strPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "rfind"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_rfind));
-    strPrototype = strPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "rindex"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_rindex));
+    strPrototype = strPrototype->setAttribute(rootContext_, py_find, rootContext_->fromMethod(nullptr, py_str_find));
+    strPrototype = strPrototype->setAttribute(rootContext_, py_index, rootContext_->fromMethod(nullptr, py_str_index));
+    strPrototype = strPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "rfind"), rootContext_->fromMethod(nullptr, py_str_rfind));
+    strPrototype = strPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "rindex"), rootContext_->fromMethod(nullptr, py_str_rindex));
     const proto::ProtoString* py_count = proto::ProtoString::fromUTF8String(rootContext_, "count");
-    strPrototype = strPrototype->setAttribute(rootContext_, py_count, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_count));
+    strPrototype = strPrototype->setAttribute(rootContext_, py_count, rootContext_->fromMethod(nullptr, py_str_count));
     const proto::ProtoString* py_rsplit = proto::ProtoString::fromUTF8String(rootContext_, "rsplit");
-    strPrototype = strPrototype->setAttribute(rootContext_, py_rsplit, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_rsplit));
-    strPrototype = strPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "splitlines"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_splitlines));
-    strPrototype = strPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "removeprefix"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_removeprefix));
-    strPrototype = strPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "removesuffix"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_removesuffix));
+    strPrototype = strPrototype->setAttribute(rootContext_, py_rsplit, rootContext_->fromMethod(nullptr, py_str_rsplit));
+    strPrototype = strPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "splitlines"), rootContext_->fromMethod(nullptr, py_str_splitlines));
+    strPrototype = strPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "removeprefix"), rootContext_->fromMethod(nullptr, py_str_removeprefix));
+    strPrototype = strPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "removesuffix"), rootContext_->fromMethod(nullptr, py_str_removesuffix));
     const proto::ProtoString* py_center = proto::ProtoString::fromUTF8String(rootContext_, "center");
     const proto::ProtoString* py_ljust = proto::ProtoString::fromUTF8String(rootContext_, "ljust");
     const proto::ProtoString* py_rjust = proto::ProtoString::fromUTF8String(rootContext_, "rjust");
     const proto::ProtoString* py_zfill = proto::ProtoString::fromUTF8String(rootContext_, "zfill");
     const proto::ProtoString* py_partition = proto::ProtoString::fromUTF8String(rootContext_, "partition");
     const proto::ProtoString* py_rpartition = proto::ProtoString::fromUTF8String(rootContext_, "rpartition");
-    strPrototype = strPrototype->setAttribute(rootContext_, py_center, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_center));
-    strPrototype = strPrototype->setAttribute(rootContext_, py_ljust, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_ljust));
-    strPrototype = strPrototype->setAttribute(rootContext_, py_rjust, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_rjust));
-    strPrototype = strPrototype->setAttribute(rootContext_, py_zfill, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_zfill));
-    strPrototype = strPrototype->setAttribute(rootContext_, py_partition, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_partition));
-    strPrototype = strPrototype->setAttribute(rootContext_, py_rpartition, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_rpartition));
+    strPrototype = strPrototype->setAttribute(rootContext_, py_center, rootContext_->fromMethod(nullptr, py_str_center));
+    strPrototype = strPrototype->setAttribute(rootContext_, py_ljust, rootContext_->fromMethod(nullptr, py_str_ljust));
+    strPrototype = strPrototype->setAttribute(rootContext_, py_rjust, rootContext_->fromMethod(nullptr, py_str_rjust));
+    strPrototype = strPrototype->setAttribute(rootContext_, py_zfill, rootContext_->fromMethod(nullptr, py_str_zfill));
+    strPrototype = strPrototype->setAttribute(rootContext_, py_partition, rootContext_->fromMethod(nullptr, py_str_partition));
+    strPrototype = strPrototype->setAttribute(rootContext_, py_rpartition, rootContext_->fromMethod(nullptr, py_str_rpartition));
     const proto::ProtoString* py_expandtabs = proto::ProtoString::fromUTF8String(rootContext_, "expandtabs");
-    strPrototype = strPrototype->setAttribute(rootContext_, py_expandtabs, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_expandtabs));
+    strPrototype = strPrototype->setAttribute(rootContext_, py_expandtabs, rootContext_->fromMethod(nullptr, py_str_expandtabs));
     const proto::ProtoString* py_capitalize = proto::ProtoString::fromUTF8String(rootContext_, "capitalize");
     const proto::ProtoString* py_title = proto::ProtoString::fromUTF8String(rootContext_, "title");
     const proto::ProtoString* py_swapcase = proto::ProtoString::fromUTF8String(rootContext_, "swapcase");
-    strPrototype = strPrototype->setAttribute(rootContext_, py_capitalize, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_capitalize));
-    strPrototype = strPrototype->setAttribute(rootContext_, py_title, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_title));
-    strPrototype = strPrototype->setAttribute(rootContext_, py_swapcase, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_swapcase));
+    strPrototype = strPrototype->setAttribute(rootContext_, py_capitalize, rootContext_->fromMethod(nullptr, py_str_capitalize));
+    strPrototype = strPrototype->setAttribute(rootContext_, py_title, rootContext_->fromMethod(nullptr, py_str_title));
+    strPrototype = strPrototype->setAttribute(rootContext_, py_swapcase, rootContext_->fromMethod(nullptr, py_str_swapcase));
     const proto::ProtoString* py_casefold = proto::ProtoString::fromUTF8String(rootContext_, "casefold");
     const proto::ProtoString* py_isalpha = proto::ProtoString::fromUTF8String(rootContext_, "isalpha");
     const proto::ProtoString* py_isdigit = proto::ProtoString::fromUTF8String(rootContext_, "isdigit");
     const proto::ProtoString* py_isspace = proto::ProtoString::fromUTF8String(rootContext_, "isspace");
     const proto::ProtoString* py_isalnum = proto::ProtoString::fromUTF8String(rootContext_, "isalnum");
-    strPrototype = strPrototype->setAttribute(rootContext_, py_casefold, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_casefold));
-    strPrototype = strPrototype->setAttribute(rootContext_, py_isalpha, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_isalpha));
-    strPrototype = strPrototype->setAttribute(rootContext_, py_isdigit, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_isdigit));
-    strPrototype = strPrototype->setAttribute(rootContext_, py_isspace, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_isspace));
-    strPrototype = strPrototype->setAttribute(rootContext_, py_isalnum, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_isalnum));
+    strPrototype = strPrototype->setAttribute(rootContext_, py_casefold, rootContext_->fromMethod(nullptr, py_str_casefold));
+    strPrototype = strPrototype->setAttribute(rootContext_, py_isalpha, rootContext_->fromMethod(nullptr, py_str_isalpha));
+    strPrototype = strPrototype->setAttribute(rootContext_, py_isdigit, rootContext_->fromMethod(nullptr, py_str_isdigit));
+    strPrototype = strPrototype->setAttribute(rootContext_, py_isspace, rootContext_->fromMethod(nullptr, py_str_isspace));
+    strPrototype = strPrototype->setAttribute(rootContext_, py_isalnum, rootContext_->fromMethod(nullptr, py_str_isalnum));
     const proto::ProtoString* py_isupper = proto::ProtoString::fromUTF8String(rootContext_, "isupper");
     const proto::ProtoString* py_islower = proto::ProtoString::fromUTF8String(rootContext_, "islower");
-    strPrototype = strPrototype->setAttribute(rootContext_, py_isupper, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_isupper));
-    strPrototype = strPrototype->setAttribute(rootContext_, py_islower, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_islower));
-    strPrototype = strPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "isidentifier"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_isidentifier));
-    strPrototype = strPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "isprintable"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_isprintable));
-    strPrototype = strPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "isascii"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_isascii));
-    strPrototype = strPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "isdecimal"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_isdecimal));
-    strPrototype = strPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "isnumeric"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_isnumeric));
+    strPrototype = strPrototype->setAttribute(rootContext_, py_isupper, rootContext_->fromMethod(nullptr, py_str_isupper));
+    strPrototype = strPrototype->setAttribute(rootContext_, py_islower, rootContext_->fromMethod(nullptr, py_str_islower));
+    strPrototype = strPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "isidentifier"), rootContext_->fromMethod(nullptr, py_str_isidentifier));
+    strPrototype = strPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "isprintable"), rootContext_->fromMethod(nullptr, py_str_isprintable));
+    strPrototype = strPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "isascii"), rootContext_->fromMethod(nullptr, py_str_isascii));
+    strPrototype = strPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "isdecimal"), rootContext_->fromMethod(nullptr, py_str_isdecimal));
+    strPrototype = strPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "isnumeric"), rootContext_->fromMethod(nullptr, py_str_isnumeric));
 
     listPrototype = rootContext_->newObject(true);
     listPrototype = listPrototype->addParent(rootContext_, objectPrototype);
     listPrototype = listPrototype->setAttribute(rootContext_, py_class, typePrototype);
     listPrototype = listPrototype->setAttribute(rootContext_, py_name, rootContext_->fromUTF8String("list"));
-    listPrototype = listPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__call__"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_call));
-    listPrototype = listPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_type_repr));
-    listPrototype = listPrototype->setAttribute(rootContext_, py_append, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_append));
-    listPrototype = listPrototype->setAttribute(rootContext_, py_len, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_len));
-    listPrototype = listPrototype->setAttribute(rootContext_, py_getitem, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_getitem));
-    listPrototype = listPrototype->setAttribute(rootContext_, py_setitem, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_setitem));
-    listPrototype = listPrototype->setAttribute(rootContext_, delItemString, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_delitem));
-    listPrototype = listPrototype->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_iter));
-    listPrototype = listPrototype->setAttribute(rootContext_, py_contains, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_contains));
-    listPrototype = listPrototype->setAttribute(rootContext_, py_eq, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_eq));
-    listPrototype = listPrototype->setAttribute(rootContext_, py_lt, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_lt));
-    listPrototype = listPrototype->setAttribute(rootContext_, py_le, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_le));
-    listPrototype = listPrototype->setAttribute(rootContext_, py_gt, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_gt));
-    listPrototype = listPrototype->setAttribute(rootContext_, py_ge, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_ge));
-    listPrototype = listPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_repr));
-    listPrototype = listPrototype->setAttribute(rootContext_, py_str, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_str));
-    listPrototype = listPrototype->setAttribute(rootContext_, py_bool, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_bool));
-    listPrototype = listPrototype->setAttribute(rootContext_, py_pop, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_pop));
-    listPrototype = listPrototype->setAttribute(rootContext_, py_extend, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_extend));
-    listPrototype = listPrototype->setAttribute(rootContext_, py_insert, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_insert));
-    listPrototype = listPrototype->setAttribute(rootContext_, py_remove, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_remove));
-    listPrototype = listPrototype->setAttribute(rootContext_, py_clear, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_clear));
-    listPrototype = listPrototype->setAttribute(rootContext_, py_reverse, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_reverse));
-    listPrototype = listPrototype->setAttribute(rootContext_, py_sort, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_sort));
-    listPrototype = listPrototype->setAttribute(rootContext_, py_copy, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_copy));
+    listPrototype = listPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__call__"), rootContext_->fromMethod(nullptr, py_list_call));
+    listPrototype = listPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_type_repr));
+    listPrototype = listPrototype->setAttribute(rootContext_, py_append, rootContext_->fromMethod(nullptr, py_list_append));
+    listPrototype = listPrototype->setAttribute(rootContext_, py_len, rootContext_->fromMethod(nullptr, py_list_len));
+    listPrototype = listPrototype->setAttribute(rootContext_, py_getitem, rootContext_->fromMethod(nullptr, py_list_getitem));
+    listPrototype = listPrototype->setAttribute(rootContext_, py_setitem, rootContext_->fromMethod(nullptr, py_list_setitem));
+    listPrototype = listPrototype->setAttribute(rootContext_, delItemString, rootContext_->fromMethod(nullptr, py_list_delitem));
+    listPrototype = listPrototype->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_list_iter));
+    listPrototype = listPrototype->setAttribute(rootContext_, py_contains, rootContext_->fromMethod(nullptr, py_list_contains));
+    listPrototype = listPrototype->setAttribute(rootContext_, py_eq, rootContext_->fromMethod(nullptr, py_list_eq));
+    listPrototype = listPrototype->setAttribute(rootContext_, py_lt, rootContext_->fromMethod(nullptr, py_list_lt));
+    listPrototype = listPrototype->setAttribute(rootContext_, py_le, rootContext_->fromMethod(nullptr, py_list_le));
+    listPrototype = listPrototype->setAttribute(rootContext_, py_gt, rootContext_->fromMethod(nullptr, py_list_gt));
+    listPrototype = listPrototype->setAttribute(rootContext_, py_ge, rootContext_->fromMethod(nullptr, py_list_ge));
+    listPrototype = listPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_list_repr));
+    listPrototype = listPrototype->setAttribute(rootContext_, py_str, rootContext_->fromMethod(nullptr, py_list_str));
+    listPrototype = listPrototype->setAttribute(rootContext_, py_bool, rootContext_->fromMethod(nullptr, py_list_bool));
+    listPrototype = listPrototype->setAttribute(rootContext_, py_pop, rootContext_->fromMethod(nullptr, py_list_pop));
+    listPrototype = listPrototype->setAttribute(rootContext_, py_extend, rootContext_->fromMethod(nullptr, py_list_extend));
+    listPrototype = listPrototype->setAttribute(rootContext_, py_insert, rootContext_->fromMethod(nullptr, py_list_insert));
+    listPrototype = listPrototype->setAttribute(rootContext_, py_remove, rootContext_->fromMethod(nullptr, py_list_remove));
+    listPrototype = listPrototype->setAttribute(rootContext_, py_clear, rootContext_->fromMethod(nullptr, py_list_clear));
+    listPrototype = listPrototype->setAttribute(rootContext_, py_reverse, rootContext_->fromMethod(nullptr, py_list_reverse));
+    listPrototype = listPrototype->setAttribute(rootContext_, py_sort, rootContext_->fromMethod(nullptr, py_list_sort));
+    listPrototype = listPrototype->setAttribute(rootContext_, py_copy, rootContext_->fromMethod(nullptr, py_list_copy));
     const proto::ProtoString* py_list_index_name = proto::ProtoString::fromUTF8String(rootContext_, "index");
     const proto::ProtoString* py_list_count_name = proto::ProtoString::fromUTF8String(rootContext_, "count");
-    listPrototype = listPrototype->setAttribute(rootContext_, py_list_index_name, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_index));
-    listPrototype = listPrototype->setAttribute(rootContext_, py_list_count_name, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_count));
+    listPrototype = listPrototype->setAttribute(rootContext_, py_list_index_name, rootContext_->fromMethod(nullptr, py_list_index));
+    listPrototype = listPrototype->setAttribute(rootContext_, py_list_count_name, rootContext_->fromMethod(nullptr, py_list_count));
     const proto::ProtoString* py_mul = proto::ProtoString::fromUTF8String(rootContext_, "__mul__");
     const proto::ProtoString* py_rmul = proto::ProtoString::fromUTF8String(rootContext_, "__rmul__");
-    listPrototype = listPrototype->setAttribute(rootContext_, py_mul, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_mul));
-    listPrototype = listPrototype->setAttribute(rootContext_, py_rmul, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_mul));
-    listPrototype = listPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__iadd__"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_iadd));
+    listPrototype = listPrototype->setAttribute(rootContext_, py_mul, rootContext_->fromMethod(nullptr, py_list_mul));
+    listPrototype = listPrototype->setAttribute(rootContext_, py_rmul, rootContext_->fromMethod(nullptr, py_list_mul));
+    listPrototype = listPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__iadd__"), rootContext_->fromMethod(nullptr, py_list_iadd));
 
     const proto::ProtoObject* listIterProto = rootContext_->newObject(true);
     listIterProto = listIterProto->addParent(rootContext_, objectPrototype);
-    listIterProto = listIterProto->setAttribute(rootContext_, py_next, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(listIterProto), py_list_iter_next));
-    listIterProto = listIterProto->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(listIterProto), py_self_iter));
+    listIterProto = listIterProto->setAttribute(rootContext_, py_next, rootContext_->fromMethod(nullptr, py_list_iter_next));
+    listIterProto = listIterProto->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_self_iter));
     listPrototype = listPrototype->setAttribute(rootContext_, py_iter_proto, listIterProto);
     const proto::ProtoObject* listReverseIterProto = rootContext_->newObject(true);
     listReverseIterProto = listReverseIterProto->addParent(rootContext_, objectPrototype);
-    listReverseIterProto = listReverseIterProto->setAttribute(rootContext_, py_next, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(listReverseIterProto), py_list_reversed_next));
-    listReverseIterProto = listReverseIterProto->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(listReverseIterProto), py_self_iter));
+    listReverseIterProto = listReverseIterProto->setAttribute(rootContext_, py_next, rootContext_->fromMethod(nullptr, py_list_reversed_next));
+    listReverseIterProto = listReverseIterProto->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_self_iter));
     listPrototype = listPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__reversed_prototype__"), listReverseIterProto);
-    listPrototype = listPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__reversed__"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(listPrototype), py_list_reversed));
+    listPrototype = listPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__reversed__"), rootContext_->fromMethod(nullptr, py_list_reversed));
 
     dictPrototype = rootContext_->newObject(true);
     dictPrototype = dictPrototype->addParent(rootContext_, objectPrototype);
     dictPrototype = dictPrototype->setAttribute(rootContext_, py_class, typePrototype);
     dictPrototype = dictPrototype->setAttribute(rootContext_, py_name, rootContext_->fromUTF8String("dict"));
-    dictPrototype = dictPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__call__"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_call));
-    dictPrototype = dictPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_type_repr));
-    dictPrototype = dictPrototype->setAttribute(rootContext_, py_getitem, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_getitem));
-    dictPrototype = dictPrototype->setAttribute(rootContext_, py_setitem, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_setitem));
-    dictPrototype = dictPrototype->setAttribute(rootContext_, delItemString, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_delitem));
-    dictPrototype = dictPrototype->setAttribute(rootContext_, py_len, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_len));
-    dictPrototype = dictPrototype->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_iter));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__call__"), rootContext_->fromMethod(nullptr, py_dict_call));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_type_repr));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, py_getitem, rootContext_->fromMethod(nullptr, py_dict_getitem));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, py_setitem, rootContext_->fromMethod(nullptr, py_dict_setitem));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, delItemString, rootContext_->fromMethod(nullptr, py_dict_delitem));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, py_len, rootContext_->fromMethod(nullptr, py_dict_len));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_dict_iter));
     dictPrototype = dictPrototype->setAttribute(rootContext_, py_iter_proto, listIterProto);
-    dictPrototype = dictPrototype->setAttribute(rootContext_, py_contains, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_contains));
-    dictPrototype = dictPrototype->setAttribute(rootContext_, py_eq, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_eq));
-    dictPrototype = dictPrototype->setAttribute(rootContext_, py_lt, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_lt));
-    dictPrototype = dictPrototype->setAttribute(rootContext_, py_le, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_le));
-    dictPrototype = dictPrototype->setAttribute(rootContext_, py_gt, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_gt));
-    dictPrototype = dictPrototype->setAttribute(rootContext_, py_ge, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_ge));
-    dictPrototype = dictPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_repr));
-    dictPrototype = dictPrototype->setAttribute(rootContext_, py_str, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_str));
-    dictPrototype = dictPrototype->setAttribute(rootContext_, py_bool, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_bool));
-    dictPrototype = dictPrototype->setAttribute(rootContext_, py_keys, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_keys));
-    dictPrototype = dictPrototype->setAttribute(rootContext_, py_values, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_values));
-    dictPrototype = dictPrototype->setAttribute(rootContext_, py_items, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_items));
-    dictPrototype = dictPrototype->setAttribute(rootContext_, py_get, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_get));
-    dictPrototype = dictPrototype->setAttribute(rootContext_, py_setdefault, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_setdefault));
-    dictPrototype = dictPrototype->setAttribute(rootContext_, py_pop, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_pop));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, py_contains, rootContext_->fromMethod(nullptr, py_dict_contains));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, py_eq, rootContext_->fromMethod(nullptr, py_dict_eq));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, py_lt, rootContext_->fromMethod(nullptr, py_dict_lt));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, py_le, rootContext_->fromMethod(nullptr, py_dict_le));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, py_gt, rootContext_->fromMethod(nullptr, py_dict_gt));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, py_ge, rootContext_->fromMethod(nullptr, py_dict_ge));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_dict_repr));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, py_str, rootContext_->fromMethod(nullptr, py_dict_str));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, py_bool, rootContext_->fromMethod(nullptr, py_dict_bool));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, py_keys, rootContext_->fromMethod(nullptr, py_dict_keys));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, py_values, rootContext_->fromMethod(nullptr, py_dict_values));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, py_items, rootContext_->fromMethod(nullptr, py_dict_items));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, py_get, rootContext_->fromMethod(nullptr, py_dict_get));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, py_setdefault, rootContext_->fromMethod(nullptr, py_dict_setdefault));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, py_pop, rootContext_->fromMethod(nullptr, py_dict_pop));
     const proto::ProtoString* py_popitem = proto::ProtoString::fromUTF8String(rootContext_, "popitem");
-    dictPrototype = dictPrototype->setAttribute(rootContext_, py_popitem, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_popitem));
-    dictPrototype = dictPrototype->setAttribute(rootContext_, py_update, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_update));
-    dictPrototype = dictPrototype->setAttribute(rootContext_, py_clear, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_clear));
-    dictPrototype = dictPrototype->setAttribute(rootContext_, py_copy, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_copy));
-    dictPrototype = dictPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "fromkeys"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_fromkeys));
-    dictPrototype = dictPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__or__"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_or));
-    dictPrototype = dictPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__ror__"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_ror));
-    dictPrototype = dictPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__ior__"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_ior));
-    dictPrototype = dictPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__iror__"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(dictPrototype), py_dict_iror));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, py_popitem, rootContext_->fromMethod(nullptr, py_dict_popitem));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, py_update, rootContext_->fromMethod(nullptr, py_dict_update));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, py_clear, rootContext_->fromMethod(nullptr, py_dict_clear));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, py_copy, rootContext_->fromMethod(nullptr, py_dict_copy));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "fromkeys"), rootContext_->fromMethod(nullptr, py_dict_fromkeys));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__or__"), rootContext_->fromMethod(nullptr, py_dict_or));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__ror__"), rootContext_->fromMethod(nullptr, py_dict_ror));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__ior__"), rootContext_->fromMethod(nullptr, py_dict_ior));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__iror__"), rootContext_->fromMethod(nullptr, py_dict_iror));
 
     tuplePrototype = rootContext_->newObject(true);
     tuplePrototype = tuplePrototype->addParent(rootContext_, objectPrototype);
     tuplePrototype = tuplePrototype->setAttribute(rootContext_, py_class, typePrototype);
     tuplePrototype = tuplePrototype->setAttribute(rootContext_, py_name, rootContext_->fromUTF8String("tuple"));
-    tuplePrototype = tuplePrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__call__"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(tuplePrototype), py_tuple_call));
-    tuplePrototype = tuplePrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(tuplePrototype), py_type_repr));
-    tuplePrototype = tuplePrototype->setAttribute(rootContext_, py_len, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(tuplePrototype), py_tuple_len));
-    tuplePrototype = tuplePrototype->setAttribute(rootContext_, py_getitem, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(tuplePrototype), py_tuple_getitem));
-    tuplePrototype = tuplePrototype->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(tuplePrototype), py_tuple_iter));
-    tuplePrototype = tuplePrototype->setAttribute(rootContext_, py_contains, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(tuplePrototype), py_tuple_contains));
-    tuplePrototype = tuplePrototype->setAttribute(rootContext_, py_bool, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(tuplePrototype), py_tuple_bool));
-    tuplePrototype = tuplePrototype->setAttribute(rootContext_, py_hash, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(tuplePrototype), py_tuple_hash));
+    tuplePrototype = tuplePrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__call__"), rootContext_->fromMethod(nullptr, py_tuple_call));
+    tuplePrototype = tuplePrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_type_repr));
+    tuplePrototype = tuplePrototype->setAttribute(rootContext_, py_len, rootContext_->fromMethod(nullptr, py_tuple_len));
+    tuplePrototype = tuplePrototype->setAttribute(rootContext_, py_getitem, rootContext_->fromMethod(nullptr, py_tuple_getitem));
+    tuplePrototype = tuplePrototype->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_tuple_iter));
+    tuplePrototype = tuplePrototype->setAttribute(rootContext_, py_contains, rootContext_->fromMethod(nullptr, py_tuple_contains));
+    tuplePrototype = tuplePrototype->setAttribute(rootContext_, py_bool, rootContext_->fromMethod(nullptr, py_tuple_bool));
+    tuplePrototype = tuplePrototype->setAttribute(rootContext_, py_hash, rootContext_->fromMethod(nullptr, py_tuple_hash));
     const proto::ProtoString* py_tuple_index_name = proto::ProtoString::fromUTF8String(rootContext_, "index");
     const proto::ProtoString* py_tuple_count_name = proto::ProtoString::fromUTF8String(rootContext_, "count");
-    tuplePrototype = tuplePrototype->setAttribute(rootContext_, py_tuple_index_name, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(tuplePrototype), py_tuple_index));
-    tuplePrototype = tuplePrototype->setAttribute(rootContext_, py_tuple_count_name, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(tuplePrototype), py_tuple_count));
-    tuplePrototype = tuplePrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(tuplePrototype), py_tuple_repr));
-    tuplePrototype = tuplePrototype->setAttribute(rootContext_, py_eq, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(tuplePrototype), py_tuple_eq));
+    tuplePrototype = tuplePrototype->setAttribute(rootContext_, py_tuple_index_name, rootContext_->fromMethod(nullptr, py_tuple_index));
+    tuplePrototype = tuplePrototype->setAttribute(rootContext_, py_tuple_count_name, rootContext_->fromMethod(nullptr, py_tuple_count));
+    tuplePrototype = tuplePrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_tuple_repr));
+    tuplePrototype = tuplePrototype->setAttribute(rootContext_, py_eq, rootContext_->fromMethod(nullptr, py_tuple_eq));
 
     const proto::ProtoObject* tupleIterProto = rootContext_->newObject(true);
     tupleIterProto = tupleIterProto->addParent(rootContext_, objectPrototype);
-    tupleIterProto = tupleIterProto->setAttribute(rootContext_, py_next, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(tupleIterProto), py_tuple_iter_next));
-    tupleIterProto = tupleIterProto->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(tupleIterProto), py_self_iter));
+    tupleIterProto = tupleIterProto->setAttribute(rootContext_, py_next, rootContext_->fromMethod(nullptr, py_tuple_iter_next));
+    tupleIterProto = tupleIterProto->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_self_iter));
     tuplePrototype = tuplePrototype->setAttribute(rootContext_, py_iter_proto, tupleIterProto);
 
     setPrototype = rootContext_->newObject(true);
     setPrototype = setPrototype->addParent(rootContext_, objectPrototype);
     setPrototype = setPrototype->setAttribute(rootContext_, py_class, typePrototype);
     setPrototype = setPrototype->setAttribute(rootContext_, py_name, rootContext_->fromUTF8String("set"));
-    setPrototype = setPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(setPrototype), py_type_repr));
-    setPrototype = setPrototype->setAttribute(rootContext_, py_len, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(setPrototype), py_set_len));
-    setPrototype = setPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__call__"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(setPrototype), py_set_call));
-    setPrototype = setPrototype->setAttribute(rootContext_, py_contains, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(setPrototype), py_set_contains));
-    setPrototype = setPrototype->setAttribute(rootContext_, py_bool, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(setPrototype), py_set_bool));
-    setPrototype = setPrototype->setAttribute(rootContext_, py_add, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(setPrototype), py_set_add));
-    setPrototype = setPrototype->setAttribute(rootContext_, py_remove, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(setPrototype), py_set_remove));
-    setPrototype = setPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(setPrototype), py_set_repr));
-    setPrototype = setPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "pop"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(setPrototype), py_set_pop));
-    setPrototype = setPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "discard"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(setPrototype), py_set_discard));
-    setPrototype = setPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "copy"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(setPrototype), py_set_copy));
-    setPrototype = setPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "clear"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(setPrototype), py_set_clear));
-    setPrototype = setPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "union"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(setPrototype), py_set_union));
-    setPrototype = setPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "intersection"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(setPrototype), py_set_intersection));
-    setPrototype = setPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "difference"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(setPrototype), py_set_difference));
-    setPrototype = setPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "symmetric_difference"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(setPrototype), py_set_symmetric_difference));
-    setPrototype = setPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "issubset"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(setPrototype), py_set_issubset));
-    setPrototype = setPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "issuperset"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(setPrototype), py_set_issuperset));
-    setPrototype = setPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__or__"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(setPrototype), py_set_or));
-    setPrototype = setPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__and__"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(setPrototype), py_set_and));
-    setPrototype = setPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__sub__"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(setPrototype), py_set_sub));
-    setPrototype = setPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__xor__"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(setPrototype), py_set_xor));
-    setPrototype = setPrototype->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(setPrototype), py_set_iter));
+    setPrototype = setPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_type_repr));
+    setPrototype = setPrototype->setAttribute(rootContext_, py_len, rootContext_->fromMethod(nullptr, py_set_len));
+    setPrototype = setPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__call__"), rootContext_->fromMethod(nullptr, py_set_call));
+    setPrototype = setPrototype->setAttribute(rootContext_, py_contains, rootContext_->fromMethod(nullptr, py_set_contains));
+    setPrototype = setPrototype->setAttribute(rootContext_, py_bool, rootContext_->fromMethod(nullptr, py_set_bool));
+    setPrototype = setPrototype->setAttribute(rootContext_, py_add, rootContext_->fromMethod(nullptr, py_set_add));
+    setPrototype = setPrototype->setAttribute(rootContext_, py_remove, rootContext_->fromMethod(nullptr, py_set_remove));
+    setPrototype = setPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_set_repr));
+    setPrototype = setPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "pop"), rootContext_->fromMethod(nullptr, py_set_pop));
+    setPrototype = setPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "discard"), rootContext_->fromMethod(nullptr, py_set_discard));
+    setPrototype = setPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "copy"), rootContext_->fromMethod(nullptr, py_set_copy));
+    setPrototype = setPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "clear"), rootContext_->fromMethod(nullptr, py_set_clear));
+    setPrototype = setPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "union"), rootContext_->fromMethod(nullptr, py_set_union));
+    setPrototype = setPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "intersection"), rootContext_->fromMethod(nullptr, py_set_intersection));
+    setPrototype = setPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "difference"), rootContext_->fromMethod(nullptr, py_set_difference));
+    setPrototype = setPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "symmetric_difference"), rootContext_->fromMethod(nullptr, py_set_symmetric_difference));
+    setPrototype = setPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "issubset"), rootContext_->fromMethod(nullptr, py_set_issubset));
+    setPrototype = setPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "issuperset"), rootContext_->fromMethod(nullptr, py_set_issuperset));
+    setPrototype = setPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__or__"), rootContext_->fromMethod(nullptr, py_set_or));
+    setPrototype = setPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__and__"), rootContext_->fromMethod(nullptr, py_set_and));
+    setPrototype = setPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__sub__"), rootContext_->fromMethod(nullptr, py_set_sub));
+    setPrototype = setPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__xor__"), rootContext_->fromMethod(nullptr, py_set_xor));
+    setPrototype = setPrototype->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_set_iter));
 
     const proto::ProtoObject* setIterProto = rootContext_->newObject(true);
     setIterProto = setIterProto->addParent(rootContext_, objectPrototype);
-    setIterProto = setIterProto->setAttribute(rootContext_, py_next, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(setIterProto), py_set_iter_next));
-    setIterProto = setIterProto->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(setIterProto), py_self_iter));
+    setIterProto = setIterProto->setAttribute(rootContext_, py_next, rootContext_->fromMethod(nullptr, py_set_iter_next));
+    setIterProto = setIterProto->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_self_iter));
     setPrototype = setPrototype->setAttribute(rootContext_, py_iter_proto, setIterProto);
 
     const proto::ProtoString* py_call = proto::ProtoString::fromUTF8String(rootContext_, "__call__");
@@ -6146,89 +6195,89 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     frozensetPrototype = frozensetPrototype->addParent(rootContext_, objectPrototype);
     frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, py_class, typePrototype);
     frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, py_name, rootContext_->fromUTF8String("frozenset"));
-    frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, py_call, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(frozensetPrototype), py_frozenset_call));
-    frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, py_len, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(frozensetPrototype), py_frozenset_len));
-    frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, py_contains, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(frozensetPrototype), py_frozenset_contains));
-    frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, py_bool, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(frozensetPrototype), py_frozenset_bool));
-    frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(frozensetPrototype), py_frozenset_iter));
-    frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, py_hash, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(frozensetPrototype), py_frozenset_hash));
+    frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, py_call, rootContext_->fromMethod(nullptr, py_frozenset_call));
+    frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, py_len, rootContext_->fromMethod(nullptr, py_frozenset_len));
+    frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, py_contains, rootContext_->fromMethod(nullptr, py_frozenset_contains));
+    frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, py_bool, rootContext_->fromMethod(nullptr, py_frozenset_bool));
+    frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_frozenset_iter));
+    frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, py_hash, rootContext_->fromMethod(nullptr, py_frozenset_hash));
     frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, py_iter_proto, setIterProto);
 
     bytesPrototype = rootContext_->newObject(true);
     bytesPrototype = bytesPrototype->addParent(rootContext_, objectPrototype);
     bytesPrototype = bytesPrototype->setAttribute(rootContext_, py_class, typePrototype);
     bytesPrototype = bytesPrototype->setAttribute(rootContext_, py_name, rootContext_->fromUTF8String("bytes"));
-    bytesPrototype = bytesPrototype->setAttribute(rootContext_, py_len, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_len));
-    bytesPrototype = bytesPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_repr));
-    bytesPrototype = bytesPrototype->setAttribute(rootContext_, py_getitem, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_getitem));
-    bytesPrototype = bytesPrototype->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_iter));
-    bytesPrototype = bytesPrototype->setAttribute(rootContext_, py_call, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_call));
+    bytesPrototype = bytesPrototype->setAttribute(rootContext_, py_len, rootContext_->fromMethod(nullptr, py_bytes_len));
+    bytesPrototype = bytesPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_bytes_repr));
+    bytesPrototype = bytesPrototype->setAttribute(rootContext_, py_getitem, rootContext_->fromMethod(nullptr, py_bytes_getitem));
+    bytesPrototype = bytesPrototype->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_bytes_iter));
+    bytesPrototype = bytesPrototype->setAttribute(rootContext_, py_call, rootContext_->fromMethod(nullptr, py_bytes_call));
 
     const proto::ProtoObject* bytesIterProto = rootContext_->newObject(true);
     bytesIterProto = bytesIterProto->addParent(rootContext_, objectPrototype);
-    bytesIterProto = bytesIterProto->setAttribute(rootContext_, py_next, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(bytesIterProto), py_bytes_iter_next));
-    bytesIterProto = bytesIterProto->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(bytesIterProto), py_self_iter));
+    bytesIterProto = bytesIterProto->setAttribute(rootContext_, py_next, rootContext_->fromMethod(nullptr, py_bytes_iter_next));
+    bytesIterProto = bytesIterProto->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_self_iter));
     bytesPrototype = bytesPrototype->setAttribute(rootContext_, py_iter_proto, bytesIterProto);
     // Prototype initialization diagnostic removed
     const proto::ProtoString* py_encode = proto::ProtoString::fromUTF8String(rootContext_, "encode");
     const proto::ProtoString* py_decode = proto::ProtoString::fromUTF8String(rootContext_, "decode");
-    strPrototype = strPrototype->setAttribute(rootContext_, py_encode, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(strPrototype), py_str_encode));
-    bytesPrototype = bytesPrototype->setAttribute(rootContext_, py_decode, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_decode));
+    strPrototype = strPrototype->setAttribute(rootContext_, py_encode, rootContext_->fromMethod(nullptr, py_str_encode));
+    bytesPrototype = bytesPrototype->setAttribute(rootContext_, py_decode, rootContext_->fromMethod(nullptr, py_bytes_decode));
     const proto::ProtoString* py_hex = proto::ProtoString::fromUTF8String(rootContext_, "hex");
     const proto::ProtoString* py_fromhex = proto::ProtoString::fromUTF8String(rootContext_, "fromhex");
-    bytesPrototype = bytesPrototype->setAttribute(rootContext_, py_hex, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_hex));
-    bytesPrototype = bytesPrototype->setAttribute(rootContext_, py_fromhex, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_fromhex));
+    bytesPrototype = bytesPrototype->setAttribute(rootContext_, py_hex, rootContext_->fromMethod(nullptr, py_bytes_hex));
+    bytesPrototype = bytesPrototype->setAttribute(rootContext_, py_fromhex, rootContext_->fromMethod(nullptr, py_bytes_fromhex));
     const proto::ProtoString* py_bytes_find_name = proto::ProtoString::fromUTF8String(rootContext_, "find");
     const proto::ProtoString* py_bytes_count_name = proto::ProtoString::fromUTF8String(rootContext_, "count");
-    bytesPrototype = bytesPrototype->setAttribute(rootContext_, py_bytes_find_name, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_find));
-    bytesPrototype = bytesPrototype->setAttribute(rootContext_, py_bytes_count_name, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_count));
-    bytesPrototype = bytesPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "index"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_index));
-    bytesPrototype = bytesPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "rfind"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_rfind));
-    bytesPrototype = bytesPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "rindex"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_rindex));
-    bytesPrototype = bytesPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "startswith"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_startswith));
-    bytesPrototype = bytesPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "endswith"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_endswith));
-    bytesPrototype = bytesPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "strip"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_strip));
-    bytesPrototype = bytesPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "lstrip"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_lstrip));
-    bytesPrototype = bytesPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "rstrip"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_rstrip));
-    bytesPrototype = bytesPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "split"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_split));
-    bytesPrototype = bytesPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "join"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_join));
-    bytesPrototype = bytesPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "replace"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_replace));
-    bytesPrototype = bytesPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "isdigit"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_isdigit));
-    bytesPrototype = bytesPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "isalpha"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_isalpha));
-    bytesPrototype = bytesPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "isascii"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_isascii));
-    bytesPrototype = bytesPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "removeprefix"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_removeprefix));
-    bytesPrototype = bytesPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "removesuffix"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(bytesPrototype), py_bytes_removesuffix));
+    bytesPrototype = bytesPrototype->setAttribute(rootContext_, py_bytes_find_name, rootContext_->fromMethod(nullptr, py_bytes_find));
+    bytesPrototype = bytesPrototype->setAttribute(rootContext_, py_bytes_count_name, rootContext_->fromMethod(nullptr, py_bytes_count));
+    bytesPrototype = bytesPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "index"), rootContext_->fromMethod(nullptr, py_bytes_index));
+    bytesPrototype = bytesPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "rfind"), rootContext_->fromMethod(nullptr, py_bytes_rfind));
+    bytesPrototype = bytesPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "rindex"), rootContext_->fromMethod(nullptr, py_bytes_rindex));
+    bytesPrototype = bytesPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "startswith"), rootContext_->fromMethod(nullptr, py_bytes_startswith));
+    bytesPrototype = bytesPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "endswith"), rootContext_->fromMethod(nullptr, py_bytes_endswith));
+    bytesPrototype = bytesPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "strip"), rootContext_->fromMethod(nullptr, py_bytes_strip));
+    bytesPrototype = bytesPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "lstrip"), rootContext_->fromMethod(nullptr, py_bytes_lstrip));
+    bytesPrototype = bytesPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "rstrip"), rootContext_->fromMethod(nullptr, py_bytes_rstrip));
+    bytesPrototype = bytesPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "split"), rootContext_->fromMethod(nullptr, py_bytes_split));
+    bytesPrototype = bytesPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "join"), rootContext_->fromMethod(nullptr, py_bytes_join));
+    bytesPrototype = bytesPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "replace"), rootContext_->fromMethod(nullptr, py_bytes_replace));
+    bytesPrototype = bytesPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "isdigit"), rootContext_->fromMethod(nullptr, py_bytes_isdigit));
+    bytesPrototype = bytesPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "isalpha"), rootContext_->fromMethod(nullptr, py_bytes_isalpha));
+    bytesPrototype = bytesPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "isascii"), rootContext_->fromMethod(nullptr, py_bytes_isascii));
+    bytesPrototype = bytesPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "removeprefix"), rootContext_->fromMethod(nullptr, py_bytes_removeprefix));
+    bytesPrototype = bytesPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "removesuffix"), rootContext_->fromMethod(nullptr, py_bytes_removesuffix));
 
     sliceType = rootContext_->newObject(true);
     sliceType = sliceType->addParent(rootContext_, objectPrototype);
     sliceType = sliceType->setAttribute(rootContext_, py_class, typePrototype);
     sliceType = sliceType->setAttribute(rootContext_, py_name, rootContext_->fromUTF8String("slice"));
-    sliceType = sliceType->setAttribute(rootContext_, py_call, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(sliceType), py_slice_call));
-    sliceType = sliceType->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(sliceType), py_slice_repr));
+    sliceType = sliceType->setAttribute(rootContext_, py_call, rootContext_->fromMethod(nullptr, py_slice_call));
+    sliceType = sliceType->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_slice_repr));
 
     floatPrototype = rootContext_->newObject(true);
     floatPrototype = floatPrototype->addParent(rootContext_, objectPrototype);
     floatPrototype = floatPrototype->setAttribute(rootContext_, py_class, typePrototype);
     floatPrototype = floatPrototype->setAttribute(rootContext_, py_name, rootContext_->fromUTF8String("float"));
-    floatPrototype = floatPrototype->setAttribute(rootContext_, py_bool, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(floatPrototype), py_float_bool));
-    floatPrototype = floatPrototype->setAttribute(rootContext_, py_call, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(floatPrototype), py_float_call));
+    floatPrototype = floatPrototype->setAttribute(rootContext_, py_bool, rootContext_->fromMethod(nullptr, py_float_bool));
+    floatPrototype = floatPrototype->setAttribute(rootContext_, py_call, rootContext_->fromMethod(nullptr, py_float_call));
     const proto::ProtoString* py_is_integer = proto::ProtoString::fromUTF8String(rootContext_, "is_integer");
-    floatPrototype = floatPrototype->setAttribute(rootContext_, py_is_integer, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(floatPrototype), py_float_is_integer));
+    floatPrototype = floatPrototype->setAttribute(rootContext_, py_is_integer, rootContext_->fromMethod(nullptr, py_float_is_integer));
     const proto::ProtoString* py_as_integer_ratio = proto::ProtoString::fromUTF8String(rootContext_, "as_integer_ratio");
-    floatPrototype = floatPrototype->setAttribute(rootContext_, py_as_integer_ratio, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(floatPrototype), py_float_as_integer_ratio));
-    floatPrototype = floatPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "hex"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(floatPrototype), py_float_hex));
-    floatPrototype = floatPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "fromhex"), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(floatPrototype), py_float_fromhex));
+    floatPrototype = floatPrototype->setAttribute(rootContext_, py_as_integer_ratio, rootContext_->fromMethod(nullptr, py_float_as_integer_ratio));
+    floatPrototype = floatPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "hex"), rootContext_->fromMethod(nullptr, py_float_hex));
+    floatPrototype = floatPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "fromhex"), rootContext_->fromMethod(nullptr, py_float_fromhex));
 
     boolPrototype = rootContext_->newObject(true);
     noneTypeProto = rootContext_->newObject(true);
     noneTypeProto = noneTypeProto->addParent(rootContext_, objectPrototype);
     noneTypeProto = noneTypeProto->setAttribute(rootContext_, py_class, typePrototype);
     noneTypeProto = noneTypeProto->setAttribute(rootContext_, py_name, rootContext_->fromUTF8String("NoneType"));
-    noneTypeProto = noneTypeProto->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(noneTypeProto), py_type_repr));
+    noneTypeProto = noneTypeProto->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_type_repr));
 
     // Support for primitive None (PROTO_NONE) attributes via prototype
-    noneTypeProto = noneTypeProto->setAttribute(rootContext_, py_bool, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(noneTypeProto), py_none_bool));
-    noneTypeProto = noneTypeProto->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(noneTypeProto), py_none_repr));
+    noneTypeProto = noneTypeProto->setAttribute(rootContext_, py_bool, rootContext_->fromMethod(nullptr, py_none_bool));
+    noneTypeProto = noneTypeProto->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_none_repr));
 
     nonePrototype = PROTO_NONE;
     space_->nonePrototype = const_cast<proto::ProtoObject*>(noneTypeProto);
@@ -6236,9 +6285,9 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     boolPrototype = boolPrototype->addParent(rootContext_, intPrototype);
     boolPrototype = boolPrototype->setAttribute(rootContext_, py_class, typePrototype);
     boolPrototype = boolPrototype->setAttribute(rootContext_, py_name, rootContext_->fromUTF8String("bool"));
-    boolPrototype = boolPrototype->setAttribute(rootContext_, py_call, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(boolPrototype), py_bool_call));
+    boolPrototype = boolPrototype->setAttribute(rootContext_, py_call, rootContext_->fromMethod(nullptr, py_bool_call));
     // Update boolean class name and repr
-    boolPrototype = boolPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(const_cast<proto::ProtoObject*>(boolPrototype), py_type_repr));
+    boolPrototype = boolPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_type_repr));
     
     space_->objectPrototype = const_cast<proto::ProtoObject*>(objectPrototype);
     space_->stringPrototype = const_cast<proto::ProtoObject*>(strPrototype);
@@ -6267,13 +6316,15 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     nativeProvider->registerModule("builtins", [this](proto::ProtoContext* ctx) { return builtinsModule; });
 
     // _collections module
-    nativeProvider->registerModule("_collections", [this](proto::ProtoContext* ctx) { return collections::initialize(ctx, dictPrototype); });
+    nativeProvider->registerModule("_collections", [this](proto::ProtoContext* ctx) { return collections::initialize(ctx, this); });
     nativeProvider->registerModule("logging", [](proto::ProtoContext* ctx) { return logging::initialize(ctx); });
     nativeProvider->registerModule("operator", [](proto::ProtoContext* ctx) { return operator_::initialize(ctx); });
     nativeProvider->registerModule("_operator", [](proto::ProtoContext* ctx) { return operator_::initialize(ctx); });
     nativeProvider->registerModule("math", [](proto::ProtoContext* ctx) { return math::initialize(ctx); });
     nativeProvider->registerModule("time", [](proto::ProtoContext* ctx) { return time_module::initialize(ctx); });
     nativeProvider->registerModule("_os", [](proto::ProtoContext* ctx) { return os_module::initialize(ctx); });
+    nativeProvider->registerModule("posix", [](proto::ProtoContext* ctx) { return os_module::initialize(ctx); });
+    nativeProvider->registerModule("nt", [](proto::ProtoContext* ctx) { return os_module::initialize(ctx); });
     nativeProvider->registerModule("_signal", [](proto::ProtoContext* ctx) { return signal_module::initialize(ctx); });
     nativeProvider->registerModule("_thread", [](proto::ProtoContext* ctx) { return thread_module::initialize(ctx); });
     nativeProvider->registerModule("functools", [](proto::ProtoContext* ctx) { return functools::initialize(ctx); });
@@ -6304,6 +6355,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     keyboardInterruptType = exceptionsMod->getAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "KeyboardInterrupt"));
     systemExitType = exceptionsMod->getAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "SystemExit"));
     recursionErrorType = exceptionsMod->getAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "RecursionError"));
+    runtimeErrorType = exceptionsMod->getAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "RuntimeError"));
     stopIterationType = exceptionsMod->getAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "StopIteration"));
     if (std::getenv("PROTO_ENV_DIAG")) {
         std::cerr << "[proto-diag] stopIterationType initialized: " << stopIterationType << "\n";
@@ -6335,6 +6387,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
             {"AssertionError", &assertionErrorType},
             {"ZeroDivisionError", &zeroDivisionErrorType},
             {"IndexError", &indexErrorType},
+            {"RuntimeError", &runtimeErrorType},
             {"SystemError", &systemErrorType}
         };
         for (const auto& pair : excMap) {
@@ -6355,6 +6408,13 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     if (!stdLibPath.empty()) allPaths.push_back(stdLibPath);
     else allPaths.push_back("../lib/python3.14");
     for (const auto& p : searchPaths) allPaths.push_back(p);
+
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        std::cerr << "[proto-diag] initializeRootObjects: allPaths.size=" << allPaths.size() << "\n";
+        for (const auto& p : allPaths) {
+            std::cerr << "[proto-diag]   path: '" << p << "'\n";
+        }
+    }
     
     registry.registerProvider(std::make_unique<PythonModuleProvider>(allPaths));
     registry.registerProvider(std::make_unique<CompiledModuleProvider>(allPaths));
@@ -6379,9 +6439,18 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     
     // Wrap back in a Python list object
     const proto::ProtoObject* newListObj = rootContext_->newObject(true);
-    if (listPrototype) newListObj = newListObj->addParent(rootContext_, listPrototype);
+    if (listPrototype) {
+        newListObj = newListObj->addParent(rootContext_, listPrototype);
+        newListObj = newListObj->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__class__"), listPrototype);
+    }
     newListObj = newListObj->setAttribute(rootContext_, dataString, pList->asObject(rootContext_));
     sysModule = sysModule->setAttribute(rootContext_, py_path, newListObj);
+
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        const proto::ProtoObject* check = sysModule->getAttribute(rootContext_, py_path);
+        const proto::ProtoObject* d = check ? check->getAttribute(rootContext_, dataString) : nullptr;
+        std::cerr << "[proto-diag] init: sys.path=" << check << " proto=" << (check ? check->getParents(rootContext_)->getAt(rootContext_,0) : nullptr) << " __data__=" << d << "\n";
+    }
     
     // b. Create sys.modules and add sys/builtins
     const proto::ProtoObject* modulesDictObj = sysModule->getAttribute(rootContext_, py_modules);
@@ -7468,21 +7537,19 @@ bool PythonEnvironment::isCompleteBlock(const std::string& code) {
 const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* ctx, const proto::ProtoObject* obj, const proto::ProtoString* name) {
     if (!obj || obj == PROTO_NONE) return nullptr;
     
+    
     // Use protoCore's native, cached lookup
     const proto::ProtoObject* val = obj->getAttribute(ctx, name);
-    if (std::getenv("PROTO_ENV_DIAG")) {
-        std::string n; name->toUTF8String(ctx, n);
-        if (n == "items" || n == "keys" || n == "values") {
-            std::cerr << "[proto-diag] getAttribute: obj=" << obj << " name='" << n << "' val=" << val << "\n";
-        }
-    }
     if (val && val != PROTO_NONE && val->isCell(ctx)) {
         if (val->isMethod(ctx)) {
             // Step V74: Don't bind methods to modules. Modules have __file__ or __path__.
             const proto::ProtoString* fileS = proto::ProtoString::fromUTF8String(ctx, "__file__");
             const proto::ProtoString* pathS = proto::ProtoString::fromUTF8String(ctx, "__path__");
-            if (obj->getAttribute(ctx, fileS) == nullptr && obj->getAttribute(ctx, pathS) == nullptr) {
-                return ctx->fromMethod(const_cast<proto::ProtoObject*>(obj), val->asMethod(ctx));
+            const proto::ProtoObject* hasFile = obj->getAttribute(ctx, fileS);
+            const proto::ProtoObject* hasPath = obj->getAttribute(ctx, pathS);
+            if ((hasFile == nullptr || hasFile == PROTO_NONE) && (hasPath == nullptr || hasPath == PROTO_NONE)) {
+                const proto::ProtoObject* bound = ctx->fromMethod(const_cast<proto::ProtoObject*>(obj), val->asMethod(ctx));
+                return bound;
             }
         }
         

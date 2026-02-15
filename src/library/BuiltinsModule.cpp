@@ -238,7 +238,6 @@ static const proto::ProtoObject* py_print(
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
     (void)keywordParameters;
-    std::cerr << "[proto-diag] py_print called with " << positionalParameters->getSize(context) << " args\n" << std::flush;
     std::string sep = " ";
     std::string end = "\n";
 
@@ -1206,23 +1205,14 @@ static const proto::ProtoObject* py_exec(
     (void)self;
     (void)parentLink;
     (void)keywordParameters;
-    if (std::getenv("PROTO_ENV_DIAG")) {
-        std::cerr << "[proto-diag] py_exec called with " << positionalParameters->getSize(context) << " args\n" << std::flush;
-    }
     if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
     const proto::ProtoObject* sourceObj = positionalParameters->getAt(context, 0);
     if (!sourceObj->isString(context)) return PROTO_NONE;
     std::string source;
     sourceObj->asString(context)->toUTF8String(context, source);
-    if (std::getenv("PROTO_ENV_DIAG")) {
-        std::cerr << "[proto-diag] py_exec: source='" << source << "'\n" << std::flush;
-    }
     Parser parser(source);
     std::unique_ptr<ModuleNode> mod = parser.parseModule();
     if (parser.hasError()) {
-        if (std::getenv("PROTO_ENV_DIAG")) {
-            std::cerr << "[proto-diag] py_exec: PARSER ERROR: " << parser.getLastErrorMsg() << "\n" << std::flush;
-        }
         PythonEnvironment* env = PythonEnvironment::fromContext(context);
         if (env) {
             std::string lineText = source;
@@ -1239,27 +1229,15 @@ static const proto::ProtoObject* py_exec(
         return PROTO_NONE;
     }
     if (!mod || mod->body.empty()) {
-        if (std::getenv("PROTO_ENV_DIAG")) {
-            std::cerr << "[proto-diag] py_exec: module body is EMPTY\n" << std::flush;
-        }
         return PROTO_NONE;
     }
     Compiler compiler(context, "<string>");
     if (!compiler.compileModule(mod.get())) {
-        if (std::getenv("PROTO_ENV_DIAG")) {
-            std::cerr << "[proto-diag] py_exec: COMPILER ERROR\n" << std::flush;
-        }
         return PROTO_NONE;
     }
     const proto::ProtoObject* codeObj = makeCodeObject(context, compiler.getConstants(), compiler.getNames(), compiler.getBytecode(), nullptr, nullptr, 0, 0, 0, false);
     if (!codeObj) {
-        if (std::getenv("PROTO_ENV_DIAG")) {
-            std::cerr << "[proto-diag] py_exec: FAILED to make code object\n" << std::flush;
-        }
         return PROTO_NONE;
-    }
-    if (std::getenv("PROTO_ENV_DIAG")) {
-        std::cerr << "[proto-diag] py_exec: calling runCodeObject\n" << std::flush;
     }
     proto::ProtoObject* globals = nullptr;
     proto::ProtoObject* locals = nullptr;

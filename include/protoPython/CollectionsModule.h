@@ -4,9 +4,10 @@
 #include <protoCore.h>
 
 namespace protoPython {
+class PythonEnvironment;
 namespace collections {
 
-const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::ProtoObject* dictPrototype);
+const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment* env);
 
 } // namespace collections
 } // namespace protoPython

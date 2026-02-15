@@ -112,6 +112,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx,
     const proto::ProtoString* py_stopiteration = proto::ProtoString::fromUTF8String(ctx, "StopIteration");
     const proto::ProtoString* py_stopasynciteration = proto::ProtoString::fromUTF8String(ctx, "StopAsyncIteration");
     const proto::ProtoString* py_systemerror = proto::ProtoString::fromUTF8String(ctx, "SystemError");
+    const proto::ProtoString* py_runtimeerror = proto::ProtoString::fromUTF8String(ctx, "RuntimeError");
 
     const proto::ProtoObject* exceptionType = make_exception_type(ctx, objectProto, typeProto, "Exception", objectProto);
     const proto::ProtoObject* keyErrorType = make_exception_type(ctx, objectProto, typeProto, "KeyError", exceptionType);
@@ -131,6 +132,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx,
     const proto::ProtoObject* stopIterationType = make_exception_type(ctx, objectProto, typeProto, "StopIteration", exceptionType);
     const proto::ProtoObject* stopAsyncIterationType = make_exception_type(ctx, objectProto, typeProto, "StopAsyncIteration", exceptionType);
     const proto::ProtoObject* systemErrorType = make_exception_type(ctx, objectProto, typeProto, "SystemError", exceptionType);
+    const proto::ProtoObject* runtimeErrorType = make_exception_type(ctx, objectProto, typeProto, "RuntimeError", exceptionType);
 
     const proto::ProtoObject* mod = ctx->newObject(true);
     mod = mod->setAttribute(ctx, py_exception, exceptionType);
@@ -145,6 +147,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx,
     mod = mod->setAttribute(ctx, py_systemexit, systemExitType);
     mod = mod->setAttribute(ctx, py_recursionerror, recursionErrorType);
     mod = mod->setAttribute(ctx, py_zerodivisionerror, zeroDivisionErrorType);
+    mod = mod->setAttribute(ctx, py_runtimeerror, runtimeErrorType);
     mod = mod->setAttribute(ctx, py_indexerror, indexErrorType);
     mod = mod->setAttribute(ctx, py_eoferror, eofErrorType);
     mod = mod->setAttribute(ctx, py_assertionerror, assertionErrorType);
