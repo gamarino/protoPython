@@ -1,0 +1,15 @@
+DEBUG: ast.py loading with __name__='ast'
+DEBUG: At line 682, __name__ is 'ast' and __name__ == '__main__' is False
+protopy: unhandled exception in module execution:
+Traceback (most recent call last):
+  File "<unknown>", in <module>
+  File "lib/python3.14/ast.py", in main
+  File "lib/python3.14/argparse.py", in <module>
+NameError: name 'supports_dir_fd' is not defined
+
+protopy: unhandled exception in module execution:
+Traceback (most recent call last):
+  File "<unknown>", in <module>
+  File "lib/python3.14/ast.py", in main
+ImportError: No module named 'os'
+

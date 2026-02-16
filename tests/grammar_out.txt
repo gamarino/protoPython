@@ -1,0 +1,35 @@
+DEBUG: ast.py loading with __name__='ast'
+DEBUG: At line 682, __name__ is 'ast' and __name__ == '__main__' is False
+protopy: unhandled exception in module execution:
+Traceback (most recent call last):
+  File "lib/python3.14/test/test_grammar.py", in <module>
+  File "lib/python3.14/test/support/__init__.py", in <module>
+  File "lib/python3.14/annotationlib.py", in <module>
+  File "lib/python3.14/ast.py", in main
+  File "lib/python3.14/argparse.py", in <module>
+TypeError: expected type.__fspath__() to return str or bytes, not NoneType
+
+protopy: unhandled exception in module execution:
+Traceback (most recent call last):
+  File "lib/python3.14/test/test_grammar.py", in <module>
+  File "lib/python3.14/test/support/__init__.py", in <module>
+  File "lib/python3.14/annotationlib.py", in <module>
+  File "lib/python3.14/ast.py", in main
+ImportError: No module named 'gettext'
+
+protopy: unhandled exception in module execution:
+Traceback (most recent call last):
+  File "lib/python3.14/test/test_grammar.py", in <module>
+  File "lib/python3.14/test/support/__init__.py", in <module>
+ImportError: No module named 'ast'
+
+protopy: unhandled exception in module execution:
+Traceback (most recent call last):
+  File "lib/python3.14/test/test_grammar.py", in <module>
+ImportError: No module named 'annotationlib'
+
+protopy: unhandled exception in module execution:
+Traceback (most recent call last):
+ImportError: No module named 'test.support'
+
+protopy: module 'test_grammar' exited with runtime error
