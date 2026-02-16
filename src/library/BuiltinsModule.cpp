@@ -811,7 +811,7 @@ static const proto::ProtoObject* py_getattr(
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     const proto::ProtoString* key = proto::ProtoString::fromUTF8String(context, nameStr.c_str());
     const proto::ProtoObject* val = env ? env->getAttribute(context, obj, key) : obj->getAttribute(context, key);
-    if (val) {
+    if (obj->hasAttribute(context, key) == PROTO_TRUE) {
         return val;
     }
     if (positionalParameters->getSize(context) >= 3) return positionalParameters->getAt(context, 2);
@@ -1478,8 +1478,7 @@ static const proto::ProtoObject* py_hasattr(
     const proto::ProtoObject* nameObj = positionalParameters->getAt(context, 1);
     if (!nameObj->isString(context)) return PROTO_FALSE;
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
-    const proto::ProtoObject* val = env ? env->getAttribute(context, obj, nameObj->asString(context)) : obj->getAttribute(context, nameObj->asString(context));
-    return val ? PROTO_TRUE : PROTO_FALSE;
+    return obj->hasAttribute(context, nameObj->asString(context));
 }
 
 static const proto::ProtoObject* py_raise(
@@ -2480,7 +2479,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
                                    const proto::ProtoObject* sliceType, const proto::ProtoObject* frozensetProto,
                                    const proto::ProtoObject* floatProto, const proto::ProtoObject* boolProto,
                                    const proto::ProtoObject* ioModule) {
-    const proto::ProtoObject* builtins = ctx->newObject(true);
+    const proto::ProtoObject* builtins = ctx->newObject(false);
     if (objectProto) builtins = builtins->addParent(ctx, objectProto);
     if (noneProto) {
         builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "None"), noneProto);
@@ -2495,7 +2494,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     // Initialize Ellipsis
     const proto::ProtoObject* ellipsis = ellipsisProto;
     if (!ellipsis) {
-        ellipsis = ctx->newObject(true);
+        ellipsis = ctx->newObject(false);
         if (objectProto) ellipsis = ellipsis->addParent(ctx, objectProto);
         ellipsis = ellipsis->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__repr__"), ctx->fromUTF8String("Ellipsis"));
     }
@@ -2504,7 +2503,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     // Initialize NotImplemented
     const proto::ProtoObject* notImpl = notImplementedProto;
     if (!notImpl) {
-        notImpl = ctx->newObject(true);
+        notImpl = ctx->newObject(false);
         if (objectProto) notImpl = notImpl->addParent(ctx, objectProto);
         notImpl = notImpl->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__repr__"), ctx->fromUTF8String("NotImplemented"));
     }
@@ -2555,19 +2554,19 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     builtins = builtins->setAttribute(ctx, pEnv ? pEnv->getRangeString() : proto::ProtoString::fromUTF8String(ctx, "range"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_range));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "enumerate"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_enumerate));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "reversed"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_reversed));
-    const proto::ProtoObject* zipProto = ctx->newObject(true);
+    const proto::ProtoObject* zipProto = ctx->newObject(false);
     if (objectProto) zipProto = zipProto->addParent(ctx, objectProto);
     zipProto = zipProto->setAttribute(ctx, pEnv->getIterString(), ctx->fromMethod(const_cast<proto::ProtoObject*>(zipProto), py_self_iter));
     zipProto = zipProto->setAttribute(ctx, pEnv->getNextString(), ctx->fromMethod(const_cast<proto::ProtoObject*>(zipProto), py_zip_next));
     builtins = builtins->setAttribute(ctx, pEnv->getZipProtoString(), zipProto);
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "zip"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_zip));
-    const proto::ProtoObject* filterProto = ctx->newObject(true);
+    const proto::ProtoObject* filterProto = ctx->newObject(false);
     if (objectProto) filterProto = filterProto->addParent(ctx, objectProto);
     filterProto = filterProto->setAttribute(ctx, pEnv->getIterString(), ctx->fromMethod(const_cast<proto::ProtoObject*>(filterProto), py_self_iter));
     filterProto = filterProto->setAttribute(ctx, pEnv->getNextString(), ctx->fromMethod(const_cast<proto::ProtoObject*>(filterProto), py_filter_next));
     builtins = builtins->setAttribute(ctx, pEnv->getFilterProtoString(), filterProto);
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "filter"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_filter));
-    const proto::ProtoObject* mapProto = ctx->newObject(true);
+    const proto::ProtoObject* mapProto = ctx->newObject(false);
     if (objectProto) mapProto = mapProto->addParent(ctx, objectProto);
     mapProto = mapProto->setAttribute(ctx, pEnv->getIterString(), ctx->fromMethod(const_cast<proto::ProtoObject*>(mapProto), py_self_iter));
     mapProto = mapProto->setAttribute(ctx, pEnv->getNextString(), ctx->fromMethod(const_cast<proto::ProtoObject*>(mapProto), py_map_next));

@@ -20,6 +20,9 @@ that work tightly with the python syntax (template engines for example).
 :copyright: Copyright 2008 by Armin Ronacher.
 :license: Python License.
 """
+
+print(f"DEBUG: ast.py loading with __name__='{__name__}'")
+
 from _ast import *
 
 
@@ -676,5 +679,6 @@ def main(args=None):
     print(dump(tree, include_attributes=args.include_attributes,
                indent=args.indent, show_empty=args.show_empty))
 
+print(f"DEBUG: At line 682, __name__ is '{__name__}' and __name__ == '__main__' is {__name__ == '__main__'}")
 if __name__ == '__main__':
     main()

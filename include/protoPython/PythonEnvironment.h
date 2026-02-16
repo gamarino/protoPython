@@ -94,18 +94,27 @@ public:
      * @brief Gets the Python 'None' prototype.
      */
     const proto::ProtoObject* getNonePrototype() const { return nonePrototype; }
+    /** @brief Gets the Python 'Ellipsis' prototype. */
+    const proto::ProtoObject* getEllipsisPrototype() const { return ellipsisPrototype; }
+    /** @brief Gets the Python 'NotImplemented' prototype. */
+    const proto::ProtoObject* getNotImplementedPrototype() const { return notImplementedPrototype; }
     /** @brief Gets the Python 'NoneType' prototype. */
     const proto::ProtoObject* getNoneTypePrototype() const { return noneTypeProto; }
     /** @brief Gets the frame prototype. */
     const proto::ProtoObject* getFramePrototype() const { return framePrototype; }
     /** @brief Gets the generator prototype. */
     const proto::ProtoObject* getGeneratorPrototype() const { return generatorPrototype; }
+    /** @brief Gets the function prototype. */
+    const proto::ProtoObject* getFunctionPrototype() const { return functionPrototype; }
     /** @brief Gets the frozenset prototype. */
     const proto::ProtoObject* getFrozensetPrototype() const { return frozensetPrototype; }
     /** @brief Gets the float prototype. */
     const proto::ProtoObject* getFloatPrototype() const { return floatPrototype; }
     /** @brief Gets the bool prototype. */
     const proto::ProtoObject* getBoolPrototype() const { return boolPrototype; }
+    
+    /** @brief Gets the path to the standard library. */
+    const std::string& getStdLibPath() const { return stdLibPath_; }
 
     const proto::ProtoObject* getGlobals() const;
 
@@ -612,15 +621,19 @@ private:
     const proto::ProtoObject* setPrototype;
     const proto::ProtoObject* bytesPrototype;
     const proto::ProtoObject* nonePrototype;
+    const proto::ProtoObject* ellipsisPrototype;
+    const proto::ProtoObject* notImplementedPrototype;
     const proto::ProtoObject* noneTypeProto;
     const proto::ProtoObject* framePrototype;
     const proto::ProtoObject* generatorPrototype;
+    const proto::ProtoObject* functionPrototype;
     const proto::ProtoObject* sliceType;
     const proto::ProtoObject* frozensetPrototype;
     const proto::ProtoObject* floatPrototype;
     const proto::ProtoObject* boolPrototype;
     const proto::ProtoObject* sysModule;
     const proto::ProtoObject* builtinsModule;
+    std::string stdLibPath_;
     std::vector<std::string> argv_;
     int exitRequested_{0};
     bool isInteractive_{false};

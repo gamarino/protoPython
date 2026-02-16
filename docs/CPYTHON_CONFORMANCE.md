@@ -2,6 +2,10 @@
 
 This document tracks the progress of `protoPython` in passing the official CPython Regression Test Suite (`Lib/test`). Achieving "All Green" in the Essential category is the primary goal for industrial-grade stability.
 
+## Rules & Principles
+
+- **Always Full Implementations**: No mocks, no stubs. Every feature must be implemented fully and correctly to ensure industrial-grade stability.
+
 ## Test Priorities
 
 ### 🔴 Essential (Primary Language & Core Types)
@@ -67,6 +71,11 @@ Tests for features that are not primary targets for `protoPython`'s performance 
     - Fixed Range Iteration Protocol in `protoCore`, ensuring correct `nullptr` termination in `OP_FOR_ITER` for exhausted ranges.
     - Corrected range object initialization in `BuiltinsModule.cpp` (fixed functional `setAttribute` chaining bug).
     - Verified proper handling of nested and filtered comprehensions.
+- **Module Resolution & Attribute Lookup**:
+    - Fixed systemic `ImportError` for the `sys` module by updating `resolve` to handle dictionary-based `sys.modules`.
+    - Corrected `sys.modules` initialization with proper `__data__` and `__keys__` structures.
+    - Implemented `hasAttribute` in `protoCore` to resolve ambiguity in `hasattr` and `getattr` for attributes set to `None`.
+    - Ensured `sys` and `sys.modules` are mutable to maintain consistent environment state.
 - **Compiler Conformance**: 
     - Full support for `//`, `@`, `**` operators and augmented assignments.
     - Implemented Walrus operator (`:=`) support.

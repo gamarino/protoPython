@@ -220,9 +220,10 @@ static const proto::ProtoObject* sys_getrecursionlimit(
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment* env,
                                      const std::vector<std::string>* argv) {
     const proto::ProtoObject* sys = ctx->newObject(true);
-    if (env && env->getObjectPrototype()) {
+    // Avoid addParent here to prevent accidental prototype pollution in some protoCore versions
+    /* if (env && env->getObjectPrototype()) {
         sys = sys->addParent(ctx, env->getObjectPrototype());
-    }
+    } */
 
     // Store env pointer for trace functions and exit
     sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__env_ptr__"), ctx->fromExternalPointer(env));
@@ -238,7 +239,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "getfilesystemencodeerrors"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_getfilesystemencodeerrors));
     sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_get_cpu_count_config"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_get_cpu_count_config));
     sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "intern"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_intern));
-    const proto::ProtoObject* traceDefault = ctx->newObject(true);
+    const proto::ProtoObject* traceDefault = ctx->newObject(false);
     if (env && env->getObjectPrototype()) {
         traceDefault = traceDefault->addParent(ctx, env->getObjectPrototype());
     }
@@ -267,11 +268,26 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     // sys.version
     sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "version"), ctx->fromUTF8String("3.14.0 (protoPython, Feb 2026)"));
 
+    // sys.base_prefix and sys.prefix (Required for many stdlib modules like gettext)
+    if (env) {
+        std::string sl = env->getStdLibPath();
+        if (sl.empty()) sl = ".";
+        sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "base_prefix"), ctx->fromUTF8String(sl.c_str()));
+        sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "prefix"), ctx->fromUTF8String(sl.c_str()));
+    } else {
+        sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "base_prefix"), PROTO_NONE);
+        sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "prefix"), PROTO_NONE);
+    }
+
     // sys.path (empty for now, PythonEnvironment will populate it). Concurrent reads after init are safe; writes use protoCore setAttribute.
     sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "path"), ctx->newList()->asObject(ctx));
 
     // sys.modules (dict mapping names to modules). Concurrent reads after init are safe; writes use protoCore setAttribute.
-    sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "modules"), ctx->newObject(true));
+    const proto::ProtoObject* modulesObj = ctx->newObject(true);
+    if (env && env->getDictPrototype()) {
+        modulesObj = modulesObj->addParent(ctx, env->getDictPrototype());
+    }
+    sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "modules"), modulesObj);
 
     // sys.argv
     const proto::ProtoList* argvList = ctx->newList();
@@ -289,7 +305,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     vi = vi->appendLast(ctx, ctx->fromInteger(0));
     sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "version_info"), vi->asObject(ctx));
 
-    const proto::ProtoObject* stats = ctx->newObject(true);
+    const proto::ProtoObject* stats = ctx->newObject(false);
     if (env && env->getObjectPrototype()) {
         stats = stats->addParent(ctx, env->getObjectPrototype());
     }

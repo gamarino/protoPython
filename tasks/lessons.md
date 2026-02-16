@@ -30,3 +30,8 @@ Patterns and rules derived from implementation and corrections. Update after app
 - **GetRawPointer API**: ProtoObject::getRawPointerIfExternalBuffer(context) returns segment pointer for ProtoExternalBuffer else nullptr. Use for zero-copy interop; document stable-address in protoCore GC doc.
 - **Swarm tests**: ExternalBufferGC and GetRawPointerIfExternalBuffer pass. OneMillionConcats and LargeRopeIndexAccess disabled by design—root cause is GC/rope on very large graphs; fix requires protoCore changes; no hack (do not enable broken tests).
 - **OperatorInvert**: C++ test must use same path as Python: invertM->call(context, nullptr, "__call__", invertM, args, nullptr). Direct asMethod() bypasses __call__ and returns nullptr for native ProtoMethodCell.
+
+## Attribute Lookup and Presence (v72+)
+
+- **getAttribute vs hasAttribute**: In `protoCore`, `getAttribute` is designed to return `PROTO_NONE` (Python's `None`) when an attribute is not found. This is a core design decision. To distinguish between a missing attribute and an attribute explicitly set to `None`, use `hasAttribute(context, name)`.
+- **Python hasattr/getattr semantics**: `hasattr(obj, name)` must use `obj->hasAttribute()` to correctly return `False` for missing attributes. `getattr(obj, name, default)` must check `hasAttribute()` before returning the result of `getAttribute()`, to avoid returning `None` when a default is provided or an `AttributeError` should be raised.

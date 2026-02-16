@@ -5200,22 +5200,7 @@ const proto::ProtoObject* PythonEnvironment::getTraceFunction() const {
 
 void PythonEnvironment::setPendingException(const proto::ProtoObject* exc) {
     if (s_threadPendingException == exc) return;
-    if (std::getenv("PROTO_ENV_DIAG") && exc) {
-        std::string typeName = "unknown";
-        if (exc == PROTO_NONE) {
-            typeName = "None";
-        } else if (rootContext_) {
-            const proto::ProtoObject* cls = exc->getAttribute(rootContext_, classString);
-            if (!cls || cls == PROTO_NONE) cls = noneTypeProto;
-            if (cls) {
-                const proto::ProtoObject* name = cls->getAttribute(rootContext_, nameString);
-                if (name && name->isString(rootContext_)) {
-                    name->asString(rootContext_)->toUTF8String(rootContext_, typeName);
-                }
-            }
-        }
-        std::cerr << "[proto-diag] setPendingException: exc=" << exc << " type=" << typeName << " from " << __builtin_return_address(0) << "\n" << std::flush;
-    }
+
     
     // Explicitly root/unroot from ProtoSpace moduleRoots to survive GC
     if (s_threadEnv && s_threadEnv->space_) {
@@ -5335,7 +5320,7 @@ proto::ProtoSpace* PythonEnvironment::getProcessSpace() {
 static std::atomic<int> s_pythonEnvInstanceCount{0};
 
 PythonEnvironment::PythonEnvironment(const std::string& stdLibPath, const std::vector<std::string>& searchPaths,
-                                     const std::vector<std::string>& argv) : space_(getProcessSpace()), rootContext_(new proto::ProtoContext(space_)), argv_(argv) {
+                                     const std::vector<std::string>& argv) : space_(getProcessSpace()), rootContext_(new proto::ProtoContext(space_)), argv_(argv), stdLibPath_(stdLibPath) {
     int prev = s_pythonEnvInstanceCount.fetch_add(1, std::memory_order_relaxed);
     // Multiple instances check removed for silence
     s_mainThreadId = std::this_thread::get_id();
@@ -5972,7 +5957,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     const proto::ProtoString* py_add = addString;
 
     // 1. Create 'object' base
-    objectPrototype = rootContext_->newObject(true);
+    objectPrototype = rootContext_->newObject(false);
     objectPrototype = objectPrototype->setAttribute(rootContext_, py_name, rootContext_->fromUTF8String("object"));
     objectPrototype = objectPrototype->setAttribute(rootContext_, py_module, builtinsVal);
 
@@ -6407,9 +6392,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     space_->methodPrototype = const_cast<proto::ProtoObject*>(objectPrototype); // Methods inherit from object
 
     // 5. Initialize Native Module Provider
-    auto& registry = proto::ProviderRegistry::instance();
     auto nativeProvider = std::make_unique<NativeModuleProvider>();
-
     // sys module (argv set later via setArgv before executeModule)
     sysModule = sys::initialize(rootContext_, this, &argv_);
     nativeProvider->registerModule("sys", [this](proto::ProtoContext* ctx) { return sysModule; });
@@ -6429,9 +6412,9 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     nativeProvider->registerModule("_operator", [](proto::ProtoContext* ctx) { return operator_::initialize(ctx); });
     nativeProvider->registerModule("math", [](proto::ProtoContext* ctx) { return math::initialize(ctx); });
     nativeProvider->registerModule("time", [](proto::ProtoContext* ctx) { return time_module::initialize(ctx); });
-    nativeProvider->registerModule("_os", [](proto::ProtoContext* ctx) { return os_module::initialize(ctx); });
-    nativeProvider->registerModule("posix", [](proto::ProtoContext* ctx) { return os_module::initialize(ctx); });
-    nativeProvider->registerModule("nt", [](proto::ProtoContext* ctx) { return os_module::initialize(ctx); });
+    nativeProvider->registerModule("_os", [this](proto::ProtoContext* ctx) { return os_module::initialize(ctx, this); });
+    nativeProvider->registerModule("posix", [this](proto::ProtoContext* ctx) { return os_module::initialize(ctx, this); });
+    nativeProvider->registerModule("nt", [this](proto::ProtoContext* ctx) { return os_module::initialize(ctx, this); });
     nativeProvider->registerModule("_signal", [](proto::ProtoContext* ctx) { return signal_module::initialize(ctx); });
     nativeProvider->registerModule("_thread", [](proto::ProtoContext* ctx) { return thread_module::initialize(ctx); });
     nativeProvider->registerModule("functools", [](proto::ProtoContext* ctx) { return functools::initialize(ctx); });
@@ -6514,7 +6497,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
 
     // V72: strings and roots already initialized at top of function.
 
-    registry.registerProvider(std::move(nativeProvider));
+    proto::ProviderRegistry::instance().registerProvider(std::move(nativeProvider));
 
     // 6. Initialize StdLib Module Provider
     std::vector<std::string> allPaths;
@@ -6529,9 +6512,9 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
         }
     }
     
-    registry.registerProvider(std::make_unique<PythonModuleProvider>(allPaths));
-    registry.registerProvider(std::make_unique<CompiledModuleProvider>(allPaths));
-    registry.registerProvider(std::make_unique<HPyModuleProvider>(allPaths));
+    proto::ProviderRegistry::instance().registerProvider(std::make_unique<PythonModuleProvider>(allPaths));
+    proto::ProviderRegistry::instance().registerProvider(std::make_unique<CompiledModuleProvider>(allPaths));
+    proto::ProviderRegistry::instance().registerProvider(std::make_unique<HPyModuleProvider>(allPaths));
     
     // 7. Populate sys.path and sys.modules
     const proto::ProtoString* py_path = proto::ProtoString::fromUTF8String(rootContext_, "path");
@@ -6568,8 +6551,41 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     // b. Create sys.modules and add sys/builtins
     const proto::ProtoObject* modulesDictObj = sysModule->getAttribute(rootContext_, py_modules);
     if (modulesDictObj) {
-        modulesDictObj = modulesDictObj->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "sys"), sysModule);
-        modulesDictObj = modulesDictObj->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "builtins"), builtinsModule);
+        // Step V74: modulesDictObj is a Python dict, we must populate __data__ (SparseList)
+        // and __keys__ (ProtoList) to maintain dictionary invariants.
+        const proto::ProtoString* sysS = proto::ProtoString::fromUTF8String(rootContext_, "sys");
+        const proto::ProtoString* builtinsS = proto::ProtoString::fromUTF8String(rootContext_, "builtins");
+        
+        const proto::ProtoObject* dataAttr = modulesDictObj->getAttribute(rootContext_, dataString);
+        proto::ProtoSparseList* d = (dataAttr && dataAttr != PROTO_NONE && dataAttr->asSparseList(rootContext_)) 
+            ? const_cast<proto::ProtoSparseList*>(dataAttr->asSparseList(rootContext_))
+            : const_cast<proto::ProtoSparseList*>(rootContext_->newSparseList());
+            
+        d = const_cast<proto::ProtoSparseList*>(d->setAt(rootContext_, sysS->getHash(rootContext_), sysModule));
+        d = const_cast<proto::ProtoSparseList*>(d->setAt(rootContext_, builtinsS->getHash(rootContext_), builtinsModule));
+        
+        modulesDictObj = modulesDictObj->setAttribute(rootContext_, dataString, d->asObject(rootContext_));
+        
+        const proto::ProtoObject* keysAttr = modulesDictObj->getAttribute(rootContext_, keysString);
+        proto::ProtoList* kl = (keysAttr && keysAttr != PROTO_NONE && keysAttr->asList(rootContext_))
+            ? const_cast<proto::ProtoList*>(keysAttr->asList(rootContext_))
+            : const_cast<proto::ProtoList*>(rootContext_->newList());
+            
+        // Check if keys already exist to avoid duplicates
+        bool hasSys = false, hasBuiltins = false;
+        for (unsigned long i = 0; i < kl->getSize(rootContext_); ++i) {
+            const proto::ProtoObject* k = kl->getAt(rootContext_, i);
+            if (k->isString(rootContext_)) {
+                std::string ks;
+                k->asString(rootContext_)->toUTF8String(rootContext_, ks);
+                if (ks == "sys") hasSys = true;
+                if (ks == "builtins") hasBuiltins = true;
+            }
+        }
+        if (!hasSys) kl = const_cast<proto::ProtoList*>(kl->appendLast(rootContext_, sysS->asObject(rootContext_)));
+        if (!hasBuiltins) kl = const_cast<proto::ProtoList*>(kl->appendLast(rootContext_, builtinsS->asObject(rootContext_)));
+        
+        modulesDictObj = modulesDictObj->setAttribute(rootContext_, keysString, kl->asObject(rootContext_));
         sysModule = sysModule->setAttribute(rootContext_, py_modules, modulesDictObj);
     }
 
@@ -6813,56 +6829,33 @@ int PythonEnvironment::executeString(const std::string& source, const std::strin
 
     int result = 0;
     if (builtinsModule) {
-        if (std::getenv("PROTO_ENV_DIAG")) {
-            std::cerr << "[proto-diag] executeString: builtinsModule=" << builtinsModule << "\n";
-        }
         const proto::ProtoObject* execFn = builtinsModule->getAttribute(context, proto::ProtoString::fromUTF8String(context, "exec"));
         if (execFn) {
-            if (std::getenv("PROTO_ENV_DIAG")) {
-                std::cerr << "[proto-diag] executeString: found exec function=" << execFn << "\n";
-            }
             const proto::ProtoList* args = context->newList()
                 ->appendLast(context, context->fromUTF8String(source.c_str()))
                 ->appendLast(context, const_cast<proto::ProtoObject*>(mod));
             execFn->asMethod(context)(context, const_cast<proto::ProtoObject*>(builtinsModule), nullptr, args, nullptr);
             const proto::ProtoObject* excAfterExec = takePendingException();
             if (excAfterExec && excAfterExec != PROTO_NONE) {
-                if (std::getenv("PROTO_ENV_DIAG")) {
-                    std::cerr << "[proto-diag] executeString: EXCEPTION OCCURRED: " << formatException(excAfterExec) << "\n";
-                }
                 result = -2;
             }
-        } else {
-            if (std::getenv("PROTO_ENV_DIAG")) {
-                std::cerr << "[proto-diag] executeString: exec function NOT FOUND in builtins\n";
-            }
-        }
-    } else {
-        if (std::getenv("PROTO_ENV_DIAG")) {
-            std::cerr << "[proto-diag] executeString: builtinsModule is NULL\n";
         }
     }
     return result;
 }
 
 int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain, proto::ProtoContext* ctx) {
-    if (std::getenv("PROTO_ENV_DIAG")) {
-        std::cerr << "[proto-diag] executeModule: ENTER moduleName='" << moduleName << "' asMain=" << asMain << "\n" << std::flush;
-    }
     SafeImportLock lock(this, ctx);
     if (!ctx) ctx = s_threadContext;
     if (!ctx) ctx = rootContext_;
     ContextScope scope(this, ctx);
     
-    if (std::getenv("PROTO_ENV_DIAG")) std::cerr << "[proto-diag] executeModule: calling getImportModule for " << moduleName << "\n";
     // 1. Get/Load module object via ProtoSpace directly to avoid recursion with resolve()
     const proto::ProtoObject* modWrapper = ctx->space->getImportModule(ctx, moduleName.c_str(), "val");
-    if (std::getenv("PROTO_ENV_DIAG")) std::cerr << "[proto-diag] executeModule: getImportModule returned " << modWrapper << "\n";
     if (!modWrapper || modWrapper == PROTO_NONE) {
         return -1;
     }
     const proto::ProtoObject* mod = modWrapper->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "val"));
-    if (std::getenv("PROTO_ENV_DIAG")) std::cerr << "[proto-diag] executeModule: mod=" << mod << "\n";
     
     static const proto::ProtoString* executedKeyS = getExecutedString();
     if (!mod || mod == PROTO_NONE) {
@@ -6877,7 +6870,6 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain,
     }
 
     if (asMain) {
-        if (std::getenv("PROTO_ENV_DIAG")) std::cerr << "[proto-diag] executeModule: setting __name__ to __main__\n";
         const proto::ProtoString* nameS = proto::ProtoString::fromUTF8String(ctx, "__name__");
         const proto::ProtoObject* mainS = ctx->fromUTF8String("__main__");
         mod = mod->setAttribute(ctx, nameS, mainS);
@@ -7707,9 +7699,6 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
 }
 
 const proto::ProtoObject* PythonEnvironment::resolve(const std::string& name, proto::ProtoContext* ctx) {
-    if (std::getenv("PROTO_RESOLVE_DIAG")) {
-        std::cerr << "[proto-resolve] resolve(string) name='" << name << "'\n" << std::flush;
-    }
     if (!ctx) ctx = s_threadContext ? s_threadContext : rootContext_;
     
     // Check per-thread cache first (Lock-free)
@@ -7754,7 +7743,6 @@ const proto::ProtoObject* PythonEnvironment::resolve(const proto::ProtoString* n
     if (s_currentGlobals) {
         if (s_currentGlobals->hasAttribute(ctx, nameObj) == PROTO_TRUE) {
             const proto::ProtoObject* result = s_currentGlobals->getAttribute(ctx, nameObj);
-            if (std::getenv("PROTO_RESOLVE_DIAG")) std::cerr << "[proto-resolve] found in globals: " << nameStr << "\n";
             return result;
         }
     }
@@ -7763,13 +7751,8 @@ const proto::ProtoObject* PythonEnvironment::resolve(const proto::ProtoString* n
     if (builtinsModule) {
         if (builtinsModule->hasAttribute(ctx, nameObj) == PROTO_TRUE) {
             const proto::ProtoObject* result = builtinsModule->getAttribute(ctx, nameObj);
-            if (std::getenv("PROTO_ENV_DIAG")) std::cerr << "[proto-diag] found in builtins: " << nameStr << " val=" << result << "\n";
             return result;
-        } else {
-            if (std::getenv("PROTO_ENV_DIAG")) std::cerr << "[proto-diag] NOT found in builtins: " << nameStr << "\n";
         }
-    } else {
-        if (std::getenv("PROTO_ENV_DIAG")) std::cerr << "[proto-diag] builtinsModule is NULL during resolve of " << nameStr << "\n";
     }
 
     // 3. Literals Quick-Path (Lock-free)
@@ -7787,9 +7770,6 @@ const proto::ProtoObject* PythonEnvironment::resolve(const proto::ProtoString* n
         if (nameStr == "tuple") result = tuplePrototype;
         if (nameStr == "bool") result = boolPrototype;
         
-        if (result && std::getenv("PROTO_ENV_DIAG")) {
-            std::cerr << "[proto-diag] resolve: quick-path match for " << nameStr << " val=" << result << "\n";
-        }
         if (result) return result;
         
         // 4. Fallback to Imports/Sys (Locked)
@@ -7799,11 +7779,12 @@ const proto::ProtoObject* PythonEnvironment::resolve(const proto::ProtoString* n
         if (sysModule) {
             const proto::ProtoObject* modules = sysModule->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "modules"));
             if (modules && modules != PROTO_NONE) {
-                // Mapping search (has() instead of hasAttribute since modules is a dict)
-                const proto::ProtoSparseList* dict = modules->asSparseList(ctx);
+                // Step V74: sys.modules is a dict, so we check __data__ first if it exists
+                const proto::ProtoObject* dataAttr = modules->getAttribute(ctx, dataString);
+                const proto::ProtoSparseList* dict = (dataAttr && dataAttr != PROTO_NONE) ? dataAttr->asSparseList(ctx) : modules->asSparseList(ctx);
+                
                 if (dict && dict->has(ctx, nameObj->getHash(ctx))) {
                     const proto::ProtoObject* mod = dict->getAt(ctx, nameObj->getHash(ctx));
-                    if (std::getenv("PROTO_RESOLVE_DIAG")) std::cerr << "[proto-resolve] found in sys.modules: " << nameStr << "\n";
                     return mod;
                 }
             }

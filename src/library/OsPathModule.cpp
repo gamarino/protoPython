@@ -144,7 +144,7 @@ static const proto::ProtoObject* py_normpath(
 }
 
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
-    const proto::ProtoObject* mod = ctx->newObject(true);
+    const proto::ProtoObject* mod = ctx->newObject(false);
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "join"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_join));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "exists"),

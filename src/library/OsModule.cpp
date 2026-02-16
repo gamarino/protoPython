@@ -1,4 +1,5 @@
 #include <protoPython/OsModule.h>
+#include <protoPython/PythonEnvironment.h>
 #include <protoCore.h>
 #include <cstdlib>
 #include <cstring>
@@ -15,6 +16,200 @@ extern char** environ;
 
 namespace protoPython {
 namespace os_module {
+
+struct ScandirState {
+    DIR* dir;
+    std::string path;
+    bool exhausted;
+
+    ScandirState(DIR* d, const std::string& p) : dir(d), path(p), exhausted(false) {}
+    ~ScandirState() {
+        if (dir) closedir(dir);
+    }
+};
+
+static void scandir_finalizer(void* ptr) {
+    delete static_cast<ScandirState*>(ptr);
+}
+
+static const proto::ProtoObject* direntry_proto = nullptr;
+
+static const proto::ProtoObject* py_direntry_is_dir(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* /*posArgs*/,
+    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoObject* pathObj = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "path"));
+    if (!pathObj || !pathObj->isString(ctx)) return PROTO_FALSE;
+    std::string path;
+    pathObj->asString(ctx)->toUTF8String(ctx, path);
+    struct stat st;
+    if (stat(path.c_str(), &st) == 0) {
+        return S_ISDIR(st.st_mode) ? PROTO_TRUE : PROTO_FALSE;
+    }
+    return PROTO_FALSE;
+}
+
+static const proto::ProtoObject* py_direntry_is_file(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* /*posArgs*/,
+    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoObject* pathObj = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "path"));
+    if (!pathObj || !pathObj->isString(ctx)) return PROTO_FALSE;
+    std::string path;
+    pathObj->asString(ctx)->toUTF8String(ctx, path);
+    struct stat st;
+    if (stat(path.c_str(), &st) == 0) {
+        return S_ISREG(st.st_mode) ? PROTO_TRUE : PROTO_FALSE;
+    }
+    return PROTO_FALSE;
+}
+
+static const proto::ProtoObject* py_direntry_is_symlink(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* /*posArgs*/,
+    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoObject* pathObj = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "path"));
+    if (!pathObj || !pathObj->isString(ctx)) return PROTO_FALSE;
+    std::string path;
+    pathObj->asString(ctx)->toUTF8String(ctx, path);
+    struct stat st;
+    if (lstat(path.c_str(), &st) == 0) {
+        return S_ISLNK(st.st_mode) ? PROTO_TRUE : PROTO_FALSE;
+    }
+    return PROTO_FALSE;
+}
+
+static const proto::ProtoObject* py_direntry_fspath(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* /*posArgs*/,
+    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoObject* path = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "path"));
+    if (path) return path;
+    // If called on the prototype itself, or if path is missing, return None to avoid polluting fspath logic
+    return PROTO_NONE;
+}
+
+static const proto::ProtoObject* py_scandir_next(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* /*posArgs*/,
+    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoObject* stateObj = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__state__"));
+    if (!stateObj || !stateObj->asExternalPointer(ctx)) return nullptr;
+    ScandirState* state = static_cast<ScandirState*>(stateObj->asExternalPointer(ctx)->getPointer(ctx));
+    if (!state || state->exhausted) return nullptr;
+
+    for (;;) {
+        struct dirent* e = readdir(state->dir);
+        if (!e) {
+            state->exhausted = true;
+            return nullptr;
+        }
+        const char* n = e->d_name;
+        if (n[0] == '.' && (n[1] == '\0' || (n[1] == '.' && n[2] == '\0')))
+            continue;
+
+        const proto::ProtoObject* entry = ctx->newObject(true);
+        if (direntry_proto) entry = entry->addParent(ctx, direntry_proto);
+        
+        std::string fullPath = state->path;
+        if (fullPath.back() != '/') fullPath += "/";
+        fullPath += n;
+
+        entry = entry->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "name"), ctx->fromUTF8String(n));
+        entry = entry->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "path"), ctx->fromUTF8String(fullPath.c_str()));
+        return entry;
+    }
+}
+
+static const proto::ProtoObject* py_scandir_iter(
+    proto::ProtoContext* /*ctx*/,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* /*posArgs*/,
+    const proto::ProtoSparseList* /*kwargs*/) {
+    return self;
+}
+
+static const proto::ProtoObject* py_stat_result_getitem(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList* /*kwargs*/) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    long long idx = posArgs->getAt(ctx, 0)->asLong(ctx);
+    const char* keys[] = {
+        "st_mode", "st_ino", "st_dev", "st_nlink", "st_uid", "st_gid", "st_size", "st_atime", "st_mtime", "st_ctime"
+    };
+    if (idx >= 0 && idx < 10) {
+        return self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, keys[idx]));
+    }
+    return PROTO_NONE;
+}
+
+static const proto::ProtoObject* make_stat_result(proto::ProtoContext* ctx, const struct stat& st) {
+    const proto::ProtoObject* res = ctx->newObject(true);
+    res = res->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "st_mode"), ctx->fromInteger(st.st_mode));
+    res = res->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "st_ino"), ctx->fromInteger(st.st_ino));
+    res = res->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "st_dev"), ctx->fromInteger(st.st_dev));
+    res = res->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "st_nlink"), ctx->fromInteger(st.st_nlink));
+    res = res->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "st_uid"), ctx->fromInteger(st.st_uid));
+    res = res->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "st_gid"), ctx->fromInteger(st.st_gid));
+    res = res->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "st_size"), ctx->fromInteger(st.st_size));
+    res = res->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "st_atime"), ctx->fromInteger(st.st_atime));
+    res = res->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "st_mtime"), ctx->fromInteger(st.st_mtime));
+    res = res->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "st_ctime"), ctx->fromInteger(st.st_ctime));
+    
+    // Add __getitem__ for indexing support
+    res = res->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__getitem__"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(res), py_stat_result_getitem));
+    
+    return res;
+}
+
+static const proto::ProtoObject* py_direntry_stat(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* /*posArgs*/,
+    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoObject* pathObj = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "path"));
+    if (!pathObj || !pathObj->isString(ctx)) return PROTO_NONE;
+    std::string path;
+    pathObj->asString(ctx)->toUTF8String(ctx, path);
+    struct stat st;
+    if (stat(path.c_str(), &st) == 0) {
+        return make_stat_result(ctx, st);
+    }
+    return PROTO_NONE;
+}
+
+static const proto::ProtoObject* py_direntry_inode(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* /*posArgs*/,
+    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoObject* pathObj = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "path"));
+    if (!pathObj || !pathObj->isString(ctx)) return PROTO_NONE;
+    std::string path;
+    pathObj->asString(ctx)->toUTF8String(ctx, path);
+    struct stat st;
+    if (lstat(path.c_str(), &st) == 0) {
+        return ctx->fromInteger(st.st_ino);
+    }
+    return PROTO_NONE;
+}
 
 static const proto::ProtoObject* py_getenv(
     proto::ProtoContext* ctx,
@@ -102,16 +297,64 @@ static const proto::ProtoObject* py_listdir(
 
 static const proto::ProtoObject* py_scandir(
     proto::ProtoContext* ctx,
-    const proto::ProtoObject* self,
-    const proto::ParentLink* parentLink,
+    const proto::ProtoObject* /*self*/,
+    const proto::ParentLink* /*parentLink*/,
     const proto::ProtoList* posArgs,
-    const proto::ProtoSparseList* kwargs) {
-    // For now, satisfy os.py by returning listdir results as an iterator
-    const proto::ProtoObject* listObj = py_listdir(ctx, self, parentLink, posArgs, kwargs);
-    const proto::ProtoList* list = listObj ? listObj->asList(ctx) : nullptr;
-    if (list) {
-        const proto::ProtoListIterator* it = list->getIterator(ctx);
-        if (it) return it->asObject(ctx);
+    const proto::ProtoSparseList* /*kwargs*/) {
+    std::string path = ".";
+    if (posArgs->getSize(ctx) >= 1) {
+        const proto::ProtoObject* pathObj = posArgs->getAt(ctx, 0);
+        if (pathObj->isString(ctx))
+            pathObj->asString(ctx)->toUTF8String(ctx, path);
+    }
+
+    DIR* d = opendir(path.c_str());
+    if (!d) return PROTO_NONE;
+
+    ScandirState* state = new ScandirState(d, path);
+    const proto::ProtoObject* iter = ctx->newObject(true);
+    iter = iter->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__state__"),
+        ctx->fromExternalPointer(state, scandir_finalizer));
+    iter = iter->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__next__"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(iter), py_scandir_next));
+    iter = iter->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iter__"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(iter), py_scandir_iter));
+    
+    return iter;
+}
+
+static const proto::ProtoObject* py_stat(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* /*self*/,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList* /*kwargs*/) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    const proto::ProtoObject* pathObj = posArgs->getAt(ctx, 0);
+    if (!pathObj->isString(ctx)) return PROTO_NONE;
+    std::string path;
+    pathObj->asString(ctx)->toUTF8String(ctx, path);
+    struct stat st;
+    if (stat(path.c_str(), &st) == 0) {
+        return make_stat_result(ctx, st);
+    }
+    return PROTO_NONE;
+}
+
+static const proto::ProtoObject* py_lstat(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* /*self*/,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList* /*kwargs*/) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    const proto::ProtoObject* pathObj = posArgs->getAt(ctx, 0);
+    if (!pathObj->isString(ctx)) return PROTO_NONE;
+    std::string path;
+    pathObj->asString(ctx)->toUTF8String(ctx, path);
+    struct stat st;
+    if (lstat(path.c_str(), &st) == 0) {
+        return make_stat_result(ctx, st);
     }
     return PROTO_NONE;
 }
@@ -128,9 +371,81 @@ static const proto::ProtoObject* py_remove(
     std::string path;
     pathObj->asString(ctx)->toUTF8String(ctx, path);
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
-    (void)unlink(path.c_str());
+    if (unlink(path.c_str()) != 0) {
+        // Handle error?
+    }
 #endif
     return PROTO_NONE;
+}
+
+static const proto::ProtoObject* py_unlink(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList* kwargs) {
+    return py_remove(ctx, self, parentLink, posArgs, kwargs);
+}
+
+static const proto::ProtoObject* py_mkdir(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* /*self*/,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList* /*kwargs*/) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    const proto::ProtoObject* pathObj = posArgs->getAt(ctx, 0);
+    if (!pathObj->isString(ctx)) return PROTO_NONE;
+    std::string path;
+    pathObj->asString(ctx)->toUTF8String(ctx, path);
+    int mode = 0777;
+    if (posArgs->getSize(ctx) >= 2) mode = static_cast<int>(posArgs->getAt(ctx, 1)->asLong(ctx));
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+    (void)mkdir(path.c_str(), mode);
+#endif
+    return PROTO_NONE;
+}
+
+static const proto::ProtoObject* py_rename(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* /*self*/,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList* /*kwargs*/) {
+    if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
+    std::string oldPath, newPath;
+    posArgs->getAt(ctx, 0)->asString(ctx)->toUTF8String(ctx, oldPath);
+    posArgs->getAt(ctx, 1)->asString(ctx)->toUTF8String(ctx, newPath);
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+    (void)rename(oldPath.c_str(), newPath.c_str());
+#endif
+    return PROTO_NONE;
+}
+
+static const proto::ProtoObject* py_replace(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList* kwargs) {
+    return py_rename(ctx, self, parentLink, posArgs, kwargs);
+}
+
+static const proto::ProtoObject* py_access(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* /*self*/,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList* /*kwargs*/) {
+    if (posArgs->getSize(ctx) < 2) return PROTO_FALSE;
+    std::string path;
+    posArgs->getAt(ctx, 0)->asString(ctx)->toUTF8String(ctx, path);
+    int mode = static_cast<int>(posArgs->getAt(ctx, 1)->asLong(ctx));
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+    return access(path.c_str(), mode) == 0 ? PROTO_TRUE : PROTO_FALSE;
+#else
+    return PROTO_FALSE;
+#endif
 }
 
 static const proto::ProtoObject* py_rmdir(
@@ -315,11 +630,85 @@ static const proto::ProtoObject* py_environ_keys_method(
     return py_environ_keys(ctx, nullptr, nullptr, nullptr, nullptr);
 }
 
-const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
-    const proto::ProtoObject* mod = ctx->newObject(true);
+static const proto::ProtoObject* py_getuid(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* /*self*/,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* /*posArgs*/,
+    const proto::ProtoSparseList* /*kwargs*/) {
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+    return ctx->fromInteger(getuid());
+#else
+    return ctx->fromInteger(0);
+#endif
+}
+
+static const proto::ProtoObject* py_geteuid(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* /*self*/,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* /*posArgs*/,
+    const proto::ProtoSparseList* /*kwargs*/) {
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+    return ctx->fromInteger(geteuid());
+#else
+    return ctx->fromInteger(0);
+#endif
+}
+
+static const proto::ProtoObject* py_getgid(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* /*self*/,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* /*posArgs*/,
+    const proto::ProtoSparseList* /*kwargs*/) {
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+    return ctx->fromInteger(getgid());
+#else
+    return ctx->fromInteger(0);
+#endif
+}
+
+static const proto::ProtoObject* py_getegid(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* /*self*/,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* /*posArgs*/,
+    const proto::ProtoSparseList* /*kwargs*/) {
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+    return ctx->fromInteger(getegid());
+#else
+    return ctx->fromInteger(0);
+#endif
+}
+
+const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment* env) {
+    if (!direntry_proto) {
+        direntry_proto = ctx->newObject(false);
+        if (env && env->getObjectPrototype()) {
+            direntry_proto = direntry_proto->addParent(ctx, env->getObjectPrototype());
+        }
+        // Ensure direntry_proto is a fresh object and not polluting global Object prototype
+        // In some protoCore versions, newObject(true) might return a shared object if not careful.
+        // We set it explicitly to have no parent or a fresh one if possible.
+        direntry_proto = direntry_proto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "is_dir"),
+            ctx->fromMethod(const_cast<proto::ProtoObject*>(direntry_proto), py_direntry_is_dir));
+        direntry_proto = direntry_proto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "is_file"),
+            ctx->fromMethod(const_cast<proto::ProtoObject*>(direntry_proto), py_direntry_is_file));
+        direntry_proto = direntry_proto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "is_symlink"),
+            ctx->fromMethod(const_cast<proto::ProtoObject*>(direntry_proto), py_direntry_is_symlink));
+        direntry_proto = direntry_proto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "stat"),
+            ctx->fromMethod(const_cast<proto::ProtoObject*>(direntry_proto), py_direntry_stat));
+        direntry_proto = direntry_proto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "inode"),
+            ctx->fromMethod(const_cast<proto::ProtoObject*>(direntry_proto), py_direntry_inode));
+        direntry_proto = direntry_proto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__fspath__"),
+            ctx->fromMethod(const_cast<proto::ProtoObject*>(direntry_proto), py_direntry_fspath));
+    }
+
+    const proto::ProtoObject* mod = ctx->newObject(false);
     
     // Create Environ object
-    const proto::ProtoObject* environProt = ctx->newObject(true);
+    const proto::ProtoObject* environProt = ctx->newObject(false);
     environProt = environProt->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__getitem__"), 
         ctx->fromMethod(const_cast<proto::ProtoObject*>(environProt), py_environ_getitem));
     environProt = environProt->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__setitem__"), 
@@ -329,8 +718,12 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     environProt = environProt->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "keys"), 
         ctx->fromMethod(const_cast<proto::ProtoObject*>(environProt), py_environ_keys_method));
 
-    const proto::ProtoObject* environObj = ctx->newObject(true);
+    const proto::ProtoObject* environObj = ctx->newObject(false);
     environObj = environObj->addParent(ctx, environProt);
+    if (env && env->getObjectPrototype()) {
+        mod = mod->addParent(ctx, env->getObjectPrototype());
+        environProt = environProt->addParent(ctx, env->getObjectPrototype());
+    }
 
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "environ"), environObj);
 
@@ -348,10 +741,32 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_listdir));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "scandir"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_scandir));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "stat"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_stat));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "lstat"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_lstat));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "remove"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_remove));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "unlink"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_unlink));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "mkdir"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_mkdir));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "rename"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_rename));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "replace"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_replace));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "access"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_access));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "rmdir"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_rmdir));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "getuid"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_getuid));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "geteuid"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_geteuid));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "getgid"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_getgid));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "getegid"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_getegid));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "environ_keys"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_environ_keys));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "waitpid"),
@@ -385,12 +800,23 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     keys = keys->appendLast(ctx, ctx->fromUTF8String("chdir"));
     keys = keys->appendLast(ctx, ctx->fromUTF8String("listdir"));
     keys = keys->appendLast(ctx, ctx->fromUTF8String("remove"));
+    keys = keys->appendLast(ctx, ctx->fromUTF8String("unlink"));
+    keys = keys->appendLast(ctx, ctx->fromUTF8String("mkdir"));
+    keys = keys->appendLast(ctx, ctx->fromUTF8String("rename"));
+    keys = keys->appendLast(ctx, ctx->fromUTF8String("replace"));
+    keys = keys->appendLast(ctx, ctx->fromUTF8String("access"));
     keys = keys->appendLast(ctx, ctx->fromUTF8String("rmdir"));
+    keys = keys->appendLast(ctx, ctx->fromUTF8String("getuid"));
+    keys = keys->appendLast(ctx, ctx->fromUTF8String("geteuid"));
+    keys = keys->appendLast(ctx, ctx->fromUTF8String("getgid"));
+    keys = keys->appendLast(ctx, ctx->fromUTF8String("getegid"));
     keys = keys->appendLast(ctx, ctx->fromUTF8String("environ_keys"));
     keys = keys->appendLast(ctx, ctx->fromUTF8String("waitpid"));
     keys = keys->appendLast(ctx, ctx->fromUTF8String("kill"));
     keys = keys->appendLast(ctx, ctx->fromUTF8String("pipe"));
     keys = keys->appendLast(ctx, ctx->fromUTF8String("scandir"));
+    keys = keys->appendLast(ctx, ctx->fromUTF8String("stat"));
+    keys = keys->appendLast(ctx, ctx->fromUTF8String("lstat"));
     keys = keys->appendLast(ctx, ctx->fromUTF8String("F_OK"));
     keys = keys->appendLast(ctx, ctx->fromUTF8String("R_OK"));
     keys = keys->appendLast(ctx, ctx->fromUTF8String("W_OK"));
