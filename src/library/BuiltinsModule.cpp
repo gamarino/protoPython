@@ -1296,15 +1296,20 @@ static const proto::ProtoObject* py_globals(
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     const proto::ProtoObject* f = PythonEnvironment::getCurrentFrame();
     
+    const proto::ProtoObject* res = PROTO_NONE;
     if (f && f != PROTO_NONE && env) {
-        const proto::ProtoObject* g = f->getAttribute(context, env->getFGlobalsString());
-        if (g && g != PROTO_NONE) return g;
+        res = f->getAttribute(context, env->getFGlobalsString());
     }
     
-    // Fallback if no frame exists (unlikely during active execution)
-    const proto::ProtoObject* g = PythonEnvironment::getCurrentGlobals();
-    if (g && g != PROTO_NONE) return g;
-    return env ? env->getBuiltins() : PROTO_NONE;
+    if (!res || res == PROTO_NONE) {
+        res = PythonEnvironment::getCurrentGlobals();
+    }
+    
+    if (!res || res == PROTO_NONE) {
+        res = env ? env->getBuiltins() : PROTO_NONE;
+    }
+
+    return res;
 }
 
 static const proto::ProtoObject* py_locals(
@@ -1528,6 +1533,7 @@ static const proto::ProtoObject* py_type(
         else if (obj == PROTO_TRUE || obj == PROTO_FALSE) ret = env ? env->getBoolPrototype() : PROTO_NONE;
         else if (obj->isString(context)) ret = env ? env->getStrPrototype() : PROTO_NONE;
         else if (obj == PROTO_NONE) ret = env ? env->getNoneTypePrototype() : PROTO_NONE;
+        else if (obj->asMethod(context)) ret = env ? env->getFunctionPrototype() : PROTO_NONE;
         else {
             ret = obj->getAttribute(context, env ? env->getClassString() : proto::ProtoString::fromUTF8String(context, "__class__"));
         }
@@ -2469,6 +2475,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
                                    const proto::ProtoObject* dictProto, const proto::ProtoObject* tupleProto,
                                    const proto::ProtoObject* setProto, const proto::ProtoObject* bytesProto,
                                    const proto::ProtoObject* noneProto,
+                                   const proto::ProtoObject* ellipsisProto,
+                                   const proto::ProtoObject* notImplementedProto,
                                    const proto::ProtoObject* sliceType, const proto::ProtoObject* frozensetProto,
                                    const proto::ProtoObject* floatProto, const proto::ProtoObject* boolProto,
                                    const proto::ProtoObject* ioModule) {
@@ -2483,6 +2491,25 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
 
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "True"), PROTO_TRUE);
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "False"), PROTO_FALSE);
+    
+    // Initialize Ellipsis
+    const proto::ProtoObject* ellipsis = ellipsisProto;
+    if (!ellipsis) {
+        ellipsis = ctx->newObject(true);
+        if (objectProto) ellipsis = ellipsis->addParent(ctx, objectProto);
+        ellipsis = ellipsis->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__repr__"), ctx->fromUTF8String("Ellipsis"));
+    }
+    builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "Ellipsis"), ellipsis);
+
+    // Initialize NotImplemented
+    const proto::ProtoObject* notImpl = notImplementedProto;
+    if (!notImpl) {
+        notImpl = ctx->newObject(true);
+        if (objectProto) notImpl = notImpl->addParent(ctx, objectProto);
+        notImpl = notImpl->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__repr__"), ctx->fromUTF8String("NotImplemented"));
+    }
+    builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "NotImplemented"), notImpl);
+
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "object"), objectProto);
     if (typeProto) {
         const_cast<proto::ProtoObject*>(typeProto)->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__call__"), ctx->fromMethod(const_cast<proto::ProtoObject*>(typeProto), py_type));

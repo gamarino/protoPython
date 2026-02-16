@@ -155,8 +155,10 @@ bool Compiler::compileConstant(ConstantNode* n) {
         obj = PROTO_NONE;
     else if (n->constType == ConstantNode::ConstType::Bool)
         obj = n->intVal ? PROTO_TRUE : PROTO_FALSE;
-    else if (n->constType == ConstantNode::ConstType::Ellipsis)
-        obj = ctx_->fromUTF8String("...");
+    else if (n->constType == ConstantNode::ConstType::Ellipsis) {
+        PythonEnvironment* env = PythonEnvironment::get(ctx_);
+        obj = env ? env->getEllipsisPrototype() : ctx_->fromUTF8String("...");
+    }
     if (!obj && n->constType != ConstantNode::ConstType::None) return false;
     int idx = addConstant(obj);
     emit(OP_LOAD_CONST, idx);
@@ -723,9 +725,9 @@ bool Compiler::compileIf(IfNode* n) {
     if (n->orelse) {
         emit(OP_JUMP_ABSOLUTE, 0);
         int endSlot = bytecodeOffset() - 1;
-        addPatch(elseSlot, elseTarget);
+        addPatch(elseSlot, bytecodeOffset()); // Jump to start of else
         if (!compileNode(n->orelse.get())) return false;
-        addPatch(endSlot, bytecodeOffset());
+        addPatch(endSlot, bytecodeOffset()); // End of body skips else
     } else {
         addPatch(elseSlot, elseTarget);
     }

@@ -100,6 +100,22 @@ static const proto::ProtoObject* py_listdir(
 #endif
 }
 
+static const proto::ProtoObject* py_scandir(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList* kwargs) {
+    // For now, satisfy os.py by returning listdir results as an iterator
+    const proto::ProtoObject* listObj = py_listdir(ctx, self, parentLink, posArgs, kwargs);
+    const proto::ProtoList* list = listObj ? listObj->asList(ctx) : nullptr;
+    if (list) {
+        const proto::ProtoListIterator* it = list->getIterator(ctx);
+        if (it) return it->asObject(ctx);
+    }
+    return PROTO_NONE;
+}
+
 static const proto::ProtoObject* py_remove(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
@@ -330,6 +346,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_chdir));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "listdir"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_listdir));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "scandir"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_scandir));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "remove"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_remove));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "rmdir"),
@@ -342,6 +360,46 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_kill));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "pipe"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_pipe));
+
+    // Common constants
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "F_OK"), ctx->fromInteger(0));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "R_OK"), ctx->fromInteger(4));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "W_OK"), ctx->fromInteger(2));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "X_OK"), ctx->fromInteger(1));
+
+    // _have_functions (Minimal set for satisfying os.py)
+    const proto::ProtoList* haveFuncs = ctx->newList();
+    haveFuncs = haveFuncs->appendLast(ctx, ctx->fromUTF8String("HAVE_FACCESSAT"));
+    haveFuncs = haveFuncs->appendLast(ctx, ctx->fromUTF8String("HAVE_FSTATAT"));
+    haveFuncs = haveFuncs->appendLast(ctx, ctx->fromUTF8String("HAVE_OPENAT"));
+    haveFuncs = haveFuncs->appendLast(ctx, ctx->fromUTF8String("HAVE_FDOPENDIR"));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_have_functions"), haveFuncs->asObject(ctx));
+
+    // Export keys and all for 'from posix import *'
+    const proto::ProtoList* keys = ctx->newList();
+    keys = keys->appendLast(ctx, ctx->fromUTF8String("environ"));
+    keys = keys->appendLast(ctx, ctx->fromUTF8String("getenv"));
+    keys = keys->appendLast(ctx, ctx->fromUTF8String("putenv"));
+    keys = keys->appendLast(ctx, ctx->fromUTF8String("unsetenv"));
+    keys = keys->appendLast(ctx, ctx->fromUTF8String("getcwd"));
+    keys = keys->appendLast(ctx, ctx->fromUTF8String("chdir"));
+    keys = keys->appendLast(ctx, ctx->fromUTF8String("listdir"));
+    keys = keys->appendLast(ctx, ctx->fromUTF8String("remove"));
+    keys = keys->appendLast(ctx, ctx->fromUTF8String("rmdir"));
+    keys = keys->appendLast(ctx, ctx->fromUTF8String("environ_keys"));
+    keys = keys->appendLast(ctx, ctx->fromUTF8String("waitpid"));
+    keys = keys->appendLast(ctx, ctx->fromUTF8String("kill"));
+    keys = keys->appendLast(ctx, ctx->fromUTF8String("pipe"));
+    keys = keys->appendLast(ctx, ctx->fromUTF8String("scandir"));
+    keys = keys->appendLast(ctx, ctx->fromUTF8String("F_OK"));
+    keys = keys->appendLast(ctx, ctx->fromUTF8String("R_OK"));
+    keys = keys->appendLast(ctx, ctx->fromUTF8String("W_OK"));
+    keys = keys->appendLast(ctx, ctx->fromUTF8String("X_OK"));
+    keys = keys->appendLast(ctx, ctx->fromUTF8String("_have_functions"));
+    
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__keys__"), keys->asObject(ctx));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__all__"), keys->asObject(ctx));
+
     return mod;
 }
 

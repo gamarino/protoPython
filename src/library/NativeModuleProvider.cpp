@@ -14,9 +14,6 @@ const proto::ProtoObject* NativeModuleProvider::tryLoad(const std::string& logic
     auto it = modules_.find(logicalPath);
     if (it != modules_.end()) {
         const proto::ProtoObject* res = it->second(ctx);
-        if (std::getenv("PROTO_ENV_DIAG")) {
-            std::cerr << "[proto-diag] NativeModuleProvider::tryLoad found '" << logicalPath << "' -> " << res << "\n" << std::flush;
-        }
         return res;
     }
     return PROTO_NONE;

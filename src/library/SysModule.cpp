@@ -303,12 +303,13 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
         "builtins", "sys", "_io", "_os", "posix", "nt", "time", "_thread", 
         "_signal", "re", "_weakref", "_collections", "logging", "operator", 
         "_operator", "math", "functools", "itertools", "json", "atexit", 
-        "_collections_abc", "exceptions", "_codecs"
+        "_collections_abc", "exceptions", "_codecs", "_ast", "errno", "stat"
     };
     for (const char* name : builtin_names) {
         builtinsList = builtinsList->appendLast(ctx, ctx->fromUTF8String(name));
     }
-    sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "builtin_module_names"), builtinsList->asObject(ctx));
+    const proto::ProtoTuple* bt = ctx->newTupleFromList(builtinsList);
+    sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "builtin_module_names"), bt->asObject(ctx));
 
     // sys.executable
     const char* exe_path = (argv && !argv->empty()) ? (*argv)[0].c_str() : "/usr/bin/protopy";

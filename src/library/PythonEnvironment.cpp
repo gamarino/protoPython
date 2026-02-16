@@ -9,6 +9,9 @@
 #include <protoPython/TimeModule.h>
 #include <protoPython/ThreadModule.h>
 #include <protoPython/BuiltinsModule.h>
+#include <protoPython/AstModule.h>
+#include <protoPython/ErrnoModule.h>
+#include <protoPython/StatModule.h>
 #include <protoPython/CodecsModule.h>
 #include <protoPython/IOModule.h>
 #include <protoPython/CollectionsModule.h>
@@ -1008,15 +1011,25 @@ static const proto::ProtoObject* py_dict_contains(
     const proto::ProtoSparseList* keywordParameters) {
     const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "__data__");
     const proto::ProtoObject* data = self->getAttribute(context, dataName);
-    if (!data || !data->asSparseList(context)) return PROTO_FALSE;
+    const proto::ProtoSparseList* dict = data ? data->asSparseList(context) : nullptr;
+    
     if (positionalParameters->getSize(context) < 1) return PROTO_FALSE;
     const proto::ProtoObject* key = positionalParameters->getAt(context, 0);
-    unsigned long h = key->getHash(context);
-    bool found = data->asSparseList(context)->has(context, h);
-    if (std::getenv("PROTO_ENV_DIAG")) {
-        // dict contains diagnostic removed
+    
+    if (dict) {
+        unsigned long h = key->getHash(context);
+        return dict->has(context, h) ? PROTO_TRUE : PROTO_FALSE;
     }
-    return found ? PROTO_TRUE : PROTO_FALSE;
+    
+    // Fallback for objects used as dicts (like modules)
+    if (key->isString(context)) {
+        std::string k;
+        key->asString(context)->toUTF8String(context, k);
+        bool has = (self->hasAttribute(context, key->asString(context)) == PROTO_TRUE);
+        if (has) return PROTO_TRUE;
+    }
+    
+    return PROTO_FALSE;
 }
 
 static const proto::ProtoObject* py_dict_eq(
@@ -6003,6 +6016,13 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     generatorPrototype = generatorPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "throw"), rootContext_->fromMethod(nullptr, py_generator_throw));
     generatorPrototype = generatorPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "close"), rootContext_->fromMethod(nullptr, py_generator_close));
 
+    // V72: Create 'function' prototype
+    functionPrototype = rootContext_->newObject(true);
+    functionPrototype = functionPrototype->addParent(rootContext_, objectPrototype);
+    functionPrototype = functionPrototype->setAttribute(rootContext_, py_class, typePrototype);
+    functionPrototype = functionPrototype->setAttribute(rootContext_, py_name, rootContext_->fromUTF8String("function"));
+    functionPrototype = functionPrototype->setAttribute(rootContext_, py_module, builtinsVal);
+
     // 6. Basic types
     intPrototype = rootContext_->newObject(true);
     intPrototype = intPrototype->addParent(rootContext_, objectPrototype);
@@ -6347,8 +6367,26 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     noneTypeProto = noneTypeProto->setAttribute(rootContext_, py_bool, rootContext_->fromMethod(nullptr, py_none_bool));
     noneTypeProto = noneTypeProto->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_none_repr));
 
-    nonePrototype = PROTO_NONE;
-    space_->nonePrototype = const_cast<proto::ProtoObject*>(nonePrototype);
+    nonePrototype = noneTypeProto;
+    space_->nonePrototype = const_cast<proto::ProtoObject*>(noneTypeProto);
+
+    // Initialize Ellipsis
+    const proto::ProtoObject* ellipsisType = rootContext_->newObject(true);
+    if (objectPrototype) ellipsisType = ellipsisType->addParent(rootContext_, objectPrototype);
+    ellipsisType = ellipsisType->setAttribute(rootContext_, py_class, typePrototype);
+    ellipsisType = ellipsisType->setAttribute(rootContext_, py_name, rootContext_->fromUTF8String("ellipsis"));
+    ellipsisType = ellipsisType->setAttribute(rootContext_, py_module, builtinsVal);
+    ellipsisType = ellipsisType->setAttribute(rootContext_, py_repr, rootContext_->fromUTF8String("Ellipsis"));
+    ellipsisPrototype = ellipsisType;
+
+    // Initialize NotImplemented
+    const proto::ProtoObject* notImplType = rootContext_->newObject(true);
+    if (objectPrototype) notImplType = notImplType->addParent(rootContext_, objectPrototype);
+    notImplType = notImplType->setAttribute(rootContext_, py_class, typePrototype);
+    notImplType = notImplType->setAttribute(rootContext_, py_name, rootContext_->fromUTF8String("NotImplementedType"));
+    notImplType = notImplType->setAttribute(rootContext_, py_module, builtinsVal);
+    notImplType = notImplType->setAttribute(rootContext_, py_repr, rootContext_->fromUTF8String("NotImplemented"));
+    notImplementedPrototype = notImplType;
 
     boolPrototype = boolPrototype->addParent(rootContext_, intPrototype);
     boolPrototype = boolPrototype->setAttribute(rootContext_, py_class, typePrototype);
@@ -6381,7 +6419,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     nativeProvider->registerModule("_io", [ioModule](proto::ProtoContext*) { return ioModule; });
 
     // builtins module
-    builtinsModule = builtins::initialize(rootContext_, objectPrototype, typePrototype, intPrototype, strPrototype, listPrototype, dictPrototype, tuplePrototype, setPrototype, bytesPrototype, nonePrototype, sliceType, frozensetPrototype, floatPrototype, boolPrototype, ioModule);
+    builtinsModule = builtins::initialize(rootContext_, objectPrototype, typePrototype, intPrototype, strPrototype, listPrototype, dictPrototype, tuplePrototype, setPrototype, bytesPrototype, nonePrototype, ellipsisPrototype, notImplementedPrototype, sliceType, frozensetPrototype, floatPrototype, boolPrototype, ioModule);
     nativeProvider->registerModule("builtins", [this](proto::ProtoContext* ctx) { return builtinsModule; });
 
     // _collections module
@@ -6412,6 +6450,10 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
 
     const proto::ProtoObject* codecsMod = codecs::initialize(rootContext_, objectPrototype, typePrototype);
     nativeProvider->registerModule("_codecs", [codecsMod](proto::ProtoContext* ctx) { return codecsMod; });
+
+    nativeProvider->registerModule("_ast", [](proto::ProtoContext* ctx) { return ast::initialize(ctx); });
+    nativeProvider->registerModule("errno", [](proto::ProtoContext* ctx) { return errno_module::initialize(ctx); });
+    nativeProvider->registerModule("stat", [](proto::ProtoContext* ctx) { return stat_module::initialize(ctx); });
 
     exceptionType = exceptionsMod->getAttribute(rootContext_, exceptionS);
     keyErrorType = exceptionsMod->getAttribute(rootContext_, keyErrorS);
@@ -7733,9 +7775,9 @@ const proto::ProtoObject* PythonEnvironment::resolve(const proto::ProtoString* n
     // 3. Literals Quick-Path (Lock-free)
     {
         const proto::ProtoObject* result = nullptr;
-        if (nameStr == "None") return nonePrototype;
-        if (nameStr == "True") return boolPrototype;
-        if (nameStr == "False") return boolPrototype;
+        if (nameStr == "None") return PROTO_NONE;
+        if (nameStr == "True") return PROTO_TRUE;
+        if (nameStr == "False") return PROTO_FALSE;
         if (nameStr == "object") return objectPrototype;
         if (nameStr == "type") return typePrototype;
         if (nameStr == "int") return intPrototype;

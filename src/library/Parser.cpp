@@ -519,7 +519,7 @@ std::unique_ptr<ASTNode> Parser::parseAtom() {
     }
     if (cur_.type == TokenType::Ellipsis) {
         auto n = createNode<ConstantNode>();
-        n->constType = ConstantNode::ConstType::None;
+        n->constType = ConstantNode::ConstType::Ellipsis;
         n->strVal = "..."; 
         advance();
         return n;
