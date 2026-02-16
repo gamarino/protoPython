@@ -376,7 +376,9 @@ static proto::ProtoObject* createUserFunction(proto::ProtoContext* ctx, const pr
     fn = fn->setAttribute(ctx, env ? env->getCodeString() : proto::ProtoString::fromUTF8String(ctx, "__code__"), codeObj);
     fn = fn->setAttribute(ctx, env ? env->getGlobalsString() : proto::ProtoString::fromUTF8String(ctx, "__globals__"), globalsFrame);
     if (closureFrame && env) {
-        fn = fn->setAttribute(ctx, env->getClosureString(), closureFrame);
+        // Wrap closure frame in a tuple for CPython compatibility (f.__closure__ is a tuple)
+        const proto::ProtoList* closureTuple = ctx->newList()->appendLast(ctx, closureFrame);
+        fn = fn->setAttribute(ctx, env->getClosureString(), closureTuple->asObject(ctx));
     }
     if (defaults && env) {
         fn = fn->setAttribute(ctx, env->getDefaultsString(), defaults);
@@ -391,38 +393,6 @@ static proto::ProtoObject* createUserFunction(proto::ProtoContext* ctx, const pr
     return const_cast<proto::ProtoObject*>(fn);
 }
 
-static const proto::ProtoObject* runUserClassCall(proto::ProtoContext* ctx,
-    const proto::ProtoObject* self,
-    const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* args,
-    const proto::ProtoSparseList* kwargs) {
-    if (!ctx || !self) return PROTO_NONE;
-    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    
-    // Create new object instance
-    proto::ProtoObject* obj = const_cast<proto::ProtoObject*>(ctx->newObject(true));
-    
-    // Class acts as prototype/parent
-    obj = const_cast<proto::ProtoObject*>(obj->addParent(ctx, self));
-    
-    // Step V74: Explicitly set __class__ to the class itself
-    const proto::ProtoString* classS = env ? env->getClassString() : proto::ProtoString::fromUTF8String(ctx, "__class__");
-    obj = const_cast<proto::ProtoObject*>(obj->setAttribute(ctx, classS, self));
-    
-    // Invoke __init__ if present
-    const proto::ProtoString* initS = env ? env->getInitString() : proto::ProtoString::fromUTF8String(ctx, "__init__");
-    
-    // Step V75: Use env->getAttribute to get a BOUND method, ensuring 'self' is passed!
-    const proto::ProtoObject* initM = env ? env->getAttribute(ctx, obj, initS) : obj->getAttribute(ctx, initS);
-    if (initM && initM != PROTO_NONE) {
-        if (std::getenv("PROTO_ENV_DIAG")) std::cerr << "[proto-diag] runUserClassCall: calling __init__ for " << obj << "\n";
-        invokeCallable(ctx, initM, args, kwargs);
-    } else {
-        if (std::getenv("PROTO_ENV_DIAG")) std::cerr << "[proto-diag] runUserClassCall: __init__ not found for " << obj << "\n";
-    }
-    
-    return obj;
-}
 
 
 /** Return true if obj is an embedded value (e.g. small int, bool); do not call getAttribute on it. */
@@ -1188,6 +1158,40 @@ struct GCStack {
     void reserve(size_t) {}
 };
 }
+
+const proto::ProtoObject* runUserClassCall(proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* args,
+    const proto::ProtoSparseList* kwargs) {
+    if (!ctx || !self) return PROTO_NONE;
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    
+    // Create new object instance
+    proto::ProtoObject* obj = const_cast<proto::ProtoObject*>(ctx->newObject(true));
+    
+    // Class acts as prototype/parent
+    obj = const_cast<proto::ProtoObject*>(obj->addParent(ctx, self));
+    
+    // Step V74: Explicitly set __class__ to the class itself
+    const proto::ProtoString* classS = env ? env->getClassString() : proto::ProtoString::fromUTF8String(ctx, "__class__");
+    obj = const_cast<proto::ProtoObject*>(obj->setAttribute(ctx, classS, self));
+    
+    // Invoke __init__ if present
+    const proto::ProtoString* initS = env ? env->getInitString() : proto::ProtoString::fromUTF8String(ctx, "__init__");
+    
+    // Step V75: Use env->getAttribute to get a BOUND method, ensuring 'self' is passed!
+    const proto::ProtoObject* initM = env ? env->getAttribute(ctx, obj, initS) : obj->getAttribute(ctx, initS);
+    if (initM && initM != PROTO_NONE) {
+        if (std::getenv("PROTO_ENV_DIAG")) std::cerr << "[proto-diag] runUserClassCall: calling __init__ for " << obj << "\n";
+        invokeCallable(ctx, initM, args, kwargs);
+    } else {
+        if (std::getenv("PROTO_ENV_DIAG")) std::cerr << "[proto-diag] runUserClassCall: __init__ not found for " << obj << "\n";
+    }
+    
+    return obj;
+}
+
 
 const proto::ProtoObject* executeBytecodeRange(
     proto::ProtoContext* ctx,
@@ -2257,6 +2261,21 @@ const proto::ProtoObject* executeBytecodeRange(
                         
                         val = curr->getAttribute(ctx, nameS);
                         if (val && val != PROTO_NONE) { found = true; break; }
+
+                        if (env) {
+                            const proto::ProtoObject* closureAttr = curr->getAttribute(ctx, env->getClosureString());
+                            if (closureAttr && closureAttr != PROTO_NONE) {
+                                if (closureAttr->asList(ctx)) {
+                                    const proto::ProtoList* l = closureAttr->asList(ctx);
+                                    for (unsigned long i = 0; i < l->getSize(ctx); ++i) worklist.push_back(l->getAt(ctx, i));
+                                } else if (closureAttr->asTuple(ctx)) {
+                                    const proto::ProtoTuple* t = closureAttr->asTuple(ctx);
+                                    for (unsigned long i = 0; i < t->getSize(ctx); ++i) worklist.push_back(t->getAt(ctx, i));
+                                } else {
+                                    worklist.push_back(closureAttr);
+                                }
+                            }
+                        }
                         
                         const proto::ProtoString* dName = env ? env->getDataString() : proto::ProtoString::fromUTF8String(ctx, "__data__");
                         const proto::ProtoObject* dataObj = curr->getAttribute(ctx, dName);
@@ -2327,6 +2346,20 @@ const proto::ProtoObject* executeBytecodeRange(
                             curr->setAttribute(ctx, nameS, val);
                             found = true;
                             break;
+                        }
+                        if (env) {
+                            const proto::ProtoObject* closureAttr = curr->getAttribute(ctx, env->getClosureString());
+                            if (closureAttr && closureAttr != PROTO_NONE) {
+                                if (closureAttr->asList(ctx)) {
+                                    const proto::ProtoList* l = closureAttr->asList(ctx);
+                                    for (unsigned long i = 0; i < l->getSize(ctx); ++i) worklist.push_back(const_cast<proto::ProtoObject*>(l->getAt(ctx, i)));
+                                } else if (closureAttr->asTuple(ctx)) {
+                                    const proto::ProtoTuple* t = closureAttr->asTuple(ctx);
+                                    for (unsigned long i = 0; i < t->getSize(ctx); ++i) worklist.push_back(const_cast<proto::ProtoObject*>(t->getAt(ctx, i)));
+                                } else {
+                                    worklist.push_back(const_cast<proto::ProtoObject*>(closureAttr));
+                                }
+                            }
                         }
                         const proto::ProtoList* parents = curr->getParents(ctx);
                         if (parents) {
@@ -2772,7 +2805,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 }
                 
                 // Set runUserClassCall as __call__
-                targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(ctx, callS, ctx->fromMethod(targetClass, runUserClassCall)));
+                targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(ctx, callS, ctx->fromMethod(targetClass, (proto::ProtoMethod)runUserClassCall)));
                 
                 if (bases && bases->asTuple(ctx)) {
                     auto bt = bases->asTuple(ctx);
@@ -2807,7 +2840,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 // For now, the co_names approach is much safer than the hash cast.
                 
                 // Set __call__ to support instantiation
-                targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(ctx, callS, ctx->fromMethod(targetClass, runUserClassCall)));
+                targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(ctx, callS, ctx->fromMethod(targetClass, (proto::ProtoMethod)runUserClassCall)));
 
                 stack.push_back(targetClass);
             }

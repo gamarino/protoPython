@@ -705,7 +705,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
             ctx->fromMethod(const_cast<proto::ProtoObject*>(direntry_proto), py_direntry_fspath));
     }
 
-    const proto::ProtoObject* mod = ctx->newObject(false);
+    const proto::ProtoObject* mod = ctx->newObject(true);
     
     // Create Environ object
     const proto::ProtoObject* environProt = ctx->newObject(false);

@@ -2,7 +2,7 @@
 
 # Configuration
 PROTOPY="/home/gamarino/Documentos/proyectos/protoPython/build/src/runtime/protopy"
-LOG="/home/gamarino/Documentos/proyectos/protoPython/conformance_status.log"
+LOG="/home/gamarino/Documentos/proyectos/protoPython/tests/conformance_status.log"
 BASE_DIR="/home/gamarino/Documentos/proyectos/protoPython"
 TIMEOUT="300" # 5 minutes per test
 

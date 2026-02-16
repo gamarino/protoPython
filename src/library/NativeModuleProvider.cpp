@@ -13,10 +13,9 @@ void NativeModuleProvider::registerModule(const std::string& name, ModuleInitial
 const proto::ProtoObject* NativeModuleProvider::tryLoad(const std::string& logicalPath, proto::ProtoContext* ctx) {
     auto it = modules_.find(logicalPath);
     if (it != modules_.end()) {
-        const proto::ProtoObject* res = it->second(ctx);
-        return res;
+        return it->second(ctx);
     }
-    return PROTO_NONE;
+    return nullptr;
 }
 
 } // namespace protoPython

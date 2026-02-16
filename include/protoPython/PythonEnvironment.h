@@ -112,6 +112,8 @@ public:
     const proto::ProtoObject* getFloatPrototype() const { return floatPrototype; }
     /** @brief Gets the bool prototype. */
     const proto::ProtoObject* getBoolPrototype() const { return boolPrototype; }
+    /** @brief Gets the module prototype. */
+    const proto::ProtoObject* getModulePrototype() const { return modulePrototype; }
     
     /** @brief Gets the path to the standard library. */
     const std::string& getStdLibPath() const { return stdLibPath_; }
@@ -176,6 +178,8 @@ public:
     const proto::ProtoString* getReprString() const { return reprString; }
     const proto::ProtoString* getHashString() const { return hashString; }
     const proto::ProtoString* getContainsString() const { return containsString; }
+    const proto::ProtoString* getModuleString() const { return moduleString; }
+    const proto::ProtoString* getBuiltinsString() const { return builtinsString; }
     const proto::ProtoString* getFormatString() const { return formatString; }
     const proto::ProtoString* getDictDunderString() const { return dictString; }
     const proto::ProtoString* getDocString() const { return docString; }
@@ -219,6 +223,7 @@ public:
     const proto::ProtoObject* buildString(const proto::ProtoObject** parts, size_t count);
     const proto::ProtoObject* getItem(const proto::ProtoObject* container, const proto::ProtoObject* key);
     void setItem(const proto::ProtoObject* container, const proto::ProtoObject* key, const proto::ProtoObject* value);
+    void initDictStorage(proto::ProtoContext* ctx, const proto::ProtoObject* obj);
     const proto::ProtoObject* getAttr(const proto::ProtoObject* obj, const std::string& attr);
     void setAttr(const proto::ProtoObject* obj, const std::string& attr, const proto::ProtoObject* val);
     bool isTrue(const proto::ProtoObject* obj);
@@ -631,6 +636,7 @@ private:
     const proto::ProtoObject* frozensetPrototype;
     const proto::ProtoObject* floatPrototype;
     const proto::ProtoObject* boolPrototype;
+    const proto::ProtoObject* modulePrototype;
     const proto::ProtoObject* sysModule;
     const proto::ProtoObject* builtinsModule;
     std::string stdLibPath_;

@@ -108,7 +108,7 @@ static const proto::ProtoObject* py_id(
     (void)self; (void)parentLink; (void)keywordParameters;
     if (positionalParameters->getSize(context) == 0) return PROTO_NONE;
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
-    return context->fromInteger(reinterpret_cast<long long>(obj));
+    return context->fromInteger((long long)(uintptr_t)obj);
 }
 
 static const proto::ProtoObject* py_complete(
@@ -159,7 +159,7 @@ static const proto::ProtoObject* py_complete(
             auto* it = const_cast<proto::ProtoSparseListIterator*>(attrs->getIterator(context));
             while (it && it->hasNext(context)) {
                 unsigned long key = it->nextKey(context);
-                const proto::ProtoString* s = reinterpret_cast<const proto::ProtoString*>(key);
+                const proto::ProtoString* s = reinterpret_cast<const proto::ProtoObject*>(key)->asString(context);
                 std::string name;
                 if (s) s->toUTF8String(context, name);
                 if (name.compare(0, prefix.size(), prefix) == 0) {
@@ -865,7 +865,7 @@ static const proto::ProtoObject* py_dir(
             auto* it = const_cast<proto::ProtoSparseListIterator*>(attrs->getIterator(context));
             while (it && it->hasNext(context)) {
                 unsigned long key = it->nextKey(context);
-                const proto::ProtoString* s = reinterpret_cast<const proto::ProtoString*>(key);
+                const proto::ProtoString* s = reinterpret_cast<const proto::ProtoObject*>(key)->asString(context);
                 if (s) {
                     std::string name;
                     s->toUTF8String(context, name);
@@ -967,9 +967,9 @@ static const proto::ProtoObject* py__tokenize_source(
         const proto::ProtoList* pair = context->newList();
         pair = pair->appendLast(context, context->fromInteger(static_cast<int>(t.type)));
         pair = pair->appendLast(context, context->fromUTF8String(t.value.c_str()));
-        result = result->appendLast(context, reinterpret_cast<const proto::ProtoObject*>(pair));
+        result = result->appendLast(context, pair->asObject(context));
     }
-    return reinterpret_cast<const proto::ProtoObject*>(result);
+    return result->asObject(context);
 }
 
 /** compile(source, filename='<string>', mode='eval'): return code object. */
@@ -1569,13 +1569,14 @@ static const proto::ProtoObject* py_type(
             targetClass = const_cast<proto::ProtoObject*>(targetClass->addParent(context, env->getObjectPrototype()));
         }
         
-        if (env && env->getTypePrototype()) {
-            targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, env->getClassString(), env->getTypePrototype()));
-        }
+        if (get_env_diag()) std::cerr << "[proto-diag] py_type: setting __class__ to " << self << "\n";
+        targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, env ? env->getClassString() : proto::ProtoString::fromUTF8String(context, "__class__"), self));
         
+        if (get_env_diag()) std::cerr << "[proto-diag] py_type: setting __name__ to " << name << "\n";
         const proto::ProtoString* py_name = env ? env->getNameString() : proto::ProtoString::fromUTF8String(context, "__name__");
         targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, py_name, name));
 
+        if (get_env_diag()) std::cerr << "[proto-diag] py_type: copying attributes from dict " << dict << "\n";
         // Copy dictionary attributes
         const proto::ProtoString* dataS = env ? env->getDataString() : proto::ProtoString::fromUTF8String(context, "__data__");
         const proto::ProtoString* keysS = env ? env->getKeysString() : proto::ProtoString::fromUTF8String(context, "__keys__");
@@ -1586,16 +1587,22 @@ static const proto::ProtoObject* py_type(
         if (dataObj && keysObj && dataObj->asSparseList(context) && keysObj->asList(context)) {
             const proto::ProtoSparseList* data = dataObj->asSparseList(context);
             const proto::ProtoList* keys = keysObj->asList(context);
+            if (get_env_diag()) std::cerr << "[proto-diag] py_type: dict has " << keys->getSize(context) << " keys\n";
             for (size_t i = 0; i < keys->getSize(context); ++i) {
                 const proto::ProtoObject* key = keys->getAt(context, i);
                 if (key->isString(context)) {
+                    std::string ks; key->asString(context)->toUTF8String(context, ks);
                     const proto::ProtoObject* val = data->getAt(context, key->getHash(context));
+                    if (get_env_diag()) std::cerr << "[proto-diag] py_type:   setting attr '" << ks << "' to " << val << "\n";
                     targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, key->asString(context), val));
                 }
             }
+        } else {
+            if (get_env_diag()) std::cerr << "[proto-diag] py_type: dict missing __data__ or __keys__ or invalid types\n";
         }
 
         // Add bases as parents
+        if (get_env_diag()) std::cerr << "[proto-diag] py_type: adding bases as parents\n";
         if (bases && bases->isTuple(context)) {
             const proto::ProtoTuple* bTup = bases->asTuple(context);
             for (size_t i = 0; i < bTup->getSize(context); ++i) {
@@ -1613,18 +1620,27 @@ static const proto::ProtoObject* py_type(
         if (targetClass->hasOwnAttribute(context, py_module) != PROTO_TRUE) {
             const proto::ProtoObject* globals = env ? env->getCurrentGlobals() : nullptr;
             const proto::ProtoObject* moduleName = globals ? globals->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__name__")) : nullptr;
-            // std::cerr << "[proto-diag] py_type: moduleName=" << moduleName << "\n";
+            if (get_env_diag()) std::cerr << "[proto-diag] py_type: setting __module__ to " << moduleName << "\n";
             if (moduleName) {
                 targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, py_module, moduleName));
             }
         }
         
         // __call__ handler for instantiation
+        if (get_env_diag()) std::cerr << "[proto-diag] py_type: setting __call__ handler\n";
         const proto::ProtoString* py_call = env ? env->getCallString() : proto::ProtoString::fromUTF8String(context, "__call__");
-        // We reuse runUserClassCall if we can or something similar?
+        targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, py_call, context->fromMethod(targetClass, runUserClassCall)));
         // For now, let's just use the default py_object_call logic or similar.
         // Actually, classes need a constructor.
         
+        if (get_env_diag()) {
+            const proto::ProtoObject* exc = env ? env->peekPendingException() : nullptr;
+            if (exc) {
+                std::cerr << "[proto-diag] py_type: FINISHED WITH EXCEPTION " << env->reprObject(context, exc) << "\n";
+            } else {
+                std::cerr << "[proto-diag] py_type: FINISHED SUCCESSFULLY\n";
+            }
+        }
         return targetClass;
     }
 
@@ -1707,7 +1723,8 @@ static const proto::ProtoObject* py_min_max(
     
     const proto::ProtoObject* keyFunc = nullptr;
     if (keywordParameters) {
-        keyFunc = keywordParameters->getAt(context, reinterpret_cast<unsigned long>(proto::ProtoString::fromUTF8String(context, "key")));
+        const proto::ProtoString* keyS = proto::ProtoString::fromUTF8String(context, "key");
+        keyFunc = keywordParameters->getAt(context, keyS->getHash(context));
     }
 
     std::vector<const proto::ProtoObject*> items;

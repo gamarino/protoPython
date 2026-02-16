@@ -2692,29 +2692,27 @@ const proto::ProtoObject* runCodeObject(proto::ProtoContext* ctx,
         
         const proto::ProtoObject* co_names_obj = codeObj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_names"));
         const proto::ProtoList* names = co_names_obj ? co_names_obj->asList(ctx) : nullptr;
-        
-        if (fileName.find("token.py") != std::string::npos || fileName.find("tokenize.py") != std::string::npos) {
-            std::cerr << "[proto-diag] runCodeObject: fileName='" << fileName << "' namesSize=" << (names ? names->getSize(ctx) : 0) << "\n";
-            if (names) {
-                for (unsigned long i = 0; i < names->getSize(ctx); ++i) {
-                    std::string n;
-                    const proto::ProtoObject* item = names->getAt(ctx, static_cast<int>(i));
-                    if (item && item->isString(ctx)) item->asString(ctx)->toUTF8String(ctx, n);
-                    std::cerr << "  name[" << i << "]='" << n << "'\n";
-                }
-            }
-            const proto::ProtoObject* co_consts_obj = codeObj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_consts"));
-            const proto::ProtoList* constants = co_consts_obj ? co_consts_obj->asList(ctx) : nullptr;
-            std::cerr << "  constantsSize=" << (constants ? constants->getSize(ctx) : 0) << "\n";
-            if (constants) {
-                for (unsigned long i = 0; i < constants->getSize(ctx); ++i) {
-                    const proto::ProtoObject* c = constants->getAt(ctx, static_cast<int>(i));
-                    std::cerr << "  const[" << i << "]=" << c;
-                    if (c && c->isInteger(ctx)) std::cerr << " (int=" << c->asLong(ctx) << ")";
-                    std::cerr << "\n";
-                }
+        std::cerr << "[proto-diag] runCodeObject: fileName='" << fileName << "' names=[";
+        if (names) {
+            for (unsigned long i = 0; i < names->getSize(ctx); ++i) {
+                std::string n;
+                const proto::ProtoObject* item = names->getAt(ctx, static_cast<int>(i));
+                if (item && item->isString(ctx)) item->asString(ctx)->toUTF8String(ctx, n);
+                std::cerr << "'" << n << "'" << (i == names->getSize(ctx) - 1 ? "" : ", ");
             }
         }
+        std::cerr << "]\n";
+
+        const proto::ProtoObject* co_consts_obj = codeObj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_consts"));
+        const proto::ProtoList* constants = co_consts_obj ? co_consts_obj->asList(ctx) : nullptr;
+        std::cerr << "[proto-diag] runCodeObject: constants=[";
+        if (constants) {
+            for (unsigned long i = 0; i < constants->getSize(ctx); ++i) {
+                const proto::ProtoObject* c = constants->getAt(ctx, static_cast<int>(i));
+                std::cerr << c << (i == constants->getSize(ctx) - 1 ? "" : ", ");
+            }
+        }
+        std::cerr << "]\n";
     }
     
     CodeObjectScope cscope(codeObj);

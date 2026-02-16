@@ -881,9 +881,26 @@ static const proto::ProtoObject* py_dict_getitem(
             const proto::ProtoObject* res = dict->getAt(context, hash);
             return res;
         }
-        PythonEnvironment* env = PythonEnvironment::fromContext(context);
-        if (env) env->raiseKeyError(context, key);
-        return PROTO_NONE;
+        // PythonEnvironment* env = PythonEnvironment::fromContext(context); // This line was redundant
+        if (std::getenv("PROTO_ENV_DIAG")) {
+            std::string kn = "?";
+            if (key->isString(context)) key->asString(context)->toUTF8String(context, kn);
+            else {
+                std::stringstream ss;
+                ss << key;
+                kn = ss.str();
+            }
+            std::string clsName = "?";
+            const proto::ProtoObject* cls = self->getAttribute(context, env ? env->getClassString() : proto::ProtoString::fromUTF8String(context, "__class__"));
+            if (cls) {
+                const proto::ProtoObject* nameAttr = cls->getAttribute(context, env ? env->getNameString() : proto::ProtoString::fromUTF8String(context, "__name__"));
+                if (nameAttr && nameAttr->isString(context)) {
+                    nameAttr->asString(context)->toUTF8String(context, clsName);
+                }
+            }
+            std::cerr << "[proto-diag] py_dict_getitem: self=" << self << " (class=" << clsName << ") RAISING KeyError for '" << kn << "'\n";
+        }
+        env->raiseKeyError(context, key);
     }
     return PROTO_NONE;
 }
@@ -5371,139 +5388,139 @@ PythonEnvironment::~PythonEnvironment() {
         remove_if_match(zeroDivisionErrorType);
         remove_if_match(indexErrorType);
 
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(iterString));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(nextString));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(emptyList));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(rangeCurString));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(rangeStopString));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(rangeStepString));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(mapFuncString));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(mapIterString));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(enumIterString));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(enumIdxString));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(revObjString));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(revIdxString));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(zipItersString));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(filterFuncString));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(filterIterString));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(classString));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(nameString));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(callString));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(getItemString));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(lenString));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(boolString));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(intString));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(floatString));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(strString));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(reprString));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(hashString));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(powString));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(containsString));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(addString));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(formatString));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(dictString));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(docString));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(reversedString));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(enumProtoS));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(revProtoS));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(zipProtoS));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(filterProtoS));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(mapProtoS));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(rangeProtoS));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(boolTypeS));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(filterBoolS));
+        remove_if_match((iterString)->asObject(rootContext_));
+        remove_if_match((nextString)->asObject(rootContext_));
+        remove_if_match((emptyList)->asObject(rootContext_));
+        remove_if_match((rangeCurString)->asObject(rootContext_));
+        remove_if_match((rangeStopString)->asObject(rootContext_));
+        remove_if_match((rangeStepString)->asObject(rootContext_));
+        remove_if_match((mapFuncString)->asObject(rootContext_));
+        remove_if_match((mapIterString)->asObject(rootContext_));
+        remove_if_match((enumIterString)->asObject(rootContext_));
+        remove_if_match((enumIdxString)->asObject(rootContext_));
+        remove_if_match((revObjString)->asObject(rootContext_));
+        remove_if_match((revIdxString)->asObject(rootContext_));
+        remove_if_match((zipItersString)->asObject(rootContext_));
+        remove_if_match((filterFuncString)->asObject(rootContext_));
+        remove_if_match((filterIterString)->asObject(rootContext_));
+        remove_if_match((classString)->asObject(rootContext_));
+        remove_if_match((nameString)->asObject(rootContext_));
+        remove_if_match((callString)->asObject(rootContext_));
+        remove_if_match((getItemString)->asObject(rootContext_));
+        remove_if_match((lenString)->asObject(rootContext_));
+        remove_if_match((boolString)->asObject(rootContext_));
+        remove_if_match((intString)->asObject(rootContext_));
+        remove_if_match((floatString)->asObject(rootContext_));
+        remove_if_match((strString)->asObject(rootContext_));
+        remove_if_match((reprString)->asObject(rootContext_));
+        remove_if_match((hashString)->asObject(rootContext_));
+        remove_if_match((powString)->asObject(rootContext_));
+        remove_if_match((containsString)->asObject(rootContext_));
+        remove_if_match((addString)->asObject(rootContext_));
+        remove_if_match((formatString)->asObject(rootContext_));
+        remove_if_match((dictString)->asObject(rootContext_));
+        remove_if_match((docString)->asObject(rootContext_));
+        remove_if_match((reversedString)->asObject(rootContext_));
+        remove_if_match((enumProtoS)->asObject(rootContext_));
+        remove_if_match((revProtoS)->asObject(rootContext_));
+        remove_if_match((zipProtoS)->asObject(rootContext_));
+        remove_if_match((filterProtoS)->asObject(rootContext_));
+        remove_if_match((mapProtoS)->asObject(rootContext_));
+        remove_if_match((rangeProtoS)->asObject(rootContext_));
+        remove_if_match((boolTypeS)->asObject(rootContext_));
+        remove_if_match((filterBoolS)->asObject(rootContext_));
         
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(__code__));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(__globals__));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(co_varnames));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(co_nparams));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(co_automatic_count));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(co_is_generator));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(co_flags));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(co_consts));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(co_names));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(co_code));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(sendString));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(throwString));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(closeString));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(f_back));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(f_code));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(f_globals));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(f_locals));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(__closure__));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(gi_code));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(gi_frame));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(gi_running));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(gi_yieldfrom));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(gi_pc));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(gi_stack));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(gi_locals));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(py_eq_s));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(py_ne_s));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(py_lt_s));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(py_le_s));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(py_gt_s));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(py_ge_s));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(getDunderString));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(setDunderString));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(delDunderString));
+        remove_if_match((__code__)->asObject(rootContext_));
+        remove_if_match((__globals__)->asObject(rootContext_));
+        remove_if_match((co_varnames)->asObject(rootContext_));
+        remove_if_match((co_nparams)->asObject(rootContext_));
+        remove_if_match((co_automatic_count)->asObject(rootContext_));
+        remove_if_match((co_is_generator)->asObject(rootContext_));
+        remove_if_match((co_flags)->asObject(rootContext_));
+        remove_if_match((co_consts)->asObject(rootContext_));
+        remove_if_match((co_names)->asObject(rootContext_));
+        remove_if_match((co_code)->asObject(rootContext_));
+        remove_if_match((sendString)->asObject(rootContext_));
+        remove_if_match((throwString)->asObject(rootContext_));
+        remove_if_match((closeString)->asObject(rootContext_));
+        remove_if_match((f_back)->asObject(rootContext_));
+        remove_if_match((f_code)->asObject(rootContext_));
+        remove_if_match((f_globals)->asObject(rootContext_));
+        remove_if_match((f_locals)->asObject(rootContext_));
+        remove_if_match((__closure__)->asObject(rootContext_));
+        remove_if_match((gi_code)->asObject(rootContext_));
+        remove_if_match((gi_frame)->asObject(rootContext_));
+        remove_if_match((gi_running)->asObject(rootContext_));
+        remove_if_match((gi_yieldfrom)->asObject(rootContext_));
+        remove_if_match((gi_pc)->asObject(rootContext_));
+        remove_if_match((gi_stack)->asObject(rootContext_));
+        remove_if_match((gi_locals)->asObject(rootContext_));
+        remove_if_match((py_eq_s)->asObject(rootContext_));
+        remove_if_match((py_ne_s)->asObject(rootContext_));
+        remove_if_match((py_lt_s)->asObject(rootContext_));
+        remove_if_match((py_le_s)->asObject(rootContext_));
+        remove_if_match((py_gt_s)->asObject(rootContext_));
+        remove_if_match((py_ge_s)->asObject(rootContext_));
+        remove_if_match((getDunderString)->asObject(rootContext_));
+        remove_if_match((setDunderString)->asObject(rootContext_));
+        remove_if_match((delDunderString)->asObject(rootContext_));
         
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(__code__));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(__globals__));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(co_varnames));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(co_nparams));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(co_automatic_count));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(co_is_generator));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(co_flags));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(__iadd__));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(__isub__));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(__imul__));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(__itruediv__));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(__ifloordiv__));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(__imod__));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(__ipow__));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(__ilshift__));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(__irshift__));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(__iand__));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(__ior__));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(__ixor__));
+        remove_if_match((__code__)->asObject(rootContext_));
+        remove_if_match((__globals__)->asObject(rootContext_));
+        remove_if_match((co_varnames)->asObject(rootContext_));
+        remove_if_match((co_nparams)->asObject(rootContext_));
+        remove_if_match((co_automatic_count)->asObject(rootContext_));
+        remove_if_match((co_is_generator)->asObject(rootContext_));
+        remove_if_match((co_flags)->asObject(rootContext_));
+        remove_if_match((__iadd__)->asObject(rootContext_));
+        remove_if_match((__isub__)->asObject(rootContext_));
+        remove_if_match((__imul__)->asObject(rootContext_));
+        remove_if_match((__itruediv__)->asObject(rootContext_));
+        remove_if_match((__ifloordiv__)->asObject(rootContext_));
+        remove_if_match((__imod__)->asObject(rootContext_));
+        remove_if_match((__ipow__)->asObject(rootContext_));
+        remove_if_match((__ilshift__)->asObject(rootContext_));
+        remove_if_match((__irshift__)->asObject(rootContext_));
+        remove_if_match((__iand__)->asObject(rootContext_));
+        remove_if_match((__ior__)->asObject(rootContext_));
+        remove_if_match((__ixor__)->asObject(rootContext_));
         
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(__and__));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(__rand__));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(__or__));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(__ror__));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(__xor__));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(__rxor__));
+        remove_if_match((__and__)->asObject(rootContext_));
+        remove_if_match((__rand__)->asObject(rootContext_));
+        remove_if_match((__or__)->asObject(rootContext_));
+        remove_if_match((__ror__)->asObject(rootContext_));
+        remove_if_match((__xor__)->asObject(rootContext_));
+        remove_if_match((__rxor__)->asObject(rootContext_));
         
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(__invert__));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(__pos__));
+        remove_if_match((__invert__)->asObject(rootContext_));
+        remove_if_match((__pos__)->asObject(rootContext_));
         
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(setItemString));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(delItemString));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(dataString));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(keysString));
+        remove_if_match((setItemString)->asObject(rootContext_));
+        remove_if_match((delItemString)->asObject(rootContext_));
+        remove_if_match((dataString)->asObject(rootContext_));
+        remove_if_match((keysString)->asObject(rootContext_));
         
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(startString));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(stopString));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(stepString));
+        remove_if_match((startString)->asObject(rootContext_));
+        remove_if_match((stopString)->asObject(rootContext_));
+        remove_if_match((stepString)->asObject(rootContext_));
         
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(ioModuleString));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(openString));
+        remove_if_match((ioModuleString)->asObject(rootContext_));
+        remove_if_match((openString)->asObject(rootContext_));
 
         remove_if_match(zeroInteger);
         remove_if_match(oneInteger);
         
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(listS));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(dictS));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(tupleS));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(setS));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(intS));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(floatS));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(strS));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(boolS));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(objectS));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(typeS));
-        remove_if_match(reinterpret_cast<const proto::ProtoObject*>(dictString));
+        remove_if_match((listS)->asObject(rootContext_));
+        remove_if_match((dictS)->asObject(rootContext_));
+        remove_if_match((tupleS)->asObject(rootContext_));
+        remove_if_match((setS)->asObject(rootContext_));
+        remove_if_match((intS)->asObject(rootContext_));
+        remove_if_match((floatS)->asObject(rootContext_));
+        remove_if_match((strS)->asObject(rootContext_));
+        remove_if_match((boolS)->asObject(rootContext_));
+        remove_if_match((objectS)->asObject(rootContext_));
+        remove_if_match((typeS)->asObject(rootContext_));
+        remove_if_match((dictString)->asObject(rootContext_));
     }
 
     unregisterContext(rootContext_);
@@ -5512,9 +5529,29 @@ PythonEnvironment::~PythonEnvironment() {
 }
 
 void PythonEnvironment::raiseKeyError(proto::ProtoContext* ctx, const proto::ProtoObject* key) {
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        std::string kn = "?";
+        if (key) {
+            if (key->isString(ctx)) key->asString(ctx)->toUTF8String(ctx, kn);
+            else if (key->isInteger(ctx)) kn = "int(" + std::to_string(key->asLong(ctx)) + ")";
+            else if (key->isBoolean(ctx)) kn = key->asBoolean(ctx) ? "True" : "False";
+            else {
+                std::stringstream ss;
+                ss << key;
+                kn = ss.str();
+            }
+        }
+        std::cerr << "[proto-diag] raiseKeyError: key=" << kn << " (" << key << ") isBoolean=" << (key && key->isBoolean(ctx)) << "\n";
+    }
     if (!keyErrorType) return;
     const proto::ProtoList* args = ctx->newList()->appendLast(ctx, key);
     const proto::ProtoObject* exc = keyErrorType->call(ctx, nullptr, proto::ProtoString::fromUTF8String(ctx, "__call__"), keyErrorType, args, nullptr);
+    if (!exc || exc == PROTO_NONE) {
+        // Fallback exception creation
+        exc = ctx->newObject(true);
+        exc = exc->addParent(ctx, keyErrorType);
+        exc = exc->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "args"), args->asObject(ctx));
+    }
     if (exc && exc != PROTO_NONE) setPendingException(exc);
 }
 
@@ -5793,7 +5830,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
 
     {
         std::lock_guard<std::mutex> lock(space_->moduleRootsMutex);
-        space_->moduleRoots.push_back(reinterpret_cast<const proto::ProtoObject*>(exceptionRootS));
+        space_->moduleRoots.push_back((exceptionRootS)->asObject(rootContext_));
     }
 
     __iadd__ = proto::ProtoString::fromUTF8String(rootContext_, "__iadd__");
@@ -5905,8 +5942,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     const proto::ProtoString* py_str = strString;
     const proto::ProtoString* py_class = classString;
     const proto::ProtoString* py_name = nameString;
-    const proto::ProtoString* py_module = moduleString;
-    const proto::ProtoObject* builtinsVal = reinterpret_cast<const proto::ProtoObject*>(builtinsString);
+    const proto::ProtoString* py_module = getModuleString();
+    const proto::ProtoObject* builtinsVal = builtinsString->asObject(rootContext_);
     const proto::ProtoString* py_append = proto::ProtoString::fromUTF8String(rootContext_, "append");
     const proto::ProtoString* py_getitem = getItemString;
     const proto::ProtoString* py_setitem = setItemString;
@@ -5969,8 +6006,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     objectPrototype = objectPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__call__"), rootContext_->fromMethod(nullptr, py_object_call));
 
     // 2. Create 'type'
-    typePrototype = rootContext_->newObject(true);
-    typePrototype = typePrototype->addParent(rootContext_, objectPrototype);
+    typePrototype = objectPrototype->newChild(rootContext_, true);
     typePrototype = typePrototype->setAttribute(rootContext_, py_class, typePrototype);
     typePrototype = typePrototype->setAttribute(rootContext_, py_name, rootContext_->fromUTF8String("type"));
     typePrototype = typePrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_type_repr));
@@ -5980,16 +6016,14 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     objectPrototype = objectPrototype->setAttribute(rootContext_, py_class, typePrototype);
 
     // 4. Create 'frame' prototype
-    framePrototype = rootContext_->newObject(true);
-    framePrototype = framePrototype->addParent(rootContext_, objectPrototype);
+    framePrototype = objectPrototype->newChild(rootContext_, true);
     framePrototype = framePrototype->setAttribute(rootContext_, py_class, typePrototype);
     framePrototype = framePrototype->setAttribute(rootContext_, py_name, rootContext_->fromUTF8String("frame"));
     framePrototype = framePrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_frame_repr));
     framePrototype = framePrototype->setAttribute(rootContext_, py_module, builtinsVal);
 
     // 5. Create 'generator' prototype
-    generatorPrototype = rootContext_->newObject(true);
-    generatorPrototype = generatorPrototype->addParent(rootContext_, objectPrototype);
+    generatorPrototype = objectPrototype->newChild(rootContext_, true);
     generatorPrototype = generatorPrototype->setAttribute(rootContext_, py_class, typePrototype);
     generatorPrototype = generatorPrototype->setAttribute(rootContext_, py_name, rootContext_->fromUTF8String("generator"));
     
@@ -6002,15 +6036,13 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     generatorPrototype = generatorPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "close"), rootContext_->fromMethod(nullptr, py_generator_close));
 
     // V72: Create 'function' prototype
-    functionPrototype = rootContext_->newObject(true);
-    functionPrototype = functionPrototype->addParent(rootContext_, objectPrototype);
+    functionPrototype = objectPrototype->newChild(rootContext_, true);
     functionPrototype = functionPrototype->setAttribute(rootContext_, py_class, typePrototype);
     functionPrototype = functionPrototype->setAttribute(rootContext_, py_name, rootContext_->fromUTF8String("function"));
     functionPrototype = functionPrototype->setAttribute(rootContext_, py_module, builtinsVal);
 
     // 6. Basic types
-    intPrototype = rootContext_->newObject(true);
-    intPrototype = intPrototype->addParent(rootContext_, objectPrototype);
+    intPrototype = objectPrototype->newChild(rootContext_, true);
     const proto::ProtoString* py_hash = proto::ProtoString::fromUTF8String(rootContext_, "__hash__");
     intPrototype = intPrototype->setAttribute(rootContext_, py_class, typePrototype);
     intPrototype = intPrototype->setAttribute(rootContext_, py_name, rootContext_->fromUTF8String("int"));
@@ -6028,8 +6060,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     intPrototype = intPrototype->setAttribute(rootContext_, py_from_bytes, rootContext_->fromMethod(nullptr, py_int_from_bytes));
     intPrototype = intPrototype->setAttribute(rootContext_, py_to_bytes, rootContext_->fromMethod(nullptr, py_int_to_bytes));
 
-    strPrototype = rootContext_->newObject(true);
-    strPrototype = strPrototype->addParent(rootContext_, objectPrototype);
+    strPrototype = objectPrototype->newChild(rootContext_, true);
     strPrototype = strPrototype->setAttribute(rootContext_, py_class, typePrototype);
     strPrototype = strPrototype->setAttribute(rootContext_, py_name, rootContext_->fromUTF8String("str"));
     strPrototype = strPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_type_repr));
@@ -6106,8 +6137,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     strPrototype = strPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "isdecimal"), rootContext_->fromMethod(nullptr, py_str_isdecimal));
     strPrototype = strPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "isnumeric"), rootContext_->fromMethod(nullptr, py_str_isnumeric));
 
-    listPrototype = rootContext_->newObject(true);
-    listPrototype = listPrototype->addParent(rootContext_, objectPrototype);
+    listPrototype = objectPrototype->newChild(rootContext_, true);
     listPrototype = listPrototype->setAttribute(rootContext_, py_class, typePrototype);
     listPrototype = listPrototype->setAttribute(rootContext_, py_name, rootContext_->fromUTF8String("list"));
     listPrototype = listPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_type_repr));
@@ -6147,20 +6177,17 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     listPrototype = listPrototype->setAttribute(rootContext_, py_rmul, rootContext_->fromMethod(nullptr, py_list_mul));
     listPrototype = listPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__iadd__"), rootContext_->fromMethod(nullptr, py_list_iadd));
 
-    const proto::ProtoObject* listIterProto = rootContext_->newObject(true);
-    listIterProto = listIterProto->addParent(rootContext_, objectPrototype);
+    const proto::ProtoObject* listIterProto = objectPrototype->newChild(rootContext_, true);
     listIterProto = listIterProto->setAttribute(rootContext_, py_next, rootContext_->fromMethod(nullptr, py_list_iter_next));
     listIterProto = listIterProto->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_self_iter));
     listPrototype = listPrototype->setAttribute(rootContext_, py_iter_proto, listIterProto);
-    const proto::ProtoObject* listReverseIterProto = rootContext_->newObject(true);
-    listReverseIterProto = listReverseIterProto->addParent(rootContext_, objectPrototype);
+    const proto::ProtoObject* listReverseIterProto = objectPrototype->newChild(rootContext_, true);
     listReverseIterProto = listReverseIterProto->setAttribute(rootContext_, py_next, rootContext_->fromMethod(nullptr, py_list_reversed_next));
     listReverseIterProto = listReverseIterProto->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_self_iter));
     listPrototype = listPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__reversed_prototype__"), listReverseIterProto);
     listPrototype = listPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__reversed__"), rootContext_->fromMethod(nullptr, py_list_reversed));
 
-    dictPrototype = rootContext_->newObject(true);
-    dictPrototype = dictPrototype->addParent(rootContext_, objectPrototype);
+    dictPrototype = objectPrototype->newChild(rootContext_, true);
     dictPrototype = dictPrototype->setAttribute(rootContext_, py_class, typePrototype);
     dictPrototype = dictPrototype->setAttribute(rootContext_, py_name, rootContext_->fromUTF8String("dict"));
     dictPrototype = dictPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__call__"), rootContext_->fromMethod(nullptr, py_dict_call));
@@ -6198,8 +6225,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     dictPrototype = dictPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__ior__"), rootContext_->fromMethod(nullptr, py_dict_ior));
     dictPrototype = dictPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__iror__"), rootContext_->fromMethod(nullptr, py_dict_iror));
 
-    tuplePrototype = rootContext_->newObject(true);
-    tuplePrototype = tuplePrototype->addParent(rootContext_, objectPrototype);
+    tuplePrototype = objectPrototype->newChild(rootContext_, true);
     tuplePrototype = tuplePrototype->setAttribute(rootContext_, py_class, typePrototype);
     tuplePrototype = tuplePrototype->setAttribute(rootContext_, py_name, rootContext_->fromUTF8String("tuple"));
     tuplePrototype = tuplePrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_type_repr));
@@ -6219,14 +6245,12 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     tuplePrototype = tuplePrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_tuple_repr));
     tuplePrototype = tuplePrototype->setAttribute(rootContext_, py_eq, rootContext_->fromMethod(nullptr, py_tuple_eq));
 
-    const proto::ProtoObject* tupleIterProto = rootContext_->newObject(true);
-    tupleIterProto = tupleIterProto->addParent(rootContext_, objectPrototype);
+    const proto::ProtoObject* tupleIterProto = objectPrototype->newChild(rootContext_, true);
     tupleIterProto = tupleIterProto->setAttribute(rootContext_, py_next, rootContext_->fromMethod(nullptr, py_tuple_iter_next));
     tupleIterProto = tupleIterProto->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_self_iter));
     tuplePrototype = tuplePrototype->setAttribute(rootContext_, py_iter_proto, tupleIterProto);
 
-    setPrototype = rootContext_->newObject(true);
-    setPrototype = setPrototype->addParent(rootContext_, objectPrototype);
+    setPrototype = objectPrototype->newChild(rootContext_, true);
     setPrototype = setPrototype->setAttribute(rootContext_, py_class, typePrototype);
     setPrototype = setPrototype->setAttribute(rootContext_, py_name, rootContext_->fromUTF8String("set"));
     setPrototype = setPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_type_repr));
@@ -6254,15 +6278,13 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     setPrototype = setPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__xor__"), rootContext_->fromMethod(nullptr, py_set_xor));
     setPrototype = setPrototype->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_set_iter));
 
-    const proto::ProtoObject* setIterProto = rootContext_->newObject(true);
-    setIterProto = setIterProto->addParent(rootContext_, objectPrototype);
+    const proto::ProtoObject* setIterProto = objectPrototype->newChild(rootContext_, true);
     setIterProto = setIterProto->setAttribute(rootContext_, py_next, rootContext_->fromMethod(nullptr, py_set_iter_next));
     setIterProto = setIterProto->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_self_iter));
     setPrototype = setPrototype->setAttribute(rootContext_, py_iter_proto, setIterProto);
 
     const proto::ProtoString* py_call = proto::ProtoString::fromUTF8String(rootContext_, "__call__");
-    frozensetPrototype = rootContext_->newObject(true);
-    frozensetPrototype = frozensetPrototype->addParent(rootContext_, objectPrototype);
+    frozensetPrototype = objectPrototype->newChild(rootContext_, true);
     frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, py_class, typePrototype);
     frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, py_name, rootContext_->fromUTF8String("frozenset"));
     frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, py_call, rootContext_->fromMethod(nullptr, py_frozenset_call));
@@ -6273,8 +6295,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, py_hash, rootContext_->fromMethod(nullptr, py_frozenset_hash));
     frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, py_iter_proto, setIterProto);
 
-    bytesPrototype = rootContext_->newObject(true);
-    bytesPrototype = bytesPrototype->addParent(rootContext_, objectPrototype);
+    bytesPrototype = objectPrototype->newChild(rootContext_, true);
     bytesPrototype = bytesPrototype->setAttribute(rootContext_, py_class, typePrototype);
     bytesPrototype = bytesPrototype->setAttribute(rootContext_, py_name, rootContext_->fromUTF8String("bytes"));
     bytesPrototype = bytesPrototype->setAttribute(rootContext_, py_len, rootContext_->fromMethod(nullptr, py_bytes_len));
@@ -6283,8 +6304,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     bytesPrototype = bytesPrototype->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_bytes_iter));
     bytesPrototype = bytesPrototype->setAttribute(rootContext_, py_call, rootContext_->fromMethod(nullptr, py_bytes_call));
 
-    const proto::ProtoObject* bytesIterProto = rootContext_->newObject(true);
-    bytesIterProto = bytesIterProto->addParent(rootContext_, objectPrototype);
+    const proto::ProtoObject* bytesIterProto = objectPrototype->newChild(rootContext_, true);
     bytesIterProto = bytesIterProto->setAttribute(rootContext_, py_next, rootContext_->fromMethod(nullptr, py_bytes_iter_next));
     bytesIterProto = bytesIterProto->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_self_iter));
     bytesPrototype = bytesPrototype->setAttribute(rootContext_, py_iter_proto, bytesIterProto);
@@ -6318,16 +6338,14 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     bytesPrototype = bytesPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "removeprefix"), rootContext_->fromMethod(nullptr, py_bytes_removeprefix));
     bytesPrototype = bytesPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "removesuffix"), rootContext_->fromMethod(nullptr, py_bytes_removesuffix));
 
-    sliceType = rootContext_->newObject(true);
-    sliceType = sliceType->addParent(rootContext_, objectPrototype);
+    sliceType = objectPrototype->newChild(rootContext_, true);
     sliceType = sliceType->setAttribute(rootContext_, py_class, typePrototype);
     sliceType = sliceType->setAttribute(rootContext_, py_name, rootContext_->fromUTF8String("slice"));
     sliceType = sliceType->setAttribute(rootContext_, py_module, builtinsVal);
     sliceType = sliceType->setAttribute(rootContext_, py_call, rootContext_->fromMethod(nullptr, py_slice_call));
     sliceType = sliceType->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_slice_repr));
 
-    floatPrototype = rootContext_->newObject(true);
-    floatPrototype = floatPrototype->addParent(rootContext_, objectPrototype);
+    floatPrototype = objectPrototype->newChild(rootContext_, true);
     floatPrototype = floatPrototype->setAttribute(rootContext_, py_class, typePrototype);
     floatPrototype = floatPrototype->setAttribute(rootContext_, py_name, rootContext_->fromUTF8String("float"));
     floatPrototype = floatPrototype->setAttribute(rootContext_, py_module, builtinsVal);
@@ -6340,9 +6358,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     floatPrototype = floatPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "hex"), rootContext_->fromMethod(nullptr, py_float_hex));
     floatPrototype = floatPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "fromhex"), rootContext_->fromMethod(nullptr, py_float_fromhex));
 
-    boolPrototype = rootContext_->newObject(true);
-    noneTypeProto = rootContext_->newObject(true);
-    noneTypeProto = noneTypeProto->addParent(rootContext_, objectPrototype);
+    boolPrototype = objectPrototype->newChild(rootContext_, true);
+    noneTypeProto = objectPrototype->newChild(rootContext_, true);
     noneTypeProto = noneTypeProto->setAttribute(rootContext_, py_class, typePrototype);
     noneTypeProto = noneTypeProto->setAttribute(rootContext_, py_name, rootContext_->fromUTF8String("NoneType"));
     noneTypeProto = noneTypeProto->setAttribute(rootContext_, py_module, builtinsVal);
@@ -6356,8 +6373,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     space_->nonePrototype = const_cast<proto::ProtoObject*>(noneTypeProto);
 
     // Initialize Ellipsis
-    const proto::ProtoObject* ellipsisType = rootContext_->newObject(true);
-    if (objectPrototype) ellipsisType = ellipsisType->addParent(rootContext_, objectPrototype);
+    const proto::ProtoObject* ellipsisType = objectPrototype->newChild(rootContext_, true);
     ellipsisType = ellipsisType->setAttribute(rootContext_, py_class, typePrototype);
     ellipsisType = ellipsisType->setAttribute(rootContext_, py_name, rootContext_->fromUTF8String("ellipsis"));
     ellipsisType = ellipsisType->setAttribute(rootContext_, py_module, builtinsVal);
@@ -6365,8 +6381,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     ellipsisPrototype = ellipsisType;
 
     // Initialize NotImplemented
-    const proto::ProtoObject* notImplType = rootContext_->newObject(true);
-    if (objectPrototype) notImplType = notImplType->addParent(rootContext_, objectPrototype);
+    const proto::ProtoObject* notImplType = objectPrototype->newChild(rootContext_, true);
     notImplType = notImplType->setAttribute(rootContext_, py_class, typePrototype);
     notImplType = notImplType->setAttribute(rootContext_, py_name, rootContext_->fromUTF8String("NotImplementedType"));
     notImplType = notImplType->setAttribute(rootContext_, py_module, builtinsVal);
@@ -6381,6 +6396,19 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     // Update boolean class name and repr
     boolPrototype = boolPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_type_repr));
     
+    // 4.5 Initialize modulePrototype
+    modulePrototype = objectPrototype->newChild(rootContext_, true);
+    modulePrototype = modulePrototype->setAttribute(rootContext_, getClassString(), typePrototype);
+    modulePrototype = modulePrototype->setAttribute(rootContext_, getNameString(), rootContext_->fromUTF8String("module"));
+    modulePrototype = modulePrototype->setAttribute(rootContext_, getModuleString(), builtinsVal);
+    modulePrototype = modulePrototype->setAttribute(rootContext_, getIterString(), rootContext_->fromMethod(nullptr, py_dict_iter));
+    modulePrototype = modulePrototype->setAttribute(rootContext_, py_iter_proto, listIterProto);
+    modulePrototype = modulePrototype->setAttribute(rootContext_, getGetItemString(), rootContext_->fromMethod(nullptr, py_dict_getitem));
+    modulePrototype = modulePrototype->setAttribute(rootContext_, getSetItemString(), rootContext_->fromMethod(nullptr, py_dict_setitem));
+    modulePrototype = modulePrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "keys"), rootContext_->fromMethod(nullptr, py_dict_keys));
+    modulePrototype = modulePrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "values"), rootContext_->fromMethod(nullptr, py_dict_values));
+    modulePrototype = modulePrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "items"), rootContext_->fromMethod(nullptr, py_dict_items));
+
     space_->objectPrototype = const_cast<proto::ProtoObject*>(objectPrototype);
     space_->stringPrototype = const_cast<proto::ProtoObject*>(strPrototype);
     space_->smallIntegerPrototype = const_cast<proto::ProtoObject*>(intPrototype);
@@ -6395,6 +6423,10 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     auto nativeProvider = std::make_unique<NativeModuleProvider>();
     // sys module (argv set later via setArgv before executeModule)
     sysModule = sys::initialize(rootContext_, this, &argv_);
+    if (modulePrototype) {
+        sysModule = sysModule->addParent(rootContext_, modulePrototype);
+        sysModule = sysModule->setAttribute(rootContext_, py_class, modulePrototype);
+    }
     nativeProvider->registerModule("sys", [this](proto::ProtoContext* ctx) { return sysModule; });
 
     // _io module (created before builtins so open() can delegate)
@@ -6403,6 +6435,10 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
 
     // builtins module
     builtinsModule = builtins::initialize(rootContext_, objectPrototype, typePrototype, intPrototype, strPrototype, listPrototype, dictPrototype, tuplePrototype, setPrototype, bytesPrototype, nonePrototype, ellipsisPrototype, notImplementedPrototype, sliceType, frozensetPrototype, floatPrototype, boolPrototype, ioModule);
+    if (modulePrototype) {
+        builtinsModule = builtinsModule->addParent(rootContext_, modulePrototype);
+        builtinsModule = builtinsModule->setAttribute(rootContext_, py_class, modulePrototype);
+    }
     nativeProvider->registerModule("builtins", [this](proto::ProtoContext* ctx) { return builtinsModule; });
 
     // _collections module
@@ -6643,134 +6679,134 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
         addRoot(zeroDivisionErrorType);
         addRoot(indexErrorType);
 
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(iterString));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(nextString));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(taskQueue));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(emptyList));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(rangeCurString));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(rangeStopString));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(rangeStepString));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(mapFuncString));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(mapIterString));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(enumIterString));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(enumIdxString));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(revObjString));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(revIdxString));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(zipItersString));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(filterFuncString));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(filterIterString));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(classString));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(nameString));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(callString));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(getItemString));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(lenString));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(boolString));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(intString));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(floatString));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(strString));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(reprString));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(hashString));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(powString));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(containsString));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(addString));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(formatString));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(dictString));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(docString));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(reversedString));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(enumProtoS));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(revProtoS));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(zipProtoS));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(filterProtoS));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(mapProtoS));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(rangeProtoS));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(boolTypeS));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(filterBoolS));
+        addRoot(iterString ? iterString->asObject(rootContext_) : nullptr);
+        addRoot(nextString ? nextString->asObject(rootContext_) : nullptr);
+        addRoot(taskQueue ? taskQueue->asObject(rootContext_) : nullptr);
+        if (emptyList) addRoot(emptyList->asObject(rootContext_));
+        if (rangeCurString) addRoot(rangeCurString->asObject(rootContext_));
+        if (rangeStopString) addRoot(rangeStopString->asObject(rootContext_));
+        if (rangeStepString) addRoot(rangeStepString->asObject(rootContext_));
+        if (mapFuncString) addRoot(mapFuncString->asObject(rootContext_));
+        if (mapIterString) addRoot(mapIterString->asObject(rootContext_));
+        if (enumIterString) addRoot(enumIterString->asObject(rootContext_));
+        if (enumIdxString) addRoot(enumIdxString->asObject(rootContext_));
+        if (revObjString) addRoot(revObjString->asObject(rootContext_));
+        if (revIdxString) addRoot(revIdxString->asObject(rootContext_));
+        if (zipItersString) addRoot(zipItersString->asObject(rootContext_));
+        if (filterFuncString) addRoot(filterFuncString->asObject(rootContext_));
+        if (filterIterString) addRoot(filterIterString->asObject(rootContext_));
+        if (classString) addRoot(classString->asObject(rootContext_));
+        if (nameString) addRoot(nameString->asObject(rootContext_));
+        if (callString) addRoot(callString->asObject(rootContext_));
+        if (getItemString) addRoot(getItemString->asObject(rootContext_));
+        if (lenString) addRoot(lenString->asObject(rootContext_));
+        if (boolString) addRoot(boolString->asObject(rootContext_));
+        if (intString) addRoot(intString->asObject(rootContext_));
+        if (floatString) addRoot(floatString->asObject(rootContext_));
+        if (strString) addRoot(strString->asObject(rootContext_));
+        if (reprString) addRoot(reprString->asObject(rootContext_));
+        if (hashString) addRoot(hashString->asObject(rootContext_));
+        if (powString) addRoot(powString->asObject(rootContext_));
+        if (containsString) addRoot(containsString->asObject(rootContext_));
+        if (addString) addRoot(addString->asObject(rootContext_));
+        if (formatString) addRoot(formatString->asObject(rootContext_));
+        if (dictString) addRoot(dictString->asObject(rootContext_));
+        if (docString) addRoot(docString->asObject(rootContext_));
+        if (reversedString) addRoot(reversedString->asObject(rootContext_));
+        if (enumProtoS) addRoot(enumProtoS->asObject(rootContext_));
+        if (revProtoS) addRoot(revProtoS->asObject(rootContext_));
+        if (zipProtoS) addRoot(zipProtoS->asObject(rootContext_));
+        if (filterProtoS) addRoot(filterProtoS->asObject(rootContext_));
+        if (mapProtoS) addRoot(mapProtoS->asObject(rootContext_));
+        if (rangeProtoS) addRoot(rangeProtoS->asObject(rootContext_));
+        if (boolTypeS) addRoot(boolTypeS->asObject(rootContext_));
+        if (filterBoolS) addRoot(filterBoolS->asObject(rootContext_));
         
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(__code__));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(__globals__));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(co_varnames));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(co_nparams));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(co_automatic_count));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(co_is_generator));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(co_flags));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(co_consts));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(co_names));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(co_code));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(giNativeCallbackString));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(sendString));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(throwString));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(closeString));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(f_back));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(f_code));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(f_globals));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(f_locals));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(__closure__));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(gi_code));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(gi_frame));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(gi_running));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(gi_yieldfrom));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(gi_pc));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(gi_stack));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(gi_locals));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(py_eq_s));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(py_ne_s));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(py_lt_s));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(py_le_s));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(py_gt_s));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(py_ge_s));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(getDunderString));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(setDunderString));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(delDunderString));
+        addRoot((__code__)->asObject(rootContext_));
+        addRoot((__globals__)->asObject(rootContext_));
+        addRoot((co_varnames)->asObject(rootContext_));
+        addRoot((co_nparams)->asObject(rootContext_));
+        addRoot((co_automatic_count)->asObject(rootContext_));
+        addRoot((co_is_generator)->asObject(rootContext_));
+        addRoot((co_flags)->asObject(rootContext_));
+        addRoot((co_consts)->asObject(rootContext_));
+        addRoot((co_names)->asObject(rootContext_));
+        addRoot((co_code)->asObject(rootContext_));
+        addRoot((giNativeCallbackString)->asObject(rootContext_));
+        addRoot((sendString)->asObject(rootContext_));
+        addRoot((throwString)->asObject(rootContext_));
+        addRoot((closeString)->asObject(rootContext_));
+        addRoot((f_back)->asObject(rootContext_));
+        addRoot((f_code)->asObject(rootContext_));
+        addRoot((f_globals)->asObject(rootContext_));
+        addRoot((f_locals)->asObject(rootContext_));
+        addRoot((__closure__)->asObject(rootContext_));
+        addRoot((gi_code)->asObject(rootContext_));
+        addRoot((gi_frame)->asObject(rootContext_));
+        addRoot((gi_running)->asObject(rootContext_));
+        addRoot((gi_yieldfrom)->asObject(rootContext_));
+        addRoot((gi_pc)->asObject(rootContext_));
+        addRoot((gi_stack)->asObject(rootContext_));
+        addRoot((gi_locals)->asObject(rootContext_));
+        addRoot((py_eq_s)->asObject(rootContext_));
+        addRoot((py_ne_s)->asObject(rootContext_));
+        addRoot((py_lt_s)->asObject(rootContext_));
+        addRoot((py_le_s)->asObject(rootContext_));
+        addRoot((py_gt_s)->asObject(rootContext_));
+        addRoot((py_ge_s)->asObject(rootContext_));
+        addRoot((getDunderString)->asObject(rootContext_));
+        addRoot((setDunderString)->asObject(rootContext_));
+        addRoot((delDunderString)->asObject(rootContext_));
         
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(__iadd__));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(__isub__));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(__imul__));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(__itruediv__));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(__ifloordiv__));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(__imod__));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(__ipow__));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(__ilshift__));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(__irshift__));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(__iand__));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(__ior__));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(__ixor__));
+        addRoot((__iadd__)->asObject(rootContext_));
+        addRoot((__isub__)->asObject(rootContext_));
+        addRoot((__imul__)->asObject(rootContext_));
+        addRoot((__itruediv__)->asObject(rootContext_));
+        addRoot((__ifloordiv__)->asObject(rootContext_));
+        addRoot((__imod__)->asObject(rootContext_));
+        addRoot((__ipow__)->asObject(rootContext_));
+        addRoot((__ilshift__)->asObject(rootContext_));
+        addRoot((__irshift__)->asObject(rootContext_));
+        addRoot((__iand__)->asObject(rootContext_));
+        addRoot((__ior__)->asObject(rootContext_));
+        addRoot((__ixor__)->asObject(rootContext_));
         
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(__and__));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(__rand__));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(__or__));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(__ror__));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(__xor__));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(__rxor__));
+        addRoot((__and__)->asObject(rootContext_));
+        addRoot((__rand__)->asObject(rootContext_));
+        addRoot((__or__)->asObject(rootContext_));
+        addRoot((__ror__)->asObject(rootContext_));
+        addRoot((__xor__)->asObject(rootContext_));
+        addRoot((__rxor__)->asObject(rootContext_));
         
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(__invert__));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(__pos__));
+        addRoot((__invert__)->asObject(rootContext_));
+        addRoot((__pos__)->asObject(rootContext_));
         
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(setItemString));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(delItemString));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(dataString));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(keysString));
+        addRoot((setItemString)->asObject(rootContext_));
+        addRoot((delItemString)->asObject(rootContext_));
+        addRoot((dataString)->asObject(rootContext_));
+        addRoot((keysString)->asObject(rootContext_));
         
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(startString));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(stopString));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(stepString));
+        addRoot((startString)->asObject(rootContext_));
+        addRoot((stopString)->asObject(rootContext_));
+        addRoot((stepString)->asObject(rootContext_));
         
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(ioModuleString));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(openString));
+        addRoot((ioModuleString)->asObject(rootContext_));
+        addRoot((openString)->asObject(rootContext_));
 
         addRoot(zeroInteger);
         addRoot(oneInteger);
         
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(listS));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(dictS));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(tupleS));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(setS));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(intS));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(floatS));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(strS));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(boolS));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(objectS));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(typeS));
-        addRoot(reinterpret_cast<const proto::ProtoObject*>(dictString));
+        addRoot(listS->asObject(rootContext_));
+        addRoot(dictS->asObject(rootContext_));
+        addRoot(tupleS->asObject(rootContext_));
+        addRoot(setS->asObject(rootContext_));
+        addRoot(intS->asObject(rootContext_));
+        addRoot(floatS->asObject(rootContext_));
+        addRoot(strS->asObject(rootContext_));
+        addRoot(boolS->asObject(rootContext_));
+        addRoot(objectS->asObject(rootContext_));
+        addRoot(typeS->asObject(rootContext_));
+        addRoot(dictString->asObject(rootContext_));
     }
     // Final prototype initialization diagnostic removed
 }
@@ -6875,6 +6911,11 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain,
         mod = mod->setAttribute(ctx, nameS, mainS);
         const_cast<proto::ProtoObject*>(modWrapper)->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "val"), mod);
     }
+    
+    if (modulePrototype && mod->getPrototype(ctx) != modulePrototype) {
+        mod = mod->addParent(ctx, modulePrototype);
+        mod = mod->setAttribute(ctx, getClassString(), modulePrototype);
+    }
 
     const proto::ProtoString* fileKey = proto::ProtoString::fromUTF8String(ctx, "__file__");
     const proto::ProtoString* executedKey = getExecutedString();
@@ -6925,8 +6966,13 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain,
                         const proto::ProtoObject* codeObj = makeCodeObject(ctx, compiler.getConstants(), compiler.getNames(), compiler.getBytecode(), ctx->fromUTF8String(path.c_str())->asString(ctx), nullptr, 0, 0, 0, false);
                         if (codeObj) {
                             proto::ProtoObject* mutableMod = const_cast<proto::ProtoObject*>(mod);
-                            if (dictPrototype) {
-                                mutableMod = const_cast<proto::ProtoObject*>(mutableMod->addParent(ctx, dictPrototype));
+                            // Modules no longer inherit from dictPrototype (CPython modules are not dicts)
+                            // if (dictPrototype) {
+                            //     mutableMod = const_cast<proto::ProtoObject*>(mutableMod->addParent(ctx, dictPrototype));
+                            // }
+                            initDictStorage(ctx, mutableMod);
+                            if (modulePrototype) {
+                                mutableMod = const_cast<proto::ProtoObject*>(mutableMod->setAttribute(ctx, getClassString(), modulePrototype));
                             }
                             
                             // Batch 1: Set frame attributes on module object
@@ -7108,7 +7154,7 @@ std::vector<std::string> PythonEnvironment::collectCandidates(const proto::Proto
                     auto* it = const_cast<proto::ProtoSparseListIterator*>(attrs->getIterator(context));
                     while (it && it->hasNext(context)) {
                         unsigned long key = it->nextKey(context);
-                        const proto::ProtoString* s = reinterpret_cast<const proto::ProtoString*>(key);
+                        const proto::ProtoString* s = reinterpret_cast<const proto::ProtoObject*>(key)->asString(context);
                         if (s) {
                             std::string name;
                             s->toUTF8String(context, name);
@@ -8409,7 +8455,7 @@ void PythonEnvironment::importStar(const proto::ProtoObject* mod) {
     auto* it = const_cast<proto::ProtoSparseListIterator*>(attrs->getIterator(ctx));
     while (it && it->hasNext(ctx)) {
         unsigned long key = it->nextKey(ctx);
-        const proto::ProtoString* s = reinterpret_cast<const proto::ProtoString*>(key);
+        const proto::ProtoString* s = reinterpret_cast<const proto::ProtoObject*>(key)->asString(ctx);
         if (s) {
             std::string name;
             s->toUTF8String(ctx, name);
@@ -8519,6 +8565,18 @@ const proto::ProtoObject* PythonEnvironment::runUntilComplete(const proto::Proto
 void PythonEnvironment::addTask(const proto::ProtoObject* coro) {
     if (!taskQueue) taskQueue = rootContext_->newList();
     taskQueue = taskQueue->appendLast(rootContext_, coro);
+}
+
+void PythonEnvironment::initDictStorage(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
+    if (!obj) return;
+    const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(ctx, "__data__");
+    const proto::ProtoString* keysName = proto::ProtoString::fromUTF8String(ctx, "__keys__");
+    if (!obj->getAttribute(ctx, dataName)) {
+        const_cast<proto::ProtoObject*>(obj)->setAttribute(ctx, dataName, ctx->newSparseList()->asObject(ctx));
+    }
+    if (!obj->getAttribute(ctx, keysName)) {
+        const_cast<proto::ProtoObject*>(obj)->setAttribute(ctx, keysName, ctx->newList()->asObject(ctx));
+    }
 }
 
 } // namespace protoPython

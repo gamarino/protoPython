@@ -1100,11 +1100,30 @@ std::unique_ptr<ASTNode> Parser::parseSuite() {
         if (!expect(TokenType::Dedent))
             return nullptr;
     } else {
-        do {
+        bool first = true;
+        while (cur_.type != TokenType::Newline && cur_.type != TokenType::EndOfFile) {
+            if (isCompound(cur_.type)) {
+                if (!first) {
+                    error("compound statement not allowed in statement list");
+                    return nullptr;
+                }
+                auto st = parseStatement();
+                if (st) suite->statements.push_back(std::move(st));
+                // After a compound statement on a single line, we expect NEWLINE or EOF
+                if (cur_.type != TokenType::Newline && cur_.type != TokenType::EndOfFile && cur_.type != TokenType::Semicolon) {
+                    // CPython allows nothing after the compound statement's suite on same line
+                }
+                if (cur_.type == TokenType::Semicolon) {
+                    error("semicolon not allowed after compound statement");
+                    return nullptr;
+                }
+                break; // Compound statement ends the line
+            }
             auto st = parseStatement();
-            if (st)
-                suite->statements.push_back(std::move(st));
-        } while (accept(TokenType::Semicolon) && cur_.type != TokenType::Newline && cur_.type != TokenType::EndOfFile);
+            if (st) suite->statements.push_back(std::move(st));
+            first = false;
+            if (!accept(TokenType::Semicolon)) break;
+        }
     }
     if (suite->statements.empty())
         suite->statements.push_back(createNode<PassNode>());
@@ -1118,16 +1137,23 @@ std::unique_ptr<ModuleNode> Parser::parseModule() {
         bool comp = isCompound(cur_.type);
         auto st = parseStatement();
         if (st) mod->body.push_back(std::move(st));
-        else if (!hasError_) {
-            error(std::string("Unexpected token in module: ") + tokenToName(cur_.type));
-            advance();
-        }
-        if (hasError_) break;
+
         if (!comp) {
-            while (accept(TokenType::Semicolon) && cur_.type != TokenType::Newline && cur_.type != TokenType::EndOfFile) {
+            while (accept(TokenType::Semicolon)) {
+                if (cur_.type == TokenType::Newline || cur_.type == TokenType::EndOfFile) break;
+                if (isCompound(cur_.type)) {
+                    error("compound statement not allowed after semicolon");
+                    break;
+                }
                 auto s2 = parseStatement();
                 if (s2) mod->body.push_back(std::move(s2));
                 else break;
+            }
+        } else {
+            // After compound statement, semicolon is NOT allowed on same line
+            if (cur_.type == TokenType::Semicolon) {
+                error("semicolon not allowed after compound statement");
+                advance();
             }
         }
         skipNewlines();

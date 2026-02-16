@@ -261,6 +261,12 @@ const proto::ProtoObject* invokePythonCallable(
     const proto::ProtoList* args,
     const proto::ProtoSparseList* kwargs = nullptr);
 
+const proto::ProtoObject* runUserClassCall(proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* args,
+    const proto::ProtoSparseList* kwargs);
+
 } // namespace protoPython
 
 #endif

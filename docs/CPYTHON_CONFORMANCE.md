@@ -71,11 +71,11 @@ Tests for features that are not primary targets for `protoPython`'s performance 
     - Fixed Range Iteration Protocol in `protoCore`, ensuring correct `nullptr` termination in `OP_FOR_ITER` for exhausted ranges.
     - Corrected range object initialization in `BuiltinsModule.cpp` (fixed functional `setAttribute` chaining bug).
     - Verified proper handling of nested and filtered comprehensions.
-- **Module Resolution & Attribute Lookup**:
-    - Fixed systemic `ImportError` for the `sys` module by updating `resolve` to handle dictionary-based `sys.modules`.
-    - Corrected `sys.modules` initialization with proper `__data__` and `__keys__` structures.
-    - Implemented `hasAttribute` in `protoCore` to resolve ambiguity in `hasattr` and `getattr` for attributes set to `None`.
-    - Ensured `sys` and `sys.modules` are mutable to maintain consistent environment state.
+- **Native Module Resolution & Import Fixes**:
+    - Resolved infinite recursion in `resolve` by making native modules (`posix`, `_ast`, `errno`, `stat`) **mutable**. This ensures the `__executed__` flag is set correctly on the original module instance.
+    - Modified `executeModule` to only trigger `runModuleMain` when the `asMain` flag is true, preventing unintended execution of global entry points during standard imports.
+    - Successfully verified discovery and import of `posix`, `ast`, `errno`, and `stat` modules.
+    - Integrated a dummy `gettext` module to satisfy standard library dependencies for `argparse` and `ast`.
 - **Compiler Conformance**: 
     - Full support for `//`, `@`, `**` operators and augmented assignments.
     - Implemented Walrus operator (`:=`) support.

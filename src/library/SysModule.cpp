@@ -220,10 +220,9 @@ static const proto::ProtoObject* sys_getrecursionlimit(
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment* env,
                                      const std::vector<std::string>* argv) {
     const proto::ProtoObject* sys = ctx->newObject(true);
-    // Avoid addParent here to prevent accidental prototype pollution in some protoCore versions
-    /* if (env && env->getObjectPrototype()) {
+    if (env && env->getObjectPrototype()) {
         sys = sys->addParent(ctx, env->getObjectPrototype());
-    } */
+    }
 
     // Store env pointer for trace functions and exit
     sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__env_ptr__"), ctx->fromExternalPointer(env));
@@ -286,6 +285,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     const proto::ProtoObject* modulesObj = ctx->newObject(true);
     if (env && env->getDictPrototype()) {
         modulesObj = modulesObj->addParent(ctx, env->getDictPrototype());
+        env->initDictStorage(ctx, modulesObj);
     }
     sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "modules"), modulesObj);
 
