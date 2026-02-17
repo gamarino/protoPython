@@ -811,6 +811,9 @@ static const proto::ProtoObject* py_getattr(
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     const proto::ProtoString* key = proto::ProtoString::fromUTF8String(context, nameStr.c_str());
     const proto::ProtoObject* val = env ? env->getAttribute(context, obj, key) : obj->getAttribute(context, key);
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        std::cerr << "[proto-diag] py_getattr obj=" << obj << " key='" << nameStr << "' val=" << val << " has=" << (obj->hasAttribute(context, key) == PROTO_TRUE) << "\n";
+    }
     if (obj->hasAttribute(context, key) == PROTO_TRUE) {
         return val;
     }
@@ -1526,42 +1529,37 @@ static const proto::ProtoObject* py_type(
     
     if (argCount == 1) {
         const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
-        const proto::ProtoObject* ret = PROTO_NONE;
-        if (obj->isInteger(context)) ret = env ? env->getIntPrototype() : PROTO_NONE;
-        else if (obj->isDouble(context)) ret = env ? env->getFloatPrototype() : PROTO_NONE;
-        else if (obj == PROTO_TRUE || obj == PROTO_FALSE) ret = env ? env->getBoolPrototype() : PROTO_NONE;
-        else if (obj->isString(context)) ret = env ? env->getStrPrototype() : PROTO_NONE;
-        else if (obj == PROTO_NONE) ret = env ? env->getNoneTypePrototype() : PROTO_NONE;
-        else if (obj->asMethod(context)) ret = env ? env->getFunctionPrototype() : PROTO_NONE;
-        else {
-            ret = obj->getAttribute(context, env ? env->getClassString() : proto::ProtoString::fromUTF8String(context, "__class__"));
-        }
-        return ret ? ret : PROTO_NONE;
+        if (std::getenv("PROTO_ENV_DIAG")) std::cerr << "[proto-diag] py_type(1) obj=" << obj << "\n";
+        return obj->getAttribute(context, env ? env->getClassString() : proto::ProtoString::fromUTF8String(context, "__class__"));
     }
     
-    if (argCount >= 3) {
-        // type(name, bases, dict)
-        const proto::ProtoObject* name = positionalParameters->getAt(context, 0);
-        const proto::ProtoObject* bases = positionalParameters->getAt(context, 1);
-        const proto::ProtoObject* dict = positionalParameters->getAt(context, 2);
+    if (argCount == 3 || argCount == 4) {
+        // type(name, bases, dict) (argCount == 3, self is metaclass)
+        // type.__new__(cls, name, bases, dict) (argCount == 4)
+        const proto::ProtoObject* cls = (argCount == 4) ? positionalParameters->getAt(context, 0) : self;
+        size_t baseIdx = (argCount == 4) ? 1 : 0;
         
-        if (std::getenv("PROTO_ENV_DIAG")) {
-            std::cerr << "[proto-diag] py_type(3) name=" << name << " bases=" << bases << " dict=" << dict << "\n" << std::flush;
-            if (name) std::cerr << "[proto-diag]   name isString: " << (name->isString(context) ? "yes" : "no") << "\n" << std::flush;
-            if (bases) std::cerr << "[proto-diag]   bases isTuple: " << (bases->isTuple(context) ? "yes" : "no") << " asList: " << (bases->asList(context) ? "yes" : "no") << "\n" << std::flush;
-            if (dict) std::cerr << "[proto-diag]   dict asSparseList: " << (dict->asSparseList(context) ? "yes" : "no") << "\n" << std::flush;
-        }
-        
-        if (!name || !name->isString(context)) {
-            if (env) env->raiseTypeError(context, "type() argument 1 must be str");
-            std::cerr << "[proto-diag] py_type: ERROR name is not string\n" << std::flush;
-            return PROTO_NONE;
+        if (argCount == 3) {
+            if (get_env_diag()) std::cerr << "[proto-diag] py_type(3) self=" << self << "\n";
+            // Find __new__ on self (the metaclass)
+            const proto::ProtoString* py_new = proto::ProtoString::fromUTF8String(context, "__new__");
+            const proto::ProtoObject* newMethod = self->getAttribute(context, py_new);
+            
+            bool isBaseType = (env && self == env->getTypePrototype());
+            if (!isBaseType && newMethod && newMethod != PROTO_NONE) {
+                if (get_env_diag()) std::cerr << "[proto-diag] py_type(3) calling custom __new__ " << newMethod << "\n";
+                const proto::ProtoList* newArgs = context->newList()->appendLast(context, self);
+                for (unsigned long i = 0; i < argCount; ++i) newArgs = newArgs->appendLast(context, positionalParameters->getAt(context, i));
+                return newMethod->call(context, nullptr, py_new, self, newArgs, keywordParameters);
+            }
         }
 
-        if (!bases || (!bases->isTuple(context) && !bases->asList(context))) {
-            if (env) env->raiseTypeError(context, "type() argument 2 must be tuple or list");
-            std::cerr << "[proto-diag] py_type: ERROR bases is not tuple/list\n" << std::flush;
-            return PROTO_NONE;
+        const proto::ProtoObject* name = positionalParameters->getAt(context, baseIdx + 0);
+        const proto::ProtoObject* bases = positionalParameters->getAt(context, baseIdx + 1);
+        const proto::ProtoObject* dict = positionalParameters->getAt(context, baseIdx + 2);
+
+        if (get_env_diag()) {
+            std::cerr << "[proto-diag] py_type(" << argCount << ") cls=" << cls << " name=" << name << "\n";
         }
 
         proto::ProtoObject* targetClass = const_cast<proto::ProtoObject*>(context->newObject(true));
@@ -1569,48 +1567,85 @@ static const proto::ProtoObject* py_type(
             targetClass = const_cast<proto::ProtoObject*>(targetClass->addParent(context, env->getObjectPrototype()));
         }
         
-        if (get_env_diag()) std::cerr << "[proto-diag] py_type: setting __class__ to " << self << "\n";
         targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, env ? env->getClassString() : proto::ProtoString::fromUTF8String(context, "__class__"), self));
-        
-        if (get_env_diag()) std::cerr << "[proto-diag] py_type: setting __name__ to " << name << "\n";
         const proto::ProtoString* py_name = env ? env->getNameString() : proto::ProtoString::fromUTF8String(context, "__name__");
         targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, py_name, name));
 
-        if (get_env_diag()) std::cerr << "[proto-diag] py_type: copying attributes from dict " << dict << "\n";
-        // Copy dictionary attributes
-        const proto::ProtoString* dataS = env ? env->getDataString() : proto::ProtoString::fromUTF8String(context, "__data__");
-        const proto::ProtoString* keysS = env ? env->getKeysString() : proto::ProtoString::fromUTF8String(context, "__keys__");
-        
-        const proto::ProtoObject* dataObj = dict->getAttribute(context, dataS);
-        const proto::ProtoObject* keysObj = dict->getAttribute(context, keysS);
-        
-        if (dataObj && keysObj && dataObj->asSparseList(context) && keysObj->asList(context)) {
-            const proto::ProtoSparseList* data = dataObj->asSparseList(context);
-            const proto::ProtoList* keys = keysObj->asList(context);
-            if (get_env_diag()) std::cerr << "[proto-diag] py_type: dict has " << keys->getSize(context) << " keys\n";
-            for (size_t i = 0; i < keys->getSize(context); ++i) {
-                const proto::ProtoObject* key = keys->getAt(context, i);
-                if (key->isString(context)) {
-                    std::string ks; key->asString(context)->toUTF8String(context, ks);
-                    const proto::ProtoObject* val = data->getAt(context, key->getHash(context));
-                    if (get_env_diag()) std::cerr << "[proto-diag] py_type:   setting attr '" << ks << "' to " << val << "\n";
-                    targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, key->asString(context), val));
+        // Copy dictionary attributes and handle __set_name__
+        if (dict) {
+            const proto::ProtoString* keysName = env ? env->getKeysString() : proto::ProtoString::fromUTF8String(context, "__keys__");
+            const proto::ProtoObject* keysObj = dict->getAttribute(context, keysName);
+            const proto::ProtoList* keysList = keysObj ? keysObj->asList(context) : nullptr;
+            
+            if (get_env_diag()) {
+                std::cerr << "[proto-diag] py_type: dict=" << dict << " __keys__ handle=" << keysObj << " list=" << keysList << " size=" << (keysList ? keysList->getSize(context) : 0) << "\n";
+            }
+
+            if (keysList) {
+                for (size_t i = 0; i < keysList->getSize(context); ++i) {
+                    const proto::ProtoObject* keyObj = keysList->getAt(context, i);
+                    if (get_env_diag()) {
+                        std::cerr << "[proto-diag] py_type: keysList[" << i << "] = " << keyObj << "\n";
+                    }
+                    if (keyObj && keyObj->isString(context)) {
+                        const proto::ProtoString* k = keyObj->asString(context);
+                        if (get_env_diag()) {
+                            std::string ks; k->toUTF8String(context, ks);
+                            std::cerr << "[proto-diag] py_type: copying attribute '" << ks << "'\n";
+                        }
+                        const proto::ProtoObject* val = dict->getAttribute(context, k);
+                        targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, k, val));
+                        
+                        // Update targetClass.__keys__
+                        if (keysName) {
+                            const proto::ProtoObject* tKeysObj = targetClass->getAttribute(context, keysName);
+                            const proto::ProtoList* tKeysList = tKeysObj ? tKeysObj->asList(context) : nullptr;
+                            if (tKeysList) {
+                                if (!tKeysList->has(context, keyObj)) {
+                                     targetClass->setAttribute(context, keysName, tKeysList->appendLast(context, keyObj)->asObject(context));
+                                }
+                            } else {
+                                // Create __keys__ if it doesn't exist on targetClass
+                                const proto::ProtoList* newList = context->newList()->appendLast(context, keyObj);
+                                targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, keysName, newList->asObject(context)));
+                            }
+                        }
+
+                        // Call __set_name__ if present
+                        const proto::ProtoObject* setName = val ? val->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__set_name__")) : nullptr;
+                        if (setName && setName != PROTO_NONE) {
+                            const proto::ProtoList* setNameArgs = context->newList()->appendLast(context, targetClass)->appendLast(context, keyObj);
+                            setName->call(context, nullptr, proto::ProtoString::fromUTF8String(context, "__set_name__"), val, setNameArgs, nullptr);
+                        }
+                    }
+                }
+            } else {
+                // Fallback for objects that don't have __keys__ (deprecated/legacy)
+                const proto::ProtoSparseList* attrs = dict->getAttributes(context);
+                if (attrs) {
+                    auto* it = const_cast<proto::ProtoSparseListIterator*>(attrs->getIterator(context));
+                    while (it && it->hasNext(context)) {
+                        unsigned long key = it->nextKey(context);
+                        // We can't safely get the string back from the hash easily here without getStringFromHash
+                        // so we skip this or use a diagnostics warning.
+                        if (std::getenv("PROTO_ENV_DIAG")) {
+                            std::cerr << "[proto-diag] py_type: WARNING: skipping untracked attribute with hash " << std::hex << key << std::dec << "\n";
+                        }
+                        it = const_cast<proto::ProtoSparseListIterator*>(it->advance(context));
+                    }
                 }
             }
-        } else {
-            if (get_env_diag()) std::cerr << "[proto-diag] py_type: dict missing __data__ or __keys__ or invalid types\n";
         }
 
         // Add bases as parents
-        if (get_env_diag()) std::cerr << "[proto-diag] py_type: adding bases as parents\n";
         if (bases && bases->isTuple(context)) {
             const proto::ProtoTuple* bTup = bases->asTuple(context);
-            for (size_t i = 0; i < bTup->getSize(context); ++i) {
+            for (int i = static_cast<int>(bTup->getSize(context)) - 1; i >= 0; --i) {
                 targetClass = const_cast<proto::ProtoObject*>(targetClass->addParent(context, bTup->getAt(context, i)));
             }
         } else if (bases && bases->asList(context)) {
             const proto::ProtoList* bList = bases->asList(context);
-            for (size_t i = 0; i < bList->getSize(context); ++i) {
+            for (int i = static_cast<int>(bList->getSize(context)) - 1; i >= 0; --i) {
                 targetClass = const_cast<proto::ProtoObject*>(targetClass->addParent(context, bList->getAt(context, i)));
             }
         }
@@ -1620,27 +1655,16 @@ static const proto::ProtoObject* py_type(
         if (targetClass->hasOwnAttribute(context, py_module) != PROTO_TRUE) {
             const proto::ProtoObject* globals = env ? env->getCurrentGlobals() : nullptr;
             const proto::ProtoObject* moduleName = globals ? globals->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__name__")) : nullptr;
-            if (get_env_diag()) std::cerr << "[proto-diag] py_type: setting __module__ to " << moduleName << "\n";
             if (moduleName) {
                 targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, py_module, moduleName));
             }
         }
         
         // __call__ handler for instantiation
-        if (get_env_diag()) std::cerr << "[proto-diag] py_type: setting __call__ handler\n";
         const proto::ProtoString* py_call = env ? env->getCallString() : proto::ProtoString::fromUTF8String(context, "__call__");
         targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, py_call, context->fromMethod(targetClass, runUserClassCall)));
-        // For now, let's just use the default py_object_call logic or similar.
-        // Actually, classes need a constructor.
         
-        if (get_env_diag()) {
-            const proto::ProtoObject* exc = env ? env->peekPendingException() : nullptr;
-            if (exc) {
-                std::cerr << "[proto-diag] py_type: FINISHED WITH EXCEPTION " << env->reprObject(context, exc) << "\n";
-            } else {
-                std::cerr << "[proto-diag] py_type: FINISHED SUCCESSFULLY\n";
-            }
-        }
+        if (std::getenv("PROTO_ENV_DIAG")) std::cerr << "[proto-diag] py_type: CREATED CLASS " << targetClass << " name=" << name << "\n";
         return targetClass;
     }
 
@@ -2528,7 +2552,10 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
 
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "object"), objectProto);
     if (typeProto) {
-        const_cast<proto::ProtoObject*>(typeProto)->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__call__"), ctx->fromMethod(const_cast<proto::ProtoObject*>(typeProto), py_type));
+        const proto::ProtoString* s_call = proto::ProtoString::fromUTF8String(ctx, "__call__");
+        const proto::ProtoString* s_new = proto::ProtoString::fromUTF8String(ctx, "__new__");
+        const_cast<proto::ProtoObject*>(typeProto)->setAttribute(ctx, s_call, ctx->fromMethod(const_cast<proto::ProtoObject*>(typeProto), py_type));
+        const_cast<proto::ProtoObject*>(typeProto)->setAttribute(ctx, s_new, ctx->fromMethod(const_cast<proto::ProtoObject*>(typeProto), py_type));
         builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "type"), typeProto);
     } else {
         builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "type"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_type));

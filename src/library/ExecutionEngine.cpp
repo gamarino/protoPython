@@ -940,7 +940,7 @@ const proto::ProtoObject* py_generator_send_impl(
         const proto::ProtoObject* co_varnames_obj = codeObj->getAttribute(ctx, env->getCoVarnamesString());
         const proto::ProtoList* co_varnames = co_varnames_obj ? co_varnames_obj->asList(ctx) : nullptr;
         const proto::ProtoObject* co_automatic_obj = codeObj->getAttribute(ctx, env->getCoAutomaticCountString());
-        int automatic_count = co_automatic_obj ? static_cast<int>(co_automatic_obj->asLong(ctx)) : 0;
+        int automatic_count = (co_automatic_obj && co_automatic_obj->isInteger(ctx)) ? static_cast<int>(co_automatic_obj->asLong(ctx)) : 0;
         
         const proto::ProtoList* localNames = ctx->newList();
         if (co_varnames) {
@@ -1083,7 +1083,7 @@ const proto::ProtoObject* py_generator_close(
     const proto::ProtoObject* pcObj = self->getAttribute(ctx, env->getGiPCString());
     const proto::ProtoObject* codeObj = self->getAttribute(ctx, env->getGiCodeString());
     if (pcObj && codeObj && pcObj->isInteger(ctx) && codeObj->getAttribute(ctx, env->getCoCodeString())->asList(ctx)) {
-        unsigned long pc = static_cast<unsigned long>(pcObj->asLong(ctx));
+        unsigned long pc = (pcObj && pcObj->isInteger(ctx)) ? static_cast<unsigned long>(pcObj->asLong(ctx)) : 0;
         if (pc >= codeObj->getAttribute(ctx, env->getCoCodeString())->asList(ctx)->getSize(ctx)) {
             return PROTO_NONE;
         }
@@ -1167,26 +1167,53 @@ const proto::ProtoObject* runUserClassCall(proto::ProtoContext* ctx,
     if (!ctx || !self) return PROTO_NONE;
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     
-    // Create new object instance
-    proto::ProtoObject* obj = const_cast<proto::ProtoObject*>(ctx->newObject(true));
+    const proto::ProtoString* newS = proto::ProtoString::fromUTF8String(ctx, "__new__");
+    const proto::ProtoObject* newM = self->getAttribute(ctx, newS);
     
-    // Class acts as prototype/parent
-    obj = const_cast<proto::ProtoObject*>(obj->addParent(ctx, self));
+    if (get_env_diag()) {
+        std::cerr << "[proto-diag] runUserClassCall: self=" << self << " newM=" << newM << "\n";
+    }
+
+    proto::ProtoObject* obj = nullptr;
+    if (newM && newM != PROTO_NONE) {
+        if (get_env_diag()) std::cerr << "[proto-diag] runUserClassCall: calling __new__ for " << self << " (method=" << newM << ")\n";
+        
+        // If it's a raw function (not yet bound), we must pass 'self' manually.
+        // But getAttribute on a class usually returns a bound method.
+        const proto::ProtoList* newArgs = args;
+        if (!newM->isMethod(ctx)) {
+             newArgs = ctx->newList()->appendLast(ctx, self);
+             if (args) {
+                 for (size_t i = 0; i < args->getSize(ctx); ++i) {
+                     newArgs = newArgs->appendLast(ctx, args->getAt(ctx, i));
+                 }
+             }
+        }
+        
+        obj = const_cast<proto::ProtoObject*>(invokeCallable(ctx, newM, newArgs, kwargs));
+        
+        if (!obj || obj == PROTO_NONE) {
+             if (env && env->hasPendingException()) {
+                 if (get_env_diag()) std::cerr << "[proto-diag] runUserClassCall: __new__ raised exception!\n";
+                 return nullptr; 
+             }
+        }
+    }
+
+    if (!obj || obj == PROTO_NONE) {
+        if (get_env_diag()) std::cerr << "[proto-diag] runUserClassCall: default creation for " << self << "\n";
+        obj = const_cast<proto::ProtoObject*>(ctx->newObject(true));
+        obj = const_cast<proto::ProtoObject*>(obj->addParent(ctx, self));
+        const proto::ProtoString* classS = env ? env->getClassString() : proto::ProtoString::fromUTF8String(ctx, "__class__");
+        obj = const_cast<proto::ProtoObject*>(obj->setAttribute(ctx, classS, self));
+    }
     
-    // Step V74: Explicitly set __class__ to the class itself
-    const proto::ProtoString* classS = env ? env->getClassString() : proto::ProtoString::fromUTF8String(ctx, "__class__");
-    obj = const_cast<proto::ProtoObject*>(obj->setAttribute(ctx, classS, self));
-    
-    // Invoke __init__ if present
+    // Invoke __init__
     const proto::ProtoString* initS = env ? env->getInitString() : proto::ProtoString::fromUTF8String(ctx, "__init__");
-    
-    // Step V75: Use env->getAttribute to get a BOUND method, ensuring 'self' is passed!
-    const proto::ProtoObject* initM = env ? env->getAttribute(ctx, obj, initS) : obj->getAttribute(ctx, initS);
+    const proto::ProtoObject* initM = obj->getAttribute(ctx, initS);
     if (initM && initM != PROTO_NONE) {
-        if (std::getenv("PROTO_ENV_DIAG")) std::cerr << "[proto-diag] runUserClassCall: calling __init__ for " << obj << "\n";
+        if (get_env_diag()) std::cerr << "[proto-diag] runUserClassCall: calling __init__ for " << obj << "\n";
         invokeCallable(ctx, initM, args, kwargs);
-    } else {
-        if (std::getenv("PROTO_ENV_DIAG")) std::cerr << "[proto-diag] runUserClassCall: __init__ not found for " << obj << "\n";
     }
     
     return obj;
@@ -1281,9 +1308,10 @@ const proto::ProtoObject* executeBytecodeRange(
         if (!instr || !instr->isInteger(ctx)) {
             continue;
         }
-        int op = static_cast<int>(instr->asLong(ctx));
+        int op = (instr && instr->isInteger(ctx)) ? static_cast<int>(instr->asLong(ctx)) : 0;
         int arg = (i + 1 < n && bytecode->getAt(ctx, static_cast<int>(i + 1))->isInteger(ctx))
-            ? static_cast<int>(bytecode->getAt(ctx, static_cast<int>(i + 1))->asLong(ctx)) : 0;
+            ? ((bytecode->getAt(ctx, static_cast<int>(i + 1)) && bytecode->getAt(ctx, static_cast<int>(i + 1))->isInteger(ctx)) 
+               ? static_cast<int>(bytecode->getAt(ctx, static_cast<int>(i + 1))->asLong(ctx)) : 0) : 0;
 
         if (std::getenv("PROTO_TRACE_AST")) {
             std::cerr << "[proto-trace] i=" << i << " op=" << op << " arg=" << arg << " stackSize=" << stack.size() << "\n";
@@ -1437,6 +1465,17 @@ const proto::ProtoObject* executeBytecodeRange(
                     const proto::ProtoObject* newFrame = frame->setAttribute(ctx, nameObj->asString(ctx), val);
                     frame = const_cast<proto::ProtoObject*>(newFrame);
                     
+                    // Track keys if __keys__ list exists
+                    const proto::ProtoString* keysS = env ? env->getKeysString() : proto::ProtoString::fromUTF8String(ctx, "__keys__");
+                    const proto::ProtoObject* keysObj = frame->getAttribute(ctx, keysS);
+                    if (keysObj && keysObj->asList(ctx)) {
+                        const proto::ProtoList* keysList = keysObj->asList(ctx);
+                        if (!keysList->has(ctx, nameObj)) {
+                            keysList = keysList->appendLast(ctx, nameObj);
+                            frame->setAttribute(ctx, keysS, keysList->asObject(ctx));
+                        }
+                    }
+
                     if (env) {
                         PythonEnvironment::setCurrentFrame(frame);
                         if (sync_globals) PythonEnvironment::setCurrentGlobals(frame);
@@ -2562,6 +2601,12 @@ const proto::ProtoObject* executeBytecodeRange(
             stack.pop_back();
             proto::ProtoObject* container = const_cast<proto::ProtoObject*>(stack.back());
             stack.pop_back();
+            
+            if (std::getenv("PROTO_ENV_DIAG")) {
+                std::string ks = "?";
+                if (key->isString(ctx)) key->asString(ctx)->toUTF8String(ctx, ks);
+                std::cerr << "[proto-diag] OP_STORE_SUBSCR: container=" << container << " key='" << ks << "' val=" << value << "\n";
+            }
             const proto::ProtoString* setItemS = env ? env->getSetItemString() : proto::ProtoString::fromUTF8String(ctx, "__setitem__");
             const proto::ProtoObject* setitem = container->getAttribute(ctx, setItemS);
             if (setitem && setitem != PROTO_NONE) {
@@ -2569,11 +2614,53 @@ const proto::ProtoObject* executeBytecodeRange(
                 const proto::ProtoList* args = ctx->newList()->appendLast(ctx, key)->appendLast(ctx, value);
                 invokeDunder(ctx, container, setItemS, args);
             } else {
-                // Fallback for native objects (maps/lists) without __setitem__
-                if (container->asSparseList(ctx)) {
-                    container->asSparseList(ctx)->setAt(ctx, key->getHash(ctx), value);
-                } else if (container->asList(ctx) && key->isInteger(ctx)) {
+                // Fallback for objects/maps without __setitem__
+                if (key->isString(ctx)) {
+                    const proto::ProtoString* sname = key->asString(ctx);
+                    container->setAttribute(ctx, sname, value);
+                    if (std::getenv("PROTO_ENV_DIAG")) {
+                        std::string kstr; sname->toUTF8String(ctx, kstr);
+                        const proto::ProtoObject* check = container->getAttribute(ctx, sname);
+                        std::cerr << "[proto-diag] OP_STORE_SUBSCR: setAttribute '" << kstr << "' SUCCESS (verified=" << check << ")\n";
+                    }
+                } else if (container->asSparseList(ctx)) {
+                    // For non-string keys, we should ideally have a way to update the SparseList in a mutable object.
+                    // But if it's a class dictionary, keys are usually strings.
+                }
+
+                // Update __keys__ if it exists (for attribute discovery/metaclasses)
+                const proto::ProtoString* keysS = env ? env->getKeysString() : proto::ProtoString::fromUTF8String(ctx, "__keys__");
+                const proto::ProtoObject* keysObj = container->getAttribute(ctx, keysS);
+                const proto::ProtoList* keysList = keysObj ? keysObj->asList(ctx) : nullptr;
+                
+                if (std::getenv("PROTO_ENV_DIAG")) {
+                    std::cerr << "[proto-diag] OP_STORE_SUBSCR: __keys__ handle=" << keysObj << " list=" << keysList << " size=" << (keysList ? keysList->getSize(ctx) : 0) << "\n";
+                }
+                if (keysList) {
+                    if (std::getenv("PROTO_ENV_DIAG")) {
+                         std::cerr << "[proto-diag] OP_STORE_SUBSCR: found __keys__ " << keysObj << " size=" << keysList->getSize(ctx) << "\n";
+                    }
+                    if (!keysList->has(ctx, key)) {
+                        unsigned long old_size = keysList->getSize(ctx);
+                        keysList = keysList->appendLast(ctx, key);
+                        if (std::getenv("PROTO_ENV_DIAG")) {
+                            std::cerr << "[proto-diag] OP_STORE_SUBSCR: __keys__ expanded " << old_size << " -> " << keysList->getSize(ctx) << "\n";
+                            for (size_t i = 0; i < keysList->getSize(ctx); ++i) {
+                                std::string ks_debug;
+                                const proto::ProtoObject* k_debug = keysList->getAt(ctx, i);
+                                if (k_debug && k_debug->isString(ctx)) k_debug->asString(ctx)->toUTF8String(ctx, ks_debug);
+                                else ks_debug = "<not a string>";
+                                std::cerr << "[proto-diag]   keysList[" << i << "] = " << k_debug << " ('" << ks_debug << "')\n";
+                            }
+                        }
+                        container->setAttribute(ctx, keysS, keysList->asObject(ctx));
+                    }
+                }
+
+                if (container->asList(ctx) && key->isInteger(ctx)) {
                     long long idx = key->asLong(ctx);
+                    // Note: ProtoList::setAt is also functional, but lists in Python rely on mutation.
+                    // This fallback only works if the list is somehow mutable or we don't care about the return.
                     container->asList(ctx)->setAt(ctx, static_cast<int>(idx), value);
                 }
             }
@@ -2740,7 +2827,6 @@ const proto::ProtoObject* executeBytecodeRange(
                 }
             }
         } else if (op == OP_BUILD_CLASS) {
-            // No argument for BUILD_CLASS
             if (stack.size() >= 4 && frame) {
                 const proto::ProtoObject* body = stack.back();
                 stack.pop_back();
@@ -2755,22 +2841,87 @@ const proto::ProtoObject* executeBytecodeRange(
                 const proto::ProtoString* nameS = env ? env->getNameString() : proto::ProtoString::fromUTF8String(ctx, "__name__");
                 const proto::ProtoString* callS = env ? env->getCallString() : proto::ProtoString::fromUTF8String(ctx, "__call__");
                 
-                proto::ProtoObject* ns = const_cast<proto::ProtoObject*>(ctx->newObject(true));
-                ns = const_cast<proto::ProtoObject*>(ns->setAttribute(ctx, nameS, name));
-                                
-                const proto::ProtoObject* globals = env ? env->getCurrentGlobals() : nullptr;
-                const proto::ProtoObject* moduleName = globals ? globals->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__name__")) : nullptr;
-                if (moduleName) {
-                    ns = const_cast<proto::ProtoObject*>(ns->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__module__"), moduleName));
+                // 1. Identify Metaclass
+                const proto::ProtoObject* metaclass = nullptr;
+                if (kwds && kwds != PROTO_NONE) {
+                    const proto::ProtoString* kName = proto::ProtoString::fromUTF8String(ctx, "metaclass");
+                    metaclass = kwds->getAttribute(ctx, kName);
+                    if (!metaclass || metaclass == PROTO_NONE) {
+                        // Try looking in __data__ if it's a dict object
+                        const proto::ProtoObject* dataObj = kwds->getAttribute(ctx, env ? env->getDataString() : proto::ProtoString::fromUTF8String(ctx, "__data__"));
+                        if (dataObj && dataObj->asSparseList(ctx)) {
+                            metaclass = dataObj->asSparseList(ctx)->getAt(ctx, kName->getHash(ctx));
+                        }
+                    }
+                }
+                if (!metaclass || metaclass == PROTO_NONE) {
+                    // Try to find metaclass in bases
+                    if (bases && bases->asTuple(ctx) && bases->asTuple(ctx)->getSize(ctx) > 0) {
+                        const proto::ProtoObject* firstBase = bases->asTuple(ctx)->getAt(ctx, 0);
+                        metaclass = firstBase->getAttribute(ctx, env->getClassString());
+                    }
+                }
+                if (!metaclass || metaclass == PROTO_NONE) {
+                    metaclass = env ? env->getTypePrototype() : nullptr;
+                }
+                if (std::getenv("PROTO_ENV_DIAG")) {
+                    std::string mName = "unknown";
+                    const proto::ProtoObject* mn = metaclass ? metaclass->getAttribute(ctx, nameS) : nullptr;
+                    if (mn && mn->isString(ctx)) mn->asString(ctx)->toUTF8String(ctx, mName);
+                    std::string nStr = "?";
+                    if (name && name->isString(ctx)) name->asString(ctx)->toUTF8String(ctx, nStr);
+                    std::cerr << "[proto-diag] OP_BUILD_CLASS: name=" << nStr << " metaclass=" << mName << "\n";
                 }
 
+                // 2. Metaclass __prepare__
+                proto::ProtoObject* ns = nullptr;
+                const proto::ProtoObject* prepareM = metaclass ? metaclass->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__prepare__")) : nullptr;
+                if (prepareM && prepareM != PROTO_NONE) {
+                    const proto::ProtoList* prepareArgs = ctx->newList()->appendLast(ctx, name)->appendLast(ctx, bases);
+                    // Use keyword parameters if available
+                    const proto::ProtoSparseList* kw = (kwds && kwds->asSparseList(ctx)) ? kwds->asSparseList(ctx) : nullptr;
+                    const proto::ProtoObject* nsObj = prepareM->call(ctx, nullptr, proto::ProtoString::fromUTF8String(ctx, "__prepare__"), metaclass, prepareArgs, kw);
+                    ns = const_cast<proto::ProtoObject*>(nsObj);
+                }
+                if (!ns || ns == PROTO_NONE) {
+                    ns = const_cast<proto::ProtoObject*>(ctx->newObject(true));
+                }
+                
+                // Initialize __keys__ list for the namespace
+                const proto::ProtoString* keysS = env ? env->getKeysString() : proto::ProtoString::fromUTF8String(ctx, "__keys__");
+                if (ns->hasOwnAttribute(ctx, keysS) != PROTO_TRUE) {
+                    const proto::ProtoList* keysList = ctx->newList();
+                    ns = const_cast<proto::ProtoObject*>(ns->setAttribute(ctx, keysS, keysList->asObject(ctx)));
+                }
+
+                // Setup standard attributes in ns
+                const proto::ProtoString* py_name_s = env ? env->getNameString() : proto::ProtoString::fromUTF8String(ctx, "__name__");
+                const proto::ProtoString* py_module_s = proto::ProtoString::fromUTF8String(ctx, "__module__");
+                
+                ns = const_cast<proto::ProtoObject*>(ns->setAttribute(ctx, nameS, name));
+                // Add to keys
+                const proto::ProtoObject* keysObj = ns->getAttribute(ctx, keysS);
+                if (keysObj && keysObj->asList(ctx)) {
+                    ns->setAttribute(ctx, keysS, keysObj->asList(ctx)->appendLast(ctx, nameS->asObject(ctx))->asObject(ctx));
+                }
+
+                const proto::ProtoObject* globals = env ? env->getCurrentGlobals() : nullptr;
+                const proto::ProtoObject* moduleName = globals ? globals->getAttribute(ctx, py_module_s) : nullptr;
+                if (moduleName) {
+                    ns = const_cast<proto::ProtoObject*>(ns->setAttribute(ctx, py_module_s, moduleName));
+                    // Re-fetch keysObj to avoid stale pointer if setAttribute returns new version or updates state
+                    keysObj = ns->getAttribute(ctx, keysS);
+                    if (keysObj && keysObj->asList(ctx)) {
+                        ns->setAttribute(ctx, keysS, keysObj->asList(ctx)->appendLast(ctx, py_module_s->asObject(ctx))->asObject(ctx));
+                    }
+                }
                 if (env) {
                     ns = const_cast<proto::ProtoObject*>(ns->setAttribute(ctx, env->getFBackString(), PythonEnvironment::getCurrentFrame()));
                     ns = const_cast<proto::ProtoObject*>(ns->setAttribute(ctx, env->getFGlobalsString(), PythonEnvironment::getCurrentGlobals()));
                     ns = const_cast<proto::ProtoObject*>(ns->setAttribute(ctx, env->getFLocalsString(), ns));
                 }
-                
-                // Invoke body with ns as locals
+
+                // 3. Execute body with ns as locals
                 if (body) {
                     const proto::ProtoObject* codeObj = body->getAttribute(ctx, env ? env->getCodeString() : proto::ProtoString::fromUTF8String(ctx, "__code__"));
                     if (codeObj && codeObj != PROTO_NONE) {
@@ -2782,66 +2933,31 @@ const proto::ProtoObject* executeBytecodeRange(
                         }
                     }
                 }
-                
-                // Create class object (prototype)
-                const proto::ProtoObject* metaclass = nullptr;
-                if (kwds && kwds != PROTO_NONE) {
-                    metaclass = kwds->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "metaclass"));
-                }
 
-                proto::ProtoObject* targetClass = const_cast<proto::ProtoObject*>(ctx->newObject(true));
-                if (env && env->getObjectPrototype()) {
-                    targetClass = const_cast<proto::ProtoObject*>(targetClass->addParent(ctx, env->getObjectPrototype()));
-                }
-                
-                const proto::ProtoObject* class_cell = (metaclass && metaclass != PROTO_NONE) ? metaclass : (env ? env->getTypePrototype() : nullptr);
-                if (class_cell) {
-                    targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(ctx, env ? env->getClassString() : proto::ProtoString::fromUTF8String(ctx, "__class__"), class_cell));
-                }
-                // Step V75: Explicitly set __name__ on the class object
-                targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(ctx, nameS, name));
-                if (moduleName) {
-                    targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__module__"), moduleName));
-                }
-                
-                // Set runUserClassCall as __call__
-                targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(ctx, callS, ctx->fromMethod(targetClass, (proto::ProtoMethod)runUserClassCall)));
-                
-                if (bases && bases->asTuple(ctx)) {
-                    auto bt = bases->asTuple(ctx);
-                    for (size_t j = 0; j < bt->getSize(ctx); ++j) {
-                        targetClass = const_cast<proto::ProtoObject*>(targetClass->addParent(ctx, bt->getAt(ctx, j)));
-                    }
-                }
-                
-                // Copy ns attributes to targetClass
-                const proto::ProtoObject* codeObj = body ? body->getAttribute(ctx, env ? env->getCodeString() : proto::ProtoString::fromUTF8String(ctx, "__code__")) : nullptr;
-                if (codeObj && codeObj != PROTO_NONE) {
-                    const proto::ProtoObject* co_names_obj = codeObj->getAttribute(ctx, env ? env->getCoNamesString() : proto::ProtoString::fromUTF8String(ctx, "co_names"));
-                    if (co_names_obj && co_names_obj->asList(ctx)) {
-                        const proto::ProtoList* co_names = co_names_obj->asList(ctx);
-                        for (size_t i = 0; i < co_names->getSize(ctx); ++i) {
-                            const proto::ProtoObject* knObj = co_names->getAt(ctx, i);
-                            if (knObj && knObj->isString(ctx)) {
-                                const proto::ProtoString* k = knObj->asString(ctx);
-                                if (env && (k == env->getFBackString() || k == env->getFLocalsString() || k == env->getFGlobalsString() || k == env->getFCodeString())) {
-                                    continue;
-                                }
-                                const proto::ProtoObject* attrVal = ns->getAttribute(ctx, k);
-                                if (attrVal && attrVal != PROTO_NONE) {
-                                    targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(ctx, k, attrVal));
-                                }
+                if (std::getenv("PROTO_ENV_DIAG")) {
+                    std::cerr << "[proto-diag] OP_BUILD_CLASS body finished. ns=" << ns << " has " << ns->getAttributes(ctx)->getSize(ctx) << " attributes\n";
+                    const proto::ProtoSparseList* attrs = ns->getAttributes(ctx);
+                    if (attrs) {
+                        auto* it = const_cast<proto::ProtoSparseListIterator*>(attrs->getIterator(ctx));
+                        while (it && it->hasNext(ctx)) {
+                            unsigned long kh = it->nextKey(ctx);
+                            const proto::ProtoString* k = reinterpret_cast<const proto::ProtoObject*>(kh)->asString(ctx);
+                            if (k) {
+                                std::string ks; k->toUTF8String(ctx, ks);
+                                const proto::ProtoObject* val = ns->getAttribute(ctx, k);
+                                std::cerr << "[proto-diag]   ns attr: " << ks << " val=" << val << " (hash: " << std::hex << kh << std::dec << ")\n";
                             }
+                            it = const_cast<proto::ProtoSparseListIterator*>(it->advance(ctx));
                         }
                     }
                 }
-                
-                // Also copy any attributes that might have been set manually (if possible)
-                // For now, the co_names approach is much safer than the hash cast.
-                
-                // Set __call__ to support instantiation
-                targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(ctx, callS, ctx->fromMethod(targetClass, (proto::ProtoMethod)runUserClassCall)));
 
+                // 4. Invoke metaclass to create the class
+                const proto::ProtoList* mcArgs = ctx->newList()->appendLast(ctx, name)->appendLast(ctx, bases)->appendLast(ctx, ns);
+                const proto::ProtoSparseList* kw = (kwds && kwds->asSparseList(ctx)) ? kwds->asSparseList(ctx) : nullptr;
+                const proto::ProtoObject* targetClass = invokeCallable(ctx, metaclass, mcArgs, kw);
+                
+                if (!targetClass) targetClass = PROTO_NONE;
                 stack.push_back(targetClass);
             }
         }

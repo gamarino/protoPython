@@ -236,6 +236,7 @@ static const proto::ProtoObject* py_type_repr(
     return context->fromUTF8String(out.c_str());
 }
 
+
 static const proto::ProtoObject* py_object_repr(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
