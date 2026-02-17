@@ -35,6 +35,10 @@ The execution engine for Python scripts.
 
 - **Fork of CPython 3.14**: Maintains the frontend (parser, AST) but replaces the bytecode evaluation loop and memory management.
 - **Execution Engine**: Uses the `protoPython` library to execute logic without a GIL.
+    - **2.2.1. Memory Management & GC Safety**: 
+        - The internal operand stack of the `ExecutionEngine` is tracked as a root by the **protoCore** garbage collector.
+        - **Rooting Policy**: All opcodes must ensure that inputs (operands) and intermediate results remain on the stack until the operation is complete. Popping operands should be the final step before pushing the result.
+        - **In-place Mutation**: To optimize performance and reduce allocation churn, opcodes favor in-place modification of stack slots when possible.
 - **Module main**: When running a script or module, protopy resolves it and, if the module has a callable `main` attribute, invokes it (stub execution path until full bytecode is in place).
 - **Threading**: Native mapping of Python `threading` to `protoCore` threads.
 

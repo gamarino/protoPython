@@ -222,10 +222,11 @@ const proto::ProtoObject* executeBytecodeRange(
     unsigned long pcStart,
     unsigned long pcEnd,
     unsigned long stackOffset = 0,
-    std::vector<const proto::ProtoObject*>* externalStack = nullptr,
     unsigned long* outPc = nullptr,
     bool* yielded = nullptr,
-    std::vector<Block>* externalBlockStack = nullptr);
+    std::vector<Block>* externalBlockStack = nullptr,
+    unsigned long initialTop = 0,
+    unsigned long* finalTopPtr = nullptr);
 
 /**
  * @brief Python-compatible generator methods.

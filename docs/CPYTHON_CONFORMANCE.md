@@ -12,9 +12,9 @@ This document tracks the progress of `protoPython` in passing the official CPyth
 Core syntax, standard object model, and fundamental types.
 
 - [/] `test_grammar.py`: Validates parser completeness. (Compiler fixed, runtime modules pending)
-- [ ] `test_types.py`: Fundamental behavior of core object cells.
-- [ ] `test_descr.py`: MRO, descriptors, and slots.
-- [ ] `test_generators.py`: Generator execution state.
+- [x] `test_types.py`: Fundamental behavior of core object cells.
+- [x] `test_descr.py`: MRO, descriptors, and slots.
+- [x] `test_generators.py`: Generator execution state.
 - [ ] `test_asyncgen.py`: Asynchronous generator support.
 - [ ] `test_json.py`: Interoperability and complex data structures.
 - [ ] `test_base64.py`: Basic data encoding and type interoperability.
@@ -46,19 +46,23 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 - [ ] `test_pydoc.py`
 - [ ] `test_warnings.py`
 
-## Progress Summary (V74 - 2026-02-15)
+## Progress Summary (V75 - 2026-02-17)
 
 | Category | Total | Checked | Passed | Success Rate |
 | :--- | :--- | :--- | :--- | :--- |
-| **Essential** | 7 | 5 | 4 | 57% |
+| **Essential** | 7 | 7 | 6 | 86% |
 | **Important** | 6 | 4 | 3 | 50% |
 | **Necessary** | 5 | 3 | 2 | 40% |
 | **Low Priority**| 4 | 0 | 0 | 0% |
-| **Total** | **22** | **12** | **9** | **41%** |
+| **Total** | **22** | **14** | **11** | **50%** |
 
-## Recent Achievements (V70-V74)
+## Recent Achievements (V70-V75)
 
-- **Stability & Exception Handling**:
+- **GC Safety & Rooting (V75)**:
+    - Massively refactored `ExecutionEngine.cpp` to ensure all `ProtoObject*` operands are rooted on the execution stack.
+    - Implemented "root-safe" patterns for all dunder method lookups and container mutations.
+    - Resolved `std::length_error` and arbitrary crashes related to garbage collection during instruction execution.
+    - Aligned stack order of `OP_STORE_ATTR` and `OP_STORE_SUBSCR` with CPython 3.14 (Value, Receiver, Key).
     - Systemic fix for `return nullptr` in opcodes (`OP_FOR_ITER`, `OP_CALL_FUNCTION`, etc.), ensuring `try...except` works across frame boundaries.
     - Verified proper propagation of `RuntimeError` and `AttributeError`.
     - Fixed `StopIteration` handling in `await` for coroutines returning values.

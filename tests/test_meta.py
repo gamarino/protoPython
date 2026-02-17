@@ -19,3 +19,6 @@ class MyClass(metaclass=Meta):
 
 print(f"MyClass address: {hex(id(MyClass))}")
 print(f"MyClass.added_by_meta = {getattr(MyClass, 'added_by_meta', 'MISSING')}")
+print(f"MyClass.__dict__ type: {type(MyClass.__dict__)}")
+print(f"MyClass.__dict__ keys: {list(MyClass.__dict__.keys()) if hasattr(MyClass.__dict__, 'keys') else 'no keys()'}")
+print(f"added_by_meta in MyClass.__dict__: {'added_by_meta' in MyClass.__dict__}")

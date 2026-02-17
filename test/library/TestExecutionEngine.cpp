@@ -305,9 +305,9 @@ TEST(ExecutionEngineTest, StoreAttr) {
         ->appendLast(&ctx, ctx.fromInteger(99));
     const proto::ProtoList* names = ctx.newList()->appendLast(&ctx, ctx.fromUTF8String("x"));
     const proto::ProtoList* bytecode = ctx.newList()
-        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(0))
-        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(1))
-        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_STORE_ATTR))->appendLast(&ctx, ctx.fromInteger(0))
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(1)) // 99 (value)
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(0)) // obj (owner)
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_STORE_ATTR))->appendLast(&ctx, ctx.fromInteger(0)) // attr
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(0))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_ATTR))->appendLast(&ctx, ctx.fromInteger(0))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE));
@@ -780,7 +780,7 @@ TEST(ExecutionEngineTest, RotThree) {
         &ctx, constants, bytecode, nullptr, frame);
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->isInteger(&ctx));
-    EXPECT_EQ(result->asLong(&ctx), 1);  // stack 1,2,3 (3 top); ROT_THREE -> 2,3,1; top=1
+    EXPECT_EQ(result->asLong(&ctx), 2);  // stack 1,2,3 (3 top); Python ROT_THREE -> 3,1,2; top=2
 }
 
 TEST(ExecutionEngineTest, RotFour) {
@@ -803,7 +803,7 @@ TEST(ExecutionEngineTest, RotFour) {
         &ctx, constants, bytecode, nullptr, frame);
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->isInteger(&ctx));
-    EXPECT_EQ(result->asLong(&ctx), 1);  // stack 1,2,3,4 (4 top); ROT_FOUR lifts fourth to top -> top=1
+    EXPECT_EQ(result->asLong(&ctx), 3);  // stack 1,2,3,4 (4 top); Python ROT_FOUR -> 4,1,2,3; top=3
 }
 
 TEST(ExecutionEngineTest, DupTopTwo) {
@@ -836,11 +836,12 @@ TEST(ExecutionEngineTest, StoreSubscr) {
     const proto::ProtoList* bytecode = ctx.newList()
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(0))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(1))
-        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_BUILD_LIST))->appendLast(&ctx, ctx.fromInteger(2))
-        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_DUP_TOP))->appendLast(&ctx, ctx.fromInteger(0))
-        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(2))
-        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(3))
-        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_STORE_SUBSCR))->appendLast(&ctx, ctx.fromInteger(0))
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_BUILD_LIST))->appendLast(&ctx, ctx.fromInteger(2)) // [L]
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(3)) // 99.0 (value)
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_DUP_TOP_TWO)) // [L, 99.0, L, 99.0]
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_POP_TOP)) // [L, 99.0, L]
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(2)) // 0 (index)
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_STORE_SUBSCR)) // [L]
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(2))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_BINARY_SUBSCR))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE));
@@ -850,9 +851,9 @@ TEST(ExecutionEngineTest, StoreSubscr) {
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->isDouble(&ctx) || result->isInteger(&ctx));
     if (result->isDouble(&ctx))
-        EXPECT_NEAR(result->asDouble(&ctx), 10.0, 1e-10);
+        EXPECT_NEAR(result->asDouble(&ctx), 99.0, 1e-10);
     else
-        EXPECT_TRUE(result->asLong(&ctx) == 10 || result->asLong(&ctx) == 0);
+        EXPECT_EQ(result->asLong(&ctx), 99);
 }
 
 TEST(ExecutionEngineTest, UnaryNegative) {
@@ -1134,7 +1135,7 @@ TEST(ExecutionEngineTest, GetIterNoCrash) {
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(0))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_LOAD_CONST))->appendLast(&ctx, ctx.fromInteger(1))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_BUILD_LIST))->appendLast(&ctx, ctx.fromInteger(2))
-        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_GET_ITER))->appendLast(&ctx, ctx.fromInteger(0))
+        ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_GET_ITER))
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE));
     proto::ProtoObject* frame = nullptr;
     const proto::ProtoObject* result = protoPython::executeMinimalBytecode(

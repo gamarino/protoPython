@@ -178,6 +178,9 @@ public:
     const proto::ProtoString* getReprString() const { return reprString; }
     const proto::ProtoString* getHashString() const { return hashString; }
     const proto::ProtoString* getContainsString() const { return containsString; }
+    const proto::ProtoString* getMatMulString() const { return matMulString; }
+    const proto::ProtoString* getIMatMulString() const { return imatmulString; }
+    const proto::ProtoString* getRMatMulString() const { return rmatmulString; }
     const proto::ProtoString* getModuleString() const { return moduleString; }
     const proto::ProtoString* getBuiltinsString() const { return builtinsString; }
     const proto::ProtoString* getFormatString() const { return formatString; }
@@ -806,6 +809,9 @@ private:
     const proto::ProtoString* delItemString{nullptr};
     const proto::ProtoString* dataString{nullptr};
     const proto::ProtoString* keysString{nullptr};
+    const proto::ProtoString* matMulString{nullptr};
+    const proto::ProtoString* imatmulString{nullptr};
+    const proto::ProtoString* rmatmulString{nullptr};
     const proto::ProtoString* initString{nullptr};
     const proto::ProtoString* executedString{nullptr};
 

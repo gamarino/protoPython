@@ -414,6 +414,11 @@ static const proto::ProtoObject* py_contains(
         return containsMethod->asMethod(context)(context, container, nullptr, args, nullptr);
     }
 
+    // FLAT approach fallback: if not iterable via __contains__, check as attribute if item is string
+    if (item->isString(context)) {
+        return container->hasAttribute(context, item->asString(context)) ? PROTO_TRUE : PROTO_FALSE;
+    }
+
     return PROTO_FALSE;
 }
 
@@ -1570,6 +1575,9 @@ static const proto::ProtoObject* py_type(
         targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, env ? env->getClassString() : proto::ProtoString::fromUTF8String(context, "__class__"), self));
         const proto::ProtoString* py_name = env ? env->getNameString() : proto::ProtoString::fromUTF8String(context, "__name__");
         targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, py_name, name));
+        
+        // Ensure the new class has dictionary storage (for __dict__ and consistency)
+        if (env) env->initDictStorage(context, targetClass);
 
         // Copy dictionary attributes and handle __set_name__
         if (dict) {
