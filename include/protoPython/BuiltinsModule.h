@@ -22,7 +22,28 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
                                    const proto::ProtoObject* sliceType, const proto::ProtoObject* frozensetProto,
                                    const proto::ProtoObject* floatProto = nullptr,
                                    const proto::ProtoObject* boolProto = nullptr,
+                                   const proto::ProtoObject* complexProto = nullptr,
                                    const proto::ProtoObject* ioModule = nullptr);
+
+const proto::ProtoObject* py_complex(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters);
+const proto::ProtoObject* py_complex_repr(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters);
+
+const proto::ProtoObject* py_type_prepare(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters);
 
 } // namespace builtins
 } // namespace protoPython

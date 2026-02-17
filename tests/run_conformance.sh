@@ -4,7 +4,7 @@
 PROTOPY="/home/gamarino/Documentos/proyectos/protoPython/build/src/runtime/protopy"
 LOG="/home/gamarino/Documentos/proyectos/protoPython/tests/conformance_status.log"
 BASE_DIR="/home/gamarino/Documentos/proyectos/protoPython"
-TIMEOUT="300" # 5 minutes per test
+TIMEOUT="15" # 15 seconds per test
 
 # Test Groups
 ESSENTIAL=(
@@ -44,7 +44,8 @@ run_tests() {
         echo -n "[RUN] $test_file ... " | tee -a "$LOG"
         
         START_TIME=$(date +%s)
-        PROTO_ENV_DIAG=1 timeout "$TIMEOUT" "$PROTOPY" "$BASE_DIR/$test_file" > /tmp/test_out.log 2>&1
+        STDLIB_PATH="/home/gamarino/Documentos/proyectos/protoPython/lib/python3.14"
+        PROTO_PYTHONPATH="$STDLIB_PATH" PROTO_ENV_DIAG=1 timeout "$TIMEOUT" "$PROTOPY" "$BASE_DIR/$test_file" > /tmp/test_out.log 2>&1
         RET=$?
         END_TIME=$(date +%s)
         DURATION=$((END_TIME - START_TIME))

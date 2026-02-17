@@ -44,47 +44,119 @@ static const proto::ProtoObject* py_import(
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters);
+
+const proto::ProtoObject* py_type_prepare(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
-    if (positionalParameters->getSize(context) == 0) return PROTO_NONE;
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::ProtoObject* dictObj = context->newObject(true);
+    if (env && env->getDictPrototype()) {
+        dictObj = dictObj->addParent(context, env->getDictPrototype());
+    }
+    // Initialize __data__ and __keys__ if needed
+    if (env) env->initDictStorage(context, dictObj);
+    return dictObj;
+}
+static const proto::ProtoObject* py_import(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    size_t argCount = positionalParameters->getSize(context);
+    if (argCount == 0) return PROTO_NONE;
+    
     const proto::ProtoObject* nameObj = positionalParameters->getAt(context, 0);
-    if (!nameObj->isString(context)) return PROTO_NONE;
     std::string moduleName;
-    nameObj->asString(context)->toUTF8String(context, moduleName);
+    if (nameObj && nameObj->isString(context)) {
+        nameObj->asString(context)->toUTF8String(context, moduleName);
+    }
+
+    const proto::ProtoObject* globals = (argCount >= 2) ? positionalParameters->getAt(context, 1) : PROTO_NONE;
+    const proto::ProtoObject* fromListObj = (argCount >= 4) ? positionalParameters->getAt(context, 3) : PROTO_NONE;
+    int level = 0;
+    if (argCount >= 5) {
+        const proto::ProtoObject* levelObj = positionalParameters->getAt(context, 4);
+        if (levelObj->isInteger(context)) level = (int)levelObj->asLong(context);
+    }
 
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
-    const proto::ProtoObject* leaf = env ? env->resolve(moduleName, context) : PROTO_NONE;
-    if (std::getenv("PROTO_ENV_DIAG")) {
-    }
-    
-    if (!leaf || leaf == PROTO_NONE) {
-        if (env) {
-            if (env->hasPendingException()) return nullptr;
-            env->raiseImportError("No module named '" + moduleName + "'");
-        }
-        return PROTO_NONE;
-    }
-    if (positionalParameters->getSize(context) >= 4 && leaf && leaf != PROTO_NONE) {
-        const proto::ProtoObject* fromListObj = positionalParameters->getAt(context, 3);
-        if (fromListObj && fromListObj->asList(context)) {
-            const proto::ProtoList* fromList = fromListObj->asList(context);
-            unsigned long fromSize = fromList->getSize(context);
-            for (unsigned long i = 0; i < fromSize; ++i) {
-                const proto::ProtoObject* itemObj = fromList->getAt(context, i);
-                if (itemObj && itemObj->isString(context)) {
-                    std::string itemName;
-                    itemObj->asString(context)->toUTF8String(context, itemName);
-                    if (itemName == "*") continue;
-                    // Check if itemName is a submodule of moduleName
-                    std::string subModuleName = moduleName + "." + itemName;
-                    if (env) env->resolve(subModuleName, context);
+    if (!env) return PROTO_NONE;
+
+    if (level > 0) {
+        if (globals == PROTO_NONE) globals = env->getGlobals();
+        if (globals && globals != PROTO_NONE) {
+            const proto::ProtoObject* pkgObj = globals->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__package__"));
+            if (!pkgObj || pkgObj == PROTO_NONE) {
+                pkgObj = globals->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__name__"));
+                // If __name__ is not a package, we might need to go up one level.
+                // For simplicity, if it doesn't have __path__, it's a module.
+                if (pkgObj && pkgObj != PROTO_NONE && globals->hasAttribute(context, proto::ProtoString::fromUTF8String(context, "__path__")) == PROTO_FALSE) {
+                    std::string name;
+                    pkgObj->asString(context)->toUTF8String(context, name);
+                    size_t lastDot = name.find_last_of('.');
+                    if (lastDot != std::string::npos) {
+                        pkgObj = context->fromUTF8String(name.substr(0, lastDot).c_str());
+                    } else {
+                        pkgObj = context->fromUTF8String("");
+                    }
+                }
+            }
+            
+            if (pkgObj && pkgObj->isString(context)) {
+                std::string base;
+                pkgObj->asString(context)->toUTF8String(context, base);
+                
+                // Handle level: 1 = current package, 2 = parent, etc.
+                for (int i = 1; i < level; ++i) {
+                    size_t lastDot = base.find_last_of('.');
+                    if (lastDot == std::string::npos) {
+                        base = "";
+                        break;
+                    }
+                    base = base.substr(0, lastDot);
+                }
+                
+                if (moduleName.empty()) {
+                    moduleName = base;
+                } else if (!base.empty()) {
+                    moduleName = base + "." + moduleName;
                 }
             }
         }
     }
 
-    bool returnLeaf = false;
-    if (positionalParameters->getSize(context) > 1) {
-        returnLeaf = (positionalParameters->getAt(context, 1) == PROTO_TRUE);
+    const proto::ProtoObject* leaf = env->resolve(moduleName, context);
+    
+    if (!leaf || leaf == PROTO_NONE) {
+        if (env->hasPendingException()) return nullptr;
+        env->raiseImportError("No module named '" + moduleName + "'");
+        return PROTO_NONE;
+    }
+
+    if (fromListObj && fromListObj->asList(context) && leaf != PROTO_NONE) {
+        const proto::ProtoList* fromList = fromListObj->asList(context);
+        unsigned long fromSize = fromList->getSize(context);
+        for (unsigned long i = 0; i < fromSize; ++i) {
+            const proto::ProtoObject* itemObj = fromList->getAt(context, i);
+            if (itemObj && itemObj->isString(context)) {
+                std::string itemName;
+                itemObj->asString(context)->toUTF8String(context, itemName);
+                if (itemName == "*") continue;
+                // Check if itemName is a submodule of moduleName
+                std::string subModuleName = moduleName + "." + itemName;
+                env->resolve(subModuleName, context);
+            }
+        }
+    }
+
+    bool returnLeaf = (argCount > 1 && positionalParameters->getAt(context, 1) == PROTO_TRUE);
+    if (!returnLeaf && fromListObj && fromListObj != PROTO_NONE && fromListObj->asList(context) && fromListObj->asList(context)->getSize(context) > 0) {
+        returnLeaf = true;
     }
 
     if (!returnLeaf && moduleName.find('.') != std::string::npos) {
@@ -453,6 +525,81 @@ static const proto::ProtoObject* py_bool(
     return PROTO_TRUE;
 }
 
+const proto::ProtoObject* py_complex(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    double real = 0.0;
+    double imag = 0.0;
+    
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    size_t argCount = positionalParameters ? positionalParameters->getSize(context) : 0;
+    
+    if (argCount >= 1) {
+        const proto::ProtoObject* rObj = positionalParameters->getAt(context, 0);
+        if (rObj->isDouble(context)) real = rObj->asDouble(context);
+        else if (rObj->isInteger(context)) real = (double)rObj->asLong(context);
+        else if (rObj->isString(context)) {
+            // Very basic string parsing for now, Python supports "1+2j"
+            std::string s;
+            rObj->asString(context)->toUTF8String(context, s);
+            try { real = std::stod(s); } catch(...) {}
+        }
+    }
+    if (argCount >= 2) {
+        const proto::ProtoObject* iObj = positionalParameters->getAt(context, 1);
+        if (iObj->isDouble(context)) imag = iObj->asDouble(context);
+        else if (iObj->isInteger(context)) imag = (double)iObj->asLong(context);
+    }
+
+    // Keyword arguments "real" and "imag"
+    if (keywordParameters) {
+        const proto::ProtoString* realS = proto::ProtoString::fromUTF8String(context, "real");
+        const proto::ProtoString* imagS = proto::ProtoString::fromUTF8String(context, "imag");
+        if (keywordParameters->has(context, realS->getHash(context))) {
+            const proto::ProtoObject* r = keywordParameters->getAt(context, realS->getHash(context));
+            if (r->isDouble(context)) real = r->asDouble(context);
+            else if (r->isInteger(context)) real = (double)r->asLong(context);
+        }
+        if (keywordParameters->has(context, imagS->getHash(context))) {
+            const proto::ProtoObject* i = keywordParameters->getAt(context, imagS->getHash(context));
+            if (i->isDouble(context)) imag = i->asDouble(context);
+            else if (i->isInteger(context)) imag = (double)i->asLong(context);
+        }
+    }
+
+    const proto::ProtoObject* res = context->newObject(true);
+    if (env && env->getComplexPrototype()) {
+        res = res->addParent(context, env->getComplexPrototype());
+    }
+    res = res->setAttribute(context, proto::ProtoString::fromUTF8String(context, "real"), context->fromDouble(real));
+    res = res->setAttribute(context, proto::ProtoString::fromUTF8String(context, "imag"), context->fromDouble(imag));
+    
+    return res;
+}
+
+const proto::ProtoObject* py_complex_repr(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoObject* rObj = self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "real"));
+    const proto::ProtoObject* iObj = self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "imag"));
+    double real = (rObj && rObj->isDouble(context)) ? rObj->asDouble(context) : 0.0;
+    double imag = (iObj && iObj->isDouble(context)) ? iObj->asDouble(context) : 0.0;
+    
+    char buf[128];
+    if (real == 0.0) {
+        std::snprintf(buf, sizeof(buf), "%.17gj", imag);
+    } else {
+        std::snprintf(buf, sizeof(buf), "(%.17g%s%.17gj)", real, (imag >= 0 ? "+" : ""), imag);
+    }
+    return context->fromUTF8String(buf);
+}
+
 static const proto::ProtoObject* py_repr(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -814,15 +961,30 @@ static const proto::ProtoObject* py_getattr(
     nameObj->asString(context)->toUTF8String(context, nameStr);
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     const proto::ProtoString* key = proto::ProtoString::fromUTF8String(context, nameStr.c_str());
+
+    if (std::getenv("PROTO_RESOLVE_DIAG")) {
+        std::string s;
+        key->toUTF8String(context, s);
+        fprintf(stderr, "DEBUG: getattr(obj=%p, key='%s')\n", (void*)obj, s.c_str());
+    } 
+
     const proto::ProtoObject* val = env ? env->getAttribute(context, obj, key) : obj->getAttribute(context, key);
-    if (std::getenv("PROTO_ENV_DIAG")) {
-    }
-    if (obj->hasAttribute(context, key) == PROTO_TRUE) {
+    if (val && (val != PROTO_NONE || obj->hasAttribute(context, key))) {
+        if (std::getenv("PROTO_RESOLVE_DIAG") && val == PROTO_NONE) {
+            fprintf(stderr, "DEBUG: getattr returning None for key: %s\n", nameStr.c_str());
+        }
         return val;
     }
-    if (positionalParameters->getSize(context) >= 3) return positionalParameters->getAt(context, 2);
-    if (env) env->raiseAttributeError(context, obj, nameStr);
-    return PROTO_NONE;
+
+    size_t argCount = positionalParameters->getSize(context);
+    if (argCount >= 3) {
+        return positionalParameters->getAt(context, 2);
+    }
+
+    if (env) {
+        env->raiseAttributeError(context, obj, nameStr);
+    }
+    return nullptr;
 }
 
 static const proto::ProtoObject* py_setattr(
@@ -1531,8 +1693,17 @@ static const proto::ProtoObject* py_type(
     
     if (argCount == 1) {
         const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
-        if (std::getenv("PROTO_ENV_DIAG")) {}
-        return obj->getAttribute(context, env ? env->getClassString() : proto::ProtoString::fromUTF8String(context, "__class__"));
+        if (obj == PROTO_NONE) return env->getNoneTypePrototype();
+        
+        const proto::ProtoString* classS = env ? env->getClassString() : proto::ProtoString::fromUTF8String(context, "__class__");
+        if (obj->hasOwnAttribute(context, classS) == PROTO_TRUE) {
+            return obj->getAttribute(context, classS);
+        }
+        
+        const proto::ProtoObject* proto = obj->getPrototype(context);
+        if (proto) return proto;
+        
+        return env ? env->getAttribute(context, obj, classS) : obj->getAttribute(context, classS);
     }
     
     if (argCount == 3 || argCount == 4) {
@@ -2517,7 +2688,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
                                    const proto::ProtoObject* ellipsisProto,
                                    const proto::ProtoObject* notImplementedProto,
                                    const proto::ProtoObject* sliceType, const proto::ProtoObject* frozensetProto,
-                                   const proto::ProtoObject* floatProto, const proto::ProtoObject* boolProto,
+                                    const proto::ProtoObject* floatProto, const proto::ProtoObject* boolProto,
+                                   const proto::ProtoObject* complexProto,
                                    const proto::ProtoObject* ioModule) {
     const proto::ProtoObject* builtins = ctx->newObject(false);
     if (objectProto) builtins = builtins->addParent(ctx, objectProto);
@@ -2570,6 +2742,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "frozenset"), frozensetProto);
     if (floatProto) builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "float"), floatProto);
     if (boolProto) builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "bool"), boolProto);
+    if (complexProto) builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "complex"), complexProto);
     
     // Add functions
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "len"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_len));

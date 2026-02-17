@@ -239,6 +239,20 @@ int main(int argc, char* argv[]) {
         printUsage(argv[0]);
         return EXIT_OK;
     }
+
+    // V72: Read PROTO_PYTHONPATH
+    if (const char* pathEnv = std::getenv("PROTO_PYTHONPATH")) {
+        std::string paths = pathEnv;
+        size_t start = 0;
+        size_t end = paths.find(':');
+        while (end != std::string::npos) {
+            options.searchPaths.push_back(paths.substr(start, end - start));
+            start = end + 1;
+            end = paths.find(':', start);
+        }
+        options.searchPaths.push_back(paths.substr(start));
+    }
+
     std::string exePath = getExecutablePath();
     std::string exeDir = exePath.empty() ? "." : dirName(exePath);
 
@@ -286,8 +300,9 @@ int main(int argc, char* argv[]) {
     std::vector<std::string> argvVec;
     for (int i = 0; i < argc; ++i) argvVec.push_back(argv[i]);
 
+
     if (options.repl) {
-        std::vector<std::string> replPaths = searchPaths;
+        std::vector<std::string> replPaths = options.searchPaths; // Use options.searchPaths which now includes PROTO_PYTHONPATH
         replPaths.insert(replPaths.begin(), ".");
         protoPython::PythonEnvironment env(stdLibPath, replPaths, argvVec);
         if (options.trace) {
@@ -324,7 +339,14 @@ int main(int argc, char* argv[]) {
             while (space->runningThreads.load() > 1 && count < 100) { usleep(50000); count++; }
         }
 
-        if (ret == -2) return EXIT_RUNTIME;
+        if (ret == -2) {
+            const proto::ProtoObject* exc = env.takePendingException();
+            if (exc && exc != PROTO_NONE) {
+                std::cerr << "protopy: unhandled exception in -c execution:\n";
+                env.handleException(exc, nullptr, std::cerr);
+            }
+            return EXIT_RUNTIME;
+        }
         return EXIT_OK;
     }
 
