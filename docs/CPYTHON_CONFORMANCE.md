@@ -8,22 +8,24 @@ This document tracks the progress of `protoPython` in passing the official CPyth
 
 ## Test Priorities
 
+## Test Priorities
+
 ### 🔴 Essential (Primary Language & Core Types)
 Core syntax, standard object model, and fundamental types.
 
-- [/] `test_grammar.py`: Validates parser completeness. (Compiler fixed, runtime modules pending)
-- [x] `test_types.py`: Fundamental behavior of core object cells.
-- [x] `test_descr.py`: MRO, descriptors, and slots.
-- [x] `test_generators.py`: Generator execution state.
-- [ ] `test_asyncgen.py`: Asynchronous generator support.
-- [ ] `test_json.py`: Interoperability and complex data structures.
-- [ ] `test_base64.py`: Basic data encoding and type interoperability.
+- [ ] `test_grammar.py`: FAIL (Internal Error 70)
+- [ ] `test_types.py`: TIMEOUT (Execution hung during core object cell tests)
+- [ ] `test_descr.py`: FAIL (Internal Error 70 - MRO/Descriptor lookup regression)
+- [ ] `test_generators.py`: FAIL (Internal Error 70 - Generator state corrupted)
+- [ ] `test_asyncgen.py`: FAIL (exit 65)
+- [x] `test_json.py`: PASS (Basic `import json` verification, full suite pending)
+- [ ] `test_base64.py`: FAIL (Import chain failed at `abc.py`)
 
 ### 🟠 Important (Standard Library Foundations)
 Frequent modules used in modern Python applications.
 
 - [ ] `test_sys.py`: System parameters and functions.
-- [ ] `test_os.py`: Miscellaneous operating system interfaces.
+- [ ] `test_os.py`: FAIL (Regression in `posix` module mutation/iteration)
 - [ ] `test_re.py`: Regular expression operations.
 - [ ] `test_datetime.py`: Basic date and time types.
 - [ ] `test_collections.py`: Container datatypes.
@@ -32,10 +34,10 @@ Frequent modules used in modern Python applications.
 ### 🟡 Necessary (Advanced Language Features)
 Semantics required for complex frameworks and libraries.
 
-- [ ] `test_decorators.py`: Function and class decoration.
+- [ ] `test_decorators.py`: PASS (via `tests/test_decorator.py`)
 - [ ] `test_metaclass.py`: Class creation hooks.
 - [ ] `test_contextlib.py`: Utilities for `with`-statement contexts.
-- [ ] `test_abc.py`: Abstract Base Classes.
+- [ ] `test_abc.py`: FAIL (Direct consequence of `TypeError: object is not iterable` in `_py_abc.py`)
 - [ ] `test_dataclasses.py`: Data Classes.
 
 ### 🟢 Low Priority (UI, Legacy, and Platform-Specific)
@@ -46,15 +48,31 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 - [ ] `test_pydoc.py`
 - [ ] `test_warnings.py`
 
-## Progress Summary (V75 - 2026-02-17)
+## Progress Summary (V76 - 2026-02-17)
 
 | Category | Total | Checked | Passed | Success Rate |
 | :--- | :--- | :--- | :--- | :--- |
-| **Essential** | 7 | 7 | 6 | 86% |
-| **Important** | 6 | 4 | 3 | 50% |
-| **Necessary** | 5 | 3 | 2 | 40% |
+| **Essential** | 7 | 7 | 1 | 14% |
+| **Important** | 6 | 1 | 0 | 0% |
+| **Necessary** | 5 | 2 | 1 | 20% |
 | **Low Priority**| 4 | 0 | 0 | 0% |
-| **Total** | **22** | **14** | **11** | **50%** |
+| **Total** | **22** | **10** | **2** | **9%** |
+
+> [!WARNING]
+> **Severe Regression Detected (V76)**: A massive drop in conformance (from 50% to 9%) has been observed.
+> The root cause is a `TypeError: object is not iterable` triggered during the import of the `abc` module, which cascades through the standard library (impacting `unittest`, `io`, etc.).
+
+## Recent Achievements (V70-V75)
+(Previous achievements preserved for context...)
+...
+
+## Regressions & Known Issues (V76)
+
+- **Critical Iteration Bug**: `import abc` triggers `TypeError: object is not iterable` when `iter(None)` is accidentally invoked or returned. This blocks almost the entire standard library.
+- **Library Test Failures**:
+    - `test_foundation`: Fails due to `abc` import failure and unresolved builtins.
+    - `test_execution_engine`: `StoreSubscr` test fails (expected 99, got 0).
+- **Execution Stability**: `test_types.py` times out, suggesting a deadlock or infinite loop in the core object model under stress.
 
 ## Recent Achievements (V70-V75)
 
@@ -80,6 +98,11 @@ Tests for features that are not primary targets for `protoPython`'s performance 
     - Modified `executeModule` to only trigger `runModuleMain` when the `asMain` flag is true, preventing unintended execution of global entry points during standard imports.
     - Successfully verified discovery and import of `posix`, `ast`, `errno`, and `stat` modules.
     - Integrated a dummy `gettext` module to satisfy standard library dependencies for `argparse` and `ast`.
+- **Complex Type Implementation (V76)**:
+    - Implemented `complex` built-in type with positional and keyword argument support (`real`, `imag`).
+    - Added `__repr__` and `__str__` support for complex objects, matching CPython formatting (e.g., `(1+2j)`).
+    - Fixed attribute lookup for `real` and `imag` on complex instances.
+    - Resolved circularity issues in prototype initialization that caused built-in registration data loss.
 - **Compiler Conformance**: 
     - Full support for `//`, `@`, `**` operators and augmented assignments.
     - Implemented Walrus operator (`:=`) support.
