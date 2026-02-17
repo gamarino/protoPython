@@ -103,8 +103,6 @@ namespace proto
 
         while (current) {
             if (++iterationCount > 50) {
-                 fprintf(stderr, "[proto-diag] Infinite loop detected in isInstanceOf for object %p prototype %p\n", this, prototype);
-                 fflush(stderr);
                  return PROTO_FALSE;
             }
             if (current == prototype) return PROTO_TRUE;
@@ -137,8 +135,6 @@ namespace proto
                 int sibCount = 0;
                 while (sibling && plPtr < 64) {
                     if (++sibCount > 100) {
-                        fprintf(stderr, "[proto-diag] Circular siblings in isInstanceOf for object %p\n", current);
-                        fflush(stderr);
                         break;
                     }
                     plStack[plPtr++] = sibling;
@@ -183,8 +179,6 @@ namespace proto
 
         while (currentPointer) {
             if (++iterationCount > 500) {
-                 fprintf(stderr, "[proto-diag] Infinite loop detected in getAttribute for object %p (chain too long)\n", this);
-                 fflush(stderr);
                  return PROTO_NONE;
             }
 
@@ -213,7 +207,6 @@ namespace proto
                 hash_idx = (reinterpret_cast<uintptr_t>(currentPointer) ^ name->getHash(context)) % THREAD_CACHE_DEPTH;
                 if (cache[hash_idx].object == currentPointer && cache[hash_idx].name == name) {
                     if (diag && (nstr_debug == "added_by_meta" || nstr_debug == "__keys__")) {
-                        fprintf(stderr, "[proto-diag] getAttribute: CACHE HIT for '%s' in %p -> %p\n", nstr_debug.c_str(), currentPointer, cache[hash_idx].result);
                     }
                     return cache[hash_idx].result;
                 }
@@ -225,7 +218,6 @@ namespace proto
                 if (ocValue->attributes->implHas(context, attr_hash)) {
                     const auto* result = ocValue->attributes->implGetAt(context, attr_hash);
                     if (diag && (nstr_debug == "added_by_meta" || nstr_debug == "__keys__" || nstr_debug == "__data__")) {
-                        fprintf(stderr, "[proto-diag] getAttribute: FOUND '%s' (%p) in state %p of %p -> %p\n", nstr_debug.c_str(), name, currentValue, currentPointer, result);
                     }
                     // Update Cache
                     if (cache) {
@@ -259,7 +251,6 @@ namespace proto
         }
 
         if (diag && (nstr_debug == "added_by_meta" || nstr_debug == "__keys__")) {
-             fprintf(stderr, "[proto-diag] getAttribute: NOT FOUND '%s' in %p linear chain\n", nstr_debug.c_str(), this);
         }
         return PROTO_NONE;
     }
@@ -313,8 +304,6 @@ namespace proto
              int casIteration = 0;
              while(true) {
                  if (++casIteration > 100) {
-                     fprintf(stderr, "[proto-diag] CAS loop infinite in setAttribute for object %p\n", this);
-                     fflush(stderr);
                      break;
                  }
                  ProtoSparseList* oldRoot = context->space->mutableRoot.load();
@@ -401,8 +390,6 @@ namespace proto
              int casIteration = 0;
              while(true) {
                  if (++casIteration > 100) {
-                     fprintf(stderr, "[proto-diag] CAS loop infinite in addParentInternal for object %p\n", this);
-                     fflush(stderr);
                      break;
                  }
                  ProtoSparseList* oldRoot = context->space->mutableRoot.load();
@@ -434,7 +421,6 @@ namespace proto
         const ProtoList* mroOfNew = newParent->getParents(context);
         
         if (diag) {
-            fprintf(stderr, "[proto-diag] Linearizing addParent: adding %p to %p\n", newParent, this);
         }
 
         // Add ancestors of newParent that are not in 'this' chain
@@ -443,7 +429,7 @@ namespace proto
             for (int i = static_cast<int>(mroOfNew->getSize(context)) - 1; i >= 0; --i) {
                 const ProtoObject* ancestor = mroOfNew->getAt(context, i);
                 if (ancestor != newParent && !result->hasParent(context, ancestor)) {
-                    if (diag) fprintf(stderr, "[proto-diag]   - adding missing ancestor %p\n", ancestor);
+                    if (diag) {}
                     result = result->addParentInternal(context, ancestor);
                 }
             }

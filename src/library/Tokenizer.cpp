@@ -322,11 +322,6 @@ Token Tokenizer::next() {
     }
     char c = source_[pos_];
     if (std::getenv("PROTO_ENV_DIAG")) {
-        // Only print every 100 tokens to avoid flooding if it's just slow
-        static int count = 0;
-        if (count++ % 100 == 0) {
-            std::cerr << "[proto-diag] Tokenizer::next: pos=" << pos_ << "/" << source_.size() << " char='" << c << "'\n";
-        }
     }
     if (c == '\n') {
         pos_++;

@@ -2686,33 +2686,6 @@ const proto::ProtoObject* runCodeObject(proto::ProtoContext* ctx,
     if (!ctx || !codeObj || !frame) return PROTO_NONE;
     
     if (std::getenv("PROTO_ENV_DIAG")) {
-        const proto::ProtoObject* fnObj = codeObj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_filename"));
-        std::string fileName = "unknown";
-        if (fnObj && fnObj->isString(ctx)) fnObj->asString(ctx)->toUTF8String(ctx, fileName);
-        
-        const proto::ProtoObject* co_names_obj = codeObj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_names"));
-        const proto::ProtoList* names = co_names_obj ? co_names_obj->asList(ctx) : nullptr;
-        std::cerr << "[proto-diag] runCodeObject: fileName='" << fileName << "' names=[";
-        if (names) {
-            for (unsigned long i = 0; i < names->getSize(ctx); ++i) {
-                std::string n;
-                const proto::ProtoObject* item = names->getAt(ctx, static_cast<int>(i));
-                if (item && item->isString(ctx)) item->asString(ctx)->toUTF8String(ctx, n);
-                std::cerr << "'" << n << "'" << (i == names->getSize(ctx) - 1 ? "" : ", ");
-            }
-        }
-        std::cerr << "]\n";
-
-        const proto::ProtoObject* co_consts_obj = codeObj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_consts"));
-        const proto::ProtoList* constants = co_consts_obj ? co_consts_obj->asList(ctx) : nullptr;
-        std::cerr << "[proto-diag] runCodeObject: constants=[";
-        if (constants) {
-            for (unsigned long i = 0; i < constants->getSize(ctx); ++i) {
-                const proto::ProtoObject* c = constants->getAt(ctx, static_cast<int>(i));
-                std::cerr << c << (i == constants->getSize(ctx) - 1 ? "" : ", ");
-            }
-        }
-        std::cerr << "]\n";
     }
     
     CodeObjectScope cscope(codeObj);
@@ -2724,19 +2697,16 @@ const proto::ProtoObject* runCodeObject(proto::ProtoContext* ctx,
 
     if (!co_consts || !co_consts->asList(ctx) || !co_code || !co_code->asList(ctx)) {
         if (std::getenv("PROTO_ENV_DIAG")) {
-            std::cerr << "[proto-diag] runCodeObject: co_consts or co_code missing or not a list\n" << std::flush;
         }
         return PROTO_NONE;
     }
     if (std::getenv("PROTO_ENV_DIAG")) {
-        std::cerr << "[proto-diag] runCodeObject: bytecode size=" << co_code->asList(ctx)->getSize(ctx) << "\n" << std::flush;
     }
 
     const proto::ProtoObject* co_automatic_obj = codeObj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_automatic_count"));
     int automatic_count = (co_automatic_obj && co_automatic_obj->isInteger(ctx)) ? static_cast<int>(co_automatic_obj->asLong(ctx)) : 0;
 
     if (std::getenv("PROTO_ENV_DIAG")) {
-        std::cerr << "[proto-diag] runCodeObject: ctx=" << ctx << " localsCount=" << ctx->getAutomaticLocalsCount() << " automatic_count=" << automatic_count << "\n";
     }
 
     proto::ProtoContext* execCtx = ctx;
@@ -2745,7 +2715,6 @@ const proto::ProtoObject* runCodeObject(proto::ProtoContext* ctx,
 
     if (ctx->getAutomaticLocalsCount() < (unsigned int)automatic_count) {
         if (std::getenv("PROTO_ENV_DIAG")) {
-            std::cerr << "[proto-diag] runCodeObject: CREATING SUB-CONTEXT\n";
         }
         const proto::ProtoList* localNames = ctx->newList();
         const proto::ProtoList* vlist = co_varnames ? co_varnames->asList(ctx) : nullptr;

@@ -267,7 +267,7 @@ int main(int argc, char* argv[]) {
     }
 
     if (std::getenv("PROTO_ENV_DIAG")) {
-        std::cerr << "[proto-diag] main: stdLibPath='" << stdLibPath << "'\n";
+        if (std::getenv("PROTO_ENV_DIAG")) {}
     }
 
     std::vector<std::string> searchPaths;

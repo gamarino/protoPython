@@ -904,22 +904,6 @@ static const proto::ProtoObject* py_dict_getitem(
         }
         // PythonEnvironment* env = PythonEnvironment::fromContext(context); // This line was redundant
         if (std::getenv("PROTO_ENV_DIAG")) {
-            std::string kn = "?";
-            if (key->isString(context)) key->asString(context)->toUTF8String(context, kn);
-            else {
-                std::stringstream ss;
-                ss << key;
-                kn = ss.str();
-            }
-            std::string clsName = "?";
-            const proto::ProtoObject* cls = self->getAttribute(context, env ? env->getClassString() : getInternalString(context, "__class__"));
-            if (cls) {
-                const proto::ProtoObject* nameAttr = cls->getAttribute(context, env ? env->getNameString() : getInternalString(context, "__name__"));
-                if (nameAttr && nameAttr->isString(context)) {
-                    nameAttr->asString(context)->toUTF8String(context, clsName);
-                }
-            }
-            std::cerr << "[proto-diag] py_dict_getitem: self=" << self << " (class=" << clsName << ") RAISING KeyError for '" << kn << "'\n";
         }
         env->raiseKeyError(context, key);
     }
@@ -1167,12 +1151,10 @@ std::string PythonEnvironment::reprObject(proto::ProtoContext* context, const pr
     const proto::ProtoString* reprS = env ? env->getReprString() : getInternalString(context, "__repr__");
     const proto::ProtoObject* reprMethod = env ? env->getAttribute(context, obj, reprS) : obj->getAttribute(context, reprS);
     if (std::getenv("PROTO_ENV_DIAG")) {
-        std::cerr << "[proto-diag] reprObject: obj=" << obj << " reprMethod=" << reprMethod << "\n";
     }
     if (reprMethod && reprMethod->asMethod(context)) {
         const proto::ProtoObject* out = reprMethod->asMethod(context)(context, obj, nullptr, nullptr, nullptr);
         if (std::getenv("PROTO_ENV_DIAG")) {
-            std::cerr << "[proto-diag] reprObject: call returned=" << out << " type=" << (out ? out->isString(context) : 0) << "\n";
         }
         if (out && out->isString(context)) {
             std::string s;
@@ -1194,10 +1176,6 @@ static const proto::ProtoObject* py_list_repr(
     const proto::ProtoList* list = data && data->asList(context) ? data->asList(context) : nullptr;
     
     if (std::getenv("PROTO_ENV_DIAG")) {
-        std::cerr << "[proto-diag] py_list_repr: self=" << self << " data=" << data << " list=" << list << "\n";
-        if (list) {
-            std::cerr << "[proto-diag]   list.size=" << list->getSize(context) << "\n";
-        }
     }
 
     if (!list) return context->fromUTF8String("[]");
@@ -1210,7 +1188,6 @@ static const proto::ProtoObject* py_list_repr(
         const proto::ProtoObject* item = list->getAt(context, static_cast<int>(i));
         std::string r = PythonEnvironment::reprObject(context, item);
         if (std::getenv("PROTO_ENV_DIAG")) {
-            std::cerr << "[proto-diag]   item[" << i << "]=" << item << " repr='" << r << "'\n";
         }
         out += r;
     }
@@ -1878,8 +1855,6 @@ static const proto::ProtoObject* py_list_call(
                 const proto::ProtoString* iterS = env ? env->getIterString() : getInternalString(context, "__iter__");
                 const proto::ProtoObject* iterM = iterable->getAttribute(context, iterS);
                 if (get_env_diag()) {
-                    std::cerr << "[proto-diag] py_list_call: iterM=" << iterM << " for iterable=" << iterable << "\n";
-                    if (iterM) std::cerr << "[proto-diag] py_list_call: iterM isMethod=" << iterM->isMethod(context) << "\n";
                 }
                 if (iterM && iterM->asMethod(context)) {
                     const proto::ProtoList* emptyL = env ? env->getEmptyList() : context->newList();
@@ -1888,7 +1863,6 @@ static const proto::ProtoObject* py_list_call(
                         const proto::ProtoString* nextS = env ? env->getNextString() : getInternalString(context, "__next__");
                         const proto::ProtoObject* nextM = it->getAttribute(context, nextS);
                         if (get_env_diag()) {
-                            std::cerr << "[proto-diag] py_list_call: it=" << it << " nextM=" << nextM << "\n";
                         }
                         if (nextM && nextM->asMethod(context)) {
                             for (;;) {
@@ -5260,7 +5234,6 @@ const proto::ProtoObject* PythonEnvironment::takePendingException() {
     const proto::ProtoObject* e = s_threadPendingException;
     if (e) {
         if (std::getenv("PROTO_ENV_DIAG")) {
-            std::cerr << "[proto-diag] takePendingException: " << e << " from " << __builtin_return_address(0) << "\n";
         }
         if (s_threadEnv && s_threadEnv->space_) {
             std::lock_guard<std::mutex> lock(s_threadEnv->space_->moduleRootsMutex);
@@ -5279,7 +5252,6 @@ bool PythonEnvironment::hasPendingException() const {
 
 const proto::ProtoObject* PythonEnvironment::peekPendingException() const {
     if (std::getenv("PROTO_ENV_DIAG") && s_threadPendingException) {
-        std::cerr << "[proto-diag] peekPendingException: " << s_threadPendingException << " from " << __builtin_return_address(0) << "\n";
     }
     return s_threadPendingException;
 }
@@ -5287,7 +5259,6 @@ const proto::ProtoObject* PythonEnvironment::peekPendingException() const {
 void PythonEnvironment::clearPendingException() {
     if (s_threadPendingException) {
         if (std::getenv("PROTO_ENV_DIAG")) {
-            std::cerr << "[proto-diag] clearPendingException: " << s_threadPendingException << "\n";
         }
         if (s_threadEnv && s_threadEnv->space_) {
             std::lock_guard<std::mutex> lock(s_threadEnv->space_->moduleRootsMutex);
@@ -5301,7 +5272,6 @@ void PythonEnvironment::clearPendingException() {
 
 bool PythonEnvironment::isStopIteration(proto::ProtoContext* ctx, const proto::ProtoObject* exc) const {
     if (std::getenv("PROTO_ENV_DIAG")) {
-        std::cerr << "[proto-diag] isStopIteration entry: exc=" << exc << " stopIterationType=" << stopIterationType << "\n";
     }
     if (!exc || !stopIterationType) return false;
     bool res = false;
@@ -5312,14 +5282,12 @@ bool PythonEnvironment::isStopIteration(proto::ProtoContext* ctx, const proto::P
     }
     
     if (std::getenv("PROTO_ENV_DIAG")) {
-        std::cerr << "[proto-diag] isStopIteration: exc=" << exc << " type=" << stopIterationType << " res=" << res << "\n";
     }
     return res;
 }
 
 const proto::ProtoObject* PythonEnvironment::getStopIterationValue(proto::ProtoContext* ctx, const proto::ProtoObject* exc) const {
     if (std::getenv("PROTO_ENV_DIAG")) {
-        std::cerr << "[proto-diag] getStopIterationValue: exc=" << exc << "\n";
     }
     if (!exc) return PROTO_NONE;
     
@@ -5327,7 +5295,6 @@ const proto::ProtoObject* PythonEnvironment::getStopIterationValue(proto::ProtoC
     if (exc->hasAttribute(ctx, valS) == PROTO_TRUE) {
         const proto::ProtoObject* val = exc->getAttribute(ctx, valS);
         if (std::getenv("PROTO_ENV_DIAG")) {
-            std::cerr << "[proto-diag] getStopIterationValue: found 'value' attribute: " << val << "\n";
         }
         if (val && val != PROTO_NONE) return val;
     }
@@ -5554,18 +5521,6 @@ PythonEnvironment::~PythonEnvironment() {
 
 void PythonEnvironment::raiseKeyError(proto::ProtoContext* ctx, const proto::ProtoObject* key) {
     if (std::getenv("PROTO_ENV_DIAG")) {
-        std::string kn = "?";
-        if (key) {
-            if (key->isString(ctx)) key->asString(ctx)->toUTF8String(ctx, kn);
-            else if (key->isInteger(ctx)) kn = "int(" + std::to_string(key->asLong(ctx)) + ")";
-            else if (key->isBoolean(ctx)) kn = key->asBoolean(ctx) ? "True" : "False";
-            else {
-                std::stringstream ss;
-                ss << key;
-                kn = ss.str();
-            }
-        }
-        std::cerr << "[proto-diag] raiseKeyError: key=" << kn << " (" << key << ") isBoolean=" << (key && key->isBoolean(ctx)) << "\n";
     }
     if (!keyErrorType) return;
     const proto::ProtoList* args = ctx->newList()->appendLast(ctx, key);
@@ -5783,7 +5738,6 @@ void PythonEnvironment::raiseIndexError(proto::ProtoContext* ctx, const std::str
 void PythonEnvironment::raiseStopIteration(proto::ProtoContext* ctx, const proto::ProtoObject* value) {
     if (!stopIterationType) return;
     if (std::getenv("PROTO_ENV_DIAG")) {
-        std::cerr << "[proto-diag] raiseStopIteration: from " << __builtin_return_address(0) << "\n";
     }
     const proto::ProtoList* args = ctx->newList();
     if (value) args = args->appendLast(ctx, value);
@@ -6515,7 +6469,6 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     runtimeErrorType = exceptionsMod->getAttribute(rootContext_, runtimeErrorS);
     stopIterationType = exceptionsMod->getAttribute(rootContext_, stopIterationS);
     if (std::getenv("PROTO_ENV_DIAG")) {
-        std::cerr << "[proto-diag] stopIterationType initialized: " << stopIterationType << "\n";
     }
     stopAsyncIterationType = exceptionsMod->getAttribute(rootContext_, stopAsyncIterationS);
     eofErrorType = exceptionsMod->getAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "EOFError"));
@@ -6569,10 +6522,6 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     for (const auto& p : searchPaths) allPaths.push_back(p);
 
     if (std::getenv("PROTO_ENV_DIAG")) {
-        std::cerr << "[proto-diag] initializeRootObjects: allPaths.size=" << allPaths.size() << "\n";
-        for (const auto& p : allPaths) {
-            std::cerr << "[proto-diag]   path: '" << p << "'\n";
-        }
     }
     
     proto::ProviderRegistry::instance().registerProvider(std::make_unique<PythonModuleProvider>(allPaths));
@@ -6606,9 +6555,6 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     sysModule = sysModule->setAttribute(rootContext_, py_path, newListObj);
 
     if (std::getenv("PROTO_ENV_DIAG")) {
-        const proto::ProtoObject* check = sysModule->getAttribute(rootContext_, py_path);
-        const proto::ProtoObject* d = check ? check->getAttribute(rootContext_, dataString) : nullptr;
-        std::cerr << "[proto-diag] init: sys.path=" << check << " proto=" << (check ? check->getParents(rootContext_)->getAt(rootContext_,0) : nullptr) << " __data__=" << d << "\n";
     }
     
     // b. Create sys.modules and add sys/builtins
@@ -6970,25 +6916,20 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain,
                 f.close();
                 bool diagnostics = std::getenv("PROTO_ENV_DIAG") != nullptr;
                 if (diagnostics) {
-                    std::cerr << "[proto-diag] executeModule: parsing " << path << "\n";
                 }
                 Parser parser(source);
                 std::unique_ptr<ModuleNode> node = parser.parseModule();
                 if (diagnostics) {
-                    std::cerr << "[proto-diag] executeModule: parse finished, hasError=" << parser.hasError() << "\n";
                 }
                 if (!parser.hasError() && node) {
                     if (diagnostics) {
-                        std::cerr << "[proto-diag] executeModule: compiling " << path << "\n";
                     }
                     Compiler compiler(ctx, path);
                     bool compileOk = compiler.compileModule(node.get());
                     if (diagnostics) {
-                        std::cerr << "[proto-diag] executeModule: compile finished, compileOk=" << compileOk << "\n";
                     }
                     if (compileOk) {
                         if (diagnostics) {
-                            std::cerr << "[proto-diag] executeModule: executing " << path << "\n";
                         }
                         const proto::ProtoObject* codeObj = makeCodeObject(ctx, compiler.getConstants(), compiler.getNames(), compiler.getBytecode(), ctx->fromUTF8String(path.c_str())->asString(ctx), nullptr, 0, 0, 0, false);
                         if (codeObj) {
@@ -7015,7 +6956,6 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain,
                             const proto::ProtoObject* oldMod = mutableMod;
                             runCodeObject(ctx, codeObj, mutableMod);
                             if (std::getenv("PROTO_ENV_DIAG")) {
-                                std::cerr << "[proto-diag] executeModule: moduleName='" << moduleName << "' mod changed: " << oldMod << " -> " << mutableMod << "\n" << std::flush;
                             }
                             setCurrentGlobals(oldGlobals);
                             mod = mutableMod;
@@ -7715,9 +7655,6 @@ bool PythonEnvironment::isCompleteBlock(const std::string& code) {
 const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* ctx, const proto::ProtoObject* obj, const proto::ProtoString* name) {
     if (!obj || obj == PROTO_NONE) {
         if (get_env_diag()) {
-            std::string n = "null";
-            if (name) name->toUTF8String(ctx, n);
-            std::cerr << "[proto-diag] getAttribute(None, '" << n << "') from " << __builtin_return_address(0) << "\n";
         }
         if (noneTypeProto) return noneTypeProto->getAttribute(ctx, name);
         return nullptr;
@@ -7798,7 +7735,6 @@ const proto::ProtoObject* PythonEnvironment::resolve(const proto::ProtoString* n
     nameObj->toUTF8String(ctx, nameStr);
 
     if (std::getenv("PROTO_RESOLVE_DIAG")) {
-        std::cerr << "[proto-resolve] resolve(ProtoString) name='" << nameStr << "'\n" << std::flush;
     }
     
     static thread_local int resolveDepth = 0;
@@ -7870,12 +7806,12 @@ const proto::ProtoObject* PythonEnvironment::resolve(const proto::ProtoString* n
             if (result && result != nullptr) {
                 const proto::ProtoObject* executedKey = result->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__executed__"));
                 if (!executedKey || executedKey == PROTO_FALSE || executedKey == PROTO_NONE) {
-                    if (std::getenv("PROTO_RESOLVE_DIAG")) std::cerr << "[proto-resolve] triggering executeModule for: " << nameStr << "\n";
+                    if (std::getenv("PROTO_RESOLVE_DIAG")) {}
                     int ret = executeModule(nameStr, false, ctx);
                     if (ret != 0) return nullptr;
                     result = modWrapper->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "val"));
                 }
-                if (std::getenv("PROTO_RESOLVE_DIAG")) std::cerr << "[proto-resolve] found via ImportModule: " << nameStr << "\n";
+                if (std::getenv("PROTO_RESOLVE_DIAG")) {}
                 return result;
             }
         }
@@ -8317,15 +8253,6 @@ const proto::ProtoObject* PythonEnvironment::iter(const proto::ProtoObject* obj)
     }
 
     if (std::getenv("PROTO_ENV_DIAG")) {
-        std::string clsName = "unknown";
-        const proto::ProtoObject* cls = obj->getPrototype(ctx);
-        if (cls) {
-            const proto::ProtoObject* nameAttr = cls->getAttribute(ctx, getInternalString(ctx, "__name__"));
-            if (nameAttr && nameAttr->isString(ctx)) {
-                nameAttr->asString(ctx)->toUTF8String(ctx, clsName);
-            }
-        }
-        std::cerr << "[proto-diag] iter: object is NOT iterable: " << obj << " class=" << clsName << "\n";
     }
     raiseTypeError(ctx, "object is not iterable");
     return nullptr;
