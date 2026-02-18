@@ -318,7 +318,9 @@ static const proto::ProtoObject* py_object_repr(
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     if (self == PROTO_TRUE) return context->fromUTF8String("True");
     if (self == PROTO_FALSE) return context->fromUTF8String("False");
-    if (self == PROTO_NONE || (env && self == env->getNonePrototype())) return context->fromUTF8String("None");
+    if (self == PROTO_NONE || (env && self == env->getNonePrototype())) {
+        return context->fromUTF8String("None");
+    }
 
     // Basic <object at 0x...> repr
     const proto::ProtoObject* nameAttr = self->getAttribute(context, env ? env->getNameString() : getInternalString(context, "__name__"));
@@ -504,7 +506,9 @@ static const proto::ProtoObject* py_object_str(
     if (self == PROTO_NONE) return context->fromUTF8String("None");
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
 
-    if (self == PROTO_NONE || (env && self == env->getNonePrototype())) return context->fromUTF8String("None");
+    if (self == PROTO_NONE || (env && self == env->getNonePrototype())) {
+        return context->fromUTF8String("None");
+    }
     if (self->isString(context)) return self;
     if (self->isInteger(context)) return context->fromUTF8String(std::to_string(self->asLong(context)).c_str());
     if (self->isDouble(context)) return context->fromUTF8String(std::to_string(self->asDouble(context)).c_str());
@@ -1827,8 +1831,10 @@ static const proto::ProtoObject* py_bytes_call(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
     if (positionalParameters->getSize(context) == 0) {
         const proto::ProtoObject* empty = self->newChild(context, true);
+        empty->setAttribute(context, env ? env->getClassString() : getInternalString(context, "__class__"), self);
         empty->setAttribute(context, getInternalString(context, "__data__"), context->fromUTF8String(""));
         return empty;
     }
@@ -1851,6 +1857,7 @@ static const proto::ProtoObject* py_bytes_call(
         out += static_cast<char>(static_cast<unsigned char>(v));
     }
     const proto::ProtoObject* b = self->newChild(context, true);
+    b->setAttribute(context, env ? env->getClassString() : getInternalString(context, "__class__"), self);
     b->setAttribute(context, getInternalString(context, "__data__"), context->fromUTF8String(out.c_str()));
     return b;
 }
@@ -1866,6 +1873,7 @@ static const proto::ProtoObject* py_set_call(
     (void)keywordParameters;
 
     proto::ProtoObject* instance = const_cast<proto::ProtoObject*>(self->newChild(context, true));
+    instance->setAttribute(context, getInternalString(context, "__class__"), self);
     const proto::ProtoString* dataName = getInternalString(context, "__data__");
     const proto::ProtoSet* s = context->newSet();
 
@@ -1906,6 +1914,7 @@ static const proto::ProtoObject* py_list_call(
 
     proto::ProtoObject* instance = const_cast<proto::ProtoObject*>(self->newChild(context, true));
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    instance->setAttribute(context, env ? env->getClassString() : getInternalString(context, "__class__"), self);
     const proto::ProtoString* dataName = env ? env->getDataString() : getInternalString(context, "__data__");
     proto::ProtoList* l = const_cast<proto::ProtoList*>(context->newList());
 
@@ -1950,8 +1959,8 @@ static const proto::ProtoObject* py_list_call(
         }
     }
 
-    instance->setAttribute(context, dataName, l->asObject(context));
     instance->setAttribute(context, env ? env->getClassString() : getInternalString(context, "__class__"), self);
+    instance->setAttribute(context, dataName, l->asObject(context));
     return instance;
 }
 
@@ -1966,6 +1975,7 @@ static const proto::ProtoObject* py_tuple_call(
 
     proto::ProtoObject* instance = const_cast<proto::ProtoObject*>(self->newChild(context, true));
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    instance->setAttribute(context, env ? env->getClassString() : getInternalString(context, "__class__"), self);
     const proto::ProtoString* dataName = env ? env->getDataString() : getInternalString(context, "__data__");
     proto::ProtoList* l = const_cast<proto::ProtoList*>(context->newList());
 
@@ -2021,6 +2031,7 @@ static const proto::ProtoObject* py_dict_call(
 
     proto::ProtoObject* instance = const_cast<proto::ProtoObject*>(self->newChild(context, true));
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    instance->setAttribute(context, env ? env->getClassString() : getInternalString(context, "__class__"), self);
     const proto::ProtoString* dataName = env ? env->getDataString() : getInternalString(context, "__data__");
     const proto::ProtoString* keysName = env ? env->getKeysString() : getInternalString(context, "__keys__");
     proto::ProtoSparseList* d = const_cast<proto::ProtoSparseList*>(context->newSparseList());
@@ -5924,8 +5935,13 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     enumIdxString = proto::ProtoString::fromUTF8String(rootContext_, "_idx");
     revObjString = proto::ProtoString::fromUTF8String(rootContext_, "_obj");
     revIdxString = proto::ProtoString::fromUTF8String(rootContext_, "_idx");
-    zipItersString = proto::ProtoString::fromUTF8String(rootContext_, "_iters");
-    filterFuncString = proto::ProtoString::fromUTF8String(rootContext_, "_func");
+    zipItersString = proto::ProtoString::fromUTF8String(rootContext_, "__zip_iters__");
+    
+    coFilenameString = proto::ProtoString::fromUTF8String(rootContext_, "co_filename");
+    coFirstLinenoString = proto::ProtoString::fromUTF8String(rootContext_, "co_firstlineno");
+    coLnotabString = proto::ProtoString::fromUTF8String(rootContext_, "co_lnotab");
+    
+    filterFuncString = proto::ProtoString::fromUTF8String(rootContext_, "__filter_func__");
     filterIterString = proto::ProtoString::fromUTF8String(rootContext_, "_iter");
     enterString = proto::ProtoString::fromUTF8String(rootContext_, "__enter__");
     exitString = proto::ProtoString::fromUTF8String(rootContext_, "__exit__");
@@ -5954,6 +5970,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     dictString = proto::ProtoString::fromUTF8String(rootContext_, "__dict__");
     docString = proto::ProtoString::fromUTF8String(rootContext_, "__doc__");
     reversedString = proto::ProtoString::fromUTF8String(rootContext_, "__reversed__");
+    addS = proto::ProtoString::fromUTF8String(rootContext_, "add");
     enumProtoS = proto::ProtoString::fromUTF8String(rootContext_, "__enumerate_proto__");
     revProtoS = proto::ProtoString::fromUTF8String(rootContext_, "__reversed_proto__");
     zipProtoS = proto::ProtoString::fromUTF8String(rootContext_, "__zip_proto__");
@@ -6045,7 +6062,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     const proto::ProtoString* py_startswith = proto::ProtoString::fromUTF8String(rootContext_, "startswith");
     const proto::ProtoString* py_endswith = proto::ProtoString::fromUTF8String(rootContext_, "endswith");
     const proto::ProtoString* py_maketrans = proto::ProtoString::fromUTF8String(rootContext_, "maketrans");
-    const proto::ProtoString* py_add = addString;
+    const proto::ProtoString* py_add = getAddS();
 
     // 1. Create 'object' base
     objectPrototype = rootContext_->newObject(false);
@@ -6516,7 +6533,11 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     // V75: Provide class-level attributes for types.py
     functionPrototype = functionPrototype->setAttribute(rootContext_, __code__, PROTO_NONE);
     functionPrototype = functionPrototype->setAttribute(rootContext_, __globals__, PROTO_NONE);
+    functionPrototype = functionPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__doc__"), PROTO_NONE);
     functionPrototype = functionPrototype->setAttribute(rootContext_, classString, typePrototype); // Ensure class is set
+    
+    methodPrototype = methodPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__doc__"), PROTO_NONE);
+    modulePrototype = modulePrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__doc__"), PROTO_NONE);
     
     tracebackPrototype = tracebackPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "tb_frame"), PROTO_NONE);
     tracebackPrototype = tracebackPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "tb_next"), PROTO_NONE);
@@ -7067,12 +7088,16 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain,
                     if (compileOk) {
                         if (diagnostics) {
                         }
-                        const proto::ProtoObject* codeObj = makeCodeObject(ctx, compiler.getConstants(), compiler.getNames(), compiler.getBytecode(), ctx->fromUTF8String(path.c_str())->asString(ctx), nullptr, 0, 0, 0, false);
+                        const proto::ProtoObject* codeObj = makeCodeObject(ctx, compiler.getConstants(), compiler.getNames(), compiler.getBytecode(), ctx->fromUTF8String(path.c_str())->asString(ctx), nullptr, 0, 0, 0, 0, false, ctx->fromUTF8String("<module>")->asString(ctx), compiler.getFirstLine(), compiler.getLnotab());
                         if (codeObj) {
                             proto::ProtoObject* mutableMod = const_cast<proto::ProtoObject*>(mod);
                             // Modules no longer inherit from dictPrototype (CPython modules are not dicts)
                             // if (dictPrototype) {
-                            //     mutableMod = const_cast<proto::ProtoObject*>(mutableMod->addParent(ctx, dictPrototype));
+                            if (modulePrototype) {
+                                mutableMod = const_cast<proto::ProtoObject*>(mutableMod->addParent(ctx, modulePrototype));
+                                // Set __class__ explicitly so type(mod) is <class 'module'>, not <class 'type'>
+                                mutableMod->setAttribute(ctx, getClassString(), modulePrototype);
+                            }
                             // }
                             initDictStorage(ctx, mutableMod);
                             if (modulePrototype) {
@@ -7088,11 +7113,30 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain,
                             const proto::ProtoObject* oldGlobals = getCurrentGlobals();
                             setCurrentGlobals(mutableMod);
                             
+                            // Update sys.modules BEFORE execution to handle cyclic imports (CPython behavior)
+                            if (sysModule) {
+                                const proto::ProtoObject* mods = sysModule->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "modules"));
+                                if (mods && mods != PROTO_NONE) {
+                                    const proto::ProtoString* modNameS = proto::ProtoString::fromUTF8String(ctx, moduleName.c_str());
+                                    // 1. Set as attribute (internal lookup fallback)
+                                    mods->setAttribute(ctx, modNameS, mutableMod);
+                                    
+                                    // 2. Set as dict item (Python-side lookup)
+                                    const proto::ProtoObject* dataAttr = mods->getAttribute(ctx, getDataString());
+                                    if (dataAttr && dataAttr != PROTO_NONE) {
+                                        const proto::ProtoSparseList* dict = dataAttr->asSparseList(ctx);
+                                        if (dict) {
+                                            const proto::ProtoSparseList* newDict = dict->setAt(ctx, modNameS->getHash(ctx), mutableMod);
+                                            mods->setAttribute(ctx, getDataString(), newDict->asObject(ctx));
+                                        }
+                                    }
+                                }
+                            }
+
                             s_threadResolveCache[moduleName] = mutableMod;
                             const proto::ProtoObject* oldMod = mutableMod;
                             runCodeObject(ctx, codeObj, mutableMod);
-                            if (std::getenv("PROTO_ENV_DIAG")) {
-                            }
+                            
                             setCurrentGlobals(oldGlobals);
                             mod = mutableMod;
                             // Re-cache if it changed
@@ -7104,14 +7148,6 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain,
                                 std::cerr << "protopy: unhandled exception in module execution:\n" 
                                           << formatException(excAfterExec, nullptr) << std::endl;
                                 return -2;
-                            }
-                            // Update sys.modules
-                            if (sysModule) {
-                                const proto::ProtoObject* mods = sysModule->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "modules"));
-                                if (mods) {
-                                    mods = mods->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, moduleName.c_str()), mod);
-                                    sysModule = sysModule->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "modules"), mods);
-                                }
                             }
                             // Update the wrapper's "val" so future resolves for this module see it as populated
                             const_cast<proto::ProtoObject*>(modWrapper)->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "val"), mod);
@@ -7215,7 +7251,7 @@ std::string PythonEnvironment::formatTraceback(const proto::ProtoContext* ctx) {
         
         const proto::ProtoObject* codeObj = f->getAttribute(nonConstCtx, getFCodeString());
         if (codeObj && codeObj != PROTO_NONE) {
-            const proto::ProtoObject* fileObj = codeObj->getAttribute(nonConstCtx, proto::ProtoString::fromUTF8String(nonConstCtx, "co_filename"));
+            const proto::ProtoObject* fileObj = codeObj->getAttribute(nonConstCtx, getCoFilenameString());
             if (fileObj && fileObj->isString(nonConstCtx)) {
                 fileObj->asString(nonConstCtx)->toUTF8String(nonConstCtx, filename);
             }
@@ -7804,8 +7840,21 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
     }
     
     
-    // 1. Try native lookup
     const proto::ProtoObject* val = obj->getAttribute(ctx, name);
+
+    if (name) {
+        std::string n;
+        name->toUTF8String(ctx, n);
+        if (n == "_splitext") {
+            const proto::ProtoObject* cls = val ? val->getAttribute(ctx, classString) : nullptr;
+            std::string clsName = "unknown";
+            if (cls) {
+                const proto::ProtoObject* nameAttr = cls->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__name__"));
+                if (nameAttr && nameAttr->isString(ctx)) nameAttr->asString(ctx)->toUTF8String(ctx, clsName);
+            }
+            // fprintf(stderr, "DEBUG: getAttribute(_splitext) on obj %p returned %p (class %s)\n", (void*)obj, (void*)val, clsName.c_str());
+        }
+    }
 
     if (get_env_diag() && name) {
         std::string n;
@@ -7814,7 +7863,7 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
             std::string objName = "unknown";
             const proto::ProtoObject* nameAttr = obj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__name__"));
             if (nameAttr && nameAttr->isString(ctx)) nameAttr->asString(ctx)->toUTF8String(ctx, objName);
-            printf("DEBUG: getAttribute(__dict__) on obj %p (%s) returned %p\n", (void*)obj, objName.c_str(), (void*)val);
+            // printf("DEBUG: getAttribute(__dict__) on obj %p (%s) returned %p\n", (void*)obj, objName.c_str(), (void*)val);
         }
     }
 
@@ -7827,7 +7876,7 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
                 std::string n;
                 name->toUTF8String(ctx, n);
                 if (n == "__dict__") {
-                    printf("DEBUG: getAttribute(__dict__) on obj %p via class returned %p\n", (void*)obj, (void*)val);
+                    // printf("DEBUG: getAttribute(__dict__) on obj %p via class returned %p\n", (void*)obj, (void*)val);
                 }
             }
         }
@@ -7838,7 +7887,7 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
 
     if (val != PROTO_NONE && val->isCell(ctx)) {
         if (val->isMethod(ctx)) {
-            // Step V74: Don't bind methods to modules. Modules have __file__ or __path__.
+            // Step V74/V75: Don't bind methods to modules. Modules have __file__ or __path__.
             const proto::ProtoString* fileS = proto::ProtoString::fromUTF8String(ctx, "__file__");
             const proto::ProtoString* pathS = proto::ProtoString::fromUTF8String(ctx, "__path__");
             const proto::ProtoObject* hasFile = obj->getAttribute(ctx, fileS);
@@ -7847,14 +7896,32 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
                 const proto::ProtoObject* bound = ctx->fromMethod(const_cast<proto::ProtoObject*>(obj), val->asMethod(ctx));
                 return bound;
             }
+            return val;
         }
         
         // Descriptor protocol (__get__)
+        // Step V75: Also don't invoke descriptors (like bound methods) on modules.
+        const proto::ProtoString* fileS = proto::ProtoString::fromUTF8String(ctx, "__file__");
+        const proto::ProtoString* pathS = proto::ProtoString::fromUTF8String(ctx, "__path__");
+        const proto::ProtoObject* hasFile = obj->getAttribute(ctx, fileS);
+        const proto::ProtoObject* hasPath = obj->getAttribute(ctx, pathS);
+        if (hasFile != nullptr && hasFile != PROTO_NONE || hasPath != nullptr && hasPath != PROTO_NONE) {
+            return val;
+        }
+
         const proto::ProtoObject* getM = val->getAttribute(ctx, getDunderString);
         if (getM && getM != PROTO_NONE && getM->asMethod(ctx)) {
             const proto::ProtoObject* typeObj = obj->getAttribute(ctx, classString);
             const proto::ProtoList* getArgs = ctx->newList()->appendLast(ctx, obj)->appendLast(ctx, typeObj ? typeObj : PROTO_NONE);
-            return getM->asMethod(ctx)(ctx, val, nullptr, getArgs, nullptr);
+            const proto::ProtoObject* result = getM->asMethod(ctx)(ctx, val, nullptr, getArgs, nullptr);
+            if (name) {
+                std::string n;
+                name->toUTF8String(ctx, n);
+                if (n == "_splitext") {
+                    // fprintf(stderr, "DEBUG: getAttribute(_splitext) __get__ returned %p\n", (void*)result);
+                }
+            }
+            return result;
         }
     }
     
@@ -7863,6 +7930,14 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
 
 const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* ctx, const proto::ProtoObject* obj, const proto::ProtoString* name, const proto::ProtoObject* value) {
     if (!obj || isEmbeddedValue(obj)) return obj;
+
+    if (name) {
+        std::string n;
+        name->toUTF8String(ctx, n);
+        if (n == "_splitext") {
+            // fprintf(stderr, "DEBUG: setAttribute(_splitext) on obj %p to val %p\n", (void*)obj, (void*)value);
+        }
+    }
 
     // In Python, data descriptors (with __set__) shadow instance attributes
     if (obj->hasOwnAttribute(ctx, name) == PROTO_FALSE) {
@@ -7979,12 +8054,16 @@ const proto::ProtoObject* PythonEnvironment::resolve(const proto::ProtoString* n
             if (result && result != nullptr) {
                 const proto::ProtoObject* executedKey = result->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__executed__"));
                 if (!executedKey || executedKey == PROTO_FALSE || executedKey == PROTO_NONE) {
-                    if (std::getenv("PROTO_RESOLVE_DIAG")) {}
+                    if (std::getenv("PROTO_RESOLVE_DIAG")) {
+                        // fprintf(stderr, "DEBUG: resolve(%s) executing module %p\n", nameStr.c_str(), (void*)result);
+                    }
                     int ret = executeModule(nameStr, false, ctx);
                     if (ret != 0) return nullptr;
                     result = modWrapper->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "val"));
                 }
-                if (std::getenv("PROTO_RESOLVE_DIAG")) {}
+                if (std::getenv("PROTO_RESOLVE_DIAG")) {
+                    // fprintf(stderr, "DEBUG: resolve(%s) returning %p (type %p)\n", nameStr.c_str(), (void*)result, (void*)(result ? result->getAttribute(ctx, getClassString()) : nullptr));
+                }
                 return result;
             }
         }
@@ -8338,19 +8417,6 @@ const proto::ProtoObject* PythonEnvironment::iter(const proto::ProtoObject* obj)
 
     if (!obj || obj == PROTO_NONE || obj == nonePrototype || (obj && obj->isNone(ctx)) || 
         (obj && obj->isCell(ctx) && obj->hasParent(ctx, noneTypeProto))) {
-        fprintf(stderr, "DEBUG: iter(None/nullptr) triggered! obj=%p, PROTO_NONE=%p, nonePrototype=%p", (void*)obj, (void*)PROTO_NONE, (void*)nonePrototype);
-        const proto::ProtoObject* co = getCurrentCodeObject();
-        if (co && co != PROTO_NONE) {
-             const proto::ProtoObject* name = co->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_name"));
-             const proto::ProtoObject* file = co->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_filename"));
-             if (name && name->isString(ctx) && file && file->isString(ctx)) {
-                 std::string n, f;
-                 name->asString(ctx)->toUTF8String(ctx, n);
-                 file->asString(ctx)->toUTF8String(ctx, f);
-                 fprintf(stderr, " In %s at %s", n.c_str(), f.c_str());
-             }
-        }
-        fprintf(stderr, "\n");
         raiseTypeError(ctx, "'NoneType' object is not iterable");
         return nullptr;
     }

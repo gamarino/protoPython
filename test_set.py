@@ -1,0 +1,5 @@
+print("set:", set)
+s = set()
+print("s:", s)
+s.add(1)
+print("s after add:", s)

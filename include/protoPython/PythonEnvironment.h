@@ -110,10 +110,16 @@ public:
     const proto::ProtoObject* getFrozensetPrototype() const { return frozensetPrototype; }
     /** @brief Gets the float prototype. */
     const proto::ProtoObject* getFloatPrototype() const { return floatPrototype; }
+    /** @brief Gets the complex prototype. */
+    const proto::ProtoObject* getComplexPrototype() const { return complexPrototype; }
     /** @brief Gets the bool prototype. */
     const proto::ProtoObject* getBoolPrototype() const { return boolPrototype; }
     /** @brief Gets the module prototype. */
     const proto::ProtoObject* getModulePrototype() const { return modulePrototype; }
+    /** @brief Gets the mappingproxy prototype. */
+    const proto::ProtoObject* getMappingProxyPrototype() const { return mappingProxyPrototype; }
+    /** @brief Gets the method prototype. */
+    const proto::ProtoObject* getMethodPrototype() const { return methodPrototype; }
     
     /** @brief Gets the path to the standard library. */
     const std::string& getStdLibPath() const { return stdLibPath_; }
@@ -210,6 +216,7 @@ public:
     const proto::ProtoObject* iter(const proto::ProtoObject* obj);
     const proto::ProtoObject* next(const proto::ProtoObject* obj);
     void raiseException(const proto::ProtoObject* exc);
+    void addTraceback(const proto::ProtoObject* exc, const proto::ProtoObject* frame, int lasti, int lineno);
     void raiseImportError(const std::string& msg);
     bool isException(const proto::ProtoObject* exc, const proto::ProtoObject* type);
     const proto::ProtoObject* lookupName(const std::string& name);
@@ -241,6 +248,10 @@ public:
     const proto::ProtoString* getEnumProtoString() const { return enumProtoS; }
     const proto::ProtoString* getRevProtoString() const { return revProtoS; }
     const proto::ProtoString* getZipProtoString() const { return zipProtoS; }
+    
+    const proto::ProtoString* getCoFilenameString() const { return coFilenameString; }
+    const proto::ProtoString* getCoFirstLinenoString() const { return coFirstLinenoString; }
+    const proto::ProtoString* getCoLnotabString() const { return coLnotabString; }
     const proto::ProtoString* getFilterProtoString() const { return filterProtoS; }
     const proto::ProtoString* getMapProtoString() const { return mapProtoS; }
     const proto::ProtoString* getRangeProtoString() const { return rangeProtoS; }
@@ -638,8 +649,14 @@ private:
     const proto::ProtoObject* sliceType;
     const proto::ProtoObject* frozensetPrototype;
     const proto::ProtoObject* floatPrototype;
+    const proto::ProtoObject* complexPrototype;
     const proto::ProtoObject* boolPrototype;
     const proto::ProtoObject* modulePrototype;
+    const proto::ProtoObject* mappingProxyPrototype;
+    const proto::ProtoObject* methodPrototype;
+    const proto::ProtoObject* tracebackPrototype;
+    const proto::ProtoObject* cellPrototype;
+    const proto::ProtoObject* codePrototype;
     const proto::ProtoObject* sysModule;
     const proto::ProtoObject* builtinsModule;
     std::string stdLibPath_;
@@ -726,6 +743,7 @@ private:
     const proto::ProtoString* formatString{nullptr};
     const proto::ProtoString* dictString{nullptr};
     const proto::ProtoString* docString{nullptr};
+    const proto::ProtoString* addS{nullptr};
     const proto::ProtoString* reversedString{nullptr};
     
     // Keyword Names Stack (thread-local per Environment)
@@ -739,7 +757,11 @@ private:
 
     const proto::ProtoString* enumProtoS{nullptr};
     const proto::ProtoString* revProtoS{nullptr};
-    const proto::ProtoString* zipProtoS{nullptr};
+    const proto::ProtoString* zipProtoS = nullptr;
+    
+    const proto::ProtoString* coFilenameString = nullptr;
+    const proto::ProtoString* coFirstLinenoString = nullptr;
+    const proto::ProtoString* coLnotabString = nullptr;
     const proto::ProtoString* filterProtoS{nullptr};
     const proto::ProtoString* mapProtoS{nullptr};
     const proto::ProtoString* rangeProtoS{nullptr};
@@ -826,6 +848,7 @@ private:
     const proto::ProtoString* exceptionRootS{nullptr};
 
     const proto::ProtoString* getExceptionRootString() const { return exceptionRootS; }
+    const proto::ProtoString* getAddS() const { return addS; }
 
     const proto::ProtoObject* zeroInteger{nullptr};
     const proto::ProtoObject* oneInteger{nullptr};
