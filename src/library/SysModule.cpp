@@ -203,6 +203,45 @@ static const proto::ProtoObject* sys_get_cpu_count_config(
     return context->fromInteger(-1);
 }
 
+static const proto::ProtoObject* sys_file_write(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    if (positionalParameters->getSize(context) > 0) {
+        const proto::ProtoObject* arg = positionalParameters->getAt(context, 0);
+        if (arg->isString(context)) {
+            std::string s;
+            arg->asString(context)->toUTF8String(context, s);
+            const proto::ProtoObject* streamType = self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "_stream_type"));
+            if (streamType && streamType->isInteger(context) && streamType->asLong(context) == 2) {
+                fprintf(stderr, "%s", s.c_str());
+                fflush(stderr);
+            } else {
+                fprintf(stdout, "%s", s.c_str());
+                fflush(stdout);
+            }
+        }
+    }
+    return context->fromInteger(0); // Return number of characters or 0
+}
+
+static const proto::ProtoObject* sys_file_flush(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoObject* streamType = self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "_stream_type"));
+    if (streamType && streamType->isInteger(context) && streamType->asLong(context) == 2) {
+        fflush(stderr);
+    } else {
+        fflush(stdout);
+    }
+    return PROTO_NONE;
+}
+
 static const proto::ProtoObject* sys_getrecursionlimit(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -278,16 +317,16 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
         sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "prefix"), PROTO_NONE);
     }
 
-    // sys.path (empty for now, PythonEnvironment will populate it). Concurrent reads after init are safe; writes use protoCore setAttribute.
-    sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "path"), ctx->newList()->asObject(ctx));
+    // sys.path (empty for now, PythonEnvironment will populate it)
+    sys = sys->setAttribute(ctx, env ? env->getPathS() : proto::ProtoString::fromUTF8String(ctx, "path"), ctx->newList()->asObject(ctx));
 
-    // sys.modules (dict mapping names to modules). Concurrent reads after init are safe; writes use protoCore setAttribute.
+    // sys.modules (dict mapping names to modules)
     const proto::ProtoObject* modulesObj = ctx->newObject(true);
     if (env && env->getDictPrototype()) {
         modulesObj = modulesObj->addParent(ctx, env->getDictPrototype());
         env->initDictStorage(ctx, modulesObj);
     }
-    sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "modules"), modulesObj);
+    sys = sys->setAttribute(ctx, env ? env->getModulesS() : proto::ProtoString::fromUTF8String(ctx, "modules"), modulesObj);
 
     // sys.argv
     const proto::ProtoList* argvList = ctx->newList();
@@ -319,27 +358,60 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
         "builtins", "sys", "_io", "_os", "posix", "nt", "time", "_thread", 
         "_signal", "re", "_weakref", "_collections", "logging", "operator", 
         "_operator", "math", "functools", "itertools", "json", "atexit", 
-        "_collections_abc", "exceptions", "_codecs", "_ast", "errno", "stat"
+        "exceptions", "_codecs", "_ast", "errno", "stat", "_collections_abc"
     };
     for (const char* name : builtin_names) {
         builtinsList = builtinsList->appendLast(ctx, ctx->fromUTF8String(name));
     }
-    const proto::ProtoTuple* bt = ctx->newTupleFromList(builtinsList);
-    sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "builtin_module_names"), bt->asObject(ctx));
+    const proto::ProtoObject* bt = ctx->newTupleFromList(builtinsList)->asObject(ctx);
+    sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "builtin_module_names"), bt);
 
     // sys.executable
     const char* exe_path = (argv && !argv->empty()) ? (*argv)[0].c_str() : "/usr/bin/protopy";
     sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "executable"), ctx->fromUTF8String(exe_path));
 
-    // Step 1340: sys.excepthook
-    // Use an internal helper or just leave it for Python code to set. 
-    // For now, let's just add the attribute.
+    // sys.excepthook (AttributeError prevention)
     sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "excepthook"), PROTO_NONE);
 
-    // Step 1335: sys.last_*
+    // sys.last_*
     sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "last_type"), PROTO_NONE);
     sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "last_value"), PROTO_NONE);
     sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "last_traceback"), PROTO_NONE);
+
+    // V75: Add stdin, stdout, stderr dummy objects
+    auto create_dummy_file = [&](int type) {
+        const proto::ProtoObject* f = ctx->newObject(true);
+        if (env && env->getObjectPrototype()) f = f->addParent(ctx, env->getObjectPrototype());
+        f = f->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "write"), ctx->fromMethod(const_cast<proto::ProtoObject*>(f), sys_file_write));
+        f = f->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "flush"), ctx->fromMethod(const_cast<proto::ProtoObject*>(f), sys_file_flush));
+        f = f->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_stream_type"), ctx->fromInteger(type));
+        return f;
+    };
+
+    const proto::ProtoObject* stdin_obj = create_dummy_file(0);
+    const proto::ProtoObject* stdout_obj = create_dummy_file(1);
+    const proto::ProtoObject* stderr_obj = create_dummy_file(2);
+
+    sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "stdin"), stdin_obj);
+    sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "stdout"), stdout_obj);
+    sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "stderr"), stderr_obj);
+    sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__stdin__"), stdin_obj);
+    sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__stdout__"), stdout_obj);
+    sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__stderr__"), stderr_obj);
+
+    // sys.implementation
+    const proto::ProtoObject* impl = ctx->newObject(true);
+    if (env && env->getObjectPrototype()) {
+        impl = impl->addParent(ctx, env->getObjectPrototype());
+    }
+    impl = impl->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "name"), ctx->fromUTF8String("protopython"));
+    const proto::ProtoList* impl_version = ctx->newList();
+    impl_version = impl_version->appendLast(ctx, ctx->fromInteger(0));
+    impl_version = impl_version->appendLast(ctx, ctx->fromInteger(2));
+    impl_version = impl_version->appendLast(ctx, ctx->fromInteger(0));
+    impl = impl->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "version"), impl_version->asObject(ctx));
+    impl = impl->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "cache_tag"), ctx->fromUTF8String("protopython-314"));
+    sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "implementation"), impl);
 
     // sys.maxsize (64-bit signed max)
     sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "maxsize"), ctx->fromInteger(9223372036854775807LL));

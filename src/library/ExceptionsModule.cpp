@@ -14,6 +14,7 @@ static const proto::ProtoObject* exception_init(
         ? context->newTupleFromList(positionalParameters)->asObject(context)
         : context->newTuple()->asObject(context);
     self = self->setAttribute(context, argsName, args);
+    self = self->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__traceback__"), PROTO_NONE);
     return PROTO_NONE;
 }
 
@@ -30,6 +31,7 @@ static const proto::ProtoObject* exception_call(
         ? context->newTupleFromList(positionalParameters)->asObject(context) 
         : context->newTuple()->asObject(context);
     instance = instance->setAttribute(context, argsName, args);
+    instance = instance->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__traceback__"), PROTO_NONE);
     const proto::ProtoObject* init = self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__init__"));
     if (init && init->asMethod(context)) {
         init->asMethod(context)(context, instance, nullptr, positionalParameters ? positionalParameters : context->newList(), keywordParameters);
@@ -135,6 +137,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx,
     const proto::ProtoString* py_stopasynciteration = proto::ProtoString::fromUTF8String(ctx, "StopAsyncIteration");
     const proto::ProtoString* py_systemerror = proto::ProtoString::fromUTF8String(ctx, "SystemError");
     const proto::ProtoString* py_runtimeerror = proto::ProtoString::fromUTF8String(ctx, "RuntimeError");
+    const proto::ProtoString* py_oserror = proto::ProtoString::fromUTF8String(ctx, "OSError");
+    const proto::ProtoString* py_blockingioerror = proto::ProtoString::fromUTF8String(ctx, "BlockingIOError");
 
     const proto::ProtoObject* exceptionType = make_exception_type(ctx, objectProto, typeProto, "Exception", objectProto);
     const proto::ProtoObject* keyErrorType = make_exception_type(ctx, objectProto, typeProto, "KeyError", exceptionType);
@@ -155,6 +159,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx,
     const proto::ProtoObject* stopAsyncIterationType = make_exception_type(ctx, objectProto, typeProto, "StopAsyncIteration", exceptionType);
     const proto::ProtoObject* systemErrorType = make_exception_type(ctx, objectProto, typeProto, "SystemError", exceptionType);
     const proto::ProtoObject* runtimeErrorType = make_exception_type(ctx, objectProto, typeProto, "RuntimeError", exceptionType);
+    const proto::ProtoObject* osErrorType = make_exception_type(ctx, objectProto, typeProto, "OSError", exceptionType);
+    const proto::ProtoObject* blockingIOErrorType = make_exception_type(ctx, objectProto, typeProto, "BlockingIOError", osErrorType);
 
     const proto::ProtoObject* mod = ctx->newObject(true);
     mod = mod->setAttribute(ctx, py_exception, exceptionType);
@@ -173,6 +179,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx,
     mod = mod->setAttribute(ctx, py_indexerror, indexErrorType);
     mod = mod->setAttribute(ctx, py_eoferror, eofErrorType);
     mod = mod->setAttribute(ctx, py_assertionerror, assertionErrorType);
+    mod = mod->setAttribute(ctx, py_oserror, osErrorType);
+    mod = mod->setAttribute(ctx, py_blockingioerror, blockingIOErrorType);
 
     // StopIteration custom init
     const proto::ProtoString* py_init = proto::ProtoString::fromUTF8String(ctx, "__init__");

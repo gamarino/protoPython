@@ -41,6 +41,10 @@ const proto::ProtoObject* PythonModuleProvider::tryLoad(const std::string& logic
     for (const auto& basePath : basePaths_) {
         // 2. Try <base>/<path>.py
         std::string pyPath = joinPath(basePath, relPath + ".py");
+        if (std::getenv("PROTO_RESOLVE_DIAG")) {
+            fprintf(stderr, "DEBUG: tryLoad(base=%s, rel=%s) checking: %s\n", 
+                    basePath.c_str(), relPath.c_str(), pyPath.c_str());
+        }
         if (fileExists(pyPath)) {
             /* Mutable so exec() STORE_NAME updates the same module object (proto setAttribute on mutable returns this). */
             const proto::ProtoObject* module = ctx->newObject(true);

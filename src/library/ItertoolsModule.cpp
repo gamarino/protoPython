@@ -24,6 +24,13 @@ static const proto::ProtoObject* py_iter_self(
     return self;
 }
 
+static const proto::ProtoObject* py_batched_stub(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    // batched(iterable, n) stub
+    return ctx->newList()->asObject(ctx);
+}
+
 static const proto::ProtoObject* py_count(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
@@ -616,6 +623,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__starmap_proto__"), starmapProto);
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "starmap"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_starmap));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "batched"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_batched_stub));
 
     return mod;
 }

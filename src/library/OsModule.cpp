@@ -682,6 +682,26 @@ static const proto::ProtoObject* py_getegid(
 #endif
 }
 
+
+
+static const proto::ProtoObject* py_exit(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* /*self*/,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList* /*kwargs*/) {
+    
+    int status = 0;
+    if (posArgs && posArgs->getSize(ctx) > 0) {
+        const proto::ProtoObject* arg = posArgs->getAt(ctx, 0);
+        if (arg && arg->isInteger(ctx)) {
+            status = static_cast<int>(arg->asLong(ctx));
+        }
+    }
+    exit(status);
+    return PROTO_NONE;
+}
+
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment* env) {
     if (!direntry_proto) {
         direntry_proto = ctx->newObject(false);
@@ -704,6 +724,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
         direntry_proto = direntry_proto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__fspath__"),
             ctx->fromMethod(const_cast<proto::ProtoObject*>(direntry_proto), py_direntry_fspath));
     }
+
+
 
     const proto::ProtoObject* mod = ctx->newObject(true);
     
@@ -775,6 +797,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_kill));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "pipe"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_pipe));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_exit"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_exit));
 
     // Common constants
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "F_OK"), ctx->fromInteger(0));
@@ -814,6 +838,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     keys = keys->appendLast(ctx, ctx->fromUTF8String("waitpid"));
     keys = keys->appendLast(ctx, ctx->fromUTF8String("kill"));
     keys = keys->appendLast(ctx, ctx->fromUTF8String("pipe"));
+    keys = keys->appendLast(ctx, ctx->fromUTF8String("_exit"));
     keys = keys->appendLast(ctx, ctx->fromUTF8String("scandir"));
     keys = keys->appendLast(ctx, ctx->fromUTF8String("stat"));
     keys = keys->appendLast(ctx, ctx->fromUTF8String("lstat"));

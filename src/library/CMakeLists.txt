@@ -54,3 +54,5 @@ set_target_properties(protoPython PROPERTIES
     VERSION ${PROJECT_VERSION}
     SOVERSION 0
 )
+
+target_compile_options(protoPython PRIVATE -O0)

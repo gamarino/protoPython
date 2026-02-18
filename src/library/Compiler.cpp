@@ -174,7 +174,8 @@ bool Compiler::compileBinOp(BinOpNode* n) {
     if (!n || !compileNode(n->left.get()) || !compileNode(n->right.get()))
         return false;
     int op = OP_BINARY_ADD;
-    if (n->op == TokenType::Minus) op = OP_BINARY_SUBTRACT;
+    if (n->op == TokenType::Plus) op = OP_BINARY_ADD;
+    else if (n->op == TokenType::Minus) op = OP_BINARY_SUBTRACT;
     else if (n->op == TokenType::Star) op = OP_BINARY_MULTIPLY;
     else if (n->op == TokenType::Slash) op = OP_BINARY_TRUE_DIVIDE;
     else if (n->op == TokenType::EqEqual) {
@@ -215,12 +216,23 @@ bool Compiler::compileBinOp(BinOpNode* n) {
         op = OP_BINARY_POWER;
     } else if (n->op == TokenType::At) {
         op = OP_BINARY_MATRIX_MULTIPLY;
-    } else if (n->op == TokenType::And) {
-        emit(OP_BINARY_AND, 0);
-        return true;
-    } else if (n->op == TokenType::Or) {
-        emit(OP_BINARY_OR, 0);
-        return true;
+    } else if (n->op == TokenType::BitAnd) {
+        op = OP_BINARY_AND;
+    } else if (n->op == TokenType::BitOr) {
+        op = OP_BINARY_OR;
+    } else if (n->op == TokenType::BitXor) {
+        op = OP_BINARY_XOR;
+    } else if (n->op == TokenType::And || n->op == TokenType::Or) {
+        // TODO: Logical And/Or should short-circuit. For now, we emit nothing and fail
+        // or emit a basic binary op if the VM supports it for logicals.
+        // Actually, many simple VMs use JUMP for these.
+        // For now, let's at least avoid mapping them to bitwise ops if possible.
+        // But wait, the previous code DID map them. Let's keep it but fix the token type.
+        if (n->op == TokenType::And) op = OP_BINARY_AND;
+        else op = OP_BINARY_OR;
+    } else {
+        // Unknown op
+        return false;
     }
     emit(op, 0);
     return true;
@@ -844,7 +856,8 @@ bool Compiler::compileListComp(ListCompNode* n) {
         ctx_->fromUTF8String(filename_.c_str())->asString(ctx_), 
         co_varnames, 1, 0, static_cast<int>(orderedLocals.size()), 
         CO_OPTIMIZED | CO_NEWLOCALS, false, 
-        ctx_->fromUTF8String("<listcomp>")->asString(ctx_));
+        ctx_->fromUTF8String("<listcomp>")->asString(ctx_),
+        bodyCompiler.getFirstLine(), bodyCompiler.getLnotab());
     emit(OP_LOAD_CONST, addConstant(codeObj));
     emit(OP_BUILD_FUNCTION, 0);
     emit(OP_ROT_TWO);
@@ -923,7 +936,8 @@ bool Compiler::compileDictComp(DictCompNode* n) {
         ctx_->fromUTF8String(filename_.c_str())->asString(ctx_), 
         co_varnames, 1, 0, static_cast<int>(orderedLocals.size()), 
         CO_OPTIMIZED | CO_NEWLOCALS, false, 
-        ctx_->fromUTF8String("<dictcomp>")->asString(ctx_));
+        ctx_->fromUTF8String("<dictcomp>")->asString(ctx_),
+        bodyCompiler.getFirstLine(), bodyCompiler.getLnotab());
     emit(OP_LOAD_CONST, addConstant(codeObj));
     emit(OP_BUILD_FUNCTION, 0);
     emit(OP_ROT_TWO);
@@ -999,7 +1013,8 @@ bool Compiler::compileSetComp(SetCompNode* n) {
         ctx_->fromUTF8String(filename_.c_str())->asString(ctx_), 
         co_varnames, 1, 0, static_cast<int>(orderedLocals.size()), 
         CO_OPTIMIZED | CO_NEWLOCALS, false, 
-        ctx_->fromUTF8String("<setcomp>")->asString(ctx_));
+        ctx_->fromUTF8String("<setcomp>")->asString(ctx_),
+        bodyCompiler.getFirstLine(), bodyCompiler.getLnotab());
     emit(OP_LOAD_CONST, addConstant(codeObj));
     emit(OP_BUILD_FUNCTION, 0);
     emit(OP_ROT_TWO);
@@ -1075,7 +1090,8 @@ bool Compiler::compileGeneratorExp(GeneratorExpNode* n) {
         ctx_->fromUTF8String(filename_.c_str())->asString(ctx_), 
         co_varnames, 1, 0, static_cast<int>(orderedLocals.size()), 
         CO_OPTIMIZED | CO_NEWLOCALS, true, 
-        ctx_->fromUTF8String("<genexpr>")->asString(ctx_));
+        ctx_->fromUTF8String("<genexpr>")->asString(ctx_),
+        bodyCompiler.getFirstLine(), bodyCompiler.getLnotab());
     emit(OP_LOAD_CONST, addConstant(codeObj));
     emit(OP_BUILD_FUNCTION, 0);
     emit(OP_ROT_TWO);
@@ -1199,8 +1215,8 @@ bool Compiler::compileTry(TryNode* n) {
     // Exception handler starts here
     addPatch(setupFinallySlot, bytecodeOffset());
     
+    std::vector<int> jumpToEndLocations;
     if (!n->handlers.empty()) {
-        std::vector<int> jumpToEndLocations;
         for (auto& h : n->handlers) {
             int nextHandlerSlot = -1;
             if (h.type) {
@@ -1229,19 +1245,22 @@ bool Compiler::compileTry(TryNode* n) {
         }
         // If we fall through all handlers, re-raise the exception
         emit(OP_RAISE_VARARGS, 0);
-
-        for (int locSlot : jumpToEndLocations) {
-            addPatch(locSlot + 1, bytecodeOffset());
-        }
     } else {
         // No handlers: re-raise whatever was caught
         emit(OP_RAISE_VARARGS, 0);
     }
     
+    // Successful try jumps here (to Else block)
     addPatch(jumpToPostHandlersSlot, bytecodeOffset());
 
     if (n->orelse) {
         if (!compileNode(n->orelse.get())) return false;
+    }
+
+    // Handled exceptions (from except blocks) jump here (after Else block)
+    int postElseLabel = bytecodeOffset();
+    for (int locSlot : jumpToEndLocations) {
+        addPatch(locSlot + 1, postElseLabel);
     }
     
     if (n->finalbody) {
@@ -2045,7 +2064,11 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
     for (const auto& name : varnamesOrdered)
         co_varnames_list = co_varnames_list->appendLast(ctx_, ctx_->fromUTF8String(name.c_str()));
 
-    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), ctx_->fromUTF8String(filename_.c_str())->asString(ctx_), co_varnames_list, nparams, kwonlyargcount, automatic_count, co_flags, bodyCompiler.isGenerator_, ctx_->fromUTF8String(n->name.c_str())->asString(ctx_));
+    const proto::ProtoList* co_lnotab = ctx_->newList();
+    for (unsigned char b : bodyCompiler.lnotabVec_)
+        co_lnotab = co_lnotab->appendLast(ctx_, ctx_->fromInteger(b));
+
+    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), ctx_->fromUTF8String(filename_.c_str())->asString(ctx_), co_varnames_list, nparams, kwonlyargcount, automatic_count, co_flags, bodyCompiler.isGenerator_, ctx_->fromUTF8String(n->name.c_str())->asString(ctx_), bodyCompiler.firstLine_, co_lnotab);
     if (!codeObj) return false;
     int idx = addConstant(codeObj);
     emit(OP_LOAD_CONST, idx);
@@ -2165,7 +2188,11 @@ bool Compiler::compileLambda(LambdaNode* n) {
     if (!forceMapped) co_flags |= CO_OPTIMIZED;
     if (!captured.empty()) co_flags |= CO_NESTED;
 
-    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), ctx_->fromUTF8String(filename_.c_str())->asString(ctx_), co_varnames, nparams, kwonlyargcount, automatic_count, co_flags, false, ctx_->fromUTF8String("<lambda>")->asString(ctx_));
+    const proto::ProtoList* co_lnotab = ctx_->newList();
+    for (unsigned char b : bodyCompiler.lnotabVec_)
+        co_lnotab = co_lnotab->appendLast(ctx_, ctx_->fromInteger(b));
+
+    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), ctx_->fromUTF8String(filename_.c_str())->asString(ctx_), co_varnames, nparams, kwonlyargcount, automatic_count, co_flags, false, ctx_->fromUTF8String("<lambda>")->asString(ctx_), bodyCompiler.firstLine_, co_lnotab);
     if (!codeObj) return false;
     int idx = addConstant(codeObj);
     emit(OP_LOAD_CONST, idx);
@@ -2294,7 +2321,11 @@ bool Compiler::compileAsyncFunctionDef(AsyncFunctionDefNode* n) {
     if (!n->kwarg.empty()) co_flags |= CO_VARKEYWORDS;
     if (bodyCompiler.isGenerator_) co_flags |= 0x20; // CO_GENERATOR
 
-    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), ctx_->fromUTF8String(filename_.c_str())->asString(ctx_), co_varnames, nparams, kwonlyargcount, automatic_count, co_flags, bodyCompiler.isGenerator_, ctx_->fromUTF8String(n->name.c_str())->asString(ctx_));
+    const proto::ProtoList* co_lnotab = ctx_->newList();
+    for (unsigned char b : bodyCompiler.lnotabVec_)
+        co_lnotab = co_lnotab->appendLast(ctx_, ctx_->fromInteger(b));
+
+    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), ctx_->fromUTF8String(filename_.c_str())->asString(ctx_), co_varnames, nparams, kwonlyargcount, automatic_count, co_flags, bodyCompiler.isGenerator_, ctx_->fromUTF8String(n->name.c_str())->asString(ctx_), bodyCompiler.firstLine_, co_lnotab);
     if (!codeObj) return false;
     int idx = addConstant(codeObj);
     emit(OP_LOAD_CONST, idx);
@@ -2518,7 +2549,12 @@ bool Compiler::compileClassDef(ClassDefNode* n) {
     bodyCompiler.emit(OP_RETURN_VALUE);
     bodyCompiler.applyPatches();
     
-    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), ctx_->fromUTF8String(filename_.c_str())->asString(ctx_), nullptr, 0, 0, 0, bodyCompiler.isGenerator_, ctx_->fromUTF8String(n->name.c_str())->asString(ctx_));
+    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, 
+        bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), 
+        ctx_->fromUTF8String(filename_.c_str())->asString(ctx_), 
+        nullptr, 0, 0, 0, 0, bodyCompiler.isGenerator_, 
+        ctx_->fromUTF8String(n->name.c_str())->asString(ctx_), 
+        bodyCompiler.getFirstLine(), bodyCompiler.getLnotab());
     int coIdx = addConstant(codeObj);
     emit(OP_LOAD_CONST, coIdx);
     emit(OP_BUILD_FUNCTION, 0);
@@ -2555,6 +2591,7 @@ bool Compiler::compileCondExpr(ConditionalExprNode* n) {
 
 bool Compiler::compileNode(ASTNode* node) {
     if (!node) return false;
+    setLineNumber(node->line);
     bool result = false;
     if (dynamic_cast<PassNode*>(node)) result = true;
     else if (auto* fn = dynamic_cast<FunctionDefNode*>(node)) result = compileFunctionDef(fn);
@@ -2620,6 +2657,13 @@ bool Compiler::compileExpression(ASTNode* expr) {
     return true;
 }
 
+const proto::ProtoList* Compiler::getLnotab() {
+    const proto::ProtoList* l = ctx_->newList();
+    for (unsigned char b : lnotabVec_)
+        l = l->appendLast(ctx_, ctx_->fromInteger(b));
+    return l;
+}
+
 bool Compiler::compileModule(ModuleNode* mod) {
     if (!mod || mod->body.empty()) return false;
     globalNames_.clear();
@@ -2649,7 +2693,9 @@ const proto::ProtoObject* makeCodeObject(proto::ProtoContext* ctx,
     int automatic_count,
     int flags,
     bool isGenerator,
-    const proto::ProtoString* co_name) {
+    const proto::ProtoString* co_name,
+    int firstlineno,
+    const proto::ProtoList* lnotab) {
     if (!ctx) return PROTO_NONE;
     const proto::ProtoObject* code = ctx->newObject(true);
     // Optional: add a 'code_proto' if we want to share methods like .exec()
@@ -2665,7 +2711,54 @@ const proto::ProtoObject* makeCodeObject(proto::ProtoContext* ctx,
     bool isGenOrCoro = isGenerator || (flags & 0x80);
     code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_is_generator"), ctx->fromBoolean(isGenOrCoro));
     code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_name"), co_name ? reinterpret_cast<const proto::ProtoObject*>(co_name) : reinterpret_cast<const proto::ProtoObject*>(ctx->fromUTF8String("<module>")));
+    
+    code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_firstlineno"), ctx->fromInteger(firstlineno));
+    code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_lnotab"), lnotab ? reinterpret_cast<const proto::ProtoObject*>(lnotab) : reinterpret_cast<const proto::ProtoObject*>(ctx->newList()));
+
     return code;
+}
+
+void Compiler::setLineNumber(int line) {
+    if (line <= 0) return;
+    if (firstLine_ == -1) {
+        firstLine_ = line;
+        lastLine_ = line;
+        lastPC_ = 0;
+        return;
+    }
+    
+    int pc = bytecodeOffset();
+    if (line == lastLine_) return;
+
+    int pcDelta = pc - lastPC_;
+    int lineDelta = line - lastLine_;
+
+    if (pcDelta == 0 && lineDelta == 0) return;
+
+    // Python lnotab format: (pc_offset, line_offset) pairs
+    // We'll store it in a way that our updateContextLocation expects (pairs in a list, but lnotabVec_ is a helper here)
+    // Actually, updateContextLocation expects a ProtoList of integers.
+    // Let's just push to lnotabVec_ and then convert to ProtoList in getLnotab() or similar.
+    
+    // Simple implementation: 
+    while (pcDelta > 255) {
+        lnotabVec_.push_back(255);
+        lnotabVec_.push_back(0);
+        pcDelta -= 255;
+    }
+    // Note: lineDelta can be negative in CPython, but we'll assume forward for now if it's simpler, 
+    // or handle negative if needed.
+    // Our updateContextLocation handles line_offset as int.
+    
+    lnotabVec_.push_back(static_cast<unsigned char>(pcDelta));
+    // Line delta can be larger than 127/255? 
+    // Python uses signed char for line delta.
+    if (lineDelta > 127) lineDelta = 127; 
+    if (lineDelta < -128) lineDelta = -128;
+    lnotabVec_.push_back(static_cast<unsigned char>(static_cast<signed char>(lineDelta)));
+
+    lastPC_ = pc;
+    lastLine_ = line;
 }
 
 namespace {

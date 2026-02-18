@@ -1695,7 +1695,7 @@ static const proto::ProtoObject* py_delattr(
     return PROTO_NONE;
 }
 
-static const proto::ProtoObject* py_type(
+const proto::ProtoObject* py_type(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
@@ -1709,8 +1709,15 @@ static const proto::ProtoObject* py_type(
     size_t argCount = positionalParameters->getSize(context);
     
     
+    if (get_env_diag()) {
+        printf("DEBUG: py_type called self=%p argCount=%zu\n", (void*)self, argCount);
+    }
+    
     if (argCount == 1) {
         const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
+        if (get_env_diag()) {
+            printf("DEBUG: py_type(1) obj=%p\n", (void*)obj);
+        }
         if (obj == PROTO_NONE) return env->getNoneTypePrototype();
         
         const proto::ProtoString* classS = env ? env->getClassString() : proto::ProtoString::fromUTF8String(context, "__class__");
@@ -1736,12 +1743,16 @@ static const proto::ProtoObject* py_type(
             const proto::ProtoString* py_new = proto::ProtoString::fromUTF8String(context, "__new__");
             const proto::ProtoObject* newMethod = self->getAttribute(context, py_new);
             
-            bool isBaseType = (env && self == env->getTypePrototype());
+            const proto::ProtoObject* typeProto = env ? env->getTypePrototype() : nullptr;
+            bool isBaseType = (env && self == typeProto);
             if (!isBaseType && newMethod && newMethod != PROTO_NONE) {
-                if (get_env_diag()) {}
-                const proto::ProtoList* newArgs = context->newList()->appendLast(context, self);
-                for (unsigned long i = 0; i < argCount; ++i) newArgs = newArgs->appendLast(context, positionalParameters->getAt(context, i));
-                return newMethod->call(context, nullptr, py_new, self, newArgs, keywordParameters);
+                auto m = newMethod->asMethod(context);
+                // Check if the method is the base py_type implementation
+                if (m && m != py_type) {
+                    const proto::ProtoList* newArgs = context->newList()->appendLast(context, self);
+                    for (unsigned long i = 0; i < argCount; ++i) newArgs = newArgs->appendLast(context, positionalParameters->getAt(context, i));
+                    return newMethod->call(context, nullptr, py_new, self, newArgs, keywordParameters);
+                }
             }
         }
 
@@ -1750,6 +1761,7 @@ static const proto::ProtoObject* py_type(
         const proto::ProtoObject* dict = positionalParameters->getAt(context, baseIdx + 2);
 
         if (get_env_diag()) {
+            printf("DEBUG: py_type(3) name=%p bases=%p dict=%p\n", (void*)name, (void*)bases, (void*)dict);
         }
 
         proto::ProtoObject* targetClass = const_cast<proto::ProtoObject*>(context->newObject(true));
@@ -1766,6 +1778,10 @@ static const proto::ProtoObject* py_type(
 
         // Copy dictionary attributes and handle __set_name__
         if (dict) {
+            if (get_env_diag()) {
+                proto::ProtoObjectPointer p{}; p.oid = dict;
+                printf("DEBUG: py_type(3) copying attributes from dict=%p tag=%lu\n", (void*)dict, (unsigned long)p.op.pointer_tag);
+            }
             const proto::ProtoString* keysName = env ? env->getKeysString() : proto::ProtoString::fromUTF8String(context, "__keys__");
             const proto::ProtoObject* keysObj = dict->getAttribute(context, keysName);
             const proto::ProtoList* keysList = keysObj ? keysObj->asList(context) : nullptr;
@@ -2751,12 +2767,18 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
 
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "object"), objectProto);
     if (typeProto) {
+        if (get_env_diag()) {
+            printf("DEBUG: Registering 'type' using typeProto=%p\n", (void*)typeProto);
+        }
         const proto::ProtoString* s_call = proto::ProtoString::fromUTF8String(ctx, "__call__");
         const proto::ProtoString* s_new = proto::ProtoString::fromUTF8String(ctx, "__new__");
         const_cast<proto::ProtoObject*>(typeProto)->setAttribute(ctx, s_call, ctx->fromMethod(const_cast<proto::ProtoObject*>(typeProto), py_type));
         const_cast<proto::ProtoObject*>(typeProto)->setAttribute(ctx, s_new, ctx->fromMethod(const_cast<proto::ProtoObject*>(typeProto), py_type));
         builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "type"), typeProto);
     } else {
+        if (get_env_diag()) {
+            printf("DEBUG: Registering 'type' using fallback method cell\n");
+        }
         builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "type"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_type));
     }
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "int"), intProto);
