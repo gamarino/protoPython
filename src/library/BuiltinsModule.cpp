@@ -170,6 +170,24 @@ static const proto::ProtoObject* py_import(
 
 
 
+static const proto::ProtoObject* py_gc_collect(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList*) {
+    return ctx->fromInteger(0);
+}
+
+static const proto::ProtoObject* py_gc_isenabled(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList*) {
+    return PROTO_TRUE;
+}
+
 static const proto::ProtoObject* py_id(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -2699,6 +2717,16 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     if (ioModule && ioModule != PROTO_NONE) {
         builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__io_module__"), ioModule);
     }
+    
+    // Initialize dummy gc module
+    const proto::ProtoObject* gcModule = ctx->newObject(true);
+    if (objectProto) gcModule = gcModule->addParent(ctx, objectProto);
+    gcModule = gcModule->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__name__"), ctx->fromUTF8String("gc"));
+    gcModule = gcModule->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "collect"), ctx->fromMethod(const_cast<proto::ProtoObject*>(gcModule), py_gc_collect));
+    gcModule = gcModule->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "isenabled"), ctx->fromMethod(const_cast<proto::ProtoObject*>(gcModule), py_gc_isenabled));
+    gcModule = gcModule->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "disable"), ctx->fromMethod(const_cast<proto::ProtoObject*>(gcModule), py_gc_isenabled));
+    gcModule = gcModule->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "enable"), ctx->fromMethod(const_cast<proto::ProtoObject*>(gcModule), py_gc_isenabled));
+    builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "gc"), gcModule);
 
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "True"), PROTO_TRUE);
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "False"), PROTO_FALSE);

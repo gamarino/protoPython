@@ -623,18 +623,21 @@ static const proto::ProtoObject* py_list_getitem(
     const proto::ProtoSparseList* keywordParameters) {
     const proto::ProtoString* dataName = getInternalString(context, "__data__");
     const proto::ProtoObject* data = self->getAttribute(context, dataName);
-    if (!data || !data->asList(context)) return PROTO_NONE;
+    if (!data || !data->asList(context)) return nullptr; // Fallback to __class_getitem__ for types
     const proto::ProtoList* list = data->asList(context);
     if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
     const proto::ProtoObject* indexObj = positionalParameters->getAt(context, 0);
     long long size = static_cast<long long>(list->getSize(context));
 
     if (indexObj->isInteger(context)) {
-        int index = static_cast<int>(indexObj->asLong(context));
-        unsigned long ulen = list->getSize(context);
-        if (index < 0) index += static_cast<int>(ulen);
-        if (index < 0 || static_cast<unsigned long>(index) >= ulen) return PROTO_NONE;
-        return list->getAt(context, index);
+        long long index = indexObj->asLong(context);
+        if (index < 0) index += size;
+        if (index < 0 || index >= size) {
+            PythonEnvironment* env = PythonEnvironment::fromContext(context);
+            if (env) env->raiseIndexError(context, "list index out of range");
+            return PROTO_NONE;
+        }
+        return list->getAt(context, static_cast<int>(index));
     }
 
     const proto::ProtoList* sliceList = indexObj->asList(context);
@@ -961,7 +964,7 @@ static const proto::ProtoObject* py_dict_getitem(
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     const proto::ProtoString* dataName = env ? env->getDataString() : getInternalString(context, "__data__");
     const proto::ProtoObject* data = self->getAttribute(context, dataName);
-    if (!data || !data->asSparseList(context)) return PROTO_NONE;
+    if (!data || !data->asSparseList(context)) return nullptr; // Fallback for dict type
 
     if (positionalParameters->getSize(context) > 0) {
         const proto::ProtoObject* key = positionalParameters->getAt(context, 0);
@@ -2806,14 +2809,18 @@ static const proto::ProtoObject* py_tuple_getitem(
     const proto::ProtoSparseList* keywordParameters) {
     const proto::ProtoString* dataName = getInternalString(context, "__data__");
     const proto::ProtoObject* data = self->getAttribute(context, dataName);
-    if (!data || !data->asTuple(context)) return PROTO_NONE;
+    if (!data || !data->asTuple(context)) return nullptr; // Fallback to __class_getitem__
     const proto::ProtoTuple* tuple = data->asTuple(context);
     if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
-    int index = static_cast<int>(positionalParameters->getAt(context, 0)->asLong(context));
-    unsigned long size = tuple->getSize(context);
-    if (index < 0) index += static_cast<int>(size);
-    if (index < 0 || static_cast<unsigned long>(index) >= size) return PROTO_NONE;
-    return tuple->getAt(context, index);
+    long long index = positionalParameters->getAt(context, 0)->asLong(context);
+    long long size = static_cast<long long>(tuple->getSize(context));
+    if (index < 0) index += size;
+    if (index < 0 || index >= size) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(context);
+        if (env) env->raiseIndexError(context, "tuple index out of range");
+        return PROTO_NONE;
+    }
+    return tuple->getAt(context, static_cast<int>(index));
 }
 
 static const proto::ProtoObject* py_tuple_iter(

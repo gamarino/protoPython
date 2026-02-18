@@ -48,30 +48,40 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 - [ ] `test_pydoc.py`
 - [ ] `test_warnings.py`
 
-## Progress Summary (V76 - 2026-02-17)
+## Progress Summary (V77 - 2026-02-18)
 
 | Category | Total | Checked | Passed | Success Rate |
 | :--- | :--- | :--- | :--- | :--- |
 | **Essential** | 7 | 7 | 1 | 14% |
 | **Important** | 6 | 1 | 0 | 0% |
-| **Necessary** | 5 | 2 | 1 | 20% |
+| **Necessary** | 5 | 2 | 2 | 40% |
 | **Low Priority**| 4 | 0 | 0 | 0% |
-| **Total** | **22** | **10** | **2** | **9%** |
+| **Total** | **22** | **10** | **3** | **13%** |
 
-> [!WARNING]
-> **Severe Regression Detected (V76)**: A massive drop in conformance (from 50% to 9%) has been observed.
-> The root cause is a `TypeError: object is not iterable` triggered during the import of the `abc` module, which cascades through the standard library (impacting `unittest`, `io`, etc.).
+> [!NOTE]
+> **Recovery in Progress (V77)**: The `TypeError: object is not iterable` triggered during `abc` import has been resolved by fixing `GenericAlias` handling. This unblocks core standard library components.
 
 ## Recent Achievements (V70-V75)
 (Previous achievements preserved for context...)
 ...
 
-## Regressions & Known Issues (V76)
+## Recent Achievements (V77)
 
-- **Critical Iteration Bug**: `import abc` triggers `TypeError: object is not iterable` when `iter(None)` is accidentally invoked or returned. This blocks almost the entire standard library.
-- **Library Test Failures**:
-    - `test_foundation`: Fails due to `abc` import failure and unresolved builtins.
-    - `test_execution_engine`: `StoreSubscr` test fails (expected 99, got 0).
+- **GenericAlias & Standard Library Unblocking**:
+    - Resolved `TypeError: object is not iterable` in `abc.py` by correctly implementing `GenericAlias` resolution.
+    - Modified `OP_BINARY_SUBSCR` in `ExecutionEngine.cpp` to use `invokeDunder` for `__class_getitem__` fallback, enabling class subscripting (e.g., `list[int]`).
+    - Implemented `py_type_class_getitem` on `typePrototype` to return the class itself as a simplified `GenericAlias`.
+    - Fixed return values of `py_list_getitem`, `py_tuple_getitem`, and `py_dict_getitem` to ensure proper fallback chain.
+- **Native `gc` Module Implementation**:
+    - Registered a native `gc` module in `BuiltinsModule.cpp` with stub implementations for `collect`, `isenabled`, `disable`, and `enable`.
+    - Created `lib/python3.14/gc.py` library shim.
+- **Builtin Registration**:
+    - Fixed typo in `builtins` registration for the `bytes` type.
+
+## Regressions & Known Issues (V77)
+
+- **Standard Library Gaps**:
+    - `test_descr.py` still fails due to missing `itertools.batched`, required by `pickle`.
 - **Execution Stability**: `test_types.py` times out, suggesting a deadlock or infinite loop in the core object model under stress.
 
 ## Recent Achievements (V70-V75)
