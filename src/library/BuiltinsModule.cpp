@@ -1496,19 +1496,55 @@ static const proto::ProtoObject* py_super(
            while (idx < worklist.size()) {
                const proto::ProtoObject* curr = worklist[idx++];
                
-               // Check if current frame/scope has __class__ as an OWN attribute
-               const proto::ProtoObject* hasIt = curr->hasOwnAttribute(context, classStr);
-               if (hasIt && env->isTrue(hasIt)) {
-                   const proto::ProtoObject* val = curr->getAttribute(context, classStr);
-                   if (val && val != PROTO_NONE) {
-                       type = val;
-                       if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG: py_super found __class__ via BFS in scope %p\n", (void*)curr);
-                       break;
-                   }
+               // 1. Check frame locals (fast locals usually include freevars)
+               const proto::ProtoObject* locals = curr->getAttribute(context, env->getFLocalsString());
+               if (locals && locals != PROTO_NONE) {
+                     if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG: py_super BFS checking locals of scope %p\n", (void*)curr);
+                     // Fix: locals is a ProtoObject (dict or frame), not a SparseList directly.
+                     // Use getAttribute to retrieve the value.
+                     const proto::ProtoObject* val = locals->getAttribute(context, classStr); 
+                     if (val && val != PROTO_NONE) {
+                          type = val;
+                          if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG: py_super found __class__ in f_locals of scope %p\n", (void*)curr);
+                          goto found_class;
+                     }
+               }
+               
+               // 2. Check closure via code object freevars
+               const proto::ProtoObject* code = curr->getAttribute(context, env->getFCodeString());
+               const proto::ProtoObject* closure = curr->getAttribute(context, env->getClosureString());
+
+               if (std::getenv("PROTO_ENV_DIAG")) {
+                   fprintf(stderr, "DEBUG: py_super BFS scope %p: code=%p, closure=%p, closure_is_tuple=%d\n", 
+                           (void*)curr, (void*)code, (void*)closure, 
+                           (closure && closure->isTuple(context)));
+               }
+               
+               if (code && code != PROTO_NONE && closure && closure->isTuple(context)) {
+                     const proto::ProtoObject* freevars = code->getAttribute(context, proto::ProtoString::fromUTF8String(context, "co_freevars"));
+                     if (freevars && freevars->isTuple(context)) {
+                          const proto::ProtoTuple* freeTup = freevars->asTuple(context);
+                          const proto::ProtoTuple* closureTup = closure->asTuple(context);
+                          for (size_t i = 0; i < freeTup->getSize(context); ++i) {
+                               const proto::ProtoObject* name = freeTup->getAt(context, i);
+                               if (name->isString(context) && name->asString(context)->cmp_to_string(context, classStr) == 0) {
+                                    if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG: py_super found __class__ in freevars at index %zu\n", i);
+                                    if (i < closureTup->getSize(context)) {
+                                         const proto::ProtoObject* cell = closureTup->getAt(context, i);
+                                         // Use getAttribute("cell_contents")
+                                         const proto::ProtoObject* val = cell->getAttribute(context, proto::ProtoString::fromUTF8String(context, "cell_contents"));
+                                         if (val && val != PROTO_NONE) {
+                                              type = val;
+                                              if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG: py_super retrieved __class__ from closure cell\n");
+                                              goto found_class;
+                                         }
+                                    }
+                               }
+                          }
+                     }
                }
                
                // Expand closure
-               const proto::ProtoObject* closure = curr->getAttribute(context, env->getClosureString());
                if (closure && closure != PROTO_NONE) {
                    if (closure->asList(context)) {
                        const proto::ProtoList* l = closure->asList(context);
@@ -1531,6 +1567,7 @@ static const proto::ProtoObject* py_super(
                    }
                }
            }
+           found_class:;
        }
        
        if (obj && obj != PROTO_NONE) {
