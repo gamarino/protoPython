@@ -202,11 +202,22 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
         frame = const_cast<proto::ProtoObject*>(frame->addParent(calleeCtx, env->getFramePrototype()));
         const proto::ProtoObject* closure = self->getAttribute(calleeCtx, env->getClosureString());
         if (closure && closure != PROTO_NONE) {
-            frame = const_cast<proto::ProtoObject*>(frame->addParent(calleeCtx, closure));
+            const proto::ProtoList* closureList = closure->asList(calleeCtx);
+            if (closureList && closureList->getSize(calleeCtx) > 0) {
+                const proto::ProtoObject* outerFrame = closureList->getAt(calleeCtx, 0);
+                if (outerFrame && outerFrame != PROTO_NONE) {
+                    frame = const_cast<proto::ProtoObject*>(frame->addParent(calleeCtx, outerFrame));
+                    if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG: runUserFunctionCall extracted outerFrame=%p from closure list\n", (void*)outerFrame);
+                }
+            } else {
+                // Fallback in case it's not wrapped in a list for some internal reason
+                frame = const_cast<proto::ProtoObject*>(frame->addParent(calleeCtx, closure));
+                if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG: runUserFunctionCall fallback used closure=%p as parent\n", (void*)closure);
+            }
+            frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getClosureString(), closure));
         }
         frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getFCodeString(), codeObj));
         frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getFGlobalsString(), globalsObj));
-        frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getFLocalsString(), frame));
     }
 
     // Bind parameters
@@ -214,6 +225,14 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
     proto::ProtoObject** slots = const_cast<proto::ProtoObject**>(calleeCtx->getAutomaticLocals());
 
     auto bindVar = [&](int idx, const proto::ProtoObject* val) {
+        if (std::getenv("PROTO_ENV_DIAG")) {
+            std::string pn = "unknown";
+            if (co_varnames && idx < (int)co_varnames->getSize(calleeCtx) && co_varnames->getAt(calleeCtx, idx)->isString(calleeCtx)) {
+                co_varnames->getAt(calleeCtx, idx)->asString(calleeCtx)->toUTF8String(calleeCtx, pn);
+            }
+            fprintf(stderr, "DEBUG: bindVar idx=%d param=%s val=%p co_flags=%d slots=%p frame=%p\n", idx, pn.c_str(), (void*)val, co_flags, (void*)slots, (void*)frame);
+            fflush(stderr);
+        }
         if ((co_flags & CO_OPTIMIZED) && slots && idx < (int)nSlots) {
             slots[idx] = const_cast<proto::ProtoObject*>(val);
         } else if (frame && co_varnames && idx < (int)co_varnames->getSize(calleeCtx)) {
@@ -225,20 +244,40 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
         }
     };
 
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        fprintf(stderr, "DEBUG: runUserFunctionCall nparams_count=%d argCount=%lu argsSize=%lu\n", nparams_count, argCount, args ? args->getSize(calleeCtx) : 0);
+        fflush(stderr);
+    }
+
     // 1. Positional arguments
     for (unsigned long i = 0; i < (unsigned long)nparams_count && i < argCount; ++i) {
         bindVar(static_cast<int>(i), args->getAt(calleeCtx, static_cast<int>(i)));
     }
 
-    // 2. Apply positional defaults if missing
+    // 2. Keyword arguments mapped to positional parameters and defaults if missing
     if (argCount < (unsigned long)nparams_count) {
         const proto::ProtoString* defaults_name = env ? env->getDefaultsString() : proto::ProtoString::fromUTF8String(calleeCtx, "__defaults__");
         const proto::ProtoObject* defaultsObj = self->getAttribute(calleeCtx, defaults_name);
-        if (defaultsObj && defaultsObj != PROTO_NONE && defaultsObj->isTuple(calleeCtx)) {
-            const proto::ProtoTuple* defaults = defaultsObj->asTuple(calleeCtx);
-            int num_defaults = (int)defaults->getSize(calleeCtx);
-            int defaults_start_at = nparams_count - num_defaults;
-            for (int i = std::max((int)argCount, defaults_start_at); i < nparams_count; ++i) {
+        bool has_defaults = (defaultsObj && defaultsObj != PROTO_NONE && defaultsObj->isTuple(calleeCtx));
+        const proto::ProtoTuple* defaults = has_defaults ? defaultsObj->asTuple(calleeCtx) : nullptr;
+        int num_defaults = defaults ? (int)defaults->getSize(calleeCtx) : 0;
+        int defaults_start_at = nparams_count - num_defaults;
+
+        for (int i = (int)argCount; i < nparams_count; ++i) {
+            bool bound = false;
+            // First check if this argument was supplied in kwargs
+            if (co_varnames && i < (int)co_varnames->getSize(calleeCtx) && kwargs) {
+                const proto::ProtoObject* paramName = co_varnames->getAt(calleeCtx, i);
+                if (paramName) {
+                    unsigned long key = paramName->getHash(calleeCtx);
+                    if (kwargs->has(calleeCtx, key)) {
+                        bindVar(i, kwargs->getAt(calleeCtx, key));
+                        bound = true;
+                    }
+                }
+            }
+            // If not found in kwargs, see if it has a default value
+            if (!bound && defaults && i >= defaults_start_at) {
                 const proto::ProtoObject* val = defaults->getAt(calleeCtx, i - defaults_start_at);
                 bindVar(i, val);
             }
@@ -325,6 +364,10 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
         bindVar(kwargIdx, kwDict);
     }
 
+    if (env) {
+        frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getFLocalsString(), frame));
+    }
+
     const proto::ProtoObject* isGenObj = codeObj->getAttribute(calleeCtx, env ? env->getCoIsGeneratorString() : proto::ProtoString::fromUTF8String(calleeCtx, "co_is_generator"));
     bool isGenerator = isGenObj && isGenObj->isBoolean(calleeCtx) && isGenObj->asBoolean(calleeCtx);
 
@@ -396,6 +439,10 @@ static const proto::ProtoObject* runBoundMethodCall(proto::ProtoContext* ctx,
         }
     }
 
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        fprintf(stderr, "DEBUG: runBoundMethodCall forwarding to im_func=%p with newArgs size=%lu\n", (void*)im_func, newArgs ? newArgs->getSize(ctx) : 0);
+        fflush(stderr);
+    }
     return invokePythonCallable(ctx, im_func, newArgs, kwargs);
 }
 
@@ -1358,10 +1405,10 @@ const proto::ProtoObject* runUserClassCall(proto::ProtoContext* ctx,
     
     // Invoke __init__
     const proto::ProtoString* initS = env ? env->getInitString() : getInternalString(ctx, "__init__");
-    const proto::ProtoObject* initM = obj->getAttribute(ctx, initS);
+    const proto::ProtoObject* initM = env ? env->getAttribute(ctx, obj, initS) : obj->getAttribute(ctx, initS);
     if (initM && initM != PROTO_NONE) {
         if (get_env_diag()) {}
-        invokeCallable(ctx, initM, args, kwargs);
+        invokePythonCallable(ctx, initM, args, kwargs);
     }
     
     return obj;
@@ -1686,7 +1733,12 @@ const proto::ProtoObject* executeBytecodeRange(
                     }
                     const proto::ProtoObject* val = nullptr;
                     bool found = false;
-                    if (frame->hasAttribute(ctx, nameS) == PROTO_TRUE) {
+                    const proto::ProtoObject* hasAttrRes = frame->hasAttribute(ctx, nameS);
+                    if (std::getenv("PROTO_ENV_DIAG") && nStr == "self") {
+                        fprintf(stderr, "DEBUG: OP_LOAD_NAME('self') frame=%p hasAttribute=%p (PROTO_TRUE=%p), closure=%p\n",
+                                (void*)frame, (void*)hasAttrRes, (void*)PROTO_TRUE, (void*)frame->getAttribute(ctx, env->getClosureString()));
+                    }
+                    if (hasAttrRes == PROTO_TRUE) {
                         val = frame->getAttribute(ctx, nameS);
                         found = true;
                     }
@@ -2463,13 +2515,16 @@ const proto::ProtoObject* executeBytecodeRange(
             if (stack.size() >= static_cast<size_t>(arg)) {
                 const proto::ProtoObject* val = stack.back();
                 // val remains on stack
-                proto::ProtoObject* lstObj = const_cast<proto::ProtoObject*>(stack[stack.size() - arg]);
+                proto::ProtoObject* lstObj = const_cast<proto::ProtoObject*>(stack[stack.size() - arg - 1]);
                 const proto::ProtoObject* data = lstObj->getAttribute(ctx, env ? env->getDataString() : getInternalString(ctx, "__data__"));
                 if (data && data->asList(ctx)) {
                     const proto::ProtoList* lst = data->asList(ctx);
                     lst = lst->appendLast(ctx, val);
+                    if (std::getenv("PROTO_ENV_DIAG")) {
+                        fprintf(stderr, "DEBUG: OP_LIST_APPEND val=%p appended to list, new size=%zu\n", (void*)val, lst->getSize(ctx));
+                    }
                     const proto::ProtoObject* newLst = lstObj->setAttribute(ctx, env ? env->getDataString() : getInternalString(ctx, "__data__"), lst->asObject(ctx));
-                    stack[stack.size() - arg] = const_cast<proto::ProtoObject*>(newLst);
+                    stack[stack.size() - arg - 1] = const_cast<proto::ProtoObject*>(newLst);
                 }
                 stack.pop_back(); // Pop val now
             }
@@ -3166,6 +3221,13 @@ const proto::ProtoObject* executeBytecodeRange(
             const proto::ProtoList* posArgs = nullptr;
             if (starargs && starargs->asList(ctx)) {
                 posArgs = starargs->asList(ctx);
+            } else if (starargs && starargs->isTuple(ctx)) {
+                const proto::ProtoTuple* tup = starargs->asTuple(ctx);
+                const proto::ProtoList* L = ctx->newList();
+                for (size_t i = 0; i < tup->getSize(ctx); ++i) {
+                    L = L->appendLast(ctx, tup->getAt(ctx, i));
+                }
+                posArgs = L;
             } else if (starargs && starargs != PROTO_NONE) {
                 // Fallback: use getIter
                 if (env) {
@@ -3187,6 +3249,20 @@ const proto::ProtoObject* executeBytecodeRange(
                 }
             }
             if (!posArgs) posArgs = ctx->newList();
+            
+            if (std::getenv("PROTO_ENV_DIAG")) {
+                std::string clsName = "unknown";
+                std::string repr = "unknown";
+                if (env) {
+                    const proto::ProtoObject* cls = starargs ? starargs->getAttribute(ctx, env->getClassString()) : nullptr;
+                    if (cls) {
+                        const proto::ProtoObject* nameAttr = cls->getAttribute(ctx, env->getNameString());
+                        if (nameAttr && nameAttr->isString(ctx)) nameAttr->asString(ctx)->toUTF8String(ctx, clsName);
+                    }
+                    repr = PythonEnvironment::reprObject(ctx, starargs);
+                }
+                fprintf(stderr, "DEBUG: OP_CALL_FUNCTION_EX PC %lu callable=%p starargs=%p (cls=%s, repr=%s) posArgsSize=%zu\n", i, (void*)callable, (void*)starargs, clsName.c_str(), repr.c_str(), posArgs->getSize(ctx));
+            }
             
             const proto::ProtoSparseList* kwArgs = nullptr;
             if (kwargs && kwargs->asSparseList(ctx)) {
@@ -3247,6 +3323,9 @@ const proto::ProtoObject* executeBytecodeRange(
             if (!stack.empty() && frame) {
                 const proto::ProtoObject* codeObj = stack.back();
                 stack.pop_back();
+                if (std::getenv("PROTO_ENV_DIAG")) {
+                    fprintf(stderr, "DEBUG: OP_BUILD_FUNCTION frame=%p, defaults=%p, kwDefaults=%p\n", (void*)frame, (void*)defaults, (void*)kwDefaults);
+                }
                 proto::ProtoObject* fn = createUserFunction(ctx, codeObj, const_cast<proto::ProtoObject*>(PythonEnvironment::getCurrentGlobals()), frame, defaults, kwDefaults);
                 if (fn) {
                     stack.push_back(fn);
@@ -3369,6 +3448,12 @@ const proto::ProtoObject* executeBytecodeRange(
                     // Note: object.__class__ data descriptor prevents this from shadowing the type 
                     // on the class object itself, so this is safe.
                     const proto::ProtoString* clsName = env ? env->getClassString() : getInternalString(ctx, "__class__");
+                    if (std::getenv("PROTO_ENV_DIAG")) {
+                        std::string tName = "unknown";
+                        const proto::ProtoObject* tNameAttr = targetClass->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__name__"));
+                        if (tNameAttr && tNameAttr->isString(ctx)) tNameAttr->asString(ctx)->toUTF8String(ctx, tName);
+                        fprintf(stderr, "DEBUG: OP_BUILD_CLASS injecting __class__ = %p (name=%s) into ns = %p\n", (void*)targetClass, tName.c_str(), (void*)ns);
+                    }
                     ns->setAttribute(ctx, clsName, targetClass);
                 }
 
@@ -3695,6 +3780,9 @@ const proto::ProtoObject* executeBytecodeRange(
                 const proto::ProtoString* dataS = env ? env->getDataString() : getInternalString(ctx, "__data__");
                 const proto::ProtoObject* data = listObj->getAttribute(ctx, dataS);
                 const proto::ProtoList* L = (data && data->asList(ctx)) ? data->asList(ctx) : nullptr;
+                if (std::getenv("PROTO_ENV_DIAG")) {
+                    fprintf(stderr, "DEBUG: OP_LIST_TO_TUPLE L=%p size=%zu\n", (void*)L, L ? L->getSize(ctx) : 0);
+                }
                 
                 if (L) {
                     const proto::ProtoTuple* T = ctx->newTupleFromList(L);

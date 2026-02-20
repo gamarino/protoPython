@@ -1483,7 +1483,7 @@ static const proto::ProtoObject* py_super(
 
        if (locals && locals != PROTO_NONE) {
            // heuristic: 'self' or 'cls'
-           const proto::ProtoString* selfStr = env ? env->getSelfDunderString() : proto::ProtoString::fromUTF8String(context, "self"); 
+           const proto::ProtoString* selfStr = proto::ProtoString::fromUTF8String(context, "self");
            
            const proto::ProtoObject* slowObj = locals->getAttribute(context, selfStr);
            if (slowObj && slowObj != PROTO_NONE) {
