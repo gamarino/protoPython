@@ -462,7 +462,7 @@ class suppress(AbstractContextManager):
         if issubclass(exctype, self._exceptions):
             return True
         if issubclass(exctype, BaseExceptionGroup):
-            match, rest = excinst.split(self._exceptions)
+            _match, rest = excinst.split(self._exceptions)
             if rest is None:
                 return True
             raise rest

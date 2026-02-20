@@ -7513,6 +7513,7 @@ std::string PythonEnvironment::formatTraceback(const proto::ProtoContext* ctx) {
     for (const auto* f : frames) {
         std::string filename = "<unknown>";
         std::string funcName = "<module>";
+        int lineno = 0;
         
         const proto::ProtoObject* codeObj = f->getAttribute(nonConstCtx, getFCodeString());
         if (codeObj && codeObj != PROTO_NONE) {
@@ -7525,9 +7526,16 @@ std::string PythonEnvironment::formatTraceback(const proto::ProtoContext* ctx) {
             if (nameObj && nameObj->isString(nonConstCtx)) {
                 nameObj->asString(nonConstCtx)->toUTF8String(nonConstCtx, funcName);
             }
+            // we don't extract line numbers correctly yet from frame objects here, but we can set up the structure
         }
         
-        out += "  File \"" + filename + "\", in " + funcName + "\n";
+        if (filename == "<unknown>") {
+            if (ctx->currentFileName) filename = ctx->currentFileName;
+            lineno = ctx->currentLineNumber;
+        }
+
+        std::string lineStr = lineno > 0 ? " (line " + std::to_string(lineno) + ")" : "";
+        out += "  File \"" + filename + "\"" + lineStr + ", in " + funcName + "\n";
     }
     return out;
 }
@@ -8131,19 +8139,51 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
 
 
     
-    // 1.1 Metaclass / Class Lookup Fallback
-    // If not found on the object/prototype chain, check the object's class.
-    // This is essential for types (like 'dict') to access attributes defined on 'type' (like '__dict__').
+    // 1.1 MRO Lookup (Inheritance Prototype Chain)
+    // For classes, we must search the MRO (base classes) BEFORE looking into the metaclass (`__class__`).
+    // For regular objects, `getParents` is usually empty natively, so this resolves quickly.
     if (!val || val == PROTO_NONE) {
-        const proto::ProtoString* clsS = this->getClassString();
-        if (clsS) {
-            const proto::ProtoObject* cls = obj->getAttribute(ctx, clsS);
-            if (cls && cls != PROTO_NONE && cls != obj) {
-                val = cls->getAttribute(ctx, name);
+        const proto::ProtoList* mro = obj->getParents(ctx);
+        if (mro) {
+            for (size_t i = 0; i < mro->getSize(ctx); ++i) {
+                const proto::ProtoObject* baseCls = mro->getAt(ctx, i);
+                val = baseCls->proto::ProtoObject::getAttribute(ctx, name);
+                if (val && val != PROTO_NONE) {
+                    break;
+                }
             }
         }
     }
 
+    // 1.2 Metaclass / Class Lookup Fallback
+    // If not found on the object itself or via its MRO, check the object's class natively (`type(obj)`).
+    if (!val || val == PROTO_NONE) {
+        const proto::ProtoString* clsS = this->getClassString();
+        if (clsS) {
+            const proto::ProtoObject* cls = obj->getAttribute(ctx, clsS);
+            if (std::getenv("PROTO_RESOLVE_DIAG")) {
+                 fprintf(stderr, "DEBUG: getAttribute checking obj's %p __class__ = %p (== PROTO_NONE: %d)\n", (void*)obj, (void*)cls, cls == PROTO_NONE);
+            }
+            if (cls && cls != PROTO_NONE && cls != obj) {
+                // Direct lookup on the class itself
+                val = cls->proto::ProtoObject::getAttribute(ctx, name);
+                
+                // Fallback: check parents (MRO) of the class
+                if (!val || val == PROTO_NONE) {
+                    const proto::ProtoList* clsMro = cls->getParents(ctx);
+                    if (clsMro) {
+                        for (size_t i = 0; i < clsMro->getSize(ctx); ++i) {
+                            const proto::ProtoObject* baseCls = clsMro->getAt(ctx, i);
+                            val = baseCls->proto::ProtoObject::getAttribute(ctx, name);
+                            if (val && val != PROTO_NONE) {
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 
 
     // 1.5 Descriptor Protocol Check (__get__)
@@ -8153,14 +8193,18 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
     // unless those method cells specifically have __get__ (which they usually don't in current protoCore).
     const proto::ProtoString* dunderGet = this->getGetDunderString();
     if (dunderGet && val->getAttribute(ctx, dunderGet)) {
-        const proto::ProtoObject* getM = val->getAttribute(ctx, dunderGet);
-        if (getM && getM->isMethod(ctx)) {
-             // arguments: (self=val, instance=obj, owner=type(obj))
-             const proto::ProtoObject* owner = obj->getAttribute(ctx, this->getClassString());
-             const proto::ProtoList* args = ctx->newList()->appendLast(ctx, obj)->appendLast(ctx, owner ? owner : PROTO_NONE);
-             const proto::ProtoObject* res = getM->asMethod(ctx)(ctx, val, nullptr, args, nullptr);
-             getAttrDepth--;
-             return res;
+        // Do not bind if obj is a module! Modules are namespaces, not classes.
+        const proto::ProtoObject* objClass = obj->getAttribute(ctx, this->getClassString());
+        if (!this->modulePrototype || (obj != this->modulePrototype && objClass != this->modulePrototype)) {
+            const proto::ProtoObject* getM = val->getAttribute(ctx, dunderGet);
+            if (getM && getM->isMethod(ctx)) {
+                 // arguments: (self=val, instance=obj, owner=type(obj))
+                 const proto::ProtoObject* owner = obj->getAttribute(ctx, this->getClassString());
+                 const proto::ProtoList* args = ctx->newList()->appendLast(ctx, obj)->appendLast(ctx, owner ? owner : PROTO_NONE);
+                 const proto::ProtoObject* res = getM->asMethod(ctx)(ctx, val, nullptr, args, nullptr);
+                 getAttrDepth--;
+                 return res;
+            }
         }
     }
 
@@ -8168,6 +8212,13 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
     if (val->isCell(ctx) && val->isMethod(ctx)) {
         // Skip binding for if looking up module markers themselves
         if (fileDunderS && pathDunderS && name != fileDunderS && name != pathDunderS) {
+            // Do not bind if obj is a module! Modules are namespaces, not classes.
+            const proto::ProtoObject* objClass = obj->getAttribute(ctx, this->getClassString());
+            if (this->modulePrototype && (obj == this->modulePrototype || objClass == this->modulePrototype)) {
+                // Return unbound module function
+                getAttrDepth--;
+                return val;
+            }
             // If it's a method cell, bind it to 'obj'.
             // In a pure protoCore.h world, we can't easily check if it's already bound,
             // so we bind it here for consistency with instance method access.

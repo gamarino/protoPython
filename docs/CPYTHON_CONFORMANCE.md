@@ -14,18 +14,18 @@ This document tracks the progress of `protoPython` in passing the official CPyth
 Core syntax, standard object model, and fundamental types.
 
 - [ ] `test_grammar.py`: FAIL (Internal Error 70)
-- [ ] `test_types.py`: TIMEOUT (Execution hung during core object cell tests)
+- [ ] `test_types.py`: FAIL (Internal Error 70)
 - [ ] `test_descr.py`: FAIL (Internal Error 70 - MRO/Descriptor lookup regression)
 - [ ] `test_generators.py`: FAIL (Internal Error 70 - Generator state corrupted)
-- [ ] `test_asyncgen.py`: FAIL (exit 65)
+- [ ] `test_asyncgen.py`: FAIL (Internal Error 70)
 - [x] `test_json.py`: PASS (Basic `import json` verification, full suite pending)
-- [ ] `test_base64.py`: FAIL (Import chain failed at `abc.py`)
+- [ ] `test_base64.py`: FAIL (Internal Error 70)
 
 ### 🟠 Important (Standard Library Foundations)
 Frequent modules used in modern Python applications.
 
 - [ ] `test_sys.py`: System parameters and functions.
-- [ ] `test_os.py`: FAIL (Regression in `posix` module mutation/iteration)
+- [ ] `test_os.py`: FAIL (Internal Error 70)
 - [ ] `test_re.py`: Regular expression operations.
 - [ ] `test_datetime.py`: Basic date and time types.
 - [ ] `test_collections.py`: Container datatypes.
@@ -67,6 +67,13 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 
 ## Recent Achievements (V77)
 
+- **Object Instantiation & Inheritance Fixes**:
+    - Resolved `TypeError` in `argparse` (e.g., `'Namespace' object has no attribute 'add_argument_group'`) by fixing dynamic instance initialization and attribute resolution.
+    - Refactored `PythonEnvironment::getAttribute` to prioritize MRO lookup before checking the metaclass, correctly implementing Python's attribute resolution order.
+    - Modified `BuiltinsModule.cpp` `py_object_new` to fully initialize Python instances (proper dictionary storage, `__class__` assignment, and base class prototype linking).
+    - Unbound `object.__new__` and `type.__new__` natively so that `getattr(cls, "__new__")` passes `cls` exactly once without native method rebinding hijacking the argument count.
+    - Fallback MRO hierarchy injection in `py_type` for automatically inserting `object` instances built without explicit bases.
+    - Patched `match` soft keyword parsing collision in `contextlib.py` to unblock continued standard library loading.
 - **GenericAlias & Standard Library Unblocking**:
     - Resolved `TypeError: object is not iterable` in `abc.py` by correctly implementing `GenericAlias` resolution.
     - Modified `OP_BINARY_SUBSCR` in `ExecutionEngine.cpp` to use `invokeDunder` for `__class_getitem__` fallback, enabling class subscripting (e.g., `list[int]`).
@@ -82,7 +89,7 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 
 - **Standard Library Gaps**:
     - `test_descr.py` still fails due to missing `itertools.batched`, required by `pickle`.
-- **Execution Stability**: `test_types.py` times out, suggesting a deadlock or infinite loop in the core object model under stress.
+- **Execution Stability**: `test_types.py` crashes with Internal Error 70 indicating compiler/runtime panic.
 
 ## Recent Achievements (V70-V75)
 

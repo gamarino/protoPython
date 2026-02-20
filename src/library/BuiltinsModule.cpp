@@ -46,6 +46,13 @@ static const proto::ProtoObject* py_import(
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters);
 
+static const proto::ProtoObject* py_object_new(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters);
+
 const proto::ProtoObject* py_type_prepare(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -163,7 +170,6 @@ static const proto::ProtoObject* py_import(
             }
         }
     }
-
     bool returnLeaf = (argCount > 1 && positionalParameters->getAt(context, 1) == PROTO_TRUE);
     if (!returnLeaf && fromListObj && fromListObj != PROTO_NONE && fromListObj->asList(context) && fromListObj->asList(context)->getSize(context) > 0) {
         returnLeaf = true;
@@ -1010,7 +1016,10 @@ static const proto::ProtoObject* py_getattr(
     } 
 
     const proto::ProtoObject* val = env ? env->getAttribute(context, obj, key) : obj->getAttribute(context, key);
-    if (val && (val != PROTO_NONE || obj->hasAttribute(context, key))) {
+    if (std::getenv("PROTO_RESOLVE_DIAG")) {
+        fprintf(stderr, "DEBUG: py_getattr val=%p PROTO_NONE=%p\n", (void*)val, (void*)PROTO_NONE);
+    }
+    if (val && (val != PROTO_NONE || obj->hasAttribute(context, key) == PROTO_TRUE)) {
         if (std::getenv("PROTO_RESOLVE_DIAG") && val == PROTO_NONE) {
             fprintf(stderr, "DEBUG: getattr returning None for key: %s\n", nameStr.c_str());
         }
@@ -1018,6 +1027,9 @@ static const proto::ProtoObject* py_getattr(
     }
 
     size_t argCount = positionalParameters->getSize(context);
+    if (std::getenv("PROTO_RESOLVE_DIAG")) {
+        fprintf(stderr, "DEBUG: py_getattr falling back. argCount=%zu\n", argCount);
+    }
     if (argCount >= 3) {
         return positionalParameters->getAt(context, 2);
     }
@@ -1993,6 +2005,13 @@ const proto::ProtoObject* py_type(
         if (get_env_diag()) {
             printf("DEBUG: py_type(1) obj=%p\n", (void*)obj);
         }
+        
+        // Distinguish `type(obj)` vs `cls.__new__(cls)` natively. 
+        // When bound via `cls.__new__`, the runtime passes `self=cls` and `args=[cls]`.
+        if (self && self == obj) {
+            return py_object_new(context, self, parentLink, positionalParameters, keywordParameters);
+        }
+        
         if (obj == PROTO_NONE) return env->getNoneTypePrototype();
         
         const proto::ProtoString* classS = env ? env->getClassString() : proto::ProtoString::fromUTF8String(context, "__class__");
@@ -2117,8 +2136,10 @@ const proto::ProtoObject* py_type(
         }
 
         // Add bases as parents
+        bool hasBases = false;
         if (bases && bases->isTuple(context)) {
             const proto::ProtoTuple* bTup = bases->asTuple(context);
+            if (bTup->getSize(context) > 0) hasBases = true;
             if (get_env_diag()) printf("DEBUG: py_type adding parents from tuple size=%zu\n", bTup->getSize(context));
             for (int i = static_cast<int>(bTup->getSize(context)) - 1; i >= 0; --i) {
                 const proto::ProtoObject* parent = bTup->getAt(context, i);
@@ -2128,6 +2149,7 @@ const proto::ProtoObject* py_type(
             targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__bases__"), bases));
         } else if (bases && bases->asList(context)) {
             const proto::ProtoList* bList = bases->asList(context);
+            if (bList->getSize(context) > 0) hasBases = true;
             if (get_env_diag()) printf("DEBUG: py_type adding parents from list size=%zu\n", bList->getSize(context));
             for (int i = static_cast<int>(bList->getSize(context)) - 1; i >= 0; --i) {
                 const proto::ProtoObject* parent = bList->getAt(context, i);
@@ -2139,6 +2161,15 @@ const proto::ProtoObject* py_type(
             // Better to leave it unset or convert. 
             // Given I can't easily convert here without context->newTuple(list), I'll skip __bases__ for list case or assume tuple is mostly used.
             // Python 'type()' call arguments are usually tuple.
+        }
+        
+        if (!hasBases && env && env->getObjectPrototype()) {
+            const proto::ProtoObject* objProto = env->getObjectPrototype();
+            if (objProto && objProto != targetClass) {
+                targetClass = const_cast<proto::ProtoObject*>(targetClass->addParent(context, objProto));
+                const proto::ProtoList* objBases = context->newList()->appendLast(context, objProto);
+                targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__bases__"), context->newTupleFromList(objBases)->asObject(context)));
+            }
         }
 
         // Set __module__ if not present
@@ -2157,11 +2188,11 @@ const proto::ProtoObject* py_type(
         
         if (std::getenv("PROTO_ENV_DIAG")) {
              printf("DEBUG: py_type created class %p check MRO\n", (void*)targetClass);
-             const proto::ProtoList* mro = const_cast<proto::ProtoObject*>(targetClass)->getParents(context);
-             if (mro) {
-                 printf("DEBUG: py_type MRO size=%zu\n", mro->getSize(context));
-                 for (size_t i = 0; i < mro->getSize(context); ++i) {
-                     printf("DEBUG: py_type MRO [%zu] = %p\n", i, (void*)mro->getAt(context, i));
+             const proto::ProtoList* mroList = const_cast<proto::ProtoObject*>(targetClass)->getParents(context);
+             if (mroList) {
+                 printf("DEBUG: py_type MRO size=%zu\n", mroList->getSize(context));
+                 for (size_t i = 0; i < mroList->getSize(context); ++i) {
+                     printf("DEBUG: py_type MRO [%zu] = %p\n", i, (void*)mroList->getAt(context, i));
                  }
              } else {
                  printf("DEBUG: py_type MRO is NULL\n");
@@ -3070,12 +3101,19 @@ static const proto::ProtoObject* py_object_new(
     // First argument is cls
     const proto::ProtoObject* cls = positionalParameters->getAt(context, 0);
     
-    // Create new instance of cls
-    // Use cls->newChild() logic
-    const proto::ProtoObject* obj = cls->newChild(context, true);
+    // Create new instance of cls natively
+    proto::ProtoObject* obj = const_cast<proto::ProtoObject*>(context->newObject(true));
+    obj = const_cast<proto::ProtoObject*>(obj->addParent(context, cls));
     
-    // Set __class__ to cls
-    obj = obj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__class__"), cls);
+    // Set __class__ to cls explicitly natively
+    obj = const_cast<proto::ProtoObject*>(obj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__class__"), cls));
+    
+    // Initialize properties tracking specifically dictionary 
+    ::protoPython::PythonEnvironment* env = ::protoPython::PythonEnvironment::fromContext(context);
+    if (env) {
+        env->initDictStorage(context, obj);
+    }
+    
     return obj;
 }
 
@@ -3136,7 +3174,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
 
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "object"), objectProto);
     if (objectProto) {
-         objectProto = const_cast<proto::ProtoObject*>(objectProto)->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__new__"), ctx->fromMethod(const_cast<proto::ProtoObject*>(objectProto), py_object_new));
+         objectProto = const_cast<proto::ProtoObject*>(objectProto)->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__new__"), ctx->fromMethod(nullptr, py_object_new));
     }
     if (typeProto) {
         if (get_env_diag()) {
@@ -3145,7 +3183,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
         const proto::ProtoString* s_call = proto::ProtoString::fromUTF8String(ctx, "__call__");
         const proto::ProtoString* s_new = proto::ProtoString::fromUTF8String(ctx, "__new__");
         typeProto = const_cast<proto::ProtoObject*>(typeProto)->setAttribute(ctx, s_call, ctx->fromMethod(const_cast<proto::ProtoObject*>(typeProto), py_type));
-        typeProto = const_cast<proto::ProtoObject*>(typeProto)->setAttribute(ctx, s_new, ctx->fromMethod(const_cast<proto::ProtoObject*>(typeProto), py_type));
+        typeProto = const_cast<proto::ProtoObject*>(typeProto)->setAttribute(ctx, s_new, ctx->fromMethod(nullptr, py_type));
         builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "type"), typeProto);
     } else {
         if (get_env_diag()) {
