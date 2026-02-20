@@ -1405,7 +1405,13 @@ static const proto::ProtoObject* py_super_getattr(
             if (std::getenv("PROTO_ENV_DIAG")) {
                 std::string s;
                 nameObj->asString(context)->toUTF8String(context, s);
-                fprintf(stderr, "DEBUG: py_super_getattr checking parent %p for %s\n", (void*)parent, s.c_str());
+                std::string tName = "unknown";
+                std::string pName = "unknown";
+                const proto::ProtoObject* tNameAttr = type->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__name__"));
+                if (tNameAttr && tNameAttr->isString(context)) tNameAttr->asString(context)->toUTF8String(context, tName);
+                const proto::ProtoObject* pNameAttr = parent->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__name__"));
+                if (pNameAttr && pNameAttr->isString(context)) pNameAttr->asString(context)->toUTF8String(context, pName);
+                fprintf(stderr, "DEBUG: py_super_getattr checking parent %p (name=%s) of type %p (name=%s) for %s\n", (void*)parent, pName.c_str(), (void*)type, tName.c_str(), s.c_str());
             }
 
             // Use parent->getAttribute directly to avoid env overhead/recursion/fallback logic
@@ -1502,8 +1508,11 @@ static const proto::ProtoObject* py_super(
                      if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG: py_super BFS checking locals of scope %p\n", (void*)curr);
                      // Fix: locals is a ProtoObject (dict or frame), not a SparseList directly.
                      // Use getAttribute to retrieve the value.
-                     const proto::ProtoObject* val = locals->getAttribute(context, classStr); 
-                     if (val && val != PROTO_NONE) {
+                     const proto::ProtoObject* val = PROTO_NONE;
+                      if (locals->hasOwnAttribute(context, classStr) == PROTO_TRUE) {
+                           val = locals->getAttribute(context, classStr);
+                      }
+                      if (val && val != PROTO_NONE) {
                           type = val;
                           if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG: py_super found __class__ in f_locals of scope %p\n", (void*)curr);
                           goto found_class;
@@ -1743,7 +1752,8 @@ static const proto::ProtoObject* py_globals(
             const proto::ProtoObject* keyObj = reinterpret_cast<const proto::ProtoObject*>(key);
             const proto::ProtoObject* value = it->nextValue(context);
             if (keyObj && keyObj->isString(context)) {
-                d = const_cast<proto::ProtoSparseList*>(d->setAt(context, key, value));
+                unsigned long hash = keyObj->getHash(context);
+                d = const_cast<proto::ProtoSparseList*>(d->setAt(context, hash, value));
                 kList = const_cast<proto::ProtoList*>(kList->appendLast(context, keyObj));
             }
             it = const_cast<proto::ProtoSparseListIterator*>(it->advance(context));
@@ -1963,17 +1973,20 @@ const proto::ProtoObject* py_type(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        fprintf(stderr, "DEBUG: py_type executing early unconditional: size=%zu\n", positionalParameters ? positionalParameters->getSize(context) : 0);
+    }
     if (!positionalParameters || positionalParameters->getSize(context) == 0) {
         return PROTO_NONE;
     }
     
     protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(context);
     size_t argCount = positionalParameters->getSize(context);
-    
-    
-    if (get_env_diag()) {
-        printf("DEBUG: py_type called self=%p argCount=%zu\n", (void*)self, argCount);
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        fprintf(stderr, "DEBUG: py_type executing unconditional: argCount=%zu\n", argCount);
     }
+    // Unconditional print to trace caller
+    fprintf(stderr, "DEBUG: py_type called unconditionally self=%p argCount=%zu\n", (void*)self, argCount);
     
     if (argCount == 1) {
         const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);

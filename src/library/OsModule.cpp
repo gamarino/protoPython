@@ -5,7 +5,7 @@
 #include <cstring>
 #include <string>
 #include <iostream>
-
+#include <thread>
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
 #include <signal.h>
 #include <unistd.h>
@@ -684,6 +684,17 @@ static const proto::ProtoObject* py_getegid(
 
 
 
+static const proto::ProtoObject* py_cpu_count(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* /*self*/,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* /*posArgs*/,
+    const proto::ProtoSparseList* /*kwargs*/) {
+    unsigned int n = std::thread::hardware_concurrency();
+    if (n == 0) return PROTO_NONE;
+    return ctx->fromInteger(n);
+}
+
 static const proto::ProtoObject* py_exit(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
@@ -795,6 +806,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_waitpid));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "kill"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_kill));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "cpu_count"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_cpu_count));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "pipe"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_pipe));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_exit"),
@@ -838,6 +851,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     keys = keys->appendLast(ctx, ctx->fromUTF8String("waitpid"));
     keys = keys->appendLast(ctx, ctx->fromUTF8String("kill"));
     keys = keys->appendLast(ctx, ctx->fromUTF8String("pipe"));
+    keys = keys->appendLast(ctx, ctx->fromUTF8String("cpu_count"));
     keys = keys->appendLast(ctx, ctx->fromUTF8String("_exit"));
     keys = keys->appendLast(ctx, ctx->fromUTF8String("scandir"));
     keys = keys->appendLast(ctx, ctx->fromUTF8String("stat"));

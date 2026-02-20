@@ -172,7 +172,29 @@ bool Compiler::compileName(NameNode* n) {
 }
 
 bool Compiler::compileBinOp(BinOpNode* n) {
-    if (!n || !compileNode(n->left.get()) || !compileNode(n->right.get()))
+    if (!n) return false;
+
+    if (n->op == TokenType::And) {
+        if (!compileNode(n->left.get())) return false;
+        emit(OP_DUP_TOP, 0);
+        emit(OP_POP_JUMP_IF_FALSE, 0);
+        int jumpIdx = bytecodeOffset() - 1;
+        emit(OP_POP_TOP, 0);
+        if (!compileNode(n->right.get())) return false;
+        addPatch(jumpIdx, bytecodeOffset());
+        return true;
+    } else if (n->op == TokenType::Or) {
+        if (!compileNode(n->left.get())) return false;
+        emit(OP_DUP_TOP, 0);
+        emit(OP_POP_JUMP_IF_TRUE, 0);
+        int jumpIdx = bytecodeOffset() - 1;
+        emit(OP_POP_TOP, 0);
+        if (!compileNode(n->right.get())) return false;
+        addPatch(jumpIdx, bytecodeOffset());
+        return true;
+    }
+
+    if (!compileNode(n->left.get()) || !compileNode(n->right.get()))
         return false;
     int op = OP_BINARY_ADD;
     if (n->op == TokenType::Plus) op = OP_BINARY_ADD;
@@ -227,14 +249,6 @@ bool Compiler::compileBinOp(BinOpNode* n) {
         op = OP_BINARY_OR;
     } else if (n->op == TokenType::BitXor) {
         op = OP_BINARY_XOR;
-    } else if (n->op == TokenType::And || n->op == TokenType::Or) {
-        // TODO: Logical And/Or should short-circuit. For now, we emit nothing and fail
-        // or emit a basic binary op if the VM supports it for logicals.
-        // Actually, many simple VMs use JUMP for these.
-        // For now, let's at least avoid mapping them to bitwise ops if possible.
-        // But wait, the previous code DID map them. Let's keep it but fix the token type.
-        if (n->op == TokenType::And) op = OP_BINARY_AND;
-        else op = OP_BINARY_OR;
     } else {
         // Unknown op
         return false;
@@ -1968,9 +1982,8 @@ static void collectCapturedNamesImpl(ASTNode* node, const std::unordered_set<std
                 capturedOut.insert(name);
             }
         }
-        // 3. Recurse into body to find captures for EVEN DEEPER scopes
-        collectCapturedNamesImpl(fn->body.get(), globalsInScope, capturedOut, depth + 1);
-        return;
+        // No recursion into body because collectUsedNames ALREADY aggregates all used names deeply.
+        // Recursing here bypasses our manual 'defined' intermediate maps and poisons closures.
     }
 
     if (auto* lam = dynamic_cast<LambdaNode*>(node)) {
@@ -1991,18 +2004,11 @@ static void collectCapturedNamesImpl(ASTNode* node, const std::unordered_set<std
                 capturedOut.insert(name);
             }
         }
-        collectCapturedNamesImpl(lam->body.get(), globalsInScope, capturedOut, depth + 1);
-        return;
+        // No recursion into body because collectUsedNames aggregates deep usage natively.
     }
 
-    // For other nodes, we only add NameNode to capturedOut if we are ALREADY inside a nested scope.
-    // AND if the name is not global.
-    if (auto* nm = dynamic_cast<NameNode*>(node)) {
-        if (depth > 0 && !globalsInScope.count(nm->id)) {
-            capturedOut.insert(nm->id);
-        }
-        return;
-    }
+    // Note: We deliberately DO NOT capture NameNode indiscriminately here based on depth > 0.
+    // The explicit FunctionDefNode logic accurately traces 'used' vs 'defined'.
 
     // Recursive traversal for control flow nodes
     if (auto* s = dynamic_cast<SuiteNode*>(node)) {
