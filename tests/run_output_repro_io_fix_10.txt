@@ -1,0 +1,6 @@
+Starting repro_io.py
+protopy: unhandled exception in module execution:
+Traceback (most recent call last):
+NameError: name 'bytearray' is not defined
+
+protopy: module 'repro_io' exited with runtime error

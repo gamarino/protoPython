@@ -1,0 +1,6 @@
+None: None, type(None): <class 'NoneType'>, id(None): 0x141
+type: <class 'type'>, id(type): 0x7f26616e4780
+Testing iter(None)...
+Caught expected for iter(None): 'NoneType' object is not iterable
+Testing iter(type(None))...
+Caught expected for iter(type(None)): 'type' object is not iterable

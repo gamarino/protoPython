@@ -1,0 +1,166 @@
+DEBUG: assertionErrorType loaded successfully: 0x7cf81d10e500
+DEBUG: runCodeObject co_code size=88 co_consts size=5 stackOffset=0
+DEBUG: [PC 0] OP 102
+DEBUG: lnotab entry j=0, pc_offset=8, line_offset=1
+DEBUG: [PC 2] OP 100
+DEBUG: LOAD_CONST arg=0 val=0x1401 repr=5
+DEBUG: [PC 4] OP 106
+DEBUG: OP_CALL_FUNCTION PC 4 callable=0x7cf81d07610c argCount=1
+DEBUG: reprObject obj=0x7cf81d07610c class=type
+DEBUG: reprObject out=0x7cf81d2e6906
+DEBUG: invokeCallable callable=0x7cf81d07610c repr=<method object at 0x7cf81d07610c> class=type
+DEBUG: [PC 6] OP 103
+DEBUG: [PC 8] OP 102
+DEBUG: [PC 10] OP 100
+DEBUG: LOAD_CONST arg=1 val=0x75cf4a0e5501 repr=r is:
+DEBUG: [PC 12] OP 102
+DEBUG: [PC 14] OP 106
+DEBUG: OP_CALL_FUNCTION PC 14 callable=0x7cf81d07194c argCount=2
+DEBUG: reprObject obj=0x7cf81d07194c class=type
+DEBUG: reprObject out=0x7cf81d2ebf86
+DEBUG: invokeCallable callable=0x7cf81d07194c repr=<method object at 0x7cf81d07194c> class=type
+DEBUG: py_print called with 2 args
+DEBUG: reprObject obj=0x7cf81d2ec50c class=type
+DEBUG: reprObject out=0x7cf81d27e9c6
+DEBUG: invokeCallable callable=0x7cf81d2ec50c repr=<method object at 0x7cf81d2ec50c> class=type
+DEBUG: initDictStorage obj=0x7cf81cfe3ec0
+DEBUG: initDictStorage dataName=0x7cf81ce63e86 keysName=0x7cf81cf403c6
+DEBUG: initDictStorage creating sparse list
+DEBUG: initDictStorage setting __data__
+DEBUG: initDictStorage checking keys
+DEBUG: initDictStorage creating keys list
+DEBUG: initDictStorage setting __keys__
+DEBUG: initDictStorage done
+DEBUG: Registering 'type' using typeProto=0x7cf81cf4c0c0
+DEBUG: executeModule initDictStorage modulePrototype=0x7cf81cfbd640
+DEBUG: initDictStorage obj=0x7cf81d18b580
+DEBUG: initDictStorage dataName=0x7cf81ce63e86 keysName=0x7cf81cf403c6
+DEBUG: initDictStorage creating sparse list
+DEBUG: initDictStorage setting __data__
+DEBUG: initDictStorage checking keys
+DEBUG: initDictStorage creating keys list
+DEBUG: initDictStorage setting __keys__
+DEBUG: initDictStorage done
+DEBUG: executeModule setting __class__
+DEBUG: executeModule setting frame attributes
+DEBUG: executeModule setting f_code
+r is: None
+DEBUG: [PC 16] OP 133
+DEBUG: [PC 18] OP 102
+DEBUG: [PC 20] OP 100
+DEBUG: LOAD_CONST arg=2 val=0x7cf81d193846 repr=type(r) is:
+DEBUG: [PC 22] OP 102
+DEBUG: resolve BUILTINS name=type obj=0x7cf81cf4c0c0
+DEBUG: [PC 24] OP 102
+DEBUG: [PC 26] OP 106
+DEBUG: OP_CALL_FUNCTION PC 26 callable=0x7cf81cf4c0c0 argCount=1
+DEBUG: reprObject obj=0x7cf81cf4c0c0 class=type
+DEBUG: reprObject out=0x7cf81d2ed906
+DEBUG: invokeCallable callable=0x7cf81cf4c0c0 repr=<class 'type'> class=type
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: py_type executing early unconditional: size=1
+DEBUG: py_type executing unconditional: argCount=1
+DEBUG: py_type called unconditionally self=0x7cf81cf4c0c0 argCount=1
+DEBUG: reprObject obj=0x7cf81cf58900 class=type
+DEBUG: reprObject out=0x7cf81d2f13c6
+DEBUG: invokeCallable (__call__) returning result=0x7cf81cf58900 repr=<object object at 0x7cf81cf58900>
+DEBUG: [PC 28] OP 106
+DEBUG: OP_CALL_FUNCTION PC 28 callable=0x7cf81d07194c argCount=2
+DEBUG: reprObject obj=0x7cf81d07194c class=type
+DEBUG: reprObject out=0x7cf81d2ebf86
+DEBUG: invokeCallable callable=0x7cf81d07194c repr=<method object at 0x7cf81d07194c> class=type
+DEBUG: py_print called with 2 args
+DEBUG: reprObject obj=0x7cf81d2f588c class=type
+DEBUG: reprObject out=0x7cf81d2828c6
+DEBUG: invokeCallable callable=0x7cf81d2f588c repr=<method object at 0x7cf81d2f588c> class=type
+DEBUG: py_type(1) obj=0x7cf81d2e71c0
+type(r) is: <class 'object'>
+DEBUG: [PC 30] OP 133
+DEBUG: [PC 32] OP 177
+DEBUG: lnotab entry j=0, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=2, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=4, pc_offset=14, line_offset=2
+DEBUG: lnotab entry j=6, pc_offset=2, line_offset=2
+DEBUG: SETUP_FINALLY handler pc 56, stack.top 0
+DEBUG: [PC 34] OP 102
+DEBUG: [PC 36] OP 119
+DEBUG: OP_GET_ITER iterable=0x7cf81d2e71c0 iterObj=(nil)
+DEBUG: [PC 36] OP 119
+DEBUG: Exception handling start exc=0x7cf81d2fa480
+DEBUG: lnotab entry j=0, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=2, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=4, pc_offset=14, line_offset=2
+DEBUG: lnotab entry j=6, pc_offset=2, line_offset=2
+DEBUG: lnotab entry j=8, pc_offset=0, line_offset=-2
+DEBUG: lnotab entry j=10, pc_offset=8, line_offset=1
+DEBUG: Exception TypeError at ./test_range.py:5 (PC 36)
+DEBUG: Calling addTraceback...
+DEBUG: addTraceback exc=0x7cf81d2fa480 frame=0x7cf81d18b580 lasti=36 lineno=5
+DEBUG: addTraceback currentTb=0x141
+DEBUG: addTraceback newTb=0x7cf81d285980
+DEBUG: addTraceback updatedExc=0x7cf81d2fa480
+DEBUG: addTraceback returned. blockStack.empty()=false
+DEBUG: Popping block: handlerPc=56 stackDepth=0
+DEBUG: Cleaning stack: current size=1, target size=0
+DEBUG: Pushing exception 0x7cf81d2fa480 back to stack
+DEBUG: Jumping to handlerPc=56
+DEBUG: [PC 56] OP 102
+DEBUG: [PC 58] OP 190
+DEBUG: OP_EXCEPTION_MATCH exc 0x7cf81d2fa480 vs type 0x7cf81d0a5300 -> 1
+DEBUG: [PC 60] OP 110
+DEBUG: [PC 62] OP 103
+DEBUG: [PC 64] OP 102
+DEBUG: lnotab entry j=0, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=2, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=4, pc_offset=14, line_offset=2
+DEBUG: lnotab entry j=6, pc_offset=2, line_offset=2
+DEBUG: lnotab entry j=8, pc_offset=0, line_offset=-2
+DEBUG: lnotab entry j=10, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=12, pc_offset=14, line_offset=1
+DEBUG: lnotab entry j=14, pc_offset=8, line_offset=1
+DEBUG: [PC 66] OP 100
+DEBUG: LOAD_CONST arg=3 val=0x7cf81d196086 repr=Exception in loop:
+DEBUG: [PC 68] OP 102
+DEBUG: resolve BUILTINS name=type obj=0x7cf81cf4c0c0
+DEBUG: [PC 70] OP 102
+DEBUG: [PC 72] OP 106
+DEBUG: OP_CALL_FUNCTION PC 72 callable=0x7cf81cf4c0c0 argCount=1
+DEBUG: reprObject obj=0x7cf81cf4c0c0 class=type
+DEBUG: reprObject out=0x7cf81d2ed906
+DEBUG: invokeCallable callable=0x7cf81cf4c0c0 repr=<class 'type'> class=type
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: py_type executing early unconditional: size=1
+DEBUG: py_type executing unconditional: argCount=1
+DEBUG: py_type called unconditionally self=0x7cf81cf4c0c0 argCount=1
+DEBUG: reprObject obj=0x7cf81d0d1540 class=type
+DEBUG: reprObject out=0x7cf81cefe886
+DEBUG: invokeCallable (__call__) returning result=0x7cf81d0d1540 repr=TypeError
+DEBUG: [PC 74] OP 102
+DEBUG: [PC 76] OP 106
+DEBUG: OP_CALL_FUNCTION PC 76 callable=0x7cf81d07194c argCount=3
+DEBUG: reprObject obj=0x7cf81d07194c class=type
+DEBUG: reprObject out=0x7cf81d2ebf86
+DEBUG: invokeCallable callable=0x7cf81d07194c repr=<method object at 0x7cf81d07194c> class=type
+DEBUG: py_print called with 3 args
+DEBUG: reprObject obj=0x7cf81d305f8c class=type
+DEBUG: reprObject out=0x7cf81d28c3c6
+DEBUG: invokeCallable callable=0x7cf81d305f8c repr=<method object at 0x7cf81d305f8c> class=type
+DEBUG: reprObject obj=0x7cf81d305fcc class=type
+DEBUG: reprObject out=0x7cf81d290386
+DEBUG: invokeCallable callable=0x7cf81d305fcc repr=<method object at 0x7cf81d305fcc> class=type
+DEBUG: py_type(1) obj=0x7cf81d2fa480
+Exception in loop:  'NoneType' object is not iterable
+DEBUG: [PC 78] OP 133
+DEBUG: [PC 80] OP 111
+DEBUG: [PC 84] OP 100
+DEBUG: reprObject obj=0x7cf81cfb5cc0 class=NoneType
+DEBUG: reprObject out=0x19776f9d101
+DEBUG: LOAD_CONST arg=4 val=0x7cf81cfb5cc0 repr=None
+DEBUG: [PC 86] OP 101
+DEBUG: runCodeObject result=0x7cf81cfb5cc0
+DEBUG: reprObject obj=0x7cf81d2935cc class=type
+DEBUG: reprObject out=0x7cf81d29ffc6
+DEBUG: invokeCallable callable=0x7cf81d2935cc repr=<method object at 0x7cf81d2935cc> class=type
+DEBUG: reprObject obj=0x7cf81d2935cc class=type
+DEBUG: reprObject out=0x7cf81d29ffc6
+DEBUG: invokeCallable callable=0x7cf81d2935cc repr=<method object at 0x7cf81d2935cc> class=type

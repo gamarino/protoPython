@@ -1,0 +1,436 @@
+DEBUG: Parser::advance token=33 value='class' line=1
+DEBUG: Parser::advance token=3 value='Base' line=1
+DEBUG: Parser::advance token=18 value='' line=1
+DEBUG: Parser::advance token=11 value='' line=2
+DEBUG: Parser::advance token=29 value='' line=2
+DEBUG: Parser::advance token=27 value='def' line=2
+DEBUG: Parser::advance token=3 value='foo' line=2
+DEBUG: Parser::advance token=8 value='' line=2
+DEBUG: Parser::advance token=3 value='self' line=2
+DEBUG: Parser::advance token=9 value='' line=2
+DEBUG: Parser::advance token=18 value='' line=2
+DEBUG: Parser::advance token=34 value='return' line=2
+DEBUG: Parser::advance token=1 value='base' line=2
+DEBUG: Parser::advance token=11 value='' line=3
+DEBUG: Parser::advance token=30 value='' line=4
+DEBUG: Parser::advance token=31 value='import' line=4
+DEBUG: Parser::advance token=3 value='sys' line=4
+DEBUG: Parser::advance token=11 value='' line=5
+DEBUG: Parser::advance token=3 value='print' line=5
+DEBUG: Parser::advance token=8 value='' line=5
+DEBUG: Parser::advance token=2 value='DEBUG Script: Base.foo is {Base.foo}' line=5
+DEBUG: Parser::advance token=10 value='' line=5
+DEBUG: Parser::advance token=3 value='Base' line=1
+DEBUG: Parser::advance token=13 value='' line=1
+DEBUG: Parser::advance token=3 value='foo' line=1
+DEBUG: Parser::advance token=12 value='' line=1
+DEBUG: Parser::advance token=3 value='file' line=5
+DEBUG: Parser::advance token=19 value='' line=5
+DEBUG: Parser::advance token=3 value='sys' line=5
+DEBUG: Parser::advance token=13 value='' line=5
+DEBUG: Parser::advance token=3 value='stderr' line=5
+DEBUG: Parser::advance token=9 value='' line=5
+DEBUG: Parser::advance token=11 value='' line=6
+DEBUG: Parser::advance token=3 value='print' line=6
+DEBUG: Parser::advance token=8 value='' line=6
+DEBUG: Parser::advance token=2 value='DEBUG Script: foo in Base.__dict__: {'foo' in Base.__dict__}' line=6
+DEBUG: Parser::advance token=10 value='' line=6
+DEBUG: Parser::advance token=1 value='foo' line=1
+DEBUG: Parser::advance token=22 value='in' line=1
+DEBUG: Parser::advance token=3 value='Base' line=1
+DEBUG: Parser::advance token=13 value='' line=1
+DEBUG: Parser::advance token=3 value='__dict__' line=1
+DEBUG: Parser::advance token=12 value='' line=1
+DEBUG: Parser::advance token=3 value='file' line=6
+DEBUG: Parser::advance token=19 value='' line=6
+DEBUG: Parser::advance token=3 value='sys' line=6
+DEBUG: Parser::advance token=13 value='' line=6
+DEBUG: Parser::advance token=3 value='stderr' line=6
+DEBUG: Parser::advance token=9 value='' line=6
+DEBUG: Parser::advance token=11 value='' line=7
+DEBUG: Parser::advance token=33 value='class' line=8
+DEBUG: Parser::advance token=3 value='Derived' line=8
+DEBUG: Parser::advance token=8 value='' line=8
+DEBUG: Parser::advance token=3 value='Base' line=8
+DEBUG: Parser::advance token=9 value='' line=8
+DEBUG: Parser::advance token=18 value='' line=8
+DEBUG: Parser::advance token=11 value='' line=9
+DEBUG: Parser::advance token=29 value='' line=9
+DEBUG: Parser::advance token=27 value='def' line=9
+DEBUG: Parser::advance token=3 value='foo' line=9
+DEBUG: Parser::advance token=8 value='' line=9
+DEBUG: Parser::advance token=3 value='self' line=9
+DEBUG: Parser::advance token=9 value='' line=9
+DEBUG: Parser::advance token=18 value='' line=9
+DEBUG: Parser::advance token=34 value='return' line=9
+DEBUG: Parser::advance token=3 value='super' line=9
+DEBUG: Parser::advance token=8 value='' line=9
+DEBUG: Parser::advance token=9 value='' line=9
+DEBUG: Parser::advance token=13 value='' line=9
+DEBUG: Parser::advance token=3 value='foo' line=9
+DEBUG: Parser::advance token=8 value='' line=9
+DEBUG: Parser::advance token=9 value='' line=9
+DEBUG: Parser::advance token=11 value='' line=10
+DEBUG: Parser::advance token=30 value='' line=11
+DEBUG: Parser::advance token=42 value='try' line=11
+DEBUG: Parser::advance token=18 value='' line=11
+DEBUG: Parser::advance token=11 value='' line=12
+DEBUG: Parser::advance token=29 value='' line=12
+DEBUG: Parser::advance token=3 value='print' line=12
+DEBUG: Parser::advance token=8 value='' line=12
+DEBUG: Parser::advance token=3 value='Derived' line=12
+DEBUG: Parser::advance token=8 value='' line=12
+DEBUG: Parser::advance token=9 value='' line=12
+DEBUG: Parser::advance token=13 value='' line=12
+DEBUG: Parser::advance token=3 value='foo' line=12
+DEBUG: Parser::advance token=8 value='' line=12
+DEBUG: Parser::advance token=9 value='' line=12
+DEBUG: Parser::advance token=9 value='' line=12
+DEBUG: Parser::advance token=11 value='' line=13
+DEBUG: Parser::advance token=30 value='' line=13
+DEBUG: Parser::advance token=43 value='except' line=13
+DEBUG: Parser::advance token=3 value='Exception' line=13
+DEBUG: Parser::advance token=50 value='as' line=13
+DEBUG: Parser::advance token=3 value='e' line=13
+DEBUG: Parser::advance token=18 value='' line=13
+DEBUG: Parser::advance token=11 value='' line=14
+DEBUG: Parser::advance token=29 value='' line=14
+DEBUG: Parser::advance token=3 value='print' line=14
+DEBUG: Parser::advance token=8 value='' line=14
+DEBUG: Parser::advance token=2 value='Caught exception: {e}' line=14
+DEBUG: Parser::advance token=9 value='' line=14
+DEBUG: Parser::advance token=3 value='e' line=1
+DEBUG: Parser::advance token=12 value='' line=1
+DEBUG: Parser::advance token=11 value='' line=15
+DEBUG: Parser::advance token=30 value='' line=15
+DEBUG: Parser::advance token=12 value='' line=15
+DEBUG: runCodeObject co_code size=130 co_consts size=12 stackOffset=0
+DEBUG: [PC 0] OP 100
+DEBUG: lnotab entry j=0, pc_offset=14, line_offset=4
+DEBUG: LOAD_CONST arg=0 val=0x1979e185101 repr=Base
+DEBUG: [PC 2] OP 118
+DEBUG: [PC 4] OP 100
+DEBUG: LOAD_CONST arg=1 val=0x141 repr=None
+DEBUG: [PC 6] OP 100
+DEBUG: reprObject obj=0x7956b2197a40 class=NoneType
+DEBUG: LOAD_CONST arg=2 val=0x7956b2197a40 repr=<object>
+DEBUG: [PC 8] OP 156
+DEBUG: [PC 10] OP 160
+DEBUG: reprObject obj=0x7956b1ebd44c class=type
+DEBUG: reprObject out=0x7956b22daa06
+DEBUG: invokeCallable callable=0x7956b1ebd44c repr=<method object at 0x7956b1ebd44c> class=type
+DEBUG: runCodeObject co_code size=8 co_consts size=1 stackOffset=0
+DEBUG: [PC 0] OP 100
+DEBUG: reprObject obj=0x7956b2185f40 class=NoneType
+DEBUG: LOAD_CONST arg=0 val=0x7956b2185f40 repr=<object>
+DEBUG: [PC 2] OP 156
+DEBUG: [PC 4] OP 103
+DEBUG: [PC 6] OP 101
+DEBUG: runCodeObject result=0x141
+DEBUG: reprObject obj=0x7956b1ebc0c0 class=type
+DEBUG: reprObject out=0x7956b23a35c6
+DEBUG: invokeCallable callable=0x7956b1ebc0c0 repr=<class 'type'> class=type
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: reprObject obj=0x7956b23a38c0 class=type
+DEBUG: reprObject out=0x7956b23ad1c6
+DEBUG: invokeCallable (__call__) returning result=0x7956b23a38c0 repr=<Base object at 0x7956b23a38c0>
+DEBUG: [PC 12] OP 103
+DEBUG: [PC 14] OP 102
+DEBUG: [PC 16] OP 100
+DEBUG: LOAD_CONST arg=3 val=0x39f9e6d01 repr=sys
+DEBUG: [PC 18] OP 106
+DEBUG: OP_CALL_FUNCTION PC 18 callable=0x7956b2010b4c argCount=1
+DEBUG: reprObject obj=0x7956b2010b4c class=type
+DEBUG: reprObject out=0x7956b23b1c86
+DEBUG: invokeCallable callable=0x7956b2010b4c repr=<method object at 0x7956b2010b4c> class=type
+DEBUG: __import__('sys') level=0
+DEBUG: [PC 20] OP 103
+DEBUG: [PC 22] OP 102
+DEBUG: [PC 24] OP 100
+DEBUG: LOAD_CONST arg=4 val=0x7956b21a9886 repr=DEBUG Script: Base.foo is 
+DEBUG: [PC 26] OP 102
+DEBUG: [PC 28] OP 112
+DEBUG: OP_LOAD_ATTR calling getAttribute env=0x7ffc43d0c6c0 obj=0x7956b23a38c0 attr=foo
+DEBUG: [PC 30] OP 179
+DEBUG: reprObject obj=0x7956b1ed4800 class=type
+DEBUG: reprObject out=0x7956b22c68c6
+DEBUG: invokeCallable callable=0x7956b1ed4800 repr=<class 'str'> class=type
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: invokeCallable (__call__) returning result=0x7956b22c8146 repr=<class 'method'>
+DEBUG: [PC 32] OP 102
+DEBUG: lnotab entry j=0, pc_offset=14, line_offset=4
+DEBUG: lnotab entry j=2, pc_offset=12, line_offset=-4
+DEBUG: lnotab entry j=4, pc_offset=6, line_offset=4
+DEBUG: lnotab entry j=6, pc_offset=10, line_offset=1
+DEBUG: [PC 34] OP 112
+DEBUG: OP_LOAD_ATTR calling getAttribute env=0x7ffc43d0c6c0 obj=0x7956b1f35c40 attr=stderr
+DEBUG: [PC 36] OP 100
+DEBUG: reprObject obj=0x7956b21aa184 class=type
+DEBUG: reprObject out=0x14accbb34e651d01
+DEBUG: LOAD_CONST arg=5 val=0x7956b21aa184 repr=(file,)
+DEBUG: [PC 38] OP 159
+DEBUG: reprObject obj=0x7956b1ff7bcc class=type
+DEBUG: reprObject out=0x7956b23bdd86
+DEBUG: invokeCallable callable=0x7956b1ff7bcc repr=<method object at 0x7956b1ff7bcc> class=type
+DEBUG: py_print called with 1 args
+DEBUG: initDictStorage obj=0x7956b1f56840
+DEBUG: initDictStorage dataName=0x7956b1dd3e86 keysName=0x7956b1eb03c6
+DEBUG: initDictStorage creating sparse list
+DEBUG: initDictStorage setting __data__
+DEBUG: initDictStorage checking keys
+DEBUG: initDictStorage creating keys list
+DEBUG: initDictStorage setting __keys__
+DEBUG: initDictStorage done
+DEBUG: Registering 'type' using typeProto=0x7956b1ebc0c0
+DEBUG: executeModule initDictStorage modulePrototype=0x7956b1f2d640
+DEBUG: initDictStorage obj=0x7956b2178cc0
+DEBUG: initDictStorage dataName=0x7956b1dd3e86 keysName=0x7956b1eb03c6
+DEBUG: initDictStorage creating sparse list
+DEBUG: initDictStorage setting __data__
+DEBUG: initDictStorage checking keys
+DEBUG: initDictStorage creating keys list
+DEBUG: initDictStorage setting __keys__
+DEBUG: initDictStorage done
+DEBUG: executeModule setting __class__
+DEBUG: executeModule setting frame attributes
+DEBUG: executeModule setting f_code
+DEBUG: initDictStorage obj=0x7956b22db300
+DEBUG: initDictStorage dataName=0x7956b1dd3e86 keysName=0x7956b1eb03c6
+DEBUG: initDictStorage creating sparse list
+DEBUG: initDictStorage setting __data__
+DEBUG: initDictStorage checking keys
+DEBUG: initDictStorage creating keys list
+DEBUG: initDictStorage setting __keys__
+DEBUG: initDictStorage done
+DEBUG: py_type called self=0x7956b1ebc0c0 argCount=3
+DEBUG: py_type(3) name=0x1979e185101 bases=0x7956b22d3140 dict=0x7956b22db300
+DEBUG: initDictStorage obj=0x7956b23a38c0
+DEBUG: initDictStorage dataName=0x7956b1dd3e86 keysName=0x7956b1eb03c6
+DEBUG: initDictStorage creating sparse list
+DEBUG: initDictStorage setting __data__
+DEBUG: initDictStorage checking keys
+DEBUG: initDictStorage creating keys list
+DEBUG: initDictStorage setting __keys__
+DEBUG: initDictStorage done
+DEBUG: py_type copying key='__name__'
+DEBUG: py_type copied keyVal=0x1979e185101
+DEBUG: py_type copying key='__module__'
+DEBUG: py_type copied keyVal=0x7956b1eb1cc6
+DEBUG: py_type copying key='foo'
+DEBUG: py_type copied keyVal=0x7956b23d5700
+DEBUG Script: Base.foo is <class 'method'>
+DEBUG: [PC 40] OP 133
+DEBUG: [PC 42] OP 102
+DEBUG: [PC 44] OP 100
+DEBUG: LOAD_CONST arg=6 val=0x7956b21ae086 repr=DEBUG Script: foo in Base.__dict__: 
+DEBUG: [PC 46] OP 100
+DEBUG: LOAD_CONST arg=7 val=0x37efccd01 repr=foo
+DEBUG: [PC 48] OP 102
+DEBUG: [PC 50] OP 112
+DEBUG: OP_LOAD_ATTR calling getAttribute env=0x7ffc43d0c6c0 obj=0x7956b23a38c0 attr=__dict__
+DEBUG: [PC 52] OP 109
+DEBUG: [PC 54] OP 179
+DEBUG: [PC 56] OP 102
+DEBUG: [PC 58] OP 112
+DEBUG: OP_LOAD_ATTR calling getAttribute env=0x7ffc43d0c6c0 obj=0x7956b1f35c40 attr=stderr
+DEBUG: [PC 60] OP 100
+DEBUG: reprObject obj=0x7956b21aa184 class=type
+DEBUG: reprObject out=0x14accbb34e651d01
+DEBUG: LOAD_CONST arg=5 val=0x7956b21aa184 repr=(file,)
+DEBUG: [PC 62] OP 159
+DEBUG: reprObject obj=0x7956b1ff7bcc class=type
+DEBUG: reprObject out=0x7956b23bdd86
+DEBUG: invokeCallable callable=0x7956b1ff7bcc repr=<method object at 0x7956b1ff7bcc> class=type
+DEBUG: py_print called with 1 args
+DEBUG: py_type_get_dict called for 0x7956b23a38c0
+DEBUG Script: foo in Base.__dict__: False
+DEBUG: [PC 64] OP 133
+DEBUG: lnotab entry j=0, pc_offset=14, line_offset=4
+DEBUG: lnotab entry j=2, pc_offset=12, line_offset=-4
+DEBUG: lnotab entry j=4, pc_offset=6, line_offset=4
+DEBUG: lnotab entry j=6, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=8, pc_offset=4, line_offset=-5
+DEBUG: lnotab entry j=10, pc_offset=10, line_offset=5
+DEBUG: lnotab entry j=12, pc_offset=10, line_offset=2
+DEBUG: [PC 66] OP 100
+DEBUG: LOAD_CONST arg=8 val=0x3265eda796589d01 repr=Derived
+DEBUG: [PC 68] OP 102
+DEBUG: [PC 70] OP 118
+DEBUG: [PC 72] OP 100
+DEBUG: LOAD_CONST arg=1 val=0x141 repr=None
+DEBUG: [PC 74] OP 100
+DEBUG: reprObject obj=0x7956b21c4ec0 class=NoneType
+DEBUG: LOAD_CONST arg=9 val=0x7956b21c4ec0 repr=<object>
+DEBUG: [PC 76] OP 156
+DEBUG: [PC 78] OP 160
+DEBUG: reprObject obj=0x7956b1ebd44c class=type
+DEBUG: reprObject out=0x7956b22daa06
+DEBUG: invokeCallable callable=0x7956b1ebd44c repr=<method object at 0x7956b1ebd44c> class=type
+DEBUG: runCodeObject co_code size=8 co_consts size=1 stackOffset=0
+DEBUG: [PC 0] OP 100
+DEBUG: reprObject obj=0x7956b21b33c0 class=NoneType
+DEBUG: LOAD_CONST arg=0 val=0x7956b21b33c0 repr=<object>
+DEBUG: [PC 2] OP 156
+DEBUG: [PC 4] OP 103
+DEBUG: [PC 6] OP 101
+DEBUG: runCodeObject result=0x141
+DEBUG: reprObject obj=0x7956b1ebc0c0 class=type
+DEBUG: reprObject out=0x7956b23a35c6
+DEBUG: invokeCallable callable=0x7956b1ebc0c0 repr=<class 'type'> class=type
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: reprObject obj=0x7956b2518b00 class=type
+DEBUG: reprObject out=0x7956b2522d46
+DEBUG: invokeCallable (__call__) returning result=0x7956b2518b00 repr=<Derived object at 0x7956b2518b00>
+DEBUG: [PC 80] OP 103
+DEBUG: [PC 82] OP 177
+DEBUG: SETUP_FINALLY handler pc 102, stack.top 0
+DEBUG: [PC 84] OP 102
+DEBUG: [PC 86] OP 102
+DEBUG: [PC 88] OP 106
+DEBUG: OP_CALL_FUNCTION PC 88 callable=0x7956b2518b00 argCount=0
+DEBUG: reprObject obj=0x7956b2518b00 class=type
+DEBUG: reprObject out=0x7956b2522d46
+DEBUG: invokeCallable callable=0x7956b2518b00 repr=<Derived object at 0x7956b2518b00> class=type
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: reprObject obj=0x7956b1ebac4c class=type
+DEBUG: reprObject out=0x7956b252c386
+DEBUG: invokeCallable callable=0x7956b1ebac4c repr=<method object at 0x7956b1ebac4c> class=type
+DEBUG: reprObject obj=0x7956b2527ec0 class=Derived
+DEBUG: reprObject out=0x7956b2530346
+DEBUG: invokeCallable (__call__) returning result=0x7956b2527ec0 repr=<Derived object at 0x7956b2527ec0>
+DEBUG: [PC 90] OP 112
+DEBUG: OP_LOAD_ATTR calling getAttribute env=0x7ffc43d0c6c0 obj=0x7956b2527ec0 attr=foo
+DEBUG: [PC 92] OP 106
+DEBUG: OP_CALL_FUNCTION PC 92 callable=0x7956b2530a40 argCount=0
+DEBUG: reprObject obj=0x7956b2530a40 class=type
+DEBUG: reprObject out=0x7956b2536586
+DEBUG: invokeCallable callable=0x7956b2530a40 repr=<method object at 0x7956b2530a40> class=type
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: reprObject obj=0x7956b2555700 class=function
+DEBUG: reprObject out=0x7956b253a8c6
+DEBUG: invokeCallable callable=0x7956b2555700 repr=<function object at 0x7956b2555700> class=function
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: [PC 0] OP 102
+DEBUG: [PC 2] OP 106
+DEBUG: OP_CALL_FUNCTION PC 2 callable=0x7956b200d18c argCount=0
+DEBUG: reprObject obj=0x7956b200d18c class=type
+DEBUG: reprObject out=0x7956b26d7c06
+DEBUG: invokeCallable callable=0x7956b200d18c repr=<method object at 0x7956b200d18c> class=type
+DEBUG: py_super 0-arg ENTER
+DEBUG: py_super found obj in fast locals: 0x7956b2527ec0
+DEBUG: py_super found type in __class__: 0x7956b1ebc0c0
+DEBUG: py_super returning PROXY
+DEBUG: [PC 4] OP 112
+DEBUG: OP_LOAD_ATTR calling getAttribute env=0x7ffc43d0c6c0 obj=0x7956b26d8d40 attr=foo
+DEBUG: py_super_getattr type=0x7956b1ebc0c0 parents_size=1 name=foo (0x37efccd01) env=0x7ffc43d0c6c0
+DEBUG: py_super_getattr checking parent 0x7956b1ebc080 for foo
+DEBUG: py_super_getattr parent 0x7956b1ebc080 returned val 0x141
+DEBUG: py_super_getattr FAILED to find attribute
+DEBUG: [PC 6] OP 106
+DEBUG: OP_CALL_FUNCTION PC 6 callable=0x141 argCount=0
+DEBUG: invokeCallable callable=0x141 repr=None class=NoneType
+DEBUG: [PC 6] OP 106
+DEBUG: Exception handling start exc=0x7956b26e0e40
+DEBUG: Exception TypeError at ./verify_super_noargs.py:9 (PC 6)
+DEBUG: Calling addTraceback...
+DEBUG: addTraceback exc=0x7956b26e0e40 frame=0x7956b26d30c0 lasti=6 lineno=9
+DEBUG: addTraceback currentTb=0x141
+DEBUG: addTraceback newTb=0x7956b22c9640
+DEBUG: addTraceback updatedExc=0x7956b26e0e40
+DEBUG: addTraceback returned. blockStack.empty()=true
+DEBUG: No trap found, returning nullptr
+DEBUG: invokeCallable (__call__) returning result=(nil) repr=nullptr
+DEBUG: invokeCallable (__call__) returning result=(nil) repr=nullptr
+DEBUG: [PC 92] OP 106
+DEBUG: Exception handling start exc=0x7956b26e0e40
+DEBUG: lnotab entry j=0, pc_offset=14, line_offset=4
+DEBUG: lnotab entry j=2, pc_offset=12, line_offset=-4
+DEBUG: lnotab entry j=4, pc_offset=6, line_offset=4
+DEBUG: lnotab entry j=6, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=8, pc_offset=4, line_offset=-5
+DEBUG: lnotab entry j=10, pc_offset=10, line_offset=5
+DEBUG: lnotab entry j=12, pc_offset=10, line_offset=2
+DEBUG: lnotab entry j=14, pc_offset=16, line_offset=4
+DEBUG: lnotab entry j=16, pc_offset=20, line_offset=1
+DEBUG: Exception TypeError at ./verify_super_noargs.py:12 (PC 92)
+DEBUG: Calling addTraceback...
+DEBUG: addTraceback exc=0x7956b26e0e40 frame=0x7956b2178cc0 lasti=92 lineno=12
+DEBUG: addTraceback currentTb=0x7956b22c9640
+DEBUG: addTraceback newTb=0x7956b22cda80
+DEBUG: addTraceback updatedExc=0x7956b26e0e40
+DEBUG: addTraceback returned. blockStack.empty()=false
+DEBUG: Popping block: handlerPc=102 stackDepth=0
+DEBUG: Cleaning stack: current size=2, target size=0
+DEBUG: Pushing exception 0x7956b26e0e40 back to stack
+DEBUG: Jumping to handlerPc=102
+DEBUG: [PC 102] OP 102
+DEBUG: [PC 104] OP 190
+DEBUG: OP_EXCEPTION_MATCH exc 0x7956b26e0e40 vs type 0x7956b2040900 -> 1
+DEBUG: [PC 106] OP 110
+DEBUG: [PC 108] OP 103
+DEBUG: [PC 110] OP 102
+DEBUG: [PC 112] OP 100
+DEBUG: LOAD_CONST arg=10 val=0x7956b21d5b06 repr=Caught exception: 
+DEBUG: [PC 114] OP 102
+DEBUG: [PC 116] OP 179
+DEBUG: reprObject obj=0x7956b1ed4800 class=type
+DEBUG: reprObject out=0x7956b22c68c6
+DEBUG: invokeCallable callable=0x7956b1ed4800 repr=<class 'str'> class=type
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: invokeCallable (__call__) returning result=0x7956b26dfcc6 repr='NoneType' object is not callable
+DEBUG: [PC 118] OP 106
+DEBUG: OP_CALL_FUNCTION PC 118 callable=0x7956b1ff7bcc argCount=1
+DEBUG: reprObject obj=0x7956b1ff7bcc class=type
+DEBUG: reprObject out=0x7956b23bdd86
+DEBUG: invokeCallable callable=0x7956b1ff7bcc repr=<method object at 0x7956b1ff7bcc> class=type
+DEBUG: py_print called with 1 args
+DEBUG: initDictStorage obj=0x7956b23d0680
+DEBUG: initDictStorage dataName=0x7956b1dd3e86 keysName=0x7956b1eb03c6
+DEBUG: initDictStorage creating sparse list
+DEBUG: initDictStorage setting __data__
+DEBUG: initDictStorage checking keys
+DEBUG: initDictStorage creating keys list
+DEBUG: initDictStorage setting __keys__
+DEBUG: initDictStorage done
+DEBUG: py_type called self=0x7956b1ebc0c0 argCount=3
+DEBUG: py_type(3) name=0x3265eda796589d01 bases=0x7956b23c89c0 dict=0x7956b23d0680
+DEBUG: initDictStorage obj=0x7956b2518b00
+DEBUG: initDictStorage dataName=0x7956b1dd3e86 keysName=0x7956b1eb03c6
+DEBUG: initDictStorage creating sparse list
+DEBUG: initDictStorage setting __data__
+DEBUG: initDictStorage checking keys
+DEBUG: initDictStorage creating keys list
+DEBUG: initDictStorage setting __keys__
+DEBUG: initDictStorage done
+DEBUG: py_type copying key='__name__'
+DEBUG: py_type copied keyVal=0x3265eda796589d01
+DEBUG: py_type copying key='__module__'
+DEBUG: py_type copied keyVal=0x7956b1eb1cc6
+DEBUG: py_type copying key='foo'
+DEBUG: py_type copied keyVal=0x7956b2555700
+Caught exception: 'NoneType' object is not callable
+DEBUG: [PC 120] OP 133
+DEBUG: [PC 122] OP 111
+DEBUG: [PC 126] OP 100
+DEBUG: reprObject obj=0x7956b1f25cc0 class=NoneType
+DEBUG: reprObject out=0x19776f9d101
+DEBUG: LOAD_CONST arg=11 val=0x7956b1f25cc0 repr=None
+DEBUG: [PC 128] OP 101
+DEBUG: lnotab entry j=0, pc_offset=14, line_offset=4
+DEBUG: lnotab entry j=2, pc_offset=12, line_offset=-4
+DEBUG: lnotab entry j=4, pc_offset=6, line_offset=4
+DEBUG: lnotab entry j=6, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=8, pc_offset=4, line_offset=-5
+DEBUG: lnotab entry j=10, pc_offset=10, line_offset=5
+DEBUG: lnotab entry j=12, pc_offset=10, line_offset=2
+DEBUG: lnotab entry j=14, pc_offset=16, line_offset=4
+DEBUG: lnotab entry j=16, pc_offset=20, line_offset=1
+DEBUG: lnotab entry j=18, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=20, pc_offset=4, line_offset=-13
+DEBUG: runCodeObject result=0x7956b1f25cc0
+DEBUG: reprObject obj=0x7956b2755f8c class=type
+DEBUG: reprObject out=0x7956b2762986
+DEBUG: invokeCallable callable=0x7956b2755f8c repr=<method object at 0x7956b2755f8c> class=type
+DEBUG: reprObject obj=0x7956b2755f8c class=type
+DEBUG: reprObject out=0x7956b2762986
+DEBUG: invokeCallable callable=0x7956b2755f8c repr=<method object at 0x7956b2755f8c> class=type

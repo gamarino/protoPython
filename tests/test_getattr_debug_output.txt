@@ -1,0 +1,289 @@
+DEBUG: Parser::advance token=42 value='try' line=2
+DEBUG: Parser::advance token=18 value='' line=2
+DEBUG: Parser::advance token=11 value='' line=3
+DEBUG: Parser::advance token=29 value='' line=3
+DEBUG: Parser::advance token=31 value='import' line=3
+DEBUG: Parser::advance token=3 value='sys' line=3
+DEBUG: Parser::advance token=11 value='' line=4
+DEBUG: Parser::advance token=3 value='print' line=4
+DEBUG: Parser::advance token=8 value='' line=4
+DEBUG: Parser::advance token=1 value='Accessing sys.missing_attr...' line=4
+DEBUG: Parser::advance token=9 value='' line=4
+DEBUG: Parser::advance token=11 value='' line=5
+DEBUG: Parser::advance token=3 value='print' line=5
+DEBUG: Parser::advance token=8 value='' line=5
+DEBUG: Parser::advance token=3 value='sys' line=5
+DEBUG: Parser::advance token=13 value='' line=5
+DEBUG: Parser::advance token=3 value='missing_attr' line=5
+DEBUG: Parser::advance token=9 value='' line=5
+DEBUG: Parser::advance token=11 value='' line=6
+DEBUG: Parser::advance token=3 value='print' line=6
+DEBUG: Parser::advance token=8 value='' line=6
+DEBUG: Parser::advance token=1 value='ERROR: sys.missing_attr did not raise AttributeError and returned:' line=6
+DEBUG: Parser::advance token=10 value='' line=6
+DEBUG: Parser::advance token=3 value='sys' line=6
+DEBUG: Parser::advance token=13 value='' line=6
+DEBUG: Parser::advance token=3 value='missing_attr' line=6
+DEBUG: Parser::advance token=9 value='' line=6
+DEBUG: Parser::advance token=11 value='' line=7
+DEBUG: Parser::advance token=30 value='' line=7
+DEBUG: Parser::advance token=43 value='except' line=7
+DEBUG: Parser::advance token=3 value='AttributeError' line=7
+DEBUG: Parser::advance token=18 value='' line=7
+DEBUG: Parser::advance token=11 value='' line=8
+DEBUG: Parser::advance token=29 value='' line=8
+DEBUG: Parser::advance token=3 value='print' line=8
+DEBUG: Parser::advance token=8 value='' line=8
+DEBUG: Parser::advance token=1 value='SUCCESS: AttributeError raised for sys.missing_attr' line=8
+DEBUG: Parser::advance token=9 value='' line=8
+DEBUG: Parser::advance token=11 value='' line=9
+DEBUG: Parser::advance token=30 value='' line=9
+DEBUG: Parser::advance token=43 value='except' line=9
+DEBUG: Parser::advance token=3 value='Exception' line=9
+DEBUG: Parser::advance token=50 value='as' line=9
+DEBUG: Parser::advance token=3 value='e' line=9
+DEBUG: Parser::advance token=18 value='' line=9
+DEBUG: Parser::advance token=11 value='' line=10
+DEBUG: Parser::advance token=29 value='' line=10
+DEBUG: Parser::advance token=3 value='print' line=10
+DEBUG: Parser::advance token=8 value='' line=10
+DEBUG: Parser::advance token=2 value='ERROR: Raised wrong exception: {type(e).__name__}: {e}' line=10
+DEBUG: Parser::advance token=9 value='' line=10
+DEBUG: Parser::advance token=93 value='type' line=1
+DEBUG: Parser::advance token=8 value='' line=1
+DEBUG: Parser::advance token=3 value='e' line=1
+DEBUG: Parser::advance token=9 value='' line=1
+DEBUG: Parser::advance token=13 value='' line=1
+DEBUG: Parser::advance token=3 value='__name__' line=1
+DEBUG: Parser::advance token=12 value='' line=1
+DEBUG: Parser::advance token=3 value='e' line=1
+DEBUG: Parser::advance token=12 value='' line=1
+DEBUG: Parser::advance token=11 value='' line=11
+DEBUG: Parser::advance token=30 value='' line=12
+DEBUG: Parser::advance token=42 value='try' line=12
+DEBUG: Parser::advance token=18 value='' line=12
+DEBUG: Parser::advance token=11 value='' line=13
+DEBUG: Parser::advance token=29 value='' line=13
+DEBUG: Parser::advance token=31 value='import' line=13
+DEBUG: Parser::advance token=3 value='_collections' line=13
+DEBUG: Parser::advance token=11 value='' line=14
+DEBUG: Parser::advance token=3 value='print' line=14
+DEBUG: Parser::advance token=8 value='' line=14
+DEBUG: Parser::advance token=1 value='Accessing _collections._tuplegetter...' line=14
+DEBUG: Parser::advance token=9 value='' line=14
+DEBUG: Parser::advance token=11 value='' line=15
+DEBUG: Parser::advance token=3 value='val' line=15
+DEBUG: Parser::advance token=19 value='' line=15
+DEBUG: Parser::advance token=3 value='_collections' line=15
+DEBUG: Parser::advance token=13 value='' line=15
+DEBUG: Parser::advance token=3 value='_tuplegetter' line=15
+DEBUG: Parser::advance token=11 value='' line=16
+DEBUG: Parser::advance token=3 value='print' line=16
+DEBUG: Parser::advance token=8 value='' line=16
+DEBUG: Parser::advance token=2 value='ERROR: _collections._tuplegetter did not raise AttributeError and returned: {val}' line=16
+DEBUG: Parser::advance token=9 value='' line=16
+DEBUG: Parser::advance token=3 value='val' line=1
+DEBUG: Parser::advance token=12 value='' line=1
+DEBUG: Parser::advance token=11 value='' line=17
+DEBUG: Parser::advance token=30 value='' line=17
+DEBUG: Parser::advance token=43 value='except' line=17
+DEBUG: Parser::advance token=3 value='AttributeError' line=17
+DEBUG: Parser::advance token=18 value='' line=17
+DEBUG: Parser::advance token=11 value='' line=18
+DEBUG: Parser::advance token=29 value='' line=18
+DEBUG: Parser::advance token=3 value='print' line=18
+DEBUG: Parser::advance token=8 value='' line=18
+DEBUG: Parser::advance token=1 value='SUCCESS: AttributeError raised for _collections._tuplegetter' line=18
+DEBUG: Parser::advance token=9 value='' line=18
+DEBUG: Parser::advance token=11 value='' line=19
+DEBUG: Parser::advance token=30 value='' line=19
+DEBUG: Parser::advance token=43 value='except' line=19
+DEBUG: Parser::advance token=3 value='Exception' line=19
+DEBUG: Parser::advance token=50 value='as' line=19
+DEBUG: Parser::advance token=3 value='e' line=19
+DEBUG: Parser::advance token=18 value='' line=19
+DEBUG: Parser::advance token=11 value='' line=20
+DEBUG: Parser::advance token=29 value='' line=20
+DEBUG: Parser::advance token=3 value='print' line=20
+DEBUG: Parser::advance token=8 value='' line=20
+DEBUG: Parser::advance token=2 value='ERROR: Raised wrong exception for _collections: {type(e).__name__}: {e}' line=20
+DEBUG: Parser::advance token=9 value='' line=20
+DEBUG: Parser::advance token=93 value='type' line=1
+DEBUG: Parser::advance token=8 value='' line=1
+DEBUG: Parser::advance token=3 value='e' line=1
+DEBUG: Parser::advance token=9 value='' line=1
+DEBUG: Parser::advance token=13 value='' line=1
+DEBUG: Parser::advance token=3 value='__name__' line=1
+DEBUG: Parser::advance token=12 value='' line=1
+DEBUG: Parser::advance token=3 value='e' line=1
+DEBUG: Parser::advance token=12 value='' line=1
+DEBUG: Parser::advance token=11 value='' line=21
+DEBUG: Parser::advance token=30 value='' line=21
+DEBUG: Parser::advance token=12 value='' line=21
+DEBUG: runCodeObject co_code size=192 co_consts size=12 stackOffset=0
+DEBUG: [PC 0] OP 177
+DEBUG: lnotab entry j=0, pc_offset=2, line_offset=1
+DEBUG: SETUP_FINALLY handler pc 44, stack.top 0
+DEBUG: [PC 2] OP 102
+DEBUG: [PC 4] OP 100
+DEBUG: LOAD_CONST arg=0 val=0x39f9e6d01 repr=sys
+DEBUG: [PC 6] OP 106
+DEBUG: OP_CALL_FUNCTION PC 6 callable=0x7df4c47b630c argCount=1
+DEBUG: reprObject obj=0x7df4c47b630c class=type
+DEBUG: reprObject out=0x7df4c4a82906
+DEBUG: invokeCallable callable=0x7df4c47b630c repr=<method object at 0x7df4c47b630c> class=type
+DEBUG: __import__('sys') level=0
+DEBUG: [PC 8] OP 103
+DEBUG: [PC 10] OP 102
+DEBUG: [PC 12] OP 100
+DEBUG: LOAD_CONST arg=1 val=0x7df4c492b786 repr=Accessing sys.missing_attr...
+DEBUG: [PC 14] OP 106
+DEBUG: OP_CALL_FUNCTION PC 14 callable=0x7df4c479d44c argCount=1
+DEBUG: reprObject obj=0x7df4c479d44c class=type
+DEBUG: reprObject out=0x7df4c4a87286
+DEBUG: invokeCallable callable=0x7df4c479d44c repr=<method object at 0x7df4c479d44c> class=type
+DEBUG: py_print called with 1 args
+DEBUG: initDictStorage obj=0x7df4c46fcd40
+DEBUG: initDictStorage dataName=0x7df4c457fe86 keysName=0x7df4c465c3c6
+DEBUG: initDictStorage creating sparse list
+DEBUG: initDictStorage setting __data__
+DEBUG: initDictStorage checking keys
+DEBUG: initDictStorage creating keys list
+DEBUG: initDictStorage setting __keys__
+DEBUG: initDictStorage done
+DEBUG: Registering 'type' using typeProto=0x7df4c46680c0
+DEBUG: executeModule initDictStorage modulePrototype=0x7df4c46d4080
+DEBUG: initDictStorage obj=0x7df4c491e1c0
+DEBUG: initDictStorage dataName=0x7df4c457fe86 keysName=0x7df4c465c3c6
+DEBUG: initDictStorage creating sparse list
+DEBUG: initDictStorage setting __data__
+DEBUG: initDictStorage checking keys
+DEBUG: initDictStorage creating keys list
+DEBUG: initDictStorage setting __keys__
+DEBUG: initDictStorage done
+DEBUG: executeModule setting __class__
+DEBUG: executeModule setting frame attributes
+DEBUG: executeModule setting f_code
+Accessing sys.missing_attr...
+DEBUG: [PC 16] OP 133
+DEBUG: [PC 18] OP 102
+DEBUG: [PC 20] OP 102
+DEBUG: [PC 22] OP 112
+DEBUG: OP_LOAD_ATTR obj=0x7df4c46dc800 (class module) name=missing_attr
+DEBUG: OP_LOAD_ATTR calling getAttribute env=0x7ffe85546820 obj=0x7df4c46dc800 attr=missing_attr
+DEBUG: [PC 24] OP 106
+DEBUG: OP_CALL_FUNCTION PC 24 callable=0x7df4c479d44c argCount=1
+DEBUG: reprObject obj=0x7df4c479d44c class=type
+DEBUG: reprObject out=0x7df4c4a87286
+DEBUG: invokeCallable callable=0x7df4c479d44c repr=<method object at 0x7df4c479d44c> class=type
+DEBUG: py_print called with 1 args
+None
+DEBUG: [PC 26] OP 133
+DEBUG: [PC 28] OP 102
+DEBUG: [PC 30] OP 100
+DEBUG: LOAD_CONST arg=2 val=0x7df4c49353c6 repr=ERROR: sys.missing_attr did not raise AttributeError and returned:
+DEBUG: [PC 32] OP 102
+DEBUG: lnotab entry j=0, pc_offset=2, line_offset=1
+DEBUG: lnotab entry j=2, pc_offset=16, line_offset=1
+DEBUG: lnotab entry j=4, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=6, pc_offset=16, line_offset=1
+DEBUG: [PC 34] OP 112
+DEBUG: OP_LOAD_ATTR obj=0x7df4c46dc800 (class module) name=missing_attr
+DEBUG: OP_LOAD_ATTR calling getAttribute env=0x7ffe85546820 obj=0x7df4c46dc800 attr=missing_attr
+DEBUG: [PC 36] OP 106
+DEBUG: OP_CALL_FUNCTION PC 36 callable=0x7df4c479d44c argCount=2
+DEBUG: reprObject obj=0x7df4c479d44c class=type
+DEBUG: reprObject out=0x7df4c4a87286
+DEBUG: invokeCallable callable=0x7df4c479d44c repr=<method object at 0x7df4c479d44c> class=type
+DEBUG: py_print called with 2 args
+ERROR: sys.missing_attr did not raise AttributeError and returned: None
+DEBUG: [PC 38] OP 133
+DEBUG: [PC 40] OP 178
+DEBUG: [PC 42] OP 111
+DEBUG: [PC 96] OP 177
+DEBUG: lnotab entry j=0, pc_offset=2, line_offset=1
+DEBUG: lnotab entry j=2, pc_offset=16, line_offset=1
+DEBUG: lnotab entry j=4, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=6, pc_offset=16, line_offset=1
+DEBUG: lnotab entry j=8, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=10, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=12, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=14, pc_offset=4, line_offset=-9
+DEBUG: lnotab entry j=16, pc_offset=8, line_offset=9
+DEBUG: lnotab entry j=18, pc_offset=2, line_offset=-9
+DEBUG: lnotab entry j=20, pc_offset=12, line_offset=12
+DEBUG: lnotab entry j=22, pc_offset=2, line_offset=1
+DEBUG: SETUP_FINALLY handler pc 136, stack.top 0
+DEBUG: [PC 98] OP 102
+DEBUG: [PC 100] OP 100
+DEBUG: LOAD_CONST arg=6 val=0x7df4c470ba46 repr=_collections
+DEBUG: [PC 102] OP 106
+DEBUG: OP_CALL_FUNCTION PC 102 callable=0x7df4c47b630c argCount=1
+DEBUG: reprObject obj=0x7df4c47b630c class=type
+DEBUG: reprObject out=0x7df4c4a82906
+DEBUG: invokeCallable callable=0x7df4c47b630c repr=<method object at 0x7df4c47b630c> class=type
+DEBUG: __import__('_collections') level=0
+DEBUG: CollectionsModule initialized (modified V2)
+DEBUG: reprObject obj=0x7df4c4ac30cc class=type
+DEBUG: reprObject out=0x7df4c4acfac6
+DEBUG: invokeCallable callable=0x7df4c4ac30cc repr=<method object at 0x7df4c4ac30cc> class=type
+DEBUG: reprObject obj=0x7df4c4ac30cc class=type
+DEBUG: reprObject out=0x7df4c4acfac6
+DEBUG: invokeCallable callable=0x7df4c4ac30cc repr=<method object at 0x7df4c4ac30cc> class=type
+DEBUG: [PC 104] OP 103
+DEBUG: [PC 106] OP 102
+DEBUG: [PC 108] OP 100
+DEBUG: LOAD_CONST arg=7 val=0x7df4c4949a46 repr=Accessing _collections._tuplegetter...
+DEBUG: [PC 110] OP 106
+DEBUG: OP_CALL_FUNCTION PC 110 callable=0x7df4c479d44c argCount=1
+DEBUG: reprObject obj=0x7df4c479d44c class=type
+DEBUG: reprObject out=0x7df4c4a87286
+DEBUG: invokeCallable callable=0x7df4c479d44c repr=<method object at 0x7df4c479d44c> class=type
+DEBUG: py_print called with 1 args
+Accessing _collections._tuplegetter...
+DEBUG: [PC 112] OP 133
+DEBUG: [PC 114] OP 102
+DEBUG: [PC 116] OP 112
+DEBUG: OP_LOAD_ATTR obj=0x7df4c4a940c0 (class module) name=_tuplegetter
+DEBUG: OP_LOAD_ATTR calling getAttribute env=0x7ffe85546820 obj=0x7df4c4a940c0 attr=_tuplegetter
+DEBUG: [PC 118] OP 103
+DEBUG: [PC 120] OP 102
+DEBUG: [PC 122] OP 100
+DEBUG: LOAD_CONST arg=8 val=0x7df4c4954f06 repr=ERROR: _collections._tuplegetter did not raise AttributeError and returned: 
+DEBUG: [PC 124] OP 102
+DEBUG: [PC 126] OP 179
+DEBUG: [PC 128] OP 106
+DEBUG: lnotab entry j=0, pc_offset=2, line_offset=1
+DEBUG: lnotab entry j=2, pc_offset=16, line_offset=1
+DEBUG: lnotab entry j=4, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=6, pc_offset=16, line_offset=1
+DEBUG: lnotab entry j=8, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=10, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=12, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=14, pc_offset=4, line_offset=-9
+DEBUG: lnotab entry j=16, pc_offset=8, line_offset=9
+DEBUG: lnotab entry j=18, pc_offset=2, line_offset=-9
+DEBUG: lnotab entry j=20, pc_offset=12, line_offset=12
+DEBUG: lnotab entry j=22, pc_offset=2, line_offset=1
+DEBUG: lnotab entry j=24, pc_offset=16, line_offset=1
+DEBUG: lnotab entry j=26, pc_offset=6, line_offset=1
+DEBUG: lnotab entry j=28, pc_offset=4, line_offset=-15
+DEBUG: lnotab entry j=30, pc_offset=12, line_offset=16
+DEBUG: OP_CALL_FUNCTION PC 128 callable=0x7df4c479d44c argCount=1
+DEBUG: reprObject obj=0x7df4c479d44c class=type
+DEBUG: reprObject out=0x7df4c4a87286
+DEBUG: invokeCallable callable=0x7df4c479d44c repr=<method object at 0x7df4c479d44c> class=type
+DEBUG: py_print called with 1 args
+ERROR: _collections._tuplegetter did not raise AttributeError and returned: None
+DEBUG: [PC 130] OP 133
+DEBUG: [PC 132] OP 178
+DEBUG: [PC 134] OP 111
+DEBUG: [PC 188] OP 100
+DEBUG: reprObject obj=0x7df4c46cc640 class=NoneType
+DEBUG: reprObject out=0x19776f9d101
+DEBUG: LOAD_CONST arg=11 val=0x7df4c46cc640 repr=None
+DEBUG: [PC 190] OP 101
+DEBUG: runCodeObject result=0x7df4c46cc640
+DEBUG: reprObject obj=0x7df4c4ac30cc class=type
+DEBUG: reprObject out=0x7df4c4acfac6
+DEBUG: invokeCallable callable=0x7df4c4ac30cc repr=<method object at 0x7df4c4ac30cc> class=type

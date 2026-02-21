@@ -1,0 +1,452 @@
+DEBUG: Parser::advance token=3 value='print' line=2
+DEBUG: Parser::advance token=8 value='' line=2
+DEBUG: Parser::advance token=1 value='Testing tuple with list:' line=2
+DEBUG: Parser::advance token=9 value='' line=2
+DEBUG: Parser::advance token=11 value='' line=3
+DEBUG: Parser::advance token=3 value='t1' line=3
+DEBUG: Parser::advance token=19 value='' line=3
+DEBUG: Parser::advance token=3 value='tuple' line=3
+DEBUG: Parser::advance token=8 value='' line=3
+DEBUG: Parser::advance token=14 value='' line=3
+DEBUG: Parser::advance token=1 value='a' line=3
+DEBUG: Parser::advance token=10 value='' line=3
+DEBUG: Parser::advance token=1 value='b' line=3
+DEBUG: Parser::advance token=15 value='' line=3
+DEBUG: Parser::advance token=9 value='' line=3
+DEBUG: Parser::advance token=11 value='' line=4
+DEBUG: Parser::advance token=3 value='print' line=4
+DEBUG: Parser::advance token=8 value='' line=4
+DEBUG: Parser::advance token=1 value='Result t1:' line=4
+DEBUG: Parser::advance token=10 value='' line=4
+DEBUG: Parser::advance token=3 value='t1' line=4
+DEBUG: Parser::advance token=9 value='' line=4
+DEBUG: Parser::advance token=11 value='' line=5
+DEBUG: Parser::advance token=3 value='print' line=6
+DEBUG: Parser::advance token=8 value='' line=6
+DEBUG: Parser::advance token=1 value='Testing map:' line=6
+DEBUG: Parser::advance token=9 value='' line=6
+DEBUG: Parser::advance token=11 value='' line=7
+DEBUG: Parser::advance token=3 value='m' line=7
+DEBUG: Parser::advance token=19 value='' line=7
+DEBUG: Parser::advance token=3 value='map' line=7
+DEBUG: Parser::advance token=8 value='' line=7
+DEBUG: Parser::advance token=3 value='str' line=7
+DEBUG: Parser::advance token=10 value='' line=7
+DEBUG: Parser::advance token=14 value='' line=7
+DEBUG: Parser::advance token=1 value='a' line=7
+DEBUG: Parser::advance token=10 value='' line=7
+DEBUG: Parser::advance token=1 value='b' line=7
+DEBUG: Parser::advance token=15 value='' line=7
+DEBUG: Parser::advance token=9 value='' line=7
+DEBUG: Parser::advance token=11 value='' line=8
+DEBUG: Parser::advance token=3 value='print' line=8
+DEBUG: Parser::advance token=8 value='' line=8
+DEBUG: Parser::advance token=1 value='Result m:' line=8
+DEBUG: Parser::advance token=10 value='' line=8
+DEBUG: Parser::advance token=3 value='m' line=8
+DEBUG: Parser::advance token=9 value='' line=8
+DEBUG: Parser::advance token=11 value='' line=9
+DEBUG: Parser::advance token=3 value='print' line=10
+DEBUG: Parser::advance token=8 value='' line=10
+DEBUG: Parser::advance token=1 value='Testing tuple with map:' line=10
+DEBUG: Parser::advance token=9 value='' line=10
+DEBUG: Parser::advance token=11 value='' line=11
+DEBUG: Parser::advance token=3 value='t2' line=11
+DEBUG: Parser::advance token=19 value='' line=11
+DEBUG: Parser::advance token=3 value='tuple' line=11
+DEBUG: Parser::advance token=8 value='' line=11
+DEBUG: Parser::advance token=3 value='map' line=11
+DEBUG: Parser::advance token=8 value='' line=11
+DEBUG: Parser::advance token=3 value='str' line=11
+DEBUG: Parser::advance token=10 value='' line=11
+DEBUG: Parser::advance token=14 value='' line=11
+DEBUG: Parser::advance token=1 value='a' line=11
+DEBUG: Parser::advance token=10 value='' line=11
+DEBUG: Parser::advance token=1 value='b' line=11
+DEBUG: Parser::advance token=15 value='' line=11
+DEBUG: Parser::advance token=9 value='' line=11
+DEBUG: Parser::advance token=9 value='' line=11
+DEBUG: Parser::advance token=11 value='' line=12
+DEBUG: Parser::advance token=3 value='print' line=12
+DEBUG: Parser::advance token=8 value='' line=12
+DEBUG: Parser::advance token=1 value='Result t2:' line=12
+DEBUG: Parser::advance token=10 value='' line=12
+DEBUG: Parser::advance token=3 value='t2' line=12
+DEBUG: Parser::advance token=9 value='' line=12
+DEBUG: Parser::advance token=11 value='' line=13
+DEBUG: Parser::advance token=31 value='import' line=14
+DEBUG: Parser::advance token=3 value='sys' line=14
+DEBUG: Parser::advance token=11 value='' line=15
+DEBUG: Parser::advance token=3 value='print' line=15
+DEBUG: Parser::advance token=8 value='' line=15
+DEBUG: Parser::advance token=1 value='Testing tuple with map and intern:' line=15
+DEBUG: Parser::advance token=9 value='' line=15
+DEBUG: Parser::advance token=11 value='' line=16
+DEBUG: Parser::advance token=3 value='t3' line=16
+DEBUG: Parser::advance token=19 value='' line=16
+DEBUG: Parser::advance token=3 value='tuple' line=16
+DEBUG: Parser::advance token=8 value='' line=16
+DEBUG: Parser::advance token=3 value='map' line=16
+DEBUG: Parser::advance token=8 value='' line=16
+DEBUG: Parser::advance token=3 value='sys' line=16
+DEBUG: Parser::advance token=13 value='' line=16
+DEBUG: Parser::advance token=3 value='intern' line=16
+DEBUG: Parser::advance token=10 value='' line=16
+DEBUG: Parser::advance token=14 value='' line=16
+DEBUG: Parser::advance token=1 value='a' line=16
+DEBUG: Parser::advance token=10 value='' line=16
+DEBUG: Parser::advance token=1 value='b' line=16
+DEBUG: Parser::advance token=15 value='' line=16
+DEBUG: Parser::advance token=9 value='' line=16
+DEBUG: Parser::advance token=9 value='' line=16
+DEBUG: Parser::advance token=11 value='' line=17
+DEBUG: Parser::advance token=3 value='print' line=17
+DEBUG: Parser::advance token=8 value='' line=17
+DEBUG: Parser::advance token=1 value='Result t3:' line=17
+DEBUG: Parser::advance token=10 value='' line=17
+DEBUG: Parser::advance token=3 value='t3' line=17
+DEBUG: Parser::advance token=9 value='' line=17
+DEBUG: Parser::advance token=11 value='' line=18
+DEBUG: Parser::advance token=12 value='' line=18
+DEBUG: runCodeObject co_code size=148 co_consts size=12 stackOffset=0
+DEBUG: [PC 0] OP 102
+DEBUG: lnotab entry j=0, pc_offset=8, line_offset=1
+DEBUG: [PC 2] OP 100
+DEBUG: LOAD_CONST arg=0 val=0x778aa2e8bfc6 repr=Testing tuple with list:
+DEBUG: [PC 4] OP 106
+DEBUG: OP_CALL_FUNCTION PC 4 callable=0x778aa2d0148c argCount=1
+DEBUG: reprObject obj=0x778aa2d0148c class=type
+DEBUG: reprObject out=0x778aa2fe7906
+DEBUG: invokeCallable callable=0x778aa2d0148c repr=<method object at 0x778aa2d0148c> class=type
+DEBUG: py_print called with 1 args
+DEBUG: initDictStorage obj=0x778aa2c61d40
+DEBUG: initDictStorage dataName=0x778aa2ae4e86 keysName=0x778aa2bc13c6
+DEBUG: initDictStorage creating sparse list
+DEBUG: initDictStorage setting __data__
+DEBUG: initDictStorage checking keys
+DEBUG: initDictStorage creating keys list
+DEBUG: initDictStorage setting __keys__
+DEBUG: initDictStorage done
+DEBUG: Registering 'type' using typeProto=0x778aa2bcd0c0
+DEBUG: executeModule initDictStorage modulePrototype=0x778aa2c39080
+DEBUG: initDictStorage obj=0x778aa2e82200
+DEBUG: initDictStorage dataName=0x778aa2ae4e86 keysName=0x778aa2bc13c6
+DEBUG: initDictStorage creating sparse list
+DEBUG: initDictStorage setting __data__
+DEBUG: initDictStorage checking keys
+DEBUG: initDictStorage creating keys list
+DEBUG: initDictStorage setting __keys__
+DEBUG: initDictStorage done
+DEBUG: executeModule setting __class__
+DEBUG: executeModule setting frame attributes
+DEBUG: executeModule setting f_code
+Testing tuple with list:
+DEBUG: [PC 6] OP 133
+DEBUG: [PC 8] OP 102
+DEBUG: reprObject obj=0x778aa2c0de40 class=type
+DEBUG: reprObject out=0x778aa2fe96c6
+DEBUG: resolve BUILTINS name=tuple result=0x778aa2c0de40 repr=<class 'tuple'>
+DEBUG: [PC 10] OP 100
+DEBUG: LOAD_CONST arg=1 val=0xc2501 repr=a
+DEBUG: [PC 12] OP 100
+DEBUG: LOAD_CONST arg=2 val=0xc4501 repr=b
+DEBUG: [PC 14] OP 114
+DEBUG: [PC 16] OP 106
+DEBUG: OP_CALL_FUNCTION PC 16 callable=0x778aa2c0de40 argCount=1
+DEBUG: reprObject obj=0x778aa2c0de40 class=type
+DEBUG: reprObject out=0x778aa2fe96c6
+DEBUG: invokeCallable callable=0x778aa2c0de40 repr=<class 'tuple'> class=type
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: reprObject obj=0x778aa2c0de40 class=type
+DEBUG: reprObject out=0x778aa2fe96c6
+DEBUG: py_tuple_call entry self=0x778aa2c0de40 repr=<class 'tuple'>
+DEBUG: py_tuple_call created instance=0x778aa2fed380
+DEBUG: reprObject obj=0x778aa2fe9a80 class=list
+DEBUG: reprObject out=0x5dc481661b7901
+DEBUG: py_tuple_call iterable=0x778aa2fe9a80 repr=[a, b]
+DEBUG: py_tuple_call asList size=2
+DEBUG: reprObject obj=0x778aa2fed380 class=tuple
+DEBUG: reprObject out=0x29c48166151901
+DEBUG: py_tuple_call returning instance=0x778aa2fed380 repr=(a, b)
+DEBUG: reprObject obj=0x778aa2fed380 class=tuple
+DEBUG: reprObject out=0x29c48166151901
+DEBUG: invokeCallable (__call__) returning result=0x778aa2fed380 repr=(a, b)
+DEBUG: [PC 18] OP 103
+DEBUG: [PC 20] OP 102
+DEBUG: [PC 22] OP 100
+DEBUG: LOAD_CONST arg=3 val=0x778aa2e8d306 repr=Result t1:
+DEBUG: [PC 24] OP 102
+DEBUG: [PC 26] OP 106
+DEBUG: OP_CALL_FUNCTION PC 26 callable=0x778aa2d0148c argCount=2
+DEBUG: reprObject obj=0x778aa2d0148c class=type
+DEBUG: reprObject out=0x778aa2fe7906
+DEBUG: invokeCallable callable=0x778aa2d0148c repr=<method object at 0x778aa2d0148c> class=type
+DEBUG: py_print called with 2 args
+DEBUG: reprObject obj=0x778aa2ff230c class=type
+DEBUG: reprObject out=0x778aa2f8c786
+DEBUG: invokeCallable callable=0x778aa2ff230c repr=<method object at 0x778aa2ff230c> class=type
+Result t1: (a, b)
+DEBUG: [PC 28] OP 133
+DEBUG: [PC 30] OP 102
+DEBUG: [PC 32] OP 100
+DEBUG: lnotab entry j=0, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=2, pc_offset=12, line_offset=1
+DEBUG: lnotab entry j=4, pc_offset=10, line_offset=2
+DEBUG: lnotab entry j=6, pc_offset=8, line_offset=1
+DEBUG: LOAD_CONST arg=4 val=0x778aa2e8e506 repr=Testing map:
+DEBUG: [PC 34] OP 106
+DEBUG: OP_CALL_FUNCTION PC 34 callable=0x778aa2d0148c argCount=1
+DEBUG: reprObject obj=0x778aa2d0148c class=type
+DEBUG: reprObject out=0x778aa2fe7906
+DEBUG: invokeCallable callable=0x778aa2d0148c repr=<method object at 0x778aa2d0148c> class=type
+DEBUG: py_print called with 1 args
+Testing map:
+DEBUG: [PC 36] OP 133
+DEBUG: [PC 38] OP 102
+DEBUG: reprObject obj=0x778aa2d0744c class=type
+DEBUG: reprObject out=0x778aa2ff9846
+DEBUG: resolve BUILTINS name=map result=0x778aa2d0744c repr=<method object at 0x778aa2d0744c>
+DEBUG: [PC 40] OP 102
+DEBUG: [PC 42] OP 100
+DEBUG: LOAD_CONST arg=1 val=0xc2501 repr=a
+DEBUG: [PC 44] OP 100
+DEBUG: LOAD_CONST arg=2 val=0xc4501 repr=b
+DEBUG: [PC 46] OP 114
+DEBUG: [PC 48] OP 106
+DEBUG: OP_CALL_FUNCTION PC 48 callable=0x778aa2d0744c argCount=2
+DEBUG: reprObject obj=0x778aa2d0744c class=type
+DEBUG: reprObject out=0x778aa2ff9846
+DEBUG: invokeCallable callable=0x778aa2d0744c repr=<method object at 0x778aa2d0744c> class=type
+DEBUG: py_map created mapObj=0x778aa3003000 func=0x778aa2be0600 iter=0x778aa3000600
+DEBUG: [PC 50] OP 103
+DEBUG: [PC 52] OP 102
+DEBUG: [PC 54] OP 100
+DEBUG: LOAD_CONST arg=5 val=0x778aa2e8f1c6 repr=Result m:
+DEBUG: [PC 56] OP 102
+DEBUG: [PC 58] OP 106
+DEBUG: OP_CALL_FUNCTION PC 58 callable=0x778aa2d0148c argCount=2
+DEBUG: reprObject obj=0x778aa2d0148c class=type
+DEBUG: reprObject out=0x778aa2fe7906
+DEBUG: invokeCallable callable=0x778aa2d0148c repr=<method object at 0x778aa2d0148c> class=type
+DEBUG: py_print called with 2 args
+DEBUG: reprObject obj=0x778aa3007acc class=type
+DEBUG: reprObject out=0x778aa2f907c6
+DEBUG: invokeCallable callable=0x778aa3007acc repr=<method object at 0x778aa3007acc> class=type
+Result m: <class 'object'>
+DEBUG: [PC 60] OP 133
+DEBUG: [PC 62] OP 102
+DEBUG: [PC 64] OP 100
+DEBUG: lnotab entry j=0, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=2, pc_offset=12, line_offset=1
+DEBUG: lnotab entry j=4, pc_offset=10, line_offset=2
+DEBUG: lnotab entry j=6, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=8, pc_offset=14, line_offset=1
+DEBUG: lnotab entry j=10, pc_offset=10, line_offset=2
+DEBUG: lnotab entry j=12, pc_offset=8, line_offset=1
+DEBUG: LOAD_CONST arg=6 val=0x778aa2e91786 repr=Testing tuple with map:
+DEBUG: [PC 66] OP 106
+DEBUG: OP_CALL_FUNCTION PC 66 callable=0x778aa2d0148c argCount=1
+DEBUG: reprObject obj=0x778aa2d0148c class=type
+DEBUG: reprObject out=0x778aa2fe7906
+DEBUG: invokeCallable callable=0x778aa2d0148c repr=<method object at 0x778aa2d0148c> class=type
+DEBUG: py_print called with 1 args
+Testing tuple with map:
+DEBUG: [PC 68] OP 133
+DEBUG: [PC 70] OP 102
+DEBUG: reprObject obj=0x778aa2c0de40 class=type
+DEBUG: reprObject out=0x778aa2fe96c6
+DEBUG: resolve BUILTINS name=tuple result=0x778aa2c0de40 repr=<class 'tuple'>
+DEBUG: [PC 72] OP 102
+DEBUG: reprObject obj=0x778aa2d0744c class=type
+DEBUG: reprObject out=0x778aa2ff9846
+DEBUG: resolve BUILTINS name=map result=0x778aa2d0744c repr=<method object at 0x778aa2d0744c>
+DEBUG: [PC 74] OP 102
+DEBUG: [PC 76] OP 100
+DEBUG: LOAD_CONST arg=1 val=0xc2501 repr=a
+DEBUG: [PC 78] OP 100
+DEBUG: LOAD_CONST arg=2 val=0xc4501 repr=b
+DEBUG: [PC 80] OP 114
+DEBUG: [PC 82] OP 106
+DEBUG: OP_CALL_FUNCTION PC 82 callable=0x778aa2d0744c argCount=2
+DEBUG: reprObject obj=0x778aa2d0744c class=type
+DEBUG: reprObject out=0x778aa2ff9846
+DEBUG: invokeCallable callable=0x778aa2d0744c repr=<method object at 0x778aa2d0744c> class=type
+DEBUG: py_map created mapObj=0x778aa3019b80 func=0x778aa2be0600 iter=0x778aa3017340
+DEBUG: [PC 84] OP 106
+DEBUG: OP_CALL_FUNCTION PC 84 callable=0x778aa2c0de40 argCount=1
+DEBUG: reprObject obj=0x778aa2c0de40 class=type
+DEBUG: reprObject out=0x778aa2fe96c6
+DEBUG: invokeCallable callable=0x778aa2c0de40 repr=<class 'tuple'> class=type
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: reprObject obj=0x778aa2c0de40 class=type
+DEBUG: reprObject out=0x778aa2fe96c6
+DEBUG: py_tuple_call entry self=0x778aa2c0de40 repr=<class 'tuple'>
+DEBUG: py_tuple_call created instance=0x778aa301cf40
+DEBUG: reprObject obj=0x778aa3019b80 class=type
+DEBUG: reprObject out=0x778aa3020b46
+DEBUG: py_tuple_call iterable=0x778aa3019b80 repr=<object object at 0x778aa3019b80>
+DEBUG: reprObject obj=0x778aa3019b80 class=type
+DEBUG: reprObject out=0x778aa3020b46
+DEBUG: py_tuple_call iterator=0x778aa3019b80 repr=<object object at 0x778aa3019b80>
+DEBUG: reprObject obj=0x778aa2be0600 class=type
+DEBUG: reprObject out=0x778aa2f93886
+DEBUG: invokeCallable callable=0x778aa2be0600 repr=<class 'str'> class=type
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: invokeCallable (__call__) returning result=0xc2501 repr=a
+DEBUG: py_tuple_call item=0xc2501 repr=a
+DEBUG: reprObject obj=0x778aa2be0600 class=type
+DEBUG: reprObject out=0x778aa2f93886
+DEBUG: invokeCallable callable=0x778aa2be0600 repr=<class 'str'> class=type
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: invokeCallable (__call__) returning result=0xc4501 repr=b
+DEBUG: py_tuple_call item=0xc4501 repr=b
+DEBUG: py_map_next: it=0x778aa3017340 __next__ returned nullptr (end of iteration)
+DEBUG: reprObject obj=0x778aa301cf40 class=tuple
+DEBUG: reprObject out=0x29c48166151901
+DEBUG: py_tuple_call returning instance=0x778aa301cf40 repr=(a, b)
+DEBUG: reprObject obj=0x778aa301cf40 class=tuple
+DEBUG: reprObject out=0x29c48166151901
+DEBUG: invokeCallable (__call__) returning result=0x778aa301cf40 repr=(a, b)
+DEBUG: [PC 86] OP 103
+DEBUG: [PC 88] OP 102
+DEBUG: [PC 90] OP 100
+DEBUG: LOAD_CONST arg=7 val=0x778aa2e928c6 repr=Result t2:
+DEBUG: [PC 92] OP 102
+DEBUG: [PC 94] OP 106
+DEBUG: OP_CALL_FUNCTION PC 94 callable=0x778aa2d0148c argCount=2
+DEBUG: reprObject obj=0x778aa2d0148c class=type
+DEBUG: reprObject out=0x778aa2fe7906
+DEBUG: invokeCallable callable=0x778aa2d0148c repr=<method object at 0x778aa2d0148c> class=type
+DEBUG: py_print called with 2 args
+DEBUG: reprObject obj=0x778aa302cacc class=type
+DEBUG: reprObject out=0x778aa2f98786
+DEBUG: invokeCallable callable=0x778aa302cacc repr=<method object at 0x778aa302cacc> class=type
+Result t2: (a, b)
+DEBUG: [PC 96] OP 133
+DEBUG: lnotab entry j=0, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=2, pc_offset=12, line_offset=1
+DEBUG: lnotab entry j=4, pc_offset=10, line_offset=2
+DEBUG: lnotab entry j=6, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=8, pc_offset=14, line_offset=1
+DEBUG: lnotab entry j=10, pc_offset=10, line_offset=2
+DEBUG: lnotab entry j=12, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=14, pc_offset=18, line_offset=1
+DEBUG: lnotab entry j=16, pc_offset=10, line_offset=3
+DEBUG: [PC 98] OP 102
+DEBUG: [PC 100] OP 100
+DEBUG: LOAD_CONST arg=8 val=0x39f9e6d01 repr=sys
+DEBUG: [PC 102] OP 106
+DEBUG: OP_CALL_FUNCTION PC 102 callable=0x778aa2d1a34c argCount=1
+DEBUG: reprObject obj=0x778aa2d1a34c class=type
+DEBUG: reprObject out=0x778aa3030386
+DEBUG: invokeCallable callable=0x778aa2d1a34c repr=<method object at 0x778aa2d1a34c> class=type
+DEBUG: __import__('sys') level=0
+DEBUG: [PC 104] OP 103
+DEBUG: [PC 106] OP 102
+DEBUG: [PC 108] OP 100
+DEBUG: LOAD_CONST arg=9 val=0x778aa2e97246 repr=Testing tuple with map and intern:
+DEBUG: [PC 110] OP 106
+DEBUG: OP_CALL_FUNCTION PC 110 callable=0x778aa2d0148c argCount=1
+DEBUG: reprObject obj=0x778aa2d0148c class=type
+DEBUG: reprObject out=0x778aa2fe7906
+DEBUG: invokeCallable callable=0x778aa2d0148c repr=<method object at 0x778aa2d0148c> class=type
+DEBUG: py_print called with 1 args
+Testing tuple with map and intern:
+DEBUG: [PC 112] OP 133
+DEBUG: [PC 114] OP 102
+DEBUG: reprObject obj=0x778aa2c0de40 class=type
+DEBUG: reprObject out=0x778aa2fe96c6
+DEBUG: resolve BUILTINS name=tuple result=0x778aa2c0de40 repr=<class 'tuple'>
+DEBUG: [PC 116] OP 102
+DEBUG: reprObject obj=0x778aa2d0744c class=type
+DEBUG: reprObject out=0x778aa2ff9846
+DEBUG: resolve BUILTINS name=map result=0x778aa2d0744c repr=<method object at 0x778aa2d0744c>
+DEBUG: [PC 118] OP 102
+DEBUG: [PC 120] OP 112
+DEBUG: OP_LOAD_ATTR obj=0x778aa2c41800 (class module) name=intern
+DEBUG: OP_LOAD_ATTR calling getAttribute env=0x7ffc56e185b0 obj=0x778aa2c41800 attr=intern
+DEBUG: [PC 122] OP 100
+DEBUG: LOAD_CONST arg=1 val=0xc2501 repr=a
+DEBUG: [PC 124] OP 100
+DEBUG: LOAD_CONST arg=2 val=0xc4501 repr=b
+DEBUG: [PC 126] OP 114
+DEBUG: [PC 128] OP 106
+DEBUG: lnotab entry j=0, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=2, pc_offset=12, line_offset=1
+DEBUG: lnotab entry j=4, pc_offset=10, line_offset=2
+DEBUG: lnotab entry j=6, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=8, pc_offset=14, line_offset=1
+DEBUG: lnotab entry j=10, pc_offset=10, line_offset=2
+DEBUG: lnotab entry j=12, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=14, pc_offset=18, line_offset=1
+DEBUG: lnotab entry j=16, pc_offset=10, line_offset=3
+DEBUG: lnotab entry j=18, pc_offset=16, line_offset=1
+DEBUG: lnotab entry j=20, pc_offset=20, line_offset=1
+DEBUG: OP_CALL_FUNCTION PC 128 callable=0x778aa2d0744c argCount=2
+DEBUG: reprObject obj=0x778aa2d0744c class=type
+DEBUG: reprObject out=0x778aa2ff9846
+DEBUG: invokeCallable callable=0x778aa2d0744c repr=<method object at 0x778aa2d0744c> class=type
+DEBUG: py_map created mapObj=0x778aa3043140 func=0x778aa303a08c iter=0x778aa3040900
+DEBUG: [PC 130] OP 106
+DEBUG: OP_CALL_FUNCTION PC 130 callable=0x778aa2c0de40 argCount=1
+DEBUG: reprObject obj=0x778aa2c0de40 class=type
+DEBUG: reprObject out=0x778aa2fe96c6
+DEBUG: invokeCallable callable=0x778aa2c0de40 repr=<class 'tuple'> class=type
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: reprObject obj=0x778aa2c0de40 class=type
+DEBUG: reprObject out=0x778aa2fe96c6
+DEBUG: py_tuple_call entry self=0x778aa2c0de40 repr=<class 'tuple'>
+DEBUG: py_tuple_call created instance=0x778aa3046500
+DEBUG: reprObject obj=0x778aa3043140 class=type
+DEBUG: reprObject out=0x778aa304a106
+DEBUG: py_tuple_call iterable=0x778aa3043140 repr=<object object at 0x778aa3043140>
+DEBUG: reprObject obj=0x778aa3043140 class=type
+DEBUG: reprObject out=0x778aa304a106
+DEBUG: py_tuple_call iterator=0x778aa3043140 repr=<object object at 0x778aa3043140>
+DEBUG: reprObject obj=0x778aa303a08c class=type
+DEBUG: reprObject out=0x778aa2f9c746
+DEBUG: invokeCallable callable=0x778aa303a08c repr=<method object at 0x778aa303a08c> class=type
+DEBUG: sys.intern obj=0xc2501
+  Value: 'a'
+DEBUG: py_tuple_call item=0xc2501 repr=a
+DEBUG: reprObject obj=0x778aa303a08c class=type
+DEBUG: reprObject out=0x778aa2f9c746
+DEBUG: invokeCallable callable=0x778aa303a08c repr=<method object at 0x778aa303a08c> class=type
+DEBUG: sys.intern obj=0xc4501
+  Value: 'b'
+DEBUG: py_tuple_call item=0xc4501 repr=b
+DEBUG: py_map_next: it=0x778aa3040900 __next__ returned nullptr (end of iteration)
+DEBUG: reprObject obj=0x778aa3046500 class=tuple
+DEBUG: reprObject out=0x29c48166151901
+DEBUG: py_tuple_call returning instance=0x778aa3046500 repr=(a, b)
+DEBUG: reprObject obj=0x778aa3046500 class=tuple
+DEBUG: reprObject out=0x29c48166151901
+DEBUG: invokeCallable (__call__) returning result=0x778aa3046500 repr=(a, b)
+DEBUG: [PC 132] OP 103
+DEBUG: [PC 134] OP 102
+DEBUG: [PC 136] OP 100
+DEBUG: LOAD_CONST arg=10 val=0x778aa2e98646 repr=Result t3:
+DEBUG: [PC 138] OP 102
+DEBUG: [PC 140] OP 106
+DEBUG: OP_CALL_FUNCTION PC 140 callable=0x778aa2d0148c argCount=2
+DEBUG: reprObject obj=0x778aa2d0148c class=type
+DEBUG: reprObject out=0x778aa2fe7906
+DEBUG: invokeCallable callable=0x778aa2d0148c repr=<method object at 0x778aa2d0148c> class=type
+DEBUG: py_print called with 2 args
+DEBUG: reprObject obj=0x778aa30560cc class=type
+DEBUG: reprObject out=0x778aa2fa4306
+DEBUG: invokeCallable callable=0x778aa30560cc repr=<method object at 0x778aa30560cc> class=type
+Result t3: (a, b)
+DEBUG: [PC 142] OP 133
+DEBUG: [PC 144] OP 100
+DEBUG: reprObject obj=0x778aa2c31640 class=NoneType
+DEBUG: reprObject out=0x19776f9d101
+DEBUG: LOAD_CONST arg=11 val=0x778aa2c31640 repr=None
+DEBUG: [PC 146] OP 101
+DEBUG: runCodeObject result=0x778aa2c31640
+DEBUG: reprObject obj=0x778aa2fa78cc class=type
+DEBUG: reprObject out=0x778aa2fb42c6
+DEBUG: invokeCallable callable=0x778aa2fa78cc repr=<method object at 0x778aa2fa78cc> class=type
+DEBUG: reprObject obj=0x778aa2fa78cc class=type
+DEBUG: reprObject out=0x778aa2fb42c6
+DEBUG: invokeCallable callable=0x778aa2fa78cc repr=<method object at 0x778aa2fa78cc> class=type

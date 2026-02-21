@@ -1,0 +1,255 @@
+DEBUG: Parser::advance token=33 value='class' line=1
+DEBUG: Parser::advance token=3 value='M' line=1
+DEBUG: Parser::advance token=8 value='' line=1
+DEBUG: Parser::advance token=93 value='type' line=1
+DEBUG: Parser::advance token=9 value='' line=1
+DEBUG: Parser::advance token=18 value='' line=1
+DEBUG: Parser::advance token=11 value='' line=2
+DEBUG: Parser::advance token=29 value='' line=2
+DEBUG: Parser::advance token=28 value='pass' line=2
+DEBUG: Parser::advance token=11 value='' line=3
+DEBUG: Parser::advance token=30 value='' line=4
+DEBUG: Parser::advance token=3 value='print' line=4
+DEBUG: Parser::advance token=8 value='' line=4
+DEBUG: Parser::advance token=2 value='M bases: {M.__bases__}' line=4
+DEBUG: Parser::advance token=9 value='' line=4
+DEBUG: Parser::advance token=3 value='M' line=1
+DEBUG: Parser::advance token=13 value='' line=1
+DEBUG: Parser::advance token=3 value='__bases__' line=1
+DEBUG: Parser::advance token=12 value='' line=1
+DEBUG: Parser::advance token=11 value='' line=5
+DEBUG: Parser::advance token=3 value='print' line=5
+DEBUG: Parser::advance token=8 value='' line=5
+DEBUG: Parser::advance token=2 value='M mro: {M.__mro__}' line=5
+DEBUG: Parser::advance token=9 value='' line=5
+DEBUG: Parser::advance token=3 value='M' line=1
+DEBUG: Parser::advance token=13 value='' line=1
+DEBUG: Parser::advance token=3 value='__mro__' line=1
+DEBUG: Parser::advance token=12 value='' line=1
+DEBUG: Parser::advance token=11 value='' line=6
+DEBUG: Parser::advance token=33 value='class' line=7
+DEBUG: Parser::advance token=3 value='A' line=7
+DEBUG: Parser::advance token=18 value='' line=7
+DEBUG: Parser::advance token=11 value='' line=8
+DEBUG: Parser::advance token=29 value='' line=8
+DEBUG: Parser::advance token=28 value='pass' line=8
+DEBUG: Parser::advance token=11 value='' line=9
+DEBUG: Parser::advance token=30 value='' line=9
+DEBUG: Parser::advance token=3 value='print' line=9
+DEBUG: Parser::advance token=8 value='' line=9
+DEBUG: Parser::advance token=2 value='A bases: {A.__bases__}' line=9
+DEBUG: Parser::advance token=9 value='' line=9
+DEBUG: Parser::advance token=3 value='A' line=1
+DEBUG: Parser::advance token=13 value='' line=1
+DEBUG: Parser::advance token=3 value='__bases__' line=1
+DEBUG: Parser::advance token=12 value='' line=1
+DEBUG: Parser::advance token=11 value='' line=10
+DEBUG: Parser::advance token=12 value='' line=10
+DEBUG: runCodeObject co_code size=76 co_consts size=9 stackOffset=0
+DEBUG: [PC 0] OP 100
+DEBUG: lnotab entry j=0, pc_offset=16, line_offset=3
+DEBUG: LOAD_CONST arg=0 val=0x9a501 repr=M
+DEBUG: [PC 2] OP 102
+DEBUG: resolve BUILTINS name=type obj=0x719936f300c0
+DEBUG: [PC 4] OP 118
+DEBUG: [PC 6] OP 100
+DEBUG: LOAD_CONST arg=1 val=0x141 repr=None
+DEBUG: [PC 8] OP 100
+DEBUG: reprObject obj=0x7199371f48c0 class=NoneType
+DEBUG: LOAD_CONST arg=2 val=0x7199371f48c0 repr=<object>
+DEBUG: [PC 10] OP 156
+DEBUG: [PC 12] OP 160
+DEBUG: reprObject obj=0x719936f3144c class=type
+DEBUG: reprObject out=0x71993734ea86
+DEBUG: invokeCallable callable=0x719936f3144c repr=<method object at 0x719936f3144c> class=type
+DEBUG: runCodeObject co_code size=4 co_consts size=0 stackOffset=0
+DEBUG: [PC 0] OP 133
+DEBUG: [PC 2] OP 101
+DEBUG: runCodeObject result=0x141
+DEBUG: reprObject obj=0x719936f300c0 class=type
+DEBUG: reprObject out=0x719937417646
+DEBUG: invokeCallable callable=0x719936f300c0 repr=<class 'type'> class=type
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: reprObject obj=0x719937417940 class=type
+DEBUG: reprObject out=0x71993741ec46
+DEBUG: invokeCallable (__call__) returning result=0x719937417940 repr=<class 'M'>
+DEBUG: [PC 14] OP 103
+DEBUG: [PC 16] OP 102
+DEBUG: [PC 18] OP 100
+DEBUG: LOAD_CONST arg=3 val=0x7199372039c6 repr=M bases: 
+DEBUG: [PC 20] OP 102
+DEBUG: [PC 22] OP 112
+DEBUG: OP_LOAD_ATTR calling getAttribute env=0x7fff7a0d5660 obj=0x719937417940 attr=__bases__
+DEBUG: [PC 24] OP 179
+DEBUG: reprObject obj=0x719936f48800 class=type
+DEBUG: reprObject out=0x7199372f97c6
+DEBUG: invokeCallable callable=0x719936f48800 repr=<class 'str'> class=type
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: invokeCallable (__call__) returning result=0x7199372faf46 repr=<class 'tuple'>
+DEBUG: [PC 26] OP 106
+DEBUG: OP_CALL_FUNCTION PC 26 callable=0x71993706a80c argCount=1
+DEBUG: reprObject obj=0x71993706a80c class=type
+DEBUG: reprObject out=0x719937425d06
+DEBUG: invokeCallable callable=0x71993706a80c repr=<method object at 0x71993706a80c> class=type
+DEBUG: py_print called with 1 args
+DEBUG: initDictStorage obj=0x719936fca840
+DEBUG: initDictStorage dataName=0x719936e47e86 keysName=0x719936f243c6
+DEBUG: initDictStorage creating sparse list
+DEBUG: initDictStorage setting __data__
+DEBUG: initDictStorage checking keys
+DEBUG: initDictStorage creating keys list
+DEBUG: initDictStorage setting __keys__
+DEBUG: initDictStorage done
+DEBUG: Registering 'type' using typeProto=0x719936f300c0
+DEBUG: executeModule initDictStorage modulePrototype=0x719936fa1640
+DEBUG: initDictStorage obj=0x7199371eb900
+DEBUG: initDictStorage dataName=0x719936e47e86 keysName=0x719936f243c6
+DEBUG: initDictStorage creating sparse list
+DEBUG: initDictStorage setting __data__
+DEBUG: initDictStorage checking keys
+DEBUG: initDictStorage creating keys list
+DEBUG: initDictStorage setting __keys__
+DEBUG: initDictStorage done
+DEBUG: executeModule setting __class__
+DEBUG: executeModule setting frame attributes
+DEBUG: executeModule setting f_code
+DEBUG: initDictStorage obj=0x71993734f380
+DEBUG: initDictStorage dataName=0x719936e47e86 keysName=0x719936f243c6
+DEBUG: initDictStorage creating sparse list
+DEBUG: initDictStorage setting __data__
+DEBUG: initDictStorage checking keys
+DEBUG: initDictStorage creating keys list
+DEBUG: initDictStorage setting __keys__
+DEBUG: initDictStorage done
+DEBUG: py_type called self=0x719936f300c0 argCount=3
+DEBUG: py_type(3) name=0x9a501 bases=0x7199373471c0 dict=0x71993734f380
+DEBUG: initDictStorage obj=0x719937417940
+DEBUG: initDictStorage dataName=0x719936e47e86 keysName=0x719936f243c6
+DEBUG: initDictStorage creating sparse list
+DEBUG: initDictStorage setting __data__
+DEBUG: initDictStorage checking keys
+DEBUG: initDictStorage creating keys list
+DEBUG: initDictStorage setting __keys__
+DEBUG: initDictStorage done
+DEBUG: py_type copying key='__name__'
+DEBUG: py_type copied keyVal=0x9a501
+DEBUG: py_type copying key='__module__'
+DEBUG: py_type copied keyVal=0x719936f25cc6
+DEBUG: py_type adding parents from tuple size=1
+DEBUG: py_type adding parent 0x719936f300c0
+DEBUG: py_type created class 0x719937417940 check MRO
+DEBUG: py_type MRO size=3
+DEBUG: py_type MRO [0] = 0x719936f300c0
+DEBUG: py_type MRO [1] = 0x719936f30080
+DEBUG: py_type MRO [2] = 0x719936f3c900
+M bases: <class 'tuple'>
+DEBUG: [PC 28] OP 133
+DEBUG: [PC 30] OP 102
+DEBUG: [PC 32] OP 100
+DEBUG: lnotab entry j=0, pc_offset=16, line_offset=3
+DEBUG: lnotab entry j=2, pc_offset=4, line_offset=-3
+DEBUG: lnotab entry j=4, pc_offset=10, line_offset=4
+DEBUG: lnotab entry j=6, pc_offset=4, line_offset=-4
+DEBUG: LOAD_CONST arg=4 val=0x103adfcb6a09bd01 repr=M mro: 
+DEBUG: [PC 34] OP 102
+DEBUG: [PC 36] OP 112
+DEBUG: OP_LOAD_ATTR calling getAttribute env=0x7fff7a0d5660 obj=0x719937417940 attr=__mro__
+DEBUG: [PC 38] OP 179
+DEBUG: [PC 40] OP 106
+DEBUG: OP_CALL_FUNCTION PC 40 callable=0x71993706a80c argCount=1
+DEBUG: reprObject obj=0x71993706a80c class=type
+DEBUG: reprObject out=0x719937425d06
+DEBUG: invokeCallable callable=0x71993706a80c repr=<method object at 0x71993706a80c> class=type
+DEBUG: py_print called with 1 args
+M mro: None
+DEBUG: [PC 42] OP 133
+DEBUG: [PC 44] OP 100
+DEBUG: LOAD_CONST arg=5 val=0x82501 repr=A
+DEBUG: [PC 46] OP 118
+DEBUG: [PC 48] OP 100
+DEBUG: LOAD_CONST arg=1 val=0x141 repr=None
+DEBUG: [PC 50] OP 100
+DEBUG: reprObject obj=0x719937206280 class=NoneType
+DEBUG: LOAD_CONST arg=6 val=0x719937206280 repr=<object>
+DEBUG: [PC 52] OP 156
+DEBUG: [PC 54] OP 160
+DEBUG: reprObject obj=0x719936f3144c class=type
+DEBUG: reprObject out=0x71993734ea86
+DEBUG: invokeCallable callable=0x719936f3144c repr=<method object at 0x719936f3144c> class=type
+DEBUG: runCodeObject co_code size=4 co_consts size=0 stackOffset=0
+DEBUG: [PC 0] OP 133
+DEBUG: [PC 2] OP 101
+DEBUG: runCodeObject result=0x141
+DEBUG: reprObject obj=0x719936f300c0 class=type
+DEBUG: reprObject out=0x719937417646
+DEBUG: invokeCallable callable=0x719936f300c0 repr=<class 'type'> class=type
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: reprObject obj=0x71993757c180 class=type
+DEBUG: reprObject out=0x719937584c06
+DEBUG: invokeCallable (__call__) returning result=0x71993757c180 repr=<A object at 0x71993757c180>
+DEBUG: [PC 56] OP 103
+DEBUG: [PC 58] OP 102
+DEBUG: [PC 60] OP 100
+DEBUG: LOAD_CONST arg=7 val=0x719937215386 repr=A bases: 
+DEBUG: [PC 62] OP 102
+DEBUG: [PC 64] OP 112
+DEBUG: lnotab entry j=0, pc_offset=16, line_offset=3
+DEBUG: lnotab entry j=2, pc_offset=4, line_offset=-3
+DEBUG: lnotab entry j=4, pc_offset=10, line_offset=4
+DEBUG: lnotab entry j=6, pc_offset=4, line_offset=-4
+DEBUG: lnotab entry j=8, pc_offset=10, line_offset=6
+DEBUG: lnotab entry j=10, pc_offset=14, line_offset=2
+DEBUG: lnotab entry j=12, pc_offset=4, line_offset=-8
+DEBUG: OP_LOAD_ATTR calling getAttribute env=0x7fff7a0d5660 obj=0x71993757c180 attr=__bases__
+DEBUG: [PC 66] OP 179
+DEBUG: reprObject obj=0x719936f48800 class=type
+DEBUG: reprObject out=0x7199372f97c6
+DEBUG: invokeCallable callable=0x719936f48800 repr=<class 'str'> class=type
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: invokeCallable (__call__) returning result=0x7199372faf46 repr=<class 'tuple'>
+DEBUG: [PC 68] OP 106
+DEBUG: OP_CALL_FUNCTION PC 68 callable=0x71993706a80c argCount=1
+DEBUG: reprObject obj=0x71993706a80c class=type
+DEBUG: reprObject out=0x719937425d06
+DEBUG: invokeCallable callable=0x71993706a80c repr=<method object at 0x71993706a80c> class=type
+DEBUG: py_print called with 1 args
+DEBUG: initDictStorage obj=0x719937433d00
+DEBUG: initDictStorage dataName=0x719936e47e86 keysName=0x719936f243c6
+DEBUG: initDictStorage creating sparse list
+DEBUG: initDictStorage setting __data__
+DEBUG: initDictStorage checking keys
+DEBUG: initDictStorage creating keys list
+DEBUG: initDictStorage setting __keys__
+DEBUG: initDictStorage done
+DEBUG: py_type called self=0x719936f300c0 argCount=3
+DEBUG: py_type(3) name=0x82501 bases=0x71993742c040 dict=0x719937433d00
+DEBUG: initDictStorage obj=0x71993757c180
+DEBUG: initDictStorage dataName=0x719936e47e86 keysName=0x719936f243c6
+DEBUG: initDictStorage creating sparse list
+DEBUG: initDictStorage setting __data__
+DEBUG: initDictStorage checking keys
+DEBUG: initDictStorage creating keys list
+DEBUG: initDictStorage setting __keys__
+DEBUG: initDictStorage done
+DEBUG: py_type copying key='__name__'
+DEBUG: py_type copied keyVal=0x82501
+DEBUG: py_type copying key='__module__'
+DEBUG: py_type copied keyVal=0x719936f25cc6
+DEBUG: py_type adding parents from tuple size=0
+DEBUG: py_type created class 0x71993757c180 check MRO
+DEBUG: py_type MRO size=1
+DEBUG: py_type MRO [0] = 0x719936f3c900
+A bases: <class 'tuple'>
+DEBUG: [PC 70] OP 133
+DEBUG: [PC 72] OP 100
+DEBUG: reprObject obj=0x719936f99cc0 class=NoneType
+DEBUG: reprObject out=0x19776f9d101
+DEBUG: LOAD_CONST arg=8 val=0x719936f99cc0 repr=None
+DEBUG: [PC 74] OP 101
+DEBUG: runCodeObject result=0x719936f99cc0
+DEBUG: reprObject obj=0x71993730094c class=type
+DEBUG: reprObject out=0x71993730d346
+DEBUG: invokeCallable callable=0x71993730094c repr=<method object at 0x71993730094c> class=type
+DEBUG: reprObject obj=0x71993730094c class=type
+DEBUG: reprObject out=0x71993730d346
+DEBUG: invokeCallable callable=0x71993730094c repr=<method object at 0x71993730094c> class=type

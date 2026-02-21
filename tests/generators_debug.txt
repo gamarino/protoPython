@@ -1,0 +1,89 @@
+DEBUG: Exception handling start exc=0x7772cf635d40
+DEBUG: Exception ImportError at lib/python3.14/types.py:11 (PC 20)
+DEBUG: Calling addTraceback...
+DEBUG: addTraceback returned. blockStack.empty()=false
+DEBUG: Popping block: handlerPc=28 stackDepth=0
+DEBUG: Cleaning stack: current size=1, target size=0
+DEBUG: Pushing exception 0x7772cf635d40 back to stack
+DEBUG: Jumping to handlerPc=28
+DEBUG: py_type called unconditionally self=0x7772d60e7880 argCount=1
+DEBUG: py_type called unconditionally self=0x7772d60e7880 argCount=1
+DEBUG: py_type called unconditionally self=0x7772d60e7880 argCount=1
+DEBUG: py_type called unconditionally self=0x7772d60e7880 argCount=1
+DEBUG: py_type called unconditionally self=0x7772d60e7880 argCount=1
+DEBUG: py_type called unconditionally self=0x7772d60e7880 argCount=1
+DEBUG: py_type called unconditionally self=0x7772d60e7880 argCount=1
+DEBUG: py_type called unconditionally self=0x7772d60e7880 argCount=1
+DEBUG: py_type called unconditionally self=0x7772d60e7880 argCount=1
+DEBUG: py_type called unconditionally self=0x7772d60e7880 argCount=3
+DEBUG: py_type called unconditionally self=0x7772d60e7880 argCount=1
+DEBUG: py_type called unconditionally self=0x7772d60e7880 argCount=1
+DEBUG: py_type called unconditionally self=0x7772d60e7880 argCount=1
+DEBUG: py_type called unconditionally self=0x7772d60e7880 argCount=1
+DEBUG: py_type called unconditionally self=0x7772d60e7880 argCount=1
+DEBUG: py_type called unconditionally self=0x7772d60e7880 argCount=1
+DEBUG: py_type called unconditionally self=0x7772d60e7880 argCount=1
+DEBUG: py_type called unconditionally self=0x7772d60e7880 argCount=1
+DEBUG: Exception handling start exc=0x7772c6d04480
+DEBUG: Exception TypeError at lib/python3.14/types.py:58 (PC 284)
+DEBUG: Calling addTraceback...
+DEBUG: addTraceback returned. blockStack.empty()=false
+DEBUG: Popping block: handlerPc=292 stackDepth=0
+DEBUG: Cleaning stack: current size=0, target size=0
+DEBUG: Pushing exception 0x7772c6d04480 back to stack
+DEBUG: Jumping to handlerPc=292
+DEBUG: py_type called unconditionally self=0x7772d60e7880 argCount=1
+DEBUG: py_type called unconditionally self=0x7772d60e7880 argCount=1
+DEBUG: py_type called unconditionally self=0x7772d60e7880 argCount=1
+DEBUG: py_type called unconditionally self=0x7772d60e7880 argCount=1
+DEBUG: py_type called unconditionally self=0x7772d60e7880 argCount=1
+DEBUG: py_type called unconditionally self=0x7772d60e7880 argCount=1
+DEBUG: py_type called unconditionally self=0x7772d60e7880 argCount=1
+DEBUG: py_type called unconditionally self=0x7772d60e7880 argCount=1
+DEBUG: py_type called unconditionally self=0x7772d60e7880 argCount=1
+DEBUG: py_type called unconditionally self=0x7772d60e7880 argCount=3
+DEBUG: py_type called unconditionally self=0x7772d60e7880 argCount=3
+DEBUG: py_globals called
+DEBUG: globals()={exc: TypeError, keys: <method object at 0x7772d6159f4c>, MethodType: <object object at 0x7772d60f40c0>, LambdaType: <function object at 0x7772d60f6b00>, MappingProxyType: <object object at 0x7772d60f40c0>, SimpleNamespace: <object object at 0x7772d60f40c0>, CellType: <class 'list'>, CoroutineType: <generator object <unknown> at 0x7772d60f4980>, AsyncGeneratorType: <generator object <unknown> at 0x7772d60f4980>, BuiltinMethodType: <method object at 0x7772d615ad00>, WrapperDescriptorType: <method object at 0x7772d615ad00>, MethodWrapperType: <method object at 0x7772d615ad00>, MethodDescriptorType: <method object at 0x7772d615ad00>, ClassMethodDescriptorType: <method object at 0x7772d615ad00>, ModuleType: <module object at 0x7772d6158e00>, TracebackType: <traceback object at 0x7772d615b500>, FrameType: <module object at 0x7772d6158e00>, GetSetDescriptorType: None, MemberDescriptorType: None, GenericAlias: <class 'type'>, ...}
+DEBUG: py_type called unconditionally self=0x7772d60e7880 argCount=3
+DEBUG: py_type called unconditionally self=0x7772d60e7880 argCount=3
+DEBUG: py_type called unconditionally self=0x7772d60e7880 argCount=3
+DEBUG: py_type called unconditionally self=0x7772d60e7880 argCount=3
+DEBUG: Exception handling start exc=0x7772c0a84e00
+DEBUG: Exception TypeError at lib/python3.14/weakref.py:0 (PC 108)
+DEBUG: Calling addTraceback...
+DEBUG: addTraceback returned. blockStack.empty()=true
+DEBUG: No trap found, returning nullptr
+DEBUG: py_type called unconditionally self=0x7772d60e7880 argCount=3
+DEBUG: Exception handling start exc=0x7772c0a84e00
+DEBUG: Exception TypeError at lib/python3.14/weakref.py:367 (PC 230)
+DEBUG: Calling addTraceback...
+DEBUG: addTraceback returned. blockStack.empty()=true
+DEBUG: No trap found, returning nullptr
+DEBUG: py_globals called
+protopy: unhandled exception in module execution:
+Traceback (most recent call last):
+  File "test/cpython/test_generators.py", in <module>
+  File "lib/python3.14/copy.py", in <module>
+TypeError: 'NoneType' object is not callable
+
+DEBUG: Exception handling start exc=0x7772c71a5000
+DEBUG: Exception ImportError at lib/python3.14/copy.py:54 (PC 18)
+DEBUG: Calling addTraceback...
+DEBUG: addTraceback returned. blockStack.empty()=true
+DEBUG: No trap found, returning nullptr
+protopy: unhandled exception in module execution:
+Traceback (most recent call last):
+  File "test/cpython/test_generators.py", in <module>
+ImportError: No module named 'weakref'
+
+DEBUG: Exception handling start exc=0x7772c71b1780
+DEBUG: Exception ImportError at test/cpython/test_generators.py:2 (PC 6)
+DEBUG: Calling addTraceback...
+DEBUG: addTraceback returned. blockStack.empty()=true
+DEBUG: No trap found, returning nullptr
+protopy: unhandled exception in module execution:
+Traceback (most recent call last):
+ImportError: No module named 'copy'
+
+protopy: module 'test_generators' exited with runtime error

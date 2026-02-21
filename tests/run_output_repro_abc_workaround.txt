@@ -1,0 +1,18 @@
+None: None, type(None): <class 'NoneType'>, id(None): 0x141
+type: <class 'type'>, id(type): 0x7680aec57780
+Testing iter(None)...
+Caught expected for iter(None): 'NoneType' object is not iterable
+Testing iter(type(None))...
+Caught expected for iter(type(None)): 'type' object is not iterable
+DEBUG: ABCMeta.__new__ scaling for ABC with bases <class 'tuple'>
+DEBUG: namespace type: <class 'object'>
+DEBUG: super().__new__ finished, cls=()
+DEBUG: getting items
+DEBUG: items type: <class 'list'>
+DEBUG: iter(None/nullptr) triggered! obj=0x7680adb417c0, PROTO_NONE=0x141, nonePrototype=0x7680aecb90c0 In __new__ at lib/python3.14/_py_abc.py
+protopy: unhandled exception in module execution:
+Traceback (most recent call last):
+  File "./repro_abc.py", in <module>
+TypeError: 'NoneType' object is not iterable
+
+Import abc failed: ImportError: No module named 'abc'

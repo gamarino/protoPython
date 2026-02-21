@@ -1,0 +1,27 @@
+Running main() from /home/gamarino/Documentos/proyectos/protoPython/build/_deps/googletest-src/googletest/src/gtest_main.cc
+Note: Google Test filter = FoundationTest.ModuleImport
+[==========] Running 1 test from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 1 test from FoundationTest
+[ RUN      ] FoundationTest.ModuleImport
+OP_FOR_ITER: iterator=0x5a46c6f0f0c0
+OP_FOR_ITER: iterator=0x5a46c7202080
+OP_FOR_ITER: iterator=0x5a46c71fe884
+OP_FOR_ITER: iterator=0x5a46c72ca5c0
+protopy: unhandled exception in module execution:
+Traceback (most recent call last):
+AttributeError: 'module' object has no attribute '_check_methods'
+
+/home/gamarino/Documentos/proyectos/protoPython/test/library/TestFoundation.cpp:65: Failure
+Expected: (osMod) != (nullptr), actual: NULL vs (nullptr)
+
+[  FAILED  ] FoundationTest.ModuleImport (752 ms)
+[----------] 1 test from FoundationTest (752 ms total)
+
+[----------] Global test environment tear-down
+[==========] 1 test from 1 test suite ran. (753 ms total)
+[  PASSED  ] 0 tests.
+[  FAILED  ] 1 test, listed below:
+[  FAILED  ] FoundationTest.ModuleImport
+
+ 1 FAILED TEST

@@ -1,0 +1,688 @@
+DEBUG: ProtoObject::addParent this=0x745d45804000 newParent=0x745d457ac400
+DEBUG: ProtoObject::addParent checking ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent skipping ancestor 0x745d457a8900 (hasParent=1)
+DEBUG: ProtoObject::addParent checking newParent 0x745d457ac400
+DEBUG: ProtoObject::addParent adding newParent 0x745d457ac400
+DEBUG: ProtoObject::addParent result=0x745d45804000
+DEBUG: ProtoObject::addParent this=0x745d45815cc0 newParent=0x745d457a8900
+DEBUG: ProtoObject::addParent checking newParent 0x745d457a8900
+DEBUG: ProtoObject::addParent adding newParent 0x745d457a8900
+DEBUG: ProtoObject::addParent result=0x745d45815cc0
+DEBUG: ProtoObject::addParent this=0x745d45829a80 newParent=0x745d457a8900
+DEBUG: ProtoObject::addParent checking newParent 0x745d457a8900
+DEBUG: ProtoObject::addParent adding newParent 0x745d457a8900
+DEBUG: ProtoObject::addParent result=0x745d45829b80
+DEBUG: ProtoObject::addParent this=0x745d45837240 newParent=0x745d457d95c0
+DEBUG: ProtoObject::addParent checking ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent adding ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent checking newParent 0x745d457d95c0
+DEBUG: ProtoObject::addParent adding newParent 0x745d457d95c0
+DEBUG: ProtoObject::addParent result=0x745d45837240
+DEBUG: ProtoObject::addParent this=0x745d45870840 newParent=0x745d457a8900
+DEBUG: ProtoObject::addParent checking newParent 0x745d457a8900
+DEBUG: ProtoObject::addParent adding newParent 0x745d457a8900
+DEBUG: ProtoObject::addParent result=0x745d45870940
+DEBUG: ProtoObject::addParent this=0x745d45888340 newParent=0x745d457a8900
+DEBUG: ProtoObject::addParent checking newParent 0x745d457a8900
+DEBUG: ProtoObject::addParent adding newParent 0x745d457a8900
+DEBUG: ProtoObject::addParent result=0x745d45888340
+DEBUG: ProtoObject::addParent this=0x745d4588a000 newParent=0x745d457a8900
+DEBUG: ProtoObject::addParent checking newParent 0x745d457a8900
+DEBUG: ProtoObject::addParent adding newParent 0x745d457a8900
+DEBUG: ProtoObject::addParent result=0x745d4588a000
+DEBUG: ProtoObject::addParent this=0x745d4588bbc0 newParent=0x745d457a8900
+DEBUG: ProtoObject::addParent checking newParent 0x745d457a8900
+DEBUG: ProtoObject::addParent adding newParent 0x745d457a8900
+DEBUG: ProtoObject::addParent result=0x745d4588bbc0
+DEBUG: ProtoObject::addParent this=0x745d45891840 newParent=0x745d457a8900
+DEBUG: ProtoObject::addParent checking newParent 0x745d457a8900
+DEBUG: ProtoObject::addParent adding newParent 0x745d457a8900
+DEBUG: ProtoObject::addParent result=0x745d45891840
+DEBUG: ProtoObject::addParent this=0x745d45898cc0 newParent=0x745d457a8900
+DEBUG: ProtoObject::addParent checking newParent 0x745d457a8900
+DEBUG: ProtoObject::addParent adding newParent 0x745d457a8900
+DEBUG: ProtoObject::addParent result=0x745d45898cc0
+DEBUG: ProtoObject::addParent this=0x745d45815cc0 newParent=0x745d4580d6c0
+DEBUG: ProtoObject::addParent checking ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent skipping ancestor 0x745d457a8900 (hasParent=1)
+DEBUG: ProtoObject::addParent checking newParent 0x745d4580d6c0
+DEBUG: ProtoObject::addParent adding newParent 0x745d4580d6c0
+DEBUG: ProtoObject::addParent result=0x745d45815cc0
+DEBUG: ProtoObject::addParent this=0x745d458b1100 newParent=0x745d457cc3c0
+DEBUG: ProtoObject::addParent checking ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent adding ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent checking newParent 0x745d457cc3c0
+DEBUG: ProtoObject::addParent adding newParent 0x745d457cc3c0
+DEBUG: ProtoObject::addParent result=0x745d458b1100
+DEBUG: ProtoObject::addParent this=0x745d458b1ec0 newParent=0x745d4580d6c0
+DEBUG: ProtoObject::addParent checking ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent adding ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent checking newParent 0x745d4580d6c0
+DEBUG: ProtoObject::addParent adding newParent 0x745d4580d6c0
+DEBUG: ProtoObject::addParent result=0x745d458b1ec0
+DEBUG: ProtoObject::addParent this=0x745d458fa140 newParent=0x745d457a8900
+DEBUG: ProtoObject::addParent checking newParent 0x745d457a8900
+DEBUG: ProtoObject::addParent adding newParent 0x745d457a8900
+DEBUG: ProtoObject::addParent result=0x745d458fa240
+DEBUG: ProtoObject::addParent this=0x745d458fb6c0 newParent=0x745d457a8900
+DEBUG: ProtoObject::addParent checking newParent 0x745d457a8900
+DEBUG: ProtoObject::addParent adding newParent 0x745d457a8900
+DEBUG: ProtoObject::addParent result=0x745d458fb6c0
+DEBUG: ProtoObject::addParent this=0x745d4590b540 newParent=0x745d45900780
+DEBUG: ProtoObject::addParent checking newParent 0x745d45900780
+DEBUG: ProtoObject::addParent adding newParent 0x745d45900780
+DEBUG: ProtoObject::addParent result=0x745d4590b640
+DEBUG: ProtoObject::addParent this=0x745d4590bd00 newParent=0x745d45900780
+DEBUG: ProtoObject::addParent checking newParent 0x745d45900780
+DEBUG: ProtoObject::addParent adding newParent 0x745d45900780
+DEBUG: ProtoObject::addParent result=0x745d4590be00
+DEBUG: ProtoObject::addParent this=0x745d4590c4c0 newParent=0x745d45900780
+DEBUG: ProtoObject::addParent checking newParent 0x745d45900780
+DEBUG: ProtoObject::addParent adding newParent 0x745d45900780
+DEBUG: ProtoObject::addParent result=0x745d4590c5c0
+DEBUG: ProtoObject::addParent this=0x745d4590d580 newParent=0x745d45900780
+DEBUG: ProtoObject::addParent checking newParent 0x745d45900780
+DEBUG: ProtoObject::addParent adding newParent 0x745d45900780
+DEBUG: ProtoObject::addParent result=0x745d4590d580
+DEBUG: ProtoObject::addParent this=0x745d4590e000 newParent=0x745d45900780
+DEBUG: ProtoObject::addParent checking newParent 0x745d45900780
+DEBUG: ProtoObject::addParent adding newParent 0x745d45900780
+DEBUG: ProtoObject::addParent result=0x745d4590e000
+DEBUG: ProtoObject::addParent this=0x745d459106c0 newParent=0x745d45900780
+DEBUG: ProtoObject::addParent checking newParent 0x745d45900780
+DEBUG: ProtoObject::addParent adding newParent 0x745d45900780
+DEBUG: ProtoObject::addParent result=0x745d459106c0
+DEBUG: ProtoObject::addParent this=0x745d459111c0 newParent=0x745d45900780
+DEBUG: ProtoObject::addParent checking newParent 0x745d45900780
+DEBUG: ProtoObject::addParent adding newParent 0x745d45900780
+DEBUG: ProtoObject::addParent result=0x745d459111c0
+DEBUG: ProtoObject::addParent this=0x745d45920b80 newParent=0x745d4580d6c0
+DEBUG: ProtoObject::addParent checking ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent skipping ancestor 0x745d457a8900 (hasParent=1)
+DEBUG: ProtoObject::addParent checking newParent 0x745d4580d6c0
+DEBUG: ProtoObject::addParent adding newParent 0x745d4580d6c0
+DEBUG: ProtoObject::addParent result=0x745d45920e00
+DEBUG: ProtoObject::addParent this=0x745d45948000 newParent=0x745d457a8900
+DEBUG: ProtoObject::addParent checking newParent 0x745d457a8900
+DEBUG: ProtoObject::addParent adding newParent 0x745d457a8900
+DEBUG: ProtoObject::addParent result=0x745d45948000
+DEBUG: ProtoObject::addParent this=0x745d4594f840 newParent=0x745d45948000
+DEBUG: ProtoObject::addParent checking ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent adding ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent checking newParent 0x745d45948000
+DEBUG: ProtoObject::addParent adding newParent 0x745d45948000
+DEBUG: ProtoObject::addParent result=0x745d4594f840
+DEBUG: ProtoObject::addParent this=0x745d45956c40 newParent=0x745d4594f840
+DEBUG: ProtoObject::addParent checking ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent adding ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent checking ancestor 0x745d45948000
+DEBUG: ProtoObject::addParent adding ancestor 0x745d45948000
+DEBUG: ProtoObject::addParent checking newParent 0x745d4594f840
+DEBUG: ProtoObject::addParent adding newParent 0x745d4594f840
+DEBUG: ProtoObject::addParent result=0x745d45956c40
+DEBUG: ProtoObject::addParent this=0x745d4595e280 newParent=0x745d4594f840
+DEBUG: ProtoObject::addParent checking ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent adding ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent checking ancestor 0x745d45948000
+DEBUG: ProtoObject::addParent adding ancestor 0x745d45948000
+DEBUG: ProtoObject::addParent checking newParent 0x745d4594f840
+DEBUG: ProtoObject::addParent adding newParent 0x745d4594f840
+DEBUG: ProtoObject::addParent result=0x745d4595e280
+DEBUG: ProtoObject::addParent this=0x745d45965c40 newParent=0x745d4594f840
+DEBUG: ProtoObject::addParent checking ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent adding ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent checking ancestor 0x745d45948000
+DEBUG: ProtoObject::addParent adding ancestor 0x745d45948000
+DEBUG: ProtoObject::addParent checking newParent 0x745d4594f840
+DEBUG: ProtoObject::addParent adding newParent 0x745d4594f840
+DEBUG: ProtoObject::addParent result=0x745d45965c40
+DEBUG: ProtoObject::addParent this=0x745d4596d400 newParent=0x745d4594f840
+DEBUG: ProtoObject::addParent checking ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent adding ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent checking ancestor 0x745d45948000
+DEBUG: ProtoObject::addParent adding ancestor 0x745d45948000
+DEBUG: ProtoObject::addParent checking newParent 0x745d4594f840
+DEBUG: ProtoObject::addParent adding newParent 0x745d4594f840
+DEBUG: ProtoObject::addParent result=0x745d4596d400
+DEBUG: ProtoObject::addParent this=0x745d459754c0 newParent=0x745d4594f840
+DEBUG: ProtoObject::addParent checking ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent adding ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent checking ancestor 0x745d45948000
+DEBUG: ProtoObject::addParent adding ancestor 0x745d45948000
+DEBUG: ProtoObject::addParent checking newParent 0x745d4594f840
+DEBUG: ProtoObject::addParent adding newParent 0x745d4594f840
+DEBUG: ProtoObject::addParent result=0x745d459754c0
+DEBUG: ProtoObject::addParent this=0x745d4597d040 newParent=0x745d4594f840
+DEBUG: ProtoObject::addParent checking ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent adding ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent checking ancestor 0x745d45948000
+DEBUG: ProtoObject::addParent adding ancestor 0x745d45948000
+DEBUG: ProtoObject::addParent checking newParent 0x745d4594f840
+DEBUG: ProtoObject::addParent adding newParent 0x745d4594f840
+DEBUG: ProtoObject::addParent result=0x745d4597d040
+DEBUG: ProtoObject::addParent this=0x745d45984800 newParent=0x745d4594f840
+DEBUG: ProtoObject::addParent checking ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent adding ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent checking ancestor 0x745d45948000
+DEBUG: ProtoObject::addParent adding ancestor 0x745d45948000
+DEBUG: ProtoObject::addParent checking newParent 0x745d4594f840
+DEBUG: ProtoObject::addParent adding newParent 0x745d4594f840
+DEBUG: ProtoObject::addParent result=0x745d45984800
+DEBUG: ProtoObject::addParent this=0x745d4598c380 newParent=0x745d45948000
+DEBUG: ProtoObject::addParent checking ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent adding ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent checking newParent 0x745d45948000
+DEBUG: ProtoObject::addParent adding newParent 0x745d45948000
+DEBUG: ProtoObject::addParent result=0x745d4598c380
+DEBUG: ProtoObject::addParent this=0x745d459947c0 newParent=0x745d45948000
+DEBUG: ProtoObject::addParent checking ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent adding ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent checking newParent 0x745d45948000
+DEBUG: ProtoObject::addParent adding newParent 0x745d45948000
+DEBUG: ProtoObject::addParent result=0x745d459947c0
+DEBUG: ProtoObject::addParent this=0x745d4599bdc0 newParent=0x745d4594f840
+DEBUG: ProtoObject::addParent checking ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent adding ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent checking ancestor 0x745d45948000
+DEBUG: ProtoObject::addParent adding ancestor 0x745d45948000
+DEBUG: ProtoObject::addParent checking newParent 0x745d4594f840
+DEBUG: ProtoObject::addParent adding newParent 0x745d4594f840
+DEBUG: ProtoObject::addParent result=0x745d4599bdc0
+DEBUG: ProtoObject::addParent this=0x745d459a3e80 newParent=0x745d4594f840
+DEBUG: ProtoObject::addParent checking ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent adding ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent checking ancestor 0x745d45948000
+DEBUG: ProtoObject::addParent adding ancestor 0x745d45948000
+DEBUG: ProtoObject::addParent checking newParent 0x745d4594f840
+DEBUG: ProtoObject::addParent adding newParent 0x745d4594f840
+DEBUG: ProtoObject::addParent result=0x745d459a3e80
+DEBUG: ProtoObject::addParent this=0x745d459ac680 newParent=0x745d4594f840
+DEBUG: ProtoObject::addParent checking ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent adding ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent checking ancestor 0x745d45948000
+DEBUG: ProtoObject::addParent adding ancestor 0x745d45948000
+DEBUG: ProtoObject::addParent checking newParent 0x745d4594f840
+DEBUG: ProtoObject::addParent adding newParent 0x745d4594f840
+DEBUG: ProtoObject::addParent result=0x745d459ac680
+DEBUG: ProtoObject::addParent this=0x745d459b4040 newParent=0x745d4594f840
+DEBUG: ProtoObject::addParent checking ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent adding ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent checking ancestor 0x745d45948000
+DEBUG: ProtoObject::addParent adding ancestor 0x745d45948000
+DEBUG: ProtoObject::addParent checking newParent 0x745d4594f840
+DEBUG: ProtoObject::addParent adding newParent 0x745d4594f840
+DEBUG: ProtoObject::addParent result=0x745d459b4040
+DEBUG: ProtoObject::addParent this=0x745d459bb680 newParent=0x745d4594f840
+DEBUG: ProtoObject::addParent checking ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent adding ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent checking ancestor 0x745d45948000
+DEBUG: ProtoObject::addParent adding ancestor 0x745d45948000
+DEBUG: ProtoObject::addParent checking newParent 0x745d4594f840
+DEBUG: ProtoObject::addParent adding newParent 0x745d4594f840
+DEBUG: ProtoObject::addParent result=0x745d459bb680
+DEBUG: ProtoObject::addParent this=0x745d459c3740 newParent=0x745d4594f840
+DEBUG: ProtoObject::addParent checking ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent adding ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent checking ancestor 0x745d45948000
+DEBUG: ProtoObject::addParent adding ancestor 0x745d45948000
+DEBUG: ProtoObject::addParent checking newParent 0x745d4594f840
+DEBUG: ProtoObject::addParent adding newParent 0x745d4594f840
+DEBUG: ProtoObject::addParent result=0x745d459c3740
+DEBUG: ProtoObject::addParent this=0x745d459cb640 newParent=0x745d4594f840
+DEBUG: ProtoObject::addParent checking ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent adding ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent checking ancestor 0x745d45948000
+DEBUG: ProtoObject::addParent adding ancestor 0x745d45948000
+DEBUG: ProtoObject::addParent checking newParent 0x745d4594f840
+DEBUG: ProtoObject::addParent adding newParent 0x745d4594f840
+DEBUG: ProtoObject::addParent result=0x745d459cb640
+DEBUG: ProtoObject::addParent this=0x745d459d4040 newParent=0x745d4594f840
+DEBUG: ProtoObject::addParent checking ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent adding ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent checking ancestor 0x745d45948000
+DEBUG: ProtoObject::addParent adding ancestor 0x745d45948000
+DEBUG: ProtoObject::addParent checking newParent 0x745d4594f840
+DEBUG: ProtoObject::addParent adding newParent 0x745d4594f840
+DEBUG: ProtoObject::addParent result=0x745d459d4040
+DEBUG: ProtoObject::addParent this=0x745d459dbbc0 newParent=0x745d4594f840
+DEBUG: ProtoObject::addParent checking ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent adding ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent checking ancestor 0x745d45948000
+DEBUG: ProtoObject::addParent adding ancestor 0x745d45948000
+DEBUG: ProtoObject::addParent checking newParent 0x745d4594f840
+DEBUG: ProtoObject::addParent adding newParent 0x745d4594f840
+DEBUG: ProtoObject::addParent result=0x745d459dbbc0
+DEBUG: ProtoObject::addParent this=0x745d459e3900 newParent=0x745d4594f840
+DEBUG: ProtoObject::addParent checking ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent adding ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent checking ancestor 0x745d45948000
+DEBUG: ProtoObject::addParent adding ancestor 0x745d45948000
+DEBUG: ProtoObject::addParent checking newParent 0x745d4594f840
+DEBUG: ProtoObject::addParent adding newParent 0x745d4594f840
+DEBUG: ProtoObject::addParent result=0x745d459e3900
+DEBUG: ProtoObject::addParent this=0x745d459ea540 newParent=0x745d459e3900
+DEBUG: ProtoObject::addParent checking ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent adding ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent checking ancestor 0x745d45948000
+DEBUG: ProtoObject::addParent adding ancestor 0x745d45948000
+DEBUG: ProtoObject::addParent checking ancestor 0x745d4594f840
+DEBUG: ProtoObject::addParent adding ancestor 0x745d4594f840
+DEBUG: ProtoObject::addParent checking newParent 0x745d459e3900
+DEBUG: ProtoObject::addParent adding newParent 0x745d459e3900
+DEBUG: ProtoObject::addParent result=0x745d459ea540
+DEBUG: ProtoObject::addParent this=0x745d459f2d80 newParent=0x745d4594f840
+DEBUG: ProtoObject::addParent checking ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent adding ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent checking ancestor 0x745d45948000
+DEBUG: ProtoObject::addParent adding ancestor 0x745d45948000
+DEBUG: ProtoObject::addParent checking newParent 0x745d4594f840
+DEBUG: ProtoObject::addParent adding newParent 0x745d4594f840
+DEBUG: ProtoObject::addParent result=0x745d459f2d80
+DEBUG: ProtoObject::addParent this=0x745d459f99c0 newParent=0x745d459f2d80
+DEBUG: ProtoObject::addParent checking ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent adding ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent checking ancestor 0x745d45948000
+DEBUG: ProtoObject::addParent adding ancestor 0x745d45948000
+DEBUG: ProtoObject::addParent checking ancestor 0x745d4594f840
+DEBUG: ProtoObject::addParent adding ancestor 0x745d4594f840
+DEBUG: ProtoObject::addParent checking newParent 0x745d459f2d80
+DEBUG: ProtoObject::addParent adding newParent 0x745d459f2d80
+DEBUG: ProtoObject::addParent result=0x745d459f99c0
+DEBUG: ProtoObject::addParent this=0x745d45a01b00 newParent=0x745d459f2d80
+DEBUG: ProtoObject::addParent checking ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent adding ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent checking ancestor 0x745d45948000
+DEBUG: ProtoObject::addParent adding ancestor 0x745d45948000
+DEBUG: ProtoObject::addParent checking ancestor 0x745d4594f840
+DEBUG: ProtoObject::addParent adding ancestor 0x745d4594f840
+DEBUG: ProtoObject::addParent checking newParent 0x745d459f2d80
+DEBUG: ProtoObject::addParent adding newParent 0x745d459f2d80
+DEBUG: ProtoObject::addParent result=0x745d45a01b00
+DEBUG: ProtoObject::addParent this=0x745d45a0aac0 newParent=0x745d459f2d80
+DEBUG: ProtoObject::addParent checking ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent adding ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent checking ancestor 0x745d45948000
+DEBUG: ProtoObject::addParent adding ancestor 0x745d45948000
+DEBUG: ProtoObject::addParent checking ancestor 0x745d4594f840
+DEBUG: ProtoObject::addParent adding ancestor 0x745d4594f840
+DEBUG: ProtoObject::addParent checking newParent 0x745d459f2d80
+DEBUG: ProtoObject::addParent adding newParent 0x745d459f2d80
+DEBUG: ProtoObject::addParent result=0x745d45a0aac0
+DEBUG: ProtoObject::addParent this=0x745d45a13140 newParent=0x745d459f2d80
+DEBUG: ProtoObject::addParent checking ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent adding ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent checking ancestor 0x745d45948000
+DEBUG: ProtoObject::addParent adding ancestor 0x745d45948000
+DEBUG: ProtoObject::addParent checking ancestor 0x745d4594f840
+DEBUG: ProtoObject::addParent adding ancestor 0x745d4594f840
+DEBUG: ProtoObject::addParent checking newParent 0x745d459f2d80
+DEBUG: ProtoObject::addParent adding newParent 0x745d459f2d80
+DEBUG: ProtoObject::addParent result=0x745d45a13140
+DEBUG: ProtoObject::addParent this=0x745d45a1cfc0 newParent=0x745d459f2d80
+DEBUG: ProtoObject::addParent checking ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent adding ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent checking ancestor 0x745d45948000
+DEBUG: ProtoObject::addParent adding ancestor 0x745d45948000
+DEBUG: ProtoObject::addParent checking ancestor 0x745d4594f840
+DEBUG: ProtoObject::addParent adding ancestor 0x745d4594f840
+DEBUG: ProtoObject::addParent checking newParent 0x745d459f2d80
+DEBUG: ProtoObject::addParent adding newParent 0x745d459f2d80
+DEBUG: ProtoObject::addParent result=0x745d45a1cfc0
+DEBUG: ProtoObject::addParent this=0x745d45a25480 newParent=0x745d459f2d80
+DEBUG: ProtoObject::addParent checking ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent adding ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent checking ancestor 0x745d45948000
+DEBUG: ProtoObject::addParent adding ancestor 0x745d45948000
+DEBUG: ProtoObject::addParent checking ancestor 0x745d4594f840
+DEBUG: ProtoObject::addParent adding ancestor 0x745d4594f840
+DEBUG: ProtoObject::addParent checking newParent 0x745d459f2d80
+DEBUG: ProtoObject::addParent adding newParent 0x745d459f2d80
+DEBUG: ProtoObject::addParent result=0x745d45a25480
+DEBUG: ProtoObject::addParent this=0x745d45a2d780 newParent=0x745d459f2d80
+DEBUG: ProtoObject::addParent checking ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent adding ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent checking ancestor 0x745d45948000
+DEBUG: ProtoObject::addParent adding ancestor 0x745d45948000
+DEBUG: ProtoObject::addParent checking ancestor 0x745d4594f840
+DEBUG: ProtoObject::addParent adding ancestor 0x745d4594f840
+DEBUG: ProtoObject::addParent checking newParent 0x745d459f2d80
+DEBUG: ProtoObject::addParent adding newParent 0x745d459f2d80
+DEBUG: ProtoObject::addParent result=0x745d45a2d780
+DEBUG: ProtoObject::addParent this=0x745d45a35fc0 newParent=0x745d459f2d80
+DEBUG: ProtoObject::addParent checking ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent adding ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent checking ancestor 0x745d45948000
+DEBUG: ProtoObject::addParent adding ancestor 0x745d45948000
+DEBUG: ProtoObject::addParent checking ancestor 0x745d4594f840
+DEBUG: ProtoObject::addParent adding ancestor 0x745d4594f840
+DEBUG: ProtoObject::addParent checking newParent 0x745d459f2d80
+DEBUG: ProtoObject::addParent adding newParent 0x745d459f2d80
+DEBUG: ProtoObject::addParent result=0x745d45a35fc0
+DEBUG: Parser::advance token=32 value='from' line=2
+DEBUG: Parser::advance token=3 value='_weakref' line=2
+DEBUG: Parser::advance token=31 value='import' line=2
+DEBUG: Parser::advance token=3 value='ref' line=2
+DEBUG: Parser::advance token=11 value='' line=3
+DEBUG: Parser::advance token=33 value='class' line=3
+DEBUG: Parser::advance token=3 value='WeakSet' line=3
+DEBUG: Parser::advance token=18 value='' line=3
+DEBUG: Parser::advance token=11 value='' line=4
+DEBUG: Parser::advance token=29 value='' line=4
+DEBUG: Parser::advance token=27 value='def' line=4
+DEBUG: Parser::advance token=3 value='__init__' line=4
+DEBUG: Parser::advance token=8 value='' line=4
+DEBUG: Parser::advance token=3 value='self' line=4
+DEBUG: Parser::advance token=10 value='' line=4
+DEBUG: Parser::advance token=3 value='data' line=4
+DEBUG: Parser::advance token=19 value='' line=4
+DEBUG: Parser::advance token=38 value='None' line=4
+DEBUG: Parser::advance token=9 value='' line=4
+DEBUG: Parser::advance token=18 value='' line=4
+DEBUG: Parser::advance token=11 value='' line=5
+DEBUG: Parser::advance token=29 value='' line=5
+DEBUG: Parser::advance token=3 value='self' line=5
+DEBUG: Parser::advance token=13 value='' line=5
+DEBUG: Parser::advance token=3 value='data' line=5
+DEBUG: Parser::advance token=19 value='' line=5
+DEBUG: Parser::advance token=3 value='set' line=5
+DEBUG: Parser::advance token=8 value='' line=5
+DEBUG: Parser::advance token=9 value='' line=5
+DEBUG: Parser::advance token=11 value='' line=6
+DEBUG: Parser::advance token=27 value='def' line=6
+DEBUG: Parser::advance token=3 value='_remove' line=6
+DEBUG: Parser::advance token=8 value='' line=6
+DEBUG: Parser::advance token=3 value='item' line=6
+DEBUG: Parser::advance token=10 value='' line=6
+DEBUG: Parser::advance token=3 value='selfref' line=6
+DEBUG: Parser::advance token=19 value='' line=6
+DEBUG: Parser::advance token=3 value='ref' line=6
+DEBUG: Parser::advance token=8 value='' line=6
+DEBUG: Parser::advance token=3 value='self' line=6
+DEBUG: Parser::advance token=9 value='' line=6
+DEBUG: Parser::advance token=9 value='' line=6
+DEBUG: Parser::advance token=18 value='' line=6
+DEBUG: Parser::advance token=11 value='' line=7
+DEBUG: Parser::advance token=29 value='' line=7
+DEBUG: Parser::advance token=3 value='self' line=7
+DEBUG: Parser::advance token=19 value='' line=7
+DEBUG: Parser::advance token=3 value='selfref' line=7
+DEBUG: Parser::advance token=8 value='' line=7
+DEBUG: Parser::advance token=9 value='' line=7
+DEBUG: Parser::advance token=11 value='' line=8
+DEBUG: Parser::advance token=23 value='if' line=8
+DEBUG: Parser::advance token=3 value='self' line=8
+DEBUG: Parser::advance token=51 value='is' line=8
+DEBUG: Parser::advance token=41 value='not' line=8
+DEBUG: Parser::advance token=38 value='None' line=8
+DEBUG: Parser::advance token=18 value='' line=8
+DEBUG: Parser::advance token=11 value='' line=9
+DEBUG: Parser::advance token=29 value='' line=9
+DEBUG: Parser::advance token=3 value='self' line=9
+DEBUG: Parser::advance token=13 value='' line=9
+DEBUG: Parser::advance token=3 value='data' line=9
+DEBUG: Parser::advance token=13 value='' line=9
+DEBUG: Parser::advance token=3 value='discard' line=9
+DEBUG: Parser::advance token=8 value='' line=9
+DEBUG: Parser::advance token=3 value='item' line=9
+DEBUG: Parser::advance token=9 value='' line=9
+DEBUG: Parser::advance token=11 value='' line=10
+DEBUG: Parser::advance token=30 value='' line=10
+DEBUG: Parser::advance token=30 value='' line=10
+DEBUG: Parser::advance token=3 value='self' line=10
+DEBUG: Parser::advance token=13 value='' line=10
+DEBUG: Parser::advance token=3 value='_remove' line=10
+DEBUG: Parser::advance token=19 value='' line=10
+DEBUG: Parser::advance token=3 value='_remove' line=10
+DEBUG: Parser::advance token=11 value='' line=11
+DEBUG: Parser::advance token=30 value='' line=11
+DEBUG: Parser::advance token=30 value='' line=11
+DEBUG: Parser::advance token=3 value='x' line=11
+DEBUG: Parser::advance token=19 value='' line=11
+DEBUG: Parser::advance token=3 value='WeakSet' line=11
+DEBUG: Parser::advance token=8 value='' line=11
+DEBUG: Parser::advance token=9 value='' line=11
+DEBUG: Parser::advance token=11 value='' line=12
+DEBUG: Parser::advance token=12 value='' line=12
+DEBUG: py_exec compiling source='
+from _weakref import ref
+class WeakSet:
+    def __init__(self, data=None):
+        self.data = set(...'
+DEBUG: emitNameOp 'self', nonlocal=0, local=0, global=0
+  nonlocalNames_ has: selfref
+  nonlocalNames_ has: item
+DEBUG: emitNameOp 'self', nonlocal=0, local=1, global=0
+DEBUG: emitNameOp 'self', nonlocal=0, local=1, global=0
+DEBUG: emitNameOp 'self', nonlocal=0, local=1, global=0
+DEBUG: emitNameOp 'self', nonlocal=0, local=0, global=0
+  nonlocalNames_ has: selfref
+  nonlocalNames_ has: item
+DEBUG: emitNameOp 'self', nonlocal=0, local=0, global=0
+  nonlocalNames_ has: selfref
+  nonlocalNames_ has: item
+DEBUG: runCodeObject co_code size=46 co_consts size=7 stackOffset=0
+DEBUG: [PC 0] OP 102
+DEBUG: [PC 2] OP 100
+DEBUG: LOAD_CONST arg=0 val=0x745d45874446 repr=_weakref
+DEBUG: [PC 4] OP 100
+DEBUG: LOAD_CONST arg=1 val=0x141 repr=None
+DEBUG: [PC 6] OP 100
+DEBUG: LOAD_CONST arg=1 val=0x141 repr=None
+DEBUG: [PC 8] OP 100
+DEBUG: reprObject obj=0x745d45ac06c2 class=type
+DEBUG: reprObject out=0x5db6901
+DEBUG: LOAD_CONST arg=2 val=0x745d45ac06c2 repr=[]
+DEBUG: [PC 10] OP 100
+DEBUG: LOAD_CONST arg=3 val=0x1 repr=0
+DEBUG: [PC 12] OP 106
+DEBUG: OP_CALL_FUNCTION PC 12 callable=0x745d4591fa0c argCount=5
+DEBUG: reprObject obj=0x745d4591fa0c class=type
+DEBUG: reprObject out=0x745d45c36d46
+DEBUG: invokeCallable callable=0x745d4591fa0c repr=<method object at 0x745d4591fa0c> class=type
+DEBUG: __import__('_weakref') level=0
+DEBUG: ProtoObject::addParent this=0x745d45c3c780 newParent=0x745d457a8900
+DEBUG: ProtoObject::addParent checking newParent 0x745d457a8900
+DEBUG: ProtoObject::addParent adding newParent 0x745d457a8900
+DEBUG: ProtoObject::addParent result=0x745d45c3c880
+DEBUG: ProtoObject::addParent this=0x745d45c38040 newParent=0x745d4580d6c0
+DEBUG: ProtoObject::addParent checking ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent adding ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent checking newParent 0x745d4580d6c0
+DEBUG: ProtoObject::addParent adding newParent 0x745d4580d6c0
+DEBUG: ProtoObject::addParent result=0x745d45c38040
+DEBUG: ProtoObject::addParent this=0x745d45c40e80 newParent=0x745d457a8900
+DEBUG: ProtoObject::addParent checking newParent 0x745d457a8900
+DEBUG: ProtoObject::addParent adding newParent 0x745d457a8900
+DEBUG: ProtoObject::addParent result=0x745d45c40f80
+DEBUG: ProtoObject::addParent this=0x745d45c46bc0 newParent=0x745d457a8900
+DEBUG: ProtoObject::addParent checking newParent 0x745d457a8900
+DEBUG: ProtoObject::addParent adding newParent 0x745d457a8900
+DEBUG: ProtoObject::addParent result=0x745d45c46cc0
+DEBUG: ProtoObject::addParent this=0x745d45c42180 newParent=0x745d4580d6c0
+DEBUG: ProtoObject::addParent checking ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent adding ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent checking newParent 0x745d4580d6c0
+DEBUG: ProtoObject::addParent adding newParent 0x745d4580d6c0
+DEBUG: ProtoObject::addParent result=0x745d45c42180
+DEBUG: ProtoObject::addParent this=0x745d45c4aac0 newParent=0x745d457a8900
+DEBUG: ProtoObject::addParent checking newParent 0x745d457a8900
+DEBUG: ProtoObject::addParent adding newParent 0x745d457a8900
+DEBUG: ProtoObject::addParent result=0x745d45c4abc0
+DEBUG: reprObject obj=0x745d45c4404c class=type
+DEBUG: reprObject out=0x745d45c50a46
+DEBUG: invokeCallable callable=0x745d45c4404c repr=<method object at 0x745d45c4404c> class=type
+DEBUG: reprObject obj=0x745d45c4404c class=type
+DEBUG: reprObject out=0x745d45c50a46
+DEBUG: invokeCallable callable=0x745d45c4404c repr=<method object at 0x745d45c4404c> class=type
+DEBUG: [PC 14] OP 206
+DEBUG: OP_IMPORT_FROM loading ref
+DEBUG: [PC 16] OP 103
+DEBUG: [PC 18] OP 133
+DEBUG: [PC 20] OP 133
+DEBUG: [PC 22] OP 100
+DEBUG: LOAD_CONST arg=4 val=0x3a65a7af0e5afd01 repr=WeakSet
+DEBUG: [PC 24] OP 118
+DEBUG: ProtoObject::addParent this=0x745d45c56900 newParent=0x745d457e2040
+DEBUG: ProtoObject::addParent checking ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent adding ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent checking newParent 0x745d457e2040
+DEBUG: ProtoObject::addParent adding newParent 0x745d457e2040
+DEBUG: ProtoObject::addParent result=0x745d45c56900
+DEBUG: [PC 26] OP 100
+DEBUG: LOAD_CONST arg=1 val=0x141 repr=None
+DEBUG: [PC 28] OP 100
+DEBUG: reprObject obj=0x745d45ae9480 class=NoneType
+DEBUG: LOAD_CONST arg=5 val=0x745d45ae9480 repr=<object>
+DEBUG: [PC 30] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x745d45a88fc0, defaults=(nil), kwDefaults=(nil)
+DEBUG: [PC 32] OP 160
+DEBUG: reprObject obj=0x745d4579d44c class=type
+DEBUG: reprObject out=0x745d45c5e1c6
+DEBUG: invokeCallable callable=0x745d4579d44c repr=<method object at 0x745d4579d44c> class=type
+DEBUG: ProtoObject::addParent this=0x745d45c5e7c0 newParent=0x745d457d95c0
+DEBUG: ProtoObject::addParent checking ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent adding ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent checking newParent 0x745d457d95c0
+DEBUG: ProtoObject::addParent adding newParent 0x745d457d95c0
+DEBUG: ProtoObject::addParent result=0x745d45c5e7c0
+DEBUG: runCodeObject co_code size=12 co_consts size=2 stackOffset=0
+DEBUG: [PC 0] OP 100
+DEBUG: reprObject obj=0x745d45ad8880 class=NoneType
+DEBUG: LOAD_CONST arg=0 val=0x745d45ad8880 repr=<object>
+DEBUG: [PC 2] OP 100
+DEBUG: LOAD_CONST arg=1 val=0x141 repr=None
+DEBUG: [PC 4] OP 118
+DEBUG: ProtoObject::addParent this=0x745d45d35040 newParent=0x745d457e2040
+DEBUG: ProtoObject::addParent checking ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent adding ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent checking newParent 0x745d457e2040
+DEBUG: ProtoObject::addParent adding newParent 0x745d457e2040
+DEBUG: ProtoObject::addParent result=0x745d45d35040
+DEBUG: [PC 6] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x745d45c5e7c0, defaults=0x745d45d35040, kwDefaults=(nil)
+DEBUG: [PC 8] OP 103
+DEBUG: [PC 10] OP 101
+DEBUG: runCodeObject result=0x141
+DEBUG: reprObject obj=0x745d4579c0c0 class=type
+DEBUG: reprObject out=0x745d45d26a86
+DEBUG: invokeCallable callable=0x745d4579c0c0 repr=<class 'type'> class=type
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: py_type executing early unconditional: size=3
+DEBUG: py_type executing unconditional: argCount=3
+DEBUG: py_type called unconditionally self=0x745d4579c0c0 argCount=3
+DEBUG: ProtoObject::addParent this=0x745d45d26d80 newParent=0x745d457a8900
+DEBUG: ProtoObject::addParent checking newParent 0x745d457a8900
+DEBUG: ProtoObject::addParent adding newParent 0x745d457a8900
+DEBUG: ProtoObject::addParent result=0x745d45d26d80
+DEBUG: initDictStorage obj=0x745d45837240
+DEBUG: initDictStorage dataName=0x745d456b3e86 keysName=0x745d457903c6
+DEBUG: initDictStorage creating sparse list
+DEBUG: initDictStorage setting __data__
+DEBUG: initDictStorage checking keys
+DEBUG: initDictStorage creating keys list
+DEBUG: initDictStorage setting __keys__
+DEBUG: initDictStorage done
+DEBUG: Registering 'type' using typeProto=0x745d4579c0c0
+DEBUG: initDictStorage obj=0x745d45c5e7c0
+DEBUG: initDictStorage dataName=0x745d456b3e86 keysName=0x745d457903c6
+DEBUG: initDictStorage creating sparse list
+DEBUG: initDictStorage setting __data__
+DEBUG: initDictStorage checking keys
+DEBUG: initDictStorage creating keys list
+DEBUG: initDictStorage setting __keys__
+DEBUG: initDictStorage done
+DEBUG: py_type(3) name=0x3a65a7af0e5afd01 bases=0x745d45c56900 dict=0x745d45c5e7c0
+DEBUG: initDictStorage obj=0x745d45d26d80
+DEBUG: initDictStorage dataName=0x745d456b3e86 keysName=0x745d457903c6
+DEBUG: initDictStorage creating sparse list
+DEBUG: initDictStorage setting __data__
+DEBUG: initDictStorage checking keys
+DEBUG: initDictStorage creating keys list
+DEBUG: initDictStorage setting __keys__
+DEBUG: initDictStorage done
+DEBUG: py_type copying key='__name__'
+DEBUG: py_type copied keyVal=0x3a65a7af0e5afd01
+DEBUG: py_type copying key='__module__'
+DEBUG: py_type copied keyVal=0x745d45791cc6
+DEBUG: py_type copying key='__init__'
+DEBUG: py_type copied keyVal=0x745d45d36480
+DEBUG: py_type adding parents from tuple size=0
+DEBUG: py_type created class 0x745d45d26d80 check MRO
+DEBUG: py_DEBUG: reprObject obj=0x745d45d26d80 class=type
+DEBUG: reprObject out=0x745d45d31d46
+DEBUG: invokeCallable (__call__) returning result=0x745d45d26d80 repr=<WeakSet object at 0x745d45d26d80>
+DEBUG: OP_BUILD_CLASS injecting __class__ = 0x745d45d26d80 (name=WeakSet) into ns = 0x745d45c5e7c0
+DEBUG: [PC 34] OP 103
+DEBUG: [PC 36] OP 102
+DEBUG: [PC 38] OP 106
+DEBUG: OP_CALL_FUNCTION PC 38 callable=0x745d45d26d80 argCount=0
+DEBUG: reprObject obj=0x745d45d26d80 class=type
+DEBUG: reprObject out=0x745d45d31d46
+DEBUG: invokeCallable callable=0x745d45d26d80 repr=<WeakSet object at 0x745d45d26d80> class=type
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: ProtoObject::addParent this=0x745d45db77c0 newParent=0x745d45d26d80
+DEBUG: ProtoObject::addParent checking ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent adding ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent checking newParent 0x745d45d26d80
+DEBUG: ProtoObject::addParent adding newParent 0x745d45d26d80
+DEBUG: ProtoObject::addParent result=0x745d45db77c0
+DEBUG: reprObject obj=0x745d45d36480 class=function
+DEBUG: reprObject out=0x745d45dbbd46
+DEBUG: invokeCallable callable=0x745d45d36480 repr=<function object at 0x745d45d36480> class=function
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: ProtoObject::addParent this=0x745d45eb30c0 newParent=0x745d457a8940
+DEBUG: ProtoObject::addParent checking ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent adding ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent checking newParent 0x745d457a8940
+DEBUG: ProtoObject::addParent adding newParent 0x745d457a8940
+DEBUG: ProtoObject::addParent result=0x745d45eb30c0
+DEBUG: ProtoObject::addParent this=0x745d45eb30c0 newParent=0x745d45c5e7c0
+DEBUG: ProtoObject::addParent checking ancestor 0x745d457a8900
+DEBUG: ProtoObject::addParent skipping ancestor 0x745d457a8900 (hasParent=1)
+DEBUG: ProtoObject::addParent checking ancestor 0x745d457d95c0
+DEBUG: ProtoObject::addParent adding ancestor 0x745d457d95c0
+DEBUG: ProtoObject::addParent checking newParent 0x745d45c5e7c0
+DEBUG: ProtoObject::addParent adding newParent 0x745d45c5e7c0
+DEBUG: ProtoObject::addParent result=0x745d45eb30c0
+DEBUG: runUserFunctionCall extracted outerFrame=0x745d45c5e7c0 from closure list
+DEBUG: [PC 0] OP 102
+DEBUG: lnotab entry j=0, pc_offset=8, line_offset=1
+DEBUG: [PC 2] OP 106
+DEBUG: OP_CALL_FUNCTION PC 2 callable=0x745d457e5dc0 argCount=0
+DEBUG: reprObject obj=0x745d457e5dc0 class=type
+DEBUG: reprObject out=0x745d45eb60c6
+DEBUG: invokeCallable callable=0x745d457e5dc0 repr=<class 'set'> class=type
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: reprObject obj=0x745d45eb62c0 class=set
+DEBUG: reprObject out=0x52a3a65e7501
+DEBUG: invokeCallable (__call__) returning result=0x745d45eb62c0 repr=set()
+DEBUG: [PC 4] OP 102
+DEBUG: OP_LOAD_NAME('self') frame=0x745d45eb30c0 hasAttribute=0xc1 (PROTO_TRUE=0x4c1), closure=0x745d45d35d02
+DEBUG: [PC 4] OP 102
+DEBUG: Exception handling start exc=0x745d45ebc3c0
+DEBUG: lnotab entry j=0, pc_offset=8, line_offset=1
+DEBUG: Exception NameError at <string>:5 (PC 4)
+DEBUG: Calling addTraceback...
+DEBUG: addTraceback exc=0x745d45ebc3c0 frame=0x745d45eb30c0 lasti=4 lineno=5
+DEBUG: addTraceback currentTb=0x141
+DEBUG: addTraceback newTb=0x745d45bd1fc0
+DEBUG: addTraceback updatedExc=0x745d45ebc3c0
+DEBUG: addTraceback returned. blockStack.empty()=true
+DEBUG: No trap found, returning nullptr
+DEBUG: invokeCallable (__call__) returning result=(nil) repr=nullptr
+DEBUG: reprObject obj=0x745d45db77c0 class=WeakSet
+DEBUG: reprObject out=0x745d45e7fc86
+DEBUG: invokeCallable (__call__) returning result=0x745d45db77c0 repr=<WeakSet object at 0x745d45db77c0>
+DEBUG: [PC 40] OP 103
+DEBUG: Exception handling start exc=0x745d45ebc3c0
+DEBUG: Exception NameError at unknown:0 (PC 40)
+DEBUG: Calling addTraceback...
+DEBUG: addTraceback exc=0x745d45ebc3c0 frame=0x745d45a88fc0 lasti=40 lineno=0
+DEBUG: addTraceback currentTb=0x745d45bd1fc0
+DEBUG: addTraceback newTb=0x745d45bd6400
+DEBUG: addTraceback updatedExc=0x745d45ebc3c0
+DEBUG: addTraceback returned. blockStack.empty()=true
+DEBUG: No trap found, returning nullptr
+DEBUG: runCodeObject result=(nil)
+type MRO size=1
+DEBUG: py_type MRO [0] = 0x745d457a8900

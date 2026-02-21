@@ -1,0 +1,24 @@
+DEBUG: ABCMeta.__new__ scaling for ABC with bases <class 'tuple'>
+protopy: unhandled exception in module execution:
+Traceback (most recent call last):
+  File "lib/python3.14/test/test_base64.py", in <module>
+  File "lib/python3.14/unittest/__init__.py", in <module>
+  File "lib/python3.14/unittest/result.py", in <module>
+AttributeError: 'module' object has no attribute '_check_methods'
+
+protopy: unhandled exception in module execution:
+Traceback (most recent call last):
+  File "lib/python3.14/test/test_base64.py", in <module>
+  File "lib/python3.14/unittest/__init__.py", in <module>
+ImportError: No module named 'io'
+
+protopy: unhandled exception in module execution:
+Traceback (most recent call last):
+  File "lib/python3.14/test/test_base64.py", in <module>
+ImportError: No module named 'unittest.result'
+
+protopy: unhandled exception in module execution:
+Traceback (most recent call last):
+ImportError: No module named 'unittest'
+
+protopy: module 'test_base64' exited with runtime error

@@ -1,0 +1,9 @@
+Starting repro_io.py
+Assigning builtins.bytearray = list
+object integrity: True
+type integrity: True
+protopy: unhandled exception in module execution:
+Traceback (most recent call last):
+AttributeError: 'module' object has no attribute 'bytearray'
+
+protopy: module 'repro_io' exited with runtime error

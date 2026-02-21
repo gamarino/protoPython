@@ -1,0 +1,230 @@
+DEBUG: Parser::advance token=31 value='import' line=2
+DEBUG: Parser::advance token=3 value='sys' line=2
+DEBUG: Parser::advance token=11 value='' line=3
+DEBUG: Parser::advance token=3 value='print' line=4
+DEBUG: Parser::advance token=8 value='' line=4
+DEBUG: Parser::advance token=1 value='Testing tuple with map and intern:' line=4
+DEBUG: Parser::advance token=9 value='' line=4
+DEBUG: Parser::advance token=11 value='' line=5
+DEBUG: Parser::advance token=3 value='t3' line=5
+DEBUG: Parser::advance token=19 value='' line=5
+DEBUG: Parser::advance token=3 value='tuple' line=5
+DEBUG: Parser::advance token=8 value='' line=5
+DEBUG: Parser::advance token=3 value='map' line=5
+DEBUG: Parser::advance token=8 value='' line=5
+DEBUG: Parser::advance token=3 value='sys' line=5
+DEBUG: Parser::advance token=13 value='' line=5
+DEBUG: Parser::advance token=3 value='intern' line=5
+DEBUG: Parser::advance token=10 value='' line=5
+DEBUG: Parser::advance token=14 value='' line=5
+DEBUG: Parser::advance token=1 value='a' line=5
+DEBUG: Parser::advance token=10 value='' line=5
+DEBUG: Parser::advance token=1 value='b' line=5
+DEBUG: Parser::advance token=15 value='' line=5
+DEBUG: Parser::advance token=9 value='' line=5
+DEBUG: Parser::advance token=9 value='' line=5
+DEBUG: Parser::advance token=11 value='' line=6
+DEBUG: Parser::advance token=3 value='print' line=6
+DEBUG: Parser::advance token=8 value='' line=6
+DEBUG: Parser::advance token=1 value='Result t3:' line=6
+DEBUG: Parser::advance token=10 value='' line=6
+DEBUG: Parser::advance token=3 value='t3' line=6
+DEBUG: Parser::advance token=9 value='' line=6
+DEBUG: Parser::advance token=11 value='' line=7
+DEBUG: Parser::advance token=3 value='print' line=8
+DEBUG: Parser::advance token=8 value='' line=8
+DEBUG: Parser::advance token=1 value='Testing join on tuple:' line=8
+DEBUG: Parser::advance token=9 value='' line=8
+DEBUG: Parser::advance token=11 value='' line=9
+DEBUG: Parser::advance token=3 value='joined' line=9
+DEBUG: Parser::advance token=19 value='' line=9
+DEBUG: Parser::advance token=1 value=', ' line=9
+DEBUG: Parser::advance token=13 value='' line=9
+DEBUG: Parser::advance token=3 value='join' line=9
+DEBUG: Parser::advance token=8 value='' line=9
+DEBUG: Parser::advance token=3 value='t3' line=9
+DEBUG: Parser::advance token=9 value='' line=9
+DEBUG: Parser::advance token=11 value='' line=10
+DEBUG: Parser::advance token=3 value='print' line=10
+DEBUG: Parser::advance token=8 value='' line=10
+DEBUG: Parser::advance token=1 value='Joined:' line=10
+DEBUG: Parser::advance token=10 value='' line=10
+DEBUG: Parser::advance token=3 value='joined' line=10
+DEBUG: Parser::advance token=9 value='' line=10
+DEBUG: Parser::advance token=11 value='' line=11
+DEBUG: Parser::advance token=12 value='' line=11
+DEBUG: runCodeObject co_code size=78 co_consts size=9 stackOffset=0
+DEBUG: [PC 0] OP 102
+DEBUG: lnotab entry j=0, pc_offset=8, line_offset=1
+DEBUG: [PC 2] OP 100
+DEBUG: LOAD_CONST arg=0 val=0x39f9e6d01 repr=sys
+DEBUG: [PC 4] OP 106
+DEBUG: OP_CALL_FUNCTION PC 4 callable=0x7448b869434c argCount=1
+DEBUG: reprObject obj=0x7448b869434c class=type
+DEBUG: reprObject out=0x7448b8961906
+DEBUG: invokeCallable callable=0x7448b869434c repr=<method object at 0x7448b869434c> class=type
+DEBUG: __import__('sys') level=0
+DEBUG: [PC 6] OP 103
+DEBUG: [PC 8] OP 102
+DEBUG: [PC 10] OP 100
+DEBUG: LOAD_CONST arg=1 val=0x7448b8808146 repr=Testing tuple with map and intern:
+DEBUG: [PC 12] OP 106
+DEBUG: OP_CALL_FUNCTION PC 12 callable=0x7448b867b48c argCount=1
+DEBUG: reprObject obj=0x7448b867b48c class=type
+DEBUG: reprObject out=0x7448b8966286
+DEBUG: invokeCallable callable=0x7448b867b48c repr=<method object at 0x7448b867b48c> class=type
+DEBUG: py_print called with 1 args
+DEBUG: initDictStorage obj=0x7448b85dbd40
+DEBUG: initDictStorage dataName=0x7448b845ee86 keysName=0x7448b853b3c6
+DEBUG: initDictStorage creating sparse list
+DEBUG: initDictStorage setting __data__
+DEBUG: initDictStorage checking keys
+DEBUG: initDictStorage creating keys list
+DEBUG: initDictStorage setting __keys__
+DEBUG: initDictStorage done
+DEBUG: Registering 'type' using typeProto=0x7448b85470c0
+DEBUG: executeModule initDictStorage modulePrototype=0x7448b85b3080
+DEBUG: initDictStorage obj=0x7448b87fc200
+DEBUG: initDictStorage dataName=0x7448b845ee86 keysName=0x7448b853b3c6
+DEBUG: initDictStorage creating sparse list
+DEBUG: initDictStorage setting __data__
+DEBUG: initDictStorage checking keys
+DEBUG: initDictStorage creating keys list
+DEBUG: initDictStorage setting __keys__
+DEBUG: initDictStorage done
+DEBUG: executeModule setting __class__
+DEBUG: executeModule setting frame attributes
+DEBUG: executeModule setting f_code
+Testing tuple with map and intern:
+DEBUG: [PC 14] OP 133
+DEBUG: [PC 16] OP 102
+DEBUG: reprObject obj=0x7448b8587e40 class=type
+DEBUG: reprObject out=0x7448b8967d06
+DEBUG: resolve BUILTINS name=tuple result=0x7448b8587e40 repr=<class 'tuple'>
+DEBUG: [PC 18] OP 102
+DEBUG: reprObject obj=0x7448b868144c class=type
+DEBUG: reprObject out=0x7448b896b786
+DEBUG: resolve BUILTINS name=map result=0x7448b868144c repr=<method object at 0x7448b868144c>
+DEBUG: [PC 20] OP 102
+DEBUG: [PC 22] OP 112
+DEBUG: OP_LOAD_ATTR obj=0x7448b85bb800 (class module) name=intern
+DEBUG: OP_LOAD_ATTR calling getAttribute env=0x7ffdca126f90 obj=0x7448b85bb800 attr=intern
+DEBUG: [PC 24] OP 100
+DEBUG: LOAD_CONST arg=2 val=0xc2501 repr=a
+DEBUG: [PC 26] OP 100
+DEBUG: LOAD_CONST arg=3 val=0xc4501 repr=b
+DEBUG: [PC 28] OP 114
+DEBUG: [PC 30] OP 106
+DEBUG: OP_CALL_FUNCTION PC 30 callable=0x7448b868144c argCount=2
+DEBUG: reprObject obj=0x7448b868144c class=type
+DEBUG: reprObject out=0x7448b896b786
+DEBUG: invokeCallable callable=0x7448b868144c repr=<method object at 0x7448b868144c> class=type
+DEBUG: py_map created mapObj=0x7448b8974f80 func=0x7448b896bd0c iter=0x7448b8972580
+DEBUG: [PC 32] OP 106
+DEBUG: lnotab entry j=0, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=2, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=4, pc_offset=20, line_offset=1
+DEBUG: OP_CALL_FUNCTION PC 32 callable=0x7448b8587e40 argCount=1
+DEBUG: reprObject obj=0x7448b8587e40 class=type
+DEBUG: reprObject out=0x7448b8967d06
+DEBUG: invokeCallable callable=0x7448b8587e40 repr=<class 'tuple'> class=type
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: reprObject obj=0x7448b8587e40 class=type
+DEBUG: reprObject out=0x7448b8967d06
+DEBUG: py_tuple_call entry self=0x7448b8587e40 repr=<class 'tuple'>
+DEBUG: py_tuple_call created instance=0x7448b8978340
+DEBUG: reprObject obj=0x7448b8974f80 class=type
+DEBUG: reprObject out=0x7448b897bf46
+DEBUG: py_tuple_call iterable=0x7448b8974f80 repr=<object object at 0x7448b8974f80>
+DEBUG: reprObject obj=0x7448b8974f80 class=type
+DEBUG: reprObject out=0x7448b897bf46
+DEBUG: py_tuple_call iterator=0x7448b8974f80 repr=<object object at 0x7448b8974f80>
+DEBUG: reprObject obj=0x7448b896bd0c class=type
+DEBUG: reprObject out=0x7448b88f3146
+DEBUG: invokeCallable callable=0x7448b896bd0c repr=<method object at 0x7448b896bd0c> class=type
+DEBUG: sys.intern obj=0xc2501
+  Value: 'a'
+DEBUG: py_tuple_call item=0xc2501 repr=a
+DEBUG: reprObject obj=0x7448b896bd0c class=type
+DEBUG: reprObject out=0x7448b88f3146
+DEBUG: invokeCallable callable=0x7448b896bd0c repr=<method object at 0x7448b896bd0c> class=type
+DEBUG: sys.intern obj=0xc4501
+  Value: 'b'
+DEBUG: py_tuple_call item=0xc4501 repr=b
+DEBUG: py_map_next: it=0x7448b8972580 __next__ returned nullptr (end of iteration)
+DEBUG: reprObject obj=0x7448b8978340 class=tuple
+DEBUG: reprObject out=0x29c48166151901
+DEBUG: py_tuple_call returning instance=0x7448b8978340 repr=(a, b)
+DEBUG: reprObject obj=0x7448b8978340 class=tuple
+DEBUG: reprObject out=0x29c48166151901
+DEBUG: invokeCallable (__call__) returning result=0x7448b8978340 repr=(a, b)
+DEBUG: [PC 34] OP 103
+DEBUG: [PC 36] OP 102
+DEBUG: [PC 38] OP 100
+DEBUG: LOAD_CONST arg=4 val=0x7448b88095c6 repr=Result t3:
+DEBUG: [PC 40] OP 102
+DEBUG: [PC 42] OP 106
+DEBUG: OP_CALL_FUNCTION PC 42 callable=0x7448b867b48c argCount=2
+DEBUG: reprObject obj=0x7448b867b48c class=type
+DEBUG: reprObject out=0x7448b8966286
+DEBUG: invokeCallable callable=0x7448b867b48c repr=<method object at 0x7448b867b48c> class=type
+DEBUG: py_print called with 2 args
+DEBUG: reprObject obj=0x7448b898810c class=type
+DEBUG: reprObject out=0x7448b88fad06
+DEBUG: invokeCallable callable=0x7448b898810c repr=<method object at 0x7448b898810c> class=type
+Result t3: (a, b)
+DEBUG: [PC 44] OP 133
+DEBUG: [PC 46] OP 102
+DEBUG: [PC 48] OP 100
+DEBUG: LOAD_CONST arg=5 val=0x7448b880ba06 repr=Testing join on tuple:
+DEBUG: [PC 50] OP 106
+DEBUG: OP_CALL_FUNCTION PC 50 callable=0x7448b867b48c argCount=1
+DEBUG: reprObject obj=0x7448b867b48c class=type
+DEBUG: reprObject out=0x7448b8966286
+DEBUG: invokeCallable callable=0x7448b867b48c repr=<method object at 0x7448b867b48c> class=type
+DEBUG: py_print called with 1 args
+Testing join on tuple:
+DEBUG: [PC 52] OP 133
+DEBUG: [PC 54] OP 100
+DEBUG: LOAD_CONST arg=6 val=0x2058901 repr=, 
+DEBUG: [PC 56] OP 112
+DEBUG: OP_LOAD_ATTR obj=0x2058901 (class type) name=join
+DEBUG: OP_LOAD_ATTR calling getAttribute env=0x7ffdca126f90 obj=0x2058901 attr=join
+DEBUG: [PC 58] OP 102
+DEBUG: [PC 60] OP 106
+DEBUG: OP_CALL_FUNCTION PC 60 callable=0x7448b898be4c argCount=1
+DEBUG: reprObject obj=0x7448b898be4c class=type
+DEBUG: reprObject out=0x7448b898f706
+DEBUG: invokeCallable callable=0x7448b898be4c repr=<method object at 0x7448b898be4c> class=type
+DEBUG: py_str_join unexpected stop (!item no exc)
+DEBUG: [PC 62] OP 103
+DEBUG: [PC 64] OP 102
+DEBUG: lnotab entry j=0, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=2, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=4, pc_offset=20, line_offset=1
+DEBUG: lnotab entry j=6, pc_offset=10, line_offset=2
+DEBUG: lnotab entry j=8, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=10, pc_offset=10, line_offset=1
+DEBUG: [PC 66] OP 100
+DEBUG: LOAD_CONST arg=7 val=0x1d64cbbb4ef95d01 repr=Joined:
+DEBUG: [PC 68] OP 102
+DEBUG: [PC 70] OP 106
+DEBUG: OP_CALL_FUNCTION PC 70 callable=0x7448b867b48c argCount=2
+DEBUG: reprObject obj=0x7448b867b48c class=type
+DEBUG: reprObject out=0x7448b8966286
+DEBUG: invokeCallable callable=0x7448b867b48c repr=<method object at 0x7448b867b48c> class=type
+DEBUG: py_print called with 2 args
+Joined: a, b
+DEBUG: [PC 72] OP 133
+DEBUG: [PC 74] OP 100
+DEBUG: reprObject obj=0x7448b85ab640 class=NoneType
+DEBUG: reprObject out=0x19776f9d101
+DEBUG: LOAD_CONST arg=8 val=0x7448b85ab640 repr=None
+DEBUG: [PC 76] OP 101
+DEBUG: runCodeObject result=0x7448b85ab640
+DEBUG: reprObject obj=0x7448b88fe2cc class=type
+DEBUG: reprObject out=0x7448b890acc6
+DEBUG: invokeCallable callable=0x7448b88fe2cc repr=<method object at 0x7448b88fe2cc> class=type
+DEBUG: reprObject obj=0x7448b88fe2cc class=type
+DEBUG: reprObject out=0x7448b890acc6
+DEBUG: invokeCallable callable=0x7448b88fe2cc repr=<method object at 0x7448b88fe2cc> class=type

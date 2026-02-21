@@ -1,0 +1,34 @@
+DEBUG: assertionErrorType loaded successfully: 0x7fe1a793be40
+DEBUG: py_exec compiling source='
+try:
+    import re
+except Exception as e:
+    print("Caught", e)
+...'
+DEBUG: runCodeObject co_code size=40 co_consts size=3 stackOffset=0
+DEBUG: [PC 0] OP 177
+DEBUG: SETUP_FINALLY handler pc 14, stack.top 0
+DEBUG: [PC 2] OP 102
+DEBUG: [PC 4] OP 100
+DEBUG: LOAD_CONST arg=0 val=0x65e4901 repr=re
+DEBUG: [PC 6] OP 106
+DEBUG: OP_CALL_FUNCTION PC 6 callable=0x7fe1a78bcb8c argCount=1
+DEBUG: reprObject obj=0x7fe1a78bcb8c class=type
+DEBUG: reprObject out=0x7fe1a7b1f906
+DEBUG: invokeCallable callable=0x7fe1a78bcb8c repr=<method object at 0x7fe1a78bcb8c> class=type
+DEBUG: __import__('re') level=0
+DEBUG: reprObject obj=0x7fe1a7b3234c class=type
+DEBUG: reprObject out=0x7fe1a7b3ed46
+DEBUG: invokeCallable callable=0x7fe1a7b3234c repr=<method object at 0x7fe1a7b3234c> class=type
+DEBUG: reprObject obj=0x7fe1a7b3234c class=type
+DEBUG: reprObject out=0x7fe1a7b3ed46
+DEBUG: invokeCallable callable=0x7fe1a7b3234c repr=<method object at 0x7fe1a7b3234c> class=type
+DEBUG: [PC 8] OP 103
+DEBUG: [PC 10] OP 178
+DEBUG: [PC 12] OP 111
+DEBUG: [PC 36] OP 100
+DEBUG: reprObject obj=0x7fe1a77eecc0 class=NoneType
+DEBUG: reprObject out=0x19776f9d101
+DEBUG: LOAD_CONST arg=2 val=0x7fe1a77eecc0 repr=None
+DEBUG: [PC 38] OP 101
+DEBUG: runCodeObject result=0x7fe1a77eecc0

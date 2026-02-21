@@ -1,0 +1,6 @@
+protopy: syntax error in 'lib/python3.14/dis.py': f-string: single '}' is not allowed at line 504:68
+protopy: unhandled exception in module execution:
+Traceback (most recent call last):
+ImportError: No module named 'dis'
+
+protopy: module 'repro_class' exited with runtime error

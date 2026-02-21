@@ -1,0 +1,2 @@
+DEBUG: ABCMeta.__new__ scaling for ABC with bases <class 'tuple'>
+Error: Type mismatch in toImpl conversion. Expected tag 9 for type const ProtoSparseListIteratorImplementation; std::string = std::__cxx11::basic_string<char>, but found tag 0 for ProtoObject* 0.

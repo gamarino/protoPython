@@ -1,0 +1,2568 @@
+DEBUG: assertionErrorType loaded successfully: 0x762bd709e600
+DEBUG: py_exec compiling source='import weakref...'
+DEBUG: runCodeObject co_code size=12 co_consts size=2 stackOffset=0
+DEBUG: [PC 0] OP 102
+DEBUG: [PC 2] OP 100
+DEBUG: LOAD_CONST arg=0 val=0x3365e5af0e5efd01 repr=weakref
+DEBUG: [PC 4] OP 106
+DEBUG: OP_CALL_FUNCTION PC 4 callable=0x762bd701f34c argCount=1
+DEBUG: reprObject obj=0x762bd701f34c class=type
+DEBUG: reprObject out=0x762bd7208186
+DEBUG: invokeCallable callable=0x762bd701f34c repr=<method object at 0x762bd701f34c> class=type
+DEBUG: __import__('weakref') level=0
+DEBUG: runCodeObject co_code size=236 co_consts size=30 stackOffset=0
+DEBUG: [PC 0] OP 100
+DEBUG: lnotab entry j=0, pc_offset=4, line_offset=5
+DEBUG: LOAD_CONST arg=0 val=0x762bd7222ac6 repr=Weak reference support for Python.
+
+This module is an implementation of PEP 205:
+
+https://peps.python.org/pep-0205/
+
+DEBUG: [PC 2] OP 133
+DEBUG: [PC 4] OP 102
+DEBUG: [PC 6] OP 100
+DEBUG: LOAD_CONST arg=1 val=0x762bd6f86ac6 repr=_weakref
+DEBUG: [PC 8] OP 100
+DEBUG: LOAD_CONST arg=2 val=0x141 repr=None
+DEBUG: [PC 10] OP 100
+DEBUG: LOAD_CONST arg=2 val=0x141 repr=None
+DEBUG: [PC 12] OP 100
+DEBUG: reprObject obj=0x762bd722f602 class=type
+DEBUG: reprObject out=0x5db6901
+DEBUG: LOAD_CONST arg=3 val=0x762bd722f602 repr=[]
+DEBUG: [PC 14] OP 100
+DEBUG: LOAD_CONST arg=4 val=0x1 repr=0
+DEBUG: [PC 16] OP 106
+DEBUG: OP_CALL_FUNCTION PC 16 callable=0x762bd701f34c argCount=5
+DEBUG: reprObject obj=0x762bd701f34c class=type
+DEBUG: reprObject out=0x762bd7208186
+DEBUG: invokeCallable callable=0x762bd701f34c repr=<method object at 0x762bd701f34c> class=type
+DEBUG: __import__('_weakref') level=0
+DEBUG: reprObject obj=0x762bd7d9b30c class=type
+DEBUG: reprObject out=0x762bd7daddc6
+DEBUG: invokeCallable callable=0x762bd7d9b30c repr=<method object at 0x762bd7d9b30c> class=type
+DEBUG: reprObject obj=0x762bd7d9b30c class=type
+DEBUG: reprObject out=0x762bd7daddc6
+DEBUG: invokeCallable callable=0x762bd7d9b30c repr=<method object at 0x762bd7d9b30c> class=type
+DEBUG: [PC 18] OP 206
+DEBUG: OP_IMPORT_FROM loading getweakrefcount
+DEBUG: [PC 20] OP 103
+DEBUG: [PC 22] OP 206
+DEBUG: OP_IMPORT_FROM loading getweakrefs
+DEBUG: [PC 24] OP 103
+DEBUG: [PC 26] OP 206
+DEBUG: OP_IMPORT_FROM loading ref
+DEBUG: [PC 28] OP 103
+DEBUG: [PC 30] OP 206
+DEBUG: OP_IMPORT_FROM loading proxy
+DEBUG: [PC 32] OP 103
+DEBUG: lnotab entry j=0, pc_offset=4, line_offset=5
+DEBUG: lnotab entry j=2, pc_offset=50, line_offset=10
+DEBUG: [PC 34] OP 206
+DEBUG: OP_IMPORT_FROM loading CallableProxyType
+DEBUG: [PC 36] OP 103
+DEBUG: [PC 38] OP 206
+DEBUG: OP_IMPORT_FROM loading ProxyType
+DEBUG: [PC 40] OP 103
+DEBUG: [PC 42] OP 206
+DEBUG: OP_IMPORT_FROM loading ReferenceType
+DEBUG: [PC 44] OP 103
+DEBUG: [PC 46] OP 206
+DEBUG: OP_IMPORT_FROM loading _remove_dead_weakref
+DEBUG: [PC 48] OP 103
+DEBUG: [PC 50] OP 133
+DEBUG: [PC 52] OP 133
+DEBUG: [PC 54] OP 102
+DEBUG: [PC 56] OP 100
+DEBUG: LOAD_CONST arg=5 val=0x762bd7238606 repr=_weakrefset
+DEBUG: [PC 58] OP 100
+DEBUG: LOAD_CONST arg=2 val=0x141 repr=None
+DEBUG: [PC 60] OP 100
+DEBUG: LOAD_CONST arg=2 val=0x141 repr=None
+DEBUG: [PC 62] OP 100
+DEBUG: reprObject obj=0x762bd72388c2 class=type
+DEBUG: reprObject out=0x5db6901
+DEBUG: LOAD_CONST arg=6 val=0x762bd72388c2 repr=[]
+DEBUG: [PC 64] OP 100
+DEBUG: lnotab entry j=0, pc_offset=4, line_offset=5
+DEBUG: lnotab entry j=2, pc_offset=50, line_offset=10
+DEBUG: lnotab entry j=4, pc_offset=22, line_offset=3
+DEBUG: LOAD_CONST arg=4 val=0x1 repr=0
+DEBUG: [PC 66] OP 106
+DEBUG: OP_CALL_FUNCTION PC 66 callable=0x762bd701f34c argCount=5
+DEBUG: reprObject obj=0x762bd701f34c class=type
+DEBUG: reprObject out=0x762bd7208186
+DEBUG: invokeCallable callable=0x762bd701f34c repr=<method object at 0x762bd701f34c> class=type
+DEBUG: __import__('_weakrefset') level=0
+DEBUG: runCodeObject co_code size=68 co_consts size=9 stackOffset=0
+DEBUG: [PC 0] OP 102
+DEBUG: lnotab entry j=0, pc_offset=22, line_offset=1
+DEBUG: [PC 2] OP 100
+DEBUG: LOAD_CONST arg=0 val=0x762bd6f86ac6 repr=_weakref
+DEBUG: [PC 4] OP 100
+DEBUG: LOAD_CONST arg=1 val=0x141 repr=None
+DEBUG: [PC 6] OP 100
+DEBUG: LOAD_CONST arg=1 val=0x141 repr=None
+DEBUG: [PC 8] OP 100
+DEBUG: reprObject obj=0x762bd7df3a02 class=type
+DEBUG: reprObject out=0x5db6901
+DEBUG: LOAD_CONST arg=2 val=0x762bd7df3a02 repr=[]
+DEBUG: [PC 10] OP 100
+DEBUG: LOAD_CONST arg=3 val=0x1 repr=0
+DEBUG: [PC 12] OP 106
+DEBUG: OP_CALL_FUNCTION PC 12 callable=0x762bd701f34c argCount=5
+DEBUG: reprObject obj=0x762bd701f34c class=type
+DEBUG: reprObject out=0x762bd7208186
+DEBUG: invokeCallable callable=0x762bd701f34c repr=<method object at 0x762bd701f34c> class=type
+DEBUG: __import__('_weakref') level=0
+DEBUG: [PC 14] OP 206
+DEBUG: OP_IMPORT_FROM loading ref
+DEBUG: [PC 16] OP 103
+DEBUG: [PC 18] OP 133
+DEBUG: [PC 20] OP 133
+DEBUG: [PC 22] OP 102
+DEBUG: [PC 24] OP 100
+DEBUG: LOAD_CONST arg=4 val=0xe797879e9501 repr=types
+DEBUG: [PC 26] OP 100
+DEBUG: LOAD_CONST arg=1 val=0x141 repr=None
+DEBUG: [PC 28] OP 100
+DEBUG: LOAD_CONST arg=1 val=0x141 repr=None
+DEBUG: [PC 30] OP 100
+DEBUG: reprObject obj=0x762bd7df4cc2 class=type
+DEBUG: reprObject out=0x5db6901
+DEBUG: LOAD_CONST arg=5 val=0x762bd7df4cc2 repr=[]
+DEBUG: [PC 32] OP 100
+DEBUG: lnotab entry j=0, pc_offset=22, line_offset=1
+DEBUG: lnotab entry j=2, pc_offset=22, line_offset=2
+DEBUG: LOAD_CONST arg=3 val=0x1 repr=0
+DEBUG: [PC 34] OP 106
+DEBUG: OP_CALL_FUNCTION PC 34 callable=0x762bd701f34c argCount=5
+DEBUG: reprObject obj=0x762bd701f34c class=type
+DEBUG: reprObject out=0x762bd7208186
+DEBUG: invokeCallable callable=0x762bd701f34c repr=<method object at 0x762bd701f34c> class=type
+DEBUG: __import__('types') level=0
+DEBUG: runCodeObject co_code size=524 co_consts size=28 stackOffset=0
+DEBUG: [PC 0] OP 100
+DEBUG: lnotab entry j=0, pc_offset=4, line_offset=7
+DEBUG: LOAD_CONST arg=0 val=0x762bd4a25dc6 repr=
+Define names for built-in types that aren't directly accessible as a builtin.
+
+DEBUG: [PC 2] OP 133
+DEBUG: [PC 4] OP 177
+DEBUG: SETUP_FINALLY handler pc 28, stack.top 0
+DEBUG: [PC 6] OP 102
+DEBUG: [PC 8] OP 100
+DEBUG: LOAD_CONST arg=1 val=0x73cbc3cf4bf901 repr=_types
+DEBUG: [PC 10] OP 100
+DEBUG: LOAD_CONST arg=2 val=0x141 repr=None
+DEBUG: [PC 12] OP 100
+DEBUG: LOAD_CONST arg=2 val=0x141 repr=None
+DEBUG: [PC 14] OP 100
+DEBUG: reprObject obj=0x762bd4a28282 class=type
+DEBUG: reprObject out=0x5db6901
+DEBUG: LOAD_CONST arg=3 val=0x762bd4a28282 repr=[]
+DEBUG: [PC 16] OP 100
+DEBUG: LOAD_CONST arg=4 val=0x1 repr=0
+DEBUG: [PC 18] OP 106
+DEBUG: OP_CALL_FUNCTION PC 18 callable=0x762bd701f34c argCount=5
+DEBUG: reprObject obj=0x762bd701f34c class=type
+DEBUG: reprObject out=0x762bd7208186
+DEBUG: invokeCallable callable=0x762bd701f34c repr=<method object at 0x762bd701f34c> class=type
+DEBUG: __import__('_types') level=0
+DEBUG: [PC 20] OP 203
+DEBUG: lnotab entry j=0, pc_offset=4, line_offset=7
+DEBUG: lnotab entry j=2, pc_offset=24, line_offset=1
+DEBUG: Exception ImportError at lib/python3.14/types.py:11 (PC 20)
+DEBUG: Exception message: ''
+DEBUG: raw exception pointer 0x762bd71f7300
+DEBUG: Calling addTraceback...
+DEBUG: addTraceback exc=0x762bd71f7300 frame=0x762bd4a13b00 lasti=20 lineno=11
+DEBUG: addTraceback currentTb=0x141
+DEBUG: addTraceback newTb=0x762bd71fd140
+DEBUG: addTraceback updatedExc=0x762bd71f7300
+DEBUG: addTraceback returned. blockStack.empty()=false
+DEBUG: Popping block: handlerPc=28 stackDepth=0
+DEBUG: Cleaning stack: current size=1, target size=0
+DEBUG: Pushing exception 0x762bd71f7300 back to stack
+DEBUG: Jumping to handlerPc=28
+DEBUG: [PC 28] OP 102
+DEBUG: [PC 30] OP 190
+DEBUG: OP_EXCEPTION_MATCH exc 0x762bd71f7300 vs type 0x762bd706b0c0 -> 1
+DEBUG: [PC 32] OP 110
+DEBUG: lnotab entry j=0, pc_offset=4, line_offset=7
+DEBUG: lnotab entry j=2, pc_offset=24, line_offset=1
+DEBUG: lnotab entry j=4, pc_offset=8, line_offset=1
+DEBUG: [PC 34] OP 133
+DEBUG: [PC 36] OP 102
+DEBUG: [PC 38] OP 100
+DEBUG: LOAD_CONST arg=5 val=0x39f9e6d01 repr=sys
+DEBUG: [PC 40] OP 106
+DEBUG: OP_CALL_FUNCTION PC 40 callable=0x762bd701f34c argCount=1
+DEBUG: reprObject obj=0x762bd701f34c class=type
+DEBUG: reprObject out=0x762bd7208186
+DEBUG: invokeCallable callable=0x762bd701f34c repr=<method object at 0x762bd701f34c> class=type
+DEBUG: __import__('sys') level=0
+DEBUG: [PC 42] OP 103
+DEBUG: [PC 44] OP 100
+DEBUG: reprObject obj=0x762bd4a2c2c0 class=NoneType
+DEBUG: LOAD_CONST arg=6 val=0x762bd4a2c2c0 repr=<object>
+DEBUG: [PC 46] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd4a13b00, defaults=(nil), kwDefaults=(nil)
+DEBUG: [PC 48] OP 103
+DEBUG: [PC 50] OP 102
+DEBUG: resolve BUILTINS name=type obj=0x762bd6ee7880
+DEBUG: [PC 52] OP 102
+DEBUG: [PC 54] OP 106
+DEBUG: OP_CALL_FUNCTION PC 54 callable=0x762bd6ee7880 argCount=1
+DEBUG: reprObject obj=0x762bd6ee7880 class=type
+DEBUG: reprObject out=0x762bd519df06
+DEBUG: invokeCallable callable=0x762bd6ee7880 repr=<class 'type'> class=type
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: py_type executing early unconditional: size=1
+DEBUG: py_type executing unconditional: argCount=1
+DEBUG: py_type called unconditionally self=0x762bd6ee7880 argCount=1
+DEBUG: getType priority 1 __class__ match
+DEBUG: reprObject obj=0x762bd6ef6b00 class=type
+DEBUG: reprObject out=0x762bd51a7d86
+DEBUG: invokeCallable (__call__) returning result=0x762bd6ef6b00 repr=<function object at 0x762bd6ef6b00>
+DEBUG: [PC 56] OP 103
+DEBUG: [PC 58] OP 102
+DEBUG: resolve BUILTINS name=type obj=0x762bd6ee7880
+DEBUG: [PC 60] OP 100
+DEBUG: reprObject obj=0x762bd4a3f500 class=NoneType
+DEBUG: LOAD_CONST arg=7 val=0x762bd4a3f500 repr=<object>
+DEBUG: [PC 62] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd4a13b00, defaults=(nil), kwDefaults=(nil)
+DEBUG: [PC 64] OP 106
+DEBUG: lnotab entry j=0, pc_offset=4, line_offset=7
+DEBUG: lnotab entry j=2, pc_offset=24, line_offset=1
+DEBUG: lnotab entry j=4, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=6, pc_offset=0, line_offset=1
+DEBUG: lnotab entry j=8, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=10, pc_offset=6, line_offset=1
+DEBUG: lnotab entry j=12, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=14, pc_offset=10, line_offset=1
+DEBUG: OP_CALL_FUNCTION PC 64 callable=0x762bd6ee7880 argCount=1
+DEBUG: reprObject obj=0x762bd6ee7880 class=type
+DEBUG: reprObject out=0x762bd519df06
+DEBUG: invokeCallable callable=0x762bd6ee7880 repr=<class 'type'> class=type
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: py_type executing early unconditional: size=1
+DEBUG: py_type executing unconditional: argCount=1
+DEBUG: py_type called unconditionally self=0x762bd6ee7880 argCount=1
+DEBUG: getType priority 1 __class__ match
+DEBUG: reprObject obj=0x762bd6ef6b00 class=type
+DEBUG: reprObject out=0x762bd51a7d86
+DEBUG: invokeCallable (__call__) returning result=0x762bd6ef6b00 repr=<function object at 0x762bd6ef6b00>
+DEBUG: [PC 66] OP 103
+DEBUG: [PC 68] OP 102
+DEBUG: resolve BUILTINS name=type obj=0x762bd6ee7880
+DEBUG: [PC 70] OP 102
+DEBUG: [PC 72] OP 112
+DEBUG: OP_LOAD_ATTR calling getAttribute env=0x762bd99013c0 obj=0x762bd51961c0 attr=__code__
+DEBUG: [PC 74] OP 106
+DEBUG: OP_CALL_FUNCTION PC 74 callable=0x762bd6ee7880 argCount=1
+DEBUG: reprObject obj=0x762bd6ee7880 class=type
+DEBUG: reprObject out=0x762bd519df06
+DEBUG: invokeCallable callable=0x762bd6ee7880 repr=<class 'type'> class=type
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: py_type executing early unconditional: size=1
+DEBUG: py_type executing unconditional: argCount=1
+DEBUG: py_type called unconditionally self=0x762bd6ee7880 argCount=1
+DEBUG: getType checking 0 parents
+DEBUG: getType proto fallback
+DEBUG: reprObject obj=0x762bd6ef40c0 class=type
+DEBUG: reprObject out=0x762bd51d42c6
+DEBUG: invokeCallable (__call__) returning result=0x762bd6ef40c0 repr=<object object at 0x762bd6ef40c0>
+DEBUG: [PC 76] OP 103
+DEBUG: [PC 78] OP 102
+DEBUG: resolve BUILTINS name=type obj=0x762bd6ee7880
+DEBUG: [PC 80] OP 102
+DEBUG: resolve BUILTINS name=type obj=0x762bd6ee7880
+DEBUG: [PC 82] OP 112
+DEBUG: OP_LOAD_ATTR calling getAttribute env=0x762bd99013c0 obj=0x762bd6ee7880 attr=__dict__
+DEBUG: [PC 84] OP 106
+DEBUG: OP_CALL_FUNCTION PC 84 callable=0x762bd6ee7880 argCount=1
+DEBUG: reprObject obj=0x762bd6ee7880 class=type
+DEBUG: reprObject out=0x762bd519df06
+DEBUG: invokeCallable callable=0x762bd6ee7880 repr=<class 'type'> class=type
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: py_type executing early unconditional: size=1
+DEBUG: py_type executing unconditional: argCount=1
+DEBUG: py_type called unconditionally self=0x762bd6ee7880 argCount=1
+DEBUG: getType checking 2 parents
+DEBUG: getType returning parent 0 as class
+DEBUG: reprObject obj=0x762bd6eec200 class=type
+DEBUG: reprObject out=0x762bd51e6906
+DEBUG: invokeCallable (__call__) returning result=0x762bd6eec200 repr=mappingproxy(None)
+DEBUG: [PC 86] OP 103
+DEBUG: [PC 88] OP 102
+DEBUG: resolve BUILTINS name=type obj=0x762bd6ee7880
+DEBUG: [PC 90] OP 102
+DEBUG: [PC 92] OP 112
+DEBUG: OP_LOAD_ATTR calling getAttribute env=0x762bd99013c0 obj=0x762bd6f613c0 attr=implementation
+DEBUG: [PC 94] OP 106
+DEBUG: OP_CALL_FUNCTION PC 94 callable=0x762bd6ee7880 argCount=1
+DEBUG: reprObject obj=0x762bd6ee7880 class=type
+DEBUG: reprObject out=0x762bd519df06
+DEBUG: invokeCallable callable=0x762bd6ee7880 repr=<class 'type'> class=type
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: py_type executing early unconditional: size=1
+DEBUG: py_type executing unconditional: argCount=1
+DEBUG: py_type called unconditionally self=0x762bd6ee7880 argCount=1
+DEBUG: getType checking 1 parents
+DEBUG: getType returning parent 0 as class
+DEBUG: reprObject obj=0x762bd6ef40c0 class=type
+DEBUG: reprObject out=0x762bd51d42c6
+DEBUG: invokeCallable (__call__) returning result=0x762bd6ef40c0 repr=<object object at 0x762bd6ef40c0>
+DEBUG: [PC 96] OP 103
+DEBUG: lnotab entry j=0, pc_offset=4, line_offset=7
+DEBUG: lnotab entry j=2, pc_offset=24, line_offset=1
+DEBUG: lnotab entry j=4, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=6, pc_offset=0, line_offset=1
+DEBUG: lnotab entry j=8, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=10, pc_offset=6, line_offset=1
+DEBUG: lnotab entry j=12, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=14, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=16, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=18, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=20, pc_offset=10, line_offset=2
+DEBUG: [PC 98] OP 100
+DEBUG: reprObject obj=0x762bd4a6e8c0 class=NoneType
+DEBUG: LOAD_CONST arg=8 val=0x762bd4a6e8c0 repr=<object>
+DEBUG: [PC 100] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd4a13b00, defaults=(nil), kwDefaults=(nil)
+DEBUG: [PC 102] OP 103
+DEBUG: [PC 104] OP 102
+DEBUG: resolve BUILTINS name=type obj=0x762bd6ee7880
+DEBUG: [PC 106] OP 102
+DEBUG: [PC 108] OP 106
+DEBUG: OP_CALL_FUNCTION PC 108 callable=0x762bd5281dc0 argCount=0
+DEBUG: reprObject obj=0x762bd5281dc0 class=function
+DEBUG: reprObject out=0x762bd528c5c6
+DEBUG: invokeCallable callable=0x762bd5281dc0 repr=<function object at 0x762bd5281dc0> class=function
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: runUserFunctionCall extracted outerFrame=0x762bd4a13b00 from closure list
+DEBUG: runUserFunctionCall nparams_count=0 argCount=0 argsSize=0
+DEBUG: [PC 0] OP 100
+DEBUG: lnotab entry j=0, pc_offset=4, line_offset=1
+DEBUG: LOAD_CONST arg=0 val=0x401 repr=1
+DEBUG: [PC 2] OP 158
+DEBUG: [PC 4] OP 100
+DEBUG: reprObject obj=0x762bd4a58040 class=NoneType
+DEBUG: LOAD_CONST arg=1 val=0x762bd4a58040 repr=<object>
+DEBUG: [PC 6] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd53ed880, defaults=(nil), kwDefaults=(nil)
+DEBUG: [PC 8] OP 158
+DEBUG: [PC 10] OP 157
+DEBUG: LOAD_FAST 0 loaded: 0x762bd53f5b80
+DEBUG: [PC 12] OP 112
+DEBUG: OP_LOAD_ATTR calling getAttribute env=0x762bd99013c0 obj=0x762bd53f5b80 attr=__closure__
+DEBUG: [PC 14] OP 100
+DEBUG: LOAD_CONST arg=2 val=0x1 repr=0
+DEBUG: [PC 16] OP 115
+DEBUG: reprObject obj=0x762bd53f5742 class=type
+DEBUG: reprObject out=0x5db6901
+DEBUG: OP_BINARY_SUBSCR container=0x762bd53f5742 repr=[] key=0x1 repr=0
+DEBUG: OP_BINARY_SUBSCR result=0x762bd53f5742
+DEBUG: [PC 18] OP 101
+DEBUG: reprObject obj=0x762bd53f5742 class=type
+DEBUG: reprObject out=0x5db6901
+DEBUG: invokeCallable (__call__) returning result=0x762bd53f5742 repr=[]
+DEBUG: [PC 110] OP 106
+DEBUG: OP_CALL_FUNCTION PC 110 callable=0x762bd6ee7880 argCount=1
+DEBUG: reprObject obj=0x762bd6ee7880 class=type
+DEBUG: reprObject out=0x762bd519df06
+DEBUG: invokeCallable callable=0x762bd6ee7880 repr=<class 'type'> class=type
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: py_type executing early unconditional: size=1
+DEBUG: py_type executing unconditional: argCount=1
+DEBUG: py_type called unconditionally self=0x762bd6ee7880 argCount=1
+DEBUG: getType checking 0 parents
+DEBUG: getType proto fallback
+DEBUG: reprObject obj=0x762bd6f17b80 class=type
+DEBUG: reprObject out=0x762bd53994c6
+DEBUG: invokeCallable (__call__) returning result=0x762bd6f17b80 repr=<class 'list'>
+DEBUG: [PC 112] OP 103
+DEBUG: [PC 114] OP 100
+DEBUG: reprObject obj=0x762bd4a82640 class=NoneType
+DEBUG: LOAD_CONST arg=9 val=0x762bd4a82640 repr=<object>
+DEBUG: [PC 116] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd4a13b00, defaults=(nil), kwDefaults=(nil)
+DEBUG: [PC 118] OP 103
+DEBUG: [PC 120] OP 102
+DEBUG: resolve BUILTINS name=type obj=0x762bd6ee7880
+DEBUG: [PC 122] OP 102
+DEBUG: [PC 124] OP 106
+DEBUG: OP_CALL_FUNCTION PC 124 callable=0x762bd53a0980 argCount=0
+DEBUG: reprObject obj=0x762bd53a0980 class=function
+DEBUG: reprObject out=0x762bd53ab146
+DEBUG: invokeCallable callable=0x762bd53a0980 repr=<function object at 0x762bd53a0980> class=function
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: runUserFunctionCall extracted outerFrame=0x762bd4a13b00 from closure list
+DEBUG: runUserFunctionCall nparams_count=0 argCount=0 argsSize=0
+DEBUG: reprObject obj=0x762bd185e540 class=generator
+DEBUG: reprObject out=0x762bd1806c46
+DEBUG: invokeCallable (__call__) returning result=0x762bd185e540 repr=<generator object _g at 0x762bd185e540>
+DEBUG: [PC 126] OP 106
+DEBUG: OP_CALL_FUNCTION PC 126 callable=0x762bd6ee7880 argCount=1
+DEBUG: reprObject obj=0x762bd6ee7880 class=type
+DEBUG: reprObject out=0x762bd519df06
+DEBUG: invokeCallable callable=0x762bd6ee7880 repr=<class 'type'> class=type
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: py_type executing early unconditional: size=1
+DEBUG: py_type executing unconditional: argCount=1
+DEBUG: py_type called unconditionally self=0x762bd6ee7880 argCount=1
+DEBUG: getType priority 1 __class__ match
+DEBUG: reprObject obj=0x762bd6ef4980 class=type
+DEBUG: reprObject out=0x762bd1819d86
+DEBUG: invokeCallable (__call__) returning result=0x762bd6ef4980 repr=<generator object <unknown> at 0x762bd6ef4980>
+DEBUG: [PC 128] OP 103
+DEBUG: lnotab entry j=0, pc_offset=4, line_offset=7
+DEBUG: lnotab entry j=2, pc_offset=24, line_offset=1
+DEBUG: lnotab entry j=4, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=6, pc_offset=0, line_offset=1
+DEBUG: lnotab entry j=8, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=10, pc_offset=6, line_offset=1
+DEBUG: lnotab entry j=12, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=14, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=16, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=18, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=20, pc_offset=10, line_offset=2
+DEBUG: lnotab entry j=22, pc_offset=6, line_offset=5
+DEBUG: lnotab entry j=24, pc_offset=10, line_offset=2
+DEBUG: lnotab entry j=26, pc_offset=6, line_offset=2
+DEBUG: lnotab entry j=28, pc_offset=10, line_offset=3
+DEBUG: [PC 130] OP 100
+DEBUG: reprObject obj=0x762bd4a95480 class=NoneType
+DEBUG: LOAD_CONST arg=10 val=0x762bd4a95480 repr=<object>
+DEBUG: [PC 132] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd4a13b00, defaults=(nil), kwDefaults=(nil)
+DEBUG: [PC 134] OP 103
+DEBUG: [PC 136] OP 133
+DEBUG: [PC 138] OP 102
+DEBUG: [PC 140] OP 106
+DEBUG: OP_CALL_FUNCTION PC 140 callable=0x762bd1821880 argCount=0
+DEBUG: reprObject obj=0x762bd1821880 class=function
+DEBUG: reprObject out=0x762bd182bf86
+DEBUG: invokeCallable callable=0x762bd1821880 repr=<function object at 0x762bd1821880> class=function
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: runUserFunctionCall extracted outerFrame=0x762bd4a13b00 from closure list
+DEBUG: runUserFunctionCall nparams_count=0 argCount=0 argsSize=0
+DEBUG: reprObject obj=0x762bd1a5e540 class=generator
+DEBUG: reprObject out=0x762bd1a2e586
+DEBUG: invokeCallable (__call__) returning result=0x762bd1a5e540 repr=<generator object _c at 0x762bd1a5e540>
+DEBUG: [PC 142] OP 103
+DEBUG: [PC 144] OP 102
+DEBUG: resolve BUILTINS name=type obj=0x762bd6ee7880
+DEBUG: [PC 146] OP 102
+DEBUG: [PC 148] OP 106
+DEBUG: OP_CALL_FUNCTION PC 148 callable=0x762bd6ee7880 argCount=1
+DEBUG: reprObject obj=0x762bd6ee7880 class=type
+DEBUG: reprObject out=0x762bd519df06
+DEBUG: invokeCallable callable=0x762bd6ee7880 repr=<class 'type'> class=type
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: py_type executing early unconditional: size=1
+DEBUG: py_type executing unconditional: argCount=1
+DEBUG: py_type called unconditionally self=0x762bd6ee7880 argCount=1
+DEBUG: getType priority 1 __class__ match
+DEBUG: reprObject obj=0x762bd6ef4980 class=type
+DEBUG: reprObject out=0x762bd1819d86
+DEBUG: invokeCallable (__call__) returning result=0x762bd6ef4980 repr=<generator object <unknown> at 0x762bd6ef4980>
+DEBUG: [PC 150] OP 103
+DEBUG: [PC 152] OP 102
+DEBUG: [PC 154] OP 112
+DEBUG: OP_LOAD_ATTR calling getAttribute env=0x762bd99013c0 obj=0x762bd1a5e540 attr=close
+DEBUG: [PC 156] OP 106
+DEBUG: OP_CALL_FUNCTION PC 156 callable=0x762bd1a44b4c argCount=0
+DEBUG: reprObject obj=0x762bd1a44b4c class=type
+DEBUG: reprObject out=0x762bd1a4e306
+DEBUG: invokeCallable callable=0x762bd1a44b4c repr=<method object at 0x762bd1a44b4c> class=type
+DEBUG: [PC 158] OP 133
+DEBUG: [PC 160] OP 100
+DEBUG: lnotab entry j=0, pc_offset=4, line_offset=7
+DEBUG: lnotab entry j=2, pc_offset=24, line_offset=1
+DEBUG: lnotab entry j=4, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=6, pc_offset=0, line_offset=1
+DEBUG: lnotab entry j=8, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=10, pc_offset=6, line_offset=1
+DEBUG: lnotab entry j=12, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=14, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=16, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=18, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=20, pc_offset=10, line_offset=2
+DEBUG: lnotab entry j=22, pc_offset=6, line_offset=5
+DEBUG: lnotab entry j=24, pc_offset=10, line_offset=2
+DEBUG: lnotab entry j=26, pc_offset=6, line_offset=2
+DEBUG: lnotab entry j=28, pc_offset=10, line_offset=3
+DEBUG: lnotab entry j=30, pc_offset=14, line_offset=1
+DEBUG: lnotab entry j=32, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=34, pc_offset=8, line_offset=4
+DEBUG: lnotab entry j=36, pc_offset=14, line_offset=1
+DEBUG: reprObject obj=0x762bd4aa8900 class=NoneType
+DEBUG: LOAD_CONST arg=11 val=0x762bd4aa8900 repr=<object>
+DEBUG: [PC 162] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd4a13b00, defaults=(nil), kwDefaults=(nil)
+DEBUG: [PC 164] OP 103
+DEBUG: [PC 166] OP 133
+DEBUG: [PC 168] OP 102
+DEBUG: [PC 170] OP 106
+DEBUG: OP_CALL_FUNCTION PC 170 callable=0x762bd1a59300 argCount=0
+DEBUG: reprObject obj=0x762bd1a59300 class=function
+DEBUG: reprObject out=0x762bd1b63a46
+DEBUG: invokeCallable callable=0x762bd1a59300 repr=<function object at 0x762bd1a59300> class=function
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: runUserFunctionCall extracted outerFrame=0x762bd4a13b00 from closure list
+DEBUG: runUserFunctionCall nparams_count=0 argCount=0 argsSize=0
+DEBUG: reprObject obj=0x762bd1c5e540 class=generator
+DEBUG: reprObject out=0x762bd1d66246
+DEBUG: invokeCallable (__call__) returning result=0x762bd1c5e540 repr=<generator object _ag at 0x762bd1c5e540>
+DEBUG: [PC 172] OP 103
+DEBUG: [PC 174] OP 102
+DEBUG: resolve BUILTINS name=type obj=0x762bd6ee7880
+DEBUG: [PC 176] OP 102
+DEBUG: [PC 178] OP 106
+DEBUG: OP_CALL_FUNCTION PC 178 callable=0x762bd6ee7880 argCount=1
+DEBUG: reprObject obj=0x762bd6ee7880 class=type
+DEBUG: reprObject out=0x762bd519df06
+DEBUG: invokeCallable callable=0x762bd6ee7880 repr=<class 'type'> class=type
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: py_type executing early unconditional: size=1
+DEBUG: py_type executing unconditional: argCount=1
+DEBUG: py_type called unconditionally self=0x762bd6ee7880 argCount=1
+DEBUG: getType priority 1 __class__ match
+DEBUG: reprObject obj=0x762bd6ef4980 class=type
+DEBUG: reprObject out=0x762bd1819d86
+DEBUG: invokeCallable (__call__) returning result=0x762bd6ef4980 repr=<generator object <unknown> at 0x762bd6ef4980>
+DEBUG: [PC 180] OP 103
+DEBUG: [PC 182] OP 100
+DEBUG: LOAD_CONST arg=12 val=0x43be901 repr=_C
+DEBUG: [PC 184] OP 118
+DEBUG: [PC 186] OP 100
+DEBUG: LOAD_CONST arg=2 val=0x141 repr=None
+DEBUG: [PC 188] OP 100
+DEBUG: reprObject obj=0x762bd4acdf80 class=NoneType
+DEBUG: LOAD_CONST arg=13 val=0x762bd4acdf80 repr=<object>
+DEBUG: [PC 190] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd4a13b00, defaults=(nil), kwDefaults=(nil)
+DEBUG: [PC 192] OP 160
+DEBUG: lnotab entry j=0, pc_offset=4, line_offset=7
+DEBUG: lnotab entry j=2, pc_offset=24, line_offset=1
+DEBUG: lnotab entry j=4, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=6, pc_offset=0, line_offset=1
+DEBUG: lnotab entry j=8, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=10, pc_offset=6, line_offset=1
+DEBUG: lnotab entry j=12, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=14, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=16, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=18, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=20, pc_offset=10, line_offset=2
+DEBUG: lnotab entry j=22, pc_offset=6, line_offset=5
+DEBUG: lnotab entry j=24, pc_offset=10, line_offset=2
+DEBUG: lnotab entry j=26, pc_offset=6, line_offset=2
+DEBUG: lnotab entry j=28, pc_offset=10, line_offset=3
+DEBUG: lnotab entry j=30, pc_offset=14, line_offset=1
+DEBUG: lnotab entry j=32, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=34, pc_offset=8, line_offset=4
+DEBUG: lnotab entry j=36, pc_offset=14, line_offset=1
+DEBUG: lnotab entry j=38, pc_offset=8, line_offset=2
+DEBUG: lnotab entry j=40, pc_offset=14, line_offset=2
+DEBUG OP_BUILD_CLASS: metaclass=0x762bd6ee7880 (PROTO_NONE=0x141)
+DEBUG OP_BUILD_CLASS: metaclass name='type'
+DEBUG: reprObject obj=0x762bd1d84acc class=type
+DEBUG: reprObject out=0x762bd1d8e346
+DEBUG: invokeCallable callable=0x762bd1d84acc repr=<method object at 0x762bd1d84acc> class=type
+DEBUG: runCodeObject co_code size=8 co_consts size=1 stackOffset=0
+DEBUG: [PC 0] OP 100
+DEBUG: reprObject obj=0x762bd4abc340 class=NoneType
+DEBUG: LOAD_CONST arg=0 val=0x762bd4abc340 repr=<object>
+DEBUG: [PC 2] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd1d8e940, defaults=(nil), kwDefaults=(nil)
+DEBUG: [PC 4] OP 103
+DEBUG: [PC 6] OP 101
+DEBUG: runCodeObject result=0x141
+DEBUG OP_BUILD_CLASS: calling metaclass=0x762bd6ee7880
+DEBUG: reprObject obj=0x762bd6ee7880 class=type
+DEBUG: reprObject out=0x762bd519df06
+DEBUG: invokeCallable callable=0x762bd6ee7880 repr=<class 'type'> class=type
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: py_type executing early unconditional: size=3
+DEBUG: py_type executing unconditional: argCount=3
+DEBUG: py_type called unconditionally self=0x762bd6ee7880 argCount=3
+DEBUG: reprObject obj=0x762bd1edf3c0 class=type
+DEBUG: reprObject out=0x762bd1f05c06
+DEBUG: invokeCallable (__call__) returning result=0x762bd1edf3c0 repr=<_C object at 0x762bd1edf3c0>
+DEBUG OP_BUILD_CLASS: targetClass=0x762bd1edf3c0
+DEBUG: OP_BUILD_CLASS injecting __class__ = 0x762bd1edf3c0 (name=_C) into ns = 0x762bd1d8e940
+DEBUG: [PC 194] OP 103
+DEBUG: [PC 196] OP 102
+DEBUG: resolve BUILTINS name=type obj=0x762bd6ee7880
+DEBUG: [PC 198] OP 102
+DEBUG: [PC 200] OP 106
+DEBUG: OP_CALL_FUNCTION PC 200 callable=0x762bd1edf3c0 argCount=0
+DEBUG: reprObject obj=0x762bd1edf3c0 class=type
+DEBUG: reprObject out=0x762bd1f05c06
+DEBUG: invokeCallable callable=0x762bd1edf3c0 repr=<_C object at 0x762bd1edf3c0> class=type
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: reprObject obj=0x762bd1f13ccc class=type
+DEBUG: reprObject out=0x762bd1f1d446
+DEBUG: invokeCallable callable=0x762bd1f13ccc repr=<method object at 0x762bd1f13ccc> class=type
+DEBUG: reprObject obj=0x762bd1f11280 class=_C
+DEBUG: reprObject out=0x762bd1f26986
+DEBUG: invokeCallable (__call__) returning result=0x762bd1f11280 repr=<_C object at 0x762bd1f11280>
+DEBUG: [PC 202] OP 112
+DEBUG: OP_LOAD_ATTR calling getAttribute env=0x762bd99013c0 obj=0x762bd1f11280 attr=_m
+DEBUG: [PC 204] OP 106
+DEBUG: OP_CALL_FUNCTION PC 204 callable=0x762bd6ee7880 argCount=1
+DEBUG: reprObject obj=0x762bd6ee7880 class=type
+DEBUG: reprObject out=0x762bd519df06
+DEBUG: invokeCallable callable=0x762bd6ee7880 repr=<class 'type'> class=type
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: py_type executing early unconditional: size=1
+DEBUG: py_type executing unconditional: argCount=1
+DEBUG: py_type called unconditionally self=0x762bd6ee7880 argCount=1
+DEBUG: getType priority 1 __class__ match
+DEBUG: reprObject obj=0x762bd6f5ad00 class=type
+DEBUG: reprObject out=0x762bd1f3c686
+DEBUG: invokeCallable (__call__) returning result=0x762bd6f5ad00 repr=<method object at 0x762bd6f5ad00>
+DEBUG: [PC 206] OP 103
+DEBUG: [PC 208] OP 102
+DEBUG: resolve BUILTINS name=type obj=0x762bd6ee7880
+DEBUG: [PC 210] OP 102
+DEBUG: OP_LOAD_NAME(len) resolved: r=0x762bd700308c (PROTO_NONE is 0x141)
+DEBUG: [PC 212] OP 106
+DEBUG: OP_CALL_FUNCTION PC 212 callable=0x762bd6ee7880 argCount=1
+DEBUG: reprObject obj=0x762bd6ee7880 class=type
+DEBUG: reprObject out=0x762bd519df06
+DEBUG: invokeCallable callable=0x762bd6ee7880 repr=<class 'type'> class=type
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: py_type executing early unconditional: size=1
+DEBUG: py_type executing unconditional: argCount=1
+DEBUG: py_type called unconditionally self=0x762bd6ee7880 argCount=1
+DEBUG: getType checking 0 parents
+DEBUG: getType proto fallback
+DEBUG: reprObject obj=0x762bd6f5ad00 class=type
+DEBUG: reprObject out=0x762bd1f3c686
+DEBUG: invokeCallable (__call__) returning result=0x762bd6f5ad00 repr=<method object at 0x762bd6f5ad00>
+DEBUG: [PC 214] OP 103
+DEBUG: [PC 216] OP 102
+DEBUG: resolve BUILTINS name=type obj=0x762bd6ee7880
+DEBUG: [PC 218] OP 114
+DEBUG: [PC 220] OP 112
+DEBUG: OP_LOAD_ATTR calling getAttribute env=0x762bd99013c0 obj=0x762bd1f4f580 attr=append
+DEBUG: [PC 222] OP 106
+DEBUG: OP_CALL_FUNCTION PC 222 callable=0x762bd6ee7880 argCount=1
+DEBUG: reprObject obj=0x762bd6ee7880 class=type
+DEBUG: reprObject out=0x762bd519df06
+DEBUG: invokeCallable callable=0x762bd6ee7880 repr=<class 'type'> class=type
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: py_type executing early unconditional: size=1
+DEBUG: py_type executing unconditional: argCount=1
+DEBUG: py_type called unconditionally self=0x762bd6ee7880 argCount=1
+DEBUG: getType checking 0 parents
+DEBUG: getType proto fallback
+DEBUG: reprObject obj=0x762bd6f5ad00 class=type
+DEBUG: reprObject out=0x762bd1f3c686
+DEBUG: invokeCallable (__call__) returning result=0x762bd6f5ad00 repr=<method object at 0x762bd6f5ad00>
+DEBUG: [PC 224] OP 103
+DEBUG: lnotab entry j=0, pc_offset=4, line_offset=7
+DEBUG: lnotab entry j=2, pc_offset=24, line_offset=1
+DEBUG: lnotab entry j=4, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=6, pc_offset=0, line_offset=1
+DEBUG: lnotab entry j=8, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=10, pc_offset=6, line_offset=1
+DEBUG: lnotab entry j=12, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=14, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=16, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=18, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=20, pc_offset=10, line_offset=2
+DEBUG: lnotab entry j=22, pc_offset=6, line_offset=5
+DEBUG: lnotab entry j=24, pc_offset=10, line_offset=2
+DEBUG: lnotab entry j=26, pc_offset=6, line_offset=2
+DEBUG: lnotab entry j=28, pc_offset=10, line_offset=3
+DEBUG: lnotab entry j=30, pc_offset=14, line_offset=1
+DEBUG: lnotab entry j=32, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=34, pc_offset=8, line_offset=4
+DEBUG: lnotab entry j=36, pc_offset=14, line_offset=1
+DEBUG: lnotab entry j=38, pc_offset=8, line_offset=2
+DEBUG: lnotab entry j=40, pc_offset=14, line_offset=2
+DEBUG: lnotab entry j=42, pc_offset=12, line_offset=2
+DEBUG: lnotab entry j=44, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=46, pc_offset=10, line_offset=2
+DEBUG: [PC 226] OP 102
+DEBUG: resolve BUILTINS name=type obj=0x762bd6ee7880
+DEBUG: [PC 228] OP 102
+DEBUG: resolve BUILTINS name=object obj=0x762bd6ef40c0
+DEBUG: [PC 230] OP 112
+DEBUG: OP_LOAD_ATTR calling getAttribute env=0x762bd99013c0 obj=0x762bd6ef40c0 attr=__init__
+DEBUG: [PC 232] OP 106
+DEBUG: OP_CALL_FUNCTION PC 232 callable=0x762bd6ee7880 argCount=1
+DEBUG: reprObject obj=0x762bd6ee7880 class=type
+DEBUG: reprObject out=0x762bd519df06
+DEBUG: invokeCallable callable=0x762bd6ee7880 repr=<class 'type'> class=type
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: py_type executing early unconditional: size=1
+DEBUG: py_type executing unconditional: argCount=1
+DEBUG: py_type called unconditionally self=0x762bd6ee7880 argCount=1
+DEBUG: getType checking 0 parents
+DEBUG: getType proto fallback
+DEBUG: reprObject obj=0x762bd6f5ad00 class=type
+DEBUG: reprObject out=0x762bd1f3c686
+DEBUG: invokeCallable (__call__) returning result=0x762bd6f5ad00 repr=<method object at 0x762bd6f5ad00>
+DEBUG: [PC 234] OP 103
+DEBUG: [PC 236] OP 102
+DEBUG: resolve BUILTINS name=type obj=0x762bd6ee7880
+DEBUG: [PC 238] OP 102
+DEBUG: resolve BUILTINS name=object obj=0x762bd6ef40c0
+DEBUG: [PC 240] OP 106
+DEBUG: OP_CALL_FUNCTION PC 240 callable=0x762bd6ef40c0 argCount=0
+DEBUG: reprObject obj=0x762bd6ef40c0 class=type
+DEBUG: reprObject out=0x762bd51d42c6
+DEBUG: invokeCallable callable=0x762bd6ef40c0 repr=<object object at 0x762bd6ef40c0> class=type
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: reprObject obj=0x762bd1f818c0 class=object
+DEBUG: reprObject out=0x762bd1f8d446
+DEBUG: invokeCallable (__call__) returning result=0x762bd1f818c0 repr=<object object at 0x762bd1f818c0>
+DEBUG: [PC 242] OP 112
+DEBUG: OP_LOAD_ATTR calling getAttribute env=0x762bd99013c0 obj=0x762bd1f818c0 attr=__str__
+DEBUG: [PC 244] OP 106
+DEBUG: OP_CALL_FUNCTION PC 244 callable=0x762bd6ee7880 argCount=1
+DEBUG: reprObject obj=0x762bd6ee7880 class=type
+DEBUG: reprObject out=0x762bd519df06
+DEBUG: invokeCallable callable=0x762bd6ee7880 repr=<class 'type'> class=type
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: py_type executing early unconditional: size=1
+DEBUG: py_type executing unconditional: argCount=1
+DEBUG: py_type called unconditionally self=0x762bd6ee7880 argCount=1
+DEBUG: getType checking 0 parents
+DEBUG: getType proto fallback
+DEBUG: reprObject obj=0x762bd6f5ad00 class=type
+DEBUG: reprObject out=0x762bd1f3c686
+DEBUG: invokeCallable (__call__) returning result=0x762bd6f5ad00 repr=<method object at 0x762bd6f5ad00>
+DEBUG: [PC 246] OP 103
+DEBUG: [PC 248] OP 102
+DEBUG: resolve BUILTINS name=type obj=0x762bd6ee7880
+DEBUG: [PC 250] OP 102
+DEBUG: [PC 252] OP 112
+DEBUG: OP_LOAD_ATTR calling getAttribute env=0x762bd99013c0 obj=0x762bd6efffc0 attr=join
+DEBUG: [PC 254] OP 106
+DEBUG: OP_CALL_FUNCTION PC 254 callable=0x762bd6ee7880 argCount=1
+DEBUG: reprObject obj=0x762bd6ee7880 class=type
+DEBUG: reprObject out=0x762bd519df06
+DEBUG: invokeCallable callable=0x762bd6ee7880 repr=<class 'type'> class=type
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: py_type executing early unconditional: size=1
+DEBUG: py_type executing unconditional: argCount=1
+DEBUG: py_type called unconditionally self=0x762bd6ee7880 argCount=1
+DEBUG: getType checking 0 parents
+DEBUG: getType proto fallback
+DEBUG: reprObject obj=0x762bd6f5ad00 class=type
+DEBUG: reprObject out=0x762bd1f3c686
+DEBUG: invokeCallable (__call__) returning result=0x762bd6f5ad00 repr=<method object at 0x762bd6f5ad00>
+DEBUG: [PC 256] OP 103
+DEBUG: lnotab entry j=0, pc_offset=4, line_offset=7
+DEBUG: lnotab entry j=2, pc_offset=24, line_offset=1
+DEBUG: lnotab entry j=4, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=6, pc_offset=0, line_offset=1
+DEBUG: lnotab entry j=8, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=10, pc_offset=6, line_offset=1
+DEBUG: lnotab entry j=12, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=14, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=16, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=18, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=20, pc_offset=10, line_offset=2
+DEBUG: lnotab entry j=22, pc_offset=6, line_offset=5
+DEBUG: lnotab entry j=24, pc_offset=10, line_offset=2
+DEBUG: lnotab entry j=26, pc_offset=6, line_offset=2
+DEBUG: lnotab entry j=28, pc_offset=10, line_offset=3
+DEBUG: lnotab entry j=30, pc_offset=14, line_offset=1
+DEBUG: lnotab entry j=32, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=34, pc_offset=8, line_offset=4
+DEBUG: lnotab entry j=36, pc_offset=14, line_offset=1
+DEBUG: lnotab entry j=38, pc_offset=8, line_offset=2
+DEBUG: lnotab entry j=40, pc_offset=14, line_offset=2
+DEBUG: lnotab entry j=42, pc_offset=12, line_offset=2
+DEBUG: lnotab entry j=44, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=46, pc_offset=10, line_offset=2
+DEBUG: lnotab entry j=48, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=50, pc_offset=12, line_offset=1
+DEBUG: lnotab entry j=52, pc_offset=10, line_offset=1
+DEBUG: [PC 258] OP 102
+DEBUG: resolve BUILTINS name=type obj=0x762bd6ee7880
+DEBUG: [PC 260] OP 102
+DEBUG: [PC 262] OP 112
+DEBUG: OP_LOAD_ATTR calling getAttribute env=0x762bd99013c0 obj=0x762bd6f24d80 attr=__dict__
+DEBUG: [PC 264] OP 100
+DEBUG: LOAD_CONST arg=14 val=0x762bd6f2bb46 repr=fromkeys
+DEBUG: [PC 266] OP 115
+DEBUG: reprObject obj=0x762bd1fb7500 class=type
+DEBUG: reprObject obj=0x762bd6f24d80 class=type
+DEBUG: reprObject out=0x762bd1fc6bc6
+DEBUG: reprObject out=0x762bd1fc9bc6
+DEBUG: OP_BINARY_SUBSCR container=0x762bd1fb7500 repr=mappingproxy(<class 'dict'>) key=0x762bd6f2bb46 repr=fromkeys
+DEBUG: OP_BINARY_SUBSCR result=0x762bd6f2b28c
+DEBUG: [PC 268] OP 106
+DEBUG: OP_CALL_FUNCTION PC 268 callable=0x762bd6ee7880 argCount=1
+DEBUG: reprObject obj=0x762bd6ee7880 class=type
+DEBUG: reprObject out=0x762bd519df06
+DEBUG: invokeCallable callable=0x762bd6ee7880 repr=<class 'type'> class=type
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: py_type executing early unconditional: size=1
+DEBUG: py_type executing unconditional: argCount=1
+DEBUG: py_type called unconditionally self=0x762bd6ee7880 argCount=1
+DEBUG: getType checking 0 parents
+DEBUG: getType proto fallback
+DEBUG: reprObject obj=0x762bd6f5ad00 class=type
+DEBUG: reprObject out=0x762bd1f3c686
+DEBUG: invokeCallable (__call__) returning result=0x762bd6f5ad00 repr=<method object at 0x762bd6f5ad00>
+DEBUG: [PC 270] OP 103
+DEBUG: [PC 272] OP 102
+DEBUG: resolve BUILTINS name=type obj=0x762bd6ee7880
+DEBUG: [PC 274] OP 102
+DEBUG: [PC 276] OP 106
+DEBUG: OP_CALL_FUNCTION PC 276 callable=0x762bd6ee7880 argCount=1
+DEBUG: reprObject obj=0x762bd6ee7880 class=type
+DEBUG: reprObject out=0x762bd519df06
+DEBUG: invokeCallable callable=0x762bd6ee7880 repr=<class 'type'> class=type
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: py_type executing early unconditional: size=1
+DEBUG: py_type executing unconditional: argCount=1
+DEBUG: py_type called unconditionally self=0x762bd6ee7880 argCount=1
+DEBUG: getType priority 1 __class__ match
+DEBUG: reprObject obj=0x762bd6f58e00 class=type
+DEBUG: reprObject out=0x762bd1fecb46
+DEBUG: invokeCallable (__call__) returning result=0x762bd6f58e00 repr=<module object at 0x762bd6f58e00>
+DEBUG: [PC 278] OP 103
+DEBUG: [PC 280] OP 177
+DEBUG: SETUP_FINALLY handler pc 292, stack.top 0
+DEBUG: [PC 282] OP 102
+DEBUG: [PC 284] OP 166
+DEBUG: [PC 284] OP 166
+DEBUG: lnotab entry j=0, pc_offset=4, line_offset=7
+DEBUG: lnotab entry j=2, pc_offset=24, line_offset=1
+DEBUG: lnotab entry j=4, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=6, pc_offset=0, line_offset=1
+DEBUG: lnotab entry j=8, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=10, pc_offset=6, line_offset=1
+DEBUG: lnotab entry j=12, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=14, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=16, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=18, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=20, pc_offset=10, line_offset=2
+DEBUG: lnotab entry j=22, pc_offset=6, line_offset=5
+DEBUG: lnotab entry j=24, pc_offset=10, line_offset=2
+DEBUG: lnotab entry j=26, pc_offset=6, line_offset=2
+DEBUG: lnotab entry j=28, pc_offset=10, line_offset=3
+DEBUG: lnotab entry j=30, pc_offset=14, line_offset=1
+DEBUG: lnotab entry j=32, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=34, pc_offset=8, line_offset=4
+DEBUG: lnotab entry j=36, pc_offset=14, line_offset=1
+DEBUG: lnotab entry j=38, pc_offset=8, line_offset=2
+DEBUG: lnotab entry j=40, pc_offset=14, line_offset=2
+DEBUG: lnotab entry j=42, pc_offset=12, line_offset=2
+DEBUG: lnotab entry j=44, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=46, pc_offset=10, line_offset=2
+DEBUG: lnotab entry j=48, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=50, pc_offset=12, line_offset=1
+DEBUG: lnotab entry j=52, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=54, pc_offset=14, line_offset=2
+DEBUG: lnotab entry j=56, pc_offset=8, line_offset=3
+DEBUG: lnotab entry j=58, pc_offset=12, line_offset=1
+DEBUG: Exception TypeError at lib/python3.14/types.py:58 (PC 284)
+DEBUG: Exception message: ''
+DEBUG: raw exception pointer 0x762bd1fede80
+DEBUG: Calling addTraceback...
+DEBUG: addTraceback exc=0x762bd1fede80 frame=0x762bd4a13b00 lasti=284 lineno=58
+DEBUG: addTraceback currentTb=0x141
+DEBUG: addTraceback newTb=0x762bd51f06c0
+DEBUG: addTraceback updatedExc=0x762bd1fede80
+DEBUG: addTraceback returned. blockStack.empty()=false
+DEBUG: Popping block: handlerPc=292 stackDepth=0
+DEBUG: Cleaning stack: current size=0, target size=0
+DEBUG: Pushing exception 0x762bd1fede80 back to stack
+DEBUG: Jumping to handlerPc=292
+DEBUG: [PC 292] OP 102
+DEBUG: [PC 294] OP 190
+DEBUG: OP_EXCEPTION_MATCH exc 0x762bd1fede80 vs type 0x762bd7064240 -> 1
+DEBUG: [PC 296] OP 110
+DEBUG: [PC 298] OP 103
+DEBUG: [PC 300] OP 102
+DEBUG: resolve BUILTINS name=type obj=0x762bd6ee7880
+DEBUG: [PC 302] OP 102
+DEBUG: [PC 304] OP 112
+DEBUG: OP_LOAD_ATTR calling getAttribute env=0x762bd99013c0 obj=0x762bd1fede80 attr=__traceback__
+DEBUG: [PC 306] OP 106
+DEBUG: OP_CALL_FUNCTION PC 306 callable=0x762bd6ee7880 argCount=1
+DEBUG: reprObject obj=0x762bd6ee7880 class=type
+DEBUG: reprObject out=0x762bd519df06
+DEBUG: invokeCallable callable=0x762bd6ee7880 repr=<class 'type'> class=type
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: py_type executing early unconditional: size=1
+DEBUG: py_type executing unconditional: argCount=1
+DEBUG: py_type called unconditionally self=0x762bd6ee7880 argCount=1
+DEBUG: getType priority 1 __class__ match
+DEBUG: reprObject obj=0x762bd6f5b500 class=type
+DEBUG: reprObject out=0x762bd200c986
+DEBUG: invokeCallable (__call__) returning result=0x762bd6f5b500 repr=<traceback object at 0x762bd6f5b500>
+DEBUG: [PC 308] OP 103
+DEBUG: [PC 310] OP 102
+DEBUG: resolve BUILTINS name=type obj=0x762bd6ee7880
+DEBUG: [PC 312] OP 102
+DEBUG: [PC 314] OP 112
+DEBUG: OP_LOAD_ATTR calling getAttribute env=0x762bd99013c0 obj=0x762bd1fede80 attr=__traceback__
+DEBUG: [PC 316] OP 112
+DEBUG: OP_LOAD_ATTR calling getAttribute env=0x762bd99013c0 obj=0x762bd51f06c0 attr=tb_frame
+DEBUG: [PC 318] OP 106
+DEBUG: OP_CALL_FUNCTION PC 318 callable=0x762bd6ee7880 argCount=1
+DEBUG: reprObject obj=0x762bd6ee7880 class=type
+DEBUG: reprObject out=0x762bd519df06
+DEBUG: invokeCallable callable=0x762bd6ee7880 repr=<class 'type'> class=type
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: py_type executing early unconditional: size=1
+DEBUG: py_type executing unconditional: argCount=1
+DEBUG: py_type called unconditionally self=0x762bd6ee7880 argCount=1
+DEBUG: getType priority 1 __class__ match
+DEBUG: reprObject obj=0x762bd6f58e00 class=type
+DEBUG: reprObject out=0x762bd1fecb46
+DEBUG: invokeCallable (__call__) returning result=0x762bd6f58e00 repr=<module object at 0x762bd6f58e00>
+DEBUG: [PC 320] OP 103
+DEBUG: lnotab entry j=0, pc_offset=4, line_offset=7
+DEBUG: lnotab entry j=2, pc_offset=24, line_offset=1
+DEBUG: lnotab entry j=4, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=6, pc_offset=0, line_offset=1
+DEBUG: lnotab entry j=8, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=10, pc_offset=6, line_offset=1
+DEBUG: lnotab entry j=12, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=14, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=16, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=18, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=20, pc_offset=10, line_offset=2
+DEBUG: lnotab entry j=22, pc_offset=6, line_offset=5
+DEBUG: lnotab entry j=24, pc_offset=10, line_offset=2
+DEBUG: lnotab entry j=26, pc_offset=6, line_offset=2
+DEBUG: lnotab entry j=28, pc_offset=10, line_offset=3
+DEBUG: lnotab entry j=30, pc_offset=14, line_offset=1
+DEBUG: lnotab entry j=32, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=34, pc_offset=8, line_offset=4
+DEBUG: lnotab entry j=36, pc_offset=14, line_offset=1
+DEBUG: lnotab entry j=38, pc_offset=8, line_offset=2
+DEBUG: lnotab entry j=40, pc_offset=14, line_offset=2
+DEBUG: lnotab entry j=42, pc_offset=12, line_offset=2
+DEBUG: lnotab entry j=44, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=46, pc_offset=10, line_offset=2
+DEBUG: lnotab entry j=48, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=50, pc_offset=12, line_offset=1
+DEBUG: lnotab entry j=52, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=54, pc_offset=14, line_offset=2
+DEBUG: lnotab entry j=56, pc_offset=8, line_offset=3
+DEBUG: lnotab entry j=58, pc_offset=12, line_offset=1
+DEBUG: lnotab entry j=60, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=62, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=64, pc_offset=16, line_offset=2
+DEBUG: [PC 322] OP 111
+DEBUG: [PC 326] OP 102
+DEBUG: resolve BUILTINS name=type obj=0x762bd6ee7880
+DEBUG: [PC 328] OP 102
+DEBUG: [PC 330] OP 112
+DEBUG: OP_LOAD_ATTR calling getAttribute env=0x762bd99013c0 obj=0x762bd6ef6b00 attr=__code__
+DEBUG: [PC 332] OP 106
+DEBUG: OP_CALL_FUNCTION PC 332 callable=0x762bd6ee7880 argCount=1
+DEBUG: reprObject obj=0x762bd6ee7880 class=type
+DEBUG: reprObject out=0x762bd519df06
+DEBUG: invokeCallable callable=0x762bd6ee7880 repr=<class 'type'> class=type
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: py_type executing early unconditional: size=1
+DEBUG: py_type executing unconditional: argCount=1
+DEBUG: py_type called unconditionally self=0x762bd6ee7880 argCount=1
+DEBUG: reprObject obj=0x762bd6f4f880 class=type
+DEBUG: reprObject out=0x19776f9d101
+DEBUG: invokeCallable (__call__) returning result=0x762bd6f4f880 repr=None
+DEBUG: [PC 334] OP 103
+DEBUG: [PC 336] OP 102
+DEBUG: resolve BUILTINS name=type obj=0x762bd6ee7880
+DEBUG: [PC 338] OP 102
+DEBUG: [PC 340] OP 112
+DEBUG: OP_LOAD_ATTR calling getAttribute env=0x762bd99013c0 obj=0x762bd6ef6b00 attr=__globals__
+DEBUG: [PC 342] OP 106
+DEBUG: OP_CALL_FUNCTION PC 342 callable=0x762bd6ee7880 argCount=1
+DEBUG: reprObject obj=0x762bd6ee7880 class=type
+DEBUG: reprObject out=0x762bd519df06
+DEBUG: invokeCallable callable=0x762bd6ee7880 repr=<class 'type'> class=type
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: py_type executing early unconditional: size=1
+DEBUG: py_type executing unconditional: argCount=1
+DEBUG: py_type called unconditionally self=0x762bd6ee7880 argCount=1
+DEBUG: reprObject obj=0x762bd6f4f880 class=type
+DEBUG: reprObject out=0x19776f9d101
+DEBUG: invokeCallable (__call__) returning result=0x762bd6f4f880 repr=None
+DEBUG: [PC 344] OP 103
+DEBUG: [PC 346] OP 102
+DEBUG: resolve BUILTINS name=type obj=0x762bd6ee7880
+DEBUG: [PC 348] OP 102
+DEBUG: [PC 350] OP 102
+DEBUG: [PC 352] OP 115
+DEBUG: lnotab entry j=0, pc_offset=4, line_offset=7
+DEBUG: lnotab entry j=2, pc_offset=24, line_offset=1
+DEBUG: lnotab entry j=4, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=6, pc_offset=0, line_offset=1
+DEBUG: lnotab entry j=8, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=10, pc_offset=6, line_offset=1
+DEBUG: lnotab entry j=12, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=14, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=16, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=18, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=20, pc_offset=10, line_offset=2
+DEBUG: lnotab entry j=22, pc_offset=6, line_offset=5
+DEBUG: lnotab entry j=24, pc_offset=10, line_offset=2
+DEBUG: lnotab entry j=26, pc_offset=6, line_offset=2
+DEBUG: lnotab entry j=28, pc_offset=10, line_offset=3
+DEBUG: lnotab entry j=30, pc_offset=14, line_offset=1
+DEBUG: lnotab entry j=32, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=34, pc_offset=8, line_offset=4
+DEBUG: lnotab entry j=36, pc_offset=14, line_offset=1
+DEBUG: lnotab entry j=38, pc_offset=8, line_offset=2
+DEBUG: lnotab entry j=40, pc_offset=14, line_offset=2
+DEBUG: lnotab entry j=42, pc_offset=12, line_offset=2
+DEBUG: lnotab entry j=44, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=46, pc_offset=10, line_offset=2
+DEBUG: lnotab entry j=48, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=50, pc_offset=12, line_offset=1
+DEBUG: lnotab entry j=52, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=54, pc_offset=14, line_offset=2
+DEBUG: lnotab entry j=56, pc_offset=8, line_offset=3
+DEBUG: lnotab entry j=58, pc_offset=12, line_offset=1
+DEBUG: lnotab entry j=60, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=62, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=64, pc_offset=16, line_offset=2
+DEBUG: lnotab entry j=66, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=68, pc_offset=10, line_offset=2
+DEBUG: lnotab entry j=70, pc_offset=12, line_offset=1
+DEBUG: reprObject obj=0x762bd6ef7bc0 class=type
+DEBUG: reprObject out=0x762bd204ed86
+DEBUG: reprObject obj=0x762bd6f17b80 class=type
+DEBUG: reprObject out=0x762bd53994c6
+DEBUG: OP_BINARY_SUBSCR container=0x762bd6f17b80 repr=<class 'list'> key=0x762bd6ef7bc0 repr=<class 'int'>
+DEBUG: OP_BINARY_SUBSCR result=0x762bd6f17b80
+DEBUG: [PC 354] OP 106
+DEBUG: OP_CALL_FUNCTION PC 354 callable=0x762bd6ee7880 argCount=1
+DEBUG: reprObject obj=0x762bd6ee7880 class=type
+DEBUG: reprObject out=0x762bd519df06
+DEBUG: invokeCallable callable=0x762bd6ee7880 repr=<class 'type'> class=type
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: py_type executing early unconditional: size=1
+DEBUG: py_type executing unconditional: argCount=1
+DEBUG: py_type called unconditionally self=0x762bd6ee7880 argCount=1
+DEBUG: getType priority 1 __class__ match
+DEBUG: reprObject obj=0x762bd6ee7880 class=type
+DEBUG: reprObject out=0x762bd519df06
+DEBUG: invokeCallable (__call__) returning result=0x762bd6ee7880 repr=<class 'type'>
+DEBUG: [PC 356] OP 103
+DEBUG: [PC 358] OP 102
+DEBUG: resolve BUILTINS name=type obj=0x762bd6ee7880
+DEBUG: [PC 360] OP 102
+DEBUG: [PC 362] OP 102
+DEBUG: [PC 364] OP 141
+DEBUG: [PC 366] OP 106
+DEBUG: OP_CALL_FUNCTION PC 366 callable=0x762bd6ee7880 argCount=1
+DEBUG: reprObject obj=0x762bd6ee7880 class=type
+DEBUG: reprObject out=0x762bd519df06
+DEBUG: invokeCallable callable=0x762bd6ee7880 repr=<class 'type'> class=type
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: py_type executing early unconditional: size=1
+DEBUG: py_type executing unconditional: argCount=1
+DEBUG: py_type called unconditionally self=0x762bd6ee7880 argCount=1
+DEBUG: getType checking 2 parents
+DEBUG: getType returning parent 0 as class
+DEBUG: reprObject obj=0x762bd6eed980 class=type
+DEBUG: reprObject out=0x762bd6eee646
+DEBUG: invokeCallable (__call__) returning result=0x762bd6eed980 repr=UnionType
+DEBUG: [PC 368] OP 103
+DEBUG: [PC 370] OP 102
+DEBUG: resolve BUILTINS name=type obj=0x762bd6ee7880
+DEBUG: [PC 372] OP 102
+DEBUG: [PC 374] OP 106
+DEBUG: OP_CALL_FUNCTION PC 374 callable=0x762bd6ee7880 argCount=1
+DEBUG: reprObject obj=0x762bd6ee7880 class=type
+DEBUG: reprObject out=0x762bd519df06
+DEBUG: invokeCallable callable=0x762bd6ee7880 repr=<class 'type'> class=type
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: py_type executing early unconditional: size=1
+DEBUG: py_type executing unconditional: argCount=1
+DEBUG: py_type called unconditionally self=0x762bd6ee7880 argCount=1
+DEBUG: getType priority 1 __class__ match
+DEBUG: reprObject obj=0x762bd6f514c0 class=type
+DEBUG: invokeCallable (__call__) returning result=0x762bd6f514c0 repr=<object>
+DEBUG: [PC 376] OP 103
+DEBUG: [PC 378] OP 102
+DEBUG: resolve BUILTINS name=type obj=0x762bd6ee7880
+DEBUG: [PC 380] OP 100
+DEBUG: LOAD_CONST arg=2 val=0x141 repr=None
+DEBUG: [PC 382] OP 106
+DEBUG: OP_CALL_FUNCTION PC 382 callable=0x762bd6ee7880 argCount=1
+DEBUG: reprObject obj=0x762bd6ee7880 class=type
+DEBUG: reprObject out=0x762bd519df06
+DEBUG: invokeCallable callable=0x762bd6ee7880 repr=<class 'type'> class=type
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: py_type executing early unconditional: size=1
+DEBUG: py_type executing unconditional: argCount=1
+DEBUG: py_type called unconditionally self=0x762bd6ee7880 argCount=1
+DEBUG: reprObject obj=0x762bd6f4f880 class=type
+DEBUG: reprObject out=0x19776f9d101
+DEBUG: invokeCallable (__call__) returning result=0x762bd6f4f880 repr=None
+DEBUG: [PC 384] OP 103
+DEBUG: lnotab entry j=0, pc_offset=4, line_offset=7
+DEBUG: lnotab entry j=2, pc_offset=24, line_offset=1
+DEBUG: lnotab entry j=4, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=6, pc_offset=0, line_offset=1
+DEBUG: lnotab entry j=8, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=10, pc_offset=6, line_offset=1
+DEBUG: lnotab entry j=12, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=14, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=16, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=18, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=20, pc_offset=10, line_offset=2
+DEBUG: lnotab entry j=22, pc_offset=6, line_offset=5
+DEBUG: lnotab entry j=24, pc_offset=10, line_offset=2
+DEBUG: lnotab entry j=26, pc_offset=6, line_offset=2
+DEBUG: lnotab entry j=28, pc_offset=10, line_offset=3
+DEBUG: lnotab entry j=30, pc_offset=14, line_offset=1
+DEBUG: lnotab entry j=32, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=34, pc_offset=8, line_offset=4
+DEBUG: lnotab entry j=36, pc_offset=14, line_offset=1
+DEBUG: lnotab entry j=38, pc_offset=8, line_offset=2
+DEBUG: lnotab entry j=40, pc_offset=14, line_offset=2
+DEBUG: lnotab entry j=42, pc_offset=12, line_offset=2
+DEBUG: lnotab entry j=44, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=46, pc_offset=10, line_offset=2
+DEBUG: lnotab entry j=48, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=50, pc_offset=12, line_offset=1
+DEBUG: lnotab entry j=52, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=54, pc_offset=14, line_offset=2
+DEBUG: lnotab entry j=56, pc_offset=8, line_offset=3
+DEBUG: lnotab entry j=58, pc_offset=12, line_offset=1
+DEBUG: lnotab entry j=60, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=62, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=64, pc_offset=16, line_offset=2
+DEBUG: lnotab entry j=66, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=68, pc_offset=10, line_offset=2
+DEBUG: lnotab entry j=70, pc_offset=12, line_offset=1
+DEBUG: lnotab entry j=72, pc_offset=12, line_offset=2
+DEBUG: lnotab entry j=74, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=76, pc_offset=8, line_offset=1
+DEBUG: [PC 386] OP 102
+DEBUG: resolve BUILTINS name=type obj=0x762bd6ee7880
+DEBUG: [PC 388] OP 102
+DEBUG: [PC 390] OP 106
+DEBUG: OP_CALL_FUNCTION PC 390 callable=0x762bd6ee7880 argCount=1
+DEBUG: reprObject obj=0x762bd6ee7880 class=type
+DEBUG: reprObject out=0x762bd519df06
+DEBUG: invokeCallable callable=0x762bd6ee7880 repr=<class 'type'> class=type
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: py_type executing early unconditional: size=1
+DEBUG: py_type executing unconditional: argCount=1
+DEBUG: py_type called unconditionally self=0x762bd6ee7880 argCount=1
+DEBUG: getType priority 1 __class__ match
+DEBUG: reprObject obj=0x762bd6f53900 class=type
+DEBUG: invokeCallable (__call__) returning result=0x762bd6f53900 repr=<object>
+DEBUG: [PC 392] OP 103
+DEBUG: [PC 394] OP 161
+DEBUG: [PC 396] OP 161
+DEBUG: [PC 398] OP 161
+DEBUG: [PC 400] OP 161
+DEBUG: [PC 402] OP 161
+DEBUG: [PC 404] OP 161
+DEBUG: [PC 406] OP 161
+DEBUG: [PC 408] OP 111
+DEBUG: [PC 412] OP 100
+DEBUG: reprObject obj=0x762bd4b1fa00 class=NoneType
+DEBUG: LOAD_CONST arg=15 val=0x762bd4b1fa00 repr=<object>
+DEBUG: [PC 414] OP 118
+DEBUG: [PC 416] OP 100
+DEBUG: lnotab entry j=0, pc_offset=4, line_offset=7
+DEBUG: lnotab entry j=2, pc_offset=24, line_offset=1
+DEBUG: lnotab entry j=4, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=6, pc_offset=0, line_offset=1
+DEBUG: lnotab entry j=8, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=10, pc_offset=6, line_offset=1
+DEBUG: lnotab entry j=12, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=14, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=16, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=18, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=20, pc_offset=10, line_offset=2
+DEBUG: lnotab entry j=22, pc_offset=6, line_offset=5
+DEBUG: lnotab entry j=24, pc_offset=10, line_offset=2
+DEBUG: lnotab entry j=26, pc_offset=6, line_offset=2
+DEBUG: lnotab entry j=28, pc_offset=10, line_offset=3
+DEBUG: lnotab entry j=30, pc_offset=14, line_offset=1
+DEBUG: lnotab entry j=32, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=34, pc_offset=8, line_offset=4
+DEBUG: lnotab entry j=36, pc_offset=14, line_offset=1
+DEBUG: lnotab entry j=38, pc_offset=8, line_offset=2
+DEBUG: lnotab entry j=40, pc_offset=14, line_offset=2
+DEBUG: lnotab entry j=42, pc_offset=12, line_offset=2
+DEBUG: lnotab entry j=44, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=46, pc_offset=10, line_offset=2
+DEBUG: lnotab entry j=48, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=50, pc_offset=12, line_offset=1
+DEBUG: lnotab entry j=52, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=54, pc_offset=14, line_offset=2
+DEBUG: lnotab entry j=56, pc_offset=8, line_offset=3
+DEBUG: lnotab entry j=58, pc_offset=12, line_offset=1
+DEBUG: lnotab entry j=60, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=62, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=64, pc_offset=16, line_offset=2
+DEBUG: lnotab entry j=66, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=68, pc_offset=10, line_offset=2
+DEBUG: lnotab entry j=70, pc_offset=12, line_offset=1
+DEBUG: lnotab entry j=72, pc_offset=12, line_offset=2
+DEBUG: lnotab entry j=74, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=76, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=78, pc_offset=8, line_offset=5
+DEBUG: lnotab entry j=80, pc_offset=18, line_offset=4
+DEBUG: lnotab entry j=82, pc_offset=14, line_offset=10
+DEBUG: LOAD_CONST arg=2 val=0x141 repr=None
+DEBUG: [PC 418] OP 100
+DEBUG: LOAD_CONST arg=2 val=0x141 repr=None
+DEBUG: [PC 420] OP 118
+DEBUG: [PC 422] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd4a13b00, defaults=0x762bd20ae440, kwDefaults=(nil)
+DEBUG: [PC 424] OP 103
+DEBUG: [PC 426] OP 100
+DEBUG: reprObject obj=0x762bd4b65cc0 class=NoneType
+DEBUG: LOAD_CONST arg=16 val=0x762bd4b65cc0 repr=<object>
+DEBUG: [PC 428] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd4a13b00, defaults=(nil), kwDefaults=(nil)
+DEBUG: [PC 430] OP 103
+DEBUG: [PC 432] OP 100
+DEBUG: reprObject obj=0x762bd4bde180 class=NoneType
+DEBUG: LOAD_CONST arg=17 val=0x762bd4bde180 repr=<object>
+DEBUG: [PC 434] OP 118
+DEBUG: [PC 436] OP 100
+DEBUG: LOAD_CONST arg=2 val=0x141 repr=None
+DEBUG: [PC 438] OP 118
+DEBUG: [PC 440] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd4a13b00, defaults=0x762bd20be780, kwDefaults=(nil)
+DEBUG: [PC 442] OP 103
+DEBUG: [PC 444] OP 100
+DEBUG: reprObject obj=0x762bd4c18440 class=NoneType
+DEBUG: LOAD_CONST arg=18 val=0x762bd4c18440 repr=<object>
+DEBUG: [PC 446] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd4a13b00, defaults=(nil), kwDefaults=(nil)
+DEBUG: [PC 448] OP 103
+DEBUG: lnotab entry j=0, pc_offset=4, line_offset=7
+DEBUG: lnotab entry j=2, pc_offset=24, line_offset=1
+DEBUG: lnotab entry j=4, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=6, pc_offset=0, line_offset=1
+DEBUG: lnotab entry j=8, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=10, pc_offset=6, line_offset=1
+DEBUG: lnotab entry j=12, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=14, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=16, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=18, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=20, pc_offset=10, line_offset=2
+DEBUG: lnotab entry j=22, pc_offset=6, line_offset=5
+DEBUG: lnotab entry j=24, pc_offset=10, line_offset=2
+DEBUG: lnotab entry j=26, pc_offset=6, line_offset=2
+DEBUG: lnotab entry j=28, pc_offset=10, line_offset=3
+DEBUG: lnotab entry j=30, pc_offset=14, line_offset=1
+DEBUG: lnotab entry j=32, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=34, pc_offset=8, line_offset=4
+DEBUG: lnotab entry j=36, pc_offset=14, line_offset=1
+DEBUG: lnotab entry j=38, pc_offset=8, line_offset=2
+DEBUG: lnotab entry j=40, pc_offset=14, line_offset=2
+DEBUG: lnotab entry j=42, pc_offset=12, line_offset=2
+DEBUG: lnotab entry j=44, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=46, pc_offset=10, line_offset=2
+DEBUG: lnotab entry j=48, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=50, pc_offset=12, line_offset=1
+DEBUG: lnotab entry j=52, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=54, pc_offset=14, line_offset=2
+DEBUG: lnotab entry j=56, pc_offset=8, line_offset=3
+DEBUG: lnotab entry j=58, pc_offset=12, line_offset=1
+DEBUG: lnotab entry j=60, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=62, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=64, pc_offset=16, line_offset=2
+DEBUG: lnotab entry j=66, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=68, pc_offset=10, line_offset=2
+DEBUG: lnotab entry j=70, pc_offset=12, line_offset=1
+DEBUG: lnotab entry j=72, pc_offset=12, line_offset=2
+DEBUG: lnotab entry j=74, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=76, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=78, pc_offset=8, line_offset=5
+DEBUG: lnotab entry j=80, pc_offset=18, line_offset=4
+DEBUG: lnotab entry j=82, pc_offset=14, line_offset=10
+DEBUG: lnotab entry j=84, pc_offset=6, line_offset=21
+DEBUG: lnotab entry j=86, pc_offset=12, line_offset=32
+DEBUG: lnotab entry j=88, pc_offset=6, line_offset=18
+DEBUG: [PC 450] OP 100
+DEBUG: reprObject obj=0x762bd4cc6a80 class=NoneType
+DEBUG: LOAD_CONST arg=19 val=0x762bd4cc6a80 repr=<object>
+DEBUG: [PC 452] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd4a13b00, defaults=(nil), kwDefaults=(nil)
+DEBUG: [PC 454] OP 103
+DEBUG: [PC 456] OP 100
+DEBUG: LOAD_CONST arg=20 val=0x762bd4cd9206 repr=DynamicClassAttribute
+DEBUG: [PC 458] OP 118
+DEBUG: [PC 460] OP 100
+DEBUG: LOAD_CONST arg=2 val=0x141 repr=None
+DEBUG: [PC 462] OP 100
+DEBUG: reprObject obj=0x762bd4e38a80 class=NoneType
+DEBUG: LOAD_CONST arg=21 val=0x762bd4e38a80 repr=<object>
+DEBUG: [PC 464] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd4a13b00, defaults=(nil), kwDefaults=(nil)
+DEBUG: [PC 466] OP 160
+DEBUG OP_BUILD_CLASS: metaclass=0x762bd6ee7880 (PROTO_NONE=0x141)
+DEBUG OP_BUILD_CLASS: metaclass name='type'
+DEBUG: reprObject obj=0x762bd20d930c class=type
+DEBUG: reprObject out=0x762bd20e2b86
+DEBUG: invokeCallable callable=0x762bd20d930c repr=<method object at 0x762bd20d930c> class=type
+DEBUG: runCodeObject co_code size=62 co_consts size=9 stackOffset=0
+DEBUG: [PC 0] OP 100
+DEBUG: LOAD_CONST arg=0 val=0x762bd4d5d146 repr=Route attribute access on a class to __getattr__.
+
+    This is a descriptor, used to define attributes that act differently when
+    accessed through an instance and through a class.  Instance access remains
+    normal, but access to an attribute through a class will be routed to the
+    class's __getattr__ method; this is done by raising AttributeError.
+
+    This allows one to have properties active on an instance, and have virtual
+    attributes on the class with the same name.  (Enum used this between Python
+    versions 3.4 - 3.9 .)
+
+    Subclass from this to use a different method of accessing virtual attributes
+    and still be treated properly by the inspect module. (Enum uses this since
+    Python 3.10 .)
+
+    
+DEBUG: [PC 2] OP 133
+DEBUG: [PC 4] OP 100
+DEBUG: reprObject obj=0x762bd4d78e80 class=NoneType
+DEBUG: LOAD_CONST arg=1 val=0x762bd4d78e80 repr=<object>
+DEBUG: [PC 6] OP 100
+DEBUG: LOAD_CONST arg=2 val=0x141 repr=None
+DEBUG: [PC 8] OP 100
+DEBUG: LOAD_CONST arg=2 val=0x141 repr=None
+DEBUG: [PC 10] OP 100
+DEBUG: LOAD_CONST arg=2 val=0x141 repr=None
+DEBUG: [PC 12] OP 100
+DEBUG: LOAD_CONST arg=2 val=0x141 repr=None
+DEBUG: [PC 14] OP 118
+DEBUG: [PC 16] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd20e3180, defaults=0x762bd21e2a80, kwDefaults=(nil)
+DEBUG: [PC 18] OP 103
+DEBUG: [PC 20] OP 100
+DEBUG: reprObject obj=0x762bd4d9bfc0 class=NoneType
+DEBUG: LOAD_CONST arg=3 val=0x762bd4d9bfc0 repr=<object>
+DEBUG: [PC 22] OP 100
+DEBUG: LOAD_CONST arg=2 val=0x141 repr=None
+DEBUG: [PC 24] OP 118
+DEBUG: [PC 26] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd20e3180, defaults=0x762bd21ea740, kwDefaults=(nil)
+DEBUG: [PC 28] OP 103
+DEBUG: [PC 30] OP 100
+DEBUG: reprObject obj=0x762bd4db5e80 class=NoneType
+DEBUG: LOAD_CONST arg=4 val=0x762bd4db5e80 repr=<object>
+DEBUG: [PC 32] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd20e3180, defaults=(nil), kwDefaults=(nil)
+DEBUG: [PC 34] OP 103
+DEBUG: [PC 36] OP 100
+DEBUG: reprObject obj=0x762bd4dd0a40 class=NoneType
+DEBUG: LOAD_CONST arg=5 val=0x762bd4dd0a40 repr=<object>
+DEBUG: [PC 38] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd20e3180, defaults=(nil), kwDefaults=(nil)
+DEBUG: [PC 40] OP 103
+DEBUG: [PC 42] OP 100
+DEBUG: reprObject obj=0x762bd4dec880 class=NoneType
+DEBUG: LOAD_CONST arg=6 val=0x762bd4dec880 repr=<object>
+DEBUG: [PC 44] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd20e3180, defaults=(nil), kwDefaults=(nil)
+DEBUG: [PC 46] OP 103
+DEBUG: [PC 48] OP 100
+DEBUG: reprObject obj=0x762bd4e03f80 class=NoneType
+DEBUG: LOAD_CONST arg=7 val=0x762bd4e03f80 repr=<object>
+DEBUG: [PC 50] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd20e3180, defaults=(nil), kwDefaults=(nil)
+DEBUG: [PC 52] OP 103
+DEBUG: [PC 54] OP 100
+DEBUG: reprObject obj=0x762bd4e1b680 class=NoneType
+DEBUG: LOAD_CONST arg=8 val=0x762bd4e1b680 repr=<object>
+DEBUG: [PC 56] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd20e3180, defaults=(nil), kwDefaults=(nil)
+DEBUG: [PC 58] OP 103
+DEBUG: [PC 60] OP 101
+DEBUG: runCodeObject result=0x141
+DEBUG OP_BUILD_CLASS: calling metaclass=0x762bd6ee7880
+DEBUG: reprObject obj=0x762bd6ee7880 class=type
+DEBUG: reprObject out=0x762bd519df06
+DEBUG: invokeCallable callable=0x762bd6ee7880 repr=<class 'type'> class=type
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: py_type executing early unconditional: size=3
+DEBUG: py_type executing unconditional: argCount=3
+DEBUG: py_type called unconditionally self=0x762bd6ee7880 argCount=3
+DEBUG: reprObject obj=0x762bd21b3cc0 class=type
+DEBUG: reprObject out=0x762bd228d3c6
+DEBUG: invokeCallable (__call__) returning result=0x762bd21b3cc0 repr=<DynamicClassAttribute object at 0x762bd21b3cc0>
+DEBUG OP_BUILD_CLASS: targetClass=0x762bd21b3cc0
+DEBUG: OP_BUILD_CLASS injecting __class__ = 0x762bd21b3cc0 (name=DynamicClassAttribute) into ns = 0x762bd20e3180
+DEBUG: [PC 468] OP 103
+DEBUG: [PC 470] OP 100
+DEBUG: LOAD_CONST arg=22 val=0x762bd4e4b046 repr=_GeneratorWrapper
+DEBUG: [PC 472] OP 118
+DEBUG: [PC 474] OP 100
+DEBUG: LOAD_CONST arg=2 val=0x141 repr=None
+DEBUG: [PC 476] OP 100
+DEBUG: reprObject obj=0x762bd4f40580 class=NoneType
+DEBUG: LOAD_CONST arg=23 val=0x762bd4f40580 repr=<object>
+DEBUG: [PC 478] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd4a13b00, defaults=(nil), kwDefaults=(nil)
+DEBUG: [PC 480] OP 160
+DEBUG: lnotab entry j=0, pc_offset=4, line_offset=7
+DEBUG: lnotab entry j=2, pc_offset=24, line_offset=1
+DEBUG: lnotab entry j=4, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=6, pc_offset=0, line_offset=1
+DEBUG: lnotab entry j=8, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=10, pc_offset=6, line_offset=1
+DEBUG: lnotab entry j=12, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=14, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=16, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=18, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=20, pc_offset=10, line_offset=2
+DEBUG: lnotab entry j=22, pc_offset=6, line_offset=5
+DEBUG: lnotab entry j=24, pc_offset=10, line_offset=2
+DEBUG: lnotab entry j=26, pc_offset=6, line_offset=2
+DEBUG: lnotab entry j=28, pc_offset=10, line_offset=3
+DEBUG: lnotab entry j=30, pc_offset=14, line_offset=1
+DEBUG: lnotab entry j=32, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=34, pc_offset=8, line_offset=4
+DEBUG: lnotab entry j=36, pc_offset=14, line_offset=1
+DEBUG: lnotab entry j=38, pc_offset=8, line_offset=2
+DEBUG: lnotab entry j=40, pc_offset=14, line_offset=2
+DEBUG: lnotab entry j=42, pc_offset=12, line_offset=2
+DEBUG: lnotab entry j=44, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=46, pc_offset=10, line_offset=2
+DEBUG: lnotab entry j=48, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=50, pc_offset=12, line_offset=1
+DEBUG: lnotab entry j=52, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=54, pc_offset=14, line_offset=2
+DEBUG: lnotab entry j=56, pc_offset=8, line_offset=3
+DEBUG: lnotab entry j=58, pc_offset=12, line_offset=1
+DEBUG: lnotab entry j=60, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=62, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=64, pc_offset=16, line_offset=2
+DEBUG: lnotab entry j=66, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=68, pc_offset=10, line_offset=2
+DEBUG: lnotab entry j=70, pc_offset=12, line_offset=1
+DEBUG: lnotab entry j=72, pc_offset=12, line_offset=2
+DEBUG: lnotab entry j=74, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=76, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=78, pc_offset=8, line_offset=5
+DEBUG: lnotab entry j=80, pc_offset=18, line_offset=4
+DEBUG: lnotab entry j=82, pc_offset=14, line_offset=10
+DEBUG: lnotab entry j=84, pc_offset=6, line_offset=21
+DEBUG: lnotab entry j=86, pc_offset=12, line_offset=32
+DEBUG: lnotab entry j=88, pc_offset=6, line_offset=18
+DEBUG: lnotab entry j=90, pc_offset=6, line_offset=28
+DEBUG: lnotab entry j=92, pc_offset=14, line_offset=63
+DEBUG: lnotab entry j=94, pc_offset=14, line_offset=37
+DEBUG OP_BUILD_CLASS: metaclass=0x762bd6ee7880 (PROTO_NONE=0x141)
+DEBUG OP_BUILD_CLASS: metaclass name='type'
+DEBUG: reprObject obj=0x762bd229974c class=type
+DEBUG: reprObject out=0x762bd22a2fc6
+DEBUG: invokeCallable callable=0x762bd229974c repr=<method object at 0x762bd229974c> class=type
+DEBUG: runCodeObject co_code size=106 co_consts size=10 stackOffset=0
+DEBUG: [PC 0] OP 100
+DEBUG: reprObject obj=0x762bd4e5be80 class=NoneType
+DEBUG: LOAD_CONST arg=0 val=0x762bd4e5be80 repr=<object>
+DEBUG: [PC 2] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd22a3600, defaults=(nil), kwDefaults=(nil)
+DEBUG: [PC 4] OP 103
+DEBUG: [PC 6] OP 100
+DEBUG: reprObject obj=0x762bd4e6ff40 class=NoneType
+DEBUG: LOAD_CONST arg=1 val=0x762bd4e6ff40 repr=<object>
+DEBUG: [PC 8] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd22a3600, defaults=(nil), kwDefaults=(nil)
+DEBUG: [PC 10] OP 103
+DEBUG: [PC 12] OP 100
+DEBUG: reprObject obj=0x762bd4e84b40 class=NoneType
+DEBUG: LOAD_CONST arg=2 val=0x762bd4e84b40 repr=<object>
+DEBUG: [PC 14] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd22a3600, defaults=(nil), kwDefaults=(nil)
+DEBUG: [PC 16] OP 103
+DEBUG: [PC 18] OP 100
+DEBUG: reprObject obj=0x762bd4e97e80 class=NoneType
+DEBUG: LOAD_CONST arg=3 val=0x762bd4e97e80 repr=<object>
+DEBUG: [PC 20] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd22a3600, defaults=(nil), kwDefaults=(nil)
+DEBUG: [PC 22] OP 103
+DEBUG: [PC 24] OP 100
+DEBUG: reprObject obj=0x762bd4eaae40 class=NoneType
+DEBUG: LOAD_CONST arg=4 val=0x762bd4eaae40 repr=<object>
+DEBUG: [PC 26] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd22a3600, defaults=(nil), kwDefaults=(nil)
+DEBUG: [PC 28] OP 102
+DEBUG: [PC 30] OP 125
+DEBUG: [PC 32] OP 106
+DEBUG: OP_CALL_FUNCTION PC 32 callable=0x762bd701bd0c argCount=1
+DEBUG: reprObject obj=0x762bd701bd0c class=type
+DEBUG: reprObject out=0x762bd2408086
+DEBUG: invokeCallable callable=0x762bd701bd0c repr=<method object at 0x762bd701bd0c> class=type
+DEBUG: [PC 34] OP 103
+DEBUG: [PC 36] OP 100
+DEBUG: reprObject obj=0x762bd4ebfc00 class=NoneType
+DEBUG: LOAD_CONST arg=5 val=0x762bd4ebfc00 repr=<object>
+DEBUG: [PC 38] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd22a3600, defaults=(nil), kwDefaults=(nil)
+DEBUG: [PC 40] OP 102
+DEBUG: [PC 42] OP 125
+DEBUG: [PC 44] OP 106
+DEBUG: OP_CALL_FUNCTION PC 44 callable=0x762bd701bd0c argCount=1
+DEBUG: reprObject obj=0x762bd701bd0c class=type
+DEBUG: reprObject out=0x762bd2408086
+DEBUG: invokeCallable callable=0x762bd701bd0c repr=<method object at 0x762bd701bd0c> class=type
+DEBUG: [PC 46] OP 103
+DEBUG: [PC 48] OP 100
+DEBUG: reprObject obj=0x762bd4ed50c0 class=NoneType
+DEBUG: LOAD_CONST arg=6 val=0x762bd4ed50c0 repr=<object>
+DEBUG: [PC 50] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd22a3600, defaults=(nil), kwDefaults=(nil)
+DEBUG: [PC 52] OP 102
+DEBUG: [PC 54] OP 125
+DEBUG: [PC 56] OP 106
+DEBUG: OP_CALL_FUNCTION PC 56 callable=0x762bd701bd0c argCount=1
+DEBUG: reprObject obj=0x762bd701bd0c class=type
+DEBUG: reprObject out=0x762bd2408086
+DEBUG: invokeCallable callable=0x762bd701bd0c repr=<method object at 0x762bd701bd0c> class=type
+DEBUG: [PC 58] OP 103
+DEBUG: [PC 60] OP 100
+DEBUG: reprObject obj=0x762bd4eeb000 class=NoneType
+DEBUG: LOAD_CONST arg=7 val=0x762bd4eeb000 repr=<object>
+DEBUG: [PC 62] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd22a3600, defaults=(nil), kwDefaults=(nil)
+DEBUG: [PC 64] OP 102
+DEBUG: [PC 66] OP 125
+DEBUG: [PC 68] OP 106
+DEBUG: OP_CALL_FUNCTION PC 68 callable=0x762bd701bd0c argCount=1
+DEBUG: reprObject obj=0x762bd701bd0c class=type
+DEBUG: reprObject out=0x762bd2408086
+DEBUG: invokeCallable callable=0x762bd701bd0c repr=<method object at 0x762bd701bd0c> class=type
+DEBUG: [PC 70] OP 103
+DEBUG: [PC 72] OP 102
+DEBUG: [PC 74] OP 103
+DEBUG: [PC 76] OP 102
+DEBUG: [PC 78] OP 103
+DEBUG: [PC 80] OP 102
+DEBUG: [PC 82] OP 103
+DEBUG: [PC 84] OP 102
+DEBUG: [PC 86] OP 103
+DEBUG: [PC 88] OP 100
+DEBUG: reprObject obj=0x762bd4f020c0 class=NoneType
+DEBUG: LOAD_CONST arg=8 val=0x762bd4f020c0 repr=<object>
+DEBUG: [PC 90] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd22a3600, defaults=(nil), kwDefaults=(nil)
+DEBUG: [PC 92] OP 103
+DEBUG: [PC 94] OP 100
+DEBUG: reprObject obj=0x762bd4f17b40 class=NoneType
+DEBUG: LOAD_CONST arg=9 val=0x762bd4f17b40 repr=<object>
+DEBUG: [PC 96] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd22a3600, defaults=(nil), kwDefaults=(nil)
+DEBUG: [PC 98] OP 103
+DEBUG: [PC 100] OP 102
+DEBUG: [PC 102] OP 103
+DEBUG: [PC 104] OP 101
+DEBUG: runCodeObject result=0x141
+DEBUG OP_BUILD_CLASS: calling metaclass=0x762bd6ee7880
+DEBUG: reprObject obj=0x762bd6ee7880 class=type
+DEBUG: reprObject out=0x762bd519df06
+DEBUG: invokeCallable callable=0x762bd6ee7880 repr=<class 'type'> class=type
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: py_type executing early unconditional: size=3
+DEBUG: py_type executing unconditional: argCount=3
+DEBUG: py_type called unconditionally self=0x762bd6ee7880 argCount=3
+DEBUG: reprObject obj=0x762bd2374140 class=type
+DEBUG: reprObject out=0x762bd248dd46
+DEBUG: invokeCallable (__call__) returning result=0x762bd2374140 repr=<_GeneratorWrapper object at 0x762bd2374140>
+DEBUG OP_BUILD_CLASS: targetClass=0x762bd2374140
+DEBUG: OP_BUILD_CLASS injecting __class__ = 0x762bd2374140 (name=_GeneratorWrapper) into ns = 0x762bd22a3600
+DEBUG: [PC 482] OP 103
+DEBUG: [PC 484] OP 100
+DEBUG: reprObject obj=0x762bd4fb80c0 class=NoneType
+DEBUG: LOAD_CONST arg=24 val=0x762bd4fb80c0 repr=<object>
+DEBUG: [PC 486] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd4a13b00, defaults=(nil), kwDefaults=(nil)
+DEBUG: [PC 488] OP 103
+DEBUG: [PC 490] OP 102
+DEBUG: [PC 492] OP 100
+DEBUG: LOAD_CONST arg=25 val=0x762bd4fc8e06 repr=DEBUG: globals()=
+DEBUG: [PC 494] OP 102
+DEBUG: [PC 496] OP 106
+DEBUG: OP_CALL_FUNCTION PC 496 callable=0x762bd7016a0c argCount=0
+DEBUG: reprObject obj=0x762bd7016a0c class=type
+DEBUG: reprObject out=0x762bd24a0c86
+DEBUG: invokeCallable callable=0x762bd7016a0c repr=<method object at 0x762bd7016a0c> class=type
+DEBUG RUNTIME argvVec size=1
+DEBUG: initDictStorage obj=0x762bd6f7f340
+DEBUG: initDictStorage dataName=0x762bd6dff646 keysName=0x762bd6edbb86
+DEBUG: initDictStorage creating sparse list
+DEBUG: initDictStorage setting __data__
+DEBUG: initDictStorage checking keys
+DEBUG: initDictStorage creating keys list
+DEBUG: initDictStorage setting __keys__
+DEBUG: initDictStorage done
+DEBUG SYS MODULE argv size=1
+DEBUG: Registering 'type' using typeProto=0x762bd6ee7880
+DEBUG: executeModule initDictStorage modulePrototype=0x762bd6f58e00
+DEBUG: initDictStorage obj=0x762bd720a880
+DEBUG: initDictStorage dataName=0x762bd6dff646 keysName=0x762bd6edbb86
+DEBUG: initDictStorage creating sparse list
+DEBUG: initDictStorage setting __data__
+DEBUG: initDictStorage checking keys
+DEBUG: initDictStorage creating keys list
+DEBUG: initDictStorage setting __keys__
+DEBUG: initDictStorage done
+DEBUG: executeModule setting __class__
+DEBUG: executeModule setting frame attributes
+DEBUG: executeModule setting f_code
+DEBUG: executeModule initDictStorage modulePrototype=0x762bd6f58e00
+DEBUG: initDictStorage obj=0x762bd7de8600
+DEBUG: initDictStorage dataName=0x762bd6dff646 keysName=0x762bd6edbb86
+DEBUG: initDictStorage creating sparse list
+DEBUG: initDictStorage setting __data__
+DEBUG: initDictStorage checking keys
+DEBUG: initDictStorage creating keys list
+DEBUG: initDictStorage setting __keys__
+DEBUG: initDictStorage done
+DEBUG: executeModule setting __class__
+DEBUG: executeModule setting frame attributes
+DEBUG: executeModule setting f_code
+DEBUG: executeModule initDictStorage modulePrototype=0x762bd6f58e00
+DEBUG: initDictStorage obj=0x762bd4a13b00
+DEBUG: initDictStorage dataName=0x762bd6dff646 keysName=0x762bd6edbb86
+DEBUG: initDictStorage creating sparse list
+DEBUG: initDictStorage setting __data__
+DEBUG: initDictStorage checking keys
+DEBUG: initDictStorage creating keys list
+DEBUG: initDictStorage setting __keys__
+DEBUG: initDictStorage done
+DEBUG: executeModule setting __class__
+DEBUG: executeModule setting frame attributes
+DEBUG: executeModule setting f_code
+DEBUG: py_type(1) obj=0x762bd51961c0
+DEBUG: py_type(1) obj=0x762bd51af680
+DEBUG: py_type(1) obj=0x762bd4a2c2c0
+DEBUG: py_type_get_dict called for 0x762bd6ee7880
+DEBUG: py_type(1) obj=0x762bd51d7600
+DEBUG: py_type(1) obj=0x762bd6fa1480
+DEBUG: py_type(1) obj=0x762bd53f5742
+DEBUG: py_type(1) obj=0x762bd185e540
+DEBUG: py_type(1) obj=0x762bd1a5e540
+DEBUG: py_type(1) obj=0x762bd1c5e540
+DEBUG: initDictStorage obj=0x762bd1d8e940
+DEBUG: initDictStorage dataName=0x762bd6dff646 keysName=0x762bd6edbb86
+DEBUG: initDictStorage creating sparse list
+DEBUG: initDictStorage setting __data__
+DEBUG: initDictStorage checking keys
+DEBUG: initDictStorage creating keys list
+DEBUG: initDictStorage setting __keys__
+DEBUG: initDictStorage done
+DEBUG: py_type(3) name=0x43be901 bases=0x762bd1d7ab40 dict=0x762bd1d8e940
+DEBUG: initDictStorage obj=0x762bd1edf3c0
+DEBUG: initDictStorage dataName=0x762bd6dff646 keysName=0x762bd6edbb86
+DEBUG: initDictStorage creating sparse list
+DEBUG: initDictStorage setting __data__
+DEBUG: initDictStorage checking keys
+DEBUG: initDictStorage creating keys list
+DEBUG: initDictStorage setting __keys__
+DEBUG: initDictStorage done
+DEBUG: py_type copying key='__name__'
+DEBUG: py_type copied keyVal=0x43be901
+DEBUG: py_type copying key='__module__'
+DEBUG: py_type copied keyVal=0x762bd6edd486
+DEBUG: py_type copying key='_m'
+DEBUG: py_type copied keyVal=0x762bd1e62ec0
+DEBUG: py_type created class 0x762bd1edf3c0 check MRO
+DEBUG: py_type MRO size=1
+DEBUG: py_type MRO [0] = 0x762bd6ef40c0
+DEBUG: py_type(1) obj=0x762bd1f29140
+DEBUG: py_type(1) obj=0x762bd700308c
+DEBUG: py_type(1) obj=0x762bd1f522cc
+DEBUG: py_type(1) obj=0x762bd1f65f4c
+DEBUG: py_type(1) obj=0x762bd1f8f94c
+DEBUG: py_type(1) obj=0x762bd1fa35cc
+DEBUG: py_type_get_dict called for 0x762bd6f24d80
+DEBUG: py_type(1) obj=0x762bd6f2b28c
+DEBUG: py_type(1) obj=0x762bd6f613c0
+DEBUG: py_type(1) obj=0x762bd51f06c0
+DEBUG: py_type(1) obj=0x762bd4a13b00
+DEBUG: py_type(1) obj=0x141
+DEBUG: py_type(1) obj=0x141
+DEBUG: py_type(1) obj=0x762bd6f17b80
+DEBUG: py_type(1) obj=0x762bd206b6c0
+DEBUG: py_type(1) obj=0x762bd6f538c0
+DEBUG: py_type(1) obj=0x141
+DEBUG: py_type(1) obj=0x762bd6f57cc0
+DEBUG: initDictStorage obj=0x762bd20e3180
+DEBUG: initDictStorage dataName=0x762bd6dff646 keysName=0x762bd6edbb86
+DEBUG: initDictStorage creating sparse list
+DEBUG: initDictStorage setting __data__
+DEBUG: initDictStorage checking keys
+DEBUG: initDictStorage creating keys list
+DEBUG: initDictStorage setting __keys__
+DEBUG: initDictStorage done
+DEBUG: py_type(3) name=0x762bd4cd9206 bases=0x762bd20cf2c0 dict=0x762bd20e3180
+DEBUG: initDictStorage obj=0x762bd21b3cc0
+DEBUG: initDictStorage dataName=0x762bd6dff646 keysName=0x762bd6edbb86
+DEBUG: initDictStorage creating sparse list
+DEBUG: initDictStorage setting __data__
+DEBUG: initDictStorage checking keys
+DEBUG: initDictStorage creating keys list
+DEBUG: initDictStorage setting __keys__
+DEBUG: initDictStorage done
+DEBUG: py_type copying key='__name__'
+DEBUG: py_type copied keyVal=0x762bd4cd9206
+DEBUG: py_type copying key='__module__'
+DEBUG: py_type copied keyVal=0x762bd6edd486
+DEBUG: py_type copying key='__init__'
+DEBUG: py_type copied keyVal=0x762bd21e4040
+DEBUG: py_type copying key='__get__'
+DEBUG: py_type copied keyVal=0x762bd21ebd00
+DEBUG: py_type copying key='__set__'
+DEBUG: py_type copied keyVal=0x762bd21f29c0
+DEBUG: py_type copying key='__delete__'
+DEBUG: py_type copied keyVal=0x762bd21f9800
+DEBUG: py_type copying key='getter'
+DEBUG: py_type copied keyVal=0x762bd2200640
+DEBUG: py_type copying key='setter'
+DEBUG: py_type copied keyVal=0x762bd2207540
+DEBUG: py_type copying key='deleter'
+DEBUG: py_type copied keyVal=0x762bd220e280
+DEBUG: py_type created class 0x762bd21b3cc0 check MRO
+DEBUG: py_type MRO size=1
+DEBUG: py_type MRO [0] = 0x762bd6ef40c0
+DEBUG: initDictStorage obj=0x762bd22a3600
+DEBUG: initDictStorage dataName=0x762bd6dff646 keysName=0x762bd6edbb86
+DEBUG: initDictStorage creating sparse list
+DEBUG: initDictStorage setting __data__
+DEBUG: initDictStorage checking keys
+DEBUG: initDictStorage creating keys list
+DEBUG: initDictStorage setting __keys__
+DEBUG: initDictStorage done
+DEBUG: py_type(3) name=0x762bd4e4b046 bases=0x762bd228f700 dict=0x762bd22a3600
+DEBUG: initDictStorage obj=0x762bd2374140
+DEBUG: initDictStorage dataName=0x762bd6dff646 keysName=0x762bd6edbb86
+DEBUG: initDictStorage creating sparse list
+DEBUG: initDictStorage setting __data__
+DEBUG: initDictStorage checking keys
+DEBUG: initDictStorage creating keys list
+DEBUG: initDictStorage setting __keys__
+DEBUG: initDictStorage done
+DEBUG: py_type copying key='__name__'
+DEBUG: py_type copied keyVal=0x762bd4e4b046
+DEBUG: py_type copying key='__module__'
+DEBUG: py_type copied keyVal=0x762bd6edd486
+DEBUG: py_type copying key='__init__'
+DEBUG: py_type copied keyVal=0x762bd23e2ec0
+DEBUG: py_type copying key='send'
+DEBUG: py_type copied keyVal=0x762bd23e9d00
+DEBUG: py_type copying key='throw'
+DEBUG: py_type copied keyVal=0x762bd23f0ac0
+DEBUG: py_type copying key='close'
+DEBUG: py_type copied keyVal=0x762bd23f7940
+DEBUG: py_type copying key='gi_code'
+DEBUG: py_type copied keyVal=0x762bd2408600
+DEBUG: py_type copying key='gi_frame'
+DEBUG: py_type copied keyVal=0x762bd241ba40
+DEBUG: py_type copying key='gi_running'
+DEBUG: py_type copied keyVal=0x762bd242ed00
+DEBUG: py_type copying key='gi_yieldfrom'
+DEBUG: py_type copied keyVal=0x762bd2442140
+DEBUG: py_type copying key='cr_code'
+DEBUG: py_type copied keyVal=0x762bd2408600
+DEBUG: py_type copying key='cr_frame'
+DEBUG: py_type copied keyVal=0x762bd241ba40
+DEBUG: py_type copying key='cr_running'
+DEBUG: py_type copied keyVal=0x762bd242ed00
+DEBUG: py_type copying key='cr_await'
+DEBUG: py_type copied keyVal=0x762bd2442140
+DEBUG: py_type copying key='__next__'
+DEBUG: py_type copied keyVal=0x762bd244d740
+DEBUG: py_type copying key='__iter__'
+DEBUG: py_type copied keyVal=0x762bd2454680
+DEBUG: py_type copying key='__await__'
+DEBUG: py_type copied keyVal=0x762bd2454680
+DEBUG: py_type created class 0x762bd2374140 check MRO
+DEBUG: py_type MRO size=1
+DEBUG: py_type MRO [0] = 0x762bd6ef40c0
+DEBUG: py_globals called
+DEBUG: initDictStorage obj=0x762bd24a11c0
+DEBUG: initDEBUG: py_globals returning dictInstance=0x762bd24a11c0 size=61
+DEBUG: [PC 498] OP 179
+DEBUG: reprObject obj=0x762bd6efffc0 class=type
+DEBUG: reprObject out=0x762bd51facc6
+DEBUG: invokeCallable callable=0x762bd6efffc0 repr=<class 'str'> class=type
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: getType priority 1 __class__ match
+DEBUG: reprObject obj=0x762bd1fede80 class=TypeError
+DEBUG: reprObject out=0x762bd6e9a046
+DEBUG: reprObject obj=0x762bd6f59f4c class=type
+DEBUG: reprObject out=0x762bd520bb06
+DEBUG: reprObject obj=0x762bd6ef6b00 class=type
+DEBUG: reprObject out=0x762bd51a7d86
+DEBUG: reprObject obj=0x762bd6ef6b00 class=type
+DEBUG: reprObject out=0x762bd51a7d86
+DEBUG: reprObject obj=0x762bd6ef40c0 class=type
+DEBUG: reprObject out=0x762bd51d42c6
+DEBUG: reprObject obj=0x762bd6eec200 class=type
+DEBUG: reprObject out=0x762bd51e6906
+DEBUG: reprObject obj=0x762bd6ef40c0 class=type
+DEBUG: reprObject out=0x762bd51d42c6
+DEBUG: reprObject obj=0x762bd6f17b80 class=type
+DEBUG: reprObject out=0x762bd53994c6
+DEBUG: reprObject obj=0x762bd6ef4980 class=type
+DEBUG: reprObject out=0x762bd1819d86
+DEBUG: reprObject obj=0x762bd6ef4980 class=type
+DEBUG: reprObject out=0x762bd1819d86
+DEBUG: reprObject obj=0x762bd6ef4980 class=type
+DEBUG: reprObject out=0x762bd1819d86
+DEBUG: reprObject obj=0x762bd6f5ad00 class=type
+DEBUG: reprObject out=0x762bd1f3c686
+DEBUG: reprObject obj=0x762bd6f5ad00 class=type
+DEBUG: reprObject out=0x762bd1f3c686
+DEBUG: reprObject obj=0x762bd6f5ad00 class=type
+DEBUG: reprObject out=0x762bd1f3c686
+DEBUG: reprObject obj=0x762bd6f5ad00 class=type
+DEBUG: reprObject out=0x762bd1f3c686
+DEBUG: reprObject obj=0x762bd6f5ad00 class=type
+DEBUG: reprObject out=0x762bd1f3c686
+DEBUG: reprObject obj=0x762bd6f5ad00 class=type
+DEBUG: reprObject out=0x762bd1f3c686
+DEBUG: reprObject obj=0x762bd6f5ad00 class=type
+DEBUG: reprObject out=0x762bd1f3c686
+DEBUG: reprObject obj=0x762bd6f58e00 class=type
+DEBUG: reprObject out=0x762bd1fecb46
+DEBUG: reprObject obj=0x762bd6f5b500 class=type
+DEBUG: reprObject out=0x762bd200c986
+DEBUG: invokeCallable (__call__) returning result=0x762bd25e85c6 repr={exc: TypeError, keys: <method object at 0x762bd6f59f4c>, FunctionType: <function object at 0x762bd6ef6b00>, LambdaType: <function object at 0x762bd6ef6b00>, CodeType: <object object at 0x762bd6ef40c0>, MappingProxyType: mappingproxy(None), SimpleNamespace: <object object at 0x762bd6ef40c0>, CellType: <class 'list'>, GeneratorType: <generator object <unknown> at 0x762bd6ef4980>, CoroutineType: <generator object <unknown> at 0x762bd6ef4980>, AsyncGeneratorType: <generator object <unknown> at 0x762bd6ef4980>, MethodType: <method object at 0x762bd6f5ad00>, BuiltinFunctionType: <method object at 0x762bd6f5ad00>, BuiltinMethodType: <method object at 0x762bd6f5ad00>, WrapperDescriptorType: <method object at 0x762bd6f5ad00>, MethodWrapperType: <method object at 0x762bd6f5ad00>, MethodDescriptorType: <method object at 0x762bd6f5ad00>, ClassMethodDescriptorType: <method object at 0x762bd6f5ad00>, ModuleType: <module object at 0x762bd6f58e00>, TracebackType: <traceback object at 0x762bd6f5b500>, ...}
+DEBUG: [PC 500] OP 106
+DEBUG: OP_CALL_FUNCTION PC 500 callable=0x762bd70061cc argCount=1
+DEBUG: reprObject obj=0x762bd70061cc class=type
+DEBUG: reprObject out=0x762bd2705686
+DEBUG: invokeCallable callable=0x762bd70061cc repr=<method object at 0x762bd70061cc> class=type
+DEBUG: py_print called with 1 args
+DictStorage dataName=0x762bd6dff646 keysName=0x762bd6edbb86
+DEBUG: initDictStorage creating sparse list
+DEBUG: initDictStorage setting __data__
+DEBUG: initDictStorage checking keys
+DEBUG: initDictStorage creating keys list
+DEBUG: initDictStorage setting __keys__
+DEBUG: initDictStorage done
+DEBUG: globals()={exc: TypeError, keys: <method object at 0x762bd6f59f4c>, FunctionType: <function object at 0x762bd6ef6b00>, LambdaType: <function object at 0x762bd6ef6b00>, CodeType: <object object at 0x762bd6ef40c0>, MappingProxyType: mappingproxy(None), SimpleNamespace: <object object at 0x762bd6ef40c0>, CellType: <class 'list'>, GeneratorType: <generator object <unknown> at 0x762bd6ef4980>, CoroutineType: <generator object <unknown> at 0x762bd6ef4980>, AsyncGeneratorType: <generator object <unknown> at 0x762bd6ef4980>, MethodType: <method object at 0x762bd6f5ad00>, BuiltinFunctionType: <method object at 0x762bd6f5ad00>, BuiltinMethodType: <method object at 0x762bd6f5ad00>, WrapperDescriptorType: <method object at 0x762bd6f5ad00>, MethodWrapperType: <method object at 0x762bd6f5ad00>, MethodDescriptorType: <method object at 0x762bd6f5ad00>, ClassMethodDescriptorType: <method object at 0x762bd6f5ad00>, ModuleType: <module object at 0x762bd6f58e00>, TracebackType: <traceback object at 0x762bd6f5b500>, ...}
+DEBUG: [PC 502] OP 133
+DEBUG: [PC 504] OP 102
+DEBUG: [PC 506] OP 106
+DEBUG: OP_CALL_FUNCTION PC 506 callable=0x762bd7016a0c argCount=0
+DEBUG: reprObject obj=0x762bd7016a0c class=type
+DEBUG: reprObject out=0x762bd24a0c86
+DEBUG: invokeCallable callable=0x762bd7016a0c repr=<method object at 0x762bd7016a0c> class=type
+DEBUG: py_globals returning dictInstance=0x762bd270f800 size=61
+DEBUG: [PC 508] OP 119
+DEBUG: env->iter called on obj=0x762bd270f800, method=0x762bd272598c, asMethod=0x762bdbc926cb
+DEBUG: OP_GET_ITER iterable=0x762bd270f800 iterObj=0x762bd272b780
+DEBUG: [PC 510] OP 100
+DEBUG: reprObject obj=0x762bd4fd0c00 class=NoneType
+DEBUG: LOAD_CONST arg=26 val=0x762bd4fd0c00 repr=<object>
+DEBUG: [PC 512] OP 156
+DEBUG: lnotab entry j=0, pc_offset=4, line_offset=7
+DEBUG: lnotab entry j=2, pc_offset=24, line_offset=1
+DEBUG: lnotab entry j=4, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=6, pc_offset=0, line_offset=1
+DEBUG: lnotab entry j=8, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=10, pc_offset=6, line_offset=1
+DEBUG: lnotab entry j=12, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=14, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=16, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=18, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=20, pc_offset=10, line_offset=2
+DEBUG: lnotab entry j=22, pc_offset=6, line_offset=5
+DEBUG: lnotab entry j=24, pc_offset=10, line_offset=2
+DEBUG: lnotab entry j=26, pc_offset=6, line_offset=2
+DEBUG: lnotab entry j=28, pc_offset=10, line_offset=3
+DEBUG: lnotab entry j=30, pc_offset=14, line_offset=1
+DEBUG: lnotab entry j=32, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=34, pc_offset=8, line_offset=4
+DEBUG: lnotab entry j=36, pc_offset=14, line_offset=1
+DEBUG: lnotab entry j=38, pc_offset=8, line_offset=2
+DEBUG: lnotab entry j=40, pc_offset=14, line_offset=2
+DEBUG: lnotab entry j=42, pc_offset=12, line_offset=2
+DEBUG: lnotab entry j=44, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=46, pc_offset=10, line_offset=2
+DEBUG: lnotab entry j=48, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=50, pc_offset=12, line_offset=1
+DEBUG: lnotab entry j=52, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=54, pc_offset=14, line_offset=2
+DEBUG: lnotab entry j=56, pc_offset=8, line_offset=3
+DEBUG: lnotab entry j=58, pc_offset=12, line_offset=1
+DEBUG: lnotab entry j=60, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=62, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=64, pc_offset=16, line_offset=2
+DEBUG: lnotab entry j=66, pc_offset=10, line_offset=1
+DEBUG: lnotab entry j=68, pc_offset=10, line_offset=2
+DEBUG: lnotab entry j=70, pc_offset=12, line_offset=1
+DEBUG: lnotab entry j=72, pc_offset=12, line_offset=2
+DEBUG: lnotab entry j=74, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=76, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=78, pc_offset=8, line_offset=5
+DEBUG: lnotab entry j=80, pc_offset=18, line_offset=4
+DEBUG: lnotab entry j=82, pc_offset=14, line_offset=10
+DEBUG: lnotab entry j=84, pc_offset=6, line_offset=21
+DEBUG: lnotab entry j=86, pc_offset=12, line_offset=32
+DEBUG: lnotab entry j=88, pc_offset=6, line_offset=18
+DEBUG: lnotab entry j=90, pc_offset=6, line_offset=28
+DEBUG: lnotab entry j=92, pc_offset=14, line_offset=63
+DEBUG: lnotab entry j=94, pc_offset=14, line_offset=37
+DEBUG: lnotab entry j=96, pc_offset=6, line_offset=51
+DEBUG: lnotab entry j=98, pc_offset=4, line_offset=-128
+DEBUG: lnotab entry j=100, pc_offset=10, line_offset=127
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd4a13b00, defaults=(nil), kwDefaults=(nil)
+DEBUG: [PC 514] OP 125
+DEBUG: [PC 516] OP 106
+DEBUG: OP_CALL_FUNCTION PC 516 callable=0x762bd27331c0 argCount=1
+DEBUG: reprObject obj=0x762bd27331c0 class=function
+DEBUG: reprObject out=0x762bd273ce46
+DEBUG: invokeCallable callable=0x762bd27331c0 repr=<function object at 0x762bd27331c0> class=function
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: runUserFunctionCall extracted outerFrame=0x762bd4a13b00 from closure list
+DEBUG: runUserFunctionCall nparams_count=1 argCount=1 argsSize=1
+DEBUG: bindVar idx=0 param=.0 val=0x762bd272b780 co_flags=3 slots=0x525000034900 frame=0x762bd18e8780
+DEBUG: [PC 0] OP 114
+DEBUG: [PC 2] OP 157
+DEBUG: LOAD_FAST 0 loaded: 0x762bd272b780
+DEBUG: [PC 4] OP 119
+DEBUG: env->iter called on obj=0x762bd272b780, method=0x762bd18edb0c, asMethod=0x762bdbb677df
+DEBUG: OP_GET_ITER iterable=0x762bd272b780 iterObj=0x762bd272b780
+DEBUG: [PC 6] OP 120
+DEBUG: [PC 28] OP 101
+DEBUG: reprObject obj=0x762bd18ea900 class=list
+DEBUG: reprObject out=0x5db6901
+DEBUG: invokeCallable (__call__) returning result=0x762bd18ea900 repr=[]
+DEBUG: [PC 518] OP 103
+DEBUG: [PC 520] OP 100
+DEBUG: reprObject obj=0x762bd6f51480 class=NoneType
+DEBUG: reprObject out=0x19776f9d101
+DEBUG: LOAD_CONST arg=27 val=0x762bd6f51480 repr=None
+DEBUG: [PC 522] OP 101
+DEBUG: runCodeObject result=0x762bd6f51480
+DEBUG: reprObject obj=0x762bd7d9b30c class=type
+DEBUG: reprObject out=0x762bd7daddc6
+DEBUG: invokeCallable callable=0x762bd7d9b30c repr=<method object at 0x762bd7d9b30c> class=type
+DEBUG: [PC 36] OP 206
+DEBUG: OP_IMPORT_FROM loading GenericAlias
+DEBUG: [PC 38] OP 103
+DEBUG: [PC 40] OP 133
+DEBUG: [PC 42] OP 133
+DEBUG: [PC 44] OP 100
+DEBUG: LOAD_CONST arg=6 val=0x3a65a7af0e5afd01 repr=WeakSet
+DEBUG: [PC 46] OP 114
+DEBUG: [PC 48] OP 103
+DEBUG: [PC 50] OP 100
+DEBUG: LOAD_CONST arg=6 val=0x3a65a7af0e5afd01 repr=WeakSet
+DEBUG: [PC 52] OP 118
+DEBUG: [PC 54] OP 100
+DEBUG: LOAD_CONST arg=1 val=0x141 repr=None
+DEBUG: [PC 56] OP 100
+DEBUG: reprObject obj=0x762bd488b8c0 class=NoneType
+DEBUG: LOAD_CONST arg=7 val=0x762bd488b8c0 repr=<object>
+DEBUG: [PC 58] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd7de8600, defaults=(nil), kwDefaults=(nil)
+DEBUG: [PC 60] OP 160
+DEBUG OP_BUILD_CLASS: metaclass=0x762bd6ee7880 (PROTO_NONE=0x141)
+DEBUG OP_BUILD_CLASS: metaclass name='type'
+DEBUG: reprObject obj=0x762bd51450cc class=type
+DEBUG: reprObject out=0x762bd514e946
+DEBUG: invokeCallable callable=0x762bd51450cc repr=<method object at 0x762bd51450cc> class=type
+DEBUG: runCodeObject co_code size=218 co_consts size=31 stackOffset=0
+DEBUG: [PC 0] OP 100
+DEBUG: reprObject obj=0x762bd4505c00 class=NoneType
+DEBUG: LOAD_CONST arg=0 val=0x762bd4505c00 repr=<object>
+DEBUG: [PC 2] OP 100
+DEBUG: LOAD_CONST arg=1 val=0x141 repr=None
+DEBUG: [PC 4] OP 118
+DEBUG: [PC 6] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd514ef40, defaults=0x762bd1c9aa00, kwDefaults=(nil)
+DEBUG: [PC 8] OP 103
+DEBUG: [PC 10] OP 100
+DEBUG: reprObject obj=0x762bd451ea80 class=NoneType
+DEBUG: LOAD_CONST arg=2 val=0x762bd451ea80 repr=<object>
+DEBUG: [PC 12] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd514ef40, defaults=(nil), kwDefaults=(nil)
+DEBUG: [PC 14] OP 103
+DEBUG: [PC 16] OP 100
+DEBUG: reprObject obj=0x762bd4532900 class=NoneType
+DEBUG: LOAD_CONST arg=3 val=0x762bd4532900 repr=<object>
+DEBUG: [PC 18] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd514ef40, defaults=(nil), kwDefaults=(nil)
+DEBUG: [PC 20] OP 103
+DEBUG: [PC 22] OP 100
+DEBUG: reprObject obj=0x762bd454ca40 class=NoneType
+DEBUG: LOAD_CONST arg=4 val=0x762bd454ca40 repr=<object>
+DEBUG: [PC 24] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd514ef40, defaults=(nil), kwDefaults=(nil)
+DEBUG: [PC 26] OP 103
+DEBUG: [PC 28] OP 100
+DEBUG: reprObject obj=0x762bd4565380 class=NoneType
+DEBUG: LOAD_CONST arg=5 val=0x762bd4565380 repr=<object>
+DEBUG: [PC 30] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd514ef40, defaults=(nil), kwDefaults=(nil)
+DEBUG: [PC 32] OP 103
+DEBUG: [PC 34] OP 100
+DEBUG: reprObject obj=0x762bd457ab00 class=NoneType
+DEBUG: LOAD_CONST arg=6 val=0x762bd457ab00 repr=<object>
+DEBUG: [PC 36] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd514ef40, defaults=(nil), kwDefaults=(nil)
+DEBUG: [PC 38] OP 103
+DEBUG: [PC 40] OP 100
+DEBUG: reprObject obj=0x762bd458df80 class=NoneType
+DEBUG: LOAD_CONST arg=7 val=0x762bd458df80 repr=<object>
+DEBUG: [PC 42] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd514ef40, defaults=(nil), kwDefaults=(nil)
+DEBUG: [PC 44] OP 103
+DEBUG: [PC 46] OP 100
+DEBUG: reprObject obj=0x762bd45a1f00 class=NoneType
+DEBUG: LOAD_CONST arg=8 val=0x762bd45a1f00 repr=<object>
+DEBUG: [PC 48] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd514ef40, defaults=(nil), kwDefaults=(nil)
+DEBUG: [PC 50] OP 103
+DEBUG: [PC 52] OP 100
+DEBUG: reprObject obj=0x762bd45c1740 class=NoneType
+DEBUG: LOAD_CONST arg=9 val=0x762bd45c1740 repr=<object>
+DEBUG: [PC 54] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd514ef40, defaults=(nil), kwDefaults=(nil)
+DEBUG: [PC 56] OP 103
+DEBUG: [PC 58] OP 100
+DEBUG: reprObject obj=0x762bd45d5880 class=NoneType
+DEBUG: LOAD_CONST arg=10 val=0x762bd45d5880 repr=<object>
+DEBUG: [PC 60] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd514ef40, defaults=(nil), kwDefaults=(nil)
+DEBUG: [PC 62] OP 103
+DEBUG: [PC 64] OP 100
+DEBUG: reprObject obj=0x762bd45e99c0 class=NoneType
+DEBUG: LOAD_CONST arg=11 val=0x762bd45e99c0 repr=<object>
+DEBUG: [PC 66] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd514ef40, defaults=(nil), kwDefaults=(nil)
+DEBUG: [PC 68] OP 103
+DEBUG: [PC 70] OP 100
+DEBUG: reprObject obj=0x762bd45fe840 class=NoneType
+DEBUG: LOAD_CONST arg=12 val=0x762bd45fe840 repr=<object>
+DEBUG: [PC 72] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd514ef40, defaults=(nil), kwDefaults=(nil)
+DEBUG: [PC 74] OP 103
+DEBUG: [PC 76] OP 100
+DEBUG: reprObject obj=0x762bd4612480 class=NoneType
+DEBUG: LOAD_CONST arg=13 val=0x762bd4612480 repr=<object>
+DEBUG: [PC 78] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd514ef40, defaults=(nil), kwDefaults=(nil)
+DEBUG: [PC 80] OP 103
+DEBUG: [PC 82] OP 100
+DEBUG: reprObject obj=0x762bd4629ec0 class=NoneType
+DEBUG: LOAD_CONST arg=14 val=0x762bd4629ec0 repr=<object>
+DEBUG: [PC 84] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd514ef40, defaults=(nil), kwDefaults=(nil)
+DEBUG: [PC 86] OP 103
+DEBUG: [PC 88] OP 102
+DEBUG: [PC 90] OP 103
+DEBUG: [PC 92] OP 100
+DEBUG: reprObject obj=0x762bd4640680 class=NoneType
+DEBUG: LOAD_CONST arg=15 val=0x762bd4640680 repr=<object>
+DEBUG: [PC 94] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd514ef40, defaults=(nil), kwDefaults=(nil)
+DEBUG: [PC 96] OP 103
+DEBUG: [PC 98] OP 100
+DEBUG: reprObject obj=0x762bd4672940 class=NoneType
+DEBUG: LOAD_CONST arg=16 val=0x762bd4672940 repr=<object>
+DEBUG: [PC 100] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd514ef40, defaults=(nil), kwDefaults=(nil)
+DEBUG: [PC 102] OP 103
+DEBUG: [PC 104] OP 100
+DEBUG: reprObject obj=0x762bd469f2c0 class=NoneType
+DEBUG: LOAD_CONST arg=17 val=0x762bd469f2c0 repr=<object>
+DEBUG: [PC 106] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd514ef40, defaults=(nil), kwDefaults=(nil)
+DEBUG: [PC 108] OP 103
+DEBUG: [PC 110] OP 102
+DEBUG: [PC 112] OP 103
+DEBUG: [PC 114] OP 100
+DEBUG: reprObject obj=0x762bd46b6340 class=NoneType
+DEBUG: LOAD_CONST arg=18 val=0x762bd46b6340 repr=<object>
+DEBUG: [PC 116] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd514ef40, defaults=(nil), kwDefaults=(nil)
+DEBUG: [PC 118] OP 103
+DEBUG: [PC 120] OP 100
+DEBUG: reprObject obj=0x762bd46e5500 class=NoneType
+DEBUG: LOAD_CONST arg=19 val=0x762bd46e5500 repr=<object>
+DEBUG: [PC 122] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd514ef40, defaults=(nil), kwDefaults=(nil)
+DEBUG: [PC 124] OP 103
+DEBUG: [PC 126] OP 100
+DEBUG: reprObject obj=0x762bd4711280 class=NoneType
+DEBUG: LOAD_CONST arg=20 val=0x762bd4711280 repr=<object>
+DEBUG: [PC 128] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd514ef40, defaults=(nil), kwDefaults=(nil)
+DEBUG: [PC 130] OP 103
+DEBUG: [PC 132] OP 102
+DEBUG: [PC 134] OP 103
+DEBUG: [PC 136] OP 100
+DEBUG: reprObject obj=0x762bd4726940 class=NoneType
+DEBUG: LOAD_CONST arg=21 val=0x762bd4726940 repr=<object>
+DEBUG: [PC 138] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd514ef40, defaults=(nil), kwDefaults=(nil)
+DEBUG: [PC 140] OP 103
+DEBUG: [PC 142] OP 100
+DEBUG: reprObject obj=0x762bd47523c0 class=NoneType
+DEBUG: LOAD_CONST arg=22 val=0x762bd47523c0 repr=<object>
+DEBUG: [PC 144] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd514ef40, defaults=(nil), kwDefaults=(nil)
+DEBUG: [PC 146] OP 103
+DEBUG: [PC 148] OP 102
+DEBUG: [PC 150] OP 103
+DEBUG: [PC 152] OP 100
+DEBUG: reprObject obj=0x762bd4767e00 class=NoneType
+DEBUG: LOAD_CONST arg=23 val=0x762bd4767e00 repr=<object>
+DEBUG: [PC 154] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd514ef40, defaults=(nil), kwDefaults=(nil)
+DEBUG: [PC 156] OP 103
+DEBUG: [PC 158] OP 100
+DEBUG: reprObject obj=0x762bd4782f40 class=NoneType
+DEBUG: LOAD_CONST arg=24 val=0x762bd4782f40 repr=<object>
+DEBUG: [PC 160] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd514ef40, defaults=(nil), kwDefaults=(nil)
+DEBUG: [PC 162] OP 103
+DEBUG: [PC 164] OP 100
+DEBUG: reprObject obj=0x762bd479d480 class=NoneType
+DEBUG: LOAD_CONST arg=25 val=0x762bd479d480 repr=<object>
+DEBUG: [PC 166] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd514ef40, defaults=(nil), kwDefaults=(nil)
+DEBUG: [PC 168] OP 103
+DEBUG: [PC 170] OP 102
+DEBUG: [PC 172] OP 103
+DEBUG: [PC 174] OP 100
+DEBUG: reprObject obj=0x762bd47b66c0 class=NoneType
+DEBUG: LOAD_CONST arg=26 val=0x762bd47b66c0 repr=<object>
+DEBUG: [PC 176] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd514ef40, defaults=(nil), kwDefaults=(nil)
+DEBUG: [PC 178] OP 103
+DEBUG: [PC 180] OP 100
+DEBUG: reprObject obj=0x762bd47ebd80 class=NoneType
+DEBUG: LOAD_CONST arg=27 val=0x762bd47ebd80 repr=<object>
+DEBUG: [PC 182] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd514ef40, defaults=(nil), kwDefaults=(nil)
+DEBUG: [PC 184] OP 103
+DEBUG: [PC 186] OP 100
+DEBUG: reprObject obj=0x762bd4818300 class=NoneType
+DEBUG: LOAD_CONST arg=28 val=0x762bd4818300 repr=<object>
+DEBUG: [PC 188] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd514ef40, defaults=(nil), kwDefaults=(nil)
+DEBUG: [PC 190] OP 103
+DEBUG: [PC 192] OP 102
+DEBUG: [PC 194] OP 103
+DEBUG: [PC 196] OP 100
+DEBUG: reprObject obj=0x762bd482e940 class=NoneType
+DEBUG: LOAD_CONST arg=29 val=0x762bd482e940 repr=<object>
+DEBUG: [PC 198] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd514ef40, defaults=(nil), kwDefaults=(nil)
+DEBUG: [PC 200] OP 103
+DEBUG: [PC 202] OP 100
+DEBUG: reprObject obj=0x762bd4843540 class=NoneType
+DEBUG: LOAD_CONST arg=30 val=0x762bd4843540 repr=<object>
+DEBUG: [PC 204] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd514ef40, defaults=(nil), kwDefaults=(nil)
+DEBUG: [PC 206] OP 103
+DEBUG: [PC 208] OP 102
+DEBUG: [PC 210] OP 102
+DEBUG: [PC 212] OP 106
+DEBUG: OP_CALL_FUNCTION PC 212 callable=0x762bd701ca4c argCount=1
+DEBUG: reprObject obj=0x762bd701ca4c class=type
+DEBUG: reprObject out=0x762bd2201d46
+DEBUG: invokeCallable callable=0x762bd701ca4c repr=<method object at 0x762bd701ca4c> class=type
+DEBUG: [PC 214] OP 103
+DEBUG: [PC 216] OP 101
+DEBUG: runCodeObject result=0x141
+DEBUG OP_BUILD_CLASS: calling metaclass=0x762bd6ee7880
+DEBUG: reprObject obj=0x762bd6ee7880 class=type
+DEBUG: reprObject out=0x762bd519df06
+DEBUG: invokeCallable callable=0x762bd6ee7880 repr=<class 'type'> class=type
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: py_type executing early unconditional: size=3
+DEBUG: py_type executing unconditional: argCount=3
+DEBUG: py_type called unconditionally self=0x762bd6ee7880 argCount=3
+DEBUG: reprObject obj=0x762bd1b39e00 class=type
+DEBUG: invokeCallable (__call__) returning result=0x762bd1b39e00 repr=<object>
+DEBUG OP_BUILD_CLASS: targetClass=0x762bd1b39e00
+DEBUG: OP_BUILD_CLASS injecting __class__ = 0x762bd1b39e00 (name=WeakSet) into ns = 0x762bd514ef40
+DEBUG: [PC 62] OP 103
+DEBUG: [PC 64] OP 100
+DEBUG: lnotab entry j=0, pc_offset=22, line_offset=1
+DEBUG: lnotab entry j=2, pc_offset=22, line_offset=2
+DEBUG: lnotab entry j=4, pc_offset=6, line_offset=3
+DEBUG: reprObject obj=0x762bd6f51480 class=NoneType
+DEBUG: reprObject out=0x19776f9d101
+DEBUG: LOAD_CONST arg=8 val=0x762bd6f51480 repr=None
+DEBUG: [PC 66] OP 101
+DEBUG: runCodeObject result=0x762bd6f51480
+DEBUG: reprObject obj=0x762bd7d9b30c class=type
+DEBUG: reprObject out=0x762bd7daddc6
+DEBUG: invokeCallable callable=0x762bd7d9b30c repr=<method object at 0x762bd7d9b30c> class=type
+DEBUG: [PC 68] OP 206
+DEBUG: OP_IMPORT_FROM loading WeakSet
+DEBUG: [PC 70] OP 103
+DEBUG: [PC 72] OP 133
+DEBUG: [PC 74] OP 133
+DEBUG: [PC 76] OP 102
+DEBUG: [PC 78] OP 100
+DEBUG: LOAD_CONST arg=7 val=0x762bd6f8ee46 repr=_collections_abc
+DEBUG: [PC 80] OP 106
+DEBUG: OP_CALL_FUNCTION PC 80 callable=0x762bd701f34c argCount=1
+DEBUG: reprObject obj=0x762bd701f34c class=type
+DEBUG: reprObject out=0x762bd7208186
+DEBUG: invokeCallable callable=0x762bd701f34c repr=<method object at 0x762bd701f34c> class=type
+DEBUG: __import__('_collections_abc') level=0
+DEBUG: reprObject obj=0x762bd7d9b30c class=type
+DEBUG: reprObject out=0x762bd7daddc6
+DEBUG: invokeCallable callable=0x762bd7d9b30c repr=<method object at 0x762bd7d9b30c> class=type
+DEBUG: [PC 82] OP 103
+DEBUG: [PC 84] OP 102
+DEBUG: [PC 86] OP 100
+DEBUG: LOAD_CONST arg=8 val=0x39f9e6d01 repr=sys
+DEBUG: [PC 88] OP 106
+DEBUG: OP_CALL_FUNCTION PC 88 callable=0x762bd701f34c argCount=1
+DEBUG: reprObject obj=0x762bd701f34c class=type
+DEBUG: reprObject out=0x762bd7208186
+DEBUG: invokeCallable callable=0x762bd701f34c repr=<method object at 0x762bd701f34c> class=type
+DEBUG: __import__('sys') level=0
+DEBUG: [PC 90] OP 103
+DEBUG: [PC 92] OP 102
+DEBUG: [PC 94] OP 100
+DEBUG: LOAD_CONST arg=9 val=0x762bd6f8b886 repr=itertools
+DEBUG: [PC 96] OP 106
+DEBUG: lnotab entry j=0, pc_offset=4, line_offset=5
+DEBUG: lnotab entry j=2, pc_offset=50, line_offset=10
+DEBUG: lnotab entry j=4, pc_offset=22, line_offset=3
+DEBUG: lnotab entry j=6, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=8, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=10, pc_offset=8, line_offset=1
+DEBUG: OP_CALL_FUNCTION PC 96 callable=0x762bd701f34c argCount=1
+DEBUG: reprObject obj=0x762bd701f34c class=type
+DEBUG: reprObject out=0x762bd7208186
+DEBUG: invokeCallable callable=0x762bd701f34c repr=<method object at 0x762bd701f34c> class=type
+DEBUG: __import__('itertools') level=0
+DEBUG: reprObject obj=0x762bd7d9b30c class=type
+DEBUG: reprObject out=0x762bd7daddc6
+DEBUG: invokeCallable callable=0x762bd7d9b30c repr=<method object at 0x762bd7d9b30c> class=type
+DEBUG: [PC 98] OP 103
+DEBUG: [PC 100] OP 102
+DEBUG: [PC 102] OP 102
+DEBUG: [PC 104] OP 118
+DEBUG: [PC 106] OP 103
+DEBUG: [PC 108] OP 100
+DEBUG: LOAD_CONST arg=10 val=0x3365e4d01 repr=ref
+DEBUG: [PC 110] OP 100
+DEBUG: LOAD_CONST arg=11 val=0xf3e37f2e1501 repr=proxy
+DEBUG: [PC 112] OP 100
+DEBUG: LOAD_CONST arg=12 val=0x762bd72278c6 repr=getweakrefcount
+DEBUG: [PC 114] OP 100
+DEBUG: LOAD_CONST arg=13 val=0x762bd72288c6 repr=getweakrefs
+DEBUG: [PC 116] OP 100
+DEBUG: LOAD_CONST arg=14 val=0x762bd7241a46 repr=WeakKeyDictionary
+DEBUG: [PC 118] OP 100
+DEBUG: LOAD_CONST arg=15 val=0x762bd722c6c6 repr=ReferenceType
+DEBUG: [PC 120] OP 100
+DEBUG: LOAD_CONST arg=16 val=0x762bd722b386 repr=ProxyType
+DEBUG: [PC 122] OP 100
+DEBUG: LOAD_CONST arg=17 val=0x762bd722a346 repr=CallableProxyType
+DEBUG: [PC 124] OP 100
+DEBUG: LOAD_CONST arg=18 val=0x762bd723db06 repr=ProxyTypes
+DEBUG: [PC 126] OP 100
+DEBUG: LOAD_CONST arg=19 val=0x762bd7248386 repr=WeakValueDictionary
+DEBUG: [PC 128] OP 100
+DEBUG: lnotab entry j=0, pc_offset=4, line_offset=5
+DEBUG: lnotab entry j=2, pc_offset=50, line_offset=10
+DEBUG: lnotab entry j=4, pc_offset=22, line_offset=3
+DEBUG: lnotab entry j=6, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=8, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=10, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=12, pc_offset=8, line_offset=2
+DEBUG: lnotab entry j=14, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=16, pc_offset=6, line_offset=1
+DEBUG: lnotab entry j=18, pc_offset=6, line_offset=1
+DEBUG: lnotab entry j=20, pc_offset=10, line_offset=3
+DEBUG: LOAD_CONST arg=20 val=0x3a65a7af0e5afd01 repr=WeakSet
+DEBUG: [PC 130] OP 100
+DEBUG: LOAD_CONST arg=21 val=0x762bd7249506 repr=WeakMethod
+DEBUG: [PC 132] OP 100
+DEBUG: LOAD_CONST arg=22 val=0x762bd7249fc6 repr=finalize
+DEBUG: [PC 134] OP 114
+DEBUG: [PC 136] OP 103
+DEBUG: [PC 138] OP 102
+DEBUG: [PC 140] OP 112
+DEBUG: OP_LOAD_ATTR calling getAttribute env=0x762bd99013c0 obj=0x762bd4998800 attr=MutableSet
+DEBUG: [PC 142] OP 112
+DEBUG: OP_LOAD_ATTR calling getAttribute env=0x762bd99013c0 obj=0x762bd1efc600 attr=register
+DEBUG: [PC 144] OP 102
+DEBUG: [PC 146] OP 106
+DEBUG: OP_CALL_FUNCTION PC 146 callable=0x762bd23a7a8c argCount=1
+DEBUG: reprObject obj=0x762bd23a7a8c class=type
+DEBUG: reprObject out=0x762bd23c1a86
+DEBUG: invokeCallable callable=0x762bd23a7a8c repr=<method object at 0x762bd23a7a8c> class=type
+DEBUG: [PC 148] OP 133
+DEBUG: [PC 150] OP 100
+DEBUG: LOAD_CONST arg=21 val=0x762bd7249506 repr=WeakMethod
+DEBUG: [PC 152] OP 102
+DEBUG: [PC 154] OP 118
+DEBUG: [PC 156] OP 100
+DEBUG: LOAD_CONST arg=2 val=0x141 repr=None
+DEBUG: [PC 158] OP 100
+DEBUG: reprObject obj=0x762bd731cec0 class=NoneType
+DEBUG: LOAD_CONST arg=23 val=0x762bd731cec0 repr=<object>
+DEBUG: [PC 160] OP 156
+DEBUG: lnotab entry j=0, pc_offset=4, line_offset=5
+DEBUG: lnotab entry j=2, pc_offset=50, line_offset=10
+DEBUG: lnotab entry j=4, pc_offset=22, line_offset=3
+DEBUG: lnotab entry j=6, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=8, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=10, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=12, pc_offset=8, line_offset=2
+DEBUG: lnotab entry j=14, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=16, pc_offset=6, line_offset=1
+DEBUG: lnotab entry j=18, pc_offset=6, line_offset=1
+DEBUG: lnotab entry j=20, pc_offset=10, line_offset=3
+DEBUG: lnotab entry j=22, pc_offset=12, line_offset=2
+DEBUG: lnotab entry j=24, pc_offset=16, line_offset=54
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd720a880, defaults=(nil), kwDefaults=(nil)
+DEBUG: [PC 162] OP 160
+DEBUG: getType checking 0 parents
+DEBUG: getType proto fallback
+DEBUG OP_BUILD_CLASS: metaclass=0x762bd6f5ad00 (PROTO_NONE=0x141)
+DEBUG OP_BUILD_CLASS: metaclass name='method'
+DEBUG: reprObject obj=0x762bd245f78c class=type
+DEBUG: reprObject out=0x762bd24798c6
+DEBUG: invokeCallable callable=0x762bd245f78c repr=<method object at 0x762bd245f78c> class=type
+DEBUG: runCodeObject co_code size=52 co_consts size=10 stackOffset=0
+DEBUG: [PC 0] OP 100
+DEBUG: LOAD_CONST arg=0 val=0x762bd7262346 repr=
+    A custom `weakref.ref` subclass which simulates a weak reference to
+    a bound method, working around the lifetime problem of bound methods.
+    
+DEBUG: [PC 2] OP 133
+DEBUG: [PC 4] OP 100
+DEBUG: LOAD_CONST arg=1 val=0x762bd7265206 repr=_func_ref
+DEBUG: [PC 6] OP 100
+DEBUG: LOAD_CONST arg=2 val=0x762bd7266006 repr=_meth_type
+DEBUG: [PC 8] OP 100
+DEBUG: LOAD_CONST arg=3 val=0x65eda7661bf901 repr=_alive
+DEBUG: [PC 10] OP 100
+DEBUG: LOAD_CONST arg=4 val=0x762bd7267046 repr=__weakref__
+DEBUG: [PC 12] OP 118
+DEBUG: [PC 14] OP 103
+DEBUG: [PC 16] OP 100
+DEBUG: reprObject obj=0x762bd72a1080 class=NoneType
+DEBUG: LOAD_CONST arg=5 val=0x762bd72a1080 repr=<object>
+DEBUG: [PC 18] OP 100
+DEBUG: LOAD_CONST arg=6 val=0x141 repr=None
+DEBUG: [PC 20] OP 118
+DEBUG: [PC 22] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd247a700, defaults=0x762bd1ce9580, kwDefaults=(nil)
+DEBUG: [PC 24] OP 103
+DEBUG: [PC 26] OP 100
+DEBUG: reprObject obj=0x762bd72bd780 class=NoneType
+DEBUG: LOAD_CONST arg=7 val=0x762bd72bd780 repr=<object>
+DEBUG: [PC 28] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd247a700, defaults=(nil), kwDefaults=(nil)
+DEBUG: [PC 30] OP 103
+DEBUG: [PC 32] OP 100
+DEBUG: reprObject obj=0x762bd72dfcc0 class=NoneType
+DEBUG: LOAD_CONST arg=8 val=0x762bd72dfcc0 repr=<object>
+DEBUG: [PC 34] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd247a700, defaults=(nil), kwDefaults=(nil)
+DEBUG: [PC 36] OP 103
+DEBUG: [PC 38] OP 100
+DEBUG: reprObject obj=0x762bd7301800 class=NoneType
+DEBUG: LOAD_CONST arg=9 val=0x762bd7301800 repr=<object>
+DEBUG: [PC 40] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x762bd247a700, defaults=(nil), kwDefaults=(nil)
+DEBUG: [PC 42] OP 103
+DEBUG: [PC 44] OP 102
+DEBUG: [PC 46] OP 112
+DEBUG: OP_LOAD_ATTR calling getAttribute env=0x762bd99013c0 obj=0x762bd7d8f60c attr=__hash__
+DEBUG: [PC 46] OP 112
+DEBUG: Exception AttributeError at unknown:0 (PC 46)
+DEBUG: Exception message: ''
+DEBUG: raw exception pointer 0x762bd1d0dfc0
+DEBUG: Calling addTraceback...
+DEBUG: addTraceback exc=0x762bd1d0dfc0 frame=0x762bd247a700 lasti=46 lineno=0
+DEBUG: addTraceback currentTb=0x141
+DEBUG: addTraceback newTb=0x762bd25f2140
+DEBUG: addTraceback updatedExc=0x762bd1d0dfc0
+DEBUG: addTraceback returned. blockStack.empty()=true
+DEBUG: No trap found, returning nullptr
+DEBUG: runCodeObject result=(nil)
+DEBUG OP_BUILD_CLASS: calling metaclass=0x762bd6f5ad00
+DEBUG: reprObject obj=0x762bd6f5ad00 class=type
+DEBUG: reprObject out=0x762bd1f3c686
+DEBUG: invokeCallable callable=0x762bd6f5ad00 repr=<method object at 0x762bd6f5ad00> class=type
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: reprObject obj=0x762bd1cdd780 class=method
+DEBUG: reprObject out=0x762bd21f8d86
+DEBUG: invokeCallable (__call__) returning result=0x762bd1cdd780 repr=<method object at 0x762bd1cdd780>
+DEBUG OP_BUILD_CLASS: targetClass=0x762bd1cdd780
+DEBUG: OP_BUILD_CLASS injecting __class__ = 0x762bd1cdd780 (name=method) into ns = 0x762bd247a700
+DEBUG: [PC 164] OP 103
+DEBUG: lnotab entry j=0, pc_offset=4, line_offset=5
+DEBUG: lnotab entry j=2, pc_offset=50, line_offset=10
+DEBUG: lnotab entry j=4, pc_offset=22, line_offset=3
+DEBUG: lnotab entry j=6, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=8, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=10, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=12, pc_offset=8, line_offset=2
+DEBUG: lnotab entry j=14, pc_offset=8, line_offset=1
+DEBUG: lnotab entry j=16, pc_offset=6, line_offset=1
+DEBUG: lnotab entry j=18, pc_offset=6, line_offset=1
+DEBUG: lnotab entry j=20, pc_offset=10, line_offset=3
+DEBUG: lnotab entry j=22, pc_offset=12, line_offset=2
+DEBUG: lnotab entry j=24, pc_offset=16, line_offset=54
+DEBUG: Exception AttributeError at lib/python3.14/weakref.py:38 (PC 164)
+DEBUG: Exception message: ''
+DEBUG: raw exception pointer 0x762bd1d0dfc0
+DEBUG: Calling addTraceback...
+DEBUG: addTraceback exc=0x762bd1d0dfc0 frame=0x762bd720a880 lasti=164 lineno=38
+DEBUG: addTraceback currentTb=0x762bd25f2140
+DEBUG: addTraceback newTb=0x762bd25f6840
+DEBUG: addTraceback updatedExc=0x762bd1d0dfc0
+DEBUG: addTraceback returned. blockStack.empty()=true
+DEBUG: No trap found, returning nullptr
+DEBUG: runCodeObject result=(nil)
+DEBUG: [PC 4] OP 106
+DEBUG: Exception AttributeError at unknown:0 (PC 4)
+DEBUG: Exception message: ''
+DEBUG: raw exception pointer 0x762bd1d0dfc0
+DEBUG: Calling addTraceback...
+DEBUG: addTraceback exc=0x762bd1d0dfc0 frame=0x762bd711a140 lasti=4 lineno=0
+DEBUG: addTraceback currentTb=0x762bd25f6840
+DEBUG: addTraceback newTb=0x762bd25faf00
+DEBUG: addTraceback updatedExc=0x762bd1d0dfc0
+DEBUG: addTraceback returned. blockStack.empty()=true
+DEBUG: No trap found, returning nullptr
+DEBUG: runCodeObject result=(nil)
+DEBUG: py_globals called
+DEBUG: initDictStorage obj=0x762bd270f800
+DEBUG: initDictStorage dataName=0x762bd6dff646 keysName=0x762bd6edbb86
+DEBUG: initDictStorage creating sparse list
+DEBUG: initDictStorage setting __data__
+DEBUG: initDictStorage checking keys
+DEBUG: initDictStorage creating keys list
+DEBUG: initDictStorage setting __keys__
+DEBUG: initDictStorage done
+DEBUG: initDictStorage obj=0x762bd514ef40
+DEBUG: initDictStorage dataName=0x762bd6dff646 keysName=0x762bd6edbb86
+DEBUG: initDictStorage creating sparse list
+DEBUG: initDictStorage setting __data__
+DEBUG: initDictStorage checking keys
+DEBUG: initDictStorage creating keys list
+DEBUG: initDictStorage setting __keys__
+DEBUG: initDictStorage done
+DEBUG: py_type(3) name=0x3a65a7af0e5afd01 bases=0x762bd513b080 dict=0x762bd514ef40
+DEBUG: initDictStorage obj=0x762bd1b39e00
+DEBUG: initDictStorage dataName=0x762bd6dff646 keysName=0x762bd6edbb86
+DEBUG: initDictStorage creating sparse list
+DEBUG: initDictStorage setting __data__
+DEBUG: initDictStorage checking keys
+DEBUG: initDictStorage creating keys list
+DEBUG: initDictStorage setting __keys__
+DEBUG: initDictStorage done
+DEBUG: py_type copying key='__name__'
+DEBUG: py_type copied keyVal=0x3a65a7af0e5afd01
+DEBUG: py_type copying key='__module__'
+DEBUG: py_type copied keyVal=0x762bd6edd486
+DEBUG: py_type copying key='__init__'
+DEBUG: py_type copied keyVal=0x762bd1c9c1c0
+DEBUG: py_type copying key='__iter__'
+DEBUG: py_type copied keyVal=0x762bd1ca3980
+DEBUG: py_type copying key='__len__'
+DEBUG: py_type copied keyVal=0x762bd1cab240
+DEBUG: py_type copying key='__contains__'
+DEBUG: py_type copied keyVal=0x762bd1cb2a40
+DEBUG: py_type copying key='__reduce__'
+DEBUG: py_type copied keyVal=0x762bd1cba240
+DEBUG: py_type copying key='add'
+DEBUG: py_type copied keyVal=0x762bd1cc1a00
+DEBUG: py_type copying key='clear'
+DEBUG: py_type copied keyVal=0x762bd1cc9100
+DEBUG: py_type copying key='copy'
+DEBUG: py_type copied keyVal=0x762bd1cd0880
+DEBUG: py_type copying key='pop'
+DEBUG: py_type copied keyVal=0x762bd1cd81c0
+DEBUG: py_type copying key='remove'
+DEBUG: py_type copied keyVal=0x762bd1cdfa40
+DEBUG: py_type copying key='discard'
+DEBUG: py_type copied keyVal=0x762bd1ce7380
+DEBUG: py_type copying key='update'
+DEBUG: py_type copied keyVal=0x762bd1ceeb00
+DEBUG: py_type copying key='__ior__'
+DEBUG: py_type copied keyVal=0x762bd1cf62c0
+DEBUG: py_type copying key='difference'
+DEBUG: py_type copied keyVal=0x762bd1cfdc00
+DEBUG: py_type copying key='__sub__'
+DEBUG: py_type copied keyVal=0x762bd1cfdc00
+DEBUG: py_type copying key='difference_update'
+DEBUG: py_type copied keyVal=0x762bd1d05e00
+DEBUG: py_type copying key='__isub__'
+DEBUG: py_type copied keyVal=0x762bd1d0d680
+DEBUG: py_type copying key='intersection'
+DEBUG: py_type copied keyVal=0x762bd1d14e40
+DEBUG: py_type copying key='__and__'
+DEBUG: py_type copied keyVal=0x762bd1d14e40
+DEBUG: py_type copying key='intersection_update'
+DEBUG: py_type copied keyVal=0x762bd1d1d0c0
+DEBUG: py_type copying key='__iand__'
+DEBUG: py_type copied keyVal=0x762bd1d24940
+DEBUG: py_type copying key='issubset'
+DEBUG: py_type copied keyVal=0x762bd1d2c240
+DEBUG: py_type copying key='__le__'
+DEBUG: py_type copied keyVal=0x762bd1d2c240
+DEBUG: py_type copying key='__lt__'
+DEBUG: py_type copied keyVal=0x762bd1d34300
+DEBUG: py_type copying key='issuperset'
+DEBUG: py_type copied keyVal=0x762bd1d3bac0
+DEBUG: py_type copying key='__ge__'
+DEBUG: py_type copied keyVal=0x762bd1d3bac0
+DEBUG: py_type copying key='__gt__'
+DEBUG: py_type copied keyVal=0x762bd1d43cc0
+DEBUG: py_type copying key='__eq__'
+DEBUG: py_type copied keyVal=0x762bd1d4b5c0
+DEBUG: py_type copying key='symmetric_difference'
+DEBUG: py_type copied keyVal=0x762bd1d52f00
+DEBUG: py_type copying key='__xor__'
+DEBUG: py_type copied keyVal=0x762bd1d52f00
+DEBUG: py_type copying key='symmetric_difference_update'
+DEBUG: py_type copied keyVal=0x762bd1e5fbc0
+DEBUG: py_type copying key='__ixor__'
+DEBUG: py_type copied keyVal=0x762bd21e0480
+DEBUG: py_type copying key='union'
+DEBUG: py_type copied keyVal=0x762bd21e7b40
+DEBUG: py_type copying key='__or__'
+DEBUG: py_type copied keyVal=0x762bd21e7b40
+DEBUG: py_type copying key='isdisjoint'
+DEBUG: py_type copied keyVal=0x762bd21efc00
+DEBUG: py_type copying key='__repr__'
+DEBUG: py_type copied keyVal=0x762bd21f70c0
+DEBUG: py_type copying key='__class_getitem__'
+DEBUG: py_type copied keyVal=0x762bd22022c0
+DEBUG: py_type created class 0x762bd1b39e00 check MRO
+DEBUG: py_type MRO size=1
+DEBUG: py_type MRO [0] = 0x762bd6ef40c0
+DEBUG: initDictStorage obj=0x762bd247a700
+DEBUG: initDictStorage dataName=0x762bd6dff646 keysName=0x762bd6edbb86
+DEBUG: initDictStorage creating sparse list
+DEBUG: initDictStorage setting __data__
+DEBUG: initDictStorage checking keys
+DEBUG: initDictStorage creating keys list
+DEBUG: initDictStorage setting __keys__
+DEBUG: initDictStorage done

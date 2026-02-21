@@ -1,0 +1,14 @@
+DEBUG: ABCMeta.__new__ scaling for ABC with bases <class 'tuple'>
+protopy: unhandled exception in module execution:
+Traceback (most recent call last):
+  File "./repro_io.py", in <module>
+NameError: name 'bytearray' is not defined
+
+ImportError _collections_abc: No module named '_collections_abc'
+--------------------
+protopy: unhandled exception in module execution:
+Traceback (most recent call last):
+  File "./repro_io.py", in <module>
+AttributeError: 'module' object has no attribute '_check_methods'
+
+ImportError io: No module named 'io'

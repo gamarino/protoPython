@@ -1,0 +1,133 @@
+DEBUG: [PC 0] OP 102
+DEBUG: [PC 2] OP 100
+DEBUG: [PC 4] OP 106
+DEBUG: [PC 0] OP 100
+DEBUG: [PC 2] OP 133
+DEBUG: [PC 3] OP 0
+DEBUG: [PC 4] OP 102
+DEBUG: [PC 6] OP 100
+DEBUG: [PC 8] OP 106
+DEBUG: [PC 0] OP 100
+DEBUG: [PC 2] OP 133
+DEBUG: [PC 3] OP 0
+DEBUG: [PC 4] OP 100
+DEBUG: [PC 6] OP 100
+DEBUG: [PC 8] OP 100
+DEBUG: [PC 10] OP 100
+DEBUG: [PC 12] OP 100
+DEBUG: [PC 14] OP 100
+DEBUG: [PC 16] OP 100
+DEBUG: [PC 18] OP 100
+DEBUG: [PC 20] OP 100
+DEBUG: [PC 22] OP 100
+DEBUG: [PC 24] OP 114
+DEBUG: [PC 26] OP 103
+DEBUG: [PC 28] OP 100
+DEBUG: [PC 30] OP 114
+DEBUG: [PC 32] OP 102
+DEBUG: [PC 34] OP 104
+DEBUG: [PC 35] OP 0
+DEBUG: [PC 36] OP 103
+DEBUG: [PC 38] OP 100
+DEBUG: [PC 40] OP 103
+DEBUG: [PC 42] OP 100
+DEBUG: [PC 44] OP 103
+DEBUG: [PC 46] OP 100
+DEBUG: [PC 48] OP 103
+DEBUG: [PC 50] OP 100
+DEBUG: [PC 52] OP 103
+DEBUG: [PC 54] OP 100
+DEBUG: [PC 56] OP 103
+DEBUG: [PC 58] OP 100
+DEBUG: [PC 60] OP 103
+DEBUG: [PC 62] OP 100
+DEBUG: [PC 64] OP 103
+DEBUG: [PC 66] OP 100
+DEBUG: [PC 68] OP 103
+DEBUG: [PC 70] OP 100
+DEBUG: [PC 72] OP 103
+DEBUG: [PC 74] OP 100
+DEBUG: [PC 76] OP 103
+DEBUG: [PC 78] OP 100
+DEBUG: [PC 80] OP 118
+DEBUG: [PC 82] OP 100
+DEBUG: [PC 84] OP 100
+DEBUG: [PC 86] OP 156
+DEBUG: [PC 87] OP 0
+DEBUG: [PC 88] OP 160
+DEBUG: [PC 0] OP 100
+DEBUG: [PC 2] OP 156
+DEBUG: [PC 3] OP 0
+DEBUG: [PC 4] OP 103
+DEBUG: [PC 6] OP 100
+DEBUG: [PC 8] OP 156
+DEBUG: [PC 9] OP 0
+DEBUG: [PC 10] OP 103
+DEBUG: [PC 12] OP 100
+DEBUG: [PC 14] OP 156
+DEBUG: [PC 15] OP 0
+DEBUG: [PC 16] OP 103
+DEBUG: [PC 18] OP 100
+DEBUG: [PC 20] OP 156
+DEBUG: [PC 21] OP 0
+DEBUG: [PC 22] OP 103
+DEBUG: [PC 24] OP 101
+DEBUG: [PC 89] OP 0
+DEBUG: [PC 90] OP 103
+DEBUG: [PC 92] OP 102
+DEBUG: [PC 94] OP 100
+DEBUG: [PC 96] OP 100
+DEBUG: [PC 98] OP 100
+DEBUG: [PC 100] OP 100
+DEBUG: [PC 102] OP 100
+DEBUG: [PC 104] OP 118
+DEBUG: [PC 106] OP 100
+DEBUG: [PC 108] OP 100
+DEBUG: [PC 110] OP 100
+DEBUG: [PC 112] OP 100
+DEBUG: [PC 114] OP 100
+DEBUG: [PC 116] OP 118
+DEBUG: [PC 118] OP 102
+DEBUG: [PC 120] OP 106
+DEBUG: [PC 0] OP 102
+DEBUG: [PC 2] OP 102
+DEBUG: [PC 4] OP 113
+DEBUG: [PC 6] OP 102
+DEBUG: [PC 8] OP 102
+DEBUG: [PC 10] OP 113
+DEBUG: [PC 12] OP 102
+DEBUG: [PC 12] OP 102
+DEBUG: Exception handling start exc=0x725de03bc180
+DEBUG: Exception NameError at lib/python3.14/__future__.py:86 (PC 12)
+DEBUG: Calling addTraceback...
+DEBUG: addTraceback returned. blockStack.empty()=true
+DEBUG: No trap found, returning nullptr
+DEBUG: [PC 122] OP 103
+DEBUG: Exception handling start exc=0x725de03bc180
+DEBUG: Exception NameError at lib/python3.14/__future__.py:367 (PC 122)
+DEBUG: Calling addTraceback...
+DEBUG: addTraceback returned. blockStack.empty()=true
+DEBUG: No trap found, returning nullptr
+protopy: unhandled exception in module execution:
+Traceback (most recent call last):
+  File "<unknown>", in <module>
+  File "lib/python3.14/codeop.py", in <module>
+NameError: name 'compiler_flag' is not defined
+
+DEBUG: [PC 10] OP 103
+DEBUG: Exception handling start exc=0x725de04310c0
+DEBUG: Exception ImportError at lib/python3.14/codeop.py:36 (PC 10)
+DEBUG: Calling addTraceback...
+DEBUG: addTraceback returned. blockStack.empty()=true
+DEBUG: No trap found, returning nullptr
+protopy: unhandled exception in module execution:
+Traceback (most recent call last):
+  File "<unknown>", in <module>
+ImportError: No module named '__future__'
+
+DEBUG: [PC 6] OP 103
+DEBUG: Exception handling start exc=0x725de043d780
+DEBUG: Exception ImportError at lib/python3.14/codeop.py:0 (PC 6)
+DEBUG: Calling addTraceback...
+DEBUG: addTraceback returned. blockStack.empty()=true
+DEBUG: No trap found, returning nullptr

@@ -1,0 +1,38 @@
+DEBUG: assertionErrorType loaded successfully: 0x7eeceb024e40
+DEBUG: py_exec compiling source='s="-h"; print(s[1])...'
+DEBUG: runCodeObject co_code size=20 co_consts size=3 stackOffset=0
+DEBUG: [PC 0] OP 100
+DEBUG: LOAD_CONST arg=0 val=0x685a901 repr=-h
+DEBUG: [PC 2] OP 103
+DEBUG: [PC 4] OP 102
+DEBUG: [PC 6] OP 102
+DEBUG: [PC 8] OP 100
+DEBUG: LOAD_CONST arg=1 val=0x401 repr=1
+DEBUG: [PC 10] OP 115
+DEBUG: OP_BINARY_SUBSCR container=0x685a901 repr=-h key=0x401 repr=1
+DEBUG: OP_BINARY_SUBSCR result=0x685a901
+DEBUG: [PC 12] OP 106
+DEBUG: OP_CALL_FUNCTION PC 12 callable=0x7eeceaf8ca0c argCount=1
+DEBUG: reprObject obj=0x7eeceaf8ca0c class=type
+DEBUG: reprObject out=0x7eeceb189046
+DEBUG: invokeCallable callable=0x7eeceaf8ca0c repr=<method object at 0x7eeceaf8ca0c> class=type
+DEBUG: py_print called with 1 args
+DEBUG RUNTIME argvVec size=1
+DEBUG: initDictStorage obj=0x7eeceaf05b80
+DEBUG: initDictStorage dataName=0x7eecead85e86 keysName=0x7eeceae623c6
+DEBUG: initDictStorage creating sparse list
+DEBUG: initDictStorage setting __data__
+DEBUG: initDictStorage checking keys
+DEBUG: initDictStorage creating keys list
+DEBUG: initDictStorage setting __keys__
+DEBUG: initDictStorage done
+DEBUG SYS MODULE argv size=1
+DEBUG: Registering 'type' using typeProto=0x7eeceae6e0c0
+-h
+DEBUG: [PC 14] OP 133
+DEBUG: [PC 16] OP 100
+DEBUG: reprObject obj=0x7eeceaed7cc0 class=NoneType
+DEBUG: reprObject out=0x19776f9d101
+DEBUG: LOAD_CONST arg=2 val=0x7eeceaed7cc0 repr=None
+DEBUG: [PC 18] OP 101
+DEBUG: runCodeObject result=0x7eeceaed7cc0

@@ -1,0 +1,43 @@
+DEBUG RUNTIME argvVec size=1
+DEBUG SYS MODULE argv size=1
+DEBUG: py_globals called
+DEBUG: globals()={exc: TypeError, keys: <method object at 0x7dcb1364c78c>, GenericAlias: <class 'type'>, FunctionType: <function object at 0x7dcb135e9340>, LambdaType: <function object at 0x7dcb135e9340>, CodeType: <object object at 0x7dcb135e6900>, MappingProxyType: <object object at 0x7dcb135e6900>, SimpleNamespace: <object object at 0x7dcb135e6900>, CellType: <class 'list'>, GeneratorType: <generator object <unknown> at 0x7dcb135e71c0>, CoroutineType: <generator object <unknown> at 0x7dcb135e71c0>, AsyncGeneratorType: <generator object <unknown> at 0x7dcb135e71c0>, MethodType: <object object at 0x7dcb135e6900>, BuiltinFunctionType: <method object at 0x7dcb1364d540>, BuiltinMethodType: <method object at 0x7dcb1364d540>, WrapperDescriptorType: <method object at 0x7dcb1364d540>, MethodWrapperType: <method object at 0x7dcb1364d540>, MethodDescriptorType: <method object at 0x7dcb1364d540>, ClassMethodDescriptorType: <method object at 0x7dcb1364d540>, ModuleType: <module object at 0x7dcb1364b640>, ...}
+DEBUG: py_globals called
+DEBUG: abc imported
+DEBUG: sys imported
+DEBUG: _check_methods imported
+DEBUG: names=<class 'tuple'>
+DEBUG: os.py about to import posixpath
+DEBUG: genericpath finishing. id(sys)=138311157234688 id(sys.modules['genericpath'])=99208633787264
+DEBUG: id(None)=321
+DEBUG: py_globals called
+DEBUG: genericpath globals id: 99208637699968
+DEBUG: genericpath _splitext defined: <function object at 0x5a3acf9aaa40> id=99208637622848
+DEBUG: py_globals called
+DEBUG: genericpath globals _splitext: MISSING id=2580161602373926145
+DEBUG: posixpath imported genericpath. id(genericpath)=99208633787264 type=<class 'module'>
+DEBUG: posixpath sys id=138311157234688
+DEBUG: posixpath sys.modules['genericpath'] id=99208633787264
+DEBUG: genericpath dir: <class 'list'>
+DEBUG: genericpath._splitext value: <function object at 0x5a3acf9aaa40>
+DEBUG: posixpath module starting. id(self)=99208615758336
+DEBUG: posixpath module starting. id(posixpath)=99208615758336
+DEBUG: posixpath seeing genericpath._splitext: <function object at 0x5a3acf9aaa40>
+DEBUG: posixpath.py entry
+DEBUG: posixpath.py try import _path_splitroot_ex from posix
+DEBUG: posixpath.py imported _path_splitroot_ex successfully
+DEBUG: posixpath.py try import _path_normpath
+DEBUG: os.py imported posixpath path=<posixpath object at 0x5a3ace4d0a00>
+DEBUG: py_globals called
+DEBUG: py_globals called
+DEBUG: py_globals called
+DEBUG: py_globals called
+DEBUG: creating environ
+DEBUG: environ created
+DEBUG: py_globals called
+DEBUG: py_globals called
+DEBUG: py_globals called
+DEBUG: py_globals called
+DEBUG: py_globals called
+DEBUG: py_globals called
+Cannot disassemble <class 'object'>

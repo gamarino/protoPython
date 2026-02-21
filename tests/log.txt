@@ -1,0 +1,91 @@
+DEBUG: assertionErrorType loaded successfully: 0x7333f1f08e40
+DEBUG: py_exec compiling source='
+import sys
+import re
+print("re attrs:", [k for k in dir(re) if not k.startswith("__")])
+...'
+DEBUG: runCodeObject co_code size=44 co_consts size=5 stackOffset=0
+DEBUG: [PC 0] OP 102
+DEBUG: [PC 2] OP 100
+DEBUG: LOAD_CONST arg=0 val=0x39f9e6d01 repr=sys
+DEBUG: [PC 4] OP 106
+DEBUG: OP_CALL_FUNCTION PC 4 callable=0x7333f1e89b8c argCount=1
+DEBUG: reprObject obj=0x7333f1e89b8c class=type
+DEBUG: reprObject out=0x7333f20ec906
+DEBUG: invokeCallable callable=0x7333f1e89b8c repr=<method object at 0x7333f1e89b8c> class=type
+DEBUG: __import__('sys') level=0
+DEBUG: [PC 6] OP 103
+DEBUG: [PC 8] OP 102
+DEBUG: [PC 10] OP 100
+DEBUG: LOAD_CONST arg=1 val=0x65e4901 repr=re
+DEBUG: [PC 12] OP 106
+DEBUG: OP_CALL_FUNCTION PC 12 callable=0x7333f1e89b8c argCount=1
+DEBUG: reprObject obj=0x7333f1e89b8c class=type
+DEBUG: reprObject out=0x7333f20ec906
+DEBUG: invokeCallable callable=0x7333f1e89b8c repr=<method object at 0x7333f1e89b8c> class=type
+DEBUG: __import__('re') level=0
+DEBUG: reprObject obj=0x7333f210374c class=type
+DEBUG: reprObject out=0x7333f2110146
+DEBUG: invokeCallable callable=0x7333f210374c repr=<method object at 0x7333f210374c> class=type
+DEBUG: reprObject obj=0x7333f210374c class=type
+DEBUG: reprObject out=0x7333f2110146
+DEBUG: invokeCallable callable=0x7333f210374c repr=<method object at 0x7333f210374c> class=type
+DEBUG: [PC 14] OP 103
+DEBUG: [PC 16] OP 102
+DEBUG: [PC 18] OP 100
+DEBUG: LOAD_CONST arg=2 val=0x7333f1f970c6 repr=re attrs:
+DEBUG: [PC 20] OP 102
+DEBUG: [PC 22] OP 102
+DEBUG: [PC 24] OP 106
+DEBUG: OP_CALL_FUNCTION PC 24 callable=0x7333f1e7f8cc argCount=1
+DEBUG: reprObject obj=0x7333f1e7f8cc class=type
+DEBUG: reprObject out=0x7333f2119606
+DEBUG: invokeCallable callable=0x7333f1e7f8cc repr=<method object at 0x7333f1e7f8cc> class=type
+DEBUG: [PC 26] OP 119
+DEBUG: env->iter called on obj=0x7333f2133380, method=0x7333f213384c, asMethod=0x7333f357d037
+DEBUG: OP_GET_ITER iterable=0x7333f2133380 iterObj=0x7333f2135680
+DEBUG: [PC 28] OP 100
+DEBUG: reprObject obj=0x7333f1f9cdc0 class=NoneType
+DEBUG: LOAD_CONST arg=3 val=0x7333f1f9cdc0 repr=<object>
+DEBUG: [PC 30] OP 156
+DEBUG: OP_BUILD_FUNCTION frame=0x7333f1f84980, defaults=(nil), kwDefaults=(nil)
+DEBUG: [PC 32] OP 125
+DEBUG: [PC 34] OP 106
+DEBUG: OP_CALL_FUNCTION PC 34 callable=0x7333f213a840 argCount=1
+DEBUG: reprObject obj=0x7333f213a840 class=function
+DEBUG: reprObject out=0x7333f213e586
+DEBUG: invokeCallable callable=0x7333f213a840 repr=<function object at 0x7333f213a840> class=function
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: runUserFunctionCall extracted outerFrame=0x7333f1f84980 from closure list
+DEBUG: runUserFunctionCall nparams_count=1 argCount=1 argsSize=1
+DEBUG: bindVar idx=0 param=.0 val=0x7333f2135680 co_flags=3 slots=0x5b51d452f150 frame=0x7333f22690c0
+DEBUG: [PC 0] OP 114
+DEBUG: [PC 2] OP 157
+DEBUG: LOAD_FAST 0 loaded: 0x7333f2135680
+DEBUG: [PC 4] OP 119
+DEBUG: env->iter called on obj=0x7333f2135680, method=0x7333f226becc, asMethod=0x7333f34e138d
+DEBUG: OP_GET_ITER iterable=0x7333f2135680 iterObj=0x7333f2135680
+DEBUG: [PC 6] OP 120
+DEBUG: [PC 6] OP 120
+DEBUG: [PC 28] OP 101
+DEBUG: reprObject obj=0x7333f2135680 class=type
+DEBUG: reprObject out=0x7333f2202946
+DEBUG: invokeCallable (__call__) returning result=0x7333f2135680 repr=<object object at 0x7333f2135680>
+DEBUG: [PC 36] OP 106
+DEBUG: OP_CALL_FUNCTION PC 36 callable=0x7333f1e70a0c argCount=2
+DEBUG: reprObject obj=0x7333f1e70a0c class=type
+DEBUG: reprObject out=0x7333f2206886
+DEBUG: invokeCallable callable=0x7333f1e70a0c repr=<method object at 0x7333f1e70a0c> class=type
+DEBUG: py_print called with 2 args
+DEBUG: reprObject obj=0x7333f2206e0c class=type
+DEBUG: reprObject out=0x7333f20876c6
+DEBUG: invokeCallable callable=0x7333f2206e0c repr=<method object at 0x7333f2206e0c> class=type
+DEBUG: getType checking 2 parents
+DEBUG: getType returning parent 1 as class
+DEBUG: [PC 38] OP 133
+DEBUG: [PC 40] OP 100
+DEBUG: reprObject obj=0x7333f1dbbcc0 class=NoneType
+DEBUG: reprObject out=0x19776f9d101
+DEBUG: LOAD_CONST arg=4 val=0x7333f1dbbcc0 repr=None
+DEBUG: [PC 42] OP 101
+DEBUG: runCodeObject result=0x7333f1dbbcc0

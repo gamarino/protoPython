@@ -1,0 +1,3282 @@
+DEBUG: Parser::advance token=3 value='print' line=2
+DEBUG: Parser::advance token=8 value='' line=2
+DEBUG: Parser::advance token=2 value='print: {print}' line=2
+DEBUG: Parser::advance token=9 value='' line=2
+DEBUG: Parser::advance token=3 value='print' line=1
+DEBUG: Parser::advance token=12 value='' line=1
+DEBUG: Parser::advance token=11 value='' line=3
+DEBUG: Parser::advance token=3 value='print' line=3
+DEBUG: Parser::advance token=8 value='' line=3
+DEBUG: Parser::advance token=2 value='str: {str}' line=3
+DEBUG: Parser::advance token=9 value='' line=3
+DEBUG: Parser::advance token=3 value='str' line=1
+DEBUG: Parser::advance token=12 value='' line=1
+DEBUG: Parser::advance token=11 value='' line=4
+DEBUG: Parser::advance token=3 value='print' line=4
+DEBUG: Parser::advance token=8 value='' line=4
+DEBUG: Parser::advance token=2 value='int: {int}' line=4
+DEBUG: Parser::advance token=9 value='' line=4
+DEBUG: Parser::advance token=3 value='int' line=1
+DEBUG: Parser::advance token=12 value='' line=1
+DEBUG: Parser::advance token=11 value='' line=5
+DEBUG: Parser::advance token=3 value='print' line=5
+DEBUG: Parser::advance token=8 value='' line=5
+DEBUG: Parser::advance token=2 value='tuple: {tuple}' line=5
+DEBUG: Parser::advance token=9 value='' line=5
+DEBUG: Parser::advance token=3 value='tuple' line=1
+DEBUG: Parser::advance token=12 value='' line=1
+DEBUG: Parser::advance token=11 value='' line=6
+DEBUG: Parser::advance token=3 value='print' line=6
+DEBUG: Parser::advance token=8 value='' line=6
+DEBUG: Parser::advance token=2 value='list: {list}' line=6
+DEBUG: Parser::advance token=9 value='' line=6
+DEBUG: Parser::advance token=3 value='list' line=1
+DEBUG: Parser::advance token=12 value='' line=1
+DEBUG: Parser::advance token=11 value='' line=7
+DEBUG: Parser::advance token=3 value='print' line=8
+DEBUG: Parser::advance token=8 value='' line=8
+DEBUG: Parser::advance token=2 value='eval('1') = {eval('1')}' line=8
+DEBUG: Parser::advance token=9 value='' line=8
+DEBUG: Parser::advance token=3 value='eval' line=1
+DEBUG: Parser::advance token=8 value='' line=1
+DEBUG: Parser::advance token=1 value='1' line=1
+DEBUG: Parser::advance token=9 value='' line=1
+DEBUG: Parser::advance token=12 value='' line=1
+DEBUG: Parser::advance token=11 value='' line=9
+DEBUG: Parser::advance token=3 value='print' line=9
+DEBUG: Parser::advance token=8 value='' line=9
+DEBUG: Parser::advance token=2 value='eval('1+1') = {eval('1+1')}' line=9
+DEBUG: Parser::advance token=9 value='' line=9
+DEBUG: Parser::advance token=3 value='eval' line=1
+DEBUG: Parser::advance token=8 value='' line=1
+DEBUG: Parser::advance token=1 value='1+1' line=1
+DEBUG: Parser::advance token=9 value='' line=1
+DEBUG: Parser::advance token=12 value='' line=1
+DEBUG: Parser::advance token=11 value='' line=10
+DEBUG: Parser::advance token=3 value='x' line=10
+DEBUG: Parser::advance token=19 value='' line=10
+DEBUG: Parser::advance token=0 value='10' line=10
+DEBUG: Parser::advance token=11 value='' line=11
+DEBUG: Parser::advance token=3 value='print' line=11
+DEBUG: Parser::advance token=8 value='' line=11
+DEBUG: Parser::advance token=2 value='eval('x') = {eval('x')}' line=11
+DEBUG: Parser::advance token=9 value='' line=11
+DEBUG: Parser::advance token=3 value='eval' line=1
+DEBUG: Parser::advance token=8 value='' line=1
+DEBUG: Parser::advance token=1 value='x' line=1
+DEBUG: Parser::advance token=9 value='' line=1
+DEBUG: Parser::advance token=12 value='' line=1
+DEBUG: Parser::advance token=11 value='' line=12
+DEBUG: Parser::advance token=3 value='print' line=12
+DEBUG: Parser::advance token=8 value='' line=12
+DEBUG: Parser::advance token=2 value='eval('x+5') = {eval('x+5')}' line=12
+DEBUG: Parser::advance token=9 value='' line=12
+DEBUG: Parser::advance token=3 value='eval' line=1
+DEBUG: Parser::advance token=8 value='' line=1
+DEBUG: Parser::advance token=1 value='x+5' line=1
+DEBUG: Parser::advance token=9 value='' line=1
+DEBUG: Parser::advance token=12 value='' line=1
+DEBUG: Parser::advance token=11 value='' line=13
+DEBUG: Parser::advance token=27 value='def' line=13
+DEBUG: Parser::advance token=3 value='f' line=13
+DEBUG: Parser::advance token=8 value='' line=13
+DEBUG: Parser::advance token=9 value='' line=13
+DEBUG: Parser::advance token=18 value='' line=13
+DEBUG: Parser::advance token=34 value='return' line=13
+DEBUG: Parser::advance token=0 value='42' line=13
+DEBUG: Parser::advance token=11 value='' line=14
+DEBUG: Parser::advance token=3 value='print' line=14
+DEBUG: Parser::advance token=8 value='' line=14
+DEBUG: Parser::advance token=2 value='eval('f()') = {eval('f()')}' line=14
+DEBUG: Parser::advance token=9 value='' line=14
+DEBUG: Parser::advance token=3 value='eval' line=1
+DEBUG: Parser::advance token=8 value='' line=1
+DEBUG: Parser::advance token=1 value='f()' line=1
+DEBUG: Parser::advance token=9 value='' line=1
+DEBUG: Parser::advance token=12 value='' line=1
+DEBUG: Parser::advance token=11 value='' line=15
+DEBUG: Parser::advance token=31 value='import' line=15
+DEBUG: Parser::advance token=3 value='collections' line=15
+DEBUG: Parser::advance token=11 value='' line=16
+DEBUG: Parser::advance token=3 value='print' line=16
+DEBUG: Parser::advance token=8 value='' line=16
+DEBUG: Parser::advance token=2 value='collections is {collections}' line=16
+DEBUG: Parser::advance token=9 value='' line=16
+DEBUG: Parser::advance token=3 value='collections' line=1
+DEBUG: Parser::advance token=12 value='' line=1
+DEBUG: Parser::advance token=11 value='' line=17
+DEBUG: Parser::advance token=42 value='try' line=17
+DEBUG: Parser::advance token=18 value='' line=17
+DEBUG: Parser::advance token=11 value='' line=18
+DEBUG: Parser::advance token=29 value='' line=18
+DEBUG: Parser::advance token=3 value='nt' line=18
+DEBUG: Parser::advance token=19 value='' line=18
+DEBUG: Parser::advance token=3 value='collections' line=18
+DEBUG: Parser::advance token=13 value='' line=18
+DEBUG: Parser::advance token=3 value='namedtuple' line=18
+DEBUG: Parser::advance token=8 value='' line=18
+DEBUG: Parser::advance token=1 value='Point' line=18
+DEBUG: Parser::advance token=10 value='' line=18
+DEBUG: Parser::advance token=14 value='' line=18
+DEBUG: Parser::advance token=1 value='x' line=18
+DEBUG: Parser::advance token=10 value='' line=18
+DEBUG: Parser::advance token=1 value='y' line=18
+DEBUG: Parser::advance token=15 value='' line=18
+DEBUG: Parser::advance token=9 value='' line=18
+DEBUG: Parser::advance token=11 value='' line=19
+DEBUG: Parser::advance token=3 value='print' line=19
+DEBUG: Parser::advance token=8 value='' line=19
+DEBUG: Parser::advance token=2 value='nt is {nt}' line=19
+DEBUG: Parser::advance token=9 value='' line=19
+DEBUG: Parser::advance token=3 value='nt' line=1
+DEBUG: Parser::advance token=12 value='' line=1
+DEBUG: Parser::advance token=11 value='' line=20
+DEBUG: Parser::advance token=30 value='' line=20
+DEBUG: Parser::advance token=43 value='except' line=20
+DEBUG: Parser::advance token=3 value='Exception' line=20
+DEBUG: Parser::advance token=50 value='as' line=20
+DEBUG: Parser::advance token=3 value='e' line=20
+DEBUG: Parser::advance token=18 value='' line=20
+DEBUG: Parser::advance token=11 value='' line=21
+DEBUG: Parser::advance token=29 value='' line=21
+DEBUG: Parser::advance token=3 value='print' line=21
+DEBUG: Parser::advance token=8 value='' line=21
+DEBUG: Parser::advance token=2 value='Error in namedtuple: {e}' line=21
+DEBUG: Parser::advance token=9 value='' line=21
+DEBUG: Parser::advance token=3 value='e' line=1
+DEBUG: Parser::advance token=12 value='' line=1
+DEBUG: Parser::advance token=11 value='' line=22
+DEBUG: Parser::advance token=30 value='' line=22
+DEBUG: Parser::advance token=12 value='' line=22
+DEBUG: runCodeObject co_code size=232 co_consts size=24 stackOffset=0
+DEBUG: [PC 0] OP 102
+DEBUG: lnotab entry j=0, pc_offset=4, line_offset=-1
+DEBUG: [PC 2] OP 100
+DEBUG: LOAD_CONST arg=0 val=0x103ae9bb4f2e1d01 repr=print: 
+DEBUG: [PC 4] OP 102
+DEBUG: [PC 6] OP 179
+DEBUG: reprObject obj=0x7fe9bfdc1600 class=type
+DEBUG: reprObject out=0x7fe9c018f886
+DEBUG: invokeCallable callable=0x7fe9bfdc1600 repr=<class 'str'> class=type
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: invokeCallable (__call__) returning result=0x7fe9c01911c6 repr=<class 'method'>
+DEBUG: [PC 8] OP 106
+DEBUG: OP_CALL_FUNCTION PC 8 callable=0x7fe9bfee22cc argCount=1
+DEBUG: reprObject obj=0x7fe9bfee22cc class=type
+DEBUG: reprObject out=0x7fe9c01cb406
+DEBUG: invokeCallable callable=0x7fe9bfee22cc repr=<method object at 0x7fe9bfee22cc> class=type
+DEBUG: py_print called with 1 args
+DEBUG: initDictStorage obj=0x7fe9bfe42d40
+DEBUG: initDictStorage dataName=0x7fe9bfcc5e86 keysName=0x7fe9bfda23c6
+DEBUG: initDictStorage creating sparse list
+DEBUG: initDictStorage setting __data__
+DEBUG: initDictStorage checking keys
+DEBUG: initDictStorage creating keys list
+DEBUG: initDictStorage setting __keys__
+DEBUG: initDictStorage done
+DEBUG: Registering 'type' using typeProto=0x7fe9bfdae0c0
+DEBUG: executeModule initDictStorage modulePrototype=0x7fe9bfe1a080
+DEBUG: initDictStorage obj=0x7fe9c0063040
+DEBUG: initDictStorage dataName=0x7fe9bfcc5e86 keysName=0x7fe9bfda23c6
+DEBUG: initDictStorage creating sparse list
+DEBUG: initDictStorage setting __data__
+DEBUG: initDictStorage checking keys
+DEBUG: initDictStorage creating keys list
+DEBUG: initDictStorage setting __keys__
+DEBUG: initDictStorage done
+DEBUG: executeModule setting __class__
+DEBUG: executeModule setting frame attributes
+DEBUG: executeModule setting f_code
+print: <class 'method'>
+DEBUG: [PC 10] OP 133
+DEBUG: [PC 12] OP 102
+DEBUG: [PC 14] OP 100
+DEBUG: LOAD_CONST arg=1 val=0x40eb974e7501 repr=str: 
+DEBUG: [PC 16] OP 102
+DEBUG: [PC 18] OP 179
+DEBUG: reprObject obj=0x7fe9bfdc1600 class=type
+DEBUG: reprObject out=0x7fe9c018f886
+DEBUG: invokeCallable callable=0x7fe9bfdc1600 repr=<class 'str'> class=type
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: invokeCallable (__call__) returning result=0x7fe9c018f886 repr=<class 'str'>
+DEBUG: [PC 20] OP 106
+DEBUG: OP_CALL_FUNCTION PC 20 callable=0x7fe9bfee22cc argCount=1
+DEBUG: reprObject obj=0x7fe9bfee22cc class=type
+DEBUG: reprObject out=0x7fe9c01cb406
+DEBUG: invokeCallable callable=0x7fe9bfee22cc repr=<method object at 0x7fe9bfee22cc> class=type
+DEBUG: py_print called with 1 args
+str: <class 'str'>
+DEBUG: [PC 22] OP 133
+DEBUG: [PC 24] OP 102
+DEBUG: [PC 26] OP 100
+DEBUG: LOAD_CONST arg=2 val=0x40eba6ed3501 repr=int: 
+DEBUG: [PC 28] OP 102
+DEBUG: [PC 30] OP 179
+DEBUG: reprObject obj=0x7fe9bfdc1600 class=type
+DEBUG: reprObject out=0x7fe9c018f886
+DEBUG: invokeCallable callable=0x7fe9bfdc1600 repr=<class 'str'> class=type
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: invokeCallable (__call__) returning result=0x7fe9c0196106 repr=<class 'int'>
+DEBUG: [PC 32] OP 106
+DEBUG: lnotab entry j=0, pc_offset=4, line_offset=-1
+DEBUG: lnotab entry j=2, pc_offset=8, line_offset=2
+DEBUG: lnotab entry j=4, pc_offset=4, line_offset=-2
+DEBUG: lnotab entry j=6, pc_offset=8, line_offset=3
+DEBUG: lnotab entry j=8, pc_offset=4, line_offset=-3
+DEBUG: lnotab entry j=10, pc_offset=8, line_offset=4
+DEBUG: OP_CALL_FUNCTION PC 32 callable=0x7fe9bfee22cc argCount=1
+DEBUG: reprObject obj=0x7fe9bfee22cc class=type
+DEBUG: reprObject out=0x7fe9c01cb406
+DEBUG: invokeCallable callable=0x7fe9bfee22cc repr=<method object at 0x7fe9bfee22cc> class=type
+DEBUG: py_print called with 1 args
+int: <class 'int'>
+DEBUG: [PC 34] OP 133
+DEBUG: [PC 36] OP 102
+DEBUG: [PC 38] OP 100
+DEBUG: LOAD_CONST arg=3 val=0x103acbb3875e9d01 repr=tuple: 
+DEBUG: [PC 40] OP 102
+DEBUG: reprObject obj=0x7fe9bfdeee40 class=type
+DEBUG: reprObject out=0x7fe9c01d8a86
+DEBUG: resolve BUILTINS name=tuple result=0x7fe9bfdeee40 repr=<class 'tuple'>
+DEBUG: [PC 42] OP 179
+DEBUG: reprObject obj=0x7fe9bfdc1600 class=type
+DEBUG: reprObject out=0x7fe9c018f886
+DEBUG: invokeCallable callable=0x7fe9bfdc1600 repr=<class 'str'> class=type
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: invokeCallable (__call__) returning result=0x7fe9c01d8a86 repr=<class 'tuple'>
+DEBUG: [PC 44] OP 106
+DEBUG: OP_CALL_FUNCTION PC 44 callable=0x7fe9bfee22cc argCount=1
+DEBUG: reprObject obj=0x7fe9bfee22cc class=type
+DEBUG: reprObject out=0x7fe9c01cb406
+DEBUG: invokeCallable callable=0x7fe9bfee22cc repr=<method object at 0x7fe9bfee22cc> class=type
+DEBUG: py_print called with 1 args
+tuple: <class 'tuple'>
+DEBUG: [PC 46] OP 133
+DEBUG: [PC 48] OP 102
+DEBUG: [PC 50] OP 100
+DEBUG: LOAD_CONST arg=4 val=0x2075d39e9d9901 repr=list: 
+DEBUG: [PC 52] OP 102
+DEBUG: [PC 54] OP 179
+DEBUG: reprObject obj=0x7fe9bfdc1600 class=type
+DEBUG: reprObject out=0x7fe9c018f886
+DEBUG: invokeCallable callable=0x7fe9bfdc1600 repr=<class 'str'> class=type
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: invokeCallable (__call__) returning result=0x7fe9c019b546 repr=<class 'list'>
+DEBUG: [PC 56] OP 106
+DEBUG: OP_CALL_FUNCTION PC 56 callable=0x7fe9bfee22cc argCount=1
+DEBUG: reprObject obj=0x7fe9bfee22cc class=type
+DEBUG: reprObject out=0x7fe9c01cb406
+DEBUG: invokeCallable callable=0x7fe9bfee22cc repr=<method object at 0x7fe9bfee22cc> class=type
+DEBUG: py_print called with 1 args
+list: <class 'list'>
+DEBUG: [PC 58] OP 133
+DEBUG: [PC 60] OP 102
+DEBUG: [PC 62] OP 100
+DEBUG: LOAD_CONST arg=5 val=0x7fe9c006b4c6 repr=eval('1') = 
+DEBUG: [PC 64] OP 102
+DEBUG: lnotab entry j=0, pc_offset=4, line_offset=-1
+DEBUG: lnotab entry j=2, pc_offset=8, line_offset=2
+DEBUG: lnotab entry j=4, pc_offset=4, line_offset=-2
+DEBUG: lnotab entry j=6, pc_offset=8, line_offset=3
+DEBUG: lnotab entry j=8, pc_offset=4, line_offset=-3
+DEBUG: lnotab entry j=10, pc_offset=8, line_offset=4
+DEBUG: lnotab entry j=12, pc_offset=4, line_offset=-4
+DEBUG: lnotab entry j=14, pc_offset=8, line_offset=5
+DEBUG: lnotab entry j=16, pc_offset=4, line_offset=-5
+DEBUG: lnotab entry j=18, pc_offset=8, line_offset=7
+DEBUG: lnotab entry j=20, pc_offset=4, line_offset=-7
+DEBUG: lnotab entry j=22, pc_offset=12, line_offset=8
+DEBUG: [PC 66] OP 100
+DEBUG: LOAD_CONST arg=6 val=0x62501 repr=1
+DEBUG: [PC 68] OP 106
+DEBUG: OP_CALL_FUNCTION PC 68 callable=0x7fe9bfef4ccc argCount=1
+DEBUG: reprObject obj=0x7fe9bfef4ccc class=type
+DEBUG: reprObject out=0x7fe9c01e8b46
+DEBUG: invokeCallable callable=0x7fe9bfef4ccc repr=<method object at 0x7fe9bfef4ccc> class=type
+DEBUG: Parser::advance token=0 value='1' line=1
+DEBUG: Parser::advance token=12 value='' line=1
+DEBUG: py_eval compiling source='1'
+  Const[0]: 1
+DEBUG: runCodeObject co_code size=4 co_consts size=1 stackOffset=0
+DEBUG: [PC 0] OP 100
+DEBUG: lnotab entry j=0, pc_offset=4, line_offset=-1
+DEBUG: LOAD_CONST arg=0 val=0x401 repr=1
+DEBUG: [PC 2] OP 101
+DEBUG: runCodeObject result=0x401
+DEBUG: [PC 70] OP 179
+DEBUG: [PC 72] OP 106
+DEBUG: OP_CALL_FUNCTION PC 72 callable=0x7fe9bfee22cc argCount=1
+DEBUG: reprObject obj=0x7fe9bfee22cc class=type
+DEBUG: reprObject out=0x7fe9c01cb406
+DEBUG: invokeCallable callable=0x7fe9bfee22cc repr=<method object at 0x7fe9bfee22cc> class=type
+DEBUG: py_print called with 1 args
+DEBUG: py_eval source='1' result=0x401
+eval('1') = 1
+DEBUG: [PC 74] OP 133
+DEBUG: [PC 76] OP 102
+DEBUG: [PC 78] OP 100
+DEBUG: LOAD_CONST arg=7 val=0x7fe9c006ca46 repr=eval('1+1') = 
+DEBUG: [PC 80] OP 102
+DEBUG: [PC 82] OP 100
+DEBUG: LOAD_CONST arg=8 val=0x18ab62d01 repr=1+1
+DEBUG: [PC 84] OP 106
+DEBUG: OP_CALL_FUNCTION PC 84 callable=0x7fe9bfef4ccc argCount=1
+DEBUG: reprObject obj=0x7fe9bfef4ccc class=type
+DEBUG: reprObject out=0x7fe9c01e8b46
+DEBUG: invokeCallable callable=0x7fe9bfef4ccc repr=<method object at 0x7fe9bfef4ccc> class=type
+DEBUG: Parser::advance token=0 value='1' line=1
+DEBUG: Parser::advance token=4 value='' line=1
+DEBUG: Parser::advance token=0 value='1' line=1
+DEBUG: Parser::advance token=12 value='' line=1
+DEBUG: py_eval compiling source='1+1'
+  Const[0]: 1
+DEBUG: runCodeObject co_code size=8 co_consts size=1 stackOffset=0
+DEBUG: [PC 0] OP 100
+DEBUG: lnotab entry j=0, pc_offset=4, line_offset=-1
+DEBUG: LOAD_CONST arg=0 val=0x401 repr=1
+DEBUG: [PC 2] OP 100
+DEBUG: LOAD_CONST arg=0 val=0x401 repr=1
+DEBUG: [PC 4] OP 104
+DEBUG: [PC 6] OP 101
+DEBUG: runCodeObject result=0x801
+DEBUG: [PC 86] OP 179
+DEBUG: [PC 88] OP 106
+DEBUG: OP_CALL_FUNCTION PC 88 callable=0x7fe9bfee22cc argCount=1
+DEBUG: reprObject obj=0x7fe9bfee22cc class=type
+DEBUG: reprObject out=0x7fe9c01cb406
+DEBUG: invokeCallable callable=0x7fe9bfee22cc repr=<method object at 0x7fe9bfee22cc> class=type
+DEBUG: py_print called with 1 args
+DEBUG: py_eval source='1+1' result=0x801
+eval('1+1') = 2
+DEBUG: [PC 90] OP 133
+DEBUG: [PC 92] OP 100
+DEBUG: LOAD_CONST arg=9 val=0x2801 repr=10
+DEBUG: [PC 94] OP 103
+DEBUG: [PC 96] OP 102
+DEBUG: lnotab entry j=0, pc_offset=4, line_offset=-1
+DEBUG: lnotab entry j=2, pc_offset=8, line_offset=2
+DEBUG: lnotab entry j=4, pc_offset=4, line_offset=-2
+DEBUG: lnotab entry j=6, pc_offset=8, line_offset=3
+DEBUG: lnotab entry j=8, pc_offset=4, line_offset=-3
+DEBUG: lnotab entry j=10, pc_offset=8, line_offset=4
+DEBUG: lnotab entry j=12, pc_offset=4, line_offset=-4
+DEBUG: lnotab entry j=14, pc_offset=8, line_offset=5
+DEBUG: lnotab entry j=16, pc_offset=4, line_offset=-5
+DEBUG: lnotab entry j=18, pc_offset=8, line_offset=7
+DEBUG: lnotab entry j=20, pc_offset=4, line_offset=-7
+DEBUG: lnotab entry j=22, pc_offset=12, line_offset=8
+DEBUG: lnotab entry j=24, pc_offset=4, line_offset=-8
+DEBUG: lnotab entry j=26, pc_offset=12, line_offset=9
+DEBUG: lnotab entry j=28, pc_offset=4, line_offset=1
+DEBUG: lnotab entry j=30, pc_offset=4, line_offset=-10
+DEBUG: [PC 98] OP 100
+DEBUG: LOAD_CONST arg=10 val=0x7fe9c006dc46 repr=eval('x') = 
+DEBUG: [PC 100] OP 102
+DEBUG: [PC 102] OP 100
+DEBUG: LOAD_CONST arg=11 val=0xf0501 repr=x
+DEBUG: [PC 104] OP 106
+DEBUG: OP_CALL_FUNCTION PC 104 callable=0x7fe9bfef4ccc argCount=1
+DEBUG: reprObject obj=0x7fe9bfef4ccc class=type
+DEBUG: reprObject out=0x7fe9c01e8b46
+DEBUG: invokeCallable callable=0x7fe9bfef4ccc repr=<method object at 0x7fe9bfef4ccc> class=type
+DEBUG: Parser::advance token=3 value='x' line=1
+DEBUG: Parser::advance token=12 value='' line=1
+DEBUG: py_eval compiling source='x'
+DEBUG: runCodeObject co_code size=4 co_consts size=0 stackOffset=0
+DEBUG: [PC 0] OP 102
+DEBUG: lnotab entry j=0, pc_offset=4, line_offset=-1
+DEBUG: [PC 2] OP 101
+DEBUG: runCodeObject result=0x2801
+DEBUG: [PC 106] OP 179
+DEBUG: [PC 108] OP 106
+DEBUG: OP_CALL_FUNCTION PC 108 callable=0x7fe9bfee22cc argCount=1
+DEBUG: reprObject obj=0x7fe9bfee22cc class=type
+DEBUG: reprObject out=0x7fe9c01cb406
+DEBUG: invokeCallable callable=0x7fe9bfee22cc repr=<method object at 0x7fe9bfee22cc> class=type
+DEBUG: py_print called with 1 args
+DEBUG: py_eval source='x' result=0x2801
+eval('x') = 10
+DEBUG: [PC 110] OP 133
+DEBUG: [PC 112] OP 102
+DEBUG: [PC 114] OP 100
+DEBUG: LOAD_CONST arg=12 val=0x7fe9c006f146 repr=eval('x+5') = 
+DEBUG: [PC 116] OP 102
+DEBUG: [PC 118] OP 100
+DEBUG: LOAD_CONST arg=13 val=0x1aabf0d01 repr=x+5
+DEBUG: [PC 120] OP 106
+DEBUG: OP_CALL_FUNCTION PC 120 callable=0x7fe9bfef4ccc argCount=1
+DEBUG: reprObject obj=0x7fe9bfef4ccc class=type
+DEBUG: reprObject out=0x7fe9c01e8b46
+DEBUG: invokeCallable callable=0x7fe9bfef4ccc repr=<method object at 0x7fe9bfef4ccc> class=type
+DEBUG: Parser::advance token=3 value='x' line=1
+DEBUG: Parser::advance token=4 value='' line=1
+DEBUG: Parser::advance token=0 value='5' line=1
+DEBUG: Parser::advance token=12 value='' line=1
+DEBUG: py_eval compiling source='x+5'
+  Const[0]: 5
+DEBUG: runCodeObject co_code size=8 co_consts size=1 stackOffset=0
+DEBUG: [PC 0] OP 102
+DEBUG: lnotab entry j=0, pc_offset=4, line_offset=-1
+DEBUG: [PC 2] OP 100
+DEBUG: LOAD_CONST arg=0 val=0x1401 repr=5
+DEBUG: [PC 4] OP 104
+DEBUG: [PC 6] OP 101
+DEBUG: runCodeObject result=0x3c01
+DEBUG: [PC 122] OP 179
+DEBUG: [PC 124] OP 106
+DEBUG: OP_CALL_FUNCTION PC 124 callable=0x7fe9bfee22cc argCount=1
+DEBUG: reprObject obj=0x7fe9bfee22cc class=type
+DEBUG: reprObject out=0x7fe9c01cb406
+DEBUG: invokeCallable callable=0x7fe9bfee22cc repr=<method object at 0x7fe9bfee22cc> class=type
+DEBUG: py_print called with 1 args
+DEBUG: py_eval source='x+5' result=0x3c01
+eval('x+5') = 15
+DEBUG: [PC 126] OP 133
+DEBUG: [PC 128] OP 100
+DEBUG: lnotab entry j=0, pc_offset=4, line_offset=-1
+DEBUG: lnotab entry j=2, pc_offset=8, line_offset=2
+DEBUG: lnotab entry j=4, pc_offset=4, line_offset=-2
+DEBUG: lnotab entry j=6, pc_offset=8, line_offset=3
+DEBUG: lnotab entry j=8, pc_offset=4, line_offset=-3
+DEBUG: lnotab entry j=10, pc_offset=8, line_offset=4
+DEBUG: lnotab entry j=12, pc_offset=4, line_offset=-4
+DEBUG: lnotab entry j=14, pc_offset=8, line_offset=5
+DEBUG: lnotab entry j=16, pc_offset=4, line_offset=-5
+DEBUG: lnotab entry j=18, pc_offset=8, line_offset=7
+DEBUG: lnotab entry j=20, pc_offset=4, line_offset=-7
+DEBUG: lnotab entry j=22, pc_offset=12, line_offset=8
+DEBUG: lnotab entry j=24, pc_offset=4, line_offset=-8
+DEBUG: lnotab entry j=26, pc_offset=12, line_offset=9
+DEBUG: lnotab entry j=28, pc_offset=4, line_offset=1
+DEBUG: lnotab entry j=30, pc_offset=4, line_offset=-10
+DEBUG: lnotab entry j=32, pc_offset=12, line_offset=11
+DEBUG: lnotab entry j=34, pc_offset=4, line_offset=-11
+DEBUG: lnotab entry j=36, pc_offset=12, line_offset=12
+DEBUG: lnotab entry j=38, pc_offset=6, line_offset=1
+DEBUG: reprObject obj=0x7fe9c0071440 class=NoneType
+DEBUG: LOAD_CONST arg=14 val=0x7fe9c0071440 repr=<object>
+DEBUG: [PC 130] OP 156
+DEBUG: [PC 132] OP 103
+DEBUG: [PC 134] OP 102
+DEBUG: [PC 136] OP 100
+DEBUG: LOAD_CONST arg=15 val=0x7fe9c0080dc6 repr=eval('f()') = 
+DEBUG: [PC 138] OP 102
+DEBUG: [PC 140] OP 100
+DEBUG: LOAD_CONST arg=16 val=0x14a8ccd01 repr=f()
+DEBUG: [PC 142] OP 106
+DEBUG: OP_CALL_FUNCTION PC 142 callable=0x7fe9bfef4ccc argCount=1
+DEBUG: reprObject obj=0x7fe9bfef4ccc class=type
+DEBUG: reprObject out=0x7fe9c01e8b46
+DEBUG: invokeCallable callable=0x7fe9bfef4ccc repr=<method object at 0x7fe9bfef4ccc> class=type
+DEBUG: Parser::advance token=3 value='f' line=1
+DEBUG: Parser::advance token=8 value='' line=1
+DEBUG: Parser::advance token=9 value='' line=1
+DEBUG: Parser::advance token=12 value='' line=1
+DEBUG: py_eval compiling source='f()'
+DEBUG: runCodeObject co_code size=6 co_consts size=0 stackOffset=0
+DEBUG: [PC 0] OP 102
+DEBUG: lnotab entry j=0, pc_offset=4, line_offset=-1
+DEBUG: [PC 2] OP 106
+DEBUG: OP_CALL_FUNCTION PC 2 callable=0x7fe9c06d7780 argCount=0
+DEBUG: reprObject obj=0x7fe9c06d7780 class=function
+DEBUG: reprObject out=0x7fe9c0848d46
+DEBUG: invokeCallable callable=0x7fe9c06d7780 repr=<function object at 0x7fe9c06d7780> class=function
+DEBUG: invokeCallable calling __call__ asMethod
+DEBUG: runCodeObject co_code size=8 co_consts size=2 stackOffset=0
+DEBUG: [PC 0] OP 100
+DEBUG: LOAD_CONST arg=0 val=0xa801 repr=42
+DEBUG: [PC 2] OP 101
+DEBUG: runCodeObject result=0xa801
+DEBUG: invokeCallable (__call__) returning result=0xa801 repr=42
+DEBUG: [PC 4] OP 101
+DEBUG: runCodeObject result=0xa801
+DEBUG: [PC 144] OP 179
+DEBUG: [PC 146] OP 106
+DEBUG: OP_CALL_FUNCTION PC 146 callable=0x7fe9bfee22cc argCount=1
+DEBUG: reprObject obj=0x7fe9bfee22cc class=type
+DEBUG: reprObject out=0x7fe9c01cb406
+DEBUG: invokeCallable callable=0x7fe9bfee22cc repr=<method object at 0x7fe9bfee22cc> class=type
+DEBUG: py_print called with 1 args
+DEBUG: py_eval source='f()' result=0xa801
+eval('f()') = 42
+DEBUG: [PC 148] OP 133
+DEBUG: [PC 150] OP 102
+DEBUG: [PC 152] OP 100
+DEBUG: LOAD_CONST arg=17 val=0x7fe9c0082b46 repr=collections
+DEBUG: [PC 154] OP 106
+DEBUG: OP_CALL_FUNCTION PC 154 callable=0x7fe9bfefb18c argCount=1
+DEBUG: reprObject obj=0x7fe9bfefb18c class=type
+DEBUG: reprObject out=0x7fe9c0837ec6
+DEBUG: invokeCallable callable=0x7fe9bfefb18c repr=<method object at 0x7fe9bfefb18c> class=type
+DEBUG: __import__('collections') level=0
+DEBUG: Parser::advance token=1 value='This module implements specialized container datatypes providing
+alternatives to Python's general purpose built-in containers, dict,
+list, set, and tuple.
+
+* namedtuple   factory function for creating tuple subclasses with named fields
+* deque        list-like container with fast appends and pops on either end
+* ChainMap     dict-like class for creating a single view of multiple mappings
+* Counter      dict subclass for counting hashable objects
+* OrderedDict  dict subclass that remembers the order entries were added
+* defaultdict  dict subclass that calls a factory function to supply missing values
+* UserDict     wrapper around dictionary objects for easier dict subclassing
+* UserList     wrapper around list objects for easier list subclassing
+* UserString   wrapper around string objects for easier string subclassing
+
+' line=1
+DEBUG: Parser::advance token=11 value='' line=16
+DEBUG: Parser::advance token=3 value='__all__' line=17
+DEBUG: Parser::advance token=19 value='' line=17
+DEBUG: Parser::advance token=14 value='' line=17
+DEBUG: Parser::advance token=1 value='ChainMap' line=18
+DEBUG: Parser::advance token=10 value='' line=18
+DEBUG: Parser::advance token=1 value='Counter' line=19
+DEBUG: Parser::advance token=10 value='' line=19
+DEBUG: Parser::advance token=1 value='OrderedDict' line=20
+DEBUG: Parser::advance token=10 value='' line=20
+DEBUG: Parser::advance token=1 value='UserDict' line=21
+DEBUG: Parser::advance token=10 value='' line=21
+DEBUG: Parser::advance token=1 value='UserList' line=22
+DEBUG: Parser::advance token=10 value='' line=22
+DEBUG: Parser::advance token=1 value='UserString' line=23
+DEBUG: Parser::advance token=10 value='' line=23
+DEBUG: Parser::advance token=1 value='defaultdict' line=24
+DEBUG: Parser::advance token=10 value='' line=24
+DEBUG: Parser::advance token=1 value='deque' line=25
+DEBUG: Parser::advance token=10 value='' line=25
+DEBUG: Parser::advance token=1 value='namedtuple' line=26
+DEBUG: Parser::advance token=10 value='' line=26
+DEBUG: Parser::advance token=15 value='' line=27
+DEBUG: Parser::advance token=11 value='' line=28
+DEBUG: Parser::advance token=31 value='import' line=29
+DEBUG: Parser::advance token=3 value='_collections_abc' line=29
+DEBUG: Parser::advance token=11 value='' line=30
+DEBUG: Parser::advance token=31 value='import' line=30
+DEBUG: Parser::advance token=3 value='sys' line=30
+DEBUG: Parser::advance token=50 value='as' line=30
+DEBUG: Parser::advance token=3 value='_sys' line=30
+DEBUG: Parser::advance token=11 value='' line=31
+DEBUG: Parser::advance token=3 value='print' line=31
+DEBUG: Parser::advance token=8 value='' line=31
+DEBUG: Parser::advance token=1 value='DEBUG: collections loaded' line=31
+DEBUG: Parser::advance token=9 value='' line=31
+DEBUG: Parser::advance token=11 value='' line=32
+DEBUG: Parser::advance token=3 value='print' line=32
+DEBUG: Parser::advance token=8 value='' line=32
+DEBUG: Parser::advance token=2 value='DEBUG: _sys is {_sys}' line=32
+DEBUG: Parser::advance token=9 value='' line=32
+DEBUG: Parser::advance token=3 value='_sys' line=1
+DEBUG: Parser::advance token=12 value='' line=1
+DEBUG: Parser::advance token=11 value='' line=33
+DEBUG: Parser::advance token=3 value='print' line=33
+DEBUG: Parser::advance token=8 value='' line=33
+DEBUG: Parser::advance token=2 value='DEBUG: _sys.intern is {getattr(_sys, 'intern', 'MISSING')}' line=33
+DEBUG: Parser::advance token=9 value='' line=33
+DEBUG: Parser::advance token=3 value='getattr' line=1
+DEBUG: Parser::advance token=8 value='' line=1
+DEBUG: Parser::advance token=3 value='_sys' line=1
+DEBUG: Parser::advance token=10 value='' line=1
+DEBUG: Parser::advance token=1 value='intern' line=1
+DEBUG: Parser::advance token=10 value='' line=1
+DEBUG: Parser::advance token=1 value='MISSING' line=1
+DEBUG: Parser::advance token=9 value='' line=1
+DEBUG: Parser::advance token=12 value='' line=1
+DEBUG: Parser::advance token=11 value='' line=34
+DEBUG: Parser::advance token=3 value='_sys' line=35
+DEBUG: Parser::advance token=13 value='' line=35
+DEBUG: Parser::advance token=3 value='modules' line=35
+DEBUG: Parser::advance token=14 value='' line=35
+DEBUG: Parser::advance token=1 value='collections.abc' line=35
+DEBUG: Parser::advance token=15 value='' line=35
+DEBUG: Parser::advance token=19 value='' line=35
+DEBUG: Parser::advance token=3 value='_collections_abc' line=35
+DEBUG: Parser::advance token=11 value='' line=36
+DEBUG: Parser::advance token=3 value='abc' line=36
+DEBUG: Parser::advance token=19 value='' line=36
+DEBUG: Parser::advance token=3 value='_collections_abc' line=36
+DEBUG: Parser::advance token=11 value='' line=37
+DEBUG: Parser::advance token=32 value='from' line=38
+DEBUG: Parser::advance token=3 value='itertools' line=38
+DEBUG: Parser::advance token=31 value='import' line=38
+DEBUG: Parser::advance token=3 value='chain' line=38
+DEBUG: Parser::advance token=50 value='as' line=38
+DEBUG: Parser::advance token=3 value='_chain' line=38
+DEBUG: Parser::advance token=11 value='' line=39
+DEBUG: Parser::advance token=32 value='from' line=39
+DEBUG: Parser::advance token=3 value='itertools' line=39
+DEBUG: Parser::advance token=31 value='import' line=39
+DEBUG: Parser::advance token=3 value='repeat' line=39
+DEBUG: Parser::advance token=50 value='as' line=39
+DEBUG: Parser::advance token=3 value='_repeat' line=39
+DEBUG: Parser::advance token=11 value='' line=40
+DEBUG: Parser::advance token=32 value='from' line=40
+DEBUG: Parser::advance token=3 value='itertools' line=40
+DEBUG: Parser::advance token=31 value='import' line=40
+DEBUG: Parser::advance token=3 value='starmap' line=40
+DEBUG: Parser::advance token=50 value='as' line=40
+DEBUG: Parser::advance token=3 value='_starmap' line=40
+DEBUG: Parser::advance token=11 value='' line=41
+DEBUG: Parser::advance token=32 value='from' line=41
+DEBUG: Parser::advance token=3 value='keyword' line=41
+DEBUG: Parser::advance token=31 value='import' line=41
+DEBUG: Parser::advance token=3 value='iskeyword' line=41
+DEBUG: Parser::advance token=50 value='as' line=41
+DEBUG: Parser::advance token=3 value='_iskeyword' line=41
+DEBUG: Parser::advance token=11 value='' line=42
+DEBUG: Parser::advance token=3 value='print' line=42
+DEBUG: Parser::advance token=8 value='' line=42
+DEBUG: Parser::advance token=2 value='DEBUG: collections._iskeyword is {_iskeyword}' line=42
+DEBUG: Parser::advance token=9 value='' line=42
+DEBUG: Parser::advance token=3 value='_iskeyword' line=1
+DEBUG: Parser::advance token=12 value='' line=1
+DEBUG: Parser::advance token=11 value='' line=43
+DEBUG: Parser::advance token=32 value='from' line=43
+DEBUG: Parser::advance token=3 value='operator' line=43
+DEBUG: Parser::advance token=31 value='import' line=43
+DEBUG: Parser::advance token=3 value='eq' line=43
+DEBUG: Parser::advance token=50 value='as' line=43
+DEBUG: Parser::advance token=3 value='_eq' line=43
+DEBUG: Parser::advance token=11 value='' line=44
+DEBUG: Parser::advance token=32 value='from' line=44
+DEBUG: Parser::advance token=3 value='operator' line=44
+DEBUG: Parser::advance token=31 value='import' line=44
+DEBUG: Parser::advance token=3 value='itemgetter' line=44
+DEBUG: Parser::advance token=50 value='as' line=44
+DEBUG: Parser::advance token=3 value='_itemgetter' line=44
+DEBUG: Parser::advance token=11 value='' line=45
+DEBUG: Parser::advance token=32 value='from' line=45
+DEBUG: Parser::advance token=3 value='reprlib' line=45
+DEBUG: Parser::advance token=31 value='import' line=45
+DEBUG: Parser::advance token=3 value='recursive_repr' line=45
+DEBUG: Parser::advance token=50 value='as' line=45
+DEBUG: Parser::advance token=3 value='_recursive_repr' line=45
+DEBUG: Parser::advance token=11 value='' line=46
+DEBUG: Parser::advance token=32 value='from' line=46
+DEBUG: Parser::advance token=3 value='_weakref' line=46
+DEBUG: Parser::advance token=31 value='import' line=46
+DEBUG: Parser::advance token=3 value='proxy' line=46
+DEBUG: Parser::advance token=50 value='as' line=46
+DEBUG: Parser::advance token=3 value='_proxy' line=46
+DEBUG: Parser::advance token=11 value='' line=47
+DEBUG: Parser::advance token=42 value='try' line=48
+DEBUG: Parser::advance token=18 value='' line=48
+DEBUG: Parser::advance token=11 value='' line=49
+DEBUG: Parser::advance token=29 value='' line=49
+DEBUG: Parser::advance token=32 value='from' line=49
+DEBUG: Parser::advance token=3 value='_collections' line=49
+DEBUG: Parser::advance token=31 value='import' line=49
+DEBUG: Parser::advance token=3 value='deque' line=49
+DEBUG: Parser::advance token=11 value='' line=50
+DEBUG: Parser::advance token=30 value='' line=50
+DEBUG: Parser::advance token=43 value='except' line=50
+DEBUG: Parser::advance token=3 value='ImportError' line=50
+DEBUG: Parser::advance token=18 value='' line=50
+DEBUG: Parser::advance token=11 value='' line=51
+DEBUG: Parser::advance token=29 value='' line=51
+DEBUG: Parser::advance token=28 value='pass' line=51
+DEBUG: Parser::advance token=11 value='' line=52
+DEBUG: Parser::advance token=30 value='' line=52
+DEBUG: Parser::advance token=25 value='else' line=52
+DEBUG: Parser::advance token=18 value='' line=52
+DEBUG: Parser::advance token=11 value='' line=53
+DEBUG: Parser::advance token=29 value='' line=53
+DEBUG: Parser::advance token=3 value='_collections_abc' line=53
+DEBUG: Parser::advance token=13 value='' line=53
+DEBUG: Parser::advance token=3 value='MutableSequence' line=53
+DEBUG: Parser::advance token=13 value='' line=53
+DEBUG: Parser::advance token=3 value='register' line=53
+DEBUG: Parser::advance token=8 value='' line=53
+DEBUG: Parser::advance token=3 value='deque' line=53
+DEBUG: Parser::advance token=9 value='' line=53
+DEBUG: Parser::advance token=11 value='' line=54
+DEBUG: Parser::advance token=30 value='' line=55
+DEBUG: Parser::advance token=42 value='try' line=55
+DEBUG: Parser::advance token=18 value='' line=55
+DEBUG: Parser::advance token=11 value='' line=56
+DEBUG: Parser::advance token=29 value='' line=57
+DEBUG: Parser::advance token=32 value='from' line=57
+DEBUG: Parser::advance token=3 value='_collections' line=57
+DEBUG: Parser::advance token=31 value='import' line=57
+DEBUG: Parser::advance token=3 value='_deque_iterator' line=57
+DEBUG: Parser::advance token=11 value='' line=58
+DEBUG: Parser::advance token=30 value='' line=58
+DEBUG: Parser::advance token=43 value='except' line=58
+DEBUG: Parser::advance token=3 value='ImportError' line=58
+DEBUG: Parser::advance token=18 value='' line=58
+DEBUG: Parser::advance token=11 value='' line=59
+DEBUG: Parser::advance token=29 value='' line=59
+DEBUG: Parser::advance token=28 value='pass' line=59
+DEBUG: Parser::advance token=11 value='' line=60
+DEBUG: Parser::advance token=30 value='' line=61
+DEBUG: Parser::advance token=42 value='try' line=61
+DEBUG: Parser::advance token=18 value='' line=61
+DEBUG: Parser::advance token=11 value='' line=62
+DEBUG: Parser::advance token=29 value='' line=62
+DEBUG: Parser::advance token=32 value='from' line=62
+DEBUG: Parser::advance token=3 value='_collections' line=62
+DEBUG: Parser::advance token=31 value='import' line=62
+DEBUG: Parser::advance token=3 value='defaultdict' line=62
+DEBUG: Parser::advance token=11 value='' line=63
+DEBUG: Parser::advance token=30 value='' line=63
+DEBUG: Parser::advance token=43 value='except' line=63
+DEBUG: Parser::advance token=3 value='ImportError' line=63
+DEBUG: Parser::advance token=18 value='' line=63
+DEBUG: Parser::advance token=11 value='' line=64
+DEBUG: Parser::advance token=29 value='' line=64
+DEBUG: Parser::advance token=28 value='pass' line=64
+DEBUG: Parser::advance token=11 value='' line=65
+DEBUG: Parser::advance token=30 value='' line=66
+DEBUG: Parser::advance token=3 value='heapq' line=66
+DEBUG: Parser::advance token=19 value='' line=66
+DEBUG: Parser::advance token=38 value='None' line=66
+DEBUG: Parser::advance token=11 value='' line=67
+DEBUG: Parser::advance token=33 value='class' line=73
+DEBUG: Parser::advance token=3 value='_OrderedDictKeysView' line=73
+DEBUG: Parser::advance token=8 value='' line=73
+DEBUG: Parser::advance token=3 value='_collections_abc' line=73
+DEBUG: Parser::advance token=13 value='' line=73
+DEBUG: Parser::advance token=3 value='KeysView' line=73
+DEBUG: Parser::advance token=9 value='' line=73
+DEBUG: Parser::advance token=18 value='' line=73
+DEBUG: Parser::advance token=11 value='' line=74
+DEBUG: Parser::advance token=29 value='' line=75
+DEBUG: Parser::advance token=27 value='def' line=75
+DEBUG: Parser::advance token=3 value='__reversed__' line=75
+DEBUG: Parser::advance token=8 value='' line=75
+DEBUG: Parser::advance token=3 value='self' line=75
+DEBUG: Parser::advance token=9 value='' line=75
+DEBUG: Parser::advance token=18 value='' line=75
+DEBUG: Parser::advance token=11 value='' line=76
+DEBUG: Parser::advance token=29 value='' line=76
+DEBUG: Parser::advance token=60 value='yield' line=76
+DEBUG: Parser::advance token=32 value='from' line=76
+DEBUG: Parser::advance token=3 value='reversed' line=76
+DEBUG: Parser::advance token=8 value='' line=76
+DEBUG: Parser::advance token=3 value='self' line=76
+DEBUG: Parser::advance token=13 value='' line=76
+DEBUG: Parser::advance token=3 value='_mapping' line=76
+DEBUG: Parser::advance token=9 value='' line=76
+DEBUG: Parser::advance token=11 value='' line=77
+DEBUG: Parser::advance token=30 value='' line=78
+DEBUG: Parser::advance token=30 value='' line=78
+DEBUG: Parser::advance token=33 value='class' line=78
+DEBUG: Parser::advance token=3 value='_OrderedDictItemsView' line=78
+DEBUG: Parser::advance token=8 value='' line=78
+DEBUG: Parser::advance token=3 value='_collections_abc' line=78
+DEBUG: Parser::advance token=13 value='' line=78
+DEBUG: Parser::advance token=3 value='ItemsView' line=78
+DEBUG: Parser::advance token=9 value='' line=78
+DEBUG: Parser::advance token=18 value='' line=78
+DEBUG: Parser::advance token=11 value='' line=79
+DEBUG: Parser::advance token=29 value='' line=80
+DEBUG: Parser::advance token=27 value='def' line=80
+DEBUG: Parser::advance token=3 value='__reversed__' line=80
+DEBUG: Parser::advance token=8 value='' line=80
+DEBUG: Parser::advance token=3 value='self' line=80
+DEBUG: Parser::advance token=9 value='' line=80
+DEBUG: Parser::advance token=18 value='' line=80
+DEBUG: Parser::advance token=11 value='' line=81
+DEBUG: Parser::advance token=29 value='' line=81
+DEBUG: Parser::advance token=21 value='for' line=81
+DEBUG: Parser::advance token=3 value='key' line=81
+DEBUG: Parser::advance token=22 value='in' line=81
+DEBUG: Parser::advance token=3 value='reversed' line=81
+DEBUG: Parser::advance token=8 value='' line=81
+DEBUG: Parser::advance token=3 value='self' line=81
+DEBUG: Parser::advance token=13 value='' line=81
+DEBUG: Parser::advance token=3 value='_mapping' line=81
+DEBUG: Parser::advance token=9 value='' line=81
+DEBUG: Parser::advance token=18 value='' line=81
+DEBUG: Parser::advance token=11 value='' line=82
+DEBUG: Parser::advance token=29 value='' line=82
+DEBUG: Parser::advance token=60 value='yield' line=82
+DEBUG: Parser::advance token=8 value='' line=82
+DEBUG: Parser::advance token=3 value='key' line=82
+DEBUG: Parser::advance token=10 value='' line=82
+DEBUG: Parser::advance token=3 value='self' line=82
+DEBUG: Parser::advance token=13 value='' line=82
+DEBUG: Parser::advance token=3 value='_mapping' line=82
+DEBUG: Parser::advance token=14 value='' line=82
+DEBUG: Parser::advance token=3 value='key' line=82
+DEBUG: Parser::advance token=15 value='' line=82
+DEBUG: Parser::advance token=9 value='' line=82
+DEBUG: Parser::advance token=11 value='' line=83
+DEBUG: Parser::advance token=30 value='' line=84
+DEBUG: Parser::advance token=30 value='' line=84
+DEBUG: Parser::advance token=30 value='' line=84
+DEBUG: Parser::advance token=33 value='class' line=84
+DEBUG: Parser::advance token=3 value='_OrderedDictValuesView' line=84
+DEBUG: Parser::advance token=8 value='' line=84
+DEBUG: Parser::advance token=3 value='_collections_abc' line=84
+DEBUG: Parser::advance token=13 value='' line=84
+DEBUG: Parser::advance token=3 value='ValuesView' line=84
+DEBUG: Parser::advance token=9 value='' line=84
+DEBUG: Parser::advance token=18 value='' line=84
+DEBUG: Parser::advance token=11 value='' line=85
+DEBUG: Parser::advance token=29 value='' line=86
+DEBUG: Parser::advance token=27 value='def' line=86
+DEBUG: Parser::advance token=3 value='__reversed__' line=86
+DEBUG: Parser::advance token=8 value='' line=86
+DEBUG: Parser::advance token=3 value='self' line=86
+DEBUG: Parser::advance token=9 value='' line=86
+DEBUG: Parser::advance token=18 value='' line=86
+DEBUG: Parser::advance token=11 value='' line=87
+DEBUG: Parser::advance token=29 value='' line=87
+DEBUG: Parser::advance token=21 value='for' line=87
+DEBUG: Parser::advance token=3 value='key' line=87
+DEBUG: Parser::advance token=22 value='in' line=87
+DEBUG: Parser::advance token=3 value='reversed' line=87
+DEBUG: Parser::advance token=8 value='' line=87
+DEBUG: Parser::advance token=3 value='self' line=87
+DEBUG: Parser::advance token=13 value='' line=87
+DEBUG: Parser::advance token=3 value='_mapping' line=87
+DEBUG: Parser::advance token=9 value='' line=87
+DEBUG: Parser::advance token=18 value='' line=87
+DEBUG: Parser::advance token=11 value='' line=88
+DEBUG: Parser::advance token=29 value='' line=88
+DEBUG: Parser::advance token=60 value='yield' line=88
+DEBUG: Parser::advance token=3 value='self' line=88
+DEBUG: Parser::advance token=13 value='' line=88
+DEBUG: Parser::advance token=3 value='_mapping' line=88
+DEBUG: Parser::advance token=14 value='' line=88
+DEBUG: Parser::advance token=3 value='key' line=88
+DEBUG: Parser::advance token=15 value='' line=88
+DEBUG: Parser::advance token=11 value='' line=89
+DEBUG: Parser::advance token=30 value='' line=90
+DEBUG: Parser::advance token=30 value='' line=90
+DEBUG: Parser::advance token=30 value='' line=90
+DEBUG: Parser::advance token=33 value='class' line=90
+DEBUG: Parser::advance token=3 value='_Link' line=90
+DEBUG: Parser::advance token=8 value='' line=90
+DEBUG: Parser::advance token=3 value='object' line=90
+DEBUG: Parser::advance token=9 value='' line=90
+DEBUG: Parser::advance token=18 value='' line=90
+DEBUG: Parser::advance token=11 value='' line=91
+DEBUG: Parser::advance token=29 value='' line=91
+DEBUG: Parser::advance token=3 value='__slots__' line=91
+DEBUG: Parser::advance token=19 value='' line=91
+DEBUG: Parser::advance token=1 value='prev' line=91
+DEBUG: Parser::advance token=10 value='' line=91
+DEBUG: Parser::advance token=1 value='next' line=91
+DEBUG: Parser::advance token=10 value='' line=91
+DEBUG: Parser::advance token=1 value='key' line=91
+DEBUG: Parser::advance token=10 value='' line=91
+DEBUG: Parser::advance token=1 value='__weakref__' line=91
+DEBUG: Parser::advance token=11 value='' line=92
+DEBUG: Parser::advance token=30 value='' line=93
+DEBUG: Parser::advance token=33 value='class' line=93
+DEBUG: Parser::advance token=3 value='OrderedDict' line=93
+DEBUG: Parser::advance token=8 value='' line=93
+DEBUG: Parser::advance token=3 value='dict' line=93
+DEBUG: Parser::advance token=9 value='' line=93
+DEBUG: Parser::advance token=18 value='' line=93
+DEBUG: Parser::advance token=11 value='' line=94
+DEBUG: Parser::advance token=29 value='' line=94
+DEBUG: Parser::advance token=1 value='Dictionary that remembers insertion order' line=94
+DEBUG: Parser::advance token=11 value='' line=95
+DEBUG: Parser::advance token=27 value='def' line=108
+DEBUG: Parser::advance token=3 value='__new__' line=108
+DEBUG: Parser::advance token=8 value='' line=108
+DEBUG: Parser::advance token=3 value='cls' line=108
+DEBUG: Parser::advance token=10 value='' line=108
+DEBUG: Parser::advance token=7 value='' line=108
+DEBUG: Parser::advance token=10 value='' line=108
+DEBUG: Parser::advance token=6 value='' line=108
+DEBUG: Parser::advance token=3 value='args' line=108
+DEBUG: Parser::advance token=10 value='' line=108
+DEBUG: Parser::advance token=73 value='' line=108
+DEBUG: Parser::advance token=3 value='kwds' line=108
+DEBUG: Parser::advance token=9 value='' line=108
+DEBUG: Parser::advance token=18 value='' line=108
+DEBUG: Parser::advance token=11 value='' line=109
+DEBUG: Parser::advance token=29 value='' line=109
+DEBUG: Parser::advance token=1 value='Create the ordered dict object and set up the underlying structures.' line=109
+DEBUG: Parser::advance token=11 value='' line=110
+DEBUG: Parser::advance token=3 value='self' line=110
+DEBUG: Parser::advance token=19 value='' line=110
+DEBUG: Parser::advance token=3 value='dict' line=110
+DEBUG: Parser::advance token=13 value='' line=110
+DEBUG: Parser::advance token=3 value='__new__' line=110
+DEBUG: Parser::advance token=8 value='' line=110
+DEBUG: Parser::advance token=3 value='cls' line=110
+DEBUG: Parser::advance token=9 value='' line=110
+DEBUG: Parser::advance token=11 value='' line=111
+DEBUG: Parser::advance token=3 value='self' line=111
+DEBUG: Parser::advance token=13 value='' line=111
+DEBUG: Parser::advance token=3 value='__hardroot' line=111
+DEBUG: Parser::advance token=19 value='' line=111
+DEBUG: Parser::advance token=3 value='_Link' line=111
+DEBUG: Parser::advance token=8 value='' line=111
+DEBUG: Parser::advance token=9 value='' line=111
+DEBUG: Parser::advance token=11 value='' line=112
+DEBUG: Parser::advance token=3 value='self' line=112
+DEBUG: Parser::advance token=13 value='' line=112
+DEBUG: Parser::advance token=3 value='__root' line=112
+DEBUG: Parser::advance token=19 value='' line=112
+DEBUG: Parser::advance token=3 value='root' line=112
+DEBUG: Parser::advance token=19 value='' line=112
+DEBUG: Parser::advance token=3 value='_proxy' line=112
+DEBUG: Parser::advance token=8 value='' line=112
+DEBUG: Parser::advance token=3 value='self' line=112
+DEBUG: Parser::advance token=13 value='' line=112
+DEBUG: Parser::advance token=3 value='__hardroot' line=112
+DEBUG: Parser::advance token=9 value='' line=112
+DEBUG: Parser::advance token=11 value='' line=113
+DEBUG: Parser::advance token=3 value='root' line=113
+DEBUG: Parser::advance token=13 value='' line=113
+DEBUG: Parser::advance token=3 value='prev' line=113
+DEBUG: Parser::advance token=19 value='' line=113
+DEBUG: Parser::advance token=3 value='root' line=113
+DEBUG: Parser::advance token=13 value='' line=113
+DEBUG: Parser::advance token=3 value='next' line=113
+DEBUG: Parser::advance token=19 value='' line=113
+DEBUG: Parser::advance token=3 value='root' line=113
+DEBUG: Parser::advance token=11 value='' line=114
+DEBUG: Parser::advance token=3 value='self' line=114
+DEBUG: Parser::advance token=13 value='' line=114
+DEBUG: Parser::advance token=3 value='__map' line=114
+DEBUG: Parser::advance token=19 value='' line=114
+DEBUG: Parser::advance token=16 value='' line=114
+DEBUG: Parser::advance token=17 value='' line=114
+DEBUG: Parser::advance token=11 value='' line=115
+DEBUG: Parser::advance token=34 value='return' line=115
+DEBUG: Parser::advance token=3 value='self' line=115
+DEBUG: Parser::advance token=11 value='' line=116
+DEBUG: Parser::advance token=30 value='' line=117
+DEBUG: Parser::advance token=27 value='def' line=117
+DEBUG: Parser::advance token=3 value='__init__' line=117
+DEBUG: Parser::advance token=8 value='' line=117
+DEBUG: Parser::advance token=3 value='self' line=117
+DEBUG: Parser::advance token=10 value='' line=117
+DEBUG: Parser::advance token=3 value='other' line=117
+DEBUG: Parser::advance token=19 value='' line=117
+DEBUG: Parser::advance token=8 value='' line=117
+DEBUG: Parser::advance token=9 value='' line=117
+DEBUG: Parser::advance token=10 value='' line=117
+DEBUG: Parser::advance token=7 value='' line=117
+DEBUG: Parser::advance token=10 value='' line=117
+DEBUG: Parser::advance token=73 value='' line=117
+DEBUG: Parser::advance token=3 value='kwds' line=117
+DEBUG: Parser::advance token=9 value='' line=117
+DEBUG: Parser::advance token=18 value='' line=117
+DEBUG: Parser::advance token=11 value='' line=118
+DEBUG: Parser::advance token=29 value='' line=118
+DEBUG: Parser::advance token=1 value='Initialize an ordered dictionary.  The signature is the same as
+        regular dictionaries.  Keyword argument order is preserved.
+        ' line=118
+DEBUG: Parser::advance token=11 value='' line=121
+DEBUG: Parser::advance token=3 value='self' line=121
+DEBUG: Parser::advance token=13 value='' line=121
+DEBUG: Parser::advance token=3 value='__update' line=121
+DEBUG: Parser::advance token=8 value='' line=121
+DEBUG: Parser::advance token=3 value='other' line=121
+DEBUG: Parser::advance token=10 value='' line=121
+DEBUG: Parser::advance token=73 value='' line=121
+DEBUG: Parser::advance token=3 value='kwds' line=121
+DEBUG: Parser::advance token=9 value='' line=121
+DEBUG: Parser::advance token=11 value='' line=122
+DEBUG: Parser::advance token=30 value='' line=123
+DEBUG: Parser::advance token=27 value='def' line=123
+DEBUG: Parser::advance token=3 value='__setitem__' line=123
+DEBUG: Parser::advance token=8 value='' line=123
+DEBUG: Parser::advance token=3 value='self' line=123
+DEBUG: Parser::advance token=10 value='' line=123
+DEBUG: Parser::advance token=3 value='key' line=123
+DEBUG: Parser::advance token=10 value='' line=123
+DEBUG: Parser::advance token=3 value='value' line=123
+DEBUG: Parser::advance token=10 value='' line=123
+DEBUG: Parser::advance token=3 value='dict_setitem' line=124
+DEBUG: Parser::advance token=19 value='' line=124
+DEBUG: Parser::advance token=3 value='dict' line=124
+DEBUG: Parser::advance token=13 value='' line=124
+DEBUG: Parser::advance token=3 value='__setitem__' line=124
+DEBUG: Parser::advance token=10 value='' line=124
+DEBUG: Parser::advance token=3 value='proxy' line=124
+DEBUG: Parser::advance token=19 value='' line=124
+DEBUG: Parser::advance token=3 value='_proxy' line=124
+DEBUG: Parser::advance token=10 value='' line=124
+DEBUG: Parser::advance token=3 value='Link' line=124
+DEBUG: Parser::advance token=19 value='' line=124
+DEBUG: Parser::advance token=3 value='_Link' line=124
+DEBUG: Parser::advance token=9 value='' line=124
+DEBUG: Parser::advance token=18 value='' line=124
+DEBUG: Parser::advance token=11 value='' line=125
+DEBUG: Parser::advance token=29 value='' line=125
+DEBUG: Parser::advance token=1 value='od.__setitem__(i, y) <==> od[i]=y' line=125
+DEBUG: Parser::advance token=11 value='' line=126
+DEBUG: Parser::advance token=23 value='if' line=128
+DEBUG: Parser::advance token=3 value='key' line=128
+DEBUG: Parser::advance token=41 value='not' line=128
+DEBUG: Parser::advance token=22 value='in' line=128
+DEBUG: Parser::advance token=3 value='self' line=128
+DEBUG: Parser::advance token=18 value='' line=128
+DEBUG: Parser::advance token=11 value='' line=129
+DEBUG: Parser::advance token=29 value='' line=129
+DEBUG: Parser::advance token=3 value='self' line=129
+DEBUG: Parser::advance token=13 value='' line=129
+DEBUG: Parser::advance token=3 value='__map' line=129
+DEBUG: Parser::advance token=14 value='' line=129
+DEBUG: Parser::advance token=3 value='key' line=129
+DEBUG: Parser::advance token=15 value='' line=129
+DEBUG: Parser::advance token=19 value='' line=129
+DEBUG: Parser::advance token=3 value='link' line=129
+DEBUG: Parser::advance token=19 value='' line=129
+DEBUG: Parser::advance token=3 value='Link' line=129
+DEBUG: Parser::advance token=8 value='' line=129
+DEBUG: Parser::advance token=9 value='' line=129
+DEBUG: Parser::advance token=11 value='' line=130
+DEBUG: Parser::advance token=3 value='root' line=130
+DEBUG: Parser::advance token=19 value='' line=130
+DEBUG: Parser::advance token=3 value='self' line=130
+DEBUG: Parser::advance token=13 value='' line=130
+DEBUG: Parser::advance token=3 value='__root' line=130
+DEBUG: Parser::advance token=11 value='' line=131
+DEBUG: Parser::advance token=3 value='last' line=131
+DEBUG: Parser::advance token=19 value='' line=131
+DEBUG: Parser::advance token=3 value='root' line=131
+DEBUG: Parser::advance token=13 value='' line=131
+DEBUG: Parser::advance token=3 value='prev' line=131
+DEBUG: Parser::advance token=11 value='' line=132
+DEBUG: Parser::advance token=3 value='link' line=132
+DEBUG: Parser::advance token=13 value='' line=132
+DEBUG: Parser::advance token=3 value='prev' line=132
+DEBUG: Parser::advance token=10 value='' line=132
+DEBUG: Parser::advance token=3 value='link' line=132
+DEBUG: Parser::advance token=13 value='' line=132
+DEBUG: Parser::advance token=3 value='next' line=132
+DEBUG: Parser::advance token=10 value='' line=132
+DEBUG: Parser::advance token=3 value='link' line=132
+DEBUG: Parser::advance token=13 value='' line=132
+DEBUG: Parser::advance token=3 value='key' line=132
+DEBUG: Parser::advance token=19 value='' line=132
+DEBUG: Parser::advance token=3 value='last' line=132
+DEBUG: Parser::advance token=10 value='' line=132
+DEBUG: Parser::advance token=3 value='root' line=132
+DEBUG: Parser::advance token=10 value='' line=132
+DEBUG: Parser::advance token=3 value='key' line=132
+DEBUG: Parser::advance token=11 value='' line=133
+DEBUG: Parser::advance token=3 value='last' line=133
+DEBUG: Parser::advance token=13 value='' line=133
+DEBUG: Parser::advance token=3 value='next' line=133
+DEBUG: Parser::advance token=19 value='' line=133
+DEBUG: Parser::advance token=3 value='link' line=133
+DEBUG: Parser::advance token=11 value='' line=134
+DEBUG: Parser::advance token=3 value='root' line=134
+DEBUG: Parser::advance token=13 value='' line=134
+DEBUG: Parser::advance token=3 value='prev' line=134
+DEBUG: Parser::advance token=19 value='' line=134
+DEBUG: Parser::advance token=3 value='proxy' line=134
+DEBUG: Parser::advance token=8 value='' line=134
+DEBUG: Parser::advance token=3 value='link' line=134
+DEBUG: Parser::advance token=9 value='' line=134
+DEBUG: Parser::advance token=11 value='' line=135
+DEBUG: Parser::advance token=30 value='' line=135
+DEBUG: Parser::advance token=3 value='dict_setitem' line=135
+DEBUG: Parser::advance token=8 value='' line=135
+DEBUG: Parser::advance token=3 value='self' line=135
+DEBUG: Parser::advance token=10 value='' line=135
+DEBUG: Parser::advance token=3 value='key' line=135
+DEBUG: Parser::advance token=10 value='' line=135
+DEBUG: Parser::advance token=3 value='value' line=135
+DEBUG: Parser::advance token=9 value='' line=135
+DEBUG: Parser::advance token=11 value='' line=136
+DEBUG: Parser::advance token=30 value='' line=137
+DEBUG: Parser::advance token=27 value='def' line=137
+DEBUG: Parser::advance token=3 value='__delitem__' line=137
+DEBUG: Parser::advance token=8 value='' line=137
+DEBUG: Parser::advance token=3 value='self' line=137
+DEBUG: Parser::advance token=10 value='' line=137
+DEBUG: Parser::advance token=3 value='key' line=137
+DEBUG: Parser::advance token=10 value='' line=137
+DEBUG: Parser::advance token=3 value='dict_delitem' line=137
+DEBUG: Parser::advance token=19 value='' line=137
+DEBUG: Parser::advance token=3 value='dict' line=137
+DEBUG: Parser::advance token=13 value='' line=137
+DEBUG: Parser::advance token=3 value='__delitem__' line=137
+DEBUG: Parser::advance token=9 value='' line=137
+DEBUG: Parser::advance token=18 value='' line=137
+DEBUG: Parser::advance token=11 value='' line=138
+DEBUG: Parser::advance token=29 value='' line=138
+DEBUG: Parser::advance token=1 value='od.__delitem__(y) <==> del od[y]' line=138
+DEBUG: Parser::advance token=11 value='' line=139
+DEBUG: Parser::advance token=3 value='dict_delitem' line=141
+DEBUG: Parser::advance token=8 value='' line=141
+DEBUG: Parser::advance token=3 value='self' line=141
+DEBUG: Parser::advance token=10 value='' line=141
+DEBUG: Parser::advance token=3 value='key' line=141
+DEBUG: Parser::advance token=9 value='' line=141
+DEBUG: Parser::advance token=11 value='' line=142
+DEBUG: Parser::advance token=3 value='link' line=142
+DEBUG: Parser::advance token=19 value='' line=142
+DEBUG: Parser::advance token=3 value='self' line=142
+DEBUG: Parser::advance token=13 value='' line=142
+DEBUG: Parser::advance token=3 value='__map' line=142
+DEBUG: Parser::advance token=13 value='' line=142
+DEBUG: Parser::advance token=3 value='pop' line=142
+DEBUG: Parser::advance token=8 value='' line=142
+DEBUG: Parser::advance token=3 value='key' line=142
+DEBUG: Parser::advance token=9 value='' line=142
+DEBUG: Parser::advance token=11 value='' line=143
+DEBUG: Parser::advance token=3 value='link_prev' line=143
+DEBUG: Parser::advance token=19 value='' line=143
+DEBUG: Parser::advance token=3 value='link' line=143
+DEBUG: Parser::advance token=13 value='' line=143
+DEBUG: Parser::advance token=3 value='prev' line=143
+DEBUG: Parser::advance token=11 value='' line=144
+DEBUG: Parser::advance token=3 value='link_next' line=144
+DEBUG: Parser::advance token=19 value='' line=144
+DEBUG: Parser::advance token=3 value='link' line=144
+DEBUG: Parser::advance token=13 value='' line=144
+DEBUG: Parser::advance token=3 value='next' line=144
+DEBUG: Parser::advance token=11 value='' line=145
+DEBUG: Parser::advance token=3 value='link_prev' line=145
+DEBUG: Parser::advance token=13 value='' line=145
+DEBUG: Parser::advance token=3 value='next' line=145
+DEBUG: Parser::advance token=19 value='' line=145
+DEBUG: Parser::advance token=3 value='link_next' line=145
+DEBUG: Parser::advance token=11 value='' line=146
+DEBUG: Parser::advance token=3 value='link_next' line=146
+DEBUG: Parser::advance token=13 value='' line=146
+DEBUG: Parser::advance token=3 value='prev' line=146
+DEBUG: Parser::advance token=19 value='' line=146
+DEBUG: Parser::advance token=3 value='link_prev' line=146
+DEBUG: Parser::advance token=11 value='' line=147
+DEBUG: Parser::advance token=3 value='link' line=147
+DEBUG: Parser::advance token=13 value='' line=147
+DEBUG: Parser::advance token=3 value='prev' line=147
+DEBUG: Parser::advance token=19 value='' line=147
+DEBUG: Parser::advance token=38 value='None' line=147
+DEBUG: Parser::advance token=11 value='' line=148
+DEBUG: Parser::advance token=3 value='link' line=148
+DEBUG: Parser::advance token=13 value='' line=148
+DEBUG: Parser::advance token=3 value='next' line=148
+DEBUG: Parser::advance token=19 value='' line=148
+DEBUG: Parser::advance token=38 value='None' line=148
+DEBUG: Parser::advance token=11 value='' line=149
+DEBUG: Parser::advance token=30 value='' line=150
+DEBUG: Parser::advance token=27 value='def' line=150
+DEBUG: Parser::advance token=3 value='__iter__' line=150
+DEBUG: Parser::advance token=8 value='' line=150
+DEBUG: Parser::advance token=3 value='self' line=150
+DEBUG: Parser::advance token=9 value='' line=150
+DEBUG: Parser::advance token=18 value='' line=150
+DEBUG: Parser::advance token=11 value='' line=151
+DEBUG: Parser::advance token=29 value='' line=151
+DEBUG: Parser::advance token=1 value='od.__iter__() <==> iter(od)' line=151
+DEBUG: Parser::advance token=11 value='' line=152
+DEBUG: Parser::advance token=3 value='root' line=153
+DEBUG: Parser::advance token=19 value='' line=153
+DEBUG: Parser::advance token=3 value='self' line=153
+DEBUG: Parser::advance token=13 value='' line=153
+DEBUG: Parser::advance token=3 value='__root' line=153
+DEBUG: Parser::advance token=11 value='' line=154
+DEBUG: Parser::advance token=3 value='curr' line=154
+DEBUG: Parser::advance token=19 value='' line=154
+DEBUG: Parser::advance token=3 value='root' line=154
+DEBUG: Parser::advance token=13 value='' line=154
+DEBUG: Parser::advance token=3 value='next' line=154
+DEBUG: Parser::advance token=11 value='' line=155
+DEBUG: Parser::advance token=35 value='while' line=155
+DEBUG: Parser::advance token=3 value='curr' line=155
+DEBUG: Parser::advance token=51 value='is' line=155
+DEBUG: Parser::advance token=41 value='not' line=155
+DEBUG: Parser::advance token=3 value='root' line=155
+DEBUG: Parser::advance token=18 value='' line=155
+DEBUG: Parser::advance token=11 value='' line=156
+DEBUG: Parser::advance token=29 value='' line=156
+DEBUG: Parser::advance token=60 value='yield' line=156
+DEBUG: Parser::advance token=3 value='curr' line=156
+DEBUG: Parser::advance token=13 value='' line=156
+DEBUG: Parser::advance token=3 value='key' line=156
+DEBUG: Parser::advance token=11 value='' line=157
+DEBUG: Parser::advance token=3 value='curr' line=157
+DEBUG: Parser::advance token=19 value='' line=157
+DEBUG: Parser::advance token=3 value='curr' line=157
+DEBUG: Parser::advance token=13 value='' line=157
+DEBUG: Parser::advance token=3 value='next' line=157
+DEBUG: Parser::advance token=11 value='' line=158
+DEBUG: Parser::advance token=30 value='' line=159
+DEBUG: Parser::advance token=30 value='' line=159
+DEBUG: Parser::advance token=27 value='def' line=159
+DEBUG: Parser::advance token=3 value='__reversed__' line=159
+DEBUG: Parser::advance token=8 value='' line=159
+DEBUG: Parser::advance token=3 value='self' line=159
+DEBUG: Parser::advance token=9 value='' line=159
+DEBUG: Parser::advance token=18 value='' line=159
+DEBUG: Parser::advance token=11 value='' line=160
+DEBUG: Parser::advance token=29 value='' line=160
+DEBUG: Parser::advance token=1 value='od.__reversed__() <==> reversed(od)' line=160
+DEBUG: Parser::advance token=11 value='' line=161
+DEBUG: Parser::advance token=3 value='root' line=162
+DEBUG: Parser::advance token=19 value='' line=162
+DEBUG: Parser::advance token=3 value='self' line=162
+DEBUG: Parser::advance token=13 value='' line=162
+DEBUG: Parser::advance token=3 value='__root' line=162
+DEBUG: Parser::advance token=11 value='' line=163
+DEBUG: Parser::advance token=3 value='curr' line=163
+DEBUG: Parser::advance token=19 value='' line=163
+DEBUG: Parser::advance token=3 value='root' line=163
+DEBUG: Parser::advance token=13 value='' line=163
+DEBUG: Parser::advance token=3 value='prev' line=163
+DEBUG: Parser::advance token=11 value='' line=164
+DEBUG: Parser::advance token=35 value='while' line=164
+DEBUG: Parser::advance token=3 value='curr' line=164
+DEBUG: Parser::advance token=51 value='is' line=164
+DEBUG: Parser::advance token=41 value='not' line=164
+DEBUG: Parser::advance token=3 value='root' line=164
+DEBUG: Parser::advance token=18 value='' line=164
+DEBUG: Parser::advance token=11 value='' line=165
+DEBUG: Parser::advance token=29 value='' line=165
+DEBUG: Parser::advance token=60 value='yield' line=165
+DEBUG: Parser::advance token=3 value='curr' line=165
+DEBUG: Parser::advance token=13 value='' line=165
+DEBUG: Parser::advance token=3 value='key' line=165
+DEBUG: Parser::advance token=11 value='' line=166
+DEBUG: Parser::advance token=3 value='curr' line=166
+DEBUG: Parser::advance token=19 value='' line=166
+DEBUG: Parser::advance token=3 value='curr' line=166
+DEBUG: Parser::advance token=13 value='' line=166
+DEBUG: Parser::advance token=3 value='prev' line=166
+DEBUG: Parser::advance token=11 value='' line=167
+DEBUG: Parser::advance token=30 value='' line=168
+DEBUG: Parser::advance token=30 value='' line=168
+DEBUG: Parser::advance token=27 value='def' line=168
+DEBUG: Parser::advance token=3 value='clear' line=168
+DEBUG: Parser::advance token=8 value='' line=168
+DEBUG: Parser::advance token=3 value='self' line=168
+DEBUG: Parser::advance token=9 value='' line=168
+DEBUG: Parser::advance token=18 value='' line=168
+DEBUG: Parser::advance token=11 value='' line=169
+DEBUG: Parser::advance token=29 value='' line=169
+DEBUG: Parser::advance token=1 value='od.clear() -> None.  Remove all items from od.' line=169
+DEBUG: Parser::advance token=11 value='' line=170
+DEBUG: Parser::advance token=3 value='root' line=170
+DEBUG: Parser::advance token=19 value='' line=170
+DEBUG: Parser::advance token=3 value='self' line=170
+DEBUG: Parser::advance token=13 value='' line=170
+DEBUG: Parser::advance token=3 value='__root' line=170
+DEBUG: Parser::advance token=11 value='' line=171
+DEBUG: Parser::advance token=3 value='root' line=171
+DEBUG: Parser::advance token=13 value='' line=171
+DEBUG: Parser::advance token=3 value='prev' line=171
+DEBUG: Parser::advance token=19 value='' line=171
+DEBUG: Parser::advance token=3 value='root' line=171
+DEBUG: Parser::advance token=13 value='' line=171
+DEBUG: Parser::advance token=3 value='next' line=171
+DEBUG: Parser::advance token=19 value='' line=171
+DEBUG: Parser::advance token=3 value='root' line=171
+DEBUG: Parser::advance token=11 value='' line=172
+DEBUG: Parser::advance token=3 value='self' line=172
+DEBUG: Parser::advance token=13 value='' line=172
+DEBUG: Parser::advance token=3 value='__map' line=172
+DEBUG: Parser::advance token=13 value='' line=172
+DEBUG: Parser::advance token=3 value='clear' line=172
+DEBUG: Parser::advance token=8 value='' line=172
+DEBUG: Parser::advance token=9 value='' line=172
+DEBUG: Parser::advance token=11 value='' line=173
+DEBUG: Parser::advance token=3 value='dict' line=173
+DEBUG: Parser::advance token=13 value='' line=173
+DEBUG: Parser::advance token=3 value='clear' line=173
+DEBUG: Parser::advance token=8 value='' line=173
+DEBUG: Parser::advance token=3 value='self' line=173
+DEBUG: Parser::advance token=9 value='' line=173
+DEBUG: Parser::advance token=11 value='' line=174
+DEBUG: Parser::advance token=30 value='' line=175
+DEBUG: Parser::advance token=27 value='def' line=175
+DEBUG: Parser::advance token=3 value='popitem' line=175
+DEBUG: Parser::advance token=8 value='' line=175
+DEBUG: Parser::advance token=3 value='self' line=175
+DEBUG: Parser::advance token=10 value='' line=175
+DEBUG: Parser::advance token=3 value='last' line=175
+DEBUG: Parser::advance token=19 value='' line=175
+DEBUG: Parser::advance token=36 value='True' line=175
+DEBUG: Parser::advance token=9 value='' line=175
+DEBUG: Parser::advance token=18 value='' line=175
+DEBUG: Parser::advance token=11 value='' line=176
+DEBUG: Parser::advance token=29 value='' line=176
+DEBUG: Parser::advance token=1 value='Remove and return a (key, value) pair from the dictionary.
+
+        Pairs are returned in LIFO order if last is true or FIFO order if false.
+        ' line=176
+DEBUG: Parser::advance token=11 value='' line=180
+DEBUG: Parser::advance token=23 value='if' line=180
+DEBUG: Parser::advance token=41 value='not' line=180
+DEBUG: Parser::advance token=3 value='self' line=180
+DEBUG: Parser::advance token=18 value='' line=180
+DEBUG: Parser::advance token=11 value='' line=181
+DEBUG: Parser::advance token=29 value='' line=181
+DEBUG: Parser::advance token=45 value='raise' line=181
+DEBUG: Parser::advance token=3 value='KeyError' line=181
+DEBUG: Parser::advance token=8 value='' line=181
+DEBUG: Parser::advance token=1 value='dictionary is empty' line=181
+DEBUG: Parser::advance token=9 value='' line=181
+DEBUG: Parser::advance token=11 value='' line=182
+DEBUG: Parser::advance token=30 value='' line=182
+DEBUG: Parser::advance token=3 value='root' line=182
+DEBUG: Parser::advance token=19 value='' line=182
+DEBUG: Parser::advance token=3 value='self' line=182
+DEBUG: Parser::advance token=13 value='' line=182
+DEBUG: Parser::advance token=3 value='__root' line=182
+DEBUG: Parser::advance token=11 value='' line=183
+DEBUG: Parser::advance token=23 value='if' line=183
+DEBUG: Parser::advance token=3 value='last' line=183
+DEBUG: Parser::advance token=18 value='' line=183
+DEBUG: Parser::advance token=11 value='' line=184
+DEBUG: Parser::advance token=29 value='' line=184
+DEBUG: Parser::advance token=3 value='link' line=184
+DEBUG: Parser::advance token=19 value='' line=184
+DEBUG: Parser::advance token=3 value='root' line=184
+DEBUG: Parser::advance token=13 value='' line=184
+DEBUG: Parser::advance token=3 value='prev' line=184
+DEBUG: Parser::advance token=11 value='' line=185
+DEBUG: Parser::advance token=3 value='link_prev' line=185
+DEBUG: Parser::advance token=19 value='' line=185
+DEBUG: Parser::advance token=3 value='link' line=185
+DEBUG: Parser::advance token=13 value='' line=185
+DEBUG: Parser::advance token=3 value='prev' line=185
+DEBUG: Parser::advance token=11 value='' line=186
+DEBUG: Parser::advance token=3 value='link_prev' line=186
+DEBUG: Parser::advance token=13 value='' line=186
+DEBUG: Parser::advance token=3 value='next' line=186
+DEBUG: Parser::advance token=19 value='' line=186
+DEBUG: Parser::advance token=3 value='root' line=186
+DEBUG: Parser::advance token=11 value='' line=187
+DEBUG: Parser::advance token=3 value='root' line=187
+DEBUG: Parser::advance token=13 value='' line=187
+DEBUG: Parser::advance token=3 value='prev' line=187
+DEBUG: Parser::advance token=19 value='' line=187
+DEBUG: Parser::advance token=3 value='link_prev' line=187
+DEBUG: Parser::advance token=11 value='' line=188
+DEBUG: Parser::advance token=30 value='' line=188
+DEBUG: Parser::advance token=25 value='else' line=188
+DEBUG: Parser::advance token=18 value='' line=188
+DEBUG: Parser::advance token=11 value='' line=189
+DEBUG: Parser::advance token=29 value='' line=189
+DEBUG: Parser::advance token=3 value='link' line=189
+DEBUG: Parser::advance token=19 value='' line=189
+DEBUG: Parser::advance token=3 value='root' line=189
+DEBUG: Parser::advance token=13 value='' line=189
+DEBUG: Parser::advance token=3 value='next' line=189
+DEBUG: Parser::advance token=11 value='' line=190
+DEBUG: Parser::advance token=3 value='link_next' line=190
+DEBUG: Parser::advance token=19 value='' line=190
+DEBUG: Parser::advance token=3 value='link' line=190
+DEBUG: Parser::advance token=13 value='' line=190
+DEBUG: Parser::advance token=3 value='next' line=190
+DEBUG: Parser::advance token=11 value='' line=191
+DEBUG: Parser::advance token=3 value='root' line=191
+DEBUG: Parser::advance token=13 value='' line=191
+DEBUG: Parser::advance token=3 value='next' line=191
+DEBUG: Parser::advance token=19 value='' line=191
+DEBUG: Parser::advance token=3 value='link_next' line=191
+DEBUG: Parser::advance token=11 value='' line=192
+DEBUG: Parser::advance token=3 value='link_next' line=192
+DEBUG: Parser::advance token=13 value='' line=192
+DEBUG: Parser::advance token=3 value='prev' line=192
+DEBUG: Parser::advance token=19 value='' line=192
+DEBUG: Parser::advance token=3 value='root' line=192
+DEBUG: Parser::advance token=11 value='' line=193
+DEBUG: Parser::advance token=30 value='' line=193
+DEBUG: Parser::advance token=3 value='key' line=193
+DEBUG: Parser::advance token=19 value='' line=193
+DEBUG: Parser::advance token=3 value='link' line=193
+DEBUG: Parser::advance token=13 value='' line=193
+DEBUG: Parser::advance token=3 value='key' line=193
+DEBUG: Parser::advance token=11 value='' line=194
+DEBUG: Parser::advance token=69 value='del' line=194
+DEBUG: Parser::advance token=3 value='self' line=194
+DEBUG: Parser::advance token=13 value='' line=194
+DEBUG: Parser::advance token=3 value='__map' line=194
+DEBUG: Parser::advance token=14 value='' line=194
+DEBUG: Parser::advance token=3 value='key' line=194
+DEBUG: Parser::advance token=15 value='' line=194
+DEBUG: Parser::advance token=11 value='' line=195
+DEBUG: Parser::advance token=3 value='value' line=195
+DEBUG: Parser::advance token=19 value='' line=195
+DEBUG: Parser::advance token=3 value='dict' line=195
+DEBUG: Parser::advance token=13 value='' line=195
+DEBUG: Parser::advance token=3 value='pop' line=195
+DEBUG: Parser::advance token=8 value='' line=195
+DEBUG: Parser::advance token=3 value='self' line=195
+DEBUG: Parser::advance token=10 value='' line=195
+DEBUG: Parser::advance token=3 value='key' line=195
+DEBUG: Parser::advance token=9 value='' line=195
+DEBUG: Parser::advance token=11 value='' line=196
+DEBUG: Parser::advance token=34 value='return' line=196
+DEBUG: Parser::advance token=3 value='key' line=196
+DEBUG: Parser::advance token=10 value='' line=196
+DEBUG: Parser::advance token=3 value='value' line=196
+DEBUG: Parser::advance token=11 value='' line=197
+DEBUG: Parser::advance token=30 value='' line=198
+DEBUG: Parser::advance token=27 value='def' line=198
+DEBUG: Parser::advance token=3 value='move_to_end' line=198
+DEBUG: Parser::advance token=8 value='' line=198
+DEBUG: Parser::advance token=3 value='self' line=198
+DEBUG: Parser::advance token=10 value='' line=198
+DEBUG: Parser::advance token=3 value='key' line=198
+DEBUG: Parser::advance token=10 value='' line=198
+DEBUG: Parser::advance token=3 value='last' line=198
+DEBUG: Parser::advance token=19 value='' line=198
+DEBUG: Parser::advance token=36 value='True' line=198
+DEBUG: Parser::advance token=9 value='' line=198
+DEBUG: Parser::advance token=18 value='' line=198
+DEBUG: Parser::advance token=11 value='' line=199
+DEBUG: Parser::advance token=29 value='' line=199
+DEBUG: Parser::advance token=1 value='Move an existing element to the end (or beginning if last is false).
+
+        Raise KeyError if the element does not exist.
+        ' line=199
+DEBUG: Parser::advance token=11 value='' line=203
+DEBUG: Parser::advance token=3 value='link' line=203
+DEBUG: Parser::advance token=19 value='' line=203
+DEBUG: Parser::advance token=3 value='self' line=203
+DEBUG: Parser::advance token=13 value='' line=203
+DEBUG: Parser::advance token=3 value='__map' line=203
+DEBUG: Parser::advance token=14 value='' line=203
+DEBUG: Parser::advance token=3 value='key' line=203
+DEBUG: Parser::advance token=15 value='' line=203
+DEBUG: Parser::advance token=11 value='' line=204
+DEBUG: Parser::advance token=3 value='link_prev' line=204
+DEBUG: Parser::advance token=19 value='' line=204
+DEBUG: Parser::advance token=3 value='link' line=204
+DEBUG: Parser::advance token=13 value='' line=204
+DEBUG: Parser::advance token=3 value='prev' line=204
+DEBUG: Parser::advance token=11 value='' line=205
+DEBUG: Parser::advance token=3 value='link_next' line=205
+DEBUG: Parser::advance token=19 value='' line=205
+DEBUG: Parser::advance token=3 value='link' line=205
+DEBUG: Parser::advance token=13 value='' line=205
+DEBUG: Parser::advance token=3 value='next' line=205
+DEBUG: Parser::advance token=11 value='' line=206
+DEBUG: Parser::advance token=3 value='soft_link' line=206
+DEBUG: Parser::advance token=19 value='' line=206
+DEBUG: Parser::advance token=3 value='link_next' line=206
+DEBUG: Parser::advance token=13 value='' line=206
+DEBUG: Parser::advance token=3 value='prev' line=206
+DEBUG: Parser::advance token=11 value='' line=207
+DEBUG: Parser::advance token=3 value='link_prev' line=207
+DEBUG: Parser::advance token=13 value='' line=207
+DEBUG: Parser::advance token=3 value='next' line=207
+DEBUG: Parser::advance token=19 value='' line=207
+DEBUG: Parser::advance token=3 value='link_next' line=207
+DEBUG: Parser::advance token=11 value='' line=208
+DEBUG: Parser::advance token=3 value='link_next' line=208
+DEBUG: Parser::advance token=13 value='' line=208
+DEBUG: Parser::advance token=3 value='prev' line=208
+DEBUG: Parser::advance token=19 value='' line=208
+DEBUG: Parser::advance token=3 value='link_prev' line=208
+DEBUG: Parser::advance token=11 value='' line=209
+DEBUG: Parser::advance token=3 value='root' line=209
+DEBUG: Parser::advance token=19 value='' line=209
+DEBUG: Parser::advance token=3 value='self' line=209
+DEBUG: Parser::advance token=13 value='' line=209
+DEBUG: Parser::advance token=3 value='__root' line=209
+DEBUG: Parser::advance token=11 value='' line=210
+DEBUG: Parser::advance token=23 value='if' line=210
+DEBUG: Parser::advance token=3 value='last' line=210
+DEBUG: Parser::advance token=18 value='' line=210
+DEBUG: Parser::advance token=11 value='' line=211
+DEBUG: Parser::advance token=29 value='' line=211
+DEBUG: Parser::advance token=3 value='last' line=211
+DEBUG: Parser::advance token=19 value='' line=211
+DEBUG: Parser::advance token=3 value='root' line=211
+DEBUG: Parser::advance token=13 value='' line=211
+DEBUG: Parser::advance token=3 value='prev' line=211
+DEBUG: Parser::advance token=11 value='' line=212
+DEBUG: Parser::advance token=3 value='link' line=212
+DEBUG: Parser::advance token=13 value='' line=212
+DEBUG: Parser::advance token=3 value='prev' line=212
+DEBUG: Parser::advance token=19 value='' line=212
+DEBUG: Parser::advance token=3 value='last' line=212
+DEBUG: Parser::advance token=11 value='' line=213
+DEBUG: Parser::advance token=3 value='link' line=213
+DEBUG: Parser::advance token=13 value='' line=213
+DEBUG: Parser::advance token=3 value='next' line=213
+DEBUG: Parser::advance token=19 value='' line=213
+DEBUG: Parser::advance token=3 value='root' line=213
+DEBUG: Parser::advance token=11 value='' line=214
+DEBUG: Parser::advance token=3 value='root' line=214
+DEBUG: Parser::advance token=13 value='' line=214
+DEBUG: Parser::advance token=3 value='prev' line=214
+DEBUG: Parser::advance token=19 value='' line=214
+DEBUG: Parser::advance token=3 value='soft_link' line=214
+DEBUG: Parser::advance token=11 value='' line=215
+DEBUG: Parser::advance token=3 value='last' line=215
+DEBUG: Parser::advance token=13 value='' line=215
+DEBUG: Parser::advance token=3 value='next' line=215
+DEBUG: Parser::advance token=19 value='' line=215
+DEBUG: Parser::advance token=3 value='link' line=215
+DEBUG: Parser::advance token=11 value='' line=216
+DEBUG: Parser::advance token=30 value='' line=216
+DEBUG: Parser::advance token=25 value='else' line=216
+DEBUG: Parser::advance token=18 value='' line=216
+DEBUG: Parser::advance token=11 value='' line=217
+DEBUG: Parser::advance token=29 value='' line=217
+DEBUG: Parser::advance token=3 value='first' line=217
+DEBUG: Parser::advance token=19 value='' line=217
+DEBUG: Parser::advance token=3 value='root' line=217
+DEBUG: Parser::advance token=13 value='' line=217
+DEBUG: Parser::advance token=3 value='next' line=217
+DEBUG: Parser::advance token=11 value='' line=218
+DEBUG: Parser::advance token=3 value='link' line=218
+DEBUG: Parser::advance token=13 value='' line=218
+DEBUG: Parser::advance token=3 value='prev' line=218
+DEBUG: Parser::advance token=19 value='' line=218
+DEBUG: Parser::advance token=3 value='root' line=218
+DEBUG: Parser::advance token=11 value='' line=219
+DEBUG: Parser::advance token=3 value='link' line=219
+DEBUG: Parser::advance token=13 value='' line=219
+DEBUG: Parser::advance token=3 value='next' line=219
+DEBUG: Parser::advance token=19 value='' line=219
+DEBUG: Parser::advance token=3 value='first' line=219
+DEBUG: Parser::advance token=11 value='' line=220
+DEBUG: Parser::advance token=3 value='first' line=220
+DEBUG: Parser::advance token=13 value='' line=220
+DEBUG: Parser::advance token=3 value='prev' line=220
+DEBUG: Parser::advance token=19 value='' line=220
+DEBUG: Parser::advance token=3 value='soft_link' line=220
+DEBUG: Parser::advance token=11 value='' line=221
+DEBUG: Parser::advance token=3 value='root' line=221
+DEBUG: Parser::advance token=13 value='' line=221
+DEBUG: Parser::advance token=3 value='next' line=221
+DEBUG: Parser::advance token=19 value='' line=221
+DEBUG: Parser::advance token=3 value='link' line=221
+DEBUG: Parser::advance token=11 value='' line=222
+DEBUG: Parser::advance token=30 value='' line=223
+DEBUG: Parser::advance token=30 value='' line=223
+DEBUG: Parser::advance token=27 value='def' line=223
+DEBUG: Parser::advance token=3 value='__sizeof__' line=223
+DEBUG: Parser::advance token=8 value='' line=223
+DEBUG: Parser::advance token=3 value='self' line=223
+DEBUG: Parser::advance token=9 value='' line=223
+DEBUG: Parser::advance token=18 value='' line=223
+DEBUG: Parser::advance token=11 value='' line=224
+DEBUG: Parser::advance token=29 value='' line=224
+DEBUG: Parser::advance token=3 value='sizeof' line=224
+DEBUG: Parser::advance token=19 value='' line=224
+DEBUG: Parser::advance token=3 value='_sys' line=224
+DEBUG: Parser::advance token=13 value='' line=224
+DEBUG: Parser::advance token=3 value='getsizeof' line=224
+DEBUG: Parser::advance token=11 value='' line=225
+DEBUG: Parser::advance token=3 value='n' line=225
+DEBUG: Parser::advance token=19 value='' line=225
+DEBUG: Parser::advance token=3 value='len' line=225
+DEBUG: Parser::advance token=8 value='' line=225
+DEBUG: Parser::advance token=3 value='self' line=225
+DEBUG: Parser::advance token=9 value='' line=225
+DEBUG: Parser::advance token=4 value='' line=225
+DEBUG: Parser::advance token=0 value='1' line=225
+DEBUG: Parser::advance token=11 value='' line=226
+DEBUG: Parser::advance token=3 value='size' line=226
+DEBUG: Parser::advance token=19 value='' line=226
+DEBUG: Parser::advance token=3 value='sizeof' line=226
+DEBUG: Parser::advance token=8 value='' line=226
+DEBUG: Parser::advance token=3 value='self' line=226
+DEBUG: Parser::advance token=13 value='' line=226
+DEBUG: Parser::advance token=3 value='__dict__' line=226
+DEBUG: Parser::advance token=9 value='' line=226
+DEBUG: Parser::advance token=11 value='' line=227
+DEBUG: Parser::advance token=3 value='size' line=227
+DEBUG: Parser::advance token=64 value='' line=227
+DEBUG: Parser::advance token=3 value='sizeof' line=227
+DEBUG: Parser::advance token=8 value='' line=227
+DEBUG: Parser::advance token=3 value='self' line=227
+DEBUG: Parser::advance token=13 value='' line=227
+DEBUG: Parser::advance token=3 value='__map' line=227
+DEBUG: Parser::advance token=9 value='' line=227
+DEBUG: Parser::advance token=6 value='' line=227
+DEBUG: Parser::advance token=0 value='2' line=227
+DEBUG: Parser::advance token=11 value='' line=228
+DEBUG: Parser::advance token=3 value='size' line=228
+DEBUG: Parser::advance token=64 value='' line=228
+DEBUG: Parser::advance token=3 value='sizeof' line=228
+DEBUG: Parser::advance token=8 value='' line=228
+DEBUG: Parser::advance token=3 value='self' line=228
+DEBUG: Parser::advance token=13 value='' line=228
+DEBUG: Parser::advance token=3 value='__hardroot' line=228
+DEBUG: Parser::advance token=9 value='' line=228
+DEBUG: Parser::advance token=6 value='' line=228
+DEBUG: Parser::advance token=3 value='n' line=228
+DEBUG: Parser::advance token=11 value='' line=229
+DEBUG: Parser::advance token=3 value='size' line=229
+DEBUG: Parser::advance token=64 value='' line=229
+DEBUG: Parser::advance token=3 value='sizeof' line=229
+DEBUG: Parser::advance token=8 value='' line=229
+DEBUG: Parser::advance token=3 value='self' line=229
+DEBUG: Parser::advance token=13 value='' line=229
+DEBUG: Parser::advance token=3 value='__root' line=229
+DEBUG: Parser::advance token=9 value='' line=229
+DEBUG: Parser::advance token=6 value='' line=229
+DEBUG: Parser::advance token=3 value='n' line=229
+DEBUG: Parser::advance token=11 value='' line=230
+DEBUG: Parser::advance token=34 value='return' line=230
+DEBUG: Parser::advance token=3 value='size' line=230
+DEBUG: Parser::advance token=11 value='' line=231
+DEBUG: Parser::advance token=30 value='' line=232
+DEBUG: Parser::advance token=3 value='update' line=232
+DEBUG: Parser::advance token=19 value='' line=232
+DEBUG: Parser::advance token=3 value='__update' line=232
+DEBUG: Parser::advance token=19 value='' line=232
+DEBUG: Parser::advance token=3 value='_collections_abc' line=232
+DEBUG: Parser::advance token=13 value='' line=232
+DEBUG: Parser::advance token=3 value='MutableMapping' line=232
+DEBUG: Parser::advance token=13 value='' line=232
+DEBUG: Parser::advance token=3 value='update' line=232
+DEBUG: Parser::advance token=11 value='' line=233
+DEBUG: Parser::advance token=27 value='def' line=234
+DEBUG: Parser::advance token=3 value='keys' line=234
+DEBUG: Parser::advance token=8 value='' line=234
+DEBUG: Parser::advance token=3 value='self' line=234
+DEBUG: Parser::advance token=9 value='' line=234
+DEBUG: Parser::advance token=18 value='' line=234
+DEBUG: Parser::advance token=11 value='' line=235
+DEBUG: Parser::advance token=29 value='' line=235
+DEBUG: Parser::advance token=1 value='D.keys() -> a set-like object providing a view on D's keys' line=235
+DEBUG: Parser::advance token=11 value='' line=236
+DEBUG: Parser::advance token=34 value='return' line=236
+DEBUG: Parser::advance token=3 value='_OrderedDictKeysView' line=236
+DEBUG: Parser::advance token=8 value='' line=236
+DEBUG: Parser::advance token=3 value='self' line=236
+DEBUG: Parser::advance token=9 value='' line=236
+DEBUG: Parser::advance token=11 value='' line=237
+DEBUG: Parser::advance token=30 value='' line=238
+DEBUG: Parser::advance token=27 value='def' line=238
+DEBUG: Parser::advance token=3 value='items' line=238
+DEBUG: Parser::advance token=8 value='' line=238
+DEBUG: Parser::advance token=3 value='self' line=238
+DEBUG: Parser::advance token=9 value='' line=238
+DEBUG: Parser::advance token=18 value='' line=238
+DEBUG: Parser::advance token=11 value='' line=239
+DEBUG: Parser::advance token=29 value='' line=239
+DEBUG: Parser::advance token=1 value='D.items() -> a set-like object providing a view on D's items' line=239
+DEBUG: Parser::advance token=11 value='' line=240
+DEBUG: Parser::advance token=34 value='return' line=240
+DEBUG: Parser::advance token=3 value='_OrderedDictItemsView' line=240
+DEBUG: Parser::advance token=8 value='' line=240
+DEBUG: Parser::advance token=3 value='self' line=240
+DEBUG: Parser::advance token=9 value='' line=240
+DEBUG: Parser::advance token=11 value='' line=241
+DEBUG: Parser::advance token=30 value='' line=242
+DEBUG: Parser::advance token=27 value='def' line=242
+DEBUG: Parser::advance token=3 value='values' line=242
+DEBUG: Parser::advance token=8 value='' line=242
+DEBUG: Parser::advance token=3 value='self' line=242
+DEBUG: Parser::advance token=9 value='' line=242
+DEBUG: Parser::advance token=18 value='' line=242
+DEBUG: Parser::advance token=11 value='' line=243
+DEBUG: Parser::advance token=29 value='' line=243
+DEBUG: Parser::advance token=1 value='D.values() -> an object providing a view on D's values' line=243
+DEBUG: Parser::advance token=11 value='' line=244
+DEBUG: Parser::advance token=34 value='return' line=244
+DEBUG: Parser::advance token=3 value='_OrderedDictValuesView' line=244
+DEBUG: Parser::advance token=8 value='' line=244
+DEBUG: Parser::advance token=3 value='self' line=244
+DEBUG: Parser::advance token=9 value='' line=244
+DEBUG: Parser::advance token=11 value='' line=245
+DEBUG: Parser::advance token=30 value='' line=246
+DEBUG: Parser::advance token=3 value='__ne__' line=246
+DEBUG: Parser::advance token=19 value='' line=246
+DEBUG: Parser::advance token=3 value='_collections_abc' line=246
+DEBUG: Parser::advance token=13 value='' line=246
+DEBUG: Parser::advance token=3 value='MutableMapping' line=246
+DEBUG: Parser::advance token=13 value='' line=246
+DEBUG: Parser::advance token=3 value='__ne__' line=246
+DEBUG: Parser::advance token=11 value='' line=247
+DEBUG: Parser::advance token=3 value='__marker' line=248
+DEBUG: Parser::advance token=19 value='' line=248
+DEBUG: Parser::advance token=3 value='object' line=248
+DEBUG: Parser::advance token=8 value='' line=248
+DEBUG: Parser::advance token=9 value='' line=248
+DEBUG: Parser::advance token=11 value='' line=249
+DEBUG: Parser::advance token=27 value='def' line=250
+DEBUG: Parser::advance token=3 value='pop' line=250
+DEBUG: Parser::advance token=8 value='' line=250
+DEBUG: Parser::advance token=3 value='self' line=250
+DEBUG: Parser::advance token=10 value='' line=250
+DEBUG: Parser::advance token=3 value='key' line=250
+DEBUG: Parser::advance token=10 value='' line=250
+DEBUG: Parser::advance token=3 value='default' line=250
+DEBUG: Parser::advance token=19 value='' line=250
+DEBUG: Parser::advance token=3 value='__marker' line=250
+DEBUG: Parser::advance token=9 value='' line=250
+DEBUG: Parser::advance token=18 value='' line=250
+DEBUG: Parser::advance token=11 value='' line=251
+DEBUG: Parser::advance token=29 value='' line=251
+DEBUG: Parser::advance token=1 value='od.pop(k[,d]) -> v, remove specified key and return the corresponding
+        value.  If key is not found, d is returned if given, otherwise KeyError
+        is raised.
+
+        ' line=251
+DEBUG: Parser::advance token=11 value='' line=256
+DEBUG: Parser::advance token=3 value='marker' line=256
+DEBUG: Parser::advance token=19 value='' line=256
+DEBUG: Parser::advance token=3 value='self' line=256
+DEBUG: Parser::advance token=13 value='' line=256
+DEBUG: Parser::advance token=3 value='__marker' line=256
+DEBUG: Parser::advance token=11 value='' line=257
+DEBUG: Parser::advance token=3 value='result' line=257
+DEBUG: Parser::advance token=19 value='' line=257
+DEBUG: Parser::advance token=3 value='dict' line=257
+DEBUG: Parser::advance token=13 value='' line=257
+DEBUG: Parser::advance token=3 value='pop' line=257
+DEBUG: Parser::advance token=8 value='' line=257
+DEBUG: Parser::advance token=3 value='self' line=257
+DEBUG: Parser::advance token=10 value='' line=257
+DEBUG: Parser::advance token=3 value='key' line=257
+DEBUG: Parser::advance token=10 value='' line=257
+DEBUG: Parser::advance token=3 value='marker' line=257
+DEBUG: Parser::advance token=9 value='' line=257
+DEBUG: Parser::advance token=11 value='' line=258
+DEBUG: Parser::advance token=23 value='if' line=258
+DEBUG: Parser::advance token=3 value='result' line=258
+DEBUG: Parser::advance token=51 value='is' line=258
+DEBUG: Parser::advance token=41 value='not' line=258
+DEBUG: Parser::advance token=3 value='marker' line=258
+DEBUG: Parser::advance token=18 value='' line=258
+DEBUG: Parser::advance token=11 value='' line=259
+DEBUG: Parser::advance token=29 value='' line=260
+DEBUG: Parser::advance token=3 value='link' line=260
+DEBUG: Parser::advance token=19 value='' line=260
+DEBUG: Parser::advance token=3 value='self' line=260
+DEBUG: Parser::advance token=13 value='' line=260
+DEBUG: Parser::advance token=3 value='__map' line=260
+DEBUG: Parser::advance token=13 value='' line=260
+DEBUG: Parser::advance token=3 value='pop' line=260
+DEBUG: Parser::advance token=8 value='' line=260
+DEBUG: Parser::advance token=3 value='key' line=260
+DEBUG: Parser::advance token=9 value='' line=260
+DEBUG: Parser::advance token=11 value='' line=261
+DEBUG: Parser::advance token=3 value='link_prev' line=261
+DEBUG: Parser::advance token=19 value='' line=261
+DEBUG: Parser::advance token=3 value='link' line=261
+DEBUG: Parser::advance token=13 value='' line=261
+DEBUG: Parser::advance token=3 value='prev' line=261
+DEBUG: Parser::advance token=11 value='' line=262
+DEBUG: Parser::advance token=3 value='link_next' line=262
+DEBUG: Parser::advance token=19 value='' line=262
+DEBUG: Parser::advance token=3 value='link' line=262
+DEBUG: Parser::advance token=13 value='' line=262
+DEBUG: Parser::advance token=3 value='next' line=262
+DEBUG: Parser::advance token=11 value='' line=263
+DEBUG: Parser::advance token=3 value='link_prev' line=263
+DEBUG: Parser::advance token=13 value='' line=263
+DEBUG: Parser::advance token=3 value='next' line=263
+DEBUG: Parser::advance token=19 value='' line=263
+DEBUG: Parser::advance token=3 value='link_next' line=263
+DEBUG: Parser::advance token=11 value='' line=264
+DEBUG: Parser::advance token=3 value='link_next' line=264
+DEBUG: Parser::advance token=13 value='' line=264
+DEBUG: Parser::advance token=3 value='prev' line=264
+DEBUG: Parser::advance token=19 value='' line=264
+DEBUG: Parser::advance token=3 value='link_prev' line=264
+DEBUG: Parser::advance token=11 value='' line=265
+DEBUG: Parser::advance token=3 value='link' line=265
+DEBUG: Parser::advance token=13 value='' line=265
+DEBUG: Parser::advance token=3 value='prev' line=265
+DEBUG: Parser::advance token=19 value='' line=265
+DEBUG: Parser::advance token=38 value='None' line=265
+DEBUG: Parser::advance token=11 value='' line=266
+DEBUG: Parser::advance token=3 value='link' line=266
+DEBUG: Parser::advance token=13 value='' line=266
+DEBUG: Parser::advance token=3 value='next' line=266
+DEBUG: Parser::advance token=19 value='' line=266
+DEBUG: Parser::advance token=38 value='None' line=266
+DEBUG: Parser::advance token=11 value='' line=267
+DEBUG: Parser::advance token=34 value='return' line=267
+DEBUG: Parser::advance token=3 value='result' line=267
+DEBUG: Parser::advance token=11 value='' line=268
+DEBUG: Parser::advance token=30 value='' line=268
+DEBUG: Parser::advance token=23 value='if' line=268
+DEBUG: Parser::advance token=3 value='default' line=268
+DEBUG: Parser::advance token=51 value='is' line=268
+DEBUG: Parser::advance token=3 value='marker' line=268
+DEBUG: Parser::advance token=18 value='' line=268
+DEBUG: Parser::advance token=11 value='' line=269
+DEBUG: Parser::advance token=29 value='' line=269
+DEBUG: Parser::advance token=45 value='raise' line=269
+DEBUG: Parser::advance token=3 value='KeyError' line=269
+DEBUG: Parser::advance token=8 value='' line=269
+DEBUG: Parser::advance token=3 value='key' line=269
+DEBUG: Parser::advance token=9 value='' line=269
+DEBUG: Parser::advance token=11 value='' line=270
+DEBUG: Parser::advance token=30 value='' line=270
+DEBUG: Parser::advance token=34 value='return' line=270
+DEBUG: Parser::advance token=3 value='default' line=270
+DEBUG: Parser::advance token=11 value='' line=271
+DEBUG: Parser::advance token=30 value='' line=272
+DEBUG: Parser::advance token=27 value='def' line=272
+DEBUG: Parser::advance token=3 value='setdefault' line=272
+DEBUG: Parser::advance token=8 value='' line=272
+DEBUG: Parser::advance token=3 value='self' line=272
+DEBUG: Parser::advance token=10 value='' line=272
+DEBUG: Parser::advance token=3 value='key' line=272
+DEBUG: Parser::advance token=10 value='' line=272
+DEBUG: Parser::advance token=3 value='default' line=272
+DEBUG: Parser::advance token=19 value='' line=272
+DEBUG: Parser::advance token=38 value='None' line=272
+DEBUG: Parser::advance token=9 value='' line=272
+DEBUG: Parser::advance token=18 value='' line=272
+DEBUG: Parser::advance token=11 value='' line=273
+DEBUG: Parser::advance token=29 value='' line=273
+DEBUG: Parser::advance token=1 value='Insert key with a value of default if key is not in the dictionary.
+
+        Return the value for key if key is in the dictionary, else default.
+        ' line=273
+DEBUG: Parser::advance token=11 value='' line=277
+DEBUG: Parser::advance token=23 value='if' line=277
+DEBUG: Parser::advance token=3 value='key' line=277
+DEBUG: Parser::advance token=22 value='in' line=277
+DEBUG: Parser::advance token=3 value='self' line=277
+DEBUG: Parser::advance token=18 value='' line=277
+DEBUG: Parser::advance token=11 value='' line=278
+DEBUG: Parser::advance token=29 value='' line=278
+DEBUG: Parser::advance token=34 value='return' line=278
+DEBUG: Parser::advance token=3 value='self' line=278
+DEBUG: Parser::advance token=14 value='' line=278
+DEBUG: Parser::advance token=3 value='key' line=278
+DEBUG: Parser::advance token=15 value='' line=278
+DEBUG: Parser::advance token=11 value='' line=279
+DEBUG: Parser::advance token=30 value='' line=279
+DEBUG: Parser::advance token=3 value='self' line=279
+DEBUG: Parser::advance token=14 value='' line=279
+DEBUG: Parser::advance token=3 value='key' line=279
+DEBUG: Parser::advance token=15 value='' line=279
+DEBUG: Parser::advance token=19 value='' line=279
+DEBUG: Parser::advance token=3 value='default' line=279
+DEBUG: Parser::advance token=11 value='' line=280
+DEBUG: Parser::advance token=34 value='return' line=280
+DEBUG: Parser::advance token=3 value='default' line=280
+DEBUG: Parser::advance token=11 value='' line=281
+DEBUG: Parser::advance token=30 value='' line=282
+DEBUG: Parser::advance token=72 value='' line=282
+DEBUG: Parser::advance token=3 value='_recursive_repr' line=282
+DEBUG: Parser::advance token=8 value='' line=282
+DEBUG: Parser::advance token=9 value='' line=282
+DEBUG: Parser::advance token=11 value='' line=283
+DEBUG: Parser::advance token=27 value='def' line=283
+DEBUG: Parser::advance token=3 value='__repr__' line=283
+DEBUG: Parser::advance token=8 value='' line=283
+DEBUG: Parser::advance token=3 value='self' line=283
+DEBUG: Parser::advance token=9 value='' line=283
+DEBUG: Parser::advance token=18 value='' line=283
+DEBUG: Parser::advance token=11 value='' line=284
+DEBUG: Parser::advance token=29 value='' line=284
+DEBUG: Parser::advance token=1 value='od.__repr__() <==> repr(od)' line=284
+DEBUG: Parser::advance token=11 value='' line=285
+DEBUG: Parser::advance token=23 value='if' line=285
+DEBUG: Parser::advance token=41 value='not' line=285
+DEBUG: Parser::advance token=3 value='self' line=285
+DEBUG: Parser::advance token=18 value='' line=285
+DEBUG: Parser::advance token=11 value='' line=286
+DEBUG: Parser::advance token=29 value='' line=286
+DEBUG: Parser::advance token=34 value='return' line=286
+DEBUG: Parser::advance token=1 value='%s()' line=286
+DEBUG: Parser::advance token=54 value='' line=286
+DEBUG: Parser::advance token=8 value='' line=286
+DEBUG: Parser::advance token=3 value='self' line=286
+DEBUG: Parser::advance token=13 value='' line=286
+DEBUG: Parser::advance token=3 value='__class__' line=286
+DEBUG: Parser::advance token=13 value='' line=286
+DEBUG: Parser::advance token=3 value='__name__' line=286
+DEBUG: Parser::advance token=10 value='' line=286
+DEBUG: Parser::advance token=9 value='' line=286
+DEBUG: Parser::advance token=11 value='' line=287
+DEBUG: Parser::advance token=30 value='' line=287
+DEBUG: Parser::advance token=34 value='return' line=287
+DEBUG: Parser::advance token=1 value='%s(%r)' line=287
+DEBUG: Parser::advance token=54 value='' line=287
+DEBUG: Parser::advance token=8 value='' line=287
+DEBUG: Parser::advance token=3 value='self' line=287
+DEBUG: Parser::advance token=13 value='' line=287
+DEBUG: Parser::advance token=3 value='__class__' line=287
+DEBUG: Parser::advance token=13 value='' line=287
+DEBUG: Parser::advance token=3 value='__name__' line=287
+DEBUG: Parser::advance token=10 value='' line=287
+DEBUG: Parser::advance token=3 value='dict' line=287
+DEBUG: Parser::advance token=8 value='' line=287
+DEBUG: Parser::advance token=3 value='self' line=287
+DEBUG: Parser::advance token=13 value='' line=287
+DEBUG: Parser::advance token=3 value='items' line=287
+DEBUG: Parser::advance token=8 value='' line=287
+DEBUG: Parser::advance token=9 value='' line=287
+DEBUG: Parser::advance token=9 value='' line=287
+DEBUG: Parser::advance token=9 value='' line=287
+DEBUG: Parser::advance token=11 value='' line=288
+DEBUG: Parser::advance token=30 value='' line=289
+DEBUG: Parser::advance token=27 value='def' line=289
+DEBUG: Parser::advance token=3 value='__reduce__' line=289
+DEBUG: Parser::advance token=8 value='' line=289
+DEBUG: Parser::advance token=3 value='self' line=289
+DEBUG: Parser::advance token=9 value='' line=289
+DEBUG: Parser::advance token=18 value='' line=289
+DEBUG: Parser::advance token=11 value='' line=290
+DEBUG: Parser::advance token=29 value='' line=290
+DEBUG: Parser::advance token=1 value='Return state information for pickling' line=290
+DEBUG: Parser::advance token=11 value='' line=291
+DEBUG: Parser::advance token=3 value='state' line=291
+DEBUG: Parser::advance token=19 value='' line=291
+DEBUG: Parser::advance token=3 value='self' line=291
+DEBUG: Parser::advance token=13 value='' line=291
+DEBUG: Parser::advance token=3 value='__getstate__' line=291
+DEBUG: Parser::advance token=8 value='' line=291
+DEBUG: Parser::advance token=9 value='' line=291
+DEBUG: Parser::advance token=11 value='' line=292
+DEBUG: Parser::advance token=23 value='if' line=292
+DEBUG: Parser::advance token=3 value='state' line=292
+DEBUG: Parser::advance token=18 value='' line=292
+DEBUG: Parser::advance token=11 value='' line=293
+DEBUG: Parser::advance token=29 value='' line=293
+DEBUG: Parser::advance token=23 value='if' line=293
+DEBUG: Parser::advance token=3 value='isinstance' line=293
+DEBUG: Parser::advance token=8 value='' line=293
+DEBUG: Parser::advance token=3 value='state' line=293
+DEBUG: Parser::advance token=10 value='' line=293
+DEBUG: Parser::advance token=3 value='tuple' line=293
+DEBUG: Parser::advance token=9 value='' line=293
+DEBUG: Parser::advance token=18 value='' line=293
+DEBUG: Parser::advance token=11 value='' line=294
+DEBUG: Parser::advance token=29 value='' line=294
+DEBUG: Parser::advance token=3 value='state' line=294
+DEBUG: Parser::advance token=10 value='' line=294
+DEBUG: Parser::advance token=3 value='slots' line=294
+DEBUG: Parser::advance token=19 value='' line=294
+DEBUG: Parser::advance token=3 value='state' line=294
+DEBUG: Parser::advance token=11 value='' line=295
+DEBUG: Parser::advance token=30 value='' line=295
+DEBUG: Parser::advance token=25 value='else' line=295
+DEBUG: Parser::advance token=18 value='' line=295
+DEBUG: Parser::advance token=11 value='' line=296
+DEBUG: Parser::advance token=29 value='' line=296
+DEBUG: Parser::advance token=3 value='slots' line=296
+DEBUG: Parser::advance token=19 value='' line=296
+DEBUG: Parser::advance token=16 value='' line=296
+DEBUG: Parser::advance token=17 value='' line=296
+DEBUG: Parser::advance token=11 value='' line=297
+DEBUG: Parser::advance token=30 value='' line=297
+DEBUG: Parser::advance token=3 value='state' line=297
+DEBUG: Parser::advance token=19 value='' line=297
+DEBUG: Parser::advance token=3 value='state' line=297
+DEBUG: Parser::advance token=13 value='' line=297
+DEBUG: Parser::advance token=3 value='copy' line=297
+DEBUG: Parser::advance token=8 value='' line=297
+DEBUG: Parser::advance token=9 value='' line=297
+DEBUG: Parser::advance token=11 value='' line=298
+DEBUG: Parser::advance token=3 value='slots' line=298
+DEBUG: Parser::advance token=19 value='' line=298
+DEBUG: Parser::advance token=3 value='slots' line=298
+DEBUG: Parser::advance token=13 value='' line=298
+DEBUG: Parser::advance token=3 value='copy' line=298
+DEBUG: Parser::advance token=8 value='' line=298
+DEBUG: Parser::advance token=9 value='' line=298
+DEBUG: Parser::advance token=11 value='' line=299
+DEBUG: Parser::advance token=21 value='for' line=299
+DEBUG: Parser::advance token=3 value='k' line=299
+DEBUG: Parser::advance token=22 value='in' line=299
+DEBUG: Parser::advance token=3 value='vars' line=299
+DEBUG: Parser::advance token=8 value='' line=299
+DEBUG: Parser::advance token=3 value='OrderedDict' line=299
+DEBUG: Parser::advance token=8 value='' line=299
+DEBUG: Parser::advance token=9 value='' line=299
+DEBUG: Parser::advance token=9 value='' line=299
+DEBUG: Parser::advance token=18 value='' line=299
+DEBUG: Parser::advance token=11 value='' line=300
+DEBUG: Parser::advance token=29 value='' line=300
+DEBUG: Parser::advance token=3 value='state' line=300
+DEBUG: Parser::advance token=13 value='' line=300
+DEBUG: Parser::advance token=3 value='pop' line=300
+DEBUG: Parser::advance token=8 value='' line=300
+DEBUG: Parser::advance token=3 value='k' line=300
+DEBUG: Parser::advance token=10 value='' line=300
+DEBUG: Parser::advance token=38 value='None' line=300
+DEBUG: Parser::advance token=9 value='' line=300
+DEBUG: Parser::advance token=11 value='' line=301
+DEBUG: Parser::advance token=3 value='slots' line=301
+DEBUG: Parser::advance token=13 value='' line=301
+DEBUG: Parser::advance token=3 value='pop' line=301
+DEBUG: Parser::advance token=8 value='' line=301
+DEBUG: Parser::advance token=3 value='k' line=301
+DEBUG: Parser::advance token=10 value='' line=301
+DEBUG: Parser::advance token=38 value='None' line=301
+DEBUG: Parser::advance token=9 value='' line=301
+DEBUG: Parser::advance token=11 value='' line=302
+DEBUG: Parser::advance token=30 value='' line=302
+DEBUG: Parser::advance token=23 value='if' line=302
+DEBUG: Parser::advance token=3 value='slots' line=302
+DEBUG: Parser::advance token=18 value='' line=302
+DEBUG: Parser::advance token=11 value='' line=303
+DEBUG: Parser::advance token=29 value='' line=303
+DEBUG: Parser::advance token=3 value='state' line=303
+DEBUG: Parser::advance token=19 value='' line=303
+DEBUG: Parser::advance token=3 value='state' line=303
+DEBUG: Parser::advance token=10 value='' line=303
+DEBUG: Parser::advance token=3 value='slots' line=303
+DEBUG: Parser::advance token=11 value='' line=304
+DEBUG: Parser::advance token=30 value='' line=304
+DEBUG: Parser::advance token=25 value='else' line=304
+DEBUG: Parser::advance token=18 value='' line=304
+DEBUG: Parser::advance token=11 value='' line=305
+DEBUG: Parser::advance token=29 value='' line=305
+DEBUG: Parser::advance token=3 value='state' line=305
+DEBUG: Parser::advance token=19 value='' line=305
+DEBUG: Parser::advance token=3 value='state' line=305
+DEBUG: Parser::advance token=40 value='or' line=305
+DEBUG: Parser::advance token=38 value='None' line=305
+DEBUG: Parser::advance token=11 value='' line=306
+DEBUG: Parser::advance token=30 value='' line=306
+DEBUG: Parser::advance token=30 value='' line=306
+DEBUG: Parser::advance token=34 value='return' line=306
+DEBUG: Parser::advance token=3 value='self' line=306
+DEBUG: Parser::advance token=13 value='' line=306
+DEBUG: Parser::advance token=3 value='__class__' line=306
+DEBUG: Parser::advance token=10 value='' line=306
+DEBUG: Parser::advance token=8 value='' line=306
+DEBUG: Parser::advance token=9 value='' line=306
+DEBUG: Parser::advance token=10 value='' line=306
+DEBUG: Parser::advance token=3 value='state' line=306
+DEBUG: Parser::advance token=10 value='' line=306
+DEBUG: Parser::advance token=38 value='None' line=306
+DEBUG: Parser::advance token=10 value='' line=306
+DEBUG: Parser::advance token=3 value='iter' line=306
+DEBUG: Parser::advance token=8 value='' line=306
+DEBUG: Parser::advance token=3 value='self' line=306
+DEBUG: Parser::advance token=13 value='' line=306
+DEBUG: Parser::advance token=3 value='items' line=306
+DEBUG: Parser::advance token=8 value='' line=306
+DEBUG: Parser::advance token=9 value='' line=306
+DEBUG: Parser::advance token=9 value='' line=306
+DEBUG: Parser::advance token=11 value='' line=307
+DEBUG: Parser::advance token=30 value='' line=308
+DEBUG: Parser::advance token=27 value='def' line=308
+DEBUG: Parser::advance token=3 value='copy' line=308
+DEBUG: Parser::advance token=8 value='' line=308
+DEBUG: Parser::advance token=3 value='self' line=308
+DEBUG: Parser::advance token=9 value='' line=308
+DEBUG: Parser::advance token=18 value='' line=308
+DEBUG: Parser::advance token=11 value='' line=309
+DEBUG: Parser::advance token=29 value='' line=309
+DEBUG: Parser::advance token=1 value='od.copy() -> a shallow copy of od' line=309
+DEBUG: Parser::advance token=11 value='' line=310
+DEBUG: Parser::advance token=34 value='return' line=310
+DEBUG: Parser::advance token=3 value='self' line=310
+DEBUG: Parser::advance token=13 value='' line=310
+DEBUG: Parser::advance token=3 value='__class__' line=310
+DEBUG: Parser::advance token=8 value='' line=310
+DEBUG: Parser::advance token=3 value='self' line=310
+DEBUG: Parser::advance token=9 value='' line=310
+DEBUG: Parser::advance token=11 value='' line=311
+DEBUG: Parser::advance token=30 value='' line=312
+DEBUG: Parser::advance token=72 value='' line=312
+DEBUG: Parser::advance token=3 value='classmethod' line=312
+DEBUG: Parser::advance token=11 value='' line=313
+DEBUG: Parser::advance token=27 value='def' line=313
+DEBUG: Parser::advance token=3 value='fromkeys' line=313
+DEBUG: Parser::advance token=8 value='' line=313
+DEBUG: Parser::advance token=3 value='cls' line=313
+DEBUG: Parser::advance token=10 value='' line=313
+DEBUG: Parser::advance token=3 value='iterable' line=313
+DEBUG: Parser::advance token=10 value='' line=313
+DEBUG: Parser::advance token=3 value='value' line=313
+DEBUG: Parser::advance token=19 value='' line=313
+DEBUG: Parser::advance token=38 value='None' line=313
+DEBUG: Parser::advance token=9 value='' line=313
+DEBUG: Parser::advance token=18 value='' line=313
+DEBUG: Parser::advance token=11 value='' line=314
+DEBUG: Parser::advance token=29 value='' line=314
+DEBUG: Parser::advance token=1 value='Create a new ordered dictionary with keys from iterable and values set to value.
+        ' line=314
+DEBUG: Parser::advance token=11 value='' line=316
+DEBUG: Parser::advance token=3 value='self' line=316
+DEBUG: Parser::advance token=19 value='' line=316
+DEBUG: Parser::advance token=3 value='cls' line=316
+DEBUG: Parser::advance token=8 value='' line=316
+DEBUG: Parser::advance token=9 value='' line=316
+DEBUG: Parser::advance token=11 value='' line=317
+DEBUG: Parser::advance token=21 value='for' line=317
+DEBUG: Parser::advance token=3 value='key' line=317
+DEBUG: Parser::advance token=22 value='in' line=317
+DEBUG: Parser::advance token=3 value='iterable' line=317
+DEBUG: Parser::advance token=18 value='' line=317
+DEBUG: Parser::advance token=11 value='' line=318
+DEBUG: Parser::advance token=29 value='' line=318
+DEBUG: Parser::advance token=3 value='self' line=318
+DEBUG: Parser::advance token=14 value='' line=318
+DEBUG: Parser::advance token=3 value='key' line=318
+DEBUG: Parser::advance token=15 value='' line=318
+DEBUG: Parser::advance token=19 value='' line=318
+DEBUG: Parser::advance token=3 value='value' line=318
+DEBUG: Parser::advance token=11 value='' line=319
+DEBUG: Parser::advance token=30 value='' line=319
+DEBUG: Parser::advance token=34 value='return' line=319
+DEBUG: Parser::advance token=3 value='self' line=319
+DEBUG: Parser::advance token=11 value='' line=320
+DEBUG: Parser::advance token=30 value='' line=321
+DEBUG: Parser::advance token=27 value='def' line=321
+DEBUG: Parser::advance token=3 value='__eq__' line=321
+DEBUG: Parser::advance token=8 value='' line=321
+DEBUG: Parser::advance token=3 value='self' line=321
+DEBUG: Parser::advance token=10 value='' line=321
+DEBUG: Parser::advance token=3 value='other' line=321
+DEBUG: Parser::advance token=9 value='' line=321
+DEBUG: Parser::advance token=18 value='' line=321
+DEBUG: Parser::advance token=11 value='' line=322
+DEBUG: Parser::advance token=29 value='' line=322
+DEBUG: Parser::advance token=1 value='od.__eq__(y) <==> od==y.  Comparison to another OD is order-sensitive
+        while comparison to a regular mapping is order-insensitive.
+
+        ' line=322
+DEBUG: Parser::advance token=11 value='' line=326
+DEBUG: Parser::advance token=23 value='if' line=326
+DEBUG: Parser::advance token=3 value='isinstance' line=326
+DEBUG: Parser::advance token=8 value='' line=326
+DEBUG: Parser::advance token=3 value='other' line=326
+DEBUG: Parser::advance token=10 value='' line=326
+DEBUG: Parser::advance token=3 value='OrderedDict' line=326
+DEBUG: Parser::advance token=9 value='' line=326
+DEBUG: Parser::advance token=18 value='' line=326
+DEBUG: Parser::advance token=11 value='' line=327
+DEBUG: Parser::advance token=29 value='' line=327
+DEBUG: Parser::advance token=34 value='return' line=327
+DEBUG: Parser::advance token=3 value='dict' line=327
+DEBUG: Parser::advance token=13 value='' line=327
+DEBUG: Parser::advance token=3 value='__eq__' line=327
+DEBUG: Parser::advance token=8 value='' line=327
+DEBUG: Parser::advance token=3 value='self' line=327
+DEBUG: Parser::advance token=10 value='' line=327
+DEBUG: Parser::advance token=3 value='other' line=327
+DEBUG: Parser::advance token=9 value='' line=327
+DEBUG: Parser::advance token=39 value='and' line=327
+DEBUG: Parser::advance token=3 value='all' line=327
+DEBUG: Parser::advance token=8 value='' line=327
+DEBUG: Parser::advance token=3 value='map' line=327
+DEBUG: Parser::advance token=8 value='' line=327
+DEBUG: Parser::advance token=3 value='_eq' line=327
+DEBUG: Parser::advance token=10 value='' line=327
+DEBUG: Parser::advance token=3 value='self' line=327
+DEBUG: Parser::advance token=10 value='' line=327
+DEBUG: Parser::advance token=3 value='other' line=327
+DEBUG: Parser::advance token=9 value='' line=327
+DEBUG: Parser::advance token=9 value='' line=327
+DEBUG: Parser::advance token=11 value='' line=328
+DEBUG: Parser::advance token=30 value='' line=328
+DEBUG: Parser::advance token=34 value='return' line=328
+DEBUG: Parser::advance token=3 value='dict' line=328
+DEBUG: Parser::advance token=13 value='' line=328
+DEBUG: Parser::advance token=3 value='__eq__' line=328
+DEBUG: Parser::advance token=8 value='' line=328
+DEBUG: Parser::advance token=3 value='self' line=328
+DEBUG: Parser::advance token=10 value='' line=328
+DEBUG: Parser::advance token=3 value='other' line=328
+DEBUG: Parser::advance token=9 value='' line=328
+DEBUG: Parser::advance token=11 value='' line=329
+DEBUG: Parser::advance token=30 value='' line=330
+DEBUG: Parser::advance token=27 value='def' line=330
+DEBUG: Parser::advance token=3 value='__ior__' line=330
+DEBUG: Parser::advance token=8 value='' line=330
+DEBUG: Parser::advance token=3 value='self' line=330
+DEBUG: Parser::advance token=10 value='' line=330
+DEBUG: Parser::advance token=3 value='other' line=330
+DEBUG: Parser::advance token=9 value='' line=330
+DEBUG: Parser::advance token=18 value='' line=330
+DEBUG: Parser::advance token=11 value='' line=331
+DEBUG: Parser::advance token=29 value='' line=331
+DEBUG: Parser::advance token=3 value='self' line=331
+DEBUG: Parser::advance token=13 value='' line=331
+DEBUG: Parser::advance token=3 value='update' line=331
+DEBUG: Parser::advance token=8 value='' line=331
+DEBUG: Parser::advance token=3 value='other' line=331
+DEBUG: Parser::advance token=9 value='' line=331
+DEBUG: Parser::advance token=11 value='' line=332
+DEBUG: Parser::advance token=34 value='return' line=332
+DEBUG: Parser::advance token=3 value='self' line=332
+DEBUG: Parser::advance token=11 value='' line=333
+DEBUG: Parser::advance token=30 value='' line=334
+DEBUG: Parser::advance token=27 value='def' line=334
+DEBUG: Parser::advance token=3 value='__or__' line=334
+DEBUG: Parser::advance token=8 value='' line=334
+DEBUG: Parser::advance token=3 value='self' line=334
+DEBUG: Parser::advance token=10 value='' line=334
+DEBUG: Parser::advance token=3 value='other' line=334
+DEBUG: Parser::advance token=9 value='' line=334
+DEBUG: Parser::advance token=18 value='' line=334
+DEBUG: Parser::advance token=11 value='' line=335
+DEBUG: Parser::advance token=29 value='' line=335
+DEBUG: Parser::advance token=23 value='if' line=335
+DEBUG: Parser::advance token=41 value='not' line=335
+DEBUG: Parser::advance token=3 value='isinstance' line=335
+DEBUG: Parser::advance token=8 value='' line=335
+DEBUG: Parser::advance token=3 value='other' line=335
+DEBUG: Parser::advance token=10 value='' line=335
+DEBUG: Parser::advance token=3 value='dict' line=335
+DEBUG: Parser::advance token=9 value='' line=335
+DEBUG: Parser::advance token=18 value='' line=335
+DEBUG: Parser::advance token=11 value='' line=336
+DEBUG: Parser::advance token=29 value='' line=336
+DEBUG: Parser::advance token=34 value='return' line=336
+DEBUG: Parser::advance token=3 value='NotImplemented' line=336
+DEBUG: Parser::advance token=11 value='' line=337
+DEBUG: Parser::advance token=30 value='' line=337
+DEBUG: Parser::advance token=3 value='new' line=337
+DEBUG: Parser::advance token=19 value='' line=337
+DEBUG: Parser::advance token=3 value='self' line=337
+DEBUG: Parser::advance token=13 value='' line=337
+DEBUG: Parser::advance token=3 value='__class__' line=337
+DEBUG: Parser::advance token=8 value='' line=337
+DEBUG: Parser::advance token=3 value='self' line=337
+DEBUG: Parser::advance token=9 value='' line=337
+DEBUG: Parser::advance token=11 value='' line=338
+DEBUG: Parser::advance token=3 value='new' line=338
+DEBUG: Parser::advance token=13 value='' line=338
+DEBUG: Parser::advance token=3 value='update' line=338
+DEBUG: Parser::advance token=8 value='' line=338
+DEBUG: Parser::advance token=3 value='other' line=338
+DEBUG: Parser::advance token=9 value='' line=338
+DEBUG: Parser::advance token=11 value='' line=339
+DEBUG: Parser::advance token=34 value='return' line=339
+DEBUG: Parser::advance token=3 value='new' line=339
+DEBUG: Parser::advance token=11 value='' line=340
+DEBUG: Parser::advance token=30 value='' line=341
+DEBUG: Parser::advance token=27 value='def' line=341
+DEBUG: Parser::advance token=3 value='__ror__' line=341
+DEBUG: Parser::advance token=8 value='' line=341
+DEBUG: Parser::advance token=3 value='self' line=341
+DEBUG: Parser::advance token=10 value='' line=341
+DEBUG: Parser::advance token=3 value='other' line=341
+DEBUG: Parser::advance token=9 value='' line=341
+DEBUG: Parser::advance token=18 value='' line=341
+DEBUG: Parser::advance token=11 value='' line=342
+DEBUG: Parser::advance token=29 value='' line=342
+DEBUG: Parser::advance token=23 value='if' line=342
+DEBUG: Parser::advance token=41 value='not' line=342
+DEBUG: Parser::advance token=3 value='isinstance' line=342
+DEBUG: Parser::advance token=8 value='' line=342
+DEBUG: Parser::advance token=3 value='other' line=342
+DEBUG: Parser::advance token=10 value='' line=342
+DEBUG: Parser::advance token=3 value='dict' line=342
+DEBUG: Parser::advance token=9 value='' line=342
+DEBUG: Parser::advance token=18 value='' line=342
+DEBUG: Parser::advance token=11 value='' line=343
+DEBUG: Parser::advance token=29 value='' line=343
+DEBUG: Parser::advance token=34 value='return' line=343
+DEBUG: Parser::advance token=3 value='NotImplemented' line=343
+DEBUG: Parser::advance token=11 value='' line=344
+DEBUG: Parser::advance token=30 value='' line=344
+DEBUG: Parser::advance token=3 value='new' line=344
+DEBUG: Parser::advance token=19 value='' line=344
+DEBUG: Parser::advance token=3 value='self' line=344
+DEBUG: Parser::advance token=13 value='' line=344
+DEBUG: Parser::advance token=3 value='__class__' line=344
+DEBUG: Parser::advance token=8 value='' line=344
+DEBUG: Parser::advance token=3 value='other' line=344
+DEBUG: Parser::advance token=9 value='' line=344
+DEBUG: Parser::advance token=11 value='' line=345
+DEBUG: Parser::advance token=3 value='new' line=345
+DEBUG: Parser::advance token=13 value='' line=345
+DEBUG: Parser::advance token=3 value='update' line=345
+DEBUG: Parser::advance token=8 value='' line=345
+DEBUG: Parser::advance token=3 value='self' line=345
+DEBUG: Parser::advance token=9 value='' line=345
+DEBUG: Parser::advance token=11 value='' line=346
+DEBUG: Parser::advance token=34 value='return' line=346
+DEBUG: Parser::advance token=3 value='new' line=346
+DEBUG: Parser::advance token=11 value='' line=347
+DEBUG: Parser::advance token=30 value='' line=349
+DEBUG: Parser::advance token=30 value='' line=349
+DEBUG: Parser::advance token=42 value='try' line=349
+DEBUG: Parser::advance token=18 value='' line=349
+DEBUG: Parser::advance token=11 value='' line=350
+DEBUG: Parser::advance token=29 value='' line=350
+DEBUG: Parser::advance token=32 value='from' line=350
+DEBUG: Parser::advance token=3 value='_collections' line=350
+DEBUG: Parser::advance token=31 value='import' line=350
+DEBUG: Parser::advance token=3 value='OrderedDict' line=350
+DEBUG: Parser::advance token=11 value='' line=351
+DEBUG: Parser::advance token=30 value='' line=351
+DEBUG: Parser::advance token=43 value='except' line=351
+DEBUG: Parser::advance token=3 value='ImportError' line=351
+DEBUG: Parser::advance token=18 value='' line=351
+DEBUG: Parser::advance token=11 value='' line=352
+DEBUG: Parser::advance token=29 value='' line=353
+DEBUG: Parser::advance token=28 value='pass' line=353
+DEBUG: Parser::advance token=11 value='' line=354
+DEBUG: Parser::advance token=30 value='' line=360
+DEBUG: Parser::advance token=42 value='try' line=360
+DEBUG: Parser::advance token=18 value='' line=360
+DEBUG: Parser::advance token=11 value='' line=361
+DEBUG: Parser::advance token=29 value='' line=361
+DEBUG: Parser::advance token=32 value='from' line=361
+DEBUG: Parser::advance token=3 value='_collections' line=361
+DEBUG: Parser::advance token=31 value='import' line=361
+DEBUG: Parser::advance token=3 value='_tuplegetter' line=361
+DEBUG: Parser::advance token=11 value='' line=362
+DEBUG: Parser::advance token=30 value='' line=362
+DEBUG: Parser::advance token=43 value='except' line=362
+DEBUG: Parser::advance token=3 value='ImportError' line=362
+DEBUG: Parser::advance token=18 value='' line=362
+DEBUG: Parser::advance token=11 value='' line=363
+DEBUG: Parser::advance token=29 value='' line=363
+DEBUG: Parser::advance token=3 value='_tuplegetter' line=363
+DEBUG: Parser::advance token=19 value='' line=363
+DEBUG: Parser::advance token=48 value='lambda' line=363
+DEBUG: Parser::advance token=3 value='index' line=363
+DEBUG: Parser::advance token=10 value='' line=363
+DEBUG: Parser::advance token=3 value='doc' line=363
+DEBUG: Parser::advance token=18 value='' line=363
+DEBUG: Parser::advance token=3 value='property' line=363
+DEBUG: Parser::advance token=8 value='' line=363
+DEBUG: Parser::advance token=3 value='_itemgetter' line=363
+DEBUG: Parser::advance token=8 value='' line=363
+DEBUG: Parser::advance token=3 value='index' line=363
+DEBUG: Parser::advance token=9 value='' line=363
+DEBUG: Parser::advance token=10 value='' line=363
+DEBUG: Parser::advance token=3 value='doc' line=363
+DEBUG: Parser::advance token=19 value='' line=363
+DEBUG: Parser::advance token=3 value='doc' line=363
+DEBUG: Parser::advance token=9 value='' line=363
+DEBUG: Parser::advance token=11 value='' line=364
+DEBUG: Parser::advance token=30 value='' line=365
+DEBUG: Parser::advance token=27 value='def' line=365
+DEBUG: Parser::advance token=3 value='namedtuple' line=365
+DEBUG: Parser::advance token=8 value='' line=365
+DEBUG: Parser::advance token=3 value='typename' line=365
+DEBUG: Parser::advance token=10 value='' line=365
+DEBUG: Parser::advance token=3 value='field_names' line=365
+DEBUG: Parser::advance token=10 value='' line=365
+DEBUG: Parser::advance token=6 value='' line=365
+DEBUG: Parser::advance token=10 value='' line=365
+DEBUG: Parser::advance token=3 value='rename' line=365
+DEBUG: Parser::advance token=19 value='' line=365
+DEBUG: Parser::advance token=37 value='False' line=365
+DEBUG: Parser::advance token=10 value='' line=365
+DEBUG: Parser::advance token=3 value='defaults' line=365
+DEBUG: Parser::advance token=19 value='' line=365
+DEBUG: Parser::advance token=38 value='None' line=365
+DEBUG: Parser::advance token=10 value='' line=365
+DEBUG: Parser::advance token=3 value='module' line=365
+DEBUG: Parser::advance token=19 value='' line=365
+DEBUG: Parser::advance token=38 value='None' line=365
+DEBUG: Parser::advance token=9 value='' line=365
+DEBUG: Parser::advance token=18 value='' line=365
+DEBUG: Parser::advance token=11 value='' line=366
+DEBUG: Parser::advance token=29 value='' line=366
+DEBUG: Parser::advance token=1 value='Returns a new subclass of tuple with named fields.
+
+    >>> Point = namedtuple('Point', ['x', 'y'])
+    >>> Point.__doc__                   # docstring for the new class
+    'Point(x, y)'
+    >>> p = Point(11, y=22)             # instantiate with positional args or keywords
+    >>> p[0] + p[1]                     # indexable like a plain tuple
+    33
+    >>> x, y = p                        # unpack like a regular tuple
+    >>> x, y
+    (11, 22)
+    >>> p.x + p.y                       # fields also accessible by name
+    33
+    >>> d = p._asdict()                 # convert to a dictionary
+    >>> d['x']
+    11
+    >>> Point(**d)                      # convert from a dictionary
+    Point(x=11, y=22)
+    >>> p._replace(x=100)               # _replace() is like str.replace() but targets named fields
+    Point(x=100, y=22)
+
+    ' line=366
+DEBUG: Parser::advance token=11 value='' line=388
+DEBUG: Parser::advance token=23 value='if' line=391
+DEBUG: Parser::advance token=3 value='isinstance' line=391
+DEBUG: Parser::advance token=8 value='' line=391
+DEBUG: Parser::advance token=3 value='field_names' line=391
+DEBUG: Parser::advance token=10 value='' line=391
+DEBUG: Parser::advance token=3 value='str' line=391
+DEBUG: Parser::advance token=9 value='' line=391
+DEBUG: Parser::advance token=18 value='' line=391
+DEBUG: Parser::advance token=11 value='' line=392
+DEBUG: Parser::advance token=29 value='' line=392
+DEBUG: Parser::advance token=3 value='field_names' line=392
+DEBUG: Parser::advance token=19 value='' line=392
+DEBUG: Parser::advance token=3 value='field_names' line=392
+DEBUG: Parser::advance token=13 value='' line=392
+DEBUG: Parser::advance token=3 value='replace' line=392
+DEBUG: Parser::advance token=8 value='' line=392
+DEBUG: Parser::advance token=1 value=',' line=392
+DEBUG: Parser::advance token=10 value='' line=392
+DEBUG: Parser::advance token=1 value=' ' line=392
+DEBUG: Parser::advance token=9 value='' line=392
+DEBUG: Parser::advance token=13 value='' line=392
+DEBUG: Parser::advance token=3 value='split' line=392
+DEBUG: Parser::advance token=8 value='' line=392
+DEBUG: Parser::advance token=9 value='' line=392
+DEBUG: Parser::advance token=11 value='' line=393
+DEBUG: Parser::advance token=30 value='' line=393
+DEBUG: Parser::advance token=3 value='field_names' line=393
+DEBUG: Parser::advance token=19 value='' line=393
+DEBUG: Parser::advance token=3 value='list' line=393
+DEBUG: Parser::advance token=8 value='' line=393
+DEBUG: Parser::advance token=3 value='map' line=393
+DEBUG: Parser::advance token=8 value='' line=393
+DEBUG: Parser::advance token=3 value='str' line=393
+DEBUG: Parser::advance token=10 value='' line=393
+DEBUG: Parser::advance token=3 value='field_names' line=393
+DEBUG: Parser::advance token=9 value='' line=393
+DEBUG: Parser::advance token=9 value='' line=393
+DEBUG: Parser::advance token=11 value='' line=394
+DEBUG: Parser::advance token=3 value='typename' line=394
+DEBUG: Parser::advance token=19 value='' line=394
+DEBUG: Parser::advance token=3 value='_sys' line=394
+DEBUG: Parser::advance token=13 value='' line=394
+DEBUG: Parser::advance token=3 value='intern' line=394
+DEBUG: Parser::advance token=8 value='' line=394
+DEBUG: Parser::advance token=3 value='str' line=394
+DEBUG: Parser::advance token=8 value='' line=394
+DEBUG: Parser::advance token=3 value='typename' line=394
+DEBUG: Parser::advance token=9 value='' line=394
+DEBUG: Parser::advance token=9 value='' line=394
+DEBUG: Parser::advance token=11 value='' line=395
+DEBUG: Parser::advance token=23 value='if' line=396
+DEBUG: Parser::advance token=3 value='rename' line=396
+DEBUG: Parser::advance token=18 value='' line=396
+DEBUG: Parser::advance token=11 value='' line=397
+DEBUG: Parser::advance token=29 value='' line=397
+DEBUG: Parser::advance token=3 value='seen' line=397
+DEBUG: Parser::advance token=19 value='' line=397
+DEBUG: Parser::advance token=3 value='set' line=397
+DEBUG: Parser::advance token=8 value='' line=397
+DEBUG: Parser::advance token=9 value='' line=397
+DEBUG: Parser::advance token=11 value='' line=398
+DEBUG: Parser::advance token=21 value='for' line=398
+DEBUG: Parser::advance token=3 value='index' line=398
+DEBUG: Parser::advance token=10 value='' line=398
+DEBUG: Parser::advance token=3 value='name' line=398
+DEBUG: Parser::advance token=22 value='in' line=398
+DEBUG: Parser::advance token=3 value='enumerate' line=398
+DEBUG: Parser::advance token=8 value='' line=398
+DEBUG: Parser::advance token=3 value='field_names' line=398
+DEBUG: Parser::advance token=9 value='' line=398
+DEBUG: Parser::advance token=18 value='' line=398
+DEBUG: Parser::advance token=11 value='' line=399
+DEBUG: Parser::advance token=29 value='' line=399
+DEBUG: Parser::advance token=23 value='if' line=399
+DEBUG: Parser::advance token=8 value='' line=399
+DEBUG: Parser::advance token=41 value='not' line=399
+DEBUG: Parser::advance token=3 value='name' line=399
+DEBUG: Parser::advance token=13 value='' line=399
+DEBUG: Parser::advance token=3 value='isidentifier' line=399
+DEBUG: Parser::advance token=8 value='' line=399
+DEBUG: Parser::advance token=9 value='' line=399
+DEBUG: Parser::advance token=40 value='or' line=400
+DEBUG: Parser::advance token=3 value='_iskeyword' line=400
+DEBUG: Parser::advance token=8 value='' line=400
+DEBUG: Parser::advance token=3 value='name' line=400
+DEBUG: Parser::advance token=9 value='' line=400
+DEBUG: Parser::advance token=40 value='or' line=401
+DEBUG: Parser::advance token=3 value='name' line=401
+DEBUG: Parser::advance token=13 value='' line=401
+DEBUG: Parser::advance token=3 value='startswith' line=401
+DEBUG: Parser::advance token=8 value='' line=401
+DEBUG: Parser::advance token=1 value='_' line=401
+DEBUG: Parser::advance token=9 value='' line=401
+DEBUG: Parser::advance token=40 value='or' line=402
+DEBUG: Parser::advance token=3 value='name' line=402
+DEBUG: Parser::advance token=22 value='in' line=402
+DEBUG: Parser::advance token=3 value='seen' line=402
+DEBUG: Parser::advance token=9 value='' line=402
+DEBUG: Parser::advance token=18 value='' line=402
+DEBUG: Parser::advance token=11 value='' line=403
+DEBUG: Parser::advance token=29 value='' line=403
+DEBUG: Parser::advance token=3 value='field_names' line=403
+DEBUG: Parser::advance token=14 value='' line=403
+DEBUG: Parser::advance token=3 value='index' line=403
+DEBUG: Parser::advance token=15 value='' line=403
+DEBUG: Parser::advance token=19 value='' line=403
+DEBUG: Parser::advance token=2 value='_{index}' line=403
+DEBUG: Parser::advance token=11 value='' line=404
+DEBUG: Parser::advance token=3 value='index' line=1
+DEBUG: Parser::advance token=12 value='' line=1
+DEBUG: Parser::advance token=30 value='' line=404
+DEBUG: Parser::advance token=3 value='seen' line=404
+DEBUG: Parser::advance token=13 value='' line=404
+DEBUG: Parser::advance token=3 value='add' line=404
+DEBUG: Parser::advance token=8 value='' line=404
+DEBUG: Parser::advance token=3 value='name' line=404
+DEBUG: Parser::advance token=9 value='' line=404
+DEBUG: Parser::advance token=11 value='' line=405
+DEBUG: Parser::advance token=30 value='' line=406
+DEBUG: Parser::advance token=30 value='' line=406
+DEBUG: Parser::advance token=21 value='for' line=406
+DEBUG: Parser::advance token=3 value='name' line=406
+DEBUG: Parser::advance token=22 value='in' line=406
+DEBUG: Parser::advance token=14 value='' line=406
+DEBUG: Parser::advance token=3 value='typename' line=406
+DEBUG: Parser::advance token=15 value='' line=406
+DEBUG: Parser::advance token=4 value='' line=406
+DEBUG: Parser::advance token=3 value='field_names' line=406
+DEBUG: Parser::advance token=18 value='' line=406
+DEBUG: Parser::advance token=11 value='' line=407
+DEBUG: Parser::advance token=29 value='' line=407
+DEBUG: Parser::advance token=23 value='if' line=407
+DEBUG: Parser::advance token=93 value='type' line=407
+DEBUG: Parser::advance token=8 value='' line=407
+DEBUG: Parser::advance token=3 value='name' line=407
+DEBUG: Parser::advance token=9 value='' line=407
+DEBUG: Parser::advance token=51 value='is' line=407
+DEBUG: Parser::advance token=41 value='not' line=407
+DEBUG: Parser::advance token=3 value='str' line=407
+DEBUG: Parser::advance token=18 value='' line=407
+DEBUG: Parser::advance token=11 value='' line=408
+DEBUG: Parser::advance token=29 value='' line=408
+DEBUG: Parser::advance token=45 value='raise' line=408
+DEBUG: Parser::advance token=3 value='TypeError' line=408
+DEBUG: Parser::advance token=8 value='' line=408
+DEBUG: Parser::advance token=1 value='Type names and field names must be strings' line=408
+DEBUG: Parser::advance token=9 value='' line=408
+DEBUG: Parser::advance token=11 value='' line=409
+DEBUG: Parser::advance token=30 value='' line=409
+DEBUG: Parser::advance token=23 value='if' line=409
+DEBUG: Parser::advance token=41 value='not' line=409
+DEBUG: Parser::advance token=3 value='name' line=409
+DEBUG: Parser::advance token=13 value='' line=409
+DEBUG: Parser::advance token=3 value='isidentifier' line=409
+DEBUG: Parser::advance token=8 value='' line=409
+DEBUG: Parser::advance token=9 value='' line=409
+DEBUG: Parser::advance token=18 value='' line=409
+DEBUG: Parser::advance token=11 value='' line=410
+DEBUG: Parser::advance token=29 value='' line=410
+DEBUG: Parser::advance token=45 value='raise' line=410
+DEBUG: Parser::advance token=3 value='ValueError' line=410
+DEBUG: Parser::advance token=8 value='' line=410
+DEBUG: Parser::advance token=1 value='Type names and field names must be valid ' line=410
+DEBUG: Parser::advance token=2 value='identifiers: {name!r}' line=411
+DEBUG: Parser::advance token=9 value='' line=411
+DEBUG: Parser::advance token=3 value='name' line=1
+DEBUG: Parser::advance token=12 value='' line=1
+DEBUG: Parser::advance token=11 value='' line=412
+DEBUG: Parser::advance token=30 value='' line=412
+DEBUG: Parser::advance token=23 value='if' line=412
+DEBUG: Parser::advance token=3 value='_iskeyword' line=412
+DEBUG: Parser::advance token=8 value='' line=412
+DEBUG: Parser::advance token=3 value='name' line=412
+DEBUG: Parser::advance token=9 value='' line=412
+DEBUG: Parser::advance token=18 value='' line=412
+DEBUG: Parser::advance token=11 value='' line=413
+DEBUG: Parser::advance token=29 value='' line=413
+DEBUG: Parser::advance token=45 value='raise' line=413
+DEBUG: Parser::advance token=3 value='ValueError' line=413
+DEBUG: Parser::advance token=8 value='' line=413
+DEBUG: Parser::advance token=1 value='Type names and field names cannot be a ' line=413
+DEBUG: Parser::advance token=2 value='keyword: {name!r}' line=414
+DEBUG: Parser::advance token=9 value='' line=414
+DEBUG: Parser::advance token=3 value='name' line=1
+DEBUG: Parser::advance token=12 value='' line=1
+DEBUG: Parser::advance token=11 value='' line=415
+DEBUG: Parser::advance token=30 value='' line=416
+DEBUG: Parser::advance token=30 value='' line=416
+DEBUG: Parser::advance token=3 value='seen' line=416
+DEBUG: Parser::advance token=19 value='' line=416
+DEBUG: Parser::advance token=3 value='set' line=416
+DEBUG: Parser::advance token=8 value='' line=416
+DEBUG: Parser::advance token=9 value='' line=416
+DEBUG: Parser::advance token=11 value='' line=417
+DEBUG: Parser::advance token=21 value='for' line=417
+DEBUG: Parser::advance token=3 value='name' line=417
+DEBUG: Parser::advance token=22 value='in' line=417
+DEBUG: Parser::advance token=3 value='field_names' line=417
+DEBUG: Parser::advance token=18 value='' line=417
+DEBUG: Parser::advance token=11 value='' line=418
+DEBUG: Parser::advance token=29 value='' line=418
+DEBUG: Parser::advance token=23 value='if' line=418
+DEBUG: Parser::advance token=3 value='name' line=418
+DEBUG: Parser::advance token=13 value='' line=418
+DEBUG: Parser::advance token=3 value='startswith' line=418
+DEBUG: Parser::advance token=8 value='' line=418
+DEBUG: Parser::advance token=1 value='_' line=418
+DEBUG: Parser::advance token=9 value='' line=418
+DEBUG: Parser::advance token=39 value='and' line=418
+DEBUG: Parser::advance token=41 value='not' line=418
+DEBUG: Parser::advance token=3 value='rename' line=418
+DEBUG: Parser::advance token=18 value='' line=418
+DEBUG: Parser::advance token=11 value='' line=419
+DEBUG: Parser::advance token=29 value='' line=419
+DEBUG: Parser::advance token=45 value='raise' line=419
+DEBUG: Parser::advance token=3 value='ValueError' line=419
+DEBUG: Parser::advance token=8 value='' line=419
+DEBUG: Parser::advance token=1 value='Field names cannot start with an underscore: ' line=419
+DEBUG: Parser::advance token=2 value='{name!r}' line=420
+DEBUG: Parser::advance token=9 value='' line=420
+DEBUG: Parser::advance token=3 value='name' line=1
+DEBUG: Parser::advance token=12 value='' line=1
+DEBUG: Parser::advance token=11 value='' line=421
+DEBUG: Parser::advance token=30 value='' line=421
+DEBUG: Parser::advance token=23 value='if' line=421
+DEBUG: Parser::advance token=3 value='name' line=421
+DEBUG: Parser::advance token=22 value='in' line=421
+DEBUG: Parser::advance token=3 value='seen' line=421
+DEBUG: Parser::advance token=18 value='' line=421
+DEBUG: Parser::advance token=11 value='' line=422
+DEBUG: Parser::advance token=29 value='' line=422
+DEBUG: Parser::advance token=45 value='raise' line=422
+DEBUG: Parser::advance token=3 value='ValueError' line=422
+DEBUG: Parser::advance token=8 value='' line=422
+DEBUG: Parser::advance token=2 value='Encountered duplicate field name: {name!r}' line=422
+DEBUG: Parser::advance token=9 value='' line=422
+DEBUG: Parser::advance token=3 value='name' line=1
+DEBUG: Parser::advance token=12 value='' line=1
+DEBUG: Parser::advance token=11 value='' line=423
+DEBUG: Parser::advance token=30 value='' line=423
+DEBUG: Parser::advance token=3 value='seen' line=423
+DEBUG: Parser::advance token=13 value='' line=423
+DEBUG: Parser::advance token=3 value='add' line=423
+DEBUG: Parser::advance token=8 value='' line=423
+DEBUG: Parser::advance token=3 value='name' line=423
+DEBUG: Parser::advance token=9 value='' line=423
+DEBUG: Parser::advance token=11 value='' line=424
+DEBUG: Parser::advance token=30 value='' line=425
+DEBUG: Parser::advance token=3 value='field_defaults' line=425
+DEBUG: Parser::advance token=19 value='' line=425
+DEBUG: Parser::advance token=16 value='' line=425
+DEBUG: Parser::advance token=17 value='' line=425
+DEBUG: Parser::advance token=11 value='' line=426
+DEBUG: Parser::advance token=23 value='if' line=426
+DEBUG: Parser::advance token=3 value='defaults' line=426
+DEBUG: Parser::advance token=51 value='is' line=426
+DEBUG: Parser::advance token=41 value='not' line=426
+DEBUG: Parser::advance token=38 value='None' line=426
+DEBUG: Parser::advance token=18 value='' line=426
+DEBUG: Parser::advance token=11 value='' line=427
+DEBUG: Parser::advance token=29 value='' line=427
+DEBUG: Parser::advance token=3 value='defaults' line=427
+DEBUG: Parser::advance token=19 value='' line=427
+DEBUG: Parser::advance token=3 value='tuple' line=427
+DEBUG: Parser::advance token=8 value='' line=427
+DEBUG: Parser::advance token=3 value='defaults' line=427
+DEBUG: Parser::advance token=9 value='' line=427
+DEBUG: Parser::advance token=11 value='' line=428
+DEBUG: Parser::advance token=23 value='if' line=428
+DEBUG: Parser::advance token=3 value='len' line=428
+DEBUG: Parser::advance token=8 value='' line=428
+DEBUG: Parser::advance token=3 value='defaults' line=428
+DEBUG: Parser::advance token=9 value='' line=428
+DEBUG: Parser::advance token=57 value='' line=428
+DEBUG: Parser::advance token=3 value='len' line=428
+DEBUG: Parser::advance token=8 value='' line=428
+DEBUG: Parser::advance token=3 value='field_names' line=428
+DEBUG: Parser::advance token=9 value='' line=428
+DEBUG: Parser::advance token=18 value='' line=428
+DEBUG: Parser::advance token=11 value='' line=429
+DEBUG: Parser::advance token=29 value='' line=429
+DEBUG: Parser::advance token=45 value='raise' line=429
+DEBUG: Parser::advance token=3 value='TypeError' line=429
+DEBUG: Parser::advance token=8 value='' line=429
+DEBUG: Parser::advance token=1 value='Got more default values than field names' line=429
+DEBUG: Parser::advance token=9 value='' line=429
+DEBUG: Parser::advance token=11 value='' line=430
+DEBUG: Parser::advance token=30 value='' line=430
+DEBUG: Parser::advance token=3 value='field_defaults' line=430
+DEBUG: Parser::advance token=19 value='' line=430
+DEBUG: Parser::advance token=3 value='dict' line=430
+DEBUG: Parser::advance token=8 value='' line=430
+DEBUG: Parser::advance token=3 value='reversed' line=430
+DEBUG: Parser::advance token=8 value='' line=430
+DEBUG: Parser::advance token=3 value='list' line=430
+DEBUG: Parser::advance token=8 value='' line=430
+DEBUG: Parser::advance token=3 value='zip' line=430
+DEBUG: Parser::advance token=8 value='' line=430
+DEBUG: Parser::advance token=3 value='reversed' line=430
+DEBUG: Parser::advance token=8 value='' line=430
+DEBUG: Parser::advance token=3 value='field_names' line=430
+DEBUG: Parser::advance token=9 value='' line=430
+DEBUG: Parser::advance token=10 value='' line=430
+DEBUG: Parser::advance token=3 value='reversed' line=431
+DEBUG: Parser::advance token=8 value='' line=431
+DEBUG: Parser::advance token=3 value='defaults' line=431
+DEBUG: Parser::advance token=9 value='' line=431
+DEBUG: Parser::advance token=9 value='' line=431
+DEBUG: Parser::advance token=9 value='' line=431
+DEBUG: Parser::advance token=9 value='' line=431
+DEBUG: Parser::advance token=9 value='' line=431
+DEBUG: Parser::advance token=11 value='' line=432
+DEBUG: Parser::advance token=30 value='' line=434
+DEBUG: Parser::advance token=3 value='print' line=434
+DEBUG: Parser::advance token=8 value='' line=434
+DEBUG: Parser::advance token=1 value='DEBUG: field_names before intern:' line=434
+DEBUG: Parser::advance token=10 value='' line=434
+DEBUG: Parser::advance token=3 value='field_names' line=434
+DEBUG: Parser::advance token=9 value='' line=434
+DEBUG: Parser::advance token=11 value='' line=435
+DEBUG: Parser::advance token=3 value='print' line=435
+DEBUG: Parser::advance token=8 value='' line=435
+DEBUG: Parser::advance token=1 value='DEBUG: globals['tuple']:' line=435
+DEBUG: Parser::advance token=10 value='' line=435
+DEBUG: Parser::advance token=3 value='globals' line=435
+DEBUG: Parser::advance token=8 value='' line=435
+DEBUG: Parser::advance token=9 value='' line=435
+DEBUG: Parser::advance token=13 value='' line=435
+DEBUG: Parser::advance token=3 value='get' line=435
+DEBUG: Parser::advance token=8 value='' line=435
+DEBUG: Parser::advance token=1 value='tuple' line=435
+DEBUG: Parser::advance token=9 value='' line=435
+DEBUG: Parser::advance token=9 value='' line=435
+DEBUG: Parser::advance token=11 value='' line=436
+DEBUG: Parser::advance token=3 value='print' line=436
+DEBUG: Parser::advance token=8 value='' line=436
+DEBUG: Parser::advance token=1 value='DEBUG: globals['map']:' line=436
+DEBUG: Parser::advance token=10 value='' line=436
+DEBUG: Parser::advance token=3 value='globals' line=436
+DEBUG: Parser::advance token=8 value='' line=436
+DEBUG: Parser::advance token=9 value='' line=436
+DEBUG: Parser::advance token=13 value='' line=436
+DEBUG: Parser::advance token=3 value='get' line=436
+DEBUG: Parser::advance token=8 value='' line=436
+DEBUG: Parser::advance token=1 value='map' line=436
+DEBUG: Parser::advance token=9 value='' line=436
+DEBUG: Parser::advance token=9 value='' line=436
+DEBUG: Parser::advance token=11 value='' line=437
+DEBUG: Parser::advance token=3 value='field_names' line=437
+DEBUG: Parser::advance token=19 value='' line=437
+DEBUG: Parser::advance token=3 value='tuple' line=437
+DEBUG: Parser::advance token=8 value='' line=437
+DEBUG: Parser::advance token=3 value='map' line=437
+DEBUG: Parser::advance token=8 value='' line=437
+DEBUG: Parser::advance token=3 value='_sys' line=437
+DEBUG: Parser::advance token=13 value='' line=437
+DEBUG: Parser::advance token=3 value='intern' line=437
+DEBUG: Parser::advance token=10 value='' line=437
+DEBUG: Parser::advance token=3 value='field_names' line=437
+DEBUG: Parser::advance token=9 value='' line=437
+DEBUG: Parser::advance token=9 value='' line=437
+DEBUG: Parser::advance token=11 value='' line=438
+DEBUG: Parser::advance token=3 value='print' line=438
+DEBUG: Parser::advance token=8 value='' line=438
+DEBUG: Parser::advance token=1 value='DEBUG: field_names after intern:' line=438
+DEBUG: Parser::advance token=10 value='' line=438
+DEBUG: Parser::advance token=3 value='field_names' line=438
+DEBUG: Parser::advance token=9 value='' line=438
+DEBUG: Parser::advance token=11 value='' line=439
+DEBUG: Parser::advance token=3 value='num_fields' line=439
+DEBUG: Parser::advance token=19 value='' line=439
+DEBUG: Parser::advance token=3 value='len' line=439
+DEBUG: Parser::advance token=8 value='' line=439
+DEBUG: Parser::advance token=3 value='field_names' line=439
+DEBUG: Parser::advance token=9 value='' line=439
+DEBUG: Parser::advance token=11 value='' line=440
+DEBUG: Parser::advance token=3 value='arg_list' line=440
+DEBUG: Parser::advance token=19 value='' line=440
+DEBUG: Parser::advance token=1 value=', ' line=440
+DEBUG: Parser::advance token=13 value='' line=440
+DEBUG: Parser::advance token=3 value='join' line=440
+DEBUG: Parser::advance token=8 value='' line=440
+DEBUG: Parser::advance token=3 value='field_names' line=440
+DEBUG: Parser::advance token=9 value='' line=440
+DEBUG: Parser::advance token=11 value='' line=441
+DEBUG: Parser::advance token=3 value='print' line=441
+DEBUG: Parser::advance token=8 value='' line=441
+DEBUG: Parser::advance token=1 value='DEBUG: arg_list:' line=441
+DEBUG: Parser::advance token=10 value='' line=441
+DEBUG: Parser::advance token=3 value='arg_list' line=441
+DEBUG: Parser::advance token=9 value='' line=441
+DEBUG: Parser::advance token=11 value='' line=442
+DEBUG: Parser::advance token=23 value='if' line=442
+DEBUG: Parser::advance token=3 value='num_fields' line=442
+DEBUG: Parser::advance token=20 value='' line=442
+DEBUG: Parser::advance token=0 value='1' line=442
+DEBUG: Parser::advance token=18 value='' line=442
+DEBUG: Parser::advance token=11 value='' line=443
+DEBUG: Parser::advance token=29 value='' line=443
+DEBUG: Parser::advance token=3 value='arg_list' line=443
+DEBUG: Parser::advance token=64 value='' line=443
+DEBUG: Parser::advance token=1 value=',' line=443
+DEBUG: Parser::advance token=11 value='' line=444
+DEBUG: Parser::advance token=30 value='' line=444
+DEBUG: Parser::advance token=3 value='repr_fmt' line=444
+DEBUG: Parser::advance token=19 value='' line=444
+DEBUG: Parser::advance token=1 value='(' line=444
+DEBUG: Parser::advance token=4 value='' line=444
+DEBUG: Parser::advance token=1 value=', ' line=444
+DEBUG: Parser::advance token=13 value='' line=444
+DEBUG: Parser::advance token=3 value='join' line=444
+DEBUG: Parser::advance token=8 value='' line=444
+DEBUG: Parser::advance token=2 value='{name}=%r' line=444
+DEBUG: Parser::advance token=21 value='for' line=444
+DEBUG: Parser::advance token=3 value='name' line=1
+DEBUG: Parser::advance token=12 value='' line=1
+DEBUG: Parser::advance token=3 value='name' line=444
+DEBUG: Parser::advance token=22 value='in' line=444
+DEBUG: Parser::advance token=3 value='field_names' line=444
+DEBUG: Parser::advance token=9 value='' line=444
+DEBUG: Parser::advance token=4 value='' line=444
+DEBUG: Parser::advance token=1 value=')' line=444
+DEBUG: Parser::advance token=11 value='' line=445
+DEBUG: Parser::advance token=3 value='tuple_new' line=445
+DEBUG: Parser::advance token=19 value='' line=445
+DEBUG: Parser::advance token=3 value='tuple' line=445
+DEBUG: Parser::advance token=13 value='' line=445
+DEBUG: Parser::advance token=3 value='__new__' line=445
+DEBUG: Parser::advance token=11 value='' line=446
+DEBUG: Parser::advance token=3 value='print' line=446
+DEBUG: Parser::advance token=8 value='' line=446
+DEBUG: Parser::advance token=1 value='DEBUG: tuple.__new__:' line=446
+DEBUG: Parser::advance token=10 value='' line=446
+DEBUG: Parser::advance token=3 value='tuple_new' line=446
+DEBUG: Parser::advance token=9 value='' line=446
+DEBUG: Parser::advance token=11 value='' line=447
+DEBUG: Parser::advance token=3 value='_dict' line=447
+DEBUG: Parser::advance token=10 value='' line=447
+DEBUG: Parser::advance token=3 value='_tuple' line=447
+DEBUG: Parser::advance token=10 value='' line=447
+DEBUG: Parser::advance token=3 value='_len' line=447
+DEBUG: Parser::advance token=10 value='' line=447
+DEBUG: Parser::advance token=3 value='_map' line=447
+DEBUG: Parser::advance token=10 value='' line=447
+DEBUG: Parser::advance token=3 value='_zip' line=447
+DEBUG: Parser::advance token=19 value='' line=447
+DEBUG: Parser::advance token=3 value='dict' line=447
+DEBUG: Parser::advance token=10 value='' line=447
+DEBUG: Parser::advance token=3 value='tuple' line=447
+DEBUG: Parser::advance token=10 value='' line=447
+DEBUG: Parser::advance token=3 value='len' line=447
+DEBUG: Parser::advance token=10 value='' line=447
+DEBUG: Parser::advance token=3 value='map' line=447
+DEBUG: Parser::advance token=10 value='' line=447
+DEBUG: Parser::advance token=3 value='zip' line=447
+DEBUG: Parser::advance token=11 value='' line=448
+DEBUG: Parser::advance token=3 value='namespace' line=451
+DEBUG: Parser::advance token=19 value='' line=451
+DEBUG: Parser::advance token=16 value='' line=451
+DEBUG: Parser::advance token=1 value='_tuple_new' line=452
+DEBUG: Parser::advance token=18 value='' line=452
+DEBUG: Parser::advance token=3 value='tuple_new' line=452
+DEBUG: Parser::advance token=10 value='' line=452
+DEBUG: Parser::advance token=1 value='__builtins__' line=453
+DEBUG: Parser::advance token=18 value='' line=453
+DEBUG: Parser::advance token=16 value='' line=453
+DEBUG: Parser::advance token=17 value='' line=453
+DEBUG: Parser::advance token=10 value='' line=453
+DEBUG: Parser::advance token=1 value='__name__' line=454
+DEBUG: Parser::advance token=18 value='' line=454
+DEBUG: Parser::advance token=2 value='namedtuple_{typename}' line=454
+DEBUG: Parser::advance token=10 value='' line=454
+DEBUG: Parser::advance token=3 value='typename' line=1
+DEBUG: Parser::advance token=12 value='' line=1
+DEBUG: Parser::advance token=17 value='' line=455
+DEBUG: Parser::advance token=11 value='' line=456
+DEBUG: Parser::advance token=3 value='code' line=456
+DEBUG: Parser::advance token=19 value='' line=456
+DEBUG: Parser::advance token=2 value='lambda _cls, {arg_list}: _tuple_new(_cls, ({arg_list}))' line=456
+DEBUG: Parser::advance token=11 value='' line=457
+DEBUG: Parser::advance token=3 value='arg_list' line=1
+DEBUG: Parser::advance token=12 value='' line=1
+DEBUG: Parser::advance token=3 value='arg_list' line=1
+DEBUG: Parser::advance token=12 value='' line=1
+DEBUG: Parser::advance token=3 value='__new__' line=457
+DEBUG: Parser::advance token=19 value='' line=457
+DEBUG: Parser::advance token=3 value='eval' line=457
+DEBUG: Parser::advance token=8 value='' line=457
+DEBUG: Parser::advance token=3 value='code' line=457
+DEBUG: Parser::advance token=10 value='' line=457
+DEBUG: Parser::advance token=3 value='namespace' line=457
+DEBUG: Parser::advance token=9 value='' line=457
+DEBUG: Parser::advance token=11 value='' line=458
+DEBUG: Parser::advance token=3 value='__new__' line=458
+DEBUG: Parser::advance token=13 value='' line=458
+DEBUG: Parser::advance token=3 value='__name__' line=458
+DEBUG: Parser::advance token=19 value='' line=458
+DEBUG: Parser::advance token=1 value='__new__' line=458
+DEBUG: Parser::advance token=11 value='' line=459
+DEBUG: Parser::advance token=3 value='__new__' line=459
+DEBUG: Parser::advance token=13 value='' line=459
+DEBUG: Parser::advance token=3 value='__doc__' line=459
+DEBUG: Parser::advance token=19 value='' line=459
+DEBUG: Parser::advance token=2 value='Create new instance of {typename}({arg_list})' line=459
+DEBUG: Parser::advance token=11 value='' line=460
+DEBUG: Parser::advance token=3 value='typename' line=1
+DEBUG: Parser::advance token=12 value='' line=1
+DEBUG: Parser::advance token=3 value='arg_list' line=1
+DEBUG: Parser::advance token=12 value='' line=1
+DEBUG: Parser::advance token=23 value='if' line=460
+DEBUG: Parser::advance token=3 value='defaults' line=460
+DEBUG: Parser::advance token=51 value='is' line=460
+DEBUG: Parser::advance token=41 value='not' line=460
+DEBUG: Parser::advance token=38 value='None' line=460
+DEBUG: Parser::advance token=18 value='' line=460
+DEBUG: Parser::advance token=11 value='' line=461
+DEBUG: Parser::advance token=29 value='' line=461
+DEBUG: Parser::advance token=3 value='__new__' line=461
+DEBUG: Parser::advance token=13 value='' line=461
+DEBUG: Parser::advance token=3 value='__defaults__' line=461
+DEBUG: Parser::advance token=19 value='' line=461
+DEBUG: Parser::advance token=3 value='defaults' line=461
+DEBUG: Parser::advance token=11 value='' line=462
+DEBUG: Parser::advance token=30 value='' line=463
+DEBUG: Parser::advance token=72 value='' line=463
+DEBUG: Parser::advance token=3 value='classmethod' line=463
+DEBUG: Parser::advance token=11 value='' line=464
+DEBUG: Parser::advance token=27 value='def' line=464
+DEBUG: Parser::advance token=3 value='_make' line=464
+DEBUG: Parser::advance token=8 value='' line=464
+DEBUG: Parser::advance token=3 value='cls' line=464
+DEBUG: Parser::advance token=10 value='' line=464
+DEBUG: Parser::advance token=3 value='iterable' line=464
+DEBUG: Parser::advance token=9 value='' line=464
+DEBUG: Parser::advance token=18 value='' line=464
+DEBUG: Parser::advance token=11 value='' line=465
+DEBUG: Parser::advance token=29 value='' line=465
+DEBUG: Parser::advance token=3 value='result' line=465
+DEBUG: Parser::advance token=19 value='' line=465
+DEBUG: Parser::advance token=3 value='tuple_new' line=465
+DEBUG: Parser::advance token=8 value='' line=465
+DEBUG: Parser::advance token=3 value='cls' line=465
+DEBUG: Parser::advance token=10 value='' line=465
+DEBUG: Parser::advance token=3 value='iterable' line=465
+DEBUG: Parser::advance token=9 value='' line=465
+DEBUG: Parser::advance token=11 value='' line=466
+DEBUG: Parser::advance token=23 value='if' line=466
+DEBUG: Parser::advance token=3 value='_len' line=466
+DEBUG: Parser::advance token=8 value='' line=466
+DEBUG: Parser::advance token=3 value='result' line=466
+DEBUG: Parser::advance token=9 value='' line=466
+DEBUG: Parser::advance token=55 value='' line=466
+DEBUG: Parser::advance token=3 value='num_fields' line=466
+DEBUG: Parser::advance token=18 value='' line=466
+DEBUG: Parser::advance token=11 value='' line=467
+DEBUG: Parser::advance token=29 value='' line=467
+DEBUG: Parser::advance token=45 value='raise' line=467
+DEBUG: Parser::advance token=3 value='TypeError' line=467
+DEBUG: Parser::advance token=8 value='' line=467
+DEBUG: Parser::advance token=2 value='Expected {num_fields} arguments, got {len(result)}' line=467
+DEBUG: Parser::advance token=9 value='' line=467
+DEBUG: Parser::advance token=3 value='num_fields' line=1
+DEBUG: Parser::advance token=12 value='' line=1
+DEBUG: Parser::advance token=3 value='len' line=1
+DEBUG: Parser::advance token=8 value='' line=1
+DEBUG: Parser::advance token=3 value='result' line=1
+DEBUG: Parser::advance token=9 value='' line=1
+DEBUG: Parser::advance token=12 value='' line=1
+DEBUG: Parser::advance token=11 value='' line=468
+DEBUG: Parser::advance token=30 value='' line=468
+DEBUG: Parser::advance token=34 value='return' line=468
+DEBUG: Parser::advance token=3 value='result' line=468
+DEBUG: Parser::advance token=11 value='' line=469
+DEBUG: Parser::advance token=30 value='' line=470
+DEBUG: Parser::advance token=3 value='_make' line=470
+DEBUG: Parser::advance token=13 value='' line=470
+DEBUG: Parser::advance token=3 value='__func__' line=470
+DEBUG: Parser::advance token=13 value='' line=470
+DEBUG: Parser::advance token=3 value='__doc__' line=470
+DEBUG: Parser::advance token=19 value='' line=470
+DEBUG: Parser::advance token=8 value='' line=470
+DEBUG: Parser::advance token=2 value='Make a new {typename} object from a sequence ' line=470
+DEBUG: Parser::advance token=1 value='or iterable' line=471
+DEBUG: Parser::advance token=3 value='typename' line=1
+DEBUG: Parser::advance token=12 value='' line=1
+DEBUG: Parser::advance token=9 value='' line=471
+DEBUG: Parser::advance token=11 value='' line=472
+DEBUG: Parser::advance token=27 value='def' line=473
+DEBUG: Parser::advance token=3 value='_replace' line=473
+DEBUG: Parser::advance token=8 value='' line=473
+DEBUG: Parser::advance token=3 value='self' line=473
+DEBUG: Parser::advance token=10 value='' line=473
+DEBUG: Parser::advance token=7 value='' line=473
+DEBUG: Parser::advance token=10 value='' line=473
+DEBUG: Parser::advance token=73 value='' line=473
+DEBUG: Parser::advance token=3 value='kwds' line=473
+DEBUG: Parser::advance token=9 value='' line=473
+DEBUG: Parser::advance token=18 value='' line=473
+DEBUG: Parser::advance token=11 value='' line=474
+DEBUG: Parser::advance token=29 value='' line=474
+DEBUG: Parser::advance token=3 value='result' line=474
+DEBUG: Parser::advance token=19 value='' line=474
+DEBUG: Parser::advance token=3 value='self' line=474
+DEBUG: Parser::advance token=13 value='' line=474
+DEBUG: Parser::advance token=3 value='_make' line=474
+DEBUG: Parser::advance token=8 value='' line=474
+DEBUG: Parser::advance token=3 value='_map' line=474
+DEBUG: Parser::advance token=8 value='' line=474
+DEBUG: Parser::advance token=3 value='kwds' line=474
+DEBUG: Parser::advance token=13 value='' line=474
+DEBUG: Parser::advance token=3 value='pop' line=474
+DEBUG: Parser::advance token=10 value='' line=474
+DEBUG: Parser::advance token=3 value='field_names' line=474
+DEBUG: Parser::advance token=10 value='' line=474
+DEBUG: Parser::advance token=3 value='self' line=474
+DEBUG: Parser::advance token=9 value='' line=474
+DEBUG: Parser::advance token=9 value='' line=474
+DEBUG: Parser::advance token=11 value='' line=475
+DEBUG: Parser::advance token=23 value='if' line=475
+DEBUG: Parser::advance token=3 value='kwds' line=475
+DEBUG: Parser::advance token=18 value='' line=475
+DEBUG: Parser::advance token=11 value='' line=476
+DEBUG: Parser::advance token=29 value='' line=476
+DEBUG: Parser::advance token=45 value='raise' line=476
+DEBUG: Parser::advance token=3 value='TypeError' line=476
+DEBUG: Parser::advance token=8 value='' line=476
+DEBUG: Parser::advance token=2 value='Got unexpected field names: {list(kwds)!r}' line=476
+DEBUG: Parser::advance token=9 value='' line=476
+DEBUG: Parser::advance token=3 value='list' line=1
+DEBUG: Parser::advance token=8 value='' line=1
+DEBUG: Parser::advance token=3 value='kwds' line=1
+DEBUG: Parser::advance token=9 value='' line=1
+DEBUG: Parser::advance token=12 value='' line=1
+DEBUG: Parser::advance token=11 value='' line=477
+DEBUG: Parser::advance token=30 value='' line=477
+DEBUG: Parser::advance token=34 value='return' line=477
+DEBUG: Parser::advance token=3 value='result' line=477
+DEBUG: Parser::advance token=11 value='' line=478
+DEBUG: Parser::advance token=30 value='' line=479
+DEBUG: Parser::advance token=3 value='_replace' line=479
+DEBUG: Parser::advance token=13 value='' line=479
+DEBUG: Parser::advance token=3 value='__doc__' line=479
+DEBUG: Parser::advance token=19 value='' line=479
+DEBUG: Parser::advance token=8 value='' line=479
+DEBUG: Parser::advance token=2 value='Return a new {typename} object replacing specified ' line=479
+DEBUG: Parser::advance token=1 value='fields with new values' line=480
+DEBUG: Parser::advance token=3 value='typename' line=1
+DEBUG: Parser::advance token=12 value='' line=1
+DEBUG: Parser::advance token=9 value='' line=480
+DEBUG: Parser::advance token=11 value='' line=481
+DEBUG: Parser::advance token=27 value='def' line=482
+DEBUG: Parser::advance token=3 value='__repr__' line=482
+DEBUG: Parser::advance token=8 value='' line=482
+DEBUG: Parser::advance token=3 value='self' line=482
+DEBUG: Parser::advance token=9 value='' line=482
+DEBUG: Parser::advance token=18 value='' line=482
+DEBUG: Parser::advance token=11 value='' line=483
+DEBUG: Parser::advance token=29 value='' line=483
+DEBUG: Parser::advance token=1 value='Return a nicely formatted representation string' line=483
+DEBUG: Parser::advance token=11 value='' line=484
+DEBUG: Parser::advance token=34 value='return' line=484
+DEBUG: Parser::advance token=3 value='self' line=484
+DEBUG: Parser::advance token=13 value='' line=484
+DEBUG: Parser::advance token=3 value='__class__' line=484
+DEBUG: Parser::advance token=13 value='' line=484
+DEBUG: Parser::advance token=3 value='__name__' line=484
+DEBUG: Parser::advance token=4 value='' line=484
+DEBUG: Parser::advance token=3 value='repr_fmt' line=484
+DEBUG: Parser::advance token=54 value='' line=484
+DEBUG: Parser::advance token=3 value='self' line=484
+DEBUG: Parser::advance token=11 value='' line=485
+DEBUG: Parser::advance token=30 value='' line=486
+DEBUG: Parser::advance token=27 value='def' line=486
+DEBUG: Parser::advance token=3 value='_asdict' line=486
+DEBUG: Parser::advance token=8 value='' line=486
+DEBUG: Parser::advance token=3 value='self' line=486
+DEBUG: Parser::advance token=9 value='' line=486
+DEBUG: Parser::advance token=18 value='' line=486
+DEBUG: Parser::advance token=11 value='' line=487
+DEBUG: Parser::advance token=29 value='' line=487
+DEBUG: Parser::advance token=1 value='Return a new dict which maps field names to their values.' line=487
+DEBUG: Parser::advance token=11 value='' line=488
+DEBUG: Parser::advance token=34 value='return' line=488
+DEBUG: Parser::advance token=3 value='_dict' line=488
+DEBUG: Parser::advance token=8 value='' line=488
+DEBUG: Parser::advance token=3 value='_zip' line=488
+DEBUG: Parser::advance token=8 value='' line=488
+DEBUG: Parser::advance token=3 value='self' line=488
+DEBUG: Parser::advance token=13 value='' line=488
+DEBUG: Parser::advance token=3 value='_fields' line=488
+DEBUG: Parser::advance token=10 value='' line=488
+DEBUG: Parser::advance token=3 value='self' line=488
+DEBUG: Parser::advance token=9 value='' line=488
+DEBUG: Parser::advance token=9 value='' line=488
+DEBUG: Parser::advance token=11 value='' line=489
+DEBUG: Parser::advance token=30 value='' line=490
+DEBUG: Parser::advance token=27 value='def' line=490
+DEBUG: Parser::advance token=3 value='__getnewargs__' line=490
+DEBUG: Parser::advance token=8 value='' line=490
+DEBUG: Parser::advance token=3 value='self' line=490
+DEBUG: Parser::advance token=9 value='' line=490
+DEBUG: Parser::advance token=18 value='' line=490
+DEBUG: Parser::advance token=11 value='' line=491
+DEBUG: Parser::advance token=29 value='' line=491
+DEBUG: Parser::advance token=1 value='Return self as a plain tuple.  Used by copy and pickle.' line=491
+DEBUG: Parser::advance token=11 value='' line=492
+DEBUG: Parser::advance token=34 value='return' line=492
+DEBUG: Parser::advance token=3 value='_tuple' line=492
+DEBUG: Parser::advance token=8 value='' line=492
+DEBUG: Parser::advance token=3 value='self' line=492
+DEBUG: Parser::advance token=9 value='' line=492
+DEBUG: Parser::advance token=11 value='' line=493
+DEBUG: Parser::advance token=30 value='' line=495
+DEBUG: Parser::advance token=3 value='print' line=495
+DEBUG: Parser::advance token=8 value='' line=495
+DEBUG: Parser::advance token=1 value='DEBUG: entering method loop' line=495
+DEBUG: Parser::advance token=9 value='' line=495
+DEBUG: Parser::advance token=11 value='' line=496
+DEBUG: Parser::advance token=21 value='for' line=496
+DEBUG: Parser::advance token=3 value='method' line=496
+DEBUG: Parser::advance token=22 value='in' line=496
+DEBUG: Parser::advance token=8 value='' line=496
+DEBUG: Parser::advance token=3 value='__new__' line=497
+DEBUG: Parser::advance token=10 value='' line=497
+DEBUG: Parser::advance token=3 value='_make' line=498
+DEBUG: Parser::advance token=13 value='' line=498
+DEBUG: Parser::advance token=3 value='__func__' line=498
+DEBUG: Parser::advance token=10 value='' line=498
+DEBUG: Parser::advance token=3 value='_replace' line=499
+DEBUG: Parser::advance token=10 value='' line=499
+DEBUG: Parser::advance token=3 value='__repr__' line=500
+DEBUG: Parser::advance token=10 value='' line=500
+DEBUG: Parser::advance token=3 value='_asdict' line=501
+DEBUG: Parser::advance token=10 value='' line=501
+DEBUG: Parser::advance token=3 value='__getnewargs__' line=502
+DEBUG: Parser::advance token=10 value='' line=502
+DEBUG: Parser::advance token=9 value='' line=503
+DEBUG: Parser::advance token=18 value='' line=503
+DEBUG: Parser::advance token=11 value='' line=504
+DEBUG: Parser::advance token=29 value='' line=504
+DEBUG: Parser::advance token=3 value='method' line=504
+DEBUG: Parser::advance token=13 value='' line=504
+DEBUG: Parser::advance token=3 value='__qualname__' line=504
+DEBUG: Parser::advance token=19 value='' line=504
+DEBUG: Parser::advance token=2 value='{typename}.{method.__name__}' line=504
+DEBUG: Parser::advance token=11 value='' line=505
+DEBUG: Parser::advance token=3 value='typename' line=1
+DEBUG: Parser::advance token=12 value='' line=1
+DEBUG: Parser::advance token=3 value='method' line=1
+DEBUG: Parser::advance token=13 value='' line=1
+DEBUG: Parser::advance token=3 value='__name__' line=1
+DEBUG: Parser::advance token=12 value='' line=1
+DEBUG: Parser::advance token=30 value='' line=508
+DEBUG: Parser::advance token=3 value='class_namespace' line=508
+DEBUG: Parser::advance token=19 value='' line=508
+DEBUG: Parser::advance token=16 value='' line=508
+DEBUG: Parser::advance token=1 value='__doc__' line=509
+DEBUG: Parser::advance token=18 value='' line=509
+DEBUG: Parser::advance token=2 value='{typename}({arg_list})' line=509
+DEBUG: Parser::advance token=10 value='' line=509
+DEBUG: Parser::advance token=3 value='typename' line=1
+DEBUG: Parser::advance token=12 value='' line=1
+DEBUG: Parser::advance token=3 value='arg_list' line=1
+DEBUG: Parser::advance token=12 value='' line=1
+DEBUG: Parser::advance token=1 value='__slots__' line=510
+DEBUG: Parser::advance token=18 value='' line=510
+DEBUG: Parser::advance token=8 value='' line=510
+DEBUG: Parser::advance token=9 value='' line=510
+DEBUG: Parser::advance token=10 value='' line=510
+DEBUG: Parser::advance token=1 value='_fields' line=511
+DEBUG: Parser::advance token=18 value='' line=511
+DEBUG: Parser::advance token=3 value='field_names' line=511
+DEBUG: Parser::advance token=10 value='' line=511
+DEBUG: Parser::advance token=1 value='_field_defaults' line=512
+DEBUG: Parser::advance token=18 value='' line=512
+DEBUG: Parser::advance token=3 value='field_defaults' line=512
+DEBUG: Parser::advance token=10 value='' line=512
+DEBUG: Parser::advance token=1 value='__new__' line=513
+DEBUG: Parser::advance token=18 value='' line=513
+DEBUG: Parser::advance token=3 value='__new__' line=513
+DEBUG: Parser::advance token=10 value='' line=513
+DEBUG: Parser::advance token=1 value='_make' line=514
+DEBUG: Parser::advance token=18 value='' line=514
+DEBUG: Parser::advance token=3 value='_make' line=514
+DEBUG: Parser::advance token=10 value='' line=514
+DEBUG: Parser::advance token=1 value='__replace__' line=515
+DEBUG: Parser::advance token=18 value='' line=515
+DEBUG: Parser::advance token=3 value='_replace' line=515
+DEBUG: Parser::advance token=10 value='' line=515
+DEBUG: Parser::advance token=1 value='_replace' line=516
+DEBUG: Parser::advance token=18 value='' line=516
+DEBUG: Parser::advance token=3 value='_replace' line=516
+DEBUG: Parser::advance token=10 value='' line=516
+DEBUG: Parser::advance token=1 value='__repr__' line=517
+DEBUG: Parser::advance token=18 value='' line=517
+DEBUG: Parser::advance token=3 value='__repr__' line=517
+DEBUG: Parser::advance token=10 value='' line=517
+DEBUG: Parser::advance token=1 value='_asdict' line=518
+DEBUG: Parser::advance token=18 value='' line=518
+DEBUG: Parser::advance token=3 value='_asdict' line=518
+DEBUG: Parser::advance token=10 value='' line=518
+DEBUG: Parser::advance token=1 value='__getnewargs__' line=519
+DEBUG: Parser::advance token=18 value='' line=519
+DEBUG: Parser::advance token=3 value='__getnewargs__' line=519
+DEBUG: Parser::advance token=10 value='' line=519
+DEBUG: Parser::advance token=1 value='__match_args__' line=520
+DEBUG: Parser::advance token=18 value='' line=520
+DEBUG: Parser::advance token=3 value='field_names' line=520
+DEBUG: Parser::advance token=10 value='' line=520
+DEBUG: Parser::advance token=17 value='' line=521
+DEBUG: Parser::advance token=11 value='' line=522
+DEBUG: Parser::advance token=3 value='print' line=522
+DEBUG: Parser::advance token=8 value='' line=522
+DEBUG: Parser::advance token=1 value='DEBUG: entering enumerate loop' line=522
+DEBUG: Parser::advance token=10 value='' line=522
+DEBUG: Parser::advance token=3 value='field_names' line=522
+DEBUG: Parser::advance token=9 value='' line=522
+DEBUG: Parser::advance token=11 value='' line=523
+DEBUG: Parser::advance token=21 value='for' line=523
+DEBUG: Parser::advance token=3 value='index' line=523
+DEBUG: Parser::advance token=10 value='' line=523
+DEBUG: Parser::advance token=3 value='name' line=523
+DEBUG: Parser::advance token=22 value='in' line=523
+DEBUG: Parser::advance token=3 value='enumerate' line=523
+DEBUG: Parser::advance token=8 value='' line=523
+DEBUG: Parser::advance token=3 value='field_names' line=523
+DEBUG: Parser::advance token=9 value='' line=523
+DEBUG: Parser::advance token=18 value='' line=523
+DEBUG: Parser::advance token=11 value='' line=524
+DEBUG: Parser::advance token=29 value='' line=524
+DEBUG: Parser::advance token=3 value='doc' line=524
+DEBUG: Parser::advance token=19 value='' line=524
+DEBUG: Parser::advance token=3 value='_sys' line=524
+DEBUG: Parser::advance token=13 value='' line=524
+DEBUG: Parser::advance token=3 value='intern' line=524
+DEBUG: Parser::advance token=8 value='' line=524
+DEBUG: Parser::advance token=2 value='Alias for field number {index}' line=524
+DEBUG: Parser::advance token=9 value='' line=524
+DEBUG: Parser::advance token=3 value='index' line=1
+DEBUG: Parser::advance token=12 value='' line=1
+DEBUG: Parser::advance token=11 value='' line=525
+DEBUG: Parser::advance token=3 value='class_namespace' line=525
+DEBUG: Parser::advance token=14 value='' line=525
+DEBUG: Parser::advance token=3 value='name' line=525
+DEBUG: Parser::advance token=15 value='' line=525
+DEBUG: Parser::advance token=19 value='' line=525
+DEBUG: Parser::advance token=3 value='_tuplegetter' line=525
+DEBUG: Parser::advance token=8 value='' line=525
+DEBUG: Parser::advance token=3 value='index' line=525
+DEBUG: Parser::advance token=10 value='' line=525
+DEBUG: Parser::advance token=3 value='doc' line=525
+DEBUG: Parser::advance token=9 value='' line=525
+DEBUG: Parser::advance token=11 value='' line=526
+DEBUG: Parser::advance token=30 value='' line=527
+DEBUG: Parser::advance token=3 value='print' line=527
+DEBUG: Parser::advance token=8 value='' line=527
+DEBUG: Parser::advance token=1 value='DEBUG: creating type' line=527
+DEBUG: Parser::advance token=9 value='' line=527
+DEBUG: Parser::advance token=62 value='Unexpected character: '\'' line=527
+protopy: syntax error in 'lib/python3.14/collections/__init__.py': Unexpected character: '\' at line 527:35
+DEBUG: [PC 156] OP 103
+DEBUG: Exception handling start exc=0x7fe9c019f9c0
+DEBUG: lnotab entry j=0, pc_offset=4, line_offset=-1
+DEBUG: lnotab entry j=2, pc_offset=8, line_offset=2
+DEBUG: lnotab entry j=4, pc_offset=4, line_offset=-2
+DEBUG: lnotab entry j=6, pc_offset=8, line_offset=3
+DEBUG: lnotab entry j=8, pc_offset=4, line_offset=-3
+DEBUG: lnotab entry j=10, pc_offset=8, line_offset=4
+DEBUG: lnotab entry j=12, pc_offset=4, line_offset=-4
+DEBUG: lnotab entry j=14, pc_offset=8, line_offset=5
+DEBUG: lnotab entry j=16, pc_offset=4, line_offset=-5
+DEBUG: lnotab entry j=18, pc_offset=8, line_offset=7
+DEBUG: lnotab entry j=20, pc_offset=4, line_offset=-7
+DEBUG: lnotab entry j=22, pc_offset=12, line_offset=8
+DEBUG: lnotab entry j=24, pc_offset=4, line_offset=-8
+DEBUG: lnotab entry j=26, pc_offset=12, line_offset=9
+DEBUG: lnotab entry j=28, pc_offset=4, line_offset=1
+DEBUG: lnotab entry j=30, pc_offset=4, line_offset=-10
+DEBUG: lnotab entry j=32, pc_offset=12, line_offset=11
+DEBUG: lnotab entry j=34, pc_offset=4, line_offset=-11
+DEBUG: lnotab entry j=36, pc_offset=12, line_offset=12
+DEBUG: lnotab entry j=38, pc_offset=6, line_offset=1
+DEBUG: lnotab entry j=40, pc_offset=4, line_offset=-13
+DEBUG: lnotab entry j=42, pc_offset=12, line_offset=15
+DEBUG: lnotab entry j=44, pc_offset=12, line_offset=-15
+DEBUG: Exception ImportError at ./debug_eval.py:16 (PC 156)
+DEBUG: Calling addTraceback...
+DEBUG: addTraceback exc=0x7fe9c019f9c0 frame=0x7fe9c0063040 lasti=156 lineno=16
+DEBUG: addTraceback currentTb=0x141
+DEBUG: addTraceback newTb=0x7fe9c01a5680
+DEBUG: addTraceback updatedExc=0x7fe9c019f9c0
+DEBUG: addTraceback returned. blockStack.empty()=true
+DEBUG: No trap found, returning nullptr
+DEBUG: runCodeObject result=(nil)
+protopy: unhandled exception in module execution:
+Traceback (most recent call last):
+ImportError: No module named 'collections'
+
+protopy: module 'debug_eval' exited with runtime error

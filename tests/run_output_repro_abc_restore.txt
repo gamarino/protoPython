@@ -1,0 +1,12 @@
+None: None, type(None): <class 'NoneType'>, id(None): 0x141
+type: <class 'type'>, id(type): 0x7d7da6b0b780
+Testing iter(None)...
+Caught expected for iter(None): 'NoneType' object is not iterable
+Testing iter(type(None))...
+Caught expected for iter(type(None)): 'type' object is not iterable
+DEBUG: ABCMeta.__new__ scaling for ABC with bases <class 'tuple'>
+DEBUG: namespace type: <class 'object'>
+DEBUG: super().__new__ finished, cls=()
+DEBUG: getting items
+DEBUG: items type: <class 'list'>
+Error: Type mismatch in toImpl conversion. Expected tag 9 for type const ProtoSparseListIteratorImplementation; std::string = std::__cxx11::basic_string<char>, but found tag 0 for ProtoObject* 0.

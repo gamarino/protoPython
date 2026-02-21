@@ -812,7 +812,7 @@ static const proto::ProtoObject* py_list_iter_next(
     if (!it || !it->hasNext(context)) return nullptr;
     const proto::ProtoObject* value = it->next(context);
     const proto::ProtoListIterator* nextIt = it->advance(context);
-    self->setAttribute(context, iterItName, nextIt->asObject(context));
+    self = self->setAttribute(context, iterItName, nextIt->asObject(context));
     return value;
 }
 
@@ -1116,22 +1116,23 @@ static const proto::ProtoObject* py_dict_iter(
     }
 
     const proto::ProtoList* keysList = nullptr;
-    if (self->asSparseList(context)) {
-        // Raw sparse list
-        const proto::ProtoString* keysName = env ? env->getKeysString() : proto::ProtoString::fromUTF8String(context, "keys");
-        const proto::ProtoObject* keysM = env ? env->getAttribute(context, self, keysName) : self->getAttribute(context, keysName);
-        if (keysM && keysM->asMethod(context)) {
-             const proto::ProtoObject* kObj = keysM->asMethod(context)(context, self, nullptr, env ? env->getEmptyList() : context->newList(), nullptr);
-             if (kObj) keysList = kObj->asList(context);
+    const proto::ProtoString* keysName = getInternalString(context, "__keys__");
+    const proto::ProtoObject* keysObj = env ? env->getAttribute(context, self, keysName) : self->getAttribute(context, keysName);
+
+    if (keysObj && keysObj->asList(context)) {
+        keysList = keysObj->asList(context);
+    } else if (self->asSparseList(context)) {
+        const proto::ProtoSparseList* sparse = self->asSparseList(context);
+        const proto::ProtoList* keys = context->newList();
+        const proto::ProtoSparseListIterator* it = sparse->getIterator(context);
+        while (it && it->hasNext(context)) {
+            size_t idx = it->nextKey(context);
+            keys = keys->appendLast(context, context->fromInteger(static_cast<long long>(idx)));
+            it = const_cast<proto::ProtoSparseListIterator*>(it)->advance(context);
         }
-        if (!keysList) {
-            // Fallback: extract keys manually? Or just return empty for now if it fails.
-            keysList = context->newList();
-        }
+        keysList = keys;
     } else {
-        const proto::ProtoString* keysName = getInternalString(context, "__keys__");
-        const proto::ProtoObject* keysObj = self->getAttribute(context, keysName);
-        keysList = keysObj && keysObj->asList(context) ? keysObj->asList(context) : context->newList();
+        keysList = context->newList();
     }
 
     const proto::ProtoListIterator* it = keysList->getIterator(context);

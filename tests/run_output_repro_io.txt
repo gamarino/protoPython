@@ -1,0 +1,11 @@
+_collections_abc: <module object at 0x755258cda8c0>
+dir(_collections_abc): <class 'list'>
+Has _check_methods? False
+--------------------
+DEBUG: ABCMeta.__new__ scaling for ABC with bases <class 'tuple'>
+protopy: unhandled exception in module execution:
+Traceback (most recent call last):
+  File "./repro_io.py", in <module>
+AttributeError: 'module' object has no attribute '_check_methods'
+
+ImportError io: No module named 'io'

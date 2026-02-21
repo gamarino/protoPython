@@ -1,0 +1,10 @@
+Starting repro_io.py
+bytearray: <class 'list'>
+bytearray(): [], type: <class 'list'>
+iter(bytearray()): <class 'object'>
+bytearray test passed
+--------------------
+DEBUG: ABCMeta.__new__ scaling for ABC with bases <class 'tuple'>
+DEBUG: namespace type: <class 'object'>
+DEBUG: super().__new__ finished, cls=()
+Error: Type mismatch in toImpl conversion. Expected tag 9 for type const ProtoSparseListIteratorImplementation; std::string = std::__cxx11::basic_string<char>, but found tag 0 for ProtoObject* 0.

@@ -1197,32 +1197,30 @@ const proto::ProtoObject* py_generator_send_impl(
             newLocals = newLocals->appendLast(calleeCtx, updatedSlots[i]);
         }
         self->setAttribute(calleeCtx, env->getGiLocalsString(), newLocals->asObject(calleeCtx));
-    }
 
-    // 8. Clear running (already done above but let's be explicit)
-    self->setAttribute(ctx, env->getGiRunningString(), PROTO_FALSE);
-    self->setAttribute(ctx, env->getGiPCString(), ctx->fromInteger(nextPc));
-
-    // 6. Save stack back
-    const proto::ProtoList* newStack = ctx->newList();
-    if (calleeCtx) {
+        // Save stack back while calleeCtx is still alive
+        const proto::ProtoList* newStack = calleeCtx->newList();
         const proto::ProtoObject** slots = calleeCtx->getAutomaticLocals();
         for (unsigned long j = 0; j < finalTop; ++j) {
-            newStack = newStack->appendLast(ctx, slots[stackOffset + j]);
+            newStack = newStack->appendLast(calleeCtx, slots[stackOffset + j]);
         }
-    }
-    self->setAttribute(ctx, env->getGiStackString(), newStack->asObject(ctx));
+        self->setAttribute(calleeCtx, env->getGiStackString(), newStack->asObject(calleeCtx));
 
-    // Save blockStack back
-    const proto::ProtoList* newBlocks = ctx->newList();
-    for (const auto& b : blockStack) {
-        const proto::ProtoList* tempL = ctx->newList();
-        tempL = tempL->appendLast(ctx, ctx->fromInteger(b.handlerPc));
-        tempL = tempL->appendLast(ctx, ctx->fromInteger(b.stackDepth));
-        const proto::ProtoObject* bTup = ctx->newTupleFromList(tempL)->asObject(ctx);
-        newBlocks = newBlocks->appendLast(ctx, bTup);
+        // Save blockStack back
+        const proto::ProtoList* newBlocks = calleeCtx->newList();
+        for (const auto& b : blockStack) {
+            const proto::ProtoList* tempL = calleeCtx->newList();
+            tempL = tempL->appendLast(calleeCtx, calleeCtx->fromInteger(b.handlerPc));
+            tempL = tempL->appendLast(calleeCtx, calleeCtx->fromInteger(b.stackDepth));
+            const proto::ProtoObject* bTup = calleeCtx->newTupleFromList(tempL)->asObject(calleeCtx);
+            newBlocks = newBlocks->appendLast(calleeCtx, bTup);
+        }
+        self->setAttribute(calleeCtx, env->getGiBlocksString(), newBlocks->asObject(calleeCtx));
     }
-    self->setAttribute(ctx, env->getGiBlocksString(), newBlocks->asObject(ctx));
+
+    // 8. Clear running 
+    self->setAttribute(ctx, env->getGiRunningString(), PROTO_FALSE);
+    self->setAttribute(ctx, env->getGiPCString(), ctx->fromInteger(nextPc));
 
     if (std::getenv("PROTO_ENV_DIAG")) {
         fprintf(stderr, "DEBUG: py_generator_send_impl finished. yielded=%d, result=%p, hasPendingException=%d\n", 
@@ -3611,7 +3609,6 @@ const proto::ProtoObject* executeBytecodeRange(
                 continue;
             }
             // continue normal execution after pushing val
-            continue;
         } else if (op == OP_UNPACK_SEQUENCE) {
             if (stack.empty() || arg <= 0) continue;
             const proto::ProtoObject* seq = stack.back();

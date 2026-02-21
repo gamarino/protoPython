@@ -1,0 +1,10 @@
+[proto-env] iter failed for object at 0x7f17950b96c0 (repr: None)
+Traceback:
+Traceback (most recent call last):
+  File "lib/python3.14/_py_abc.py", in __new__
+
+protopy: unhandled exception in module execution:
+Traceback (most recent call last):
+  File "<unknown>", in <module>
+TypeError: object is not iterable
+
