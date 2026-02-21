@@ -122,6 +122,7 @@ struct Comprehension {
     std::unique_ptr<ASTNode> target;
     std::unique_ptr<ASTNode> iter;
     std::vector<std::unique_ptr<ASTNode>> ifs;
+    bool is_async = false;
 };
 
 /** List comprehension [elt for ...]. */

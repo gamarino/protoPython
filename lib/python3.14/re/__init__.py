@@ -138,6 +138,7 @@ __all__ = [
 ]
 
 __version__ = "2.2.1"
+print("RE INIT REACED LINE 141")
 
 @enum.global_enum
 @enum._simple_enum(enum.IntFlag, boundary=enum.KEEP)
@@ -162,6 +163,7 @@ PatternError = error = _compiler.PatternError
 # public interface
 
 def match(pattern, string, flags=0):
+    print("RE INIT REACHED MATCH DEF")
     """Try to apply the pattern at the start of the string, returning
     a Match object, or None if no match was found."""
     return _compile(pattern, flags).match(string)
@@ -303,6 +305,7 @@ def purge():
 _special_chars_map = {i: '\\' + chr(i) for i in b'()[]{}?*+-|^$\\.&~# \t\n\r\v\f'}
 
 def escape(pattern):
+    print("RE INIT REACHED ESCAPE DEF")
     """
     Escape special characters in a string.
     """
@@ -426,3 +429,5 @@ class Scanner:
                 append(action)
             i = j
         return result, string[i:]
+
+print("RE INIT REACHED END OF FILE")

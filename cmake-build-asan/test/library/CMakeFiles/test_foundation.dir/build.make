@@ -92,7 +92,7 @@ test_foundation_EXTERNAL_OBJECTS =
 
 test/library/test_foundation: test/library/CMakeFiles/test_foundation.dir/TestFoundation.cpp.o
 test/library/test_foundation: test/library/CMakeFiles/test_foundation.dir/build.make
-test/library/test_foundation: src/library/libprotoPython.so
+test/library/test_foundation: src/library/libprotoPython.so.0.2.0
 test/library/test_foundation: lib/libgtest_main.a
 test/library/test_foundation: protoCore/libprotoCore.so.1.0.0
 test/library/test_foundation: lib/libgtest.a

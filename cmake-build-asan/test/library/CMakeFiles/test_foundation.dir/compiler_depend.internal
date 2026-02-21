@@ -26,6 +26,7 @@ test/library/CMakeFiles/test_foundation.dir/TestFoundation.cpp.o
  /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/_deps/googletest-src/googletest/include/gtest/internal/gtest-string.h
  /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/_deps/googletest-src/googletest/include/gtest/internal/gtest-type-util.h
  /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/PythonEnvironment.h
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/Tokenizer.h
  /usr/include/alloca.h
  /usr/include/asm-generic/bitsperlong.h
  /usr/include/asm-generic/errno-base.h
@@ -205,6 +206,7 @@ test/library/CMakeFiles/test_foundation.dir/TestFoundation.cpp.o
  /usr/include/c++/13/string
  /usr/include/c++/13/string_view
  /usr/include/c++/13/system_error
+ /usr/include/c++/13/thread
  /usr/include/c++/13/tuple
  /usr/include/c++/13/type_traits
  /usr/include/c++/13/typeinfo

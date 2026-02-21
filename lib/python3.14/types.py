@@ -337,4 +337,5 @@ def coroutine(func):
 
     return wrapped
 
+print(f"DEBUG: globals()={globals()}")
 __all__ = [n for n in globals() if not n.startswith('_')]  # for pydoc

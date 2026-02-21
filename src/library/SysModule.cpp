@@ -258,10 +258,7 @@ static const proto::ProtoObject* sys_getrecursionlimit(
 
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment* env,
                                      const std::vector<std::string>* argv) {
-    const proto::ProtoObject* sys = ctx->newObject(true);
-    if (env && env->getObjectPrototype()) {
-        sys = sys->addParent(ctx, env->getObjectPrototype());
-    }
+    const proto::ProtoObject* sys = env && env->getObjectPrototype() ? env->getObjectPrototype()->newChild(ctx, true) : ctx->newObject(true);
 
     // Store env pointer for trace functions and exit
     sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__env_ptr__"), ctx->fromExternalPointer(env));
@@ -277,10 +274,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "getfilesystemencodeerrors"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_getfilesystemencodeerrors));
     sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_get_cpu_count_config"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_get_cpu_count_config));
     sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "intern"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_intern));
-    const proto::ProtoObject* traceDefault = ctx->newObject(false);
-    if (env && env->getObjectPrototype()) {
-        traceDefault = traceDefault->addParent(ctx, env->getObjectPrototype());
-    }
+    const proto::ProtoObject* traceDefault = env && env->getObjectPrototype() ? env->getObjectPrototype()->newChild(ctx, false) : ctx->newObject(false);
     traceDefault = traceDefault->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__call__"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(traceDefault), sys_trace_default));
     sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_trace_default"), traceDefault);
@@ -318,12 +312,15 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     }
 
     // sys.path (empty for now, PythonEnvironment will populate it)
-    sys = sys->setAttribute(ctx, env ? env->getPathS() : proto::ProtoString::fromUTF8String(ctx, "path"), ctx->newList()->asObject(ctx));
+    const proto::ProtoObject* pathList = ctx->newList()->asObject(ctx);
+    if (env && env->getListPrototype()) {
+        pathList = pathList->addParent(ctx, env->getListPrototype());
+    }
+    sys = sys->setAttribute(ctx, env ? env->getPathS() : proto::ProtoString::fromUTF8String(ctx, "path"), pathList);
 
     // sys.modules (dict mapping names to modules)
-    const proto::ProtoObject* modulesObj = ctx->newObject(true);
-    if (env && env->getDictPrototype()) {
-        modulesObj = modulesObj->addParent(ctx, env->getDictPrototype());
+    const proto::ProtoObject* modulesObj = env && env->getDictPrototype() ? env->getDictPrototype()->newChild(ctx, true) : ctx->newObject(true);
+    if (env) {
         env->initDictStorage(ctx, modulesObj);
     }
     sys = sys->setAttribute(ctx, env ? env->getModulesS() : proto::ProtoString::fromUTF8String(ctx, "modules"), modulesObj);
@@ -331,11 +328,22 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     // sys.argv
     const proto::ProtoList* argvList = ctx->newList();
     if (argv) {
+        printf("DEBUG SYS MODULE argv size=%zu\n", argv->size());
         for (const auto& s : *argv) {
-            argvList = argvList->appendLast(ctx, ctx->fromUTF8String(s.c_str()));
+            const proto::ProtoObject* strObj = ctx->fromUTF8String(s.c_str());
+            if (env && env->getStrPrototype()) {
+                strObj = strObj->addParent(ctx, env->getStrPrototype());
+            }
+            argvList = argvList->appendLast(ctx, strObj);
         }
     }
-    sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "argv"), argvList->asObject(ctx));
+    const proto::ProtoObject* argvWrapper = ctx->newObject(true);
+    if (env && env->getListPrototype()) {
+        argvWrapper = argvWrapper->addParent(ctx, env->getListPrototype());
+        argvWrapper = argvWrapper->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__class__"), env->getListPrototype());
+    }
+    argvWrapper = argvWrapper->setAttribute(ctx, env ? env->getDataString() : proto::ProtoString::fromUTF8String(ctx, "__data__"), argvList->asObject(ctx));
+    sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "argv"), argvWrapper);
 
     // sys.version_info (3, 14, 0)
     const proto::ProtoList* vi = ctx->newList();
@@ -344,10 +352,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     vi = vi->appendLast(ctx, ctx->fromInteger(0));
     sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "version_info"), vi->asObject(ctx));
 
-    const proto::ProtoObject* stats = ctx->newObject(false);
-    if (env && env->getObjectPrototype()) {
-        stats = stats->addParent(ctx, env->getObjectPrototype());
-    }
+    const proto::ProtoObject* stats = env && env->getObjectPrototype() ? env->getObjectPrototype()->newChild(ctx, false) : ctx->newObject(false);
     stats = stats->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "calls"), ctx->fromInteger(0));
     stats = stats->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "objects_created"), ctx->fromInteger(0));
     sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "stats"), stats);
@@ -380,8 +385,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
 
     // V75: Add stdin, stdout, stderr dummy objects
     auto create_dummy_file = [&](int type) {
-        const proto::ProtoObject* f = ctx->newObject(true);
-        if (env && env->getObjectPrototype()) f = f->addParent(ctx, env->getObjectPrototype());
+        const proto::ProtoObject* f = env && env->getObjectPrototype() ? env->getObjectPrototype()->newChild(ctx, true) : ctx->newObject(true);
         f = f->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "write"), ctx->fromMethod(const_cast<proto::ProtoObject*>(f), sys_file_write));
         f = f->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "flush"), ctx->fromMethod(const_cast<proto::ProtoObject*>(f), sys_file_flush));
         f = f->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_stream_type"), ctx->fromInteger(type));
@@ -400,10 +404,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__stderr__"), stderr_obj);
 
     // sys.implementation
-    const proto::ProtoObject* impl = ctx->newObject(true);
-    if (env && env->getObjectPrototype()) {
-        impl = impl->addParent(ctx, env->getObjectPrototype());
-    }
+    const proto::ProtoObject* impl = env && env->getObjectPrototype() ? env->getObjectPrototype()->newChild(ctx, true) : ctx->newObject(true);
     impl = impl->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "name"), ctx->fromUTF8String("protopython"));
     const proto::ProtoList* impl_version = ctx->newList();
     impl_version = impl_version->appendLast(ctx, ctx->fromInteger(0));

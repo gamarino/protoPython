@@ -10,7 +10,9 @@ set(CMAKE_DEPENDS_LANGUAGES
 set(CMAKE_DEPENDS_DEPENDENCY_FILES
   "/home/gamarino/Documentos/proyectos/protoCore/test/ContextTests.cpp" "protoCore/test/CMakeFiles/proto_tests.dir/ContextTests.cpp.o" "gcc" "protoCore/test/CMakeFiles/proto_tests.dir/ContextTests.cpp.o.d"
   "/home/gamarino/Documentos/proyectos/protoCore/test/GCStressTests.cpp" "protoCore/test/CMakeFiles/proto_tests.dir/GCStressTests.cpp.o" "gcc" "protoCore/test/CMakeFiles/proto_tests.dir/GCStressTests.cpp.o.d"
+  "/home/gamarino/Documentos/proyectos/protoCore/test/MultipleInheritanceTests.cpp" "protoCore/test/CMakeFiles/proto_tests.dir/MultipleInheritanceTests.cpp.o" "gcc" "protoCore/test/CMakeFiles/proto_tests.dir/MultipleInheritanceTests.cpp.o.d"
   "/home/gamarino/Documentos/proyectos/protoCore/test/NumericTests.cpp" "protoCore/test/CMakeFiles/proto_tests.dir/NumericTests.cpp.o" "gcc" "protoCore/test/CMakeFiles/proto_tests.dir/NumericTests.cpp.o.d"
+  "/home/gamarino/Documentos/proyectos/protoCore/test/SwarmTests.cpp" "protoCore/test/CMakeFiles/proto_tests.dir/SwarmTests.cpp.o" "gcc" "protoCore/test/CMakeFiles/proto_tests.dir/SwarmTests.cpp.o.d"
   "/home/gamarino/Documentos/proyectos/protoCore/test/test_list.cpp" "protoCore/test/CMakeFiles/proto_tests.dir/test_list.cpp.o" "gcc" "protoCore/test/CMakeFiles/proto_tests.dir/test_list.cpp.o.d"
   "/home/gamarino/Documentos/proyectos/protoCore/test/test_module_discovery.cpp" "protoCore/test/CMakeFiles/proto_tests.dir/test_module_discovery.cpp.o" "gcc" "protoCore/test/CMakeFiles/proto_tests.dir/test_module_discovery.cpp.o.d"
   "/home/gamarino/Documentos/proyectos/protoCore/test/test_object.cpp" "protoCore/test/CMakeFiles/proto_tests.dir/test_object.cpp.o" "gcc" "protoCore/test/CMakeFiles/proto_tests.dir/test_object.cpp.o.d"

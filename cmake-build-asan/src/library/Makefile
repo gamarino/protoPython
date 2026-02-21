@@ -117,7 +117,7 @@ rebuild_cache/fast: rebuild_cache
 
 # Special rule for the target list_install_components
 list_install_components:
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --cyan "Available install components are: \"Unspecified\" \"gmock\" \"gtest\" \"protoCore\" \"protoPython\""
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --cyan "Available install components are: \"Unspecified\" \"protoCore\" \"protoPython\""
 .PHONY : list_install_components
 
 # Special rule for the target list_install_components
@@ -204,6 +204,30 @@ protoPython: src/library/CMakeFiles/protoPython.dir/rule
 protoPython/fast:
 	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/build
 .PHONY : protoPython/fast
+
+AstModule.o: AstModule.cpp.o
+.PHONY : AstModule.o
+
+# target to build an object file
+AstModule.cpp.o:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/AstModule.cpp.o
+.PHONY : AstModule.cpp.o
+
+AstModule.i: AstModule.cpp.i
+.PHONY : AstModule.i
+
+# target to preprocess a source file
+AstModule.cpp.i:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/AstModule.cpp.i
+.PHONY : AstModule.cpp.i
+
+AstModule.s: AstModule.cpp.s
+.PHONY : AstModule.s
+
+# target to generate assembly for a file
+AstModule.cpp.s:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/AstModule.cpp.s
+.PHONY : AstModule.cpp.s
 
 AtexitModule.o: AtexitModule.cpp.o
 .PHONY : AtexitModule.o
@@ -301,6 +325,30 @@ BytecodeLoader.cpp.s:
 	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/BytecodeLoader.cpp.s
 .PHONY : BytecodeLoader.cpp.s
 
+CodecsModule.o: CodecsModule.cpp.o
+.PHONY : CodecsModule.o
+
+# target to build an object file
+CodecsModule.cpp.o:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/CodecsModule.cpp.o
+.PHONY : CodecsModule.cpp.o
+
+CodecsModule.i: CodecsModule.cpp.i
+.PHONY : CodecsModule.i
+
+# target to preprocess a source file
+CodecsModule.cpp.i:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/CodecsModule.cpp.i
+.PHONY : CodecsModule.cpp.i
+
+CodecsModule.s: CodecsModule.cpp.s
+.PHONY : CodecsModule.s
+
+# target to generate assembly for a file
+CodecsModule.cpp.s:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/CodecsModule.cpp.s
+.PHONY : CodecsModule.cpp.s
+
 CollectionsAbcModule.o: CollectionsAbcModule.cpp.o
 .PHONY : CollectionsAbcModule.o
 
@@ -349,6 +397,30 @@ CollectionsModule.cpp.s:
 	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/CollectionsModule.cpp.s
 .PHONY : CollectionsModule.cpp.s
 
+CompiledModuleProvider.o: CompiledModuleProvider.cpp.o
+.PHONY : CompiledModuleProvider.o
+
+# target to build an object file
+CompiledModuleProvider.cpp.o:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/CompiledModuleProvider.cpp.o
+.PHONY : CompiledModuleProvider.cpp.o
+
+CompiledModuleProvider.i: CompiledModuleProvider.cpp.i
+.PHONY : CompiledModuleProvider.i
+
+# target to preprocess a source file
+CompiledModuleProvider.cpp.i:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/CompiledModuleProvider.cpp.i
+.PHONY : CompiledModuleProvider.cpp.i
+
+CompiledModuleProvider.s: CompiledModuleProvider.cpp.s
+.PHONY : CompiledModuleProvider.s
+
+# target to generate assembly for a file
+CompiledModuleProvider.cpp.s:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/CompiledModuleProvider.cpp.s
+.PHONY : CompiledModuleProvider.cpp.s
+
 Compiler.o: Compiler.cpp.o
 .PHONY : Compiler.o
 
@@ -372,6 +444,54 @@ Compiler.s: Compiler.cpp.s
 Compiler.cpp.s:
 	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/Compiler.cpp.s
 .PHONY : Compiler.cpp.s
+
+ContextvarsModule.o: ContextvarsModule.cpp.o
+.PHONY : ContextvarsModule.o
+
+# target to build an object file
+ContextvarsModule.cpp.o:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/ContextvarsModule.cpp.o
+.PHONY : ContextvarsModule.cpp.o
+
+ContextvarsModule.i: ContextvarsModule.cpp.i
+.PHONY : ContextvarsModule.i
+
+# target to preprocess a source file
+ContextvarsModule.cpp.i:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/ContextvarsModule.cpp.i
+.PHONY : ContextvarsModule.cpp.i
+
+ContextvarsModule.s: ContextvarsModule.cpp.s
+.PHONY : ContextvarsModule.s
+
+# target to generate assembly for a file
+ContextvarsModule.cpp.s:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/ContextvarsModule.cpp.s
+.PHONY : ContextvarsModule.cpp.s
+
+ErrnoModule.o: ErrnoModule.cpp.o
+.PHONY : ErrnoModule.o
+
+# target to build an object file
+ErrnoModule.cpp.o:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/ErrnoModule.cpp.o
+.PHONY : ErrnoModule.cpp.o
+
+ErrnoModule.i: ErrnoModule.cpp.i
+.PHONY : ErrnoModule.i
+
+# target to preprocess a source file
+ErrnoModule.cpp.i:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/ErrnoModule.cpp.i
+.PHONY : ErrnoModule.cpp.i
+
+ErrnoModule.s: ErrnoModule.cpp.s
+.PHONY : ErrnoModule.s
+
+# target to generate assembly for a file
+ErrnoModule.cpp.s:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/ErrnoModule.cpp.s
+.PHONY : ErrnoModule.cpp.s
 
 ExceptionsModule.o: ExceptionsModule.cpp.o
 .PHONY : ExceptionsModule.o
@@ -444,6 +564,54 @@ FunctoolsModule.s: FunctoolsModule.cpp.s
 FunctoolsModule.cpp.s:
 	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/FunctoolsModule.cpp.s
 .PHONY : FunctoolsModule.cpp.s
+
+HPyContext.o: HPyContext.cpp.o
+.PHONY : HPyContext.o
+
+# target to build an object file
+HPyContext.cpp.o:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/HPyContext.cpp.o
+.PHONY : HPyContext.cpp.o
+
+HPyContext.i: HPyContext.cpp.i
+.PHONY : HPyContext.i
+
+# target to preprocess a source file
+HPyContext.cpp.i:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/HPyContext.cpp.i
+.PHONY : HPyContext.cpp.i
+
+HPyContext.s: HPyContext.cpp.s
+.PHONY : HPyContext.s
+
+# target to generate assembly for a file
+HPyContext.cpp.s:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/HPyContext.cpp.s
+.PHONY : HPyContext.cpp.s
+
+HPyModuleProvider.o: HPyModuleProvider.cpp.o
+.PHONY : HPyModuleProvider.o
+
+# target to build an object file
+HPyModuleProvider.cpp.o:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/HPyModuleProvider.cpp.o
+.PHONY : HPyModuleProvider.cpp.o
+
+HPyModuleProvider.i: HPyModuleProvider.cpp.i
+.PHONY : HPyModuleProvider.i
+
+# target to preprocess a source file
+HPyModuleProvider.cpp.i:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/HPyModuleProvider.cpp.i
+.PHONY : HPyModuleProvider.cpp.i
+
+HPyModuleProvider.s: HPyModuleProvider.cpp.s
+.PHONY : HPyModuleProvider.s
+
+# target to generate assembly for a file
+HPyModuleProvider.cpp.s:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/HPyModuleProvider.cpp.s
+.PHONY : HPyModuleProvider.cpp.s
 
 IOModule.o: IOModule.cpp.o
 .PHONY : IOModule.o
@@ -781,6 +949,78 @@ ReModule.cpp.s:
 	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/ReModule.cpp.s
 .PHONY : ReModule.cpp.s
 
+SignalModule.o: SignalModule.cpp.o
+.PHONY : SignalModule.o
+
+# target to build an object file
+SignalModule.cpp.o:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/SignalModule.cpp.o
+.PHONY : SignalModule.cpp.o
+
+SignalModule.i: SignalModule.cpp.i
+.PHONY : SignalModule.i
+
+# target to preprocess a source file
+SignalModule.cpp.i:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/SignalModule.cpp.i
+.PHONY : SignalModule.cpp.i
+
+SignalModule.s: SignalModule.cpp.s
+.PHONY : SignalModule.s
+
+# target to generate assembly for a file
+SignalModule.cpp.s:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/SignalModule.cpp.s
+.PHONY : SignalModule.cpp.s
+
+StatModule.o: StatModule.cpp.o
+.PHONY : StatModule.o
+
+# target to build an object file
+StatModule.cpp.o:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/StatModule.cpp.o
+.PHONY : StatModule.cpp.o
+
+StatModule.i: StatModule.cpp.i
+.PHONY : StatModule.i
+
+# target to preprocess a source file
+StatModule.cpp.i:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/StatModule.cpp.i
+.PHONY : StatModule.cpp.i
+
+StatModule.s: StatModule.cpp.s
+.PHONY : StatModule.s
+
+# target to generate assembly for a file
+StatModule.cpp.s:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/StatModule.cpp.s
+.PHONY : StatModule.cpp.s
+
+StructModule.o: StructModule.cpp.o
+.PHONY : StructModule.o
+
+# target to build an object file
+StructModule.cpp.o:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/StructModule.cpp.o
+.PHONY : StructModule.cpp.o
+
+StructModule.i: StructModule.cpp.i
+.PHONY : StructModule.i
+
+# target to preprocess a source file
+StructModule.cpp.i:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/StructModule.cpp.i
+.PHONY : StructModule.cpp.i
+
+StructModule.s: StructModule.cpp.s
+.PHONY : StructModule.s
+
+# target to generate assembly for a file
+StructModule.cpp.s:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/StructModule.cpp.s
+.PHONY : StructModule.cpp.s
+
 SysModule.o: SysModule.cpp.o
 .PHONY : SysModule.o
 
@@ -901,6 +1141,30 @@ Tokenizer.cpp.s:
 	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/Tokenizer.cpp.s
 .PHONY : Tokenizer.cpp.s
 
+WeakrefModule.o: WeakrefModule.cpp.o
+.PHONY : WeakrefModule.o
+
+# target to build an object file
+WeakrefModule.cpp.o:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/WeakrefModule.cpp.o
+.PHONY : WeakrefModule.cpp.o
+
+WeakrefModule.i: WeakrefModule.cpp.i
+.PHONY : WeakrefModule.i
+
+# target to preprocess a source file
+WeakrefModule.cpp.i:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/WeakrefModule.cpp.i
+.PHONY : WeakrefModule.cpp.i
+
+WeakrefModule.s: WeakrefModule.cpp.s
+.PHONY : WeakrefModule.s
+
+# target to generate assembly for a file
+WeakrefModule.cpp.s:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/WeakrefModule.cpp.s
+.PHONY : WeakrefModule.cpp.s
+
 # Help Target
 help:
 	@echo "The following are some of the valid targets for this Makefile:"
@@ -917,6 +1181,9 @@ help:
 	@echo "... rebuild_cache"
 	@echo "... test"
 	@echo "... protoPython"
+	@echo "... AstModule.o"
+	@echo "... AstModule.i"
+	@echo "... AstModule.s"
 	@echo "... AtexitModule.o"
 	@echo "... AtexitModule.i"
 	@echo "... AtexitModule.s"
@@ -929,15 +1196,27 @@ help:
 	@echo "... BytecodeLoader.o"
 	@echo "... BytecodeLoader.i"
 	@echo "... BytecodeLoader.s"
+	@echo "... CodecsModule.o"
+	@echo "... CodecsModule.i"
+	@echo "... CodecsModule.s"
 	@echo "... CollectionsAbcModule.o"
 	@echo "... CollectionsAbcModule.i"
 	@echo "... CollectionsAbcModule.s"
 	@echo "... CollectionsModule.o"
 	@echo "... CollectionsModule.i"
 	@echo "... CollectionsModule.s"
+	@echo "... CompiledModuleProvider.o"
+	@echo "... CompiledModuleProvider.i"
+	@echo "... CompiledModuleProvider.s"
 	@echo "... Compiler.o"
 	@echo "... Compiler.i"
 	@echo "... Compiler.s"
+	@echo "... ContextvarsModule.o"
+	@echo "... ContextvarsModule.i"
+	@echo "... ContextvarsModule.s"
+	@echo "... ErrnoModule.o"
+	@echo "... ErrnoModule.i"
+	@echo "... ErrnoModule.s"
 	@echo "... ExceptionsModule.o"
 	@echo "... ExceptionsModule.i"
 	@echo "... ExceptionsModule.s"
@@ -947,6 +1226,12 @@ help:
 	@echo "... FunctoolsModule.o"
 	@echo "... FunctoolsModule.i"
 	@echo "... FunctoolsModule.s"
+	@echo "... HPyContext.o"
+	@echo "... HPyContext.i"
+	@echo "... HPyContext.s"
+	@echo "... HPyModuleProvider.o"
+	@echo "... HPyModuleProvider.i"
+	@echo "... HPyModuleProvider.s"
 	@echo "... IOModule.o"
 	@echo "... IOModule.i"
 	@echo "... IOModule.s"
@@ -989,6 +1274,15 @@ help:
 	@echo "... ReModule.o"
 	@echo "... ReModule.i"
 	@echo "... ReModule.s"
+	@echo "... SignalModule.o"
+	@echo "... SignalModule.i"
+	@echo "... SignalModule.s"
+	@echo "... StatModule.o"
+	@echo "... StatModule.i"
+	@echo "... StatModule.s"
+	@echo "... StructModule.o"
+	@echo "... StructModule.i"
+	@echo "... StructModule.s"
 	@echo "... SysModule.o"
 	@echo "... SysModule.i"
 	@echo "... SysModule.s"
@@ -1004,6 +1298,9 @@ help:
 	@echo "... Tokenizer.o"
 	@echo "... Tokenizer.i"
 	@echo "... Tokenizer.s"
+	@echo "... WeakrefModule.o"
+	@echo "... WeakrefModule.i"
+	@echo "... WeakrefModule.s"
 .PHONY : help
 
 

@@ -120,6 +120,8 @@ public:
     const proto::ProtoObject* getMappingProxyPrototype() const { return mappingProxyPrototype; }
     /** @brief Gets the method prototype. */
     const proto::ProtoObject* getMethodPrototype() const { return methodPrototype; }
+    /** @brief Gets the getset_descriptor prototype. */
+    const proto::ProtoObject* getGetSetDescriptorPrototype() const { return getSetDescriptorPrototype; }
     
     /** @brief Gets the path to the standard library. */
     const std::string& getStdLibPath() const { return stdLibPath_; }
@@ -152,6 +154,7 @@ public:
     const proto::ProtoString* getIterString() const { return iterString; }
     const proto::ProtoString* getNextString() const { return nextString; }
     const proto::ProtoList* getEmptyList() const { return emptyList; }
+    const proto::ProtoSparseList* getEmptySparseList() const { return emptySparseList; }
 
     const proto::ProtoString* getRangeCurString() const { return rangeCurString; }
     const proto::ProtoString* getRangeStopString() const { return rangeStopString; }
@@ -202,8 +205,15 @@ public:
     const proto::ProtoString* getLeString() const { return py_le_s; }
     const proto::ProtoString* getGtString() const { return py_gt_s; }
     const proto::ProtoString* getGeString() const { return py_ge_s; }
+    const proto::ProtoString* getPathS() const { return pathS; }
+    const proto::ProtoString* getPathDunderS() const { return pathDunderS; }
+    const proto::ProtoString* getFileDunderS() const { return fileDunderS; }
+    const proto::ProtoString* getModulesS() const { return modulesS; }
 
     const proto::ProtoObject* getAttribute(proto::ProtoContext* ctx, const proto::ProtoObject* obj, const proto::ProtoString* name);
+
+    const proto::ProtoObject* getType(proto::ProtoContext* ctx, const proto::ProtoObject* obj);
+
     const proto::ProtoObject* setAttribute(proto::ProtoContext* ctx, const proto::ProtoObject* obj, const proto::ProtoString* name, const proto::ProtoObject* value);
 
     const proto::ProtoObject* compareObjects(proto::ProtoContext* ctx, const proto::ProtoObject* a, const proto::ProtoObject* b, int op);
@@ -654,9 +664,15 @@ private:
     const proto::ProtoObject* modulePrototype;
     const proto::ProtoObject* mappingProxyPrototype;
     const proto::ProtoObject* methodPrototype;
+    const proto::ProtoObject* unionTypePrototype;
     const proto::ProtoObject* tracebackPrototype;
     const proto::ProtoObject* cellPrototype;
     const proto::ProtoObject* codePrototype;
+    const proto::ProtoObject* getSetDescriptorPrototype;
+    
+public:
+    const proto::ProtoObject* getUnionTypePrototype() const { return unionTypePrototype; }
+private:
     const proto::ProtoObject* sysModule;
     const proto::ProtoObject* builtinsModule;
     std::string stdLibPath_;
@@ -676,6 +692,7 @@ private:
     const proto::ProtoObject* typeErrorType{nullptr};
     const proto::ProtoObject* runtimeErrorType{nullptr};
     const proto::ProtoObject* importErrorType{nullptr};
+    const proto::ProtoObject* baseExceptionType{nullptr};
     const proto::ProtoObject* keyboardInterruptType{nullptr};
     const proto::ProtoObject* systemExitType{nullptr};
     const proto::ProtoObject* recursionErrorType{nullptr};
@@ -686,10 +703,22 @@ private:
     const proto::ProtoObject* indexErrorType{nullptr};
     const proto::ProtoObject* systemErrorType{nullptr};
     const proto::ProtoObject* stopAsyncIterationType{nullptr};
+    const proto::ProtoObject* osErrorType{nullptr};
+    const proto::ProtoObject* blockingIOErrorType{nullptr};
+    const proto::ProtoObject* warningType{nullptr};
+    const proto::ProtoObject* userWarningType{nullptr};
+    const proto::ProtoObject* deprecationWarningType{nullptr};
+    const proto::ProtoObject* runtimeWarningType{nullptr};
+    const proto::ProtoObject* pendingDeprecationWarningType{nullptr};
+    const proto::ProtoObject* importWarningType{nullptr};
+    const proto::ProtoObject* bytesWarningType{nullptr};
+    const proto::ProtoObject* resourceWarningType{nullptr};
+    const proto::ProtoObject* encodingWarningType{nullptr};
     const proto::ProtoList* taskQueue{nullptr};
     const proto::ProtoString* iterString{nullptr};
     const proto::ProtoString* nextString{nullptr};
     const proto::ProtoList* emptyList{nullptr};
+    const proto::ProtoSparseList* emptySparseList{nullptr};
     int recursionLimit_{1000};
 
     const proto::ProtoString* rangeCurString{nullptr};
@@ -724,11 +753,15 @@ private:
     const proto::ProtoString* syntaxErrorS{nullptr};
     const proto::ProtoString* importErrorS{nullptr};
     const proto::ProtoString* indexErrorS{nullptr};
+    const proto::ProtoString* osErrorS{nullptr};
+    const proto::ProtoString* blockingIOErrorS{nullptr};
 
     const proto::ProtoString* classString{nullptr};
     const proto::ProtoString* nameString{nullptr};
     const proto::ProtoString* callString{nullptr};
     const proto::ProtoString* getItemString{nullptr};
+    const proto::ProtoString* pathS{nullptr};
+    const proto::ProtoString* modulesS{nullptr};
 
     const proto::ProtoString* lenString{nullptr};
     const proto::ProtoString* boolString{nullptr};
@@ -853,6 +886,8 @@ private:
     const proto::ProtoObject* zeroInteger{nullptr};
     const proto::ProtoObject* oneInteger{nullptr};
 
+    const proto::ProtoString* fileDunderS{nullptr};
+    const proto::ProtoString* pathDunderS{nullptr};
     const proto::ProtoString* listS{nullptr};
     const proto::ProtoString* dictS{nullptr};
     const proto::ProtoString* tupleS{nullptr};

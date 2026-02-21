@@ -418,7 +418,9 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
     return result;
 }
 
-static const proto::ProtoObject* runBoundMethodCall(proto::ProtoContext* ctx,
+} // namespace
+
+const proto::ProtoObject* runBoundMethodCall(proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink* /*parentLink*/,
     const proto::ProtoList* args,
@@ -446,6 +448,7 @@ static const proto::ProtoObject* runBoundMethodCall(proto::ProtoContext* ctx,
     return invokePythonCallable(ctx, im_func, newArgs, kwargs);
 }
 
+namespace {
 static const proto::ProtoObject* py_function_get(proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
     const proto::ParentLink* /*parentLink*/,
@@ -458,10 +461,10 @@ static const proto::ProtoObject* py_function_get(proto::ProtoContext* ctx,
 
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
 
-    // V70: Implement bound methods
     const proto::ProtoObject* bound = ctx->newObject(true);
     if (env && env->getMethodPrototype()) {
         bound = bound->addParent(ctx, env->getMethodPrototype());
+        bound = bound->setAttribute(ctx, env->getClassString(), env->getMethodPrototype());
     }
     
     // Set __self__ (the instance)
@@ -863,20 +866,44 @@ static const proto::ProtoObject* compareOp(proto::ProtoContext* ctx,
 }
 
 static bool isTruthy(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
-    bool res = false;
-    if (!obj || obj == PROTO_NONE) res = false;
-    else if (obj == PROTO_FALSE) res = false;
-    else if (obj == PROTO_TRUE) res = true;
-    else {
-        PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-        if (env && obj == env->getNonePrototype()) res = false;
-        else if (obj->isInteger(ctx)) res = (obj->asLong(ctx) != 0);
-        else if (obj->isDouble(ctx)) res = (obj->asDouble(ctx) != 0.0);
-        else if (obj->isString(ctx)) res = (obj->asString(ctx)->getSize(ctx) > 0);
-        else res = true;
+    if (!obj || obj == PROTO_NONE) return false;
+    if (obj == PROTO_FALSE) return false;
+    if (obj == PROTO_TRUE) return true;
+    
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (env && obj == env->getNonePrototype()) return false;
+    
+    if (obj->isInteger(ctx)) return (obj->asLong(ctx) != 0);
+    if (obj->isDouble(ctx)) return (obj->asDouble(ctx) != 0.0);
+    if (obj->isString(ctx)) return (obj->asString(ctx)->getSize(ctx) > 0);
+    
+    // Evaluate __bool__ method
+    const proto::ProtoString* boolS = env ? env->getBoolString() : proto::ProtoString::fromUTF8String(ctx, "__bool__");
+    const proto::ProtoObject* cls = env ? env->getType(ctx, obj) : obj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__class__"));
+    const proto::ProtoObject* boolMethod = cls ? cls->getAttribute(ctx, boolS) : obj->getAttribute(ctx, boolS);
+    if (boolMethod && boolMethod->asMethod(ctx)) {
+        const proto::ProtoList* emptyL = env ? env->getEmptyList() : ctx->newList();
+        const proto::ProtoObject* result = boolMethod->asMethod(ctx)(ctx, obj, nullptr, emptyL, nullptr);
+        if (result == PROTO_FALSE) return false;
+        if (result == PROTO_TRUE) return true;
+        
+        // If it doesn't return exactly True or False, try to convert result to bool or check its truthiness
+        // This is simplified but matching py_bool logic
+        return isTruthy(ctx, result); 
     }
     
-    return res;
+    // Evaluate __len__ method fallback
+    const proto::ProtoString* lenS = env ? env->getLenString() : proto::ProtoString::fromUTF8String(ctx, "__len__");
+    const proto::ProtoObject* lenMethod = cls ? cls->getAttribute(ctx, lenS) : obj->getAttribute(ctx, lenS);
+    if (lenMethod && lenMethod->asMethod(ctx)) {
+        const proto::ProtoList* emptyL = env ? env->getEmptyList() : ctx->newList();
+        const proto::ProtoObject* result = lenMethod->asMethod(ctx)(ctx, obj, nullptr, emptyL, nullptr);
+        if (result && result->isInteger(ctx)) {
+            return (result->asLong(ctx) > 0);
+        }
+    }
+    
+    return true;
 }
 
 struct RecursionScope {
@@ -1196,6 +1223,16 @@ const proto::ProtoObject* py_generator_send_impl(
         newBlocks = newBlocks->appendLast(ctx, bTup);
     }
     self->setAttribute(ctx, env->getGiBlocksString(), newBlocks->asObject(ctx));
+
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        fprintf(stderr, "DEBUG: py_generator_send_impl finished. yielded=%d, result=%p, hasPendingException=%d\n", 
+                (int)yielded, (void*)result, (int)env->hasPendingException());
+        if (env->hasPendingException()) {
+             const proto::ProtoObject* exc = env->peekPendingException();
+             fprintf(stderr, "DEBUG: py_generator_send_impl pending exception: %p\n", (void*)exc);
+        }
+        fflush(stderr);
+    }
 
     if (!yielded && !env->hasPendingException()) {
         env->raiseStopIteration(ctx, result);
@@ -1525,14 +1562,14 @@ const proto::ProtoObject* executeBytecodeRange(
         {
              const proto::ProtoObject* opObj = bytecode->getAt(ctx, i);
              int op = static_cast<int>(opObj->asLong(ctx));
-             fprintf(stderr, "DEBUG: [PC %lu] OP %d\n", i, op);
-            fflush(stderr);
-             fflush(stderr);
+             if (std::getenv("PROTO_ENV_DIAG")) {
+                 fprintf(stderr, "DEBUG: [PC %lu] OP %d\n", i, op);
+                 fflush(stderr);
+             }
         }
         if (env && env->hasPendingException()) {
             const proto::ProtoObject* exc = env->peekPendingException();
             if (exc) {
-                fprintf(stderr, "DEBUG: Exception handling start exc=%p\n", exc);
             fflush(stderr);
                 fflush(stderr);
                 
@@ -1551,52 +1588,62 @@ const proto::ProtoObject* executeBytecodeRange(
 
                 updateContextLocation(ctx, frame, i);
                 
-                fprintf(stderr, "DEBUG: Exception %s at %s:%d (PC %lu)\n", 
-                        excName.c_str(), 
-                        ctx->currentFileName ? ctx->currentFileName : "unknown", 
-                        ctx->currentLineNumber, 
-                        i);
-                if (!excMsg.empty()) fprintf(stderr, "DEBUG: Exception message: %s\n", excMsg.c_str());
+                if (get_env_diag()) {
+                    fprintf(stderr, "DEBUG: Exception %s at %s:%d (PC %lu)\n", 
+                            excName.c_str(), 
+                            ctx->currentFileName ? ctx->currentFileName : "unknown", 
+                            ctx->currentLineNumber, 
+                            i);
+                    fprintf(stderr, "DEBUG: Exception message: '%s'\n", excMsg.c_str());
+                    fprintf(stderr, "DEBUG: raw exception pointer %p\n", exc);
+                    fflush(stderr);
+                }
+            }
+            
+            if (get_env_diag()) {
+                fprintf(stderr, "DEBUG: Calling addTraceback...\n");
+                fflush(stderr);
+            }
+            env->addTraceback(exc, frame, static_cast<int>(i), ctx->currentLineNumber);
+            if (get_env_diag()) {
+                fprintf(stderr, "DEBUG: addTraceback returned. blockStack.empty()=%s\n", blockStack.empty() ? "true" : "false");
                 fflush(stderr);
             }
             
-            fprintf(stderr, "DEBUG: Calling addTraceback...\n");
-            fflush(stderr);
-            fflush(stderr);
-            env->addTraceback(exc, frame, static_cast<int>(i), ctx->currentLineNumber);
-            fprintf(stderr, "DEBUG: addTraceback returned. blockStack.empty()=%s\n", blockStack.empty() ? "true" : "false");
-            fflush(stderr);
-            fflush(stderr);
-            
             if (!blockStack.empty()) {
                 Block b = blockStack.back();
-                fprintf(stderr, "DEBUG: Popping block: handlerPc=%lu stackDepth=%zu\n", b.handlerPc, b.stackDepth);
-            fflush(stderr);
-                fflush(stderr);
+                if (get_env_diag()) {
+                    fprintf(stderr, "DEBUG: Popping block: handlerPc=%lu stackDepth=%zu\n", b.handlerPc, b.stackDepth);
+                    fflush(stderr);
+                }
                 blockStack.pop_back();
 
                 env->clearPendingException();
 
-                fprintf(stderr, "DEBUG: Cleaning stack: current size=%zu, target size=%zu\n", stack.size(), b.stackDepth);
-            fflush(stderr);
-                fflush(stderr);
+                if (get_env_diag()) {
+                    fprintf(stderr, "DEBUG: Cleaning stack: current size=%zu, target size=%zu\n", stack.size(), b.stackDepth);
+                    fflush(stderr);
+                }
                 while (stack.size() > b.stackDepth) stack.pop_back();
                 if (exc) {
-                    fprintf(stderr, "DEBUG: Pushing exception %p back to stack\n", exc);
-            fflush(stderr);
-                    fflush(stderr);
+                    if (get_env_diag()) {
+                        fprintf(stderr, "DEBUG: Pushing exception %p back to stack\n", exc);
+                        fflush(stderr);
+                    }
                     stack.push_back(exc);
                 }
 
-                fprintf(stderr, "DEBUG: Jumping to handlerPc=%lu\n", b.handlerPc);
-            fflush(stderr);
-                fflush(stderr);
+                if (get_env_diag()) {
+                    fprintf(stderr, "DEBUG: Jumping to handlerPc=%lu\n", b.handlerPc);
+                    fflush(stderr);
+                }
                 i = b.handlerPc;
                 continue;
             }
-            fprintf(stderr, "DEBUG: No trap found, returning nullptr\n");
-            fflush(stderr);
-            fflush(stderr);
+            if (get_env_diag()) {
+                fprintf(stderr, "DEBUG: No trap found, returning nullptr\n");
+                fflush(stderr);
+            }
             return nullptr;
         }
         
@@ -1753,11 +1800,14 @@ const proto::ProtoObject* executeBytecodeRange(
                         if (r) {
                             if (nStr == "_splitext") {
                                 fprintf(stderr, "DEBUG: OP_LOAD_NAME(_splitext) resolved: val %p\n", (void*)r);
-            fflush(stderr);
+                                fflush(stderr);
+                            }
+                            if (nStr == "len") {
+                                fprintf(stderr, "DEBUG: OP_LOAD_NAME(len) resolved: r=%p (PROTO_NONE is %p)\n", (void*)r, (void*)PROTO_NONE);
+                                fflush(stderr);
                             }
                             stack.push_back(r);
-                        }
- else {
+                        } else {
                             if (!env->hasPendingException()) env->raiseNameError(ctx, nStr);
                             continue;
                         }
@@ -1820,7 +1870,9 @@ const proto::ProtoObject* executeBytecodeRange(
             if (arg >= 0 && static_cast<unsigned long>(arg) < nSlots) {
                 const proto::ProtoObject** slots = ctx->getAutomaticLocals();
                 const proto::ProtoObject* val = slots[arg];
-                if (std::getenv("PROTO_ENV_DIAG")) {
+                if (std::getenv("PROTO_ENV_DIAG") && arg == 0) {
+                     fprintf(stderr, "DEBUG: LOAD_FAST 0 loaded: %p\n", (void*)val);
+                     fflush(stderr);
                 }
                 stack.push_back(val ? val : (env ? env->getNonePrototype() : PROTO_NONE));
             } else {
@@ -2849,12 +2901,34 @@ const proto::ProtoObject* executeBytecodeRange(
                     
                     if (attrNameStr.empty()) attrName->toUTF8String(ctx, attrNameStr);
                     if (attrNameStr == "__new__") {
-                        fprintf(stderr, "DEBUG: OP_LOAD_ATTR '__new__' env=%p obj=%p\n", (void*)env, (void*)obj);
+                        if (get_env_diag()) fprintf(stderr, "DEBUG: OP_LOAD_ATTR '__new__' env=%p obj=%p\n", (void*)env, (void*)obj);
                     }
 
                     const proto::ProtoObject* val = env ? env->getAttribute(ctx, obj, attrName) : obj->getAttribute(ctx, attrName);
-                    if (val) {
-                        stack.back() = val; // Replace obj with result
+                    
+                    bool isMissing = false;
+                    if (!val) {
+                        if (env && env->hasPendingException()) {
+                            stack.pop_back(); // Pop obj
+                            continue; // Exception already set by __getattr__ or descriptor
+                        }
+                        isMissing = true;
+                    } else if (val == PROTO_NONE) {
+                        if (obj->hasAttribute(ctx, attrName) == PROTO_FALSE) {
+                            const proto::ProtoString* getattrS = proto::ProtoString::fromUTF8String(ctx, "__getattr__");
+                            const proto::ProtoObject* cls = obj->getAttribute(ctx, env ? env->getClassString() : proto::ProtoString::fromUTF8String(ctx, "__class__"));
+                            bool hasGetattr = false;
+                            if (cls && cls != PROTO_NONE && cls->hasAttribute(ctx, getattrS) == PROTO_TRUE) {
+                                hasGetattr = true;
+                            } else if (obj->hasOwnAttribute(ctx, getattrS) == PROTO_TRUE) {
+                                hasGetattr = true;
+                            }
+                            if (!hasGetattr) isMissing = true;
+                        }
+                    }
+
+                    if (!isMissing) {
+                        stack.back() = val ? val : PROTO_NONE; // Replace obj with result
                     } else {
                         stack.pop_back(); // Pop obj before raising error
                         std::string attr;
@@ -3362,7 +3436,7 @@ const proto::ProtoObject* executeBytecodeRange(
                     // Try to find metaclass in bases
                     if (bases && bases->asTuple(ctx) && bases->asTuple(ctx)->getSize(ctx) > 0) {
                         const proto::ProtoObject* firstBase = bases->asTuple(ctx)->getAt(ctx, 0);
-                        metaclass = firstBase->getAttribute(ctx, env->getClassString());
+                        metaclass = env ? env->getType(ctx, firstBase) : firstBase->getAttribute(ctx, env->getClassString());
                     }
                 }
                 if (!metaclass || metaclass == PROTO_NONE) {
@@ -3372,7 +3446,27 @@ const proto::ProtoObject* executeBytecodeRange(
                 }
 
                 // 2. Metaclass __prepare__
-                const proto::ProtoObject* prepareM = metaclass ? metaclass->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__prepare__")) : nullptr;
+                if (get_env_diag()) fprintf(stderr, "DEBUG OP_BUILD_CLASS: metaclass=%p (PROTO_NONE=%p)\n", (void*)metaclass, (void*)PROTO_NONE);
+                if (metaclass) {
+                    const proto::ProtoObject* mcName = metaclass->getAttribute(ctx, env ? env->getNameString() : getInternalString(ctx, "__name__"));
+                    if (mcName && mcName->isString(ctx)) {
+                        std::string mn; mcName->asString(ctx)->toUTF8String(ctx, mn);
+                        if (get_env_diag()) fprintf(stderr, "DEBUG OP_BUILD_CLASS: metaclass name='%s'\n", mn.c_str());
+                    }
+                }
+                const proto::ProtoObject* prepareRaw = nullptr;
+                if (metaclass) {
+                    prepareRaw = env ? env->getAttribute(ctx, metaclass, proto::ProtoString::fromUTF8String(ctx, "__prepare__")) : metaclass->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__prepare__"));
+                }
+                const proto::ProtoObject* prepareM = prepareRaw;
+                if (prepareRaw && prepareRaw != PROTO_NONE) {
+                    // Manually resolve descriptor if it has __get__ (since it might be an instance attribute on the class, escaping typical getAttribute descriptor logic)
+                    const proto::ProtoObject* getMethod = prepareRaw->getAttribute(ctx, env ? env->getGetDunderString() : proto::ProtoString::fromUTF8String(ctx, "__get__"));
+                    if (getMethod && getMethod != PROTO_NONE) {
+                        const proto::ProtoList* getArgs = ctx->newList()->appendLast(ctx, env ? env->getNonePrototype() : PROTO_NONE)->appendLast(ctx, metaclass);
+                        prepareM = invokeCallable(ctx, getMethod, getArgs, nullptr);
+                    }
+                }
                 if (prepareM && prepareM != PROTO_NONE) {
                     const proto::ProtoList* prepareArgs = ctx->newList()->appendLast(ctx, name)->appendLast(ctx, bases);
                     // Use keyword parameters if available
@@ -3426,6 +3520,7 @@ const proto::ProtoObject* executeBytecodeRange(
                     const proto::ProtoObject* codeObj = body->getAttribute(ctx, env ? env->getCodeString() : proto::ProtoString::fromUTF8String(ctx, "__code__"));
                     if (codeObj && codeObj != PROTO_NONE) {
                         runCodeObject(ctx, codeObj, ns);
+                        stack.back() = ns; // ns may have been reallocated by CoW during execution
                     } else {
                         const proto::ProtoObject* callM = body->getAttribute(ctx, callS);
                         if (callM && callM->asMethod(ctx)) {
@@ -3440,7 +3535,9 @@ const proto::ProtoObject* executeBytecodeRange(
                 // 4. Invoke metaclass to create the class
                 const proto::ProtoList* mcArgs = ctx->newList()->appendLast(ctx, name)->appendLast(ctx, bases)->appendLast(ctx, ns);
                 const proto::ProtoSparseList* kw = (kwds && kwds->asSparseList(ctx)) ? kwds->asSparseList(ctx) : nullptr;
+                if (get_env_diag()) fprintf(stderr, "DEBUG OP_BUILD_CLASS: calling metaclass=%p\n", (void*)metaclass);
                 const proto::ProtoObject* targetClass = invokeCallable(ctx, metaclass, mcArgs, kw);
+                if (get_env_diag()) fprintf(stderr, "DEBUG OP_BUILD_CLASS: targetClass=%p\n", (void*)targetClass);
                 
                 if (targetClass && targetClass != PROTO_NONE) {
                     // Inject __class__ into the class namespace (frame) so methods can interpret it 
@@ -3466,10 +3563,13 @@ const proto::ProtoObject* executeBytecodeRange(
             if (stack.empty()) continue;
             const proto::ProtoObject* iterable = stack.back();
             PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-            const proto::ProtoObject* it = env ? env->iter(iterable) : nullptr;
-            
-            if (it) {
-                stack.back() = it;
+            const proto::ProtoObject* iterObj = env ? env->iter(iterable) : nullptr;
+            if (std::getenv("PROTO_ENV_DIAG")) {
+                fprintf(stderr, "DEBUG: OP_GET_ITER iterable=%p iterObj=%p\n", (void*)iterable, (void*)iterObj);
+                fflush(stderr);
+            }
+            if (iterObj) {
+                stack.back() = iterObj;
             } else {
                 if (env && env->hasPendingException()) {
                     continue;
@@ -3490,13 +3590,23 @@ const proto::ProtoObject* executeBytecodeRange(
                 stack.push_back(val);
             } else {
                 if (env && env->hasPendingException()) {
-                    continue;
-                }
-                // exhaustion
-                stack.pop_back();
-                if (arg >= 0 && static_cast<unsigned long>(arg) < n) {
-                    i = static_cast<unsigned long>(arg);
-                    continue;
+                    if (env->isStopIteration(ctx, env->peekPendingException())) {
+                        env->clearPendingException();
+                        stack.pop_back();
+                        if (arg >= 0 && static_cast<unsigned long>(arg) < n) {
+                            i = static_cast<unsigned long>(arg);
+                            continue;
+                        }
+                    } else {
+                        continue;
+                    }
+                } else {
+                    // exhaustion
+                    stack.pop_back();
+                    if (arg >= 0 && static_cast<unsigned long>(arg) < n) {
+                        i = static_cast<unsigned long>(arg);
+                        continue;
+                    }
                 }
                 continue;
             }

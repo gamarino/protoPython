@@ -37,6 +37,7 @@ add_library(protoPython SHARED
     AstModule.cpp
     ErrnoModule.cpp
     StatModule.cpp
+    StructModule.cpp
 )
 
 target_include_directories(protoPython PUBLIC

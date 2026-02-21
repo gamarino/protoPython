@@ -373,13 +373,8 @@ static const proto::ProtoObject* py_deque_new(
 }
 
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx, protoPython::PythonEnvironment* env) {
-    const proto::ProtoObject* module = ctx->newObject(true);
-    const proto::ProtoObject* dequePrototype = ctx->newObject(true);
-    
-    if (env && env->getObjectPrototype()) {
-        module = module->addParent(ctx, env->getObjectPrototype());
-        dequePrototype = dequePrototype->addParent(ctx, env->getObjectPrototype());
-    }
+    const proto::ProtoObject* module = env && env->getObjectPrototype() ? env->getObjectPrototype()->newChild(ctx, true) : ctx->newObject(true);
+    const proto::ProtoObject* dequePrototype = env && env->getObjectPrototype() ? env->getObjectPrototype()->newChild(ctx, true) : ctx->newObject(true);
     
     if (env && env->getTypePrototype()) {
         dequePrototype = dequePrototype->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__class__"), env->getTypePrototype());
@@ -410,10 +405,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, protoPython::Pyth
     module = module->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "deque"), dequePrototype);
 
     const proto::ProtoString* py_getitem = proto::ProtoString::fromUTF8String(ctx, "__getitem__");
-    const proto::ProtoObject* defaultdictPrototype = ctx->newObject(true);
-    if (env && env->getDictPrototype()) {
-        defaultdictPrototype = defaultdictPrototype->addParent(ctx, env->getDictPrototype());
-    }
+    const proto::ProtoObject* defaultdictPrototype = env && env->getDictPrototype() ? env->getDictPrototype()->newChild(ctx, true) : ctx->newObject(true);
     if (env && env->getTypePrototype()) {
         defaultdictPrototype = defaultdictPrototype->setAttribute(ctx, py_getitem,
             ctx->fromMethod(nullptr, py_defaultdict_getitem));

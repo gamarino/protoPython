@@ -125,24 +125,10 @@ protoCore/CMakeFiles/protoCore.dir/core/ParentLink.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/protoCore.dir/core/ParentLink.cpp.s"
 	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/protoCore && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/gamarino/Documentos/proyectos/protoCore/core/ParentLink.cpp -o CMakeFiles/protoCore.dir/core/ParentLink.cpp.s
 
-protoCore/CMakeFiles/protoCore.dir/core/Proto.cpp.o: protoCore/CMakeFiles/protoCore.dir/flags.make
-protoCore/CMakeFiles/protoCore.dir/core/Proto.cpp.o: /home/gamarino/Documentos/proyectos/protoCore/core/Proto.cpp
-protoCore/CMakeFiles/protoCore.dir/core/Proto.cpp.o: protoCore/CMakeFiles/protoCore.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/CMakeFiles --progress-num=$(CMAKE_PROGRESS_5) "Building CXX object protoCore/CMakeFiles/protoCore.dir/core/Proto.cpp.o"
-	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/protoCore && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT protoCore/CMakeFiles/protoCore.dir/core/Proto.cpp.o -MF CMakeFiles/protoCore.dir/core/Proto.cpp.o.d -o CMakeFiles/protoCore.dir/core/Proto.cpp.o -c /home/gamarino/Documentos/proyectos/protoCore/core/Proto.cpp
-
-protoCore/CMakeFiles/protoCore.dir/core/Proto.cpp.i: cmake_force
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/protoCore.dir/core/Proto.cpp.i"
-	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/protoCore && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/gamarino/Documentos/proyectos/protoCore/core/Proto.cpp > CMakeFiles/protoCore.dir/core/Proto.cpp.i
-
-protoCore/CMakeFiles/protoCore.dir/core/Proto.cpp.s: cmake_force
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/protoCore.dir/core/Proto.cpp.s"
-	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/protoCore && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/gamarino/Documentos/proyectos/protoCore/core/Proto.cpp -o CMakeFiles/protoCore.dir/core/Proto.cpp.s
-
 protoCore/CMakeFiles/protoCore.dir/core/ProtoByteBuffer.cpp.o: protoCore/CMakeFiles/protoCore.dir/flags.make
 protoCore/CMakeFiles/protoCore.dir/core/ProtoByteBuffer.cpp.o: /home/gamarino/Documentos/proyectos/protoCore/core/ProtoByteBuffer.cpp
 protoCore/CMakeFiles/protoCore.dir/core/ProtoByteBuffer.cpp.o: protoCore/CMakeFiles/protoCore.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/CMakeFiles --progress-num=$(CMAKE_PROGRESS_6) "Building CXX object protoCore/CMakeFiles/protoCore.dir/core/ProtoByteBuffer.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/CMakeFiles --progress-num=$(CMAKE_PROGRESS_5) "Building CXX object protoCore/CMakeFiles/protoCore.dir/core/ProtoByteBuffer.cpp.o"
 	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/protoCore && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT protoCore/CMakeFiles/protoCore.dir/core/ProtoByteBuffer.cpp.o -MF CMakeFiles/protoCore.dir/core/ProtoByteBuffer.cpp.o.d -o CMakeFiles/protoCore.dir/core/ProtoByteBuffer.cpp.o -c /home/gamarino/Documentos/proyectos/protoCore/core/ProtoByteBuffer.cpp
 
 protoCore/CMakeFiles/protoCore.dir/core/ProtoByteBuffer.cpp.i: cmake_force
@@ -156,7 +142,7 @@ protoCore/CMakeFiles/protoCore.dir/core/ProtoByteBuffer.cpp.s: cmake_force
 protoCore/CMakeFiles/protoCore.dir/core/ProtoContext.cpp.o: protoCore/CMakeFiles/protoCore.dir/flags.make
 protoCore/CMakeFiles/protoCore.dir/core/ProtoContext.cpp.o: /home/gamarino/Documentos/proyectos/protoCore/core/ProtoContext.cpp
 protoCore/CMakeFiles/protoCore.dir/core/ProtoContext.cpp.o: protoCore/CMakeFiles/protoCore.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/CMakeFiles --progress-num=$(CMAKE_PROGRESS_7) "Building CXX object protoCore/CMakeFiles/protoCore.dir/core/ProtoContext.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/CMakeFiles --progress-num=$(CMAKE_PROGRESS_6) "Building CXX object protoCore/CMakeFiles/protoCore.dir/core/ProtoContext.cpp.o"
 	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/protoCore && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT protoCore/CMakeFiles/protoCore.dir/core/ProtoContext.cpp.o -MF CMakeFiles/protoCore.dir/core/ProtoContext.cpp.o.d -o CMakeFiles/protoCore.dir/core/ProtoContext.cpp.o -c /home/gamarino/Documentos/proyectos/protoCore/core/ProtoContext.cpp
 
 protoCore/CMakeFiles/protoCore.dir/core/ProtoContext.cpp.i: cmake_force
@@ -170,7 +156,7 @@ protoCore/CMakeFiles/protoCore.dir/core/ProtoContext.cpp.s: cmake_force
 protoCore/CMakeFiles/protoCore.dir/core/ProtoList.cpp.o: protoCore/CMakeFiles/protoCore.dir/flags.make
 protoCore/CMakeFiles/protoCore.dir/core/ProtoList.cpp.o: /home/gamarino/Documentos/proyectos/protoCore/core/ProtoList.cpp
 protoCore/CMakeFiles/protoCore.dir/core/ProtoList.cpp.o: protoCore/CMakeFiles/protoCore.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/CMakeFiles --progress-num=$(CMAKE_PROGRESS_8) "Building CXX object protoCore/CMakeFiles/protoCore.dir/core/ProtoList.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/CMakeFiles --progress-num=$(CMAKE_PROGRESS_7) "Building CXX object protoCore/CMakeFiles/protoCore.dir/core/ProtoList.cpp.o"
 	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/protoCore && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT protoCore/CMakeFiles/protoCore.dir/core/ProtoList.cpp.o -MF CMakeFiles/protoCore.dir/core/ProtoList.cpp.o.d -o CMakeFiles/protoCore.dir/core/ProtoList.cpp.o -c /home/gamarino/Documentos/proyectos/protoCore/core/ProtoList.cpp
 
 protoCore/CMakeFiles/protoCore.dir/core/ProtoList.cpp.i: cmake_force
@@ -184,7 +170,7 @@ protoCore/CMakeFiles/protoCore.dir/core/ProtoList.cpp.s: cmake_force
 protoCore/CMakeFiles/protoCore.dir/core/ModuleCache.cpp.o: protoCore/CMakeFiles/protoCore.dir/flags.make
 protoCore/CMakeFiles/protoCore.dir/core/ModuleCache.cpp.o: /home/gamarino/Documentos/proyectos/protoCore/core/ModuleCache.cpp
 protoCore/CMakeFiles/protoCore.dir/core/ModuleCache.cpp.o: protoCore/CMakeFiles/protoCore.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/CMakeFiles --progress-num=$(CMAKE_PROGRESS_9) "Building CXX object protoCore/CMakeFiles/protoCore.dir/core/ModuleCache.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/CMakeFiles --progress-num=$(CMAKE_PROGRESS_8) "Building CXX object protoCore/CMakeFiles/protoCore.dir/core/ModuleCache.cpp.o"
 	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/protoCore && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT protoCore/CMakeFiles/protoCore.dir/core/ModuleCache.cpp.o -MF CMakeFiles/protoCore.dir/core/ModuleCache.cpp.o.d -o CMakeFiles/protoCore.dir/core/ModuleCache.cpp.o -c /home/gamarino/Documentos/proyectos/protoCore/core/ModuleCache.cpp
 
 protoCore/CMakeFiles/protoCore.dir/core/ModuleCache.cpp.i: cmake_force
@@ -198,7 +184,7 @@ protoCore/CMakeFiles/protoCore.dir/core/ModuleCache.cpp.s: cmake_force
 protoCore/CMakeFiles/protoCore.dir/core/ModuleProvider.cpp.o: protoCore/CMakeFiles/protoCore.dir/flags.make
 protoCore/CMakeFiles/protoCore.dir/core/ModuleProvider.cpp.o: /home/gamarino/Documentos/proyectos/protoCore/core/ModuleProvider.cpp
 protoCore/CMakeFiles/protoCore.dir/core/ModuleProvider.cpp.o: protoCore/CMakeFiles/protoCore.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/CMakeFiles --progress-num=$(CMAKE_PROGRESS_10) "Building CXX object protoCore/CMakeFiles/protoCore.dir/core/ModuleProvider.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/CMakeFiles --progress-num=$(CMAKE_PROGRESS_9) "Building CXX object protoCore/CMakeFiles/protoCore.dir/core/ModuleProvider.cpp.o"
 	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/protoCore && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT protoCore/CMakeFiles/protoCore.dir/core/ModuleProvider.cpp.o -MF CMakeFiles/protoCore.dir/core/ModuleProvider.cpp.o.d -o CMakeFiles/protoCore.dir/core/ModuleProvider.cpp.o -c /home/gamarino/Documentos/proyectos/protoCore/core/ModuleProvider.cpp
 
 protoCore/CMakeFiles/protoCore.dir/core/ModuleProvider.cpp.i: cmake_force
@@ -212,7 +198,7 @@ protoCore/CMakeFiles/protoCore.dir/core/ModuleProvider.cpp.s: cmake_force
 protoCore/CMakeFiles/protoCore.dir/core/ModuleResolver.cpp.o: protoCore/CMakeFiles/protoCore.dir/flags.make
 protoCore/CMakeFiles/protoCore.dir/core/ModuleResolver.cpp.o: /home/gamarino/Documentos/proyectos/protoCore/core/ModuleResolver.cpp
 protoCore/CMakeFiles/protoCore.dir/core/ModuleResolver.cpp.o: protoCore/CMakeFiles/protoCore.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/CMakeFiles --progress-num=$(CMAKE_PROGRESS_11) "Building CXX object protoCore/CMakeFiles/protoCore.dir/core/ModuleResolver.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/CMakeFiles --progress-num=$(CMAKE_PROGRESS_10) "Building CXX object protoCore/CMakeFiles/protoCore.dir/core/ModuleResolver.cpp.o"
 	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/protoCore && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT protoCore/CMakeFiles/protoCore.dir/core/ModuleResolver.cpp.o -MF CMakeFiles/protoCore.dir/core/ModuleResolver.cpp.o.d -o CMakeFiles/protoCore.dir/core/ModuleResolver.cpp.o -c /home/gamarino/Documentos/proyectos/protoCore/core/ModuleResolver.cpp
 
 protoCore/CMakeFiles/protoCore.dir/core/ModuleResolver.cpp.i: cmake_force
@@ -226,7 +212,7 @@ protoCore/CMakeFiles/protoCore.dir/core/ModuleResolver.cpp.s: cmake_force
 protoCore/CMakeFiles/protoCore.dir/core/ProtoMethodCell.cpp.o: protoCore/CMakeFiles/protoCore.dir/flags.make
 protoCore/CMakeFiles/protoCore.dir/core/ProtoMethodCell.cpp.o: /home/gamarino/Documentos/proyectos/protoCore/core/ProtoMethodCell.cpp
 protoCore/CMakeFiles/protoCore.dir/core/ProtoMethodCell.cpp.o: protoCore/CMakeFiles/protoCore.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/CMakeFiles --progress-num=$(CMAKE_PROGRESS_12) "Building CXX object protoCore/CMakeFiles/protoCore.dir/core/ProtoMethodCell.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/CMakeFiles --progress-num=$(CMAKE_PROGRESS_11) "Building CXX object protoCore/CMakeFiles/protoCore.dir/core/ProtoMethodCell.cpp.o"
 	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/protoCore && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT protoCore/CMakeFiles/protoCore.dir/core/ProtoMethodCell.cpp.o -MF CMakeFiles/protoCore.dir/core/ProtoMethodCell.cpp.o.d -o CMakeFiles/protoCore.dir/core/ProtoMethodCell.cpp.o -c /home/gamarino/Documentos/proyectos/protoCore/core/ProtoMethodCell.cpp
 
 protoCore/CMakeFiles/protoCore.dir/core/ProtoMethodCell.cpp.i: cmake_force
@@ -237,24 +223,24 @@ protoCore/CMakeFiles/protoCore.dir/core/ProtoMethodCell.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/protoCore.dir/core/ProtoMethodCell.cpp.s"
 	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/protoCore && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/gamarino/Documentos/proyectos/protoCore/core/ProtoMethodCell.cpp -o CMakeFiles/protoCore.dir/core/ProtoMethodCell.cpp.s
 
-protoCore/CMakeFiles/protoCore.dir/core/ProtoObjectCell.cpp.o: protoCore/CMakeFiles/protoCore.dir/flags.make
-protoCore/CMakeFiles/protoCore.dir/core/ProtoObjectCell.cpp.o: /home/gamarino/Documentos/proyectos/protoCore/core/ProtoObjectCell.cpp
-protoCore/CMakeFiles/protoCore.dir/core/ProtoObjectCell.cpp.o: protoCore/CMakeFiles/protoCore.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/CMakeFiles --progress-num=$(CMAKE_PROGRESS_13) "Building CXX object protoCore/CMakeFiles/protoCore.dir/core/ProtoObjectCell.cpp.o"
-	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/protoCore && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT protoCore/CMakeFiles/protoCore.dir/core/ProtoObjectCell.cpp.o -MF CMakeFiles/protoCore.dir/core/ProtoObjectCell.cpp.o.d -o CMakeFiles/protoCore.dir/core/ProtoObjectCell.cpp.o -c /home/gamarino/Documentos/proyectos/protoCore/core/ProtoObjectCell.cpp
+protoCore/CMakeFiles/protoCore.dir/core/ProtoObject.cpp.o: protoCore/CMakeFiles/protoCore.dir/flags.make
+protoCore/CMakeFiles/protoCore.dir/core/ProtoObject.cpp.o: /home/gamarino/Documentos/proyectos/protoCore/core/ProtoObject.cpp
+protoCore/CMakeFiles/protoCore.dir/core/ProtoObject.cpp.o: protoCore/CMakeFiles/protoCore.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/CMakeFiles --progress-num=$(CMAKE_PROGRESS_12) "Building CXX object protoCore/CMakeFiles/protoCore.dir/core/ProtoObject.cpp.o"
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/protoCore && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT protoCore/CMakeFiles/protoCore.dir/core/ProtoObject.cpp.o -MF CMakeFiles/protoCore.dir/core/ProtoObject.cpp.o.d -o CMakeFiles/protoCore.dir/core/ProtoObject.cpp.o -c /home/gamarino/Documentos/proyectos/protoCore/core/ProtoObject.cpp
 
-protoCore/CMakeFiles/protoCore.dir/core/ProtoObjectCell.cpp.i: cmake_force
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/protoCore.dir/core/ProtoObjectCell.cpp.i"
-	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/protoCore && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/gamarino/Documentos/proyectos/protoCore/core/ProtoObjectCell.cpp > CMakeFiles/protoCore.dir/core/ProtoObjectCell.cpp.i
+protoCore/CMakeFiles/protoCore.dir/core/ProtoObject.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/protoCore.dir/core/ProtoObject.cpp.i"
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/protoCore && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/gamarino/Documentos/proyectos/protoCore/core/ProtoObject.cpp > CMakeFiles/protoCore.dir/core/ProtoObject.cpp.i
 
-protoCore/CMakeFiles/protoCore.dir/core/ProtoObjectCell.cpp.s: cmake_force
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/protoCore.dir/core/ProtoObjectCell.cpp.s"
-	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/protoCore && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/gamarino/Documentos/proyectos/protoCore/core/ProtoObjectCell.cpp -o CMakeFiles/protoCore.dir/core/ProtoObjectCell.cpp.s
+protoCore/CMakeFiles/protoCore.dir/core/ProtoObject.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/protoCore.dir/core/ProtoObject.cpp.s"
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/protoCore && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/gamarino/Documentos/proyectos/protoCore/core/ProtoObject.cpp -o CMakeFiles/protoCore.dir/core/ProtoObject.cpp.s
 
 protoCore/CMakeFiles/protoCore.dir/core/ProviderRegistry.cpp.o: protoCore/CMakeFiles/protoCore.dir/flags.make
 protoCore/CMakeFiles/protoCore.dir/core/ProviderRegistry.cpp.o: /home/gamarino/Documentos/proyectos/protoCore/core/ProviderRegistry.cpp
 protoCore/CMakeFiles/protoCore.dir/core/ProviderRegistry.cpp.o: protoCore/CMakeFiles/protoCore.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/CMakeFiles --progress-num=$(CMAKE_PROGRESS_14) "Building CXX object protoCore/CMakeFiles/protoCore.dir/core/ProviderRegistry.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/CMakeFiles --progress-num=$(CMAKE_PROGRESS_13) "Building CXX object protoCore/CMakeFiles/protoCore.dir/core/ProviderRegistry.cpp.o"
 	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/protoCore && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT protoCore/CMakeFiles/protoCore.dir/core/ProviderRegistry.cpp.o -MF CMakeFiles/protoCore.dir/core/ProviderRegistry.cpp.o.d -o CMakeFiles/protoCore.dir/core/ProviderRegistry.cpp.o -c /home/gamarino/Documentos/proyectos/protoCore/core/ProviderRegistry.cpp
 
 protoCore/CMakeFiles/protoCore.dir/core/ProviderRegistry.cpp.i: cmake_force
@@ -268,7 +254,7 @@ protoCore/CMakeFiles/protoCore.dir/core/ProviderRegistry.cpp.s: cmake_force
 protoCore/CMakeFiles/protoCore.dir/core/ProtoSpace.cpp.o: protoCore/CMakeFiles/protoCore.dir/flags.make
 protoCore/CMakeFiles/protoCore.dir/core/ProtoSpace.cpp.o: /home/gamarino/Documentos/proyectos/protoCore/core/ProtoSpace.cpp
 protoCore/CMakeFiles/protoCore.dir/core/ProtoSpace.cpp.o: protoCore/CMakeFiles/protoCore.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/CMakeFiles --progress-num=$(CMAKE_PROGRESS_15) "Building CXX object protoCore/CMakeFiles/protoCore.dir/core/ProtoSpace.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/CMakeFiles --progress-num=$(CMAKE_PROGRESS_14) "Building CXX object protoCore/CMakeFiles/protoCore.dir/core/ProtoSpace.cpp.o"
 	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/protoCore && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT protoCore/CMakeFiles/protoCore.dir/core/ProtoSpace.cpp.o -MF CMakeFiles/protoCore.dir/core/ProtoSpace.cpp.o.d -o CMakeFiles/protoCore.dir/core/ProtoSpace.cpp.o -c /home/gamarino/Documentos/proyectos/protoCore/core/ProtoSpace.cpp
 
 protoCore/CMakeFiles/protoCore.dir/core/ProtoSpace.cpp.i: cmake_force
@@ -282,7 +268,7 @@ protoCore/CMakeFiles/protoCore.dir/core/ProtoSpace.cpp.s: cmake_force
 protoCore/CMakeFiles/protoCore.dir/core/ProtoSparseList.cpp.o: protoCore/CMakeFiles/protoCore.dir/flags.make
 protoCore/CMakeFiles/protoCore.dir/core/ProtoSparseList.cpp.o: /home/gamarino/Documentos/proyectos/protoCore/core/ProtoSparseList.cpp
 protoCore/CMakeFiles/protoCore.dir/core/ProtoSparseList.cpp.o: protoCore/CMakeFiles/protoCore.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/CMakeFiles --progress-num=$(CMAKE_PROGRESS_16) "Building CXX object protoCore/CMakeFiles/protoCore.dir/core/ProtoSparseList.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/CMakeFiles --progress-num=$(CMAKE_PROGRESS_15) "Building CXX object protoCore/CMakeFiles/protoCore.dir/core/ProtoSparseList.cpp.o"
 	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/protoCore && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT protoCore/CMakeFiles/protoCore.dir/core/ProtoSparseList.cpp.o -MF CMakeFiles/protoCore.dir/core/ProtoSparseList.cpp.o.d -o CMakeFiles/protoCore.dir/core/ProtoSparseList.cpp.o -c /home/gamarino/Documentos/proyectos/protoCore/core/ProtoSparseList.cpp
 
 protoCore/CMakeFiles/protoCore.dir/core/ProtoSparseList.cpp.i: cmake_force
@@ -296,7 +282,7 @@ protoCore/CMakeFiles/protoCore.dir/core/ProtoSparseList.cpp.s: cmake_force
 protoCore/CMakeFiles/protoCore.dir/core/ProtoString.cpp.o: protoCore/CMakeFiles/protoCore.dir/flags.make
 protoCore/CMakeFiles/protoCore.dir/core/ProtoString.cpp.o: /home/gamarino/Documentos/proyectos/protoCore/core/ProtoString.cpp
 protoCore/CMakeFiles/protoCore.dir/core/ProtoString.cpp.o: protoCore/CMakeFiles/protoCore.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/CMakeFiles --progress-num=$(CMAKE_PROGRESS_17) "Building CXX object protoCore/CMakeFiles/protoCore.dir/core/ProtoString.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/CMakeFiles --progress-num=$(CMAKE_PROGRESS_16) "Building CXX object protoCore/CMakeFiles/protoCore.dir/core/ProtoString.cpp.o"
 	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/protoCore && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT protoCore/CMakeFiles/protoCore.dir/core/ProtoString.cpp.o -MF CMakeFiles/protoCore.dir/core/ProtoString.cpp.o.d -o CMakeFiles/protoCore.dir/core/ProtoString.cpp.o -c /home/gamarino/Documentos/proyectos/protoCore/core/ProtoString.cpp
 
 protoCore/CMakeFiles/protoCore.dir/core/ProtoString.cpp.i: cmake_force
@@ -310,7 +296,7 @@ protoCore/CMakeFiles/protoCore.dir/core/ProtoString.cpp.s: cmake_force
 protoCore/CMakeFiles/protoCore.dir/core/ProtoTuple.cpp.o: protoCore/CMakeFiles/protoCore.dir/flags.make
 protoCore/CMakeFiles/protoCore.dir/core/ProtoTuple.cpp.o: /home/gamarino/Documentos/proyectos/protoCore/core/ProtoTuple.cpp
 protoCore/CMakeFiles/protoCore.dir/core/ProtoTuple.cpp.o: protoCore/CMakeFiles/protoCore.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/CMakeFiles --progress-num=$(CMAKE_PROGRESS_18) "Building CXX object protoCore/CMakeFiles/protoCore.dir/core/ProtoTuple.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/CMakeFiles --progress-num=$(CMAKE_PROGRESS_17) "Building CXX object protoCore/CMakeFiles/protoCore.dir/core/ProtoTuple.cpp.o"
 	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/protoCore && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT protoCore/CMakeFiles/protoCore.dir/core/ProtoTuple.cpp.o -MF CMakeFiles/protoCore.dir/core/ProtoTuple.cpp.o.d -o CMakeFiles/protoCore.dir/core/ProtoTuple.cpp.o -c /home/gamarino/Documentos/proyectos/protoCore/core/ProtoTuple.cpp
 
 protoCore/CMakeFiles/protoCore.dir/core/ProtoTuple.cpp.i: cmake_force
@@ -324,7 +310,7 @@ protoCore/CMakeFiles/protoCore.dir/core/ProtoTuple.cpp.s: cmake_force
 protoCore/CMakeFiles/protoCore.dir/core/Thread.cpp.o: protoCore/CMakeFiles/protoCore.dir/flags.make
 protoCore/CMakeFiles/protoCore.dir/core/Thread.cpp.o: /home/gamarino/Documentos/proyectos/protoCore/core/Thread.cpp
 protoCore/CMakeFiles/protoCore.dir/core/Thread.cpp.o: protoCore/CMakeFiles/protoCore.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/CMakeFiles --progress-num=$(CMAKE_PROGRESS_19) "Building CXX object protoCore/CMakeFiles/protoCore.dir/core/Thread.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/CMakeFiles --progress-num=$(CMAKE_PROGRESS_18) "Building CXX object protoCore/CMakeFiles/protoCore.dir/core/Thread.cpp.o"
 	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/protoCore && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT protoCore/CMakeFiles/protoCore.dir/core/Thread.cpp.o -MF CMakeFiles/protoCore.dir/core/Thread.cpp.o.d -o CMakeFiles/protoCore.dir/core/Thread.cpp.o -c /home/gamarino/Documentos/proyectos/protoCore/core/Thread.cpp
 
 protoCore/CMakeFiles/protoCore.dir/core/Thread.cpp.i: cmake_force
@@ -338,7 +324,7 @@ protoCore/CMakeFiles/protoCore.dir/core/Thread.cpp.s: cmake_force
 protoCore/CMakeFiles/protoCore.dir/core/ProtoExternalPointer.cpp.o: protoCore/CMakeFiles/protoCore.dir/flags.make
 protoCore/CMakeFiles/protoCore.dir/core/ProtoExternalPointer.cpp.o: /home/gamarino/Documentos/proyectos/protoCore/core/ProtoExternalPointer.cpp
 protoCore/CMakeFiles/protoCore.dir/core/ProtoExternalPointer.cpp.o: protoCore/CMakeFiles/protoCore.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/CMakeFiles --progress-num=$(CMAKE_PROGRESS_20) "Building CXX object protoCore/CMakeFiles/protoCore.dir/core/ProtoExternalPointer.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/CMakeFiles --progress-num=$(CMAKE_PROGRESS_19) "Building CXX object protoCore/CMakeFiles/protoCore.dir/core/ProtoExternalPointer.cpp.o"
 	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/protoCore && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT protoCore/CMakeFiles/protoCore.dir/core/ProtoExternalPointer.cpp.o -MF CMakeFiles/protoCore.dir/core/ProtoExternalPointer.cpp.o.d -o CMakeFiles/protoCore.dir/core/ProtoExternalPointer.cpp.o -c /home/gamarino/Documentos/proyectos/protoCore/core/ProtoExternalPointer.cpp
 
 protoCore/CMakeFiles/protoCore.dir/core/ProtoExternalPointer.cpp.i: cmake_force
@@ -348,6 +334,20 @@ protoCore/CMakeFiles/protoCore.dir/core/ProtoExternalPointer.cpp.i: cmake_force
 protoCore/CMakeFiles/protoCore.dir/core/ProtoExternalPointer.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/protoCore.dir/core/ProtoExternalPointer.cpp.s"
 	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/protoCore && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/gamarino/Documentos/proyectos/protoCore/core/ProtoExternalPointer.cpp -o CMakeFiles/protoCore.dir/core/ProtoExternalPointer.cpp.s
+
+protoCore/CMakeFiles/protoCore.dir/core/ProtoExternalBuffer.cpp.o: protoCore/CMakeFiles/protoCore.dir/flags.make
+protoCore/CMakeFiles/protoCore.dir/core/ProtoExternalBuffer.cpp.o: /home/gamarino/Documentos/proyectos/protoCore/core/ProtoExternalBuffer.cpp
+protoCore/CMakeFiles/protoCore.dir/core/ProtoExternalBuffer.cpp.o: protoCore/CMakeFiles/protoCore.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/CMakeFiles --progress-num=$(CMAKE_PROGRESS_20) "Building CXX object protoCore/CMakeFiles/protoCore.dir/core/ProtoExternalBuffer.cpp.o"
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/protoCore && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT protoCore/CMakeFiles/protoCore.dir/core/ProtoExternalBuffer.cpp.o -MF CMakeFiles/protoCore.dir/core/ProtoExternalBuffer.cpp.o.d -o CMakeFiles/protoCore.dir/core/ProtoExternalBuffer.cpp.o -c /home/gamarino/Documentos/proyectos/protoCore/core/ProtoExternalBuffer.cpp
+
+protoCore/CMakeFiles/protoCore.dir/core/ProtoExternalBuffer.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/protoCore.dir/core/ProtoExternalBuffer.cpp.i"
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/protoCore && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/gamarino/Documentos/proyectos/protoCore/core/ProtoExternalBuffer.cpp > CMakeFiles/protoCore.dir/core/ProtoExternalBuffer.cpp.i
+
+protoCore/CMakeFiles/protoCore.dir/core/ProtoExternalBuffer.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/protoCore.dir/core/ProtoExternalBuffer.cpp.s"
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/protoCore && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/gamarino/Documentos/proyectos/protoCore/core/ProtoExternalBuffer.cpp -o CMakeFiles/protoCore.dir/core/ProtoExternalBuffer.cpp.s
 
 protoCore/CMakeFiles/protoCore.dir/core/ProtoSet.cpp.o: protoCore/CMakeFiles/protoCore.dir/flags.make
 protoCore/CMakeFiles/protoCore.dir/core/ProtoSet.cpp.o: /home/gamarino/Documentos/proyectos/protoCore/core/ProtoSet.cpp
@@ -397,7 +397,6 @@ protoCore_OBJECTS = \
 "CMakeFiles/protoCore.dir/core/Double.cpp.o" \
 "CMakeFiles/protoCore.dir/core/LargeInteger.cpp.o" \
 "CMakeFiles/protoCore.dir/core/ParentLink.cpp.o" \
-"CMakeFiles/protoCore.dir/core/Proto.cpp.o" \
 "CMakeFiles/protoCore.dir/core/ProtoByteBuffer.cpp.o" \
 "CMakeFiles/protoCore.dir/core/ProtoContext.cpp.o" \
 "CMakeFiles/protoCore.dir/core/ProtoList.cpp.o" \
@@ -405,7 +404,7 @@ protoCore_OBJECTS = \
 "CMakeFiles/protoCore.dir/core/ModuleProvider.cpp.o" \
 "CMakeFiles/protoCore.dir/core/ModuleResolver.cpp.o" \
 "CMakeFiles/protoCore.dir/core/ProtoMethodCell.cpp.o" \
-"CMakeFiles/protoCore.dir/core/ProtoObjectCell.cpp.o" \
+"CMakeFiles/protoCore.dir/core/ProtoObject.cpp.o" \
 "CMakeFiles/protoCore.dir/core/ProviderRegistry.cpp.o" \
 "CMakeFiles/protoCore.dir/core/ProtoSpace.cpp.o" \
 "CMakeFiles/protoCore.dir/core/ProtoSparseList.cpp.o" \
@@ -413,6 +412,7 @@ protoCore_OBJECTS = \
 "CMakeFiles/protoCore.dir/core/ProtoTuple.cpp.o" \
 "CMakeFiles/protoCore.dir/core/Thread.cpp.o" \
 "CMakeFiles/protoCore.dir/core/ProtoExternalPointer.cpp.o" \
+"CMakeFiles/protoCore.dir/core/ProtoExternalBuffer.cpp.o" \
 "CMakeFiles/protoCore.dir/core/ProtoSet.cpp.o" \
 "CMakeFiles/protoCore.dir/core/ProtoMultiset.cpp.o" \
 "CMakeFiles/protoCore.dir/core/Integer.cpp.o"
@@ -424,7 +424,6 @@ protoCore/libprotoCore.so.1.0.0: protoCore/CMakeFiles/protoCore.dir/core/Cell.cp
 protoCore/libprotoCore.so.1.0.0: protoCore/CMakeFiles/protoCore.dir/core/Double.cpp.o
 protoCore/libprotoCore.so.1.0.0: protoCore/CMakeFiles/protoCore.dir/core/LargeInteger.cpp.o
 protoCore/libprotoCore.so.1.0.0: protoCore/CMakeFiles/protoCore.dir/core/ParentLink.cpp.o
-protoCore/libprotoCore.so.1.0.0: protoCore/CMakeFiles/protoCore.dir/core/Proto.cpp.o
 protoCore/libprotoCore.so.1.0.0: protoCore/CMakeFiles/protoCore.dir/core/ProtoByteBuffer.cpp.o
 protoCore/libprotoCore.so.1.0.0: protoCore/CMakeFiles/protoCore.dir/core/ProtoContext.cpp.o
 protoCore/libprotoCore.so.1.0.0: protoCore/CMakeFiles/protoCore.dir/core/ProtoList.cpp.o
@@ -432,7 +431,7 @@ protoCore/libprotoCore.so.1.0.0: protoCore/CMakeFiles/protoCore.dir/core/ModuleC
 protoCore/libprotoCore.so.1.0.0: protoCore/CMakeFiles/protoCore.dir/core/ModuleProvider.cpp.o
 protoCore/libprotoCore.so.1.0.0: protoCore/CMakeFiles/protoCore.dir/core/ModuleResolver.cpp.o
 protoCore/libprotoCore.so.1.0.0: protoCore/CMakeFiles/protoCore.dir/core/ProtoMethodCell.cpp.o
-protoCore/libprotoCore.so.1.0.0: protoCore/CMakeFiles/protoCore.dir/core/ProtoObjectCell.cpp.o
+protoCore/libprotoCore.so.1.0.0: protoCore/CMakeFiles/protoCore.dir/core/ProtoObject.cpp.o
 protoCore/libprotoCore.so.1.0.0: protoCore/CMakeFiles/protoCore.dir/core/ProviderRegistry.cpp.o
 protoCore/libprotoCore.so.1.0.0: protoCore/CMakeFiles/protoCore.dir/core/ProtoSpace.cpp.o
 protoCore/libprotoCore.so.1.0.0: protoCore/CMakeFiles/protoCore.dir/core/ProtoSparseList.cpp.o
@@ -440,6 +439,7 @@ protoCore/libprotoCore.so.1.0.0: protoCore/CMakeFiles/protoCore.dir/core/ProtoSt
 protoCore/libprotoCore.so.1.0.0: protoCore/CMakeFiles/protoCore.dir/core/ProtoTuple.cpp.o
 protoCore/libprotoCore.so.1.0.0: protoCore/CMakeFiles/protoCore.dir/core/Thread.cpp.o
 protoCore/libprotoCore.so.1.0.0: protoCore/CMakeFiles/protoCore.dir/core/ProtoExternalPointer.cpp.o
+protoCore/libprotoCore.so.1.0.0: protoCore/CMakeFiles/protoCore.dir/core/ProtoExternalBuffer.cpp.o
 protoCore/libprotoCore.so.1.0.0: protoCore/CMakeFiles/protoCore.dir/core/ProtoSet.cpp.o
 protoCore/libprotoCore.so.1.0.0: protoCore/CMakeFiles/protoCore.dir/core/ProtoMultiset.cpp.o
 protoCore/libprotoCore.so.1.0.0: protoCore/CMakeFiles/protoCore.dir/core/Integer.cpp.o

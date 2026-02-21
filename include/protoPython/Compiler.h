@@ -31,6 +31,8 @@ public:
     const proto::ProtoList* getConstants();
     const proto::ProtoList* getNames();
     const proto::ProtoList* getBytecode();
+    const proto::ProtoList* getLnotab();
+    int getFirstLine() const { return firstLine_; }
 
 private:
     proto::ProtoContext* ctx_ = nullptr;
@@ -134,6 +136,14 @@ private:
         std::vector<int> breakPatches;
     };
     std::vector<LoopInfo> loopStack_;
+    
+    // Line number tracking
+    int firstLine_ = -1;
+    int currentLine_ = 0;
+    int lastPC_ = 0;
+    int lastLine_ = 0;
+    std::vector<unsigned char> lnotabVec_;
+    void setLineNumber(int line);
 };
 
 /** Build a code object (ProtoObject with co_consts, co_names, co_code) from compiler output.
@@ -149,7 +159,9 @@ const proto::ProtoObject* makeCodeObject(proto::ProtoContext* ctx,
     int automatic_count = 0,
     int flags = 0,
     bool isGenerator = false,
-    const proto::ProtoString* co_name = nullptr);
+    const proto::ProtoString* co_name = nullptr,
+    int firstlineno = 0,
+    const proto::ProtoList* lnotab = nullptr);
 
 /** Run a code object with the given frame. Returns execution result. */
 const proto::ProtoObject* runCodeObject(proto::ProtoContext* ctx,

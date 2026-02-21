@@ -92,7 +92,7 @@ test_threading_strategy_EXTERNAL_OBJECTS =
 
 test/library/test_threading_strategy: test/library/CMakeFiles/test_threading_strategy.dir/TestThreadingStrategy.cpp.o
 test/library/test_threading_strategy: test/library/CMakeFiles/test_threading_strategy.dir/build.make
-test/library/test_threading_strategy: src/library/libprotoPython.so
+test/library/test_threading_strategy: src/library/libprotoPython.so.0.2.0
 test/library/test_threading_strategy: protoCore/libprotoCore.so.1.0.0
 test/library/test_threading_strategy: lib/libgtest_main.a
 test/library/test_threading_strategy: lib/libgtest.a

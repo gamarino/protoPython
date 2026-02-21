@@ -276,8 +276,7 @@ static const proto::ProtoObject* py_allocate_lock(
     const proto::ParentLink* /*parentLink*/,
     const proto::ProtoList* /*posArgs*/,
     const proto::ProtoSparseList* /*kwargs*/) {
-    proto::ProtoObject* obj = const_cast<proto::ProtoObject*>(ctx->newObject(true));
-    if (lockProt) obj = const_cast<proto::ProtoObject*>(obj->addParent(ctx, lockProt));
+    proto::ProtoObject* obj = lockProt ? const_cast<proto::ProtoObject*>(lockProt->newChild(ctx, true)) : const_cast<proto::ProtoObject*>(ctx->newObject(true));
     obj->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_handle"), 
         ctx->fromExternalPointer(new LockData, mutex_finalizer));
     return obj;
@@ -289,8 +288,7 @@ static const proto::ProtoObject* py_allocate_rlock(
     const proto::ParentLink* /*parentLink*/,
     const proto::ProtoList* /*posArgs*/,
     const proto::ProtoSparseList* /*kwargs*/) {
-    proto::ProtoObject* obj = const_cast<proto::ProtoObject*>(ctx->newObject(true));
-    if (rlockProt) obj = const_cast<proto::ProtoObject*>(obj->addParent(ctx, rlockProt));
+    proto::ProtoObject* obj = rlockProt ? const_cast<proto::ProtoObject*>(rlockProt->newChild(ctx, true)) : const_cast<proto::ProtoObject*>(ctx->newObject(true));
     obj->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_handle"), 
         ctx->fromExternalPointer(new RLockData, rmutex_finalizer));
     return obj;

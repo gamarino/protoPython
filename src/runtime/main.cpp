@@ -67,6 +67,7 @@ struct CliOptions {
     std::string commandLine;
     std::string stdLibPath;
     std::vector<std::string> searchPaths;
+    std::vector<std::string> targetArgs;
 };
 
 static std::string baseName(const std::string& path) {
@@ -142,18 +143,24 @@ static bool parseArgs(int argc, char* argv[], CliOptions& opts, std::string& err
                 return false;
             }
             opts.moduleName = argv[++i];
+            for (int j = i + 1; j < argc; ++j) opts.targetArgs.push_back(argv[j]);
+            break;
         } else if (arg == "-c") {
             if (i + 1 >= argc) {
                 error = "-c requires a value";
                 return false;
             }
             opts.commandLine = argv[++i];
+            for (int j = i + 1; j < argc; ++j) opts.targetArgs.push_back(argv[j]);
+            break;
         } else if (arg == "--script") {
             if (i + 1 >= argc) {
                 error = "--script requires a value";
                 return false;
             }
             opts.scriptPath = argv[++i];
+            for (int j = i + 1; j < argc; ++j) opts.targetArgs.push_back(argv[j]);
+            break;
         } else if (arg == "--stdlib") {
             if (i + 1 >= argc) {
                 error = "--stdlib requires a value";
@@ -185,6 +192,8 @@ static bool parseArgs(int argc, char* argv[], CliOptions& opts, std::string& err
             } else {
                 opts.moduleName = arg;
             }
+            for (int j = i + 1; j < argc; ++j) opts.targetArgs.push_back(argv[j]);
+            break;
         } else {
             error = "Unexpected positional argument: " + arg;
             return false;
@@ -298,7 +307,13 @@ int main(int argc, char* argv[]) {
     searchPaths.insert(searchPaths.end(), options.searchPaths.begin(), options.searchPaths.end());
 
     std::vector<std::string> argvVec;
-    for (int i = 0; i < argc; ++i) argvVec.push_back(argv[i]);
+    if (!options.commandLine.empty()) argvVec.push_back("-c");
+    else if (!options.scriptPath.empty()) argvVec.push_back(options.scriptPath);
+    else if (!options.moduleName.empty()) argvVec.push_back(options.moduleName);
+    else argvVec.push_back("");
+    
+    argvVec.insert(argvVec.end(), options.targetArgs.begin(), options.targetArgs.end());
+    printf("DEBUG RUNTIME argvVec size=%zu\n", argvVec.size());
 
 
     if (options.repl) {

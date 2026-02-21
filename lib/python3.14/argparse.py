@@ -1422,6 +1422,7 @@ class _ActionsContainer(object):
                  prefix_chars,
                  argument_default,
                  conflict_handler):
+        print("DEBUG ARGPARSE ENTER _ActionsContainer.__init__ id(self)=", id(self))
         super(_ActionsContainer, self).__init__()
 
         self.description = description
@@ -1455,6 +1456,7 @@ class _ActionsContainer(object):
 
         # groups
         self._action_groups = []
+        print("DEBUG ARGPARSE _ActionsContainer assigned self._action_groups=", self._action_groups, type(self._action_groups))
         self._mutually_exclusive_groups = []
 
         # defaults storage
@@ -1562,9 +1564,18 @@ class _ActionsContainer(object):
         return self._add_action(action)
 
     def add_argument_group(self, *args, **kwargs):
-        group = _ArgumentGroup(self, *args, **kwargs)
-        self._action_groups.append(group)
-        return group
+        print("DEBUG ARGPARSE ENTER add_argument_group")
+        try:
+            group = _ArgumentGroup(self, *args, **kwargs)
+            print("DEBUG ARGPARSE _ArgumentGroup done")
+            print("DEBUG ARGPARSE self._action_groups type:", type(self._action_groups))
+            print("DEBUG ARGPARSE getattr append:", getattr(self._action_groups, 'append', None))
+            self._action_groups.append(group)
+            print("DEBUG ARGPARSE append done")
+            return group
+        except Exception as e:
+            print("DEBUG ARGPARSE exception in add_argument_group:", repr(e))
+            raise
 
     def add_mutually_exclusive_group(self, **kwargs):
         group = _MutuallyExclusiveGroup(self, **kwargs)
@@ -1663,14 +1674,17 @@ class _ActionsContainer(object):
         option_strings = []
         long_option_strings = []
         for option_string in args:
-            # error on strings that don't start with an appropriate prefix
-            if not option_string[0] in self.prefix_chars:
-                raise ValueError(
-                    f'invalid option string {option_string!r}: '
-                    f'must start with a character {self.prefix_chars!r}')
+            # error out if option string is not valid
+            if not option_string.startswith(self.prefix_chars):
+                import sys
+                msg = _('invalid option string %(option)r: '
+                        'must start with a character %(characters)r')
+                raise ValueError(msg % {'option': option_string,
+                                        'characters': self.prefix_chars})
 
             # strings starting with two prefix characters are long options
             option_strings.append(option_string)
+            import sys; sys.stderr.write("DEBUG OP_STRING: " + repr(option_string) + "\n"); sys.stderr.flush()
             if len(option_string) > 1 and option_string[1] in self.prefix_chars:
                 long_option_strings.append(option_string)
 
@@ -1766,6 +1780,7 @@ class _ArgumentGroup(_ActionsContainer):
         update('prefix_chars', container.prefix_chars)
         update('argument_default', container.argument_default)
         super_init = super(_ArgumentGroup, self).__init__
+        print("DEBUG ARGPARSE super_init=", super_init, type(super_init))
         super_init(description=description, **kwargs)
 
         # group attributes
@@ -1897,8 +1912,14 @@ class ArgumentParser(_AttributeHolder, _ActionsContainer):
         self.suggest_on_error = suggest_on_error
         self.color = color
 
-        add_group = self.add_argument_group
-        self._positionals = add_group(_('positional arguments'))
+        print("DEBUG ARGPARSE MRO:", type(self).__mro__)
+        print("DEBUG ARGPARSE HASATTR add_argument_group:", hasattr(self, 'add_argument_group'))
+        add_group = getattr(self, 'add_argument_group', None)
+        try:
+            self._positionals = add_group(_('positional arguments'))
+        except TypeError as e:
+            print("DEBUG ARGPARSE 1901 TypeError:", e, "add_group=", add_group, type(add_group), "arg=", _('positional arguments'))
+            raise
         self._optionals = add_group(_('options'))
         self._subparsers = None
 
@@ -1911,10 +1932,14 @@ class ArgumentParser(_AttributeHolder, _ActionsContainer):
         # (using explicit default to override global argument_default)
         default_prefix = '-' if '-' in prefix_chars else prefix_chars[0]
         if self.add_help:
-            self.add_argument(
-                default_prefix+'h', default_prefix*2+'help',
-                action='help', default=SUPPRESS,
-                help=_('show this help message and exit'))
+            try:
+                self.add_argument(
+                    default_prefix+'h', default_prefix*2+'help',
+                    action='help', default=SUPPRESS,
+                    help=_('show this help message and exit'))
+            except Exception as e:
+                print("DEBUG ARGPARSE CAUGHT EXCEPTION:", type(e), e)
+                raise
 
         # add parent arguments and defaults
         for parent in parents:

@@ -207,7 +207,8 @@ src/library/CMakeFiles/protoPython.dir/PythonEnvironment.cpp.o: \
  /usr/include/c++/13/bits/ranges_uninitialized.h \
  /usr/include/c++/13/bits/ranges_algobase.h \
  /usr/include/c++/13/pstl/glue_memory_defs.h \
- /usr/include/c++/13/pstl/execution_defs.h /usr/include/c++/13/vector \
+ /usr/include/c++/13/pstl/execution_defs.h /usr/include/c++/13/mutex \
+ /usr/include/c++/13/thread /usr/include/c++/13/vector \
  /usr/include/c++/13/bits/stl_vector.h \
  /usr/include/c++/13/bits/stl_bvector.h \
  /usr/include/c++/13/bits/vector.tcc /usr/include/c++/13/functional \
@@ -224,16 +225,26 @@ src/library/CMakeFiles/protoPython.dir/PythonEnvironment.cpp.o: \
  /usr/include/c++/13/bits/stl_heap.h \
  /usr/include/c++/13/bits/uniform_int_dist.h /usr/include/c++/13/iostream \
  /usr/include/c++/13/istream /usr/include/c++/13/bits/istream.tcc \
- /usr/include/c++/13/mutex \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/Tokenizer.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/SignalModule.h \
  /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/PythonModuleProvider.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/CompiledModuleProvider.h \
  /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/NativeModuleProvider.h \
  /usr/include/c++/13/map /usr/include/c++/13/bits/stl_tree.h \
  /usr/include/c++/13/bits/stl_map.h \
  /usr/include/c++/13/bits/stl_multimap.h \
  /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/SysModule.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/HPyModuleProvider.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/HPyContext.h \
  /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/TimeModule.h \
  /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/ThreadModule.h \
  /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/BuiltinsModule.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/AstModule.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/ErrnoModule.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/StatModule.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/ContextvarsModule.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/StructModule.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/CodecsModule.h \
  /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/IOModule.h \
  /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/CollectionsModule.h \
  /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/ExceptionsModule.h \
@@ -250,7 +261,11 @@ src/library/CMakeFiles/protoPython.dir/PythonEnvironment.cpp.o: \
  /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/CollectionsAbcModule.h \
  /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/AtexitModule.h \
  /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/ExecutionEngine.h \
- /usr/include/c++/13/algorithm /usr/include/c++/13/bits/ranges_algo.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/Parser.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/Compiler.h \
+ /usr/include/c++/13/unordered_set \
+ /usr/include/c++/13/bits/unordered_set.h /usr/include/c++/13/algorithm \
+ /usr/include/c++/13/bits/ranges_algo.h \
  /usr/include/c++/13/pstl/glue_algorithm_defs.h /usr/include/c++/13/cmath \
  /usr/include/math.h /usr/include/x86_64-linux-gnu/bits/math-vector.h \
  /usr/include/x86_64-linux-gnu/bits/libm-simd-decl-stubs.h \
@@ -277,4 +292,26 @@ src/library/CMakeFiles/protoPython.dir/PythonEnvironment.cpp.o: \
  /usr/include/x86_64-linux-gnu/c++/13/bits/basic_file.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/c++io.h \
  /usr/include/c++/13/bits/fstream.tcc /usr/include/c++/13/sstream \
- /usr/include/c++/13/bits/sstream.tcc
+ /usr/include/c++/13/bits/sstream.tcc /usr/include/c++/13/cstring \
+ /usr/include/string.h /usr/include/strings.h /usr/include/signal.h \
+ /usr/include/x86_64-linux-gnu/bits/signum-generic.h \
+ /usr/include/x86_64-linux-gnu/bits/signum-arch.h \
+ /usr/include/x86_64-linux-gnu/bits/types/sig_atomic_t.h \
+ /usr/include/x86_64-linux-gnu/bits/types/siginfo_t.h \
+ /usr/include/x86_64-linux-gnu/bits/types/__sigval_t.h \
+ /usr/include/x86_64-linux-gnu/bits/siginfo-arch.h \
+ /usr/include/x86_64-linux-gnu/bits/siginfo-consts.h \
+ /usr/include/x86_64-linux-gnu/bits/siginfo-consts-arch.h \
+ /usr/include/x86_64-linux-gnu/bits/types/sigval_t.h \
+ /usr/include/x86_64-linux-gnu/bits/types/sigevent_t.h \
+ /usr/include/x86_64-linux-gnu/bits/sigevent-consts.h \
+ /usr/include/x86_64-linux-gnu/bits/sigaction.h \
+ /usr/include/x86_64-linux-gnu/bits/sigcontext.h \
+ /usr/include/x86_64-linux-gnu/bits/types/stack_t.h \
+ /usr/include/x86_64-linux-gnu/sys/ucontext.h \
+ /usr/include/x86_64-linux-gnu/bits/sigstack.h \
+ /usr/include/x86_64-linux-gnu/bits/sigstksz.h \
+ /usr/include/x86_64-linux-gnu/bits/ss_flags.h \
+ /usr/include/x86_64-linux-gnu/bits/types/struct_sigstack.h \
+ /usr/include/x86_64-linux-gnu/bits/sigthread.h \
+ /usr/include/x86_64-linux-gnu/bits/signal_ext.h

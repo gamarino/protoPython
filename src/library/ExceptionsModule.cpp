@@ -103,8 +103,7 @@ static const proto::ProtoObject* make_exception_type(proto::ProtoContext* ctx,
     const proto::ProtoString* py_call = proto::ProtoString::fromUTF8String(ctx, "__call__");
     const proto::ProtoString* py_class = proto::ProtoString::fromUTF8String(ctx, "__class__");
 
-    const proto::ProtoObject* exc = ctx->newObject(true);
-    exc = exc->addParent(ctx, base);
+    const proto::ProtoObject* exc = base ? base->newChild(ctx, true) : ctx->newObject(true);
     exc = exc->setAttribute(ctx, py_class, typeProto);
     exc = exc->setAttribute(ctx, py_name, ctx->fromUTF8String(name));
     exc = exc->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__module__"), ctx->fromUTF8String("builtins"));

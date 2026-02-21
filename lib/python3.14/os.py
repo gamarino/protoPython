@@ -23,14 +23,18 @@ and opendir), and leave all pathname manipulation to os.path
 
 #'
 import abc
+print("DEBUG: abc imported")
 import sys
+print("DEBUG: sys imported")
 import stat as st
 
 from _collections_abc import _check_methods
+print("DEBUG: _check_methods imported")
 
 GenericAlias = type(list[int])
 
 _names = sys.builtin_module_names
+print("DEBUG: names=" + str(_names))
 
 # Note:  more names are added to __all__ later.
 __all__ = ["altsep", "curdir", "pardir", "sep", "pathsep", "linesep",
@@ -56,17 +60,20 @@ if 'posix' in _names:
     try:
         from posix import _exit
         __all__.append('_exit')
-    except ImportError:
+    except (ImportError, AttributeError):
         pass
+    print("DEBUG: os.py about to import posixpath")
     import posixpath as path
+    print(f"DEBUG: os.py imported posixpath path={path}")
 
     try:
         from posix import _have_functions
-    except ImportError:
+        from posix import _have_functions
+    except (ImportError, AttributeError):
         pass
     try:
         from posix import _create_environ
-    except ImportError:
+    except (ImportError, AttributeError):
         pass
 
     import posix
@@ -80,7 +87,7 @@ elif 'nt' in _names:
     try:
         from nt import _exit
         __all__.append('_exit')
-    except ImportError:
+    except (ImportError, AttributeError):
         pass
     import ntpath as path
 
@@ -90,11 +97,11 @@ elif 'nt' in _names:
 
     try:
         from nt import _have_functions
-    except ImportError:
+    except (ImportError, AttributeError):
         pass
     try:
         from nt import _create_environ
-    except ImportError:
+    except (ImportError, AttributeError):
         pass
 
 else:
@@ -796,7 +803,9 @@ def _create_environ_mapping():
         encode, decode)
 
 # unicode environ
+print("DEBUG: creating environ")
 environ = _create_environ_mapping()
+print("DEBUG: environ created")
 del _create_environ_mapping
 
 
@@ -1085,6 +1094,12 @@ def _fspath(path):
     path representation is not str or bytes, TypeError is raised. If the
     provided path is not str, bytes, or os.PathLike, TypeError is raised.
     """
+    import sys
+    caller = getattr(sys._getframe().f_back, 'f_code', None)
+    caller_name = getattr(caller, 'co_name', '<unknown>') if caller else '<unknown>'
+    print(f"DEBUG FSPATH INVOKED: path_type={type(path).__name__}, caller={caller_name}")
+    if type(path).__name__ == 'module':
+        print(f"DEBUG FSPATH MODULE NAME: {path.__name__}, caller={caller_name}")
     if isinstance(path, (str, bytes)):
         return path
 

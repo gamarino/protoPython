@@ -428,6 +428,7 @@ def namedtuple(typename, field_names, *, rename=False, defaults=None, module=Non
 
     # Variables used in the methods and docstrings
     field_names = tuple(map(_sys.intern, field_names))
+    print("DEBUG: field_names after intern:", field_names)
     num_fields = len(field_names)
     arg_list = ', '.join(field_names)
     if num_fields == 1:

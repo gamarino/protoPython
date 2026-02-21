@@ -117,7 +117,7 @@ rebuild_cache/fast: rebuild_cache
 
 # Special rule for the target list_install_components
 list_install_components:
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --cyan "Available install components are: \"Unspecified\" \"gmock\" \"gtest\" \"protoCore\" \"protoPython\""
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --cyan "Available install components are: \"Unspecified\" \"protoCore\" \"protoPython\""
 .PHONY : list_install_components
 
 # Special rule for the target list_install_components
@@ -275,6 +275,20 @@ test_basic_block_analysis/fast:
 	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f test/library/CMakeFiles/test_basic_block_analysis.dir/build.make test/library/CMakeFiles/test_basic_block_analysis.dir/build
 .PHONY : test_basic_block_analysis/fast
 
+# Convenience name for target.
+test/library/CMakeFiles/test_hpy_context.dir/rule:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test/library/CMakeFiles/test_hpy_context.dir/rule
+.PHONY : test/library/CMakeFiles/test_hpy_context.dir/rule
+
+# Convenience name for target.
+test_hpy_context: test/library/CMakeFiles/test_hpy_context.dir/rule
+.PHONY : test_hpy_context
+
+# fast build rule for target.
+test_hpy_context/fast:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f test/library/CMakeFiles/test_hpy_context.dir/build.make test/library/CMakeFiles/test_hpy_context.dir/build
+.PHONY : test_hpy_context/fast
+
 TestBasicBlockAnalysis.o: TestBasicBlockAnalysis.cpp.o
 .PHONY : TestBasicBlockAnalysis.o
 
@@ -346,6 +360,30 @@ TestFoundation.s: TestFoundation.cpp.s
 TestFoundation.cpp.s:
 	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f test/library/CMakeFiles/test_foundation.dir/build.make test/library/CMakeFiles/test_foundation.dir/TestFoundation.cpp.s
 .PHONY : TestFoundation.cpp.s
+
+TestHPyContext.o: TestHPyContext.cpp.o
+.PHONY : TestHPyContext.o
+
+# target to build an object file
+TestHPyContext.cpp.o:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f test/library/CMakeFiles/test_hpy_context.dir/build.make test/library/CMakeFiles/test_hpy_context.dir/TestHPyContext.cpp.o
+.PHONY : TestHPyContext.cpp.o
+
+TestHPyContext.i: TestHPyContext.cpp.i
+.PHONY : TestHPyContext.i
+
+# target to preprocess a source file
+TestHPyContext.cpp.i:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f test/library/CMakeFiles/test_hpy_context.dir/build.make test/library/CMakeFiles/test_hpy_context.dir/TestHPyContext.cpp.i
+.PHONY : TestHPyContext.cpp.i
+
+TestHPyContext.s: TestHPyContext.cpp.s
+.PHONY : TestHPyContext.s
+
+# target to generate assembly for a file
+TestHPyContext.cpp.s:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f test/library/CMakeFiles/test_hpy_context.dir/build.make test/library/CMakeFiles/test_hpy_context.dir/TestHPyContext.cpp.s
+.PHONY : TestHPyContext.cpp.s
 
 TestMinimal.o: TestMinimal.cpp.o
 .PHONY : TestMinimal.o
@@ -437,6 +475,7 @@ help:
 	@echo "... test_basic_block_analysis"
 	@echo "... test_execution_engine"
 	@echo "... test_foundation"
+	@echo "... test_hpy_context"
 	@echo "... test_minimal"
 	@echo "... test_protocore_minimal"
 	@echo "... test_threading_strategy"
@@ -449,6 +488,9 @@ help:
 	@echo "... TestFoundation.o"
 	@echo "... TestFoundation.i"
 	@echo "... TestFoundation.s"
+	@echo "... TestHPyContext.o"
+	@echo "... TestHPyContext.i"
+	@echo "... TestHPyContext.s"
 	@echo "... TestMinimal.o"
 	@echo "... TestMinimal.i"
 	@echo "... TestMinimal.s"

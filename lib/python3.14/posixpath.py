@@ -28,6 +28,15 @@ import sys
 import stat
 import genericpath
 from genericpath import *
+import sys
+print(f"DEBUG: posixpath imported genericpath. id(genericpath)={id(genericpath)} type={type(genericpath)}")
+print(f"DEBUG: posixpath sys id={id(sys)}")
+print(f"DEBUG: posixpath sys.modules['genericpath'] id={id(sys.modules.get('genericpath'))}")
+print(f"DEBUG: genericpath dir: {dir(genericpath)}")
+if hasattr(genericpath, '_splitext'):
+    print(f"DEBUG: genericpath._splitext value: {genericpath._splitext}")
+else:
+    print("DEBUG: genericpath has no _splitext attribute")
 
 __all__ = ["normcase","isabs","join","splitdrive","splitroot","split","splitext",
            "basename","dirname","commonprefix","getsize","getmtime",
@@ -114,6 +123,14 @@ def split(p):
 # pathname component; the root is everything before that.
 # It is always true that root + ext == p.
 
+# DEBUG: posixpath.py starting
+def _exit(code):
+    import os
+    os._exit(code)
+
+print(f"DEBUG: posixpath module starting. id(self)={id(__import__('sys').modules['posixpath']) if 'posixpath' in __import__('sys').modules else 'unknown'}")
+
+print(f"DEBUG: posixpath module starting. id(posixpath)={id(__import__('sys').modules['posixpath']) if 'posixpath' in __import__('sys').modules else 'unknown'}")
 def splitext(p):
     p = os.fspath(p)
     if isinstance(p, bytes):
@@ -123,6 +140,7 @@ def splitext(p):
         sep = '/'
         extsep = '.'
     return genericpath._splitext(p, sep, None, extsep)
+print(f"DEBUG: posixpath seeing genericpath._splitext: {genericpath._splitext}")
 splitext.__doc__ = genericpath._splitext.__doc__
 
 # Split a pathname into a drive specification and the rest of the
@@ -135,13 +153,14 @@ def splitdrive(p):
     return p[:0], p
 
 
+print("DEBUG: posixpath.py entry")
 try:
+    print("DEBUG: posixpath.py try import _path_splitroot_ex from posix")
     from posix import _path_splitroot_ex as splitroot
-except ImportError:
+    print("DEBUG: posixpath.py imported _path_splitroot_ex successfully")
+except (ImportError, AttributeError) as e:
+    print(f"DEBUG: posixpath.py caught {type(e)}: {e}")
     def splitroot(p):
-        """Split a pathname into drive, root and tail.
-
-        The tail contains anything after the root."""
         p = os.fspath(p)
         if isinstance(p, bytes):
             sep = b'/'
@@ -150,15 +169,11 @@ except ImportError:
             sep = '/'
             empty = ''
         if p[:1] != sep:
-            # Relative path, e.g.: 'foo'
             return empty, empty, p
         elif p[1:2] != sep or p[2:3] == sep:
-            # Absolute path, e.g.: '/foo', '///foo', '////foo', etc.
             return empty, sep, p[1:]
-        else:
-            # Precisely two leading slashes, e.g.: '//foo'. Implementation defined per POSIX, see
-            # https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap04.html#tag_04_13
-            return empty, p[:2], p[2:]
+        return empty, p[:2], p[2:]
+    print("DEBUG: posixpath.py finished splitroot fallback")
 
 
 # Return the tail (basename) part of a path, same as split(path)[1].
@@ -340,10 +355,11 @@ def expandvars(path):
 # It should be understood that this may change the meaning of the path
 # if it contains symbolic links!
 
+print("DEBUG: posixpath.py try import _path_normpath")
 try:
     from posix import _path_normpath as normpath
 
-except ImportError:
+except (ImportError, AttributeError):
     def normpath(path):
         """Normalize path, eliminating double slashes, etc."""
         path = os.fspath(path)

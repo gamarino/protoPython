@@ -63,6 +63,8 @@ run_tests() {
     echo "" >> "$LOG"
 }
 
+cd "$BASE_DIR/tests" || exit 1
+
 run_tests "Essential" "${ESSENTIAL[@]}"
 run_tests "Important" "${IMPORTANT[@]}"
 run_tests "Necessary" "${NECESSARY[@]}"

@@ -2297,3 +2297,39 @@ TEST_F(FoundationTest, SubprocessRun) {
     const proto::ProtoObject* fileVal = subMod->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__file__"));
     EXPECT_TRUE(fileVal != nullptr && fileVal->isString(ctx));
 }
+
+TEST_F(FoundationTest, ReproCrash) {
+    proto::ProtoContext* context = env.getContext();
+    // Create dictionary
+    const proto::ProtoObject* dict = context->newObject(true)->addParent(context, env.getDictPrototype());
+    dict->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->newSparseList()->asObject(context));
+    
+    // Add item
+    const proto::ProtoObject* setitem = dict->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__setitem__"));
+    const proto::ProtoList* setArgs = context->newList()
+        ->appendLast(context, context->fromUTF8String("key"))
+        ->appendLast(context, context->fromInteger(42));
+    setitem->asMethod(context)(context, dict, nullptr, setArgs, nullptr);
+
+    // Get items()
+    const proto::ProtoObject* itemsMethod = dict->getAttribute(context, proto::ProtoString::fromUTF8String(context, "items"));
+    ASSERT_NE(itemsMethod, nullptr);
+    const proto::ProtoObject* itemsObj = itemsMethod->asMethod(context)(context, dict, nullptr, nullptr, nullptr);
+    
+    // Iterate manually via PythonEnvironment::next (simulating OP_FOR_ITER)
+    // 1. Get iterator
+    const proto::ProtoObject* iterMethod = itemsObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__iter__"));
+    // If list, it might use builtin iter mechanism. 
+    // Let's use env.resolve("iter") to be sure we match bytecode behavior
+    const proto::ProtoObject* pyIter = env.resolve("iter");
+    const proto::ProtoList* iterArgs = context->newList()->appendLast(context, itemsObj);
+    const proto::ProtoObject* iterator = pyIter->asMethod(context)(context, PROTO_NONE, nullptr, iterArgs, nullptr);
+    ASSERT_NE(iterator, nullptr);
+
+    // 2. Loop
+    while (true) {
+        const proto::ProtoObject* val = env.next(iterator);
+        if (!val) break;
+        // EXPECT_TRUE(val != nullptr);
+    }
+}

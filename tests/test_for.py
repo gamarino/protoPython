@@ -1,6 +1,3 @@
-items = [1, 2, 3]
-total = 0
-for x in items:
-    print(x)
-    total += x
-print("Total:", total)
+d = {'a': 1, 'b': 2}
+for k, v in d.items():
+    print(k, v)

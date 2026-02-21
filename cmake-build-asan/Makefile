@@ -117,7 +117,7 @@ rebuild_cache/fast: rebuild_cache
 
 # Special rule for the target list_install_components
 list_install_components:
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --cyan "Available install components are: \"Unspecified\" \"gmock\" \"gtest\" \"protoCore\" \"protoPython\""
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --cyan "Available install components are: \"Unspecified\" \"protoCore\" \"protoPython\""
 .PHONY : list_install_components
 
 # Special rule for the target list_install_components
@@ -229,6 +229,19 @@ concurrent_append_benchmark: cmake_check_build_system
 concurrent_append_benchmark/fast:
 	$(MAKE) $(MAKESILENT) -f protoCore/CMakeFiles/concurrent_append_benchmark.dir/build.make protoCore/CMakeFiles/concurrent_append_benchmark.dir/build
 .PHONY : concurrent_append_benchmark/fast
+
+#=============================================================================
+# Target rules for targets named package_protocore_only
+
+# Build rule for target.
+package_protocore_only: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 package_protocore_only
+.PHONY : package_protocore_only
+
+# fast build rule for target.
+package_protocore_only/fast:
+	$(MAKE) $(MAKESILENT) -f protoCore/CMakeFiles/package_protocore_only.dir/build.make protoCore/CMakeFiles/package_protocore_only.dir/build
+.PHONY : package_protocore_only/fast
 
 #=============================================================================
 # Target rules for targets named proto_tests
@@ -387,6 +400,19 @@ test_basic_block_analysis/fast:
 .PHONY : test_basic_block_analysis/fast
 
 #=============================================================================
+# Target rules for targets named test_hpy_context
+
+# Build rule for target.
+test_hpy_context: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_hpy_context
+.PHONY : test_hpy_context
+
+# fast build rule for target.
+test_hpy_context/fast:
+	$(MAKE) $(MAKESILENT) -f test/library/CMakeFiles/test_hpy_context.dir/build.make test/library/CMakeFiles/test_hpy_context.dir/build
+.PHONY : test_hpy_context/fast
+
+#=============================================================================
 # Target rules for targets named protopy
 
 # Build rule for target.
@@ -412,6 +438,19 @@ test_regr/fast:
 	$(MAKE) $(MAKESILENT) -f test/regression/CMakeFiles/test_regr.dir/build.make test/regression/CMakeFiles/test_regr.dir/build
 .PHONY : test_regr/fast
 
+#=============================================================================
+# Target rules for targets named protopyc
+
+# Build rule for target.
+protopyc: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 protopyc
+.PHONY : protopyc
+
+# fast build rule for target.
+protopyc/fast:
+	$(MAKE) $(MAKESILENT) -f src/compiler/CMakeFiles/protopyc.dir/build.make src/compiler/CMakeFiles/protopyc.dir/build
+.PHONY : protopyc/fast
+
 # Help Target
 help:
 	@echo "The following are some of the valid targets for this Makefile:"
@@ -427,6 +466,7 @@ help:
 	@echo "... package_source"
 	@echo "... rebuild_cache"
 	@echo "... test"
+	@echo "... package_protocore_only"
 	@echo "... concurrent_append_benchmark"
 	@echo "... gmock"
 	@echo "... gmock_main"
@@ -437,9 +477,11 @@ help:
 	@echo "... protoPython"
 	@echo "... proto_tests"
 	@echo "... protopy"
+	@echo "... protopyc"
 	@echo "... test_basic_block_analysis"
 	@echo "... test_execution_engine"
 	@echo "... test_foundation"
+	@echo "... test_hpy_context"
 	@echo "... test_minimal"
 	@echo "... test_protocore_minimal"
 	@echo "... test_regr"

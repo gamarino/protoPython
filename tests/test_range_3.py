@@ -1,0 +1,6 @@
+r = range(5)
+is_none = (r is None)
+print("r is None:", is_none)
+type_r = type(r)
+print("type(r):", type_r)
+print("type(None):", type(None))

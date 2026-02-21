@@ -7,15 +7,14 @@ namespace protoPython {
 namespace ast {
 
 static const proto::ProtoObject* create_ast_node_type(proto::ProtoContext* ctx, const char* name, const proto::ProtoObject* base) {
-    const proto::ProtoObject* type = ctx->newObject(true);
-    if (base) type = type->addParent(ctx, base);
+    const proto::ProtoObject* type = base ? base->newChild(ctx, true) : ctx->newObject(true);
     type = type->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__name__"), ctx->fromUTF8String(name));
     return type;
 }
 
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
-    const proto::ProtoObject* mod_obj = ctx->newObject(true);
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    const proto::ProtoObject* mod_obj = env && env->getObjectPrototype() ? env->getObjectPrototype()->newChild(ctx, true) : ctx->newObject(true);
     const proto::ProtoObject* objectProto = env ? env->getObjectPrototype() : nullptr;
 
     const proto::ProtoObject* ast_base = create_ast_node_type(ctx, "AST", objectProto);

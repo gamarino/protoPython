@@ -6,5 +6,5 @@ CXX_DEFINES = -DprotoPython_EXPORTS
 
 CXX_INCLUDES = -I/home/gamarino/Documentos/proyectos/protoPython/include -I/home/gamarino/Documentos/proyectos/protoPython/src/library/../../include -I/home/gamarino/Documentos/proyectos/protoCore/headers
 
-CXX_FLAGS = -fsanitize=address -fno-omit-frame-pointer -g -std=gnu++20 -fPIC
+CXX_FLAGS = -fsanitize=address -fno-omit-frame-pointer -g -std=gnu++20 -fPIC -O0
 

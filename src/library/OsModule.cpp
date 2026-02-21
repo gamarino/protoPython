@@ -118,8 +118,7 @@ static const proto::ProtoObject* py_scandir_next(
         if (n[0] == '.' && (n[1] == '\0' || (n[1] == '.' && n[2] == '\0')))
             continue;
 
-        const proto::ProtoObject* entry = ctx->newObject(true);
-        if (direntry_proto) entry = entry->addParent(ctx, direntry_proto);
+        const proto::ProtoObject* entry = direntry_proto ? direntry_proto->newChild(ctx, true) : ctx->newObject(true);
         
         std::string fullPath = state->path;
         if (fullPath.back() != '/') fullPath += "/";
@@ -715,10 +714,7 @@ static const proto::ProtoObject* py_exit(
 
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment* env) {
     if (!direntry_proto) {
-        direntry_proto = ctx->newObject(false);
-        if (env && env->getObjectPrototype()) {
-            direntry_proto = direntry_proto->addParent(ctx, env->getObjectPrototype());
-        }
+        direntry_proto = env && env->getObjectPrototype() ? env->getObjectPrototype()->newChild(ctx, false) : ctx->newObject(false);
         // Ensure direntry_proto is a fresh object and not polluting global Object prototype
         // In some protoCore versions, newObject(true) might return a shared object if not careful.
         // We set it explicitly to have no parent or a fresh one if possible.
@@ -738,10 +734,10 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
 
 
 
-    const proto::ProtoObject* mod = ctx->newObject(true);
+    const proto::ProtoObject* mod = env && env->getObjectPrototype() ? env->getObjectPrototype()->newChild(ctx, true) : ctx->newObject(true);
     
     // Create Environ object
-    const proto::ProtoObject* environProt = ctx->newObject(false);
+    const proto::ProtoObject* environProt = env && env->getObjectPrototype() ? env->getObjectPrototype()->newChild(ctx, false) : ctx->newObject(false);
     environProt = environProt->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__getitem__"), 
         ctx->fromMethod(const_cast<proto::ProtoObject*>(environProt), py_environ_getitem));
     environProt = environProt->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__setitem__"), 
@@ -751,12 +747,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     environProt = environProt->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "keys"), 
         ctx->fromMethod(const_cast<proto::ProtoObject*>(environProt), py_environ_keys_method));
 
-    const proto::ProtoObject* environObj = ctx->newObject(false);
-    environObj = environObj->addParent(ctx, environProt);
-    if (env && env->getObjectPrototype()) {
-        mod = mod->addParent(ctx, env->getObjectPrototype());
-        environProt = environProt->addParent(ctx, env->getObjectPrototype());
-    }
+    const proto::ProtoObject* environObj = environProt->newChild(ctx, false);
 
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "environ"), environObj);
 

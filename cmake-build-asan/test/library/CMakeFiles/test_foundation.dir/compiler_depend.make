@@ -25,6 +25,7 @@ test/library/CMakeFiles/test_foundation.dir/TestFoundation.cpp.o: /home/gamarino
   _deps/googletest-src/googletest/include/gtest/internal/gtest-string.h \
   _deps/googletest-src/googletest/include/gtest/internal/gtest-type-util.h \
   /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/PythonEnvironment.h \
+  /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/Tokenizer.h \
   /usr/include/alloca.h \
   /usr/include/asm-generic/bitsperlong.h \
   /usr/include/asm-generic/errno-base.h \
@@ -204,6 +205,7 @@ test/library/CMakeFiles/test_foundation.dir/TestFoundation.cpp.o: /home/gamarino
   /usr/include/c++/13/string \
   /usr/include/c++/13/string_view \
   /usr/include/c++/13/system_error \
+  /usr/include/c++/13/thread \
   /usr/include/c++/13/tuple \
   /usr/include/c++/13/type_traits \
   /usr/include/c++/13/typeinfo \
@@ -577,8 +579,6 @@ test/library/CMakeFiles/test_foundation.dir/TestFoundation.cpp.o: /home/gamarino
 
 /usr/include/c++/13/bits/erase_if.h:
 
-/usr/include/c++/13/bits/shared_ptr.h:
-
 /usr/include/c++/13/bits/semaphore_base.h:
 
 /usr/include/c++/13/bits/ranges_algobase.h:
@@ -621,8 +621,6 @@ test/library/CMakeFiles/test_foundation.dir/TestFoundation.cpp.o: /home/gamarino
 
 /usr/include/time.h:
 
-/usr/include/c++/13/bits/max_size_type.h:
-
 /usr/include/c++/13/bits/streambuf.tcc:
 
 /usr/include/c++/13/bits/locale_facets_nonio.tcc:
@@ -630,6 +628,10 @@ test/library/CMakeFiles/test_foundation.dir/TestFoundation.cpp.o: /home/gamarino
 /usr/include/c++/13/bits/stl_heap.h:
 
 /usr/include/c++/13/utility:
+
+/usr/include/x86_64-linux-gnu/bits/floatn-common.h:
+
+/usr/include/c++/13/bits/requires_hosted.h:
 
 /usr/include/c++/13/bits/locale_facets.h:
 
@@ -687,6 +689,32 @@ _deps/googletest-src/googletest/include/gtest/gtest-param-test.h:
 
 /usr/include/c++/13/bits/stream_iterator.h:
 
+/usr/include/x86_64-linux-gnu/bits/signum-arch.h:
+
+/usr/include/x86_64-linux-gnu/bits/errno.h:
+
+/usr/include/c++/13/bits/stl_pair.h:
+
+/usr/include/x86_64-linux-gnu/bits/types/__sigset_t.h:
+
+/usr/include/c++/13/bits/charconv.h:
+
+/usr/include/c++/13/bits/hashtable_policy.h:
+
+/usr/include/x86_64-linux-gnu/c++/13/bits/ctype_inline.h:
+
+/usr/include/x86_64-linux-gnu/bits/signal_ext.h:
+
+/usr/include/c++/13/bits/std_function.h:
+
+/usr/include/c++/13/bits/char_traits.h:
+
+/usr/include/c++/13/bits/exception.h:
+
+/usr/include/c++/13/bits/cxxabi_init_exception.h:
+
+/usr/include/c++/13/typeinfo:
+
 /usr/include/x86_64-linux-gnu/bits/types/struct_sched_param.h:
 
 /usr/include/asm-generic/errno.h:
@@ -717,7 +745,13 @@ _deps/googletest-src/googletest/include/gtest/gtest-param-test.h:
 
 /usr/include/c++/13/ext/atomicity.h:
 
+/usr/include/c++/13/bits/shared_ptr.h:
+
 /usr/include/c++/13/bits/basic_ios.h:
+
+/home/gamarino/Documentos/proyectos/protoPython/include/protoPython/Tokenizer.h:
+
+/usr/include/string.h:
 
 _deps/googletest-src/googletest/include/gtest/internal/gtest-string.h:
 
@@ -726,6 +760,10 @@ _deps/googletest-src/googletest/include/gtest/internal/gtest-string.h:
 /home/gamarino/Documentos/proyectos/protoCore/headers/protoCore.h:
 
 /usr/include/regex.h:
+
+/usr/include/c++/13/streambuf:
+
+/usr/include/c++/13/bits/memory_resource.h:
 
 /usr/include/c++/13/bits/this_thread_sleep.h:
 
@@ -741,41 +779,9 @@ _deps/googletest-src/googletest/include/gtest/internal/gtest-port-arch.h:
 
 _deps/googletest-src/googletest/include/gtest/internal/gtest-death-test-internal.h:
 
-/usr/include/x86_64-linux-gnu/bits/types/__sigset_t.h:
-
-/usr/include/c++/13/bits/charconv.h:
-
-/usr/include/c++/13/bits/hashtable_policy.h:
-
-/usr/include/x86_64-linux-gnu/c++/13/bits/ctype_inline.h:
-
-/usr/include/x86_64-linux-gnu/bits/signal_ext.h:
-
-/usr/include/c++/13/bits/std_function.h:
-
-/usr/include/c++/13/bits/char_traits.h:
-
-/usr/include/c++/13/bits/exception.h:
-
-/usr/include/c++/13/bits/memory_resource.h:
-
-/usr/include/c++/13/streambuf:
-
-/usr/include/c++/13/bits/cxxabi_init_exception.h:
-
-/usr/include/c++/13/typeinfo:
-
 _deps/googletest-src/googletest/include/gtest/internal/custom/gtest-printers.h:
 
 /usr/include/alloca.h:
-
-/usr/include/c++/13/bits/ranges_cmp.h:
-
-/usr/include/asm-generic/int-ll64.h:
-
-/usr/include/c++/13/bits/shared_ptr_atomic.h:
-
-/usr/include/c++/13/set:
 
 /usr/include/c++/13/bits/invoke.h:
 
@@ -861,6 +867,18 @@ _deps/googletest-src/googletest/include/gtest/gtest-assertion-result.h:
 
 /usr/include/c++/13/bits/atomic_timed_wait.h:
 
+/usr/include/c++/13/bits/ranges_cmp.h:
+
+/usr/include/asm-generic/int-ll64.h:
+
+/usr/include/c++/13/bits/shared_ptr_atomic.h:
+
+/usr/include/c++/13/set:
+
+/usr/include/c++/13/bits/max_size_type.h:
+
+/usr/include/c++/13/thread:
+
 /usr/include/asm-generic/posix_types.h:
 
 /usr/include/stdc-predef.h:
@@ -876,10 +894,6 @@ _deps/googletest-src/googletest/include/gtest/internal/gtest-port.h:
 /usr/include/c++/13/bits/refwrap.h:
 
 _deps/googletest-src/googletest/include/gtest/gtest.h:
-
-/usr/include/c++/13/bits/stl_relops.h:
-
-_deps/googletest-src/googletest/include/gtest/gtest_pred_impl.h:
 
 /usr/include/c++/13/array:
 
@@ -918,6 +932,10 @@ _deps/googletest-src/googletest/include/gtest/gtest_pred_impl.h:
 /usr/include/c++/13/cassert:
 
 /usr/include/c++/13/bits/cpp_type_traits.h:
+
+_deps/googletest-src/googletest/include/gtest/gtest_pred_impl.h:
+
+/usr/include/c++/13/bits/stl_relops.h:
 
 /usr/include/c++/13/bits/ostream_insert.h:
 
@@ -981,12 +999,6 @@ _deps/googletest-src/googletest/include/gtest/gtest-matchers.h:
 
 /usr/include/c++/13/debug/assertions.h:
 
-/usr/include/x86_64-linux-gnu/bits/signum-arch.h:
-
-/usr/include/c++/13/bits/stl_pair.h:
-
-/usr/include/x86_64-linux-gnu/bits/errno.h:
-
 /usr/include/c++/13/ext/aligned_buffer.h:
 
 /usr/include/locale.h:
@@ -1011,9 +1023,9 @@ _deps/googletest-src/googletest/include/gtest/gtest-matchers.h:
 
 /usr/include/c++/13/functional:
 
-/usr/include/c++/13/bits/std_thread.h:
-
 /usr/include/limits.h:
+
+/usr/include/c++/13/bits/std_thread.h:
 
 /usr/include/c++/13/initializer_list:
 
@@ -1113,8 +1125,6 @@ _deps/googletest-src/googletest/include/gtest/internal/custom/gtest-port.h:
 
 /usr/include/stdlib.h:
 
-/usr/include/string.h:
-
 /usr/include/x86_64-linux-gnu/bits/statx.h:
 
 /usr/include/unistd.h:
@@ -1138,7 +1148,3 @@ _deps/googletest-src/googletest/include/gtest/internal/custom/gtest-port.h:
 /usr/include/x86_64-linux-gnu/bits/cpu-set.h:
 
 /usr/include/x86_64-linux-gnu/bits/endian.h:
-
-/usr/include/c++/13/bits/requires_hosted.h:
-
-/usr/include/x86_64-linux-gnu/bits/floatn-common.h:

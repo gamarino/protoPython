@@ -3,7 +3,7 @@ Path operations common to more than one OS
 Do not use directly.  The OS specific modules import the appropriate
 functions from this module themselves.
 """
-import os
+# import os
 import stat
 
 __all__ = ['commonprefix', 'exists', 'getatime', 'getctime', 'getmtime',
@@ -15,6 +15,7 @@ __all__ = ['commonprefix', 'exists', 'getatime', 'getctime', 'getmtime',
 # This is false for dangling symbolic links on systems that support them.
 def exists(path):
     """Test whether a path exists.  Returns False for broken symbolic links"""
+    import os
     try:
         os.stat(path)
     except (OSError, ValueError):
@@ -25,6 +26,7 @@ def exists(path):
 # Being true for dangling symbolic links is also useful.
 def lexists(path):
     """Test whether a path exists.  Returns True for broken symbolic links"""
+    import os
     try:
         os.lstat(path)
     except (OSError, ValueError):
@@ -35,6 +37,7 @@ def lexists(path):
 # for the same path on systems that support symlinks
 def isfile(path):
     """Test whether a path is a regular file"""
+    import os
     try:
         st = os.stat(path)
     except (OSError, ValueError):
@@ -47,6 +50,7 @@ def isfile(path):
 # can be true for the same path on systems that support symlinks
 def isdir(s):
     """Return true if the pathname refers to an existing directory."""
+    import os
     try:
         st = os.stat(s)
     except (OSError, ValueError):
@@ -59,6 +63,7 @@ def isdir(s):
 
 def islink(path):
     """Test whether a path is a symbolic link"""
+    import os
     try:
         st = os.lstat(path)
     except (OSError, ValueError, AttributeError):
@@ -68,36 +73,38 @@ def islink(path):
 
 # Is a path a junction?
 def isjunction(path):
-    """Test whether a path is a junction
-    Junctions are not supported on the current platform"""
+    import os
     os.fspath(path)
     return False
 
 
 def isdevdrive(path):
-    """Determines whether the specified path is on a Windows Dev Drive.
-    Dev Drives are not supported on the current platform"""
+    import os
     os.fspath(path)
     return False
 
 
 def getsize(filename):
     """Return the size of a file, reported by os.stat()."""
+    import os
     return os.stat(filename).st_size
 
 
 def getmtime(filename):
     """Return the last modification time of a file, reported by os.stat()."""
+    import os
     return os.stat(filename).st_mtime
 
 
 def getatime(filename):
     """Return the last access time of a file, reported by os.stat()."""
+    import os
     return os.stat(filename).st_atime
 
 
 def getctime(filename):
     """Return the metadata change time of a file, reported by os.stat()."""
+    import os
     return os.stat(filename).st_ctime
 
 
@@ -110,6 +117,7 @@ def commonprefix(m):
     # API and they are already doing what they need to be OS-agnostic and so
     # they most likely won't be using an os.PathLike object in the sublists.
     if not isinstance(m[0], (list, tuple)):
+        import os
         m = tuple(map(os.fspath, m))
     s1 = min(m)
     s2 = max(m)
@@ -133,6 +141,7 @@ def samefile(f1, f2):
     This is determined by the device number and i-node number and
     raises an exception if an os.stat() call on either pathname fails.
     """
+    import os
     s1 = os.stat(f1)
     s2 = os.stat(f2)
     return samestat(s1, s2)
@@ -142,6 +151,7 @@ def samefile(f1, f2):
 # (Not necessarily the same file descriptor!)
 def sameopenfile(fp1, fp2):
     """Test whether two open file objects reference the same file"""
+    import os
     s1 = os.fstat(fp1)
     s2 = os.fstat(fp2)
     return samestat(s1, s2)
@@ -176,6 +186,17 @@ def _splitext(p, sep, altsep, extsep):
             filenameIndex += 1
 
     return p, p[:0]
+
+import sys
+print(f"DEBUG: genericpath finishing. id(sys)={id(sys)} id(sys.modules['genericpath'])={id(sys.modules.get('genericpath'))}")
+print(f"DEBUG: id(None)={id(None)}")
+print(f"DEBUG: genericpath globals id: {id(globals())}")
+print(f"DEBUG: genericpath _splitext defined: {_splitext} id={id(_splitext)}")
+try:
+    val = getattr(globals(), '_splitext', 'MISSING')
+    print(f"DEBUG: genericpath globals _splitext: {val} id={id(val)}")
+except Exception as e:
+    print(f"DEBUG: genericpath globals error: {e}")
 
 def _check_arg_types(funcname, *args):
     hasstr = hasbytes = False

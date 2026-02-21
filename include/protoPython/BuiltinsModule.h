@@ -38,6 +38,13 @@ const proto::ProtoObject* py_complex_repr(
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters);
 
+const proto::ProtoObject* py_type(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters);
+
 const proto::ProtoObject* py_type_prepare(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,

@@ -202,13 +202,13 @@ CMAKE_PROJECT_HOMEPAGE_URL:STATIC=
 CMAKE_PROJECT_NAME:STATIC=protoPython
 
 //Value Computed by CMake
-CMAKE_PROJECT_VERSION:STATIC=0.1.0
+CMAKE_PROJECT_VERSION:STATIC=0.2.0
 
 //Value Computed by CMake
 CMAKE_PROJECT_VERSION_MAJOR:STATIC=0
 
 //Value Computed by CMake
-CMAKE_PROJECT_VERSION_MINOR:STATIC=1
+CMAKE_PROJECT_VERSION_MINOR:STATIC=2
 
 //Value Computed by CMake
 CMAKE_PROJECT_VERSION_PATCH:STATIC=0
@@ -332,6 +332,9 @@ CPACK_SOURCE_TZ:BOOL=ON
 //Enable to build ZIP source packages
 CPACK_SOURCE_ZIP:BOOL=OFF
 
+//Path to a program.
+DPKG_EXECUTABLE:FILEPATH=/usr/bin/dpkg
+
 //Directory under which to collect all populated content
 FETCHCONTENT_BASE_DIR:PATH=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/_deps
 
@@ -358,13 +361,16 @@ GTEST_HAS_ABSL:BOOL=OFF
 
 //Enable installation of googletest. (Projects embedding googletest
 // may want to turn this OFF.)
-INSTALL_GTEST:BOOL=ON
+INSTALL_GTEST:BOOL=OFF
 
 //Run benchmark suite in CTest
 PROTOPY_BENCHMARKS:BOOL=OFF
 
 //Trace GC path lock acquisition and release to stderr
 PROTO_GC_LOCK_TRACE:BOOL=OFF
+
+//Path to a program.
+RPMBUILD_EXECUTABLE:FILEPATH=RPMBUILD_EXECUTABLE-NOTFOUND
 
 //Value Computed by CMake
 gmock_BINARY_DIR:STATIC=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/_deps/googletest-build/googlemock
@@ -569,7 +575,7 @@ CMAKE_MODULE_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: CMAKE_NM
 CMAKE_NM-ADVANCED:INTERNAL=1
 //number of local generators
-CMAKE_NUMBER_OF_MAKEFILES:INTERNAL=10
+CMAKE_NUMBER_OF_MAKEFILES:INTERNAL=11
 //ADVANCED property for variable: CMAKE_OBJCOPY
 CMAKE_OBJCOPY-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: CMAKE_OBJDUMP

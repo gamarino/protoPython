@@ -92,7 +92,7 @@ test_regr_EXTERNAL_OBJECTS =
 
 test/regression/test_regr: test/regression/CMakeFiles/test_regr.dir/test_regr.cpp.o
 test/regression/test_regr: test/regression/CMakeFiles/test_regr.dir/build.make
-test/regression/test_regr: src/library/libprotoPython.so
+test/regression/test_regr: src/library/libprotoPython.so.0.2.0
 test/regression/test_regr: lib/libgtest_main.a
 test/regression/test_regr: protoCore/libprotoCore.so.1.0.0
 test/regression/test_regr: lib/libgtest.a
