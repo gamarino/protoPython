@@ -285,7 +285,8 @@ std::unique_ptr<ASTNode> Parser::parseAtom() {
             e = parseExpression();
         }
 
-        if (!isStarred && cur_.type == TokenType::For) {
+        bool isComp = cur_.type == TokenType::For || (cur_.type == TokenType::Async && tok_.peek().type == TokenType::For);
+        if (!isStarred && isComp) {
             auto ge = createNode<GeneratorExpNode>();
             ge->elt = std::move(e);
             ge->generators = parseComprehensions();
@@ -347,20 +348,11 @@ std::unique_ptr<ASTNode> Parser::parseAtom() {
             first = parseExpression();
         }
 
-        if (!isStarred && cur_.type == TokenType::For) {
+        bool isComp = cur_.type == TokenType::For || (cur_.type == TokenType::Async && tok_.peek().type == TokenType::For);
+        if (!isStarred && isComp) {
             auto lc = createNode<ListCompNode>();
             lc->elt = std::move(first);
-            while (cur_.type == TokenType::For) {
-                Comprehension c;
-                advance(); // for
-                c.target = parseTargetList();
-                expect(TokenType::In);
-                c.iter = parseOrExpr();
-                while (accept(TokenType::If)) {
-                    c.ifs.push_back(parseOrExpr());
-                }
-                lc->generators.push_back(std::move(c));
-            }
+            lc->generators = parseComprehensions();
             expect(TokenType::RSquare);
             return lc;
         }
@@ -411,20 +403,11 @@ std::unique_ptr<ASTNode> Parser::parseAtom() {
             firstKey = parseExpression();
         }
 
-        if (!isStarred && !isDoubleStarred && cur_.type == TokenType::For) {
+        bool isComp = cur_.type == TokenType::For || (cur_.type == TokenType::Async && tok_.peek().type == TokenType::For);
+        if (!isStarred && !isDoubleStarred && isComp) {
             auto sc = createNode<SetCompNode>();
             sc->elt = std::move(firstKey);
-            while (cur_.type == TokenType::For) {
-                Comprehension c;
-                advance(); // for
-                c.target = parseTargetList();
-                expect(TokenType::In);
-                c.iter = parseOrExpr();
-                while (accept(TokenType::If)) {
-                    c.ifs.push_back(parseOrExpr());
-                }
-                sc->generators.push_back(std::move(c));
-            }
+            sc->generators = parseComprehensions();
             expect(TokenType::RCurly);
             return sc;
         }
@@ -437,21 +420,12 @@ std::unique_ptr<ASTNode> Parser::parseAtom() {
                 d->values.push_back(std::move(firstKey));
             } else {
                 auto val = parseExpression();
-                if (cur_.type == TokenType::For) {
+                bool isComp = cur_.type == TokenType::For || (cur_.type == TokenType::Async && tok_.peek().type == TokenType::For);
+                if (isComp) {
                     auto dc = createNode<DictCompNode>();
                     dc->key = std::move(firstKey);
                     dc->value = std::move(val);
-                    while (cur_.type == TokenType::For) {
-                        Comprehension c;
-                        advance(); // for
-                        c.target = parseTargetList();
-                        expect(TokenType::In);
-                        c.iter = parseOrExpr();
-                        while (accept(TokenType::If)) {
-                            c.ifs.push_back(parseOrExpr());
-                        }
-                        dc->generators.push_back(std::move(c));
-                    }
+                    dc->generators = parseComprehensions();
                     expect(TokenType::RCurly);
                     return dc;
                 }
@@ -578,7 +552,8 @@ std::unique_ptr<ASTNode> Parser::parsePrimary() {
                     call->keywords.push_back({kwname, parseExpression()});
                 } else {
                     auto arg = parseExpression();
-                    if (call->args.empty() && call->keywords.empty() && cur_.type == TokenType::For) {
+                    bool isComp = cur_.type == TokenType::For || (cur_.type == TokenType::Async && tok_.peek().type == TokenType::For);
+                    if (call->args.empty() && call->keywords.empty() && isComp) {
                         // list(x for x in y)
                         auto ge = createNode<GeneratorExpNode>();
                         ge->elt = std::move(arg);
@@ -1786,11 +1761,17 @@ std::unique_ptr<ASTNode> Parser::parseAsync() {
 
 std::vector<Comprehension> Parser::parseComprehensions() {
     std::vector<Comprehension> generators;
-    while (cur_.type == TokenType::For) {
+    for (;;) {
+        bool isAsync = accept(TokenType::Async);
+        if (cur_.type != TokenType::For) {
+            if (isAsync) error("expected 'for' after 'async'");
+            break;
+        }
         Comprehension c;
+        c.is_async = isAsync;
         advance(); // for
         c.target = parseTargetList();
-        expect(TokenType::In);
+        if (!expect(TokenType::In)) break;
         c.iter = parseOrExpr();
         while (accept(TokenType::If)) {
             c.ifs.push_back(parseOrExpr());
@@ -1799,6 +1780,7 @@ std::vector<Comprehension> Parser::parseComprehensions() {
     }
     return generators;
 }
+
 
 std::vector<std::unique_ptr<TypeParamNode>> Parser::parseTypeParams() {
     std::vector<std::unique_ptr<TypeParamNode>> params;

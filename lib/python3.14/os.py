@@ -805,7 +805,8 @@ def _create_environ_mapping():
 # unicode environ
 print("DEBUG: creating environ")
 environ = _create_environ_mapping()
-print("DEBUG: environ created")
+print("DEBUG: environ created, type:", type(environ).__name__)
+print("DEBUG: environ.mro:", [c.__name__ for c in type(environ).__mro__])
 del _create_environ_mapping
 
 

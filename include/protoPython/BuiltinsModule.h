@@ -25,6 +25,13 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
                                    const proto::ProtoObject* complexProto = nullptr,
                                    const proto::ProtoObject* ioModule = nullptr);
 
+const proto::ProtoObject* py_object_hash(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters);
+
 const proto::ProtoObject* py_complex(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,

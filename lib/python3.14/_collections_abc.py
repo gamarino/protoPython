@@ -33,13 +33,16 @@ Unit tests are in test_collections.
 #######################################################################
 
 from abc import ABCMeta, abstractmethod
+print("DEBUG: _collections_abc importing sys", flush=True)
 import sys
+print("DEBUG: _collections_abc starting aliases", flush=True)
 
 GenericAlias = type(list[int])
 EllipsisType = type(...)
 def _f(): pass
 FunctionType = type(_f)
 del _f
+print("DEBUG: _collections_abc defining Awaitable", flush=True)
 
 __all__ = ["Awaitable", "Coroutine",
            "AsyncIterable", "AsyncIterator", "AsyncGenerator",
@@ -190,7 +193,9 @@ class Coroutine(Awaitable):
         return NotImplemented
 
 
+print("DEBUG: _collections_abc about to register Coroutine", flush=True)
 Coroutine.register(coroutine)
+print("DEBUG: _collections_abc registered Coroutine", flush=True)
 
 
 class AsyncIterable(metaclass=ABCMeta):

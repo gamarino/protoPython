@@ -1842,6 +1842,24 @@ static const proto::ProtoObject* py_locals(
                     keys = keys->appendLast(context, name);
                 }
             }
+            // Copy any attributes stored directly on the frame (e.g. from OP_STORE_NAME in class bodies)
+            const proto::ProtoObject* fKeysObj = f->getAttribute(context, env ? env->getKeysString() : proto::ProtoString::fromUTF8String(context, "__keys__"));
+            const proto::ProtoList* fKeysList = fKeysObj ? fKeysObj->asList(context) : nullptr;
+            if (fKeysList) {
+                for (size_t i = 0; i < fKeysList->getSize(context); ++i) {
+                    const proto::ProtoObject* nameObj = fKeysList->getAt(context, i);
+                    if (nameObj && nameObj->isString(context)) {
+                        const proto::ProtoObject* val = f->getAttribute(context, nameObj->asString(context));
+                        if (val && val != PROTO_NONE) { // In Python, None can be a value, but if attribute lookup fails it returns PROTO_NONE in our engine
+                            if (!keys->has(context, nameObj)) {
+                                keys = keys->appendLast(context, nameObj);
+                            }
+                            data = data->setAt(context, nameObj->getHash(context), val);
+                        }
+                    }
+                }
+            }
+
             dict->setAttribute(context, env ? env->getDataString() : proto::ProtoString::fromUTF8String(context, "__data__"), data->asObject(context));
             dict->setAttribute(context, env ? env->getKeysString() : proto::ProtoString::fromUTF8String(context, "__keys__"), keys->asObject(context));
             if (env && env->getDictPrototype()) {
@@ -1943,6 +1961,23 @@ static const proto::ProtoObject* py_sorted(
     listObj->setAttribute(context, env ? env->getDataString() : proto::ProtoString::fromUTF8String(context, "__data__"), resultList->asObject(context));
     return listObj;
 }
+
+const proto::ProtoObject* py_object_hash(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoObject* obj = self;
+    if (!obj && positionalParameters->getSize(context) > 0) {
+        obj = positionalParameters->getAt(context, 0);
+    }
+    if (!obj) return PROTO_NONE;
+    // Identity hash
+    unsigned long h = reinterpret_cast<unsigned long>(obj);
+    return context->fromInteger(static_cast<long long>(h));
+}
+
 
 static const proto::ProtoObject* py_hash(
     proto::ProtoContext* context,
@@ -2152,7 +2187,12 @@ const proto::ProtoObject* py_type(
             targetClass = const_cast<proto::ProtoObject*>(targetClass->addParent(context, env->getObjectPrototype()));
         }
         
-        targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, env ? env->getClassString() : proto::ProtoString::fromUTF8String(context, "__class__"), self));
+        if (get_env_diag()) {
+            std::string n = "unknown";
+            if (name && name->isString(context)) name->asString(context)->toUTF8String(context, n);
+            fprintf(stderr, "DEBUG: py_type name='%s' targetClass=%p __class__=cls=%p\n", n.c_str(), (void*)targetClass, (void*)cls);
+        }
+        targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, env ? env->getClassString() : proto::ProtoString::fromUTF8String(context, "__class__"), cls));
         const proto::ProtoString* py_name = env ? env->getNameString() : proto::ProtoString::fromUTF8String(context, "__name__");
         targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, py_name, name));
         

@@ -33,22 +33,39 @@ class ABCMeta(type):
     _abc_invalidation_counter = 0
 
     def __new__(mcls, name, bases, namespace, /, **kwargs):
+        print(f"DEBUG ABC: ABCMeta.__new__({name}) starting super().__new__", flush=True)
         cls = super().__new__(mcls, name, bases, namespace, **kwargs)
-        # Compute set of abstract method names
-        abstracts = {name
-                     for name, value in namespace.items()
-                     if getattr(value, "__isabstractmethod__", False)}
+        print(f"DEBUG ABC: ABCMeta.__new__({name}) finished super().__new__", flush=True)
+        print(f"DEBUG ABC: ABCMeta.__new__({name}) namespace keys: {list(namespace.keys())}", flush=True)
+        print(f"DEBUG ABC: ABCMeta.__new__({name}) namespace type: {type(namespace)}, items type: {type(namespace.items())}", flush=True)
+        abstracts = []
+        for n, v in namespace.items():
+            print(f"DEBUG ABC: ABCMeta.__new__({name}) about to process {n}", flush=True)
+            is_abs = getattr(v, "__isabstractmethod__", False)
+            print(f"DEBUG ABC: ABCMeta.__new__({name}) post-getattr for {n}", flush=True)
+            print(f"DEBUG ABC: ABCMeta.__new__({name}) checking {n}: val={repr(v)} is_abs={is_abs}", flush=True)
+            if is_abs:
+                print(f"DEBUG ABC: ABCMeta.__new__({name}) found abstract: {n}", flush=True)
+                abstracts.append(n)
+        abstracts = set(abstracts)
+        print(f"DEBUG ABC: ABCMeta.__new__({name}) computed own abstracts: {abstracts}", flush=True)
         for base in bases:
-            for name in getattr(base, "__abstractmethods__", set()):
-                value = getattr(cls, name, None)
+            print(f"DEBUG ABC: ABCMeta.__new__({name}) getting abstracts from {base}", flush=True)
+            abs_methods = getattr(base, "__abstractmethods__", set())
+            print(f"DEBUG ABC: ABCMeta.__new__({name}) abstracts from {base}: {abs_methods}", flush=True)
+            for mname in abs_methods:
+                print(f"DEBUG ABC: ABCMeta.__new__({name}) checking method {mname}", flush=True)
+                value = getattr(cls, mname, None)
                 if getattr(value, "__isabstractmethod__", False):
-                    abstracts.add(name)
+                    abstracts.add(mname)
         cls.__abstractmethods__ = frozenset(abstracts)
+        print(f"DEBUG ABC: ABCMeta.__new__({name}) finished abstracts", flush=True)
         # Set up inheritance registry
         cls._abc_registry = WeakSet()
         cls._abc_cache = WeakSet()
         cls._abc_negative_cache = WeakSet()
         cls._abc_negative_cache_version = ABCMeta._abc_invalidation_counter
+        print(f"DEBUG ABC: ABCMeta.__new__({name}) finished", flush=True)
         return cls
 
     def register(cls, subclass):
@@ -56,6 +73,7 @@ class ABCMeta(type):
 
         Returns the subclass, to allow usage as a class decorator.
         """
+        print(f"DEBUG ABC: {cls.__name__}.register({subclass.__name__ if hasattr(subclass, '__name__') else subclass})", flush=True)
         if not isinstance(subclass, type):
             raise TypeError("Can only register classes")
         if issubclass(subclass, cls):
@@ -107,6 +125,7 @@ class ABCMeta(type):
 
     def __subclasscheck__(cls, subclass):
         """Override for issubclass(subclass, cls)."""
+        print(f"DEBUG ABC: {cls.__name__}.__subclasscheck__({subclass.__name__ if hasattr(subclass, '__name__') else subclass})", flush=True)
         if not isinstance(subclass, type):
             raise TypeError('issubclass() arg 1 must be a class')
         # Check cache

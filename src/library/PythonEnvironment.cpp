@@ -297,7 +297,19 @@ static const proto::ProtoObject* py_mappingproxy_getitem(
         // Fix for types: if the wrapped object is a Type, use attribute access (for __dict__).
         // Types in protoPython store members as attributes.
         const proto::ProtoObject* cls = data->getAttribute(context, env ? env->getClassString() : proto::ProtoString::fromUTF8String(context, "__class__"));
+        bool isType = false;
         if (env && cls == env->getTypePrototype()) {
+            isType = true;
+        } else {
+            const proto::ProtoObject* isPyCls = data->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__is_python_class__"));
+            if (isPyCls && isPyCls != PROTO_NONE) isType = true;
+            else {
+                const proto::ProtoObject* mro = data->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__mro__"));
+                if (mro && mro->asList(context)) isType = true;
+            }
+        }
+
+        if (isType) {
              const proto::ProtoObject* res = data->getAttribute(context, key->asString(context));
              if (res) return res;
              // If not found, fall through to raise KeyError (or return nullptr if caller handles it?)
@@ -1926,11 +1938,11 @@ static const proto::ProtoObject* py_bytes_iter_next(
     const proto::ProtoString* indexName = proto::ProtoString::fromUTF8String(context, "__bytes_index__");
     const proto::ProtoObject* dataObj = self->getAttribute(context, dataName);
     const proto::ProtoObject* indexObj = self->getAttribute(context, indexName);
-    if (!dataObj || !dataObj->isString(context) || !indexObj || !indexObj->isInteger(context)) return PROTO_NONE;
+    if (!dataObj || !dataObj->isString(context) || !indexObj || !indexObj->isInteger(context)) return nullptr;
     const proto::ProtoString* s = dataObj->asString(context);
     int idx = static_cast<int>(indexObj->asLong(context));
     unsigned long size = s->getSize(context);
-    if (static_cast<unsigned long>(idx) >= size) return PROTO_NONE;
+    if (static_cast<unsigned long>(idx) >= size) return nullptr;
     std::string c;
     s->toUTF8String(context, c);
     const proto::ProtoObject* result = context->fromInteger(static_cast<unsigned char>(c[static_cast<size_t>(idx)]));
@@ -2706,9 +2718,9 @@ static const proto::ProtoObject* py_set_iter_next(
     const proto::ProtoSparseList* keywordParameters) {
     const proto::ProtoString* iterItName = proto::ProtoString::fromUTF8String(context, "__iter_it__");
     const proto::ProtoObject* itObj = self->getAttribute(context, iterItName);
-    if (!itObj || !itObj->asSetIterator(context)) return PROTO_NONE;
+    if (!itObj || !itObj->asSetIterator(context)) return nullptr;
     const proto::ProtoSetIterator* it = itObj->asSetIterator(context);
-    if (!it || !it->hasNext(context)) return PROTO_NONE;
+    if (!it || !it->hasNext(context)) return nullptr;
     const proto::ProtoObject* value = it->next(context);
     const proto::ProtoSetIterator* nextIt = it->advance(context);
     self->setAttribute(context, iterItName, nextIt->asObject(context));
@@ -6326,6 +6338,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     objectPrototype = objectPrototype->setAttribute(rootContext_, py_module, builtinsVal);
 
     const proto::ProtoString* py_format_dunder = proto::ProtoString::fromUTF8String(rootContext_, "__format__");
+    const proto::ProtoString* py_hash_dunder = proto::ProtoString::fromUTF8String(rootContext_, "__hash__");
     objectPrototype = objectPrototype->setAttribute(rootContext_, py_init, rootContext_->fromMethod(nullptr, py_object_init));
     objectPrototype = objectPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_object_repr));
     objectPrototype = objectPrototype->setAttribute(rootContext_, py_str, rootContext_->fromMethod(nullptr, py_object_str));
@@ -6913,8 +6926,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     nativeProvider->registerModule("json", [](proto::ProtoContext* ctx) { return json::initialize(ctx); });
     nativeProvider->registerModule("os.path", [](proto::ProtoContext* ctx) { return os_path::initialize(ctx); });
     nativeProvider->registerModule("pathlib", [](proto::ProtoContext* ctx) { return pathlib::initialize(ctx); });
-    nativeProvider->registerModule("collections.abc", [](proto::ProtoContext* ctx) { return collections_abc::initialize(ctx); });
-    nativeProvider->registerModule("_collections_abc", [](proto::ProtoContext* ctx) { return collections_abc::initialize(ctx); });
+    // nativeProvider->registerModule("collections.abc", [](proto::ProtoContext* ctx) { return collections_abc::initialize(ctx); });
+    // nativeProvider->registerModule("_collections_abc", [](proto::ProtoContext* ctx) { return collections_abc::initialize(ctx); });
     nativeProvider->registerModule("atexit", [](proto::ProtoContext* ctx) { return atexit_module::initialize(ctx); });
     nativeProvider->registerModule("_weakref", [](proto::ProtoContext* ctx) { return weakref::initialize(ctx); });
 
@@ -7318,8 +7331,7 @@ int PythonEnvironment::executeString(const std::string& source, const std::strin
                 ->appendLast(context, context->fromUTF8String(source.c_str()))
                 ->appendLast(context, const_cast<proto::ProtoObject*>(mod));
             execFn->asMethod(context)(context, const_cast<proto::ProtoObject*>(builtinsModule), nullptr, args, nullptr);
-            const proto::ProtoObject* excAfterExec = takePendingException();
-            if (excAfterExec && excAfterExec != PROTO_NONE) {
+            if (hasPendingException()) {
                 result = -2;
             }
         }

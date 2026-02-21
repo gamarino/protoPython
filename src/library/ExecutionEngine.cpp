@@ -1827,13 +1827,17 @@ const proto::ProtoObject* executeBytecodeRange(
                     // Update frame (CoW support)
                     std::string nStr;
                     nameObj->asString(ctx)->toUTF8String(ctx, nStr);
-                    if (nStr == "_splitext") {
-                        fprintf(stderr, "DEBUG: OP_STORE_NAME(_splitext) on frame %p to val %p\n", (void*)frame, (void*)val);
-            fflush(stderr);
-                    }
                     const proto::ProtoObject* newFrame = frame->setAttribute(ctx, nameObj->asString(ctx), val);
                     frame = const_cast<proto::ProtoObject*>(newFrame);
                     stack.pop_back(); // Pop val now that it's stored
+                    
+                    const proto::ProtoString* dataS = getInternalString(ctx, "__data__");
+                    const proto::ProtoObject* dataObj = frame->getAttribute(ctx, dataS);
+                    if (dataObj && dataObj->asSparseList(ctx)) {
+                        const proto::ProtoSparseList* dataList = dataObj->asSparseList(ctx);
+                        dataList = dataList->setAt(ctx, nameObj->getHash(ctx), val);
+                        frame = const_cast<proto::ProtoObject*>(frame->setAttribute(ctx, dataS, dataList->asObject(ctx)));
+                    }
                     
                     const proto::ProtoString* keysS = getInternalString(ctx, "__keys__");
                     const proto::ProtoObject* keysObj = frame->getAttribute(ctx, keysS);
@@ -3254,10 +3258,8 @@ const proto::ProtoObject* executeBytecodeRange(
             const proto::ProtoObject* result = invokeCallable(ctx, callable, plArgs, kwMap);
             if (env) env->popKwNames();
             
-            // Now safe to pop everything
-            for (int j = 0; j < arg + 3; ++j) stack.pop_back(); // Pop callable, args, kwVals, namesTuple, plArgs, kwMap
-            // Wait, for (int j = 0; j < arg + 1; ++j) popped callable, args, kwVals, namesTuple.
-            // But we have 2 more (plArgs, kwMap). So total arg + 3. Correct.
+            // Now stack contains: callable + (arg) items + kwMap. Total to pop: arg + 2.
+            for (int j = 0; j < arg + 2; ++j) stack.pop_back(); // Pop callable, args, kwMap
             stack.push_back(result ? result : (env ? env->getNonePrototype() : PROTO_NONE));
         } else if (op == OP_CALL_FUNCTION) {
             if (stack.size() < (unsigned long)(arg + 1)) continue;
@@ -3412,6 +3414,11 @@ const proto::ProtoObject* executeBytecodeRange(
                 const proto::ProtoObject* kwds = stack[firstIdx + 2];
                 const proto::ProtoObject* bases = stack[firstIdx + 1];
                 const proto::ProtoObject* name = stack[firstIdx];
+                if (get_env_diag()) {
+                    std::string n = "unknown";
+                    if (name && name->isString(ctx)) name->asString(ctx)->toUTF8String(ctx, n);
+                    fprintf(stderr, "DEBUG OP_BUILD_CLASS: building name='%s'\n", n.c_str());
+                }
                 
                 PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
                 const proto::ProtoString* nameS = env ? env->getNameString() : getInternalString(ctx, "__name__");
@@ -3549,6 +3556,9 @@ const proto::ProtoObject* executeBytecodeRange(
                         if (tNameAttr && tNameAttr->isString(ctx)) tNameAttr->asString(ctx)->toUTF8String(ctx, tName);
                         fprintf(stderr, "DEBUG: OP_BUILD_CLASS injecting __class__ = %p (name=%s) into ns = %p\n", (void*)targetClass, tName.c_str(), (void*)ns);
                     }
+                    if (get_env_diag()) {
+                        fprintf(stderr, "DEBUG: OP_BUILD_CLASS injecting targetClass=%p into ns=%p\n", (void*)targetClass, (void*)ns);
+                    }
                     ns->setAttribute(ctx, clsName, targetClass);
                 }
 
@@ -3591,22 +3601,18 @@ const proto::ProtoObject* executeBytecodeRange(
                     if (env->isStopIteration(ctx, env->peekPendingException())) {
                         env->clearPendingException();
                         stack.pop_back();
-                        if (arg >= 0 && static_cast<unsigned long>(arg) < n) {
-                            i = static_cast<unsigned long>(arg);
-                            continue;
-                        }
-                    } else {
+                        i = static_cast<unsigned long>(arg);
                         continue;
+                    } else {
+                        // the unhandled exception will be picked up at the top of the next iteration
+                        continue; 
                     }
                 } else {
                     // exhaustion
                     stack.pop_back();
-                    if (arg >= 0 && static_cast<unsigned long>(arg) < n) {
-                        i = static_cast<unsigned long>(arg);
-                        continue;
-                    }
+                    i = static_cast<unsigned long>(arg);
+                    continue;
                 }
-                continue;
             }
             // continue normal execution after pushing val
         } else if (op == OP_UNPACK_SEQUENCE) {
