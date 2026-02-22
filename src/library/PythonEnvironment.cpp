@@ -6563,10 +6563,14 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     listPrototype = listPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__iadd__"), rootContext_->fromMethod(nullptr, py_list_iadd));
 
     const proto::ProtoObject* listIterProto = objectPrototype->newChild(rootContext_, true);
+    listIterProto = listIterProto->setAttribute(rootContext_, py_class, typePrototype);
+    listIterProto = listIterProto->setAttribute(rootContext_, py_name, proto::ProtoString::fromUTF8String(rootContext_, "list_iterator")->asObject(rootContext_));
     listIterProto = listIterProto->setAttribute(rootContext_, py_next, rootContext_->fromMethod(nullptr, py_list_iter_next));
     listIterProto = listIterProto->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_self_iter));
     listPrototype = listPrototype->setAttribute(rootContext_, py_iter_proto, listIterProto);
     const proto::ProtoObject* listReverseIterProto = objectPrototype->newChild(rootContext_, true);
+    listReverseIterProto = listReverseIterProto->setAttribute(rootContext_, py_class, typePrototype);
+    listReverseIterProto = listReverseIterProto->setAttribute(rootContext_, py_name, proto::ProtoString::fromUTF8String(rootContext_, "list_reverseiterator")->asObject(rootContext_));
     listReverseIterProto = listReverseIterProto->setAttribute(rootContext_, py_next, rootContext_->fromMethod(nullptr, py_list_reversed_next));
     listReverseIterProto = listReverseIterProto->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_self_iter));
     listPrototype = listPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__reversed_prototype__"), listReverseIterProto);
@@ -6631,6 +6635,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     tuplePrototype = tuplePrototype->setAttribute(rootContext_, py_eq, rootContext_->fromMethod(nullptr, py_tuple_eq));
 
     const proto::ProtoObject* tupleIterProto = objectPrototype->newChild(rootContext_, true);
+    tupleIterProto = tupleIterProto->setAttribute(rootContext_, py_class, typePrototype);
+    tupleIterProto = tupleIterProto->setAttribute(rootContext_, py_name, proto::ProtoString::fromUTF8String(rootContext_, "tuple_iterator")->asObject(rootContext_));
     tupleIterProto = tupleIterProto->setAttribute(rootContext_, py_next, rootContext_->fromMethod(nullptr, py_tuple_iter_next));
     tupleIterProto = tupleIterProto->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_self_iter));
     tuplePrototype = tuplePrototype->setAttribute(rootContext_, py_iter_proto, tupleIterProto);
@@ -6664,6 +6670,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     setPrototype = setPrototype->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_set_iter));
 
     const proto::ProtoObject* setIterProto = objectPrototype->newChild(rootContext_, true);
+    setIterProto = setIterProto->setAttribute(rootContext_, py_class, typePrototype);
+    setIterProto = setIterProto->setAttribute(rootContext_, py_name, proto::ProtoString::fromUTF8String(rootContext_, "set_iterator")->asObject(rootContext_));
     setIterProto = setIterProto->setAttribute(rootContext_, py_next, rootContext_->fromMethod(nullptr, py_set_iter_next));
     setIterProto = setIterProto->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_self_iter));
     setPrototype = setPrototype->setAttribute(rootContext_, py_iter_proto, setIterProto);
@@ -6690,6 +6698,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     bytesPrototype = bytesPrototype->setAttribute(rootContext_, py_call, rootContext_->fromMethod(nullptr, py_bytes_call));
 
     const proto::ProtoObject* bytesIterProto = objectPrototype->newChild(rootContext_, true);
+    bytesIterProto = bytesIterProto->setAttribute(rootContext_, py_class, typePrototype);
+    bytesIterProto = bytesIterProto->setAttribute(rootContext_, py_name, proto::ProtoString::fromUTF8String(rootContext_, "bytes_iterator")->asObject(rootContext_));
     bytesIterProto = bytesIterProto->setAttribute(rootContext_, py_next, rootContext_->fromMethod(nullptr, py_bytes_iter_next));
     bytesIterProto = bytesIterProto->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_self_iter));
     bytesPrototype = bytesPrototype->setAttribute(rootContext_, py_iter_proto, bytesIterProto);
@@ -6837,6 +6847,15 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     tracebackPrototype = tracebackPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "tb_next"), PROTO_NONE);
     tracebackPrototype = tracebackPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "tb_lasti"), PROTO_NONE);
     tracebackPrototype = tracebackPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "tb_lineno"), PROTO_NONE);
+
+    // V75: Ensure all protoCore built-in iterator prototypes have __class__ = type
+    if (space_->stringIteratorPrototype) space_->stringIteratorPrototype = const_cast<proto::ProtoObject*>(space_->stringIteratorPrototype->setAttribute(rootContext_, py_class, typePrototype));
+    if (space_->listIteratorPrototype) space_->listIteratorPrototype = const_cast<proto::ProtoObject*>(space_->listIteratorPrototype->setAttribute(rootContext_, py_class, typePrototype));
+    if (space_->tupleIteratorPrototype) space_->tupleIteratorPrototype = const_cast<proto::ProtoObject*>(space_->tupleIteratorPrototype->setAttribute(rootContext_, py_class, typePrototype));
+    if (space_->sparseListIteratorPrototype) space_->sparseListIteratorPrototype = const_cast<proto::ProtoObject*>(space_->sparseListIteratorPrototype->setAttribute(rootContext_, py_class, typePrototype));
+    if (space_->setIteratorPrototype) space_->setIteratorPrototype = const_cast<proto::ProtoObject*>(space_->setIteratorPrototype->setAttribute(rootContext_, py_class, typePrototype));
+    if (space_->multisetIteratorPrototype) space_->multisetIteratorPrototype = const_cast<proto::ProtoObject*>(space_->multisetIteratorPrototype->setAttribute(rootContext_, py_class, typePrototype));
+    if (space_->rangeIteratorPrototype) space_->rangeIteratorPrototype = const_cast<proto::ProtoObject*>(space_->rangeIteratorPrototype->setAttribute(rootContext_, py_class, typePrototype));
 
     space_->objectPrototype = const_cast<proto::ProtoObject*>(objectPrototype);
     space_->stringPrototype = const_cast<proto::ProtoObject*>(strPrototype);

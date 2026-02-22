@@ -199,7 +199,6 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
     // 5. Build Execution Frame (for locals()/sys._getframe)
     proto::ProtoObject* frame = const_cast<proto::ProtoObject*>(calleeCtx->newObject(true));
     if (env) {
-        frame = const_cast<proto::ProtoObject*>(frame->addParent(calleeCtx, env->getFramePrototype()));
         const proto::ProtoObject* closure = self->getAttribute(calleeCtx, env->getClosureString());
         if (closure && closure != PROTO_NONE) {
             const proto::ProtoList* closureList = closure->asList(calleeCtx);
@@ -216,6 +215,8 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
             }
             frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getClosureString(), closure));
         }
+        // ADD FRAME PROTOTYPE LAST SO IT BECOMES HEAD!
+        frame = const_cast<proto::ProtoObject*>(frame->addParent(calleeCtx, env->getFramePrototype()));
         frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getFCodeString(), codeObj));
         frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getFGlobalsString(), globalsObj));
     }

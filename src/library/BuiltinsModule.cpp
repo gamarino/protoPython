@@ -2363,7 +2363,16 @@ static const proto::ProtoObject* py_isinstance(
         if (intType && checkInterfaceInstanceOf(context, intType, cls)) return PROTO_TRUE;
     }
     
-    return checkInterfaceInstanceOf(context, obj, cls) ? PROTO_TRUE : PROTO_FALSE;
+    if (checkInterfaceInstanceOf(context, obj, cls)) return PROTO_TRUE;
+
+    // Check __class__ attribute if native parent link failed
+    const proto::ProtoString* classStr = env ? env->getClassString() : proto::ProtoString::fromUTF8String(context, "__class__");
+    const proto::ProtoObject* objClass = obj->getAttribute(context, classStr);
+    if (objClass && objClass != obj) {
+        if (checkInterfaceInstanceOf(context, objClass, cls)) return PROTO_TRUE;
+    }
+
+    return PROTO_FALSE;
 }
 
 static const proto::ProtoObject* py_issubclass(

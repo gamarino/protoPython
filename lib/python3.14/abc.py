@@ -5,7 +5,6 @@
 
 
 def abstractmethod(funcobj):
-    print(f"DEBUG ABC: abstractmethod({funcobj.__name__ if hasattr(funcobj, '__name__') else funcobj})", flush=True)
     funcobj.__isabstractmethod__ = True
     return funcobj
 

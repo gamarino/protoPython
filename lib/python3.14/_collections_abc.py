@@ -88,8 +88,13 @@ dict_values = type({}.values())
 dict_items = type({}.items())
 ## misc ##
 mappingproxy = type(type.__dict__)
+print("DEBUG ABC: mappingproxy is", mappingproxy, flush=True)
 def _get_framelocalsproxy():
-    return type(sys._getframe().f_locals)
+    try:
+        import sys
+        return type(sys._getframe().f_locals)
+    except (ImportError, AttributeError, ValueError):
+        return dict
 framelocalsproxy = _get_framelocalsproxy()
 del _get_framelocalsproxy
 generator = type((lambda: (yield))())
@@ -829,7 +834,9 @@ class Mapping(Collection):
     __reversed__ = None
 
 Mapping.register(mappingproxy)
-Mapping.register(framelocalsproxy)
+
+if framelocalsproxy is not None:
+    Mapping.register(framelocalsproxy)
 
 
 class MappingView(Sized):
