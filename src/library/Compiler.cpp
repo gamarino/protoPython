@@ -1354,6 +1354,8 @@ bool Compiler::compileTry(TryNode* n) {
 
             if (!compileNode(h.body.get())) return false;
             
+            emit(OP_POP_EXCEPT);
+
             int endJumpSlot = bytecodeOffset();
             emit(OP_JUMP_ABSOLUTE, 0); 
             jumpToEndLocations.push_back(endJumpSlot);
@@ -2299,12 +2301,13 @@ bool Compiler::compileLambda(LambdaNode* n) {
     int co_flags = CO_NEWLOCALS;
     if (!forceMapped) co_flags |= CO_OPTIMIZED;
     if (!captured.empty()) co_flags |= CO_NESTED;
+    if (bodyCompiler.isGenerator_) co_flags |= 0x20; // CO_GENERATOR
 
     const proto::ProtoList* co_lnotab = ctx_->newList();
     for (unsigned char b : bodyCompiler.lnotabVec_)
         co_lnotab = co_lnotab->appendLast(ctx_, ctx_->fromInteger(b));
 
-    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), ctx_->fromUTF8String(filename_.c_str())->asString(ctx_), co_varnames, nparams, kwonlyargcount, automatic_count, co_flags, false, ctx_->fromUTF8String("<lambda>")->asString(ctx_), bodyCompiler.firstLine_, co_lnotab);
+    const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), ctx_->fromUTF8String(filename_.c_str())->asString(ctx_), co_varnames, nparams, kwonlyargcount, automatic_count, co_flags, bodyCompiler.isGenerator_, ctx_->fromUTF8String("<lambda>")->asString(ctx_), bodyCompiler.firstLine_, co_lnotab);
     if (!codeObj) return false;
     int idx = addConstant(codeObj);
     emit(OP_LOAD_CONST, idx);

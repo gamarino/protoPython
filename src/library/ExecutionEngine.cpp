@@ -476,6 +476,16 @@ static const proto::ProtoObject* py_function_get(proto::ProtoContext* ctx,
     bound = bound->setAttribute(ctx, getInternalString(ctx, "__func__"),
                                self);
     
+    // Copy __name__ and __qualname__ from the original function
+    const proto::ProtoObject* funcName = self->getAttribute(ctx, env ? env->getNameString() : getInternalString(ctx, "__name__"));
+    if (funcName && funcName != PROTO_NONE) {
+        bound = bound->setAttribute(ctx, env ? env->getNameString() : getInternalString(ctx, "__name__"), funcName);
+    }
+    const proto::ProtoObject* funcQualname = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__qualname__"));
+    if (funcQualname && funcQualname != PROTO_NONE) {
+        bound = bound->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__qualname__"), funcQualname);
+    }
+    
     // Set __call__ to a special native method that will do the binding call
     bound = bound->setAttribute(ctx, env ? env->getCallString() : getInternalString(ctx, "__call__"),
                                ctx->fromMethod(const_cast<proto::ProtoObject*>(bound), runBoundMethodCall));
@@ -503,6 +513,14 @@ static proto::ProtoObject* createUserFunction(proto::ProtoContext* ctx, const pr
     // Explicitly set __class__ to fix type identity if prototype linkage failed
     if (env && env->getFunctionPrototype()) {
         fn = fn->setAttribute(ctx, env ? env->getClassString() : proto::ProtoString::fromUTF8String(ctx, "__class__"), env->getFunctionPrototype());
+    }
+    if (codeObj) {
+        const proto::ProtoString* co_name_s = proto::ProtoString::fromUTF8String(ctx, "co_name");
+        const proto::ProtoObject* codeName = codeObj->getAttribute(ctx, co_name_s);
+        if (codeName && codeName != PROTO_NONE) {
+            fn = fn->setAttribute(ctx, env ? env->getNameString() : proto::ProtoString::fromUTF8String(ctx, "__name__"), codeName);
+            fn = fn->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__qualname__"), codeName);
+        }
     }
     if (closureFrame && env) {
         // Wrap closure frame in a tuple for CPython compatibility (f.__closure__ is a tuple)
@@ -1332,15 +1350,8 @@ const proto::ProtoObject* invokePythonCallable(proto::ProtoContext* ctx,
 
 
 static void checkSTW(proto::ProtoContext* ctx) {
-    if (ctx && ctx->space && ctx->space->stwFlag.load()) {
-        if (ctx->space->gcThread && std::this_thread::get_id() == ctx->space->gcThread->get_id()) return;
-        ctx->space->parkedThreads++;
-        {
-            std::unique_lock<std::recursive_mutex> lock(proto::ProtoSpace::globalMutex);
-            ctx->space->gcCV.notify_all();
-            ctx->space->stopTheWorldCV.wait(lock, [ctx] { return !ctx->space->stwFlag.load(); });
-        }
-        ctx->space->parkedThreads--;
+    if (ctx && ctx->thread) {
+        ctx->thread->synchToGC();
     }
 }
 
@@ -1409,16 +1420,14 @@ const proto::ProtoObject* runUserClassCall(proto::ProtoContext* ctx,
     if (newM && newM != PROTO_NONE) {
         if (get_env_diag()) {}
         
-        // If it's a raw function (not yet bound), we must pass 'self' manually.
-        // But getAttribute on a class usually returns a bound method.
-        const proto::ProtoList* newArgs = args;
-        if (!newM->isMethod(ctx)) {
-             newArgs = ctx->newList()->appendLast(ctx, self);
-             if (args) {
-                 for (size_t i = 0; i < args->getSize(ctx); ++i) {
-                     newArgs = newArgs->appendLast(ctx, args->getAt(ctx, i));
-                 }
-             }
+        // In Python, __new__ is acts like a staticmethod, so looking it up on a class 
+        // does not bind it. We MUST explicitly pass `self` (the class) as the first argument 
+        // to `__new__`, regardless of whether it's a native C++ method or a Python function.
+        const proto::ProtoList* newArgs = ctx->newList()->appendLast(ctx, self);
+        if (args) {
+            for (size_t i = 0; i < args->getSize(ctx); ++i) {
+                newArgs = newArgs->appendLast(ctx, args->getAt(ctx, i));
+            }
         }
         
         obj = const_cast<proto::ProtoObject*>(invokeCallable(ctx, newM, newArgs, kwargs));
@@ -1440,11 +1449,31 @@ const proto::ProtoObject* runUserClassCall(proto::ProtoContext* ctx,
     }
     
     // Invoke __init__
-    const proto::ProtoString* initS = env ? env->getInitString() : getInternalString(ctx, "__init__");
-    const proto::ProtoObject* initM = env ? env->getAttribute(ctx, obj, initS) : obj->getAttribute(ctx, initS);
-    if (initM && initM != PROTO_NONE) {
-        if (get_env_diag()) {}
-        invokePythonCallable(ctx, initM, args, kwargs);
+    // Magic methods should be looked up on the class, not the instance object's __dict__ directly.
+    if (obj && obj != PROTO_NONE) {
+        bool isInstanceOfSelf = false;
+        if (env) {
+            isInstanceOfSelf = (obj->isInstanceOf(ctx, self) == PROTO_TRUE);
+        } else {
+            // Very naive fallback if env is missing
+            const proto::ProtoObject* cls = obj->getAttribute(ctx, getInternalString(ctx, "__class__"));
+            isInstanceOfSelf = (cls == self);
+        }
+        
+        if (isInstanceOfSelf) {
+            const proto::ProtoString* initS = env ? env->getInitString() : getInternalString(ctx, "__init__");
+            const proto::ProtoObject* initM = self->getAttribute(ctx, initS);
+            if (initM && initM != PROTO_NONE) {
+                // Since we looked it up on the class (self), we must manually pass `obj` as first arg
+                const proto::ProtoList* initArgs = ctx->newList()->appendLast(ctx, obj);
+                if (args) {
+                    for (size_t i = 0; i < args->getSize(ctx); ++i) {
+                        initArgs = initArgs->appendLast(ctx, args->getAt(ctx, i));
+                    }
+                }
+                invokePythonCallable(ctx, initM, initArgs, kwargs);
+            }
+        }
     }
     
     return obj;
@@ -1617,6 +1646,9 @@ const proto::ProtoObject* executeBytecodeRange(
                 }
                 blockStack.pop_back();
 
+                if (exc && env) {
+                    env->pushActiveException(exc);
+                }
                 env->clearPendingException();
 
                 if (get_env_diag()) {
@@ -2016,8 +2048,7 @@ const proto::ProtoObject* executeBytecodeRange(
             i = next_i + arg;
             continue;
         } else if (op == OP_POP_EXCEPT) {
-            // Restore previous exception state if we tracked it, 
-            // but for now just a NOP since we handle it in blockStack
+            if (env) env->popActiveException();
         } else if (op == OP_BINARY_POWER) {
             if (stack.size() < 2) continue;
             const proto::ProtoObject* b = stack.back();
@@ -2318,42 +2349,34 @@ const proto::ProtoObject* executeBytecodeRange(
                 }
             }
         } else if (op == OP_RAISE_VARARGS) {
-            if (get_env_diag()) {}
-            const proto::ProtoObject* exc = nullptr;
-            if (!stack.empty()) {
-                exc = stack.back();
-                if (arg == 1) {
-                    if (env && env->getTypePrototype()) {
-                        const proto::ProtoObject* cls = exc->getAttribute(ctx, env->getClassString());
-                        if (cls == env->getTypePrototype()) {
-                            const proto::ProtoString* callS = env->getCallString();
-                            exc = exc->call(ctx, nullptr, callS, exc, ctx->newList(), nullptr);
-                            stack.back() = exc; // Root it
-                        }
-                    }
-                    if (env && exc) env->setPendingException(exc);
-                    stack.pop_back();
-                    continue; // Re-run to catch exception at top of loop
-                } else if (arg == 0) {
-                    if (env) {
-                        // For reraise (arg=0), the exception should be on stack if we just entered a handler,
-                        // or it might be internal to the environment.
-                        // If it's on the stack, we pop and set as pending.
-                        if (!stack.empty()) {
-                             const proto::ProtoObject* toRaise = stack.back();
-                             stack.pop_back();
-                             env->setPendingException(toRaise);
-                             continue; // Re-run to catch exception
-                        }
-                    }
-                }
-            } else if (arg == 0) {
-                 // Even if stack is empty, if we are at RAISE_VARARGS 0, we should probably 
-                 // just return nullptr to signal an unhandled reraise or error.
-                 if (env && !env->hasPendingException()) {
-                     env->raiseRuntimeError(ctx, "reraise outside of except block");
+            if (arg == 0) {
+                 const proto::ProtoObject* activeExc = env ? env->getActiveException() : nullptr;
+                 if (!activeExc && !stack.empty()) {
+                     activeExc = stack.back();
+                     stack.pop_back();
                  }
-                 continue; 
+                 if (activeExc) {
+                     if (env) env->setPendingException(activeExc);
+                 } else {
+                     if (env && !env->hasPendingException()) {
+                         env->raiseRuntimeError(ctx, "reraise outside of except block");
+                     }
+                 }
+                 continue;
+            } else if (arg == 1) {
+                 if (!stack.empty()) {
+                     const proto::ProtoObject* exc = stack.back();
+                     stack.pop_back();
+                     if (env && env->getTypePrototype()) {
+                         const proto::ProtoObject* cls = exc->getAttribute(ctx, env->getClassString());
+                         if (cls == env->getTypePrototype()) {
+                             const proto::ProtoString* callS = env->getCallString();
+                             exc = exc->call(ctx, nullptr, callS, exc, ctx->newList(), nullptr);
+                         }
+                     }
+                     if (env && exc) env->setPendingException(exc);
+                 }
+                 continue;
             }
             i = next_i;
             continue;
@@ -3439,11 +3462,63 @@ const proto::ProtoObject* executeBytecodeRange(
                     }
                 }
                 if (!metaclass || metaclass == PROTO_NONE) {
-                    // Try to find metaclass in bases
-                    if (bases && bases->asTuple(ctx) && bases->asTuple(ctx)->getSize(ctx) > 0) {
-                        const proto::ProtoObject* firstBase = bases->asTuple(ctx)->getAt(ctx, 0);
-                        metaclass = env ? env->getType(ctx, firstBase) : firstBase->getAttribute(ctx, env->getClassString());
+                    // CPython semantics: iterate all bases and find the most derived metaclass.
+                    // If multiple independent metaclasses exist, Python throws TypeError, but here we just take the first strictly derived one.
+                    const proto::ProtoObject* typeProto = env ? env->getTypePrototype() : nullptr;
+                    const proto::ProtoObject* objectProto = env ? env->getObjectPrototype() : nullptr;
+                    const proto::ProtoObject* bestMeta = typeProto;
+                    
+                    if (bases && bases->asTuple(ctx)) {
+                        const proto::ProtoTuple* tupleBases = bases->asTuple(ctx);
+                        for (size_t i = 0; i < tupleBases->getSize(ctx); ++i) {
+                            const proto::ProtoObject* base = tupleBases->getAt(ctx, i);
+                            const proto::ProtoObject* baseMeta = nullptr;
+                            if (env) {
+                                baseMeta = base->getAttribute(ctx, env->getClassString());
+                                if (!baseMeta || baseMeta == PROTO_NONE) {
+                                    baseMeta = env->getType(ctx, base);
+                                }
+                            } else {
+                                baseMeta = base->getAttribute(ctx, getInternalString(ctx, "__class__"));
+                            }
+                            if (!baseMeta || baseMeta == PROTO_NONE || baseMeta == objectProto) {
+                                // If a native base accidentally lacks a metaclass (evaluating to object), default it to type
+                                baseMeta = typeProto;
+                            }
+                            // Compute derivation: if baseMeta is a subclass of bestMeta, it becomes the new best
+                            if (baseMeta != bestMeta && bestMeta) {
+                                const proto::ProtoObject* mro = baseMeta->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__mro__"));
+                                bool isSub = false;
+                                if (mro) {
+                                    const proto::ProtoTuple* mroTuple = mro->asTuple(ctx);
+                                    if (mroTuple) {
+                                        for (size_t j = 0; j < mroTuple->getSize(ctx); ++j) {
+                                            if (mroTuple->getAt(ctx, j) == bestMeta) {
+                                                isSub = true;
+                                                break;
+                                            }
+                                        }
+                                    } else {
+                                        const proto::ProtoList* mroList = mro->asList(ctx);
+                                        if (mroList) {
+                                            for (unsigned long j = 0; j < mroList->getSize(ctx); ++j) {
+                                                if (mroList->getAt(ctx, j) == bestMeta) {
+                                                    isSub = true;
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                if (isSub) {
+                                    bestMeta = baseMeta;
+                                }
+                            } else if (!bestMeta && baseMeta) {
+                                bestMeta = baseMeta;
+                            }
+                        }
                     }
+                    metaclass = bestMeta;
                 }
                 if (!metaclass || metaclass == PROTO_NONE) {
                     metaclass = env ? env->getTypePrototype() : nullptr;

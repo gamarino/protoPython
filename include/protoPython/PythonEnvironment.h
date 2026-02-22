@@ -489,6 +489,41 @@ public:
     const proto::ProtoObject* takePendingException();
 
     /**
+     * @brief Pushes an exception to the active exception stack (used by except blocks).
+     */
+    static void pushActiveException(const proto::ProtoObject* exc);
+
+    /**
+     * @brief Pops the top exception from the active exception stack (used by OP_POP_EXCEPT).
+     */
+    static void popActiveException();
+
+    /**
+     * @brief Gets the currently active exception in the innermost except block.
+     */
+    static const proto::ProtoObject* getActiveException();
+
+    /**
+     * @brief Helper to save the thread's pending exception context and restore it on destruction.
+     * Mirrors CPython's PyErr_Fetch / PyErr_Restore semantics to protect surrounding try-except
+     * blocks from being overwritten by internal C++ exception handling.
+     */
+    class ExceptionStateSaver {
+        PythonEnvironment* env;
+        const proto::ProtoObject* savedExc;
+    public:
+        ExceptionStateSaver(PythonEnvironment* e) : env(e), savedExc(nullptr) {
+            if (env) savedExc = env->peekPendingException();
+        }
+        ~ExceptionStateSaver() {
+            if (env) {
+                // Restore the saved pending exception (protects surrounding Python blocks).
+                env->setPendingException(savedExc);
+            }
+        }
+    };
+
+    /**
      * @brief Sets the current execution frame for the current thread.
      */
     static void setCurrentFrame(const proto::ProtoObject* frame);
@@ -913,7 +948,6 @@ public:
     /** Signal handling flag (Step 1310). */
     static std::atomic<bool> s_sigintReceived;
     static std::thread::id s_mainThreadId;
-    mutable std::recursive_mutex importLock_;
 
     /** RAII scope for managing thread-local Python environment and context registration. */
     class ContextScope {
