@@ -445,30 +445,6 @@ Compiler.cpp.s:
 	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/Compiler.cpp.s
 .PHONY : Compiler.cpp.s
 
-ContextvarsModule.o: ContextvarsModule.cpp.o
-.PHONY : ContextvarsModule.o
-
-# target to build an object file
-ContextvarsModule.cpp.o:
-	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/ContextvarsModule.cpp.o
-.PHONY : ContextvarsModule.cpp.o
-
-ContextvarsModule.i: ContextvarsModule.cpp.i
-.PHONY : ContextvarsModule.i
-
-# target to preprocess a source file
-ContextvarsModule.cpp.i:
-	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/ContextvarsModule.cpp.i
-.PHONY : ContextvarsModule.cpp.i
-
-ContextvarsModule.s: ContextvarsModule.cpp.s
-.PHONY : ContextvarsModule.s
-
-# target to generate assembly for a file
-ContextvarsModule.cpp.s:
-	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/ContextvarsModule.cpp.s
-.PHONY : ContextvarsModule.cpp.s
-
 ErrnoModule.o: ErrnoModule.cpp.o
 .PHONY : ErrnoModule.o
 
@@ -1211,9 +1187,6 @@ help:
 	@echo "... Compiler.o"
 	@echo "... Compiler.i"
 	@echo "... Compiler.s"
-	@echo "... ContextvarsModule.o"
-	@echo "... ContextvarsModule.i"
-	@echo "... ContextvarsModule.s"
 	@echo "... ErrnoModule.o"
 	@echo "... ErrnoModule.i"
 	@echo "... ErrnoModule.s"

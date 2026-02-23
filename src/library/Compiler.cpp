@@ -113,32 +113,23 @@ void Compiler::applyPatches() {
     patches_.clear();
 }
 
-const proto::ProtoList* Compiler::getConstants() {
+const proto::ProtoTuple* Compiler::getConstants() {
     if (!constants_) {
-        constants_ = ctx_->newList();
-        for (auto it = constantsVec_.rbegin(); it != constantsVec_.rend(); ++it) {
-            constants_ = constants_->appendFirst(ctx_, *it);
-        }
+        constants_ = ctx_->newTuple(constantsVec_);
     }
     return constants_;
 }
 
-const proto::ProtoList* Compiler::getNames() {
+const proto::ProtoTuple* Compiler::getNames() {
     if (!names_) {
-        names_ = ctx_->newList();
-        for (auto it = namesVec_.rbegin(); it != namesVec_.rend(); ++it) {
-            names_ = names_->appendFirst(ctx_, *it);
-        }
+        names_ = ctx_->newTuple(namesVec_);
     }
     return names_;
 }
 
-const proto::ProtoList* Compiler::getBytecode() {
+const proto::ProtoTuple* Compiler::getBytecode() {
     if (!bytecode_) {
-        bytecode_ = ctx_->newList();
-        for (auto it = bytecodeVec_.rbegin(); it != bytecodeVec_.rend(); ++it) {
-            bytecode_ = bytecode_->appendFirst(ctx_, *it);
-        }
+        bytecode_ = ctx_->newTuple(bytecodeVec_);
     }
     return bytecode_;
 }
@@ -869,9 +860,11 @@ bool Compiler::compileListComp(ListCompNode* n) {
     bodyCompiler.applyPatches();
     
     // Create code object
-    const proto::ProtoList* co_varnames = ctx_->newList();
+    std::vector<const proto::ProtoObject*> varnamesVec;
+    varnamesVec.reserve(orderedLocals.size());
     for (const auto& name : orderedLocals)
-        co_varnames = co_varnames->appendLast(ctx_, ctx_->fromUTF8String(name.c_str()));
+        varnamesVec.push_back(ctx_->fromUTF8String(name.c_str()));
+    const proto::ProtoTuple* co_varnames = ctx_->newTuple(varnamesVec);
     
     int flags = CO_OPTIMIZED | CO_NEWLOCALS;
     if (isAsync) flags |= 128; // CO_COROUTINE
@@ -961,9 +954,11 @@ bool Compiler::compileDictComp(DictCompNode* n) {
     bodyCompiler.emit(OP_RETURN_VALUE);
     bodyCompiler.applyPatches();
     
-    const proto::ProtoList* co_varnames = ctx_->newList();
+    std::vector<const proto::ProtoObject*> varnamesVec;
+    varnamesVec.reserve(orderedLocals.size());
     for (const auto& name : orderedLocals)
-        co_varnames = co_varnames->appendLast(ctx_, ctx_->fromUTF8String(name.c_str()));
+        varnamesVec.push_back(ctx_->fromUTF8String(name.c_str()));
+    const proto::ProtoTuple* co_varnames = ctx_->newTuple(varnamesVec);
     
     int flags = CO_OPTIMIZED | CO_NEWLOCALS;
     if (isAsync) flags |= 128; // CO_COROUTINE
@@ -1050,9 +1045,11 @@ bool Compiler::compileSetComp(SetCompNode* n) {
     bodyCompiler.emit(OP_RETURN_VALUE);
     bodyCompiler.applyPatches();
     
-    const proto::ProtoList* co_varnames = ctx_->newList();
+    std::vector<const proto::ProtoObject*> varnamesVec;
+    varnamesVec.reserve(orderedLocals.size());
     for (const auto& name : orderedLocals)
-        co_varnames = co_varnames->appendLast(ctx_, ctx_->fromUTF8String(name.c_str()));
+        varnamesVec.push_back(ctx_->fromUTF8String(name.c_str()));
+    const proto::ProtoTuple* co_varnames = ctx_->newTuple(varnamesVec);
     
     int flags = CO_OPTIMIZED | CO_NEWLOCALS;
     if (isAsync) flags |= 128; // CO_COROUTINE
@@ -1139,9 +1136,11 @@ bool Compiler::compileGeneratorExp(GeneratorExpNode* n) {
     bodyCompiler.emit(OP_RETURN_VALUE);
     bodyCompiler.applyPatches();
     
-    const proto::ProtoList* co_varnames = ctx_->newList();
+    std::vector<const proto::ProtoObject*> varnamesVec;
+    varnamesVec.reserve(orderedLocals.size());
     for (const auto& name : orderedLocals)
-        co_varnames = co_varnames->appendLast(ctx_, ctx_->fromUTF8String(name.c_str()));
+        varnamesVec.push_back(ctx_->fromUTF8String(name.c_str()));
+    const proto::ProtoTuple* co_varnames = ctx_->newTuple(varnamesVec);
     
     int flags = CO_OPTIMIZED | CO_NEWLOCALS;
     if (isAsync) flags |= 128; // CO_COROUTINE
@@ -2174,13 +2173,13 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
     if (!n->vararg.empty()) co_flags |= CO_VARARGS;
     if (!n->kwarg.empty()) co_flags |= CO_VARKEYWORDS;
 
-    const proto::ProtoList* co_varnames_list = ctx_->newList();
+    std::vector<const proto::ProtoObject*> varnamesVec;
+    varnamesVec.reserve(varnamesOrdered.size());
     for (const auto& name : varnamesOrdered)
-        co_varnames_list = co_varnames_list->appendLast(ctx_, ctx_->fromUTF8String(name.c_str()));
+        varnamesVec.push_back(ctx_->fromUTF8String(name.c_str()));
+    const proto::ProtoTuple* co_varnames_list = ctx_->newTuple(varnamesVec);
 
-    const proto::ProtoList* co_lnotab = ctx_->newList();
-    for (unsigned char b : bodyCompiler.lnotabVec_)
-        co_lnotab = co_lnotab->appendLast(ctx_, ctx_->fromInteger(b));
+    const proto::ProtoTuple* co_lnotab = bodyCompiler.getLnotab();
 
     const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), ctx_->fromUTF8String(filename_.c_str())->asString(ctx_), co_varnames_list, nparams, kwonlyargcount, automatic_count, co_flags, bodyCompiler.isGenerator_, ctx_->fromUTF8String(n->name.c_str())->asString(ctx_), bodyCompiler.firstLine_, co_lnotab);
     if (!codeObj) return false;
@@ -2294,18 +2293,18 @@ bool Compiler::compileLambda(LambdaNode* n) {
     bodyCompiler.emit(OP_RETURN_VALUE);
     bodyCompiler.applyPatches();
 
-    const proto::ProtoList* co_varnames = ctx_->newList();
+    std::vector<const proto::ProtoObject*> varnamesVec;
+    varnamesVec.reserve(varnamesOrdered.size());
     for (const auto& name : varnamesOrdered)
-        co_varnames = co_varnames->appendLast(ctx_, ctx_->fromUTF8String(name.c_str()));
+        varnamesVec.push_back(ctx_->fromUTF8String(name.c_str()));
+    const proto::ProtoTuple* co_varnames = ctx_->newTuple(varnamesVec);
         
     int co_flags = CO_NEWLOCALS;
     if (!forceMapped) co_flags |= CO_OPTIMIZED;
     if (!captured.empty()) co_flags |= CO_NESTED;
     if (bodyCompiler.isGenerator_) co_flags |= 0x20; // CO_GENERATOR
 
-    const proto::ProtoList* co_lnotab = ctx_->newList();
-    for (unsigned char b : bodyCompiler.lnotabVec_)
-        co_lnotab = co_lnotab->appendLast(ctx_, ctx_->fromInteger(b));
+    const proto::ProtoTuple* co_lnotab = bodyCompiler.getLnotab();
 
     const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), ctx_->fromUTF8String(filename_.c_str())->asString(ctx_), co_varnames, nparams, kwonlyargcount, automatic_count, co_flags, bodyCompiler.isGenerator_, ctx_->fromUTF8String("<lambda>")->asString(ctx_), bodyCompiler.firstLine_, co_lnotab);
     if (!codeObj) return false;
@@ -2424,9 +2423,11 @@ bool Compiler::compileAsyncFunctionDef(AsyncFunctionDefNode* n) {
     
     bodyCompiler.applyPatches();
 
-    const proto::ProtoList* co_varnames = ctx_->newList();
+    std::vector<const proto::ProtoObject*> varnamesVec;
+    varnamesVec.reserve(varnamesOrdered.size());
     for (const auto& name : varnamesOrdered)
-        co_varnames = co_varnames->appendLast(ctx_, ctx_->fromUTF8String(name.c_str()));
+        varnamesVec.push_back(ctx_->fromUTF8String(name.c_str()));
+    const proto::ProtoTuple* co_varnames = ctx_->newTuple(varnamesVec);
     
     // 0x80 is CO_COROUTINE
     int co_flags = 128 | CO_NEWLOCALS; 
@@ -2436,9 +2437,7 @@ bool Compiler::compileAsyncFunctionDef(AsyncFunctionDefNode* n) {
     if (!n->kwarg.empty()) co_flags |= CO_VARKEYWORDS;
     if (bodyCompiler.isGenerator_) co_flags |= 0x20; // CO_GENERATOR
 
-    const proto::ProtoList* co_lnotab = ctx_->newList();
-    for (unsigned char b : bodyCompiler.lnotabVec_)
-        co_lnotab = co_lnotab->appendLast(ctx_, ctx_->fromInteger(b));
+    const proto::ProtoTuple* co_lnotab = bodyCompiler.getLnotab();
 
     const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), ctx_->fromUTF8String(filename_.c_str())->asString(ctx_), co_varnames, nparams, kwonlyargcount, automatic_count, co_flags, bodyCompiler.isGenerator_, ctx_->fromUTF8String(n->name.c_str())->asString(ctx_), bodyCompiler.firstLine_, co_lnotab);
     if (!codeObj) return false;
@@ -2778,11 +2777,13 @@ bool Compiler::compileExpression(ASTNode* expr) {
     return true;
 }
 
-const proto::ProtoList* Compiler::getLnotab() {
-    const proto::ProtoList* l = ctx_->newList();
-    for (unsigned char b : lnotabVec_)
-        l = l->appendLast(ctx_, ctx_->fromInteger(b));
-    return l;
+const proto::ProtoTuple* Compiler::getLnotab() {
+    std::vector<const proto::ProtoObject*> elems;
+    elems.reserve(lnotabVec_.size());
+    for (unsigned char b : lnotabVec_) {
+        elems.push_back(ctx_->fromInteger(b));
+    }
+    return ctx_->newTuple(elems);
 }
 
 bool Compiler::compileModule(ModuleNode* mod) {
@@ -2804,11 +2805,11 @@ bool Compiler::compileModule(ModuleNode* mod) {
 }
 
 const proto::ProtoObject* makeCodeObject(proto::ProtoContext* ctx,
-    const proto::ProtoList* constants,
-    const proto::ProtoList* names,
-    const proto::ProtoList* bytecode,
+    const proto::ProtoTuple* constants,
+    const proto::ProtoTuple* names,
+    const proto::ProtoTuple* bytecode,
     const proto::ProtoString* filename,
-    const proto::ProtoList* varnames,
+    const proto::ProtoTuple* varnames,
     int nparams,
     int kwonlyargcount,
     int automatic_count,
@@ -2816,15 +2817,15 @@ const proto::ProtoObject* makeCodeObject(proto::ProtoContext* ctx,
     bool isGenerator,
     const proto::ProtoString* co_name,
     int firstlineno,
-    const proto::ProtoList* lnotab) {
+    const proto::ProtoTuple* lnotab) {
     if (!ctx) return PROTO_NONE;
     const proto::ProtoObject* code = ctx->newObject(true);
     // Optional: add a 'code_proto' if we want to share methods like .exec()
     code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_consts"), reinterpret_cast<const proto::ProtoObject*>(constants));
-    code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_names"), names ? reinterpret_cast<const proto::ProtoObject*>(names) : reinterpret_cast<const proto::ProtoObject*>(ctx->newList()));
+    code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_names"), names ? reinterpret_cast<const proto::ProtoObject*>(names) : reinterpret_cast<const proto::ProtoObject*>(ctx->newTuple()));
     code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_code"), reinterpret_cast<const proto::ProtoObject*>(bytecode));
     code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_filename"), filename ? reinterpret_cast<const proto::ProtoObject*>(filename) : reinterpret_cast<const proto::ProtoObject*>(ctx->fromUTF8String("<stdin>")));
-    code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_varnames"), varnames ? reinterpret_cast<const proto::ProtoObject*>(varnames) : reinterpret_cast<const proto::ProtoObject*>(ctx->newList()));
+    code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_varnames"), varnames ? reinterpret_cast<const proto::ProtoObject*>(varnames) : reinterpret_cast<const proto::ProtoObject*>(ctx->newTuple()));
     code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_nparams"), ctx->fromInteger(nparams));
     code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_kwonlyargcount"), ctx->fromInteger(kwonlyargcount));
     code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_automatic_count"), ctx->fromInteger(automatic_count + PYTHON_STACK_BUFFER));
@@ -2834,7 +2835,7 @@ const proto::ProtoObject* makeCodeObject(proto::ProtoContext* ctx,
     code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_name"), co_name ? reinterpret_cast<const proto::ProtoObject*>(co_name) : reinterpret_cast<const proto::ProtoObject*>(ctx->fromUTF8String("<module>")));
     
     code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_firstlineno"), ctx->fromInteger(firstlineno));
-    code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_lnotab"), lnotab ? reinterpret_cast<const proto::ProtoObject*>(lnotab) : reinterpret_cast<const proto::ProtoObject*>(ctx->newList()));
+    code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_lnotab"), lnotab ? reinterpret_cast<const proto::ProtoObject*>(lnotab) : reinterpret_cast<const proto::ProtoObject*>(ctx->newTuple()));
 
     return code;
 }
@@ -2942,17 +2943,17 @@ const proto::ProtoObject* runCodeObject(proto::ProtoContext* ctx,
     proto::ProtoContext* execCtx = subCtx;
     PythonEnvironment::setCurrentContext(execCtx);
 
-    unsigned long stackOffset = (co_varnames && co_varnames->asList(execCtx)) ? co_varnames->asList(execCtx)->getSize(execCtx) : 0;
+    unsigned long stackOffset = (co_varnames && co_varnames->asTuple(execCtx)) ? co_varnames->asTuple(execCtx)->getSize(execCtx) : 0;
 
     if (std::getenv("PROTO_ENV_DIAG")) {
         fprintf(stderr, "DEBUG: runCodeObject co_code size=%lu co_consts size=%lu stackOffset=%lu\n",
-            co_code->asList(execCtx)->getSize(execCtx),
-            co_consts->asList(execCtx)->getSize(execCtx),
+            co_code->asTuple(execCtx)->getSize(execCtx),
+            co_consts->asTuple(execCtx)->getSize(execCtx),
             stackOffset);
     }
 
-    const proto::ProtoObject* result = executeBytecodeRange(execCtx, co_consts->asList(execCtx), co_code->asList(execCtx),
-        co_names ? co_names->asList(execCtx) : nullptr, frame, 0, co_code->asList(execCtx)->getSize(execCtx),
+    const proto::ProtoObject* result = executeBytecodeRange(execCtx, co_consts->asTuple(execCtx), co_code->asTuple(execCtx),
+        co_names ? co_names->asTuple(execCtx) : nullptr, frame, 0, co_code->asTuple(execCtx)->getSize(execCtx),
         stackOffset);
 
     if (std::getenv("PROTO_ENV_DIAG")) {

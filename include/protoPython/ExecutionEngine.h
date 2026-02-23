@@ -216,9 +216,9 @@ struct Block {
 
 const proto::ProtoObject* executeBytecodeRange(
     proto::ProtoContext* ctx,
-    const proto::ProtoList* constants,
-    const proto::ProtoList* bytecode,
-    const proto::ProtoList* names,
+    const proto::ProtoTuple* constants,
+    const proto::ProtoTuple* bytecode,
+    const proto::ProtoTuple* names,
     proto::ProtoObject*& frame,
     unsigned long pcStart,
     unsigned long pcEnd,
@@ -251,9 +251,9 @@ const proto::ProtoObject* py_generator_close(proto::ProtoContext* ctx, const pro
  */
 const proto::ProtoObject* executeMinimalBytecode(
     proto::ProtoContext* ctx,
-    const proto::ProtoList* constants,
-    const proto::ProtoList* bytecode,
-    const proto::ProtoList* names,
+    const proto::ProtoTuple* constants,
+    const proto::ProtoTuple* bytecode,
+    const proto::ProtoTuple* names,
     proto::ProtoObject*& frame);
 
 /** Invoke a Python callable with the given args list. Used by _thread bootstrap. */

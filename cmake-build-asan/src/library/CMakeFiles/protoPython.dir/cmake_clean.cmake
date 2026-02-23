@@ -20,8 +20,6 @@ file(REMOVE_RECURSE
   "CMakeFiles/protoPython.dir/CompiledModuleProvider.cpp.o.d"
   "CMakeFiles/protoPython.dir/Compiler.cpp.o"
   "CMakeFiles/protoPython.dir/Compiler.cpp.o.d"
-  "CMakeFiles/protoPython.dir/ContextvarsModule.cpp.o"
-  "CMakeFiles/protoPython.dir/ContextvarsModule.cpp.o.d"
   "CMakeFiles/protoPython.dir/ErrnoModule.cpp.o"
   "CMakeFiles/protoPython.dir/ErrnoModule.cpp.o.d"
   "CMakeFiles/protoPython.dir/ExceptionsModule.cpp.o"

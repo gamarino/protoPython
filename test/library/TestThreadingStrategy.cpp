@@ -10,6 +10,17 @@
 #include <protoCore.h>
 #include <cstddef>
 
+
+#include <vector>
+static const proto::ProtoTuple* listToTuple(proto::ProtoContext* ctx, const proto::ProtoList* list) {
+    std::vector<const proto::ProtoObject*> elems;
+    unsigned long size = list->getSize(ctx);
+    for (unsigned long i = 0; i < size; ++i) {
+        elems.push_back(list->getAt(ctx, i));
+    }
+    return ctx->newTuple(elems);
+}
+
 TEST(ThreadingStrategyTest, ExecutionTaskAlignment) {
     EXPECT_GE(alignof(protoPython::ExecutionTask), 64u)
         << "ExecutionTask must be 64-byte aligned to avoid false sharing";
@@ -29,8 +40,8 @@ TEST(ThreadingStrategyTest, RunTaskInlineReturnsResult) {
 
     protoPython::ExecutionTask task{};
     task.ctx = &ctx;
-    task.constants = constants;
-    task.bytecode = bytecode;
+    task.constants = listToTuple(&ctx, constants);
+    task.bytecode = listToTuple(&ctx, bytecode);
     task.names = nullptr;
     task.frame = nullptr;
     task.pcStart = 0;
@@ -53,8 +64,8 @@ TEST(ThreadingStrategyTest, SubmitTaskRunsInlineWithoutCrash) {
 
     protoPython::ExecutionTask task{};
     task.ctx = &ctx;
-    task.constants = constants;
-    task.bytecode = bytecode;
+    task.constants = listToTuple(&ctx, constants);
+    task.bytecode = listToTuple(&ctx, bytecode);
     task.pcStart = 0;
     task.pcEnd = bytecode->getSize(&ctx) - 1;
 
@@ -76,8 +87,8 @@ TEST(ThreadingStrategyTest, RunTaskInlineNullResultOutNoCrash) {
         ->appendLast(&ctx, ctx.fromInteger(protoPython::OP_RETURN_VALUE))->appendLast(&ctx, ctx.fromInteger(0));
     protoPython::ExecutionTask task{};
     task.ctx = &ctx;
-    task.constants = constants;
-    task.bytecode = bytecode;
+    task.constants = listToTuple(&ctx, constants);
+    task.bytecode = listToTuple(&ctx, bytecode);
     task.pcEnd = bytecode->getSize(&ctx) - 1;
     EXPECT_NO_FATAL_FAILURE(protoPython::runTaskInline(&task, nullptr));
 }

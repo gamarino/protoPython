@@ -21,9 +21,9 @@ namespace protoPython {
 /** Opaque task handle for bulk bytecode execution. Fits in a single cache line when possible. */
 struct alignas(64) ExecutionTask {
     proto::ProtoContext* ctx{nullptr};
-    const proto::ProtoList* constants{nullptr};
-    const proto::ProtoList* bytecode{nullptr};
-    const proto::ProtoList* names{nullptr};
+    const proto::ProtoTuple* constants{nullptr};
+    const proto::ProtoTuple* bytecode{nullptr};
+    const proto::ProtoTuple* names{nullptr};
     proto::ProtoObject* frame{nullptr};
     uint64_t pcStart{0};
     uint64_t pcEnd{0};

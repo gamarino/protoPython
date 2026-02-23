@@ -1,6 +1,12 @@
 # Evitar que los diagnósticos de ejecución entren al repo
 *.log
 exec_diag_*
+verify*.txt
+out*.txt
+test*.txt
+debug*.txt
+*trace*.txt
+*diff*.txt
 
 # Python bytecode
 __pycache__/

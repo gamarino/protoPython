@@ -28,10 +28,10 @@ public:
     /** Compile a module (exec mode). Returns true on success. */
     bool compileModule(ModuleNode* mod);
 
-    const proto::ProtoList* getConstants();
-    const proto::ProtoList* getNames();
-    const proto::ProtoList* getBytecode();
-    const proto::ProtoList* getLnotab();
+    const proto::ProtoTuple* getConstants();
+    const proto::ProtoTuple* getNames();
+    const proto::ProtoTuple* getBytecode();
+    const proto::ProtoTuple* getLnotab();
     int getFirstLine() const { return firstLine_; }
 
 private:
@@ -46,9 +46,9 @@ private:
     std::unordered_map<std::string, int> constStrIndex_;
 
     // Result holders for get*() methods
-    const proto::ProtoList* constants_ = nullptr;
-    const proto::ProtoList* names_ = nullptr;
-    const proto::ProtoList* bytecode_ = nullptr;
+    const proto::ProtoTuple* constants_ = nullptr;
+    const proto::ProtoTuple* names_ = nullptr;
+    const proto::ProtoTuple* bytecode_ = nullptr;
 
     int addConstant(const proto::ProtoObject* obj);
     int addName(const std::string& name);
@@ -149,11 +149,11 @@ private:
 /** Build a code object (ProtoObject with co_consts, co_names, co_code) from compiler output.
  * Optional: co_varnames (slot-ordered names), co_nparams, co_automatic_count for fast local slots. */
 const proto::ProtoObject* makeCodeObject(proto::ProtoContext* ctx,
-    const proto::ProtoList* constants,
-    const proto::ProtoList* names,
-    const proto::ProtoList* bytecode,
+    const proto::ProtoTuple* constants,
+    const proto::ProtoTuple* names,
+    const proto::ProtoTuple* bytecode,
     const proto::ProtoString* filename = nullptr,
-    const proto::ProtoList* varnames = nullptr,
+    const proto::ProtoTuple* varnames = nullptr,
     int nparams = 0,
     int kwonlyargcount = 0,
     int automatic_count = 0,
@@ -161,7 +161,7 @@ const proto::ProtoObject* makeCodeObject(proto::ProtoContext* ctx,
     bool isGenerator = false,
     const proto::ProtoString* co_name = nullptr,
     int firstlineno = 0,
-    const proto::ProtoList* lnotab = nullptr);
+    const proto::ProtoTuple* lnotab = nullptr);
 
 /** Run a code object with the given frame. Returns execution result. */
 const proto::ProtoObject* runCodeObject(proto::ProtoContext* ctx,

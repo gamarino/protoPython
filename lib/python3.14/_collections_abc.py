@@ -92,23 +92,35 @@ print("DEBUG ABC: mappingproxy is", mappingproxy, flush=True)
 def _get_framelocalsproxy():
     try:
         import sys
-        return type(sys._getframe().f_locals)
+        print("DEBUG ABC: calling _getframe", flush=True)
+        frame = sys._getframe()
+        print("DEBUG ABC: calling f_locals on frame", flush=True)
+        locs = frame.f_locals
+        print("DEBUG ABC: returning type of f_locals", flush=True)
+        return type(locs)
     except (ImportError, AttributeError, ValueError):
         return dict
 framelocalsproxy = _get_framelocalsproxy()
 del _get_framelocalsproxy
+print("DEBUG ABC: creating generator type", flush=True)
 generator = type((lambda: (yield))())
+print("DEBUG ABC: going to def coro", flush=True)
 ## coroutine ##
 async def _coro(): pass
+print("DEBUG ABC: instantiating coro", flush=True)
 _coro = _coro()
 coroutine = type(_coro)
+print("DEBUG ABC: closing coro", flush=True)
 _coro.close()  # Prevent ResourceWarning
 del _coro
+print("DEBUG ABC: def ag", flush=True)
 ## asynchronous generator ##
 async def _ag(): yield
+print("DEBUG ABC: instantiating ag", flush=True)
 _ag = _ag()
 async_generator = type(_ag)
 del _ag
+print("DEBUG ABC: finished ag", flush=True)
 
 
 ### ONE-TRICK PONIES ###
@@ -203,6 +215,7 @@ Coroutine.register(coroutine)
 print("DEBUG: _collections_abc registered Coroutine", flush=True)
 
 
+print("DEBUG ABC: defining AsyncIterable", flush=True)
 class AsyncIterable(metaclass=ABCMeta):
 
     __slots__ = ()
@@ -220,6 +233,7 @@ class AsyncIterable(metaclass=ABCMeta):
     __class_getitem__ = classmethod(GenericAlias)
 
 
+print("DEBUG ABC: defining AsyncIterator", flush=True)
 class AsyncIterator(AsyncIterable):
 
     __slots__ = ()
@@ -239,6 +253,7 @@ class AsyncIterator(AsyncIterable):
         return NotImplemented
 
 
+print("DEBUG ABC: defining AsyncGenerator", flush=True)
 class AsyncGenerator(AsyncIterator):
 
     __slots__ = ()
@@ -288,8 +303,10 @@ class AsyncGenerator(AsyncIterator):
 
 
 AsyncGenerator.register(async_generator)
+print("DEBUG ABC: registered async_generator", flush=True)
 
 
+print("DEBUG ABC: defining Iterable", flush=True)
 class Iterable(metaclass=ABCMeta):
 
     __slots__ = ()
@@ -308,6 +325,7 @@ class Iterable(metaclass=ABCMeta):
     __class_getitem__ = classmethod(GenericAlias)
 
 
+print("DEBUG ABC: defining Iterator", flush=True)
 class Iterator(Iterable):
 
     __slots__ = ()
@@ -359,6 +377,7 @@ class Reversible(Iterable):
         return NotImplemented
 
 
+print("DEBUG ABC: defining Generator", flush=True)
 class Generator(Iterator):
 
     __slots__ = ()

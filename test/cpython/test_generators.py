@@ -1,12 +1,22 @@
+print("import copy")
 import copy
+print("import gc")
 import gc
+print("import pickle")
 import pickle
+print("import sys")
 import sys
+print("import doctest")
 import doctest
+print("import unittest")
 import unittest
+print("import weakref")
 import weakref
+print("import inspect")
 import inspect
+print("import textwrap")
 import textwrap
+print("import types")
 import types
 
 from test import support

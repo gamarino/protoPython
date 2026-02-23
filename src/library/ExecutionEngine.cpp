@@ -410,7 +410,7 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
         
         if (bytecode && consts) {
             unsigned long stackOffset = co_varnames ? co_varnames->getSize(calleeCtx) : 0;
-            result = executeBytecodeRange(calleeCtx, consts, bytecode, names, frame, 0, bytecode->getSize(calleeCtx), stackOffset);
+            result = executeBytecodeRange(calleeCtx, reinterpret_cast<const proto::ProtoObject*>(consts)->asTuple(calleeCtx), reinterpret_cast<const proto::ProtoObject*>(bytecode)->asTuple(calleeCtx), reinterpret_cast<const proto::ProtoObject*>(names)->asTuple(calleeCtx), frame, 0, bytecode->getSize(calleeCtx), stackOffset);
         } else {
             result = PROTO_NONE;
         }
@@ -1197,9 +1197,9 @@ const proto::ProtoObject* py_generator_send_impl(
         const proto::ProtoList* co_names = codeObj->getAttribute(calleeCtx, env->getCoNamesString())->asList(calleeCtx);
         
         result = executeBytecodeRange(calleeCtx, 
-            co_consts,
-            co_code_list,
-            co_names,
+            reinterpret_cast<const proto::ProtoObject*>(co_consts)->asTuple(calleeCtx),
+            reinterpret_cast<const proto::ProtoObject*>(co_code_list)->asTuple(calleeCtx),
+            reinterpret_cast<const proto::ProtoObject*>(co_names)->asTuple(calleeCtx),
             frame,
             pc,
             co_code_list->getSize(calleeCtx),
@@ -1532,9 +1532,9 @@ static void updateContextLocation(proto::ProtoContext* ctx, proto::ProtoObject* 
 
 const proto::ProtoObject* executeBytecodeRange(
     proto::ProtoContext* ctx,
-    const proto::ProtoList* constants,
-    const proto::ProtoList* bytecode,
-    const proto::ProtoList* names,
+    const proto::ProtoTuple* constants,
+    const proto::ProtoTuple* bytecode,
+    const proto::ProtoTuple* names,
     proto::ProtoObject*& frame,
     unsigned long pcStart,
     unsigned long pcEnd,
@@ -1851,8 +1851,14 @@ const proto::ProtoObject* executeBytecodeRange(
                 }
             }
         } else if (op == OP_STORE_NAME) {
+            if (std::getenv("PROTO_ENV_DIAG")) {
+                std::cerr << "OP_STORE_NAME: names=" << (names ? names->getSize(ctx) : -1) << " frame=" << (frame != nullptr) << " arg=" << arg << "\n";
+            }
             if (names && frame && static_cast<unsigned long>(arg) < names->getSize(ctx)) {
-                if (stack.empty()) continue;
+                if (stack.empty()) {
+                    if (std::getenv("PROTO_ENV_DIAG")) std::cerr << "OP_STORE_NAME: empty stack!\n";
+                    continue;
+                }
                 const proto::ProtoObject* nameObj = names->getAt(ctx, arg);
                 const proto::ProtoObject* val = stack.back();
                 // Delay pop until done
@@ -3655,13 +3661,14 @@ const proto::ProtoObject* executeBytecodeRange(
             if (iterObj) {
                 stack.back() = iterObj;
             } else {
-                if (env && env->hasPendingException()) {
+                if (env) {
+                    if (!env->hasPendingException()) {
+                        env->raiseTypeError(ctx, "object is not iterable");
+                    }
                     continue;
+                } else {
+                    return nullptr;
                 }
-                // If no env is present or no iterator found, return nullptr/PROTO_NONE to signal failure
-                // (Matches GetIterNoCrash test expectation)
-                if (env) env->raiseTypeError(ctx, "object is not iterable");
-                continue;
             }
         } else if (op == OP_FOR_ITER) {
             if (stack.empty()) continue;
@@ -4171,9 +4178,9 @@ const proto::ProtoObject* executeBytecodeRange(
 
 const proto::ProtoObject* executeMinimalBytecode(
     proto::ProtoContext* ctx,
-    const proto::ProtoList* constants,
-    const proto::ProtoList* bytecode,
-    const proto::ProtoList* names,
+    const proto::ProtoTuple* constants,
+    const proto::ProtoTuple* bytecode,
+    const proto::ProtoTuple* names,
     proto::ProtoObject*& frame) {
     if (!ctx || !constants || !bytecode) return nullptr;
     unsigned long n = bytecode->getSize(ctx);

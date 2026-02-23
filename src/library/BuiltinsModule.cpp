@@ -46,7 +46,7 @@ static const proto::ProtoObject* py_import(
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters);
 
-static const proto::ProtoObject* py_object_new(
+const proto::ProtoObject* py_object_new(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
@@ -1280,7 +1280,7 @@ static const proto::ProtoObject* py_eval(
     }
     Compiler compiler(context, "<string>");
     if (!compiler.compileExpression(expr.get())) return PROTO_NONE;
-    const proto::ProtoList* cos = compiler.getConstants();
+    const proto::ProtoTuple* cos = compiler.getConstants();
     if (get_env_diag()) {
         fprintf(stderr, "DEBUG: py_eval compiling source='%s'\n", source.c_str());
         for (unsigned long i = 0; i < cos->getSize(context); i++) {
@@ -2183,7 +2183,12 @@ const proto::ProtoObject* py_type(
         }
 
         proto::ProtoObject* targetClass = const_cast<proto::ProtoObject*>(context->newObject(true));
-        if (env && env->getObjectPrototype()) {
+        
+        // Add metaclass first so that its attributes are searched after the class MRO bases 
+        // (which are added below in reverse order, meaning they are searched before the metaclass).
+        if (cls && cls != targetClass) {
+            targetClass = const_cast<proto::ProtoObject*>(targetClass->addParent(context, cls));
+        } else if (env && env->getObjectPrototype()) {
             targetClass = const_cast<proto::ProtoObject*>(targetClass->addParent(context, env->getObjectPrototype()));
         }
         
@@ -2375,6 +2380,42 @@ static const proto::ProtoObject* py_isinstance(
     return PROTO_FALSE;
 }
 
+static const proto::ProtoObject* py_issubclass_check_single(proto::ProtoContext* context, const proto::ProtoObject* cls, const proto::ProtoObject* base) {
+    if (cls == base) return PROTO_TRUE;
+
+    // Fast path: use __mro__
+    const proto::ProtoObject* mro = cls->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__mro__"));
+    if (mro) {
+        const proto::ProtoList* mroList = mro->asList(context);
+        if (mroList) {
+            for (unsigned long i = 0; i < mroList->getSize(context); ++i) {
+                if (mroList->getAt(context, i) == base) {
+                    return PROTO_TRUE;
+                }
+            }
+        }
+    }
+
+    // Fallback: check __bases__ recursively
+    const proto::ProtoObject* bases = cls->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__bases__"));
+    if (bases) {
+        const proto::ProtoList* basesList = bases->asList(context);
+        if (basesList) {
+            for (unsigned long i = 0; i < basesList->getSize(context); ++i) {
+                 if (py_issubclass_check_single(context, basesList->getAt(context, i), base) == PROTO_TRUE) {
+                     return PROTO_TRUE;
+                 }
+            }
+        }
+    }
+    
+    // Abstract Base Classes subclass hook fallback:
+    // If base has __subclasscheck__, we should ideally call it. For native py_issubclass, 
+    // the surrounding Python code in _abc.py or equivalent manages __subclasscheck__.
+    // To strictly implement issubclass, we defer to __mro__.
+    return PROTO_FALSE;
+}
+
 static const proto::ProtoObject* py_issubclass(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -2385,7 +2426,20 @@ static const proto::ProtoObject* py_issubclass(
     const proto::ProtoObject* cls = positionalParameters->getAt(context, 0);
     const proto::ProtoObject* base = positionalParameters->getAt(context, 1);
     
-    return checkInterfaceInstanceOf(context, cls, base) ? PROTO_TRUE : PROTO_FALSE;
+    // In Python, if base is a tuple, we must check if cls is a subclass of ANY element in the tuple
+    if (base) {
+         const proto::ProtoList* baseList = base->asList(context);
+         if (baseList) {
+             for (unsigned long i = 0; i < baseList->getSize(context); ++i) {
+                  if (py_issubclass_check_single(context, cls, baseList->getAt(context, i)) == PROTO_TRUE) {
+                       return PROTO_TRUE;
+                  }
+             }
+             return PROTO_FALSE;
+         }
+    }
+    
+    return py_issubclass_check_single(context, cls, base);
 }
 
 static const proto::ProtoObject* py_abs(
@@ -2727,7 +2781,9 @@ static const proto::ProtoObject* py_classmethod(
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     proto::ProtoObject* cm = const_cast<proto::ProtoObject*>(context->newObject(true));
     if (positionalParameters->getSize(context) >= 1) {
-        cm->setAttribute(context, proto::ProtoString::fromUTF8String(context, "func"), positionalParameters->getAt(context, 0));
+        const proto::ProtoObject* func = positionalParameters->getAt(context, 0);
+        cm->setAttribute(context, proto::ProtoString::fromUTF8String(context, "func"), func);
+        cm->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__func__"), func);
     }
     cm->setAttribute(context, env->getGetDunderString(), context->fromMethod(cm, py_classmethod_get));
     return cm;
@@ -2751,7 +2807,9 @@ static const proto::ProtoObject* py_staticmethod(
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     proto::ProtoObject* sm = const_cast<proto::ProtoObject*>(context->newObject(true));
     if (positionalParameters->getSize(context) >= 1) {
-        sm->setAttribute(context, proto::ProtoString::fromUTF8String(context, "func"), positionalParameters->getAt(context, 0));
+        const proto::ProtoObject* func = positionalParameters->getAt(context, 0);
+        sm->setAttribute(context, proto::ProtoString::fromUTF8String(context, "func"), func);
+        sm->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__func__"), func);
     }
     sm->setAttribute(context, env->getGetDunderString(), context->fromMethod(sm, py_staticmethod_get));
     return sm;
@@ -3266,7 +3324,15 @@ static const proto::ProtoObject* py_map_next(
     return res;
 }
 
-static const proto::ProtoObject* py_object_new(
+// Forward declare for exposure
+const proto::ProtoObject* py_object_new(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters);
+
+const proto::ProtoObject* py_object_new(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
@@ -3354,9 +3420,6 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "NotImplemented"), notImpl);
 
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "object"), objectProto);
-    if (objectProto) {
-         objectProto = const_cast<proto::ProtoObject*>(objectProto)->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__new__"), ctx->fromMethod(nullptr, py_object_new));
-    }
     if (typeProto) {
         if (get_env_diag()) {
             printf("DEBUG: Registering 'type' using typeProto=%p\n", (void*)typeProto);

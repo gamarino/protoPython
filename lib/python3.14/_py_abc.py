@@ -33,25 +33,34 @@ class ABCMeta(type):
     _abc_invalidation_counter = 0
 
     def __new__(mcls, name, bases, namespace, /, **kwargs):
+        print(f"DEBUG ABC (__new__): creating {name}", flush=True)
         cls = super().__new__(mcls, name, bases, namespace, **kwargs)
+        print(f"DEBUG ABC (__new__): super().__new__ done", flush=True)
         abstracts = []
         for n, v in dict.items(namespace):
             is_abs = getattr(v, "__isabstractmethod__", False)
             if is_abs:
                 abstracts.append(n)
         abstracts = set(abstracts)
+        print(f"DEBUG ABC (__new__): checked namespace for abstracts", flush=True)
         for base in bases:
             abs_methods = getattr(base, "__abstractmethods__", set())
             for mname in abs_methods:
                 value = getattr(cls, mname, None)
                 if getattr(value, "__isabstractmethod__", False):
                     abstracts.add(mname)
+        print(f"DEBUG ABC (__new__): checked bases for abstracts", flush=True)
         cls.__abstractmethods__ = frozenset(abstracts)
         # Set up inheritance registry
+        print(f"DEBUG ABC (__new__): creating WeakSets", flush=True)
         cls._abc_registry = WeakSet()
+        print(f"DEBUG ABC (__new__): created registry WeakSet", flush=True)
         cls._abc_cache = WeakSet()
+        print(f"DEBUG ABC (__new__): created cache WeakSet", flush=True)
         cls._abc_negative_cache = WeakSet()
+        print(f"DEBUG ABC (__new__): created negative cache WeakSet", flush=True)
         cls._abc_negative_cache_version = ABCMeta._abc_invalidation_counter
+        print(f"DEBUG ABC (__new__): returning cls", flush=True)
         return cls
 
     def register(cls, subclass):
