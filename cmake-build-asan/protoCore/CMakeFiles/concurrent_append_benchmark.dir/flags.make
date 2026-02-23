@@ -6,5 +6,5 @@ CXX_DEFINES =
 
 CXX_INCLUDES = -I/home/gamarino/Documentos/proyectos/protoCore/headers
 
-CXX_FLAGS = -fsanitize=address -fno-omit-frame-pointer -g -std=c++20
+CXX_FLAGS = -fsanitize=address -fno-omit-frame-pointer -g -std=c++20 -fno-delete-null-pointer-checks
 

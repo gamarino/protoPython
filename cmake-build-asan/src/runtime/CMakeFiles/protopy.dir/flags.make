@@ -6,5 +6,5 @@ CXX_DEFINES = -DSTDLIB_PATH=\"../lib/python3.14\"
 
 CXX_INCLUDES = -I/home/gamarino/Documentos/proyectos/protoPython/include -I/home/gamarino/Documentos/proyectos/protoPython/src/runtime/../../include -I/home/gamarino/Documentos/proyectos/protoPython/src/library/../../include -I/home/gamarino/Documentos/proyectos/protoCore/headers
 
-CXX_FLAGS = -fsanitize=address -fno-omit-frame-pointer -g -std=gnu++20
+CXX_FLAGS = -fsanitize=address -fno-omit-frame-pointer -g -std=gnu++20 -fno-delete-null-pointer-checks
 

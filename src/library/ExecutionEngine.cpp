@@ -166,7 +166,7 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
     const proto::ProtoObject* co_kwonly_obj = codeObj->getAttribute(ctx, co_kwonly_name);
     const proto::ProtoObject* co_automatic_obj = codeObj->getAttribute(ctx, co_automatic_name);
 
-    const proto::ProtoList* co_varnames = co_varnames_obj && co_varnames_obj->asList(ctx) ? co_varnames_obj->asList(ctx) : nullptr;
+    const proto::ProtoTuple* co_varnames = co_varnames_obj && co_varnames_obj->asTuple(ctx) ? co_varnames_obj->asTuple(ctx) : nullptr;
     int nparams_count = (co_nparams_obj && co_nparams_obj->isInteger(ctx)) ? static_cast<int>(co_nparams_obj->asLong(ctx)) : 0;
     int kwonly_count = (co_kwonly_obj && co_kwonly_obj->isInteger(ctx)) ? static_cast<int>(co_kwonly_obj->asLong(ctx)) : 0;
     int automatic_count = (co_automatic_obj && co_automatic_obj->isInteger(ctx)) ? static_cast<int>(co_automatic_obj->asLong(ctx)) : 0;
@@ -404,13 +404,13 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
         const proto::ProtoObject* constsObj = codeObj->getAttribute(calleeCtx, env->getCoConstsString());
         const proto::ProtoObject* namesObj = codeObj->getAttribute(calleeCtx, env->getCoNamesString());
         
-        const proto::ProtoList* bytecode = bytecodeObj ? bytecodeObj->asList(calleeCtx) : nullptr;
-        const proto::ProtoList* consts = constsObj ? constsObj->asList(calleeCtx) : nullptr;
-        const proto::ProtoList* names = namesObj ? namesObj->asList(calleeCtx) : nullptr;
+        const proto::ProtoTuple* bytecode = bytecodeObj ? bytecodeObj->asTuple(calleeCtx) : nullptr;
+        const proto::ProtoTuple* consts = constsObj ? constsObj->asTuple(calleeCtx) : nullptr;
+        const proto::ProtoTuple* names = namesObj ? namesObj->asTuple(calleeCtx) : nullptr;
         
         if (bytecode && consts) {
             unsigned long stackOffset = co_varnames ? co_varnames->getSize(calleeCtx) : 0;
-            result = executeBytecodeRange(calleeCtx, reinterpret_cast<const proto::ProtoObject*>(consts)->asTuple(calleeCtx), reinterpret_cast<const proto::ProtoObject*>(bytecode)->asTuple(calleeCtx), reinterpret_cast<const proto::ProtoObject*>(names)->asTuple(calleeCtx), frame, 0, bytecode->getSize(calleeCtx), stackOffset);
+            result = executeBytecodeRange(calleeCtx, consts, bytecode, names, frame, 0, bytecode->getSize(calleeCtx), stackOffset);
         } else {
             result = PROTO_NONE;
         }
@@ -1146,7 +1146,7 @@ const proto::ProtoObject* py_generator_send_impl(
     const proto::ProtoObject* result = nullptr;
     {
         const proto::ProtoObject* co_varnames_obj = codeObj->getAttribute(ctx, env->getCoVarnamesString());
-        const proto::ProtoList* co_varnames = co_varnames_obj ? co_varnames_obj->asList(ctx) : nullptr;
+        const proto::ProtoTuple* co_varnames = co_varnames_obj ? co_varnames_obj->asTuple(ctx) : nullptr;
         stackOffset = co_varnames ? co_varnames->getSize(ctx) : 0;
         const proto::ProtoObject* co_automatic_obj = codeObj->getAttribute(ctx, env->getCoAutomaticCountString());
         int automatic_count = (co_automatic_obj && co_automatic_obj->isInteger(ctx)) ? static_cast<int>(co_automatic_obj->asLong(ctx)) : 0;
@@ -1851,12 +1851,13 @@ const proto::ProtoObject* executeBytecodeRange(
                 }
             }
         } else if (op == OP_STORE_NAME) {
-            if (std::getenv("PROTO_ENV_DIAG")) {
-                std::cerr << "OP_STORE_NAME: names=" << (names ? names->getSize(ctx) : -1) << " frame=" << (frame != nullptr) << " arg=" << arg << "\n";
+            if (get_env_diag()) {
+                fprintf(stderr, "DEBUG: OP_STORE_NAME start PC %lu names=%ld arg=%d\n", i, names ? names->getSize(ctx) : -1, arg);
+                fflush(stderr);
             }
             if (names && frame && static_cast<unsigned long>(arg) < names->getSize(ctx)) {
                 if (stack.empty()) {
-                    if (std::getenv("PROTO_ENV_DIAG")) std::cerr << "OP_STORE_NAME: empty stack!\n";
+                    if (get_env_diag()) fprintf(stderr, "OP_STORE_NAME: empty stack!\n");
                     continue;
                 }
                 const proto::ProtoObject* nameObj = names->getAt(ctx, arg);
@@ -1889,12 +1890,9 @@ const proto::ProtoObject* executeBytecodeRange(
                     }
 
                     if (get_env_diag()) {
-                    // std::string n;
-                    // nameObj->asString(ctx)->toUTF8String(ctx, n);
-                    // std::string r = PythonEnvironment::reprObject(ctx, val);
-                    // fprintf(stderr, "DEBUG: STORE_NAME %s (val %p, repr %s)\n", n.c_str(), (void*)val, r.c_str());
-            fflush(stderr);
-                }
+                        fprintf(stderr, "DEBUG: OP_STORE_NAME finished frame update for PC %lu\n", i);
+                        fflush(stderr);
+                    }
                     if (env) {
                         PythonEnvironment::setCurrentFrame(frame);
                         if (sync_globals) {
@@ -2477,7 +2475,7 @@ const proto::ProtoObject* executeBytecodeRange(
                         ? env->getAttribute(ctx, mod, nameS) 
                         : mod->getAttribute(ctx, nameS);
                     
-                    if (val && val != PROTO_NONE) {
+                    if (val && (val != PROTO_NONE || mod->hasAttribute(ctx, nameS) == PROTO_TRUE)) {
                         stack.push_back(val);
                     } else {
                         if (env) {
@@ -3427,14 +3425,20 @@ const proto::ProtoObject* executeBytecodeRange(
             if (!stack.empty() && frame) {
                 const proto::ProtoObject* codeObj = stack.back();
                 stack.pop_back();
-                if (std::getenv("PROTO_ENV_DIAG")) {
-                    fprintf(stderr, "DEBUG: OP_BUILD_FUNCTION frame=%p, defaults=%p, kwDefaults=%p\n", (void*)frame, (void*)defaults, (void*)kwDefaults);
+                if (get_env_diag()) {
+                    fprintf(stderr, "DEBUG: OP_BUILD_FUNCTION called for PC %lu, codeObj=%p\n", i, (void*)codeObj);
+                    fflush(stderr);
                 }
                 proto::ProtoObject* fn = createUserFunction(ctx, codeObj, const_cast<proto::ProtoObject*>(PythonEnvironment::getCurrentGlobals()), frame, defaults, kwDefaults);
+                if (get_env_diag()) {
+                    fprintf(stderr, "DEBUG: OP_BUILD_FUNCTION finished createUserFunction\n");
+                    fflush(stderr);
+                }
                 if (fn) {
                     stack.push_back(fn);
                 }
             }
+
         } else if (op == OP_BUILD_CLASS) {
             if (stack.size() >= 4 && frame) {
                 // Keep name, bases, kwds, body on stack as roots.

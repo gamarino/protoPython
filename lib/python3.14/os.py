@@ -114,7 +114,17 @@ from os.path import (curdir, pardir, sep, pathsep, defpath, extsep, altsep,
 del _names
 
 
+print("DEBUG: os.py _have_functions in globals():", '_have_functions' in globals())
+try:
+    print("DEBUG: os.py globals() type:", type(globals()))
+    print("DEBUG: _exists('_have_functions'):", _exists('_have_functions'))
+    from posix import _have_functions as tmp_have
+    print("DEBUG: posix._have_functions =", tmp_have)
+except Exception as e:
+    print("DEBUG: Exception importing _have_functions:", type(e), e)
+
 if _exists("_have_functions"):
+    print("DEBUG: os.py _have_functions exists! Populating supports_dir_fd")
     _globals = globals()
     def _add(str, fn):
         if (fn in _globals) and (str in _have_functions):
