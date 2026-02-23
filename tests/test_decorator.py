@@ -1,8 +1,9 @@
-def my_decorator(f):
+def dec(f):
+    print("In dec, f:", f)
     return f
 
-@my_decorator
-def my_func():
-    print("hello")
+@dec
+def foo():
+    pass
 
-my_func()
+print("foo is:", foo)

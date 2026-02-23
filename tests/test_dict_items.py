@@ -1,7 +1,5 @@
-# test_dict_items.py
-d = {'a': 1, 'b': 2}
-items = list(d.items())
-print("items:", items)
-
-gen = ((v, k) for k, v in d.items())
-print("gen:", list(gen))
+d = {"__name__": None, "__module__": "abc", "__slots__": ()}
+print("items:", list(d.items()))
+for n, v in d.items():
+    print("processing", n)
+print("done")

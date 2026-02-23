@@ -6990,7 +6990,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     nativeProvider->registerModule("nt", [this](proto::ProtoContext* ctx) { return os_module::initialize(ctx, this); });
     nativeProvider->registerModule("_signal", [](proto::ProtoContext* ctx) { return signal_module::initialize(ctx); });
     nativeProvider->registerModule("_thread", [](proto::ProtoContext* ctx) { return thread_module::initialize(ctx); });
-    nativeProvider->registerModule("functools", [](proto::ProtoContext* ctx) { return functools::initialize(ctx); });
+    nativeProvider->registerModule("_functools", [](proto::ProtoContext* ctx) { return functools::initialize(ctx); });
     nativeProvider->registerModule("itertools", [](proto::ProtoContext* ctx) { return itertools::initialize(ctx); });
     nativeProvider->registerModule("re", [](proto::ProtoContext* ctx) { return re::initialize(ctx); });
     nativeProvider->registerModule("json", [](proto::ProtoContext* ctx) { return json::initialize(ctx); });

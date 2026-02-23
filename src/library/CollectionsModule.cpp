@@ -422,12 +422,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, protoPython::Pyth
     module = module->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "OrderedDict"),
                                  ctx->fromMethod(nullptr, py_ordereddict_new));
 
-    // Dummy _deque_iterator and _tuplegetter to satisfy collections/__init__.py
-    const proto::ProtoObject* tuplegetter = ctx->newObject(true);
-    tuplegetter = tuplegetter->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__name__"), ctx->fromUTF8String("_tuplegetter"));
-    // No env available here for objectPrototype easily without changing signature, 
-    // but we can at least avoid self-reference.
-    module = module->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_tuplegetter"), tuplegetter);
+
 
     const proto::ProtoObject* deque_iterator = ctx->newObject(true);
     deque_iterator = deque_iterator->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__name__"), ctx->fromUTF8String("_deque_iterator"));

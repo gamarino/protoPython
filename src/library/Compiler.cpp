@@ -2900,6 +2900,8 @@ const proto::ProtoObject* runCodeObject(proto::ProtoContext* ctx,
     proto::ProtoObject*& frame) {
     if (!ctx || !codeObj || !frame) return PROTO_NONE;
     
+
+
     if (std::getenv("PROTO_ENV_DIAG")) {
     }
     
@@ -2910,7 +2912,7 @@ const proto::ProtoObject* runCodeObject(proto::ProtoContext* ctx,
     const proto::ProtoObject* co_code = codeObj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_code"));
     const proto::ProtoObject* co_varnames = codeObj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_varnames"));
 
-    if (!co_consts || !co_consts->asList(ctx) || !co_code || !co_code->asList(ctx)) {
+    if (!co_consts || !co_consts->asTuple(ctx) || !co_code || !co_code->asTuple(ctx)) {
         if (std::getenv("PROTO_ENV_DIAG")) {
         }
         return PROTO_NONE;

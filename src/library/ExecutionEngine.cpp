@@ -2477,7 +2477,7 @@ const proto::ProtoObject* executeBytecodeRange(
                         ? env->getAttribute(ctx, mod, nameS) 
                         : mod->getAttribute(ctx, nameS);
                     
-                    if (val) {
+                    if (val && val != PROTO_NONE) {
                         stack.push_back(val);
                     } else {
                         if (env) {

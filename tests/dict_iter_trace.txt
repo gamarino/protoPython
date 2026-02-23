@@ -1,7 +1,7 @@
-DEBUG: assertionErrorType loaded successfully: 0x7df58fa9e600
+DEBUG: assertionErrorType loaded successfully: 0x7a00d7e9e600
 DEBUG RUNTIME argvVec size=1
-DEBUG: initDictStorage obj=0x7df58f97f340
-DEBUG: initDictStorage dataName=0x7df58f7ff646 keysName=0x7df58f8dbb86
+DEBUG: initDictStorage obj=0x7a00d7d7f340
+DEBUG: initDictStorage dataName=0x7a00d7bff646 keysName=0x7a00d7cdbb86
 DEBUG: initDictStorage creating sparse list
 DEBUG: initDictStorage setting __data__
 DEBUG: initDictStorage checking keys
@@ -9,4 +9,4 @@ DEBUG: initDictStorage creating keys list
 DEBUG: initDictStorage setting __keys__
 DEBUG: initDictStorage done
 DEBUG SYS MODULE argv size=1
-DEBUG: Registering 'type' using typeProto=0x7df58f8e7880
+DEBUG: Registering 'type' using typeProto=0x7a00d7ce7880

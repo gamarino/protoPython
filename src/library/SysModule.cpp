@@ -362,7 +362,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     const char* builtin_names[] = {
         "builtins", "sys", "_io", "_os", "posix", "nt", "time", "_thread", 
         "_signal", "re", "_weakref", "_collections", "logging", "operator", 
-        "_operator", "math", "functools", "itertools", "json", "atexit", 
+        "_operator", "math", "_functools", "itertools", "json", "atexit", 
         "exceptions", "_codecs", "_ast", "errno", "stat", "_collections_abc"
     };
     for (const char* name : builtin_names) {

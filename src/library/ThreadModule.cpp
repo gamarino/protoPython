@@ -387,6 +387,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_lock_release));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "allocate_rlock"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_allocate_rlock));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "RLock"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_allocate_rlock));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_rlock_acquire"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_rlock_acquire));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_rlock_release"),
