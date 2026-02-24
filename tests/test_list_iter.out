@@ -1,0 +1,6 @@
+DEBUG: assertionErrorType loaded successfully: 0x748349637140
+DEBUG RUNTIME argvVec size=1
+DEBUG SYS MODULE argv size=1
+starting loop
+__name__ None
+__module__ abc

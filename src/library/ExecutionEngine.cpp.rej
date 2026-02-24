@@ -1,0 +1,13 @@
+--- src/library/ExecutionEngine.cpp
++++ src/library/ExecutionEngine.cpp
+@@ -1832,6 +1832,10 @@
+                     nameObj->asString(ctx)->toUTF8String(ctx, nStr);
+                     if (nStr == "_splitext") {
+                         fprintf(stderr, "DEBUG: OP_STORE_NAME(_splitext) on frame %p to val %p\n", (void*)frame, (void*)val);
+             fflush(stderr);
+                     }
++                    if (nStr == "send") {
++                        fprintf(stderr, "DEBUG: OP_STORE_NAME('send') on frame %p to val %p\n", (void*)frame, (void*)val);
++                        fflush(stderr);
++                    }
+                     const proto::ProtoObject* newFrame = frame->setAttribute(ctx, nameObj->asString(ctx), val);

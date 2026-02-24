@@ -738,6 +738,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromDouble(3.14159265358979323846));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "e"),
         ctx->fromDouble(2.71828182845904523536));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "tau"),
+        ctx->fromDouble(6.28318530717958647692));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "nan"),
         ctx->fromDouble(std::numeric_limits<double>::quiet_NaN()));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "inf"),

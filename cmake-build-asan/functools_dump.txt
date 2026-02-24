@@ -1,0 +1,16 @@
+protopy 0.1.0 - minimal runtime (execution stubbed)
+Usage:
+  ./src/runtime/protopy [-m <name> | --module <name>] [-p <path> | --path <path>]...
+  ./src/runtime/protopy [-c <cmd>] [-p <path> | --path <path>]...
+  ./src/runtime/protopy [--script <script.py>] [--path <path>]...
+  ./src/runtime/protopy [module_name|script.py]
+Options:
+  -c <command>      Execute Python program passed as string
+  -m <module-name>  Execute module as a script
+  -p, --path <path> Append additional module search path (repeatable)
+  --stdlib <path>   Override stdlib location (defaults to build-time path)
+  --dry-run         Validate inputs but skip environment initialization
+  --bytecode-only   Stub: validate bytecode loading path (no execution)
+  --trace           Enable tracing (stub)
+  --repl, -i        Interactive REPL
+  --help, -h        Show this help message

@@ -1,0 +1,7 @@
+s = set()
+print("s.__contains__('foo') =", s.__contains__('foo'))
+print("'foo' in s =", 'foo' in s)
+print("s.add('bar')")
+s.add('bar')
+print("s.__contains__('bar') =", s.__contains__('bar'))
+print("s.__contains__('baz') =", s.__contains__('baz'))

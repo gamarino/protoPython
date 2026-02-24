@@ -1,0 +1,74 @@
+
+This GDB supports auto-downloading debuginfo from the following URLs:
+  <https://debuginfod.ubuntu.com>
+Enable debuginfod for this session? (y or [n]) [answered N; input not from terminal]
+Debuginfod has been disabled.
+To make this setting permanent, add 'set debuginfod enabled off' to .gdbinit.
+[Depuración de hilo usando libthread_db enabled]
+Using host libthread_db library "/lib/x86_64-linux-gnu/libthread_db.so.1".
+[Nuevo Thread 0x7ffff27fc6c0 (LWP 887302)]
+DEBUG: assertionErrorType loaded successfully: 0x7ffff2aa96c0
+
+Thread 1 "protopy" received signal SIGINT, Interrupt.
+__asan::AsanTSDGet () at ../../../../src/libsanitizer/asan/asan_posix.cpp:124
+aviso: 124	../../../../src/libsanitizer/asan/asan_posix.cpp: No existe el archivo o el directorio
+#0  __asan::AsanTSDGet () at ../../../../src/libsanitizer/asan/asan_posix.cpp:124
+#1  0x00007ffff79e1a6d in __asan::GetCurrentThread () at ../../../../src/libsanitizer/asan/asan_thread.cpp:423
+#2  0x00007ffff79b0e1b in ___interceptor___tls_get_addr (arg=0x7ffff7a6a078) at ../../../../src/libsanitizer/sanitizer_common/sanitizer_common_interceptors.inc:5425
+#3  ___interceptor___tls_get_addr (arg=0x7ffff7a6a078) at ../../../../src/libsanitizer/sanitizer_common/sanitizer_common_interceptors.inc:5420
+#4  0x00007ffff791de4d in __asan::GetTLSFakeStack () at ../../../../src/libsanitizer/asan/asan_fake_stack.cpp:194
+#5  __asan::GetFakeStackFast () at ../../../../src/libsanitizer/asan/asan_fake_stack.cpp:211
+#6  __asan::OnMalloc (class_id=0, size=<optimized out>) at ../../../../src/libsanitizer/asan/asan_fake_stack.cpp:225
+#7  __asan_stack_malloc_0 (size=<optimized out>) at ../../../../src/libsanitizer/asan/asan_fake_stack.cpp:273
+#8  0x00007ffff72a9e5b in std::vector<proto::ProtoTupleImplementation const*, std::allocator<proto::ProtoTupleImplementation const*> >::end (this=0x7ffff6c38338) at /usr/include/c++/13/bits/stl_vector.h:893
+#9  0x00007ffff72a873b in proto::ProtoTupleImplementation::getHash (this=0x7ffff3166180, context=0x508000002420) at /home/gamarino/Documentos/proyectos/protoCore/core/ProtoTuple.cpp:387
+#10 0x00007ffff7277f1f in proto::ProtoObject::getHash (this=0x7ffff3166184, context=0x508000002420) at /home/gamarino/Documentos/proyectos/protoCore/core/ProtoObject.cpp:650
+#11 0x00007ffff72a8907 in proto::ProtoTupleImplementation::getHash (this=0x7ffff3166200, context=0x508000002420) at /home/gamarino/Documentos/proyectos/protoCore/core/ProtoTuple.cpp:399
+#12 0x00007ffff7277f1f in proto::ProtoObject::getHash (this=0x7ffff3166204, context=0x508000002420) at /home/gamarino/Documentos/proyectos/protoCore/core/ProtoObject.cpp:650
+#13 0x00007ffff72a8907 in proto::ProtoTupleImplementation::getHash (this=0x7ffff3166280, context=0x508000002420) at /home/gamarino/Documentos/proyectos/protoCore/core/ProtoTuple.cpp:399
+#14 0x00007ffff72a73d4 in proto::(anonymous namespace)::compareTuples (context=0x508000002420, t1=0x7fffed9ee700, t2=0x7ffff3166280) at /home/gamarino/Documentos/proyectos/protoCore/core/ProtoTuple.cpp:219
+#15 0x00007ffff72a771e in proto::(anonymous namespace)::internTuple (context=0x508000002420, newTuple=0x7fffed9ee700) at /home/gamarino/Documentos/proyectos/protoCore/core/ProtoTuple.cpp:242
+#16 0x00007ffff72a6789 in proto::(anonymous namespace)::fromListRecursive (context=0x508000002420, list=0x7fffed9ee1c2, start=0, end=26) at /home/gamarino/Documentos/proyectos/protoCore/core/ProtoTuple.cpp:161
+#17 0x00007ffff72a7c8e in proto::ProtoTupleImplementation::tupleFromList (context=0x508000002420, list=0x7fffed9ee1c0) at /home/gamarino/Documentos/proyectos/protoCore/core/ProtoTuple.cpp:293
+#18 0x00007ffff725f4a3 in proto::ProtoContext::fromUTF8String (this=0x508000002420, zeroTerminatedUtf8String=0x50300002a580 "../lib/python3.14/types.py") at /home/gamarino/Documentos/proyectos/protoCore/core/ProtoContext.cpp:302
+#19 0x00007ffff7549c0c in protoPython::Compiler::compileFunctionDef (this=0x7ffff510b750, n=0x513000018300) at /home/gamarino/Documentos/proyectos/protoPython/src/library/Compiler.cpp:2184
+#20 0x00007ffff7551938 in protoPython::Compiler::compileNode (this=0x7ffff510b750, node=0x513000018300) at /home/gamarino/Documentos/proyectos/protoPython/src/library/Compiler.cpp:2717
+#21 0x00007ffff75531eb in protoPython::Compiler::compileModule (this=0x7ffff510b750, mod=0x50400003ff50) at /home/gamarino/Documentos/proyectos/protoPython/src/library/Compiler.cpp:2794
+#22 0x00007ffff7718908 in protoPython::PythonEnvironment::executeModule (this=0x7ffff5301390, moduleName="types", asMain=false, ctx=0x508000002420) at /home/gamarino/Documentos/proyectos/protoPython/src/library/PythonEnvironment.cpp:7483
+#23 0x00007ffff77271e0 in protoPython::PythonEnvironment::resolve (this=0x7ffff5301390, nameObj=0xe797879e9501, ctx=0x508000002420) at /home/gamarino/Documentos/proyectos/protoPython/src/library/PythonEnvironment.cpp:8639
+#24 0x00007ffff7725ed2 in protoPython::PythonEnvironment::resolve (this=0x7ffff5301390, name="types", ctx=0x508000002420) at /home/gamarino/Documentos/proyectos/protoPython/src/library/PythonEnvironment.cpp:8529
+#25 0x00007ffff7771ee4 in protoPython::builtins::py_import (context=0x508000002420, self=0x7ffff2a2a3c0, parentLink=0x0, positionalParameters=0x7fffed790bc2, keywordParameters=0x7ffff28b8c48) at /home/gamarino/Documentos/proyectos/protoPython/src/library/BuiltinsModule.cpp:148
+#26 0x00007ffff7588231 in protoPython::(anonymous namespace)::invokeCallable (ctx=0x508000002420, callable=0x7ffff2a2a40c, args=0x7fffed790bc2, kwargs=0x7ffff28b8c48) at /home/gamarino/Documentos/proyectos/protoPython/src/library/ExecutionEngine.cpp:1003
+#27 0x00007ffff759d964 in protoPython::executeBytecodeRange (ctx=0x508000002420, constants=0x7fffed62c584, bytecode=0x7fffed62c184, names=0x7fffed62c384, frame=@0x7ffff5130050: 0x7fffed2e7140, pcStart=0, pcEnd=67, stackOffset=0, outPc=0x0, yielded=0x0, externalBlockStack=0x0, initialTop=0, finalTopPtr=0x0) at /home/gamarino/Documentos/proyectos/protoPython/src/library/ExecutionEngine.cpp:3310
+#28 0x00007ffff7554614 in protoPython::runCodeObject (ctx=0x5080000021a0, codeObj=0x7fffed62c640, frame=@0x7ffff5130050: 0x7fffed2e7140) at /home/gamarino/Documentos/proyectos/protoPython/src/library/Compiler.cpp:2957
+#29 0x00007ffff7719341 in protoPython::PythonEnvironment::executeModule (this=0x7ffff5301390, moduleName="_weakrefset", asMain=false, ctx=0x5080000021a0) at /home/gamarino/Documentos/proyectos/protoPython/src/library/PythonEnvironment.cpp:7540
+#30 0x00007ffff77271e0 in protoPython::PythonEnvironment::resolve (this=0x7ffff5301390, nameObj=0x7ffff0d143c6, ctx=0x5080000021a0) at /home/gamarino/Documentos/proyectos/protoPython/src/library/PythonEnvironment.cpp:8639
+#31 0x00007ffff7725ed2 in protoPython::PythonEnvironment::resolve (this=0x7ffff5301390, name="_weakrefset", ctx=0x5080000021a0) at /home/gamarino/Documentos/proyectos/protoPython/src/library/PythonEnvironment.cpp:8529
+#32 0x00007ffff7771ee4 in protoPython::builtins::py_import (context=0x5080000021a0, self=0x7ffff2a2a3c0, parentLink=0x0, positionalParameters=0x7fffed2e4382, keywordParameters=0x7ffff28b8c48) at /home/gamarino/Documentos/proyectos/protoPython/src/library/BuiltinsModule.cpp:148
+#33 0x00007ffff7588231 in protoPython::(anonymous namespace)::invokeCallable (ctx=0x5080000021a0, callable=0x7ffff2a2a40c, args=0x7fffed2e4382, kwargs=0x7ffff28b8c48) at /home/gamarino/Documentos/proyectos/protoPython/src/library/ExecutionEngine.cpp:1003
+#34 0x00007ffff759d964 in protoPython::executeBytecodeRange (ctx=0x5080000021a0, constants=0x7fffed1f11c4, bytecode=0x7fffed1f0d44, names=0x7fffed1f0f44, frame=@0x7ffff5154050: 0x7ffff0d09c00, pcStart=0, pcEnd=47, stackOffset=0, outPc=0x0, yielded=0x0, externalBlockStack=0x0, initialTop=0, finalTopPtr=0x0) at /home/gamarino/Documentos/proyectos/protoPython/src/library/ExecutionEngine.cpp:3310
+#35 0x00007ffff7554614 in protoPython::runCodeObject (ctx=0x508000001fa0, codeObj=0x7fffed1f1280, frame=@0x7ffff5154050: 0x7ffff0d09c00) at /home/gamarino/Documentos/proyectos/protoPython/src/library/Compiler.cpp:2957
+#36 0x00007ffff7719341 in protoPython::PythonEnvironment::executeModule (this=0x7ffff5301390, moduleName="_py_abc", asMain=false, ctx=0x508000001fa0) at /home/gamarino/Documentos/proyectos/protoPython/src/library/PythonEnvironment.cpp:7540
+#37 0x00007ffff77271e0 in protoPython::PythonEnvironment::resolve (this=0x7ffff5301390, nameObj=0x31e2c37fcf0bfd01, ctx=0x508000001fa0) at /home/gamarino/Documentos/proyectos/protoPython/src/library/PythonEnvironment.cpp:8639
+#38 0x00007ffff7725ed2 in protoPython::PythonEnvironment::resolve (this=0x7ffff5301390, name="_py_abc", ctx=0x508000001fa0) at /home/gamarino/Documentos/proyectos/protoPython/src/library/PythonEnvironment.cpp:8529
+#39 0x00007ffff7771ee4 in protoPython::builtins::py_import (context=0x508000001fa0, self=0x7ffff2a2a3c0, parentLink=0x0, positionalParameters=0x7ffff0d07d82, keywordParameters=0x7ffff28b8c48) at /home/gamarino/Documentos/proyectos/protoPython/src/library/BuiltinsModule.cpp:148
+#40 0x00007ffff7588231 in protoPython::(anonymous namespace)::invokeCallable (ctx=0x508000001fa0, callable=0x7ffff2a2a40c, args=0x7ffff0d07d82, kwargs=0x7ffff28b8c48) at /home/gamarino/Documentos/proyectos/protoPython/src/library/ExecutionEngine.cpp:1003
+#41 0x00007ffff759d964 in protoPython::executeBytecodeRange (ctx=0x508000001fa0, constants=0x7ffff0783f44, bytecode=0x7ffff0783144, names=0x7ffff0783844, frame=@0x7ffff51bd050: 0x7ffff040e440, pcStart=0, pcEnd=203, stackOffset=0, outPc=0x0, yielded=0x0, externalBlockStack=0x0, initialTop=0, finalTopPtr=0x0) at /home/gamarino/Documentos/proyectos/protoPython/src/library/ExecutionEngine.cpp:3310
+#42 0x00007ffff7554614 in protoPython::runCodeObject (ctx=0x508000001ca0, codeObj=0x7ffff0784000, frame=@0x7ffff51bd050: 0x7ffff040e440) at /home/gamarino/Documentos/proyectos/protoPython/src/library/Compiler.cpp:2957
+#43 0x00007ffff7719341 in protoPython::PythonEnvironment::executeModule (this=0x7ffff5301390, moduleName="abc", asMain=false, ctx=0x508000001ca0) at /home/gamarino/Documentos/proyectos/protoPython/src/library/PythonEnvironment.cpp:7540
+#44 0x00007ffff77271e0 in protoPython::PythonEnvironment::resolve (this=0x7ffff5301390, nameObj=0x31e2c2d01, ctx=0x508000001ca0) at /home/gamarino/Documentos/proyectos/protoPython/src/library/PythonEnvironment.cpp:8639
+#45 0x00007ffff7725ed2 in protoPython::PythonEnvironment::resolve (this=0x7ffff5301390, name="abc", ctx=0x508000001ca0) at /home/gamarino/Documentos/proyectos/protoPython/src/library/PythonEnvironment.cpp:8529
+#46 0x00007ffff7771ee4 in protoPython::builtins::py_import (context=0x508000001ca0, self=0x7ffff2a2a3c0, parentLink=0x0, positionalParameters=0x7ffff040c5c2, keywordParameters=0x7ffff28b8c48) at /home/gamarino/Documentos/proyectos/protoPython/src/library/BuiltinsModule.cpp:148
+#47 0x00007ffff7588231 in protoPython::(anonymous namespace)::invokeCallable (ctx=0x508000001ca0, callable=0x7ffff2a2a40c, args=0x7ffff040c5c2, kwargs=0x7ffff28b8c48) at /home/gamarino/Documentos/proyectos/protoPython/src/library/ExecutionEngine.cpp:1003
+#48 0x00007ffff759d964 in protoPython::executeBytecodeRange (ctx=0x508000001ca0, constants=0x7ffff02b8344, bytecode=0x7ffff02b5644, names=0x7ffff02b60c4, frame=@0x7ffff5101050: 0x7ffff2c871c0, pcStart=0, pcEnd=899, stackOffset=0, outPc=0x0, yielded=0x0, externalBlockStack=0x0, initialTop=0, finalTopPtr=0x0) at /home/gamarino/Documentos/proyectos/protoPython/src/library/ExecutionEngine.cpp:3310
+#49 0x00007ffff7554614 in protoPython::runCodeObject (ctx=0x508000001220, codeObj=0x7ffff02b8400, frame=@0x7ffff5101050: 0x7ffff2c871c0) at /home/gamarino/Documentos/proyectos/protoPython/src/library/Compiler.cpp:2957
+#50 0x00007ffff7719341 in protoPython::PythonEnvironment::executeModule (this=0x7ffff5301390, moduleName="functools", asMain=false, ctx=0x508000001220) at /home/gamarino/Documentos/proyectos/protoPython/src/library/PythonEnvironment.cpp:7540
+#51 0x00007ffff77271e0 in protoPython::PythonEnvironment::resolve (this=0x7ffff5301390, nameObj=0x7ffff2b2b986, ctx=0x508000001220) at /home/gamarino/Documentos/proyectos/protoPython/src/library/PythonEnvironment.cpp:8639
+#52 0x00007ffff7725ed2 in protoPython::PythonEnvironment::resolve (this=0x7ffff5301390, name="functools", ctx=0x508000001220) at /home/gamarino/Documentos/proyectos/protoPython/src/library/PythonEnvironment.cpp:8529
+#53 0x00007ffff7771ee4 in protoPython::builtins::py_import (context=0x508000001220, self=0x7ffff2a2a3c0, parentLink=0x0, positionalParameters=0x7ffff2c847c2, keywordParameters=0x7ffff28b8c48) at /home/gamarino/Documentos/proyectos/protoPython/src/library/BuiltinsModule.cpp:148
+#54 0x00007ffff7588231 in protoPython::(anonymous namespace)::invokeCallable (ctx=0x508000001220, callable=0x7ffff2a2a40c, args=0x7ffff2c847c2, kwargs=0x7ffff28b8c48) at /home/gamarino/Documentos/proyectos/protoPython/src/library/ExecutionEngine.cpp:1003
+#55 0x00007ffff759d964 in protoPython::executeBytecodeRange (ctx=0x508000001220, constants=0x7ffff2b2ca44, bytecode=0x7ffff2b2c944, names=0x7ffff2b2c9c4, frame=@0x7ffff5000850: 0x7ffff2b25200, pcStart=0, pcEnd=11, stackOffset=0, outPc=0x0, yielded=0x0, externalBlockStack=0x0, initialTop=0, finalTopPtr=0x0) at /home/gamarino/Documentos/proyectos/protoPython/src/library/ExecutionEngine.cpp:3310
+#56 0x00007ffff7554614 in protoPython::runCodeObject (ctx=0x508000000120, codeObj=0x7ffff2b2cb00, frame=@0x7ffff5000850: 0x7ffff2b25200) at /home/gamarino/Documentos/proyectos/protoPython/src/library/Compiler.cpp:2957
+#57 0x00007ffff77816da in protoPython::builtins::py_exec (context=0x508000000120, self=0x7ffff2b19980, parentLink=0x0, positionalParameters=0x7ffff2b2a182, keywordParameters=0x0) at /home/gamarino/Documentos/proyectos/protoPython/src/library/BuiltinsModule.cpp:1715
+#58 0x00007ffff7717cc5 in protoPython::PythonEnvironment::executeString (this=0x7ffff5301390, source="import functools", name="<string>") at /home/gamarino/Documentos/proyectos/protoPython/src/library/PythonEnvironment.cpp:7402
+#59 0x00005555555668cf in main (argc=3, argv=0x7fffffffd3c8) at /home/gamarino/Documentos/proyectos/protoPython/src/runtime/main.cpp:349

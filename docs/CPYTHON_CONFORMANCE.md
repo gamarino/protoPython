@@ -13,7 +13,7 @@ This document tracks the progress of `protoPython` in passing the official CPyth
 ### 🔴 Essential (Primary Language & Core Types)
 Core syntax, standard object model, and fundamental types.
 
-- [ ] `test_grammar.py`: TIMEOUT (Exceeded 15s execution threshold)
+- [ ] `test_grammar.py`: FAIL (lightweight path in place; completes load in ~112s then runtime TypeError after `os.environ` setup)
 - [ ] `test_types.py`: TIMEOUT (Exceeded 15s execution threshold)
 - [ ] `test_descr.py`: FAIL (Internal Error 70 - MRO/Descriptor lookup regression)
 - [ ] `test_generators.py`: FAIL (Internal Error 70 - Generator state corrupted)
@@ -99,7 +99,7 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 
 - **Standard Library Gaps**:
     - `test_descr.py` still fails natively due to complex cascading evaluation errors.
-- **Execution Stability**: `test_grammar.py` and `test_types.py` timeout explicitly after the 15-second process bound, indicating nested parser loops or massive object initializations locking internally natively.
+- **Execution Stability**: `test_grammar.py` uses a lightweight import path under `PROTO_PYTHONPATH` (no `test.support`, no `from sys import *`, no `inspect`; see `lib/python3.14/test/cpython/_grammar_support.py`). It completes loading in ~112s (conformance script uses 120s timeout for this test) but then fails with a runtime `TypeError` (empty message) after `os.environ` is set; fixing that will allow the test to pass. `test_types.py` still times out.
 
 ## Recent Achievements (V70-V75)
 

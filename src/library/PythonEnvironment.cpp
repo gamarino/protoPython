@@ -3036,7 +3036,11 @@ static const proto::ProtoObject* py_tuple_iter_next(
     if (static_cast<unsigned long>(index) >= size) return nullptr;
 
     const proto::ProtoObject* value = tuple->getAt(context, index);
-    self->setAttribute(context, iterIndexName, context->fromInteger(index + 1));
+    const proto::ProtoObject* nextObj = self->setAttribute(context, iterIndexName, context->fromInteger(index + 1));
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        fprintf(stderr, "DEBUG py_tuple_iter_next index=%d -> %d, self=%p, nextObj=%p\n", index, index + 1, (void*)self, (void*)nextObj);
+        fflush(stderr);
+    }
     return value;
 }
 
@@ -9157,15 +9161,26 @@ void PythonEnvironment::addTraceback(const proto::ProtoObject* exc, const proto:
     if (std::getenv("PROTO_ENV_DIAG")) {
         fprintf(stderr, "DEBUG: addTraceback currentTb=%p\n", currentTb);
     }
-
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        fprintf(stderr, "DEBUG: addTraceback allocating newTb\n"); fflush(stderr);
+    }
     const proto::ProtoObject* newTb = tracebackPrototype->newChild(rootContext_, true);
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        fprintf(stderr, "DEBUG: addTraceback setting classString\n"); fflush(stderr);
+    }
     newTb = newTb->setAttribute(rootContext_, classString, tracebackPrototype);
     
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        fprintf(stderr, "DEBUG: addTraceback creating strings\n"); fflush(stderr);
+    }
     const proto::ProtoString* tbFrameName = proto::ProtoString::fromUTF8String(rootContext_, "tb_frame");
     const proto::ProtoString* tbLastiName = proto::ProtoString::fromUTF8String(rootContext_, "tb_lasti");
     const proto::ProtoString* tbLinenoName = proto::ProtoString::fromUTF8String(rootContext_, "tb_lineno");
     const proto::ProtoString* tbNextName = proto::ProtoString::fromUTF8String(rootContext_, "tb_next");
     
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        fprintf(stderr, "DEBUG: addTraceback setting attributes\n"); fflush(stderr);
+    }
     newTb = newTb->setAttribute(rootContext_, tbFrameName, frame);
     newTb = newTb->setAttribute(rootContext_, tbLastiName, rootContext_->fromInteger(lasti));
     newTb = newTb->setAttribute(rootContext_, tbLinenoName, rootContext_->fromInteger(lineno));
@@ -9177,7 +9192,7 @@ void PythonEnvironment::addTraceback(const proto::ProtoObject* exc, const proto:
     }
     
     if (std::getenv("PROTO_ENV_DIAG")) {
-        fprintf(stderr, "DEBUG: addTraceback newTb=%p\n", newTb);
+        fprintf(stderr, "DEBUG: addTraceback newTb=%p created\n", newTb); fflush(stderr);
     }
 
     // Update exception's __traceback__
@@ -9204,7 +9219,12 @@ bool PythonEnvironment::isException(const proto::ProtoObject* exc, const proto::
         return false;
     }
     
-    return isTrue(exc->isInstanceOf(ctx, type));
+    bool match = isTrue(exc->isInstanceOf(ctx, type));
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        fprintf(stderr, "DEBUG: isException exc=%p type=%p -> match=%d\n", (void*)exc, (void*)type, match);
+        fflush(stderr);
+    }
+    return match;
 }
 
 void PythonEnvironment::augAssignName(const std::string& name, TokenType op, const proto::ProtoObject* value) {

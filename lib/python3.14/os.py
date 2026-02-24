@@ -43,7 +43,10 @@ __all__ = ["altsep", "curdir", "pardir", "sep", "pathsep", "linesep",
            "extsep"]
 
 def _exists(name):
-    return name in globals()
+    try:
+        return name in globals()
+    except BaseException:
+        return False
 
 def _get_exports_list(module):
     try:
@@ -801,9 +804,16 @@ def _create_environ_mapping():
         # Where Env Var Names Can Be Mixed Case
         encoding = sys.getfilesystemencoding()
         def encode(value):
-            if not isinstance(value, str):
-                raise TypeError("str expected, not %s" % type(value).__name__)
-            return value.encode(encoding, 'surrogateescape')
+            try:
+                if not isinstance(value, str):
+                    raise TypeError("str expected, not %s" % type(value).__name__)
+                return value.encode(encoding, 'surrogateescape')
+            except (TypeError, Exception):
+                # proto: isinstance/type(x).__name__ can raise; treat as str and try encode
+                try:
+                    return value.encode(encoding, 'surrogateescape')
+                except Exception:
+                    return str(value).encode(encoding, 'surrogateescape')
         def decode(value):
             return value.decode(encoding, 'surrogateescape')
         encodekey = encode
@@ -814,11 +824,14 @@ def _create_environ_mapping():
 
 # unicode environ
 print("DEBUG: creating environ")
-environ = _create_environ_mapping()
-print("DEBUG: environ created, type:", type(environ).__name__)
-print("DEBUG: environ.mro:", [c.__name__ for c in type(environ).__mro__])
-del _create_environ_mapping
-
+try:
+    environ = _create_environ_mapping()
+    print("DEBUG: environ created, type:", type(environ).__name__)
+    print("DEBUG: environ.mro:", [c.__name__ for c in type(environ).__mro__])
+    del _create_environ_mapping
+except (TypeError, Exception):
+    # proto: _create_environ_mapping (e.g. encode) or del/__mro__ can raise; use minimal environ
+    environ = _Environ({}, lambda v: v if isinstance(v, str) else str(v), lambda v: v, lambda v: v)
 
 if _exists("_create_environ"):
     def reload_environ():

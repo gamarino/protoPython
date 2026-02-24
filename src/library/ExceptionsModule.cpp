@@ -104,6 +104,10 @@ static const proto::ProtoObject* make_exception_type(proto::ProtoContext* ctx,
     const proto::ProtoString* py_class = proto::ProtoString::fromUTF8String(ctx, "__class__");
 
     const proto::ProtoObject* exc = base ? base->newChild(ctx, true) : ctx->newObject(true);
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        fprintf(stderr, "DEBUG: make_exception_type name='%s' type=%p base=%p\n", name, (void*)exc, (void*)base);
+        fflush(stderr);
+    }
     exc = exc->setAttribute(ctx, py_class, typeProto);
     exc = exc->setAttribute(ctx, py_name, ctx->fromUTF8String(name));
     exc = exc->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__module__"), ctx->fromUTF8String("builtins"));

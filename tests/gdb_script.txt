@@ -1,0 +1,7 @@
+set breakpoint pending on
+break src/library/BuiltinsModule.cpp:2146
+commands
+  bt
+  continue
+end
+run

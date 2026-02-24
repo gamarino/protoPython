@@ -5,6 +5,7 @@
 #include <cstring>
 #include <string>
 #include <iostream>
+#include <fstream>
 #include <thread>
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
 #include <signal.h>
@@ -629,6 +630,45 @@ static const proto::ProtoObject* py_environ_keys_method(
     return py_environ_keys(ctx, nullptr, nullptr, nullptr, nullptr);
 }
 
+
+static const proto::ProtoObject* py_urandom(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* /*self*/,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList* /*kwargs*/) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    int n = static_cast<int>(posArgs->getAt(ctx, 0)->asLong(ctx));
+    if (n < 0) return PROTO_NONE;
+    
+    std::string buf;
+    buf.resize(n);
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+    std::ifstream urandom("/dev/urandom", std::ios::in | std::ios::binary);
+    if (urandom) {
+        urandom.read(&buf[0], n);
+        urandom.close();
+    }
+#endif
+    
+    // Fallback if not readable or read failed
+    for (int i = 0; i < n; ++i) {
+        if (buf[i] == '\0') {
+            buf[i] = static_cast<char>((rand() % 255) + 1); // Avoid nulls to prevent ProtoString truncation for now
+        }
+    }
+
+    PythonEnvironment* env = PythonEnvironment::get(ctx);
+    if (!env || !env->getBytesPrototype()) {
+        return ctx->fromUTF8String(buf.c_str());
+    }
+    
+    const proto::ProtoObject* b = env->getBytesPrototype()->newChild(ctx, true);
+    b->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__class__"), env->getBytesPrototype());
+    b->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__data__"), ctx->fromUTF8String(buf.c_str()));
+    return b;
+}
+
 static const proto::ProtoObject* py_getuid(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
@@ -795,6 +835,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_environ_keys));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "waitpid"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_waitpid));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "urandom"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_urandom));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "kill"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_kill));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "cpu_count"),
@@ -840,6 +882,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     keys = keys->appendLast(ctx, ctx->fromUTF8String("getegid"));
     keys = keys->appendLast(ctx, ctx->fromUTF8String("environ_keys"));
     keys = keys->appendLast(ctx, ctx->fromUTF8String("waitpid"));
+    keys = keys->appendLast(ctx, ctx->fromUTF8String("urandom"));
     keys = keys->appendLast(ctx, ctx->fromUTF8String("kill"));
     keys = keys->appendLast(ctx, ctx->fromUTF8String("pipe"));
     keys = keys->appendLast(ctx, ctx->fromUTF8String("cpu_count"));

@@ -1,0 +1,58 @@
+DEBUG: assertionErrorType loaded successfully: 0x7ffff2aad680
+DEBUG: OP_LOAD_NAME(len) resolved: r=0x7ffff2a1210c (PROTO_NONE is 0x141)
+DEBUG RUNTIME argvVec size=1
+DEBUG SYS MODULE argv size=1
+DEBUG: globals()={exc: TypeError, keys: <method object at 0x7ffff296348c>, FunctionType: <function object at 0x7ffff28f7800>, LambdaType: <function object at 0x7ffff28f7800>, CodeType: <object object at 0x7ffff28f4dc0>, SimpleNamespace: <object object at 0x7ffff28f4dc0>, CellType: <class 'list'>, GeneratorType: <generator object <unknown> at 0x7ffff28f5680>, CoroutineType: <generator object <unknown> at 0x7ffff28f5680>, AsyncGeneratorType: <generator object <unknown> at 0x7ffff28f5680>, BuiltinFunctionType: <method object at 0x7ffff2964240>, BuiltinMethodType: <method object at 0x7ffff2964240>, WrapperDescriptorType: <method object at 0x7ffff2964240>, MethodWrapperType: <method object at 0x7ffff2964240>, MethodDescriptorType: <method object at 0x7ffff2964240>, ClassMethodDescriptorType: <method object at 0x7ffff2964240>, ModuleType: <module object at 0x7ffff2962340>, TracebackType: <traceback object at 0x7ffff2964a40>, FrameType: <module object at 0x7ffff2962340>, GetSetDescriptorType: None, ...}
+DEBUG: _collections_abc importing sys
+DEBUG: _collections_abc starting aliases
+DEBUG: _collections_abc defining Awaitable
+DEBUG: _collections_abc about to register Coroutine
+DEBUG: _collections_abc registered Coroutine
+DEBUG: keyword.py loading
+DEBUG: keyword.iskeyword set to <method object at 0x7fffce5ce10c>
+DEBUG: field_names after intern: (hits, misses, maxsize, currsize)
+DEBUG: OP_LOAD_NAME(len) resolved: r=0x7ffff2a1210c (PROTO_NONE is 0x141)
+DEBUG: OP_LOAD_NAME(len) resolved: r=0x7ffff2a1210c (PROTO_NONE is 0x141)
+DEBUG: TRACE 1
+DEBUG: TRACE 2
+DEBUG: TRACE 3
+DEBUG: TRACE 4
+DEBUG: TRACE 5
+DEBUG: TRACE 6
+DEBUG: TRACE 6.1: Before _make
+DEBUG: TRACE 6.2: Before _replace
+DEBUG: TRACE 6.3: Before __repr__
+DEBUG: TRACE 6.4: Before _asdict
+DEBUG: TRACE 6.5: Before __getnewargs__
+DEBUG: TRACE 7: Function modifying loop
+DEBUG: TRACE 7.x modifying method: <<lambda> object at 0x7fffe2adf980>
+DEBUG: TRACE 7.x modifying method: <_make object at 0x7fffe2d71080>
+DEBUG: TRACE 7.x modifying method: <_replace object at 0x7fffe2cc2700>
+DEBUG: TRACE 7.x modifying method: <__repr__ object at 0x7fffe2d15140>
+DEBUG: TRACE 7.x modifying method: <_asdict object at 0x7fffe2d31fc0>
+DEBUG: TRACE 7.x modifying method: <__getnewargs__ object at 0x7fffe2d51300>
+DEBUG: TRACE 8: building class namespace
+DEBUG: TRACE 8.2 enumerate is: <method object at 0x7ffff2a1dfcc>
+DEBUG: TRACE 8.3 _sys.intern is: <method object at 0x7ffff297c10c>
+DEBUG: TRACE 8.4 _tuplegetter is: <<lambda> object at 0x7fffd5c8d040>
+DEBUG: TRACE 8.5 loop iter: 0 hits
+DEBUG: TRACE 9: before type()
+DEBUG: TRACE 10: before sys.getframe()
+DEBUG: TRACE 10.1: calling _sys._getframe(1)
+DEBUG: TRACE 10.2: got frame None
+DEBUG: TRACE 10.3: got f_globals None
+DEBUG: TRACE 10.EXCEPT (AttributeError/ValueError): AttributeError(''module' object has no attribute 'get'')
+DEBUG: TRACE 11: done!
+DEBUG: FUNCTOOLS cache info namedtuple created
+DEBUG: OP_LOAD_NAME(len) resolved: r=0x7ffff2a1210c (PROTO_NONE is 0x141)
+DEBUG: FUNCTOOLS starting singledispatch
+DEBUG: FUNCTOOLS _c3_merge defined
+DEBUG: FUNCTOOLS _c3_mro defined
+DEBUG: FUNCTOOLS _compose_mro defined
+DEBUG: FUNCTOOLS _find_impl defined
+DEBUG: FUNCTOOLS singledispatch defined
+DEBUG: FUNCTOOLS singledispatchmethod defined
+DEBUG: FUNCTOOLS _singledispatchmethod_get defined
+DEBUG: FUNCTOOLS cached_property defined
+DEBUG: FUNCTOOLS before reduce assignment
+aviso: 57	./nptl/futex-internal.c: No existe el archivo o el directorio

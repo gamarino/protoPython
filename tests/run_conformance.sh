@@ -4,7 +4,7 @@
 PROTOPY="/home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/src/runtime/protopy"
 LOG="/home/gamarino/Documentos/proyectos/protoPython/tests/conformance_status.log"
 BASE_DIR="/home/gamarino/Documentos/proyectos/protoPython"
-TIMEOUT="60" # 60 seconds per test
+TIMEOUT="15" # 15 seconds per test
 
 # Test Groups
 ESSENTIAL=(

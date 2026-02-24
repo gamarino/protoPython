@@ -203,7 +203,7 @@ print("DEBUG: _collections_abc about to register Coroutine", flush=True)
 Coroutine.register(coroutine)
 print("DEBUG: _collections_abc registered Coroutine", flush=True)
 
-
+print("DEBUG: _collections_abc defining AsyncIterable", flush=True)
 class AsyncIterable(metaclass=ABCMeta):
 
     __slots__ = ()
@@ -220,7 +220,7 @@ class AsyncIterable(metaclass=ABCMeta):
 
     __class_getitem__ = classmethod(GenericAlias)
 
-
+print("DEBUG: _collections_abc defining AsyncIterator", flush=True)
 class AsyncIterator(AsyncIterable):
 
     __slots__ = ()
@@ -239,7 +239,7 @@ class AsyncIterator(AsyncIterable):
             return _check_methods(C, "__anext__", "__aiter__")
         return NotImplemented
 
-
+print("DEBUG: _collections_abc defining AsyncGenerator", flush=True)
 class AsyncGenerator(AsyncIterator):
 
     __slots__ = ()
@@ -288,9 +288,12 @@ class AsyncGenerator(AsyncIterator):
         return NotImplemented
 
 
+print("DEBUG: _collections_abc about to register async_generator", flush=True)
 AsyncGenerator.register(async_generator)
+print("DEBUG: _collections_abc registered AsyncGenerator", flush=True)
 
 
+print("DEBUG: _collections_abc defining Iterable", flush=True)
 class Iterable(metaclass=ABCMeta):
 
     __slots__ = ()
@@ -308,7 +311,9 @@ class Iterable(metaclass=ABCMeta):
 
     __class_getitem__ = classmethod(GenericAlias)
 
+print("DEBUG: _collections_abc defined Iterable", flush=True)
 
+print("DEBUG: _collections_abc defining Iterator", flush=True)
 class Iterator(Iterable):
 
     __slots__ = ()
@@ -327,23 +332,36 @@ class Iterator(Iterable):
             return _check_methods(C, '__iter__', '__next__')
         return NotImplemented
 
-
+print("DEBUG: _collections_abc defined Iterator", flush=True)
 Iterator.register(bytes_iterator)
+print("DEBUG: _collections_abc registered bytes_iterator", flush=True)
+print("DEBUG: registering bytearray_iterator", flush=True)
 Iterator.register(bytearray_iterator)
-#Iterator.register(callable_iterator)
+print("DEBUG: registering dict_keyiterator", flush=True)
 Iterator.register(dict_keyiterator)
+print("DEBUG: registering dict_valueiterator", flush=True)
 Iterator.register(dict_valueiterator)
+print("DEBUG: registering dict_itemiterator", flush=True)
 Iterator.register(dict_itemiterator)
+print("DEBUG: registering list_iterator", flush=True)
 Iterator.register(list_iterator)
+print("DEBUG: registering list_reverseiterator", flush=True)
 Iterator.register(list_reverseiterator)
+print("DEBUG: registering range_iterator", flush=True)
 Iterator.register(range_iterator)
+print("DEBUG: registering longrange_iterator", flush=True)
 Iterator.register(longrange_iterator)
+print("DEBUG: registering set_iterator", flush=True)
 Iterator.register(set_iterator)
+print("DEBUG: registering str_iterator", flush=True)
 Iterator.register(str_iterator)
+print("DEBUG: registering tuple_iterator", flush=True)
 Iterator.register(tuple_iterator)
+print("DEBUG: registering zip_iterator", flush=True)
 Iterator.register(zip_iterator)
+print("DEBUG: _collections_abc finished Iterator registrations", flush=True)
 
-
+print("DEBUG: _collections_abc defining Reversible", flush=True)
 class Reversible(Iterable):
 
     __slots__ = ()
@@ -360,6 +378,7 @@ class Reversible(Iterable):
         return NotImplemented
 
 
+print("DEBUG: _collections_abc defining Generator", flush=True)
 class Generator(Iterator):
 
     __slots__ = ()
@@ -408,9 +427,12 @@ class Generator(Iterator):
         return NotImplemented
 
 
+print("DEBUG: _collections_abc about to register generator", flush=True)
 Generator.register(generator)
+print("DEBUG: _collections_abc registered generator", flush=True)
 
 
+print("DEBUG: _collections_abc defining Sized", flush=True)
 class Sized(metaclass=ABCMeta):
 
     __slots__ = ()
@@ -425,6 +447,7 @@ class Sized(metaclass=ABCMeta):
             return _check_methods(C, "__len__")
         return NotImplemented
 
+print("DEBUG: _collections_abc defined Sized", flush=True)
 
 class Container(metaclass=ABCMeta):
 
@@ -442,6 +465,7 @@ class Container(metaclass=ABCMeta):
 
     __class_getitem__ = classmethod(GenericAlias)
 
+print("DEBUG: _collections_abc defined Container", flush=True)
 
 class Collection(Sized, Iterable, Container):
 
@@ -453,6 +477,7 @@ class Collection(Sized, Iterable, Container):
             return _check_methods(C,  "__len__", "__iter__", "__contains__")
         return NotImplemented
 
+print("DEBUG: _collections_abc defined Collection", flush=True)
 
 class Buffer(metaclass=ABCMeta):
 
@@ -468,6 +493,7 @@ class Buffer(metaclass=ABCMeta):
             return _check_methods(C, "__buffer__")
         return NotImplemented
 
+print("DEBUG: _collections_abc defined Buffer", flush=True)
 
 class _CallableGenericAlias(GenericAlias):
     """ Represent `Callable[argtypes, resulttype]`.
@@ -536,6 +562,7 @@ def _is_param_expr(obj):
     names = ('ParamSpec', '_ConcatenateGenericAlias')
     return obj.__module__ == 'typing' and any(obj.__name__ == name for name in names)
 
+print("DEBUG: _collections_abc defined _CallableGenericAlias and _is_param_expr", flush=True)
 
 class Callable(metaclass=ABCMeta):
 
@@ -553,6 +580,7 @@ class Callable(metaclass=ABCMeta):
 
     __class_getitem__ = classmethod(_CallableGenericAlias)
 
+print("DEBUG: _collections_abc defined Callable", flush=True)
 
 ### SETS ###
 
@@ -569,6 +597,8 @@ class Set(Collection):
     """
 
     __slots__ = ()
+
+    # print("DEBUG: _collections_abc starting Set definition", flush=True)
 
     def __le__(self, other):
         if not isinstance(other, Set):
@@ -696,7 +726,7 @@ class Set(Collection):
 
 
 Set.register(frozenset)
-
+print("DEBUG: _collections_abc registered frozenset in Set", flush=True)
 
 class MutableSet(Set):
     """A mutable set is a finite, iterable container.
@@ -779,7 +809,7 @@ class MutableSet(Set):
 
 
 MutableSet.register(set)
-
+print("DEBUG: _collections_abc registered set in MutableSet", flush=True)
 
 ### MAPPINGS ###
 
@@ -835,12 +865,13 @@ class Mapping(Collection):
     __reversed__ = None
 
 Mapping.register(mappingproxy)
-
 if framelocalsproxy is not None:
     Mapping.register(framelocalsproxy)
+print("DEBUG: _collections_abc registered mappingproxy into Mapping", flush=True)
 
 
 class MappingView(Sized):
+    print("DEBUG: _collections_abc inside MappingView body", flush=True)
 
     __slots__ = '_mapping',
 
@@ -857,6 +888,7 @@ class MappingView(Sized):
 
 
 class KeysView(MappingView, Set):
+    print("DEBUG: _collections_abc inside KeysView body", flush=True)
 
     __slots__ = ()
 
@@ -872,6 +904,7 @@ class KeysView(MappingView, Set):
 
 
 KeysView.register(dict_keys)
+print("DEBUG: _collections_abc registered dict_keys into KeysView", flush=True)
 
 
 class ItemsView(MappingView, Set):
@@ -897,6 +930,7 @@ class ItemsView(MappingView, Set):
 
 
 ItemsView.register(dict_items)
+print("DEBUG: _collections_abc registered dict_items into ItemsView", flush=True)
 
 
 class ValuesView(MappingView, Collection):
@@ -916,6 +950,7 @@ class ValuesView(MappingView, Collection):
 
 
 ValuesView.register(dict_values)
+print("DEBUG: _collections_abc registered dict_values into ValuesView", flush=True)
 
 
 class MutableMapping(Mapping):

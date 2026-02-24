@@ -2787,7 +2787,7 @@ const proto::ProtoTuple* Compiler::getLnotab() {
 }
 
 bool Compiler::compileModule(ModuleNode* mod) {
-    if (!mod || mod->body.empty()) return false;
+    if (!mod) return false;
     globalNames_.clear();
     
     for (size_t i = 0; i < mod->body.size(); ++i) {
