@@ -68,17 +68,31 @@ __name__ = "collections.abc"
 # Note:  in other implementations, these types might not be distinct
 # and they may have their own implementation specific types that
 # are not included on this list.
+print("DEBUG _coll: bytes_iterator")
 bytes_iterator = type(iter(b''))
+print("DEBUG _coll: bytearray_iterator")
 bytearray_iterator = type(iter(bytearray()))
 #callable_iterator = ???
+print("DEBUG _coll: dict_keyiterator")
 dict_keyiterator = type(iter({}.keys()))
+print("DEBUG _coll: dict_valueiterator")
 dict_valueiterator = type(iter({}.values()))
+print("DEBUG _coll: dict_itemiterator")
 dict_itemiterator = type(iter({}.items()))
+print("DEBUG _coll: list_iterator")
 list_iterator = type(iter([]))
 list_reverseiterator = type(iter(reversed([])))
 range_iterator = type(iter(range(0)))
 longrange_iterator = type(iter(range(1 << 1000)))
-set_iterator = type(iter(set()))
+try:
+    _s = set()
+    print("DEBUG _collections_abc: _s =", _s, "type:", type(_s))
+    _i = iter(_s)
+    print("DEBUG _collections_abc: _i =", _i)
+    set_iterator = type(_i)
+except Exception as e:
+    print("DEBUG _collections_abc ERROR:", e)
+    set_iterator = type(iter(set()))
 str_iterator = type(iter(""))
 tuple_iterator = type(iter(()))
 zip_iterator = type(iter(zip()))

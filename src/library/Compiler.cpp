@@ -143,6 +143,16 @@ bool Compiler::compileConstant(ConstantNode* n) {
         obj = ctx_->fromDouble(n->floatVal);
     else if (n->constType == ConstantNode::ConstType::Str)
         obj = ctx_->fromUTF8String(n->strVal.c_str());
+    else if (n->constType == ConstantNode::ConstType::Bytes) {
+        PythonEnvironment* env = PythonEnvironment::get(ctx_);
+        if (env && env->getBytesPrototype()) {
+            proto::ProtoObject* b = const_cast<proto::ProtoObject*>(env->getBytesPrototype()->newChild(ctx_, true));
+            b->setAttribute(ctx_, ctx_->fromUTF8String("__data__")->asString(ctx_), ctx_->fromUTF8String(n->bytesVal.c_str()));
+            obj = b;
+        } else {
+            obj = ctx_->fromUTF8String(n->bytesVal.c_str());
+        }
+    }
     else if (n->constType == ConstantNode::ConstType::None)
         obj = PROTO_NONE;
     else if (n->constType == ConstantNode::ConstType::Bool)

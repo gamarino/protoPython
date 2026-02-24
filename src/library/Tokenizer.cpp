@@ -149,13 +149,16 @@ Token Tokenizer::scanString(char quote, const std::string& prefix) {
     Token t = makeToken(TokenType::String);
     bool isRaw = false;
     bool isF = false;
+    bool isB = false;
     for (char c : prefix) {
         char lc = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
         if (lc == 'r') isRaw = true;
         if (lc == 'f') isF = true;
+        if (lc == 'b') isB = true;
         if (lc == 't') { /* Handle Template String prefix if needed, for now just allow it */ }
     }
     if (isF) t.type = TokenType::FString;
+    else if (isB) t.type = TokenType::Bytes;
     
     bool triple = false;
     if (pos_ + 2 < source_.size() && source_[pos_ + 1] == quote && source_[pos_ + 2] == quote) {

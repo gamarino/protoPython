@@ -10,6 +10,7 @@ namespace protoPython {
 enum class TokenType {
     Number,
     String,
+    Bytes,
     FString,
     Name,
     Plus,

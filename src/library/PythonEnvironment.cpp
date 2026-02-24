@@ -4976,7 +4976,11 @@ static const proto::ProtoObject* py_dict_keys(
     const proto::ProtoString* keysName = getInternalString(context, "__keys__");
     const proto::ProtoObject* keysObj = self->getAttribute(context, keysName);
     const proto::ProtoList* keys = keysObj && keysObj->asList(context) ? keysObj->asList(context) : context->newList();
-    return keys->asObject(context);
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::ProtoObject* listProto = env ? env->getListPrototype() : nullptr;
+    proto::ProtoObject* listObj = const_cast<proto::ProtoObject*>(listProto ? listProto->newChild(context, true) : context->newObject());
+    listObj->setAttribute(context, getInternalString(context, "__data__"), keys->asObject(context));
+    return listObj;
 }
 
 static const proto::ProtoObject* py_dict_values(
@@ -5001,7 +5005,11 @@ static const proto::ProtoObject* py_dict_values(
         const proto::ProtoObject* val = dict->getAt(context, key->getHash(context));
         values = values->appendLast(context, val ? val : PROTO_NONE);
     }
-    return values->asObject(context);
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::ProtoObject* listProto = env ? env->getListPrototype() : nullptr;
+    proto::ProtoObject* listObj = const_cast<proto::ProtoObject*>(listProto ? listProto->newChild(context, true) : context->newObject());
+    listObj->setAttribute(context, getInternalString(context, "__data__"), values->asObject(context));
+    return listObj;
 }
 
 static const proto::ProtoObject* py_dict_items(
@@ -5028,8 +5036,11 @@ static const proto::ProtoObject* py_dict_items(
         const proto::ProtoTuple* pairTuple = context->newTupleFromList(pairList);
         items = items->appendLast(context, pairTuple->asObject(context));
     }
-    const proto::ProtoObject* res = items->asObject(context);
-    return res;
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::ProtoObject* listProto = env ? env->getListPrototype() : nullptr;
+    proto::ProtoObject* listObj = const_cast<proto::ProtoObject*>(listProto ? listProto->newChild(context, true) : context->newObject());
+    listObj->setAttribute(context, getInternalString(context, "__data__"), items->asObject(context));
+    return listObj;
 }
 
 static const proto::ProtoObject* py_dict_get(

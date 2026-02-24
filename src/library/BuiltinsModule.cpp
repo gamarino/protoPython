@@ -2350,6 +2350,29 @@ static bool checkInterfaceInstanceOf(proto::ProtoContext* context, const proto::
     return obj->isInstanceOf(context, cls) == PROTO_TRUE;
 }
 
+static const proto::ProtoObject* resolveClassType(protoPython::PythonEnvironment* env, const proto::ProtoObject* self, proto::ProtoContext* context, const proto::ProtoObject* cls) {
+    if (!env || !self) return cls;
+    const proto::ProtoObject* typeAttr = self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "type"));
+    const proto::ProtoObject* listAttr = self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "list"));
+    if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG resolveClassType cls=%p self=%p listAttr=%p typeAttr=%p\n", (void*)cls, (void*)self, (void*)listAttr, (void*)typeAttr);
+    if (cls == typeAttr) return env->getTypePrototype();
+    if (cls == listAttr) return env->getListPrototype();
+    if (cls == self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "tuple"))) return env->getTuplePrototype();
+    if (cls == self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "dict"))) return env->getDictPrototype();
+    if (cls == self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "int"))) return env->getIntPrototype();
+    if (cls == self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "float"))) return env->getFloatPrototype();
+    if (cls == self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "str"))) return env->getStrPrototype();
+    if (cls == self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "bytes"))) return env->getBytesPrototype();
+    if (cls == self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "bytearray"))) return env->getBytesPrototype();
+    if (cls == self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "set"))) return env->getSetPrototype();
+    if (cls == self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "frozenset"))) return env->getFrozensetPrototype();
+    if (cls == self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "bool"))) return env->getBoolPrototype();
+    if (cls == self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "complex"))) return env->getComplexPrototype();
+    return cls;
+}
+
+static bool py_issubclass_check_single(proto::ProtoContext* context, const proto::ProtoObject* cls, const proto::ProtoObject* base);
+
 static const proto::ProtoObject* py_isinstance(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -2360,28 +2383,31 @@ static const proto::ProtoObject* py_isinstance(
     if (positionalParameters->getSize(context) < 2) return PROTO_FALSE;
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
     const proto::ProtoObject* cls = positionalParameters->getAt(context, 1);
+    cls = resolveClassType(env, self, context, cls);
     
     if (obj == PROTO_TRUE || obj == PROTO_FALSE) {
-        const proto::ProtoObject* boolType = self->getAttribute(context, env ? env->getBoolTypeNameString() : proto::ProtoString::fromUTF8String(context, "bool"));
-        const proto::ProtoObject* intType = self->getAttribute(context, env ? env->getIntTypeNameString() : proto::ProtoString::fromUTF8String(context, "int"));
+        const proto::ProtoObject* boolType = env ? env->getBoolPrototype() : nullptr;
+        const proto::ProtoObject* intType = env ? env->getIntPrototype() : nullptr;
         if (cls == boolType || cls == intType) return PROTO_TRUE;
         if (intType && checkInterfaceInstanceOf(context, intType, cls)) return PROTO_TRUE;
     }
     
     if (checkInterfaceInstanceOf(context, obj, cls)) return PROTO_TRUE;
 
-    // Check __class__ attribute if native parent link failed
+    // Check __class__ attribute or prototype if native parent link failed
     const proto::ProtoString* classStr = env ? env->getClassString() : proto::ProtoString::fromUTF8String(context, "__class__");
     const proto::ProtoObject* objClass = obj->getAttribute(context, classStr);
+    if (!objClass) objClass = obj->getPrototype(context);
+    
     if (objClass && objClass != obj) {
-        if (checkInterfaceInstanceOf(context, objClass, cls)) return PROTO_TRUE;
+        if (py_issubclass_check_single(context, objClass, cls)) return PROTO_TRUE;
     }
 
     return PROTO_FALSE;
 }
 
-static const proto::ProtoObject* py_issubclass_check_single(proto::ProtoContext* context, const proto::ProtoObject* cls, const proto::ProtoObject* base) {
-    if (cls == base) return PROTO_TRUE;
+static bool py_issubclass_check_single(proto::ProtoContext* context, const proto::ProtoObject* cls, const proto::ProtoObject* base) {
+    if (cls == base) return true;
 
     // Fast path: use __mro__
     const proto::ProtoObject* mro = cls->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__mro__"));
@@ -2390,7 +2416,7 @@ static const proto::ProtoObject* py_issubclass_check_single(proto::ProtoContext*
         if (mroList) {
             for (unsigned long i = 0; i < mroList->getSize(context); ++i) {
                 if (mroList->getAt(context, i) == base) {
-                    return PROTO_TRUE;
+                    return true;
                 }
             }
         }
@@ -2402,8 +2428,8 @@ static const proto::ProtoObject* py_issubclass_check_single(proto::ProtoContext*
         const proto::ProtoList* basesList = bases->asList(context);
         if (basesList) {
             for (unsigned long i = 0; i < basesList->getSize(context); ++i) {
-                 if (py_issubclass_check_single(context, basesList->getAt(context, i), base) == PROTO_TRUE) {
-                     return PROTO_TRUE;
+                 if (py_issubclass_check_single(context, basesList->getAt(context, i), base)) {
+                     return true;
                  }
             }
         }
@@ -2413,7 +2439,7 @@ static const proto::ProtoObject* py_issubclass_check_single(proto::ProtoContext*
     // If base has __subclasscheck__, we should ideally call it. For native py_issubclass, 
     // the surrounding Python code in _abc.py or equivalent manages __subclasscheck__.
     // To strictly implement issubclass, we defer to __mro__.
-    return PROTO_FALSE;
+    return false;
 }
 
 static const proto::ProtoObject* py_issubclass(
@@ -2426,12 +2452,17 @@ static const proto::ProtoObject* py_issubclass(
     const proto::ProtoObject* cls = positionalParameters->getAt(context, 0);
     const proto::ProtoObject* base = positionalParameters->getAt(context, 1);
     
+    protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(context);
+    cls = resolveClassType(env, self, context, cls);
+    base = resolveClassType(env, self, context, base);
+    
     // In Python, if base is a tuple, we must check if cls is a subclass of ANY element in the tuple
     if (base) {
          const proto::ProtoList* baseList = base->asList(context);
+         if (!baseList && base->asTuple(context)) baseList = base->asTuple(context)->asList(context);
          if (baseList) {
              for (unsigned long i = 0; i < baseList->getSize(context); ++i) {
-                  if (py_issubclass_check_single(context, cls, baseList->getAt(context, i)) == PROTO_TRUE) {
+                  if (py_issubclass_check_single(context, cls, baseList->getAt(context, i))) {
                        return PROTO_TRUE;
                   }
              }
@@ -2439,7 +2470,7 @@ static const proto::ProtoObject* py_issubclass(
          }
     }
     
-    return py_issubclass_check_single(context, cls, base);
+    return py_issubclass_check_single(context, cls, base) ? PROTO_TRUE : PROTO_FALSE;
 }
 
 static const proto::ProtoObject* py_abs(
@@ -3362,7 +3393,12 @@ const proto::ProtoObject* py_object_new(
 
 const proto::ProtoObject* py_bytearray_fallback(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* link, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
     if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG: py_bytearray_fallback called\n");
-    // Just return an empty byte string for now, or a simple mock object
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (env && env->getBytesPrototype()) {
+        proto::ProtoObject* b = const_cast<proto::ProtoObject*>(env->getBytesPrototype()->newChild(ctx, true));
+        b->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__data__"), proto::ProtoString::fromUTF8String(ctx, "")->asObject(ctx));
+        return b;
+    }
     return proto::ProtoString::fromUTF8String(ctx, "")->asObject(ctx);
 }
 

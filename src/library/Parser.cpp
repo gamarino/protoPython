@@ -213,15 +213,17 @@ std::unique_ptr<ASTNode> Parser::parseAtom() {
         a->value = parsePrimary(); 
         return a;
     }
-    if (cur_.type == TokenType::String || cur_.type == TokenType::FString) {
+    if (cur_.type == TokenType::String || cur_.type == TokenType::FString || cur_.type == TokenType::Bytes) {
         std::vector<std::unique_ptr<ASTNode>> allValues;
         bool anyF = false;
+        bool anyB = cur_.type == TokenType::Bytes;
         
-        while (cur_.type == TokenType::String || cur_.type == TokenType::FString) {
-            if (cur_.type == TokenType::String) {
+        while (cur_.type == TokenType::String || cur_.type == TokenType::FString || cur_.type == TokenType::Bytes) {
+            if (cur_.type == TokenType::String || cur_.type == TokenType::Bytes) {
                 auto n = createNode<ConstantNode>();
-                n->constType = ConstantNode::ConstType::Str;
-                n->strVal = cur_.value;
+                n->constType = (cur_.type == TokenType::Bytes) ? ConstantNode::ConstType::Bytes : ConstantNode::ConstType::Str;
+                if (cur_.type == TokenType::Bytes) n->bytesVal = cur_.value;
+                else n->strVal = cur_.value;
                 allValues.push_back(std::move(n));
                 advance();
             } else {
@@ -239,15 +241,22 @@ std::unique_ptr<ASTNode> Parser::parseAtom() {
         }
         
         if (!anyF) {
-            std::string finalVal;
+            std::string finalStr;
+            std::string finalBytes;
             for (auto& v : allValues) {
                 if (auto* cn = dynamic_cast<ConstantNode*>(v.get())) {
-                    finalVal += cn->strVal;
+                    if (cn->constType == ConstantNode::ConstType::Bytes) finalBytes += cn->bytesVal;
+                    else finalStr += cn->strVal;
                 }
             }
             auto n = createNode<ConstantNode>();
-            n->constType = ConstantNode::ConstType::Str;
-            n->strVal = finalVal;
+            if (anyB) {
+                n->constType = ConstantNode::ConstType::Bytes;
+                n->bytesVal = finalBytes;
+            } else {
+                n->constType = ConstantNode::ConstType::Str;
+                n->strVal = finalStr;
+            }
             return n;
         } else {
             auto res = createNode<JoinedStrNode>();

@@ -16,11 +16,12 @@ struct ASTNode {
 };
 
 struct ConstantNode : ASTNode {
-    enum class ConstType { Int, Float, Str, None, Bool, Ellipsis };
+    enum class ConstType { Int, Float, Str, Bytes, None, Bool, Ellipsis };
     ConstType constType = ConstType::Int;
     long long intVal = 0;
     double floatVal = 0.0;
     std::string strVal;
+    std::string bytesVal;
 };
 
 struct NameNode : ASTNode {
