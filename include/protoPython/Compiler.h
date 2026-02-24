@@ -131,9 +131,19 @@ private:
     void addPatch(int argSlotIndex, int targetBytecodeIndex);
     void applyPatches();
     std::vector<std::pair<int, int>> patches_;
+    
+    enum class BlockType { TryFinally, With };
+    struct BlockEnv {
+        BlockType type;
+        ASTNode* cleanupNode; // ASTNode for finally body. Null for With.
+    };
+    std::vector<BlockEnv> blockEnvStack_;
+    bool unwindBlocks(bool isLoopExit);
+    
     struct LoopInfo {
         int start;
         std::vector<int> breakPatches;
+        size_t blockDepth;
     };
     std::vector<LoopInfo> loopStack_;
     

@@ -118,21 +118,10 @@ class Context:
             raise RuntimeError("cannot enter context: it is already the current context")
             
         _set_current_context(self)
-        
-        has_err = False
-        err = None
-        res = None
         try:
-            res = callable(*args, **kwargs)
-        except BaseException as e:
-            has_err = True
-            err = e
-            
-        _set_current_context(prev_context)
-        
-        if has_err:
-            raise err
-        return res
+            return callable(*args, **kwargs)
+        finally:
+            _set_current_context(prev_context)
                 
     def copy(self):
         new_ctx = Context()

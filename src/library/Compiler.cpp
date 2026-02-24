@@ -672,7 +672,7 @@ bool Compiler::compileWhile(WhileNode* n) {
     if (!n || !n->test) return false;
     int startPC = bytecodeOffset();
     
-    loopStack_.push_back({startPC, {}});
+    loopStack_.push_back({startPC, {}, blockEnvStack_.size()});
     
     if (!compileNode(n->test.get())) return false;
     
@@ -703,7 +703,7 @@ bool Compiler::compileFor(ForNode* n) {
     emit(OP_GET_ITER);
     int loopStart = bytecodeOffset();
     
-    loopStack_.push_back({loopStart, {}});
+    loopStack_.push_back({loopStart, {}, blockEnvStack_.size()});
     
     emit(OP_FOR_ITER, 0);
     int argSlot = bytecodeOffset() - 1;
@@ -727,6 +727,7 @@ bool Compiler::compileFor(ForNode* n) {
 
 bool Compiler::compileBreak(BreakNode* n) {
     if (loopStack_.empty()) return false;
+    if (!unwindBlocks(true)) return false;
     emit(OP_JUMP_ABSOLUTE, 0);
     loopStack_.back().breakPatches.push_back(bytecodeOffset() - 1);
     return true;
@@ -734,6 +735,7 @@ bool Compiler::compileBreak(BreakNode* n) {
 
 bool Compiler::compileContinue(ContinueNode* n) {
     if (loopStack_.empty()) return false;
+    if (!unwindBlocks(true)) return false;
     emit(OP_JUMP_ABSOLUTE, loopStack_.back().start);
     return true;
 }
@@ -770,6 +772,7 @@ bool Compiler::compileReturn(ReturnNode* n) {
         int idx = addConstant(PROTO_NONE);
         emit(OP_LOAD_CONST, idx);
     }
+    if (!unwindBlocks(false)) return false;
     emit(OP_RETURN_VALUE);
     return true;
 }
@@ -1323,7 +1326,11 @@ bool Compiler::compileTry(TryNode* n) {
     emit(OP_SETUP_FINALLY, 0);
     int setupFinallySlot = bytecodeOffset() - 1;
     
+    blockEnvStack_.push_back({BlockType::TryFinally, n->finalbody.get()});
+    
     if (!compileNode(n->body.get())) return false;
+    
+    blockEnvStack_.pop_back();
     
     // No exception: pop the block and jump over handlers
     emit(OP_POP_BLOCK, 0);
@@ -1415,6 +1422,8 @@ bool Compiler::compileWithItems(const std::vector<WithItem>& items, size_t index
     emit(OP_SETUP_WITH, 0); // Handler to be patched
     int setupSlot = bytecodeOffset() - 1;
     
+    blockEnvStack_.push_back({BlockType::With, nullptr});
+    
     if (item.optional_vars) {
         if (!compileTarget(item.optional_vars.get(), TargetCtx::Store)) return false;
     } else {
@@ -1422,6 +1431,8 @@ bool Compiler::compileWithItems(const std::vector<WithItem>& items, size_t index
     }
     
     if (!compileWithItems(items, index + 1, body)) return false;
+    
+    blockEnvStack_.pop_back();
     
     // Normal exit
     emit(OP_POP_BLOCK);
@@ -2497,7 +2508,7 @@ bool Compiler::compileAsyncFor(AsyncForNode* n) {
     emit(OP_GET_AITER);
 
     int loopStart = bytecodeOffset();
-    loopStack_.push_back({loopStart, {}});
+    loopStack_.push_back({loopStart, {}, blockEnvStack_.size()});
 
     // 2. SETUP_FINALLY to catch StopAsyncIteration
     int setupFinallySlot = bytecodeOffset();
@@ -2801,6 +2812,30 @@ bool Compiler::compileModule(ModuleNode* mod) {
     emit(OP_LOAD_CONST, noneIdx);
     emit(OP_RETURN_VALUE);
     applyPatches();
+    return true;
+}
+
+bool Compiler::unwindBlocks(bool isLoopExit) {
+    size_t targetDepth = 0;
+    if (isLoopExit && !loopStack_.empty()) {
+        targetDepth = loopStack_.back().blockDepth;
+    }
+    
+    for (size_t i = blockEnvStack_.size(); i > targetDepth; --i) {
+        const BlockEnv& env = blockEnvStack_[i - 1];
+        if (env.type == BlockType::TryFinally) {
+            emit(OP_POP_BLOCK);
+            if (env.cleanupNode) {
+                if (!compileNode(env.cleanupNode)) return false;
+            }
+        } else if (env.type == BlockType::With) {
+            emit(OP_POP_BLOCK);
+            int noneIdx = addConstant(PROTO_NONE);
+            emit(OP_LOAD_CONST, noneIdx);
+            emit(OP_WITH_CLEANUP);
+            emit(OP_POP_TOP); // pop suppression flag
+        }
+    }
     return true;
 }
 
