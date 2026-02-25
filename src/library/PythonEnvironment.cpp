@@ -99,6 +99,9 @@ static bool isEmbeddedValue(const proto::ProtoObject* obj) {
 
 // --- Dunder Methods Implementation ---
 
+extern const proto::ProtoObject* exported_runUserFunctionCall(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs);
+extern const proto::ProtoObject* exported_py_function_get(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs);
+
 namespace builtins {
     const proto::ProtoObject* py_object_new(
         proto::ProtoContext* context,
@@ -353,15 +356,12 @@ static const proto::ProtoObject* py_object_repr(
     }
 
     // Basic <object at 0x...> repr
-    const proto::ProtoObject* nameAttr = self->getAttribute(context, env ? env->getNameString() : getInternalString(context, "__name__"));
     std::string name = "object";
-    if (nameAttr && nameAttr->isString(context)) {
-        nameAttr->asString(context)->toUTF8String(context, name);
-    } else {
-        const proto::ProtoObject* cls = self->getAttribute(context, env ? env->getClassString() : getInternalString(context, "__class__"));
-        if (cls) {
-            const proto::ProtoObject* clsName = cls->getAttribute(context, env ? env->getNameString() : getInternalString(context, "__name__"));
-            if (clsName && clsName->isString(context)) clsName->asString(context)->toUTF8String(context, name);
+    const proto::ProtoObject* cls = env ? env->getType(context, self) : self->getAttribute(context, getInternalString(context, "__class__"));
+    if (cls) {
+        const proto::ProtoObject* clsName = cls->getAttribute(context, env ? env->getNameString() : getInternalString(context, "__name__"));
+        if (clsName && clsName->isString(context)) {
+            clsName->asString(context)->toUTF8String(context, name);
         }
     }
 
@@ -3015,6 +3015,7 @@ static const proto::ProtoObject* py_tuple_iter(
     const proto::ProtoString* iterIndexName = proto::ProtoString::fromUTF8String(context, "__iter_index__");
     iterObj = const_cast<proto::ProtoObject*>(iterObj->setAttribute(context, iterTupleName, data));
     iterObj = const_cast<proto::ProtoObject*>(iterObj->setAttribute(context, iterIndexName, context->fromInteger(0)));
+    fprintf(stderr, "DEBUG py_tuple_iter CREATING: iterObj=%p for tuple=%p\n", (void*)iterObj, (void*)data);
     return iterObj;
 }
 
@@ -3028,8 +3029,11 @@ static const proto::ProtoObject* py_tuple_iter_next(
     const proto::ProtoString* iterIndexName = proto::ProtoString::fromUTF8String(context, "__iter_index__");
     const proto::ProtoObject* tupleObj = self->getAttribute(context, iterTupleName);
     const proto::ProtoObject* indexObj = self->getAttribute(context, iterIndexName);
-    if (!tupleObj || !tupleObj->asTuple(context) || !indexObj) return PROTO_NONE;
-
+    fprintf(stderr, "DEBUG py_tuple_iter_next: self=%p\n", (void*)self);
+    if (!tupleObj || !tupleObj->asTuple(context) || !indexObj) {
+        fprintf(stderr, "DEBUG py_tuple_iter_next FAILING: tupleObj=%p, asTuple=%p, indexObj=%p\n", (void*)tupleObj, (void*)(tupleObj ? tupleObj->asTuple(context) : nullptr), (void*)indexObj);
+        return nullptr; // Throw StopIteration instead of infinite None loops!
+    }
     const proto::ProtoTuple* tuple = tupleObj->asTuple(context);
     int index = static_cast<int>(indexObj->asLong(context));
     unsigned long size = tuple->getSize(context);
@@ -6409,7 +6413,6 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     objectPrototype = objectPrototype->setAttribute(rootContext_, py_str, rootContext_->fromMethod(nullptr, py_object_str));
     objectPrototype = objectPrototype->setAttribute(rootContext_, py_format_dunder, rootContext_->fromMethod(nullptr, py_object_format));
     objectPrototype = objectPrototype->setAttribute(rootContext_, py_hash_dunder, rootContext_->fromMethod(nullptr, py_object_hash));
-    objectPrototype = objectPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__call__"), rootContext_->fromMethod(nullptr, py_object_call));
 
     // 2. Create 'type'
     typePrototype = objectPrototype->newChild(rootContext_, true);
@@ -6483,6 +6486,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     functionPrototype = functionPrototype->setAttribute(rootContext_, py_class, typePrototype);
     functionPrototype = functionPrototype->setAttribute(rootContext_, py_name, rootContext_->fromUTF8String("function"));
     functionPrototype = functionPrototype->setAttribute(rootContext_, py_module, builtinsVal);
+    functionPrototype = functionPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__call__"), rootContext_->fromMethod(nullptr, protoPython::exported_runUserFunctionCall));
+    functionPrototype = functionPrototype->setAttribute(rootContext_, getDunderString, rootContext_->fromMethod(nullptr, protoPython::exported_py_function_get));
 
     // 6. Basic types
     intPrototype = objectPrototype->newChild(rootContext_, true);
@@ -6634,6 +6639,17 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     listIterProto = listIterProto->setAttribute(rootContext_, py_next, rootContext_->fromMethod(nullptr, py_list_iter_next));
     listIterProto = listIterProto->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_self_iter));
     listPrototype = listPrototype->setAttribute(rootContext_, py_iter_proto, listIterProto);
+    
+    fprintf(stderr, "DEBUG PROTOS: Setting strIterProto on strPrototype=%p\n", (void*)strPrototype);
+    const proto::ProtoObject* strIterProto = objectPrototype->newChild(rootContext_, true);
+    strIterProto = strIterProto->setAttribute(rootContext_, py_class, typePrototype);
+    strIterProto = strIterProto->setAttribute(rootContext_, py_name, proto::ProtoString::fromUTF8String(rootContext_, "str_iterator")->asObject(rootContext_));
+    strIterProto = strIterProto->setAttribute(rootContext_, py_next, rootContext_->fromMethod(nullptr, py_list_iter_next));
+    strIterProto = strIterProto->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_self_iter));
+    strPrototype = strPrototype->setAttribute(rootContext_, py_iter_proto, strIterProto);
+    strPrototype = strPrototype->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_list_iter));
+    fprintf(stderr, "DEBUG PROTOS: Finished setting strIterProto! strPrototype->hasOwnAttr(%p)=%d\n", (void*)py_iter_proto, strPrototype->hasOwnAttribute(rootContext_, py_iter_proto) == PROTO_TRUE);  
+    strPrototype = strPrototype->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_list_iter));
     const proto::ProtoObject* listReverseIterProto = objectPrototype->newChild(rootContext_, true);
     listReverseIterProto = listReverseIterProto->setAttribute(rootContext_, py_class, typePrototype);
     listReverseIterProto = listReverseIterProto->setAttribute(rootContext_, py_name, proto::ProtoString::fromUTF8String(rootContext_, "list_reverseiterator")->asObject(rootContext_));
@@ -6653,7 +6669,13 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     dictPrototype = dictPrototype->setAttribute(rootContext_, delItemString, rootContext_->fromMethod(nullptr, py_dict_delitem));
     dictPrototype = dictPrototype->setAttribute(rootContext_, py_len, rootContext_->fromMethod(nullptr, py_dict_len));
     dictPrototype = dictPrototype->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_dict_iter));
-    dictPrototype = dictPrototype->setAttribute(rootContext_, py_iter_proto, listIterProto);
+    
+    const proto::ProtoObject* dictIterProto = objectPrototype->newChild(rootContext_, true);
+    dictIterProto = dictIterProto->setAttribute(rootContext_, py_class, typePrototype);
+    dictIterProto = dictIterProto->setAttribute(rootContext_, py_name, proto::ProtoString::fromUTF8String(rootContext_, "dict_keyiterator")->asObject(rootContext_));
+    dictIterProto = dictIterProto->setAttribute(rootContext_, py_next, rootContext_->fromMethod(nullptr, py_list_iter_next));
+    dictIterProto = dictIterProto->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_self_iter));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, py_iter_proto, dictIterProto);
     dictPrototype = dictPrototype->setAttribute(rootContext_, py_contains, rootContext_->fromMethod(nullptr, py_dict_contains));
     dictPrototype = dictPrototype->setAttribute(rootContext_, py_eq, rootContext_->fromMethod(nullptr, py_dict_eq));
     dictPrototype = dictPrototype->setAttribute(rootContext_, py_lt, rootContext_->fromMethod(nullptr, py_dict_lt));
@@ -6769,6 +6791,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     bytesIterProto = bytesIterProto->setAttribute(rootContext_, py_next, rootContext_->fromMethod(nullptr, py_bytes_iter_next));
     bytesIterProto = bytesIterProto->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_self_iter));
     bytesPrototype = bytesPrototype->setAttribute(rootContext_, py_iter_proto, bytesIterProto);
+    bytesPrototype = bytesPrototype->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_list_iter));
     // Prototype initialization diagnostic removed
     const proto::ProtoString* py_encode = proto::ProtoString::fromUTF8String(rootContext_, "encode");
     const proto::ProtoString* py_decode = proto::ProtoString::fromUTF8String(rootContext_, "decode");
@@ -6884,6 +6907,53 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     methodPrototype = methodPrototype->setAttribute(rootContext_, py_class, typePrototype);
     methodPrototype = methodPrototype->setAttribute(rootContext_, py_name, rootContext_->fromUTF8String("method"));
     methodPrototype = methodPrototype->setAttribute(rootContext_, py_module, builtinsVal);
+    // Bind descriptor __get__ so getattr(str, "replace") resolves to a bound method dynamically!
+    methodPrototype = methodPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__get__"), rootContext_->fromMethod(nullptr, 
+        [](proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+            if (!args || args->getSize(ctx) < 1) return self;
+            const proto::ProtoObject* instance = args->getAt(ctx, 0);
+            if (instance == PROTO_NONE || !instance) return self; // Unbound method accessed natively via class
+            // Create natively bound method:
+            if (!self->isMethod(ctx)) return self;
+            const proto::ProtoObject* bound = ctx->fromMethod(const_cast<proto::ProtoObject*>(instance), self->asMethod(ctx));
+            
+            // Native built-in bound methods need standard introspection primitives identically to user functions.
+            PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+            const proto::ProtoString* py_name_s = env ? env->getNameString() : proto::ProtoString::fromUTF8String(ctx, "__name__");
+            const proto::ProtoObject* dunderName = self->getAttribute(ctx, py_name_s);
+            if (dunderName && dunderName != PROTO_NONE) {
+                bound = bound->setAttribute(ctx, py_name_s, dunderName);
+                bound = bound->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__qualname__"), dunderName);
+            }
+            return bound;
+        }
+    ));
+    
+    // Bind __call__ so method objects invoke directly instead of falling back to type.__call__ (which creates classes)
+    methodPrototype = methodPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__call__"), rootContext_->fromMethod(nullptr, 
+        [](proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) -> const proto::ProtoObject* {
+            if (!self->isMethod(ctx)) return PROTO_NONE;
+            
+            // Re-invoke through the direct asMethod pointer using self as 'instance' if it's bound.
+            // But wait, user-created bound methods from Python have `runBoundMethodCall` natively bound in them.
+            // If we are here, someone is calling a method object dynamically via its __call__ attribute.
+            // So we delegate to self->asMethod().
+            // Wait, we need to pass `args` and `kwargs` forward. But the first arg to `asMethod` is the instance.
+            // `invokeCallable` already handled that if it was natively executable.
+            // If it fell back to __call__ on the class, `args` already has `self` prepended!
+            if (!args || args->getSize(ctx) == 0) return PROTO_NONE;
+            const proto::ProtoObject* methodObj = args->getAt(ctx, 0);
+            
+            const proto::ProtoList* subArgs = ctx->newList();
+            for (size_t i = 1; i < args->getSize(ctx); ++i) subArgs = subArgs->appendLast(ctx, args->getAt(ctx, i));
+            
+            // If it's a natively bound C++ method, call it.
+            // If it's a Python bound method, its __call__ is already `runBoundMethodCall`.
+            // Let's just forward to invokeCallable which knows how to handle it.
+            return invokePythonCallable(ctx, methodObj, subArgs, kwargs);
+        }
+    ));
+
 
     tracebackPrototype = objectPrototype->newChild(rootContext_, true);
     tracebackPrototype = tracebackPrototype->setAttribute(rootContext_, py_class, typePrototype);
@@ -6914,14 +6984,25 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     tracebackPrototype = tracebackPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "tb_lasti"), PROTO_NONE);
     tracebackPrototype = tracebackPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "tb_lineno"), PROTO_NONE);
 
-    // V75: Ensure all protoCore built-in iterator prototypes have __class__ = type
-    if (space_->stringIteratorPrototype) space_->stringIteratorPrototype = const_cast<proto::ProtoObject*>(space_->stringIteratorPrototype->setAttribute(rootContext_, py_class, typePrototype));
-    if (space_->listIteratorPrototype) space_->listIteratorPrototype = const_cast<proto::ProtoObject*>(space_->listIteratorPrototype->setAttribute(rootContext_, py_class, typePrototype));
-    if (space_->tupleIteratorPrototype) space_->tupleIteratorPrototype = const_cast<proto::ProtoObject*>(space_->tupleIteratorPrototype->setAttribute(rootContext_, py_class, typePrototype));
-    if (space_->sparseListIteratorPrototype) space_->sparseListIteratorPrototype = const_cast<proto::ProtoObject*>(space_->sparseListIteratorPrototype->setAttribute(rootContext_, py_class, typePrototype));
-    if (space_->setIteratorPrototype) space_->setIteratorPrototype = const_cast<proto::ProtoObject*>(space_->setIteratorPrototype->setAttribute(rootContext_, py_class, typePrototype));
-    if (space_->multisetIteratorPrototype) space_->multisetIteratorPrototype = const_cast<proto::ProtoObject*>(space_->multisetIteratorPrototype->setAttribute(rootContext_, py_class, typePrototype));
-    if (space_->rangeIteratorPrototype) space_->rangeIteratorPrototype = const_cast<proto::ProtoObject*>(space_->rangeIteratorPrototype->setAttribute(rootContext_, py_class, typePrototype));
+    // V75: Ensure all protoCore built-in iterator prototypes have __class__ = type and __name__
+    if (space_->stringIteratorPrototype) { space_->stringIteratorPrototype = const_cast<proto::ProtoObject*>(space_->stringIteratorPrototype->setAttribute(rootContext_, py_class, typePrototype)); space_->stringIteratorPrototype = const_cast<proto::ProtoObject*>(space_->stringIteratorPrototype->setAttribute(rootContext_, py_name, rootContext_->fromUTF8String("str_iterator"))); space_->stringIteratorPrototype = const_cast<proto::ProtoObject*>(space_->stringIteratorPrototype->setAttribute(rootContext_, py_module, builtinsVal)); }
+    if (space_->listIteratorPrototype) { space_->listIteratorPrototype = const_cast<proto::ProtoObject*>(space_->listIteratorPrototype->setAttribute(rootContext_, py_class, typePrototype)); space_->listIteratorPrototype = const_cast<proto::ProtoObject*>(space_->listIteratorPrototype->setAttribute(rootContext_, py_name, rootContext_->fromUTF8String("list_iterator"))); space_->listIteratorPrototype = const_cast<proto::ProtoObject*>(space_->listIteratorPrototype->setAttribute(rootContext_, py_module, builtinsVal)); }
+    if (space_->tupleIteratorPrototype) { space_->tupleIteratorPrototype = const_cast<proto::ProtoObject*>(space_->tupleIteratorPrototype->setAttribute(rootContext_, py_class, typePrototype)); space_->tupleIteratorPrototype = const_cast<proto::ProtoObject*>(space_->tupleIteratorPrototype->setAttribute(rootContext_, py_name, rootContext_->fromUTF8String("tuple_iterator"))); space_->tupleIteratorPrototype = const_cast<proto::ProtoObject*>(space_->tupleIteratorPrototype->setAttribute(rootContext_, py_module, builtinsVal)); }
+    if (space_->sparseListIteratorPrototype) { space_->sparseListIteratorPrototype = const_cast<proto::ProtoObject*>(space_->sparseListIteratorPrototype->setAttribute(rootContext_, py_class, typePrototype)); space_->sparseListIteratorPrototype = const_cast<proto::ProtoObject*>(space_->sparseListIteratorPrototype->setAttribute(rootContext_, py_name, rootContext_->fromUTF8String("dict_iterator"))); space_->sparseListIteratorPrototype = const_cast<proto::ProtoObject*>(space_->sparseListIteratorPrototype->setAttribute(rootContext_, py_module, builtinsVal)); }
+    if (space_->setIteratorPrototype) { space_->setIteratorPrototype = const_cast<proto::ProtoObject*>(space_->setIteratorPrototype->setAttribute(rootContext_, py_class, typePrototype)); space_->setIteratorPrototype = const_cast<proto::ProtoObject*>(space_->setIteratorPrototype->setAttribute(rootContext_, py_name, rootContext_->fromUTF8String("set_iterator"))); space_->setIteratorPrototype = const_cast<proto::ProtoObject*>(space_->setIteratorPrototype->setAttribute(rootContext_, py_module, builtinsVal)); }
+    if (space_->multisetIteratorPrototype) { space_->multisetIteratorPrototype = const_cast<proto::ProtoObject*>(space_->multisetIteratorPrototype->setAttribute(rootContext_, py_class, typePrototype)); space_->multisetIteratorPrototype = const_cast<proto::ProtoObject*>(space_->multisetIteratorPrototype->setAttribute(rootContext_, py_name, rootContext_->fromUTF8String("multiset_iterator"))); space_->multisetIteratorPrototype = const_cast<proto::ProtoObject*>(space_->multisetIteratorPrototype->setAttribute(rootContext_, py_module, builtinsVal)); }
+    
+    if (space_->rangeIteratorPrototype) { 
+        fprintf(stderr, "DEBUG BEFORE SETTING: py_class string ptr=%p\n", (void*)py_class);
+        space_->rangeIteratorPrototype = const_cast<proto::ProtoObject*>(space_->rangeIteratorPrototype->setAttribute(rootContext_, py_class, typePrototype)); 
+        space_->rangeIteratorPrototype = const_cast<proto::ProtoObject*>(space_->rangeIteratorPrototype->setAttribute(rootContext_, py_name, rootContext_->fromUTF8String("range_iterator"))); 
+        space_->rangeIteratorPrototype = const_cast<proto::ProtoObject*>(space_->rangeIteratorPrototype->setAttribute(rootContext_, py_module, builtinsVal)); 
+        if (space_->rangeIteratorPrototype->hasOwnAttribute(rootContext_, py_class) == PROTO_TRUE) {
+            fprintf(stderr, "DEBUG: YES, rangeIterProto hasOwnAttribute py_class MATCHES ITSELF\n");
+        } else {
+            fprintf(stderr, "DEBUG: NO, rangeIterProto hasOwnAttribute py_class FAILS ON ITSELF\n");
+        }
+    }
 
     space_->objectPrototype = const_cast<proto::ProtoObject*>(objectPrototype);
     space_->stringPrototype = const_cast<proto::ProtoObject*>(strPrototype);
@@ -6933,6 +7014,12 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     space_->sparseListPrototype = const_cast<proto::ProtoObject*>(dictPrototype);
     space_->methodPrototype = const_cast<proto::ProtoObject*>(methodPrototype);
     // V75: Keep these in PythonEnvironment, not ProtoSpace
+
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        fprintf(stderr, "DEBUG PROTOS: stringIter=%p listIter=%p tupleIter=%p dictIter=%p\n",
+                (void*)space_->stringIteratorPrototype, (void*)space_->listIteratorPrototype,
+                (void*)space_->tupleIteratorPrototype, (void*)space_->sparseListIteratorPrototype);
+    }
 
     // 5. Initialize Native Module Provider
     auto nativeProvider = std::make_unique<NativeModuleProvider>();
@@ -8266,6 +8353,12 @@ const proto::ProtoObject* PythonEnvironment::getType(proto::ProtoContext* ctx, c
         return obj->getAttribute(ctx, classS);
     }
 
+    if (std::getenv("PROTO_ENV_DIAG") && obj->getParents(ctx) && obj->getParents(ctx)->getSize(ctx) == 1) {
+        if (obj->getParents(ctx)->getAt(ctx, 0)->hasOwnAttribute(ctx, classS) != PROTO_TRUE) {
+            fprintf(stderr, "DEBUG: getType Priority 2 FAIL. Parent hasOwnAttribute was false. parent=%p, classS=%p\n", (void*)obj->getParents(ctx)->getAt(ctx, 0), (void*)classS);
+        }
+    }
+
     // Priority 2: Look for the structural parent marked as a Python class (has its own __class__)
     const proto::ProtoList* parents = obj->getParents(ctx);
     if (parents) {
@@ -8403,19 +8496,18 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
 
 
     // 1.5 Descriptor Protocol Check (__get__)
-    // If the attribute found (val) has a __get__ method, invoke it.
+    // If the attribute found (val) has a __get__ method ON ITS TYPE, invoke it.
     // This allows properties, methods, and other descriptors to work correctly.
-    // Note: We skip this for method cells that are handled by specialized binding logic later,
-    // unless those method cells specifically have __get__ (which they usually don't in current protoCore).
     const proto::ProtoString* dunderGet = this->getGetDunderString();
-    if (dunderGet && val->getAttribute(ctx, dunderGet)) {
+    const proto::ProtoObject* valType = val ? this->getType(ctx, val) : nullptr;
+    const proto::ProtoObject* getM = valType ? valType->getAttribute(ctx, dunderGet) : nullptr;
+    
+    if (dunderGet && getM && getM->isMethod(ctx)) {
         // Do not bind if obj is a module! Modules are namespaces, not classes.
         const proto::ProtoObject* objClass = obj->getAttribute(ctx, this->getClassString());
         if (!this->modulePrototype || (obj != this->modulePrototype && objClass != this->modulePrototype)) {
-            const proto::ProtoObject* getM = val->getAttribute(ctx, dunderGet);
-            if (getM && getM->isMethod(ctx)) {
                  const proto::ProtoObject* instance = obj;
-                 const proto::ProtoObject* owner = obj->getAttribute(ctx, this->getClassString());
+                 const proto::ProtoObject* owner = objClass;
                  
                  // If obj is a class and the attribute was found on the class itself (or its bases),
                  // we are accessing an attribute ON a class. So instance = None, owner = the class (obj).
@@ -8428,9 +8520,8 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
                  const proto::ProtoObject* res = getM->asMethod(ctx)(ctx, val, nullptr, args, nullptr);
                  getAttrDepth--;
                  return res;
-            }
+             }
         }
-    }
 
     // 2. Minimalist Binding logic: if it's a method cell from a prototype, bind it to 'obj'
     if (val->isCell(ctx) && val->isMethod(ctx)) {
