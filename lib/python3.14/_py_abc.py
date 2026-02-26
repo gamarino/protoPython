@@ -33,9 +33,12 @@ class ABCMeta(type):
     _abc_invalidation_counter = 0
 
     def __new__(mcls, name, bases, namespace, /, **kwargs):
+        print(f"DEBUG ABCMeta.__new__: {name}")
         cls = super().__new__(mcls, name, bases, namespace, **kwargs)
+        print("DEBUG ABCMeta.__new__ super() done")
         abstracts = []
         for n, v in dict.items(namespace):
+            print(f"DEBUG ABCMeta.__new__ attr {n}")
             is_abs = getattr(v, "__isabstractmethod__", False)
             if is_abs:
                 abstracts.append(n)

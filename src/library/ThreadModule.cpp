@@ -327,6 +327,50 @@ static const proto::ProtoObject* py_join_thread(
     return PROTO_NONE;
 }
 
+static const proto::ProtoObject* py_is_main_interpreter(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    return PROTO_TRUE; // For now
+}
+
+static const proto::ProtoObject* py_get_main_thread_ident(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    // Return early thread ID or main identifier. For now, 0.
+    return ctx->fromInteger(0);
+}
+
+static const proto::ProtoObject* py_start_joinable_thread(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    // For now, delegate to _make_thread_handle.
+    return ctx->fromInteger(0); // stub
+}
+
+static const proto::ProtoObject* py_daemon_threads_allowed(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    return PROTO_TRUE;
+}
+
+static const proto::ProtoObject* py_shutdown(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    return PROTO_NONE;
+}
+
+static const proto::ProtoObject* py_make_thread_handle(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    return PROTO_NONE;
+}
+
 static const proto::ProtoObject* py_is_alive(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
@@ -393,6 +437,28 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_rlock_acquire));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_rlock_release"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_rlock_release));
+
+    // threading.py dependencies
+    const proto::ProtoObject* pyType = protoPython::PythonEnvironment::fromContext(ctx) ? protoPython::PythonEnvironment::fromContext(ctx)->lookupName("type") : nullptr;
+    const proto::ProtoObject* pyException = protoPython::PythonEnvironment::fromContext(ctx) ? protoPython::PythonEnvironment::fromContext(ctx)->lookupName("Exception") : nullptr;
+
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "LockType"), ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_allocate_lock));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "error"), pyException ? pyException : PROTO_NONE);
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "TIMEOUT_MAX"), ctx->fromDouble(9223372036.0));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_is_main_interpreter"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_is_main_interpreter));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_get_main_thread_ident"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_get_main_thread_ident));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "start_joinable_thread"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_start_joinable_thread));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "daemon_threads_allowed"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_daemon_threads_allowed));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_shutdown"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_shutdown));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_make_thread_handle"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_make_thread_handle));
+    // Provide a callable for _ThreadHandle
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_ThreadHandle"), ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_make_thread_handle));
 
     auto py_thread_count = [](proto::ProtoContext* c, const proto::ProtoObject*, const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) -> const proto::ProtoObject* {
         return c->fromInteger(c->space->runningThreads.load());

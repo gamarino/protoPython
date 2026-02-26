@@ -1,0 +1,1 @@
+/usr/bin/c++ -O3 -DNDEBUG CMakeFiles/immutable_sharing_benchmark.dir/performance/immutable_sharing_benchmark.cpp.o -o immutable_sharing_benchmark  -Wl,-rpath,/mnt/c/Users/gamar/PycharmProjects/protoPython/wsl-build/protoCore libprotoCore.so.1.0.0 

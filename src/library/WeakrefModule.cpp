@@ -47,6 +47,27 @@ static const proto::ProtoObject* py_weakref_getweakrefs(
     return ctx->newList()->asObject(ctx);
 }
 
+static const proto::ProtoObject* py_weakref_remove_dead_weakref(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
+    const proto::ProtoObject* dct = posArgs->getAt(ctx, 0);
+    const proto::ProtoObject* key = posArgs->getAt(ctx, 1);
+    
+    // Attempt to delete the key from the dictionary.
+    // If it's a dict, use deleteItem or setAttribute to none depending on the runtime support.
+    // For now, since dict mutation is supported, we can just do a setAttribute with None (or delete if API exists).
+    // In our simplified engine, we can try to use delItem or just ignore if it fails.
+    if (dct && key) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+        if (env) {
+            // del dct[key]
+            env->delItem(dct, key);
+        }
+    }
+    return PROTO_NONE;
+}
+
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     proto::ProtoObject* mod = const_cast<proto::ProtoObject*>(ctx->newObject(true));
     mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "proxy"),
@@ -57,6 +78,19 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(mod, py_weakref_getweakrefcount));
     mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "getweakrefs"),
         ctx->fromMethod(mod, py_weakref_getweakrefs));
+    mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_remove_dead_weakref"),
+        ctx->fromMethod(mod, py_weakref_remove_dead_weakref));
+
+    // Register types (for now, simply aliases to avoid missing attribute errors).
+    // In a full implementation, these would point to type prototypes.
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (env) {
+        const proto::ProtoObject* pyType = env->lookupName("type");
+        mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "ReferenceType"), pyType ? pyType : PROTO_NONE);
+        mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "ProxyType"), pyType ? pyType : PROTO_NONE);
+        mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "CallableProxyType"), pyType ? pyType : PROTO_NONE);
+    }
+
     return mod;
 }
 

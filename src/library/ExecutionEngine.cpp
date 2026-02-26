@@ -219,6 +219,10 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
         frame = const_cast<proto::ProtoObject*>(frame->addParent(calleeCtx, env->getFramePrototype()));
         frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getFCodeString(), codeObj));
         frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getFGlobalsString(), globalsObj));
+        const proto::ProtoObject* parentFrame = PythonEnvironment::getCurrentFrame();
+        if (parentFrame) {
+            frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getFBackString(), parentFrame));
+        }
     }
 
     // Bind parameters
@@ -1010,7 +1014,7 @@ static const proto::ProtoObject* invokeCallable(proto::ProtoContext* ctx,
 
     /* FALLBACK TO PUBLIC API __call__ */
     const proto::ProtoString* callS = env ? env->getCallString() : proto::ProtoString::fromUTF8String(ctx, "__call__");
-    const proto::ProtoObject* callAttr = callable->getAttribute(ctx, callS);
+    const proto::ProtoObject* callAttr = env ? env->getAttribute(ctx, callable, callS) : callable->getAttribute(ctx, callS);
     if (!callAttr || !callAttr->asMethod(ctx)) {
         if (env) {
             std::string repr = PythonEnvironment::reprObject(ctx, callable);
@@ -2970,6 +2974,11 @@ const proto::ProtoObject* executeBytecodeRange(
 
                     const proto::ProtoObject* val = env ? env->getAttribute(ctx, obj, attrName) : obj->getAttribute(ctx, attrName);
                     
+                    if (std::getenv("PROTO_ENV_DIAG")) {
+                        fprintf(stderr, "DEBUG: OP_LOAD_ATTR returned val=%p\n", (void*)val);
+                        fflush(stderr);
+                    }
+                    
                     bool isMissing = false;
                     if (!val) {
                         if (env && env->hasPendingException()) {
@@ -4243,6 +4252,14 @@ const proto::ProtoObject* executeMinimalBytecode(
     if (!ctx || !constants || !bytecode) return nullptr;
     unsigned long n = bytecode->getSize(ctx);
     return executeBytecodeRange(ctx, constants, bytecode, names, frame, 0, n ? n - 1 : 0, 0, nullptr, nullptr, nullptr, 0, nullptr);
+}
+
+const proto::ProtoObject* exported_py_function_get(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+    return py_function_get(ctx, self, parentLink, args, kwargs);
+}
+
+const proto::ProtoObject* exported_runUserFunctionCall(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+    return runUserFunctionCall(ctx, self, parentLink, args, kwargs);
 }
 
 } // namespace protoPython

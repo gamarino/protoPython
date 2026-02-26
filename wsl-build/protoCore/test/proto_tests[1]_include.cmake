@@ -1,0 +1,5 @@
+if(EXISTS "/mnt/c/Users/gamar/PycharmProjects/protoPython/wsl-build/protoCore/test/proto_tests[1]_tests.cmake")
+  include("/mnt/c/Users/gamar/PycharmProjects/protoPython/wsl-build/protoCore/test/proto_tests[1]_tests.cmake")
+else()
+  add_test(proto_tests_NOT_BUILT proto_tests_NOT_BUILT)
+endif()

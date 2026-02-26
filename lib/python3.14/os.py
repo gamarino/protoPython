@@ -856,6 +856,7 @@ def getenv(key, default=None):
 supports_bytes_environ = (name != 'nt')
 __all__.extend(("getenv", "supports_bytes_environ"))
 
+print("DEBUG before getenvb")
 if supports_bytes_environ:
     def _check_bytes(value):
         if not isinstance(value, bytes):
@@ -876,6 +877,7 @@ if supports_bytes_environ:
 
     __all__.extend(("environb", "getenvb"))
 
+print("DEBUG before _fscodec")
 def _fscodec():
     encoding = sys.getfilesystemencoding()
     errors = sys.getfilesystemencodeerrors()
@@ -906,6 +908,7 @@ def _fscodec():
 
     return fsencode, fsdecode
 
+print("DEBUG before _fscodec call")
 fsencode, fsdecode = _fscodec()
 del _fscodec
 
@@ -1158,6 +1161,8 @@ if not _exists('fspath'):
     fspath.__name__ = "fspath"
 
 
+print("DEBUG before PathLike class")
+print(f"DEBUG type(abc.ABC)={type(abc.ABC)}")
 class PathLike(abc.ABC):
 
     """Abstract base class for implementing the file system path protocol."""
@@ -1175,6 +1180,9 @@ class PathLike(abc.ABC):
             return _check_methods(subclass, '__fspath__')
         return NotImplemented
 
+    print("DEBUG before __class_getitem__")
+    print(f"DEBUG classmethod={classmethod}")
+    print(f"DEBUG GenericAlias={GenericAlias}")
     __class_getitem__ = classmethod(GenericAlias)
 
 

@@ -1,0 +1,3 @@
+/mnt/c/Users/gamar/PycharmProjects/protoPython/wsl-build/_deps/googletest-subbuild/CMakeFiles/googletest-populate.dir
+/mnt/c/Users/gamar/PycharmProjects/protoPython/wsl-build/_deps/googletest-subbuild/CMakeFiles/edit_cache.dir
+/mnt/c/Users/gamar/PycharmProjects/protoPython/wsl-build/_deps/googletest-subbuild/CMakeFiles/rebuild_cache.dir

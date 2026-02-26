@@ -1,0 +1,1 @@
+/usr/bin/c++ -O3 -DNDEBUG CMakeFiles/concurrent_append_benchmark.dir/performance/concurrent_append_benchmark.cpp.o -o concurrent_append_benchmark  -Wl,-rpath,/mnt/c/Users/gamar/PycharmProjects/protoPython/wsl-build/protoCore libprotoCore.so.1.0.0 

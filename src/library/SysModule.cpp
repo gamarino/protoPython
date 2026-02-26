@@ -124,7 +124,12 @@ static const proto::ProtoObject* sys_getframe(
         frame = frame->getAttribute(context, f_back_s);
     }
     
-    return frame ? frame : PROTO_NONE;
+    if (!frame || frame == PROTO_NONE) {
+        if (env) env->raiseValueError(context, context->fromUTF8String("call stack is not deep enough"));
+        return PROTO_NONE;
+    }
+    
+    return frame;
 }
 
 static const proto::ProtoObject* sys_setrecursionlimit(

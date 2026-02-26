@@ -48,7 +48,7 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 - [ ] `test_pydoc.py`
 - [ ] `test_warnings.py`
 
-## Progress Summary (V78 - 2026-02-20)
+## Progress Summary (V80 - 2026-02-26)
 
 | Category | Total | Checked | Passed | Success Rate |
 | :--- | :--- | :--- | :--- | :--- |
@@ -59,7 +59,7 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 | **Total** | **22** | **10** | **4** | **18%** |
 
 > [!NOTE]
-> **V78 Evaluation Cycle**: Implemented full dynamic native descriptor resolution solving the `NameError` cascade within `argparse` `super()` executions. `test_os.py` effectively now resolves and executes flawlessly without error exits! Timeouts in grammar/types exist due to 15s build barriers.
+> **V80 Evaluation Cycle**: Focus shifted to unblocking the standard library test imports. Full native implementations of `time.monotonic` and `time.perf_counter` were added. Identified missing features in `_weakref`, `threading`, and `unittest` that block test execution and require complete native implementations to ensure strict standard library compatibility.
 
 ## Recent Achievements (V70-V75)
 (Previous achievements preserved for context...)
@@ -85,6 +85,31 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 - **Builtin Registration**:
     - Fixed typo in `builtins` registration for the `bytes` type.
 
+## Recent Achievements (V80)
+
+- **Native Modules**:
+    - Completely implemented `monotonic` and `perf_counter` native methods in the `time` module (`TimeModule.cpp`) to accurately support test environment timeouts natively.
+
+## Pending Native Implementations (Blocked Tests)
+
+- **`_weakref`**: Missing native `CallableProxyType`, `ProxyType`, and `ReferenceType`, blocking `test_grammar.py` module loading.
+- **`threading`**: Missing native components causing cascading import errors.
+- **`unittest`**: Unsupported module attributes failing test harness initialization.
+*(Must be fully natively implemented to unblock tests natively without mocks, adhering to project rules).*
+
+## Recent Achievements (V79)
+
+- **Control Flow & Block Unwinding**:
+    - Implemented block unwinding for non-local control flow in Compiler (`OP_RETURN_VALUE`, `OP_BREAK_LOOP`, `OP_CONTINUE_LOOP`).
+    - Added `BlockEnv` tracking for `TryFinally` and `With` blocks, resolving memory leaks and bypassing finally execution paths.
+- **Runtime Stability & GC Fixes**:
+    - Resolved critical GC race conditions by zeroing allocated cell memory in `allocCell`.
+    - Fixed `ParentLink` casting and resolving segfaults in `ParentLinkImplementation::getObject` (occurring during `test_grammar.py`).
+    - Fixed `__call__` resolution on `methodPrototype` to correctly handle bound methods and metaclass instantiations.
+- **Environment Context & Imports**:
+    - Fixed Python compiler losing environment context when compiling bytes literals.
+    - Debugging and fixes implemented for `functools` and `_collections_abc` imports.
+
 ## Recent Achievements (V78)
 
 - **`test_os.py` Standardization**:
@@ -95,11 +120,11 @@ Tests for features that are not primary targets for `protoPython`'s performance 
     - Restored immutability variable mapping natively by synchronizing `f_locals` explicitly with the post-bound initialization frame object representation correctly.
     - Repaired `py_super` dunder search fallback explicitly fetching `"self"` dynamically over native built-in namespaces natively.
 
-## Regressions & Known Issues (V78)
+## Regressions & Known Issues (V79)
 
 - **Standard Library Gaps**:
-    - `test_descr.py` still fails natively due to complex cascading evaluation errors.
-- **Execution Stability**: `test_grammar.py` uses a lightweight import path under `PROTO_PYTHONPATH` (no `test.support`, no `from sys import *`, no `inspect`; see `lib/python3.14/test/cpython/_grammar_support.py`). It completes loading in ~112s (conformance script uses 120s timeout for this test) but then fails with a runtime `TypeError` (empty message) after `os.environ` is set; fixing that will allow the test to pass. `test_types.py` still times out.
+    - `test_descr.py` continues to fail or timeout natively due to cascading evaluation complexity.
+- **Execution Stability**: `test_grammar.py` no longer segfaults but encounters timeouts or environment execution hurdles under the 15s test barrier. `test_types.py` still times out. Test framework script (`tests/run_conformance.sh`) had environment/symlink issues on WSL when launching native shared libraries.
 
 ## Recent Achievements (V70-V75)
 

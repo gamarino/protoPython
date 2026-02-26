@@ -1520,6 +1520,37 @@ static const proto::ProtoObject* py_list_extend(
     return PROTO_NONE;
 }
 
+/** list.__add__(other): return a new list concatenating self and other. */
+static const proto::ProtoObject* py_list_add(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    if (!positionalParameters || positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    const proto::ProtoObject* otherObj = positionalParameters->getAt(context, 0);
+    if (!otherObj) return PROTO_NONE;
+
+    const proto::ProtoList* otherList = otherObj->asList(context);
+    if (!otherList) {
+        const proto::ProtoObject* otherData = otherObj->getAttribute(context, getInternalString(context, "__data__"));
+        if (otherData) otherList = otherData->asList(context);
+    }
+    const proto::ProtoString* dataName = getInternalString(context, "__data__");
+    const proto::ProtoObject* data = self->getAttribute(context, dataName);
+    if (!data || !data->asList(context) || !otherList) return PROTO_NONE;
+    
+    const proto::ProtoList* list = data->asList(context);
+    const proto::ProtoList* newList = list->extend(context, otherList);
+    
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!env || !env->getListPrototype()) return PROTO_NONE;
+    
+    proto::ProtoObject* outObj = const_cast<proto::ProtoObject*>(env->getListPrototype()->newChild(context, true));
+    outObj->setAttribute(context, dataName, newList->asObject(context));
+    return outObj;
+}
+
 /** list.__iadd__(other): in-place extend with other, return self (for +=). */
 static const proto::ProtoObject* py_list_iadd(
     proto::ProtoContext* context,
@@ -6567,6 +6598,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     strPrototype = strPrototype->setAttribute(rootContext_, py_rpartition, rootContext_->fromMethod(nullptr, py_str_rpartition));
     const proto::ProtoString* py_expandtabs = proto::ProtoString::fromUTF8String(rootContext_, "expandtabs");
     strPrototype = strPrototype->setAttribute(rootContext_, py_expandtabs, rootContext_->fromMethod(nullptr, py_str_expandtabs));
+    const proto::ProtoString* py_isidentifier = proto::ProtoString::fromUTF8String(rootContext_, "isidentifier");
+    strPrototype = strPrototype->setAttribute(rootContext_, py_isidentifier, rootContext_->fromMethod(nullptr, py_str_isidentifier));
     const proto::ProtoString* py_capitalize = proto::ProtoString::fromUTF8String(rootContext_, "capitalize");
     const proto::ProtoString* py_title = proto::ProtoString::fromUTF8String(rootContext_, "title");
     const proto::ProtoString* py_swapcase = proto::ProtoString::fromUTF8String(rootContext_, "swapcase");
@@ -6631,6 +6664,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     const proto::ProtoString* py_rmul = proto::ProtoString::fromUTF8String(rootContext_, "__rmul__");
     listPrototype = listPrototype->setAttribute(rootContext_, py_mul, rootContext_->fromMethod(nullptr, py_list_mul));
     listPrototype = listPrototype->setAttribute(rootContext_, py_rmul, rootContext_->fromMethod(nullptr, py_list_mul));
+    listPrototype = listPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__add__"), rootContext_->fromMethod(nullptr, py_list_add));
     listPrototype = listPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__iadd__"), rootContext_->fromMethod(nullptr, py_list_iadd));
 
     const proto::ProtoObject* listIterProto = objectPrototype->newChild(rootContext_, true);
@@ -6910,12 +6944,15 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     // Bind descriptor __get__ so getattr(str, "replace") resolves to a bound method dynamically!
     methodPrototype = methodPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__get__"), rootContext_->fromMethod(nullptr, 
         [](proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+            fprintf(stderr, "DEBUG_GET: methodPrototype.__get__ called on self=%p. isMethod=%d\n", (void*)self, self->isMethod(ctx));
             if (!args || args->getSize(ctx) < 1) return self;
             const proto::ProtoObject* instance = args->getAt(ctx, 0);
+            fprintf(stderr, "DEBUG_GET: instance=%p\n", (void*)instance);
             if (instance == PROTO_NONE || !instance) return self; // Unbound method accessed natively via class
             // Create natively bound method:
             if (!self->isMethod(ctx)) return self;
             const proto::ProtoObject* bound = ctx->fromMethod(const_cast<proto::ProtoObject*>(instance), self->asMethod(ctx));
+            fprintf(stderr, "DEBUG_GET: created bound method %p\n", (void*)bound);
             
             // Native built-in bound methods need standard introspection primitives identically to user functions.
             PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
@@ -8349,6 +8386,9 @@ const proto::ProtoObject* PythonEnvironment::getType(proto::ProtoContext* ctx, c
     // Priority 1: Explicit __class__ attribute (avoids recursion)
     const proto::ProtoString* classS = getClassString() ? getClassString() : proto::ProtoString::fromUTF8String(ctx, "__class__");
     if (obj->hasOwnAttribute(ctx, classS) == PROTO_TRUE) {
+        if (std::getenv("PROTO_ENV_DIAG")) {
+            fprintf(stderr, "DEBUG_GETTYPE: getType(%p) -> priority 1\n", (void*)obj);
+        }
         if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG: getType priority 1 __class__ match\n");
         return obj->getAttribute(ctx, classS);
     }
@@ -8379,11 +8419,11 @@ const proto::ProtoObject* PythonEnvironment::getType(proto::ProtoContext* ctx, c
     // Priority 3: Fallback lookup
     const proto::ProtoObject* proto = obj->getPrototype(ctx);
     if (proto) {
-        if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG: getType proto fallback\n");
+        if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG_GETTYPE: getType(%p) -> priority 3 proto=%p\n", (void*)obj, (void*)proto);
         return proto;
     }
     
-    if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG: getType fallback attribute lookup\n");
+    if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG_GETTYPE: getType(%p) -> fallback attribute lookup\n", (void*)obj);
     return getAttribute(ctx, obj, classS);
 }
 
@@ -8469,7 +8509,7 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
     if (!val || val == PROTO_NONE) {
         const proto::ProtoString* clsS = this->getClassString();
         if (clsS) {
-            const proto::ProtoObject* cls = obj->getAttribute(ctx, clsS);
+            const proto::ProtoObject* cls = this->getType(ctx, obj);
             if (std::getenv("PROTO_RESOLVE_DIAG")) {
                  fprintf(stderr, "DEBUG: getAttribute checking obj's %p __class__ = %p (== PROTO_NONE: %d)\n", (void*)obj, (void*)cls, cls == PROTO_NONE);
             }
@@ -8502,6 +8542,10 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
     const proto::ProtoObject* valType = val ? this->getType(ctx, val) : nullptr;
     const proto::ProtoObject* getM = valType ? valType->getAttribute(ctx, dunderGet) : nullptr;
     
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        fprintf(stderr, "DEBUG_GET: val=%p valType=%p getM=%p\n", (void*)val, (void*)valType, (void*)getM);
+    }
+    
     if (dunderGet && getM && getM->isMethod(ctx)) {
         // Do not bind if obj is a module! Modules are namespaces, not classes.
         const proto::ProtoObject* objClass = obj->getAttribute(ctx, this->getClassString());
@@ -8518,6 +8562,7 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
                  
                  const proto::ProtoList* args = ctx->newList()->appendLast(ctx, instance)->appendLast(ctx, owner ? owner : PROTO_NONE);
                  const proto::ProtoObject* res = getM->asMethod(ctx)(ctx, val, nullptr, args, nullptr);
+                 fprintf(stderr, "DEBUG_GET: PythonEnvironment::getAttribute returning descriptor result %p\n", (void*)res);
                  getAttrDepth--;
                  return res;
              }

@@ -399,7 +399,24 @@ def namedtuple(typename, field_names, *, rename=False, defaults=None, module=Non
                 field_names[index] = f'_{index}'
             seen.add(name)
 
+    print("TRACE: Start of name loop")
     for name in [typename] + field_names:
+        print("TRACE: looping name", name)
+        if type(name) is not str:
+            raise TypeError('Type names and field names must be strings')
+        print("TRACE: check length")
+        if len(name) == 0:
+            pass
+        print("TRACE: calling isidentifier")
+        is_ident = name.isidentifier()
+        print("TRACE: is_ident =", is_ident)
+        if not is_ident:
+            raise ValueError('Type names and field names must be valid '
+                             f'identifiers: {name!r}')
+        print("TRACE: check _iskeyword")
+        if _iskeyword(name):
+            raise ValueError('Type names and field names cannot be a '
+                             f'keyword: {name!r}')
         if type(name) is not str:
             raise TypeError('Type names and field names must be strings')
         if not name.isidentifier():

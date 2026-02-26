@@ -31,12 +31,26 @@ static const proto::ProtoObject* py_sleep(
     return PROTO_NONE;
 }
 
+static const proto::ProtoObject* py_monotonic(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    (void)posArgs;
+    auto now = std::chrono::steady_clock::now();
+    auto epoch = now.time_since_epoch();
+    double sec = std::chrono::duration<double>(epoch).count();
+    return ctx->fromDouble(sec);
+}
+
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     const proto::ProtoObject* mod = ctx->newObject(true);
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "time"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_time));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "sleep"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_sleep));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "monotonic"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_monotonic));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "perf_counter"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_monotonic));
     return mod;
 }
 

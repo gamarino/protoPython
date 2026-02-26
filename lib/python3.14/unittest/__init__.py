@@ -53,14 +53,21 @@ __all__ = ['TestResult', 'TestCase', 'IsolatedAsyncioTestCase', 'TestSuite',
 
 __unittest = True
 
+print("DEBUG importing .result")
 from .result import TestResult
+print("DEBUG importing .case")
 from .case import (addModuleCleanup, TestCase, FunctionTestCase, SkipTest, skip,
                    skipIf, skipUnless, expectedFailure, doModuleCleanups,
                    enterModuleContext)
+print("DEBUG importing .suite")
 from .suite import BaseTestSuite, TestSuite  # noqa: F401
+print("DEBUG importing .loader")
 from .loader import TestLoader, defaultTestLoader
+print("DEBUG importing .main")
 from .main import TestProgram, main  # noqa: F401
+print("DEBUG importing .runner")
 from .runner import TextTestRunner, TextTestResult
+print("DEBUG importing .signals")
 from .signals import installHandler, registerResult, removeResult, removeHandler
 # IsolatedAsyncioTestCase will be imported lazily.
 
