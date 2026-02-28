@@ -1618,20 +1618,56 @@ static const proto::ProtoObject* py_super(
            found_class:;
        }
        
-       if (obj && obj != PROTO_NONE) {
-           if (!type) {
-               // Fallback: use type(obj) for the object.
-               if (env) {
-                   type = env ? env->getType(context, obj) : obj->getAttribute(context, env->getClassString());
-               } else {
-                   type = obj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__class__"));
-               }
-               if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG: py_super 0-arg inferred type=%p from obj=%p\n", (void*)type, (void*)obj);
-           }
-       } else {
-           if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG: py_super 0-arg failed to find self/cls\n");
-           return PROTO_NONE;
-       }
+        if (obj && obj != PROTO_NONE) {
+            if (!type) {
+                // Fallback: heuristically find the defining class
+                if (frame && env) {
+                    const proto::ProtoObject* codeObj = frame->getAttribute(context, env->getFCodeString());
+                    if (codeObj && codeObj != PROTO_NONE) {
+                        const proto::ProtoObject* co_name = codeObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "co_name"));
+                        bool isClass = obj->hasOwnAttribute(context, proto::ProtoString::fromUTF8String(context, "__mro__")) == PROTO_TRUE;
+                        const proto::ProtoObject* mroSrc = isClass ? obj : env->getType(context, obj);
+                        const proto::ProtoObject* mroObj = mroSrc ? mroSrc->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__mro__")) : nullptr;
+                        const proto::ProtoTuple* mro = (mroObj && mroObj != PROTO_NONE) ? mroObj->asTuple(context) : nullptr;
+                        if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG_SUPER_MRO_CHECK: obj=%p isClass=%d mroSrc=%p mroObj=%p mro=%p co_name=%p co_nameStr=%d\n", (void*)obj, isClass, (void*)mroSrc, (void*)mroObj, (void*)mro, (void*)co_name, co_name ? co_name->isString(context) : 0);
+                        if (mro && co_name && co_name->isString(context)) {
+                            for (size_t i = 0; i < mro->getSize(context); ++i) {
+                                const proto::ProtoObject* cls = mro->getAt(context, i);
+                                if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG_SUPER_MRO: cls=%p hasOwn=%d\n", (void*)cls, cls->hasOwnAttribute(context, co_name->asString(context)) == PROTO_TRUE);
+                                if (cls->hasOwnAttribute(context, co_name->asString(context)) == PROTO_TRUE) {
+                                    const proto::ProtoObject* attr = cls->getAttribute(context, co_name->asString(context));
+                                    const proto::ProtoObject* attrCode = attr ? attr->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__code__")) : nullptr;
+                                    if (!attrCode || attrCode == PROTO_NONE) {
+                                        const proto::ProtoObject* func = attr ? attr->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__func__")) : nullptr;
+                                        if (func && func != PROTO_NONE) {
+                                            attrCode = func->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__code__"));
+                                        }
+                                    }
+                                    if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG_SUPER_MRO: cls=%p attr=%p attrCode=%p codeObj=%p\n", (void*)cls, (void*)attr, (void*)attrCode, (void*)codeObj);
+                                    if (attrCode == codeObj) {
+                                        type = cls;
+                                        if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG_SUPER_MRO: MATCH! type set to %p\n", (void*)type);
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (!type) {
+                    if (env) {
+                        type = env ? env->getType(context, obj) : obj->getAttribute(context, env->getClassString());
+                    } else {
+                        type = obj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__class__"));
+                    }
+                }
+                if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG: py_super 0-arg inferred type=%p from obj=%p\n", (void*)type, (void*)obj);
+            }
+        } else {
+            if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG: py_super 0-arg failed to find self/cls\n");
+            return PROTO_NONE;
+        }
     } else {
         type = positionalParameters->getAt(context, 0);
         obj = positionalParameters->getAt(context, 1);
@@ -1647,6 +1683,7 @@ static const proto::ProtoObject* py_super(
     proxy->setAttribute(context, proto::ProtoString::fromUTF8String(context, "type"), type);
     proxy->setAttribute(context, proto::ProtoString::fromUTF8String(context, "obj"), obj);
     proxy->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__getattr__"), context->fromMethod(proxy, py_super_getattr));
+    proxy->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__is_super_proxy__"), context->fromBoolean(true));
 
     return proxy;
 }

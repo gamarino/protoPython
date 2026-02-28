@@ -2513,6 +2513,11 @@ const proto::ProtoObject* executeBytecodeRange(
                         ? env->getAttribute(ctx, mod, nameS) 
                         : mod->getAttribute(ctx, nameS);
                     
+                    if (std::getenv("PROTO_ENV_DIAG")) {
+                        std::string n; nameS->toUTF8String(ctx, n);
+                        fprintf(stderr, "DEBUG: OP_IMPORT_FROM name=%s val=%p hasAttr=%d\n", n.c_str(), (void*)val, mod->hasAttribute(ctx, nameS) == PROTO_TRUE);
+                    }
+
                     if (val && (val != PROTO_NONE || mod->hasAttribute(ctx, nameS) == PROTO_TRUE)) {
                         stack.push_back(val);
                     } else {
@@ -4256,6 +4261,35 @@ const proto::ProtoObject* executeMinimalBytecode(
 
 const proto::ProtoObject* exported_py_function_get(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
     return py_function_get(ctx, self, parentLink, args, kwargs);
+}
+
+const proto::ProtoObject* exported_py_function_code_get(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+    if (args->getSize(ctx) < 2) return PROTO_NONE;
+    const proto::ProtoObject* instance = args->getAt(ctx, 0);
+    if (!instance || instance == PROTO_NONE) return self;
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    const proto::ProtoString* codeStr = env ? env->getCodeString() : proto::ProtoString::fromUTF8String(ctx, "__code__");
+    const proto::ProtoObject* res = instance->getAttribute(ctx, codeStr);
+    return res ? res : PROTO_NONE;
+}
+
+const proto::ProtoObject* exported_py_function_globals_get(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+    if (args->getSize(ctx) < 2) return PROTO_NONE;
+    const proto::ProtoObject* instance = args->getAt(ctx, 0);
+    if (!instance || instance == PROTO_NONE) return self;
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    const proto::ProtoString* globalsStr = env ? env->getGlobalsString() : proto::ProtoString::fromUTF8String(ctx, "__globals__");
+    const proto::ProtoObject* res = instance->getAttribute(ctx, globalsStr);
+    return res ? res : PROTO_NONE;
+}
+
+const proto::ProtoObject* exported_py_function_doc_get(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+    if (args->getSize(ctx) < 2) return PROTO_NONE;
+    const proto::ProtoObject* instance = args->getAt(ctx, 0);
+    if (!instance || instance == PROTO_NONE) return self;
+    const proto::ProtoString* docStr = proto::ProtoString::fromUTF8String(ctx, "__doc__");
+    const proto::ProtoObject* res = instance->getAttribute(ctx, docStr);
+    return res ? res : PROTO_NONE;
 }
 
 const proto::ProtoObject* exported_runUserFunctionCall(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {

@@ -1125,6 +1125,7 @@ Sequence.register(memoryview)
 
 class _DeprecateByteStringMeta(ABCMeta):
     def __new__(cls, name, bases, namespace, **kwargs):
+        print(f"DEBUG _DeprecateByteStringMeta.__new__: {name}")
         if name != "ByteString":
             import warnings
 
@@ -1132,7 +1133,10 @@ class _DeprecateByteStringMeta(ABCMeta):
                 "collections.abc.ByteString",
                 remove=(3, 17),
             )
-        return super().__new__(cls, name, bases, namespace, **kwargs)
+        print("DEBUG _DeprecateByteStringMeta calling super().__new__")
+        res = super().__new__(cls, name, bases, namespace, **kwargs)
+        print("DEBUG _DeprecateByteStringMeta super().__new__ returned")
+        return res
 
     def __instancecheck__(cls, instance):
         import warnings

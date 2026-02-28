@@ -651,7 +651,7 @@ public:
     /**
      * @brief Formats a traceback starting from the given context (Step 1329).
      */
-    std::string formatTraceback(const proto::ProtoContext* ctx);
+    std::string formatTraceback(const proto::ProtoContext* ctx, const proto::ProtoObject* exc = nullptr);
     
     // Keyword Names Stack management (for **kwargs refinement)
     void pushKwNames(const proto::ProtoTuple* names);

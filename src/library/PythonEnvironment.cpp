@@ -101,6 +101,9 @@ static bool isEmbeddedValue(const proto::ProtoObject* obj) {
 
 extern const proto::ProtoObject* exported_runUserFunctionCall(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs);
 extern const proto::ProtoObject* exported_py_function_get(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs);
+extern const proto::ProtoObject* exported_py_function_code_get(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs);
+extern const proto::ProtoObject* exported_py_function_globals_get(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs);
+extern const proto::ProtoObject* exported_py_function_doc_get(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs);
 
 namespace builtins {
     const proto::ProtoObject* py_object_new(
@@ -7008,9 +7011,18 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     codePrototype = codePrototype->setAttribute(rootContext_, py_module, builtinsVal);
 
     // V75: Provide class-level attributes for types.py
-    functionPrototype = functionPrototype->setAttribute(rootContext_, __code__, PROTO_NONE);
-    functionPrototype = functionPrototype->setAttribute(rootContext_, __globals__, PROTO_NONE);
-    functionPrototype = functionPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__doc__"), PROTO_NONE);
+    const proto::ProtoObject* codeDesc = objectPrototype->newChild(rootContext_, true);
+    codeDesc = codeDesc->setAttribute(rootContext_, getGetDunderString(), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(codeDesc), protoPython::exported_py_function_code_get));
+    functionPrototype = functionPrototype->setAttribute(rootContext_, __code__, codeDesc);
+
+    const proto::ProtoObject* globalsDesc = objectPrototype->newChild(rootContext_, true);
+    globalsDesc = globalsDesc->setAttribute(rootContext_, getGetDunderString(), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(globalsDesc), protoPython::exported_py_function_globals_get));
+    functionPrototype = functionPrototype->setAttribute(rootContext_, __globals__, globalsDesc);
+
+    const proto::ProtoObject* docDesc = objectPrototype->newChild(rootContext_, true);
+    docDesc = docDesc->setAttribute(rootContext_, getGetDunderString(), rootContext_->fromMethod(const_cast<proto::ProtoObject*>(docDesc), protoPython::exported_py_function_doc_get));
+    functionPrototype = functionPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__doc__"), docDesc);
+
     functionPrototype = functionPrototype->setAttribute(rootContext_, classString, typePrototype); // Ensure class is set
     
     methodPrototype = methodPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__doc__"), PROTO_NONE);
@@ -7775,48 +7787,61 @@ static void sigint_handler(int) {
     PythonEnvironment::s_sigintReceived.store(true);
 }
 
-std::string PythonEnvironment::formatTraceback(const proto::ProtoContext* ctx) {
+std::string PythonEnvironment::formatTraceback(const proto::ProtoContext* ctx, const proto::ProtoObject* exc) {
     if (!ctx) ctx = s_threadContext ? s_threadContext : rootContext_;
     proto::ProtoContext* nonConstCtx = const_cast<proto::ProtoContext*>(ctx);
-    std::string out = "Traceback (most recent call last):\n";
     
-    // Walk the frame stack using f_back
-    const proto::ProtoObject* frame = getCurrentFrame();
-    std::vector<const proto::ProtoObject*> frames;
-    while (frame && frame != PROTO_NONE) {
-        frames.push_back(frame);
-        frame = frame->getAttribute(nonConstCtx, getFBackString());
-        if (frames.size() > 50) break; // Safety limit
+    std::vector<const proto::ProtoObject*> tracebacks;
+    if (exc && exc != PROTO_NONE) {
+        const proto::ProtoObject* tb = exc->getAttribute(nonConstCtx, proto::ProtoString::fromUTF8String(nonConstCtx, "__traceback__"));
+        while (tb && tb != PROTO_NONE) {
+            tracebacks.push_back(tb);
+            tb = tb->getAttribute(nonConstCtx, proto::ProtoString::fromUTF8String(nonConstCtx, "tb_next"));
+            if (tracebacks.size() > 50) break; // Safety limit
+        }
     }
     
-    // Process frames in reverse (oldest first)
-    std::reverse(frames.begin(), frames.end());
+    if (tracebacks.empty()) {
+        return "";
+    }
+
+    std::string out = "Traceback (most recent call last):\n";
+    // Process frames in order (Python __traceback__ linked list from addTraceback: newest frame is tail, oldest caller is head)
     
-    for (const auto* f : frames) {
+    for (const auto* tb : tracebacks) {
         std::string filename = "<unknown>";
         std::string funcName = "<module>";
         int lineno = 0;
         
-        const proto::ProtoObject* codeObj = f->getAttribute(nonConstCtx, getFCodeString());
-        if (codeObj && codeObj != PROTO_NONE) {
-            const proto::ProtoObject* fileObj = codeObj->getAttribute(nonConstCtx, getCoFilenameString());
-            if (fileObj && fileObj->isString(nonConstCtx)) {
-                fileObj->asString(nonConstCtx)->toUTF8String(nonConstCtx, filename);
+        const proto::ProtoObject* f = tb->getAttribute(nonConstCtx, proto::ProtoString::fromUTF8String(nonConstCtx, "tb_frame"));
+        const proto::ProtoObject* linenoObj = tb->getAttribute(nonConstCtx, proto::ProtoString::fromUTF8String(nonConstCtx, "tb_lineno"));
+        if (linenoObj && linenoObj->isInteger(nonConstCtx)) {
+            lineno = static_cast<int>(linenoObj->asLong(nonConstCtx));
+        }
+
+        if (f && f != PROTO_NONE) {
+            const proto::ProtoObject* codeObj = f->getAttribute(nonConstCtx, getFCodeString());
+            if (codeObj && codeObj != PROTO_NONE) {
+                const proto::ProtoObject* fileObj = codeObj->getAttribute(nonConstCtx, getCoFilenameString());
+                if (fileObj && fileObj->isString(nonConstCtx)) {
+                    fileObj->asString(nonConstCtx)->toUTF8String(nonConstCtx, filename);
+                }
+                
+                const proto::ProtoObject* nameObj = codeObj->getAttribute(nonConstCtx, proto::ProtoString::fromUTF8String(nonConstCtx, "co_name"));
+                if (nameObj && nameObj->isString(nonConstCtx)) {
+                    nameObj->asString(nonConstCtx)->toUTF8String(nonConstCtx, funcName);
+                }
             }
-            
-            const proto::ProtoObject* nameObj = codeObj->getAttribute(nonConstCtx, proto::ProtoString::fromUTF8String(nonConstCtx, "co_name"));
-            if (nameObj && nameObj->isString(nonConstCtx)) {
-                nameObj->asString(nonConstCtx)->toUTF8String(nonConstCtx, funcName);
-            }
-            // we don't extract line numbers correctly yet from frame objects here, but we can set up the structure
         }
         
         if (filename == "<unknown>") {
             if (ctx->currentFileName) filename = ctx->currentFileName;
-            lineno = ctx->currentLineNumber;
+        }
+        if (lineno == 0) {
+            if (ctx->currentLineNumber > 0) lineno = ctx->currentLineNumber;
         }
 
-        std::string lineStr = lineno > 0 ? " (line " + std::to_string(lineno) + ")" : "";
+        std::string lineStr = lineno > 0 ? ", line " + std::to_string(lineno) : "";
         out += "  File \"" + filename + "\"" + lineStr + ", in " + funcName + "\n";
     }
     return out;
@@ -7973,7 +7998,7 @@ std::string PythonEnvironment::formatException(const proto::ProtoObject* exc, co
 
     // Prepend Traceback (Step 1329)
     if (typeName != "SyntaxError" && typeName != "KeyboardInterrupt" && typeName != "SystemExit") {
-        out += formatTraceback(context);
+        out += formatTraceback(context, exc);
     }
 
     // Header: Type: Message
@@ -8446,6 +8471,17 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
         getAttrDepth--;
         return nullptr;
     }
+
+    const proto::ProtoString* isSuperProxyS = proto::ProtoString::fromUTF8String(ctx, "__is_super_proxy__");
+    if (obj->hasOwnAttribute(ctx, isSuperProxyS) == PROTO_TRUE) {
+        const proto::ProtoString* getattrS = proto::ProtoString::fromUTF8String(ctx, "__getattr__");
+        const proto::ProtoObject* getattrM = obj->getAttribute(ctx, getattrS);
+        if (getattrM && getattrM->isMethod(ctx)) {
+             getAttrDepth--;
+             const proto::ProtoList* args = ctx->newList()->appendLast(ctx, name->asObject(ctx));
+             return getattrM->asMethod(ctx)(ctx, obj, nullptr, args, nullptr);
+        }
+    }
     
     bool isClass = false;
     const proto::ProtoString* isPyClassS = proto::ProtoString::fromUTF8String(ctx, "__is_python_class__");
@@ -8457,6 +8493,8 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
     
     // 1. Get the raw value from the primitive object hierarchy
     const proto::ProtoObject* val = obj->getAttribute(ctx, name);
+    bool isExplicitNone = (val == PROTO_NONE && obj->hasAttribute(ctx, name) == PROTO_TRUE);
+
     if (val && val != PROTO_NONE) {
         if (!isClass) {
             foundOnClassOrMro = true;
@@ -8481,16 +8519,15 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
         }
     }
     
-    if (!val || val == PROTO_NONE) {
+    if (!val || (!isExplicitNone && val == PROTO_NONE)) {
         // Fallback logic starts here
     }
-
 
     
     // 1.1 MRO Lookup (Inheritance Prototype Chain)
     // For classes, we must search the MRO (base classes) BEFORE looking into the metaclass (`__class__`).
     // For regular objects, `getParents` is usually empty natively, so this resolves quickly.
-    if (!val || val == PROTO_NONE) {
+    if (!val || (!isExplicitNone && val == PROTO_NONE)) {
         const proto::ProtoList* mro = obj->getParents(ctx);
         if (mro) {
             for (size_t i = 0; i < mro->getSize(ctx); ++i) {
@@ -8506,7 +8543,7 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
 
     // 1.2 Metaclass / Class Lookup Fallback
     // If not found on the object itself or via its MRO, check the object's class natively (`type(obj)`).
-    if (!val || val == PROTO_NONE) {
+    if (!val || (!isExplicitNone && val == PROTO_NONE)) {
         const proto::ProtoString* clsS = this->getClassString();
         if (clsS) {
             const proto::ProtoObject* cls = this->getType(ctx, obj);
@@ -8597,7 +8634,7 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
     
     // Fallback: __getattr__
     // This is required for objects like 'super' proxies that rely on __getattr__
-    if ((!val || val == PROTO_NONE)) {
+    if (!val || (!isExplicitNone && val == PROTO_NONE)) {
         if (getAttrDepth < 10) {
             const proto::ProtoString* getattrS = proto::ProtoString::fromUTF8String(ctx, "__getattr__");
             // Ensure we ONLY do this for actual instances, not classes/types, or strictly for super proxies.
