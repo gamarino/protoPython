@@ -1,8 +1,8 @@
 src/library/CMakeFiles/protoPython.dir/CodecsModule.cpp.o: \
- /home/gamarino/Documentos/proyectos/protoPython/src/library/CodecsModule.cpp \
+ /mnt/c/Users/gamar/PycharmProjects/protoPython/src/library/CodecsModule.cpp \
  /usr/include/stdc-predef.h \
- /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/CodecsModule.h \
- /home/gamarino/Documentos/proyectos/protoCore/headers/protoCore.h \
+ /mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython/CodecsModule.h \
+ /mnt/c/Users/gamar/PycharmProjects/protoCore/headers/protoCore.h \
  /usr/include/c++/13/atomic /usr/include/c++/13/bits/atomic_base.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/c++config.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/os_defines.h \
@@ -212,7 +212,7 @@ src/library/CMakeFiles/protoPython.dir/CodecsModule.cpp.o: \
  /usr/include/c++/13/bits/stl_vector.h \
  /usr/include/c++/13/bits/stl_bvector.h \
  /usr/include/c++/13/bits/vector.tcc \
- /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/PythonEnvironment.h \
+ /mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython/PythonEnvironment.h \
  /usr/include/c++/13/functional /usr/include/c++/13/bits/std_function.h \
  /usr/include/c++/13/unordered_map \
  /usr/include/c++/13/bits/unordered_map.h \
@@ -226,4 +226,4 @@ src/library/CMakeFiles/protoPython.dir/CodecsModule.cpp.o: \
  /usr/include/c++/13/bits/stl_heap.h \
  /usr/include/c++/13/bits/uniform_int_dist.h /usr/include/c++/13/iostream \
  /usr/include/c++/13/istream /usr/include/c++/13/bits/istream.tcc \
- /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/Tokenizer.h
+ /mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython/Tokenizer.h

@@ -1,8 +1,8 @@
 src/library/CMakeFiles/protoPython.dir/Parser.cpp.o: \
- /home/gamarino/Documentos/proyectos/protoPython/src/library/Parser.cpp \
+ /mnt/c/Users/gamar/PycharmProjects/protoPython/src/library/Parser.cpp \
  /usr/include/stdc-predef.h \
- /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/Parser.h \
- /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/Tokenizer.h \
+ /mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython/Parser.h \
+ /mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython/Tokenizer.h \
  /usr/include/c++/13/string /usr/include/c++/13/bits/requires_hosted.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/c++config.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/os_defines.h \

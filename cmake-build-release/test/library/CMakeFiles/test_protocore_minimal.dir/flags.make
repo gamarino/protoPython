@@ -4,7 +4,7 @@
 # compile CXX with /usr/bin/c++
 CXX_DEFINES = 
 
-CXX_INCLUDES = -I/home/gamarino/Documentos/proyectos/protoPython/include -I/home/gamarino/Documentos/proyectos/protoCore/headers
+CXX_INCLUDES = -I/mnt/c/Users/gamar/PycharmProjects/protoPython/include -I/mnt/c/Users/gamar/PycharmProjects/protoCore/headers
 
 CXX_FLAGS = -O3 -DNDEBUG -std=gnu++20 -fno-delete-null-pointer-checks
 

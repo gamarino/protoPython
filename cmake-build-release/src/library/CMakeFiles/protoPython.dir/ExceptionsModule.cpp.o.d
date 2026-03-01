@@ -1,8 +1,8 @@
 src/library/CMakeFiles/protoPython.dir/ExceptionsModule.cpp.o: \
- /home/gamarino/Documentos/proyectos/protoPython/src/library/ExceptionsModule.cpp \
+ /mnt/c/Users/gamar/PycharmProjects/protoPython/src/library/ExceptionsModule.cpp \
  /usr/include/stdc-predef.h \
- /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/ExceptionsModule.h \
- /home/gamarino/Documentos/proyectos/protoCore/headers/protoCore.h \
+ /mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython/ExceptionsModule.h \
+ /mnt/c/Users/gamar/PycharmProjects/protoCore/headers/protoCore.h \
  /usr/include/c++/13/atomic /usr/include/c++/13/bits/atomic_base.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/c++config.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/os_defines.h \

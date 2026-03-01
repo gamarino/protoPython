@@ -6,5 +6,5 @@ CXX_DEFINES = -DprotoPython_EXPORTS
 
 CXX_INCLUDES = -I/mnt/c/Users/gamar/PycharmProjects/protoPython/include -I/mnt/c/Users/gamar/PycharmProjects/protoPython/src/library/../../include -I/mnt/c/Users/gamar/PycharmProjects/protoCore/headers
 
-CXX_FLAGS = -O3 -DNDEBUG -std=gnu++20 -fPIC -fno-delete-null-pointer-checks -O0
+CXX_FLAGS = -g -std=gnu++20 -fPIC -fno-delete-null-pointer-checks -O0
 

@@ -8,8 +8,8 @@ set(CMAKE_DEPENDS_LANGUAGES
 
 # The set of dependency files which are needed:
 set(CMAKE_DEPENDS_DEPENDENCY_FILES
-  "/home/gamarino/Documentos/proyectos/protoPython/src/compiler/CppGenerator.cpp" "src/compiler/CMakeFiles/protopyc.dir/CppGenerator.cpp.o" "gcc" "src/compiler/CMakeFiles/protopyc.dir/CppGenerator.cpp.o.d"
-  "/home/gamarino/Documentos/proyectos/protoPython/src/compiler/ProtopycMain.cpp" "src/compiler/CMakeFiles/protopyc.dir/ProtopycMain.cpp.o" "gcc" "src/compiler/CMakeFiles/protopyc.dir/ProtopycMain.cpp.o.d"
+  "/mnt/c/Users/gamar/PycharmProjects/protoPython/src/compiler/CppGenerator.cpp" "src/compiler/CMakeFiles/protopyc.dir/CppGenerator.cpp.o" "gcc" "src/compiler/CMakeFiles/protopyc.dir/CppGenerator.cpp.o.d"
+  "/mnt/c/Users/gamar/PycharmProjects/protoPython/src/compiler/ProtopycMain.cpp" "src/compiler/CMakeFiles/protopyc.dir/ProtopycMain.cpp.o" "gcc" "src/compiler/CMakeFiles/protopyc.dir/ProtopycMain.cpp.o.d"
   )
 
 # Targets to which this target links which contain Fortran sources.

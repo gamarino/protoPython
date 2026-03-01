@@ -1,4 +1,4 @@
-# Install script for directory: /home/gamarino/Documentos/proyectos/protoCore/test
+# Install script for directory: /mnt/c/Users/gamar/PycharmProjects/protoCore/test
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)
@@ -44,6 +44,6 @@ endif()
 
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   # Include the install script for the subdirectory.
-  include("/home/gamarino/Documentos/proyectos/protoPython/cmake-build-release/_deps/googletest-build/cmake_install.cmake")
+  include("/mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release/_deps/googletest-build/cmake_install.cmake")
 endif()
 

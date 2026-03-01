@@ -1,4 +1,4 @@
-# Install script for directory: /home/gamarino/Documentos/proyectos/protoPython/cmake-build-release/_deps/googletest-subbuild
+# Install script for directory: /mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release/_deps/googletest-subbuild
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)
@@ -45,5 +45,5 @@ endif()
 
 string(REPLACE ";" "\n" CMAKE_INSTALL_MANIFEST_CONTENT
        "${CMAKE_INSTALL_MANIFEST_FILES}")
-file(WRITE "/home/gamarino/Documentos/proyectos/protoPython/cmake-build-release/_deps/googletest-subbuild/${CMAKE_INSTALL_MANIFEST}"
+file(WRITE "/mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release/_deps/googletest-subbuild/${CMAKE_INSTALL_MANIFEST}"
      "${CMAKE_INSTALL_MANIFEST_CONTENT}")

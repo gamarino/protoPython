@@ -1,6 +1,6 @@
 # CMake generated Testfile for 
-# Source directory: /home/gamarino/Documentos/proyectos/protoCore
-# Build directory: /home/gamarino/Documentos/proyectos/protoPython/cmake-build-release/protoCore
+# Source directory: /mnt/c/Users/gamar/PycharmProjects/protoCore
+# Build directory: /mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release/protoCore
 # 
 # This file includes the relevant testing commands required for 
 # testing this directory and lists subdirectories to be tested as well.

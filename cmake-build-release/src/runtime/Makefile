@@ -57,10 +57,10 @@ RM = /usr/bin/cmake -E rm -f
 EQUALS = =
 
 # The top-level source directory on which CMake was run.
-CMAKE_SOURCE_DIR = /home/gamarino/Documentos/proyectos/protoPython
+CMAKE_SOURCE_DIR = /mnt/c/Users/gamar/PycharmProjects/protoPython
 
 # The top-level build directory on which CMake was run.
-CMAKE_BINARY_DIR = /home/gamarino/Documentos/proyectos/protoPython/cmake-build-release
+CMAKE_BINARY_DIR = /mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release
 
 #=============================================================================
 # Targets provided globally by CMake.
@@ -68,7 +68,7 @@ CMAKE_BINARY_DIR = /home/gamarino/Documentos/proyectos/protoPython/cmake-build-r
 # Special rule for the target package
 package: preinstall
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --cyan "Run CPack packaging tool..."
-	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-release && /usr/bin/cpack --config ./CPackConfig.cmake
+	cd /mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release && /usr/bin/cpack --config ./CPackConfig.cmake
 .PHONY : package
 
 # Special rule for the target package
@@ -78,7 +78,7 @@ package/fast: package
 # Special rule for the target package_source
 package_source:
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --cyan "Run CPack packaging tool for source..."
-	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-release && /usr/bin/cpack --config ./CPackSourceConfig.cmake /home/gamarino/Documentos/proyectos/protoPython/cmake-build-release/CPackSourceConfig.cmake
+	cd /mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release && /usr/bin/cpack --config ./CPackSourceConfig.cmake /mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release/CPackSourceConfig.cmake
 .PHONY : package_source
 
 # Special rule for the target package_source
@@ -162,14 +162,14 @@ install/strip/fast: preinstall/fast
 
 # The main all target
 all: cmake_check_build_system
-	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-release && $(CMAKE_COMMAND) -E cmake_progress_start /home/gamarino/Documentos/proyectos/protoPython/cmake-build-release/CMakeFiles /home/gamarino/Documentos/proyectos/protoPython/cmake-build-release/src/runtime//CMakeFiles/progress.marks
-	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-release && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 src/runtime/all
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/gamarino/Documentos/proyectos/protoPython/cmake-build-release/CMakeFiles 0
+	cd /mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release && $(CMAKE_COMMAND) -E cmake_progress_start /mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release/CMakeFiles /mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release/src/runtime//CMakeFiles/progress.marks
+	cd /mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 src/runtime/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release/CMakeFiles 0
 .PHONY : all
 
 # The main clean target
 clean:
-	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-release && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 src/runtime/clean
+	cd /mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 src/runtime/clean
 .PHONY : clean
 
 # The main clean target
@@ -178,22 +178,22 @@ clean/fast: clean
 
 # Prepare targets for installation.
 preinstall: all
-	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-release && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 src/runtime/preinstall
+	cd /mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 src/runtime/preinstall
 .PHONY : preinstall
 
 # Prepare targets for installation.
 preinstall/fast:
-	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-release && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 src/runtime/preinstall
+	cd /mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 src/runtime/preinstall
 .PHONY : preinstall/fast
 
 # clear depends
 depend:
-	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-release && $(CMAKE_COMMAND) -S$(CMAKE_SOURCE_DIR) -B$(CMAKE_BINARY_DIR) --check-build-system CMakeFiles/Makefile.cmake 1
+	cd /mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release && $(CMAKE_COMMAND) -S$(CMAKE_SOURCE_DIR) -B$(CMAKE_BINARY_DIR) --check-build-system CMakeFiles/Makefile.cmake 1
 .PHONY : depend
 
 # Convenience name for target.
 src/runtime/CMakeFiles/protopy.dir/rule:
-	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-release && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 src/runtime/CMakeFiles/protopy.dir/rule
+	cd /mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 src/runtime/CMakeFiles/protopy.dir/rule
 .PHONY : src/runtime/CMakeFiles/protopy.dir/rule
 
 # Convenience name for target.
@@ -202,7 +202,7 @@ protopy: src/runtime/CMakeFiles/protopy.dir/rule
 
 # fast build rule for target.
 protopy/fast:
-	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-release && $(MAKE) $(MAKESILENT) -f src/runtime/CMakeFiles/protopy.dir/build.make src/runtime/CMakeFiles/protopy.dir/build
+	cd /mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release && $(MAKE) $(MAKESILENT) -f src/runtime/CMakeFiles/protopy.dir/build.make src/runtime/CMakeFiles/protopy.dir/build
 .PHONY : protopy/fast
 
 main.o: main.cpp.o
@@ -210,7 +210,7 @@ main.o: main.cpp.o
 
 # target to build an object file
 main.cpp.o:
-	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-release && $(MAKE) $(MAKESILENT) -f src/runtime/CMakeFiles/protopy.dir/build.make src/runtime/CMakeFiles/protopy.dir/main.cpp.o
+	cd /mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release && $(MAKE) $(MAKESILENT) -f src/runtime/CMakeFiles/protopy.dir/build.make src/runtime/CMakeFiles/protopy.dir/main.cpp.o
 .PHONY : main.cpp.o
 
 main.i: main.cpp.i
@@ -218,7 +218,7 @@ main.i: main.cpp.i
 
 # target to preprocess a source file
 main.cpp.i:
-	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-release && $(MAKE) $(MAKESILENT) -f src/runtime/CMakeFiles/protopy.dir/build.make src/runtime/CMakeFiles/protopy.dir/main.cpp.i
+	cd /mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release && $(MAKE) $(MAKESILENT) -f src/runtime/CMakeFiles/protopy.dir/build.make src/runtime/CMakeFiles/protopy.dir/main.cpp.i
 .PHONY : main.cpp.i
 
 main.s: main.cpp.s
@@ -226,7 +226,7 @@ main.s: main.cpp.s
 
 # target to generate assembly for a file
 main.cpp.s:
-	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-release && $(MAKE) $(MAKESILENT) -f src/runtime/CMakeFiles/protopy.dir/build.make src/runtime/CMakeFiles/protopy.dir/main.cpp.s
+	cd /mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release && $(MAKE) $(MAKESILENT) -f src/runtime/CMakeFiles/protopy.dir/build.make src/runtime/CMakeFiles/protopy.dir/main.cpp.s
 .PHONY : main.cpp.s
 
 # Help Target
@@ -259,6 +259,6 @@ help:
 # No rule that depends on this can have commands that come from listfiles
 # because they might be regenerated.
 cmake_check_build_system:
-	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-release && $(CMAKE_COMMAND) -S$(CMAKE_SOURCE_DIR) -B$(CMAKE_BINARY_DIR) --check-build-system CMakeFiles/Makefile.cmake 0
+	cd /mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release && $(CMAKE_COMMAND) -S$(CMAKE_SOURCE_DIR) -B$(CMAKE_BINARY_DIR) --check-build-system CMakeFiles/Makefile.cmake 0
 .PHONY : cmake_check_build_system
 

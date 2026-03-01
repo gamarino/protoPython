@@ -1,4 +1,4 @@
-# Install script for directory: /home/gamarino/Documentos/proyectos/protoPython/test/library
+# Install script for directory: /mnt/c/Users/gamar/PycharmProjects/protoPython/test/library
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)

@@ -57,10 +57,10 @@ RM = /usr/bin/cmake -E rm -f
 EQUALS = =
 
 # The top-level source directory on which CMake was run.
-CMAKE_SOURCE_DIR = /home/gamarino/Documentos/proyectos/protoPython
+CMAKE_SOURCE_DIR = /mnt/c/Users/gamar/PycharmProjects/protoPython
 
 # The top-level build directory on which CMake was run.
-CMAKE_BINARY_DIR = /home/gamarino/Documentos/proyectos/protoPython/cmake-build-release
+CMAKE_BINARY_DIR = /mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release
 
 #=============================================================================
 # Targets provided globally by CMake.
@@ -78,7 +78,7 @@ package/fast: package
 # Special rule for the target package_source
 package_source:
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --cyan "Run CPack packaging tool for source..."
-	/usr/bin/cpack --config ./CPackSourceConfig.cmake /home/gamarino/Documentos/proyectos/protoPython/cmake-build-release/CPackSourceConfig.cmake
+	/usr/bin/cpack --config ./CPackSourceConfig.cmake /mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release/CPackSourceConfig.cmake
 .PHONY : package_source
 
 # Special rule for the target package_source
@@ -162,9 +162,9 @@ install/strip/fast: preinstall/fast
 
 # The main all target
 all: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/gamarino/Documentos/proyectos/protoPython/cmake-build-release/CMakeFiles /home/gamarino/Documentos/proyectos/protoPython/cmake-build-release//CMakeFiles/progress.marks
+	$(CMAKE_COMMAND) -E cmake_progress_start /mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release/CMakeFiles /mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release//CMakeFiles/progress.marks
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 all
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/gamarino/Documentos/proyectos/protoPython/cmake-build-release/CMakeFiles 0
+	$(CMAKE_COMMAND) -E cmake_progress_start /mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release/CMakeFiles 0
 .PHONY : all
 
 # The main clean target

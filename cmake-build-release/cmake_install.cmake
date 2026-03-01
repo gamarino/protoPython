@@ -1,4 +1,4 @@
-# Install script for directory: /home/gamarino/Documentos/proyectos/protoPython
+# Install script for directory: /mnt/c/Users/gamar/PycharmProjects/protoPython
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)
@@ -44,32 +44,32 @@ endif()
 
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   # Include the install script for the subdirectory.
-  include("/home/gamarino/Documentos/proyectos/protoPython/cmake-build-release/protoCore/cmake_install.cmake")
+  include("/mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release/protoCore/cmake_install.cmake")
 endif()
 
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   # Include the install script for the subdirectory.
-  include("/home/gamarino/Documentos/proyectos/protoPython/cmake-build-release/src/library/cmake_install.cmake")
+  include("/mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release/src/library/cmake_install.cmake")
 endif()
 
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   # Include the install script for the subdirectory.
-  include("/home/gamarino/Documentos/proyectos/protoPython/cmake-build-release/test/library/cmake_install.cmake")
+  include("/mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release/test/library/cmake_install.cmake")
 endif()
 
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   # Include the install script for the subdirectory.
-  include("/home/gamarino/Documentos/proyectos/protoPython/cmake-build-release/src/runtime/cmake_install.cmake")
+  include("/mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release/src/runtime/cmake_install.cmake")
 endif()
 
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   # Include the install script for the subdirectory.
-  include("/home/gamarino/Documentos/proyectos/protoPython/cmake-build-release/test/regression/cmake_install.cmake")
+  include("/mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release/test/regression/cmake_install.cmake")
 endif()
 
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   # Include the install script for the subdirectory.
-  include("/home/gamarino/Documentos/proyectos/protoPython/cmake-build-release/src/compiler/cmake_install.cmake")
+  include("/mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release/src/compiler/cmake_install.cmake")
 endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
@@ -79,12 +79,12 @@ if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT
          FILE "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/bin/protopy"
          RPATH "\$ORIGIN/../lib")
   endif()
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/bin" TYPE EXECUTABLE FILES "/home/gamarino/Documentos/proyectos/protoPython/cmake-build-release/src/runtime/protopy")
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/bin" TYPE EXECUTABLE FILES "/mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release/src/runtime/protopy")
   if(EXISTS "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/bin/protopy" AND
      NOT IS_SYMLINK "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/bin/protopy")
     file(RPATH_CHANGE
          FILE "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/bin/protopy"
-         OLD_RPATH "/home/gamarino/Documentos/proyectos/protoPython/cmake-build-release/src/library:/home/gamarino/Documentos/proyectos/protoPython/cmake-build-release/protoCore:"
+         OLD_RPATH "/mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release/src/library:/mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release/protoCore:"
          NEW_RPATH "\$ORIGIN/../lib")
     if(CMAKE_INSTALL_DO_STRIP)
       execute_process(COMMAND "/usr/bin/strip" "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/bin/protopy")
@@ -105,8 +105,8 @@ if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT
     endif()
   endforeach()
   file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib" TYPE SHARED_LIBRARY FILES
-    "/home/gamarino/Documentos/proyectos/protoPython/cmake-build-release/src/library/libprotoPython.so.0.2.0"
-    "/home/gamarino/Documentos/proyectos/protoPython/cmake-build-release/src/library/libprotoPython.so.0"
+    "/mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release/src/library/libprotoPython.so.0.2.0"
+    "/mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release/src/library/libprotoPython.so.0"
     )
   foreach(file
       "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/lib/libprotoPython.so.0.2.0"
@@ -116,7 +116,7 @@ if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT
        NOT IS_SYMLINK "${file}")
       file(RPATH_CHANGE
            FILE "${file}"
-           OLD_RPATH "/home/gamarino/Documentos/proyectos/protoPython/cmake-build-release/src/library:/home/gamarino/Documentos/proyectos/protoPython/cmake-build-release/protoCore:"
+           OLD_RPATH "/mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release/src/library:/mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release/protoCore:"
            NEW_RPATH "\$ORIGIN")
       if(CMAKE_INSTALL_DO_STRIP)
         execute_process(COMMAND "/usr/bin/strip" "${file}")
@@ -126,7 +126,7 @@ if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT
 endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib" TYPE SHARED_LIBRARY FILES "/home/gamarino/Documentos/proyectos/protoPython/cmake-build-release/src/library/libprotoPython.so")
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib" TYPE SHARED_LIBRARY FILES "/mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release/src/library/libprotoPython.so")
 endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
@@ -136,12 +136,12 @@ if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT
          FILE "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/bin/protopyc"
          RPATH "\$ORIGIN/../lib")
   endif()
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/bin" TYPE EXECUTABLE FILES "/home/gamarino/Documentos/proyectos/protoPython/cmake-build-release/src/compiler/protopyc")
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/bin" TYPE EXECUTABLE FILES "/mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release/src/compiler/protopyc")
   if(EXISTS "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/bin/protopyc" AND
      NOT IS_SYMLINK "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/bin/protopyc")
     file(RPATH_CHANGE
          FILE "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/bin/protopyc"
-         OLD_RPATH "/home/gamarino/Documentos/proyectos/protoPython/cmake-build-release/src/library:/home/gamarino/Documentos/proyectos/protoPython/cmake-build-release/protoCore:"
+         OLD_RPATH "/mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release/src/library:/mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release/protoCore:"
          NEW_RPATH "\$ORIGIN/../lib")
     if(CMAKE_INSTALL_DO_STRIP)
       execute_process(COMMAND "/usr/bin/strip" "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/bin/protopyc")
@@ -150,11 +150,11 @@ if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT
 endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "protoPython" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/include" TYPE DIRECTORY FILES "/home/gamarino/Documentos/proyectos/protoPython/include/protoPython")
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/include" TYPE DIRECTORY FILES "/mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython")
 endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "protoPython" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/protoPython" TYPE DIRECTORY FILES "/home/gamarino/Documentos/proyectos/protoPython/lib/python3.14" USE_SOURCE_PERMISSIONS)
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/protoPython" TYPE DIRECTORY FILES "/mnt/c/Users/gamar/PycharmProjects/protoPython/lib/python3.14" USE_SOURCE_PERMISSIONS)
 endif()
 
 if(CMAKE_INSTALL_COMPONENT)
@@ -165,5 +165,5 @@ endif()
 
 string(REPLACE ";" "\n" CMAKE_INSTALL_MANIFEST_CONTENT
        "${CMAKE_INSTALL_MANIFEST_FILES}")
-file(WRITE "/home/gamarino/Documentos/proyectos/protoPython/cmake-build-release/${CMAKE_INSTALL_MANIFEST}"
+file(WRITE "/mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release/${CMAKE_INSTALL_MANIFEST}"
      "${CMAKE_INSTALL_MANIFEST_CONTENT}")

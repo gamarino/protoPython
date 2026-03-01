@@ -1,8 +1,8 @@
 test/library/CMakeFiles/test_minimal.dir/TestMinimal.cpp.o: \
- /home/gamarino/Documentos/proyectos/protoPython/test/library/TestMinimal.cpp \
+ /mnt/c/Users/gamar/PycharmProjects/protoPython/test/library/TestMinimal.cpp \
  /usr/include/stdc-predef.h \
- /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/PythonEnvironment.h \
- /home/gamarino/Documentos/proyectos/protoCore/headers/protoCore.h \
+ /mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython/PythonEnvironment.h \
+ /mnt/c/Users/gamar/PycharmProjects/protoCore/headers/protoCore.h \
  /usr/include/c++/13/atomic /usr/include/c++/13/bits/atomic_base.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/c++config.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/os_defines.h \
@@ -236,4 +236,4 @@ test/library/CMakeFiles/test_minimal.dir/TestMinimal.cpp.o: \
  /usr/include/c++/13/bits/stl_heap.h \
  /usr/include/c++/13/bits/uniform_int_dist.h /usr/include/c++/13/iostream \
  /usr/include/c++/13/istream /usr/include/c++/13/bits/istream.tcc \
- /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/Tokenizer.h
+ /mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython/Tokenizer.h

@@ -53,10 +53,10 @@ RM = /usr/bin/cmake -E rm -f
 EQUALS = =
 
 # The top-level source directory on which CMake was run.
-CMAKE_SOURCE_DIR = /home/gamarino/Documentos/proyectos/protoPython
+CMAKE_SOURCE_DIR = /mnt/c/Users/gamar/PycharmProjects/protoPython
 
 # The top-level build directory on which CMake was run.
-CMAKE_BINARY_DIR = /home/gamarino/Documentos/proyectos/protoPython/cmake-build-release
+CMAKE_BINARY_DIR = /mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release
 
 # Utility rule file for package_protocore_only.
 
@@ -67,14 +67,14 @@ include protoCore/CMakeFiles/package_protocore_only.dir/compiler_depend.make
 include protoCore/CMakeFiles/package_protocore_only.dir/progress.make
 
 protoCore/CMakeFiles/package_protocore_only:
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --blue --bold --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-release/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Create TGZ with only protoCore runtime and header"
-	/usr/bin/cmake -E rm -rf /home/gamarino/Documentos/proyectos/protoPython/cmake-build-release/package_staging
-	/usr/bin/cmake -E make_directory /home/gamarino/Documentos/proyectos/protoPython/cmake-build-release/package_staging/protoCore-1.0.0-Linux/include
-	/usr/bin/cmake -E make_directory /home/gamarino/Documentos/proyectos/protoPython/cmake-build-release/package_staging/protoCore-1.0.0-Linux/lib
-	/usr/bin/cmake -E copy_if_different /home/gamarino/Documentos/proyectos/protoPython/cmake-build-release/protoCore/libprotoCore.so.1.0.0 /home/gamarino/Documentos/proyectos/protoPython/cmake-build-release/package_staging/protoCore-1.0.0-Linux/lib/
-	/usr/bin/cmake -E copy_if_different /home/gamarino/Documentos/proyectos/protoCore/headers/protoCore.h /home/gamarino/Documentos/proyectos/protoPython/cmake-build-release/package_staging/protoCore-1.0.0-Linux/include/
-	tar czf /home/gamarino/Documentos/proyectos/protoPython/cmake-build-release/protoCore-1.0.0-Linux.tar.gz -C /home/gamarino/Documentos/proyectos/protoPython/cmake-build-release/package_staging protoCore-1.0.0-Linux
-	/usr/bin/cmake -E echo Created\ /home/gamarino/Documentos/proyectos/protoPython/cmake-build-release/protoCore-1.0.0-Linux.tar.gz
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --blue --bold --progress-dir=/mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Create TGZ with only protoCore runtime and header"
+	/usr/bin/cmake -E rm -rf /mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release/package_staging
+	/usr/bin/cmake -E make_directory /mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release/package_staging/protoCore-1.0.0-Linux/include
+	/usr/bin/cmake -E make_directory /mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release/package_staging/protoCore-1.0.0-Linux/lib
+	/usr/bin/cmake -E copy_if_different /mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release/protoCore/libprotoCore.so.1.0.0 /mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release/package_staging/protoCore-1.0.0-Linux/lib/
+	/usr/bin/cmake -E copy_if_different /mnt/c/Users/gamar/PycharmProjects/protoCore/headers/protoCore.h /mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release/package_staging/protoCore-1.0.0-Linux/include/
+	tar czf /mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release/protoCore-1.0.0-Linux.tar.gz -C /mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release/package_staging protoCore-1.0.0-Linux
+	/usr/bin/cmake -E echo Created\ /mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release/protoCore-1.0.0-Linux.tar.gz
 
 package_protocore_only: protoCore/CMakeFiles/package_protocore_only
 package_protocore_only: protoCore/CMakeFiles/package_protocore_only.dir/build.make
@@ -85,10 +85,10 @@ protoCore/CMakeFiles/package_protocore_only.dir/build: package_protocore_only
 .PHONY : protoCore/CMakeFiles/package_protocore_only.dir/build
 
 protoCore/CMakeFiles/package_protocore_only.dir/clean:
-	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-release/protoCore && $(CMAKE_COMMAND) -P CMakeFiles/package_protocore_only.dir/cmake_clean.cmake
+	cd /mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release/protoCore && $(CMAKE_COMMAND) -P CMakeFiles/package_protocore_only.dir/cmake_clean.cmake
 .PHONY : protoCore/CMakeFiles/package_protocore_only.dir/clean
 
 protoCore/CMakeFiles/package_protocore_only.dir/depend:
-	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-release && $(CMAKE_COMMAND) -E cmake_depends "Unix Makefiles" /home/gamarino/Documentos/proyectos/protoPython /home/gamarino/Documentos/proyectos/protoCore /home/gamarino/Documentos/proyectos/protoPython/cmake-build-release /home/gamarino/Documentos/proyectos/protoPython/cmake-build-release/protoCore /home/gamarino/Documentos/proyectos/protoPython/cmake-build-release/protoCore/CMakeFiles/package_protocore_only.dir/DependInfo.cmake "--color=$(COLOR)"
+	cd /mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release && $(CMAKE_COMMAND) -E cmake_depends "Unix Makefiles" /mnt/c/Users/gamar/PycharmProjects/protoPython /mnt/c/Users/gamar/PycharmProjects/protoCore /mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release /mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release/protoCore /mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release/protoCore/CMakeFiles/package_protocore_only.dir/DependInfo.cmake "--color=$(COLOR)"
 .PHONY : protoCore/CMakeFiles/package_protocore_only.dir/depend
 

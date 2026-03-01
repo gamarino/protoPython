@@ -1,8 +1,8 @@
 src/compiler/CMakeFiles/protopyc.dir/ProtopycMain.cpp.o: \
- /home/gamarino/Documentos/proyectos/protoPython/src/compiler/ProtopycMain.cpp \
+ /mnt/c/Users/gamar/PycharmProjects/protoPython/src/compiler/ProtopycMain.cpp \
  /usr/include/stdc-predef.h \
- /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/Parser.h \
- /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/Tokenizer.h \
+ /mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython/Parser.h \
+ /mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython/Tokenizer.h \
  /usr/include/c++/13/string /usr/include/c++/13/bits/requires_hosted.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/c++config.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/os_defines.h \
@@ -219,7 +219,7 @@ src/compiler/CMakeFiles/protopyc.dir/ProtopycMain.cpp.o: \
  /usr/include/c++/13/bits/stl_map.h \
  /usr/include/c++/13/bits/stl_multimap.h \
  /usr/include/c++/13/bits/erase_if.h \
- /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/CppGenerator.h \
+ /mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython/CppGenerator.h \
  /usr/include/c++/13/iostream /usr/include/c++/13/istream \
  /usr/include/c++/13/bits/istream.tcc /usr/include/c++/13/sstream \
  /usr/include/c++/13/bits/sstream.tcc /usr/include/c++/13/unordered_set \

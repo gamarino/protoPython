@@ -6,5 +6,5 @@ CXX_DEFINES = -DREGR_PATH=\"/mnt/c/Users/gamar/PycharmProjects/protoPython/test/
 
 CXX_INCLUDES = -I/mnt/c/Users/gamar/PycharmProjects/protoPython/include -I/mnt/c/Users/gamar/PycharmProjects/protoPython/src/library/../../include -I/mnt/c/Users/gamar/PycharmProjects/protoCore/headers -isystem /mnt/c/Users/gamar/PycharmProjects/protoPython/wsl-build/_deps/googletest-src/googletest/include -isystem /mnt/c/Users/gamar/PycharmProjects/protoPython/wsl-build/_deps/googletest-src/googletest
 
-CXX_FLAGS = -O3 -DNDEBUG -std=gnu++20 -fno-delete-null-pointer-checks
+CXX_FLAGS = -g -std=gnu++20 -fno-delete-null-pointer-checks
 

@@ -214,7 +214,13 @@ int executeModule(protoPython::PythonEnvironment& env, const std::string& module
         return EXIT_RESOLVE;
     }
     if (ret == -2) {
-        std::cerr << "protopy: module '" << moduleName << "' exited with runtime error" << std::endl;
+        const proto::ProtoObject* exc = env.takePendingException();
+        if (exc && exc != PROTO_NONE) {
+            std::cerr << "protopy: unhandled exception during execution of '" << moduleName << "':\n";
+            env.handleException(exc, nullptr, std::cerr);
+        } else {
+            std::cerr << "protopy: module '" << moduleName << "' exited with runtime error" << std::endl;
+        }
         return EXIT_RUNTIME;
     }
     if (ret == -3)

@@ -6,5 +6,5 @@ CXX_DEFINES = -DprotoCore_EXPORTS
 
 CXX_INCLUDES = -I/mnt/c/Users/gamar/PycharmProjects/protoCore/headers
 
-CXX_FLAGS = -O3 -DNDEBUG -std=c++20 -fPIC -fno-delete-null-pointer-checks
+CXX_FLAGS = -g -std=c++20 -fPIC -fno-delete-null-pointer-checks
 

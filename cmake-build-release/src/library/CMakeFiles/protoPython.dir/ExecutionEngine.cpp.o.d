@@ -1,8 +1,8 @@
 src/library/CMakeFiles/protoPython.dir/ExecutionEngine.cpp.o: \
- /home/gamarino/Documentos/proyectos/protoPython/src/library/ExecutionEngine.cpp \
+ /mnt/c/Users/gamar/PycharmProjects/protoPython/src/library/ExecutionEngine.cpp \
  /usr/include/stdc-predef.h \
- /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/ExecutionEngine.h \
- /home/gamarino/Documentos/proyectos/protoCore/headers/protoCore.h \
+ /mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython/ExecutionEngine.h \
+ /mnt/c/Users/gamar/PycharmProjects/protoCore/headers/protoCore.h \
  /usr/include/c++/13/atomic /usr/include/c++/13/bits/atomic_base.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/c++config.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/os_defines.h \
@@ -212,9 +212,9 @@ src/library/CMakeFiles/protoPython.dir/ExecutionEngine.cpp.o: \
  /usr/include/c++/13/bits/stl_vector.h \
  /usr/include/c++/13/bits/stl_bvector.h \
  /usr/include/c++/13/bits/vector.tcc \
- /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/Compiler.h \
- /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/Parser.h \
- /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/Tokenizer.h \
+ /mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython/Compiler.h \
+ /mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython/Parser.h \
+ /mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython/Tokenizer.h \
  /usr/include/c++/13/map /usr/include/c++/13/bits/stl_tree.h \
  /usr/include/c++/13/bits/node_handle.h \
  /usr/include/c++/13/bits/stl_map.h \
@@ -231,10 +231,10 @@ src/library/CMakeFiles/protoPython.dir/ExecutionEngine.cpp.o: \
  /usr/include/c++/13/bits/algorithmfwd.h \
  /usr/include/c++/13/bits/stl_heap.h \
  /usr/include/c++/13/bits/uniform_int_dist.h \
- /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/PythonEnvironment.h \
+ /mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython/PythonEnvironment.h \
  /usr/include/c++/13/iostream /usr/include/c++/13/istream \
  /usr/include/c++/13/bits/istream.tcc \
- /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/MemoryManager.hpp \
+ /mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython/MemoryManager.hpp \
  /usr/include/c++/13/cmath /usr/include/math.h \
  /usr/include/x86_64-linux-gnu/bits/math-vector.h \
  /usr/include/x86_64-linux-gnu/bits/libm-simd-decl-stubs.h \

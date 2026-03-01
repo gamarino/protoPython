@@ -1,8 +1,8 @@
 src/library/CMakeFiles/protoPython.dir/TimeModule.cpp.o: \
- /home/gamarino/Documentos/proyectos/protoPython/src/library/TimeModule.cpp \
+ /mnt/c/Users/gamar/PycharmProjects/protoPython/src/library/TimeModule.cpp \
  /usr/include/stdc-predef.h \
- /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/TimeModule.h \
- /home/gamarino/Documentos/proyectos/protoCore/headers/protoCore.h \
+ /mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython/TimeModule.h \
+ /mnt/c/Users/gamar/PycharmProjects/protoCore/headers/protoCore.h \
  /usr/include/c++/13/atomic /usr/include/c++/13/bits/atomic_base.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/c++config.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/os_defines.h \

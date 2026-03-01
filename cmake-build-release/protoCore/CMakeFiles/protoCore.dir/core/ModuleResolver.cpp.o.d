@@ -1,7 +1,7 @@
 protoCore/CMakeFiles/protoCore.dir/core/ModuleResolver.cpp.o: \
- /home/gamarino/Documentos/proyectos/protoCore/core/ModuleResolver.cpp \
+ /mnt/c/Users/gamar/PycharmProjects/protoCore/core/ModuleResolver.cpp \
  /usr/include/stdc-predef.h \
- /home/gamarino/Documentos/proyectos/protoCore/core/../headers/protoCore.h \
+ /mnt/c/Users/gamar/PycharmProjects/protoCore/core/../headers/protoCore.h \
  /usr/include/c++/13/atomic /usr/include/c++/13/bits/atomic_base.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/c++config.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/os_defines.h \
@@ -222,10 +222,10 @@ protoCore/CMakeFiles/protoCore.dir/core/ModuleResolver.cpp.o: \
  /usr/include/c++/13/bits/stl_vector.h \
  /usr/include/c++/13/bits/stl_bvector.h \
  /usr/include/c++/13/bits/vector.tcc \
- /home/gamarino/Documentos/proyectos/protoCore/core/ModuleCache.h \
- /home/gamarino/Documentos/proyectos/protoCore/core/ModuleProvider.h \
- /home/gamarino/Documentos/proyectos/protoCore/core/../headers/proto_internal.h \
- /home/gamarino/Documentos/proyectos/protoCore/core/../headers/protoCore.h \
+ /mnt/c/Users/gamar/PycharmProjects/protoCore/core/ModuleCache.h \
+ /mnt/c/Users/gamar/PycharmProjects/protoCore/core/ModuleProvider.h \
+ /mnt/c/Users/gamar/PycharmProjects/protoCore/core/../headers/proto_internal.h \
+ /mnt/c/Users/gamar/PycharmProjects/protoCore/core/../headers/protoCore.h \
  /usr/include/c++/13/unordered_set \
  /usr/include/c++/13/bits/unordered_set.h \
  /usr/include/c++/13/bits/hashtable.h \

@@ -1,8 +1,8 @@
 protoCore/CMakeFiles/protoCore.dir/core/ProtoSet.cpp.o: \
- /home/gamarino/Documentos/proyectos/protoCore/core/ProtoSet.cpp \
+ /mnt/c/Users/gamar/PycharmProjects/protoCore/core/ProtoSet.cpp \
  /usr/include/stdc-predef.h \
- /home/gamarino/Documentos/proyectos/protoCore/core/../headers/proto_internal.h \
- /home/gamarino/Documentos/proyectos/protoCore/core/../headers/protoCore.h \
+ /mnt/c/Users/gamar/PycharmProjects/protoCore/core/../headers/proto_internal.h \
+ /mnt/c/Users/gamar/PycharmProjects/protoCore/core/../headers/protoCore.h \
  /usr/include/c++/13/atomic /usr/include/c++/13/bits/atomic_base.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/c++config.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/os_defines.h \

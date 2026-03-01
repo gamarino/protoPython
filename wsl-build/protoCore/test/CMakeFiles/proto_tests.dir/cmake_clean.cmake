@@ -23,6 +23,8 @@ file(REMOVE_RECURSE
   "CMakeFiles/proto_tests.dir/test_sets.cpp.o.d"
   "CMakeFiles/proto_tests.dir/test_sparselist.cpp.o"
   "CMakeFiles/proto_tests.dir/test_sparselist.cpp.o.d"
+  "CMakeFiles/proto_tests.dir/test_string.cpp.o"
+  "CMakeFiles/proto_tests.dir/test_string.cpp.o.d"
   "CMakeFiles/proto_tests.dir/test_tuple.cpp.o"
   "CMakeFiles/proto_tests.dir/test_tuple.cpp.o.d"
   "proto_tests"

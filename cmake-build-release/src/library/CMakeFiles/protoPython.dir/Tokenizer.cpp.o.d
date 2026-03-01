@@ -1,7 +1,7 @@
 src/library/CMakeFiles/protoPython.dir/Tokenizer.cpp.o: \
- /home/gamarino/Documentos/proyectos/protoPython/src/library/Tokenizer.cpp \
+ /mnt/c/Users/gamar/PycharmProjects/protoPython/src/library/Tokenizer.cpp \
  /usr/include/stdc-predef.h \
- /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/Tokenizer.h \
+ /mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython/Tokenizer.h \
  /usr/include/c++/13/string /usr/include/c++/13/bits/requires_hosted.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/c++config.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/os_defines.h \
