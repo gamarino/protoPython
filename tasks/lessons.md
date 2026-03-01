@@ -80,3 +80,9 @@ Patterns and rules derived from implementation and corrections. Update after app
   - The engine must call `env->pushActiveException(exc)` right before dispatching to an `except` handler, storing the exception in a lock-free list inside the `py_thread` dict (`_active_excs`).
   - The compiler must emit `OP_POP_EXCEPT` at the end of every `except` block, ensuring the engine predictably pops the stack and does not leak references across scopes.
   - `OP_RAISE_VARARGS 0` must prioritize resolving its re-raise target from `env->getActiveException()` before checking the transient value stack.
+
+## Garbage Collection and C++ Intermediate Allocations
+
+- **GC Sweeping Mid-Method**: When performing multiple `allocCell` or `new` operations within a single C++ method in `protoCore`, early allocations that haven't yet been anchored to a long-lived object graph are vulnerable to being swept if the Garbage Collector thread triggers *during* the method's execution.
+- **The Double-Free / Type Confusion Symptom**: If an unrooted intermediate cell is collected and added to the free list while a C++ method is still assembling it, a subsequent allocation in the same method or a concurrent thread might reuse that exact memory address. The method will finish assembling the object and overwrite the reused memory, causing memory corruption and segmentation faults (e.g., `ParentLinkImplementation` holding a tagged pointer).
+- **The Context-Scoped Fix**: The correct `protoCore` pattern is to defer submitting the young generation (`lastAllocatedCell`) to the GC until the `ProtoContext` destructor. The GC sweep loop should only *scan* `lastAllocatedCell` for references to older objects to keep them alive, but it must not steal the list or collect the young objects. `submitYoungGeneration` should be called strictly when the context tears down, ensuring all intermediate C++ allocations survive the duration of the method.
