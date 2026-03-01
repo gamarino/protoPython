@@ -2290,10 +2290,12 @@ const proto::ProtoObject* py_type(
 
                     if (keyObj && keyObj->isString(context)) {
                         const proto::ProtoString* k = keyObj->asString(context);
-                        if (get_env_diag()) { // Debug print
-                             std::string ks; k->toUTF8String(context, ks);
-                             printf("DEBUG: py_type copying key='%s'\n", ks.c_str());
+                        std::string ks; k->toUTF8String(context, ks);
+                        if (get_env_diag()) {
+                            printf("DEBUG: py_type copying key iter %zu: '%s'\n", i, ks.c_str());
+                            fflush(stdout);
                         }
+                        
                         const proto::ProtoObject* val = nullptr;
                         const proto::ProtoObject* getItemMethod = dict->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__getitem__"));
                         if (getItemMethod && getItemMethod->isMethod(context)) {
@@ -2308,9 +2310,6 @@ const proto::ProtoObject* py_type(
                             val = dict->getAttribute(context, k);
                         }
                         
-                        if (get_env_diag()) {
-                             printf("DEBUG: py_type copied keyVal=%p\n", (void*)val);
-                        }
                         targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, k, val));
                         
                         // Update targetClass.__keys__
@@ -2329,10 +2328,22 @@ const proto::ProtoObject* py_type(
                         }
 
                         // Call __set_name__ if present
+                        if (get_env_diag()) {
+                            printf("DEBUG: py_type checking __set_name__ for key '%s'\n", ks.c_str());
+                            fflush(stdout);
+                        }
                         const proto::ProtoObject* setName = val ? val->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__set_name__")) : nullptr;
                         if (setName && setName != PROTO_NONE) {
+                            if (get_env_diag()) {
+                                printf("DEBUG: py_type calling __set_name__ on key '%s'\n", ks.c_str());
+                                fflush(stdout);
+                            }
                             const proto::ProtoList* setNameArgs = context->newList()->appendLast(context, targetClass)->appendLast(context, keyObj);
                             setName->call(context, nullptr, proto::ProtoString::fromUTF8String(context, "__set_name__"), val, setNameArgs, nullptr);
+                            if (get_env_diag()) {
+                                printf("DEBUG: py_type returned from __set_name__ on key '%s'\n", ks.c_str());
+                                fflush(stdout);
+                            }
                         }
                     }
                 }

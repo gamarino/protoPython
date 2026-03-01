@@ -479,7 +479,7 @@ def namedtuple(typename, field_names, *, rename=False, defaults=None, module=Non
     # print("DEBUG: TRACE 5")
     if defaults is not None:
         __new__.__defaults__ = defaults
-    # print("DEBUG: TRACE 6")
+    print("DEBUG: TRACE 6")
 
     # print("DEBUG: TRACE 6.1: Before _make")
     @classmethod
@@ -517,7 +517,7 @@ def namedtuple(typename, field_names, *, rename=False, defaults=None, module=Non
         'Return self as a plain tuple.  Used by copy and pickle.'
         return _tuple(self)
 
-    # print("DEBUG: TRACE 7: Function modifying loop")
+    print("DEBUG: TRACE 7: Function modifying loop")
 
     # Modify function metadata to help with introspection and debugging
     for method in (
@@ -528,10 +528,10 @@ def namedtuple(typename, field_names, *, rename=False, defaults=None, module=Non
         _asdict,
         __getnewargs__,
     ):
-        # print("DEBUG: TRACE 7.x modifying method:", method)
+        print("DEBUG: TRACE 7.x modifying method:", repr(method))
         method.__qualname__ = f'{typename}.{method.__name__}'
 
-    # print("DEBUG: TRACE 8: building class namespace")
+    print("DEBUG: TRACE 8: building class namespace")
     # Build-up the class namespace dictionary
     # and use type() to build the result class
     try:
@@ -559,7 +559,7 @@ def namedtuple(typename, field_names, *, rename=False, defaults=None, module=Non
 
     try:
         for index, name in enumerate(field_names):
-            # print("DEBUG: TRACE 8.5 loop iter:", index, name)
+            print("DEBUG: TRACE 8.5 loop iter:", index, name)
             doc = _sys.intern(f'Alias for field number {index}')
             class_namespace[name] = _tuplegetter(index, doc)
     except Exception as e:
@@ -567,15 +567,12 @@ def namedtuple(typename, field_names, *, rename=False, defaults=None, module=Non
         raise
 
 
-    # print("DEBUG: TRACE 9: before type()")
+    print("DEBUG: TRACE 8: Before type creation")
     result = type(typename, (tuple,), class_namespace)
 
     # print("DEBUG: TRACE 10: before sys.getframe()")
     # For pickling to work, the __module__ variable needs to be set to the frame
     # where the named tuple is created.  Bypass this step in environments where
-    # sys._getframe is not defined (Jython for example) or sys._getframe is not
-    # defined for arguments greater than 0 (IronPython), or where the user
-    # has specified a particular module to be used.
     if module is None:
         try:
             # print("DEBUG: TRACE 10.1: calling _sys._getframe(1)")

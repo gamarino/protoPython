@@ -3150,8 +3150,8 @@ const proto::ProtoObject* executeBytecodeRange(
                         if (key->isInteger(ctx)) {
                             long long idx = key->asLong(ctx);
                             if (idx < 0) idx += size;
-                            const proto::ProtoObject* charObj = (idx >= 0 && static_cast<unsigned long>(idx) < s->getSize(ctx)) ? s->getAt(ctx, static_cast<int>(idx)) : PROTO_NONE;
-                            
+                            const proto::ProtoString* charStr = (idx >= 0 && static_cast<unsigned long>(idx) < s->getSize(ctx)) ? s->getSlice(ctx, static_cast<int>(idx), static_cast<int>(idx) + 1) : nullptr;
+                            const proto::ProtoObject* charObj = charStr ? charStr->asObject(ctx) : PROTO_NONE;
                             proto::ProtoObject* resObj = const_cast<proto::ProtoObject*>(ctx->newObject(true));
                             resObj->setAttribute(ctx, env ? env->getDataString() : getInternalString(ctx, "__data__"), charObj);
                             if (env && env->getStrPrototype()) {
