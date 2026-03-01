@@ -37,3 +37,8 @@ This document summarizes the phased implementation of stdlib stubs toward CPytho
 
 - [STUBS.md](STUBS.md) — Stub catalog and status.
 - [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) — Roadmap and standard library note.
+
+## Known Limitations and Performance
+
+- **Execution Engine Performance**: The pure execution engine is fast (sub-millisecond for primitive loops), but standard library imports (`typing`, `argparse`, `collections`) take significant time (10–30+ seconds) due to parsing and AST evaluation overhead without `.pyc` caching or JIT compilation. 
+- **Circular Imports**: The core `OP_IMPORT_FROM` opcode handles circular `ImportError` exceptions safely following a fix that skips the failing instruction correctly (`i = next_i`) rather than spinning infinitely.

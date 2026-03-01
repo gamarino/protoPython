@@ -630,55 +630,10 @@ def unparse(ast_obj):
 def main(args=None):
     import argparse
     import sys
-
     parser = argparse.ArgumentParser(color=True)
     parser.add_argument('infile', nargs='?', default='-',
                         help='the file to parse; defaults to stdin')
-    parser.add_argument('-m', '--mode', default='exec',
-                        choices=('exec', 'single', 'eval', 'func_type'),
-                        help='specify what kind of code must be parsed')
-    parser.add_argument('--no-type-comments', default=True, action='store_false',
-                        help="don't add information about type comments")
-    parser.add_argument('-a', '--include-attributes', action='store_true',
-                        help='include attributes such as line numbers and '
-                             'column offsets')
-    parser.add_argument('-i', '--indent', type=int, default=3,
-                        help='indentation of nodes (number of spaces)')
-    parser.add_argument('--feature-version',
-                        type=str, default=None, metavar='VERSION',
-                        help='Python version in the format 3.x '
-                             '(for example, 3.10)')
-    parser.add_argument('-O', '--optimize',
-                        type=int, default=-1, metavar='LEVEL',
-                        help='optimization level for parser (default -1)')
-    parser.add_argument('--show-empty', default=False, action='store_true',
-                        help='show empty lists and fields in dump output')
-    args = parser.parse_args(args)
-
-    if args.infile == '-':
-        name = '<stdin>'
-        source = sys.stdin.buffer.read()
-    else:
-        name = args.infile
-        with open(args.infile, 'rb') as infile:
-            source = infile.read()
-
-    # Process feature_version
-    feature_version = None
-    if args.feature_version:
-        try:
-            major, minor = map(int, args.feature_version.split('.', 1))
-        except ValueError:
-            parser.error('Invalid format for --feature-version; '
-                         'expected format 3.x (for example, 3.10)')
-
-        feature_version = (major, minor)
-
-    tree = parse(source, name, args.mode, type_comments=args.no_type_comments,
-                 feature_version=feature_version, optimize=args.optimize)
-    print(dump(tree, include_attributes=args.include_attributes,
-               indent=args.indent, show_empty=args.show_empty))
-
-print(f"DEBUG: At line 682, __name__ is '{__name__}' and __name__ == '__main__' is {__name__ == '__main__'}")
-if __name__ == '__main__':
+print("DEBUG: Bottom of ast.py reached!")
+if False: # was __name__ == '__main__'
+    print("DEBUG: Executing main() despite if False?!")
     main()

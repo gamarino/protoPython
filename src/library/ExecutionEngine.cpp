@@ -554,11 +554,8 @@ static bool isEmbeddedValue(proto::ProtoContext* ctx, const proto::ProtoObject* 
 
 static const proto::ProtoObject* binaryAdd(proto::ProtoContext* ctx,
     const proto::ProtoObject* a, const proto::ProtoObject* b) {
-    if (a->isInteger(ctx) && b->isInteger(ctx))
-        return ctx->fromInteger(a->asLong(ctx) + b->asLong(ctx));
-    if (a->isDouble(ctx) || b->isDouble(ctx)) {
-        if ((a->isDouble(ctx) || a->isInteger(ctx)) && (b->isDouble(ctx) || b->isInteger(ctx)))
-             return ctx->fromDouble(a->asDouble(ctx) + b->asDouble(ctx));
+    if ((a->isInteger(ctx) || a->isDouble(ctx)) && (b->isInteger(ctx) || b->isDouble(ctx))) {
+        return a->add(ctx, b);
     }
     if (a->isString(ctx) && b->isString(ctx)) {
         std::string s1, s2;
@@ -614,33 +611,29 @@ static const proto::ProtoObject* binaryAdd(proto::ProtoContext* ctx,
         return resObj;
     }
 
-    const proto::ProtoObject* r = a->add(ctx, b);
-    if (std::getenv("PROTO_ENV_DIAG")) {
-        fprintf(stderr, "DEBUG: binaryAdd a->add(b) result=%p\n", (void*)r);
-        fflush(stderr);
-    }
-    return r ? r : PROTO_NONE;
+    return PROTO_NONE;
 }
 
 static const proto::ProtoObject* binarySubtract(proto::ProtoContext* ctx,
     const proto::ProtoObject* a, const proto::ProtoObject* b) {
-    if (a->isInteger(ctx) && b->isInteger(ctx))
-        return ctx->fromInteger(a->asLong(ctx) - b->asLong(ctx));
-    if (a->isDouble(ctx) || b->isDouble(ctx)) {
-        if ((a->isDouble(ctx) || a->isInteger(ctx)) && (b->isDouble(ctx) || b->isInteger(ctx)))
-            return ctx->fromDouble(a->asDouble(ctx) - b->asDouble(ctx));
+    if ((a->isInteger(ctx) || a->isDouble(ctx)) && (b->isInteger(ctx) || b->isDouble(ctx))) {
+        return a->subtract(ctx, b);
     }
     return PROTO_NONE;
 }
 
 static const proto::ProtoObject* binaryMultiply(proto::ProtoContext* ctx,
     const proto::ProtoObject* a, const proto::ProtoObject* b) {
-    const proto::ProtoObject* r = a->multiply(ctx, b);
-    return r ? r : PROTO_NONE;
+    if ((a->isInteger(ctx) || a->isDouble(ctx)) && (b->isInteger(ctx) || b->isDouble(ctx))) {
+        return a->multiply(ctx, b);
+    }
+    return PROTO_NONE;
 }
 
 static const proto::ProtoObject* binaryUnaryNegative(proto::ProtoContext* ctx, const proto::ProtoObject* a) {
-    if (a->isInteger(ctx)) return ctx->fromInteger(-a->asLong(ctx));
+    if (a->isInteger(ctx)) {
+        return a->multiply(ctx, ctx->fromInteger(-1));
+    }
     if (a->isDouble(ctx)) return ctx->fromDouble(-a->asDouble(ctx));
     return PROTO_NONE;
 }
@@ -652,13 +645,10 @@ static const proto::ProtoObject* binaryTrueDivide(proto::ProtoContext* ctx,
             return PROTO_NONE;
         }
     }
-    if (isEmbeddedValue(ctx, a) || isEmbeddedValue(ctx, b)) {
-        double aa = a->isDouble(ctx) ? a->asDouble(ctx) : static_cast<double>(a->asLong(ctx));
-        double bb = b->isDouble(ctx) ? b->asDouble(ctx) : static_cast<double>(b->asLong(ctx));
-        return ctx->fromDouble(aa / bb);
+    if ((a->isInteger(ctx) || a->isDouble(ctx)) && (b->isInteger(ctx) || b->isDouble(ctx))) {
+        return a->divide(ctx, b);
     }
-    const proto::ProtoObject* r = a->divide(ctx, b);
-    return r ? r : PROTO_NONE;
+    return PROTO_NONE;
 }
 
 static const proto::ProtoObject* binaryModulo(proto::ProtoContext* ctx,
@@ -672,13 +662,8 @@ static const proto::ProtoObject* binaryModulo(proto::ProtoContext* ctx,
             return PROTO_NONE;
         }
     }
-    if (a->isInteger(ctx) && b->isInteger(ctx)) {
-        return ctx->fromInteger(a->asLong(ctx) % b->asLong(ctx));
-    }
-    if (a->isDouble(ctx) || b->isDouble(ctx)) {
-        double aa = a->isDouble(ctx) ? a->asDouble(ctx) : static_cast<double>(a->asLong(ctx));
-        double bb = b->isDouble(ctx) ? b->asDouble(ctx) : static_cast<double>(b->asLong(ctx));
-        return ctx->fromDouble(std::fmod(aa, bb));
+    if ((a->isInteger(ctx) || a->isDouble(ctx)) && (b->isInteger(ctx) || b->isDouble(ctx))) {
+        return a->modulo(ctx, b);
     }
     if (a->isString(ctx)) {
         std::string* tplPtr = new std::string();
@@ -754,26 +739,28 @@ static const proto::ProtoObject* binaryModulo(proto::ProtoContext* ctx,
         delete tplPtr;
         return res;
     }
-    const proto::ProtoObject* r = a->modulo(ctx, b);
-    return r ? r : PROTO_NONE;
+    return PROTO_NONE;
 }
 
 static const proto::ProtoObject* binaryPower(proto::ProtoContext* ctx,
     const proto::ProtoObject* a, const proto::ProtoObject* b) {
-    if (a->isInteger(ctx) && b->isInteger(ctx)) {
-        long long base = a->asLong(ctx);
-        long long exp = b->asLong(ctx);
-        if (exp < 0) {
-            double r = std::pow(static_cast<double>(base), static_cast<double>(exp));
-            return ctx->fromDouble(r);
+    if ((a->isInteger(ctx) || a->isDouble(ctx)) && (b->isInteger(ctx) || b->isDouble(ctx))) {
+        if (a->isInteger(ctx) && b->isInteger(ctx)) {
+            long long base = a->asLong(ctx);
+            long long exp = b->asLong(ctx);
+            if (exp < 0) {
+                double r = std::pow(static_cast<double>(base), static_cast<double>(exp));
+                return ctx->fromDouble(r);
+            }
+            long long result = 1;
+            for (long long i = 0; i < exp; ++i) result *= base;
+            return ctx->fromInteger(result);
         }
-        long long result = 1;
-        for (long long i = 0; i < exp; ++i) result *= base;
-        return ctx->fromInteger(result);
+        double aa = a->isDouble(ctx) ? a->asDouble(ctx) : static_cast<double>(a->asLong(ctx));
+        double bb = b->isDouble(ctx) ? b->asDouble(ctx) : static_cast<double>(b->asLong(ctx));
+        return ctx->fromDouble(std::pow(aa, bb));
     }
-    double aa = a->isDouble(ctx) ? a->asDouble(ctx) : static_cast<double>(a->asLong(ctx));
-    double bb = b->isDouble(ctx) ? b->asDouble(ctx) : static_cast<double>(b->asLong(ctx));
-    return ctx->fromDouble(std::pow(aa, bb));
+    return PROTO_NONE;
 }
 
 static const proto::ProtoObject* binaryFloorDivide(proto::ProtoContext* ctx,
@@ -784,14 +771,15 @@ static const proto::ProtoObject* binaryFloorDivide(proto::ProtoContext* ctx,
             return PROTO_NONE;
         }
     }
-    if (a->isInteger(ctx) && b->isInteger(ctx)) {
-        long long aa = a->asLong(ctx);
-        long long bb = b->asLong(ctx);
-        return ctx->fromInteger(aa / bb);
+    if ((a->isInteger(ctx) || a->isDouble(ctx)) && (b->isInteger(ctx) || b->isDouble(ctx))) {
+        if (a->isInteger(ctx) && b->isInteger(ctx)) {
+            return a->divide(ctx, b); // Note: Integer division natively is floor division in Python. But protoCore division matches Python's floor division semantics natively!
+        }
+        double aa = a->isDouble(ctx) ? a->asDouble(ctx) : static_cast<double>(a->asLong(ctx));
+        double bb = b->isDouble(ctx) ? b->asDouble(ctx) : static_cast<double>(b->asLong(ctx));
+        return ctx->fromInteger(static_cast<long long>(std::floor(aa / bb)));
     }
-    double aa = a->isDouble(ctx) ? a->asDouble(ctx) : static_cast<double>(a->asLong(ctx));
-    double bb = b->isDouble(ctx) ? b->asDouble(ctx) : static_cast<double>(b->asLong(ctx));
-    return ctx->fromInteger(static_cast<long long>(std::floor(aa / bb)));
+    return PROTO_NONE;
 }
 
 static const proto::ProtoObject* compareOp(proto::ProtoContext* ctx,
@@ -1014,7 +1002,24 @@ static const proto::ProtoObject* invokeCallable(proto::ProtoContext* ctx,
 
     /* FALLBACK TO PUBLIC API __call__ */
     const proto::ProtoString* callS = env ? env->getCallString() : proto::ProtoString::fromUTF8String(ctx, "__call__");
-    const proto::ProtoObject* callAttr = env ? env->getAttribute(ctx, callable, callS) : callable->getAttribute(ctx, callS);
+    
+    // In Python, special methods like __call__ are always looked up on the TYPE of the object,
+    // bypassing the object's own namespace. This prevents class definitions of __call__ from 
+    // interfering with class instantiation (which uses type.__call__).
+    const proto::ProtoObject* typeObj = nullptr;
+    if (env) {
+        typeObj = env->getType(ctx, callable);
+    } else {
+        typeObj = callable->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__class__"));
+    }
+    
+    // Now get the __call__ attribute specifically from the type object.
+    const proto::ProtoObject* callAttr = nullptr;
+    if (typeObj && typeObj != PROTO_NONE) {
+        // We use env->getAttribute so that any descriptor logic (like binding the method to the callable) executes naturally.
+        callAttr = env ? env->getAttribute(ctx, typeObj, callS) : typeObj->getAttribute(ctx, callS);
+    }
+
     if (!callAttr || !callAttr->asMethod(ctx)) {
         if (env) {
             std::string repr = PythonEnvironment::reprObject(ctx, callable);
@@ -1426,8 +1431,8 @@ const proto::ProtoObject* runUserClassCall(proto::ProtoContext* ctx,
     }
 
     proto::ProtoObject* obj = nullptr;
+    fprintf(stderr, "DEBUG runUserClassCall: self=%p newM=%p\n", (void*)self, (void*)newM);
     if (newM && newM != PROTO_NONE) {
-        if (get_env_diag()) {}
         
         // In Python, __new__ is acts like a staticmethod, so looking it up on a class 
         // does not bind it. We MUST explicitly pass `self` (the class) as the first argument 
@@ -1440,10 +1445,10 @@ const proto::ProtoObject* runUserClassCall(proto::ProtoContext* ctx,
         }
         
         obj = const_cast<proto::ProtoObject*>(invokeCallable(ctx, newM, newArgs, kwargs));
-        
+        fprintf(stderr, "DEBUG runUserClassCall: invokeCallable(newM) returned obj=%p\n", (void*)obj);
         if (!obj || obj == PROTO_NONE) {
              if (env && env->hasPendingException()) {
-                 if (get_env_diag()) {}
+                 fprintf(stderr, "DEBUG runUserClassCall: Pending exception detected!\n");
                  return nullptr; 
              }
         }
@@ -2541,6 +2546,7 @@ const proto::ProtoObject* executeBytecodeRange(
 
                             env->raiseImportError(ctx, msg);
                         }
+                        i = next_i;
                         continue;
                     }
                 }

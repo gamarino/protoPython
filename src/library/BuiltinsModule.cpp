@@ -995,8 +995,13 @@ static const proto::ProtoObject* py_callable(
     const proto::ProtoSparseList* keywordParameters) {
     if (positionalParameters->getSize(context) < 1) return PROTO_FALSE;
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
+    if (obj->asMethod(context)) return PROTO_TRUE;
+
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
-    const proto::ProtoObject* call = obj->getAttribute(context, env ? env->getCallString() : proto::ProtoString::fromUTF8String(context, "__call__"));
+    const proto::ProtoObject* proto = obj->getPrototype(context);
+    const proto::ProtoString* callS = env ? env->getCallString() : proto::ProtoString::fromUTF8String(context, "__call__");
+    const proto::ProtoObject* call = proto ? (env ? env->getAttribute(context, proto, callS) : proto->getAttribute(context, callS)) : nullptr;
+    
     return (call && call != PROTO_NONE && call->asMethod(context)) ? PROTO_TRUE : PROTO_FALSE;
 }
 
