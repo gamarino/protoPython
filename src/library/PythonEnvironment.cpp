@@ -3115,7 +3115,7 @@ static const proto::ProtoObject* py_tuple_iter(
     const proto::ProtoString* iterIndexName = proto::ProtoString::fromUTF8String(context, "__iter_index__");
     iterObj = const_cast<proto::ProtoObject*>(iterObj->setAttribute(context, iterTupleName, data));
     iterObj = const_cast<proto::ProtoObject*>(iterObj->setAttribute(context, iterIndexName, context->fromInteger(0)));
-    fprintf(stderr, "DEBUG py_tuple_iter CREATING: iterObj=%p for tuple=%p\n", (void*)iterObj, (void*)data);
+    if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG py_tuple_iter CREATING: iterObj=%p for tuple=%p\n", (void*)iterObj, (void*)data);
     return iterObj;
 }
 
@@ -3129,9 +3129,9 @@ static const proto::ProtoObject* py_tuple_iter_next(
     const proto::ProtoString* iterIndexName = proto::ProtoString::fromUTF8String(context, "__iter_index__");
     const proto::ProtoObject* tupleObj = self->getAttribute(context, iterTupleName);
     const proto::ProtoObject* indexObj = self->getAttribute(context, iterIndexName);
-    fprintf(stderr, "DEBUG py_tuple_iter_next: self=%p\n", (void*)self);
+    if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG py_tuple_iter_next: self=%p\n", (void*)self);
     if (!tupleObj || !tupleObj->asTuple(context) || !indexObj) {
-        fprintf(stderr, "DEBUG py_tuple_iter_next FAILING: tupleObj=%p, asTuple=%p, indexObj=%p\n", (void*)tupleObj, (void*)(tupleObj ? tupleObj->asTuple(context) : nullptr), (void*)indexObj);
+        if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG py_tuple_iter_next FAILING: tupleObj=%p, asTuple=%p, indexObj=%p\n", (void*)tupleObj, (void*)(tupleObj ? tupleObj->asTuple(context) : nullptr), (void*)indexObj);
         return nullptr; // Throw StopIteration instead of infinite None loops!
     }
     const proto::ProtoTuple* tuple = tupleObj->asTuple(context);
@@ -6743,7 +6743,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     listIterProto = listIterProto->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_self_iter));
     listPrototype = listPrototype->setAttribute(rootContext_, py_iter_proto, listIterProto);
     
-    fprintf(stderr, "DEBUG PROTOS: Setting strIterProto on strPrototype=%p\n", (void*)strPrototype);
+    if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG PROTOS: Setting strIterProto on strPrototype=%p\n", (void*)strPrototype);
     const proto::ProtoObject* strIterProto = objectPrototype->newChild(rootContext_, true);
     strIterProto = strIterProto->setAttribute(rootContext_, py_class, typePrototype);
     strIterProto = strIterProto->setAttribute(rootContext_, py_name, proto::ProtoString::fromUTF8String(rootContext_, "str_iterator")->asObject(rootContext_));
@@ -6751,7 +6751,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     strIterProto = strIterProto->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_self_iter));
     strPrototype = strPrototype->setAttribute(rootContext_, py_iter_proto, strIterProto);
     strPrototype = strPrototype->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_list_iter));
-    fprintf(stderr, "DEBUG PROTOS: Finished setting strIterProto! strPrototype->hasOwnAttr(%p)=%d\n", (void*)py_iter_proto, strPrototype->hasOwnAttribute(rootContext_, py_iter_proto) == PROTO_TRUE);  
+    if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG PROTOS: Finished setting strIterProto! strPrototype->hasOwnAttr(%p)=%d\n", (void*)py_iter_proto, strPrototype->hasOwnAttribute(rootContext_, py_iter_proto) == PROTO_TRUE);  
     strPrototype = strPrototype->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_list_iter));
     const proto::ProtoObject* listReverseIterProto = objectPrototype->newChild(rootContext_, true);
     listReverseIterProto = listReverseIterProto->setAttribute(rootContext_, py_class, typePrototype);
@@ -7013,15 +7013,15 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     // Bind descriptor __get__ so getattr(str, "replace") resolves to a bound method dynamically!
     methodPrototype = methodPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__get__"), rootContext_->fromMethod(nullptr, 
         [](proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) -> const proto::ProtoObject* {
-            fprintf(stderr, "DEBUG_GET: methodPrototype.__get__ called on self=%p. isMethod=%d\n", (void*)self, self->isMethod(ctx));
+            if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG_GET: methodPrototype.__get__ called on self=%p. isMethod=%d\n", (void*)self, self->isMethod(ctx));
             if (!args || args->getSize(ctx) < 1) return self;
             const proto::ProtoObject* instance = args->getAt(ctx, 0);
-            fprintf(stderr, "DEBUG_GET: instance=%p\n", (void*)instance);
+            if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG_GET: instance=%p\n", (void*)instance);
             if (instance == PROTO_NONE || !instance) return self; // Unbound method accessed natively via class
             // Create natively bound method:
             if (!self->isMethod(ctx)) return self;
             const proto::ProtoObject* bound = ctx->fromMethod(const_cast<proto::ProtoObject*>(instance), self->asMethod(ctx));
-            fprintf(stderr, "DEBUG_GET: created bound method %p\n", (void*)bound);
+            if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG_GET: created bound method %p\n", (void*)bound);
             
             // Native built-in bound methods need standard introspection primitives identically to user functions.
             PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
@@ -7127,14 +7127,16 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     if (space_->multisetIteratorPrototype) { space_->multisetIteratorPrototype = const_cast<proto::ProtoObject*>(space_->multisetIteratorPrototype->setAttribute(rootContext_, py_class, typePrototype)); space_->multisetIteratorPrototype = const_cast<proto::ProtoObject*>(space_->multisetIteratorPrototype->setAttribute(rootContext_, py_name, rootContext_->fromUTF8String("multiset_iterator"))); space_->multisetIteratorPrototype = const_cast<proto::ProtoObject*>(space_->multisetIteratorPrototype->setAttribute(rootContext_, py_module, builtinsVal)); }
     
     if (space_->rangeIteratorPrototype) { 
-        fprintf(stderr, "DEBUG BEFORE SETTING: py_class string ptr=%p\n", (void*)py_class);
+        if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG BEFORE SETTING: py_class string ptr=%p\n", (void*)py_class);
         space_->rangeIteratorPrototype = const_cast<proto::ProtoObject*>(space_->rangeIteratorPrototype->setAttribute(rootContext_, py_class, typePrototype)); 
         space_->rangeIteratorPrototype = const_cast<proto::ProtoObject*>(space_->rangeIteratorPrototype->setAttribute(rootContext_, py_name, rootContext_->fromUTF8String("range_iterator"))); 
         space_->rangeIteratorPrototype = const_cast<proto::ProtoObject*>(space_->rangeIteratorPrototype->setAttribute(rootContext_, py_module, builtinsVal)); 
-        if (space_->rangeIteratorPrototype->hasOwnAttribute(rootContext_, py_class) == PROTO_TRUE) {
-            fprintf(stderr, "DEBUG: YES, rangeIterProto hasOwnAttribute py_class MATCHES ITSELF\n");
-        } else {
-            fprintf(stderr, "DEBUG: NO, rangeIterProto hasOwnAttribute py_class FAILS ON ITSELF\n");
+        if (std::getenv("PROTO_ENV_DIAG")) {
+            if (space_->rangeIteratorPrototype->hasOwnAttribute(rootContext_, py_class) == PROTO_TRUE) {
+                fprintf(stderr, "DEBUG: YES, rangeIterProto hasOwnAttribute py_class MATCHES ITSELF\n");
+            } else {
+                fprintf(stderr, "DEBUG: NO, rangeIterProto hasOwnAttribute py_class FAILS ON ITSELF\n");
+            }
         }
     }
 
@@ -8684,7 +8686,7 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
                  
                  const proto::ProtoList* args = ctx->newList()->appendLast(ctx, instance)->appendLast(ctx, owner ? owner : PROTO_NONE);
                  const proto::ProtoObject* res = getM->asMethod(ctx)(ctx, val, nullptr, args, nullptr);
-                 fprintf(stderr, "DEBUG_GET: PythonEnvironment::getAttribute returning descriptor result %p\n", (void*)res);
+                 if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG_GET: PythonEnvironment::getAttribute returning descriptor result %p\n", (void*)res);
                  getAttrDepth--;
                  return res;
              }

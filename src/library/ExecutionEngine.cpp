@@ -1431,7 +1431,7 @@ const proto::ProtoObject* runUserClassCall(proto::ProtoContext* ctx,
     }
 
     proto::ProtoObject* obj = nullptr;
-    fprintf(stderr, "DEBUG runUserClassCall: self=%p newM=%p\n", (void*)self, (void*)newM);
+    if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG runUserClassCall: self=%p newM=%p\n", (void*)self, (void*)newM);
     if (newM && newM != PROTO_NONE) {
         
         // In Python, __new__ is acts like a staticmethod, so looking it up on a class 
@@ -1445,10 +1445,10 @@ const proto::ProtoObject* runUserClassCall(proto::ProtoContext* ctx,
         }
         
         obj = const_cast<proto::ProtoObject*>(invokeCallable(ctx, newM, newArgs, kwargs));
-        fprintf(stderr, "DEBUG runUserClassCall: invokeCallable(newM) returned obj=%p\n", (void*)obj);
+        if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG runUserClassCall: invokeCallable(newM) returned obj=%p\n", (void*)obj);
         if (!obj || obj == PROTO_NONE) {
              if (env && env->hasPendingException()) {
-                 fprintf(stderr, "DEBUG runUserClassCall: Pending exception detected!\n");
+                 if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG runUserClassCall: Pending exception detected!\n");
                  return nullptr; 
              }
         }
@@ -1837,7 +1837,7 @@ const proto::ProtoObject* executeBytecodeRange(
                     }
                     if (found) {
                         if (nStr == "_splitext") {
-                            fprintf(stderr, "DEBUG: OP_LOAD_NAME(_splitext) found in frame: val %p\n", (void*)val);
+                            if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG: OP_LOAD_NAME(_splitext) found in frame: val %p\n", (void*)val);
             fflush(stderr);
                         }
                         stack.push_back(val);
@@ -1845,11 +1845,11 @@ const proto::ProtoObject* executeBytecodeRange(
                         const proto::ProtoObject* r = env->resolve(nameS, ctx);
                         if (r) {
                             if (nStr == "_splitext") {
-                                fprintf(stderr, "DEBUG: OP_LOAD_NAME(_splitext) resolved: val %p\n", (void*)r);
+                                if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG: OP_LOAD_NAME(_splitext) resolved: val %p\n", (void*)r);
                                 fflush(stderr);
                             }
                             if (nStr == "len") {
-                                fprintf(stderr, "DEBUG: OP_LOAD_NAME(len) resolved: r=%p (PROTO_NONE is %p)\n", (void*)r, (void*)PROTO_NONE);
+                                if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG: OP_LOAD_NAME(len) resolved: r=%p (PROTO_NONE is %p)\n", (void*)r, (void*)PROTO_NONE);
                                 fflush(stderr);
                             }
                             stack.push_back(r);

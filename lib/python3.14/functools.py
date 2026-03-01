@@ -518,7 +518,7 @@ def _unwrap_partialmethod(func):
 ################################################################################
 
 _CacheInfo = namedtuple("CacheInfo", ["hits", "misses", "maxsize", "currsize"])
-print("DEBUG: FUNCTOOLS cache info namedtuple created")
+# print("DEBUG: FUNCTOOLS cache info namedtuple created")
 
 def _make_key(args, kwds, typed,
              kwd_mark = (object(),),
@@ -732,7 +732,7 @@ def cache(user_function, /):
 ################################################################################
 ### singledispatch() - single-dispatch generic function decorator
 ################################################################################
-print("DEBUG: FUNCTOOLS starting singledispatch")
+# print("DEBUG: FUNCTOOLS starting singledispatch")
 
 def _c3_merge(sequences):
     """Merges MROs in *sequences* to a single MRO using the C3 algorithm.
@@ -761,7 +761,7 @@ def _c3_merge(sequences):
             if seq[0] == candidate:
                 del seq[0]
 
-print("DEBUG: FUNCTOOLS _c3_merge defined")
+# print("DEBUG: FUNCTOOLS _c3_merge defined")
 def _c3_mro(cls, abcs=None):
     """Computes the method resolution order using extended C3 linearization.
 
@@ -807,7 +807,7 @@ def _c3_mro(cls, abcs=None):
         [explicit_bases] + [abstract_bases] + [other_bases]
     )
 
-print("DEBUG: FUNCTOOLS _c3_mro defined")
+# print("DEBUG: FUNCTOOLS _c3_mro defined")
 def _compose_mro(cls, types):
     """Calculates the method resolution order for a given class *cls*.
 
@@ -850,7 +850,7 @@ def _compose_mro(cls, types):
                     mro.append(subcls)
     return _c3_mro(cls, abcs=mro)
 
-print("DEBUG: FUNCTOOLS _compose_mro defined")
+# print("DEBUG: FUNCTOOLS _compose_mro defined")
 def _find_impl(cls, registry):
     """Returns the best matching implementation from *registry* for type *cls*.
 
@@ -877,7 +877,7 @@ def _find_impl(cls, registry):
             match = t
     return registry.get(match)
 
-print("DEBUG: FUNCTOOLS _find_impl defined")
+# print("DEBUG: FUNCTOOLS _find_impl defined")
 def singledispatch(func):
     """Single-dispatch generic function decorator.
 
@@ -997,7 +997,7 @@ def singledispatch(func):
     return wrapper
 
 
-print("DEBUG: FUNCTOOLS singledispatch defined", flush=True)
+# print("DEBUG: FUNCTOOLS singledispatch defined", flush=True)
 # Descriptor version
 class singledispatchmethod:
     """Single-dispatch generic method descriptor.
@@ -1037,7 +1037,7 @@ class singledispatchmethod:
                 name = '?'
         return f'<single dispatch method descriptor {name}>'
 
-print("DEBUG: FUNCTOOLS singledispatchmethod defined", flush=True)
+# print("DEBUG: FUNCTOOLS singledispatchmethod defined", flush=True)
 class _singledispatchmethod_get:
     def __init__(self, unbound, obj, cls):
         self._unbound = unbound
@@ -1100,7 +1100,7 @@ class _singledispatchmethod_get:
 
 _NOT_FOUND = object()
 
-print("DEBUG: FUNCTOOLS _singledispatchmethod_get defined", flush=True)
+# print("DEBUG: FUNCTOOLS _singledispatchmethod_get defined", flush=True)
 class cached_property:
     def __init__(self, func):
         self.func = func
@@ -1146,7 +1146,7 @@ class cached_property:
 
     __class_getitem__ = classmethod(GenericAlias)
 
-print("DEBUG: FUNCTOOLS cached_property defined", flush=True)
+# print("DEBUG: FUNCTOOLS cached_property defined", flush=True)
 
 def _warn_python_reduce_kwargs(py_reduce):
     @wraps(py_reduce)
@@ -1164,9 +1164,9 @@ def _warn_python_reduce_kwargs(py_reduce):
         return py_reduce(*args, **kwargs)
     return wrapper
 
-print("DEBUG: FUNCTOOLS before reduce assignment", flush=True)
+# print("DEBUG: FUNCTOOLS before reduce assignment", flush=True)
 reduce = _warn_python_reduce_kwargs(reduce)
-print("DEBUG: FUNCTOOLS after reduce assignment", flush=True)
+# print("DEBUG: FUNCTOOLS after reduce assignment", flush=True)
 del _warn_python_reduce_kwargs
 
 # The import of the C accelerated version of reduce() has been moved

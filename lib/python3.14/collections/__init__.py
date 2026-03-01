@@ -456,32 +456,32 @@ def namedtuple(typename, field_names, *, rename=False, defaults=None, module=Non
 
     # Create all the named tuple methods to be added to the class namespace
 
-    print("DEBUG: TRACE 1")
+    # print("DEBUG: TRACE 1")
     namespace = {
         '_tuple_new': tuple_new,
         '__builtins__': {},
         '__name__': f'namedtuple_{typename}',
     }
-    print("DEBUG: TRACE 2")
+    # print("DEBUG: TRACE 2")
     code = f'lambda _cls, {arg_list}: _tuple_new(_cls, ({arg_list}))'
-    print("DEBUG: TRACE 3")
+    # print("DEBUG: TRACE 3")
     try:
         __new__ = eval(code, namespace)
     except Exception as e:
-        print("DEBUG: TRACE eval FAILED:", repr(e))
+        # print("DEBUG: TRACE eval FAILED:", repr(e))
         raise
-    print("DEBUG: TRACE 4")
+    # print("DEBUG: TRACE 4")
     try:
         __new__.__name__ = '__new__'
     except Exception as e:
-        print("DEBUG: TRACE __name__ FAILED:", repr(e))
+        # print("DEBUG: TRACE __name__ FAILED:", repr(e))
         raise
-    print("DEBUG: TRACE 5")
+    # print("DEBUG: TRACE 5")
     if defaults is not None:
         __new__.__defaults__ = defaults
-    print("DEBUG: TRACE 6")
+    # print("DEBUG: TRACE 6")
 
-    print("DEBUG: TRACE 6.1: Before _make")
+    # print("DEBUG: TRACE 6.1: Before _make")
     @classmethod
     def _make(cls, iterable):
         result = tuple_new(cls, iterable)
@@ -489,7 +489,7 @@ def namedtuple(typename, field_names, *, rename=False, defaults=None, module=Non
             raise TypeError(f'Expected {num_fields} arguments, got {len(result)}')
         return result
 
-    print("DEBUG: TRACE 6.2: Before _replace")
+    # print("DEBUG: TRACE 6.2: Before _replace")
     _make.__func__.__doc__ = (f'Make a new {typename} object from a sequence '
                               'or iterable')
 
@@ -499,7 +499,7 @@ def namedtuple(typename, field_names, *, rename=False, defaults=None, module=Non
             raise TypeError(f'Got unexpected field names: {list(kwds)!r}')
         return result
 
-    print("DEBUG: TRACE 6.3: Before __repr__")
+    # print("DEBUG: TRACE 6.3: Before __repr__")
     _replace.__doc__ = (f'Return a new {typename} object replacing specified '
                         'fields with new values')
 
@@ -507,17 +507,17 @@ def namedtuple(typename, field_names, *, rename=False, defaults=None, module=Non
         'Return a nicely formatted representation string'
         return self.__class__.__name__ + repr_fmt % self
 
-    print("DEBUG: TRACE 6.4: Before _asdict")
+    # print("DEBUG: TRACE 6.4: Before _asdict")
     def _asdict(self):
         'Return a new dict which maps field names to their values.'
         return _dict(_zip(self._fields, self))
 
-    print("DEBUG: TRACE 6.5: Before __getnewargs__")
+    # print("DEBUG: TRACE 6.5: Before __getnewargs__")
     def __getnewargs__(self):
         'Return self as a plain tuple.  Used by copy and pickle.'
         return _tuple(self)
 
-    print("DEBUG: TRACE 7: Function modifying loop")
+    # print("DEBUG: TRACE 7: Function modifying loop")
 
     # Modify function metadata to help with introspection and debugging
     for method in (
@@ -528,10 +528,10 @@ def namedtuple(typename, field_names, *, rename=False, defaults=None, module=Non
         _asdict,
         __getnewargs__,
     ):
-        print("DEBUG: TRACE 7.x modifying method:", method)
+        # print("DEBUG: TRACE 7.x modifying method:", method)
         method.__qualname__ = f'{typename}.{method.__name__}'
 
-    print("DEBUG: TRACE 8: building class namespace")
+    # print("DEBUG: TRACE 8: building class namespace")
     # Build-up the class namespace dictionary
     # and use type() to build the result class
     try:
@@ -550,27 +550,27 @@ def namedtuple(typename, field_names, *, rename=False, defaults=None, module=Non
             '__match_args__': field_names,
         }
     except Exception as e:
-        print("DEBUG: TRACE 8.1 dict creation failed:", repr(e))
+        # print("DEBUG: TRACE 8.1 dict creation failed:", repr(e))
         raise
 
-    print("DEBUG: TRACE 8.2 enumerate is:", enumerate)
-    print("DEBUG: TRACE 8.3 _sys.intern is:", _sys.intern)
-    print("DEBUG: TRACE 8.4 _tuplegetter is:", _tuplegetter)
+    # print("DEBUG: TRACE 8.2 enumerate is:", enumerate)
+    # print("DEBUG: TRACE 8.3 _sys.intern is:", _sys.intern)
+    # print("DEBUG: TRACE 8.4 _tuplegetter is:", _tuplegetter)
 
     try:
         for index, name in enumerate(field_names):
-            print("DEBUG: TRACE 8.5 loop iter:", index, name)
+            # print("DEBUG: TRACE 8.5 loop iter:", index, name)
             doc = _sys.intern(f'Alias for field number {index}')
             class_namespace[name] = _tuplegetter(index, doc)
     except Exception as e:
-        print("DEBUG: TRACE 8.6 loop failed:", repr(e))
+        # print("DEBUG: TRACE 8.6 loop failed:", repr(e))
         raise
 
 
-    print("DEBUG: TRACE 9: before type()")
+    # print("DEBUG: TRACE 9: before type()")
     result = type(typename, (tuple,), class_namespace)
 
-    print("DEBUG: TRACE 10: before sys.getframe()")
+    # print("DEBUG: TRACE 10: before sys.getframe()")
     # For pickling to work, the __module__ variable needs to be set to the frame
     # where the named tuple is created.  Bypass this step in environments where
     # sys._getframe is not defined (Jython for example) or sys._getframe is not
@@ -578,22 +578,22 @@ def namedtuple(typename, field_names, *, rename=False, defaults=None, module=Non
     # has specified a particular module to be used.
     if module is None:
         try:
-            print("DEBUG: TRACE 10.1: calling _sys._getframe(1)")
+            # print("DEBUG: TRACE 10.1: calling _sys._getframe(1)")
             frame = _sys._getframe(1)
-            print("DEBUG: TRACE 10.2: got frame", frame)
+            # print("DEBUG: TRACE 10.2: got frame", frame)
             f_globals = frame.f_globals
-            print("DEBUG: TRACE 10.3: got f_globals", f_globals)
+            # print("DEBUG: TRACE 10.3: got f_globals", f_globals)
             module = f_globals.get('__name__', '__main__')
-            print("DEBUG: TRACE 10.4: got module", module)
+            # print("DEBUG: TRACE 10.4: got module", module)
         except (AttributeError, ValueError) as e:
-            print("DEBUG: TRACE 10.EXCEPT (AttributeError/ValueError):", repr(e))
+            pass
         except Exception as e:
-            print("DEBUG: TRACE 10.EXCEPT (OTHER):", repr(e))
+            # print("DEBUG: TRACE 10.EXCEPT (OTHER):", repr(e))
             raise
     if module is not None:
         result.__module__ = module
 
-    print("DEBUG: TRACE 11: done!")
+    # print("DEBUG: TRACE 11: done!")
     return result
 
 

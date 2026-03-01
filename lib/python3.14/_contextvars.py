@@ -7,24 +7,33 @@ class _Sentinel:
 
 MISSING = _Sentinel()
 
-_state = threading.local()
+_state = None
+
+def _get_state():
+    global _state
+    if _state is None:
+        import threading
+        _state = threading.local()
+    return _state
 
 def _get_current_context():
+    state = _get_state()
     try:
-        return _state.context
+        return state.context
     except AttributeError:
         ctx = Context()
-        _state.context = ctx
+        state.context = ctx
         return ctx
 
 def _set_current_context(ctx):
+    state = _get_state()
     if ctx is None:
         try:
-            del _state.context
+            del state.context
         except AttributeError:
             pass
     else:
-        _state.context = ctx
+        state.context = ctx
 
 
 class Token:
