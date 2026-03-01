@@ -3240,10 +3240,18 @@ const proto::ProtoObject* executeBytecodeRange(
             stack.push_back(finalDict);
         } else if (op == OP_STORE_SUBSCR) {
             // i++;
+            if (get_env_diag()) {
+                fprintf(stderr, "DEBUG OP_STORE_SUBSCR stack.size()=%lu\n", (unsigned long)stack.size());
+            }
             if (stack.size() < 3) { i = next_i; continue; }
-            proto::ProtoObject* container = const_cast<proto::ProtoObject*>(stack.back());
-            const proto::ProtoObject* value = stack[stack.top - 2];
-            const proto::ProtoObject* key = stack[stack.top - 3];
+            proto::ProtoObject* container = const_cast<proto::ProtoObject*>(stack[stack.top - 2]);
+            const proto::ProtoObject* key = stack.back();
+            const proto::ProtoObject* value = stack[stack.top - 3];
+            
+            if (get_env_diag()) {
+                fprintf(stderr, "DEBUG OP_STORE_SUBSCR: value=%p key=%p container=%p\n", (void*)value, (void*)key, (void*)container);
+                fflush(stderr);
+            }
             // Delay pop
 
             const proto::ProtoString* setItemS = env ? env->getSetItemString() : proto::ProtoString::fromUTF8String(ctx, "__setitem__");
@@ -3297,6 +3305,9 @@ const proto::ProtoObject* executeBytecodeRange(
                     }
                 }
             }
+            stack.pop_back();
+            stack.pop_back();
+            stack.pop_back();
         } else if (op == OP_CALL_FUNCTION_KW) {
             if (stack.size() < 2) { i = next_i; continue; } // at least callable and names_tuple
             const proto::ProtoObject* namesTupleObj = stack.back();

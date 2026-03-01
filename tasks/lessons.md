@@ -69,6 +69,7 @@ Patterns and rules derived from implementation and corrections. Update after app
 - **NamedTuple `_make` Method**: The `_make(iterable)` class method creates a new instance of the named tuple from an iterable. It is equivalent to `cls(*iterable)`.
 - **NamedTuple `_asdict` Method**: The `_asdict()` method returns a new `dict` that maps the field names to the corresponding values in the named tuple instance.
 - **NamedTuple `_replace` Method**: The `_replace(**kwargs)` method returns a new instance of the named tuple with specified fields replaced by new values.
+- **Stack Item Ordering (OP_STORE_SUBSCR / OP_DUP_TOP_TWO)**: Overhauled `OP_STORE_SUBSCR` to conform rigidly with Python 3.14 ordering: `TOS` is the key, `TOS1` is the container, and `TOS2` is the value. Prior iterations incorrectly inverted `container` and `key` extraction, failing `test_execution_engine`. Similarly, `OP_DUP_TOP_TWO` must preserve the stacking order: duplicating `a, b` into `a, b, a, b` where `b` is unconditionally the Top-Of-Stack (TOS).
 
 ## Thread Local GC and Exception Context Preservation (v73+)
 
