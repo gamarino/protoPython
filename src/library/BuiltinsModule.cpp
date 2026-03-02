@@ -2481,17 +2481,25 @@ static const proto::ProtoObject* py_isinstance(
 }
 
 static bool py_issubclass_check_single(proto::ProtoContext* context, const proto::ProtoObject* cls, const proto::ProtoObject* base) {
-    if (cls == base) return true;
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        fprintf(stderr, "DEBUG py_issubclass_check_single: cls=%p base=%p\n", (void*)cls, (void*)base);
+    }
+    if (cls == base) {
+        if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG py_issubclass_check_single returns True (cls == base)\n");
+        return true;
+    }
 
     // Fast path: use __mro__
     const proto::ProtoObject* mro = cls->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__mro__"));
     if (mro) {
         const proto::ProtoList* mroList = mro->asList(context);
-        if (mroList) {
-            for (unsigned long i = 0; i < mroList->getSize(context); ++i) {
-                if (mroList->getAt(context, i) == base) {
-                    return true;
-                }
+        const proto::ProtoTuple* mroTuple = mro->asTuple(context);
+        unsigned long size = mroList ? mroList->getSize(context) : (mroTuple ? mroTuple->getSize(context) : 0);
+        for (unsigned long i = 0; i < size; ++i) {
+            const proto::ProtoObject* item = mroList ? mroList->getAt(context, i) : mroTuple->getAt(context, i);
+            if (item == base) {
+                if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG py_issubclass_check_single returns True (in mro)\n");
+                return true;
             }
         }
     }
@@ -2500,11 +2508,13 @@ static bool py_issubclass_check_single(proto::ProtoContext* context, const proto
     const proto::ProtoObject* bases = cls->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__bases__"));
     if (bases) {
         const proto::ProtoList* basesList = bases->asList(context);
-        if (basesList) {
-            for (unsigned long i = 0; i < basesList->getSize(context); ++i) {
-                 if (py_issubclass_check_single(context, basesList->getAt(context, i), base)) {
-                     return true;
-                 }
+        const proto::ProtoTuple* basesTuple = bases->asTuple(context);
+        unsigned long size = basesList ? basesList->getSize(context) : (basesTuple ? basesTuple->getSize(context) : 0);
+        for (unsigned long i = 0; i < size; ++i) {
+            const proto::ProtoObject* item = basesList ? basesList->getAt(context, i) : basesTuple->getAt(context, i);
+            if (py_issubclass_check_single(context, item, base)) {
+                if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG py_issubclass_check_single returns True (in __bases__)\n");
+                return true;
             }
         }
     }
@@ -2513,6 +2523,7 @@ static bool py_issubclass_check_single(proto::ProtoContext* context, const proto
     // If base has __subclasscheck__, we should ideally call it. For native py_issubclass, 
     // the surrounding Python code in _abc.py or equivalent manages __subclasscheck__.
     // To strictly implement issubclass, we defer to __mro__.
+    if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG py_issubclass_check_single returns False\n");
     return false;
 }
 
@@ -2525,6 +2536,10 @@ static const proto::ProtoObject* py_issubclass(
     if (positionalParameters->getSize(context) < 2) return PROTO_FALSE;
     const proto::ProtoObject* cls = positionalParameters->getAt(context, 0);
     const proto::ProtoObject* base = positionalParameters->getAt(context, 1);
+    
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        fprintf(stderr, "DEBUG py_issubclass: entry cls=%p base=%p\n", (void*)cls, (void*)base);
+    }
     
     protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(context);
     cls = resolveClassType(env, self, context, cls);
@@ -3662,6 +3677,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     rangeIterProto = rangeIterProto->setAttribute(ctx, pEnv->getIterString(), ctx->fromMethod(nullptr, py_self_iter));
     rangeIterProto = rangeIterProto->setAttribute(ctx, pEnv->getNextString(), ctx->fromMethod(nullptr, py_range_next));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "range_iterator"), rangeIterProto);
+    pEnv->setRangeIteratorProto(rangeIterProto);
 
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "abs"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_abs));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "min"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_min));
