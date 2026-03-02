@@ -551,7 +551,6 @@ bool Compiler::compileTarget(ASTNode* target, TargetCtx ctx) {
     if (auto* sub = dynamic_cast<SubscriptNode*>(target)) {
         if (!compileNode(sub->value.get()) || !compileNode(sub->index.get())) return false;
         if (ctx == TargetCtx::Store) {
-            emit(OP_ROT_THREE, 0);
             emit(OP_STORE_SUBSCR, 0);
         } else if (ctx == TargetCtx::Delete) {
             emit(OP_DELETE_SUBSCR, 0);
@@ -1532,7 +1531,8 @@ bool Compiler::statementLeavesValue(ASTNode* node) {
         dynamic_cast<ImportNode*>(node) || dynamic_cast<GlobalNode*>(node) ||
         dynamic_cast<ReturnNode*>(node) || dynamic_cast<DeleteNode*>(node) ||
         dynamic_cast<TryNode*>(node) || dynamic_cast<WithNode*>(node) ||
-        dynamic_cast<AssertNode*>(node)) return false;
+        dynamic_cast<AssertNode*>(node) || dynamic_cast<PassNode*>(node) ||
+        dynamic_cast<BreakNode*>(node) || dynamic_cast<ContinueNode*>(node)) return false;
     return true;
 }
 
