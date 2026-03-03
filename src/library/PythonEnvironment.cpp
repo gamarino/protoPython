@@ -6222,6 +6222,8 @@ void PythonEnvironment::raiseAttributeError(proto::ProtoContext* ctx, const prot
 }
 
 void PythonEnvironment::raiseTypeError(proto::ProtoContext* ctx, const std::string& msg) {
+    fprintf(stderr, "DEBUG HANG: raiseTypeError called with msg='%s'\n", msg.c_str());
+    fflush(stderr);
     if (!typeErrorType) return;
     const proto::ProtoList* args = ctx->newList()->appendLast(ctx, ctx->fromUTF8String(msg.c_str()));
     const proto::ProtoObject* exc = typeErrorType->call(ctx, nullptr, proto::ProtoString::fromUTF8String(ctx, "__call__"), typeErrorType, args, nullptr);
@@ -9057,6 +9059,46 @@ const proto::ProtoObject* PythonEnvironment::resolve(const proto::ProtoString* n
         }
     }
 
+    return nullptr;
+}
+
+const proto::ProtoObject* PythonEnvironment::resolveModule(const std::string& nameStr, proto::ProtoContext* ctx) {
+    if (!ctx) ctx = s_threadContext ? s_threadContext : rootContext_;
+    
+    // 4. Fallback to Imports/Sys (Locked)
+    SafeImportLock lock(this, ctx);
+    
+    // Re-check sys.modules
+    if (sysModule) {
+        const proto::ProtoString* nameObj = proto::ProtoString::fromUTF8String(ctx, nameStr.c_str());
+        const proto::ProtoObject* modules = sysModule->getAttribute(ctx, modulesS);
+        if (modules && modules != PROTO_NONE) {
+            // Step V74: sys.modules is a dict, so we check __data__ first if it exists
+            const proto::ProtoObject* dataAttr = modules->getAttribute(ctx, dataString);
+            const proto::ProtoSparseList* dict = (dataAttr && dataAttr != PROTO_NONE) ? dataAttr->asSparseList(ctx) : modules->asSparseList(ctx);
+            
+            if (dict && dict->has(ctx, nameObj->getHash(ctx))) {
+                const proto::ProtoObject* mod = dict->getAt(ctx, nameObj->getHash(ctx));
+                return mod;
+            }
+        }
+    }
+
+    // Module import search
+    const proto::ProtoObject* modWrapper = ctx->space->getImportModule(ctx, nameStr.c_str(), "val");
+    if (modWrapper && modWrapper != PROTO_NONE) {
+        const proto::ProtoObject* result = modWrapper->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "val"));
+        if (result && result != nullptr) {
+            const proto::ProtoObject* executedKey = result->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__executed__"));
+            if (!executedKey || executedKey == PROTO_FALSE || executedKey == PROTO_NONE) {
+                int ret = executeModule(nameStr, false, ctx);
+                if (ret != 0) return nullptr;
+                result = modWrapper->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "val"));
+            }
+            return result;
+        }
+    }
+    
     return nullptr;
 }
 

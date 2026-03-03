@@ -12,7 +12,7 @@ static const proto::ProtoObject* exception_init(
     const proto::ProtoString* argsName = proto::ProtoString::fromUTF8String(context, "args");
     const proto::ProtoList* actualArgs = context->newList();
     if (positionalParameters && positionalParameters->getSize(context) > 0) {
-        for (unsigned long i = 1; i < positionalParameters->getSize(context); ++i) {
+        for (unsigned long i = 0; i < positionalParameters->getSize(context); ++i) {
             actualArgs = actualArgs->appendLast(context, positionalParameters->getAt(context, i));
         }
     }

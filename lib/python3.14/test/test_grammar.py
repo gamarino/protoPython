@@ -1,3 +1,4 @@
+print("DUMP type.__init__:", type.__init__)
 # Python test set -- part 1, grammar.
 # This just tests whether the parser accepts them all.
 

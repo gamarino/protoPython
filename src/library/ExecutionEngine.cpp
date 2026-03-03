@@ -1499,6 +1499,22 @@ const proto::ProtoObject* runUserClassCall(proto::ProtoContext* ctx,
         if (isInstanceOfSelf) {
             const proto::ProtoString* initS = env ? env->getInitString() : getInternalString(ctx, "__init__");
             const proto::ProtoObject* initM = self->getAttribute(ctx, initS);
+             if (std::getenv("PROTO_ENV_DIAG")) {
+                 std::string initS_str;
+                 initS->toUTF8String(ctx, initS_str);
+                 
+                 // If initM is a method, get its internal C++ pointer
+                 void* cFuncPtr = nullptr;
+                 if (initM && initM->asMethod(ctx)) cFuncPtr = (void*)(initM->asMethod(ctx));
+                 
+                 std::string selfName = "unknown";
+                 const proto::ProtoObject* nAttr = self->getAttribute(ctx, env ? env->getNameString() : nullptr);
+                 if (nAttr && nAttr->isString(ctx)) nAttr->asString(ctx)->toUTF8String(ctx, selfName);
+                 
+                 const proto::ProtoObject* typeProto = env ? env->getTypePrototype() : nullptr;
+                 
+                 fprintf(stderr, "DEBUG HANG runUserClassCall initS='%s' initM=%p (method=%p) self=%p (name='%s', isTypeProto=%d)\n", initS_str.c_str(), (void*)initM, cFuncPtr, (void*)self, selfName.c_str(), self == typeProto);
+             }
             if (initM && initM != PROTO_NONE) {
                 // Since we looked it up on the class (self), we must manually pass `obj` as first arg
                 const proto::ProtoList* initArgs = ctx->newList()->appendLast(ctx, obj);
@@ -1507,7 +1523,11 @@ const proto::ProtoObject* runUserClassCall(proto::ProtoContext* ctx,
                         initArgs = initArgs->appendLast(ctx, args->getAt(ctx, i));
                     }
                 }
-                invokePythonCallable(ctx, initM, initArgs, kwargs);
+                const proto::ProtoObject* initRes = invokePythonCallable(ctx, initM, initArgs, kwargs);
+                if (env && env->hasPendingException()) {
+                    if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG runUserClassCall: initM raised an exception!\n");
+                    return nullptr;
+                }
             }
         }
     }
@@ -3777,16 +3797,6 @@ const proto::ProtoObject* executeBytecodeRange(
             const proto::ProtoObject* val = env ? env->next(iterator) : nullptr;
             
             if (val) {
-                static int mystery_loop_count = 0;
-                mystery_loop_count++;
-                if (mystery_loop_count > 100000) {
-                    std::string valStr = "non-string";
-                    if (val->isString(ctx)) val->asString(ctx)->toUTF8String(ctx, valStr);
-                    fprintf(stderr, "CRITICAL INIT LOOP HANG! iterator=%p val=%p ('%s')\n", (void*)iterator, (void*)val, valStr.c_str());
-                    const proto::ProtoObject* iterCls = iterator->getAttribute(ctx, env ? env->getClassString() : proto::ProtoString::fromUTF8String(ctx, "__class__"));
-                    fprintf(stderr, "Iterator class = %p\n", (void*)iterCls);
-                    abort();
-                }
                 stack.push_back(val);
             } else {
                 if (env && env->hasPendingException()) {

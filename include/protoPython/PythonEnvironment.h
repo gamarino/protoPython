@@ -247,6 +247,7 @@ public:
     const proto::ProtoObject* getAttr(const proto::ProtoObject* obj, const std::string& attr);
     void setAttr(const proto::ProtoObject* obj, const std::string& attr, const proto::ProtoObject* val);
     bool isTrue(const proto::ProtoObject* obj);
+    const proto::ProtoObject* resolveModule(const std::string& nameStr, proto::ProtoContext* ctx = nullptr);
     const proto::ProtoObject* importModule(const std::string& name, int level = 0, const std::vector<std::string>& fromList = {});
     void importStar(const proto::ProtoObject* mod);
 

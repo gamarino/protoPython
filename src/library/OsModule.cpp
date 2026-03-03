@@ -621,6 +621,52 @@ static const proto::ProtoObject* py_environ_delitem(
     return py_unsetenv(ctx, nullptr, nullptr, posArgs, nullptr);
 }
 
+#include <fcntl.h>
+#include <utime.h>
+
+static const proto::ProtoObject* py_open(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* /*self*/,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList* /*kwargs*/) {
+    if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
+    const proto::ProtoObject* pathObj = posArgs->getAt(ctx, 0);
+    const proto::ProtoObject* flagsObj = posArgs->getAt(ctx, 1);
+    if (!pathObj->isString(ctx) || !flagsObj->isInteger(ctx)) return PROTO_NONE;
+    
+    std::string path;
+    pathObj->asString(ctx)->toUTF8String(ctx, path);
+    int flags = static_cast<int>(flagsObj->asLong(ctx));
+    
+    int mode = 0777;
+    if (posArgs->getSize(ctx) >= 3) {
+        mode = static_cast<int>(posArgs->getAt(ctx, 2)->asLong(ctx));
+    }
+    
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+    int fd = open(path.c_str(), flags, mode);
+    if (fd < 0) return PROTO_NONE; // Ideally throw OSError
+    return ctx->fromInteger(fd);
+#else
+    return PROTO_NONE;
+#endif
+}
+
+static const proto::ProtoObject* py_close(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* /*self*/,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList* /*kwargs*/) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    int fd = static_cast<int>(posArgs->getAt(ctx, 0)->asLong(ctx));
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+    close(fd);
+#endif
+    return PROTO_NONE;
+}
+
 static const proto::ProtoObject* py_environ_keys_method(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
@@ -845,6 +891,10 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_pipe));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_exit"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_exit));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "open"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_open));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "close"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_close));
 
     // Common constants
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "F_OK"), ctx->fromInteger(0));
@@ -895,9 +945,12 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     keys = keys->appendLast(ctx, ctx->fromUTF8String("W_OK"));
     keys = keys->appendLast(ctx, ctx->fromUTF8String("X_OK"));
     keys = keys->appendLast(ctx, ctx->fromUTF8String("_have_functions"));
+    keys = keys->appendLast(ctx, ctx->fromUTF8String("open"));
+    keys = keys->appendLast(ctx, ctx->fromUTF8String("close"));
     
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__keys__"), keys->asObject(ctx));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__all__"), keys->asObject(ctx));
+
 
     return mod;
 }

@@ -145,12 +145,12 @@ static const proto::ProtoObject* py_import(
         }
     }
 
-    const proto::ProtoObject* leaf = env->resolve(moduleName, context);
+    const proto::ProtoObject* leaf = env->resolveModule(moduleName, context);
     
     if (!leaf || leaf == PROTO_NONE) {
         if (env->hasPendingException()) return nullptr;
         env->raiseImportError("No module named '" + moduleName + "'");
-        return PROTO_NONE;
+        return nullptr;
     }
 
     if (fromListObj && fromListObj->asList(context) && leaf != PROTO_NONE) {
@@ -1027,9 +1027,23 @@ static const proto::ProtoObject* py_object_init(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
-    // object.__init__() takes no parameters
     if (positionalParameters && positionalParameters->getSize(context) > 1) { // 1 is self
         PythonEnvironment* env = PythonEnvironment::fromContext(context);
+        std::string clsName = "unknown";
+        if (env && positionalParameters->getSize(context) > 0) {
+             const proto::ProtoObject* inst = positionalParameters->getAt(context, 0);
+             if (inst) {
+                  const proto::ProtoObject* cls = inst->getAttribute(context, env->getClassString());
+                  if (cls) {
+                       const proto::ProtoObject* nAttr = cls->getAttribute(context, env->getNameString());
+                       if (nAttr && nAttr->isString(context)) nAttr->asString(context)->toUTF8String(context, clsName);
+                  }
+             }
+        }
+        if (std::getenv("PROTO_ENV_DIAG")) {
+             fprintf(stderr, "DEBUG HANG: py_object_init called on instance with class '%s' args=%zu\n", clsName.c_str(), positionalParameters->getSize(context));
+             fprintf(stderr, "DEBUG HANG: py_object_init addr pointer is %p\n", (void*)py_object_init);
+        }
         if (env) env->raiseTypeError(context, "object.__init__() takes exactly one argument (the instance to initialize)");
     }
     return PROTO_NONE;
@@ -2252,6 +2266,17 @@ extern const proto::ProtoObject* runUserClassCall(proto::ProtoContext* ctx,
 
 namespace builtins {
 
+static const proto::ProtoObject* py_type_init(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    // type.__init__ generally ignores its arguments as initialization 
+    // happens inside py_type (which acts as __new__).
+    return PROTO_NONE;
+}
+
 const proto::ProtoObject* py_type(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -2926,6 +2951,17 @@ static const proto::ProtoObject* py_property_set(
     return PROTO_NONE;
 }
 
+static const proto::ProtoObject* py_property_init(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    // property.__init__ ignores its positional and keyword parameters.
+    // Initialization is already done natively in __new__.
+    return PROTO_NONE;
+}
+
 static const proto::ProtoObject* py_property(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -3446,8 +3482,17 @@ static const proto::ProtoObject* py_filter_next(
         if (!val) return nullptr;
         
         const proto::ProtoObject* result = env ? env->callObject(func, {val}) : nullptr;
-        if (filter_is_truthy(context, result)) return val;
     }
+}
+
+static const proto::ProtoObject* py_ignore_init(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    // __init__ ignores its parameters for native types that handle initialization in __new__
+    return PROTO_NONE;
 }
 
 static const proto::ProtoObject* py_map(
@@ -3634,7 +3679,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
         const proto::ProtoString* s_setattr = proto::ProtoString::fromUTF8String(ctx, "__setattr__");
         objectProto = const_cast<proto::ProtoObject*>(objectProto)->setAttribute(ctx, s_setattr, ctx->fromMethod(const_cast<proto::ProtoObject*>(objectProto), py_object_setattr));
         objectProto = const_cast<proto::ProtoObject*>(objectProto)->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__getattribute__"), ctx->fromMethod(const_cast<proto::ProtoObject*>(objectProto), py_object_getattribute));
-        objectProto = const_cast<proto::ProtoObject*>(objectProto)->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__init__"), ctx->fromMethod(const_cast<proto::ProtoObject*>(objectProto), py_object_init));
+        protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(ctx);
+        objectProto = const_cast<proto::ProtoObject*>(objectProto)->setAttribute(ctx, env ? env->getInitString() : proto::ProtoString::fromUTF8String(ctx, "__init__"), ctx->fromMethod(const_cast<proto::ProtoObject*>(objectProto), py_object_init));
         // Update the space's objectPrototype!
         ctx->space->objectPrototype = const_cast<proto::ProtoObject*>(objectProto);
     }
@@ -3643,10 +3689,13 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
         if (get_env_diag()) {
             printf("DEBUG: Registering 'type' using typeProto=%p\n", (void*)typeProto);
         }
-        const proto::ProtoString* s_call = proto::ProtoString::fromUTF8String(ctx, "__call__");
+        protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(ctx);
+        const proto::ProtoString* s_call = env ? env->getCallString() : proto::ProtoString::fromUTF8String(ctx, "__call__");
         const proto::ProtoString* s_new = proto::ProtoString::fromUTF8String(ctx, "__new__");
+        const proto::ProtoString* s_init = env ? env->getInitString() : proto::ProtoString::fromUTF8String(ctx, "__init__");
         typeProto = const_cast<proto::ProtoObject*>(typeProto)->setAttribute(ctx, s_call, ctx->fromMethod(const_cast<proto::ProtoObject*>(typeProto), py_type));
         typeProto = const_cast<proto::ProtoObject*>(typeProto)->setAttribute(ctx, s_new, ctx->fromMethod(nullptr, py_type));
+        typeProto = const_cast<proto::ProtoObject*>(typeProto)->setAttribute(ctx, s_init, ctx->fromMethod(nullptr, py_type_init));
         builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "type"), typeProto);
     } else {
         if (get_env_diag()) {
@@ -3724,6 +3773,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     if (typeProto) rangeClass = rangeClass->setAttribute(ctx, py_class_local, typeProto);
     rangeClass = rangeClass->setAttribute(ctx, py_name_local, proto::ProtoString::fromUTF8String(ctx, "range")->asObject(ctx));
     rangeClass = rangeClass->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__new__"), ctx->fromMethod(nullptr, py_range_new));
+    rangeClass = rangeClass->setAttribute(ctx, pEnv ? pEnv->getInitString() : proto::ProtoString::fromUTF8String(ctx, "__init__"), ctx->fromMethod(nullptr, py_ignore_init));
     builtins = builtins->setAttribute(ctx, pEnv ? pEnv->getRangeString() : proto::ProtoString::fromUTF8String(ctx, "range"), rangeClass);
 
     const proto::ProtoObject* zipProto = ctx->newObject(false);
@@ -3731,6 +3781,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     if (typeProto) zipProto = zipProto->setAttribute(ctx, py_class_local, typeProto);
     zipProto = zipProto->setAttribute(ctx, py_name_local, proto::ProtoString::fromUTF8String(ctx, "zip")->asObject(ctx));
     zipProto = zipProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__new__"), ctx->fromMethod(nullptr, py_zip));
+    zipProto = zipProto->setAttribute(ctx, pEnv ? pEnv->getInitString() : proto::ProtoString::fromUTF8String(ctx, "__init__"), ctx->fromMethod(nullptr, py_ignore_init));
     zipProto = zipProto->setAttribute(ctx, pEnv->getIterString(), ctx->fromMethod(const_cast<proto::ProtoObject*>(zipProto), py_self_iter));
     zipProto = zipProto->setAttribute(ctx, pEnv->getNextString(), ctx->fromMethod(const_cast<proto::ProtoObject*>(zipProto), py_zip_next));
     builtins = builtins->setAttribute(ctx, pEnv->getZipProtoString(), zipProto);
@@ -3740,6 +3791,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     if (typeProto) filterProto = filterProto->setAttribute(ctx, py_class_local, typeProto);
     filterProto = filterProto->setAttribute(ctx, py_name_local, proto::ProtoString::fromUTF8String(ctx, "filter")->asObject(ctx));
     filterProto = filterProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__new__"), ctx->fromMethod(nullptr, py_filter));
+    filterProto = filterProto->setAttribute(ctx, pEnv ? pEnv->getInitString() : proto::ProtoString::fromUTF8String(ctx, "__init__"), ctx->fromMethod(nullptr, py_ignore_init));
     filterProto = filterProto->setAttribute(ctx, pEnv->getIterString(), ctx->fromMethod(const_cast<proto::ProtoObject*>(filterProto), py_self_iter));
     filterProto = filterProto->setAttribute(ctx, pEnv->getNextString(), ctx->fromMethod(const_cast<proto::ProtoObject*>(filterProto), py_filter_next));
     builtins = builtins->setAttribute(ctx, pEnv->getFilterProtoString(), filterProto);
@@ -3749,6 +3801,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     if (typeProto) mapProto = mapProto->setAttribute(ctx, py_class_local, typeProto);
     mapProto = mapProto->setAttribute(ctx, py_name_local, proto::ProtoString::fromUTF8String(ctx, "map")->asObject(ctx));
     mapProto = mapProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__new__"), ctx->fromMethod(nullptr, py_map));
+    mapProto = mapProto->setAttribute(ctx, pEnv ? pEnv->getInitString() : proto::ProtoString::fromUTF8String(ctx, "__init__"), ctx->fromMethod(nullptr, py_ignore_init));
     mapProto = mapProto->setAttribute(ctx, pEnv->getIterString(), ctx->fromMethod(const_cast<proto::ProtoObject*>(mapProto), py_self_iter));
     mapProto = mapProto->setAttribute(ctx, pEnv->getNextString(), ctx->fromMethod(const_cast<proto::ProtoObject*>(mapProto), py_map_next));
     builtins = builtins->setAttribute(ctx, pEnv->getMapProtoString(), mapProto);
@@ -3762,6 +3815,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     if (typeProto) enumProto = enumProto->setAttribute(ctx, py_class_local, typeProto);
     enumProto = enumProto->setAttribute(ctx, py_name_local, proto::ProtoString::fromUTF8String(ctx, "enumerate")->asObject(ctx));
     enumProto = enumProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__new__"), ctx->fromMethod(nullptr, py_enumerate));
+    enumProto = enumProto->setAttribute(ctx, pEnv ? pEnv->getInitString() : proto::ProtoString::fromUTF8String(ctx, "__init__"), ctx->fromMethod(nullptr, py_ignore_init));
     enumProto = enumProto->setAttribute(ctx, pEnv->getIterString(), ctx->fromMethod(const_cast<proto::ProtoObject*>(enumProto), py_self_iter));
     enumProto = enumProto->setAttribute(ctx, pEnv->getNextString(), ctx->fromMethod(const_cast<proto::ProtoObject*>(enumProto), py_enumerate_next));
     builtins = builtins->setAttribute(ctx, pEnv->getEnumProtoString(), enumProto);
@@ -3851,6 +3905,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     propertyProto = propertyProto->setAttribute(ctx, pEnv->getGetDunderString(), ctx->fromMethod(nullptr, py_property_get));
     propertyProto = propertyProto->setAttribute(ctx, pEnv->getSetDunderString(), ctx->fromMethod(nullptr, py_property_set));
     propertyProto = propertyProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__new__"), ctx->fromMethod(nullptr, py_property));
+    const proto::ProtoString* initStr = pEnv ? pEnv->getInitString() : proto::ProtoString::fromUTF8String(ctx, "__init__");
+    propertyProto = propertyProto->setAttribute(ctx, initStr, ctx->fromMethod(nullptr, py_property_init));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "property"), propertyProto);
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "classmethod"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_classmethod));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "staticmethod"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_staticmethod));
