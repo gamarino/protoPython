@@ -350,6 +350,16 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     argvWrapper = argvWrapper->setAttribute(ctx, env ? env->getDataString() : proto::ProtoString::fromUTF8String(ctx, "__data__"), argvList->asObject(ctx));
     sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "argv"), argvWrapper);
 
+    // sys.warnoptions (empty list by default)
+    const proto::ProtoList* warnList = ctx->newList();
+    const proto::ProtoObject* warnWrapper = ctx->newObject(true);
+    if (env && env->getListPrototype()) {
+        warnWrapper = warnWrapper->addParent(ctx, env->getListPrototype());
+        warnWrapper = warnWrapper->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__class__"), env->getListPrototype());
+    }
+    warnWrapper = warnWrapper->setAttribute(ctx, env ? env->getDataString() : proto::ProtoString::fromUTF8String(ctx, "__data__"), warnList->asObject(ctx));
+    sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "warnoptions"), warnWrapper);
+
     // sys.version_info (3, 14, 0)
     const proto::ProtoList* vi = ctx->newList();
     vi = vi->appendLast(ctx, ctx->fromInteger(3));
@@ -418,6 +428,15 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     impl = impl->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "version"), impl_version->asObject(ctx));
     impl = impl->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "cache_tag"), ctx->fromUTF8String("protopython-314"));
     sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "implementation"), impl);
+
+    // sys.flags
+    const proto::ProtoObject* flags = env && env->getObjectPrototype() ? env->getObjectPrototype()->newChild(ctx, true) : ctx->newObject(true);
+    flags = flags->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "optimize"), ctx->fromInteger(0));
+    flags = flags->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "ignore_environment"), ctx->fromInteger(0));
+    flags = flags->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "dont_write_bytecode"), ctx->fromInteger(1));
+    flags = flags->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "dev_mode"), ctx->fromInteger(0));
+    flags = flags->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "context_aware_warnings"), ctx->fromInteger(0));
+    sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "flags"), flags);
 
     // sys.maxsize (64-bit signed max)
     sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "maxsize"), ctx->fromInteger(9223372036854775807LL));

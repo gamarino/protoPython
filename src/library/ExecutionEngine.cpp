@@ -526,6 +526,28 @@ static proto::ProtoObject* createUserFunction(proto::ProtoContext* ctx, const pr
             fn = fn->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__qualname__"), codeName);
         }
     }
+    
+    // Add missing default function attributes required by CPython/functools
+    if (env) {
+        const proto::ProtoString* dictS = proto::ProtoString::fromUTF8String(ctx, "__dict__");
+        const proto::ProtoString* annS = proto::ProtoString::fromUTF8String(ctx, "__annotations__");
+        const proto::ProtoString* modS = proto::ProtoString::fromUTF8String(ctx, "__module__");
+        const proto::ProtoString* docS = proto::ProtoString::fromUTF8String(ctx, "__doc__");
+        
+        const proto::ProtoObject* emptyDict1 = env->getDictPrototype() ? env->getDictPrototype()->newChild(ctx, true) : ctx->newObject(true);
+        const proto::ProtoObject* emptyDict2 = env->getDictPrototype() ? env->getDictPrototype()->newChild(ctx, true) : ctx->newObject(true);
+        
+        fn = fn->setAttribute(ctx, dictS, emptyDict1);
+        fn = fn->setAttribute(ctx, annS, emptyDict2);
+        fn = fn->setAttribute(ctx, docS, PROTO_NONE);
+        
+        const proto::ProtoObject* modName = globalsFrame->getAttribute(ctx, env->getNameString());
+        if (modName && modName != PROTO_NONE) {
+            fn = fn->setAttribute(ctx, modS, modName);
+        } else {
+            fn = fn->setAttribute(ctx, modS, PROTO_NONE);
+        }
+    }
     if (closureFrame && env) {
         // Wrap closure frame in a tuple for CPython compatibility (f.__closure__ is a tuple)
         const proto::ProtoList* closureTuple = ctx->newList()->appendLast(ctx, closureFrame);
@@ -996,8 +1018,8 @@ static const proto::ProtoObject* invokeCallable(proto::ProtoContext* ctx,
     }
 
     if (callable->asMethod(ctx)) {
-        const proto::ProtoObject* self = callable->asMethodSelf(ctx);
-        return callable->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(self), nullptr, args, kwargs);
+        const proto::ProtoObject* methodSelf = callable->asMethodSelf(ctx);
+        return callable->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(methodSelf), nullptr, args, kwargs);
     }
 
     /* FALLBACK TO PUBLIC API __call__ */
@@ -1607,7 +1629,7 @@ const proto::ProtoObject* executeBytecodeRange(
              int arg = (i + 1 < n && bytecode->getAt(ctx, static_cast<int>(i + 1))->isInteger(ctx))
                  ? static_cast<int>(bytecode->getAt(ctx, static_cast<int>(i + 1))->asLong(ctx)) : 0;
              if (std::getenv("PROTO_ENV_DIAG")) {
-                 fprintf(stderr, "DEBUG: [PC %lu] OP %d ARG %d\n", i, op, arg);
+                 fprintf(stderr, "DEBUG HANG TRACE: [PC %lu] OP %d ARG %d\n", i, op, arg);
                  fflush(stderr);
              }
         }
@@ -1624,9 +1646,17 @@ const proto::ProtoObject* executeBytecodeRange(
                 }
                 
                 std::string excMsg = "";
-                const proto::ProtoObject* msg = exc->getAttribute(ctx, env->getStrString());
-                if (msg && msg->isString(ctx)) {
-                    msg->asString(ctx)->toUTF8String(ctx, excMsg);
+                const proto::ProtoObject* strFunc = exc->getAttribute(ctx, env->getStrString());
+                if (strFunc) {
+                    if (strFunc->isString(ctx)) {
+                        strFunc->asString(ctx)->toUTF8String(ctx, excMsg);
+                    } else if (strFunc->asMethod(ctx)) {
+                        const proto::ProtoObject* funcSelf = strFunc->asMethodSelf(ctx);
+                        const proto::ProtoObject* strRes = strFunc->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(funcSelf), nullptr, ctx->newList(), ctx->newSparseList());
+                        if (strRes && strRes->isString(ctx)) {
+                            strRes->asString(ctx)->toUTF8String(ctx, excMsg);
+                        }
+                    }
                 }
 
                 updateContextLocation(ctx, frame, i);
@@ -3747,6 +3777,16 @@ const proto::ProtoObject* executeBytecodeRange(
             const proto::ProtoObject* val = env ? env->next(iterator) : nullptr;
             
             if (val) {
+                static int mystery_loop_count = 0;
+                mystery_loop_count++;
+                if (mystery_loop_count > 100000) {
+                    std::string valStr = "non-string";
+                    if (val->isString(ctx)) val->asString(ctx)->toUTF8String(ctx, valStr);
+                    fprintf(stderr, "CRITICAL INIT LOOP HANG! iterator=%p val=%p ('%s')\n", (void*)iterator, (void*)val, valStr.c_str());
+                    const proto::ProtoObject* iterCls = iterator->getAttribute(ctx, env ? env->getClassString() : proto::ProtoString::fromUTF8String(ctx, "__class__"));
+                    fprintf(stderr, "Iterator class = %p\n", (void*)iterCls);
+                    abort();
+                }
                 stack.push_back(val);
             } else {
                 if (env && env->hasPendingException()) {
@@ -3883,9 +3923,13 @@ const proto::ProtoObject* executeBytecodeRange(
                 const proto::ProtoObject* val = stack.back();
                 stack.pop_back();
                 if (nameObj->isString(ctx)) {
-                    frame = const_cast<proto::ProtoObject*>(frame->setAttribute(ctx, nameObj->asString(ctx), val));
+                    const proto::ProtoObject* globalsObj = PythonEnvironment::getCurrentGlobals();
+                    if (!globalsObj) globalsObj = frame;
+                    const proto::ProtoObject* newGlobals = globalsObj->setAttribute(ctx, nameObj->asString(ctx), val);
+                    PythonEnvironment::setCurrentGlobals(newGlobals);
+                    const proto::ProtoString* fg = env ? env->getFGlobalsString() : getInternalString(ctx, "f_globals");
+                    frame = const_cast<proto::ProtoObject*>(frame->setAttribute(ctx, fg, newGlobals));
                     PythonEnvironment::setCurrentFrame(frame);
-                    if (sync_globals) PythonEnvironment::setCurrentGlobals(frame);
                     if (env) env->invalidateResolveCache();
                 }
             }

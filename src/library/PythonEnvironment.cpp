@@ -735,18 +735,63 @@ static const proto::ProtoObject* py_list_setitem(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
-    const proto::ProtoString* dataName = getInternalString(context, "__data__");
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::ProtoString* dataName = env ? env->getDataString() : getInternalString(context, "__data__");
     const proto::ProtoObject* data = self->getAttribute(context, dataName);
     if (!data || !data->asList(context)) return PROTO_NONE;
     const proto::ProtoList* list = data->asList(context);
     if (positionalParameters->getSize(context) < 2) return PROTO_NONE;
-    int index = static_cast<int>(positionalParameters->getAt(context, 0)->asLong(context));
+    
+    const proto::ProtoObject* indexObj = positionalParameters->getAt(context, 0);
     const proto::ProtoObject* value = positionalParameters->getAt(context, 1);
     unsigned long size = list->getSize(context);
-    if (index < 0) index += static_cast<int>(size);
-    if (index < 0 || static_cast<unsigned long>(index) >= size) return PROTO_NONE;
-    const proto::ProtoList* newList = list->setAt(context, index, value);
-    self->setAttribute(context, dataName, newList->asObject(context));
+
+    if (indexObj->isInteger(context)) {
+        int index = static_cast<int>(indexObj->asLong(context));
+        if (index < 0) index += static_cast<int>(size);
+        if (index < 0 || static_cast<unsigned long>(index) >= size) return PROTO_NONE;
+        const proto::ProtoList* newList = list->setAt(context, index, value);
+        self->setAttribute(context, dataName, newList->asObject(context));
+        return PROTO_NONE;
+    }
+
+    SliceBounds sb = get_slice_bounds(context, indexObj, size);
+    if (sb.isSlice) {
+        if (sb.step != 1) {
+            if (env) env->raiseValueError(context, context->fromUTF8String("extended slice assignment with step != 1 not supported natively yet"));
+            return PROTO_NONE;
+        }
+
+        const proto::ProtoList* valueList = value->asList(context);
+        if (!valueList) {
+            const proto::ProtoObject* vd = value->getAttribute(context, dataName);
+            if (vd) valueList = vd->asList(context);
+        }
+        if (!valueList) {
+            const proto::ProtoTuple* vTuple = value->asTuple(context);
+            if (vTuple) valueList = vTuple->asList(context);
+        }
+        if (!valueList) {
+            if (env) env->raiseTypeError(context, "can only assign an iterable");
+            return PROTO_NONE;
+        }
+
+        const proto::ProtoList* newList = context->newList();
+        for (long long i = 0; i < sb.start; ++i) {
+            newList = newList->appendLast(context, list->getAt(context, static_cast<int>(i)));
+        }
+        for (unsigned long i = 0; i < valueList->getSize(context); ++i) {
+            newList = newList->appendLast(context, valueList->getAt(context, static_cast<int>(i)));
+        }
+        for (long long i = sb.stop; i < static_cast<long long>(size); ++i) {
+            newList = newList->appendLast(context, list->getAt(context, static_cast<int>(i)));
+        }
+
+        self->setAttribute(context, dataName, newList->asObject(context));
+        return PROTO_NONE;
+    }
+
+    if (env) env->raiseTypeError(context, "list indices must be integers or slices, not other types");
     return PROTO_NONE;
 }
 
@@ -756,12 +801,20 @@ static const proto::ProtoObject* py_list_delitem(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
-    const proto::ProtoString* dataName = PythonEnvironment::fromContext(context)->getDataString();
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::ProtoString* dataName = env ? env->getDataString() : getInternalString(context, "__data__");
     const proto::ProtoObject* data = self->getAttribute(context, dataName);
     if (!data || !data->asList(context)) return PROTO_NONE;
     const proto::ProtoList* list = data->asList(context);
     if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
-    int index = static_cast<int>(positionalParameters->getAt(context, 0)->asLong(context));
+    
+    const proto::ProtoObject* indexObj = positionalParameters->getAt(context, 0);
+    if (!indexObj->isInteger(context)) {
+        if (env) env->raiseTypeError(context, "list indices must be integers or slices, not other types (slice deletion not supported natively yet)");
+        return PROTO_NONE;
+    }
+    
+    int index = static_cast<int>(indexObj->asLong(context));
     unsigned long size = list->getSize(context);
     if (index < 0) index += static_cast<int>(size);
     if (index < 0 || static_cast<unsigned long>(index) >= size) return PROTO_NONE;
@@ -878,6 +931,9 @@ static const proto::ProtoObject* py_list_reversed(
     const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
     const proto::ProtoString* revProtoName = proto::ProtoString::fromUTF8String(context, "__reversed_prototype__");
     const proto::ProtoObject* revProto = self->getAttribute(context, revProtoName);
+    if (get_env_diag()) {
+        printf("DEBUG: py_list_reversed self=%p revProto=%p\n", (void*)self, (void*)revProto);
+    }
     if (!revProto) return PROTO_NONE;
     const proto::ProtoString* dataName = getInternalString(context, "__data__");
     const proto::ProtoObject* data = self->getAttribute(context, dataName);
@@ -8597,6 +8653,15 @@ const proto::ProtoObject* PythonEnvironment::getType(proto::ProtoContext* ctx, c
 const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* ctx, const proto::ProtoObject* obj, const proto::ProtoString* name) {
     if (!obj || !name) return nullptr;
     
+    std::string nameStr;
+    name->toUTF8String(ctx, nameStr);
+    bool tracing = false;
+    if (nameStr == "__setattr__" || nameStr == "_local__impl") {
+        tracing = true;
+        fprintf(stderr, "TRACE_GET: getAttribute obj=%p name='%s' name_ptr=%p\n", (void*)obj, nameStr.c_str(), (void*)name);
+        fflush(stderr);
+    }
+
     // Recursion Guard for binding logic
     static thread_local int getAttrDepth = 0;
     if (getAttrDepth > 20) {
@@ -8621,7 +8686,12 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
         if (getattrM && getattrM->isMethod(ctx)) {
              getAttrDepth--;
              const proto::ProtoList* args = ctx->newList()->appendLast(ctx, name->asObject(ctx));
-             return getattrM->asMethod(ctx)(ctx, obj, nullptr, args, nullptr);
+             const proto::ProtoObject* res = getattrM->asMethod(ctx)(ctx, obj, nullptr, args, nullptr);
+             if (tracing) {
+                 fprintf(stderr, "TRACE_GET: returning from super proxy __getattr__\n");
+                 fflush(stderr);
+             }
+             return res;
         }
     }
     
@@ -8686,6 +8756,10 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
     // 1.2 Metaclass / Class Lookup Fallback
     // If not found on the object itself or via its MRO, check the object's class natively (`type(obj)`).
     if (!val || (!isExplicitNone && val == PROTO_NONE)) {
+        if (tracing) {
+            fprintf(stderr, "TRACE_GET: not found on class or MRO, checking metaclass\n");
+            fflush(stderr);
+        }
         const proto::ProtoString* clsS = this->getClassString();
         if (clsS) {
             const proto::ProtoObject* cls = this->getType(ctx, obj);
@@ -8711,6 +8785,11 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
                 }
             }
         }
+    }
+
+    if (tracing) {
+        fprintf(stderr, "TRACE_GET: after metaclass fallback: val=%p\n", (void*)val);
+        fflush(stderr);
     }
 
 

@@ -13,6 +13,7 @@ try:
 except ImportError:
     from collections import deque as _deque
 
+print("THREADING: done imports at top")
 # Note regarding PEP 8 compliant names
 #  This threading model was originally inspired by Java, and inherited
 # the convention of camelCase function and method names from that
@@ -66,7 +67,7 @@ del _thread
 try:
     from _thread import _local as local
 except ImportError:
-    from _threading_local import local
+    pass # Will import from _threading_local at the end of this module
 
 # Support for profile and trace hooks
 
@@ -1308,15 +1309,18 @@ def _make_invoke_excepthook():
     # Create a local namespace to ensure that variables remain alive
     # when _invoke_excepthook() is called, even if it is called late during
     # Python shutdown. It is mostly needed for daemon threads.
-
     old_excepthook = excepthook
-    old_sys_excepthook = _sys.excepthook
-    if old_excepthook is None:
-        raise RuntimeError("threading.excepthook is None")
+    try:
+        old_sys_excepthook = _sys.excepthook
+    except AttributeError:
+        old_sys_excepthook = None
     if old_sys_excepthook is None:
-        raise RuntimeError("sys.excepthook is None")
+        pass
 
-    sys_exc_info = _sys.exc_info
+    try:
+        sys_exc_info = _sys.exc_info
+    except AttributeError:
+        sys_exc_info = lambda: (None, None, None)
     local_print = print
     local_sys = _sys
 
@@ -1402,8 +1406,9 @@ class _MainThread(Thread):
 
 # Helper thread-local instance to detect when a _DummyThread
 # is collected. Not a part of the public API.
-_thread_local_info = local()
 
+
+print("THREADING: defining current_thread")
 
 class _DeleteDummyThreadOnDel:
     '''
@@ -1547,7 +1552,10 @@ def _register_atexit(func, *arg, **kwargs):
     _threading_atexits.append(lambda: func(*arg, **kwargs))
 
 
-from _thread import stack_size
+try:
+    from _thread import stack_size
+except ImportError:
+    pass
 
 # Create the main thread object,
 # and make it available for the interpreter
@@ -1639,3 +1647,17 @@ def _after_fork():
 
 if hasattr(_os, "register_at_fork"):
     _os.register_at_fork(after_in_child=_after_fork)
+
+print("THREADING: doing target_local")
+target_local = None
+if 'local' in dir():
+    target_local = local
+else:
+    try:
+        from _thread import _local as target_local
+        local = target_local
+    except ImportError:
+        from _threading_local import local
+        target_local = local
+
+_thread_local_info = target_local()

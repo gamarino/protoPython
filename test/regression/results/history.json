@@ -451,5 +451,25 @@
     "failed_tests": [
       "/home/gamarino/Documentos/proyectos/protoPython/build/src/runtime/protopy"
     ]
+  },
+  {
+    "passed": 0,
+    "failed": 1,
+    "total": 1,
+    "compatibility_pct": 0.0,
+    "timestamp": "2026-03-02T22:34:10.147985+00:00",
+    "failed_tests": [
+      "/home/gamarino/Documentos/proyectos/protoPython/build/src/runtime/protopy"
+    ]
+  },
+  {
+    "passed": 0,
+    "failed": 1,
+    "total": 1,
+    "compatibility_pct": 0.0,
+    "timestamp": "2026-03-03T01:26:46.262887+00:00",
+    "failed_tests": [
+      "/home/gamarino/Documentos/proyectos/protoPython/build/src/runtime/protopy"
+    ]
   }
 ]

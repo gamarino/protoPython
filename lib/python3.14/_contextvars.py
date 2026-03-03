@@ -1,5 +1,3 @@
-import threading
-
 __all__ = ('Context', 'ContextVar', 'Token', 'copy_context')
 
 class _Sentinel:
@@ -13,7 +11,12 @@ def _get_state():
     global _state
     if _state is None:
         import threading
-        _state = threading.local()
+        try:
+            _state = threading.local()
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            raise
     return _state
 
 def _get_current_context():

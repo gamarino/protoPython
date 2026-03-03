@@ -263,7 +263,10 @@ TEST(ExecutionEngineTest, CallFunction) {
     const proto::ProtoObject* callableObj = ctx.newObject(true);
     proto::ProtoObject* mutableCallable = const_cast<proto::ProtoObject*>(callableObj);
     const proto::ProtoObject* method = ctx.fromMethod(mutableCallable, callable_returns_42);
-    mutableCallable->setAttribute(&ctx, proto::ProtoString::fromUTF8String(&ctx, "__call__"), method);
+    const proto::ProtoObject* typeObj = ctx.newObject(true);
+    proto::ProtoObject* mutableType = const_cast<proto::ProtoObject*>(typeObj);
+    mutableType->setAttribute(&ctx, proto::ProtoString::fromUTF8String(&ctx, "__call__"), method);
+    mutableCallable->setAttribute(&ctx, proto::ProtoString::fromUTF8String(&ctx, "__class__"), typeObj);
     const proto::ProtoList* constants = ctx.newList()
         ->appendLast(&ctx, callableObj)
         ->appendLast(&ctx, ctx.fromInteger(0));

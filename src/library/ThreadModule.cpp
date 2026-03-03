@@ -176,6 +176,43 @@ static const proto::ProtoObject* py_rlock_locked(
     if (!ld) return PROTO_FALSE;
     return ld->count > 0 ? PROTO_TRUE : PROTO_FALSE;
 }
+static const proto::ProtoObject* py_lock_enter(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList* kwargs) {
+    return py_lock_acquire(ctx, self, parentLink, nullptr, nullptr);
+}
+
+static const proto::ProtoObject* py_lock_exit(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList* kwargs) {
+    py_lock_release(ctx, self, parentLink, nullptr, nullptr);
+    return PROTO_NONE;
+}
+
+static const proto::ProtoObject* py_rlock_enter(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList* kwargs) {
+    return py_rlock_acquire(ctx, self, parentLink, nullptr, nullptr);
+}
+
+static const proto::ProtoObject* py_rlock_exit(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList* kwargs) {
+    py_rlock_release(ctx, self, parentLink, nullptr, nullptr);
+    return PROTO_NONE;
+}
 
 /** Diagnostic: count distinct OS threads that enter thread_bootstrap (PROTO_THREAD_DIAG=1). Lock-free. */
 static std::atomic<int> s_bootstrapTidCount{0};
@@ -402,6 +439,10 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(nullptr, py_lock_release));
     lockProt = lockProt->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "locked"), 
         ctx->fromMethod(nullptr, py_lock_locked));
+    lockProt = lockProt->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__enter__"), 
+        ctx->fromMethod(nullptr, py_lock_enter));
+    lockProt = lockProt->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__exit__"), 
+        ctx->fromMethod(nullptr, py_lock_exit));
 
     rlockProt = ctx->newObject(true);
     rlockProt = rlockProt->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "acquire"), 
@@ -410,6 +451,10 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(nullptr, py_rlock_release));
     rlockProt = rlockProt->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "locked"), 
         ctx->fromMethod(nullptr, py_rlock_locked));
+    rlockProt = rlockProt->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__enter__"), 
+        ctx->fromMethod(nullptr, py_rlock_enter));
+    rlockProt = rlockProt->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__exit__"), 
+        ctx->fromMethod(nullptr, py_rlock_exit));
 
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "start_new_thread"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_start_new_thread));

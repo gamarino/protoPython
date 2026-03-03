@@ -98,15 +98,171 @@ static const proto::ProtoObject* py_search(
     return mo;
 }
 
+static const proto::ProtoObject* py_escape(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    const proto::ProtoObject* patObj = posArgs->getAt(ctx, 0);
+    if (!patObj->isString(ctx)) return patObj; // Or raise TypeError
+
+    std::string s;
+    patObj->asString(ctx)->toUTF8String(ctx, s);
+    
+    std::string escaped;
+    for (char c : s) {
+        if (!isalnum((unsigned char)c) && c != '_') {
+            escaped += '\\';
+        }
+        escaped += c;
+    }
+    return ctx->fromUTF8String(escaped.c_str());
+}
+
+static const proto::ProtoObject* py_pattern_match(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    const proto::ProtoObject* strObj = posArgs->getAt(ctx, 0);
+    
+    std::string pat;
+    const proto::ProtoObject* patAttr = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__re_pattern__"));
+    if (patAttr && patAttr->isString(ctx))
+        patAttr->asString(ctx)->toUTF8String(ctx, pat);
+    else
+        return PROTO_NONE;
+        
+    std::string s;
+    if (!strObj->isString(ctx)) return PROTO_NONE;
+    strObj->asString(ctx)->toUTF8String(ctx, s);
+
+    std::regex re;
+    try {
+        re = std::regex(pat);
+    } catch (...) {
+        return PROTO_NONE;
+    }
+    std::smatch m;
+    if (!std::regex_search(s, m, re) || m.position() != 0) return PROTO_NONE;
+
+    const proto::ProtoObject* matchProto = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__match_proto__"));
+    // Fallback if the pattern doesn't have it (though it should)
+    if (!matchProto) return PROTO_NONE;
+    
+    const proto::ProtoObject* mo = matchProto->newChild(ctx, true);
+    mo = mo->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__re_match_str__"), ctx->fromUTF8String(m.str().c_str()));
+    return mo;
+}
+
+static const proto::ProtoObject* py_pattern_search(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    const proto::ProtoObject* strObj = posArgs->getAt(ctx, 0);
+    
+    std::string pat;
+    const proto::ProtoObject* patAttr = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__re_pattern__"));
+    if (patAttr && patAttr->isString(ctx))
+        patAttr->asString(ctx)->toUTF8String(ctx, pat);
+    else
+        return PROTO_NONE;
+        
+    std::string s;
+    if (!strObj->isString(ctx)) return PROTO_NONE;
+    strObj->asString(ctx)->toUTF8String(ctx, s);
+
+    std::regex re;
+    try {
+        re = std::regex(pat);
+    } catch (...) {
+        return PROTO_NONE;
+    }
+    std::smatch m;
+    if (!std::regex_search(s, m, re)) return PROTO_NONE;
+
+    const proto::ProtoObject* matchProto = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__match_proto__"));
+    if (!matchProto) return PROTO_NONE;
+    
+    const proto::ProtoObject* mo = matchProto->newChild(ctx, true);
+    mo = mo->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__re_match_str__"), ctx->fromUTF8String(m.str().c_str()));
+    return mo;
+}
+
+static const proto::ProtoObject* py_pattern_sub(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
+    const proto::ProtoObject* replObj = posArgs->getAt(ctx, 0);
+    const proto::ProtoObject* strObj = posArgs->getAt(ctx, 1);
+    
+    std::string pat;
+    const proto::ProtoObject* patAttr = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__re_pattern__"));
+    if (patAttr && patAttr->isString(ctx))
+        patAttr->asString(ctx)->toUTF8String(ctx, pat);
+    else
+        return PROTO_NONE;
+        
+    std::string replStr;
+    if (replObj->isString(ctx)) {
+        replObj->asString(ctx)->toUTF8String(ctx, replStr);
+    } else {
+        // Can't handle callable repl right now, just fallback or ignore
+        return strObj; 
+    }
+    
+    std::string s;
+    if (!strObj->isString(ctx)) return PROTO_NONE;
+    strObj->asString(ctx)->toUTF8String(ctx, s);
+
+    std::regex re;
+    try {
+        re = std::regex(pat);
+    } catch (...) {
+        return strObj;
+    }
+    
+    std::string res;
+    try {
+        res = std::regex_replace(s, re, replStr);
+    } catch (...) {
+        return strObj;
+    }
+
+    return ctx->fromUTF8String(res.c_str());
+}
+
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     const proto::ProtoObject* mod = ctx->newObject(true);
     const proto::ProtoObject* patternProto = ctx->newObject(true);
+    
+    const proto::ProtoObject* matchProto = ctx->newObject(true);
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__match_proto__"), matchProto);
+    
+    patternProto = patternProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__match_proto__"), matchProto);
+    patternProto = patternProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "match"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(patternProto), py_pattern_match));
+    patternProto = patternProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "search"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(patternProto), py_pattern_search));
+    patternProto = patternProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "sub"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(patternProto), py_pattern_sub));
+        
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__pattern_proto__"), patternProto);
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "compile"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_compile));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "escape"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_escape));
 
-    const proto::ProtoObject* matchProto = ctx->newObject(true);
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__match_proto__"), matchProto);
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "match"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_match));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "search"),
