@@ -7883,6 +7883,30 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain,
                                             mods->setAttribute(ctx, getDataString(), newDict->asObject(ctx));
                                         }
                                     }
+
+                                    // Bind submodule to parent module
+                                    size_t lastDot = moduleName.find_last_of('.');
+                                    if (lastDot != std::string::npos) {
+                                        std::string parentName = moduleName.substr(0, lastDot);
+                                        std::string childName = moduleName.substr(lastDot + 1);
+                                        
+                                        const proto::ProtoString* parentNameS = proto::ProtoString::fromUTF8String(ctx, parentName.c_str());
+                                        const proto::ProtoObject* parentMod = nullptr;
+                                        
+                                        if (dataAttr && dataAttr != PROTO_NONE) {
+                                            const proto::ProtoSparseList* dict = dataAttr->asSparseList(ctx);
+                                            if (dict && dict->has(ctx, parentNameS->getHash(ctx))) {
+                                                parentMod = dict->getAt(ctx, parentNameS->getHash(ctx));
+                                            }
+                                        }
+                                        if (!parentMod || parentMod == PROTO_NONE) {
+                                            parentMod = mods->getAttribute(ctx, parentNameS);
+                                        }
+                                        
+                                        if (parentMod && parentMod != PROTO_NONE) {
+                                            const_cast<proto::ProtoObject*>(parentMod)->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, childName.c_str()), mutableMod);
+                                        }
+                                    }
                                 }
                             }
 
