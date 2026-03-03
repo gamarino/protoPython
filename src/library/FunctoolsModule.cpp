@@ -48,8 +48,8 @@ static const proto::ProtoObject* py_partial(
 }
 
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
-    const proto::ProtoObject* mod = ctx->newObject(true);
-    const proto::ProtoObject* partialProto = ctx->newObject(true);
+    const proto::ProtoObject* mod = ctx->newObject(false);
+    const proto::ProtoObject* partialProto = ctx->newObject(false);
     partialProto = partialProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__call__"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(partialProto), py_partial_call));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__partial_proto__"), partialProto);

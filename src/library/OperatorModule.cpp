@@ -280,7 +280,7 @@ static const proto::ProtoObject* py_itemgetter(
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     
-    proto::ProtoObject* getter = const_cast<proto::ProtoObject*>(ctx->newObject(true));
+    proto::ProtoObject* getter = const_cast<proto::ProtoObject*>(ctx->newObject(false));
     getter->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__items__"), posArgs->asObject(ctx));
     getter->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__call__"),
         ctx->fromMethod(getter, py_itemgetter_call));
@@ -288,7 +288,7 @@ static const proto::ProtoObject* py_itemgetter(
 }
 
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
-    const proto::ProtoObject* mod = ctx->newObject(true);
+    const proto::ProtoObject* mod = ctx->newObject(false);
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "add"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_add));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "sub"),

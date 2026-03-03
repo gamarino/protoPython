@@ -77,7 +77,7 @@ static const proto::ProtoObject* py_abc_check_methods(
 
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     auto createAbc = [&](const char* name) {
-        proto::ProtoObject* abc = const_cast<proto::ProtoObject*>(ctx->newObject(true));
+        proto::ProtoObject* abc = const_cast<proto::ProtoObject*>(ctx->newObject(false));
         abc->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__call__"),
             ctx->fromMethod(abc, py_abc_call));
         abc->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "register"),
@@ -102,7 +102,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         return abc;
     };
 
-    const proto::ProtoObject* mod = ctx->newObject(true);
+    const proto::ProtoObject* mod = ctx->newObject(false);
     const char* names[] = {
         "Hashable", "Iterable", "Iterator", "Sized", "Container", "Collection",
         "Mapping", "MutableMapping", "Sequence", "MutableSequence",

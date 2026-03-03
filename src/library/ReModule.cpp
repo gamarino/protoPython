@@ -243,10 +243,10 @@ static const proto::ProtoObject* py_pattern_sub(
 }
 
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
-    const proto::ProtoObject* mod = ctx->newObject(true);
-    const proto::ProtoObject* patternProto = ctx->newObject(true);
+    const proto::ProtoObject* mod = ctx->newObject(false);
+    const proto::ProtoObject* patternProto = ctx->newObject(false);
     
-    const proto::ProtoObject* matchProto = ctx->newObject(true);
+    const proto::ProtoObject* matchProto = ctx->newObject(false);
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__match_proto__"), matchProto);
     
     patternProto = patternProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__match_proto__"), matchProto);

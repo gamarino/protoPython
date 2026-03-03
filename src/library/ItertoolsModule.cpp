@@ -529,9 +529,9 @@ static const proto::ProtoObject* py_chain(
 }
 
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
-    const proto::ProtoObject* mod = ctx->newObject(true);
+    const proto::ProtoObject* mod = ctx->newObject(false);
 
-    const proto::ProtoObject* countProto = ctx->newObject(true);
+    const proto::ProtoObject* countProto = ctx->newObject(false);
     countProto = countProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iter__"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(countProto), py_iter_self));
     countProto = countProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__next__"),
@@ -540,7 +540,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "count"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_count));
 
-    const proto::ProtoObject* isliceProto = ctx->newObject(true);
+    const proto::ProtoObject* isliceProto = ctx->newObject(false);
     isliceProto = isliceProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iter__"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(isliceProto), py_iter_self));
     isliceProto = isliceProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__next__"),
@@ -549,7 +549,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "islice"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_islice));
 
-    const proto::ProtoObject* chainProto = ctx->newObject(true);
+    const proto::ProtoObject* chainProto = ctx->newObject(false);
     chainProto = chainProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iter__"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(chainProto), py_iter_self));
     chainProto = chainProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__next__"),
@@ -558,7 +558,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "chain"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_chain));
 
-    const proto::ProtoObject* repeatProto = ctx->newObject(true);
+    const proto::ProtoObject* repeatProto = ctx->newObject(false);
     repeatProto = repeatProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iter__"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(repeatProto), py_iter_self));
     repeatProto = repeatProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__next__"),
@@ -567,7 +567,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "repeat"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_repeat));
 
-    const proto::ProtoObject* cycleProto = ctx->newObject(true);
+    const proto::ProtoObject* cycleProto = ctx->newObject(false);
     cycleProto = cycleProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iter__"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(cycleProto), py_iter_self));
     cycleProto = cycleProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__next__"),
@@ -576,7 +576,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "cycle"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_cycle));
 
-    const proto::ProtoObject* takewhileProto = ctx->newObject(true);
+    const proto::ProtoObject* takewhileProto = ctx->newObject(false);
     takewhileProto = takewhileProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iter__"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(takewhileProto), py_iter_self));
     takewhileProto = takewhileProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__next__"),
@@ -585,7 +585,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "takewhile"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_takewhile));
 
-    const proto::ProtoObject* dropwhileProto = ctx->newObject(true);
+    const proto::ProtoObject* dropwhileProto = ctx->newObject(false);
     dropwhileProto = dropwhileProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iter__"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(dropwhileProto), py_iter_self));
     dropwhileProto = dropwhileProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__next__"),
@@ -596,7 +596,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
 
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "tee"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_tee));
-    const proto::ProtoObject* accumulateProto = ctx->newObject(true);
+    const proto::ProtoObject* accumulateProto = ctx->newObject(false);
     accumulateProto = accumulateProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iter__"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(accumulateProto), py_iter_self));
     accumulateProto = accumulateProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__next__"),
@@ -615,7 +615,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "permutations"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_permutations_stub));
 
-    const proto::ProtoObject* starmapProto = ctx->newObject(true);
+    const proto::ProtoObject* starmapProto = ctx->newObject(false);
     starmapProto = starmapProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iter__"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(starmapProto), py_iter_self));
     starmapProto = starmapProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__next__"),

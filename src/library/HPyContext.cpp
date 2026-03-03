@@ -166,7 +166,7 @@ static const proto::ProtoObject* hpy_method_wrapper(
 const proto::ProtoObject* HPy_WrapMethod(HPyContext* hctx, const char* name, HPyCFunction meth) {
     if (!hctx || !hctx->ctx || !meth) return nullptr;
     
-    const proto::ProtoObject* wrap = hctx->ctx->newObject(true);
+    const proto::ProtoObject* wrap = hctx->ctx->newObject(false);
     const proto::ProtoString* py_name = proto::ProtoString::fromUTF8String(hctx->ctx, "__name__");
     const proto::ProtoString* py_call = proto::ProtoString::fromUTF8String(hctx->ctx, "__call__");
     const proto::ProtoString* py_meth = proto::ProtoString::fromUTF8String(hctx->ctx, "__hpy_meth__");
@@ -182,7 +182,7 @@ HPy HPyModule_Create(HPyContext* hctx, HPyModuleDef* def) {
     if (!hctx || !hctx->ctx || !def) return 0;
     
     // 1. Create a basic ProtoObject for the module
-    const proto::ProtoObject* mod = hctx->ctx->newObject(true);
+    const proto::ProtoObject* mod = hctx->ctx->newObject(false);
     
     // 2. Set module name
     const proto::ProtoString* py_name = proto::ProtoString::fromUTF8String(hctx->ctx, "__name__");
@@ -388,7 +388,7 @@ HPy HPyErr_NewException(HPyContext* hctx, const char* name, HPy base, HPy dict) 
     if (!baseObj) {
         // Find 'Exception' in the context or use a default
         // For Phase 3/4, we assume HPy modules likely provide their own bases or use 0
-        baseObj = hctx->ctx->newObject(true); // Default to a new object if base unidentified
+        baseObj = hctx->ctx->newObject(false); // Default to a new object if base unidentified
     }
     const proto::ProtoObject* exc = baseObj->newChild(hctx->ctx, true);
     const proto::ProtoString* py_name = proto::ProtoString::fromUTF8String(hctx->ctx, "__name__");
@@ -531,7 +531,7 @@ HPy HPy_Next(HPyContext* hctx, HPy iter) {
 HPy HPySlice_New(HPyContext* hctx, HPy start, HPy stop, HPy step) {
     if (!hctx || !hctx->ctx) return 0;
     // Mock slice object
-    const proto::ProtoObject* slice = hctx->ctx->newObject(true);
+    const proto::ProtoObject* slice = hctx->ctx->newObject(false);
     HPy_SetAttr_s(hctx, hctx->fromProtoObject(slice), "start", start);
     HPy_SetAttr_s(hctx, hctx->fromProtoObject(slice), "stop", stop);
     HPy_SetAttr_s(hctx, hctx->fromProtoObject(slice), "step", step);
@@ -540,7 +540,7 @@ HPy HPySlice_New(HPyContext* hctx, HPy start, HPy stop, HPy step) {
 
 HPy HPyType_FromSpec(HPyContext* hctx, HPyType_Spec* spec) {
     if (!hctx || !hctx->ctx || !spec) return 0;
-    const proto::ProtoObject* typeObj = hctx->ctx->newObject(true);
+    const proto::ProtoObject* typeObj = hctx->ctx->newObject(false);
     const proto::ProtoString* py_name = proto::ProtoString::fromUTF8String(hctx->ctx, "__name__");
     typeObj->setAttribute(hctx->ctx, py_name, hctx->ctx->fromUTF8String(spec->name));
     // Implementation of slots would go here (Step 1256)

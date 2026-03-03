@@ -1,8 +1,6 @@
 #!/bin/bash
-PROTO_PYTHONPATH=/mnt/c/Users/gamar/PycharmProjects/protoPython/lib/python3.14
-export PROTO_PYTHONPATH
-gdb -batch -ex "run" -ex "bt full" -ex "quit" --args /mnt/c/Users/gamar/PycharmProjects/protoPython/wsl-build/src/runtime/protopy lib/python3.14/test/test_grammar.py > gdb_out.txt 2>&1 &
+gdb -batch -ex "run" -ex "bt" -ex "frame 1" -ex "print i" -ex "print op" --args ./cmake-build-debug/src/runtime/protopy test_match.py &
 GDB_PID=$!
-sleep 15
+sleep 1
 kill -INT $GDB_PID
 wait $GDB_PID

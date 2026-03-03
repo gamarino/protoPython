@@ -86,7 +86,8 @@ int Compiler::addName(const std::string& name) {
     auto it = namesIndex_.find(name);
     if (it != namesIndex_.end()) return it->second;
     int idx = static_cast<int>(namesVec_.size());
-    const proto::ProtoString* str = proto::ProtoString::fromUTF8String(ctx_, name.c_str());
+    auto* env = protoPython::PythonEnvironment::get(ctx_);
+    const proto::ProtoString* str = env ? env->getInternedString(ctx_, name.c_str()) : proto::ProtoString::fromUTF8String(ctx_, name.c_str());
     namesVec_.push_back(reinterpret_cast<const proto::ProtoObject*>(str));
     namesIndex_[name] = idx;
     return idx;
@@ -2864,7 +2865,7 @@ const proto::ProtoObject* makeCodeObject(proto::ProtoContext* ctx,
     int firstlineno,
     const proto::ProtoTuple* lnotab) {
     if (!ctx) return PROTO_NONE;
-    const proto::ProtoObject* code = ctx->newObject(true);
+    const proto::ProtoObject* code = ctx->newObject(false);
     // Optional: add a 'code_proto' if we want to share methods like .exec()
     code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_consts"), reinterpret_cast<const proto::ProtoObject*>(constants));
     code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_names"), names ? reinterpret_cast<const proto::ProtoObject*>(names) : reinterpret_cast<const proto::ProtoObject*>(ctx->newTuple()));

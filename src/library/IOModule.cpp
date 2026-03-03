@@ -74,7 +74,7 @@ static const proto::ProtoObject* py_io_open(
         positionalParameters->getAt(context, 1)->asString(context)->toUTF8String(context, mode);
     }
 
-    const proto::ProtoObject* fileObj = context->newObject(true);
+    const proto::ProtoObject* fileObj = context->newObject(false);
     fileObj = fileObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "name"), fileArg);
     fileObj = fileObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "mode"), context->fromUTF8String(mode.c_str()));
     fileObj = fileObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "buffering"), context->fromInteger(-1));
@@ -96,7 +96,7 @@ static const proto::ProtoObject* py_io_register(
 }
 
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
-    const proto::ProtoObject* ioMod = ctx->newObject(true);
+    const proto::ProtoObject* ioMod = ctx->newObject(false);
     
     ioMod = ioMod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "open"), ctx->fromMethod(const_cast<proto::ProtoObject*>(ioMod), py_io_open));
     ioMod = ioMod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "open_code"), ctx->fromMethod(const_cast<proto::ProtoObject*>(ioMod), py_io_open));
@@ -111,7 +111,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
 
     auto add_stub = [&](const char* name) {
         const proto::ProtoString* nameS = proto::ProtoString::fromUTF8String(ctx, name);
-        const proto::ProtoObject* stub = ctx->newObject(true);
+        const proto::ProtoObject* stub = ctx->newObject(false);
         stub = stub->setAttribute(ctx, py_name_s, ctx->fromUTF8String(name));
         stub = stub->setAttribute(ctx, py_doc_s, py_empty_doc);
         stub = stub->setAttribute(ctx, py_module_s, py_io_s);

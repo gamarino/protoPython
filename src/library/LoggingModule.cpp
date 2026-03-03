@@ -18,7 +18,7 @@ static const proto::ProtoObject* py_logger_info(
 static const proto::ProtoObject* py_getLogger(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    const proto::ProtoObject* logger = ctx->newObject(true);
+    const proto::ProtoObject* logger = ctx->newObject(false);
     logger = logger->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "name"),
         posArgs->getSize(ctx) > 0 ? posArgs->getAt(ctx, 0) : ctx->fromUTF8String("root"));
     logger = logger->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "info"),
@@ -27,7 +27,7 @@ static const proto::ProtoObject* py_getLogger(
 }
 
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
-    const proto::ProtoObject* mod = ctx->newObject(true);
+    const proto::ProtoObject* mod = ctx->newObject(false);
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "basicConfig"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_basicConfig));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "getLogger"),

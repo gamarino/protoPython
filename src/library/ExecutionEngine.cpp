@@ -1229,13 +1229,13 @@ const proto::ProtoObject* py_generator_send_impl(
         if (!globals) globals = env->getGlobals();
         GlobalsScope gscope(globals);
         
-        const proto::ProtoList* co_consts = codeObj->getAttribute(calleeCtx, env->getCoConstsString())->asList(calleeCtx);
-        const proto::ProtoList* co_names = codeObj->getAttribute(calleeCtx, env->getCoNamesString())->asList(calleeCtx);
+        const proto::ProtoTuple* co_consts = codeObj->getAttribute(calleeCtx, env->getCoConstsString())->asTuple(calleeCtx);
+        const proto::ProtoTuple* co_names = codeObj->getAttribute(calleeCtx, env->getCoNamesString())->asTuple(calleeCtx);
         
         result = executeBytecodeRange(calleeCtx, 
-            reinterpret_cast<const proto::ProtoObject*>(co_consts)->asTuple(calleeCtx),
+            co_consts,
             reinterpret_cast<const proto::ProtoObject*>(co_code_list)->asTuple(calleeCtx),
-            reinterpret_cast<const proto::ProtoObject*>(co_names)->asTuple(calleeCtx),
+            co_names,
             frame,
             pc,
             co_code_list->getSize(calleeCtx),
@@ -1922,7 +1922,8 @@ const proto::ProtoObject* executeBytecodeRange(
             }
             if (names && frame && static_cast<unsigned long>(arg) < names->getSize(ctx)) {
                 if (stack.empty()) {
-                    if (get_env_diag()) fprintf(stderr, "OP_STORE_NAME: empty stack!\n");
+                    const proto::ProtoObject* codeObj = frame ? frame->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__code__")) : nullptr; std::string fname = "<unknown>"; if (codeObj && codeObj->hasAttribute(ctx, env->getNameString()) == PROTO_TRUE) { codeObj->getAttribute(ctx, env->getNameString())->asString(ctx)->toUTF8String(ctx, fname); } fprintf(stderr, "OP_STORE_NAME: empty stack in %s!\n", fname.c_str());
+                    if (env) { env->raiseTypeError(ctx, "stack underflow in OP_STORE_NAME"); }
                     continue;
                 }
                 const proto::ProtoObject* nameObj = names->getAt(ctx, arg);
@@ -2435,6 +2436,7 @@ const proto::ProtoObject* executeBytecodeRange(
                          env->raiseRuntimeError(ctx, "reraise outside of except block");
                      }
                  }
+                 i = next_i;
                  continue;
             } else if (arg == 1) {
                  if (!stack.empty()) {
@@ -2443,12 +2445,12 @@ const proto::ProtoObject* executeBytecodeRange(
                      if (env && env->getTypePrototype()) {
                          const proto::ProtoObject* cls = exc->getAttribute(ctx, env->getClassString());
                          if (cls == env->getTypePrototype()) {
-                             const proto::ProtoString* callS = env->getCallString();
-                             exc = exc->call(ctx, nullptr, callS, exc, ctx->newList(), nullptr);
+                             exc = invokePythonCallable(ctx, exc, ctx->newList(), nullptr);
                          }
                      }
-                     if (env && exc) env->setPendingException(exc);
+                     if (env && exc && exc != PROTO_NONE) env->setPendingException(exc);
                  }
+                 i = next_i;
                  continue;
             }
             i = next_i;
@@ -2596,7 +2598,6 @@ const proto::ProtoObject* executeBytecodeRange(
 
                             env->raiseImportError(ctx, msg);
                         }
-                        i = next_i;
                         continue;
                     }
                 }
@@ -2839,7 +2840,8 @@ const proto::ProtoObject* executeBytecodeRange(
                 stack[stack.size() - 1] = const_cast<proto::ProtoObject*>(data->asObject(ctx)); // Update root
             }
             
-            setObj->setAttribute(ctx, env ? env->getDataString() : getInternalString(ctx, "__data__"), data->asObject(ctx));
+            setObj = const_cast<proto::ProtoObject*>(setObj->setAttribute(ctx, env ? env->getDataString() : getInternalString(ctx, "__data__"), data->asObject(ctx)));
+            stack[stack.size() - 2] = setObj; // update root
             const proto::ProtoObject* finalSet = stack[stack.size() - 2];
             for (int j = 0; j < arg + 2; ++j) stack.pop_back();
             stack.push_back(finalSet);
@@ -3405,7 +3407,11 @@ const proto::ProtoObject* executeBytecodeRange(
             for (int j = 0; j < arg + 2; ++j) stack.pop_back(); // Pop callable, args, kwMap
             stack.push_back(result ? result : (env ? env->getNonePrototype() : PROTO_NONE));
         } else if (op == OP_CALL_FUNCTION) {
-            if (stack.size() < (unsigned long)(arg + 1)) continue;
+            if (stack.size() < (unsigned long)(arg + 1)) {
+                 if (env) env->raiseRuntimeError(ctx, "Stack underflow in OP_CALL_FUNCTION");
+                 i = next_i;
+                 continue;
+            }
             int firstArgPos = stack.top - arg;
             
             stack.push_back(ctx->newList()->asObject(ctx));
@@ -3526,7 +3532,7 @@ const proto::ProtoObject* executeBytecodeRange(
             stack.push_back(tupObj); // Root tupObj
             if (env && env->getTuplePrototype()) tupObj = const_cast<proto::ProtoObject*>(tupObj->addParent(ctx, env->getTuplePrototype()));
             
-            tupObj->setAttribute(ctx, env ? env->getDataString() : getInternalString(ctx, "__data__"), tup->asObject(ctx));
+            tupObj = const_cast<proto::ProtoObject*>(tupObj->setAttribute(ctx, env ? env->getDataString() : getInternalString(ctx, "__data__"), tup->asObject(ctx)));
             
             const proto::ProtoObject* finalTup = tupObj;
             for (int j = 0; j < arg + 2; ++j) stack.pop_back();
@@ -3665,14 +3671,6 @@ const proto::ProtoObject* executeBytecodeRange(
                     prepareRaw = env ? env->getAttribute(ctx, metaclass, proto::ProtoString::fromUTF8String(ctx, "__prepare__")) : metaclass->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__prepare__"));
                 }
                 const proto::ProtoObject* prepareM = prepareRaw;
-                if (prepareRaw && prepareRaw != PROTO_NONE) {
-                    // Manually resolve descriptor if it has __get__ (since it might be an instance attribute on the class, escaping typical getAttribute descriptor logic)
-                    const proto::ProtoObject* getMethod = prepareRaw->getAttribute(ctx, env ? env->getGetDunderString() : proto::ProtoString::fromUTF8String(ctx, "__get__"));
-                    if (getMethod && getMethod != PROTO_NONE) {
-                        const proto::ProtoList* getArgs = ctx->newList()->appendLast(ctx, env ? env->getNonePrototype() : PROTO_NONE)->appendLast(ctx, metaclass);
-                        prepareM = invokeCallable(ctx, getMethod, getArgs, nullptr);
-                    }
-                }
                 if (prepareM && prepareM != PROTO_NONE) {
                     const proto::ProtoList* prepareArgs = ctx->newList()->appendLast(ctx, name)->appendLast(ctx, bases);
                     // Use keyword parameters if available

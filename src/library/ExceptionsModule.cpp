@@ -122,7 +122,7 @@ static const proto::ProtoObject* make_exception_type(proto::ProtoContext* ctx,
     const proto::ProtoString* py_call = proto::ProtoString::fromUTF8String(ctx, "__call__");
     const proto::ProtoString* py_class = proto::ProtoString::fromUTF8String(ctx, "__class__");
 
-    const proto::ProtoObject* exc = base ? base->newChild(ctx, true) : ctx->newObject(true);
+    const proto::ProtoObject* exc = base ? base->newChild(ctx, true) : ctx->newObject(false);
     if (std::getenv("PROTO_ENV_DIAG")) {
         fprintf(stderr, "DEBUG: make_exception_type name='%s' type=%p base=%p\n", name, (void*)exc, (void*)base);
         fflush(stderr);
@@ -217,7 +217,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx,
     const proto::ProtoObject* bytesWarningType = make_exception_type(ctx, objectProto, typeProto, "BytesWarning", warningType);
     const proto::ProtoObject* resourceWarningType = make_exception_type(ctx, objectProto, typeProto, "ResourceWarning", warningType);
 
-    const proto::ProtoObject* mod = ctx->newObject(true);
+    const proto::ProtoObject* mod = ctx->newObject(false);
     mod = mod->setAttribute(ctx, py_exception, exceptionType);
     mod = mod->setAttribute(ctx, py_keyerror, keyErrorType);
     mod = mod->setAttribute(ctx, py_valueerror, valueErrorType);

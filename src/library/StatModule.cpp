@@ -5,7 +5,7 @@ namespace protoPython {
 namespace stat_module {
 
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
-    const proto::ProtoObject* mod = ctx->newObject(true);
+    const proto::ProtoObject* mod = ctx->newObject(false);
 
     // Common stat constants
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "S_IFMT"), ctx->fromInteger(S_IFMT));

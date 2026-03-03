@@ -5,7 +5,7 @@ namespace protoPython {
 namespace errno_module {
 
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
-    const proto::ProtoObject* mod = ctx->newObject(true);
+    const proto::ProtoObject* mod = ctx->newObject(false);
     
     // Most common errno constants
     const char* names[] = {

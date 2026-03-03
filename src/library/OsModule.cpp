@@ -119,7 +119,7 @@ static const proto::ProtoObject* py_scandir_next(
         if (n[0] == '.' && (n[1] == '\0' || (n[1] == '.' && n[2] == '\0')))
             continue;
 
-        const proto::ProtoObject* entry = direntry_proto ? direntry_proto->newChild(ctx, true) : ctx->newObject(true);
+        const proto::ProtoObject* entry = direntry_proto ? direntry_proto->newChild(ctx, true) : ctx->newObject(false);
         
         std::string fullPath = state->path;
         if (fullPath.back() != '/') fullPath += "/";
@@ -158,7 +158,7 @@ static const proto::ProtoObject* py_stat_result_getitem(
 }
 
 static const proto::ProtoObject* make_stat_result(proto::ProtoContext* ctx, const struct stat& st) {
-    const proto::ProtoObject* res = ctx->newObject(true);
+    const proto::ProtoObject* res = ctx->newObject(false);
     res = res->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "st_mode"), ctx->fromInteger(st.st_mode));
     res = res->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "st_ino"), ctx->fromInteger(st.st_ino));
     res = res->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "st_dev"), ctx->fromInteger(st.st_dev));
@@ -312,7 +312,7 @@ static const proto::ProtoObject* py_scandir(
     if (!d) return PROTO_NONE;
 
     ScandirState* state = new ScandirState(d, path);
-    const proto::ProtoObject* iter = ctx->newObject(true);
+    const proto::ProtoObject* iter = ctx->newObject(false);
     iter = iter->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__state__"),
         ctx->fromExternalPointer(state, scandir_finalizer));
     iter = iter->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__next__"),
@@ -802,7 +802,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     if (!direntry_proto) {
         direntry_proto = env && env->getObjectPrototype() ? env->getObjectPrototype()->newChild(ctx, false) : ctx->newObject(false);
         // Ensure direntry_proto is a fresh object and not polluting global Object prototype
-        // In some protoCore versions, newObject(true) might return a shared object if not careful.
+        // In some protoCore versions, newObject(false) might return a shared object if not careful.
         // We set it explicitly to have no parent or a fresh one if possible.
         direntry_proto = direntry_proto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "is_dir"),
             ctx->fromMethod(const_cast<proto::ProtoObject*>(direntry_proto), py_direntry_is_dir));
@@ -820,7 +820,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
 
 
 
-    const proto::ProtoObject* mod = env && env->getObjectPrototype() ? env->getObjectPrototype()->newChild(ctx, true) : ctx->newObject(true);
+    const proto::ProtoObject* mod = env && env->getObjectPrototype() ? env->getObjectPrototype()->newChild(ctx, true) : ctx->newObject(false);
     
     // Create Environ object
     const proto::ProtoObject* environProt = env && env->getObjectPrototype() ? env->getObjectPrototype()->newChild(ctx, false) : ctx->newObject(false);

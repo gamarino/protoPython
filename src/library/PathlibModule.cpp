@@ -177,7 +177,7 @@ static const proto::ProtoObject* py_path_write_text(
 }
 
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
-    const proto::ProtoObject* pathProto = ctx->newObject(true);
+    const proto::ProtoObject* pathProto = ctx->newObject(false);
     pathProto = pathProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__path_proto__"), pathProto);
     pathProto = pathProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__call__"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(pathProto), py_path_call));
@@ -196,7 +196,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     pathProto = pathProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "write_text"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(pathProto), py_path_write_text));
 
-    const proto::ProtoObject* mod = ctx->newObject(true);
+    const proto::ProtoObject* mod = ctx->newObject(false);
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "Path"), pathProto);
     return mod;
 }

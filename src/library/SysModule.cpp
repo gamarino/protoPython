@@ -263,7 +263,7 @@ static const proto::ProtoObject* sys_getrecursionlimit(
 
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment* env,
                                      const std::vector<std::string>* argv) {
-    const proto::ProtoObject* sys = env && env->getObjectPrototype() ? env->getObjectPrototype()->newChild(ctx, true) : ctx->newObject(true);
+    const proto::ProtoObject* sys = env && env->getObjectPrototype() ? env->getObjectPrototype()->newChild(ctx, true) : ctx->newObject(false);
 
     // Store env pointer for trace functions and exit
     sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__env_ptr__"), ctx->fromExternalPointer(env));
@@ -324,7 +324,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     sys = sys->setAttribute(ctx, env ? env->getPathS() : proto::ProtoString::fromUTF8String(ctx, "path"), pathList);
 
     // sys.modules (dict mapping names to modules)
-    const proto::ProtoObject* modulesObj = env && env->getDictPrototype() ? env->getDictPrototype()->newChild(ctx, true) : ctx->newObject(true);
+    const proto::ProtoObject* modulesObj = env && env->getDictPrototype() ? env->getDictPrototype()->newChild(ctx, true) : ctx->newObject(false);
     if (env) {
         env->initDictStorage(ctx, modulesObj);
     }
@@ -342,7 +342,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
             argvList = argvList->appendLast(ctx, strObj);
         }
     }
-    const proto::ProtoObject* argvWrapper = ctx->newObject(true);
+    const proto::ProtoObject* argvWrapper = ctx->newObject(false);
     if (env && env->getListPrototype()) {
         argvWrapper = argvWrapper->addParent(ctx, env->getListPrototype());
         argvWrapper = argvWrapper->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__class__"), env->getListPrototype());
@@ -352,7 +352,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
 
     // sys.warnoptions (empty list by default)
     const proto::ProtoList* warnList = ctx->newList();
-    const proto::ProtoObject* warnWrapper = ctx->newObject(true);
+    const proto::ProtoObject* warnWrapper = ctx->newObject(false);
     if (env && env->getListPrototype()) {
         warnWrapper = warnWrapper->addParent(ctx, env->getListPrototype());
         warnWrapper = warnWrapper->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__class__"), env->getListPrototype());
@@ -400,7 +400,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
 
     // V75: Add stdin, stdout, stderr dummy objects
     auto create_dummy_file = [&](int type) {
-        const proto::ProtoObject* f = env && env->getObjectPrototype() ? env->getObjectPrototype()->newChild(ctx, true) : ctx->newObject(true);
+        const proto::ProtoObject* f = env && env->getObjectPrototype() ? env->getObjectPrototype()->newChild(ctx, true) : ctx->newObject(false);
         f = f->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "write"), ctx->fromMethod(const_cast<proto::ProtoObject*>(f), sys_file_write));
         f = f->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "flush"), ctx->fromMethod(const_cast<proto::ProtoObject*>(f), sys_file_flush));
         f = f->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_stream_type"), ctx->fromInteger(type));
@@ -419,7 +419,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__stderr__"), stderr_obj);
 
     // sys.implementation
-    const proto::ProtoObject* impl = env && env->getObjectPrototype() ? env->getObjectPrototype()->newChild(ctx, true) : ctx->newObject(true);
+    const proto::ProtoObject* impl = env && env->getObjectPrototype() ? env->getObjectPrototype()->newChild(ctx, true) : ctx->newObject(false);
     impl = impl->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "name"), ctx->fromUTF8String("protopython"));
     const proto::ProtoList* impl_version = ctx->newList();
     impl_version = impl_version->appendLast(ctx, ctx->fromInteger(0));
@@ -430,7 +430,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     sys = sys->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "implementation"), impl);
 
     // sys.flags
-    const proto::ProtoObject* flags = env && env->getObjectPrototype() ? env->getObjectPrototype()->newChild(ctx, true) : ctx->newObject(true);
+    const proto::ProtoObject* flags = env && env->getObjectPrototype() ? env->getObjectPrototype()->newChild(ctx, true) : ctx->newObject(false);
     flags = flags->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "optimize"), ctx->fromInteger(0));
     flags = flags->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "ignore_environment"), ctx->fromInteger(0));
     flags = flags->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "dont_write_bytecode"), ctx->fromInteger(1));

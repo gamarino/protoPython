@@ -49,7 +49,7 @@ const proto::ProtoObject* CompiledModuleProvider::tryLoad(const std::string& log
     loadedHandles_[logicalPath] = handle;
 
     // Create module object
-    const proto::ProtoObject* mod = ctx->newObject(true);
+    const proto::ProtoObject* mod = ctx->newObject(false);
     if (ctx->space->objectPrototype) mod = mod->addParent(ctx, ctx->space->objectPrototype);
     
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__name__"), ctx->fromUTF8String(logicalPath.c_str()));

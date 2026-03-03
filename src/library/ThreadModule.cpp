@@ -313,7 +313,7 @@ static const proto::ProtoObject* py_allocate_lock(
     const proto::ParentLink* /*parentLink*/,
     const proto::ProtoList* /*posArgs*/,
     const proto::ProtoSparseList* /*kwargs*/) {
-    proto::ProtoObject* obj = lockProt ? const_cast<proto::ProtoObject*>(lockProt->newChild(ctx, true)) : const_cast<proto::ProtoObject*>(ctx->newObject(true));
+    proto::ProtoObject* obj = lockProt ? const_cast<proto::ProtoObject*>(lockProt->newChild(ctx, true)) : const_cast<proto::ProtoObject*>(ctx->newObject(false));
     obj->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_handle"), 
         ctx->fromExternalPointer(new LockData, mutex_finalizer));
     return obj;
@@ -325,7 +325,7 @@ static const proto::ProtoObject* py_allocate_rlock(
     const proto::ParentLink* /*parentLink*/,
     const proto::ProtoList* /*posArgs*/,
     const proto::ProtoSparseList* /*kwargs*/) {
-    proto::ProtoObject* obj = rlockProt ? const_cast<proto::ProtoObject*>(rlockProt->newChild(ctx, true)) : const_cast<proto::ProtoObject*>(ctx->newObject(true));
+    proto::ProtoObject* obj = rlockProt ? const_cast<proto::ProtoObject*>(rlockProt->newChild(ctx, true)) : const_cast<proto::ProtoObject*>(ctx->newObject(false));
     obj->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_handle"), 
         ctx->fromExternalPointer(new RLockData, rmutex_finalizer));
     return obj;
@@ -430,9 +430,9 @@ static const proto::ProtoObject* py_is_alive(
 }
 
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
-    const proto::ProtoObject* mod = ctx->newObject(true);
+    const proto::ProtoObject* mod = ctx->newObject(false);
     
-    lockProt = ctx->newObject(true);
+    lockProt = ctx->newObject(false);
     lockProt = lockProt->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "acquire"), 
         ctx->fromMethod(nullptr, py_lock_acquire));
     lockProt = lockProt->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "release"), 
@@ -444,7 +444,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     lockProt = lockProt->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__exit__"), 
         ctx->fromMethod(nullptr, py_lock_exit));
 
-    rlockProt = ctx->newObject(true);
+    rlockProt = ctx->newObject(false);
     rlockProt = rlockProt->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "acquire"), 
         ctx->fromMethod(nullptr, py_rlock_acquire));
     rlockProt = rlockProt->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "release"), 

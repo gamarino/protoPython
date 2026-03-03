@@ -1,6 +1,9 @@
-import sys
-def my_en(it):
-    for x in it:
-        print("ITEM:", repr(x))
-print("custom enumeration:")
-my_en(iter('abc'))
+import enum
+class Color(enum.Enum):
+    RED = 1
+    GREEN = 2
+    BLUE = 3
+
+print(Color.RED)
+print(Color.RED.value)
+print(Color.RED.name)

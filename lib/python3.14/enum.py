@@ -469,7 +469,10 @@ class EnumType(type):
         # create the namespace dict
         enum_dict = EnumDict(cls)
         # inherit previous flags and _generate_next_value_ function
-        member_type, first_enum = metacls._get_mixins_(cls, bases)
+        print("METACLS._GET_MIXINS_ IS:", metacls._get_mixins_)
+        mixins = metacls._get_mixins_(cls, bases)
+        print("MIXINS Returned:", mixins, type(mixins))
+        member_type, first_enum = mixins
         if first_enum is not None:
             enum_dict['_generate_next_value_'] = getattr(
                     first_enum, '_generate_next_value_', None,
@@ -512,7 +515,9 @@ class EnumType(type):
             classdict['_generate_next_value_'] = _gnv
         #
         # data type of member and the controlling Enum class
-        member_type, first_enum = metacls._get_mixins_(cls, bases)
+        mixins = metacls._get_mixins_(cls, bases)
+        print("MIXINS Returned:", mixins, type(mixins))
+        member_type, first_enum = mixins
         __new__, save_new, use_args = metacls._find_new_(
                 classdict, member_type, first_enum,
                 )

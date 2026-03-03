@@ -32,7 +32,7 @@ const proto::ProtoObject* py_clearcache(proto::ProtoContext* ctx, const proto::P
 }
 
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
-    const proto::ProtoObject* mod = ctx->newObject(true);
+    const proto::ProtoObject* mod = ctx->newObject(false);
 
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "calcsize"), ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_calcsize));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "pack"), ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_pack));
@@ -44,7 +44,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
 
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "error"), PROTO_NONE);
 
-    const proto::ProtoObject* structClass = ctx->newObject(true);
+    const proto::ProtoObject* structClass = ctx->newObject(false);
     structClass = structClass->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__init__"), ctx->fromMethod(const_cast<proto::ProtoObject*>(structClass), py_struct_init));
     structClass = structClass->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "pack"), ctx->fromMethod(const_cast<proto::ProtoObject*>(structClass), py_struct_pack));
     structClass = structClass->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "unpack"), ctx->fromMethod(const_cast<proto::ProtoObject*>(structClass), py_struct_unpack));

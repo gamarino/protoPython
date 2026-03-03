@@ -52,7 +52,7 @@ static const proto::ProtoObject* jsonParse(proto::ProtoContext* ctx, const std::
         jsonSkipWs(s, i);
         if (i < s.size() && s[i] == '}') {
             ++i;
-            const proto::ProtoObject* emptyObj = ctx->newObject(true);
+            const proto::ProtoObject* emptyObj = ctx->newObject(false);
             emptyObj = emptyObj->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__keys__"), keys->asObject(ctx));
             emptyObj = emptyObj->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__data__"), data->asObject(ctx));
             return emptyObj;
@@ -73,7 +73,7 @@ static const proto::ProtoObject* jsonParse(proto::ProtoContext* ctx, const std::
         }
         jsonSkipWs(s, i);
         if (i < s.size() && s[i] == '}') ++i;
-        const proto::ProtoObject* obj = ctx->newObject(true);
+        const proto::ProtoObject* obj = ctx->newObject(false);
         obj = obj->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__keys__"), keys->asObject(ctx));
         obj = obj->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__data__"), data->asObject(ctx));
         return obj;
@@ -168,7 +168,7 @@ static const proto::ProtoObject* py_dumps(
 }
 
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
-    const proto::ProtoObject* mod = ctx->newObject(true);
+    const proto::ProtoObject* mod = ctx->newObject(false);
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "loads"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_loads));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "dumps"),

@@ -42,7 +42,7 @@ static const proto::ProtoObject* py_monotonic(
 }
 
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
-    const proto::ProtoObject* mod = ctx->newObject(true);
+    const proto::ProtoObject* mod = ctx->newObject(false);
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "time"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_time));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "sleep"),

@@ -20,17 +20,17 @@ static const proto::ProtoObject* cv_set(proto::ProtoContext* ctx, const proto::P
 }
 
 static const proto::ProtoObject* cv_call(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*, const proto::ProtoList* pos, const proto::ProtoSparseList*) {
-    const proto::ProtoObject* inst = ctx->newObject(true);
+    const proto::ProtoObject* inst = ctx->newObject(false);
     // self is the ContextVar prototype
     inst = inst->addParent(ctx, self);
     return inst;
 }
 
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
-    const proto::ProtoObject* mod = ctx->newObject(true);
+    const proto::ProtoObject* mod = ctx->newObject(false);
     
     // ContextVar "class"
-    const proto::ProtoObject* contextVarProto = ctx->newObject(true);
+    const proto::ProtoObject* contextVarProto = ctx->newObject(false);
     contextVarProto = contextVarProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "get"), 
         ctx->fromMethod(const_cast<proto::ProtoObject*>(contextVarProto), cv_get));
     contextVarProto = contextVarProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "set"), 

@@ -79,7 +79,7 @@ static const proto::ProtoObject* py_codecs_lookup_error(
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx,
                                      const proto::ProtoObject* objectProto,
                                      const proto::ProtoObject* typeProto) {
-    const proto::ProtoObject* mod = ctx->newObject(true);
+    const proto::ProtoObject* mod = ctx->newObject(false);
     
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "lookup"), ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_codecs_lookup));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "encode"), ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_codecs_encode));

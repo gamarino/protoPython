@@ -26,6 +26,9 @@ public:
                      const std::vector<std::string>& argv = {});
     ~PythonEnvironment();
 
+    // Global string interning for resolving cross-module identity matches
+    static const proto::ProtoString* getInternedString(proto::ProtoContext* ctx, const std::string& str);
+
     /**
      * @brief Returns the process singleton ProtoSpace (L-Shape: one per process).
      */
@@ -799,6 +802,9 @@ private:
     const proto::ProtoString* pathS{nullptr};
     const proto::ProtoString* modulesS{nullptr};
 
+    const proto::ProtoString* pendingExcString{nullptr};
+    const proto::ProtoString* activeExcsString{nullptr};
+
     const proto::ProtoString* lenString{nullptr};
     const proto::ProtoString* boolString{nullptr};
     const proto::ProtoString* intString{nullptr};
@@ -918,6 +924,9 @@ private:
 
     const proto::ProtoString* getExceptionRootString() const { return exceptionRootS; }
     const proto::ProtoString* getAddS() const { return addS; }
+
+    void clearExceptionsWrapper() { clearPendingException(); }
+    void setPendingExceptionWrapper(const proto::ProtoObject* exc) { setPendingException(exc); };
 
     const proto::ProtoObject* zeroInteger{nullptr};
     const proto::ProtoObject* oneInteger{nullptr};

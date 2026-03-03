@@ -328,7 +328,7 @@ static const proto::ProtoObject* py_defaultdict_new(
 static const proto::ProtoObject* py_ordereddict_new(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    const proto::ProtoObject* d = ctx->newObject(true);
+    const proto::ProtoObject* d = ctx->newObject(false);
     d = d->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__data__"), ctx->newSparseList()->asObject(ctx));
     d = d->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__keys__"), ctx->newList()->asObject(ctx));
     return d;
@@ -373,8 +373,8 @@ static const proto::ProtoObject* py_deque_new(
 }
 
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx, protoPython::PythonEnvironment* env) {
-    const proto::ProtoObject* module = env && env->getObjectPrototype() ? env->getObjectPrototype()->newChild(ctx, true) : ctx->newObject(true);
-    const proto::ProtoObject* dequePrototype = env && env->getObjectPrototype() ? env->getObjectPrototype()->newChild(ctx, true) : ctx->newObject(true);
+    const proto::ProtoObject* module = env && env->getObjectPrototype() ? env->getObjectPrototype()->newChild(ctx, true) : ctx->newObject(false);
+    const proto::ProtoObject* dequePrototype = env && env->getObjectPrototype() ? env->getObjectPrototype()->newChild(ctx, true) : ctx->newObject(false);
     
     if (env && env->getTypePrototype()) {
         dequePrototype = dequePrototype->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__class__"), env->getTypePrototype());
@@ -405,17 +405,17 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, protoPython::Pyth
     module = module->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "deque"), dequePrototype);
 
     const proto::ProtoString* py_getitem = proto::ProtoString::fromUTF8String(ctx, "__getitem__");
-    const proto::ProtoObject* defaultdictPrototype = env && env->getDictPrototype() ? env->getDictPrototype()->newChild(ctx, true) : ctx->newObject(true);
+    const proto::ProtoObject* defaultdictPrototype = env && env->getDictPrototype() ? env->getDictPrototype()->newChild(ctx, true) : ctx->newObject(false);
     if (env && env->getTypePrototype()) {
         defaultdictPrototype = defaultdictPrototype->setAttribute(ctx, py_getitem,
             ctx->fromMethod(nullptr, py_defaultdict_getitem));
         defaultdictPrototype = defaultdictPrototype->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__class__"), env->getTypePrototype());
     }
 
-    const proto::ProtoObject* defaultdictMod = ctx->newObject(true);
+    const proto::ProtoObject* defaultdictMod = ctx->newObject(false);
     defaultdictMod = defaultdictMod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__defaultdict_prototype__"), defaultdictPrototype);
 
-    const proto::ProtoObject* ordereddictMod = ctx->newObject(true);
+    const proto::ProtoObject* ordereddictMod = ctx->newObject(false);
 
     module = module->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "defaultdict"),
                                  ctx->fromMethod(nullptr, py_defaultdict_new));
@@ -424,7 +424,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, protoPython::Pyth
 
 
 
-    const proto::ProtoObject* deque_iterator = ctx->newObject(true);
+    const proto::ProtoObject* deque_iterator = ctx->newObject(false);
     deque_iterator = deque_iterator->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__name__"), ctx->fromUTF8String("_deque_iterator"));
     deque_iterator = deque_iterator->setAttribute(ctx, env->getNextString(),
                                                  ctx->fromMethod(nullptr, py_deque_iterator_next));
@@ -439,7 +439,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, protoPython::Pyth
                                                  ctx->fromMethod(nullptr, py_deque_repr));
     dequePrototype = dequePrototype->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__deque_iterator_proto__"), deque_iterator);
 
-    const proto::ProtoObject* deque_reverse_iterator = ctx->newObject(true);
+    const proto::ProtoObject* deque_reverse_iterator = ctx->newObject(false);
     deque_reverse_iterator = deque_reverse_iterator->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__name__"), ctx->fromUTF8String("_deque_reverse_iterator"));
     deque_reverse_iterator = deque_reverse_iterator->setAttribute(ctx, env->getNextString(),
                                                   ctx->fromMethod(nullptr, py_deque_reverse_iterator_next));
