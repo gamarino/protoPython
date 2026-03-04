@@ -900,6 +900,13 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "close"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_close));
 
+    const proto::ProtoObject* statResultType = ctx->newObject(true); // make mutable just in case
+    statResultType = statResultType->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__name__"), ctx->fromUTF8String("stat_result"));
+    if (env && env->getTypePrototype()) {
+        statResultType = statResultType->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__class__"), env->getTypePrototype());
+    }
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "stat_result"), statResultType);
+
     // Common constants
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "F_OK"), ctx->fromInteger(0));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "R_OK"), ctx->fromInteger(4));
@@ -951,6 +958,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     keys = keys->appendLast(ctx, ctx->fromUTF8String("_have_functions"));
     keys = keys->appendLast(ctx, ctx->fromUTF8String("open"));
     keys = keys->appendLast(ctx, ctx->fromUTF8String("close"));
+    keys = keys->appendLast(ctx, ctx->fromUTF8String("stat_result"));
     
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__keys__"), keys->asObject(ctx));
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__all__"), keys->asObject(ctx));

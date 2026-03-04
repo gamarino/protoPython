@@ -724,6 +724,8 @@ class _Environ(MutableMapping):
     def __getitem__(self, key):
         try:
             value = self._data[self.encodekey(key)]
+            if value is None:
+                raise KeyError(key)
         except KeyError:
             # raise KeyError with the original key value
             raise KeyError(key) from None
@@ -804,18 +806,9 @@ def _create_environ_mapping():
         # Where Env Var Names Can Be Mixed Case
         encoding = sys.getfilesystemencoding()
         def encode(value):
-            try:
-                if not isinstance(value, str):
-                    raise TypeError("str expected, not %s" % type(value).__name__)
-                return value.encode(encoding, 'surrogateescape')
-            except (TypeError, Exception):
-                # proto: isinstance/type(x).__name__ can raise; treat as str and try encode
-                try:
-                    return value.encode(encoding, 'surrogateescape')
-                except Exception:
-                    return str(value).encode(encoding, 'surrogateescape')
+            return value if isinstance(value, str) else str(value)
         def decode(value):
-            return value.decode(encoding, 'surrogateescape')
+            return value
         encodekey = encode
         data = environ
     return _Environ(data,
@@ -1100,6 +1093,28 @@ if sys.platform != 'vxworks':
             return iter(self._stream)
 
     __all__.append("popen")
+
+import collections
+print("DEBUG: in os.py, about to set terminal_size")
+if not hasattr(sys.modules[__name__], 'terminal_size'):
+    class terminal_size:
+        def __init__(self, data):
+            self.columns = data[0]
+            self.lines = data[1]
+        def __iter__(self):
+            yield self.columns
+            yield self.lines
+        def __getitem__(self, i):
+            if i == 0: return self.columns
+            if i == 1: return self.lines
+            raise IndexError()
+        def __len__(self): return 2
+    sys.modules[__name__].terminal_size = terminal_size
+if not hasattr(sys.modules[__name__], 'get_terminal_size'):
+    def get_terminal_size(fd=None):
+        raise OSError("get_terminal_size not supported")
+    sys.modules[__name__].get_terminal_size = get_terminal_size
+    print("DEBUG: get_terminal_size set as fake function")
 
 # Supply os.fdopen()
 def fdopen(fd, mode="r", buffering=-1, encoding=None, *args, **kwargs):

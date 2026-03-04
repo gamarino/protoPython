@@ -324,18 +324,26 @@ static const proto::ProtoObject* py_len(
     if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
     
+    // Try calling __len__ first if it exists
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::ProtoString* lenStr = env ? env->getLenString() : proto::ProtoString::fromUTF8String(context, "__len__");
+    const proto::ProtoObject* lenMethod = obj->getAttribute(context, lenStr);
+    if (lenMethod && lenMethod->asMethod(context)) {
+        const proto::ProtoList* emptyArgs = env ? env->getEmptyList() : context->newList();
+        const proto::ProtoObject* res = lenMethod->asMethod(context)(context, obj, nullptr, emptyArgs, nullptr);
+        if (res && res != PROTO_NONE && proto::isInteger(res)) {
+            return res;
+        }
+    }
+    
+    // Otherwise fallback to native types
     if (obj->asList(context)) return context->fromInteger(obj->asList(context)->getSize(context));
     if (obj->asTuple(context)) return context->fromInteger(obj->asTuple(context)->getSize(context));
+    if (obj->asSet(context)) return context->fromInteger(obj->asSet(context)->getSize(context));
     if (obj->asSparseList(context)) return context->fromInteger(obj->asSparseList(context)->getSize(context));
     if (obj->isString(context)) return context->fromInteger(obj->asString(context)->getSize(context));
-    
-    // Fallback: count attributes (for objects acting as dicts)
-    const proto::ProtoSparseList* attrs = obj->getAttributes(context);
-    // py_len fallback diagnostic removed
-    if (get_env_diag()) {
-    }
-    if (attrs) return context->fromInteger(attrs->getSize(context));
 
+    if (env) env->raiseTypeError(context, "'" + PythonEnvironment::reprObject(context, obj) + "' has no len()");
     return context->fromInteger(0);
 }
 
@@ -1635,8 +1643,13 @@ static const proto::ProtoObject* py_super_getattr(
                     while (it && it->hasNext(context)) {
                         unsigned long kHash = it->nextKey(context);
                         const proto::ProtoObject* v = it->nextValue(context);
-                        if (kHash == target_hash) {
-                            val = v; break;
+                        if (kHash != 0) {
+                            const proto::ProtoObject* keyObj = reinterpret_cast<const proto::ProtoObject*>(kHash);
+                            if (keyObj && keyObj->isString(context)) {
+                                if (keyObj->asString(context)->cmp_to_string(context, nameStr) == 0) {
+                                    val = v; break;
+                                }
+                            }
                         }
                         it = const_cast<proto::ProtoSparseListIterator*>(it)->advance(context);
                     }
@@ -2496,7 +2509,7 @@ const proto::ProtoObject* py_type(
             printf("DEBUG: py_type(3) name=%p bases=%p dict=%p\n", (void*)name, (void*)bases, (void*)dict);
         }
 
-        proto::ProtoObject* targetClass = const_cast<proto::ProtoObject*>(context->newObject(false));
+        proto::ProtoObject* targetClass = const_cast<proto::ProtoObject*>(context->newObject(true));
         
         // Add metaclass first so that its attributes are searched after the class MRO bases 
         // (which are added below in reverse order, meaning they are searched before the metaclass).

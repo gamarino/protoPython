@@ -3719,6 +3719,9 @@ const proto::ProtoObject* executeBytecodeRange(
                     if (std::getenv("PROTO_ENV_DIAG")) {
                         fprintf(stderr, "TRACE_PREPARE: invokeCallable returned nsObj=%p\n", (void*)nsObj); fflush(stderr);
                     }
+                    if (!nsObj) {
+                        return nullptr;
+                    }
                     stack.push_back(nsObj); 
                 } else {
                     stack.push_back(ctx->newObject(true));

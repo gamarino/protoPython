@@ -2543,9 +2543,9 @@ static const proto::ProtoObject* py_set_len(
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
     const proto::ProtoSet* s = self->asSet(context);
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::ProtoObject* data = self->getAttribute(context, env ? env->getDataString() : getInternalString(context, "__data__"));
     if (!s) {
-        PythonEnvironment* env = PythonEnvironment::fromContext(context);
-        const proto::ProtoObject* data = self->getAttribute(context, env ? env->getDataString() : getInternalString(context, "__data__"));
         s = data ? data->asSet(context) : nullptr;
     }
     if (!s) return context->fromInteger(0);
@@ -3229,6 +3229,15 @@ static const proto::ProtoObject* py_tuple_len(
     const proto::ProtoObject* data = self->getAttribute(context, dataName);
     if (!data || !data->asTuple(context)) return context->fromInteger(0);
     return context->fromInteger(data->asTuple(context)->getSize(context));
+}
+
+static const proto::ProtoObject* py_dict_init(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList* kwargs) {
+    return PROTO_NONE;
 }
 
 static const proto::ProtoObject* py_tuple_getitem(
@@ -6996,6 +7005,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     dictPrototype = dictPrototype->setAttribute(rootContext_, py_class, typePrototype);
     dictPrototype = dictPrototype->setAttribute(rootContext_, py_name, rootContext_->fromUTF8String("dict"));
     dictPrototype = dictPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__new__"), rootContext_->fromMethod(nullptr, py_dict_call));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__init__"), rootContext_->fromMethod(nullptr, py_dict_init));
     dictPrototype = dictPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_type_repr));
     dictPrototype = dictPrototype->setAttribute(rootContext_, py_module, builtinsVal);
     dictPrototype = dictPrototype->setAttribute(rootContext_, py_getitem, rootContext_->fromMethod(nullptr, py_dict_getitem));
@@ -8970,7 +8980,9 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
         fprintf(stderr, "DEBUG_GET: val=%p valType=%p getM=%p\n", (void*)val, (void*)valType, (void*)getM);
     }
     
-    if (dunderGet && getM && getM->isMethod(ctx)) {
+    bool isInstanceDict = (!isClass && obj->hasOwnAttribute(ctx, name) == PROTO_TRUE);
+    
+    if (dunderGet && getM && getM->isMethod(ctx) && !isInstanceDict) {
         // Do not bind if obj is a module! Modules are namespaces, not classes.
         const proto::ProtoObject* objClass = obj->getAttribute(ctx, this->getClassString());
         if (!this->modulePrototype || (obj != this->modulePrototype && objClass != this->modulePrototype)) {
@@ -9003,6 +9015,16 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
                 getAttrDepth--;
                 return val;
             }
+            
+            // In Python, functions stored directly on an instance are NOT bound as methods.
+            // Check if it's an instance, the attribute is its own, and it's a Python function (has __code__).
+            if (!isClass && obj->hasOwnAttribute(ctx, name) == PROTO_TRUE) {
+                if (val->hasAttribute(ctx, this->getCodeString() ? this->getCodeString() : proto::ProtoString::fromUTF8String(ctx, "__code__")) == PROTO_TRUE) {
+                    getAttrDepth--;
+                    return val;
+                }
+            }
+            
             // If it's a method cell, bind it to 'obj'.
             // In a pure protoCore.h world, we can't easily check if it's already bound,
             // so we bind it here for consistency with instance method access.
