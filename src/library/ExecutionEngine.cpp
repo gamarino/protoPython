@@ -1905,6 +1905,7 @@ const proto::ProtoObject* executeBytecodeRange(
                             stack.push_back(r);
                         } else {
                             if (!env->hasPendingException()) env->raiseNameError(ctx, nStr);
+                            i = next_i;
                             continue;
                         }
                     } else {
@@ -1924,6 +1925,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 if (stack.empty()) {
                     const proto::ProtoObject* codeObj = frame ? frame->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__code__")) : nullptr; std::string fname = "<unknown>"; if (codeObj && codeObj->hasAttribute(ctx, env->getNameString()) == PROTO_TRUE) { codeObj->getAttribute(ctx, env->getNameString())->asString(ctx)->toUTF8String(ctx, fname); } fprintf(stderr, "OP_STORE_NAME: empty stack in %s!\n", fname.c_str());
                     if (env) { env->raiseTypeError(ctx, "stack underflow in OP_STORE_NAME"); }
+                    i = next_i;
                     continue;
                 }
                 const proto::ProtoObject* nameObj = names->getAt(ctx, arg);
@@ -2563,7 +2565,7 @@ const proto::ProtoObject* executeBytecodeRange(
                     const proto::ProtoString* nameS = nameObj->asString(ctx);
                     if (std::getenv("PROTO_ENV_DIAG")) {
                         std::string n; nameS->toUTF8String(ctx, n);
-                        fprintf(stderr, "DEBUG: OP_IMPORT_FROM loading %s\n", n.c_str());
+                        fprintf(stderr, "DEBUG: OP_IMPORT_FROM loading %s from mod=%p\n", n.c_str(), (void*)mod);
                     }
 
                     const proto::ProtoObject* val = (env) 
@@ -2598,6 +2600,7 @@ const proto::ProtoObject* executeBytecodeRange(
 
                             env->raiseImportError(ctx, msg);
                         }
+                        i = next_i;
                         continue;
                     }
                 }
@@ -3463,7 +3466,8 @@ const proto::ProtoObject* executeBytecodeRange(
                         if (env->hasPendingException()) {
                             const proto::ProtoObject* exc = env->takePendingException();
                             if (!env->isStopIteration(ctx, exc)) {
-                                env->setPendingException(exc);
+                                env->setPendingException(exc); // re-raise
+                                i = next_i;
                                 continue;
                             }
                         }
@@ -3782,6 +3786,7 @@ const proto::ProtoObject* executeBytecodeRange(
                     if (!env->hasPendingException()) {
                         env->raiseTypeError(ctx, "object is not iterable");
                     }
+                    i = next_i;
                     continue;
                 } else {
                     return nullptr;
@@ -4024,6 +4029,7 @@ const proto::ProtoObject* executeBytecodeRange(
                         const proto::ProtoObject* exc = env->takePendingException();
                         if (!env->isStopIteration(ctx, exc)) {
                             env->setPendingException(exc);
+                            i = next_i;
                             continue;
                         }
                     }
@@ -4095,6 +4101,7 @@ const proto::ProtoObject* executeBytecodeRange(
                         const proto::ProtoObject* exc = env->takePendingException();
                         if (!env->isStopIteration(ctx, exc)) {
                             env->setPendingException(exc);
+                            i = next_i;
                             continue;
                         }
                     }

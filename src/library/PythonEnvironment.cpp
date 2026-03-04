@@ -9147,8 +9147,10 @@ const proto::ProtoObject* PythonEnvironment::resolve(const proto::ProtoString* n
 
         // Module import search
         const proto::ProtoObject* modWrapper = ctx->space->getImportModule(ctx, nameStr.c_str(), "val");
+    fprintf(stderr, "DEBUG: resolveModule %s -> modWrapper=%p\n", nameStr.c_str(), (void*)modWrapper); 
         if (modWrapper && modWrapper != PROTO_NONE) {
             const proto::ProtoObject* result = modWrapper->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "val"));
+        fprintf(stderr, "DEBUG: resolveModule %s -> result=%p\n", nameStr.c_str(), (void*)result); 
             if (result && result != nullptr) {
                 const proto::ProtoObject* executedKey = result->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__executed__"));
                 if (!executedKey || executedKey == PROTO_FALSE || executedKey == PROTO_NONE) {
@@ -9207,8 +9209,10 @@ const proto::ProtoObject* PythonEnvironment::resolveModule(const std::string& na
 
     // Module import search
     const proto::ProtoObject* modWrapper = ctx->space->getImportModule(ctx, nameStr.c_str(), "val");
+    fprintf(stderr, "DEBUG: resolveModule %s -> modWrapper=%p\n", nameStr.c_str(), (void*)modWrapper); 
     if (modWrapper && modWrapper != PROTO_NONE) {
         const proto::ProtoObject* result = modWrapper->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "val"));
+        fprintf(stderr, "DEBUG: resolveModule %s -> result=%p\n", nameStr.c_str(), (void*)result); 
         if (result && result != nullptr) {
             const proto::ProtoObject* executedKey = result->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__executed__"));
             if (!executedKey || executedKey == PROTO_FALSE || executedKey == PROTO_NONE) {

@@ -13,7 +13,11 @@ void NativeModuleProvider::registerModule(const std::string& name, ModuleInitial
 const proto::ProtoObject* NativeModuleProvider::tryLoad(const std::string& logicalPath, proto::ProtoContext* ctx) {
     auto it = modules_.find(logicalPath);
     if (it != modules_.end()) {
-        return it->second(ctx);
+        const proto::ProtoObject* mod = it->second(ctx);
+        if (mod && mod != PROTO_NONE) {
+            mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__executed__"), PROTO_TRUE);
+        }
+        return mod;
     }
     return nullptr;
 }
