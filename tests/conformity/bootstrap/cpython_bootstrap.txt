@@ -1,0 +1,18 @@
+# Minimal bootstrap set for protoPython (Phase 1.3).
+# One test path per line; optional # comment with rationale.
+# Paths are relative to protoPython/tests/ or repo root as per runner.
+
+# Object model and types
+tests/conformity/builtins/test_int_conformity.py   # int arithmetic and identity
+tests/conformity/builtins/test_str_conformity.py   # str ops return new roots
+tests/conformity/builtins/test_list_conformity.py  # list structural sharing
+tests/conformity/builtins/test_dict_conformity.py  # dict get/set/delete and iteration
+
+# Import and namespaces
+tests/conformity/import/test_module_identity.py   # module identity after M.x = v
+tests/conformity/import/test_wrapper_content.py    # wrapper points to current module root
+tests/conformity/import/test_reimport.py           # no dangling refs on re-import
+
+# Basic control flow (existing tests that exercise minimal object model)
+tests/test_str.py                                  # isinstance(str)
+tests/test_list_iter.py                            # list iteration

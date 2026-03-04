@@ -1,0 +1,2 @@
+sed -i 's/const proto::ProtoObject\* modWrapper = ctx->space->getImportModule(ctx, nameStr.c_str(), "val");/&\n    fprintf(stderr, "DEBUG: resolveModule %s -> modWrapper=%p\\n", nameStr.c_str(), (void*)modWrapper); /' src/library/PythonEnvironment.cpp
+sed -i 's/const proto::ProtoObject\* result = modWrapper->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "val"));/&\n        fprintf(stderr, "DEBUG: resolveModule %s -> result=%p\\n", nameStr.c_str(), (void*)result); /' src/library/PythonEnvironment.cpp
