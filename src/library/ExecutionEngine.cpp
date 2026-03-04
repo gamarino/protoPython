@@ -1447,7 +1447,7 @@ const proto::ProtoObject* runUserClassCall(proto::ProtoContext* ctx,
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     
     const proto::ProtoString* newS = proto::ProtoString::fromUTF8String(ctx, "__new__");
-    const proto::ProtoObject* newM = self->getAttribute(ctx, newS);
+    const proto::ProtoObject* newM = env ? env->getAttribute(ctx, self, newS) : self->getAttribute(ctx, newS);
     
     if (get_env_diag()) {
     }
@@ -3096,11 +3096,16 @@ const proto::ProtoObject* executeBytecodeRange(
                     const proto::ProtoString* nameS = nameObj->asString(ctx);
                     if (std::getenv("PROTO_ENV_DIAG")) {
                     }
+                    proto::ProtoObject* oldObj = const_cast<proto::ProtoObject*>(obj);
                     if (env) {
                         obj = const_cast<proto::ProtoObject*>(env->setAttribute(ctx, obj, nameS, val));
                     } else {
                         proto::ProtoObject* mutableObj = const_cast<proto::ProtoObject*>(obj);
                         obj = const_cast<proto::ProtoObject*>(mutableObj->setAttribute(ctx, nameS, val));
+                    }
+                    if (std::getenv("PROTO_ENV_DIAG")) {
+                        std::string nameStr; nameS->toUTF8String(ctx, nameStr);
+                        fprintf(stderr, "DEBUG OP_STORE_ATTR: old_obj=%p new_obj=%p name=%s\n", (void*)oldObj, (void*)obj, nameStr.c_str());
                     }
                     stack.pop_back(); // Pop obj
                     stack.pop_back(); // Pop val
@@ -3416,7 +3421,12 @@ const proto::ProtoObject* executeBytecodeRange(
             if (env) env->popKwNames();
             
             // Now stack contains: callable + (arg) items + kwMap. Total to pop: arg + 2.
-            for (int j = 0; j < arg + 2; ++j) stack.pop_back(); // Pop callable, args, kwMap
+            for (int j = 0; j < arg + 2; ++j) {
+                if (!stack.empty()) stack.pop_back(); 
+            }
+            if (!result && env && env->hasPendingException()) {
+                continue;
+            }
             stack.push_back(result ? result : (env ? env->getNonePrototype() : PROTO_NONE));
         } else if (op == OP_CALL_FUNCTION) {
             if (stack.size() < (unsigned long)(arg + 1)) {
@@ -3443,10 +3453,14 @@ const proto::ProtoObject* executeBytecodeRange(
             const proto::ProtoObject* result = invokeCallable(ctx, callable, args);
             PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
             
-            // Cleanup: Pop callable, args, and intermediate args-list
-            for (int j = 0; j < arg + 2; ++j) stack.pop_back();
+            // Cleanup: Pop callable, arg items, and intermediate args-list
+            for (int j = 0; j < arg + 2; ++j) {
+                if (!stack.empty()) stack.pop_back();
+            }
+            if (!result && env && env->hasPendingException()) {
+                continue;
+            }
             stack.push_back(result ? result : (env ? env->getNonePrototype() : PROTO_NONE));
-            if (!result && env && env->hasPendingException()) continue;
         } else if (op == OP_CALL_FUNCTION_EX) {
             const proto::ProtoObject* kwargs = (arg & 1) ? stack.back() : nullptr;
             const proto::ProtoObject* starargs = (arg & 1) ? stack[stack.top - 2] : stack.back();
@@ -3524,10 +3538,13 @@ const proto::ProtoObject* executeBytecodeRange(
             
             // Pop callable, starargs, [kwargs]
             int toPop = (arg & 1) ? 3 : 2;
-            for (int j = 0; j < toPop; ++j) stack.pop_back();
-            
+            for (int j = 0; j < toPop; ++j) {
+                if (!stack.empty()) stack.pop_back();
+            }
+            if (!result && env && env->hasPendingException()) {
+                continue;
+            }
             stack.push_back(result ? result : (env ? env->getNonePrototype() : PROTO_NONE));
-            if (!result && env && env->hasPendingException()) continue;
         } else if (op == OP_BUILD_TUPLE) {
             if (stack.size() < static_cast<size_t>(arg)) continue;
             // i++;
@@ -3654,6 +3671,13 @@ const proto::ProtoObject* executeBytecodeRange(
                                         }
                                     }
                                 }
+                                if (std::getenv("PROTO_ENV_DIAG")) {
+                                    std::string bn, bmn, bestn;
+                                    if (base && base->getAttribute(ctx, nameS) && base->getAttribute(ctx, nameS)->isString(ctx)) base->getAttribute(ctx, nameS)->asString(ctx)->toUTF8String(ctx, bn);
+                                    if (baseMeta && baseMeta->getAttribute(ctx, nameS) && baseMeta->getAttribute(ctx, nameS)->isString(ctx)) baseMeta->getAttribute(ctx, nameS)->asString(ctx)->toUTF8String(ctx, bmn);
+                                    if (bestMeta && bestMeta->getAttribute(ctx, nameS) && bestMeta->getAttribute(ctx, nameS)->isString(ctx)) bestMeta->getAttribute(ctx, nameS)->asString(ctx)->toUTF8String(ctx, bestn);
+                                    fprintf(stderr, "DEBUG METACLASS: base %p (%s) baseMeta %p (%s) bestMeta %p (%s) isSub=%d\n", (void*)base, bn.c_str(), (void*)baseMeta, bmn.c_str(), (void*)bestMeta, bestn.c_str(), isSub);
+                                }
                                 if (isSub) {
                                     bestMeta = baseMeta;
                                 }
@@ -3684,11 +3708,17 @@ const proto::ProtoObject* executeBytecodeRange(
                     prepareRaw = env ? env->getAttribute(ctx, metaclass, proto::ProtoString::fromUTF8String(ctx, "__prepare__")) : metaclass->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__prepare__"));
                 }
                 const proto::ProtoObject* prepareM = prepareRaw;
+                if (std::getenv("PROTO_ENV_DIAG")) {
+                    fprintf(stderr, "TRACE_PREPARE: metaclass=%p prepareM=%p\n", (void*)metaclass, (void*)prepareM); fflush(stderr);
+                }
                 if (prepareM && prepareM != PROTO_NONE) {
                     const proto::ProtoList* prepareArgs = ctx->newList()->appendLast(ctx, name)->appendLast(ctx, bases);
                     // Use keyword parameters if available
                     const proto::ProtoSparseList* kw = (kwds && kwds->asSparseList(ctx)) ? kwds->asSparseList(ctx) : nullptr;
                     const proto::ProtoObject* nsObj = invokeCallable(ctx, prepareM, prepareArgs, kw);
+                    if (std::getenv("PROTO_ENV_DIAG")) {
+                        fprintf(stderr, "TRACE_PREPARE: invokeCallable returned nsObj=%p\n", (void*)nsObj); fflush(stderr);
+                    }
                     stack.push_back(nsObj); 
                 } else {
                     stack.push_back(ctx->newObject(true));

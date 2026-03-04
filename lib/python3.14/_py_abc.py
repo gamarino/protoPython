@@ -55,6 +55,7 @@ class ABCMeta(type):
         cls._abc_cache = WeakSet()
         cls._abc_negative_cache = WeakSet()
         cls._abc_negative_cache_version = ABCMeta._abc_invalidation_counter
+        print(f"DEBUG ABCMeta.__new__ finished {name}, hasattr_registry={hasattr(cls, '_abc_registry')}")
         return cls
 
     def register(cls, subclass):

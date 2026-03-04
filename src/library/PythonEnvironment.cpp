@@ -5802,7 +5802,7 @@ static std::string getPyThreadIdStr() {
 
 static const proto::ProtoObject* getPyThread(proto::ProtoContext* ctx) {
     if (s_currentPyThread) return s_currentPyThread;
-    s_currentPyThread = ctx->newObject(false); // mutable
+    s_currentPyThread = ctx->newObject(true); // mutable
     if (s_globalThreadRootsDict) {
         const proto::ProtoString* k = proto::ProtoString::fromUTF8String(ctx, getPyThreadIdStr().c_str());
         const_cast<proto::ProtoObject*>(s_globalThreadRootsDict)->setAttribute(ctx, k, s_currentPyThread);
@@ -5886,6 +5886,10 @@ const proto::ProtoObject* PythonEnvironment::takePendingException() {
     const proto::ProtoString* key = s_threadEnv ? s_threadEnv->pendingExcString : proto::ProtoString::fromUTF8String(s_threadContext, "_pending_exc");
     const proto::ProtoObject* e = getPyThread(s_threadContext)->getAttribute(s_threadContext, key);
     if (e == PROTO_NONE) e = nullptr;
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        fprintf(stderr, "DEBUG EXCEPTION TAKE: threadKey=%p val=%p\n", (void*)key, (void*)e);
+        fflush(stderr);
+    }
     s_currentPyThread = const_cast<proto::ProtoObject*>(getPyThread(s_threadContext))->setAttribute(s_threadContext, key, PROTO_NONE);
     return e;
 }
@@ -5901,7 +5905,6 @@ bool PythonEnvironment::hasPendingException() const {
     return r;
 }
 
-
 const proto::ProtoObject* PythonEnvironment::peekPendingException() const {
     if (!s_threadContext) return nullptr;
     const proto::ProtoString* key = pendingExcString ? pendingExcString : proto::ProtoString::fromUTF8String(s_threadContext, "_pending_exc");
@@ -5912,6 +5915,10 @@ const proto::ProtoObject* PythonEnvironment::peekPendingException() const {
 void PythonEnvironment::clearPendingException() {
     if (!s_threadContext) return;
     const proto::ProtoString* key = pendingExcString ? pendingExcString : proto::ProtoString::fromUTF8String(s_threadContext, "_pending_exc");
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        fprintf(stderr, "DEBUG EXCEPTION CLEAR: threadKey=%p\n", (void*)key);
+        fflush(stderr);
+    }
     s_currentPyThread = const_cast<proto::ProtoObject*>(getPyThread(s_threadContext))->setAttribute(s_threadContext, key, PROTO_NONE);
 }
 

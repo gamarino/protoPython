@@ -636,6 +636,26 @@ const proto::ProtoObject* py_complex_repr(
     return context->fromUTF8String(buf);
 }
 
+// Forward declarations for implicit method wrappings
+static const proto::ProtoObject* py_staticmethod(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters);
+
+static const proto::ProtoObject* py_classmethod(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters);
+
+// NOTE: The `py_type` function definition is not present in the provided content.
+// The instruction asks to modify a loop within `py_type`.
+// Since `py_type` is not here, I cannot apply the internal modification.
+// I have only added the forward declarations as requested before where `py_type` would logically be.
+
 static const proto::ProtoObject* py_repr(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -1532,19 +1552,47 @@ static const proto::ProtoObject* py_super_getattr(
     const proto::ProtoObject* type = self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "type"));
     if (!obj || !type) return PROTO_NONE;
 
-    // Search MRO
-    const proto::ProtoList* parents = type->getParents(context); // type's parents, i.e. starting after 'type'
+    // Search MRO. For Python classes, __mro__ from the `obj` is the source of truth perfectly linearized.
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     
-    if (parents) {
+    bool isClass = obj->hasOwnAttribute(context, proto::ProtoString::fromUTF8String(context, "__mro__")) == PROTO_TRUE;
+    const proto::ProtoObject* mroSrc = isClass ? obj : env->getType(context, obj);
+    const proto::ProtoObject* mroAttr = mroSrc ? mroSrc->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__mro__")) : nullptr;
+    
+    std::vector<const proto::ProtoObject*> parentsList;
+    if (mroAttr && mroAttr->isTuple(context)) {
+        const proto::ProtoTuple* mro = mroAttr->asTuple(context);
+        bool found = false;
+        for (size_t i = 0; i < mro->getSize(context); ++i) {
+            if (found) {
+                parentsList.push_back(mro->getAt(context, i));
+            } else if (mro->getAt(context, i) == type) {
+                found = true;
+            }
+        }
+        if (!found && mro->getSize(context) > 1) {
+            for (size_t i = 1; i < mro->getSize(context); ++i) {
+                parentsList.push_back(mro->getAt(context, i));
+            }
+        }
+    } else {
+        const proto::ProtoList* parents = type->getParents(context);
+        if (parents) {
+            for (size_t i = 0; i < parents->getSize(context); ++i) {
+                parentsList.push_back(parents->getAt(context, i));
+            }
+        }
+    }
+    
+    if (!parentsList.empty()) {
         if (std::getenv("PROTO_ENV_DIAG")) {
             std::string nameS;
             nameObj->asString(context)->toUTF8String(context, nameS);
             fprintf(stderr, "DEBUG: py_super_getattr type=%p parents_size=%lu name=%s (%p) env=%p\n", 
-                (void*)type, parents->getSize(context), nameS.c_str(), (void*)nameObj, (void*)env);
+                (void*)type, parentsList.size(), nameS.c_str(), (void*)nameObj, (void*)env);
         }
-        for (size_t i = 0; i < parents->getSize(context); ++i) {
-            const proto::ProtoObject* parent = parents->getAt(context, i);
+        for (size_t i = 0; i < parentsList.size(); ++i) {
+            const proto::ProtoObject* parent = parentsList[i];
             if (std::getenv("PROTO_ENV_DIAG")) {
                 std::string s;
                 nameObj->asString(context)->toUTF8String(context, s);
@@ -1556,21 +1604,59 @@ static const proto::ProtoObject* py_super_getattr(
                 if (pNameAttr && pNameAttr->isString(context)) pNameAttr->asString(context)->toUTF8String(context, pName);
                 fprintf(stderr, "DEBUG: py_super_getattr checking parent %p (name=%s) of type %p (name=%s) for %s\n", (void*)parent, pName.c_str(), (void*)type, tName.c_str(), s.c_str());
             }
-
+            
             // Use hasOwnAttribute / direct data lookup to avoid full MRO search from this parent
             // which would defeat C3 linearization (e.g., finding object.__init__ on first parent).
             const proto::ProtoString* nameStr = nameObj->asString(context);
+            unsigned long target_hash = (unsigned long)nameStr;
             const proto::ProtoObject* val = PROTO_NONE;
             
-            // Fast path: hasOwnAttribute check
-            if (parent->hasOwnAttribute(context, nameStr) == PROTO_TRUE) {
-                val = parent->getAttribute(context, nameStr);
-            } else {
-                // Check __data__ dict just in case
-                const proto::ProtoObject* data = parent->getAttribute(context, env ? env->getDataString() : proto::ProtoString::fromUTF8String(context, "__data__"));
-                if (data && data->asSparseList(context)) {
-                    const proto::ProtoObject* match = data->asSparseList(context)->getAt(context, nameStr->getHash(context));
+            // Fast path: hasOwnAttribute check (using interned pointer address as sparse list key)
+            const proto::ProtoSparseList* attrs = parent->getOwnAttributes(context);
+            if (std::getenv("PROTO_ENV_DIAG")) {
+                if (!attrs) fprintf(stderr, "DEBUG: py_super_getattr attrs is null\n");
+                else {
+                    fprintf(stderr, "DEBUG: py_super_getattr looking for hash %lu on parent %p:\n", target_hash, (void*)parent);
+                    const proto::ProtoSparseListIterator* it = attrs->getIterator(context);
+                    while (it && it->hasNext(context)) {
+                        unsigned long hk = it->nextKey(context);
+                        fprintf(stderr, "DEBUG:   - attr hash %lu\n", hk);
+                        it = const_cast<proto::ProtoSparseListIterator*>(it)->advance(context);
+                    }
+                }
+            }
+            if (attrs) {
+                const proto::ProtoObject* match = attrs->getAt(context, target_hash);
+                if (match) {
+                    val = match;
+                } else {
+                    // Search by string comparison just in case pointer was different but string identical
+                    const proto::ProtoSparseListIterator* it = attrs->getIterator(context);
+                    while (it && it->hasNext(context)) {
+                        unsigned long kHash = it->nextKey(context);
+                        const proto::ProtoObject* v = it->nextValue(context);
+                        if (kHash == target_hash) {
+                            val = v; break;
+                        }
+                        it = const_cast<proto::ProtoSparseListIterator*>(it)->advance(context);
+                    }
+                }
+            }
+            
+            if (!val || val == PROTO_NONE) {
+                // Check __dict__ exactly properly matching the Python spec
+                const proto::ProtoObject* dict = parent->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__dict__"));
+                if (dict && dict != PROTO_NONE && dict->asSparseList(context)) {
+                    const proto::ProtoObject* match = dict->asSparseList(context)->getAt(context, nameStr->getHash(context));
                     if (match) val = match;
+                } else if (dict && dict != PROTO_NONE) {
+                    // Try dictionary getitem
+                    const proto::ProtoObject* getItemMethod = dict->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__getitem__"));
+                    if (getItemMethod && getItemMethod->isMethod(context)) {
+                        const proto::ProtoList* args = context->newList()->appendLast(context, nameObj);
+                        val = getItemMethod->asMethod(context)(context, dict, nullptr, args, nullptr);
+                        if (env && env->hasPendingException()) env->clearPendingException();
+                    }
                 }
             }
             
@@ -1603,6 +1689,26 @@ static const proto::ProtoObject* py_super_getattr(
     
     if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG: py_super_getattr FAILED to find attribute\n");
     return PROTO_NONE;
+}
+
+static const proto::ProtoObject* py_super_setattr(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    if (positionalParameters->getSize(context) < 2) return PROTO_NONE;
+    const proto::ProtoObject* nameObj = positionalParameters->getAt(context, 0);
+    const proto::ProtoObject* valueObj = positionalParameters->getAt(context, 1);
+    
+    if (!nameObj->isString(context)) return PROTO_NONE;
+    
+    // Get stored 'obj' and 'type' from proxy
+    const proto::ProtoObject* obj = self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "obj"));
+    if (!obj || obj == PROTO_NONE) return PROTO_NONE;
+
+    // Call setAttribute directly on the bound object
+    return obj->setAttribute(context, nameObj->asString(context), valueObj);
 }
 
 static const proto::ProtoObject* py_super(
@@ -1802,10 +1908,11 @@ static const proto::ProtoObject* py_super(
     }
 
     if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG: py_super returning PROXY\n");
-    proto::ProtoObject* proxy = const_cast<proto::ProtoObject*>(context->newObject(false));
+    proto::ProtoObject* proxy = const_cast<proto::ProtoObject*>(context->newObject(true));
     proxy->setAttribute(context, proto::ProtoString::fromUTF8String(context, "type"), type);
     proxy->setAttribute(context, proto::ProtoString::fromUTF8String(context, "obj"), obj);
     proxy->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__getattr__"), context->fromMethod(proxy, py_super_getattr));
+    proxy->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__setattr__"), context->fromMethod(proxy, py_super_setattr));
     proxy->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__is_super_proxy__"), context->fromBoolean(true));
 
     return proxy;
@@ -2448,6 +2555,28 @@ const proto::ProtoObject* py_type(
                         }
                         if (!val) {
                             val = dict->getAttribute(context, k);
+                        }
+                        
+                        // Implicitly wrap special methods
+                        if (val && env && val != PROTO_NONE) {
+                            const proto::ProtoObject* valType = env->getType(context, val);
+                            const proto::ProtoObject* vName = valType ? valType->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__name__")) : nullptr;
+                            std::string tName = "";
+                            if (vName && vName->isString(context)) vName->asString(context)->toUTF8String(context, tName);
+
+                            if (ks == "__new__" && tName != "staticmethod") {
+                                const proto::ProtoObject* smCls = env->getBuiltins()->getAttribute(context, proto::ProtoString::fromUTF8String(context, "staticmethod"));
+                                if (smCls && smCls != PROTO_NONE) {
+                                    const proto::ProtoList* smArgs = context->newList()->appendLast(context, smCls)->appendLast(context, val);
+                                    val = py_staticmethod(context, nullptr, nullptr, smArgs, nullptr);
+                                }
+                            } else if ((ks == "__init_subclass__" || ks == "__class_getitem__") && tName != "classmethod") {
+                                const proto::ProtoObject* cmCls = env->getBuiltins()->getAttribute(context, proto::ProtoString::fromUTF8String(context, "classmethod"));
+                                if (cmCls && cmCls != PROTO_NONE) {
+                                    const proto::ProtoList* cmArgs = context->newList()->appendLast(context, cmCls)->appendLast(context, val);
+                                    val = py_classmethod(context, nullptr, nullptr, cmArgs, nullptr);
+                                }
+                            }
                         }
                         
                         targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, k, val));
@@ -3958,21 +4087,34 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     propertyProto = propertyProto->setAttribute(ctx, initStr, ctx->fromMethod(nullptr, py_property_init));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "property"), propertyProto);
     
-    const proto::ProtoObject* classmethodProto = ctx->newObject(false);
-    if (objectProto) classmethodProto = classmethodProto->addParent(ctx, objectProto);
-    if (typeProto) classmethodProto = classmethodProto->setAttribute(ctx, py_class_local, typeProto);
-    classmethodProto = classmethodProto->setAttribute(ctx, py_name_local, proto::ProtoString::fromUTF8String(ctx, "classmethod")->asObject(ctx));
+    const proto::ProtoObject* staticmethodProto = ctx->newObject(true);
+    staticmethodProto = staticmethodProto->setAttribute(ctx, pEnv->getClassString(), typeProto);
+    staticmethodProto = staticmethodProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__name__"), proto::ProtoString::fromUTF8String(ctx, "staticmethod")->asObject(ctx));
+    
+    // Add MRO so that py_type_getattribute can find descriptor methods
+    const proto::ProtoList* smMroList = ctx->newList()->appendLast(ctx, staticmethodProto)->appendLast(ctx, objectProto);
+    staticmethodProto = staticmethodProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__mro__"), smMroList->asObject(ctx));
+    staticmethodProto = staticmethodProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__bases__"), ctx->newList()->appendLast(ctx, objectProto)->asObject(ctx));
+    staticmethodProto = staticmethodProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__is_python_class__"), PROTO_TRUE);
+
+    const proto::ProtoObject* classmethodProto = ctx->newObject(true);
+    classmethodProto = classmethodProto->setAttribute(ctx, pEnv->getClassString(), typeProto);
+    classmethodProto = classmethodProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__name__"), proto::ProtoString::fromUTF8String(ctx, "classmethod")->asObject(ctx));
+    
+    // Add MRO so that py_type_getattribute can find descriptor methods
+    const proto::ProtoList* cmMroList = ctx->newList()->appendLast(ctx, classmethodProto)->appendLast(ctx, objectProto);
+    classmethodProto = classmethodProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__mro__"), cmMroList->asObject(ctx));
+    classmethodProto = classmethodProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__bases__"), ctx->newList()->appendLast(ctx, objectProto)->asObject(ctx));
+    classmethodProto = classmethodProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__is_python_class__"), PROTO_TRUE);
+
     classmethodProto = classmethodProto->setAttribute(ctx, pEnv->getGetDunderString(), ctx->fromMethod(nullptr, py_classmethod_get));
     classmethodProto = classmethodProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__new__"), ctx->fromMethod(nullptr, py_classmethod));
-    builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "classmethod"), classmethodProto);
     
-    const proto::ProtoObject* staticmethodProto = ctx->newObject(false);
-    if (objectProto) staticmethodProto = staticmethodProto->addParent(ctx, objectProto);
-    if (typeProto) staticmethodProto = staticmethodProto->setAttribute(ctx, py_class_local, typeProto);
-    staticmethodProto = staticmethodProto->setAttribute(ctx, py_name_local, proto::ProtoString::fromUTF8String(ctx, "staticmethod")->asObject(ctx));
     staticmethodProto = staticmethodProto->setAttribute(ctx, pEnv->getGetDunderString(), ctx->fromMethod(nullptr, py_staticmethod_get));
     staticmethodProto = staticmethodProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__new__"), ctx->fromMethod(nullptr, py_staticmethod));
+
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "staticmethod"), staticmethodProto);
+    builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "classmethod"), classmethodProto);
     
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__import__"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_import));
 
