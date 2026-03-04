@@ -1467,7 +1467,13 @@ const proto::ProtoObject* runUserClassCall(proto::ProtoContext* ctx,
         }
         
         obj = const_cast<proto::ProtoObject*>(invokeCallable(ctx, newM, newArgs, kwargs));
-        if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG runUserClassCall: invokeCallable(newM) returned obj=%p\n", (void*)obj);
+        if (std::getenv("PROTO_ENV_DIAG")) {
+            fprintf(stderr, "DEBUG runUserClassCall: invokeCallable(newM) returned obj=%p\n", (void*)obj);
+            if (!obj || obj == PROTO_NONE) {
+                fprintf(stderr, "DEBUG TRAP: runUserClassCall newM returned nullptr or NoneType for class %p!\n", (void*)self);
+            }
+            fflush(stderr);
+        }
         if (!obj || obj == PROTO_NONE) {
              if (env && env->hasPendingException()) {
                  if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG runUserClassCall: Pending exception detected!\n");
@@ -1723,10 +1729,13 @@ const proto::ProtoObject* executeBytecodeRange(
                 while (stack.size() > b.stackDepth) stack.pop_back();
                 if (exc) {
                     if (get_env_diag()) {
-                        fprintf(stderr, "DEBUG: Pushing exception %p back to stack\n", exc);
+                        fprintf(stderr, "DEBUG: Pushing exception tuple (None, exc, exc) %p back to stack\n", exc);
                         fflush(stderr);
                     }
-                    stack.push_back(exc);
+                    const proto::ProtoObject* noneObj = env ? env->getNonePrototype() : PROTO_NONE;
+                    stack.push_back(noneObj); // Traceback
+                    stack.push_back(exc);     // Value
+                    stack.push_back(exc);     // Type (duplicated exc for ProtoPython's modified exception match)
                 }
 
                 if (get_env_diag()) {

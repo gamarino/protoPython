@@ -1363,9 +1363,8 @@ bool Compiler::compileTry(TryNode* n) {
 
             // Bind exception to name if present
             if (!h.name.empty()) {
+                emit(OP_DUP_TOP);
                 if (!emitNameOp(h.name, TargetCtx::Store)) return false;
-            } else {
-                emit(OP_POP_TOP);
             }
 
             if (!compileNode(h.body.get())) return false;
