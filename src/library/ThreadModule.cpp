@@ -19,9 +19,6 @@
 namespace protoPython {
 namespace thread_module {
 
-static const proto::ProtoObject* lockProt = nullptr;
-static const proto::ProtoObject* rlockProt = nullptr;
-
 struct LockData {
     std::mutex m;
     std::atomic<bool> held{false};
@@ -309,10 +306,11 @@ static const proto::ProtoObject* py_lock_locked(
 
 static const proto::ProtoObject* py_allocate_lock(
     proto::ProtoContext* ctx,
-    const proto::ProtoObject* /*self*/,
+    const proto::ProtoObject* self,
     const proto::ParentLink* /*parentLink*/,
     const proto::ProtoList* /*posArgs*/,
     const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoObject* lockProt = self ? self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_lockProt")) : nullptr;
     proto::ProtoObject* obj = lockProt ? const_cast<proto::ProtoObject*>(lockProt->newChild(ctx, true)) : const_cast<proto::ProtoObject*>(ctx->newObject(false));
     obj->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_handle"), 
         ctx->fromExternalPointer(new LockData, mutex_finalizer));
@@ -321,10 +319,11 @@ static const proto::ProtoObject* py_allocate_lock(
 
 static const proto::ProtoObject* py_allocate_rlock(
     proto::ProtoContext* ctx,
-    const proto::ProtoObject* /*self*/,
+    const proto::ProtoObject* self,
     const proto::ParentLink* /*parentLink*/,
     const proto::ProtoList* /*posArgs*/,
     const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoObject* rlockProt = self ? self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_rlockProt")) : nullptr;
     proto::ProtoObject* obj = rlockProt ? const_cast<proto::ProtoObject*>(rlockProt->newChild(ctx, true)) : const_cast<proto::ProtoObject*>(ctx->newObject(false));
     obj->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_handle"), 
         ctx->fromExternalPointer(new RLockData, rmutex_finalizer));
@@ -432,7 +431,7 @@ static const proto::ProtoObject* py_is_alive(
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     const proto::ProtoObject* mod = ctx->newObject(false);
     
-    lockProt = ctx->newObject(false);
+    const proto::ProtoObject* lockProt = ctx->newObject(false);
     lockProt = lockProt->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "acquire"), 
         ctx->fromMethod(nullptr, py_lock_acquire));
     lockProt = lockProt->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "release"), 
@@ -443,8 +442,9 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(nullptr, py_lock_enter));
     lockProt = lockProt->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__exit__"), 
         ctx->fromMethod(nullptr, py_lock_exit));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_lockProt"), lockProt);
 
-    rlockProt = ctx->newObject(false);
+    const proto::ProtoObject* rlockProt = ctx->newObject(false);
     rlockProt = rlockProt->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "acquire"), 
         ctx->fromMethod(nullptr, py_rlock_acquire));
     rlockProt = rlockProt->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "release"), 
@@ -455,6 +455,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(nullptr, py_rlock_enter));
     rlockProt = rlockProt->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__exit__"), 
         ctx->fromMethod(nullptr, py_rlock_exit));
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_rlockProt"), rlockProt);
 
     mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "start_new_thread"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_start_new_thread));

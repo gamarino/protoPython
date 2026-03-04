@@ -33,8 +33,6 @@ static void scandir_finalizer(void* ptr) {
     delete static_cast<ScandirState*>(ptr);
 }
 
-static const proto::ProtoObject* direntry_proto = nullptr;
-
 static const proto::ProtoObject* py_direntry_is_dir(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
@@ -119,7 +117,8 @@ static const proto::ProtoObject* py_scandir_next(
         if (n[0] == '.' && (n[1] == '\0' || (n[1] == '.' && n[2] == '\0')))
             continue;
 
-        const proto::ProtoObject* entry = direntry_proto ? direntry_proto->newChild(ctx, true) : ctx->newObject(false);
+        const proto::ProtoObject* direntry_proto = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_direntry_proto"));
+        const proto::ProtoObject* entry = direntry_proto && direntry_proto != PROTO_NONE ? direntry_proto->newChild(ctx, true) : ctx->newObject(false);
         
         std::string fullPath = state->path;
         if (fullPath.back() != '/') fullPath += "/";
@@ -297,7 +296,7 @@ static const proto::ProtoObject* py_listdir(
 
 static const proto::ProtoObject* py_scandir(
     proto::ProtoContext* ctx,
-    const proto::ProtoObject* /*self*/,
+    const proto::ProtoObject* self,
     const proto::ParentLink* /*parentLink*/,
     const proto::ProtoList* posArgs,
     const proto::ProtoSparseList* /*kwargs*/) {
@@ -319,6 +318,12 @@ static const proto::ProtoObject* py_scandir(
         ctx->fromMethod(const_cast<proto::ProtoObject*>(iter), py_scandir_next));
     iter = iter->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iter__"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(iter), py_scandir_iter));
+    
+    // Attach direntry_proto from module
+    const proto::ProtoObject* direntry_proto = self ? self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_direntry_proto")) : nullptr;
+    if (direntry_proto && direntry_proto != PROTO_NONE) {
+        iter = iter->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_direntry_proto"), direntry_proto);
+    }
     
     return iter;
 }
@@ -799,28 +804,27 @@ static const proto::ProtoObject* py_exit(
 }
 
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment* env) {
-    if (!direntry_proto) {
-        direntry_proto = env && env->getObjectPrototype() ? env->getObjectPrototype()->newChild(ctx, false) : ctx->newObject(false);
-        // Ensure direntry_proto is a fresh object and not polluting global Object prototype
-        // In some protoCore versions, newObject(false) might return a shared object if not careful.
-        // We set it explicitly to have no parent or a fresh one if possible.
-        direntry_proto = direntry_proto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "is_dir"),
-            ctx->fromMethod(const_cast<proto::ProtoObject*>(direntry_proto), py_direntry_is_dir));
-        direntry_proto = direntry_proto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "is_file"),
-            ctx->fromMethod(const_cast<proto::ProtoObject*>(direntry_proto), py_direntry_is_file));
-        direntry_proto = direntry_proto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "is_symlink"),
-            ctx->fromMethod(const_cast<proto::ProtoObject*>(direntry_proto), py_direntry_is_symlink));
-        direntry_proto = direntry_proto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "stat"),
-            ctx->fromMethod(const_cast<proto::ProtoObject*>(direntry_proto), py_direntry_stat));
-        direntry_proto = direntry_proto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "inode"),
-            ctx->fromMethod(const_cast<proto::ProtoObject*>(direntry_proto), py_direntry_inode));
-        direntry_proto = direntry_proto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__fspath__"),
-            ctx->fromMethod(const_cast<proto::ProtoObject*>(direntry_proto), py_direntry_fspath));
-    }
+    const proto::ProtoObject* direntry_proto = env && env->getObjectPrototype() ? env->getObjectPrototype()->newChild(ctx, false) : ctx->newObject(false);
+    // Ensure direntry_proto is a fresh object and not polluting global Object prototype
+    // In some protoCore versions, newObject(false) might return a shared object if not careful.
+    // We set it explicitly to have no parent or a fresh one if possible.
+    direntry_proto = direntry_proto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "is_dir"),
+        ctx->fromMethod(nullptr, py_direntry_is_dir));
+    direntry_proto = direntry_proto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "is_file"),
+        ctx->fromMethod(nullptr, py_direntry_is_file));
+    direntry_proto = direntry_proto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "is_symlink"),
+        ctx->fromMethod(nullptr, py_direntry_is_symlink));
+    direntry_proto = direntry_proto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "stat"),
+        ctx->fromMethod(nullptr, py_direntry_stat));
+    direntry_proto = direntry_proto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "inode"),
+        ctx->fromMethod(nullptr, py_direntry_inode));
+    direntry_proto = direntry_proto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__fspath__"),
+        ctx->fromMethod(nullptr, py_direntry_fspath));
 
 
 
     const proto::ProtoObject* mod = env && env->getObjectPrototype() ? env->getObjectPrototype()->newChild(ctx, true) : ctx->newObject(false);
+    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_direntry_proto"), direntry_proto);
     
     // Create Environ object
     const proto::ProtoObject* environProt = env && env->getObjectPrototype() ? env->getObjectPrototype()->newChild(ctx, false) : ctx->newObject(false);
