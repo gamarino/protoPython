@@ -321,6 +321,22 @@ static const proto::ProtoObject* py_type_get_dict(
     return proxy;
 }
 
+static const proto::ProtoObject* py_type_get_annotations(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!self || !env) return PROTO_NONE;
+    
+    const proto::ProtoString* annS = proto::ProtoString::fromUTF8String(context, "__annotations__");
+    if (self->hasOwnAttribute(context, annS) == PROTO_TRUE) {
+        return self->getAttribute(context, annS);
+    }
+    
+    env->raiseAttributeError(context, self, "__annotations__");
+    return nullptr;
+}
+
 static const proto::ProtoObject* py_object_hash(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -6750,6 +6766,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     objectPrototype = objectPrototype->setAttribute(rootContext_, py_hash_dunder, rootContext_->fromMethod(nullptr, py_object_hash));
     objectPrototype = objectPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__reduce_ex__"), rootContext_->fromMethod(nullptr, py_object_reduce_ex));
     objectPrototype = objectPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__reduce__"), rootContext_->fromMethod(nullptr, py_object_reduce));
+    objectPrototype = objectPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__is_python_class__"), PROTO_TRUE);
 
     // 2. Create 'type'
     typePrototype = objectPrototype->newChild(rootContext_, true);
@@ -6758,6 +6775,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     typePrototype = typePrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_type_repr));
     typePrototype = typePrototype->setAttribute(rootContext_, py_module, builtinsVal);
     typePrototype = typePrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__call__"), rootContext_->fromMethod(nullptr, protoPython::builtins::py_type));
+    typePrototype = typePrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__is_python_class__"), PROTO_TRUE);
     typePrototype = typePrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__new__"), rootContext_->fromMethod(nullptr, protoPython::builtins::py_type));
     typePrototype = typePrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__prepare__"), rootContext_->fromMethod(nullptr, protoPython::builtins::py_type_prepare));
     typePrototype = typePrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__class_getitem__"), rootContext_->fromMethod(nullptr, py_type_class_getitem));
@@ -6797,6 +6815,15 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     dictDescr->setAttribute(rootContext_, py_name, dictString->asObject(rootContext_));
 
     typePrototype = typePrototype->setAttribute(rootContext_, dictString, dictDescr);
+
+    // Register __annotations__ on type
+    proto::ProtoObject* annDescr = const_cast<proto::ProtoObject*>(getSetDescriptorPrototype->newChild(rootContext_, true));
+    const proto::ProtoString* annString = proto::ProtoString::fromUTF8String(rootContext_, "__annotations__");
+    annDescr->setAttribute(rootContext_, py_class, getSetDescriptorPrototype);
+    annDescr->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "fget"), rootContext_->fromMethod(nullptr, py_type_get_annotations));
+    annDescr->setAttribute(rootContext_, py_name, annString->asObject(rootContext_));
+    
+    typePrototype = typePrototype->setAttribute(rootContext_, annString, annDescr);
 
     // 3. Circularity: object's class is type
     objectPrototype = objectPrototype->setAttribute(rootContext_, py_class, typePrototype);
@@ -8831,12 +8858,6 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
     
     std::string nameStr;
     name->toUTF8String(ctx, nameStr);
-    bool tracing = false;
-    if (nameStr == "__setattr__" || nameStr == "_local__impl") {
-        tracing = true;
-        fprintf(stderr, "TRACE_GET: getAttribute obj=%p name='%s' name_ptr=%p\n", (void*)obj, nameStr.c_str(), (void*)name);
-        fflush(stderr);
-    }
 
     // Recursion Guard for binding logic
     static thread_local int getAttrDepth = 0;
@@ -8992,8 +9013,31 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
                  // If obj is a class and the attribute was found on the class itself (or its bases),
                  // we are accessing an attribute ON a class. So instance = None, owner = the class (obj).
                  if (isClass && foundOnClassOrMro) {
-                     instance = PROTO_NONE;
-                     owner = obj;
+                     bool metaclassDataDescr = false;
+                     if (owner && owner != PROTO_NONE) {
+                          const proto::ProtoObject* mVal = owner->getAttribute(ctx, name);
+                          if (mVal == val) {
+                              const proto::ProtoObject* mValType = this->getType(ctx, mVal);
+                              if (mValType && mValType->hasAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__set__")) == PROTO_TRUE) {
+                                  metaclassDataDescr = true;
+                              } else if (mValType) {
+                                  const proto::ProtoObject* tName = mValType->getAttribute(ctx, this->getNameString());
+                                  if (tName && tName->isString(ctx)) {
+                                      std::string str; tName->asString(ctx)->toUTF8String(ctx, str);
+                                      if (str == "getset_descriptor" || str == "property" || str == "member_descriptor") {
+                                          metaclassDataDescr = true;
+                                      }
+                                  }
+                              }
+                          }
+                     }
+                     if (metaclassDataDescr) {
+                         instance = obj;
+                         // owner is already objClass
+                     } else {
+                         instance = PROTO_NONE;
+                         owner = obj;
+                     }
                  }
                  
                  const proto::ProtoList* args = ctx->newList()->appendLast(ctx, instance)->appendLast(ctx, owner ? owner : PROTO_NONE);
