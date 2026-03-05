@@ -677,7 +677,7 @@ bool Compiler::compileWhile(WhileNode* n) {
     int jumpToEndSlot = bytecodeOffset() - 1;
     
     if (!compileNode(n->body.get())) return false;
-    emit(OP_JUMP_ABSOLUTE, startPC);
+    emit(OP_JUMP_ABSOLUTE, startPC * 2);
     
     int afterLoopBody = bytecodeOffset();
     addPatch(jumpToEndSlot, afterLoopBody);
@@ -706,7 +706,7 @@ bool Compiler::compileFor(ForNode* n) {
     int argSlot = bytecodeOffset() - 1;
     if (!compileTarget(n->target.get(), TargetCtx::Store)) return false;
     if (!compileNode(n->body.get())) return false;
-    emit(OP_JUMP_ABSOLUTE, loopStart);
+    emit(OP_JUMP_ABSOLUTE, loopStart * 2);
     int afterLoop = bytecodeOffset();
     addPatch(argSlot, afterLoop);
     
@@ -733,7 +733,7 @@ bool Compiler::compileBreak(BreakNode* n) {
 bool Compiler::compileContinue(ContinueNode* n) {
     if (loopStack_.empty()) return false;
     if (!unwindBlocks(true)) return false;
-    emit(OP_JUMP_ABSOLUTE, loopStack_.back().start);
+    emit(OP_JUMP_ABSOLUTE, loopStack_.back().start * 2);
     return true;
 }
 
@@ -1240,7 +1240,7 @@ bool Compiler::compileComprehension(const std::vector<Comprehension>& generators
     
     if (!compileComprehension(generators, index + 1, innerBody)) return false;
     
-    emit(OP_JUMP_ABSOLUTE, loopStart);
+    emit(OP_JUMP_ABSOLUTE, loopStart * 2);
     int loopEnd = bytecodeOffset();
     addPatch(endSlot, loopEnd);
     for (int slot : ifSlots) {
@@ -2541,7 +2541,7 @@ bool Compiler::compileAsyncFor(AsyncForNode* n) {
 
     // 5. Body
     if (!compileNode(n->body.get())) return false;
-    emit(OP_JUMP_ABSOLUTE, loopStart);
+    emit(OP_JUMP_ABSOLUTE, loopStart * 2);
 
     // 6. Handler (StopAsyncIteration)
     int handlerTarget = bytecodeOffset();
