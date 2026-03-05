@@ -18,29 +18,13 @@ Compiler::Compiler(proto::ProtoContext* ctx, const std::string& filename)
 }
 
 int Compiler::addConstant(const proto::ProtoObject* obj) {
-    if (obj == PROTO_NONE) {
-        auto it = constStrIndex_.find("None");
-        if (it != constStrIndex_.end()) return it->second;
-        int idx = static_cast<int>(constantsVec_.size());
+    if (obj == PROTO_NONE || obj == PROTO_TRUE || obj == PROTO_FALSE) {
+        int n = static_cast<int>(constantsVec_.size());
+        for (int i = 0; i < n; ++i) {
+            if (constantsVec_[i] == obj) return i;
+        }
         constantsVec_.push_back(obj);
-        constStrIndex_["None"] = idx;
-        return idx;
-    }
-    if (obj == PROTO_TRUE) {
-        auto it = constStrIndex_.find("True");
-        if (it != constStrIndex_.end()) return it->second;
-        int idx = static_cast<int>(constantsVec_.size());
-        constantsVec_.push_back(obj);
-        constStrIndex_["True"] = idx;
-        return idx;
-    }
-    if (obj == PROTO_FALSE) {
-        auto it = constStrIndex_.find("False");
-        if (it != constStrIndex_.end()) return it->second;
-        int idx = static_cast<int>(constantsVec_.size());
-        constantsVec_.push_back(obj);
-        constStrIndex_["False"] = idx;
-        return idx;
+        return n;
     }
 
     if (obj->isInteger(ctx_)) {
@@ -99,7 +83,7 @@ void Compiler::emit(int op, int arg) {
 }
 
 int Compiler::bytecodeOffset() const {
-    return static_cast<int>(bytecodeVec_.size());
+    return static_cast<int>(bytecodeVec_.size()) / 2;
 }
 
 void Compiler::addPatch(int argSlotIndex, int targetBytecodeIndex) {
@@ -108,8 +92,11 @@ void Compiler::addPatch(int argSlotIndex, int targetBytecodeIndex) {
 
 void Compiler::applyPatches() {
     for (const auto& p : patches_) {
-        if (p.first >= 0 && static_cast<unsigned long>(p.first) < bytecodeVec_.size())
-            bytecodeVec_[p.first] = ctx_->fromInteger(p.second);
+        // p.first is the instruction index (bytecodeOffset() value)
+        // the arg slot is at index (p.first * 2) + 1 in the bytecodeVec_
+        unsigned long arrayIdx = static_cast<unsigned long>(p.first) * 2 + 1;
+        if (arrayIdx < bytecodeVec_.size())
+            bytecodeVec_[arrayIdx] = ctx_->fromInteger(p.second * 2); // ExecutionEngine jumps to array index!
     }
     patches_.clear();
 }
@@ -1362,11 +1349,21 @@ bool Compiler::compileTry(TryNode* n) {
             }
 
             // Bind exception to name if present
+            // In ProtoPython execution engine, the top of the stack is now Exception (Type), Exception (Value), Traceback (None)
+            // Wait: since we changed OP_EXCEPTION_MATCH to pop ONLY `type`, `Type`, `Value`, `Traceback` are still on the stack.
+            // CPython OP_EXCEPTION_MATCH pops the matching type but NOT the exception itself. 
+            // We need to pop 3 items eventually, but first let's store it if needed.
+            // Top of stack is `exc` (type). Next is `exc` (value). Next is `traceback` (none).
             if (!h.name.empty()) {
-                emit(OP_DUP_TOP);
+                emit(OP_DUP_TOP); // duplicates `exc` (type)
                 if (!emitNameOp(h.name, TargetCtx::Store)) return false;
             }
 
+            // Pop the 3 exception items from the stack since we're handling it
+            emit(OP_POP_TOP, 0); // type
+            emit(OP_POP_TOP, 0); // value
+            emit(OP_POP_TOP, 0); // traceback
+            
             if (!compileNode(h.body.get())) return false;
             
             emit(OP_POP_EXCEPT);
@@ -1376,13 +1373,21 @@ bool Compiler::compileTry(TryNode* n) {
             jumpToEndLocations.push_back(endJumpSlot);
 
             if (nextHandlerSlot != -1) {
-                addPatch(nextHandlerSlot + 1, bytecodeOffset());
+                addPatch(nextHandlerSlot, bytecodeOffset());
             }
         }
-        // If we fall through all handlers, re-raise the exception
+        // If we fall through all handlers, we still need to pop the exception info
+        // wait, OP_RAISE_VARARGS 0 re-raises the active exception. It doesn't use the stack!
+        // but the stack has 3 items left over! We need to pop them.
+        emit(OP_POP_TOP, 0);
+        emit(OP_POP_TOP, 0);
+        emit(OP_POP_TOP, 0);
         emit(OP_RAISE_VARARGS, 0);
     } else {
-        // No handlers: re-raise whatever was caught
+        // No handlers: re-raise whatever was caught. Stack has 3 items. Pop them.
+        emit(OP_POP_TOP, 0);
+        emit(OP_POP_TOP, 0);
+        emit(OP_POP_TOP, 0);
         emit(OP_RAISE_VARARGS, 0);
     }
     
@@ -1396,7 +1401,7 @@ bool Compiler::compileTry(TryNode* n) {
     // Handled exceptions (from except blocks) jump here (after Else block)
     int postElseLabel = bytecodeOffset();
     for (int locSlot : jumpToEndLocations) {
-        addPatch(locSlot + 1, postElseLabel);
+        addPatch(locSlot, postElseLabel);
     }
     
     if (n->finalbody) {

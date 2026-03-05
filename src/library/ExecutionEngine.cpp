@@ -3546,7 +3546,10 @@ const proto::ProtoObject* executeBytecodeRange(
             }
             stack.push_back(result ? result : (env ? env->getNonePrototype() : PROTO_NONE));
         } else if (op == OP_BUILD_TUPLE) {
-            if (stack.size() < static_cast<size_t>(arg)) continue;
+            if (stack.size() < static_cast<size_t>(arg)) {
+                i = next_i;
+                continue;
+            }
             // i++;
             const proto::ProtoList* lst = ctx->newList();
             stack.push_back(lst->asObject(ctx)); // Root lst
