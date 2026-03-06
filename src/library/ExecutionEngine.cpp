@@ -2085,7 +2085,7 @@ const proto::ProtoObject* executeBytecodeRange(
             if (stack.size() < 2) { i = next_i; continue; }
             const proto::ProtoObject* right = stack.back();
             const proto::ProtoObject* left = stack[stack.top - 2];
-            const proto::ProtoObject* r = left->modulo(ctx, right);
+            const proto::ProtoObject* r = binaryModulo(ctx, left, right);
             stack.pop_back();
             stack.back() = r;
         } else if (op == OP_BINARY_MATRIX_MULTIPLY) {
@@ -3632,10 +3632,20 @@ const proto::ProtoObject* executeBytecodeRange(
                     const proto::ProtoObject* objectProto = env ? env->getObjectPrototype() : nullptr;
                     const proto::ProtoObject* bestMeta = typeProto;
                     
-                    if (bases && bases->asTuple(ctx)) {
+                    if (bases) {
                         const proto::ProtoTuple* tupleBases = bases->asTuple(ctx);
-                        for (size_t i = 0; i < tupleBases->getSize(ctx); ++i) {
-                            const proto::ProtoObject* base = tupleBases->getAt(ctx, i);
+                        const proto::ProtoList* listBases = tupleBases ? nullptr : bases->asList(ctx);
+                        if (!tupleBases && !listBases) {
+                            const proto::ProtoObject* dataAttr = bases->getAttribute(ctx, env ? env->getDataString() : getInternalString(ctx, "__data__"));
+                            if (dataAttr) {
+                                tupleBases = dataAttr->asTuple(ctx);
+                                listBases = tupleBases ? nullptr : dataAttr->asList(ctx);
+                            }
+                        }
+                        
+                        size_t basesSize = tupleBases ? tupleBases->getSize(ctx) : (listBases ? listBases->getSize(ctx) : 0);
+                        for (size_t i = 0; i < basesSize; ++i) {
+                            const proto::ProtoObject* base = tupleBases ? tupleBases->getAt(ctx, i) : listBases->getAt(ctx, i);
                             const proto::ProtoObject* baseMeta = nullptr;
                             if (env) {
                                 baseMeta = base->getAttribute(ctx, env->getClassString());

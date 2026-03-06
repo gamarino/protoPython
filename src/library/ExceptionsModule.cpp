@@ -9,46 +9,29 @@ static const proto::ProtoObject* exception_init(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
+    
+    const proto::ProtoObject* instance = self;
+    unsigned long startIdx = 0;
+    if (!instance || instance == PROTO_NONE) {
+        if (!positionalParameters || positionalParameters->getSize(context) == 0) return PROTO_NONE;
+        instance = positionalParameters->getAt(context, 0);
+        startIdx = 1;
+    }
+
     const proto::ProtoString* argsName = proto::ProtoString::fromUTF8String(context, "args");
     const proto::ProtoList* actualArgs = context->newList();
-    if (positionalParameters && positionalParameters->getSize(context) > 0) {
-        for (unsigned long i = 0; i < positionalParameters->getSize(context); ++i) {
+    if (positionalParameters && positionalParameters->getSize(context) > startIdx) {
+        for (unsigned long i = startIdx; i < positionalParameters->getSize(context); ++i) {
             actualArgs = actualArgs->appendLast(context, positionalParameters->getAt(context, i));
         }
     }
     const proto::ProtoObject* args = context->newTupleFromList(actualArgs)->asObject(context);
-    self = self->setAttribute(context, argsName, args);
-    self = self->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__traceback__"), PROTO_NONE);
+    instance = const_cast<proto::ProtoObject*>(instance)->setAttribute(context, argsName, args);
+    instance = const_cast<proto::ProtoObject*>(instance)->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__traceback__"), PROTO_NONE);
     return PROTO_NONE;
 }
 
-static const proto::ProtoObject* exception_call(
-    proto::ProtoContext* context,
-    const proto::ProtoObject* self,
-    const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
-    const proto::ProtoObject* instance = self->newChild(context, true);
-    instance = instance->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__class__"), self);
-    const proto::ProtoString* argsName = proto::ProtoString::fromUTF8String(context, "args");
-    
-    const proto::ProtoList* actualArgs = context->newList();
-    if (positionalParameters) {
-        for (unsigned long i = 0; i < positionalParameters->getSize(context); ++i) {
-            // Skip the class object itself if passed as the first argument due to how __call__ is bound
-            if (i == 0 && positionalParameters->getAt(context, i) == self) continue;
-            actualArgs = actualArgs->appendLast(context, positionalParameters->getAt(context, i));
-        }
-    }
-    const proto::ProtoObject* args = context->newTupleFromList(actualArgs)->asObject(context);
-    instance = instance->setAttribute(context, argsName, args);
-    instance = instance->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__traceback__"), PROTO_NONE);
-    const proto::ProtoObject* init = self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__init__"));
-    if (init && init->asMethod(context)) {
-        init->asMethod(context)(context, instance, nullptr, actualArgs, keywordParameters);
-    }
-    return instance;
-}
+
 
 static const proto::ProtoObject* exception_str(
     proto::ProtoContext* context,
@@ -56,8 +39,15 @@ static const proto::ProtoObject* exception_str(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
+    
+    const proto::ProtoObject* instance = self;
+    if (!instance || instance == PROTO_NONE) {
+        if (!positionalParameters || positionalParameters->getSize(context) == 0) return context->fromUTF8String("");
+        instance = positionalParameters->getAt(context, 0);
+    }
+    
     const proto::ProtoString* argsName = proto::ProtoString::fromUTF8String(context, "args");
-    const proto::ProtoObject* argsObj = self->getAttribute(context, argsName);
+    const proto::ProtoObject* argsObj = instance->getAttribute(context, argsName);
     const proto::ProtoTuple* args = argsObj && argsObj->isTuple(context) ? argsObj->asTuple(context) : context->newTuple();
     
     if (std::getenv("PROTO_ENV_DIAG")) {
@@ -83,16 +73,29 @@ static const proto::ProtoObject* exception_repr(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
+    
+    const proto::ProtoObject* instance = self;
+    if (!instance || instance == PROTO_NONE) {
+        if (!positionalParameters || positionalParameters->getSize(context) == 0) return context->fromUTF8String("Exception()");
+        instance = positionalParameters->getAt(context, 0);
+    }
+    
     const proto::ProtoString* argsName = proto::ProtoString::fromUTF8String(context, "args");
-    const proto::ProtoObject* argsObj = self->getAttribute(context, argsName);
+    const proto::ProtoObject* argsObj = instance->getAttribute(context, argsName);
     const proto::ProtoTuple* args = argsObj && argsObj->isTuple(context) ? argsObj->asTuple(context) : context->newTuple();
-    const proto::ProtoObject* nameObj = self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__name__"));
+    const proto::ProtoObject* nameObj = instance->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__class__"));
+    if (nameObj && nameObj != PROTO_NONE) {
+        nameObj = nameObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__name__"));
+    } else {
+        nameObj = instance->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__name__"));
+    }
+    
     std::string name = "Exception";
     if (nameObj && nameObj->isString(context)) {
         nameObj->asString(context)->toUTF8String(context, name);
     }
     if (args->getSize(context) == 0) {
-        return context->fromUTF8String(name.c_str());
+        return context->fromUTF8String((name + "()").c_str());
     }
     std::string out = name + "(";
     for (unsigned long i = 0; i < args->getSize(context) && i < 3; ++i) {
@@ -139,16 +142,38 @@ static const proto::ProtoObject* make_exception_type(proto::ProtoContext* ctx,
         exc = exc->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__bases__"), ctx->newTuple()->asObject(ctx));
     }
     exc = exc->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__module__"), ctx->fromUTF8String("builtins"));
-    exc = exc->setAttribute(ctx, py_init, ctx->fromMethod(const_cast<proto::ProtoObject*>(exc), exception_init));
-    exc = exc->setAttribute(ctx, py_repr, ctx->fromMethod(const_cast<proto::ProtoObject*>(exc), exception_repr));
-    exc = exc->setAttribute(ctx, py_str, ctx->fromMethod(const_cast<proto::ProtoObject*>(exc), exception_str));
-    exc = exc->setAttribute(ctx, py_call, ctx->fromMethod(const_cast<proto::ProtoObject*>(exc), exception_call));
+    exc = exc->setAttribute(ctx, py_init, ctx->fromMethod(nullptr, exception_init));
+    exc = exc->setAttribute(ctx, py_repr, ctx->fromMethod(nullptr, exception_repr));
+    exc = exc->setAttribute(ctx, py_str, ctx->fromMethod(nullptr, exception_str));
+    
+    // Set __mro__ for attribute lookup
+    const proto::ProtoList* mroList = ctx->newList()->appendLast(ctx, exc);
+    if (base) {
+        const proto::ProtoObject* baseMro = base->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__mro__"));
+        if (baseMro && baseMro->isTuple(ctx)) {
+            const proto::ProtoTuple* bt = baseMro->asTuple(ctx);
+            for (size_t i = 0; i < bt->getSize(ctx); ++i) {
+                mroList = mroList->appendLast(ctx, bt->getAt(ctx, i));
+            }
+        } else if (baseMro && baseMro->asList(ctx)) {
+            const proto::ProtoList* bl = baseMro->asList(ctx);
+            for (size_t i = 0; i < bl->getSize(ctx); ++i) {
+                mroList = mroList->appendLast(ctx, bl->getAt(ctx, i));
+            }
+        } else {
+            mroList = mroList->appendLast(ctx, base);
+            if (base != objectProto) mroList = mroList->appendLast(ctx, objectProto);
+        }
+    }
+    exc = exc->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__mro__"), ctx->newTupleFromList(mroList)->asObject(ctx));
+    
     return exc;
 }
 
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx,
                                      const proto::ProtoObject* objectProto,
                                      const proto::ProtoObject* typeProto) {
+    const proto::ProtoString* py_baseexception = proto::ProtoString::fromUTF8String(ctx, "BaseException");
     const proto::ProtoString* py_exception = proto::ProtoString::fromUTF8String(ctx, "Exception");
     const proto::ProtoString* py_keyerror = proto::ProtoString::fromUTF8String(ctx, "KeyError");
     const proto::ProtoString* py_valueerror = proto::ProtoString::fromUTF8String(ctx, "ValueError");
@@ -183,7 +208,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx,
     const proto::ProtoString* py_byteswarning = proto::ProtoString::fromUTF8String(ctx, "BytesWarning");
     const proto::ProtoString* py_resourcewarning = proto::ProtoString::fromUTF8String(ctx, "ResourceWarning");
 
-    const proto::ProtoObject* exceptionType = make_exception_type(ctx, objectProto, typeProto, "Exception", objectProto);
+    const proto::ProtoObject* baseExceptionType = make_exception_type(ctx, objectProto, typeProto, "BaseException", objectProto);
+    const proto::ProtoObject* exceptionType = make_exception_type(ctx, objectProto, typeProto, "Exception", baseExceptionType);
     const proto::ProtoObject* keyErrorType = make_exception_type(ctx, objectProto, typeProto, "KeyError", exceptionType);
     const proto::ProtoObject* valueErrorType = make_exception_type(ctx, objectProto, typeProto, "ValueError", exceptionType);
     const proto::ProtoObject* nameErrorType = make_exception_type(ctx, objectProto, typeProto, "NameError", exceptionType);
@@ -191,8 +217,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx,
     const proto::ProtoObject* syntaxErrorType = make_exception_type(ctx, objectProto, typeProto, "SyntaxError", exceptionType);
     const proto::ProtoObject* typeErrorType = make_exception_type(ctx, objectProto, typeProto, "TypeError", exceptionType);
     const proto::ProtoObject* importErrorType = make_exception_type(ctx, objectProto, typeProto, "ImportError", exceptionType);
-    const proto::ProtoObject* keyboardInterruptType = make_exception_type(ctx, objectProto, typeProto, "KeyboardInterrupt", exceptionType);
-    const proto::ProtoObject* systemExitType = make_exception_type(ctx, objectProto, typeProto, "SystemExit", exceptionType);
+    const proto::ProtoObject* keyboardInterruptType = make_exception_type(ctx, objectProto, typeProto, "KeyboardInterrupt", baseExceptionType);
+    const proto::ProtoObject* systemExitType = make_exception_type(ctx, objectProto, typeProto, "SystemExit", baseExceptionType);
     const proto::ProtoObject* recursionErrorType = make_exception_type(ctx, objectProto, typeProto, "RecursionError", exceptionType);
     const proto::ProtoObject* zeroDivisionErrorType = make_exception_type(ctx, objectProto, typeProto, "ZeroDivisionError", exceptionType);
     const proto::ProtoObject* indexErrorType = make_exception_type(ctx, objectProto, typeProto, "IndexError", exceptionType);
@@ -218,6 +244,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx,
     const proto::ProtoObject* resourceWarningType = make_exception_type(ctx, objectProto, typeProto, "ResourceWarning", warningType);
 
     const proto::ProtoObject* mod = ctx->newObject(false);
+    mod = mod->setAttribute(ctx, py_baseexception, baseExceptionType);
     mod = mod->setAttribute(ctx, py_exception, exceptionType);
     mod = mod->setAttribute(ctx, py_keyerror, keyErrorType);
     mod = mod->setAttribute(ctx, py_valueerror, valueErrorType);

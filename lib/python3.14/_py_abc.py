@@ -43,9 +43,12 @@ class ABCMeta(type):
             if is_abs:
                 abstracts.append(n)
         abstracts = set(abstracts)
+        print("DEBUG ABCMeta.__new__ start base loop")
         for base in bases:
+            print(f"DEBUG ABCMeta.__new__ base {base} checking abstractmethods")
             abs_methods = getattr(base, "__abstractmethods__", set())
             for mname in abs_methods:
+                print(f"DEBUG ABCMeta.__new__ base {base} mname {mname}")
                 value = getattr(cls, mname, None)
                 if getattr(value, "__isabstractmethod__", False):
                     abstracts.add(mname)

@@ -49,7 +49,7 @@ def _is_dunder(name):
     """
     return (
             len(name) > 4 and
-            name[:2] == name[-2:] == '__' and
+            name[:2] == '__' and name[-2:] == '__' and
             name[2] != '_' and
             name[-3] != '_'
             )
@@ -60,7 +60,7 @@ def _is_sunder(name):
     """
     return (
             len(name) > 2 and
-            name[0] == name[-1] == '_' and
+            name[0] == '_' and name[-1] == '_' and
             name[1] != '_' and
             name[-2] != '_'
             )
@@ -480,22 +480,28 @@ class EnumType(type):
         return enum_dict
 
     def __new__(metacls, cls, bases, classdict, *, boundary=None, _simple=False, **kwds):
+        print(f"DEBUG __new__ trace: entered cls={cls}")
         # an Enum class is final once enumeration items have been defined; it
         # cannot be mixed with other types (int, float, etc.) if it has an
         # inherited __new__ unless a new __new__ is defined (or the resulting
         # class will fail).
         #
         if _simple:
+            print("DEBUG __new__ trace: returning _simple")
             return super().__new__(metacls, cls, bases, classdict, **kwds)
+        print("DEBUG __new__ trace: past _simple")
         #
         # remove any keys listed in _ignore_
         classdict.setdefault('_ignore_', []).append('_ignore_')
         ignore = classdict['_ignore_']
+        print(f"DEBUG __new__ trace: about to pop ignore"); print(f"DEBUG classdict type: {type(classdict)} mro: {type(classdict).__mro__}"); print(f"DEBUG classdict.pop: {getattr(classdict, 'pop', 'MISSING')}")
         for key in ignore:
             classdict.pop(key, None)
         #
         # grab member names
+        print("DEBUG __new__ trace: grabbing member_names")
         member_names = classdict._member_names
+        print("DEBUG __new__ trace: member names grabbed")
         #
         # check for illegal enum names (any others?)
         invalid_names = set(member_names) & {'mro', ''}
@@ -505,29 +511,41 @@ class EnumType(type):
                     ))
         #
         # adjust the sunders
+        print("DEBUG __new__ trace: adjust sunders")
         _order_ = classdict.pop('_order_', None)
+        print("DEBUG __new__ trace: popped _order_")
         _gnv = classdict.get('_generate_next_value_')
+        print(f"DEBUG __new__ trace: retrieved _gnv")
         if _gnv is not None and type(_gnv) is not staticmethod:
             _gnv = staticmethod(_gnv)
         # convert to normal dict
+        print("DEBUG __new__ trace: calling dict(classdict.items())")
         classdict = dict(classdict.items())
+        print("DEBUG __new__ trace: dict converted")
         if _gnv is not None:
             classdict['_generate_next_value_'] = _gnv
+        print("DEBUG __new__ trace: handled _gnv assignment")
         #
         # data type of member and the controlling Enum class
+        print("DEBUG __new__ trace: getting mixins")
         mixins = metacls._get_mixins_(cls, bases)
+        print("DEBUG __new__ trace: mixins retrieved")
         print("MIXINS Returned:", mixins, type(mixins))
         member_type, first_enum = mixins
         __new__, save_new, use_args = metacls._find_new_(
                 classdict, member_type, first_enum,
                 )
+        print("DEBUG __new__ trace: _find_new_ finished")
         classdict['_new_member_'] = __new__
+        print("DEBUG __new__ trace: set _new_member_")
         classdict['_use_args_'] = use_args
         #
         # convert future enum members into temporary _proto_members
+        print(f"DEBUG __new__ trace: converting members loop: {member_names}")
         for name in member_names:
             value = classdict[name]
             classdict[name] = _proto_member(value)
+        print("DEBUG __new__ trace: converting members loop done")
         #
         # house-keeping structures
         classdict['_member_names_'] = []
@@ -975,9 +993,16 @@ class EnumType(type):
         # a datatype has a __new__ method, or a __dataclass_fields__ attribute
         data_types = set()
         base_chain = set()
+        print(f"DEBUG _find_data_type_ STARTing. len(bases)={len(bases)}")
+        for i, b in enumerate(bases):
+            print(f"DEBUG bases[{i}] = {b} (type: {type(b)})")
+        print(f"DEBUG _find_data_type_ str(bases)={bases}")
         for chain in bases:
             candidate = None
-            for base in chain.__mro__:
+            print(f"DEBUG FOR-YIELD chain={chain} type(chain)={type(chain)}")
+            mro_attr = chain.__mro__
+            print(f"DEBUG chain.__mro__={mro_attr} type={type(mro_attr)}")
+            for base in mro_attr:
                 base_chain.add(base)
                 if base is object:
                     continue
@@ -991,6 +1016,9 @@ class EnumType(type):
                 else:
                     candidate = candidate or base
         if len(data_types) > 1:
+            print(f"DEBUG TOO MANY DATA TYPES: class_name={class_name} data_types={data_types} bases={bases}")
+            for chain in bases:
+                print(f"DEBUG chain={chain} mro={chain.__mro__}")
             raise TypeError('too many data types for %r: %r' % (class_name, data_types))
         elif data_types:
             return data_types.pop()

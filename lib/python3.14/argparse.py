@@ -1434,7 +1434,7 @@ class _ActionsContainer(object):
         self._registries = {}
 
         # register actions
-        self.register('action', None, _StoreAction)
+        print("DEBUG: before register"); self.register('action', None, _StoreAction); print("DEBUG: after register")
         self.register('action', 'store', _StoreAction)
         self.register('action', 'store_const', _StoreConstAction)
         self.register('action', 'store_true', _StoreTrueAction)

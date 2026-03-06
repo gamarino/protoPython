@@ -144,6 +144,7 @@ private:
         int start;
         std::vector<int> breakPatches;
         size_t blockDepth;
+        bool hasIterator;
     };
     std::vector<LoopInfo> loopStack_;
     

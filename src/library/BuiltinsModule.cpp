@@ -1621,14 +1621,18 @@ static const proto::ProtoObject* py_super_getattr(
             
             // Fast path: hasOwnAttribute check (using interned pointer address as sparse list key)
             const proto::ProtoSparseList* attrs = parent->getOwnAttributes(context);
-            if (std::getenv("PROTO_ENV_DIAG")) {
-                if (!attrs) fprintf(stderr, "DEBUG: py_super_getattr attrs is null\n");
+            bool isNew = (nameStr && nameStr->cmp_to_string(context, proto::ProtoString::fromUTF8String(context, "__new__")) == 0);
+            if (isNew) {
+                if (!attrs) fprintf(stderr, "DEBUG py_super_getattr(__new__): attrs is null on parent %p\n", (void*)parent);
                 else {
-                    fprintf(stderr, "DEBUG: py_super_getattr looking for hash %lu on parent %p:\n", target_hash, (void*)parent);
+                    fprintf(stderr, "DEBUG py_super_getattr(__new__): looking for hash %lu on parent %p:\n", target_hash, (void*)parent);
                     const proto::ProtoSparseListIterator* it = attrs->getIterator(context);
                     while (it && it->hasNext(context)) {
                         unsigned long hk = it->nextKey(context);
-                        fprintf(stderr, "DEBUG:   - attr hash %lu\n", hk);
+                        const proto::ProtoObject* vk = reinterpret_cast<const proto::ProtoObject*>(hk);
+                        std::string k_str = "?";
+                        if (vk && vk->isString(context)) vk->asString(context)->toUTF8String(context, k_str);
+                        fprintf(stderr, "DEBUG   - attr hash %lu (str='%s')\n", hk, k_str.c_str());
                         it = const_cast<proto::ProtoSparseListIterator*>(it)->advance(context);
                     }
                 }
@@ -1673,8 +1677,8 @@ static const proto::ProtoObject* py_super_getattr(
                 }
             }
             
-            if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG: py_super_getattr parent %p returned val %p\n", (void*)parent, (void*)val);
-
+            if (isNew) fprintf(stderr, "DEBUG py_super_getattr(__new__): parent %p returned val %p\n", (void*)parent, (void*)val);
+            
             if (val && val != PROTO_NONE) {
                 // Found! Now check for descriptor protocol.
                 // Create __get__ string
@@ -1751,20 +1755,45 @@ static const proto::ProtoObject* py_super(
        const proto::ProtoObject* locals = frame->getAttribute(context, env->getFLocalsString());
 
        if (locals && locals != PROTO_NONE) {
-           // heuristic: 'self' or 'cls'
-           const proto::ProtoString* selfStr = proto::ProtoString::fromUTF8String(context, "self");
-           
-           const proto::ProtoObject* slowObj = locals->getAttribute(context, selfStr);
-           if (slowObj && slowObj != PROTO_NONE) {
-               obj = slowObj;
-               if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG: py_super found obj in locals (self): %p\n", (void*)obj);
-           } else if (!obj || obj == PROTO_NONE) {
-               // Only try other names if we haven't found 'obj' yet
-               obj = locals->getAttribute(context, proto::ProtoString::fromUTF8String(context, "cls"));
-               if (!obj || obj == PROTO_NONE) {
-                    obj = locals->getAttribute(context, proto::ProtoString::fromUTF8String(context, "mcls"));
+           bool foundArg = false;
+           // robust: lookup the exact first argument name from co_varnames
+           const proto::ProtoObject* codeObj = frame->getAttribute(context, env->getFCodeString());
+           if (codeObj && codeObj != PROTO_NONE) {
+               const proto::ProtoObject* varnamesObj = codeObj->getAttribute(context, env->getCoVarnamesString());
+               if (varnamesObj && varnamesObj != PROTO_NONE && varnamesObj->isTuple(context)) {
+                   const proto::ProtoTuple* varnames = varnamesObj->asTuple(context);
+                   if (varnames->getSize(context) > 0) {
+                       const proto::ProtoObject* firstArgName = varnames->getAt(context, 0);
+                       if (firstArgName && firstArgName->isString(context)) {
+                           const proto::ProtoObject* slowObj = locals->getAttribute(context, firstArgName->asString(context));
+                           if (slowObj && slowObj != PROTO_NONE) {
+                               obj = slowObj;
+                               foundArg = true;
+                               if (std::getenv("PROTO_ENV_DIAG")) {
+                                   std::string n;
+                                   firstArgName->asString(context)->toUTF8String(context, n);
+                                   fprintf(stderr, "DEBUG: py_super found obj in locals (%s): %p\n", n.c_str(), (void*)obj);
+                               }
+                           }
+                       }
+                   }
                }
-               if (obj && obj != PROTO_NONE && std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG: py_super found obj in locals (cls/mcls): %p\n", (void*)obj);
+           }
+           
+           if (!foundArg && (!obj || obj == PROTO_NONE)) {
+               // Fallback heuristics: 'self', 'cls', 'mcls'
+               const proto::ProtoObject* slowObj = locals->getAttribute(context, proto::ProtoString::fromUTF8String(context, "self"));
+               if (slowObj && slowObj != PROTO_NONE) {
+                   obj = slowObj;
+               } else {
+                   obj = locals->getAttribute(context, proto::ProtoString::fromUTF8String(context, "cls"));
+                   if (!obj || obj == PROTO_NONE) {
+                        obj = locals->getAttribute(context, proto::ProtoString::fromUTF8String(context, "metacls"));
+                        if (!obj || obj == PROTO_NONE) {
+                             obj = locals->getAttribute(context, proto::ProtoString::fromUTF8String(context, "mcls"));
+                        }
+                   }
+               }
            }
            
            // BFS search for __class__ in closure scopes (for super)
@@ -2335,6 +2364,7 @@ static const proto::ProtoList* computeC3MRO(proto::ProtoContext* context, const 
     if (!bases || bases->getSize(context) == 0) {
         PythonEnvironment* env = PythonEnvironment::fromContext(context);
         const proto::ProtoObject* objProto = env ? env->getObjectPrototype() : nullptr;
+        fprintf(stderr, "DEBUG computeC3MRO EMPTY BASES. cls=%p objProto=%p\n", (void*)cls, (void*)objProto);
         if (cls == objProto || !objProto) {
             return context->newList()->appendLast(context, cls);
         }
@@ -2347,8 +2377,17 @@ static const proto::ProtoList* computeC3MRO(proto::ProtoContext* context, const 
     for (size_t i = 0; i < bases->getSize(context); ++i) {
         const proto::ProtoObject* baseCls = bases->getAt(context, i);
         const proto::ProtoObject* mroAttr = baseCls->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__mro__"));
-        if (mroAttr && mroAttr->asTuple(context)) {
-            mros.push_back(mroAttr->asTuple(context)->asList(context));
+        const proto::ProtoTuple* tup = nullptr;
+        if (mroAttr) {
+            tup = mroAttr->asTuple(context);
+            if (!tup) {
+                PythonEnvironment* env = PythonEnvironment::fromContext(context);
+                const proto::ProtoObject* dataAttr = mroAttr->getAttribute(context, env ? env->getDataString() : proto::ProtoString::fromUTF8String(context, "__data__"));
+                if (dataAttr) tup = dataAttr->asTuple(context);
+            }
+        }
+        if (tup) {
+            mros.push_back(tup->asList(context));
         } else {
             mros.push_back(context->newList()->appendLast(context, baseCls));
         }
@@ -2439,11 +2478,7 @@ const proto::ProtoObject* py_type(
     protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(context);
     const proto::ProtoObject* typeProto = env ? env->getTypePrototype() : nullptr;
     
-    // Delegation: If self is not typeProto, we are instantiating a class natively.
-    if (self && self != typeProto) {
-        return protoPython::runUserClassCall(context, self, parentLink, positionalParameters, keywordParameters);
-    }
-    
+    // Decoration: runUserClassCall moved to py_type_call
     if (!positionalParameters || positionalParameters->getSize(context) == 0) {
         return PROTO_NONE;
     }
@@ -2457,15 +2492,10 @@ const proto::ProtoObject* py_type(
         fprintf(stderr, "DEBUG: py_type called unconditionally self=%p argCount=%zu\n", (void*)self, argCount);
     }
     
-    if (argCount == 1) {
-        const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
+    if (argCount == 1 || argCount == 2) {
+        const proto::ProtoObject* obj = (argCount == 2) ? positionalParameters->getAt(context, 1) : positionalParameters->getAt(context, 0);
         if (get_env_diag()) {
-            printf("DEBUG: py_type(1) obj=%p\n", (void*)obj);
-        }
-        
-        // Distinguish `type(obj)` vs `cls.__new__(cls)` natively. 
-        if (self && self == obj) {
-            return py_object_new(context, self, parentLink, positionalParameters, keywordParameters);
+            printf("DEBUG: py_type(1/2) obj=%p\n", (void*)obj);
         }
         
         if (obj == PROTO_NONE) return env->getNoneTypePrototype();
@@ -2648,8 +2678,26 @@ const proto::ProtoObject* py_type(
 
         // Compute and set __mro__ using C3 linearization
         const proto::ProtoList* mroList = nullptr;
-        if (bases && bases->isTuple(context)) {
-            mroList = computeC3MRO(context, targetClass, bases->asTuple(context));
+        
+        const proto::ProtoTuple* tupleBases = bases ? bases->asTuple(context) : nullptr;
+        const proto::ProtoList* listBases = bases && !tupleBases ? bases->asList(context) : nullptr;
+        if (bases && !tupleBases && !listBases) {
+            const proto::ProtoObject* dataAttr = bases->getAttribute(context, env ? env->getDataString() : proto::ProtoString::fromUTF8String(context, "__data__"));
+            if (dataAttr) {
+                tupleBases = dataAttr->asTuple(context);
+                listBases = tupleBases ? nullptr : dataAttr->asList(context);
+            }
+        }
+        
+        fprintf(stderr, "DEBUG py_type before MRO: targetClass=%p tupleBases=%p (size=%lu) listBases=%p\n",
+                (void*)targetClass, (void*)tupleBases, tupleBases ? tupleBases->getSize(context) : 0, (void*)listBases);
+        
+        if (tupleBases) {
+            mroList = computeC3MRO(context, targetClass, tupleBases);
+            targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__bases__"), bases));
+        } else if (listBases) {
+            const proto::ProtoTuple* convTup = context->newTupleFromList(listBases);
+            mroList = computeC3MRO(context, targetClass, convTup);
             targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__bases__"), bases));
         } else {
             const proto::ProtoList* emptyBases = context->newList();

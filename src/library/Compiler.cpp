@@ -669,7 +669,7 @@ bool Compiler::compileWhile(WhileNode* n) {
     if (!n || !n->test) return false;
     int startPC = bytecodeOffset();
     
-    loopStack_.push_back({startPC, {}, blockEnvStack_.size()});
+    loopStack_.push_back({startPC, {}, blockEnvStack_.size(), false});
     
     if (!compileNode(n->test.get())) return false;
     
@@ -700,7 +700,7 @@ bool Compiler::compileFor(ForNode* n) {
     emit(OP_GET_ITER);
     int loopStart = bytecodeOffset();
     
-    loopStack_.push_back({loopStart, {}, blockEnvStack_.size()});
+    loopStack_.push_back({loopStart, {}, blockEnvStack_.size(), true});
     
     emit(OP_FOR_ITER, 0);
     int argSlot = bytecodeOffset() - 1;
@@ -725,6 +725,9 @@ bool Compiler::compileFor(ForNode* n) {
 bool Compiler::compileBreak(BreakNode* n) {
     if (loopStack_.empty()) return false;
     if (!unwindBlocks(true)) return false;
+    if (loopStack_.back().hasIterator) {
+        emit(OP_POP_TOP, 0);
+    }
     emit(OP_JUMP_ABSOLUTE, 0);
     loopStack_.back().breakPatches.push_back(bytecodeOffset() - 1);
     return true;
@@ -2523,7 +2526,7 @@ bool Compiler::compileAsyncFor(AsyncForNode* n) {
     emit(OP_GET_AITER);
 
     int loopStart = bytecodeOffset();
-    loopStack_.push_back({loopStart, {}, blockEnvStack_.size()});
+    loopStack_.push_back({loopStart, {}, blockEnvStack_.size(), true});
 
     // 2. SETUP_FINALLY to catch StopAsyncIteration
     int setupFinallySlot = bytecodeOffset();
