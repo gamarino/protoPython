@@ -6952,6 +6952,83 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     typePrototype = typePrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__class_getitem__"), rootContext_->fromMethod(nullptr, py_type_class_getitem));
     typePrototype = typePrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__or__"), rootContext_->fromMethod(nullptr, py_type_or));
 
+    // V75: Initialize specific prototypes for better type identity
+    // IMPORTANT: methodPrototype MUST be initialized extremely early so that ALL subsequent methods get it natively!
+    methodPrototype = objectPrototype->newChild(rootContext_, true);
+    methodPrototype = methodPrototype->setAttribute(rootContext_, py_class, typePrototype);
+    methodPrototype = methodPrototype->setAttribute(rootContext_, py_name, rootContext_->fromUTF8String("method"));
+    methodPrototype = methodPrototype->setAttribute(rootContext_, py_module, builtinsVal);
+    // Bind descriptor __get__ so getattr(str, "replace") resolves to a bound method dynamically!
+    methodPrototype = methodPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__get__"), rootContext_->fromMethod(nullptr, 
+        [](proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+            if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG_GET: methodPrototype.__get__ called on self=%p. isMethod=%d\n", (void*)self, self->isMethod(ctx));
+            if (!args || args->getSize(ctx) < 1) return self;
+            const proto::ProtoObject* instance = args->getAt(ctx, 0);
+            if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG_GET: instance=%p\n", (void*)instance);
+            if (instance == PROTO_NONE || !instance) return self; // Unbound method accessed natively via class
+            // Create natively bound method:
+            if (!self->isMethod(ctx)) return self;
+            const proto::ProtoObject* bound = ctx->fromMethod(const_cast<proto::ProtoObject*>(instance), self->asMethod(ctx));
+            if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG_GET: created bound method %p\n", (void*)bound);
+            
+            // Native built-in bound methods need standard introspection primitives identically to user functions.
+            PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+            const proto::ProtoString* py_name_s = env ? env->getNameString() : proto::ProtoString::fromUTF8String(ctx, "__name__");
+            const proto::ProtoObject* dunderName = self->getAttribute(ctx, py_name_s);
+            if (dunderName && dunderName != PROTO_NONE) {
+                bound = bound->setAttribute(ctx, py_name_s, dunderName);
+                bound = bound->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__qualname__"), dunderName);
+            }
+            return bound;
+        }
+    ));
+    
+    // Bind __call__ so method objects invoke directly instead of falling back to type.__call__ (which creates classes)
+    methodPrototype = methodPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__call__"), rootContext_->fromMethod(nullptr, 
+        [](proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) -> const proto::ProtoObject* {
+            PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+            if (!env) return PROTO_NONE;
+            
+            const proto::ProtoObject* methodObj = nullptr;
+            const proto::ProtoList* actualArgs = args;
+            
+            bool selfHasFunc = false;
+            if (self && self != PROTO_NONE) {
+                const proto::ProtoObject* f = self->getAttribute(ctx, env->getFuncDunderString());
+                if (f && f != PROTO_NONE) selfHasFunc = true;
+            }
+            
+            if (selfHasFunc) {
+                methodObj = self;
+            } else if (args && args->getSize(ctx) > 0) {
+                methodObj = args->getAt(ctx, 0);
+                actualArgs = ctx->newList();
+                for (size_t i = 1; i < args->getSize(ctx); ++i) {
+                    actualArgs = actualArgs->appendLast(ctx, args->getAt(ctx, i));
+                }
+            }
+            
+            if (!methodObj || methodObj == PROTO_NONE) return PROTO_NONE;
+            
+            const proto::ProtoObject* im_self = methodObj->getAttribute(ctx, env->getSelfDunderString());
+            const proto::ProtoObject* im_func = methodObj->getAttribute(ctx, env->getFuncDunderString());
+            
+            if (im_self && im_func && im_self != PROTO_NONE && im_func != PROTO_NONE) {
+                const proto::ProtoList* subArgs = ctx->newList()->appendLast(ctx, im_self);
+                if (actualArgs) {
+                    for (size_t i = 0; i < actualArgs->getSize(ctx); ++i) {
+                        subArgs = subArgs->appendLast(ctx, actualArgs->getAt(ctx, i));
+                    }
+                }
+                fprintf(stderr, "DEBUG METHOD CALL: forwarding to im_func=%p\n", (void*)im_func); fflush(stderr); return invokePythonCallable(ctx, im_func, subArgs, kwargs);
+            }
+            
+            return invokePythonCallable(ctx, methodObj, actualArgs, kwargs);
+        }
+    ));
+    methodPrototype = methodPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__doc__"), PROTO_NONE);
+    space_->methodPrototype = const_cast<proto::ProtoObject*>(methodPrototype);
+
     // Initialize mappingproxy
     mappingProxyPrototype = objectPrototype->newChild(rootContext_, true);
     mappingProxyPrototype = mappingProxyPrototype->setAttribute(rootContext_, py_class, typePrototype);
@@ -7453,81 +7530,6 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     modulePrototype = modulePrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "values"), rootContext_->fromMethod(nullptr, py_dict_values));
     modulePrototype = modulePrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "items"), rootContext_->fromMethod(nullptr, py_dict_items));
     modulePrototype = modulePrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "update"), rootContext_->fromMethod(nullptr, py_dict_update));
-    
-    // V75: Initialize specific prototypes for better type identity
-    methodPrototype = objectPrototype->newChild(rootContext_, true);
-    methodPrototype = methodPrototype->setAttribute(rootContext_, py_class, typePrototype);
-    methodPrototype = methodPrototype->setAttribute(rootContext_, py_name, rootContext_->fromUTF8String("method"));
-    methodPrototype = methodPrototype->setAttribute(rootContext_, py_module, builtinsVal);
-    // Bind descriptor __get__ so getattr(str, "replace") resolves to a bound method dynamically!
-    methodPrototype = methodPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__get__"), rootContext_->fromMethod(nullptr, 
-        [](proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) -> const proto::ProtoObject* {
-            if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG_GET: methodPrototype.__get__ called on self=%p. isMethod=%d\n", (void*)self, self->isMethod(ctx));
-            if (!args || args->getSize(ctx) < 1) return self;
-            const proto::ProtoObject* instance = args->getAt(ctx, 0);
-            if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG_GET: instance=%p\n", (void*)instance);
-            if (instance == PROTO_NONE || !instance) return self; // Unbound method accessed natively via class
-            // Create natively bound method:
-            if (!self->isMethod(ctx)) return self;
-            const proto::ProtoObject* bound = ctx->fromMethod(const_cast<proto::ProtoObject*>(instance), self->asMethod(ctx));
-            if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG_GET: created bound method %p\n", (void*)bound);
-            
-            // Native built-in bound methods need standard introspection primitives identically to user functions.
-            PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-            const proto::ProtoString* py_name_s = env ? env->getNameString() : proto::ProtoString::fromUTF8String(ctx, "__name__");
-            const proto::ProtoObject* dunderName = self->getAttribute(ctx, py_name_s);
-            if (dunderName && dunderName != PROTO_NONE) {
-                bound = bound->setAttribute(ctx, py_name_s, dunderName);
-                bound = bound->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__qualname__"), dunderName);
-            }
-            return bound;
-        }
-    ));
-    
-    // Bind __call__ so method objects invoke directly instead of falling back to type.__call__ (which creates classes)
-    methodPrototype = methodPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__call__"), rootContext_->fromMethod(nullptr, 
-        [](proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) -> const proto::ProtoObject* {
-            PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-            if (!env) return PROTO_NONE;
-            
-            const proto::ProtoObject* methodObj = nullptr;
-            const proto::ProtoList* actualArgs = args;
-            
-            bool selfHasFunc = false;
-            if (self && self != PROTO_NONE) {
-                const proto::ProtoObject* f = self->getAttribute(ctx, env->getFuncDunderString());
-                if (f && f != PROTO_NONE) selfHasFunc = true;
-            }
-            
-            if (selfHasFunc) {
-                methodObj = self;
-            } else if (args && args->getSize(ctx) > 0) {
-                methodObj = args->getAt(ctx, 0);
-                actualArgs = ctx->newList();
-                for (size_t i = 1; i < args->getSize(ctx); ++i) {
-                    actualArgs = actualArgs->appendLast(ctx, args->getAt(ctx, i));
-                }
-            }
-            
-            if (!methodObj || methodObj == PROTO_NONE) return PROTO_NONE;
-            
-            const proto::ProtoObject* im_self = methodObj->getAttribute(ctx, env->getSelfDunderString());
-            const proto::ProtoObject* im_func = methodObj->getAttribute(ctx, env->getFuncDunderString());
-            
-            if (im_self && im_func && im_self != PROTO_NONE && im_func != PROTO_NONE) {
-                const proto::ProtoList* subArgs = ctx->newList()->appendLast(ctx, im_self);
-                if (actualArgs) {
-                    for (size_t i = 0; i < actualArgs->getSize(ctx); ++i) {
-                        subArgs = subArgs->appendLast(ctx, actualArgs->getAt(ctx, i));
-                    }
-                }
-                fprintf(stderr, "DEBUG METHOD CALL: forwarding to im_func=%p\n", (void*)im_func); fflush(stderr); return invokePythonCallable(ctx, im_func, subArgs, kwargs);
-            }
-            
-            return invokePythonCallable(ctx, methodObj, actualArgs, kwargs);
-        }
-    ));
-
 
     tracebackPrototype = objectPrototype->newChild(rootContext_, true);
     tracebackPrototype = tracebackPrototype->setAttribute(rootContext_, py_class, typePrototype);
@@ -7558,8 +7560,6 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     functionPrototype = functionPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__doc__"), docDesc);
 
     functionPrototype = functionPrototype->setAttribute(rootContext_, classString, typePrototype); // Ensure class is set
-    
-    methodPrototype = methodPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__doc__"), PROTO_NONE);
     modulePrototype = modulePrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__doc__"), PROTO_NONE);
     
     tracebackPrototype = tracebackPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "tb_frame"), PROTO_NONE);

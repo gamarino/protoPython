@@ -518,7 +518,10 @@ class EnumType(type):
         print(f"DEBUG __new__ trace: retrieved _gnv")
         if _gnv is not None and type(_gnv) is not staticmethod:
             _gnv = staticmethod(_gnv)
-        # convert to normal dict
+        #
+        # get dict of classdict
+        print(f"DEBUG __new__ trace: before dict() conversion, classdict keys are {list(classdict.keys())}")
+        print(f"DEBUG __new__ trace: classdict.items() is {list(classdict.items())}")
         print("DEBUG __new__ trace: calling dict(classdict.items())")
         classdict = dict(classdict.items())
         print("DEBUG __new__ trace: dict converted")
@@ -542,8 +545,14 @@ class EnumType(type):
         #
         # convert future enum members into temporary _proto_members
         print(f"DEBUG __new__ trace: converting members loop: {member_names}")
+        print(f"DEBUG classdict keys internally: {list(classdict.keys())}")
         for name in member_names:
-            value = classdict[name]
+            print(f"DEBUG fetching {name} from classdict...")
+            try:
+                value = classdict[name]
+            except KeyError:
+                print(f"DEBUG KeyError fetching {name}. classdict._member_names_ is {classdict._member_names_}")
+                raise
             classdict[name] = _proto_member(value)
         print("DEBUG __new__ trace: converting members loop done")
         #

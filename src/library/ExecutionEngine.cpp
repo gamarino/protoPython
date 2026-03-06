@@ -1941,20 +1941,48 @@ const proto::ProtoObject* executeBytecodeRange(
                 const proto::ProtoObject* val = stack.back();
                 // Delay pop until done
                 if (nameObj->isString(ctx)) {
-                    // Update frame (CoW support)
-                    std::string nStr;
-                    nameObj->asString(ctx)->toUTF8String(ctx, nStr);
-                    const proto::ProtoObject* newFrame = frame->setAttribute(ctx, nameObj->asString(ctx), val);
-                    frame = const_cast<proto::ProtoObject*>(newFrame);
-                    stack.pop_back(); // Pop val now that it's stored
-                    
-                    const proto::ProtoString* dataS = getInternalString(ctx, "__data__");
-                    const proto::ProtoObject* dataObj = frame->getAttribute(ctx, dataS);
-                    if (dataObj && dataObj->asSparseList(ctx)) {
-                        const proto::ProtoSparseList* dataList = dataObj->asSparseList(ctx);
-                        dataList = dataList->setAt(ctx, nameObj->getHash(ctx), val);
-                        frame = const_cast<proto::ProtoObject*>(frame->setAttribute(ctx, dataS, dataList->asObject(ctx)));
+                    bool handledBySetitem = false;
+                    if (env) {
+                        const proto::ProtoObject* frameType = env->getType(ctx, frame);
+                        // Check if it's a custom namespace class
+                        if (frameType && frameType != PROTO_NONE &&
+                            frameType != env->getDictPrototype() &&
+                            frameType != env->getModulePrototype()) {
+                            
+                            const proto::ProtoObject* setitem = env->getAttribute(ctx, frameType, env->getSetItemString());
+                            if (setitem && setitem != PROTO_NONE) {
+                                handledBySetitem = true;
+                                if (get_env_diag()) {
+                                    std::string nStr; nameObj->asString(ctx)->toUTF8String(ctx, nStr);
+                                    fprintf(stderr, "DEBUG OP_STORE_NAME: handledBySetitem intercepted '%s' type=%p\n", nStr.c_str(), (void*)frameType);
+                                }
+                                const proto::ProtoList* args = ctx->newList()->appendLast(ctx, nameObj)->appendLast(ctx, val);
+                                invokeDunder(ctx, frame, env->getSetItemString(), args);
+                                if (env->hasPendingException()) {
+                                    stack.pop_back();
+                                    i = next_i;
+                                    continue;
+                                }
+                            }
+                        }
                     }
+
+                    if (!handledBySetitem) {
+                        // Update frame (CoW support)
+                        std::string nStr;
+                        nameObj->asString(ctx)->toUTF8String(ctx, nStr);
+                        const proto::ProtoObject* newFrame = frame->setAttribute(ctx, nameObj->asString(ctx), val);
+                        frame = const_cast<proto::ProtoObject*>(newFrame);
+                        
+                        const proto::ProtoString* dataS = getInternalString(ctx, "__data__");
+                        const proto::ProtoObject* dataObj = frame->getAttribute(ctx, dataS);
+                        if (dataObj && dataObj->asSparseList(ctx)) {
+                            const proto::ProtoSparseList* dataList = dataObj->asSparseList(ctx);
+                            dataList = dataList->setAt(ctx, nameObj->getHash(ctx), val);
+                            frame = const_cast<proto::ProtoObject*>(frame->setAttribute(ctx, dataS, dataList->asObject(ctx)));
+                        }
+                    }
+                    stack.pop_back(); // Pop val now that it's stored
                     
                     const proto::ProtoString* keysS = getInternalString(ctx, "__keys__");
                     const proto::ProtoObject* keysObj = frame->getAttribute(ctx, keysS);

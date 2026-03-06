@@ -3874,10 +3874,16 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
                                     const proto::ProtoObject* floatProto, const proto::ProtoObject* boolProto,
                                    const proto::ProtoObject* complexProto,
                                    const proto::ProtoObject* ioModule) {
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        fprintf(stderr, "DEBUG BUILTINS INIT: passed objectProto=%p typeProto=%p intProto=%p\n", (void*)objectProto, (void*)typeProto, (void*)intProto);
+    }
     const proto::ProtoObject* builtins = ctx->newObject(false);
     if (objectProto) builtins = builtins->addParent(ctx, objectProto);
     if (noneProto) {
         builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "None"), noneProto);
+    }
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        fprintf(stderr, "DEBUG IN BUILTINS INIT: 1 obInB=%p\n", (void*)builtins->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "object")));
     }
     if (ioModule && ioModule != PROTO_NONE) {
         builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__io_module__"), ioModule);
@@ -3924,6 +3930,9 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
         ctx->space->objectPrototype = const_cast<proto::ProtoObject*>(objectProto);
     }
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "object"), objectProto);
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        fprintf(stderr, "DEBUG IN BUILTINS INIT: 2 (AFTER SET) obInB=%p\n", (void*)builtins->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "object")));
+    }
     if (typeProto) {
         if (get_env_diag()) {
             printf("DEBUG: Registering 'type' using typeProto=%p\n", (void*)typeProto);
@@ -4171,7 +4180,9 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "classmethod"), classmethodProto);
     
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__import__"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_import));
-
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        fprintf(stderr, "DEBUG IN BUILTINS INIT: END obInB=%p\n", (void*)builtins->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "object")));
+    }
     return builtins;
 }
 

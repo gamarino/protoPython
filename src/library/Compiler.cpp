@@ -813,7 +813,6 @@ bool Compiler::compileListComp(ListCompNode* n) {
     // Collect locals and nonlocals for comprehension scope
     std::unordered_set<std::string> compLocals;
     for (const auto& gen : n->generators) collectDefinedNames(gen.target.get(), compLocals);
-    collectDefinedNames(n->elt.get(), compLocals);
     
     std::unordered_set<std::string> compUsed;
     for (const auto& gen : n->generators) {
@@ -906,8 +905,6 @@ bool Compiler::compileDictComp(DictCompNode* n) {
     // Collect locals and nonlocals for comprehension scope
     std::unordered_set<std::string> compLocals;
     for (const auto& gen : n->generators) collectDefinedNames(gen.target.get(), compLocals);
-    collectDefinedNames(n->key.get(), compLocals);
-    collectDefinedNames(n->value.get(), compLocals);
     
     std::unordered_set<std::string> compUsed;
     for (const auto& gen : n->generators) {
@@ -1000,7 +997,6 @@ bool Compiler::compileSetComp(SetCompNode* n) {
     // Collect locals and nonlocals for comprehension scope
     std::unordered_set<std::string> compLocals;
     for (const auto& gen : n->generators) collectDefinedNames(gen.target.get(), compLocals);
-    collectDefinedNames(n->elt.get(), compLocals);
     
     std::unordered_set<std::string> compUsed;
     for (const auto& gen : n->generators) {
@@ -1092,7 +1088,6 @@ bool Compiler::compileGeneratorExp(GeneratorExpNode* n) {
     // Collect locals and nonlocals for generator expression scope
     std::unordered_set<std::string> compLocals;
     for (const auto& gen : n->generators) collectDefinedNames(gen.target.get(), compLocals);
-    collectDefinedNames(n->elt.get(), compLocals);
     
     std::unordered_set<std::string> compUsed;
     for (const auto& gen : n->generators) {
@@ -2095,6 +2090,59 @@ static void collectCapturedNamesImpl(ASTNode* node, const std::unordered_set<std
         for (size_t i = 0; i < d->keys.size(); ++i) {
             if (d->keys[i]) collectCapturedNamesImpl(d->keys[i].get(), globalsInScope, capturedOut, depth);
             collectCapturedNamesImpl(d->values[i].get(), globalsInScope, capturedOut, depth);
+        }
+    } else if (auto* comp = dynamic_cast<ListCompNode*>(node)) {
+        std::unordered_set<std::string> defined;
+        for (const auto& gen : comp->generators) collectDefinedNames(gen.target.get(), defined);
+        std::unordered_set<std::string> used;
+        for (const auto& gen : comp->generators) {
+            collectUsedNames(gen.iter.get(), used);
+            collectUsedNames(gen.target.get(), used);
+            for (const auto& i : gen.ifs) collectUsedNames(i.get(), used);
+        }
+        collectUsedNames(comp->elt.get(), used);
+        for (const auto& name : used) {
+            if (!defined.count(name) && !globalsInScope.count(name)) capturedOut.insert(name);
+        }
+    } else if (auto* comp = dynamic_cast<SetCompNode*>(node)) {
+        std::unordered_set<std::string> defined;
+        for (const auto& gen : comp->generators) collectDefinedNames(gen.target.get(), defined);
+        std::unordered_set<std::string> used;
+        for (const auto& gen : comp->generators) {
+            collectUsedNames(gen.iter.get(), used);
+            collectUsedNames(gen.target.get(), used);
+            for (const auto& i : gen.ifs) collectUsedNames(i.get(), used);
+        }
+        collectUsedNames(comp->elt.get(), used);
+        for (const auto& name : used) {
+            if (!defined.count(name) && !globalsInScope.count(name)) capturedOut.insert(name);
+        }
+    } else if (auto* comp = dynamic_cast<GeneratorExpNode*>(node)) {
+        std::unordered_set<std::string> defined;
+        for (const auto& gen : comp->generators) collectDefinedNames(gen.target.get(), defined);
+        std::unordered_set<std::string> used;
+        for (const auto& gen : comp->generators) {
+            collectUsedNames(gen.iter.get(), used);
+            collectUsedNames(gen.target.get(), used);
+            for (const auto& i : gen.ifs) collectUsedNames(i.get(), used);
+        }
+        collectUsedNames(comp->elt.get(), used);
+        for (const auto& name : used) {
+            if (!defined.count(name) && !globalsInScope.count(name)) capturedOut.insert(name);
+        }
+    } else if (auto* comp = dynamic_cast<DictCompNode*>(node)) {
+        std::unordered_set<std::string> defined;
+        for (const auto& gen : comp->generators) collectDefinedNames(gen.target.get(), defined);
+        std::unordered_set<std::string> used;
+        for (const auto& gen : comp->generators) {
+            collectUsedNames(gen.iter.get(), used);
+            collectUsedNames(gen.target.get(), used);
+            for (const auto& i : gen.ifs) collectUsedNames(i.get(), used);
+        }
+        collectUsedNames(comp->key.get(), used);
+        collectUsedNames(comp->value.get(), used);
+        for (const auto& name : used) {
+            if (!defined.count(name) && !globalsInScope.count(name)) capturedOut.insert(name);
         }
     }
 }
