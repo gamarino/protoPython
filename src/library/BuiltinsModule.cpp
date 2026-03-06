@@ -3928,13 +3928,6 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
         if (get_env_diag()) {
             printf("DEBUG: Registering 'type' using typeProto=%p\n", (void*)typeProto);
         }
-        protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(ctx);
-        const proto::ProtoString* s_call = env ? env->getCallString() : proto::ProtoString::fromUTF8String(ctx, "__call__");
-        const proto::ProtoString* s_new = proto::ProtoString::fromUTF8String(ctx, "__new__");
-        const proto::ProtoString* s_init = env ? env->getInitString() : proto::ProtoString::fromUTF8String(ctx, "__init__");
-        typeProto = const_cast<proto::ProtoObject*>(typeProto)->setAttribute(ctx, s_call, ctx->fromMethod(const_cast<proto::ProtoObject*>(typeProto), py_type));
-        typeProto = const_cast<proto::ProtoObject*>(typeProto)->setAttribute(ctx, s_new, ctx->fromMethod(nullptr, py_type));
-        typeProto = const_cast<proto::ProtoObject*>(typeProto)->setAttribute(ctx, s_init, ctx->fromMethod(nullptr, py_type_init));
         builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "type"), typeProto);
     } else {
         if (get_env_diag()) {
