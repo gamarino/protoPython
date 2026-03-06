@@ -847,6 +847,22 @@ static const proto::ProtoObject* py_list_getitem(
     const proto::ProtoObject* indexObj = positionalParameters->getAt(context, 0);
     long long size = static_cast<long long>(list->getSize(context));
 
+    SliceBounds sb = get_slice_bounds(context, indexObj, size);
+    if (sb.isSlice) {
+        const proto::ProtoList* result = context->newList();
+        for (long long i = sb.start; (sb.step > 0 ? i < sb.stop : i > sb.stop); i += sb.step) {
+            result = result->appendLast(context, list->getAt(context, static_cast<int>(i)));
+        }
+        proto::ProtoObject* res = const_cast<proto::ProtoObject*>(context->newObject(true));
+        PythonEnvironment* env = PythonEnvironment::fromContext(context);
+        res->setAttribute(context, env ? env->getDataString() : getInternalString(context, "__data__"), result->asObject(context));
+        if (env && env->getListPrototype()) {
+            res->addParent(context, env->getListPrototype());
+            res->setAttribute(context, env->getClassString(), env->getListPrototype());
+        }
+        return res;
+    }
+
     if (indexObj->isInteger(context)) {
         long long index = indexObj->asLong(context);
         if (index < 0) index += size;
@@ -858,49 +874,8 @@ static const proto::ProtoObject* py_list_getitem(
         return list->getAt(context, static_cast<int>(index));
     }
 
-    const proto::ProtoList* sliceList = indexObj->asList(context);
-    if (sliceList) {
-        unsigned long sliceSize = sliceList->getSize(context);
-        if (sliceSize >= 2) {
-            long long start = sliceList->getAt(context, 0)->asLong(context);
-            long long stop = sliceList->getAt(context, 1)->asLong(context);
-            long long step = sliceSize >= 3 ? sliceList->getAt(context, 2)->asLong(context) : 1;
-            if (step != 1) return PROTO_NONE;
-            if (start < 0) start += size;
-            if (stop < 0) stop += size;
-            if (start < 0) start = 0;
-            if (stop > size) stop = size;
-            if (start > stop) start = stop;
-            const proto::ProtoList* result = context->newList();
-            for (long long i = start; i < stop; i += step) {
-                result = result->appendLast(context, list->getAt(context, static_cast<int>(i)));
-            }
-            return result->asObject(context);
-        }
-        return PROTO_NONE;
-    }
-
-    SliceBounds sb = get_slice_bounds(context, indexObj, size);
-    if (sb.isSlice) {
-        proto::ProtoObject* newListObj = const_cast<proto::ProtoObject*>(context->newObject(false));
-        const proto::ProtoList* newList = context->newList();
-        PythonEnvironment* env = PythonEnvironment::fromContext(context);
-
-        if (sb.step > 0) {
-            for (long long i = sb.start; i < sb.stop; i += sb.step) {
-                newList = newList->appendLast(context, list->getAt(context, static_cast<int>(i)));
-            }
-        } else if (sb.step < 0) {
-            for (long long i = sb.start; i > sb.stop; i += sb.step) {
-                newList = newList->appendLast(context, list->getAt(context, static_cast<int>(i)));
-            }
-        }
-
-        newListObj->setAttribute(context, env ? env->getDataString() : getInternalString(context, "__data__"), newList->asObject(context));
-        if (env && env->getListPrototype()) newListObj->addParent(context, env->getListPrototype());
-        return newListObj;
-    }
-
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (env) env->raiseTypeError(context, "list indices must be integers or slices");
     return PROTO_NONE;
 }
 
@@ -2243,13 +2218,40 @@ static const proto::ProtoObject* py_bytes_getitem(
     const proto::ProtoSparseList* keywordParameters) {
     const proto::ProtoString* s = bytes_data(context, self);
     if (!s || positionalParameters->getSize(context) < 1) return PROTO_NONE;
-    int idx = static_cast<int>(positionalParameters->getAt(context, 0)->asLong(context));
+    const proto::ProtoObject* indexObj = positionalParameters->getAt(context, 0);
     unsigned long size = s->getSize(context);
-    if (idx < 0) idx += static_cast<int>(size);
-    if (idx < 0 || static_cast<unsigned long>(idx) >= size) return PROTO_NONE;
-    std::string c;
-    s->toUTF8String(context, c);
-    return context->fromInteger(static_cast<unsigned char>(c[static_cast<size_t>(idx)]));
+
+    SliceBounds sb = get_slice_bounds(context, indexObj, static_cast<long long>(size));
+    if (sb.isSlice) {
+        std::string c;
+        s->toUTF8String(context, c);
+        std::string sub;
+        for (long long i = sb.start; (sb.step > 0 ? i < sb.stop : i > sb.stop); i += sb.step) {
+            sub += c[static_cast<size_t>(i)];
+        }
+        PythonEnvironment* env = PythonEnvironment::fromContext(context);
+        const proto::ProtoObject* bytesProto = env ? env->getBytesPrototype() : nullptr;
+        proto::ProtoObject* b = const_cast<proto::ProtoObject*>(bytesProto ? bytesProto->newChild(context, true) : context->newObject(true));
+        b->setAttribute(context, getInternalString(context, "__data__"), context->fromUTF8String(sub.c_str()));
+        return b;
+    }
+
+    if (indexObj->isInteger(context)) {
+        int idx = static_cast<int>(indexObj->asLong(context));
+        if (idx < 0) idx += static_cast<int>(size);
+        if (idx < 0 || static_cast<unsigned long>(idx) >= size) {
+            PythonEnvironment* env = PythonEnvironment::fromContext(context);
+            if (env) env->raiseIndexError(context, "index out of range");
+            return PROTO_NONE;
+        }
+        std::string c;
+        s->toUTF8String(context, c);
+        return context->fromInteger(static_cast<unsigned char>(c[static_cast<size_t>(idx)]));
+    }
+
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (env) env->raiseTypeError(context, "byte indices must be integers or slices");
+    return PROTO_NONE;
 }
 
 static const proto::ProtoObject* py_bytes_iter(
@@ -3419,15 +3421,40 @@ static const proto::ProtoObject* py_tuple_getitem(
     if (!tuple) return nullptr; // Fallback to __class_getitem__
 
     if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
-    long long index = positionalParameters->getAt(context, 0)->asLong(context);
+    const proto::ProtoObject* indexObj = positionalParameters->getAt(context, 0);
     long long size = static_cast<long long>(tuple->getSize(context));
-    if (index < 0) index += size;
-    if (index < 0 || index >= size) {
+
+    SliceBounds sb = get_slice_bounds(context, indexObj, size);
+    if (sb.isSlice) {
+        const proto::ProtoList* result = context->newList();
+        for (long long i = sb.start; (sb.step > 0 ? i < sb.stop : i > sb.stop); i += sb.step) {
+            result = result->appendLast(context, tuple->getAt(context, static_cast<int>(i)));
+        }
+        const proto::ProtoTuple* T = context->newTupleFromList(result);
+        proto::ProtoObject* tupObj = const_cast<proto::ProtoObject*>(context->newObject(true));
         PythonEnvironment* env = PythonEnvironment::fromContext(context);
-        if (env) env->raiseIndexError(context, "tuple index out of range");
-        return PROTO_NONE;
+        if (env && env->getTuplePrototype()) {
+            tupObj = const_cast<proto::ProtoObject*>(tupObj->addParent(context, env->getTuplePrototype()));
+            tupObj = const_cast<proto::ProtoObject*>(tupObj->setAttribute(context, env->getClassString(), env->getTuplePrototype()));
+        }
+        tupObj = const_cast<proto::ProtoObject*>(tupObj->setAttribute(context, env ? env->getDataString() : getInternalString(context, "__data__"), T->asObject(context)));
+        return tupObj;
     }
-    return tuple->getAt(context, static_cast<int>(index));
+
+    if (indexObj->isInteger(context)) {
+        long long index = indexObj->asLong(context);
+        if (index < 0) index += size;
+        if (index < 0 || index >= size) {
+            PythonEnvironment* env = PythonEnvironment::fromContext(context);
+            if (env) env->raiseIndexError(context, "tuple index out of range");
+            return PROTO_NONE;
+        }
+        return tuple->getAt(context, static_cast<int>(index));
+    }
+    
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (env) env->raiseTypeError(context, "tuple indices must be integers or slices");
+    return PROTO_NONE;
 }
 
 static const proto::ProtoObject* py_tuple_iter(
@@ -4338,31 +4365,29 @@ static const proto::ProtoObject* py_str_getitem(
     const proto::ProtoObject* indexObj = positionalParameters->getAt(context, 0);
 
     SliceBounds sb = get_slice_bounds(context, indexObj, size);
-    if (sb.isSlice && sb.step == 1) {
-        std::string sub = s.substr(static_cast<size_t>(sb.start), static_cast<size_t>(sb.stop - sb.start));
+    if (sb.isSlice) {
+        std::string sub;
+        for (long long i = sb.start; (sb.step > 0 ? i < sb.stop : i > sb.stop); i += sb.step) {
+            sub += s[static_cast<size_t>(i)];
+        }
         return context->fromUTF8String(sub.c_str());
     }
 
-    const proto::ProtoList* sliceList = indexObj->asList(context);
-    if (sliceList && sliceList->getSize(context) >= 2) {
-        long long start = sliceList->getAt(context, 0)->asLong(context);
-        long long stop = sliceList->getAt(context, 1)->asLong(context);
-        long long step = sliceList->getSize(context) >= 3 ? sliceList->getAt(context, 2)->asLong(context) : 1;
-        if (step != 1) return PROTO_NONE;
-        if (start < 0) start += size;
-        if (stop < 0) stop += size;
-        if (start < 0) start = 0;
-        if (stop > size) stop = size;
-        if (start > stop) start = stop;
-        std::string sub = s.substr(static_cast<size_t>(start), static_cast<size_t>(stop - start));
-        return context->fromUTF8String(sub.c_str());
+    if (indexObj->isInteger(context)) {
+        int idx = static_cast<int>(indexObj->asLong(context));
+        if (idx < 0) idx += static_cast<int>(size);
+        if (idx < 0 || static_cast<unsigned long>(idx) >= size) {
+            PythonEnvironment* env = PythonEnvironment::fromContext(context);
+            if (env) env->raiseIndexError(context, "string index out of range");
+            return PROTO_NONE;
+        }
+        char c[2] = { s[static_cast<size_t>(idx)], '\0' };
+        return context->fromUTF8String(c);
     }
-
-    int idx = static_cast<int>(indexObj->asLong(context));
-    if (idx < 0) idx += static_cast<int>(size);
-    if (idx < 0 || static_cast<unsigned long>(idx) >= s.size()) return PROTO_NONE;
-    char c[2] = { s[static_cast<size_t>(idx)], '\0' };
-    return context->fromUTF8String(c);
+    
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (env) env->raiseTypeError(context, "string indices must be integers or slices");
+    return PROTO_NONE;
 }
 
 static const proto::ProtoObject* py_slice_call(
@@ -7634,6 +7659,19 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
 
     // builtins module
     builtinsModule = builtins::initialize(rootContext_, objectPrototype, typePrototype, intPrototype, strPrototype, listPrototype, dictPrototype, tuplePrototype, setPrototype, bytesPrototype, nonePrototype, ellipsisPrototype, notImplementedPrototype, sliceType, frozensetPrototype, floatPrototype, boolPrototype, complexPrototype, ioModule);
+    
+    // IMPORTANT: BuiltinsModule::initialize augments objectPrototype (__setattr__, __init__, etc.)
+    // and stores the augmented version in rootContext_->space->objectPrototype.
+    // We MUST read it back so that all subsequent exceptions/built-in classes
+    // inherit from the enriched objectPrototype, unifying the identities!
+    if (rootContext_->space->objectPrototype) {
+        objectPrototype = rootContext_->space->objectPrototype;
+    }
+
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        const proto::ProtoObject* obInB = builtinsModule->getAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "object"));
+        fprintf(stderr, "DEBUG AFTER BUILTINS INIT: objectPrototype=%p obInBuiltins=%p\n", (void*)objectPrototype, (void*)obInB);
+    }
     if (modulePrototype) {
         builtinsModule = builtinsModule->addParent(rootContext_, modulePrototype);
         builtinsModule = builtinsModule->setAttribute(rootContext_, py_class, modulePrototype);
@@ -8241,7 +8279,7 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain,
 
                             s_threadResolveCache[moduleName] = mutableMod;
                             const proto::ProtoObject* oldMod = mutableMod;
-                            if (get_env_diag()) { fprintf(stderr, "DEBUG: executeModule starting runCodeObject mutableMod=%p\n", (void*)mutableMod); fflush(stderr); }
+                            if (get_env_diag()) { fprintf(stderr, "DEBUG: executeModule starting runCodeObject mutableMod=%p (%s)\n", (void*)mutableMod, moduleName.c_str()); fflush(stderr); }
                             runCodeObject(ctx, codeObj, mutableMod);
                             if (get_env_diag()) { fprintf(stderr, "DEBUG: executeModule finished runCodeObject mutableMod=%p (has CodeType=%d)\n", (void*)mutableMod, mutableMod->hasAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "CodeType"))==PROTO_TRUE); fflush(stderr); }
                             
@@ -9393,8 +9431,8 @@ const proto::ProtoObject* PythonEnvironment::resolve(const proto::ProtoString* n
                 fprintf(stderr, "DEBUG: resolve BUILTINS name=%s result=%p repr=%s\n", nameStr.c_str(), (void*)result, PythonEnvironment::reprObject(ctx, result).c_str());
                 fflush(stderr);
             }
-            if (std::getenv("PROTO_ENV_DIAG") && (nameStr == "type" || nameStr == "object")) {
-                 fprintf(stderr, "DEBUG: resolve BUILTINS name=%s obj=%p\n", nameStr.c_str(), (void*)result);
+            if (std::getenv("PROTO_ENV_DIAG") && (nameStr == "type" || nameStr == "object" || nameStr == "int")) {
+                 fprintf(stderr, "DEBUG: resolve BUILTINS found name=%s result=%p resultProto=%p objectPrototype=%p intPrototype=%p builtinsModule=%p\n", nameStr.c_str(), (void*)result, (void*)(result ? result->getPrototype(ctx) : nullptr), (void*)objectPrototype, (void*)intPrototype, (void*)builtinsModule);
                  fflush(stderr);
             }
             return result;
