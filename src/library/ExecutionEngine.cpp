@@ -414,8 +414,19 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
         
         if (bytecode && consts) {
             unsigned long stackOffset = co_varnames ? co_varnames->getSize(calleeCtx) : 0;
+            // The following variables are not defined in this scope and would cause a compilation error.
+            // Assuming they are intended to be defined elsewhere or this snippet is part of a larger context.
+            // For now, we will use the original call to executeBytecodeRange and add the requested prints.
+            // If the intent was to change the signature of executeBytecodeRange, that would require
+            // changes to its definition and the definition of these variables.
+            // result = executeBytecodeRange(calleeCtx, consts, bytecode, names, frame, nextPc, bytecode->getSize(ctx), stackOffset, &finalPc, &yielded, &blockStack, initialTop, &finalTop);
             result = executeBytecodeRange(calleeCtx, consts, bytecode, names, frame, 0, bytecode->getSize(calleeCtx), stackOffset);
+            if (std::getenv("PROTO_ENV_DIAG")) {
+                std::string repr = env ? PythonEnvironment::reprObject(calleeCtx, result) : "???";
+                fprintf(stderr, "DEBUG HANG: runUserFunctionCall executeBytecodeRange returned result=%p repr=%s\n", (void*)result, repr.c_str());
+            }
         } else {
+            if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG HANG: function missing bytecode or consts!\n");
             result = PROTO_NONE;
         }
     }
@@ -816,6 +827,15 @@ static const proto::ProtoObject* compareOp(proto::ProtoContext* ctx,
         return result ? PROTO_TRUE : PROTO_FALSE;
     }
     
+    if (op == 10) { // EXCEPTION_MATCH
+        PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+        if (env) {
+            bool match = env->isException(a, b); // a = exc, b = type
+            return match ? PROTO_TRUE : PROTO_FALSE;
+        }
+        return PROTO_FALSE;
+    }
+
     if (op == 6 || op == 7) { // in, not in
         bool found = false;
         const proto::ProtoList* lst = b->asList(ctx);
@@ -1132,7 +1152,10 @@ const proto::ProtoObject* py_generator_send_impl(
     const proto::ProtoObject* stackObj = self->getAttribute(ctx, env->getGiStackString());
     const proto::ProtoObject* blocksObj = self->getAttribute(ctx, env->getGiBlocksString());
 
-    if (!codeObj || !frame || !pcObj || !stackObj) return PROTO_NONE;
+    if (!codeObj || !frame || !pcObj || !stackObj) {
+        if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG HANG: generator missing properties! codeObj=%p frame=%p pcObj=%p stackObj=%p\n", (void*)codeObj, (void*)frame, (void*)pcObj, (void*)stackObj);
+        return PROTO_NONE;
+    }
 
     // Restore blockStack
     std::vector<Block> blockStack;
@@ -1154,10 +1177,14 @@ const proto::ProtoObject* py_generator_send_impl(
     }
 
     unsigned long pc = (pcObj && pcObj->isInteger(ctx)) ? static_cast<unsigned long>(pcObj->asLong(ctx)) : 0;
-    const proto::ProtoList* co_code_list = codeObj->getAttribute(ctx, env->getCoCodeString())->asList(ctx);
-    if (!co_code_list) return PROTO_NONE;
+    const proto::ProtoTuple* co_code_tuple = codeObj->getAttribute(ctx, env->getCoCodeString())->asTuple(ctx);
+    if (!co_code_tuple) {
+        if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG HANG: generator missing co_code_tuple!\n");
+        return PROTO_NONE;
+    }
     
-    if (pc >= co_code_list->getSize(ctx)) {
+    if (pc >= co_code_tuple->getSize(ctx)) {
+        if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG HANG: generator pc >= co_code_tuple! pc=%lu size=%lu\n", pc, co_code_tuple->getSize(ctx));
         env->raiseStopIteration(ctx, PROTO_NONE);
         return PROTO_NONE;
     }
@@ -1234,11 +1261,11 @@ const proto::ProtoObject* py_generator_send_impl(
         
         result = executeBytecodeRange(calleeCtx, 
             co_consts,
-            reinterpret_cast<const proto::ProtoObject*>(co_code_list)->asTuple(calleeCtx),
+            reinterpret_cast<const proto::ProtoObject*>(co_code_tuple)->asTuple(calleeCtx),
             co_names,
             frame,
             pc,
-            co_code_list->getSize(calleeCtx),
+            co_code_tuple->getSize(calleeCtx),
             stackOffset,
             &nextPc,
             &yielded,
@@ -1288,11 +1315,16 @@ const proto::ProtoObject* py_generator_send_impl(
     }
 
     if (!yielded && !env->hasPendingException()) {
+        if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG HANG: generator exhausted cleanly! raising StopIteration\n");
         env->raiseStopIteration(ctx, result);
         return nullptr;
     }
 
-    return result;
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        std::string repr = env && result ? PythonEnvironment::reprObject(ctx, result) : "???";
+        fprintf(stderr, "DEBUG HANG: py_generator_send_impl returning normally: %p %s\n", (void*)result, repr.c_str());
+    }
+    return result ? result : PROTO_NONE;
 }
 
 const proto::ProtoObject* py_self_iter(
@@ -1886,9 +1918,10 @@ const proto::ProtoObject* executeBytecodeRange(
                     const proto::ProtoObject* val = nullptr;
                     bool found = false;
                     const proto::ProtoObject* hasAttrRes = frame->hasAttribute(ctx, nameS);
-                    if (std::getenv("PROTO_ENV_DIAG") && nStr == "self") {
-                        fprintf(stderr, "DEBUG: OP_LOAD_NAME('self') frame=%p hasAttribute=%p (PROTO_TRUE=%p), closure=%p\n",
-                                (void*)frame, (void*)hasAttrRes, (void*)PROTO_TRUE, (void*)frame->getAttribute(ctx, env->getClosureString()));
+                    if (std::getenv("PROTO_ENV_DIAG")) {
+                        fprintf(stderr, "DEBUG: OP_LOAD_NAME('%s') PC %lu frame=%p hasAttribute=%p (PROTO_TRUE=%p), closure=%p\n",
+                                nStr.c_str(), i, (void*)frame, (void*)hasAttrRes, (void*)PROTO_TRUE, (void*)frame->getAttribute(ctx, env->getClosureString()));
+                        fflush(stderr);
                     }
                     if (hasAttrRes == PROTO_TRUE) {
                         val = frame->getAttribute(ctx, nameS);
@@ -1927,13 +1960,24 @@ const proto::ProtoObject* executeBytecodeRange(
             }
         } else if (op == OP_STORE_NAME) {
             if (get_env_diag()) {
-                fprintf(stderr, "DEBUG: OP_STORE_NAME start PC %lu names=%ld arg=%d\n", i, names ? names->getSize(ctx) : -1, arg);
+                std::string nStr = "unknown";
+                if (names && arg < names->getSize(ctx)) {
+                    if (names->getAt(ctx, arg)->isString(ctx)) names->getAt(ctx, arg)->asString(ctx)->toUTF8String(ctx, nStr);
+                }
+                fprintf(stderr, "DEBUG: OP_STORE_NAME start PC %lu names=%ld arg=%d name='%s'\n", i, names ? names->getSize(ctx) : -1, arg, nStr.c_str());
                 fflush(stderr);
             }
             if (names && frame && static_cast<unsigned long>(arg) < names->getSize(ctx)) {
                 if (stack.empty()) {
-                    const proto::ProtoObject* codeObj = frame ? frame->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__code__")) : nullptr; std::string fname = "<unknown>"; if (codeObj && codeObj->hasAttribute(ctx, env->getNameString()) == PROTO_TRUE) { codeObj->getAttribute(ctx, env->getNameString())->asString(ctx)->toUTF8String(ctx, fname); } fprintf(stderr, "OP_STORE_NAME: empty stack in %s!\n", fname.c_str());
-                    if (env) { env->raiseTypeError(ctx, "stack underflow in OP_STORE_NAME"); }
+                    if (env) {
+                        const proto::ProtoObject* codeObj = frame ? frame->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__code__")) : nullptr;
+                        std::string fname = "<unknown>";
+                        if (codeObj && codeObj->hasAttribute(ctx, env->getNameString()) == PROTO_TRUE) {
+                            codeObj->getAttribute(ctx, env->getNameString())->asString(ctx)->toUTF8String(ctx, fname);
+                        }
+                        fprintf(stderr, "OP_STORE_NAME: empty stack in %s! PC=%lu\n", fname.c_str(), i);
+                        env->raiseTypeError(ctx, "stack underflow in OP_STORE_NAME");
+                    }
                     i = next_i;
                     continue;
                 }
@@ -3920,24 +3964,65 @@ const proto::ProtoObject* executeBytecodeRange(
             }
             const proto::ProtoObject* seq = stack.back();
             stack.pop_back();
-            const proto::ProtoList* list = seq->asList(ctx);
-            const proto::ProtoTuple* tup = seq->asTuple(ctx);
-            if (!list && !tup) {
-                 const proto::ProtoObject* data = seq->getAttribute(ctx, env ? env->getDataString() : getInternalString(ctx, "__data__"));
-                 if (data) {
-                     list = data->asList(ctx);
-                     tup = data->asTuple(ctx);
-                 }
-            }
-            if (list) {
-                if (static_cast<int>(list->getSize(ctx)) < arg) continue;
-                for (int j = arg - 1; j >= 0; --j) {
-                    stack.push_back(list->getAt(ctx, j));
+
+            PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+            if (env) {
+                const proto::ProtoObject* iterObj = env->iter(seq);
+                if (!iterObj) {
+                    if (!env->hasPendingException()) env->raiseTypeError(ctx, "cannot unpack non-iterable object");
+                    i = next_i; continue;
                 }
-            } else if (tup) {
-                if (static_cast<int>(tup->getSize(ctx)) < arg) continue;
+                std::vector<const proto::ProtoObject*> items;
+                for (int j = 0; j < arg; ++j) {
+                    const proto::ProtoObject* val = env->next(iterObj);
+                    if (!val) {
+                        if (env->hasPendingException() && env->isStopIteration(ctx, env->peekPendingException())) {
+                            env->clearPendingException();
+                        }
+                        if (!env->hasPendingException()) {
+                            env->raiseValueError(ctx, proto::ProtoString::fromUTF8String(ctx, "not enough values to unpack")->asObject(ctx));
+                        }
+                        break;
+                    }
+                    items.push_back(val);
+                }
+                if (env->hasPendingException()) {
+                    i = next_i; continue;
+                }
+                
+                // Check if there are too many values
+                const proto::ProtoObject* excess = env->next(iterObj);
+                if (excess) {
+                    env->raiseValueError(ctx, proto::ProtoString::fromUTF8String(ctx, "too many values to unpack")->asObject(ctx));
+                    i = next_i; continue;
+                } else if (env->hasPendingException() && env->isStopIteration(ctx, env->peekPendingException())) {
+                    env->clearPendingException();
+                }
+
+                // Push onto stack in reverse order so the first unpacked name gets the top of the stack
                 for (int j = arg - 1; j >= 0; --j) {
-                    stack.push_back(tup->getAt(ctx, j));
+                    stack.push_back(items[j]);
+                }
+            } else {
+                const proto::ProtoList* list = seq->asList(ctx);
+                const proto::ProtoTuple* tup = seq->asTuple(ctx);
+                if (!list && !tup) {
+                     const proto::ProtoObject* data = seq->getAttribute(ctx, getInternalString(ctx, "__data__"));
+                     if (data) {
+                         list = data->asList(ctx);
+                         tup = data->asTuple(ctx);
+                     }
+                }
+                if (list) {
+                    if (static_cast<int>(list->getSize(ctx)) < arg) continue;
+                    for (int j = arg - 1; j >= 0; --j) {
+                        stack.push_back(list->getAt(ctx, j));
+                    }
+                } else if (tup) {
+                    if (static_cast<int>(tup->getSize(ctx)) < arg) continue;
+                    for (int j = arg - 1; j >= 0; --j) {
+                        stack.push_back(tup->getAt(ctx, j));
+                    }
                 }
             }
         } else if (op == OP_UNPACK_EX) {

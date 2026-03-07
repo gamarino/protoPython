@@ -2587,17 +2587,25 @@ const proto::ProtoObject* py_type(
                         }
                         
                         const proto::ProtoObject* val = nullptr;
-                        const proto::ProtoObject* getItemMethod = dict->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__getitem__"));
-                        if (getItemMethod && getItemMethod->isMethod(context)) {
+                        const proto::ProtoString* getItemStr = proto::ProtoString::fromUTF8String(context, "__getitem__");
+                        const proto::ProtoObject* getItemMethod = env ? env->getAttribute(context, dict, getItemStr) : dict->getAttribute(context, getItemStr);
+                        if (get_env_diag()) {
+                            fprintf(stderr, "DEBUG py_type loop: key '%s' dict=%p getItemMethod=%p\n", ks.c_str(), (void*)dict, (void*)getItemMethod);
+                        }
+                        if (getItemMethod && getItemMethod != PROTO_NONE) {
                             const proto::ProtoList* mArgs = context->newList()->appendLast(context, keyObj);
-                            val = getItemMethod->asMethod(context)(context, dict, nullptr, mArgs, nullptr);
+                            val = protoPython::invokePythonCallable(context, getItemMethod, mArgs, nullptr);
                             if (env && env->hasPendingException()) {
+                                if (get_env_diag()) fprintf(stderr, "DEBUG py_type loop: getItem exception caught\n");
                                 env->clearPendingException();
                                 val = nullptr;
+                            } else {
+                                if (get_env_diag()) fprintf(stderr, "DEBUG py_type loop: getItem returned %p\n", (void*)val);
                             }
                         }
-                        if (!val) {
+                        if (!val) { // nullptr ONLY! PROTO_NONE is a valid value.
                             val = dict->getAttribute(context, k);
+                            if (get_env_diag()) fprintf(stderr, "DEBUG py_type loop: fallback getAttribute returned %p\n", (void*)val);
                         }
                         
                         // Implicitly wrap special methods
@@ -2636,25 +2644,6 @@ const proto::ProtoObject* py_type(
                                 // Create __keys__ if it doesn't exist on targetClass
                                 const proto::ProtoList* newList = context->newList()->appendLast(context, keyObj);
                                 targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, keysName, newList->asObject(context)));
-                            }
-                        }
-
-                        // Call __set_name__ if present
-                        if (get_env_diag()) {
-                            printf("DEBUG: py_type checking __set_name__ for key '%s'\n", ks.c_str());
-                            fflush(stdout);
-                        }
-                        const proto::ProtoObject* setName = val ? val->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__set_name__")) : nullptr;
-                        if (setName && setName != PROTO_NONE) {
-                            if (get_env_diag()) {
-                                printf("DEBUG: py_type calling __set_name__ on key '%s'\n", ks.c_str());
-                                fflush(stdout);
-                            }
-                            const proto::ProtoList* setNameArgs = context->newList()->appendLast(context, targetClass)->appendLast(context, keyObj);
-                            setName->call(context, nullptr, proto::ProtoString::fromUTF8String(context, "__set_name__"), val, setNameArgs, nullptr);
-                            if (get_env_diag()) {
-                                printf("DEBUG: py_type returned from __set_name__ on key '%s'\n", ks.c_str());
-                                fflush(stdout);
                             }
                         }
                     }
@@ -2737,6 +2726,38 @@ const proto::ProtoObject* py_type(
                  printf("DEBUG: py_type MRO is NULL\n");
              }
         }
+        
+        // Final Pass: Call __set_name__ for all attributes that have it.
+        // This MUST be done after the targetClass has been fully assembled,
+        // so that descriptors can access other attributes (e.g. enum._member_type_)
+        const proto::ProtoString* targetKeysName = proto::ProtoString::fromUTF8String(context, "__keys__");
+        const proto::ProtoObject* tKeysObj = targetClass->getAttribute(context, targetKeysName);
+        if (tKeysObj && tKeysObj->asList(context)) {
+            const proto::ProtoList* tKeysList = tKeysObj->asList(context);
+            for (size_t i = 0; i < tKeysList->getSize(context); ++i) {
+                const proto::ProtoObject* keyObj = tKeysList->getAt(context, i);
+                if (keyObj && keyObj->isString(context)) {
+                    const proto::ProtoObject* val = targetClass->getAttribute(context, keyObj->asString(context));
+                    if (val && val != PROTO_NONE) {
+                        PythonEnvironment* pe = PythonEnvironment::fromContext(context);
+                        const proto::ProtoObject* valType = pe ? pe->getType(context, val) : nullptr;
+                        const proto::ProtoObject* setName = valType ? valType->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__set_name__")) : nullptr;
+                        if (setName && setName != PROTO_NONE) {
+                            if (get_env_diag()) {
+                                std::string ks; keyObj->asString(context)->toUTF8String(context, ks);
+                                std::string fnStr = PythonEnvironment::reprObject(context, setName);
+                                printf("DEBUG: py_type calling __set_name__ on key '%s' with method=%s\n", ks.c_str(), fnStr.c_str());
+                                fflush(stdout);
+                            }
+                            const proto::ProtoList* setNameArgs = context->newList()->appendLast(context, val)->appendLast(context, targetClass)->appendLast(context, keyObj);
+                            protoPython::invokePythonCallable(context, setName, setNameArgs, nullptr);
+                            if (pe && pe->hasPendingException()) return nullptr;
+                        }
+                    }
+                }
+            }
+        }
+        
         return targetClass;
     }
 
@@ -3566,25 +3587,14 @@ static const proto::ProtoObject* py_range(
     if (step == 0) return PROTO_NONE;
 
     ::protoPython::PythonEnvironment* env = ::protoPython::PythonEnvironment::fromContext(context);
-    const proto::ProtoString* rangeProtoS = env ? env->getRangeProtoString() : proto::ProtoString::fromUTF8String(context, "__range_proto__");
     const proto::ProtoString* curS = env ? env->getRangeCurString() : proto::ProtoString::fromUTF8String(context, "__range_cur__");
     const proto::ProtoString* stopS = env ? env->getRangeStopString() : proto::ProtoString::fromUTF8String(context, "__range_stop__");
     const proto::ProtoString* stepS = env ? env->getRangeStepString() : proto::ProtoString::fromUTF8String(context, "__range_step__");
 
-    const proto::ProtoObject* rangeProto = self->getAttribute(context, rangeProtoS);
-    if (!rangeProto || rangeProto == PROTO_NONE) {
-        if (std::getenv("PROTO_ENV_DIAG")) {
-            fprintf(stderr, "DEBUG: py_range failed: rangeProto missing on self=%p\n", (void*)self);
-        }
-        return PROTO_NONE;
-    }
-    const proto::ProtoObject* rangeObj = rangeProto->newChild(context, true);
+    const proto::ProtoObject* rangeObj = self ? self->newChild(context, true) : context->newObject(false);
     rangeObj = rangeObj->setAttribute(context, curS, context->fromInteger(start));
     rangeObj = rangeObj->setAttribute(context, stopS, context->fromInteger(stop));
     rangeObj = rangeObj->setAttribute(context, stepS, context->fromInteger(step));
-    
-    // Ensure the range object has our new __iter__ method
-    rangeObj = rangeObj->setAttribute(context, env->getIterString(), context->fromMethod(const_cast<proto::ProtoObject*>(rangeObj), py_range_iter));
     
     return rangeObj;
 }
@@ -4014,6 +4024,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     if (typeProto) rangeClass = rangeClass->setAttribute(ctx, py_class_local, typeProto);
     rangeClass = rangeClass->setAttribute(ctx, py_name_local, proto::ProtoString::fromUTF8String(ctx, "range")->asObject(ctx));
     rangeClass = rangeClass->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__new__"), ctx->fromMethod(nullptr, py_range_new));
+    rangeClass = rangeClass->setAttribute(ctx, pEnv ? pEnv->getIterString() : proto::ProtoString::fromUTF8String(ctx, "__iter__"), ctx->fromMethod(nullptr, py_range_iter));
     rangeClass = rangeClass->setAttribute(ctx, pEnv ? pEnv->getInitString() : proto::ProtoString::fromUTF8String(ctx, "__init__"), ctx->fromMethod(nullptr, py_ignore_init));
     builtins = builtins->setAttribute(ctx, pEnv ? pEnv->getRangeString() : proto::ProtoString::fromUTF8String(ctx, "range"), rangeClass);
 
@@ -4068,17 +4079,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     revProto = revProto->setAttribute(ctx, py_name_local, proto::ProtoString::fromUTF8String(ctx, "reversed")->asObject(ctx));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "reversed"), revProto);
 
-    // -- MOVE rangeProto creation HERE before binding py_range --
-    const proto::ProtoObject* rangeProto = ctx->newObject(false);
-    if (objectProto) rangeProto = rangeProto->addParent(ctx, objectProto);
-    if (typeProto) rangeProto = rangeProto->setAttribute(ctx, py_class_local, typeProto);
-    rangeProto = rangeProto->setAttribute(ctx, py_name_local, proto::ProtoString::fromUTF8String(ctx, "range_iterator")->asObject(ctx));
-    rangeProto = rangeProto->setAttribute(ctx, pEnv->getIterString(), ctx->fromMethod(const_cast<proto::ProtoObject*>(rangeProto), py_range_iter));
-    rangeProto = rangeProto->setAttribute(ctx, pEnv->getNextString(), ctx->fromMethod(const_cast<proto::ProtoObject*>(rangeProto), py_range_next));
-    builtins = builtins->setAttribute(ctx, pEnv->getRangeProtoString(), rangeProto);
-    
-    // Now bind range with the updated builtins object
-    builtins = builtins->setAttribute(ctx, pEnv->getRangeString(), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_range));
+    // rangeProto initialization was removed as rangeClass handles instantiation now
     
     revProto = revProto->setAttribute(ctx, pEnv->getIterString(), ctx->fromMethod(const_cast<proto::ProtoObject*>(revProto), py_self_iter));
     revProto = revProto->setAttribute(ctx, pEnv->getNextString(), ctx->fromMethod(const_cast<proto::ProtoObject*>(revProto), py_reversed_next));
@@ -4137,7 +4138,16 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "hash"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_hash));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "help"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_help));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_complete"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_complete));
-    builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "memoryview"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_memoryview));
+    auto py_memoryview_new = [](proto::ProtoContext* context, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) -> const proto::ProtoObject* {
+        return py_memoryview(context, self, parentLink, args, kwargs);
+    };
+    const proto::ProtoObject* memoryviewClass = ctx->newObject(false);
+    if (objectProto) memoryviewClass = memoryviewClass->addParent(ctx, objectProto);
+    if (typeProto) memoryviewClass = memoryviewClass->setAttribute(ctx, py_class_local, typeProto);
+    memoryviewClass = memoryviewClass->setAttribute(ctx, py_name_local, proto::ProtoString::fromUTF8String(ctx, "memoryview")->asObject(ctx));
+    memoryviewClass = memoryviewClass->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__new__"), ctx->fromMethod(nullptr, py_memoryview_new));
+    memoryviewClass = memoryviewClass->setAttribute(ctx, pEnv ? pEnv->getInitString() : proto::ProtoString::fromUTF8String(ctx, "__init__"), ctx->fromMethod(nullptr, py_ignore_init));
+    builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "memoryview"), memoryviewClass);
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "super"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_super));
     const proto::ProtoObject* propertyProto = ctx->newObject(false);
     if (objectProto) propertyProto = propertyProto->addParent(ctx, objectProto);

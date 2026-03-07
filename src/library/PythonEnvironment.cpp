@@ -731,17 +731,34 @@ static const proto::ProtoObject* py_object_str(
 }
 
 static const proto::ProtoObject* py_str_call(
-    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink* parentLink,
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink,
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    if (!posArgs || posArgs->getSize(ctx) <= 1) return ctx->fromUTF8String("");
-    const proto::ProtoObject* x = posArgs->getAt(ctx, 1);
-    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    const proto::ProtoObject* cls = env ? env->getType(ctx, x) : x->getAttribute(ctx, getInternalString(ctx, "__class__"));
-    const proto::ProtoObject* strMethod = cls ? cls->getAttribute(ctx, env ? env->getStrString() : getInternalString(ctx, "__str__")) : nullptr;
-    if (strMethod && strMethod->asMethod(ctx)) {
-        return strMethod->asMethod(ctx)(ctx, x, nullptr, env ? env->getEmptyList() : ctx->newList(), nullptr);
+    const proto::ProtoObject* targetCls = posArgs && posArgs->getSize(ctx) > 0 ? posArgs->getAt(ctx, 0) : self;
+    const proto::ProtoObject* x = nullptr;
+    if (!posArgs || posArgs->getSize(ctx) <= 1) {
+        x = ctx->fromUTF8String("");
+    } else {
+        x = posArgs->getAt(ctx, 1);
+        PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+        const proto::ProtoObject* cls = env ? env->getType(ctx, x) : x->getAttribute(ctx, getInternalString(ctx, "__class__"));
+        const proto::ProtoObject* strMethod = cls ? cls->getAttribute(ctx, env ? env->getStrString() : getInternalString(ctx, "__str__")) : nullptr;
+        if (strMethod && strMethod->asMethod(ctx)) {
+            x = strMethod->asMethod(ctx)(ctx, x, nullptr, env ? env->getEmptyList() : ctx->newList(), nullptr);
+        } else {
+            x = py_object_str(ctx, x, parentLink, nullptr, nullptr);
+        }
     }
-    return py_object_str(ctx, x, parentLink, nullptr, nullptr);
+    
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!targetCls || (env && targetCls == env->getStrPrototype())) {
+        return x;
+    }
+    
+    // Subclass instantiation
+    proto::ProtoObject* instance = const_cast<proto::ProtoObject*>(targetCls->newChild(ctx, true));
+    const proto::ProtoString* dataName = env ? env->getDataString() : getInternalString(ctx, "__data__");
+    instance->setAttribute(ctx, dataName, x);
+    return instance;
 }
 
 static const proto::ProtoObject* py_repr_call(
