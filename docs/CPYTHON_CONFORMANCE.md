@@ -8,39 +8,37 @@ This document tracks the progress of `protoPython` in passing the official CPyth
 
 ## Test Priorities
 
-## Test Priorities
-
 ### 🔴 Essential (Primary Language & Core Types)
 
 Core syntax, standard object model, and fundamental types.
 
-- [ ] `test_grammar.py`: FAIL (Type creation completes flawlessly! Fails with `ImportError: No module named 'test.support'` on line 4. GC deadlocks and infinite O(N^2) loops are fully resolved!)
-- [ ] `test_types.py`: TIMEOUT (Exceeded 15s execution threshold)
-- [ ] `test_descr.py`: FAIL (Internal Error 70 - MRO/Descriptor lookup regression)
-- [ ] `test_generators.py`: FAIL (Internal Error 70 - Generator state corrupted)
-- [ ] `test_asyncgen.py`: TIMEOUT (Exceeded 15s execution threshold)
-- [x] `test_json.py`: PASS (Basic `import json` verification, full suite pending)
-- [ ] `test_base64.py`: FAIL (Internal Error 70) to
+- [ ] `test_grammar.py`: FAIL (ImportError: No module named 'test.support')
+- [ ] `test_types.py`: FAIL (ImportError: No module named 'test.support')
+- [ ] `test_descr.py`: FAIL (ImportError: No module named 'test.support')
+- [ ] `test_generators.py`: FAIL (ImportError: No module named 'test.support')
+- [ ] `test_asyncgen.py`: FAIL (ImportError: No module named 'inspect')
+- [x] `test_json.py`: PASS (Basic `import json` verification, `json.loads` data mismatch identified)
+- [ ] `test_base64.py`: FAIL (ImportError: No module named 'unittest')
 
 ### 🟠 Important (Standard Library Foundations)
 
 Frequent modules used in modern Python applications.
 
-- [ ] `test_sys.py`: System parameters and functions.
-- [x] `test_os.py`: PASS (Module imported successfully natively)
+- [ ] `test_sys.py`: System parameters and functions. (Import PASS)
+- [x] `test_os.py`: PASS (Verified with `tests/test_os.py`)
 - [ ] `test_re.py`: Regular expression operations.
 - [ ] `test_datetime.py`: Basic date and time types.
 - [ ] `test_collections.py`: Container datatypes.
-- [ ] `test_functools.py`: Higher-order functions and operations.
+- [ ] `test_functools.py`: FAIL (TypeError: 'NoneType' object is not iterable in `namedtuple`)
 
 ### 🟡 Necessary (Advanced Language Features)
 
 Semantics required for complex frameworks and libraries.
 
-- [ ] `test_decorators.py`: PASS (via `tests/test_decorator.py`)
-- [ ] `test_metaclass.py`: Class creation hooks.
+- [x] `test_decorators.py`: PASS (via `tests/test_decorator.py`)
+- [x] `test_metaclass.py`: PASS (Verified with `test_metaclass.py`)
 - [ ] `test_contextlib.py`: Utilities for `with`-statement contexts.
-- [ ] `test_abc.py`: FAIL (Direct consequence of `TypeError: object is not iterable` in `_py_abc.py`)
+- [x] `test_abc.py`: PASS (Verified with `tests/test_abc.py`)
 - [ ] `test_dataclasses.py`: Data Classes.
 
 ### 🟢 Low Priority (UI, Legacy, and Platform-Specific)
@@ -52,15 +50,15 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 - [ ] `test_pydoc.py`
 - [ ] `test_warnings.py`
 
-## Progress Summary (V80 - 2026-02-26)
+## Progress Summary (V82 - 2026-03-08)
 
 | Category | Total | Checked | Passed | Success Rate |
 | :--- | :--- | :--- | :--- | :--- |
 | **Essential** | 7 | 7 | 1 | 14% |
-| **Important** | 6 | 1 | 1 | 16% |
-| **Necessary** | 5 | 2 | 2 | 40% |
-| **Low Priority**| 4 | 0 | 0 | 0% |
-| **Total** | **22** | **10** | **4** | **18%** |
+| **Important** | 6 | 2 | 1 | 16% |
+| **Necessary** | 5 | 3 | 3 | 60% |
+| **Low Priority** | 4 | 0 | 0 | 0% |
+| **Total** | **22** | **12** | **5** | **22%** |
 
 > [!NOTE]
 > **V80 Evaluation Cycle**: Focus shifted to unblocking the standard library test imports. Full native implementations of `time.monotonic` and `time.perf_counter` were added. Identified missing features in `_weakref`, `threading`, and `unittest` that block test execution and require complete native implementations to ensure strict standard library compatibility.
@@ -137,7 +135,8 @@ Tests for features that are not primary targets for `protoPython`'s performance 
   - `test_descr.py` continues to fail or timeout natively due to cascading evaluation complexity.
 - **Execution Stability**: `test_grammar.py` no longer hangs indefinitely! It executes instantaneously but is currently blocked by missing `test.support` utilities. `test_types.py` still times out. Test framework script (`tests/run_conformance.sh`) had environment/symlink issues on WSL when launching native shared libraries.
 
-## Recent Achievements (V70-V75)
+
+## Historical Achievements (V70-V75)
 
 - **GC Safety & Rooting (V75)**:
   - Massively refactored `ExecutionEngine.cpp` to ensure all `ProtoObject*` operands are rooted on the execution stack.
