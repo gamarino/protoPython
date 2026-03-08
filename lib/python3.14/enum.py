@@ -17,7 +17,7 @@ __all__ = [
 # Dummy value for Enum and Flag as there are explicit checks for them
 # before they have been created.
 # This is also why there are checks in EnumType like `if Enum is not None`
-Enum = Flag = EJECT = _stdlib_enums = ReprEnum = None
+Enum = Flag = STRICT = CONFORM = EJECT = KEEP = _stdlib_enums = ReprEnum = None
 
 class nonmember(object):
     """
@@ -236,12 +236,6 @@ class _proto_member:
         self.value = value
 
     def __set_name__(self, enum_class, member_name):
-        """
-        convert each quasi-member into an instance of the new enum class
-        """
-        # first step: remove ourself from enum_class
-        delattr(enum_class, member_name)
-        # second step: create member based on enum_class
         value = self.value
         if not isinstance(value, tuple):
             args = (value, )
@@ -271,13 +265,6 @@ class _proto_member:
         enum_member.__init__(*args)
         enum_member._sort_order_ = len(enum_class._member_names_)
 
-        if Flag is not None and issubclass(enum_class, Flag):
-            if isinstance(value, int):
-                enum_class._flag_mask_ |= value
-                if _is_single_bit(value):
-                    enum_class._singles_mask_ |= value
-            enum_class._all_bits_ = 2 ** ((enum_class._flag_mask_).bit_length()) - 1
-
         # If another member with the same value was already defined, the
         # new member becomes an alias to the existing one.
         try:
@@ -294,6 +281,7 @@ class _proto_member:
         except KeyError:
             # this could still be an alias if the value is multi-bit and the
             # class is a flag class
+            print(f"DEBUG: __set_name__ adding {member_name} to _member_names_")
             if (
                     Flag is None
                     or not issubclass(enum_class, Flag)
@@ -411,8 +399,6 @@ class EnumDict(dict):
                 single = True
                 value = (value, )
             if isinstance(value, tuple) and any(isinstance(v, auto) for v in value):
-                # insist on an actual tuple, no subclasses, in keeping with only supporting
-                # top-level auto() usage (not contained in any other data structure)
                 auto_valued = []
                 t = type(value)
                 for v in value:
@@ -430,10 +416,8 @@ class EnumDict(dict):
                     value = auto_valued[0]
                 else:
                     try:
-                        # accepts iterable as multiple arguments?
                         value = t(auto_valued)
                     except TypeError:
-                        # then pass them in singly
                         value = t(*auto_valued)
             self._member_names[key] = None
             if non_auto_store:
@@ -468,40 +452,15 @@ class EnumType(type):
         metacls._check_for_existing_members_(cls, bases)
         # create the namespace dict
         enum_dict = EnumDict(cls)
-        # inherit previous flags and _generate_next_value_ function
-        print("METACLS._GET_MIXINS_ IS:", metacls._get_mixins_)
         mixins = metacls._get_mixins_(cls, bases)
-        print("MIXINS Returned:", mixins, type(mixins))
         member_type, first_enum = mixins
         if first_enum is not None:
-            enum_dict['_generate_next_value_'] = getattr(
-                    first_enum, '_generate_next_value_', None,
-                    )
+            enum_dict['_generate_next_value_'] = getattr(first_enum, '_generate_next_value_', None)
         return enum_dict
 
     def __new__(metacls, cls, bases, classdict, *, boundary=None, _simple=False, **kwds):
-        print(f"DEBUG __new__ trace: entered cls={cls}")
-        # an Enum class is final once enumeration items have been defined; it
-        # cannot be mixed with other types (int, float, etc.) if it has an
-        # inherited __new__ unless a new __new__ is defined (or the resulting
-        # class will fail).
-        #
-        if _simple:
-            print("DEBUG __new__ trace: returning _simple")
-            return super().__new__(metacls, cls, bases, classdict, **kwds)
-        print("DEBUG __new__ trace: past _simple")
-        #
-        # remove any keys listed in _ignore_
-        classdict.setdefault('_ignore_', []).append('_ignore_')
-        ignore = classdict['_ignore_']
-        print(f"DEBUG __new__ trace: about to pop ignore"); print(f"DEBUG classdict type: {type(classdict)} mro: {type(classdict).__mro__}"); print(f"DEBUG classdict.pop: {getattr(classdict, 'pop', 'MISSING')}")
-        for key in ignore:
-            classdict.pop(key, None)
-        #
         # grab member names
-        print("DEBUG __new__ trace: grabbing member_names")
         member_names = classdict._member_names
-        print("DEBUG __new__ trace: member names grabbed")
         #
         # check for illegal enum names (any others?)
         invalid_names = set(member_names) & {'mro', ''}
@@ -511,50 +470,27 @@ class EnumType(type):
                     ))
         #
         # adjust the sunders
-        print("DEBUG __new__ trace: adjust sunders")
         _order_ = classdict.pop('_order_', None)
-        print("DEBUG __new__ trace: popped _order_")
         _gnv = classdict.get('_generate_next_value_')
-        print(f"DEBUG __new__ trace: retrieved _gnv")
         if _gnv is not None and type(_gnv) is not staticmethod:
             _gnv = staticmethod(_gnv)
         #
         # get dict of classdict
-        print(f"DEBUG __new__ trace: before dict() conversion, classdict keys are {list(classdict.keys())}")
-        print(f"DEBUG __new__ trace: classdict.items() is {list(classdict.items())}")
-        print("DEBUG __new__ trace: calling dict(classdict.items())")
         classdict = dict(classdict.items())
-        print("DEBUG __new__ trace: dict converted")
         if _gnv is not None:
             classdict['_generate_next_value_'] = _gnv
-        print("DEBUG __new__ trace: handled _gnv assignment")
         #
         # data type of member and the controlling Enum class
-        print("DEBUG __new__ trace: getting mixins")
-        mixins = metacls._get_mixins_(cls, bases)
-        print("DEBUG __new__ trace: mixins retrieved")
-        print("MIXINS Returned:", mixins, type(mixins))
-        member_type, first_enum = mixins
+        member_type, first_enum = metacls._get_mixins_(cls, bases)
         __new__, save_new, use_args = metacls._find_new_(
                 classdict, member_type, first_enum,
                 )
-        print("DEBUG __new__ trace: _find_new_ finished")
         classdict['_new_member_'] = __new__
-        print("DEBUG __new__ trace: set _new_member_")
         classdict['_use_args_'] = use_args
         #
         # convert future enum members into temporary _proto_members
-        print(f"DEBUG __new__ trace: converting members loop: {member_names}")
-        print(f"DEBUG classdict keys internally: {list(classdict.keys())}")
         for name in member_names:
-            print(f"DEBUG fetching {name} from classdict...")
-            try:
-                value = classdict[name]
-            except KeyError:
-                print(f"DEBUG KeyError fetching {name}. classdict._member_names_ is {classdict._member_names_}")
-                raise
-            classdict[name] = _proto_member(value)
-        print("DEBUG __new__ trace: converting members loop done")
+            classdict[name] = _proto_member(classdict[name])
         #
         # house-keeping structures
         classdict['_member_names_'] = []
@@ -1002,15 +938,11 @@ class EnumType(type):
         # a datatype has a __new__ method, or a __dataclass_fields__ attribute
         data_types = set()
         base_chain = set()
-        print(f"DEBUG _find_data_type_ STARTing. len(bases)={len(bases)}")
-        for i, b in enumerate(bases):
-            print(f"DEBUG bases[{i}] = {b} (type: {type(b)})")
-        print(f"DEBUG _find_data_type_ str(bases)={bases}")
         for chain in bases:
             candidate = None
-            print(f"DEBUG FOR-YIELD chain={chain} type(chain)={type(chain)}")
-            mro_attr = chain.__mro__
-            print(f"DEBUG chain.__mro__={mro_attr} type={type(mro_attr)}")
+            mro_attr = getattr(chain, '__mro__', None)
+            if mro_attr is None:
+                continue # Skip if no MRO
             for base in mro_attr:
                 base_chain.add(base)
                 if base is object:
@@ -1025,10 +957,7 @@ class EnumType(type):
                 else:
                     candidate = candidate or base
         if len(data_types) > 1:
-            print(f"DEBUG TOO MANY DATA TYPES: class_name={class_name} data_types={data_types} bases={bases}")
-            for chain in bases:
-                print(f"DEBUG chain={chain} mro={chain.__mro__}")
-            raise TypeError('too many data types for %r: %r' % (class_name, data_types))
+            raise TypeError('Too many data types: %r' % data_types)
         elif data_types:
             return data_types.pop()
         else:
@@ -1401,7 +1330,7 @@ class StrEnum(str, ReprEnum):
             # check that errors argument is a string
             if not isinstance(values[2], str):
                 raise TypeError('errors must be a string, not %r' % (values[2]))
-        value = str(*values)
+        value = values[0]
         member = str.__new__(cls, value)
         member._value_ = value
         return member
@@ -1412,6 +1341,13 @@ class StrEnum(str, ReprEnum):
         Return the lower-cased version of the member name.
         """
         return name.lower()
+
+print("DEBUG StrEnum immediately after def:", hasattr(StrEnum, '_generate_next_value_'))
+print("DEBUG StrEnum._generate_next_value_:", getattr(StrEnum, '_generate_next_value_', None))
+try:
+    print("DEBUG StrEnum.__dict__:", StrEnum.__dict__.get('_generate_next_value_'))
+except Exception as e:
+    print("DEBUG dict err:", e)
 
 
 def pickle_by_global_name(self, proto):
@@ -1435,7 +1371,6 @@ class FlagBoundary(StrEnum):
     CONFORM = auto()
     EJECT = auto()
     KEEP = auto()
-STRICT, CONFORM, EJECT, KEEP = FlagBoundary
 
 
 class Flag(Enum, boundary=STRICT):
