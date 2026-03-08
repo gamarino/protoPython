@@ -1985,7 +1985,17 @@ const proto::ProtoObject* executeBytecodeRange(
                     bool handledBySetitem = false;
                     if (env) {
                         const proto::ProtoObject* frameType = env->getType(ctx, frame);
-                        // Check if it's a custom namespace class
+                        
+                        // Check if it's a custom namespace class by looking for __class__ manually
+                        // if getType returned the base dict type.
+                        if (frameType == env->getDictPrototype()) {
+                            const proto::ProtoString* classS = env->getClassString() ? env->getClassString() : proto::ProtoString::fromUTF8String(ctx, "__class__");
+                            const proto::ProtoObject* cls = frame->proto::ProtoObject::getAttribute(ctx, classS);
+                            if (cls && cls != PROTO_NONE) {
+                                frameType = cls;
+                            }
+                        }
+
                         if (frameType && frameType != PROTO_NONE &&
                             frameType != env->getDictPrototype() &&
                             frameType != env->getModulePrototype()) {

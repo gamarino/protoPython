@@ -335,19 +335,11 @@ class EnumDict(dict):
 
         Single underscore (sunder) names are reserved.
         """
-        if self._cls_name is not None and _is_private(self._cls_name, key):
+        cls_name = getattr(self, '_cls_name', None)
+        _isp = globals().get('_is_private')
+        if cls_name is not None and _isp and _isp(cls_name, key):
             # do nothing, name will be a normal attribute
             pass
-        elif _is_sunder(key):
-            if key not in (
-                    '_order_',
-                    '_generate_next_value_', '_numeric_repr_', '_missing_', '_ignore_',
-                    '_iter_member_', '_iter_member_by_value_', '_iter_member_by_def_',
-                    '_add_alias_', '_add_value_alias_',
-                    # While not in use internally, those are common for pretty
-                    # printing and thus excluded from Enum's reservation of
-                    # _sunder_ names
-                    ) and not key.startswith('_repr_'):
                 raise ValueError(
                         '_sunder_ names, such as %r, are reserved for future Enum use'
                         % (key, )
@@ -460,7 +452,15 @@ class EnumType(type):
 
     def __new__(metacls, cls, bases, classdict, *, boundary=None, _simple=False, **kwds):
         # grab member names
-        member_names = classdict._member_names
+        member_names = getattr(classdict, '_member_names', None)
+        if member_names is None:
+            if _simple:
+                member_names = [
+                        n for n, v in classdict.items()
+                        if not (_is_dunder(n) or _is_private(cls, n) or _is_sunder(n) or _is_descriptor(v))
+                        ]
+            else:
+                member_names = []
         #
         # check for illegal enum names (any others?)
         invalid_names = set(member_names) & {'mro', ''}
