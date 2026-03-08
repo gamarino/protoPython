@@ -1,2 +1,0 @@
-DEBUG RUNTIME argvVec size=1
-DEBUG SYS MODULE argv size=1

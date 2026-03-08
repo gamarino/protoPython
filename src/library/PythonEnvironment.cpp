@@ -9079,12 +9079,6 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
              return this->getType(ctx, obj);
         }
     }
-    if (nameStr == "__class__") {
-        fprintf(stderr, "DEBUG_CLASS_LOOKUP: getAttribute(obj=%p, '__class__')\n", (void*)obj);
-        if (obj->isString(ctx)) fprintf(stderr, "DEBUG_CLASS_LOOKUP: obj is a Primitive String!\n");
-        if (obj->asList(ctx)) fprintf(stderr, "DEBUG_CLASS_LOOKUP: obj is a List!\n");
-        fflush(stderr);
-    }
 
     // Recursion Guard for binding logic
     static thread_local int getAttrDepth = 0;
