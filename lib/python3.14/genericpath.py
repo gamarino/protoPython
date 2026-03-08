@@ -188,15 +188,15 @@ def _splitext(p, sep, altsep, extsep):
     return p, p[:0]
 
 import sys
-print(f"DEBUG: genericpath finishing. id(sys)={id(sys)} id(sys.modules['genericpath'])={id(sys.modules.get('genericpath'))}")
-print(f"DEBUG: id(None)={id(None)}")
-print(f"DEBUG: genericpath globals id: {id(globals())}")
-print(f"DEBUG: genericpath _splitext defined: {_splitext} id={id(_splitext)}")
+pass
+pass
+pass
+pass
 try:
     val = getattr(globals(), '_splitext', 'MISSING')
-    print(f"DEBUG: genericpath globals _splitext: {val} id={id(val)}")
+    pass
 except Exception as e:
-    print(f"DEBUG: genericpath globals error: {e}")
+    pass
 
 def _check_arg_types(funcname, *args):
     hasstr = hasbytes = False

@@ -16,10 +16,7 @@
 
 namespace protoPython {
 
-static bool get_env_diag() {
-    static bool diag = std::getenv("PROTO_ENV_DIAG") != nullptr;
-    return diag;
-}
+static bool get_env_diag() { return false; }
 
 static bool opcodeHasArg(int op) {
     switch (op) {

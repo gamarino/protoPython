@@ -21,7 +21,7 @@ that work tightly with the python syntax (template engines for example).
 :license: Python License.
 """
 
-print(f"DEBUG: ast.py loading with __name__='{__name__}'")
+pass
 
 from _ast import *
 
@@ -633,7 +633,7 @@ def main(args=None):
     parser = argparse.ArgumentParser(color=True)
     parser.add_argument('infile', nargs='?', default='-',
                         help='the file to parse; defaults to stdin')
-print("DEBUG: Bottom of ast.py reached!")
+pass
 if False: # was __name__ == '__main__'
-    print("DEBUG: Executing main() despite if False?!")
+    pass
     main()

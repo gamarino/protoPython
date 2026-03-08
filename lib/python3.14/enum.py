@@ -281,7 +281,7 @@ class _proto_member:
         except KeyError:
             # this could still be an alias if the value is multi-bit and the
             # class is a flag class
-            print(f"DEBUG: __set_name__ adding {member_name} to _member_names_")
+            pass
             if (
                     Flag is None
                     or not issubclass(enum_class, Flag)
@@ -1342,12 +1342,12 @@ class StrEnum(str, ReprEnum):
         """
         return name.lower()
 
-print("DEBUG StrEnum immediately after def:", hasattr(StrEnum, '_generate_next_value_'))
-print("DEBUG StrEnum._generate_next_value_:", getattr(StrEnum, '_generate_next_value_', None))
+pass
+pass
 try:
-    print("DEBUG StrEnum.__dict__:", StrEnum.__dict__.get('_generate_next_value_'))
+    pass
 except Exception as e:
-    print("DEBUG dict err:", e)
+    pass
 
 
 def pickle_by_global_name(self, proto):

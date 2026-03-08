@@ -33,16 +33,16 @@ Unit tests are in test_collections.
 #######################################################################
 
 from abc import ABCMeta, abstractmethod
-print("DEBUG: _collections_abc importing sys", flush=True)
+pass
 import sys
-print("DEBUG: _collections_abc starting aliases", flush=True)
+pass
 
 GenericAlias = type(list[int])
 EllipsisType = type(...)
 def _f(): pass
 FunctionType = type(_f)
 del _f
-print("DEBUG: _collections_abc defining Awaitable", flush=True)
+pass
 
 __all__ = ["Awaitable", "Coroutine",
            "AsyncIterable", "AsyncIterator", "AsyncGenerator",
@@ -68,30 +68,30 @@ __name__ = "collections.abc"
 # Note:  in other implementations, these types might not be distinct
 # and they may have their own implementation specific types that
 # are not included on this list.
-print("DEBUG _coll: bytes_iterator")
+pass
 bytes_iterator = type(iter(b''))
-print("DEBUG _coll: bytearray_iterator")
+pass
 bytearray_iterator = type(iter(bytearray()))
 #callable_iterator = ???
-print("DEBUG _coll: dict_keyiterator")
+pass
 dict_keyiterator = type(iter({}.keys()))
-print("DEBUG _coll: dict_valueiterator")
+pass
 dict_valueiterator = type(iter({}.values()))
-print("DEBUG _coll: dict_itemiterator")
+pass
 dict_itemiterator = type(iter({}.items()))
-print("DEBUG _coll: list_iterator")
+pass
 list_iterator = type(iter([]))
 list_reverseiterator = type(iter(reversed([])))
 range_iterator = type(iter(range(0)))
 longrange_iterator = type(iter(range(1 << 1000)))
 try:
     _s = set()
-    print("DEBUG _collections_abc: _s =", _s, "type:", type(_s))
+    pass
     _i = iter(_s)
-    print("DEBUG _collections_abc: _i =", _i)
+    pass
     set_iterator = type(_i)
 except Exception as e:
-    print("DEBUG _collections_abc ERROR:", e)
+    pass
     set_iterator = type(iter(set()))
 str_iterator = type(iter(""))
 tuple_iterator = type(iter(()))
@@ -213,11 +213,11 @@ class Coroutine(Awaitable):
         return NotImplemented
 
 
-print("DEBUG: _collections_abc about to register Coroutine", flush=True)
+pass
 Coroutine.register(coroutine)
-print("DEBUG: _collections_abc registered Coroutine", flush=True)
+pass
 
-print("DEBUG: _collections_abc defining AsyncIterable", flush=True)
+pass
 class AsyncIterable(metaclass=ABCMeta):
 
     __slots__ = ()
@@ -234,7 +234,7 @@ class AsyncIterable(metaclass=ABCMeta):
 
     __class_getitem__ = classmethod(GenericAlias)
 
-print("DEBUG: _collections_abc defining AsyncIterator", flush=True)
+pass
 class AsyncIterator(AsyncIterable):
 
     __slots__ = ()
@@ -253,7 +253,7 @@ class AsyncIterator(AsyncIterable):
             return _check_methods(C, "__anext__", "__aiter__")
         return NotImplemented
 
-print("DEBUG: _collections_abc defining AsyncGenerator", flush=True)
+pass
 class AsyncGenerator(AsyncIterator):
 
     __slots__ = ()
@@ -302,12 +302,12 @@ class AsyncGenerator(AsyncIterator):
         return NotImplemented
 
 
-print("DEBUG: _collections_abc about to register async_generator", flush=True)
+pass
 AsyncGenerator.register(async_generator)
-print("DEBUG: _collections_abc registered AsyncGenerator", flush=True)
+pass
 
 
-print("DEBUG: _collections_abc defining Iterable", flush=True)
+pass
 class Iterable(metaclass=ABCMeta):
 
     __slots__ = ()
@@ -325,9 +325,9 @@ class Iterable(metaclass=ABCMeta):
 
     __class_getitem__ = classmethod(GenericAlias)
 
-print("DEBUG: _collections_abc defined Iterable", flush=True)
+pass
 
-print("DEBUG: _collections_abc defining Iterator", flush=True)
+pass
 class Iterator(Iterable):
 
     __slots__ = ()
@@ -346,36 +346,36 @@ class Iterator(Iterable):
             return _check_methods(C, '__iter__', '__next__')
         return NotImplemented
 
-print("DEBUG: _collections_abc defined Iterator", flush=True)
+pass
 Iterator.register(bytes_iterator)
-print("DEBUG: _collections_abc registered bytes_iterator", flush=True)
-print("DEBUG: registering bytearray_iterator", flush=True)
+pass
+pass
 Iterator.register(bytearray_iterator)
-print("DEBUG: registering dict_keyiterator", flush=True)
+pass
 Iterator.register(dict_keyiterator)
-print("DEBUG: registering dict_valueiterator", flush=True)
+pass
 Iterator.register(dict_valueiterator)
-print("DEBUG: registering dict_itemiterator", flush=True)
+pass
 Iterator.register(dict_itemiterator)
-print("DEBUG: registering list_iterator", flush=True)
+pass
 Iterator.register(list_iterator)
-print("DEBUG: registering list_reverseiterator", flush=True)
+pass
 Iterator.register(list_reverseiterator)
-print("DEBUG: registering range_iterator", flush=True)
+pass
 Iterator.register(range_iterator)
-print("DEBUG: registering longrange_iterator", flush=True)
+pass
 Iterator.register(longrange_iterator)
-print("DEBUG: registering set_iterator", flush=True)
+pass
 Iterator.register(set_iterator)
-print("DEBUG: registering str_iterator", flush=True)
+pass
 Iterator.register(str_iterator)
-print("DEBUG: registering tuple_iterator", flush=True)
+pass
 Iterator.register(tuple_iterator)
-print("DEBUG: registering zip_iterator", flush=True)
+pass
 Iterator.register(zip_iterator)
-print("DEBUG: _collections_abc finished Iterator registrations", flush=True)
+pass
 
-print("DEBUG: _collections_abc defining Reversible", flush=True)
+pass
 class Reversible(Iterable):
 
     __slots__ = ()
@@ -392,7 +392,7 @@ class Reversible(Iterable):
         return NotImplemented
 
 
-print("DEBUG: _collections_abc defining Generator", flush=True)
+pass
 class Generator(Iterator):
 
     __slots__ = ()
@@ -441,12 +441,12 @@ class Generator(Iterator):
         return NotImplemented
 
 
-print("DEBUG: _collections_abc about to register generator", flush=True)
+pass
 Generator.register(generator)
-print("DEBUG: _collections_abc registered generator", flush=True)
+pass
 
 
-print("DEBUG: _collections_abc defining Sized", flush=True)
+pass
 class Sized(metaclass=ABCMeta):
 
     __slots__ = ()
@@ -461,7 +461,7 @@ class Sized(metaclass=ABCMeta):
             return _check_methods(C, "__len__")
         return NotImplemented
 
-print("DEBUG: _collections_abc defined Sized", flush=True)
+pass
 
 class Container(metaclass=ABCMeta):
 
@@ -479,7 +479,7 @@ class Container(metaclass=ABCMeta):
 
     __class_getitem__ = classmethod(GenericAlias)
 
-print("DEBUG: _collections_abc defined Container", flush=True)
+pass
 
 class Collection(Sized, Iterable, Container):
 
@@ -491,7 +491,7 @@ class Collection(Sized, Iterable, Container):
             return _check_methods(C,  "__len__", "__iter__", "__contains__")
         return NotImplemented
 
-print("DEBUG: _collections_abc defined Collection", flush=True)
+pass
 
 class Buffer(metaclass=ABCMeta):
 
@@ -507,7 +507,7 @@ class Buffer(metaclass=ABCMeta):
             return _check_methods(C, "__buffer__")
         return NotImplemented
 
-print("DEBUG: _collections_abc defined Buffer", flush=True)
+pass
 
 class _CallableGenericAlias(GenericAlias):
     """ Represent `Callable[argtypes, resulttype]`.
@@ -576,7 +576,7 @@ def _is_param_expr(obj):
     names = ('ParamSpec', '_ConcatenateGenericAlias')
     return obj.__module__ == 'typing' and any(obj.__name__ == name for name in names)
 
-print("DEBUG: _collections_abc defined _CallableGenericAlias and _is_param_expr", flush=True)
+pass
 
 class Callable(metaclass=ABCMeta):
 
@@ -594,7 +594,7 @@ class Callable(metaclass=ABCMeta):
 
     __class_getitem__ = classmethod(_CallableGenericAlias)
 
-print("DEBUG: _collections_abc defined Callable", flush=True)
+pass
 
 ### SETS ###
 
@@ -740,7 +740,7 @@ class Set(Collection):
 
 
 Set.register(frozenset)
-print("DEBUG: _collections_abc registered frozenset in Set", flush=True)
+pass
 
 class MutableSet(Set):
     """A mutable set is a finite, iterable container.
@@ -823,7 +823,7 @@ class MutableSet(Set):
 
 
 MutableSet.register(set)
-print("DEBUG: _collections_abc registered set in MutableSet", flush=True)
+pass
 
 ### MAPPINGS ###
 
@@ -881,11 +881,11 @@ class Mapping(Collection):
 Mapping.register(mappingproxy)
 if framelocalsproxy is not None:
     Mapping.register(framelocalsproxy)
-print("DEBUG: _collections_abc registered mappingproxy into Mapping", flush=True)
+pass
 
 
 class MappingView(Sized):
-    print("DEBUG: _collections_abc inside MappingView body", flush=True)
+    pass
 
     __slots__ = '_mapping',
 
@@ -902,7 +902,7 @@ class MappingView(Sized):
 
 
 class KeysView(MappingView, Set):
-    print("DEBUG: _collections_abc inside KeysView body", flush=True)
+    pass
 
     __slots__ = ()
 
@@ -918,7 +918,7 @@ class KeysView(MappingView, Set):
 
 
 KeysView.register(dict_keys)
-print("DEBUG: _collections_abc registered dict_keys into KeysView", flush=True)
+pass
 
 
 class ItemsView(MappingView, Set):
@@ -944,7 +944,7 @@ class ItemsView(MappingView, Set):
 
 
 ItemsView.register(dict_items)
-print("DEBUG: _collections_abc registered dict_items into ItemsView", flush=True)
+pass
 
 
 class ValuesView(MappingView, Collection):
@@ -964,7 +964,7 @@ class ValuesView(MappingView, Collection):
 
 
 ValuesView.register(dict_values)
-print("DEBUG: _collections_abc registered dict_values into ValuesView", flush=True)
+pass
 
 
 class MutableMapping(Mapping):
@@ -1125,7 +1125,7 @@ Sequence.register(memoryview)
 
 class _DeprecateByteStringMeta(ABCMeta):
     def __new__(cls, name, bases, namespace, **kwargs):
-        print(f"DEBUG _DeprecateByteStringMeta.__new__: {name}")
+        pass
         if name != "ByteString":
             import warnings
 
@@ -1133,9 +1133,9 @@ class _DeprecateByteStringMeta(ABCMeta):
                 "collections.abc.ByteString",
                 remove=(3, 17),
             )
-        print("DEBUG _DeprecateByteStringMeta calling super().__new__")
+        pass
         res = super().__new__(cls, name, bases, namespace, **kwargs)
-        print("DEBUG _DeprecateByteStringMeta super().__new__ returned")
+        pass
         return res
 
     def __instancecheck__(cls, instance):

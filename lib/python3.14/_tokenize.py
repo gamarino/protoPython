@@ -1,7 +1,7 @@
 # Dummy _tokenize module for ProtoPython
-print("DEBUG: _tokenize.py top")
+pass
 import token
-print("DEBUG: _tokenize.py imported token")
+pass
 import builtins
 
 class TokenizerIter:

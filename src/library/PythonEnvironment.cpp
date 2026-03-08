@@ -5530,6 +5530,7 @@ static const proto::ProtoObject* py_dict_items(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
+    if (!self) return context->newList()->asObject(context);
     const proto::ProtoString* keysName = getInternalString(context, "__keys__");
     const proto::ProtoObject* keysObj = self->getAttribute(context, keysName);
     const proto::ProtoList* keys = keysObj && keysObj->asList(context) ? keysObj->asList(context) : context->newList();
@@ -5537,21 +5538,31 @@ static const proto::ProtoObject* py_dict_items(
     const proto::ProtoString* dataName = getInternalString(context, "__data__");
     const proto::ProtoObject* data = self->getAttribute(context, dataName);
     const proto::ProtoSparseList* dict = data && data->asSparseList(context) ? data->asSparseList(context) : nullptr;
-    if (!dict) return context->newList()->asObject(context);
-
+    
     const proto::ProtoList* items = context->newList();
-    unsigned long size = keys->getSize(context);
-    for (unsigned long i = 0; i < size; ++i) {
-        const proto::ProtoObject* key = keys->getAt(context, static_cast<int>(i));
-        const proto::ProtoObject* val = dict->getAt(context, key->getHash(context));
-        const proto::ProtoList* pairList = context->newList()->appendLast(context, key)->appendLast(context, val ? val : PROTO_NONE);
-        const proto::ProtoTuple* pairTuple = context->newTupleFromList(pairList);
-        items = items->appendLast(context, pairTuple->asObject(context));
+    if (dict) {
+        unsigned long size = keys->getSize(context);
+        for (unsigned long i = 0; i < size; ++i) {
+            const proto::ProtoObject* key = keys->getAt(context, static_cast<int>(i));
+            if (!key) continue;
+            const proto::ProtoObject* val = dict->getAt(context, key->getHash(context));
+            const proto::ProtoList* pairList = context->newList()->appendLast(context, key)->appendLast(context, val ? val : PROTO_NONE);
+            const proto::ProtoObject* pairTuple = context->newTupleFromList(pairList)->asObject(context);
+            items = items->appendLast(context, pairTuple);
+        }
     }
+    
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     const proto::ProtoObject* listProto = env ? env->getListPrototype() : nullptr;
     proto::ProtoObject* listObj = const_cast<proto::ProtoObject*>(listProto ? listProto->newChild(context, true) : context->newObject());
     listObj->setAttribute(context, getInternalString(context, "__data__"), items->asObject(context));
+    // Ensure it has an iterator
+    if (!listObj->getAttribute(context, getInternalString(context, "__iter__"))) {
+        if (listProto) {
+             const proto::ProtoObject* iterFunc = listProto->getAttribute(context, getInternalString(context, "__iter__"));
+             if (iterFunc) listObj->setAttribute(context, getInternalString(context, "__iter__"), iterFunc);
+        }
+    }
     return listObj;
 }
 

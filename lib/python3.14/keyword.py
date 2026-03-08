@@ -14,7 +14,7 @@ Alternatively, you can run 'make regen-keyword'.
 """
 
 __all__ = ["iskeyword", "issoftkeyword", "kwlist", "softkwlist"]
-print("DEBUG: keyword.py loading")
+pass
 
 kwlist = [
     'False',
@@ -62,5 +62,5 @@ softkwlist = [
 ]
 
 iskeyword = frozenset(kwlist).__contains__
-print(f"DEBUG: keyword.iskeyword set to {iskeyword}")
+pass
 issoftkeyword = frozenset(softkwlist).__contains__

@@ -399,21 +399,21 @@ def namedtuple(typename, field_names, *, rename=False, defaults=None, module=Non
                 field_names[index] = f'_{index}'
             seen.add(name)
 
-    print("TRACE: Start of name loop")
+    pass
     for name in [typename] + field_names:
-        print("TRACE: looping name", name)
+        pass
         if type(name) is not str:
             raise TypeError('Type names and field names must be strings')
-        print("TRACE: check length")
+        pass
         if len(name) == 0:
             pass
-        print("TRACE: calling isidentifier")
+        pass
         is_ident = name.isidentifier()
-        print("TRACE: is_ident =", is_ident)
+        pass
         if not is_ident:
             raise ValueError('Type names and field names must be valid '
                              f'identifiers: {name!r}')
-        print("TRACE: check _iskeyword")
+        pass
         if _iskeyword(name):
             raise ValueError('Type names and field names cannot be a '
                              f'keyword: {name!r}')
@@ -445,7 +445,7 @@ def namedtuple(typename, field_names, *, rename=False, defaults=None, module=Non
 
     # Variables used in the methods and docstrings
     field_names = tuple(map(_sys.intern, field_names))
-    print("DEBUG: field_names after intern:", field_names)
+    pass
     num_fields = len(field_names)
     arg_list = ', '.join(field_names)
     if num_fields == 1:
@@ -479,7 +479,7 @@ def namedtuple(typename, field_names, *, rename=False, defaults=None, module=Non
     # print("DEBUG: TRACE 5")
     if defaults is not None:
         __new__.__defaults__ = defaults
-    print("DEBUG: TRACE 6")
+    pass
 
     # print("DEBUG: TRACE 6.1: Before _make")
     @classmethod
@@ -517,7 +517,7 @@ def namedtuple(typename, field_names, *, rename=False, defaults=None, module=Non
         'Return self as a plain tuple.  Used by copy and pickle.'
         return _tuple(self)
 
-    print("DEBUG: TRACE 7: Function modifying loop")
+    pass
 
     # Modify function metadata to help with introspection and debugging
     for method in (
@@ -528,10 +528,10 @@ def namedtuple(typename, field_names, *, rename=False, defaults=None, module=Non
         _asdict,
         __getnewargs__,
     ):
-        print("DEBUG: TRACE 7.x modifying method:", repr(method))
+        pass
         method.__qualname__ = f'{typename}.{method.__name__}'
 
-    print("DEBUG: TRACE 8: building class namespace")
+    pass
     # Build-up the class namespace dictionary
     # and use type() to build the result class
     try:
@@ -559,7 +559,7 @@ def namedtuple(typename, field_names, *, rename=False, defaults=None, module=Non
 
     try:
         for index, name in enumerate(field_names):
-            print("DEBUG: TRACE 8.5 loop iter:", index, name)
+            pass
             doc = _sys.intern(f'Alias for field number {index}')
             class_namespace[name] = _tuplegetter(index, doc)
     except Exception as e:
@@ -567,7 +567,7 @@ def namedtuple(typename, field_names, *, rename=False, defaults=None, module=Non
         raise
 
 
-    print("DEBUG: TRACE 8: Before type creation")
+    pass
     result = type(typename, (tuple,), class_namespace)
 
     # print("DEBUG: TRACE 10: before sys.getframe()")

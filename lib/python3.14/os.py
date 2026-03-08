@@ -23,18 +23,18 @@ and opendir), and leave all pathname manipulation to os.path
 
 #'
 import abc
-print("DEBUG: abc imported")
+pass
 import sys
-print("DEBUG: sys imported")
+pass
 import stat as st
 
 from _collections_abc import _check_methods
-print("DEBUG: _check_methods imported")
+pass
 
 GenericAlias = type(list[int])
 
 _names = sys.builtin_module_names
-print("DEBUG: names=" + str(_names))
+pass
 
 # Note:  more names are added to __all__ later.
 __all__ = ["altsep", "curdir", "pardir", "sep", "pathsep", "linesep",
@@ -65,9 +65,9 @@ if 'posix' in _names:
         __all__.append('_exit')
     except (ImportError, AttributeError):
         pass
-    print("DEBUG: os.py about to import posixpath")
+    pass
     import posixpath as path
-    print(f"DEBUG: os.py imported posixpath path={path}")
+    pass
 
     try:
         from posix import _have_functions
@@ -117,17 +117,17 @@ from os.path import (curdir, pardir, sep, pathsep, defpath, extsep, altsep,
 del _names
 
 
-print("DEBUG: os.py _have_functions in globals():", '_have_functions' in globals())
+pass
 try:
-    print("DEBUG: os.py globals() type:", type(globals()))
-    print("DEBUG: _exists('_have_functions'):", _exists('_have_functions'))
+    pass
+    pass
     from posix import _have_functions as tmp_have
-    print("DEBUG: posix._have_functions =", tmp_have)
+    pass
 except Exception as e:
-    print("DEBUG: Exception importing _have_functions:", type(e), e)
+    pass
 
 if _exists("_have_functions"):
-    print("DEBUG: os.py _have_functions exists! Populating supports_dir_fd")
+    pass
     _globals = globals()
     def _add(str, fn):
         if (fn in _globals) and (str in _have_functions):
@@ -816,11 +816,11 @@ def _create_environ_mapping():
         encode, decode)
 
 # unicode environ
-print("DEBUG: creating environ")
+pass
 try:
     environ = _create_environ_mapping()
-    print("DEBUG: environ created, type:", type(environ).__name__)
-    print("DEBUG: environ.mro:", [c.__name__ for c in type(environ).__mro__])
+    pass
+    pass
     del _create_environ_mapping
 except (TypeError, Exception):
     # proto: _create_environ_mapping (e.g. encode) or del/__mro__ can raise; use minimal environ
@@ -849,7 +849,7 @@ def getenv(key, default=None):
 supports_bytes_environ = (name != 'nt')
 __all__.extend(("getenv", "supports_bytes_environ"))
 
-print("DEBUG before getenvb")
+pass
 if supports_bytes_environ:
     def _check_bytes(value):
         if not isinstance(value, bytes):
@@ -870,7 +870,7 @@ if supports_bytes_environ:
 
     __all__.extend(("environb", "getenvb"))
 
-print("DEBUG before _fscodec")
+pass
 def _fscodec():
     encoding = sys.getfilesystemencoding()
     errors = sys.getfilesystemencodeerrors()
@@ -901,7 +901,7 @@ def _fscodec():
 
     return fsencode, fsdecode
 
-print("DEBUG before _fscodec call")
+pass
 fsencode, fsdecode = _fscodec()
 del _fscodec
 
@@ -1095,7 +1095,7 @@ if sys.platform != 'vxworks':
     __all__.append("popen")
 
 import collections
-print("DEBUG: in os.py, about to set terminal_size")
+pass
 if not hasattr(sys.modules[__name__], 'terminal_size'):
     class terminal_size:
         def __init__(self, data):
@@ -1114,7 +1114,7 @@ if not hasattr(sys.modules[__name__], 'get_terminal_size'):
     def get_terminal_size(fd=None):
         raise OSError("get_terminal_size not supported")
     sys.modules[__name__].get_terminal_size = get_terminal_size
-    print("DEBUG: get_terminal_size set as fake function")
+    pass
 
 # Supply os.fdopen()
 def fdopen(fd, mode="r", buffering=-1, encoding=None, *args, **kwargs):
@@ -1139,9 +1139,9 @@ def _fspath(path):
     import sys
     caller = getattr(sys._getframe().f_back, 'f_code', None)
     caller_name = getattr(caller, 'co_name', '<unknown>') if caller else '<unknown>'
-    print(f"DEBUG FSPATH INVOKED: path_type={type(path).__name__}, caller={caller_name}")
+    pass
     if type(path).__name__ == 'module':
-        print(f"DEBUG FSPATH MODULE NAME: {path.__name__}, caller={caller_name}")
+        pass
     if isinstance(path, (str, bytes)):
         return path
 
@@ -1176,8 +1176,8 @@ if not _exists('fspath'):
     fspath.__name__ = "fspath"
 
 
-print("DEBUG before PathLike class")
-print(f"DEBUG type(abc.ABC)={type(abc.ABC)}")
+pass
+pass
 class PathLike(abc.ABC):
 
     """Abstract base class for implementing the file system path protocol."""
@@ -1195,9 +1195,9 @@ class PathLike(abc.ABC):
             return _check_methods(subclass, '__fspath__')
         return NotImplemented
 
-    print("DEBUG before __class_getitem__")
-    print(f"DEBUG classmethod={classmethod}")
-    print(f"DEBUG GenericAlias={GenericAlias}")
+    pass
+    pass
+    pass
     __class_getitem__ = classmethod(GenericAlias)
 
 

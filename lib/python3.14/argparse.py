@@ -1422,7 +1422,7 @@ class _ActionsContainer(object):
                  prefix_chars,
                  argument_default,
                  conflict_handler):
-        print("DEBUG ARGPARSE ENTER _ActionsContainer.__init__ id(self)=", id(self))
+        pass
         super(_ActionsContainer, self).__init__()
 
         self.description = description
@@ -1434,7 +1434,7 @@ class _ActionsContainer(object):
         self._registries = {}
 
         # register actions
-        print("DEBUG: before register"); self.register('action', None, _StoreAction); print("DEBUG: after register")
+        pass; self.register('action', None, _StoreAction); pass
         self.register('action', 'store', _StoreAction)
         self.register('action', 'store_const', _StoreConstAction)
         self.register('action', 'store_true', _StoreTrueAction)
@@ -1456,7 +1456,7 @@ class _ActionsContainer(object):
 
         # groups
         self._action_groups = []
-        print("DEBUG ARGPARSE _ActionsContainer assigned self._action_groups=", self._action_groups, type(self._action_groups))
+        pass
         self._mutually_exclusive_groups = []
 
         # defaults storage
@@ -1564,17 +1564,17 @@ class _ActionsContainer(object):
         return self._add_action(action)
 
     def add_argument_group(self, *args, **kwargs):
-        print("DEBUG ARGPARSE ENTER add_argument_group")
+        pass
         try:
             group = _ArgumentGroup(self, *args, **kwargs)
-            print("DEBUG ARGPARSE _ArgumentGroup done")
-            print("DEBUG ARGPARSE self._action_groups type:", type(self._action_groups))
-            print("DEBUG ARGPARSE getattr append:", getattr(self._action_groups, 'append', None))
+            pass
+            pass
+            pass
             self._action_groups.append(group)
-            print("DEBUG ARGPARSE append done")
+            pass
             return group
         except Exception as e:
-            print("DEBUG ARGPARSE exception in add_argument_group:", repr(e))
+            pass
             raise
 
     def add_mutually_exclusive_group(self, **kwargs):
@@ -1780,7 +1780,7 @@ class _ArgumentGroup(_ActionsContainer):
         update('prefix_chars', container.prefix_chars)
         update('argument_default', container.argument_default)
         super_init = super(_ArgumentGroup, self).__init__
-        print("DEBUG ARGPARSE super_init=", super_init, type(super_init))
+        pass
         super_init(description=description, **kwargs)
 
         # group attributes
@@ -1912,13 +1912,13 @@ class ArgumentParser(_AttributeHolder, _ActionsContainer):
         self.suggest_on_error = suggest_on_error
         self.color = color
 
-        print("DEBUG ARGPARSE MRO:", type(self).__mro__)
-        print("DEBUG ARGPARSE HASATTR add_argument_group:", hasattr(self, 'add_argument_group'))
+        pass
+        pass
         add_group = getattr(self, 'add_argument_group', None)
         try:
             self._positionals = add_group(_('positional arguments'))
         except TypeError as e:
-            print("DEBUG ARGPARSE 1901 TypeError:", e, "add_group=", add_group, type(add_group), "arg=", _('positional arguments'))
+            pass
             raise
         self._optionals = add_group(_('options'))
         self._subparsers = None
@@ -1938,7 +1938,7 @@ class ArgumentParser(_AttributeHolder, _ActionsContainer):
                     action='help', default=SUPPRESS,
                     help=_('show this help message and exit'))
             except Exception as e:
-                print("DEBUG ARGPARSE CAUGHT EXCEPTION:", type(e), e)
+                pass
                 raise
 
         # add parent arguments and defaults

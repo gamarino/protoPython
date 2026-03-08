@@ -33,22 +33,22 @@ class ABCMeta(type):
     _abc_invalidation_counter = 0
 
     def __new__(mcls, name, bases, namespace, /, **kwargs):
-        print(f"DEBUG ABCMeta.__new__: {name}")
+        pass
         cls = super().__new__(mcls, name, bases, namespace, **kwargs)
-        print("DEBUG ABCMeta.__new__ super() done")
+        pass
         abstracts = []
         for n, v in dict.items(namespace):
-            print(f"DEBUG ABCMeta.__new__ attr {n}")
+            pass
             is_abs = getattr(v, "__isabstractmethod__", False)
             if is_abs:
                 abstracts.append(n)
         abstracts = set(abstracts)
-        print("DEBUG ABCMeta.__new__ start base loop")
+        pass
         for base in bases:
-            print(f"DEBUG ABCMeta.__new__ base {base} checking abstractmethods")
+            pass
             abs_methods = getattr(base, "__abstractmethods__", set())
             for mname in abs_methods:
-                print(f"DEBUG ABCMeta.__new__ base {base} mname {mname}")
+                pass
                 value = getattr(cls, mname, None)
                 if getattr(value, "__isabstractmethod__", False):
                     abstracts.add(mname)
@@ -58,7 +58,7 @@ class ABCMeta(type):
         cls._abc_cache = WeakSet()
         cls._abc_negative_cache = WeakSet()
         cls._abc_negative_cache_version = ABCMeta._abc_invalidation_counter
-        print(f"DEBUG ABCMeta.__new__ finished {name}, hasattr_registry={hasattr(cls, '_abc_registry')}")
+        pass
         return cls
 
     def register(cls, subclass):

@@ -337,5 +337,5 @@ def coroutine(func):
 
     return wrapped
 
-print(f"DEBUG: globals()={globals()}")
+pass
 # __all__  # for pydoc
