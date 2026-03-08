@@ -987,6 +987,9 @@ public:
         PythonEnvironment* env_;
         proto::ProtoContext* ctx_;
     };
+
+    /** StopIteration helpers */
+    bool handleExhaustion(proto::ProtoContext* ctx);
 };
 
 } // namespace protoPython

@@ -962,7 +962,11 @@ static const proto::ProtoObject* py_sum(
     
     for (;;) {
         const proto::ProtoObject* val = nextFn(context, it, nullptr, emptyL, nullptr);
-        if (!val || val == noneObj) break;
+        if (!val) {
+             if (env && env->handleExhaustion(context)) break;
+             return nullptr; // Propagate other errors
+        }
+        if (val == noneObj) break;
         if (val->isInteger(context)) acc += val->asLong(context);
     }
     return context->fromInteger(acc);
@@ -993,7 +997,11 @@ static const proto::ProtoObject* py_all(
 
     for (;;) {
         const proto::ProtoObject* val = nextFn(context, it, nullptr, emptyL, nullptr);
-        if (!val || val == noneObj) break;
+        if (!val) {
+             if (env && env->handleExhaustion(context)) break;
+             return nullptr; // Propagate other errors
+        }
+        if (val == noneObj) break;
         if (!val->asBoolean(context)) return PROTO_FALSE;
     }
     return PROTO_TRUE;
@@ -1024,7 +1032,11 @@ static const proto::ProtoObject* py_any(
 
     for (;;) {
         const proto::ProtoObject* val = nextFn(context, it, nullptr, emptyL, nullptr);
-        if (!val || val == noneObj) break;
+        if (!val) {
+             if (env && env->handleExhaustion(context)) break;
+             return nullptr; // Propagate other errors
+        }
+        if (val == noneObj) break;
         if (val->asBoolean(context)) return PROTO_TRUE;
     }
     return PROTO_FALSE;
@@ -2772,6 +2784,7 @@ static bool checkInterfaceInstanceOf(proto::ProtoContext* context, const proto::
         }
         return false;
     }
+    if (obj == cls) return true;
     return obj->isInstanceOf(context, cls) == PROTO_TRUE;
 }
 
@@ -2780,7 +2793,9 @@ static const proto::ProtoObject* resolveClassType(protoPython::PythonEnvironment
     const proto::ProtoObject* typeAttr = self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "type"));
     const proto::ProtoObject* listAttr = self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "list"));
     if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG resolveClassType cls=%p self=%p listAttr=%p typeAttr=%p\n", (void*)cls, (void*)self, (void*)listAttr, (void*)typeAttr);
-    if (cls == typeAttr) return env->getTypePrototype();
+    if (cls == typeAttr) {
+        return env->getTypePrototype();
+    }
     if (cls == listAttr) return env->getListPrototype();
     if (cls == self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "tuple"))) return env->getTuplePrototype();
     if (cls == self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "dict"))) return env->getDictPrototype();
@@ -2817,12 +2832,15 @@ static const proto::ProtoObject* py_isinstance(
         if (intType && checkInterfaceInstanceOf(context, intType, cls)) return PROTO_TRUE;
     }
     
-    if (checkInterfaceInstanceOf(context, obj, cls)) return PROTO_TRUE;
+    if (checkInterfaceInstanceOf(context, obj, cls)) {
+        return PROTO_TRUE;
+    }
 
     // Check __class__ attribute or prototype if native parent link failed
     const proto::ProtoString* classStr = env ? env->getClassString() : proto::ProtoString::fromUTF8String(context, "__class__");
     const proto::ProtoObject* objClass = obj->getAttribute(context, classStr);
     if (!objClass) objClass = obj->getPrototype(context);
+    
     
     if (objClass && objClass != obj) {
         if (py_issubclass_check_single(context, objClass, cls)) return PROTO_TRUE;
@@ -2957,9 +2975,14 @@ static const proto::ProtoObject* py_min_max(
         const proto::ProtoObject* iterable = positionalParameters->getAt(context, 0);
         const proto::ProtoObject* iterObj = py_iter(context, nullptr, nullptr, context->newList()->appendLast(context, iterable), nullptr);
         if (iterObj && iterObj != PROTO_NONE) {
+            ::protoPython::PythonEnvironment* env = ::protoPython::PythonEnvironment::fromContext(context);
             while (true) {
                 const proto::ProtoObject* item = py_next(context, nullptr, nullptr, context->newList()->appendLast(context, iterObj), nullptr);
-                if (!item || item == PROTO_NONE) break;
+                if (!item) {
+                    if (env && env->handleExhaustion(context)) break;
+                    return nullptr;
+                }
+                if (item == PROTO_NONE) break;
                 items.push_back(item);
             }
         }
