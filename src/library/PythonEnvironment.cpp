@@ -9427,6 +9427,15 @@ const proto::ProtoObject* PythonEnvironment::resolve(const proto::ProtoString* n
             }
             return result;
         }
+
+        // Support dictionary-based globals (e.g. from eval/exec namespace)
+        const proto::ProtoObject* dataAttr = s_currentGlobals->getAttribute(ctx, dataString);
+        if (dataAttr && dataAttr != PROTO_NONE) {
+            const proto::ProtoSparseList* dict = dataAttr->asSparseList(ctx);
+            if (dict && dict->has(ctx, nameObj->getHash(ctx))) {
+                return dict->getAt(ctx, nameObj->getHash(ctx));
+            }
+        }
     }
 
     // 2. Builtins (Lock-free)
