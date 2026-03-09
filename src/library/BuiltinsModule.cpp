@@ -3838,11 +3838,8 @@ static const proto::ProtoObject* py_map_next(
     }
     
     const proto::ProtoObject* res = env ? env->callObject(func, {val}) : nullptr;
-    if (!res && env) {
-         if (std::getenv("PROTO_ENV_DIAG")) {
-            fprintf(stderr, "DEBUG: py_map_next: callObject(func=%p, val=%p) FAILED\n", (void*)func, (void*)val);
-            fflush(stderr);
-        }
+    if (!res && env && env->hasPendingException()) {
+        return nullptr;
     }
     return res;
 }

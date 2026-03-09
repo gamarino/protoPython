@@ -1,4 +1,5 @@
 #include <protoPython/JsonModule.h>
+#include <protoPython/PythonEnvironment.h>
 #include <sstream>
 #include <string>
 #include <cctype>
@@ -30,9 +31,16 @@ static const proto::ProtoObject* jsonParse(proto::ProtoContext* ctx, const std::
     }
     if (s[i] == '[') {
         ++i;
+        PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
         const proto::ProtoList* list = ctx->newList();
         jsonSkipWs(s, i);
-        if (i < s.size() && s[i] == ']') { ++i; return list->asObject(ctx); }
+        if (i < s.size() && s[i] == ']') {
+            ++i;
+            const proto::ProtoObject* obj = ctx->newObject(true);
+            obj = obj->setAttribute(ctx, env->getDataString(), list->asObject(ctx));
+            obj = obj->setAttribute(ctx, env->getClassString(), env->getListPrototype());
+            return obj;
+        }
         for (;;) {
             const proto::ProtoObject* v = jsonParse(ctx, s, i);
             if (!v) break;
@@ -43,19 +51,24 @@ static const proto::ProtoObject* jsonParse(proto::ProtoContext* ctx, const std::
         }
         jsonSkipWs(s, i);
         if (i < s.size() && s[i] == ']') ++i;
-        return list->asObject(ctx);
+        const proto::ProtoObject* obj = ctx->newObject(true);
+        obj = obj->setAttribute(ctx, env->getDataString(), list->asObject(ctx));
+        obj = obj->setAttribute(ctx, env->getClassString(), env->getListPrototype());
+        return obj;
     }
     if (s[i] == '{') {
         ++i;
+        PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
         const proto::ProtoList* keys = ctx->newList();
         const proto::ProtoSparseList* data = ctx->newSparseList();
         jsonSkipWs(s, i);
         if (i < s.size() && s[i] == '}') {
             ++i;
-            const proto::ProtoObject* emptyObj = ctx->newObject(false);
-            emptyObj = emptyObj->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__keys__"), keys->asObject(ctx));
-            emptyObj = emptyObj->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__data__"), data->asObject(ctx));
-            return emptyObj;
+            const proto::ProtoObject* obj = ctx->newObject(true);
+            obj = obj->setAttribute(ctx, env->getKeysString(), keys->asObject(ctx));
+            obj = obj->setAttribute(ctx, env->getDataString(), data->asObject(ctx));
+            obj = obj->setAttribute(ctx, env->getClassString(), env->getDictPrototype());
+            return obj;
         }
         for (;;) {
             const proto::ProtoObject* k = jsonParse(ctx, s, i);
@@ -73,9 +86,10 @@ static const proto::ProtoObject* jsonParse(proto::ProtoContext* ctx, const std::
         }
         jsonSkipWs(s, i);
         if (i < s.size() && s[i] == '}') ++i;
-        const proto::ProtoObject* obj = ctx->newObject(false);
-        obj = obj->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__keys__"), keys->asObject(ctx));
-        obj = obj->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__data__"), data->asObject(ctx));
+        const proto::ProtoObject* obj = ctx->newObject(true);
+        obj = obj->setAttribute(ctx, env->getKeysString(), keys->asObject(ctx));
+        obj = obj->setAttribute(ctx, env->getDataString(), data->asObject(ctx));
+        obj = obj->setAttribute(ctx, env->getClassString(), env->getDictPrototype());
         return obj;
     }
     if (std::isdigit(static_cast<unsigned char>(s[i])) || (s[i] == '-' && i + 1 < s.size() && std::isdigit(static_cast<unsigned char>(s[i+1])))) {
@@ -136,8 +150,9 @@ static void dumpValue(proto::ProtoContext* ctx, std::ostream& out, const proto::
         out << ']';
         return;
     }
-    const proto::ProtoObject* keysObj = obj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__keys__"));
-    const proto::ProtoObject* dataObj = obj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__data__"));
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    const proto::ProtoObject* keysObj = obj->getAttribute(ctx, env->getKeysString());
+    const proto::ProtoObject* dataObj = obj->getAttribute(ctx, env->getDataString());
     if (keysObj && keysObj->asList(ctx) && dataObj && dataObj->asSparseList(ctx)) {
         const proto::ProtoList* keys = keysObj->asList(ctx);
         const proto::ProtoSparseList* data = dataObj->asSparseList(ctx);

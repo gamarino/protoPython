@@ -2421,9 +2421,8 @@ static const proto::ProtoObject* py_set_call(
                         const proto::ProtoObject* item = nextM->asMethod(context)(context, it, nullptr, emptyL, nullptr);
                         if (!item) {
                             if (env && env->handleExhaustion(context)) break;
-                            return nullptr;
+                            break; // Stop iteration correctly
                         }
-                        if (item == PROTO_NONE || (env && item == env->getNonePrototype())) break;
                         s = s->add(context, item);
                     }
                 }
@@ -3254,26 +3253,32 @@ static const proto::ProtoObject* py_frozenset_call(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
-    const proto::ProtoString* iterProtoName = proto::ProtoString::fromUTF8String(context, "__iter_prototype__");
-    const proto::ProtoObject* iterProto = self->getAttribute(context, iterProtoName);
-    if (!iterProto || positionalParameters->getSize(context) < 1) return PROTO_NONE;
-    const proto::ProtoObject* itObj = positionalParameters->getAt(context, 0);
-    const proto::ProtoObject* iterAttr = itObj->getAttribute(context, getInternalString(context, "__iter__"));
-    if (!iterAttr || !iterAttr->asMethod(context)) return PROTO_NONE;
-    const proto::ProtoList* empty = context->newList();
-    const proto::ProtoObject* iterResult = iterAttr->asMethod(context)(context, itObj, nullptr, empty, nullptr);
-    if (!iterResult) return PROTO_NONE;
-    const proto::ProtoObject* nextAttr = iterResult->getAttribute(context, getInternalString(context, "__next__"));
-    if (!nextAttr || !nextAttr->asMethod(context)) return PROTO_NONE;
+    (void)parentLink;
+    (void)keywordParameters;
+
+    const proto::ProtoObject* cls = (positionalParameters && positionalParameters->getSize(context) > 0) ? positionalParameters->getAt(context, 0) : self;
+    if (!cls) return PROTO_NONE;
 
     const proto::ProtoSet* acc = context->newSet();
-    const proto::ProtoList* nextArgs = context->newList();
-    for (;;) {
-        const proto::ProtoObject* item = nextAttr->asMethod(context)(context, iterResult, nullptr, nextArgs, nullptr);
-        if (!item || item == PROTO_NONE) break;
-        acc = acc->add(context, item);
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+
+    if (positionalParameters && positionalParameters->getSize(context) >= 2) {
+        const proto::ProtoObject* itObj = positionalParameters->getAt(context, 1);
+        const proto::ProtoObject* it = env ? env->iter(itObj) : nullptr;
+        if (it && it != PROTO_NONE) {
+            for (;;) {
+                const proto::ProtoObject* item = env->next(it);
+                if (!item) {
+                    if (env && env->handleExhaustion(context)) break;
+                    break;
+                }
+                acc = acc->add(context, item);
+            }
+        }
     }
-    const proto::ProtoObject* fs = self->newChild(context, true);
+
+    proto::ProtoObject* fs = const_cast<proto::ProtoObject*>(cls->newChild(context, true));
+    fs->setAttribute(context, getInternalString(context, "__class__"), cls);
     fs->setAttribute(context, getInternalString(context, "__data__"), acc->asObject(context));
     return fs;
 }
@@ -7441,7 +7446,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     frozensetPrototype = objectPrototype->newChild(rootContext_, true);
     frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, py_class, typePrototype);
     frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, py_name, rootContext_->fromUTF8String("frozenset"));
-    frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, py_call, rootContext_->fromMethod(nullptr, py_frozenset_call));
+    frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__new__"), rootContext_->fromMethod(nullptr, py_frozenset_call));
     frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, py_len, rootContext_->fromMethod(nullptr, py_frozenset_len));
     frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, py_contains, rootContext_->fromMethod(nullptr, py_frozenset_contains));
     frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, py_bool, rootContext_->fromMethod(nullptr, py_frozenset_bool));
@@ -9827,6 +9832,10 @@ const proto::ProtoObject* PythonEnvironment::callObjectEx(const proto::ProtoObje
     }
 
     const proto::ProtoObject* result = invokePythonCallable(ctx, callable, plArgs, psKwargs);
+    if (!result && this->hasPendingException()) {
+        if (pushed) this->popKwNames();
+        return nullptr;
+    }
 
     if (pushed) this->popKwNames();
     return result ? result : PROTO_NONE;
@@ -10415,7 +10424,8 @@ void PythonEnvironment::initDictStorage(proto::ProtoContext* ctx, const proto::P
 bool PythonEnvironment::handleExhaustion(proto::ProtoContext* ctx) {
     if (!ctx) return false;
     const proto::ProtoObject* exc = peekPendingException();
-    if (exc && isStopIteration(ctx, exc)) {
+    if (!exc) return true; // Successful exhaustion (no exception)
+    if (isStopIteration(ctx, exc)) {
         clearPendingException();
         return true;
     }
