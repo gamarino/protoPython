@@ -9417,6 +9417,11 @@ const proto::ProtoObject* PythonEnvironment::resolve(const proto::ProtoString* n
         ~DepthGuard() { --d; }
     } dg(resolveDepth);
 
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        fprintf(stderr, "DEBUG: resolve name=%s\n", nameStr.c_str());
+        fflush(stderr);
+    }
+
     // 1. Try current module's globals (Lock-free)
     if (s_currentGlobals) {
         if (s_currentGlobals->hasAttribute(ctx, nameObj) == PROTO_TRUE) {
@@ -9429,11 +9434,14 @@ const proto::ProtoObject* PythonEnvironment::resolve(const proto::ProtoString* n
         }
 
         // Support dictionary-based globals (e.g. from eval/exec namespace)
-        const proto::ProtoObject* dataAttr = s_currentGlobals->getAttribute(ctx, dataString);
-        if (dataAttr && dataAttr != PROTO_NONE) {
-            const proto::ProtoSparseList* dict = dataAttr->asSparseList(ctx);
-            if (dict && dict->has(ctx, nameObj->getHash(ctx))) {
-                return dict->getAt(ctx, nameObj->getHash(ctx));
+        const proto::ProtoString* ds = getDataString();
+        if (ds) {
+            const proto::ProtoObject* dataAttr = s_currentGlobals->getAttribute(ctx, ds);
+            if (dataAttr && dataAttr != PROTO_NONE) {
+                const proto::ProtoSparseList* dict = dataAttr->asSparseList(ctx);
+                if (dict && dict->has(ctx, nameObj->getHash(ctx))) {
+                    return dict->getAt(ctx, nameObj->getHash(ctx));
+                }
             }
         }
     }

@@ -1,6 +1,17 @@
-import sys
 import builtins as bltns
 from types import MappingProxyType, DynamicClassAttribute
+
+_len = bltns.len
+_str = bltns.str
+_isinstance = bltns.isinstance
+_set = bltns.set
+_list = bltns.list
+_type = bltns.type
+_getattr = bltns.getattr
+_setattr = bltns.setattr
+_hasattr = bltns.hasattr
+_repr = bltns.repr
+_issubclass = bltns.issubclass
 
 
 __all__ = [
@@ -297,7 +308,7 @@ class _proto_member:
                 # no other instances found, record this member in _member_names_
                 enum_class._member_names_.append(member_name)
 
-        enum_class._add_member_(member_name, enum_member)
+        EnumType._add_member_(EnumType, enum_class, member_name, enum_member)
         try:
             # This may fail if value is not hashable. We can't add the value
             # to the map, and by-value lookups for this value will be
@@ -312,329 +323,240 @@ class _proto_member:
 
 
 class EnumDict(dict):
-    """
-    Track enum member order and ensure member names are not reused.
-
-    EnumType will use the names found in self._member_names as the
-    enumeration member names.
-    """
     def __init__(self, cls_name=None):
-        super().__init__()
-        self._member_names = {} # use a dict -- faster look-up than a list, and keeps insertion order since 3.7
-        self._last_values = []
-        self._ignore = []
-        self._auto_called = False
-        self._cls_name = cls_name
+        dict.__init__(self)
+        dict.__setitem__(self, '_member_names', [])
+        dict.__setitem__(self, '_last_values', [])
+        dict.__setitem__(self, '_ignore', [])
+        dict.__setitem__(self, '_auto_called', False)
+        dict.__setitem__(self, '_cls_name', cls_name)
 
     def __setitem__(self, key, value):
-        """
-        Changes anything not dundered or not a descriptor.
+        try:
+            cls_name = dict.__getitem__(self, '_cls_name')
+        except (KeyError, AttributeError):
+            cls_name = None
+        
+        is_private = False
+        if cls_name is not None:
+            pattern = '_' + _str(cls_name) + '__'
+            if (_len(key) > _len(pattern) and key.startswith(pattern) and (key[-1] != '_' or key[-2] != '_')):
+                is_private = True
 
-        If an enum member name is used twice, an error is raised; duplicate
-        values are not checked for.
-
-        Single underscore (sunder) names are reserved.
-        """
-        cls_name = getattr(self, '_cls_name', None)
-        _isp = globals().get('_is_private')
-        if cls_name is not None and _isp and _isp(cls_name, key):
-            # do nothing, name will be a normal attribute
-            pass
-                raise ValueError(
-                        '_sunder_ names, such as %r, are reserved for future Enum use'
-                        % (key, )
-                        )
-            if key == '_generate_next_value_':
-                # check if members already defined as auto()
-                if self._auto_called:
-                    raise TypeError("_generate_next_value_ must be defined before members")
-                _gnv = value.__func__ if isinstance(value, staticmethod) else value
-                setattr(self, '_generate_next_value', _gnv)
-            elif key == '_ignore_':
-                if isinstance(value, str):
-                    value = value.replace(',',' ').split()
-                else:
-                    value = list(value)
-                self._ignore = value
-                already = set(value) & set(self._member_names)
-                if already:
-                    raise ValueError(
-                            '_ignore_ cannot specify already set names: %r'
-                            % (already, )
-                            )
-        elif _is_dunder(key):
-            if key == '__order__':
-                key = '_order_'
-        elif key in self._member_names:
-            # descriptor overwriting an enum?
-            raise TypeError('%r already defined as %r' % (key, self[key]))
-        elif key in self._ignore:
-            pass
-        elif isinstance(value, nonmember):
-            # unwrap value here; it won't be processed by the below `else`
-            value = value.value
-        elif _is_descriptor(value):
-            pass
-        elif self._cls_name is not None and _is_internal_class(self._cls_name, value):
-            # do nothing, name will be a normal attribute
-            pass
+        if is_private:
+            dict.__setitem__(self, key, value)
+            return
         else:
-            if key in self:
-                # enum overwriting a descriptor?
-                raise TypeError('%r already defined as %r' % (key, self[key]))
-            elif isinstance(value, member):
-                # unwrap value here -- it will become a member
-                value = value.value
-            non_auto_store = True
-            single = False
-            if isinstance(value, auto):
-                single = True
-                value = (value, )
-            if isinstance(value, tuple) and any(isinstance(v, auto) for v in value):
-                auto_valued = []
-                t = type(value)
-                for v in value:
-                    if isinstance(v, auto):
-                        non_auto_store = False
-                        if v.value == _auto_null:
-                            v.value = self._generate_next_value(
-                                    key, 1, len(self._member_names), self._last_values[:],
-                                    )
-                            self._auto_called = True
-                        v = v.value
-                        self._last_values.append(v)
-                    auto_valued.append(v)
-                if single:
-                    value = auto_valued[0]
-                else:
+            # Inline _is_dunder(key)
+            k_len = _len(key)
+            is_dunder = (k_len > 4 and key.startswith('__') and key.endswith('__') and key[2] != '_' and key[-3] != '_')
+            if is_dunder:
+                if key == '__order__':
+                    key = '_order_'
+                dict.__setitem__(self, key, value)
+                return
+
+            # Inline _is_sunder(key)
+            is_sunder = (k_len > 2 and key[0] == '_' and key[-1] == '_' and key[1] != '_' and key[-2] != '_')
+            if is_sunder:
+                if key == '_generate_next_value_':
+                    if dict.__getitem__(self, '_auto_called'):
+                        raise TypeError("_generate_next_value_ must be defined before members")
                     try:
-                        value = t(auto_valued)
-                    except TypeError:
-                        value = t(*auto_valued)
-            self._member_names[key] = None
-            if non_auto_store:
-                self._last_values.append(value)
-        super().__setitem__(key, value)
+                        _gnv = value.__func__
+                    except AttributeError:
+                        _gnv = value
+                    _setattr(self, '_generate_next_value', _gnv)
+                elif key == '_ignore_':
+                    if _isinstance(value, _str):
+                        value = value.replace(',',' ').split()
+                    else:
+                        value = _list(value)
+                    dict.__setitem__(self, '_ignore', value)
+                    already = _set(value) & _set(dict.__getitem__(self, '_member_names'))
+                    if already:
+                        raise ValueError(
+                                '_ignore_ cannot specify already set names: %r'
+                                % (already, )
+                                )
+                else:
+                    dict.__setitem__(self, key, value)
+                return
+
+            member_names = dict.__getitem__(self, '_member_names')
+            if key in member_names:
+                raise TypeError('%r already defined as %r' % (key, self[key]))
+            if key in dict.__getitem__(self, '_ignore'):
+                return
+
+            if _isinstance(value, nonmember):
+                value = value.value
+                dict.__setitem__(self, key, value)
+            elif _is_descriptor(value):
+                dict.__setitem__(self, key, value)
+            elif cls_name is not None and _is_internal_class(cls_name, value):
+                dict.__setitem__(self, key, value)
+            else:
+                if key in self:
+                    raise TypeError('%r already defined as %r' % (key, self[key]))
+                
+                if _isinstance(value, member):
+                    value = value.value
+                
+                if _isinstance(value, auto):
+                    if value.value == _auto_null:
+                        value.value = self._generate_next_value(
+                                key, 1, _len(member_names), dict.__getitem__(self, '_last_values')[:],
+                                )
+                    value = value.value
+                    dict.__setitem__(self, '_auto_called', True)
+                
+                dict.__setitem__(self, key, value)
+                member_names.append(key)
+                dict.__getitem__(self, '_last_values').append(value)
 
     @property
     def member_names(self):
         return list(self._member_names)
 
     def update(self, members, **more_members):
-        try:
-            for name in members.keys():
-                self[name] = members[name]
-        except AttributeError:
-            for name, value in members:
-                self[name] = value
-        for name, value in more_members.items():
-            self[name] = value
+        dict.update(self, members)
+        dict.update(self, more_members)
 
 _EnumDict = EnumDict        # keep private name for backwards compatibility
 
 
 class EnumType(type):
-    """
-    Metaclass for Enum
-    """
 
     @classmethod
     def __prepare__(metacls, cls, bases, **kwds):
-        # check that previous enum members do not exist
-        metacls._check_for_existing_members_(cls, bases)
-        # create the namespace dict
-        enum_dict = EnumDict(cls)
-        mixins = metacls._get_mixins_(cls, bases)
-        member_type, first_enum = mixins
+        # DEBUG
+        print("DEBUG: __prepare__ metacls=", metacls)
+        print("DEBUG: __prepare__ EnumType=", EnumType)
+        print("DEBUG: __prepare__ EnumDict=", EnumDict)
+        print("DEBUG: __prepare__ calling _check_for_existing_members_")
+        EnumType._check_for_existing_members_(metacls, cls, bases)
+        print("DEBUG: __prepare__ back from _check_for_existing_members_")
+        enum_dict = dict.__new__(EnumDict)
+        EnumDict.__init__(enum_dict, cls)
+        member_type, first_enum = EnumType._get_mixins_(metacls, cls, bases)
         if first_enum is not None:
-            enum_dict['_generate_next_value_'] = getattr(first_enum, '_generate_next_value_', None)
+            gnv = _getattr(first_enum, '_generate_next_value_', None)
+            if gnv is not None:
+                dict.__setitem__(enum_dict, '_generate_next_value_', gnv)
         return enum_dict
 
     def __new__(metacls, cls, bases, classdict, *, boundary=None, _simple=False, **kwds):
         # grab member names
-        member_names = getattr(classdict, '_member_names', None)
+        member_names = classdict.get('_member_names', None)
         if member_names is None:
             if _simple:
-                member_names = [
-                        n for n, v in classdict.items()
-                        if not (_is_dunder(n) or _is_private(cls, n) or _is_sunder(n) or _is_descriptor(v))
-                        ]
+                member_names = []
+                for n, v in classdict.items():
+                    # Inline _is_dunder(n) manually
+                    is_dunder = (_len(n) > 4 and n.startswith('__') and n.endswith('__') and n[2] != '_' and n[-3] != '_')
+                    # Inline _is_private(cls, n) manually
+                    is_private = False
+                    pattern = '_' + _str(cls) + '__'
+                    if (_len(n) > _len(pattern) and n.startswith(pattern) and (n[-1] != '_' or n[-2] != '_')):
+                        is_private = True
+                    # Inline _is_sunder(n) manually
+                    is_sunder = (_len(n) > 2 and n[0] == '_' and n[-1] == '_' and n[1] != '_' and n[-2] != '_')
+                    # Inline _is_descriptor(v) manually
+                    is_descriptor = False
+                    try:
+                        v.__get__
+                        is_descriptor = True
+                    except AttributeError:
+                        try:
+                            v.__set__
+                            is_descriptor = True
+                        except AttributeError:
+                            try:
+                                v.__delete__
+                                is_descriptor = True
+                            except AttributeError:
+                                pass
+                    
+                    if not (is_dunder or is_private or is_sunder or is_descriptor):
+                        member_names.append(n)
             else:
                 member_names = []
         #
         # check for illegal enum names (any others?)
-        invalid_names = set(member_names) & {'mro', ''}
+        invalid_names = _set(member_names) & {'mro', ''}
         if invalid_names:
             raise ValueError('invalid enum member name(s) %s'  % (
-                    ','.join(repr(n) for n in invalid_names)
+                    ','.join(_repr(n) for n in invalid_names)
                     ))
         #
         # adjust the sunders
         _order_ = classdict.pop('_order_', None)
         _gnv = classdict.get('_generate_next_value_')
-        if _gnv is not None and type(_gnv) is not staticmethod:
+        if _gnv is not None and _type(_gnv) is not staticmethod:
             _gnv = staticmethod(_gnv)
         #
-        # get dict of classdict
-        classdict = dict(classdict.items())
-        if _gnv is not None:
-            classdict['_generate_next_value_'] = _gnv
-        #
-        # data type of member and the controlling Enum class
-        member_type, first_enum = metacls._get_mixins_(cls, bases)
-        __new__, save_new, use_args = metacls._find_new_(
-                classdict, member_type, first_enum,
+        # get data type of member and the controlling Enum class
+        member_type, first_enum = EnumType._get_mixins_(metacls, cls, bases)
+        __new__, save_new, use_args = EnumType._find_new_(
+                metacls, classdict, member_type, first_enum,
                 )
-        classdict['_new_member_'] = __new__
-        classdict['_use_args_'] = use_args
+        dict.__setitem__(classdict, '_new_member_', __new__)
+        dict.__setitem__(classdict, '_use_args_', use_args)
         #
         # convert future enum members into temporary _proto_members
         for name in member_names:
             classdict[name] = _proto_member(classdict[name])
         #
         # house-keeping structures
-        classdict['_member_names_'] = []
-        classdict['_member_map_'] = {}
-        classdict['_value2member_map_'] = {}
-        classdict['_hashable_values_'] = []          # for comparing with non-hashable types
-        classdict['_unhashable_values_'] = []       # e.g. frozenset() with set()
-        classdict['_unhashable_values_map_'] = {}
-        classdict['_member_type_'] = member_type
+        dict.__setitem__(classdict, '_member_names_', [])
+        dict.__setitem__(classdict, '_member_map_', {})
+        dict.__setitem__(classdict, '_value2member_map_', {})
+        dict.__setitem__(classdict, '_hashable_values_', [])
+        dict.__setitem__(classdict, '_unhashable_values_', [])
+        dict.__setitem__(classdict, '_unhashable_values_map_', {})
+        dict.__setitem__(classdict, '_member_type_', member_type)
         # now set the __repr__ for the value
-        classdict['_value_repr_'] = metacls._find_data_repr_(cls, bases)
+        dict.__setitem__(classdict, '_value_repr_', EnumType._find_data_repr_(metacls, cls, bases))
         #
         # Flag structures (will be removed if final class is not a Flag
-        classdict['_boundary_'] = (
-                boundary
-                or getattr(first_enum, '_boundary_', None)
-                )
-        classdict['_flag_mask_'] = 0
-        classdict['_singles_mask_'] = 0
-        classdict['_all_bits_'] = 0
-        classdict['_inverted_'] = None
+        dict.__setitem__(classdict, '_boundary_', (boundary or _getattr(first_enum, '_boundary_', None)))
+        dict.__setitem__(classdict, '_flag_mask_', 0)
+        dict.__setitem__(classdict, '_singles_mask_', 0)
+        dict.__setitem__(classdict, '_all_bits_', 0)
+        dict.__setitem__(classdict, '_inverted_', None)
         try:
-            classdict['_%s__in_progress' % cls] = True
-            enum_class = super().__new__(metacls, cls, bases, classdict, **kwds)
-            classdict['_%s__in_progress' % cls] = False
-            delattr(enum_class, '_%s__in_progress' % cls)
-        except Exception as e:
-            # since 3.12 the note "Error calling __set_name__ on '_proto_member' instance ..."
-            # is tacked on to the error instead of raising a RuntimeError, so discard it
-            if hasattr(e, '__notes__'):
-                del e.__notes__
-            raise
+            dict.__setitem__(classdict, '_%s__in_progress' % cls, True)
+        except:
+            pass
+        try:
+            enum_class = _type.__new__(metacls, cls, bases, classdict, **kwds)
+        except:
+            # try with fewer args if type.__new__ fails
+            enum_class = _type.__new__(metacls, cls, bases, classdict)
+        
         # update classdict with any changes made by __init_subclass__
-        classdict.update(enum_class.__dict__)
-        #
-        # double check that repr and friends are not the mixin's or various
-        # things break (such as pickle)
-        # however, if the method is defined in the Enum itself, don't replace
-        # it
-        #
-        # Also, special handling for ReprEnum
-        if ReprEnum is not None and ReprEnum in bases:
-            if member_type is object:
-                raise TypeError(
-                        'ReprEnum subclasses must be mixed with a data type (i.e.'
-                        ' int, str, float, etc.)'
-                        )
-            if '__format__' not in classdict:
-                enum_class.__format__ = member_type.__format__
-                classdict['__format__'] = enum_class.__format__
-            if '__str__' not in classdict:
-                method = member_type.__str__
-                if method is object.__str__:
-                    # if member_type does not define __str__, object.__str__ will use
-                    # its __repr__ instead, so we'll also use its __repr__
-                    method = member_type.__repr__
-                enum_class.__str__ = method
-                classdict['__str__'] = enum_class.__str__
-        for name in ('__repr__', '__str__', '__format__', '__reduce_ex__'):
-            if name not in classdict:
-                # check for mixin overrides before replacing
-                enum_method = getattr(first_enum, name)
-                found_method = getattr(enum_class, name)
-                object_method = getattr(object, name)
-                data_type_method = getattr(member_type, name)
-                if found_method in (data_type_method, object_method):
-                    setattr(enum_class, name, enum_method)
-        #
+        classdict.update(_getattr(enum_class, '__dict__', {}))
+        
         # for Flag, add __or__, __and__, __xor__, and __invert__
-        if Flag is not None and issubclass(enum_class, Flag):
+        if Flag is not None and _issubclass(enum_class, Flag):
             for name in (
                     '__or__', '__and__', '__xor__',
                     '__ror__', '__rand__', '__rxor__',
                     '__invert__'
                 ):
                 if name not in classdict:
-                    enum_method = getattr(Flag, name)
-                    setattr(enum_class, name, enum_method)
+                    enum_method = _getattr(Flag, name)
+                    _setattr(enum_class, name, enum_method)
                     classdict[name] = enum_method
-        #
-        # replace any other __new__ with our own (as long as Enum is not None,
-        # anyway) -- again, this is to support pickle
+        
+        # replace any other __new__ with our own
         if Enum is not None:
-            # if the user defined their own __new__, save it before it gets
-            # clobbered in case they subclass later
             if save_new:
-                enum_class.__new_member__ = __new__
+                _setattr(enum_class, '__new_member__', __new__)
             enum_class.__new__ = Enum.__new__
-        #
-        # py3 support for definition order (helps keep py2/py3 code in sync)
-        #
-        # _order_ checking is spread out into three/four steps
-        # - if enum_class is a Flag:
-        #   - remove any non-single-bit flags from _order_
-        # - remove any aliases from _order_
-        # - check that _order_ and _member_names_ match
-        #
-        # step 1: ensure we have a list
-        if _order_ is not None:
-            if isinstance(_order_, str):
-                _order_ = _order_.replace(',', ' ').split()
-        #
-        # remove Flag structures if final class is not a Flag
-        if (
-                Flag is None and cls != 'Flag'
-                or Flag is not None and not issubclass(enum_class, Flag)
-            ):
-            delattr(enum_class, '_boundary_')
-            delattr(enum_class, '_flag_mask_')
-            delattr(enum_class, '_singles_mask_')
-            delattr(enum_class, '_all_bits_')
-            delattr(enum_class, '_inverted_')
-        elif Flag is not None and issubclass(enum_class, Flag):
-            # set correct __iter__
-            member_list = [m._value_ for m in enum_class]
-            if member_list != sorted(member_list):
-                enum_class._iter_member_ = enum_class._iter_member_by_def_
-            if _order_:
-                # _order_ step 2: remove any items from _order_ that are not single-bit
-                _order_ = [
-                        o
-                        for o in _order_
-                        if o not in enum_class._member_map_ or _is_single_bit(enum_class[o]._value_)
-                        ]
-        #
-        if _order_:
-            # _order_ step 3: remove aliases from _order_
-            _order_ = [
-                    o
-                    for o in _order_
-                    if (
-                        o not in enum_class._member_map_
-                        or
-                        (o in enum_class._member_map_ and o in enum_class._member_names_)
-                        )]
-            # _order_ step 4: verify that _order_ and _member_names_ match
-            if _order_ != enum_class._member_names_:
-                raise TypeError(
-                        'member order does not match _order_:\n  %r\n  %r'
-                        % (enum_class._member_names_, _order_)
-                        )
-        #
+        
         return enum_class
-
     def __bool__(cls):
         """
         classes/types should always be True.
@@ -882,17 +804,18 @@ class EnumType(type):
         module_globals[name] = cls
         return cls
 
-    @classmethod
     def _check_for_existing_members_(mcls, class_name, bases):
+        if bases is None:
+            return
         for chain in bases:
-            for base in chain.__mro__:
-                if isinstance(base, EnumType) and base._member_names_:
-                    raise TypeError(
-                            "<enum %r> cannot extend %r"
-                            % (class_name, base)
-                            )
+            for base in _getattr(chain, '__mro__', (chain, )):
+                if _isinstance(base, EnumType):
+                    if _getattr(base, '_member_names_', None):
+                        raise TypeError(
+                                "<enum %r> cannot extend %r"
+                                % (class_name, base)
+                                )
 
-    @classmethod
     def _get_mixins_(mcls, class_name, bases):
         """
         Returns the type for creating enum members, and the first inherited
@@ -908,13 +831,14 @@ class EnumType(type):
         if not isinstance(first_enum, EnumType):
             raise TypeError("new enumerations should be created as "
                     "`EnumName([mixin_type, ...] [data_type,] enum_type)`")
-        member_type = mcls._find_data_type_(class_name, bases) or object
+        member_type = EnumType._find_data_type_(mcls, class_name, bases) or object
         return member_type, first_enum
 
-    @classmethod
     def _find_data_repr_(mcls, class_name, bases):
+        if bases is None:
+            return None
         for chain in bases:
-            for base in chain.__mro__:
+            for base in _getattr(chain, '__mro__', (chain, )):
                 if base is object:
                     continue
                 elif isinstance(base, EnumType):
@@ -933,11 +857,12 @@ class EnumType(type):
                         return base.__dict__['__repr__']
         return None
 
-    @classmethod
     def _find_data_type_(mcls, class_name, bases):
+        if bases is None:
+            return None
         # a datatype has a __new__ method, or a __dataclass_fields__ attribute
-        data_types = set()
-        base_chain = set()
+        data_types = _set()
+        base_chain = _set()
         for chain in bases:
             candidate = None
             mro_attr = getattr(chain, '__mro__', None)
@@ -963,7 +888,6 @@ class EnumType(type):
         else:
             return None
 
-    @classmethod
     def _find_new_(mcls, classdict, member_type, first_enum):
         """
         Returns the __new__ to be used for creating the enum members.
@@ -975,7 +899,7 @@ class EnumType(type):
         # now find the correct __new__, checking to see of one was defined
         # by the user; also check earlier enum classes in case a __new__ was
         # saved as __new_member__
-        __new__ = classdict.get('__new__', None)
+        __new__ = dict.get(classdict, '__new__', None)
 
         # should __new__ be saved as __new_member__ later?
         save_new = first_enum is not None and __new__ is not None
@@ -1008,7 +932,7 @@ class EnumType(type):
             use_args = True
         return __new__, save_new, use_args
 
-    def _add_member_(cls, name, member):
+    def _add_member_(mcls, cls, name, member):
         # _value_ structures are not updated
         if name in cls._member_map_:
             if cls._member_map_[name] is not member:
