@@ -2921,8 +2921,6 @@ const proto::ProtoObject* makeCodeObject(proto::ProtoContext* ctx,
     const proto::ProtoTuple* lnotab) {
     if (!ctx) return PROTO_NONE;
     const proto::ProtoObject* code = ctx->newObject(false);
-    // Optional: add a 'code_proto' if we want to share methods like .exec()
-    code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_consts"), reinterpret_cast<const proto::ProtoObject*>(constants));
     code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_names"), names ? reinterpret_cast<const proto::ProtoObject*>(names) : reinterpret_cast<const proto::ProtoObject*>(ctx->newTuple()));
     code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_code"), reinterpret_cast<const proto::ProtoObject*>(bytecode));
     code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_filename"), filename ? reinterpret_cast<const proto::ProtoObject*>(filename) : reinterpret_cast<const proto::ProtoObject*>(ctx->fromUTF8String("<stdin>")));

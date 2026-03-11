@@ -46,10 +46,11 @@ static const proto::ProtoObject* py_import(
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters);
 
-const proto::ProtoObject* py_object_new(
+static const proto::ProtoObject* py_vars(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
-    const proto::ParentLink* parentLink,
+    const proto::ProtoObject* klass,
+    const proto::ProtoList* positionalParameters,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters);
 
@@ -310,9 +311,9 @@ static const proto::ProtoObject* py_complete(
 static const proto::ProtoObject* py_locals(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
-    const proto::ParentLink* parentLink,
+    const proto::ProtoObject* klass,
     const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters);
+    const proto::ProtoObject* keywordParameters);
 
 
 static const proto::ProtoObject* py_len(
@@ -2132,96 +2133,120 @@ static const proto::ProtoObject* py_globals(
 
 static const proto::ProtoObject* py_locals(
     proto::ProtoContext* context,
-    const proto::ProtoObject* self,
-    const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
-    (void)self; (void)parentLink; (void)positionalParameters; (void)keywordParameters;
-    PythonEnvironment* env = PythonEnvironment::fromContext(context);
-    const proto::ProtoObject* f = PythonEnvironment::getCurrentFrame();
-    const proto::ProtoObject* co = PythonEnvironment::getCurrentCodeObject();
+static const proto::ProtoObject* py_locals(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ProtoObject* klass, const proto::ProtoList* args, const proto::ProtoObject* kwargs) {
+    protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(ctx);
+    const proto::ProtoObject* f = (env) ? env->getCurrentFrame() : nullptr;
+    const proto::ProtoObject* co = (env) ? env->getCurrentCodeObject() : nullptr;
     
     if (!f || f == PROTO_NONE) {
-         return py_globals(context, self, parentLink, positionalParameters, keywordParameters);
+         return py_globals(ctx, self, klass, nullptr, nullptr);
     }
     
-    // If we have a code object with varnish names, it's a function frame with optimized locals.
-    // We must return a snapshot as per Python behavior for locals().
-    if (co && co != PROTO_NONE && context->getAutomaticLocalsCount() > 0) {
-        const proto::ProtoObject* co_varnames_obj = co->getAttribute(context, env ? env->getCoVarnamesString() : proto::ProtoString::fromUTF8String(context, "co_varnames"));
-        const proto::ProtoList* co_varnames = co_varnames_obj ? co_varnames_obj->asList(context) : nullptr;
-        
-        if (co_varnames) {
-            proto::ProtoObject* dict = const_cast<proto::ProtoObject*>(env && env->getDictPrototype() ? env->getDictPrototype()->newChild(context, true) : context->newObject(false));
-            const proto::ProtoObject** slots = context->getAutomaticLocals();
-            unsigned int nSlots = context->getAutomaticLocalsCount();
-            unsigned long nNames = co_varnames->getSize(context);
-            unsigned long count = (nNames < nSlots) ? nNames : nSlots;
-            
-            const proto::ProtoSparseList* data = context->newSparseList();
-            const proto::ProtoList* keys = context->newList();
+    // Check if we are in a function scope (co_varnames present) or if it has optimized locals
+    const proto::ProtoObject* co_varnames_obj = nullptr;
+    if (co && co != PROTO_NONE) {
+        co_varnames_obj = co->getAttribute(ctx, env ? env->getCoVarnamesString() : proto::ProtoString::fromUTF8String(ctx, "co_varnames"));
+    }
 
+    if (co_varnames_obj && co_varnames_obj != PROTO_NONE) {
+        const proto::ProtoTuple* co_varnames_tup = co_varnames_obj->asTuple(ctx);
+        const proto::ProtoList* co_varnames_list = co_varnames_obj->asList(ctx);
+        
+        proto::ProtoObject* dict = const_cast<proto::ProtoObject*>(env && env->getDictPrototype() ? env->getDictPrototype()->newChild(ctx, true) : ctx->newObject(false));
+        const proto::ProtoObject** slots = ctx->getAutomaticLocals();
+        unsigned int nSlots = ctx->getAutomaticLocalsCount();
+        unsigned long nNames = 0;
+        if (co_varnames_tup) nNames = co_varnames_tup->getSize(ctx);
+        else if (co_varnames_list) nNames = co_varnames_list->getSize(ctx);
+
+        const proto::ProtoSparseList* data = ctx->newSparseList();
+        const proto::ProtoList* keys = ctx->newList();
+
+        // 1. Capture optimized locals from slots
+        if (nSlots > 0 && nNames > 0) {
+            unsigned long count = (nNames < nSlots) ? nNames : nSlots;
             for (unsigned long i = 0; i < count; ++i) {
-                const proto::ProtoObject* name = co_varnames->getAt(context, static_cast<int>(i));
+                const proto::ProtoObject* name = co_varnames_tup ? co_varnames_tup->getAt(ctx, static_cast<int>(i)) : co_varnames_list->getAt(ctx, static_cast<int>(i));
                 const proto::ProtoObject* val = slots[i];
-                if (val && name->isString(context)) {
-                    data = data->setAt(context, name->getHash(context), val);
-                    keys = keys->appendLast(context, name);
+                if (val && val != PROTO_NONE && name->isString(ctx)) {
+                    data = data->setAt(ctx, name->getHash(ctx), val);
+                    keys = keys->appendLast(ctx, name);
                 }
             }
-            // Copy any attributes stored directly on the frame (e.g. from OP_STORE_NAME in class bodies)
-            const proto::ProtoObject* fKeysObj = f->getAttribute(context, env ? env->getKeysString() : proto::ProtoString::fromUTF8String(context, "__keys__"));
-            const proto::ProtoList* fKeysList = fKeysObj ? fKeysObj->asList(context) : nullptr;
-            if (fKeysList) {
-                for (size_t i = 0; i < fKeysList->getSize(context); ++i) {
-                    const proto::ProtoObject* nameObj = fKeysList->getAt(context, i);
-                    if (nameObj && nameObj->isString(context)) {
-                        const proto::ProtoObject* val = f->getAttribute(context, nameObj->asString(context));
-                        if (val && val != PROTO_NONE) { // In Python, None can be a value, but if attribute lookup fails it returns PROTO_NONE in our engine
-                            if (!keys->has(context, nameObj)) {
-                                keys = keys->appendLast(context, nameObj);
-                            }
-                            data = data->setAt(context, nameObj->getHash(context), val);
+        }
+
+        // 2. Capture non-optimized locals from frame attributes (including in __data__)
+        const proto::ProtoString* dataS = env ? env->getDataString() : proto::ProtoString::fromUTF8String(ctx, "__data__");
+        const proto::ProtoString* keysS = env ? env->getKeysString() : proto::ProtoString::fromUTF8String(ctx, "__keys__");
+        
+        const proto::ProtoObject* fKeysObj = f->getAttribute(ctx, keysS);
+        const proto::ProtoList* fKeysList = fKeysObj ? fKeysObj->asList(ctx) : nullptr;
+        if (fKeysList) {
+            for (size_t i = 0; i < fKeysList->getSize(ctx); ++i) {
+                const proto::ProtoObject* nameObj = fKeysList->getAt(ctx, i);
+                if (nameObj && nameObj->isString(ctx)) {
+                    // Skip internal attributes
+                    const std::string& keyStr = nameObj->asString(ctx)->asUTF8String(ctx);
+                    if (keyStr == "__data__" || keyStr == "__keys__") continue;
+                    
+                    const proto::ProtoObject* val = f->getAttribute(ctx, nameObj->asString(ctx));
+                    if (val && val != PROTO_NONE) {
+                        if (!keys->has(ctx, nameObj)) {
+                            keys = keys->appendLast(ctx, nameObj);
                         }
+                        data = data->setAt(ctx, nameObj->getHash(ctx), val);
                     }
                 }
             }
-
-            dict->setAttribute(context, env ? env->getDataString() : proto::ProtoString::fromUTF8String(context, "__data__"), data->asObject(context));
-            dict->setAttribute(context, env ? env->getKeysString() : proto::ProtoString::fromUTF8String(context, "__keys__"), keys->asObject(context));
-            if (env && env->getDictPrototype()) {
-                dict->setAttribute(context, env->getClassString(), env->getDictPrototype());
-            }
-            return dict;
         }
+
+        dict->setAttribute(ctx, dataS, data->asObject(ctx));
+        dict->setAttribute(ctx, keysS, keys->asObject(ctx));
+        if (env && env->getDictPrototype()) {
+            dict->setAttribute(ctx, env->getClassString(), env->getDictPrototype());
+        }
+        return dict;
     }
     
-    // Otherwise (module/global scope), f_locals *is* the globals dictionary (or the module object).
-    // In our implementation, we set f_locals to the frame object itself for efficiency in executeModule.
-    const proto::ProtoObject* l = f->getAttribute(context, env ? env->getFLocalsString() : proto::ProtoString::fromUTF8String(context, "f_locals"));
-    if (l && l != PROTO_NONE) return l;
-    
+    // Otherwise (module/global scope), return the frame itself (which acts as a dict)
     return f;
 }
 
-/** vars([object]): return object.__dict__ if given; stub for no-arg (locals). */
-static const proto::ProtoObject* py_vars(
-    proto::ProtoContext* context,
-    const proto::ProtoObject* self,
-    const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
-    if (!positionalParameters || positionalParameters->getSize(context) == 0) {
-        return py_locals(context, self, parentLink, positionalParameters, keywordParameters);
+static const proto::ProtoObject* py_vars(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ProtoObject* klass, const proto::ProtoList* args, const proto::ProtoObject* kwargs) {
+    if (!args || args->getSize(ctx) == 0) {
+        return py_locals(ctx, self, klass, nullptr, nullptr);
     }
-    const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
-    PythonEnvironment* env = PythonEnvironment::fromContext(context);
-    const proto::ProtoObject* d = obj->getAttribute(context, env ? env->getDictDunderString() : proto::ProtoString::fromUTF8String(context, "__dict__"));
-    if (d && d != PROTO_NONE)
-        return d;
+    const proto::ProtoObject* obj = args->getAt(ctx, 0);
+    protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(ctx);
+    const proto::ProtoString* dictS = env ? env->getDictDunderString() : proto::ProtoString::fromUTF8String(ctx, "__dict__");
     
-    if (env) env->raiseTypeError(context, "vars() argument must have __dict__ attribute");
-    return PROTO_NONE;
+    const proto::ProtoObject* dict = obj->getAttribute(ctx, dictS);
+    if (dict && dict != PROTO_NONE) return dict;
+    
+    // Fallback: create a snapshot if it has attributes but no __dict__
+    proto::ProtoObject* snapshot = const_cast<proto::ProtoObject*>(env && env->getDictPrototype() ? env->getDictPrototype()->newChild(ctx, true) : ctx->newObject(false));
+    const proto::ProtoString* dataS = env ? env->getDataString() : proto::ProtoString::fromUTF8String(ctx, "__data__");
+    const proto::ProtoString* keysS = env ? env->getKeysString() : proto::ProtoString::fromUTF8String(ctx, "__keys__");
+    
+    const proto::ProtoObject* keysObj = obj->getAttribute(ctx, keysS);
+    const proto::ProtoList* keysList = keysObj ? keysObj->asList(ctx) : nullptr;
+    if (keysList) {
+        const proto::ProtoSparseList* data = ctx->newSparseList();
+        const proto::ProtoList* snapshotKeys = ctx->newList();
+        for (size_t i = 0; i < keysList->getSize(ctx); ++i) {
+            const proto::ProtoObject* k = keysList->getAt(ctx, i);
+            if (k && k->isString(ctx)) {
+                const proto::ProtoObject* v = obj->getAttribute(ctx, k->asString(ctx));
+                if (v && v != PROTO_NONE) {
+                    data = data->setAt(ctx, k->getHash(ctx), v);
+                    snapshotKeys = snapshotKeys->appendLast(ctx, k);
+                }
+            }
+        }
+        snapshot->setAttribute(ctx, dataS, data->asObject(ctx));
+        snapshot->setAttribute(ctx, keysS, snapshotKeys->asObject(ctx));
+    }
+    return snapshot;
 }
 
 /** Compare two objects for sorting: int, string, else compare(). */

@@ -2034,20 +2034,13 @@ const proto::ProtoObject* executeBytecodeRange(
                         }
                     }
                     stack.pop_back(); // Pop val now that it's stored
-                    
-                    const proto::ProtoString* keysS = getInternalString(ctx, "__keys__");
-                    const proto::ProtoObject* keysObj = frame->getAttribute(ctx, keysS);
-                    if (keysObj && keysObj->asList(ctx)) {
-                        const proto::ProtoList* keysList = keysObj->asList(ctx);
-                        if (!keysList->has(ctx, nameObj)) {
-                            keysList = keysList->appendLast(ctx, nameObj);
-                            frame = const_cast<proto::ProtoObject*>(frame->setAttribute(ctx, keysS, keysList->asObject(ctx)));
-                        }
-                    }
 
-                    if (get_env_diag()) {
-                        fprintf(stderr, "DEBUG: OP_STORE_NAME finished frame update for PC %lu\n", i);
-                        fflush(stderr);
+                    // Track key for reflection (locals(), vars())
+                    const proto::ProtoObject* keysObj = frame->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__keys__"));
+                    const proto::ProtoList* keysList = (keysObj && keysObj->asList(ctx)) ? keysObj->asList(ctx) : ctx->newList();
+                    if (!keysList->has(ctx, nameObj)) {
+                        keysList = keysList->appendLast(ctx, nameObj);
+                        frame = const_cast<proto::ProtoObject*>(frame->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__keys__"), keysList->asObject(ctx)));
                     }
                     if (env) {
                         PythonEnvironment::setCurrentFrame(frame);
