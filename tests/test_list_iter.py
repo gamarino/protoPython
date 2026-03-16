@@ -1,5 +1,4 @@
-l = [("__name__", None), ("__module__", "abc")]
-print("starting loop")
-for k, v in l:
-    print(k, v)
-print("done loop")
+l = [1, 2, 3]
+for x in l:
+    print(x)
+print("List iter OK")

@@ -49,8 +49,21 @@ static const proto::ProtoObject* py_import(
 static const proto::ProtoObject* py_vars(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
-    const proto::ProtoObject* klass,
+    const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters);
+
+static const proto::ProtoObject* py_globals(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters);
+
+const proto::ProtoObject* py_object_new(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters);
 
@@ -61,7 +74,7 @@ const proto::ProtoObject* py_type_prepare(
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
-    const proto::ProtoObject* dictObj = context->newObject(false);
+    const proto::ProtoObject* dictObj = context->newObject(true);
     if (env && env->getDictPrototype()) {
         dictObj = dictObj->addParent(context, env->getDictPrototype());
     }
@@ -311,9 +324,9 @@ static const proto::ProtoObject* py_complete(
 static const proto::ProtoObject* py_locals(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
-    const proto::ProtoObject* klass,
+    const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
-    const proto::ProtoObject* keywordParameters);
+    const proto::ProtoSparseList* keywordParameters);
 
 
 static const proto::ProtoObject* py_len(
@@ -2062,159 +2075,28 @@ static const proto::ProtoObject* py_breakpoint(
     return PROTO_NONE;
 }
 
-static const proto::ProtoObject* py_globals(
-    proto::ProtoContext* context,
-    const proto::ProtoObject* self,
-    const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
+static const proto::ProtoObject* py_globals(proto::ProtoContext* context, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* positionalParameters, const proto::ProtoSparseList* keywordParameters) {
     (void)self; (void)parentLink; (void)positionalParameters; (void)keywordParameters;
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
-    if (get_env_diag()) printf("DEBUG: py_globals called\n");
     const proto::ProtoObject* f = PythonEnvironment::getCurrentFrame();
-    
-    const proto::ProtoObject* mod = PROTO_NONE;
     if (f && f != PROTO_NONE && env) {
-        mod = f->getAttribute(context, env->getFGlobalsString());
+        const proto::ProtoObject* mod = f->getAttribute(context, env->getFGlobalsString());
+        if (mod && mod != PROTO_NONE) return mod;
     }
-    
-    if (!mod || mod == PROTO_NONE) {
-        mod = PythonEnvironment::getCurrentGlobals();
-    }
-
-    if (!mod || mod == PROTO_NONE) return env ? env->getNonePrototype() : PROTO_NONE;
-
-    const proto::ProtoString* dataName = env ? env->getDataString() : proto::ProtoString::fromUTF8String(context, "__data__");
-    /* 
-    if (mod->getAttribute(context, dataName)) {
-        return mod;
-    }
-    */
-
-    const proto::ProtoObject* dictProto = env ? env->getDictPrototype() : nullptr;
-    if (!dictProto) return mod;
-    
-    proto::ProtoObject* dictInstance = const_cast<proto::ProtoObject*>(dictProto->newChild(context, true));
-    dictInstance->setAttribute(context, env ? env->getClassString() : proto::ProtoString::fromUTF8String(context, "__class__"), dictProto);
-    if (env) env->initDictStorage(context, dictInstance);
-    
-    const proto::ProtoString* keysName = env ? env->getKeysString() : proto::ProtoString::fromUTF8String(context, "__keys__");
-    const proto::ProtoObject* dataObj = dictInstance->getAttribute(context, dataName);
-    const proto::ProtoObject* keysObj = dictInstance->getAttribute(context, keysName);
-    
-    proto::ProtoSparseList* d = const_cast<proto::ProtoSparseList*>(dataObj ? dataObj->asSparseList(context) : context->newSparseList());
-    proto::ProtoList* kList = const_cast<proto::ProtoList*>(keysObj ? keysObj->asList(context) : context->newList());
-    
-    const proto::ProtoSparseList* modAttrs = mod->getAttributes(context);
-    if (modAttrs) {
-        auto* it = const_cast<proto::ProtoSparseListIterator*>(modAttrs->getIterator(context));
-        while (it && it->hasNext(context)) {
-            unsigned long key = it->nextKey(context);
-            const proto::ProtoObject* keyObj = reinterpret_cast<const proto::ProtoObject*>(key);
-            const proto::ProtoObject* value = it->nextValue(context);
-            if (keyObj && keyObj->isString(context)) {
-                unsigned long hash = keyObj->getHash(context);
-                d = const_cast<proto::ProtoSparseList*>(d->setAt(context, hash, value));
-                kList = const_cast<proto::ProtoList*>(kList->appendLast(context, keyObj));
-            }
-            it = const_cast<proto::ProtoSparseListIterator*>(it->advance(context));
-        }
-    }
-    
-    dictInstance->setAttribute(context, dataName, d->asObject(context));
-    dictInstance->setAttribute(context, keysName, kList->asObject(context));
-    
-    if (std::getenv("PROTO_ENV_DIAG")) {
-        fprintf(stderr, "DEBUG: py_globals returning dictInstance=%p size=%lu\n", (void*)dictInstance, d->getSize(context));
-        fflush(stderr);
-    }
-    return dictInstance;
+    return PythonEnvironment::getCurrentGlobals();
 }
 
-static const proto::ProtoObject* py_locals(
-    proto::ProtoContext* context,
-static const proto::ProtoObject* py_locals(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ProtoObject* klass, const proto::ProtoList* args, const proto::ProtoObject* kwargs) {
-    protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(ctx);
-    const proto::ProtoObject* f = (env) ? env->getCurrentFrame() : nullptr;
-    const proto::ProtoObject* co = (env) ? env->getCurrentCodeObject() : nullptr;
-    
+static const proto::ProtoObject* py_locals(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+    const proto::ProtoObject* f = PythonEnvironment::getCurrentFrame();
     if (!f || f == PROTO_NONE) {
-         return py_globals(ctx, self, klass, nullptr, nullptr);
+         return py_globals(ctx, self, parentLink, nullptr, nullptr);
     }
-    
-    // Check if we are in a function scope (co_varnames present) or if it has optimized locals
-    const proto::ProtoObject* co_varnames_obj = nullptr;
-    if (co && co != PROTO_NONE) {
-        co_varnames_obj = co->getAttribute(ctx, env ? env->getCoVarnamesString() : proto::ProtoString::fromUTF8String(ctx, "co_varnames"));
-    }
-
-    if (co_varnames_obj && co_varnames_obj != PROTO_NONE) {
-        const proto::ProtoTuple* co_varnames_tup = co_varnames_obj->asTuple(ctx);
-        const proto::ProtoList* co_varnames_list = co_varnames_obj->asList(ctx);
-        
-        proto::ProtoObject* dict = const_cast<proto::ProtoObject*>(env && env->getDictPrototype() ? env->getDictPrototype()->newChild(ctx, true) : ctx->newObject(false));
-        const proto::ProtoObject** slots = ctx->getAutomaticLocals();
-        unsigned int nSlots = ctx->getAutomaticLocalsCount();
-        unsigned long nNames = 0;
-        if (co_varnames_tup) nNames = co_varnames_tup->getSize(ctx);
-        else if (co_varnames_list) nNames = co_varnames_list->getSize(ctx);
-
-        const proto::ProtoSparseList* data = ctx->newSparseList();
-        const proto::ProtoList* keys = ctx->newList();
-
-        // 1. Capture optimized locals from slots
-        if (nSlots > 0 && nNames > 0) {
-            unsigned long count = (nNames < nSlots) ? nNames : nSlots;
-            for (unsigned long i = 0; i < count; ++i) {
-                const proto::ProtoObject* name = co_varnames_tup ? co_varnames_tup->getAt(ctx, static_cast<int>(i)) : co_varnames_list->getAt(ctx, static_cast<int>(i));
-                const proto::ProtoObject* val = slots[i];
-                if (val && val != PROTO_NONE && name->isString(ctx)) {
-                    data = data->setAt(ctx, name->getHash(ctx), val);
-                    keys = keys->appendLast(ctx, name);
-                }
-            }
-        }
-
-        // 2. Capture non-optimized locals from frame attributes (including in __data__)
-        const proto::ProtoString* dataS = env ? env->getDataString() : proto::ProtoString::fromUTF8String(ctx, "__data__");
-        const proto::ProtoString* keysS = env ? env->getKeysString() : proto::ProtoString::fromUTF8String(ctx, "__keys__");
-        
-        const proto::ProtoObject* fKeysObj = f->getAttribute(ctx, keysS);
-        const proto::ProtoList* fKeysList = fKeysObj ? fKeysObj->asList(ctx) : nullptr;
-        if (fKeysList) {
-            for (size_t i = 0; i < fKeysList->getSize(ctx); ++i) {
-                const proto::ProtoObject* nameObj = fKeysList->getAt(ctx, i);
-                if (nameObj && nameObj->isString(ctx)) {
-                    // Skip internal attributes
-                    const std::string& keyStr = nameObj->asString(ctx)->asUTF8String(ctx);
-                    if (keyStr == "__data__" || keyStr == "__keys__") continue;
-                    
-                    const proto::ProtoObject* val = f->getAttribute(ctx, nameObj->asString(ctx));
-                    if (val && val != PROTO_NONE) {
-                        if (!keys->has(ctx, nameObj)) {
-                            keys = keys->appendLast(ctx, nameObj);
-                        }
-                        data = data->setAt(ctx, nameObj->getHash(ctx), val);
-                    }
-                }
-            }
-        }
-
-        dict->setAttribute(ctx, dataS, data->asObject(ctx));
-        dict->setAttribute(ctx, keysS, keys->asObject(ctx));
-        if (env && env->getDictPrototype()) {
-            dict->setAttribute(ctx, env->getClassString(), env->getDictPrototype());
-        }
-        return dict;
-    }
-    
-    // Otherwise (module/global scope), return the frame itself (which acts as a dict)
     return f;
 }
 
-static const proto::ProtoObject* py_vars(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ProtoObject* klass, const proto::ProtoList* args, const proto::ProtoObject* kwargs) {
+static const proto::ProtoObject* py_vars(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
     if (!args || args->getSize(ctx) == 0) {
-        return py_locals(ctx, self, klass, nullptr, nullptr);
+        return py_locals(ctx, self, parentLink, nullptr, nullptr);
     }
     const proto::ProtoObject* obj = args->getAt(ctx, 0);
     protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(ctx);
@@ -2223,30 +2105,7 @@ static const proto::ProtoObject* py_vars(proto::ProtoContext* ctx, const proto::
     const proto::ProtoObject* dict = obj->getAttribute(ctx, dictS);
     if (dict && dict != PROTO_NONE) return dict;
     
-    // Fallback: create a snapshot if it has attributes but no __dict__
-    proto::ProtoObject* snapshot = const_cast<proto::ProtoObject*>(env && env->getDictPrototype() ? env->getDictPrototype()->newChild(ctx, true) : ctx->newObject(false));
-    const proto::ProtoString* dataS = env ? env->getDataString() : proto::ProtoString::fromUTF8String(ctx, "__data__");
-    const proto::ProtoString* keysS = env ? env->getKeysString() : proto::ProtoString::fromUTF8String(ctx, "__keys__");
-    
-    const proto::ProtoObject* keysObj = obj->getAttribute(ctx, keysS);
-    const proto::ProtoList* keysList = keysObj ? keysObj->asList(ctx) : nullptr;
-    if (keysList) {
-        const proto::ProtoSparseList* data = ctx->newSparseList();
-        const proto::ProtoList* snapshotKeys = ctx->newList();
-        for (size_t i = 0; i < keysList->getSize(ctx); ++i) {
-            const proto::ProtoObject* k = keysList->getAt(ctx, i);
-            if (k && k->isString(ctx)) {
-                const proto::ProtoObject* v = obj->getAttribute(ctx, k->asString(ctx));
-                if (v && v != PROTO_NONE) {
-                    data = data->setAt(ctx, k->getHash(ctx), v);
-                    snapshotKeys = snapshotKeys->appendLast(ctx, k);
-                }
-            }
-        }
-        snapshot->setAttribute(ctx, dataS, data->asObject(ctx));
-        snapshot->setAttribute(ctx, keysS, snapshotKeys->asObject(ctx));
-    }
-    return snapshot;
+    return obj;
 }
 
 /** Compare two objects for sorting: int, string, else compare(). */
@@ -2606,7 +2465,10 @@ const proto::ProtoObject* py_type(
         if (dict) {
             const proto::ProtoString* keysName = env ? env->getKeysString() : proto::ProtoString::fromUTF8String(context, "__keys__");
             const proto::ProtoObject* keysObj = dict->getAttribute(context, keysName);
-            const proto::ProtoList* keysList = keysObj ? keysObj->asList(context) : nullptr;
+            const proto::ProtoList* keysList = (keysObj && keysObj->asList(context)) ? keysObj->asList(context) : nullptr;
+            if (get_env_diag()) {
+                fprintf(stderr, "DEBUG py_type: dict=%p keysObj=%p keysSize=%lu\n", (void*)dict, (void*)keysObj, keysList ? keysList->getSize(context) : 0);
+            }
             
             if (get_env_diag()) {
             }
@@ -2667,6 +2529,21 @@ const proto::ProtoObject* py_type(
                             }
                         }
                         
+                        // Skip keys that have no actual value in the namespace
+                        // (both __getitem__ and getAttribute failed).
+                        // Setting nullptr on the class would corrupt inherited attributes.
+                        if (!val) {
+                            if (get_env_diag()) {
+                                std::string kn; k->toUTF8String(context, kn);
+                                fprintf(stderr, "DEBUG py_type loop: SKIPPING attr '%s' (val is nullptr)\n", kn.c_str());
+                            }
+                            continue;
+                        }
+                        
+                        if (get_env_diag()) {
+                            std::string kn; k->toUTF8String(context, kn);
+                            fprintf(stderr, "DEBUG py_type loop: setting attr %s to val %p\n", kn.c_str(), (void*)val);
+                        }
                         targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, k, val));
                         
                         // Update targetClass.__keys__
@@ -4002,7 +3879,16 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "int"), intProto);
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "str"), strProto);
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "list"), listProto);
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        const proto::ProtoObject* dNew = dictProto ? dictProto->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__new__")) : nullptr;
+        fprintf(stderr, "DEBUG IN BUILTINS INIT: dictProto=%p dict.__new__=%p\n", (void*)dictProto, (void*)dNew);
+    }
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "dict"), dictProto);
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        const proto::ProtoObject* dInB = builtins->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "dict"));
+        const proto::ProtoObject* dNew = dInB ? dInB->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__new__")) : nullptr;
+        fprintf(stderr, "DEBUG IN BUILTINS INIT: dictInB=%p dictInB.__new__=%p\n", (void*)dInB, (void*)dNew);
+    }
     
     // Add dummy bytearray
     auto py_bytearray_new = [](proto::ProtoContext* context, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) -> const proto::ProtoObject* {

@@ -3854,7 +3854,15 @@ const proto::ProtoObject* executeBytecodeRange(
                 if (body) {
                     const proto::ProtoObject* codeObj = body->getAttribute(ctx, env ? env->getCodeString() : proto::ProtoString::fromUTF8String(ctx, "__code__"));
                     if (codeObj && codeObj != PROTO_NONE) {
+                        if (std::getenv("PROTO_ENV_DIAG")) {
+                            fprintf(stderr, "DEBUG OP_BUILD_CLASS: before body run ns=%p\n", (void*)ns);
+                        }
                         runCodeObject(ctx, codeObj, ns);
+                        if (std::getenv("PROTO_ENV_DIAG")) {
+                            const proto::ProtoObject* keysObj = ns->getAttribute(ctx, env ? env->getKeysString() : getInternalString(ctx, "__keys__"));
+                            const proto::ProtoList* keysList = keysObj ? keysObj->asList(ctx) : nullptr;
+                            fprintf(stderr, "DEBUG OP_BUILD_CLASS: after body run ns=%p keysSize=%lu\n", (void*)ns, keysList ? keysList->getSize(ctx) : 0);
+                        }
                         stack.back() = ns; // ns may have been reallocated by CoW during execution
                     } else {
                         const proto::ProtoObject* callM = body->getAttribute(ctx, callS);

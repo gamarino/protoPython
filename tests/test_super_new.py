@@ -1,7 +1,11 @@
 class Meta(type):
     def __new__(mcls, name, bases, ns):
-        print("Meta.__new__ args:", mcls, name, bases, ns)
-        return super().__new__(mcls, name, bases, ns)
+        print("mcls is:", mcls)
+        cls = super().__new__(mcls, name, bases, ns)
+        print("cls is:", cls)
+        return cls
 
-class MyClass(metaclass=Meta):
+class A(metaclass=Meta):
     pass
+
+print("A is:", A)

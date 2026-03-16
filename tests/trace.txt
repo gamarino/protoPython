@@ -1,531 +1,872 @@
-DEBUG: ProtoObject::addParent this=0x7548e59ba000 newParent=0x7548e5962400
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent skipping ancestor 0x7548e595e900 (hasParent=1)
-DEBUG: ProtoObject::addParent checking newParent 0x7548e5962400
-DEBUG: ProtoObject::addParent adding newParent 0x7548e5962400
-DEBUG: ProtoObject::addParent result=0x7548e59ba000
-DEBUG: ProtoObject::addParent this=0x7548e59cbcc0 newParent=0x7548e595e900
-DEBUG: ProtoObject::addParent checking newParent 0x7548e595e900
-DEBUG: ProtoObject::addParent adding newParent 0x7548e595e900
-DEBUG: ProtoObject::addParent result=0x7548e59cbcc0
-DEBUG: ProtoObject::addParent this=0x7548e59dfa80 newParent=0x7548e595e900
-DEBUG: ProtoObject::addParent checking newParent 0x7548e595e900
-DEBUG: ProtoObject::addParent adding newParent 0x7548e595e900
-DEBUG: ProtoObject::addParent result=0x7548e59dfb80
-DEBUG: ProtoObject::addParent this=0x7548e59ec280 newParent=0x7548e598f5c0
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent checking newParent 0x7548e598f5c0
-DEBUG: ProtoObject::addParent adding newParent 0x7548e598f5c0
-DEBUG: ProtoObject::addParent result=0x7548e59ec280
-DEBUG: ProtoObject::addParent this=0x7548e5a07000 newParent=0x7548e595e900
-DEBUG: ProtoObject::addParent checking newParent 0x7548e595e900
-DEBUG: ProtoObject::addParent adding newParent 0x7548e595e900
-DEBUG: ProtoObject::addParent result=0x7548e5a07100
-DEBUG: ProtoObject::addParent this=0x7548e5a20dc0 newParent=0x7548e595e900
-DEBUG: ProtoObject::addParent checking newParent 0x7548e595e900
-DEBUG: ProtoObject::addParent adding newParent 0x7548e595e900
-DEBUG: ProtoObject::addParent result=0x7548e5a20dc0
-DEBUG: ProtoObject::addParent this=0x7548e5a22a80 newParent=0x7548e595e900
-DEBUG: ProtoObject::addParent checking newParent 0x7548e595e900
-DEBUG: ProtoObject::addParent adding newParent 0x7548e595e900
-DEBUG: ProtoObject::addParent result=0x7548e5a22a80
-DEBUG: ProtoObject::addParent this=0x7548e5a24640 newParent=0x7548e595e900
-DEBUG: ProtoObject::addParent checking newParent 0x7548e595e900
-DEBUG: ProtoObject::addParent adding newParent 0x7548e595e900
-DEBUG: ProtoObject::addParent result=0x7548e5a24640
-DEBUG: ProtoObject::addParent this=0x7548e5a2a2c0 newParent=0x7548e595e900
-DEBUG: ProtoObject::addParent checking newParent 0x7548e595e900
-DEBUG: ProtoObject::addParent adding newParent 0x7548e595e900
-DEBUG: ProtoObject::addParent result=0x7548e5a2a2c0
-DEBUG: ProtoObject::addParent this=0x7548e5a31740 newParent=0x7548e595e900
-DEBUG: ProtoObject::addParent checking newParent 0x7548e595e900
-DEBUG: ProtoObject::addParent adding newParent 0x7548e595e900
-DEBUG: ProtoObject::addParent result=0x7548e5a31740
-DEBUG: ProtoObject::addParent this=0x7548e59cbcc0 newParent=0x7548e59c36c0
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent skipping ancestor 0x7548e595e900 (hasParent=1)
-DEBUG: ProtoObject::addParent checking newParent 0x7548e59c36c0
-DEBUG: ProtoObject::addParent adding newParent 0x7548e59c36c0
-DEBUG: ProtoObject::addParent result=0x7548e59cbcc0
-DEBUG: ProtoObject::addParent this=0x7548e5a49400 newParent=0x7548e59823c0
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent checking newParent 0x7548e59823c0
-DEBUG: ProtoObject::addParent adding newParent 0x7548e59823c0
-DEBUG: ProtoObject::addParent result=0x7548e5a49400
-DEBUG: ProtoObject::addParent this=0x7548e5a4a1c0 newParent=0x7548e59c36c0
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent checking newParent 0x7548e59c36c0
-DEBUG: ProtoObject::addParent adding newParent 0x7548e59c36c0
-DEBUG: ProtoObject::addParent result=0x7548e5a4a1c0
-DEBUG: ProtoObject::addParent this=0x7548e5a92480 newParent=0x7548e595e900
-DEBUG: ProtoObject::addParent checking newParent 0x7548e595e900
-DEBUG: ProtoObject::addParent adding newParent 0x7548e595e900
-DEBUG: ProtoObject::addParent result=0x7548e5a92580
-DEBUG: ProtoObject::addParent this=0x7548e5a93a00 newParent=0x7548e595e900
-DEBUG: ProtoObject::addParent checking newParent 0x7548e595e900
-DEBUG: ProtoObject::addParent adding newParent 0x7548e595e900
-DEBUG: ProtoObject::addParent result=0x7548e5a93a00
-DEBUG: ProtoObject::addParent this=0x7548e5aa3880 newParent=0x7548e5a98ac0
-DEBUG: ProtoObject::addParent checking newParent 0x7548e5a98ac0
-DEBUG: ProtoObject::addParent adding newParent 0x7548e5a98ac0
-DEBUG: ProtoObject::addParent result=0x7548e5aa3980
-DEBUG: ProtoObject::addParent this=0x7548e5aa4040 newParent=0x7548e5a98ac0
-DEBUG: ProtoObject::addParent checking newParent 0x7548e5a98ac0
-DEBUG: ProtoObject::addParent adding newParent 0x7548e5a98ac0
-DEBUG: ProtoObject::addParent result=0x7548e5aa4140
-DEBUG: ProtoObject::addParent this=0x7548e5aa4800 newParent=0x7548e5a98ac0
-DEBUG: ProtoObject::addParent checking newParent 0x7548e5a98ac0
-DEBUG: ProtoObject::addParent adding newParent 0x7548e5a98ac0
-DEBUG: ProtoObject::addParent result=0x7548e5aa4900
-DEBUG: ProtoObject::addParent this=0x7548e5aa58c0 newParent=0x7548e5a98ac0
-DEBUG: ProtoObject::addParent checking newParent 0x7548e5a98ac0
-DEBUG: ProtoObject::addParent adding newParent 0x7548e5a98ac0
-DEBUG: ProtoObject::addParent result=0x7548e5aa58c0
-DEBUG: ProtoObject::addParent this=0x7548e5aa6340 newParent=0x7548e5a98ac0
-DEBUG: ProtoObject::addParent checking newParent 0x7548e5a98ac0
-DEBUG: ProtoObject::addParent adding newParent 0x7548e5a98ac0
-DEBUG: ProtoObject::addParent result=0x7548e5aa6340
-DEBUG: ProtoObject::addParent this=0x7548e5aa8a00 newParent=0x7548e5a98ac0
-DEBUG: ProtoObject::addParent checking newParent 0x7548e5a98ac0
-DEBUG: ProtoObject::addParent adding newParent 0x7548e5a98ac0
-DEBUG: ProtoObject::addParent result=0x7548e5aa8a00
-DEBUG: ProtoObject::addParent this=0x7548e5aa9500 newParent=0x7548e5a98ac0
-DEBUG: ProtoObject::addParent checking newParent 0x7548e5a98ac0
-DEBUG: ProtoObject::addParent adding newParent 0x7548e5a98ac0
-DEBUG: ProtoObject::addParent result=0x7548e5aa9500
-DEBUG: ProtoObject::addParent this=0x7548e5ab8ec0 newParent=0x7548e59c36c0
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent skipping ancestor 0x7548e595e900 (hasParent=1)
-DEBUG: ProtoObject::addParent checking newParent 0x7548e59c36c0
-DEBUG: ProtoObject::addParent adding newParent 0x7548e59c36c0
-DEBUG: ProtoObject::addParent result=0x7548e5ab9140
-DEBUG: ProtoObject::addParent this=0x7548e5ae0340 newParent=0x7548e595e900
-DEBUG: ProtoObject::addParent checking newParent 0x7548e595e900
-DEBUG: ProtoObject::addParent adding newParent 0x7548e595e900
-DEBUG: ProtoObject::addParent result=0x7548e5ae0340
-DEBUG: ProtoObject::addParent this=0x7548e5ae7b80 newParent=0x7548e5ae0340
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent checking newParent 0x7548e5ae0340
-DEBUG: ProtoObject::addParent adding newParent 0x7548e5ae0340
-DEBUG: ProtoObject::addParent result=0x7548e5ae7b80
-DEBUG: ProtoObject::addParent this=0x7548e5aeef80 newParent=0x7548e5ae7b80
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e5ae0340
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e5ae0340
-DEBUG: ProtoObject::addParent checking newParent 0x7548e5ae7b80
-DEBUG: ProtoObject::addParent adding newParent 0x7548e5ae7b80
-DEBUG: ProtoObject::addParent result=0x7548e5aeef80
-DEBUG: ProtoObject::addParent this=0x7548e5af65c0 newParent=0x7548e5ae7b80
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e5ae0340
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e5ae0340
-DEBUG: ProtoObject::addParent checking newParent 0x7548e5ae7b80
-DEBUG: ProtoObject::addParent adding newParent 0x7548e5ae7b80
-DEBUG: ProtoObject::addParent result=0x7548e5af65c0
-DEBUG: ProtoObject::addParent this=0x7548e5afdf80 newParent=0x7548e5ae7b80
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e5ae0340
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e5ae0340
-DEBUG: ProtoObject::addParent checking newParent 0x7548e5ae7b80
-DEBUG: ProtoObject::addParent adding newParent 0x7548e5ae7b80
-DEBUG: ProtoObject::addParent result=0x7548e5afdf80
-DEBUG: ProtoObject::addParent this=0x7548e5b05740 newParent=0x7548e5ae7b80
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e5ae0340
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e5ae0340
-DEBUG: ProtoObject::addParent checking newParent 0x7548e5ae7b80
-DEBUG: ProtoObject::addParent adding newParent 0x7548e5ae7b80
-DEBUG: ProtoObject::addParent result=0x7548e5b05740
-DEBUG: ProtoObject::addParent this=0x7548e5b0d800 newParent=0x7548e5ae7b80
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e5ae0340
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e5ae0340
-DEBUG: ProtoObject::addParent checking newParent 0x7548e5ae7b80
-DEBUG: ProtoObject::addParent adding newParent 0x7548e5ae7b80
-DEBUG: ProtoObject::addParent result=0x7548e5b0d800
-DEBUG: ProtoObject::addParent this=0x7548e5b15380 newParent=0x7548e5ae7b80
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e5ae0340
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e5ae0340
-DEBUG: ProtoObject::addParent checking newParent 0x7548e5ae7b80
-DEBUG: ProtoObject::addParent adding newParent 0x7548e5ae7b80
-DEBUG: ProtoObject::addParent result=0x7548e5b15380
-DEBUG: ProtoObject::addParent this=0x7548e5b1cb40 newParent=0x7548e5ae7b80
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e5ae0340
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e5ae0340
-DEBUG: ProtoObject::addParent checking newParent 0x7548e5ae7b80
-DEBUG: ProtoObject::addParent adding newParent 0x7548e5ae7b80
-DEBUG: ProtoObject::addParent result=0x7548e5b1cb40
-DEBUG: ProtoObject::addParent this=0x7548e5b246c0 newParent=0x7548e5ae0340
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent checking newParent 0x7548e5ae0340
-DEBUG: ProtoObject::addParent adding newParent 0x7548e5ae0340
-DEBUG: ProtoObject::addParent result=0x7548e5b246c0
-DEBUG: ProtoObject::addParent this=0x7548e5b2cb00 newParent=0x7548e5ae0340
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent checking newParent 0x7548e5ae0340
-DEBUG: ProtoObject::addParent adding newParent 0x7548e5ae0340
-DEBUG: ProtoObject::addParent result=0x7548e5b2cb00
-DEBUG: ProtoObject::addParent this=0x7548e5b34100 newParent=0x7548e5ae7b80
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e5ae0340
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e5ae0340
-DEBUG: ProtoObject::addParent checking newParent 0x7548e5ae7b80
-DEBUG: ProtoObject::addParent adding newParent 0x7548e5ae7b80
-DEBUG: ProtoObject::addParent result=0x7548e5b34100
-DEBUG: ProtoObject::addParent this=0x7548e5b3c1c0 newParent=0x7548e5ae7b80
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e5ae0340
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e5ae0340
-DEBUG: ProtoObject::addParent checking newParent 0x7548e5ae7b80
-DEBUG: ProtoObject::addParent adding newParent 0x7548e5ae7b80
-DEBUG: ProtoObject::addParent result=0x7548e5b3c1c0
-DEBUG: ProtoObject::addParent this=0x7548e5b449c0 newParent=0x7548e5ae7b80
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e5ae0340
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e5ae0340
-DEBUG: ProtoObject::addParent checking newParent 0x7548e5ae7b80
-DEBUG: ProtoObject::addParent adding newParent 0x7548e5ae7b80
-DEBUG: ProtoObject::addParent result=0x7548e5b449c0
-DEBUG: ProtoObject::addParent this=0x7548e5b4c380 newParent=0x7548e5ae7b80
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e5ae0340
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e5ae0340
-DEBUG: ProtoObject::addParent checking newParent 0x7548e5ae7b80
-DEBUG: ProtoObject::addParent adding newParent 0x7548e5ae7b80
-DEBUG: ProtoObject::addParent result=0x7548e5b4c380
-DEBUG: ProtoObject::addParent this=0x7548e5b539c0 newParent=0x7548e5ae7b80
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e5ae0340
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e5ae0340
-DEBUG: ProtoObject::addParent checking newParent 0x7548e5ae7b80
-DEBUG: ProtoObject::addParent adding newParent 0x7548e5ae7b80
-DEBUG: ProtoObject::addParent result=0x7548e5b539c0
-DEBUG: ProtoObject::addParent this=0x7548e5b5ba80 newParent=0x7548e5ae7b80
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e5ae0340
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e5ae0340
-DEBUG: ProtoObject::addParent checking newParent 0x7548e5ae7b80
-DEBUG: ProtoObject::addParent adding newParent 0x7548e5ae7b80
-DEBUG: ProtoObject::addParent result=0x7548e5b5ba80
-DEBUG: ProtoObject::addParent this=0x7548e5b63980 newParent=0x7548e5ae7b80
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e5ae0340
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e5ae0340
-DEBUG: ProtoObject::addParent checking newParent 0x7548e5ae7b80
-DEBUG: ProtoObject::addParent adding newParent 0x7548e5ae7b80
-DEBUG: ProtoObject::addParent result=0x7548e5b63980
-DEBUG: ProtoObject::addParent this=0x7548e5b6c380 newParent=0x7548e5ae7b80
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e5ae0340
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e5ae0340
-DEBUG: ProtoObject::addParent checking newParent 0x7548e5ae7b80
-DEBUG: ProtoObject::addParent adding newParent 0x7548e5ae7b80
-DEBUG: ProtoObject::addParent result=0x7548e5b6c380
-DEBUG: ProtoObject::addParent this=0x7548e5b73f00 newParent=0x7548e5ae7b80
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e5ae0340
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e5ae0340
-DEBUG: ProtoObject::addParent checking newParent 0x7548e5ae7b80
-DEBUG: ProtoObject::addParent adding newParent 0x7548e5ae7b80
-DEBUG: ProtoObject::addParent result=0x7548e5b73f00
-DEBUG: ProtoObject::addParent this=0x7548e5b7bc40 newParent=0x7548e5ae7b80
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e5ae0340
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e5ae0340
-DEBUG: ProtoObject::addParent checking newParent 0x7548e5ae7b80
-DEBUG: ProtoObject::addParent adding newParent 0x7548e5ae7b80
-DEBUG: ProtoObject::addParent result=0x7548e5b7bc40
-DEBUG: ProtoObject::addParent this=0x7548e5b82880 newParent=0x7548e5b7bc40
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e5ae0340
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e5ae0340
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e5ae7b80
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e5ae7b80
-DEBUG: ProtoObject::addParent checking newParent 0x7548e5b7bc40
-DEBUG: ProtoObject::addParent adding newParent 0x7548e5b7bc40
-DEBUG: ProtoObject::addParent result=0x7548e5b82880
-DEBUG: ProtoObject::addParent this=0x7548e5b8b0c0 newParent=0x7548e5ae7b80
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e5ae0340
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e5ae0340
-DEBUG: ProtoObject::addParent checking newParent 0x7548e5ae7b80
-DEBUG: ProtoObject::addParent adding newParent 0x7548e5ae7b80
-DEBUG: ProtoObject::addParent result=0x7548e5b8b0c0
-DEBUG: ProtoObject::addParent this=0x7548e5b91d00 newParent=0x7548e5b8b0c0
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e5ae0340
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e5ae0340
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e5ae7b80
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e5ae7b80
-DEBUG: ProtoObject::addParent checking newParent 0x7548e5b8b0c0
-DEBUG: ProtoObject::addParent adding newParent 0x7548e5b8b0c0
-DEBUG: ProtoObject::addParent result=0x7548e5b91d00
-DEBUG: ProtoObject::addParent this=0x7548e5b99e40 newParent=0x7548e5b8b0c0
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e5ae0340
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e5ae0340
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e5ae7b80
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e5ae7b80
-DEBUG: ProtoObject::addParent checking newParent 0x7548e5b8b0c0
-DEBUG: ProtoObject::addParent adding newParent 0x7548e5b8b0c0
-DEBUG: ProtoObject::addParent result=0x7548e5b99e40
-DEBUG: ProtoObject::addParent this=0x7548e5ba2e00 newParent=0x7548e5b8b0c0
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e5ae0340
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e5ae0340
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e5ae7b80
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e5ae7b80
-DEBUG: ProtoObject::addParent checking newParent 0x7548e5b8b0c0
-DEBUG: ProtoObject::addParent adding newParent 0x7548e5b8b0c0
-DEBUG: ProtoObject::addParent result=0x7548e5ba2e00
-DEBUG: ProtoObject::addParent this=0x7548e5bab480 newParent=0x7548e5b8b0c0
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e5ae0340
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e5ae0340
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e5ae7b80
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e5ae7b80
-DEBUG: ProtoObject::addParent checking newParent 0x7548e5b8b0c0
-DEBUG: ProtoObject::addParent adding newParent 0x7548e5b8b0c0
-DEBUG: ProtoObject::addParent result=0x7548e5bab480
-DEBUG: ProtoObject::addParent this=0x7548e5bb5300 newParent=0x7548e5b8b0c0
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e5ae0340
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e5ae0340
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e5ae7b80
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e5ae7b80
-DEBUG: ProtoObject::addParent checking newParent 0x7548e5b8b0c0
-DEBUG: ProtoObject::addParent adding newParent 0x7548e5b8b0c0
-DEBUG: ProtoObject::addParent result=0x7548e5bb5300
-DEBUG: ProtoObject::addParent this=0x7548e5bbd7c0 newParent=0x7548e5b8b0c0
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e5ae0340
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e5ae0340
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e5ae7b80
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e5ae7b80
-DEBUG: ProtoObject::addParent checking newParent 0x7548e5b8b0c0
-DEBUG: ProtoObject::addParent adding newParent 0x7548e5b8b0c0
-DEBUG: ProtoObject::addParent result=0x7548e5bbd7c0
-DEBUG: ProtoObject::addParent this=0x7548e5bc5ac0 newParent=0x7548e5b8b0c0
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e5ae0340
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e5ae0340
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e5ae7b80
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e5ae7b80
-DEBUG: ProtoObject::addParent checking newParent 0x7548e5b8b0c0
-DEBUG: ProtoObject::addParent adding newParent 0x7548e5b8b0c0
-DEBUG: ProtoObject::addParent result=0x7548e5bc5ac0
-DEBUG: ProtoObject::addParent this=0x7548e5bce300 newParent=0x7548e5b8b0c0
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e5ae0340
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e5ae0340
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e5ae7b80
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e5ae7b80
-DEBUG: ProtoObject::addParent checking newParent 0x7548e5b8b0c0
-DEBUG: ProtoObject::addParent adding newParent 0x7548e5b8b0c0
-DEBUG: ProtoObject::addParent result=0x7548e5bce300
-DEBUG: Parser::advance token=27 value='def' line=2
-DEBUG: Parser::advance token=3 value='test' line=2
-DEBUG: Parser::advance token=8 value='' line=2
-DEBUG: Parser::advance token=9 value='' line=2
-DEBUG: Parser::advance token=18 value='' line=2
-DEBUG: Parser::advance token=11 value='' line=3
-DEBUG: Parser::advance token=29 value='' line=3
-DEBUG: Parser::advance token=27 value='def' line=3
-DEBUG: Parser::advance token=3 value='f' line=3
-DEBUG: Parser::advance token=8 value='' line=3
-DEBUG: Parser::advance token=3 value='self' line=3
-DEBUG: Parser::advance token=19 value='' line=3
-DEBUG: Parser::advance token=38 value='None' line=3
-DEBUG: Parser::advance token=9 value='' line=3
-DEBUG: Parser::advance token=18 value='' line=3
-DEBUG: Parser::advance token=11 value='' line=4
-DEBUG: Parser::advance token=29 value='' line=4
-DEBUG: Parser::advance token=27 value='def' line=4
-DEBUG: Parser::advance token=3 value='g' line=4
-DEBUG: Parser::advance token=8 value='' line=4
-DEBUG: Parser::advance token=9 value='' line=4
-DEBUG: Parser::advance token=18 value='' line=4
-DEBUG: Parser::advance token=11 value='' line=5
-DEBUG: Parser::advance token=29 value='' line=5
-DEBUG: Parser::advance token=34 value='return' line=5
-DEBUG: Parser::advance token=3 value='self' line=5
-DEBUG: Parser::advance token=11 value='' line=6
-DEBUG: Parser::advance token=30 value='' line=6
-DEBUG: Parser::advance token=34 value='return' line=6
-DEBUG: Parser::advance token=3 value='g' line=6
-DEBUG: Parser::advance token=11 value='' line=7
-DEBUG: Parser::advance token=30 value='' line=7
-DEBUG: Parser::advance token=34 value='return' line=7
-DEBUG: Parser::advance token=3 value='f' line=7
-DEBUG: Parser::advance token=11 value='' line=8
-DEBUG: Parser::advance token=30 value='' line=8
-DEBUG: Parser::advance token=3 value='x' line=8
-DEBUG: Parser::advance token=19 value='' line=8
-DEBUG: Parser::advance token=3 value='test' line=8
-DEBUG: Parser::advance token=8 value='' line=8
-DEBUG: Parser::advance token=9 value='' line=8
-DEBUG: Parser::advance token=11 value='' line=9
-DEBUG: Parser::advance token=3 value='x' line=9
-DEBUG: Parser::advance token=8 value='' line=9
-DEBUG: Parser::advance token=0 value='123' line=9
-DEBUG: Parser::advance token=9 value='' line=9
-DEBUG: Parser::advance token=8 value='' line=9
-DEBUG: Parser::advance token=9 value='' line=9
-DEBUG: Parser::advance token=11 value='' line=10
-DEBUG: Parser::advance token=12 value='' line=10
-DEBUG: py_exec compiling source='
-def test():
-    def f(self=None):
-        def g():
-            return self
-        return g
-    ret...'
-DEBUG: runCodeObject co_code size=26 co_consts size=3 stackOffset=0
-DEBUG: [PC 0] OP 100
-DEBUG: reprObject obj=0x7548e5c5a200 class=NoneType
-DEBUG: LOAD_CONST arg=0 val=0x7548e5c5a200 repr=<object>
-DEBUG: [PC 2] OP 156
-DEBUG: [PC 4] OP 103
-DEBUG: [PC 6] OP 102
-DEBUG: [PC 8] OP 106
-DEBUG: OP_CALL_FUNCTION PC 8 callable=0x7548e5d6b7c0 argCount=0
-DEBUG: reprObject obj=0x7548e5d6b7c0 class=function
-DEBUG: reprObject out=0x7548e5d6fbc6
-DEBUG: invokeCallable callable=0x7548e5d6b7c0 repr=<function object at 0x7548e5d6b7c0> class=function
+DEBUG PROTOS: Setting strIterProto on strPrototype=0x7fef4e5c9ac0
+DEBUG PROTOS: Finished setting strIterProto! strPrototype->hasOwnAttr(0x7fef4e59e8c6)=1
+DEBUG BEFORE SETTING: py_class string ptr=0x7fef4e57a446
+DEBUG: YES, rangeIterProto hasOwnAttribute py_class MATCHES ITSELF
+DEBUG PROTOS: stringIter=0x7fef4e638d00 listIter=0x7fef4e63a280 tupleIter=0x7fef4e63b9c0 dictIter=0x7fef4e63cf80
+DEBUG BUILTINS INIT: passed objectProto=0x7fef4e5bd1c0 typeProto=0x7fef4e5a8b40 intProto=0x7fef4e5c1f40
+DEBUG IN BUILTINS INIT: 1 obInB=(nil)
+DEBUG IN BUILTINS INIT: 2 (AFTER SET) obInB=0x7fef4e6e4b40
+DEBUG IN BUILTINS INIT: END obInB=0x7fef4e6e4b40
+DEBUG AFTER BUILTINS INIT: objectPrototype=0x7fef4e6e4b40 obInBuiltins=0x7fef4e6e4b40
+DEBUG: make_exception_type name='BaseException' type=0x7fef4e749280 base=0x7fef4e6e4b40
+DEBUG: make_exception_type name='Exception' type=0x7fef4e751880 base=0x7fef4e749280
+DEBUG: make_exception_type name='KeyError' type=0x7fef4e759880 base=0x7fef4e751880
+DEBUG: make_exception_type name='ValueError' type=0x7fef4e7617c0 base=0x7fef4e751880
+DEBUG: make_exception_type name='NameError' type=0x7fef4e769a40 base=0x7fef4e751880
+DEBUG: make_exception_type name='AttributeError' type=0x7fef4e771ac0 base=0x7fef4e751880
+DEBUG: make_exception_type name='SyntaxError' type=0x7fef4e77a440 base=0x7fef4e751880
+DEBUG: make_exception_type name='TypeError' type=0x7fef4e782880 base=0x7fef4e751880
+DEBUG: make_exception_type name='ImportError' type=0x7fef4e78a900 base=0x7fef4e751880
+DEBUG: make_exception_type name='KeyboardInterrupt' type=0x7fef4e792d40 base=0x7fef4e749280
+DEBUG: make_exception_type name='SystemExit' type=0x7fef4e79bd40 base=0x7fef4e749280
+DEBUG: make_exception_type name='RecursionError' type=0x7fef4e7a3f00 base=0x7fef4e751880
+DEBUG: make_exception_type name='ZeroDivisionError' type=0x7fef4e7ac880 base=0x7fef4e751880
+DEBUG: make_exception_type name='IndexError' type=0x7fef4e7b5940 base=0x7fef4e751880
+DEBUG: make_exception_type name='EOFError' type=0x7fef4e7bdd00 base=0x7fef4e751880
+DEBUG: make_exception_type name='AssertionError' type=0x7fef4e7c5e00 base=0x7fef4e751880
+DEBUG: make_exception_type name='StopIteration' type=0x7fef4e7ce980 base=0x7fef4e751880
+DEBUG: make_exception_type name='StopAsyncIteration' type=0x7fef4e7d7340 base=0x7fef4e751880
+DEBUG: make_exception_type name='SystemError' type=0x7fef4e7e0800 base=0x7fef4e751880
+DEBUG: make_exception_type name='RuntimeError' type=0x7fef4e7e8e40 base=0x7fef4e751880
+DEBUG: make_exception_type name='OSError' type=0x7fef4e7f1640 base=0x7fef4e751880
+DEBUG: make_exception_type name='BlockingIOError' type=0x7fef4e7f8d40 base=0x7fef4e7f1640
+DEBUG: make_exception_type name='Warning' type=0x7fef4e801d80 base=0x7fef4e751880
+DEBUG: make_exception_type name='UserWarning' type=0x7fef4e809480 base=0x7fef4e801d80
+DEBUG: make_exception_type name='DeprecationWarning' type=0x7fef4e811d80 base=0x7fef4e801d80
+DEBUG: make_exception_type name='PendingDeprecationWarning' type=0x7fef4e81b4c0 base=0x7fef4e801d80
+DEBUG: make_exception_type name='SyntaxWarning' type=0x7fef4e825ac0 base=0x7fef4e801d80
+DEBUG: make_exception_type name='RuntimeWarning' type=0x7fef4e82e700 base=0x7fef4e801d80
+DEBUG: make_exception_type name='FutureWarning' type=0x7fef4e837500 base=0x7fef4e801d80
+DEBUG: make_exception_type name='ImportWarning' type=0x7fef4e840140 base=0x7fef4e801d80
+DEBUG: make_exception_type name='UnicodeWarning' type=0x7fef4e848d80 base=0x7fef4e801d80
+DEBUG: make_exception_type name='BytesWarning' type=0x7fef4e851b80 base=0x7fef4e801d80
+DEBUG: make_exception_type name='ResourceWarning' type=0x7fef4e85a600 base=0x7fef4e801d80
+DEBUG: assertionErrorType loaded successfully: 0x7fef4e7c5e00
+DEBUG: executeModule starting runCodeObject mutableMod=0x7fef4e8aab40 (test_next)
+DEBUG: runCodeObject co_code size=16 co_consts size=2 stackOffset=0
+DEBUG HANG TRACE: [PC 0] OP 100 ARG 0
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e8d59c0) -> priority 3 proto=0x7fef4e6e4b40
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e5a3a8c) -> priority 3 proto=0x7fef4e5af5c0
+TRACE_GET: after metaclass fallback: val=0x7fef4e5afacc
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e5afacc) -> priority 3 proto=0x7fef4e5af5c0
+DEBUG_GET: val=0x7fef4e5afacc valType=0x7fef4e5af5c0 getM=0x7fef4e5afacc
+DEBUG_GET: methodPrototype.__get__ called on self=0x7fef4e5a3a8c. isMethod=1
+DEBUG_GET: instance=0x7fef4e8d59c0
+DEBUG_GET: created bound method 0x7fef4e9bfe4c
+TRACE_GET: after metaclass fallback: val=0x74c797562df901
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x74c797562df901) -> priority 3 proto=0x7fef4e5c9ac0
+DEBUG_GET: val=0x74c797562df901 valType=0x7fef4e5c9ac0 getM=(nil)
+DEBUG: reprObject obj=0x7fef4e8d59c0 class=object
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e8d59c0) -> priority 3 proto=0x7fef4e6e4b40
+DEBUG: reprObject out=0x7fef4e9c8f06
+DEBUG: LOAD_CONST arg=0 val=0x7fef4e8d59c0 repr=<object object at 0x7fef4e8d59c0>
+DEBUG HANG TRACE: [PC 2] OP 156 ARG 0
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG: OP_BUILD_FUNCTION called for PC 2, codeObj=0x7fef4e8d59c0
+DEBUG: OP_BUILD_FUNCTION finished createUserFunction
+DEBUG HANG TRACE: [PC 4] OP 103 ARG 0
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG: OP_STORE_NAME start PC 4 names=1 arg=0
+DEBUG_GETTYPE: getType(0x7fef4e8aab40) -> priority 1
+DEBUG: getType priority 1 __class__ match
+DEBUG: OP_STORE_NAME finished frame update for PC 4
+DEBUG HANG TRACE: [PC 6] OP 102 ARG 0
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG HANG TRACE: [PC 8] OP 106 ARG 0
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG: OP_CALL_FUNCTION PC 8 callable=0x7fef4e9ce1c0 argCount=0
+DEBUG_GETTYPE: getType(0x7fef4e9ce1c0) -> priority 1
+DEBUG: getType priority 1 __class__ match
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e5a3a8c) -> priority 3 proto=0x7fef4e5af5c0
+TRACE_GET: after metaclass fallback: val=0x7fef4e5afacc
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e5afacc) -> priority 3 proto=0x7fef4e5af5c0
+DEBUG_GET: val=0x7fef4e5afacc valType=0x7fef4e5af5c0 getM=0x7fef4e5afacc
+DEBUG_GET: methodPrototype.__get__ called on self=0x7fef4e5a3a8c. isMethod=1
+DEBUG_GET: instance=0x7fef4e9ce1c0
+DEBUG_GET: created bound method 0x7fef4e9d40cc
+TRACE_GET: after metaclass fallback: val=0x7fef4e5c0c46
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e5c0c46) -> priority 3 proto=0x7fef4e5c9ac0
+DEBUG_GET: val=0x7fef4e5c0c46 valType=0x7fef4e5c9ac0 getM=(nil)
+DEBUG: reprObject obj=0x7fef4e9ce1c0 class=function
+DEBUG_GETTYPE: getType(0x7fef4e9ce1c0) -> priority 1
+DEBUG: getType priority 1 __class__ match
+DEBUG: reprObject out=0x7fef4e9dd486
+DEBUG: invokeCallable callable=0x7fef4e9ce1c0 repr=<function object at 0x7fef4e9ce1c0> class=function
+DEBUG_GETTYPE: getType(0x7fef4e9ce1c0) -> priority 1
+DEBUG: getType priority 1 __class__ match
+TRACE_GET: after metaclass fallback: val=0x7fef4e5c10cc
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e5c10cc) -> priority 3 proto=0x7fef4e5af5c0
+DEBUG_GET: val=0x7fef4e5c10cc valType=0x7fef4e5af5c0 getM=0x7fef4e5afacc
 DEBUG: invokeCallable calling __call__ asMethod
-DEBUG: ProtoObject::addParent this=0x7548e5e690c0 newParent=0x7548e595e940
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent checking newParent 0x7548e595e940
-DEBUG: ProtoObject::addParent adding newParent 0x7548e595e940
-DEBUG: ProtoObject::addParent result=0x7548e5e690c0
-DEBUG: ProtoObject::addParent this=0x7548e5e690c0 newParent=0x7548e5d6b382
-DEBUG: ProtoObject::addParent checking newParent 0x7548e5d6b382
-DEBUG: ProtoObject::addParent adding newParent 0x7548e5d6b382
-DEBUG: ProtoObject::addParent result=0x7548e5e690c0
-DEBUG: [PC 0] OP 100
-DEBUG: lnotab entry j=0, pc_offset=10, line_offset=4
-DEBUG: reprObject obj=0x7548e5c49300 class=NoneType
-DEBUG: LOAD_CONST arg=0 val=0x7548e5c49300 repr=<object>
-DEBUG: [PC 2] OP 100
-DEBUG: LOAD_CONST arg=1 val=0x141 repr=None
-DEBUG: [PC 4] OP 118
-DEBUG: ProtoObject::addParent this=0x7548e5e6c4c0 newParent=0x7548e5998040
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent checking newParent 0x7548e5998040
-DEBUG: ProtoObject::addParent adding newParent 0x7548e5998040
-DEBUG: ProtoObject::addParent result=0x7548e5e6c4c0
-DEBUG: [PC 6] OP 156
-DEBUG: [PC 8] OP 103
-DEBUG: [PC 10] OP 102
-DEBUG: [PC 12] OP 101
-DEBUG: reprObject obj=0x7548e5e6d900 class=function
-DEBUG: reprObject out=0x7548e5e33c86
-DEBUG: invokeCallable (__call__) returning result=0x7548e5e6d900 repr=<function object at 0x7548e5e6d900>
-DEBUG: [PC 10] OP 103
-DEBUG: [PC 12] OP 102
-DEBUG: [PC 14] OP 100
-DEBUG: LOAD_CONST arg=1 val=0x1ec01 repr=123
-DEBUG: [PC 16] OP 106
-DEBUG: OP_CALL_FUNCTION PC 16 callable=0x7548e5e6d900 argCount=1
-DEBUG: reprObject obj=0x7548e5e6d900 class=function
-DEBUG: reprObject out=0x7548e5e33c86
-DEBUG: invokeCallable callable=0x7548e5e6d900 repr=<function object at 0x7548e5e6d900> class=function
+DEBUG: runUserFunctionCall extracted outerFrame=0x7fef4e8aab40 from closure list
+DEBUG: runUserFunctionCall nparams_count=0 argCount=0 argsSize=0
+DEBUG HANG TRACE: [PC 0] OP 100 ARG 0
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG: LOAD_CONST arg=0 val=0x82501 repr=A
+DEBUG HANG TRACE: [PC 2] OP 100 ARG 1
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG: LOAD_CONST arg=1 val=0x84501 repr=B
+DEBUG HANG TRACE: [PC 4] OP 100 ARG 2
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG: LOAD_CONST arg=2 val=0x86501 repr=C
+DEBUG HANG TRACE: [PC 6] OP 114 ARG 3
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG HANG TRACE: [PC 8] OP 103 ARG 0
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG: OP_STORE_NAME start PC 8 names=5 arg=0
+DEBUG: getType checking 4 parents
+DEBUG: getType returning parent 0 as class
+TRACE_GET: not found on class or MRO, checking metaclass
+DEBUG_GETTYPE: getType(0x7fef4e5bd200) -> priority 1
+DEBUG: getType priority 1 __class__ match
+TRACE_GET: after metaclass fallback: val=(nil)
+DEBUG_GET: val=(nil) valType=(nil) getM=(nil)
+DEBUG: OP_STORE_NAME finished frame update for PC 8
+DEBUG HANG TRACE: [PC 10] OP 102 ARG 0
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG HANG TRACE: [PC 12] OP 119 ARG 0
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+TRACE_GET: after metaclass fallback: val=0x7fef4e5e418c
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e5e418c) -> priority 3 proto=0x7fef4e5af5c0
+DEBUG_GET: val=0x7fef4e5e418c valType=0x7fef4e5af5c0 getM=0x7fef4e5afacc
+DEBUG_GET: methodPrototype.__get__ called on self=0x7fef4e5e418c. isMethod=1
+DEBUG_GET: instance=0x7fef4eaba1c0
+DEBUG_GET: created bound method 0x7fef4eac4d4c
+DEBUG_GET: PythonEnvironment::getAttribute returning descriptor result 0x7fef4eac4d4c
+DEBUG: env->iter called on obj=0x7fef4eaba1c0, method=0x7fef4eac4d4c, asMethod=0x7fef4fd97034
+TRACE_GET: after metaclass fallback: val=0x7fef4e5ea780
+DEBUG_GETTYPE: getType(0x7fef4e5ea780) -> priority 1
+DEBUG: getType priority 1 __class__ match
+DEBUG_GET: val=0x7fef4e5ea780 valType=0x7fef4e5a8b40 getM=(nil)
+DEBUG py_list_iter: START self=0x7fef4eaba1c0 list=0x7fef4eaba142
+DEBUG py_list_iter: returning iterObj=0x7fef4eacba00
+DEBUG: OP_GET_ITER iterable=0x7fef4eaba1c0 iterObj=0x7fef4eacba00
+DEBUG HANG TRACE: [PC 14] OP 100 ARG 3
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e8c1300) -> priority 3 proto=0x7fef4e6e4b40
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e5a3a8c) -> priority 3 proto=0x7fef4e5af5c0
+TRACE_GET: after metaclass fallback: val=0x7fef4e5afacc
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e5afacc) -> priority 3 proto=0x7fef4e5af5c0
+DEBUG_GET: val=0x7fef4e5afacc valType=0x7fef4e5af5c0 getM=0x7fef4e5afacc
+DEBUG_GET: methodPrototype.__get__ called on self=0x7fef4e5a3a8c. isMethod=1
+DEBUG_GET: instance=0x7fef4e8c1300
+DEBUG_GET: created bound method 0x7fef4ead35cc
+TRACE_GET: after metaclass fallback: val=0x74c797562df901
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x74c797562df901) -> priority 3 proto=0x7fef4e5c9ac0
+DEBUG_GET: val=0x74c797562df901 valType=0x7fef4e5c9ac0 getM=(nil)
+DEBUG: reprObject obj=0x7fef4e8c1300 class=object
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e8c1300) -> priority 3 proto=0x7fef4e6e4b40
+DEBUG: reprObject out=0x7fef4eadc346
+DEBUG: LOAD_CONST arg=3 val=0x7fef4e8c1300 repr=<object object at 0x7fef4e8c1300>
+DEBUG HANG TRACE: [PC 16] OP 156 ARG 0
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG: OP_BUILD_FUNCTION called for PC 16, codeObj=0x7fef4e8c1300
+DEBUG: OP_BUILD_FUNCTION finished createUserFunction
+DEBUG HANG TRACE: [PC 18] OP 125 ARG 0
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG HANG TRACE: [PC 20] OP 106 ARG 1
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG: OP_CALL_FUNCTION PC 20 callable=0x7fef4eae1600 argCount=1
+DEBUG_GETTYPE: getType(0x7fef4eae1600) -> priority 1
+DEBUG: getType priority 1 __class__ match
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e5a3a8c) -> priority 3 proto=0x7fef4e5af5c0
+TRACE_GET: after metaclass fallback: val=0x7fef4e5afacc
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e5afacc) -> priority 3 proto=0x7fef4e5af5c0
+DEBUG_GET: val=0x7fef4e5afacc valType=0x7fef4e5af5c0 getM=0x7fef4e5afacc
+DEBUG_GET: methodPrototype.__get__ called on self=0x7fef4e5a3a8c. isMethod=1
+DEBUG_GET: instance=0x7fef4eae1600
+DEBUG_GET: created bound method 0x7fef4eae680c
+TRACE_GET: after metaclass fallback: val=0x7fef4e5c0c46
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e5c0c46) -> priority 3 proto=0x7fef4e5c9ac0
+DEBUG_GET: val=0x7fef4e5c0c46 valType=0x7fef4e5c9ac0 getM=(nil)
+DEBUG: reprObject obj=0x7fef4eae1600 class=function
+DEBUG_GETTYPE: getType(0x7fef4eae1600) -> priority 1
+DEBUG: getType priority 1 __class__ match
+DEBUG: reprObject out=0x7fef4eaef986
+DEBUG: invokeCallable callable=0x7fef4eae1600 repr=<function object at 0x7fef4eae1600> class=function
+DEBUG_GETTYPE: getType(0x7fef4eae1600) -> priority 1
+DEBUG: getType priority 1 __class__ match
+TRACE_GET: after metaclass fallback: val=0x7fef4e5c10cc
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e5c10cc) -> priority 3 proto=0x7fef4e5af5c0
+DEBUG_GET: val=0x7fef4e5c10cc valType=0x7fef4e5af5c0 getM=0x7fef4e5afacc
 DEBUG: invokeCallable calling __call__ asMethod
-DEBUG: ProtoObject::addParent this=0x7548e5fe90c0 newParent=0x7548e595e940
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent checking newParent 0x7548e595e940
-DEBUG: ProtoObject::addParent adding newParent 0x7548e595e940
-DEBUG: ProtoObject::addParent result=0x7548e5fe90c0
-DEBUG: ProtoObject::addParent this=0x7548e5fe90c0 newParent=0x7548e5e6d182
-DEBUG: ProtoObject::addParent checking newParent 0x7548e5e6d182
-DEBUG: ProtoObject::addParent adding newParent 0x7548e5e6d182
-DEBUG: ProtoObject::addParent result=0x7548e5fe90c0
-DEBUG: bindVar bound 'self' to frame attributes
-DEBUG: [PC 0] OP 100
-DEBUG: lnotab entry j=0, pc_offset=6, line_offset=2
-DEBUG: reprObject obj=0x7548e5c38bc0 class=NoneType
-DEBUG: LOAD_CONST arg=0 val=0x7548e5c38bc0 repr=<object>
-DEBUG: [PC 2] OP 156
-DEBUG: [PC 4] OP 103
-DEBUG: [PC 6] OP 102
-DEBUG: [PC 8] OP 101
-DEBUG: reprObject obj=0x7548e5fece40 class=function
-DEBUG: reprObject out=0x7548e5f7c186
-DEBUG: invokeCallable (__call__) returning result=0x7548e5fece40 repr=<function object at 0x7548e5fece40>
-DEBUG: [PC 18] OP 106
-DEBUG: OP_CALL_FUNCTION PC 18 callable=0x7548e5fece40 argCount=0
-DEBUG: reprObject obj=0x7548e5fece40 class=function
-DEBUG: reprObject out=0x7548e5f7c186
-DEBUG: invokeCallable callable=0x7548e5fece40 repr=<function object at 0x7548e5fece40> class=function
+DEBUG: runUserFunctionCall extracted outerFrame=0x7fef4eab80c0 from closure list
+DEBUG: runUserFunctionCall nparams_count=1 argCount=1 argsSize=1
+DEBUG: bindVar idx=0 param=.0 val=0x7fef4eacba00 co_flags=3 slots=0x5fc1c7ec2b10 frame=0x7fef4ebb80c0
+DEBUG_GETTYPE: getType(0x7fef4ebbad80) -> priority 1
+DEBUG: getType priority 1 __class__ match
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e5bec8c) -> priority 3 proto=0x7fef4e5af5c0
+TRACE_GET: after metaclass fallback: val=0x7fef4e5afacc
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e5afacc) -> priority 3 proto=0x7fef4e5af5c0
+DEBUG_GET: val=0x7fef4e5afacc valType=0x7fef4e5af5c0 getM=0x7fef4e5afacc
+DEBUG_GET: methodPrototype.__get__ called on self=0x7fef4e5bec8c. isMethod=1
+DEBUG_GET: instance=0x7fef4ebbad80
+DEBUG_GET: created bound method 0x7fef4ec7e6cc
+TRACE_GET: after metaclass fallback: val=0x7fef4e5bea86
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e5bea86) -> priority 3 proto=0x7fef4e5c9ac0
+DEBUG_GET: val=0x7fef4e5bea86 valType=0x7fef4e5c9ac0 getM=(nil)
+DEBUG: reprObject obj=0x7fef4ebbad80 class=generator
+DEBUG: reprObject out=0x7fef4ec89486
+DEBUG: invokeCallable (__call__) returning result=0x7fef4ebbad80 repr=<generator object <genexpr> at 0x7fef4ebbad80>
+DEBUG HANG TRACE: [PC 22] OP 103 ARG 1
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG: OP_STORE_NAME start PC 22 names=5 arg=1
+DEBUG: getType checking 4 parents
+DEBUG: getType returning parent 0 as class
+TRACE_GET: not found on class or MRO, checking metaclass
+DEBUG_GETTYPE: getType(0x7fef4e5bd200) -> priority 1
+DEBUG: getType priority 1 __class__ match
+TRACE_GET: after metaclass fallback: val=(nil)
+DEBUG_GET: val=(nil) valType=(nil) getM=(nil)
+DEBUG: OP_STORE_NAME finished frame update for PC 22
+DEBUG HANG TRACE: [PC 24] OP 102 ARG 2
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG HANG TRACE: [PC 26] OP 100 ARG 4
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG: LOAD_CONST arg=4 val=0x1d3141d3c659dd01 repr=Next 1:
+DEBUG HANG TRACE: [PC 28] OP 102 ARG 3
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG HANG TRACE: [PC 30] OP 102 ARG 1
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG HANG TRACE: [PC 32] OP 106 ARG 1
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG: OP_CALL_FUNCTION PC 32 callable=0x7fef4e6f048c argCount=1
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e6f048c) -> priority 3 proto=0x7fef4e5af5c0
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e5a3a8c) -> priority 3 proto=0x7fef4e5af5c0
+TRACE_GET: after metaclass fallback: val=0x7fef4e5afacc
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e5afacc) -> priority 3 proto=0x7fef4e5af5c0
+DEBUG_GET: val=0x7fef4e5afacc valType=0x7fef4e5af5c0 getM=0x7fef4e5afacc
+DEBUG_GET: methodPrototype.__get__ called on self=0x7fef4e5a3a8c. isMethod=1
+DEBUG_GET: instance=0x7fef4e6f048c
+DEBUG_GET: created bound method 0x7fef4ec9488c
+TRACE_GET: after metaclass fallback: val=0x64dfa3a65db901
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x64dfa3a65db901) -> priority 3 proto=0x7fef4e5c9ac0
+DEBUG_GET: val=0x64dfa3a65db901 valType=0x7fef4e5c9ac0 getM=(nil)
+DEBUG: reprObject obj=0x7fef4e6f048c class=method
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e6f048c) -> priority 3 proto=0x7fef4e5af5c0
+DEBUG: reprObject out=0x7fef4ec9d7c6
+DEBUG: invokeCallable callable=0x7fef4e6f048c repr=<method object at 0x7fef4e6f048c> class=unknown
+DEBUG HANG TRACE: [PC 0] OP 157 ARG 0
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG: LOAD_FAST 0 loaded: 0x7fef4eacba00
+DEBUG HANG TRACE: [PC 2] OP 119 ARG 0
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+TRACE_GET: after metaclass fallback: val=0x7fef4e5ec20c
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e5ec20c) -> priority 3 proto=0x7fef4e5af5c0
+DEBUG_GET: val=0x7fef4e5ec20c valType=0x7fef4e5af5c0 getM=0x7fef4e5afacc
+DEBUG_GET: methodPrototype.__get__ called on self=0x7fef4e5ec20c. isMethod=1
+DEBUG_GET: instance=0x7fef4eacba00
+DEBUG_GET: created bound method 0x7fef4ed80a4c
+DEBUG_GET: PythonEnvironment::getAttribute returning descriptor result 0x7fef4ed80a4c
+DEBUG: env->iter called on obj=0x7fef4eacba00, method=0x7fef4ed80a4c, asMethod=0x7fef4fcf4b33
+DEBUG: OP_GET_ITER iterable=0x7fef4eacba00 iterObj=0x7fef4eacba00
+DEBUG HANG TRACE: [PC 4] OP 120 ARG 16
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG HANG TRACE: [PC 6] OP 158 ARG 1
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG HANG TRACE: [PC 8] OP 157 ARG 1
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG HANG TRACE: [PC 10] OP 172 ARG 0
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG: py_generator_send_impl finished. yielded=1, result=0x82501, hasPendingException=0
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG HANG: py_generator_send_impl returning normally: 0x82501 A
+DEBUG HANG TRACE: [PC 34] OP 106 ARG 2
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG: OP_CALL_FUNCTION PC 34 callable=0x7fef4e6ebf4c argCount=2
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e6ebf4c) -> priority 3 proto=0x7fef4e5af5c0
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e5a3a8c) -> priority 3 proto=0x7fef4e5af5c0
+TRACE_GET: after metaclass fallback: val=0x7fef4e5afacc
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e5afacc) -> priority 3 proto=0x7fef4e5af5c0
+DEBUG_GET: val=0x7fef4e5afacc valType=0x7fef4e5af5c0 getM=0x7fef4e5afacc
+DEBUG_GET: methodPrototype.__get__ called on self=0x7fef4e5a3a8c. isMethod=1
+DEBUG_GET: instance=0x7fef4e6ebf4c
+DEBUG_GET: created bound method 0x7fef4ed634cc
+TRACE_GET: after metaclass fallback: val=0x64dfa3a65db901
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x64dfa3a65db901) -> priority 3 proto=0x7fef4e5c9ac0
+DEBUG_GET: val=0x64dfa3a65db901 valType=0x7fef4e5c9ac0 getM=(nil)
+DEBUG: reprObject obj=0x7fef4e6ebf4c class=method
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e6ebf4c) -> priority 3 proto=0x7fef4e5af5c0
+DEBUG: reprObject out=0x7fef4ed6c206
+DEBUG: invokeCallable callable=0x7fef4e6ebf4c repr=<method object at 0x7fef4e6ebf4c> class=unknown
+DEBUG: py_print called with 2 args
+DEBUG RUNTIME argvVec size=1
+DEBUG: initDictStorage obj=0x7fef4e65fa00
+DEBUG: initDictStorage dataName=0x7fef4e4b99c6 keysName=0x7fef4e598646
+DEBUG: initDictStorage creating sparse list
+DEBUG: initDictStorage setting __data__
+DEBUG: initDictStorage checking keys
+DEBUG: initDictStorage creating keys list
+DEBUG: initDictStorage setting __keys__
+DEBUG: initDictStorage done
+DEBUG SYS MODULE argv size=1
+DEBUG: Registering 'type' using typeProto=0x7fef4e5a8b40
+DEBUG: executeModule initDictStorage modulePrototype=0x7fef4e630680
+DEBUG: initDictStorage obj=0x7fef4e8aab40
+DEBUG: initDictStorage dataName=0x7fef4e4b99c6 keysName=0x7fef4e598646
+DEBUG: initDictStorage creating sparse list
+DEBUG: initDictStorage setting __data__
+DEBUG: initDictStorage checking keys
+DEBUG: initDictStorage creating keys list
+DEBUG: initDictStorage setting __keys__
+DEBUG: initDictStorage done
+DEBUG: executeModule setting __class__
+DEBUG: executeModule setting frame attributes
+DEBUG: executeModule setting f_code
+Next 1: A
+DEBUG HANG TRACE: [PC 36] OP 133 ARG 0
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG HANG TRACE: [PC 38] OP 102 ARG 2
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG HANG TRACE: [PC 40] OP 100 ARG 5
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG: LOAD_CONST arg=5 val=0x1d3241d3c659dd01 repr=Next 2:
+DEBUG HANG TRACE: [PC 42] OP 102 ARG 3
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG HANG TRACE: [PC 44] OP 102 ARG 1
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG HANG TRACE: [PC 46] OP 106 ARG 1
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG: OP_CALL_FUNCTION PC 46 callable=0x7fef4e6f048c argCount=1
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e6f048c) -> priority 3 proto=0x7fef4e5af5c0
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e5a3a8c) -> priority 3 proto=0x7fef4e5af5c0
+TRACE_GET: after metaclass fallback: val=0x7fef4e5afacc
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e5afacc) -> priority 3 proto=0x7fef4e5af5c0
+DEBUG_GET: val=0x7fef4e5afacc valType=0x7fef4e5af5c0 getM=0x7fef4e5afacc
+DEBUG_GET: methodPrototype.__get__ called on self=0x7fef4e5a3a8c. isMethod=1
+DEBUG_GET: instance=0x7fef4e6f048c
+DEBUG_GET: created bound method 0x7fef4ed714cc
+TRACE_GET: after metaclass fallback: val=0x64dfa3a65db901
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x64dfa3a65db901) -> priority 3 proto=0x7fef4e5c9ac0
+DEBUG_GET: val=0x64dfa3a65db901 valType=0x7fef4e5c9ac0 getM=(nil)
+DEBUG: reprObject obj=0x7fef4e6f048c class=method
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e6f048c) -> priority 3 proto=0x7fef4e5af5c0
+DEBUG: reprObject out=0x7fef4ec9d7c6
+DEBUG: invokeCallable callable=0x7fef4e6f048c repr=<method object at 0x7fef4e6f048c> class=unknown
+DEBUG HANG TRACE: [PC 12] OP 133 ARG 0
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG HANG TRACE: [PC 14] OP 111 ARG 4
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG HANG TRACE: [PC 4] OP 120 ARG 16
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG HANG TRACE: [PC 6] OP 158 ARG 1
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG HANG TRACE: [PC 8] OP 157 ARG 1
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG HANG TRACE: [PC 10] OP 172 ARG 0
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG: py_generator_send_impl finished. yielded=1, result=0x84501, hasPendingException=0
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG HANG: py_generator_send_impl returning normally: 0x84501 B
+DEBUG HANG TRACE: [PC 48] OP 106 ARG 2
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG: OP_CALL_FUNCTION PC 48 callable=0x7fef4e6ebf4c argCount=2
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e6ebf4c) -> priority 3 proto=0x7fef4e5af5c0
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e5a3a8c) -> priority 3 proto=0x7fef4e5af5c0
+TRACE_GET: after metaclass fallback: val=0x7fef4e5afacc
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e5afacc) -> priority 3 proto=0x7fef4e5af5c0
+DEBUG_GET: val=0x7fef4e5afacc valType=0x7fef4e5af5c0 getM=0x7fef4e5afacc
+DEBUG_GET: methodPrototype.__get__ called on self=0x7fef4e5a3a8c. isMethod=1
+DEBUG_GET: instance=0x7fef4e6ebf4c
+DEBUG_GET: created bound method 0x7fef4ef06ecc
+TRACE_GET: after metaclass fallback: val=0x64dfa3a65db901
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x64dfa3a65db901) -> priority 3 proto=0x7fef4e5c9ac0
+DEBUG_GET: val=0x64dfa3a65db901 valType=0x7fef4e5c9ac0 getM=(nil)
+DEBUG: reprObject obj=0x7fef4e6ebf4c class=method
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e6ebf4c) -> priority 3 proto=0x7fef4e5af5c0
+DEBUG: reprObject out=0x7fef4ed6c206
+DEBUG: invokeCallable callable=0x7fef4e6ebf4c repr=<method object at 0x7fef4e6ebf4c> class=unknown
+DEBUG: py_print called with 2 args
+Next 2: B
+DEBUG HANG TRACE: [PC 50] OP 133 ARG 0
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG HANG TRACE: [PC 52] OP 102 ARG 2
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG HANG TRACE: [PC 54] OP 100 ARG 6
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG: LOAD_CONST arg=6 val=0x1d3341d3c659dd01 repr=Next 3:
+DEBUG HANG TRACE: [PC 56] OP 102 ARG 3
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG HANG TRACE: [PC 58] OP 102 ARG 1
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG HANG TRACE: [PC 60] OP 106 ARG 1
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG: OP_CALL_FUNCTION PC 60 callable=0x7fef4e6f048c argCount=1
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e6f048c) -> priority 3 proto=0x7fef4e5af5c0
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e5a3a8c) -> priority 3 proto=0x7fef4e5af5c0
+TRACE_GET: after metaclass fallback: val=0x7fef4e5afacc
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e5afacc) -> priority 3 proto=0x7fef4e5af5c0
+DEBUG_GET: val=0x7fef4e5afacc valType=0x7fef4e5af5c0 getM=0x7fef4e5afacc
+DEBUG_GET: methodPrototype.__get__ called on self=0x7fef4e5a3a8c. isMethod=1
+DEBUG_GET: instance=0x7fef4e6f048c
+DEBUG_GET: created bound method 0x7fef4ef14e0c
+TRACE_GET: after metaclass fallback: val=0x64dfa3a65db901
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x64dfa3a65db901) -> priority 3 proto=0x7fef4e5c9ac0
+DEBUG_GET: val=0x64dfa3a65db901 valType=0x7fef4e5c9ac0 getM=(nil)
+DEBUG: reprObject obj=0x7fef4e6f048c class=method
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e6f048c) -> priority 3 proto=0x7fef4e5af5c0
+DEBUG: reprObject out=0x7fef4ec9d7c6
+DEBUG: invokeCallable callable=0x7fef4e6f048c repr=<method object at 0x7fef4e6f048c> class=unknown
+DEBUG HANG TRACE: [PC 12] OP 133 ARG 0
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG HANG TRACE: [PC 14] OP 111 ARG 4
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG HANG TRACE: [PC 4] OP 120 ARG 16
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG HANG TRACE: [PC 6] OP 158 ARG 1
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG HANG TRACE: [PC 8] OP 157 ARG 1
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG HANG TRACE: [PC 10] OP 172 ARG 0
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG: py_generator_send_impl finished. yielded=1, result=0x86501, hasPendingException=0
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG HANG: py_generator_send_impl returning normally: 0x86501 C
+DEBUG HANG TRACE: [PC 62] OP 106 ARG 2
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG: OP_CALL_FUNCTION PC 62 callable=0x7fef4e6ebf4c argCount=2
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e6ebf4c) -> priority 3 proto=0x7fef4e5af5c0
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e5a3a8c) -> priority 3 proto=0x7fef4e5af5c0
+TRACE_GET: after metaclass fallback: val=0x7fef4e5afacc
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e5afacc) -> priority 3 proto=0x7fef4e5af5c0
+DEBUG_GET: val=0x7fef4e5afacc valType=0x7fef4e5af5c0 getM=0x7fef4e5afacc
+DEBUG_GET: methodPrototype.__get__ called on self=0x7fef4e5a3a8c. isMethod=1
+DEBUG_GET: instance=0x7fef4e6ebf4c
+DEBUG_GET: created bound method 0x7fef4f0a550c
+TRACE_GET: after metaclass fallback: val=0x64dfa3a65db901
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x64dfa3a65db901) -> priority 3 proto=0x7fef4e5c9ac0
+DEBUG_GET: val=0x64dfa3a65db901 valType=0x7fef4e5c9ac0 getM=(nil)
+DEBUG: reprObject obj=0x7fef4e6ebf4c class=method
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e6ebf4c) -> priority 3 proto=0x7fef4e5af5c0
+DEBUG: reprObject out=0x7fef4ed6c206
+DEBUG: invokeCallable callable=0x7fef4e6ebf4c repr=<method object at 0x7fef4e6ebf4c> class=unknown
+DEBUG: py_print called with 2 args
+Next 3: C
+DEBUG HANG TRACE: [PC 64] OP 133 ARG 0
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG HANG TRACE: [PC 66] OP 177 ARG 86
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG: SETUP_FINALLY handler pc 86, stack.top 0
+DEBUG HANG TRACE: [PC 68] OP 102 ARG 2
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG HANG TRACE: [PC 70] OP 100 ARG 7
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG: LOAD_CONST arg=7 val=0x1d3441d3c659dd01 repr=Next 4:
+DEBUG HANG TRACE: [PC 72] OP 102 ARG 3
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG HANG TRACE: [PC 74] OP 102 ARG 1
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG HANG TRACE: [PC 76] OP 106 ARG 1
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG: OP_CALL_FUNCTION PC 76 callable=0x7fef4e6f048c argCount=1
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e6f048c) -> priority 3 proto=0x7fef4e5af5c0
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e5a3a8c) -> priority 3 proto=0x7fef4e5af5c0
+TRACE_GET: after metaclass fallback: val=0x7fef4e5afacc
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e5afacc) -> priority 3 proto=0x7fef4e5af5c0
+DEBUG_GET: val=0x7fef4e5afacc valType=0x7fef4e5af5c0 getM=0x7fef4e5afacc
+DEBUG_GET: methodPrototype.__get__ called on self=0x7fef4e5a3a8c. isMethod=1
+DEBUG_GET: instance=0x7fef4e6f048c
+DEBUG_GET: created bound method 0x7fef4f0b344c
+TRACE_GET: after metaclass fallback: val=0x64dfa3a65db901
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x64dfa3a65db901) -> priority 3 proto=0x7fef4e5c9ac0
+DEBUG_GET: val=0x64dfa3a65db901 valType=0x7fef4e5c9ac0 getM=(nil)
+DEBUG: reprObject obj=0x7fef4e6f048c class=method
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e6f048c) -> priority 3 proto=0x7fef4e5af5c0
+DEBUG: reprObject out=0x7fef4ec9d7c6
+DEBUG: invokeCallable callable=0x7fef4e6f048c repr=<method object at 0x7fef4e6f048c> class=unknown
+DEBUG HANG TRACE: [PC 12] OP 133 ARG 0
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG HANG TRACE: [PC 14] OP 111 ARG 4
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG HANG TRACE: [PC 4] OP 120 ARG 16
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG py_list_iter_next: exhausted
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG HANG TRACE: [PC 16] OP 100 ARG 0
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG: LOAD_CONST arg=0 val=0x141 repr=None
+DEBUG HANG TRACE: [PC 18] OP 101 ARG 0
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG: py_generator_send_impl finished. yielded=0, result=0x141, hasPendingException=0
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG HANG: generator exhausted cleanly! raising StopIteration
+DEBUG_GETTYPE: getType(0x7fef4e7ce980) -> priority 1
+DEBUG: getType priority 1 __class__ match
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e5a8dcc) -> priority 3 proto=0x7fef4e5af5c0
+TRACE_GET: after metaclass fallback: val=0x7fef4e5afacc
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e5afacc) -> priority 3 proto=0x7fef4e5af5c0
+DEBUG_GET: val=0x7fef4e5afacc valType=0x7fef4e5af5c0 getM=0x7fef4e5afacc
+DEBUG_GET: methodPrototype.__get__ called on self=0x7fef4e5a8dcc. isMethod=1
+DEBUG_GET: instance=0x7fef4e7ce980
+DEBUG_GET: created bound method 0x7fef4f243a4c
+TRACE_GET: after metaclass fallback: val=0x197879e9101
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x197879e9101) -> priority 3 proto=0x7fef4e5c9ac0
+DEBUG_GET: val=0x197879e9101 valType=0x7fef4e5c9ac0 getM=(nil)
+DEBUG: reprObject obj=0x7fef4e7ce980 class=type
+DEBUG: reprObject out=0x7fef4f30cf46
+DEBUG: invokeCallable callable=0x7fef4e7ce980 repr=<class 'StopIteration'> class=type
+DEBUG_GETTYPE: getType(0x7fef4e7ce980) -> priority 1
+DEBUG: getType priority 1 __class__ match
+TRACE_GET: after metaclass fallback: val=0x7fef4e5a910c
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e5a910c) -> priority 3 proto=0x7fef4e5af5c0
+DEBUG_GET: val=0x7fef4e5a910c valType=0x7fef4e5af5c0 getM=0x7fef4e5afacc
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e5a910c) -> priority 3 proto=0x7fef4e5af5c0
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e5a910c) -> priority 3 proto=0x7fef4e5af5c0
+DEBUG_GET: metaclassDataDescr=0 owner=0x7fef4e5a8b40 mVal=0x7fef4e5a910c val=0x7fef4e5a910c mValType=0x7fef4e5af5c0 (method)
+DEBUG_GET: methodPrototype.__get__ called on self=0x7fef4e5a910c. isMethod=1
+DEBUG_GET: instance=0x141
+DEBUG_GET: PythonEnvironment::getAttribute returning descriptor result 0x7fef4e5a910c
 DEBUG: invokeCallable calling __call__ asMethod
-DEBUG: ProtoObject::addParent this=0x7548e61690c0 newParent=0x7548e595e940
-DEBUG: ProtoObject::addParent checking ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent adding ancestor 0x7548e595e900
-DEBUG: ProtoObject::addParent checking newParent 0x7548e595e940
-DEBUG: ProtoObject::addParent adding newParent 0x7548e595e940
-DEBUG: ProtoObject::addParent result=0x7548e61690c0
-DEBUG: ProtoObject::addParent this=0x7548e61690c0 newParent=0x7548e5feca02
-DEBUG: ProtoObject::addParent checking newParent 0x7548e5feca02
-DEBUG: ProtoObject::addParent adding newParent 0x7548e5feca02
-DEBUG: ProtoObject::addParent result=0x7548e61690c0
-DEBUG: [PC 0] OP 102
-DEBUG: [PC 0] OP 102
-DEBUG: Exception handling start exc=0x7548e616ff00
-DEBUG: Exception NameError at <string>:5 (PC 0)
+TRACE_GET: after metaclass fallback: val=0x7fef4e5a36cc
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e5a36cc) -> priority 3 proto=0x7fef4e5af5c0
+DEBUG_GET: val=0x7fef4e5a36cc valType=0x7fef4e5af5c0 getM=0x7fef4e5afacc
+DEBUG_GET: methodPrototype.__get__ called on self=0x7fef4e5a36cc. isMethod=1
+DEBUG_GET: instance=0x7fef4e7ce980
+DEBUG_GET: created bound method 0x7fef4f314f8c
+DEBUG_GET: PythonEnvironment::getAttribute returning descriptor result 0x7fef4f314f8c
+DEBUG runUserClassCall: self=0x7fef4e7ce980 newM=0x7fef4f314f8c
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4f314f8c) -> priority 3 proto=0x7fef4e5af5c0
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e5a3a8c) -> priority 3 proto=0x7fef4e5af5c0
+TRACE_GET: after metaclass fallback: val=0x7fef4e5afacc
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e5afacc) -> priority 3 proto=0x7fef4e5af5c0
+DEBUG_GET: val=0x7fef4e5afacc valType=0x7fef4e5af5c0 getM=0x7fef4e5afacc
+DEBUG_GET: methodPrototype.__get__ called on self=0x7fef4e5a3a8c. isMethod=1
+DEBUG_GET: instance=0x7fef4f314f8c
+DEBUG_GET: created bound method 0x7fef4f31b3cc
+TRACE_GET: after metaclass fallback: val=0x64dfa3a65db901
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x64dfa3a65db901) -> priority 3 proto=0x7fef4e5c9ac0
+DEBUG_GET: val=0x64dfa3a65db901 valType=0x7fef4e5c9ac0 getM=(nil)
+DEBUG: reprObject obj=0x7fef4f314f8c class=method
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4f314f8c) -> priority 3 proto=0x7fef4e5af5c0
+DEBUG: reprObject out=0x7fef4f324186
+DEBUG: invokeCallable callable=0x7fef4f314f8c repr=<method object at 0x7fef4f314f8c> class=unknown
+DEBUG runUserClassCall: invokeCallable(newM) returned obj=0x7fef4f3241c0
+DEBUG HANG runUserClassCall initS='__init__' initM=0x7fef4e86484c (method=0x7fef4fe2e995) self=0x7fef4e7ce980 (name='StopIteration', isTypeProto=0)
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e86484c) -> priority 3 proto=0x7fef4e5af5c0
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e5a3a8c) -> priority 3 proto=0x7fef4e5af5c0
+TRACE_GET: after metaclass fallback: val=0x7fef4e5afacc
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e5afacc) -> priority 3 proto=0x7fef4e5af5c0
+DEBUG_GET: val=0x7fef4e5afacc valType=0x7fef4e5af5c0 getM=0x7fef4e5afacc
+DEBUG_GET: methodPrototype.__get__ called on self=0x7fef4e5a3a8c. isMethod=1
+DEBUG_GET: instance=0x7fef4e86484c
+DEBUG_GET: created bound method 0x7fef4f32a98c
+TRACE_GET: after metaclass fallback: val=0x64dfa3a65db901
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x64dfa3a65db901) -> priority 3 proto=0x7fef4e5c9ac0
+DEBUG_GET: val=0x64dfa3a65db901 valType=0x7fef4e5c9ac0 getM=(nil)
+DEBUG: reprObject obj=0x7fef4e86484c class=method
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e86484c) -> priority 3 proto=0x7fef4e5af5c0
+DEBUG: reprObject out=0x7fef4f333706
+DEBUG: invokeCallable callable=0x7fef4e86484c repr=<method object at 0x7fef4e86484c> class=unknown
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=(nil) res=0
+DEBUG_GETTYPE: getType(0x7fef4f3241c0) -> priority 1
+DEBUG: getType priority 1 __class__ match
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e7d300c) -> priority 3 proto=0x7fef4e5af5c0
+TRACE_GET: after metaclass fallback: val=0x7fef4e5afacc
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e5afacc) -> priority 3 proto=0x7fef4e5af5c0
+DEBUG_GET: val=0x7fef4e5afacc valType=0x7fef4e5af5c0 getM=0x7fef4e5afacc
+DEBUG_GET: methodPrototype.__get__ called on self=0x7fef4e7d300c. isMethod=1
+DEBUG_GET: instance=0x7fef4f3241c0
+DEBUG_GET: created bound method 0x7fef4f33a9cc
+TRACE_GET: after metaclass fallback: val=0x7fef4e556846
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e556846) -> priority 3 proto=0x7fef4e5c9ac0
+DEBUG_GET: val=0x7fef4e556846 valType=0x7fef4e5c9ac0 getM=(nil)
+DEBUG: reprObject obj=0x7fef4f3241c0 class=StopIteration
+DEBUG: reprObject out=0x7fef4f3442c6
+DEBUG: invokeCallable (__call__) returning result=0x7fef4f3241c0 repr=StopIteration(<obj>, <obj>)
+DEBUG EXCEPTION: Raised StopIteration exc=0x7fef4f3241c0
+DEBUG EXCEPTION SET: threadKey=0x7fef4e580cc6 val=0x7fef4f3241c0
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=0x7fef4f3241c0 res=1
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=0x7fef4f3241c0 res=1
+DEBUG HANG TRACE: [PC 76] OP 106 ARG 1
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=0x7fef4f3241c0 res=1
+DEBUG: Exception StopIteration at ./test_next.py:2 (PC 76)
+DEBUG: Exception message: ''
+DEBUG: raw exception pointer 0x7fef4f3241c0
 DEBUG: Calling addTraceback...
-DEBUG: addTraceback exc=0x7548e616ff00 frame=0x7548e61690c0 lasti=0 lineno=5
+DEBUG: addTraceback exc=0x7fef4f3241c0 frame=0x7fef4eab80c0 lasti=76 lineno=2
 DEBUG: addTraceback currentTb=0x141
-DEBUG: addTraceback newTb=0x7548e5d3fac0
-DEBUG: addTraceback updatedExc=0x7548e616ff00
-DEBUG: addTraceback returned. blockStack.empty()=true
-DEBUG: No trap found, returning nullptr
-DEBUG: invokeCallable (__call__) returning result=(nil) repr=nullptr
-DEBUG: [PC 18] OP 106
-DEBUG: Exception handling start exc=0x7548e616ff00
-DEBUG: Exception NameError at unknown:0 (PC 18)
-DEBUG: Calling addTraceback...
-DEBUG: addTraceback exc=0x7548e616ff00 frame=0x7548e5c21340 lasti=18 lineno=0
-DEBUG: addTraceback currentTb=0x7548e5d3fac0
-DEBUG: addTraceback newTb=0x7548e5d43f00
-DEBUG: addTraceback updatedExc=0x7548e616ff00
-DEBUG: addTraceback returned. blockStack.empty()=true
-DEBUG: No trap found, returning nullptr
-DEBUG: runCodeObject result=(nil)
+DEBUG: addTraceback allocating newTb
+DEBUG: addTraceback setting classString
+DEBUG: addTraceback creating strings
+DEBUG: addTraceback setting attributes
+DEBUG: addTraceback newTb=0x7fef4e9acf00 created
+DEBUG: addTraceback updatedExc=0x7fef4f3241c0
+DEBUG: addTraceback returned. blockStack.empty()=false
+DEBUG: Popping block: handlerPc=86 stackDepth=0
+DEBUG EXCEPTION: pushed active exception 0x7fef4f3241c0. New size = 1
+DEBUG EXCEPTION CLEAR: threadKey=0x7fef4e580cc6
+DEBUG: Cleaning stack: current size=2, target size=0
+DEBUG: Pushing exception tuple (None, exc, exc) 0x7fef4f3241c0 back to stack
+DEBUG: Jumping to handlerPc=86
+DEBUG HANG TRACE: [PC 86] OP 102 ARG 4
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=0x141 res=0
+DEBUG HANG TRACE: [PC 88] OP 190 ARG 0
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=0x141 res=0
+DEBUG: isException exc=0x7fef4f3241c0 type=0x7fef4e7ce980 -> match=1
+DEBUG: OP_EXCEPTION_MATCH exc 0x7fef4f3241c0 vs type 0x7fef4e7ce980 -> 1
+TRACE_GET: after metaclass fallback: val=0x7fef4e7ce980
+DEBUG_GETTYPE: getType(0x7fef4e7ce980) -> priority 1
+DEBUG: getType priority 1 __class__ match
+DEBUG_GET: val=0x7fef4e7ce980 valType=0x7fef4e5a8b40 getM=(nil)
+TRACE_GET: after metaclass fallback: val=0x7fef4e556846
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e556846) -> priority 3 proto=0x7fef4e5c9ac0
+DEBUG_GET: val=0x7fef4e556846 valType=0x7fef4e5c9ac0 getM=(nil)
+TRACE_GET: after metaclass fallback: val=0x7fef4e556846
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e556846) -> priority 3 proto=0x7fef4e5c9ac0
+DEBUG_GET: val=0x7fef4e556846 valType=0x7fef4e5c9ac0 getM=(nil)
+DEBUG HANG TRACE: [PC 90] OP 110 ARG 110
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=0x141 res=0
+DEBUG HANG TRACE: [PC 92] OP 133 ARG 0
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=0x141 res=0
+DEBUG HANG TRACE: [PC 94] OP 133 ARG 0
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=0x141 res=0
+DEBUG HANG TRACE: [PC 96] OP 133 ARG 0
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=0x141 res=0
+DEBUG HANG TRACE: [PC 98] OP 102 ARG 2
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=0x141 res=0
+DEBUG HANG TRACE: [PC 100] OP 100 ARG 8
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=0x141 res=0
+DEBUG: LOAD_CONST arg=8 val=0x7fef4e8c4a06 repr=StopIteration caught
+DEBUG HANG TRACE: [PC 102] OP 106 ARG 1
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=0x141 res=0
+DEBUG: OP_CALL_FUNCTION PC 102 callable=0x7fef4e6ebf4c argCount=1
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e6ebf4c) -> priority 3 proto=0x7fef4e5af5c0
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e5a3a8c) -> priority 3 proto=0x7fef4e5af5c0
+TRACE_GET: after metaclass fallback: val=0x7fef4e5afacc
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e5afacc) -> priority 3 proto=0x7fef4e5af5c0
+DEBUG_GET: val=0x7fef4e5afacc valType=0x7fef4e5af5c0 getM=0x7fef4e5afacc
+DEBUG_GET: methodPrototype.__get__ called on self=0x7fef4e5a3a8c. isMethod=1
+DEBUG_GET: instance=0x7fef4e6ebf4c
+DEBUG_GET: created bound method 0x7fef4f35844c
+TRACE_GET: after metaclass fallback: val=0x64dfa3a65db901
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x64dfa3a65db901) -> priority 3 proto=0x7fef4e5c9ac0
+DEBUG_GET: val=0x64dfa3a65db901 valType=0x7fef4e5c9ac0 getM=(nil)
+DEBUG: reprObject obj=0x7fef4e6ebf4c class=method
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e6ebf4c) -> priority 3 proto=0x7fef4e5af5c0
+DEBUG: reprObject out=0x7fef4ed6c206
+DEBUG: invokeCallable callable=0x7fef4e6ebf4c repr=<method object at 0x7fef4e6ebf4c> class=unknown
+DEBUG: py_print called with 1 args
+DEBUG: py_type_call called self=0x7fef4e7ce980
+DEBUG: initDictStorage obj=0x7fef4f3241c0
+DEBUG: initDictStorage dataName=0x7fef4e4b99c6 keysName=0x7fef4e598646
+DEBUG: initDictStorage creating sparse list
+DEBUG: initDictStorage setting __data__
+DEBUG: initDictStorage checking keys
+DEBUG: initDictStorage creating keys list
+DEBUG: initDictStorage setting __keys__
+DEBUG: initDictStorage done
+StopIteration caught
+DEBUG HANG TRACE: [PC 104] OP 133 ARG 0
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=0x141 res=0
+DEBUG HANG TRACE: [PC 106] OP 202 ARG 0
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=0x141 res=0
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=0x141 res=0
+DEBUG HANG TRACE: [PC 108] OP 111 ARG 118
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=0x141 res=0
+DEBUG HANG TRACE: [PC 118] OP 100 ARG 9
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=0x141 res=0
+DEBUG_GETTYPE: getType(0x7fef4e628d80) -> priority 1
+DEBUG: getType priority 1 __class__ match
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e628a4c) -> priority 3 proto=0x7fef4e5af5c0
+TRACE_GET: after metaclass fallback: val=0x7fef4e5afacc
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e5afacc) -> priority 3 proto=0x7fef4e5af5c0
+DEBUG_GET: val=0x7fef4e5afacc valType=0x7fef4e5af5c0 getM=0x7fef4e5afacc
+DEBUG_GET: methodPrototype.__get__ called on self=0x7fef4e628a4c. isMethod=1
+DEBUG_GET: instance=0x7fef4e628d80
+DEBUG_GET: created bound method 0x7fef4f36650c
+TRACE_GET: after metaclass fallback: val=0x7fef4e627f86
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e627f86) -> priority 3 proto=0x7fef4e5c9ac0
+DEBUG_GET: val=0x7fef4e627f86 valType=0x7fef4e5c9ac0 getM=(nil)
+DEBUG: reprObject obj=0x7fef4e628d80 class=NoneType
+DEBUG: reprObject out=0x19776f9d101
+DEBUG: LOAD_CONST arg=9 val=0x7fef4e628d80 repr=None
+DEBUG HANG TRACE: [PC 120] OP 101 ARG 0
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=0x141 res=0
+DEBUG_GETTYPE: getType(0x7fef4e628d80) -> priority 1
+DEBUG: getType priority 1 __class__ match
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e628a4c) -> priority 3 proto=0x7fef4e5af5c0
+TRACE_GET: after metaclass fallback: val=0x7fef4e5afacc
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e5afacc) -> priority 3 proto=0x7fef4e5af5c0
+DEBUG_GET: val=0x7fef4e5afacc valType=0x7fef4e5af5c0 getM=0x7fef4e5afacc
+DEBUG_GET: methodPrototype.__get__ called on self=0x7fef4e628a4c. isMethod=1
+DEBUG_GET: instance=0x7fef4e628d80
+DEBUG_GET: created bound method 0x7fef4f37060c
+TRACE_GET: after metaclass fallback: val=0x7fef4e627f86
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e627f86) -> priority 3 proto=0x7fef4e5c9ac0
+DEBUG_GET: val=0x7fef4e627f86 valType=0x7fef4e5c9ac0 getM=(nil)
+DEBUG: reprObject obj=0x7fef4e628d80 class=NoneType
+DEBUG: reprObject out=0x19776f9d101
+DEBUG HANG: runUserFunctionCall executeBytecodeRange returned result=0x7fef4e628d80 repr=None
+DEBUG_GETTYPE: getType(0x7fef4e628d80) -> priority 1
+DEBUG: getType priority 1 __class__ match
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e628a4c) -> priority 3 proto=0x7fef4e5af5c0
+TRACE_GET: after metaclass fallback: val=0x7fef4e5afacc
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e5afacc) -> priority 3 proto=0x7fef4e5af5c0
+DEBUG_GET: val=0x7fef4e5afacc valType=0x7fef4e5af5c0 getM=0x7fef4e5afacc
+DEBUG_GET: methodPrototype.__get__ called on self=0x7fef4e628a4c. isMethod=1
+DEBUG_GET: instance=0x7fef4e628d80
+DEBUG_GET: created bound method 0x7fef4eaa70cc
+TRACE_GET: after metaclass fallback: val=0x7fef4e627f86
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e627f86) -> priority 3 proto=0x7fef4e5c9ac0
+DEBUG_GET: val=0x7fef4e627f86 valType=0x7fef4e5c9ac0 getM=(nil)
+DEBUG: reprObject obj=0x7fef4e628d80 class=NoneType
+DEBUG: reprObject out=0x19776f9d101
+DEBUG: invokeCallable (__call__) returning result=0x7fef4e628d80 repr=None
+DEBUG HANG TRACE: [PC 10] OP 133 ARG 0
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=0x141 res=0
+DEBUG HANG TRACE: [PC 12] OP 100 ARG 1
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=0x141 res=0
+DEBUG_GETTYPE: getType(0x7fef4e628d80) -> priority 1
+DEBUG: getType priority 1 __class__ match
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e628a4c) -> priority 3 proto=0x7fef4e5af5c0
+TRACE_GET: after metaclass fallback: val=0x7fef4e5afacc
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e5afacc) -> priority 3 proto=0x7fef4e5af5c0
+DEBUG_GET: val=0x7fef4e5afacc valType=0x7fef4e5af5c0 getM=0x7fef4e5afacc
+DEBUG_GET: methodPrototype.__get__ called on self=0x7fef4e628a4c. isMethod=1
+DEBUG_GET: instance=0x7fef4e628d80
+DEBUG_GET: created bound method 0x7fef4eab11cc
+TRACE_GET: after metaclass fallback: val=0x7fef4e627f86
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e627f86) -> priority 3 proto=0x7fef4e5c9ac0
+DEBUG_GET: val=0x7fef4e627f86 valType=0x7fef4e5c9ac0 getM=(nil)
+DEBUG: reprObject obj=0x7fef4e628d80 class=NoneType
+DEBUG: reprObject out=0x19776f9d101
+DEBUG: LOAD_CONST arg=1 val=0x7fef4e628d80 repr=None
+DEBUG HANG TRACE: [PC 14] OP 101 ARG 0
+DEBUG EXCEPTION GET: threadKey=0x7fef4e580cc6 val=0x141 res=0
+DEBUG: runCodeObject result=0x7fef4e628d80
+DEBUG: executeModule finished runCodeObject mutableMod=0x7fef4e8aab40 (has CodeType=0)
+DEBUG: executeModule updating modWrapper=0x7fef4e8a91c0 with mod=0x7fef4e8aab40
+DEBUG: executeModule updated modWrapper. New val=0x7fef4e8a90c0
+DEBUG: resolveModule atexit -> modWrapper=0x7fef4e9b7bc0
+DEBUG: resolveModule atexit -> result=0x7fef4e9b7ac0
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e9b518c) -> priority 3 proto=0x7fef4e5af5c0
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e5a3a8c) -> priority 3 proto=0x7fef4e5af5c0
+TRACE_GET: after metaclass fallback: val=0x7fef4e5afacc
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e5afacc) -> priority 3 proto=0x7fef4e5af5c0
+DEBUG_GET: val=0x7fef4e5afacc valType=0x7fef4e5af5c0 getM=0x7fef4e5afacc
+DEBUG_GET: methodPrototype.__get__ called on self=0x7fef4e5a3a8c. isMethod=1
+DEBUG_GET: instance=0x7fef4e9b518c
+DEBUG_GET: created bound method 0x7fef4f37aa8c
+TRACE_GET: after metaclass fallback: val=0x64dfa3a65db901
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x64dfa3a65db901) -> priority 3 proto=0x7fef4e5c9ac0
+DEBUG_GET: val=0x64dfa3a65db901 valType=0x7fef4e5c9ac0 getM=(nil)
+DEBUG: reprObject obj=0x7fef4e9b518c class=method
+DEBUG: getType checking 0 parents
+DEBUG_GETTYPE: getType(0x7fef4e9b518c) -> priority 3 proto=0x7fef4e5af5c0
+DEBUG: reprObject out=0x7fef4f383886
+DEBUG: invokeCallable callable=0x7fef4e9b518c repr=<method object at 0x7fef4e9b518c> class=unknown

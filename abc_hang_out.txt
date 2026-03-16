@@ -1,2 +1,0 @@
-DEBUG: assertionErrorType loaded successfully: 0x70f3e12ad2c0
-DEBUG: OP_LOAD_NAME(len) resolved: r=0x70f3e1211d4c (PROTO_NONE is 0x141)

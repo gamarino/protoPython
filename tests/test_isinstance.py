@@ -1,8 +1,6 @@
-class Custom: pass
-print("isinstance(Custom, type):", isinstance(Custom, type))
-print("issubclass(Custom, type):", issubclass(Custom, type))
-class CustomMeta(type): pass
-print("isinstance(CustomMeta, type):", isinstance(CustomMeta, type))
-def g(): yield 1
-G = type(g())
-print("isinstance(G, type):", isinstance(G, type))
+t = (1,)
+print("isinstance(t, tuple) =", isinstance(t, tuple))
+print("type(t) =", type(t))
+print("tuple class =", tuple)
+print("type(tuple) =", type(tuple))
+print("t.__class__ =", getattr(t, '__class__', None))

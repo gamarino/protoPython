@@ -2921,6 +2921,7 @@ const proto::ProtoObject* makeCodeObject(proto::ProtoContext* ctx,
     const proto::ProtoTuple* lnotab) {
     if (!ctx) return PROTO_NONE;
     const proto::ProtoObject* code = ctx->newObject(false);
+    code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_consts"), constants ? reinterpret_cast<const proto::ProtoObject*>(constants) : reinterpret_cast<const proto::ProtoObject*>(ctx->newTuple()));
     code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_names"), names ? reinterpret_cast<const proto::ProtoObject*>(names) : reinterpret_cast<const proto::ProtoObject*>(ctx->newTuple()));
     code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_code"), reinterpret_cast<const proto::ProtoObject*>(bytecode));
     code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_filename"), filename ? reinterpret_cast<const proto::ProtoObject*>(filename) : reinterpret_cast<const proto::ProtoObject*>(ctx->fromUTF8String("<stdin>")));
@@ -2997,11 +2998,15 @@ struct CodeObjectScope {
 const proto::ProtoObject* runCodeObject(proto::ProtoContext* ctx,
     const proto::ProtoObject* codeObj,
     proto::ProtoObject*& frame) {
-    if (!ctx || !codeObj || !frame) return PROTO_NONE;
+    if (!ctx || !codeObj || !frame) {
+        if (std::getenv("PROTO_ENV_DIAG")) {
+            fprintf(stderr, "DEBUG: runCodeObject early return: ctx=%p codeObj=%p frame=%p\n", (void*)ctx, (void*)codeObj, (void*)frame);
+        }
+        return PROTO_NONE;
+    }
     
-
-
     if (std::getenv("PROTO_ENV_DIAG")) {
+        fprintf(stderr, "DEBUG: runCodeObject started\n");
     }
     
     CodeObjectScope cscope(codeObj);
@@ -3013,17 +3018,13 @@ const proto::ProtoObject* runCodeObject(proto::ProtoContext* ctx,
 
     if (!co_consts || !co_consts->asTuple(ctx) || !co_code || !co_code->asTuple(ctx)) {
         if (std::getenv("PROTO_ENV_DIAG")) {
+            fprintf(stderr, "DEBUG: runCodeObject missing co_consts (%p) or co_code (%p)\n", (void*)co_consts, (void*)co_code);
         }
         return PROTO_NONE;
-    }
-    if (std::getenv("PROTO_ENV_DIAG")) {
     }
 
     const proto::ProtoObject* co_automatic_obj = codeObj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_automatic_count"));
     int automatic_count = (co_automatic_obj && co_automatic_obj->isInteger(ctx)) ? static_cast<int>(co_automatic_obj->asLong(ctx)) : 0;
-
-    if (std::getenv("PROTO_ENV_DIAG")) {
-    }
 
     proto::ProtoContext* oldCtx = PythonEnvironment::getCurrentContext();
 
@@ -3068,6 +3069,7 @@ const proto::ProtoObject* runCodeObject(proto::ProtoContext* ctx,
     }
     return result;
 }
+
 
 bool Compiler::compileJoinedStr(JoinedStrNode* n) {
     if (!n) return false;

@@ -1,16 +1,17 @@
-class A:
-    x = 1
+class ABCMeta(type):
+    def __new__(mcls, name, bases, namespace, **kwargs):
+        print("ABCMeta.__new__")
+        return super().__new__(mcls, name, bases, namespace, **kwargs)
 
-class B(A):
+class MyMeta(ABCMeta):
+    def __new__(mcls, name, bases, namespace):
+        print("MyMeta.__new__")
+        # Let's inspect super() manually
+        s = super()
+        print(s)
+        # What is s.__new__?
+        print(s.__new__)
+        return s.__new__(mcls, name, bases, namespace)
+
+class MyClass(metaclass=MyMeta):
     pass
-
-b = B()
-print(f"getattr(b, 'x'): {getattr(b, 'x')}")
-print(f"getattr(b, 'x', 99): {getattr(b, 'x', 99)}")
-
-class C:
-    y = None
-
-c = C()
-print(f"getattr(c, 'y'): {getattr(c, 'y')}")
-print(f"getattr(c, 'y', 99): {getattr(c, 'y', 99)}")

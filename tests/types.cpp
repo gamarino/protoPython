@@ -1224,6 +1224,6 @@ env->storeName("__await__", env->lookupName("__iter__"));
     const proto::ProtoObject* func_coroutine = ctx->fromMethod(nullptr, py_func_coroutine_30);
     env->storeName("coroutine", func_coroutine);
 #line 340 "lib/python3.14/types.py"
-env->storeName("__all__", /* Unsupported node: N11protoPython12ListCompNodeE */);
+env->callObject(env->lookupName("print"), {env->buildString({ctx->fromUTF8String("DEBUG: globals()="), env->callObject(env->lookupName("globals"), {})})});
     return nullptr;
 }

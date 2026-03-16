@@ -1,1 +1,2 @@
-import _collections_abc
+import abc
+print("abc imported successfully")

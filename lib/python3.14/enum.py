@@ -30,6 +30,11 @@ __all__ = [
 # This is also why there are checks in EnumType like `if Enum is not None`
 Enum = Flag = STRICT = CONFORM = EJECT = KEEP = _stdlib_enums = ReprEnum = None
 
+import builtins as bltns
+bltns.print("DEBUG: enum.py near nonmember. dict =", dict)
+bltns.print("DEBUG: enum.py near nonmember. bltns.dict =", bltns.dict)
+bltns.print("DEBUG: enum.py near nonmember. dict.__new__ =", getattr(dict, '__new__', None))
+
 class nonmember(object):
     """
     Protects item from becoming an Enum member during class creation.
@@ -430,13 +435,16 @@ class EnumType(type):
 
     @classmethod
     def __prepare__(metacls, cls, bases, **kwds):
-        # DEBUG
-        print("DEBUG: __prepare__ metacls=", metacls)
-        print("DEBUG: __prepare__ EnumType=", EnumType)
-        print("DEBUG: __prepare__ EnumDict=", EnumDict)
-        print("DEBUG: __prepare__ calling _check_for_existing_members_")
+        import builtins as _bltns
+        _bltns.print("DEBUG __prepare__: dict =", dict)
+        _bltns.print("DEBUG __prepare__: id(dict) =", id(dict))
+        _bltns.print("DEBUG __prepare__: dict.__new__ =", getattr(dict, '__new__', 'MISSING'))
+        _bltns.print("DEBUG __prepare__: _bltns.dict =", _bltns.dict)
+        _bltns.print("DEBUG __prepare__: _bltns.dict.__new__ =", getattr(_bltns.dict, '__new__', 'MISSING'))
+        _bltns.print("DEBUG __prepare__: dict is _bltns.dict =", dict is _bltns.dict)
         EnumType._check_for_existing_members_(metacls, cls, bases)
-        print("DEBUG: __prepare__ back from _check_for_existing_members_")
+        _bltns.print("DEBUG __prepare__: about to call dict.__new__(EnumDict)")
+        _bltns.print("DEBUG __prepare__: dict.__new__ type =", type(dict.__new__))
         enum_dict = dict.__new__(EnumDict)
         EnumDict.__init__(enum_dict, cls)
         member_type, first_enum = EnumType._get_mixins_(metacls, cls, bases)
@@ -995,6 +1003,8 @@ class EnumType(type):
 
 
 EnumMeta = EnumType         # keep EnumMeta name for backwards compatibility
+import builtins as bltns
+bltns.print("DEBUG: EnumType defined. _check_for_existing_members_ =", getattr(EnumType, '_check_for_existing_members_', None))
 
 
 class Enum(metaclass=EnumType):

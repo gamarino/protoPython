@@ -1,14 +1,9 @@
-data = [
-    ("int", 1),
-    ("float", 1.5),
-    ("str", "hi"),
-    ("list", [1]),
-    ("dict", {"a": 1}),
-    ("tuple", (1,)),
-    ("set", {1}),
-    ("bytes", b"a"),
-    ("None", None)
-]
-
-for name, obj in data:
-    print("Checking", name, "type:", type(obj))
+import enum
+class FlagBoundary(enum.StrEnum):
+    STRICT = enum.auto()
+    CONFORM = enum.auto()
+    EJECT = enum.auto()
+    KEEP = enum.auto()
+print("MEMBERS:", FlagBoundary._member_names_)
+for x in FlagBoundary:
+    print("X:", x)
