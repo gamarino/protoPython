@@ -12,8 +12,6 @@ _setattr = bltns.setattr
 _hasattr = bltns.hasattr
 _repr = bltns.repr
 _issubclass = bltns.issubclass
-
-
 __all__ = [
         'EnumType', 'EnumMeta', 'EnumDict',
         'Enum', 'IntEnum', 'StrEnum', 'Flag', 'IntFlag', 'ReprEnum',
@@ -25,15 +23,14 @@ __all__ = [
         ]
 
 
+
 # Dummy value for Enum and Flag as there are explicit checks for them
 # before they have been created.
 # This is also why there are checks in EnumType like `if Enum is not None`
 Enum = Flag = STRICT = CONFORM = EJECT = KEEP = _stdlib_enums = ReprEnum = None
 
 import builtins as bltns
-bltns.print("DEBUG: enum.py near nonmember. dict =", dict)
-bltns.print("DEBUG: enum.py near nonmember. bltns.dict =", bltns.dict)
-bltns.print("DEBUG: enum.py near nonmember. dict.__new__ =", getattr(dict, '__new__', None))
+
 
 class nonmember(object):
     """
@@ -41,6 +38,7 @@ class nonmember(object):
     """
     def __init__(self, value):
         self.value = value
+
 
 class member(object):
     """
@@ -327,6 +325,7 @@ class _proto_member:
             enum_class._unhashable_values_map_.setdefault(member_name, []).append(value)
 
 
+
 class EnumDict(dict):
     def __init__(self, cls_name=None):
         dict.__init__(self)
@@ -350,6 +349,7 @@ class EnumDict(dict):
 
         if is_private:
             dict.__setitem__(self, key, value)
+            _setattr(self, key, value)
             return
         else:
             # Inline _is_dunder(key)
@@ -359,6 +359,7 @@ class EnumDict(dict):
                 if key == '__order__':
                     key = '_order_'
                 dict.__setitem__(self, key, value)
+                _setattr(self, key, value)
                 return
 
             # Inline _is_sunder(key)
@@ -371,7 +372,9 @@ class EnumDict(dict):
                         _gnv = value.__func__
                     except AttributeError:
                         _gnv = value
+                    print(f"DEBUG_ENUM: setting _generate_next_value on {self} to {_gnv}")
                     _setattr(self, '_generate_next_value', _gnv)
+                    dict.__setitem__(self, key, value)
                 elif key == '_ignore_':
                     if _isinstance(value, _str):
                         value = value.replace(',',' ').split()
@@ -386,6 +389,7 @@ class EnumDict(dict):
                                 )
                 else:
                     dict.__setitem__(self, key, value)
+                    _setattr(self, key, value)
                 return
 
             member_names = dict.__getitem__(self, '_member_names')
@@ -417,6 +421,7 @@ class EnumDict(dict):
                     dict.__setitem__(self, '_auto_called', True)
                 
                 dict.__setitem__(self, key, value)
+                _setattr(self, key, value)
                 member_names.append(key)
                 dict.__getitem__(self, '_last_values').append(value)
 
@@ -431,32 +436,34 @@ class EnumDict(dict):
 _EnumDict = EnumDict        # keep private name for backwards compatibility
 
 
+
 class EnumType(type):
 
     @classmethod
     def __prepare__(metacls, cls, bases, **kwds):
-        import builtins as _bltns
-        _bltns.print("DEBUG __prepare__: dict =", dict)
-        _bltns.print("DEBUG __prepare__: id(dict) =", id(dict))
-        _bltns.print("DEBUG __prepare__: dict.__new__ =", getattr(dict, '__new__', 'MISSING'))
-        _bltns.print("DEBUG __prepare__: _bltns.dict =", _bltns.dict)
-        _bltns.print("DEBUG __prepare__: _bltns.dict.__new__ =", getattr(_bltns.dict, '__new__', 'MISSING'))
-        _bltns.print("DEBUG __prepare__: dict is _bltns.dict =", dict is _bltns.dict)
+        try:
+            print(f"DEBUG_ENUM: __prepare__ metacls={metacls} cls={cls}")
+            print(f"DEBUG_ENUM: EnumType={EnumType}")
+            print(f"DEBUG_ENUM: check_method={getattr(EnumType, '_check_for_existing_members_', 'MISSING')}")
+            print(f"DEBUG_ENUM: dict={dict}")
+            print(f"DEBUG_ENUM: bltns.dict={getattr(bltns, 'dict', 'MISSING')}")
+            print(f"DEBUG_ENUM: dict.__new__={getattr(dict, '__new__', 'MISSING')}")
+        except Exception as e:
+            print(f"DEBUG_ENUM: error during debug prints: {e}")
         EnumType._check_for_existing_members_(metacls, cls, bases)
-        _bltns.print("DEBUG __prepare__: about to call dict.__new__(EnumDict)")
-        _bltns.print("DEBUG __prepare__: dict.__new__ type =", type(dict.__new__))
+        print(f"DEBUG_ENUM: calling dict.__new__(EnumDict)")
         enum_dict = dict.__new__(EnumDict)
         EnumDict.__init__(enum_dict, cls)
         member_type, first_enum = EnumType._get_mixins_(metacls, cls, bases)
         if first_enum is not None:
             gnv = _getattr(first_enum, '_generate_next_value_', None)
             if gnv is not None:
-                dict.__setitem__(enum_dict, '_generate_next_value_', gnv)
+                enum_dict['_generate_next_value_'] = gnv
         return enum_dict
 
     def __new__(metacls, cls, bases, classdict, *, boundary=None, _simple=False, **kwds):
         # grab member names
-        member_names = classdict.get('_member_names', None)
+        member_names = classdict.get('_member_names_', None)
         if member_names is None:
             if _simple:
                 member_names = []
@@ -492,7 +499,9 @@ class EnumType(type):
                 member_names = []
         #
         # check for illegal enum names (any others?)
-        invalid_names = _set(member_names) & {'mro', ''}
+        s1 = _set(member_names)
+        s2 = {'mro', ''}
+        invalid_names = s1 & s2
         if invalid_names:
             raise ValueError('invalid enum member name(s) %s'  % (
                     ','.join(_repr(n) for n in invalid_names)
@@ -506,18 +515,21 @@ class EnumType(type):
         #
         # get data type of member and the controlling Enum class
         member_type, first_enum = EnumType._get_mixins_(metacls, cls, bases)
-        __new__, save_new, use_args = EnumType._find_new_(
+        tmp_new = EnumType._find_new_(
                 metacls, classdict, member_type, first_enum,
                 )
+        print(f"DEBUG_UNPACK: _find_new_ returned {tmp_new}")
+        __new__, save_new, use_args = tmp_new
         dict.__setitem__(classdict, '_new_member_', __new__)
         dict.__setitem__(classdict, '_use_args_', use_args)
         #
         # convert future enum members into temporary _proto_members
         for name in member_names:
-            classdict[name] = _proto_member(classdict[name])
+            dict.__setitem__(classdict, name, _proto_member(classdict[name]))
         #
         # house-keeping structures
-        dict.__setitem__(classdict, '_member_names_', [])
+        if '_member_names_' not in classdict:
+            dict.__setitem__(classdict, '_member_names_', [])
         dict.__setitem__(classdict, '_member_map_', {})
         dict.__setitem__(classdict, '_value2member_map_', {})
         dict.__setitem__(classdict, '_hashable_values_', [])
@@ -672,9 +684,7 @@ class EnumType(type):
         return cls._member_map_[name]
 
     def __iter__(cls):
-        """
-        Return members in definition order.
-        """
+        print(f"DEBUG_ITER: cls={cls} names={getattr(cls, '_member_names_', 'MISSING')}")
         return (cls._member_map_[name] for name in cls._member_names_)
 
     def __len__(cls):
@@ -1004,7 +1014,7 @@ class EnumType(type):
 
 EnumMeta = EnumType         # keep EnumMeta name for backwards compatibility
 import builtins as bltns
-bltns.print("DEBUG: EnumType defined. _check_for_existing_members_ =", getattr(EnumType, '_check_for_existing_members_', None))
+
 
 
 class Enum(metaclass=EnumType):
@@ -1341,7 +1351,8 @@ class Flag(Enum, boundary=STRICT):
         for val in _iter_bits_lsb(value & cls._flag_mask_):
             yield cls._value2member_map_.get(val)
 
-    _iter_member_ = _iter_member_by_value_
+        print(f"DEBUG_ENUM: Flag body locals keys={list(locals().keys())}")
+        _iter_member_ = _iter_member_by_value_
 
     @classmethod
     def _iter_member_by_def_(cls, value):
@@ -1647,8 +1658,7 @@ def _simple_enum(etype=Enum, *, boundary=None, use_args=None):
         >>> Color
         <enum 'Color'>
     """
-    def convert_class(cls):
-        nonlocal use_args
+    def convert_class(cls, use_args=use_args):
         cls_name = cls.__name__
         if use_args is None:
             use_args = etype._use_args_
@@ -1699,7 +1709,7 @@ def _simple_enum(etype=Enum, *, boundary=None, use_args=None):
         # things break (such as pickle)
         # however, if the method is defined in the Enum itself, don't replace
         # it
-        enum_class = type(cls_name, (etype, ), body, boundary=boundary, _simple=True)
+        enum_class = EnumType(cls_name, (etype, ), body, boundary=boundary, _simple=True)
         for name in ('__repr__', '__str__', '__format__', '__reduce_ex__'):
             if name not in body:
                 # check for mixin overrides before replacing
@@ -1834,7 +1844,6 @@ class EnumCheck:
     CONTINUOUS = "no skipped integer values"
     NAMED_FLAGS = "multi-flag aliases may not contain unnamed flags"
     UNIQUE = "one name per value"
-CONTINUOUS, NAMED_FLAGS, UNIQUE = EnumCheck
 
 
 class verify:
@@ -2076,3 +2085,4 @@ def _old_convert_(etype, name, module, filter, source=None, *, boundary=None):
     return cls
 
 _stdlib_enums = IntEnum, StrEnum, IntFlag
+# end of enum.py

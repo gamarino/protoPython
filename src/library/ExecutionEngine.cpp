@@ -925,16 +925,27 @@ static bool isTruthy(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
     if (obj == PROTO_FALSE) return false;
     if (obj == PROTO_TRUE) return true;
     
-    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    if (env && obj == env->getNonePrototype()) return false;
-    
     if (obj->isInteger(ctx)) return (obj->asLong(ctx) != 0);
     if (obj->isDouble(ctx)) return (obj->asDouble(ctx) != 0.0);
     if (obj->isString(ctx)) return (obj->asString(ctx)->getSize(ctx) > 0);
     
+    // Optimized native checks (works for both raw Proto objects and those without __bool__ override)
+    if (obj->asTuple(ctx)) return (obj->asTuple(ctx)->getSize(ctx) > 0);
+    if (obj->asList(ctx)) return (obj->asList(ctx)->getSize(ctx) > 0);
+    if (obj->asSparseList(ctx)) return (obj->asSparseList(ctx)->getSize(ctx) > 0);
+
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        fprintf(stderr, "DEBUG isTruthy: obj=%p (type-ident logic follow-through)\n", (void*)obj);
+        fflush(stderr);
+    }
+    if (env && obj == env->getNonePrototype()) return false;
+    
     // Evaluate __bool__ method
     const proto::ProtoString* boolS = env ? env->getBoolString() : proto::ProtoString::fromUTF8String(ctx, "__bool__");
-    const proto::ProtoObject* cls = env ? env->getType(ctx, obj) : obj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__class__"));
+    const proto::ProtoObject* cls = env ? env->getType(ctx, obj) : nullptr;
+    if (!cls) cls = obj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__class__"));
+    
     const proto::ProtoObject* boolMethod = cls ? cls->getAttribute(ctx, boolS) : obj->getAttribute(ctx, boolS);
     if (boolMethod && boolMethod->asMethod(ctx)) {
         const proto::ProtoList* emptyL = env ? env->getEmptyList() : ctx->newList();
@@ -2912,7 +2923,10 @@ const proto::ProtoObject* executeBytecodeRange(
             if (stack.size() < static_cast<size_t>(arg)) continue;
             proto::ProtoObject* setObj = const_cast<proto::ProtoObject*>(ctx->newObject(true));
             stack.push_back(setObj); // Root setObj
-            if (env && env->getSetPrototype()) setObj->addParent(ctx, env->getSetPrototype());
+            if (env && env->getSetPrototype()) {
+                setObj = const_cast<proto::ProtoObject*>(setObj->addParent(ctx, env->getSetPrototype()));
+                stack.back() = setObj;
+            }
             const proto::ProtoSet* data = ctx->newSet();
             const proto::ProtoObject* dataPinned = data->asObject(ctx);
             stack.push_back(dataPinned); // Root data
@@ -2927,6 +2941,12 @@ const proto::ProtoObject* executeBytecodeRange(
             setObj = const_cast<proto::ProtoObject*>(setObj->setAttribute(ctx, env ? env->getDataString() : getInternalString(ctx, "__data__"), data->asObject(ctx)));
             stack[stack.size() - 2] = setObj; // update root
             const proto::ProtoObject* finalSet = stack[stack.size() - 2];
+            if (std::getenv("PROTO_ENV_DIAG")) {
+                const proto::ProtoObject* ftype = env ? env->getType(ctx, finalSet) : nullptr;
+                std::string frepr = env ? env->reprObject(ctx, finalSet) : "???";
+                fprintf(stderr, "DEBUG OP_BUILD_SET: finalSet=%p type=%p repr=%s proto=%p arg=%d\n", (void*)finalSet, (void*)ftype, frepr.c_str(), (void*)(env ? env->getSetPrototype() : nullptr), arg);
+                fflush(stderr);
+            }
             for (int j = 0; j < arg + 2; ++j) stack.pop_back();
             stack.push_back(finalSet);
         } else if (op == OP_BUILD_STRING) {
@@ -4022,12 +4042,18 @@ const proto::ProtoObject* executeBytecodeRange(
                      }
                 }
                 if (list) {
-                    if (static_cast<int>(list->getSize(ctx)) < arg) continue;
+                    if (static_cast<int>(list->getSize(ctx)) < arg) {
+                        if (env) env->raiseValueError(ctx, proto::ProtoString::fromUTF8String(ctx, "not enough values to unpack")->asObject(ctx));
+                        i = next_i; continue;
+                    }
                     for (int j = arg - 1; j >= 0; --j) {
                         stack.push_back(list->getAt(ctx, j));
                     }
                 } else if (tup) {
-                    if (static_cast<int>(tup->getSize(ctx)) < arg) continue;
+                    if (static_cast<int>(tup->getSize(ctx)) < arg) {
+                        if (env) env->raiseValueError(ctx, proto::ProtoString::fromUTF8String(ctx, "not enough values to unpack")->asObject(ctx));
+                        i = next_i; continue;
+                    }
                     for (int j = arg - 1; j >= 0; --j) {
                         stack.push_back(tup->getAt(ctx, j));
                     }
@@ -4051,7 +4077,10 @@ const proto::ProtoObject* executeBytecodeRange(
                 continue;
             }
 
-            if (static_cast<int>(all.size()) < num_before + num_after) continue;
+            if (static_cast<int>(all.size()) < num_before + num_after) {
+                if (env) env->raiseValueError(ctx, proto::ProtoString::fromUTF8String(ctx, "not enough values to unpack")->asObject(ctx));
+                i = next_i; continue;
+            }
 
             // Push after elements (in reverse order for stack)
             for (int i = static_cast<int>(all.size()) - 1; i >= static_cast<int>(all.size()) - num_after; --i) {

@@ -81,9 +81,6 @@ const proto::ProtoObject* py_type_prepare(
     // Initialize __data__ and __keys__ if needed
     if (env) env->initDictStorage(context, dictObj);
     
-    // Explicitly mark this dict as intended for a Python class namespace
-    dictObj = const_cast<proto::ProtoObject*>(dictObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__is_python_class__"), PROTO_TRUE));
-    
     return dictObj;
 }
 static const proto::ProtoObject* py_import(
@@ -2445,10 +2442,11 @@ const proto::ProtoObject* py_type(
             targetClass = const_cast<proto::ProtoObject*>(targetClass->addParent(context, env->getObjectPrototype()));
         }
         
-        if (get_env_diag()) {
+        if (std::getenv("PROTO_ENV_DIAG")) {
             std::string n = "unknown";
             if (name && name->isString(context)) name->asString(context)->toUTF8String(context, n);
-            fprintf(stderr, "DEBUG: py_type name='%s' targetClass=%p __class__=cls=%p\n", n.c_str(), (void*)targetClass, (void*)cls);
+            fprintf(stderr, "DEBUG py_type: creating class '%s' targetClass=%p\n", n.c_str(), (void*)targetClass);
+            fflush(stderr);
         }
         targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, env ? env->getClassString() : proto::ProtoString::fromUTF8String(context, "__class__"), cls));
         const proto::ProtoString* py_name = env ? env->getNameString() : proto::ProtoString::fromUTF8String(context, "__name__");
@@ -2460,6 +2458,10 @@ const proto::ProtoObject* py_type(
         
         // Ensure the new class has dictionary storage (for __dict__ and consistency)
         if (env) env->initDictStorage(context, targetClass);
+        if (get_env_diag()) {
+            fprintf(stderr, "DEBUG py_type: initDictStorage done targetClass=%p\n", (void*)targetClass);
+            fflush(stderr);
+        }
 
         // Copy dictionary attributes and handle __set_name__
         if (dict) {
@@ -2481,8 +2483,8 @@ const proto::ProtoObject* py_type(
                         const proto::ProtoString* k = keyObj->asString(context);
                         std::string ks; k->toUTF8String(context, ks);
                         if (get_env_diag()) {
-                            printf("DEBUG: py_type copying key iter %zu: '%s'\n", i, ks.c_str());
-                            fflush(stdout);
+                            fprintf(stderr, "DEBUG py_type attribute sync: attr '%s' from dict %p\n", ks.c_str(), (void*)dict);
+                            fflush(stderr);
                         }
                         
                         const proto::ProtoObject* val = nullptr;
@@ -2503,7 +2505,8 @@ const proto::ProtoObject* py_type(
                             }
                         }
                         if (!val) { // nullptr ONLY! PROTO_NONE is a valid value.
-                            val = dict->getAttribute(context, k);
+                            // Only copy if it's an own attribute of the dict (mapping)
+                            val = (dict->hasOwnAttribute(context, k)) ? dict->getAttribute(context, k) : nullptr;
                             if (get_env_diag()) fprintf(stderr, "DEBUG py_type loop: fallback getAttribute returned %p\n", (void*)val);
                         }
                         
@@ -2544,6 +2547,12 @@ const proto::ProtoObject* py_type(
                             std::string kn; k->toUTF8String(context, kn);
                             fprintf(stderr, "DEBUG py_type loop: setting attr %s to val %p\n", kn.c_str(), (void*)val);
                         }
+                        if (std::getenv("PROTO_ENV_DIAG")) {
+                            std::string kn; k->toUTF8String(context, kn);
+                            std::string vn = env ? env->reprObject(context, val) : "???";
+                            fprintf(stderr, "DEBUG py_type attribute sync: class=%p attr=%s val=%s\n", (void*)targetClass, kn.c_str(), vn.c_str());
+                            fflush(stderr);
+                        }
                         targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, k, val));
                         
                         // Update targetClass.__keys__
@@ -2580,6 +2589,8 @@ const proto::ProtoObject* py_type(
         }
 
         // Compute and set __mro__ using C3 linearization
+        fprintf(stderr, "DEBUG py_type: starting MRO computation\n");
+        fflush(stderr);
         const proto::ProtoList* mroList = nullptr;
         
         const proto::ProtoTuple* tupleBases = bases ? bases->asTuple(context) : nullptr;
@@ -2727,6 +2738,15 @@ static const proto::ProtoObject* py_isinstance(
     const proto::ProtoObject* cls = positionalParameters->getAt(context, 1);
     cls = resolveClassType(env, self, context, cls);
     
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        std::string objRepr = env ? env->reprObject(context, obj) : "???";
+        std::string clsRepr = env ? env->reprObject(context, cls) : "???";
+        if (clsRepr.find("EnumType") != std::string::npos || clsRepr.find("Enum") != std::string::npos) {
+             fprintf(stderr, "DEBUG py_isinstance: obj=%p (%s) cls=%p (%s)\n", (void*)obj, objRepr.c_str(), (void*)cls, clsRepr.c_str());
+             fflush(stderr);
+        }
+    }
+
     if (obj == PROTO_TRUE || obj == PROTO_FALSE) {
         const proto::ProtoObject* boolType = env ? env->getBoolPrototype() : nullptr;
         const proto::ProtoObject* intType = env ? env->getIntPrototype() : nullptr;
