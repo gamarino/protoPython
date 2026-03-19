@@ -2347,6 +2347,76 @@ extern const proto::ProtoObject* runUserClassCall(proto::ProtoContext* ctx,
 
 namespace builtins {
 
+const proto::ProtoObject* py_type_mro(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    (void)parentLink;
+    (void)keywordParameters;
+    
+    if (get_env_diag()) {
+    }
+    
+    // self can be 'type' or a metaclass, or 'cls' if called as cls.mro()
+    const proto::ProtoObject* cls = self;
+    if (positionalParameters && positionalParameters->getSize(context) > 0) {
+        const proto::ProtoObject* firstArg = positionalParameters->getAt(context, 0);
+        // If called as type.mro(cls)
+        if (firstArg) cls = firstArg;
+    }
+    
+    ::protoPython::PythonEnvironment* env = ::protoPython::PythonEnvironment::fromContext(context);
+    const proto::ProtoString* mroName = proto::ProtoString::fromUTF8String(context, "__mro__");
+    
+    const_cast<proto::ProtoObject*>(cls); // ensure we can use it
+    const proto::ProtoObject* mroAttr = cls->getAttribute(context, mroName);
+    
+    // If it's a descriptor (like the one we found), we need to get its value
+    if (mroAttr && mroAttr->hasAttribute(context, env ? env->getGetDunderString() : proto::ProtoString::fromUTF8String(context, "__get__"))) {
+        const proto::ProtoList* args = context->newList()->appendLast(context, cls)->appendLast(context, cls); // (self, instance, owner)
+        const proto::ProtoObject* getter = mroAttr->getAttribute(context, env ? env->getGetDunderString() : proto::ProtoString::fromUTF8String(context, "__get__"));
+        if (getter && getter->asMethod(context)) {
+            mroAttr = getter->asMethod(context)(context, mroAttr, nullptr, args, nullptr);
+        }
+    }
+
+    const proto::ProtoObject* listProto = env ? env->getListPrototype() : nullptr;
+    const proto::ProtoString* dataName = env ? env->getDataString() : proto::ProtoString::fromUTF8String(context, "__data__");
+    
+    if (mroAttr) {
+        const proto::ProtoTuple* mroTuple = mroAttr->asTuple(context);
+        if (mroTuple) {
+            const proto::ProtoList* mroList = context->newList();
+            for (int i = 0; i < (int)mroTuple->getSize(context); ++i) {
+                mroList = mroList->appendLast(context, mroTuple->getAt(context, i));
+            }
+            if (listProto) {
+                const proto::ProtoObject* res = listProto->newChild(context, true);
+                const_cast<proto::ProtoObject*>(res)->setAttribute(context, dataName, mroList->asObject(context));
+                return res;
+            }
+            return mroList->asObject(context);
+        }
+    }
+    
+    // Fallback: return [cls, object]
+    const proto::ProtoList* fallback = context->newList()->appendLast(context, cls);
+    const proto::ProtoObject* objectProto = env ? env->getObjectPrototype() : nullptr;
+    if (objectProto && cls != objectProto) {
+        fallback = fallback->appendLast(context, objectProto);
+    }
+    
+    if (listProto) {
+        const proto::ProtoObject* res = listProto->newChild(context, true);
+        const_cast<proto::ProtoObject*>(res)->setAttribute(context, dataName, fallback->asObject(context));
+        return res;
+    }
+    
+    return fallback->asObject(context);
+}
+
 static const proto::ProtoObject* py_type_init(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -2583,6 +2653,33 @@ const proto::ProtoObject* py_type(
                         if (std::getenv("PROTO_ENV_DIAG")) {
                         }
                         it = const_cast<proto::ProtoSparseListIterator*>(it->advance(context));
+                    }
+                }
+            }
+        }
+
+        // Call __set_name__ protocol on attributes
+        if (targetClass) {
+            const proto::ProtoString* keysName = env ? env->getKeysString() : proto::ProtoString::fromUTF8String(context, "__keys__");
+            const proto::ProtoObject* keysObj = targetClass->proto::ProtoObject::getAttribute(context, keysName);
+            if (keysObj && keysObj->asList(context)) {
+                const proto::ProtoList* keys = keysObj->asList(context);
+                const proto::ProtoString* setNameName = proto::ProtoString::fromUTF8String(context, "__set_name__");
+                for (unsigned long i = 0; i < keys->getSize(context); ++i) {
+                    const proto::ProtoObject* keyObj = keys->getAt(context, static_cast<int>(i));
+                    if (keyObj && keyObj->isString(context)) {
+                        const proto::ProtoString* attrName = keyObj->asString(context);
+                        const proto::ProtoObject* attrVal = targetClass->proto::ProtoObject::getAttribute(context, attrName);
+                        if (attrVal) {
+                            const proto::ProtoObject* setNameMethod = attrVal->getAttribute(context, setNameName);
+                            if (setNameMethod && setNameMethod->isMethod(context)) {
+                                if (std::getenv("PROTO_ENV_DIAG")) {
+                                    std::string kn; attrName->toUTF8String(context, kn);
+                                    fprintf(stderr, "DEBUG py_type: calling __set_name__ for '%s'\n", kn.c_str());
+                                }
+                                setNameMethod->asMethod(context)(context, attrVal, nullptr, context->newList()->appendLast(context, targetClass)->appendLast(context, attrName->asObject(context)), nullptr);
+                            }
+                        }
                     }
                 }
             }
@@ -3887,12 +3984,12 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     }
     if (typeProto) {
         if (get_env_diag()) {
-            printf("DEBUG: Registering 'type' using typeProto=%p\n", (void*)typeProto);
         }
         builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "type"), typeProto);
+        // Register mro on typePrototype natively
+        const_cast<proto::ProtoObject*>(typeProto)->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "mro"), ctx->fromMethod(const_cast<proto::ProtoObject*>(typeProto), py_type_mro));
     } else {
         if (get_env_diag()) {
-            printf("DEBUG: Registering 'type' using fallback method cell\n");
         }
         builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "type"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_type));
     }

@@ -2712,7 +2712,6 @@ static const proto::ProtoObject* py_dict_call(
                                 } else if (pairT && pairT->getSize(context) == 2) {
                                     k = pairT->getAt(context, 0); v = pairT->getAt(context, 1);
                                 } else {
-                                     // Slow fallback for non-native tuples/lists acting as pairs
                                     const proto::ProtoString* getIS = proto::ProtoString::fromUTF8String(context, "__getitem__");
                                     const proto::ProtoObject* mGet = env ? env->getAttribute(context, pairObj, getIS) : pairObj->getAttribute(context, getIS);
                                     if (mGet && mGet != PROTO_NONE) {
@@ -2843,7 +2842,7 @@ static const proto::ProtoObject* py_set_add(
     const proto::ProtoSparseList* keywordParameters) {
     if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
     const proto::ProtoString* dataName = getInternalString(context, "__data__");
-    const proto::ProtoObject* data = self->getAttribute(context, dataName);
+    const proto::ProtoObject* data = self->proto::ProtoObject::getAttribute(context, dataName);
     const proto::ProtoSet* s = data && data->asSet(context) ? data->asSet(context) : context->newSet();
     const proto::ProtoSet* newSet = s->add(context, positionalParameters->getAt(context, 0));
     self->setAttribute(context, dataName, newSet->asObject(context));
@@ -5555,7 +5554,7 @@ static const proto::ProtoObject* py_dict_keys(
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
     const proto::ProtoString* keysName = getInternalString(context, "__keys__");
-    const proto::ProtoObject* keysObj = self->getAttribute(context, keysName);
+    const proto::ProtoObject* keysObj = self->proto::ProtoObject::getAttribute(context, keysName);
     const proto::ProtoList* keys = keysObj && keysObj->asList(context) ? keysObj->asList(context) : context->newList();
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     const proto::ProtoObject* listProto = env ? env->getListPrototype() : nullptr;
@@ -5571,11 +5570,11 @@ static const proto::ProtoObject* py_dict_values(
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
     const proto::ProtoString* keysName = getInternalString(context, "__keys__");
-    const proto::ProtoObject* keysObj = self->getAttribute(context, keysName);
+    const proto::ProtoObject* keysObj = self->proto::ProtoObject::getAttribute(context, keysName);
     const proto::ProtoList* keys = keysObj && keysObj->asList(context) ? keysObj->asList(context) : context->newList();
 
     const proto::ProtoString* dataName = getInternalString(context, "__data__");
-    const proto::ProtoObject* data = self->getAttribute(context, dataName);
+    const proto::ProtoObject* data = self->proto::ProtoObject::getAttribute(context, dataName);
     const proto::ProtoSparseList* dict = data && data->asSparseList(context) ? data->asSparseList(context) : nullptr;
     if (!dict) return context->newList()->asObject(context);
 
@@ -5601,11 +5600,11 @@ static const proto::ProtoObject* py_dict_items(
     const proto::ProtoSparseList* keywordParameters) {
     if (!self) return context->newList()->asObject(context);
     const proto::ProtoString* keysName = getInternalString(context, "__keys__");
-    const proto::ProtoObject* keysObj = self->getAttribute(context, keysName);
+    const proto::ProtoObject* keysObj = self->proto::ProtoObject::getAttribute(context, keysName);
     const proto::ProtoList* keys = keysObj && keysObj->asList(context) ? keysObj->asList(context) : context->newList();
 
     const proto::ProtoString* dataName = getInternalString(context, "__data__");
-    const proto::ProtoObject* data = self->getAttribute(context, dataName);
+    const proto::ProtoObject* data = self->proto::ProtoObject::getAttribute(context, dataName);
     const proto::ProtoSparseList* dict = data && data->asSparseList(context) ? data->asSparseList(context) : nullptr;
     
     const proto::ProtoList* items = context->newList();
@@ -10061,16 +10060,10 @@ const proto::ProtoString* PythonEnvironment::getInternedString(proto::ProtoConte
     static thread_local std::unordered_map<std::string, const proto::ProtoString*> internPool;
     auto it = internPool.find(str);
     if (it != internPool.end()) {
-        if (str == "CodeType" || str == "MappingProxyType") {
-            if (get_env_diag()) { fprintf(stderr, "DEBUG_INTERN: returning existing '%s' = %p\n", str.c_str(), (void*)it->second); fflush(stderr); }
-        }
         return it->second;
     }
     const proto::ProtoString* newStr = proto::ProtoString::fromUTF8String(ctx, str.c_str());
     internPool[str] = newStr;
-    if (str == "CodeType" || str == "MappingProxyType") {
-        if (get_env_diag()) { fprintf(stderr, "DEBUG_INTERN: created new '%s' = %p\n", str.c_str(), (void*)newStr); fflush(stderr); }
-    }
     return newStr;
 }
 
