@@ -3821,6 +3821,32 @@ const proto::ProtoObject* executeBytecodeRange(
                         fprintf(stderr, "DEBUG: OP_BUILD_CLASS injecting targetClass=%p into ns=%p\n", (void*)targetClass, (void*)ns);
                     }
                     ns->setAttribute(ctx, clsName, targetClass);
+
+                    // 5. Trigger __set_name__ on descriptors
+                    const proto::ProtoObject* keysObj = ns->getAttribute(ctx, keysS);
+                    if (keysObj && keysObj->asList(ctx)) {
+                        const proto::ProtoList* keysList = keysObj->asList(ctx);
+                        const proto::ProtoString* setNameS = proto::ProtoString::fromUTF8String(ctx, "__set_name__");
+                        for (unsigned long j = 0; j < keysList->getSize(ctx); ++j) {
+                            const proto::ProtoObject* key = keysList->getAt(ctx, static_cast<int>(j));
+                            if (key->isString(ctx)) {
+                                const proto::ProtoObject* attr = ns->getAttribute(ctx, key->asString(ctx));
+                                if (attr) {
+                                    const proto::ProtoObject* setNameM = env ? env->getAttribute(ctx, attr, setNameS) : attr->getAttribute(ctx, setNameS);
+                                    if (setNameM && setNameM != PROTO_NONE) {
+                                        // Wrap key (ProtoString) into a Python-level string object
+                                        proto::ProtoObject* pyKey = const_cast<proto::ProtoObject*>(ctx->newObject(true));
+                                        if (env && env->getStrPrototype()) pyKey->addParent(ctx, env->getStrPrototype());
+                                        pyKey = const_cast<proto::ProtoObject*>(pyKey->setAttribute(ctx, env ? env->getDataString() : getInternalString(ctx, "__data__"), key));
+                                        
+                                        const proto::ProtoList* setNameArgs = ctx->newList()->appendLast(ctx, targetClass)->appendLast(ctx, pyKey);
+                                        invokeCallable(ctx, setNameM, setNameArgs);
+                                        if (env && env->hasPendingException()) break;
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
 
                 if (!targetClass) targetClass = PROTO_NONE;
