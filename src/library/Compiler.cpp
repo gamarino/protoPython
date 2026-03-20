@@ -18,6 +18,7 @@ Compiler::Compiler(proto::ProtoContext* ctx, const std::string& filename)
 }
 
 int Compiler::addConstant(const proto::ProtoObject* obj) {
+    if (!obj) obj = PROTO_NONE;
     if (obj == PROTO_NONE || obj == PROTO_TRUE || obj == PROTO_FALSE) {
         int n = static_cast<int>(constantsVec_.size());
         for (int i = 0; i < n; ++i) {

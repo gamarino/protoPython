@@ -329,7 +329,7 @@ class _proto_member:
 class EnumDict(dict):
     def __init__(self, cls_name=None):
         dict.__init__(self)
-        dict.__setitem__(self, '_member_names', [])
+        dict.__setitem__(self, '_member_names_', [])
         dict.__setitem__(self, '_last_values', [])
         dict.__setitem__(self, '_ignore', [])
         dict.__setitem__(self, '_auto_called', False)
@@ -372,7 +372,6 @@ class EnumDict(dict):
                         _gnv = value.__func__
                     except AttributeError:
                         _gnv = value
-                    print(f"DEBUG_ENUM: setting _generate_next_value on {self} to {_gnv}")
                     _setattr(self, '_generate_next_value', _gnv)
                     dict.__setitem__(self, key, value)
                 elif key == '_ignore_':
@@ -381,7 +380,7 @@ class EnumDict(dict):
                     else:
                         value = _list(value)
                     dict.__setitem__(self, '_ignore', value)
-                    already = _set(value) & _set(dict.__getitem__(self, '_member_names'))
+                    already = _set(value) & _set(dict.__getitem__(self, '_member_names_'))
                     if already:
                         raise ValueError(
                                 '_ignore_ cannot specify already set names: %r'
@@ -392,7 +391,7 @@ class EnumDict(dict):
                     _setattr(self, key, value)
                 return
 
-            member_names = dict.__getitem__(self, '_member_names')
+            member_names = dict.__getitem__(self, '_member_names_')
             if key in member_names:
                 raise TypeError('%r already defined as %r' % (key, self[key]))
             if key in dict.__getitem__(self, '_ignore'):
@@ -427,7 +426,7 @@ class EnumDict(dict):
 
     @property
     def member_names(self):
-        return list(self._member_names)
+        return list(self._member_names_)
 
     def update(self, members, **more_members):
         dict.update(self, members)
@@ -441,17 +440,7 @@ class EnumType(type):
 
     @classmethod
     def __prepare__(metacls, cls, bases, **kwds):
-        try:
-            print(f"DEBUG_ENUM: __prepare__ metacls={metacls} cls={cls}")
-            print(f"DEBUG_ENUM: EnumType={EnumType}")
-            print(f"DEBUG_ENUM: check_method={getattr(EnumType, '_check_for_existing_members_', 'MISSING')}")
-            print(f"DEBUG_ENUM: dict={dict}")
-            print(f"DEBUG_ENUM: bltns.dict={getattr(bltns, 'dict', 'MISSING')}")
-            print(f"DEBUG_ENUM: dict.__new__={getattr(dict, '__new__', 'MISSING')}")
-        except Exception as e:
-            print(f"DEBUG_ENUM: error during debug prints: {e}")
         EnumType._check_for_existing_members_(metacls, cls, bases)
-        print(f"DEBUG_ENUM: calling dict.__new__(EnumDict)")
         enum_dict = dict.__new__(EnumDict)
         EnumDict.__init__(enum_dict, cls)
         member_type, first_enum = EnumType._get_mixins_(metacls, cls, bases)
@@ -518,9 +507,8 @@ class EnumType(type):
         tmp_new = EnumType._find_new_(
                 metacls, classdict, member_type, first_enum,
                 )
-        print(f"DEBUG_UNPACK: _find_new_ returned {tmp_new}")
-        __new__, save_new, use_args = tmp_new
-        dict.__setitem__(classdict, '_new_member_', __new__)
+        member_new, save_new, use_args = tmp_new
+        dict.__setitem__(classdict, '_new_member_', member_new)
         dict.__setitem__(classdict, '_use_args_', use_args)
         #
         # convert future enum members into temporary _proto_members
@@ -556,7 +544,9 @@ class EnumType(type):
             enum_class = _type.__new__(metacls, cls, bases, classdict)
         
         # update classdict with any changes made by __init_subclass__
-        classdict.update(_getattr(enum_class, '__dict__', {}))
+        # (CPython 3.12+ does this)
+        if hasattr(enum_class, '__init_subclass__'):
+            classdict.update(_getattr(enum_class, '__dict__', {}))
         
         # for Flag, add __or__, __and__, __xor__, and __invert__
         if Flag is not None and _issubclass(enum_class, Flag):
@@ -570,12 +560,50 @@ class EnumType(type):
                     _setattr(enum_class, name, enum_method)
                     classdict[name] = enum_method
         
+        # now create members
+        for name in member_names:
+            value = classdict[name]
+            if isinstance(value, _proto_member):
+                value = value.value
+            # create member
+            try:
+                if use_args:
+                    if not isinstance(value, tuple):
+                        args = (enum_class, value)
+                    else:
+                        args = (enum_class, ) + value
+                    member = member_new(*args)
+                    member_value = value[0] if isinstance(value, tuple) else value
+                else:
+                    member = member_new(enum_class)
+                    member_value = value
+            except Exception as e:
+                raise
+            
+            member._name_ = name
+            member._value_ = member_value
+            
+            # call _add_member_
+            EnumType._add_member_(metacls, enum_class, name, member)
+            
+            # also populate _value2member_map_
+            # (aliases are already in _member_map_ via _add_member_)
+            if member_value not in enum_class._value2member_map_:
+                enum_class._value2member_map_[member_value] = member
+            
+            if _is_single_bit(member_value):
+                # (Flag only)
+                enum_class._flag_mask_ |= member_value
+                enum_class._singles_mask_ |= member_value
+            else:
+                enum_class._flag_mask_ |= member_value
+
         # replace any other __new__ with our own
         if Enum is not None:
             if save_new:
-                _setattr(enum_class, '__new_member__', __new__)
+                _setattr(enum_class, '__new_member__', member_new)
             enum_class.__new__ = Enum.__new__
-        
+
         return enum_class
     def __bool__(cls):
         """
@@ -917,12 +945,12 @@ class EnumType(type):
         # now find the correct __new__, checking to see of one was defined
         # by the user; also check earlier enum classes in case a __new__ was
         # saved as __new_member__
-        __new__ = dict.get(classdict, '__new__', None)
+        member_new = classdict.get('__new__', None)
 
         # should __new__ be saved as __new_member__ later?
-        save_new = first_enum is not None and __new__ is not None
+        save_new = first_enum is not None and member_new is not None
 
-        if __new__ is None:
+        if member_new is None:
             # check all possibles for __new_member__ before falling back to
             # __new__
             for method in ('__new_member__', '__new__'):
@@ -934,21 +962,21 @@ class EnumType(type):
                             object.__new__,
                             Enum.__new__,
                             }:
-                        __new__ = target
+                        member_new = target
                         break
-                if __new__ is not None:
+                if member_new is not None:
                     break
             else:
-                __new__ = object.__new__
+                member_new = object.__new__
 
         # if a non-object.__new__ is used then whatever value/tuple was
         # assigned to the enum member name will be passed to __new__ and to the
         # new enum member's __init__
-        if first_enum is None or __new__ in (Enum.__new__, object.__new__):
+        if first_enum is None or member_new in (Enum.__new__, object.__new__):
             use_args = False
         else:
             use_args = True
-        return __new__, save_new, use_args
+        return member_new, save_new, use_args
 
     def _add_member_(mcls, cls, name, member):
         # _value_ structures are not updated
@@ -962,7 +990,13 @@ class EnumType(type):
         descriptor_type = None
         class_type = None
         for base in cls.__mro__[1:]:
-            attr = base.__dict__.get(name)
+            try:
+                base_dict = getattr(base, '__dict__', None)
+                if base_dict is None or not hasattr(base_dict, 'get'):
+                    continue
+                attr = base_dict.get(name)
+            except Exception:
+                attr = None
             if attr is not None:
                 if isinstance(attr, (property, DynamicClassAttribute)):
                     found_descriptor = attr
@@ -1351,7 +1385,6 @@ class Flag(Enum, boundary=STRICT):
         for val in _iter_bits_lsb(value & cls._flag_mask_):
             yield cls._value2member_map_.get(val)
 
-        print(f"DEBUG_ENUM: Flag body locals keys={list(locals().keys())}")
         _iter_member_ = _iter_member_by_value_
 
     @classmethod

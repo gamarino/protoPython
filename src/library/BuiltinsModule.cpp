@@ -2835,15 +2835,6 @@ static const proto::ProtoObject* py_isinstance(
     const proto::ProtoObject* cls = positionalParameters->getAt(context, 1);
     cls = resolveClassType(env, self, context, cls);
     
-    if (std::getenv("PROTO_ENV_DIAG")) {
-        std::string objRepr = env ? env->reprObject(context, obj) : "???";
-        std::string clsRepr = env ? env->reprObject(context, cls) : "???";
-        if (clsRepr.find("EnumType") != std::string::npos || clsRepr.find("Enum") != std::string::npos) {
-             fprintf(stderr, "DEBUG py_isinstance: obj=%p (%s) cls=%p (%s)\n", (void*)obj, objRepr.c_str(), (void*)cls, clsRepr.c_str());
-             fflush(stderr);
-        }
-    }
-
     if (obj == PROTO_TRUE || obj == PROTO_FALSE) {
         const proto::ProtoObject* boolType = env ? env->getBoolPrototype() : nullptr;
         const proto::ProtoObject* intType = env ? env->getIntPrototype() : nullptr;
@@ -2869,9 +2860,6 @@ static const proto::ProtoObject* py_isinstance(
 }
 
 static bool py_issubclass_check_single(proto::ProtoContext* context, const proto::ProtoObject* cls, const proto::ProtoObject* base) {
-    if (std::getenv("PROTO_ENV_DIAG")) {
-        fprintf(stderr, "DEBUG py_issubclass_check_single: cls=%p base=%p\n", (void*)cls, (void*)base);
-    }
     if (cls == base) {
         if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG py_issubclass_check_single returns True (cls == base)\n");
         return true;

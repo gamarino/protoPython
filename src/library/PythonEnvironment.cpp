@@ -1003,26 +1003,33 @@ static const proto::ProtoObject* py_list_iter(
 
     const proto::ProtoList* list = self->asList(context);
     const proto::ProtoObject* data = self;
-    if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG py_list_iter: START self=%p list=%p\n", (void*)self, (void*)list);
     if (!list) {
         const proto::ProtoString* dataName = env ? env->getDataString() : getInternalString(context, "__data__");
         data = self->getAttribute(context, dataName);
-        if (data) list = data->asList(context);
-        if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG py_list_iter: data fallback data=%p list=%p\n", (void*)data, (void*)list);
+        if (data) {
+            list = data->asList(context);
+            if (!list && data->isString(context)) {
+                const proto::ProtoString* s = data->asString(context);
+                std::string utf8;
+                s->toUTF8String(context, utf8);
+                const proto::ProtoList* L = context->newList();
+                for (char c : utf8) {
+                    char buf[2] = {c, '\0'};
+                    const proto::ProtoObject* charObj = proto::ProtoString::fromUTF8String(context, buf)->asObject(context);
+                    L = L->appendLast(context, charObj);
+                }
+                list = L;
+            }
+        }
     }
-    if (!list) {
-        if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG py_list_iter: return PROTO_NONE\n");
-        return PROTO_NONE;
-    }
+    if (!list) return PROTO_NONE;
 
     const proto::ProtoListIterator* it = list->getIterator(context);
 
     const proto::ProtoObject* iterObj = iterProto->newChild(context, true);
-    const proto::ProtoString* iterListName = proto::ProtoString::fromUTF8String(context, "__iter_list__");
     const proto::ProtoString* iterItName = proto::ProtoString::fromUTF8String(context, "__iter_it__");
-    iterObj = iterObj->setAttribute(context, iterListName, data);
     iterObj = iterObj->setAttribute(context, iterItName, it->asObject(context));
-    fprintf(stderr, "DEBUG py_list_iter: returning iterObj=%p\n", (void*)iterObj); return iterObj;
+    return iterObj;
 }
 
 static const proto::ProtoObject* py_list_iter_next(
@@ -1033,22 +1040,12 @@ static const proto::ProtoObject* py_list_iter_next(
     const proto::ProtoSparseList* keywordParameters) {
     const proto::ProtoString* iterItName = proto::ProtoString::fromUTF8String(context, "__iter_it__");
     const proto::ProtoObject* itObj = self->getAttribute(context, iterItName);
-    if (!itObj) {
-        if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG py_list_iter_next: itObj is NULL\n");
-        return PROTO_NONE;
-    }
-    if (!itObj->asListIterator(context)) {
-        if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG py_list_iter_next: itObj->asListIterator is NULL. itObj=%p type=%p\n", (void*)itObj, (void*)(itObj->getPrototype(context)));
-        return PROTO_NONE;
-    }
+    if (!itObj || !itObj->asListIterator(context)) return PROTO_NONE;
     const proto::ProtoListIterator* it = itObj->asListIterator(context);
-    if (!it || !it->hasNext(context)) {
-        if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG py_list_iter_next: exhausted\n");
-        return nullptr;
-    }
+    if (!it || !it->hasNext(context)) return nullptr;
     const proto::ProtoObject* value = it->next(context);
     const proto::ProtoListIterator* nextIt = it->advance(context);
-    self = self->setAttribute(context, iterItName, nextIt->asObject(context));
+    self->setAttribute(context, iterItName, nextIt->asObject(context));
     return value;
 }
 
@@ -10133,31 +10130,18 @@ const proto::ProtoObject* PythonEnvironment::iter(const proto::ProtoObject* obj)
 
     if (!obj || obj == PROTO_NONE || obj == nonePrototype || (obj && obj->isNone(ctx)) || 
         (obj && obj->isCell(ctx) && obj->hasParent(ctx, noneTypeProto))) {
-        if (std::getenv("PROTO_ENV_DIAG")) {
-            fprintf(stderr, "DEBUG: env->iter matched NoneType obj=%p isCell=%d noneTypeProto=%p hasParentNone=%d\n",
-                    (void*)obj, (obj ? obj->isCell(ctx) : 0), (void*)noneTypeProto, (obj ? obj->hasParent(ctx, noneTypeProto) : 0));
-            if (obj && obj->getParents(ctx)) {
-                fprintf(stderr, "DEBUG: obj parents size=%zu\n", obj->getParents(ctx)->getSize(ctx));
-                for(size_t i=0; i<obj->getParents(ctx)->getSize(ctx); i++) {
-                    fprintf(stderr, "DEBUG: parent[%zu]=%p\n", i, (void*)obj->getParents(ctx)->getAt(ctx, i));
-                }
-            }
-            fflush(stderr);
-        }
         raiseTypeError(ctx, "'NoneType' object is not iterable");
         return nullptr;
     }
-    const proto::ProtoObject* method = getAttribute(ctx, obj, getIterString());
-    if (std::getenv("PROTO_ENV_DIAG")) {
-        fprintf(stderr, "DEBUG: env->iter called on obj=%p, method=%p, asMethod=%p\n",
-                (void*)obj, (void*)method, (void*)(method ? method->asMethod(ctx) : nullptr));
-        fflush(stderr);
-    }
-    if (method && method->asMethod(ctx)) {
-        return method->asMethod(ctx)(ctx, obj, nullptr, getEmptyList(), nullptr);
-    }
 
-
+    const proto::ProtoObject* cls = getType(ctx, obj);
+    const proto::ProtoObject* method = getAttribute(ctx, cls, getIterString());
+    
+    if (method && method != PROTO_NONE) {
+        const proto::ProtoList* args = ctx->newList()->appendLast(ctx, obj);
+        const proto::ProtoObject* result = protoPython::invokePythonCallable(ctx, method, args, nullptr);
+        if (result && result != PROTO_NONE) return result;
+    }
 
     // Optimization: if it already has __next__, it's an iterator (return self)
     const proto::ProtoObject* nextMethod = obj->getAttribute(ctx, getNextString());
@@ -10175,7 +10159,7 @@ const proto::ProtoObject* PythonEnvironment::iter(const proto::ProtoObject* obj)
             const proto::ProtoObject* iterObj = iterProto->newChild(ctx, true);
             iterObj = iterObj->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iter_list__"), obj);
             iterObj = iterObj->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iter_it__"), it->asObject(ctx));
-            fprintf(stderr, "DEBUG py_list_iter: returning iterObj=%p\n", (void*)iterObj); return iterObj;
+            return iterObj;
         }
     } else if (obj->asTuple(ctx)) {
         const proto::ProtoString* iterProtoName = proto::ProtoString::fromUTF8String(ctx, "__iter_prototype__");
@@ -10187,7 +10171,7 @@ const proto::ProtoObject* PythonEnvironment::iter(const proto::ProtoObject* obj)
                 const proto::ProtoObject* iterObj = iterProto->newChild(ctx, true);
                 iterObj = iterObj->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iter_list__"), obj);
                 iterObj = iterObj->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iter_it__"), it->asObject(ctx));
-                fprintf(stderr, "DEBUG py_list_iter: returning iterObj=%p\n", (void*)iterObj); return iterObj;
+                return iterObj;
             }
         }
     } else if (obj->isString(ctx)) {
@@ -10206,7 +10190,7 @@ const proto::ProtoObject* PythonEnvironment::iter(const proto::ProtoObject* obj)
                 const proto::ProtoObject* iterObj = iterProto->newChild(ctx, true);
                 iterObj = iterObj->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iter_list__"), keysObj);
                 iterObj = iterObj->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iter_it__"), it->asObject(ctx));
-                fprintf(stderr, "DEBUG py_list_iter: returning iterObj=%p\n", (void*)iterObj); return iterObj;
+                return iterObj;
             }
         }
     } else if (obj->asSet(ctx) || (obj->getPrototype(ctx) && obj->getPrototype(ctx) == setPrototype)) {
