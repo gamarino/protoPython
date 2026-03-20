@@ -367,6 +367,9 @@ static const proto::ProtoObject* py_print(
     const proto::ProtoSparseList* keywordParameters) {
     if (std::getenv("PROTO_ENV_DIAG")) {
         fprintf(stderr, "DEBUG: py_print called with %lu args\n", positionalParameters->getSize(context));
+    } else {
+        // Force diag for this investigation
+        // fprintf(stderr, "DEBUG: py_print size=%lu\n", positionalParameters->getSize(context));
     }
     (void)keywordParameters;
     std::string sep = " ";
@@ -387,7 +390,7 @@ static const proto::ProtoObject* py_print(
             strObj = context->fromUTF8String(std::to_string(obj->asLong(context)).c_str());
         } else if (obj->isDouble(context)) {
             strObj = context->fromUTF8String(std::to_string(obj->asDouble(context)).c_str());
-        } else if (obj->isString(context)) {
+        } else if (obj->isString(context) || (((uintptr_t)obj & 0x3FF) == 129)) {
             strObj = obj;
         } else if (obj == PROTO_TRUE) {
             strObj = context->fromUTF8String("True");
@@ -412,10 +415,29 @@ static const proto::ProtoObject* py_print(
             }
         }
 
-        if (strObj && strObj->isString(context)) {
+        if (strObj && (strObj->isString(context) || (((uintptr_t)strObj & 0x3FF) == 129))) {
             std::string out;
-            strObj->asString(context)->toUTF8String(context, out);
+            if (((uintptr_t)strObj & 0x3FF) == 129) {
+                out = static_cast<char>((uintptr_t)strObj >> 10);
+            } else {
+                strObj->asString(context)->toUTF8String(context, out);
+            }
             std::cout << out;
+        } else if (strObj) {
+            // Try to unwrap if it's a Python-level string object with __data__
+            const proto::ProtoString* dataS = env ? env->getDataString() : proto::ProtoString::fromUTF8String(context, "__data__");
+            const proto::ProtoObject* data = strObj->getAttribute(context, dataS);
+            if (data && (data->isString(context) || (((uintptr_t)data & 0x3FF) == 129))) {
+                std::string out;
+                if (((uintptr_t)data & 0x3FF) == 129) {
+                    out = static_cast<char>((uintptr_t)data >> 10);
+                } else {
+                    data->asString(context)->toUTF8String(context, out);
+                }
+                std::cout << out;
+            } else {
+                std::cout << "<unprintable>";
+            }
         } else {
             std::cout << "<unprintable>";
         }

@@ -1049,60 +1049,6 @@ static const proto::ProtoObject* py_list_iter_next(
     return value;
 }
 
-static const proto::ProtoObject* py_str_iter_next(
-    proto::ProtoContext* context,
-    const proto::ProtoObject* self,
-    const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
-    const proto::ProtoString* iterItName = proto::ProtoString::fromUTF8String(context, "__iter_it__");
-    const proto::ProtoObject* itObj = self->getAttribute(context, iterItName);
-    if (!itObj || !itObj->asListIterator(context)) return PROTO_NONE;
-    const proto::ProtoListIterator* it = itObj->asListIterator(context);
-    if (!it || !it->hasNext(context)) return nullptr;
-    const proto::ProtoObject* value = it->next(context);
-    const proto::ProtoListIterator* nextIt = it->advance(context);
-    self = self->setAttribute(context, iterItName, nextIt->asObject(context));
-    
-    // Wrap value into a 1-char ProtoString
-    if (value) {
-        if (((uintptr_t)value & 0x3FF) == 129) {
-            char c = static_cast<char>((uintptr_t)value >> 10);
-            char strBuf[2] = {c, '\0'};
-            PythonEnvironment* env = PythonEnvironment::fromContext(context);
-            const proto::ProtoString* charStr = proto::ProtoString::fromUTF8String(context, strBuf);
-            proto::ProtoObject* resObj = const_cast<proto::ProtoObject*>(context->newObject(false));
-            resObj->setAttribute(context, env ? env->getDataString() : getInternalString(context, "__data__"), charStr->asObject(context));
-            if (env && env->getStrPrototype()) {
-                resObj = const_cast<proto::ProtoObject*>(resObj->addParent(context, env->getStrPrototype()));
-                resObj->setAttribute(context, env->getClassString(), env->getStrPrototype());
-            }
-            return resObj;
-        } else if (value->isInteger(context)) {
-            char c = static_cast<char>(value->asLong(context));
-            char strBuf[2] = {c, '\0'};
-            PythonEnvironment* env = PythonEnvironment::fromContext(context);
-            const proto::ProtoString* charStr = proto::ProtoString::fromUTF8String(context, strBuf);
-            proto::ProtoObject* resObj = const_cast<proto::ProtoObject*>(context->newObject(false));
-            resObj->setAttribute(context, env ? env->getDataString() : getInternalString(context, "__data__"), charStr->asObject(context));
-            if (env && env->getStrPrototype()) {
-                resObj = const_cast<proto::ProtoObject*>(resObj->addParent(context, env->getStrPrototype()));
-                resObj->setAttribute(context, env->getClassString(), env->getStrPrototype());
-            }
-            return resObj;
-        } else if (value->isString(context)) {
-            PythonEnvironment* env = PythonEnvironment::fromContext(context);
-            proto::ProtoObject* resObj = const_cast<proto::ProtoObject*>(context->newObject(false));
-            resObj->setAttribute(context, env ? env->getDataString() : getInternalString(context, "__data__"), value);
-            if (env && env->getStrPrototype()) {
-                resObj = const_cast<proto::ProtoObject*>(resObj->addParent(context, env->getStrPrototype()));
-                resObj->setAttribute(context, env->getClassString(), env->getStrPrototype());
-            }
-            return resObj;
-        }
-    }
-    return PROTO_NONE; // Should not happen for strings
-}
 
 static const proto::ProtoObject* py_list_reversed(
     proto::ProtoContext* context,
@@ -4260,16 +4206,64 @@ static const proto::ProtoString* str_from_self(proto::ProtoContext* context, con
     return data && data->isString(context) ? data->asString(context) : nullptr;
 }
 
+static const proto::ProtoObject* py_str_identity(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    return self;
+}
+
 static const proto::ProtoObject* py_str_iter(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
     const proto::ProtoString* str = str_from_self(context, self);
     if (!str) return PROTO_NONE;
-    const proto::ProtoStringIterator* it = str->getIterator(context);
-    return it ? it->asObject(context) : PROTO_NONE;
+
+    const proto::ProtoString* iterProtoName = getInternalString(context, "__iter_prototype__");
+    const proto::ProtoObject* iterProto = env ? env->getAttribute(context, self, iterProtoName) : self->getAttribute(context, iterProtoName);
+    if (!iterProto) return PROTO_NONE;
+
+    const proto::ProtoString* dataName = env ? env->getDataString() : getInternalString(context, "__data__");
+    const proto::ProtoString* indexName = getInternalString(context, "__index__");
+
+    const proto::ProtoObject* iterObj = iterProto->newChild(context, true);
+    iterObj = iterObj->setAttribute(context, dataName, self);
+    iterObj = iterObj->setAttribute(context, indexName, context->fromInteger(0));
+    return iterObj;
+}
+
+static const proto::ProtoObject* py_str_iter_next(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::ProtoString* dataName = env ? env->getDataString() : getInternalString(context, "__data__");
+    const proto::ProtoString* indexName = getInternalString(context, "__index__");
+
+    const proto::ProtoObject* data = self->getAttribute(context, dataName);
+    const proto::ProtoObject* idxObj = self->getAttribute(context, indexName);
+    if (!data || !idxObj || !idxObj->isInteger(context)) return PROTO_NONE;
+
+    const proto::ProtoString* str = data->asString(context);
+    if (!str) return PROTO_NONE;
+
+    long long index = idxObj->asLong(context);
+    std::string s;
+    str->toUTF8String(context, s);
+
+    if (index < (long long)s.size()) {
+        std::string ch = s.substr(index, 1);
+        self->setAttribute(context, indexName, context->fromInteger(index + 1));
+        return context->fromUTF8String(ch.c_str());
+    }
+
+    return nullptr;
 }
 
 static const proto::ProtoObject* py_str_contains(
@@ -7380,6 +7374,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     strPrototype = strPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "isascii"), rootContext_->fromMethod(nullptr, py_str_isascii));
     strPrototype = strPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "isdecimal"), rootContext_->fromMethod(nullptr, py_str_isdecimal));
     strPrototype = strPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "isnumeric"), rootContext_->fromMethod(nullptr, py_str_isnumeric));
+    strPrototype = strPrototype->setAttribute(rootContext_, py_str, rootContext_->fromMethod(nullptr, py_str_identity));
+    strPrototype = strPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_str_identity));
 
     listPrototype = objectPrototype->newChild(rootContext_, true);
     listPrototype = listPrototype->setAttribute(rootContext_, py_class, typePrototype);
@@ -7436,9 +7432,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     strIterProto = strIterProto->setAttribute(rootContext_, py_next, rootContext_->fromMethod(nullptr, py_str_iter_next));
     strIterProto = strIterProto->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_self_iter));
     strPrototype = strPrototype->setAttribute(rootContext_, py_iter_proto, strIterProto);
-    strPrototype = strPrototype->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_list_iter));
-    if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG PROTOS: Finished setting strIterProto! strPrototype->hasOwnAttr(%p)=%d\n", (void*)py_iter_proto, strPrototype->hasOwnAttribute(rootContext_, py_iter_proto) == PROTO_TRUE);  
-    strPrototype = strPrototype->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_list_iter));
+    strPrototype = strPrototype->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_str_iter));
     const proto::ProtoObject* listReverseIterProto = objectPrototype->newChild(rootContext_, true);
     listReverseIterProto = listReverseIterProto->setAttribute(rootContext_, py_class, typePrototype);
     listReverseIterProto = listReverseIterProto->setAttribute(rootContext_, py_name, proto::ProtoString::fromUTF8String(rootContext_, "list_reverseiterator")->asObject(rootContext_));
