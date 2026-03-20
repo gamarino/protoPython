@@ -10165,14 +10165,10 @@ const proto::ProtoObject* PythonEnvironment::iter(const proto::ProtoObject* obj)
         const proto::ProtoString* iterProtoName = proto::ProtoString::fromUTF8String(ctx, "__iter_prototype__");
         const proto::ProtoObject* iterProto = tuplePrototype ? tuplePrototype->getAttribute(ctx, iterProtoName) : nullptr;
         if (iterProto) {
-            const proto::ProtoList* list = obj->asTuple(ctx)->asList(ctx);
-            if (list) {
-                const proto::ProtoListIterator* it = list->getIterator(ctx);
-                const proto::ProtoObject* iterObj = iterProto->newChild(ctx, true);
-                iterObj = iterObj->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iter_list__"), obj);
-                iterObj = iterObj->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iter_it__"), it->asObject(ctx));
-                return iterObj;
-            }
+            const proto::ProtoObject* iterObj = iterProto->newChild(ctx, true);
+            iterObj = iterObj->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iter_tuple__"), obj);
+            iterObj = iterObj->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iter_index__"), ctx->fromInteger(0));
+            return iterObj;
         }
     } else if (obj->isString(ctx)) {
         const proto::ProtoString* str = obj->asString(ctx);
