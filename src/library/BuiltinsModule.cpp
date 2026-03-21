@@ -367,9 +367,6 @@ static const proto::ProtoObject* py_print(
     const proto::ProtoSparseList* keywordParameters) {
     if (std::getenv("PROTO_ENV_DIAG")) {
         fprintf(stderr, "DEBUG: py_print called with %lu args\n", positionalParameters->getSize(context));
-    } else {
-        // Force diag for this investigation
-        // fprintf(stderr, "DEBUG: py_print size=%lu\n", positionalParameters->getSize(context));
     }
     (void)keywordParameters;
     std::string sep = " ";
@@ -390,7 +387,7 @@ static const proto::ProtoObject* py_print(
             strObj = context->fromUTF8String(std::to_string(obj->asLong(context)).c_str());
         } else if (obj->isDouble(context)) {
             strObj = context->fromUTF8String(std::to_string(obj->asDouble(context)).c_str());
-        } else if (obj->isString(context) || (((uintptr_t)obj & 0x3FF) == 129)) {
+        } else if (obj->isString(context)) {
             strObj = obj;
         } else if (obj == PROTO_TRUE) {
             strObj = context->fromUTF8String("True");
@@ -415,29 +412,10 @@ static const proto::ProtoObject* py_print(
             }
         }
 
-        if (strObj && (strObj->isString(context) || (((uintptr_t)strObj & 0x3FF) == 129))) {
+        if (strObj && strObj->isString(context)) {
             std::string out;
-            if (((uintptr_t)strObj & 0x3FF) == 129) {
-                out = static_cast<char>((uintptr_t)strObj >> 10);
-            } else {
-                strObj->asString(context)->toUTF8String(context, out);
-            }
+            strObj->asString(context)->toUTF8String(context, out);
             std::cout << out;
-        } else if (strObj) {
-            // Try to unwrap if it's a Python-level string object with __data__
-            const proto::ProtoString* dataS = env ? env->getDataString() : proto::ProtoString::fromUTF8String(context, "__data__");
-            const proto::ProtoObject* data = strObj->getAttribute(context, dataS);
-            if (data && (data->isString(context) || (((uintptr_t)data & 0x3FF) == 129))) {
-                std::string out;
-                if (((uintptr_t)data & 0x3FF) == 129) {
-                    out = static_cast<char>((uintptr_t)data >> 10);
-                } else {
-                    data->asString(context)->toUTF8String(context, out);
-                }
-                std::cout << out;
-            } else {
-                std::cout << "<unprintable>";
-            }
         } else {
             std::cout << "<unprintable>";
         }
@@ -2857,6 +2835,15 @@ static const proto::ProtoObject* py_isinstance(
     const proto::ProtoObject* cls = positionalParameters->getAt(context, 1);
     cls = resolveClassType(env, self, context, cls);
     
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        std::string objRepr = env ? env->reprObject(context, obj) : "???";
+        std::string clsRepr = env ? env->reprObject(context, cls) : "???";
+        if (clsRepr.find("EnumType") != std::string::npos || clsRepr.find("Enum") != std::string::npos) {
+             fprintf(stderr, "DEBUG py_isinstance: obj=%p (%s) cls=%p (%s)\n", (void*)obj, objRepr.c_str(), (void*)cls, clsRepr.c_str());
+             fflush(stderr);
+        }
+    }
+
     if (obj == PROTO_TRUE || obj == PROTO_FALSE) {
         const proto::ProtoObject* boolType = env ? env->getBoolPrototype() : nullptr;
         const proto::ProtoObject* intType = env ? env->getIntPrototype() : nullptr;
@@ -2882,6 +2869,9 @@ static const proto::ProtoObject* py_isinstance(
 }
 
 static bool py_issubclass_check_single(proto::ProtoContext* context, const proto::ProtoObject* cls, const proto::ProtoObject* base) {
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        fprintf(stderr, "DEBUG py_issubclass_check_single: cls=%p base=%p\n", (void*)cls, (void*)base);
+    }
     if (cls == base) {
         if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG py_issubclass_check_single returns True (cls == base)\n");
         return true;

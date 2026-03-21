@@ -38,6 +38,7 @@ add_library(protoPython SHARED
     ErrnoModule.cpp
     StatModule.cpp
     StructModule.cpp
+    OpcodeModule.cpp
 )
 
 target_include_directories(protoPython PUBLIC

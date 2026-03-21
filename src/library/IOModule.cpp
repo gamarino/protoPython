@@ -79,19 +79,6 @@ static const proto::ProtoObject* py_io_open(
     fileObj = fileObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "mode"), context->fromUTF8String(mode.c_str()));
     fileObj = fileObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "buffering"), context->fromInteger(-1));
     std::string* buffer = new std::string();
-    if (mode.find('r') != std::string::npos) {
-        FILE* f = fopen(filename.c_str(), "rb");
-        if (f) {
-            fseek(f, 0, SEEK_END);
-            long size = ftell(f);
-            fseek(f, 0, SEEK_SET);
-            if (size > 0) {
-                buffer->resize(size);
-                fread(&(*buffer)[0], 1, size, f);
-            }
-            fclose(f);
-        }
-    }
     fileObj = fileObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__file_buffer__"),
         context->fromExternalPointer(buffer, file_buffer_finalizer));
     fileObj = fileObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "read"),

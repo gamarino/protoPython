@@ -142,7 +142,8 @@ TEST_F(FoundationTest, ExecuteModule) {
         if (phase == 0) ++hookBefore;
         else ++hookAfter;
     });
-    env.executeModule("builtins");
+    // Use a module that is unlikely to have been loaded yet in this suite
+    env.executeModule("abc");
     EXPECT_EQ(hookBefore, 1);
     EXPECT_EQ(hookAfter, 1);
     env.setExecutionHook(nullptr);

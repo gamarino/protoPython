@@ -96,7 +96,7 @@ public:
     /**
      * @brief Gets the Python 'None' prototype.
      */
-    const proto::ProtoObject* getNonePrototype() const { return nonePrototype ? nonePrototype : PROTO_NONE; }
+    const proto::ProtoObject* getNonePrototype() const { return nonePrototype; }
     /** @brief Gets the Python 'Ellipsis' prototype. */
     const proto::ProtoObject* getEllipsisPrototype() const { return ellipsisPrototype; }
     /** @brief Gets the Python 'NotImplemented' prototype. */
@@ -216,7 +216,6 @@ public:
     const proto::ProtoObject* getAttribute(proto::ProtoContext* ctx, const proto::ProtoObject* obj, const proto::ProtoString* name);
 
     const proto::ProtoObject* getType(proto::ProtoContext* ctx, const proto::ProtoObject* obj);
-    bool isActuallyAClass(proto::ProtoContext* ctx, const proto::ProtoObject* obj);
 
     const proto::ProtoObject* setAttribute(proto::ProtoContext* ctx, const proto::ProtoObject* obj, const proto::ProtoString* name, const proto::ProtoObject* value);
 

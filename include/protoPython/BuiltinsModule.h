@@ -51,13 +51,6 @@ const proto::ProtoObject* py_type(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters);
-    
-const proto::ProtoObject* py_type_mro(
-    proto::ProtoContext* context,
-    const proto::ProtoObject* self,
-    const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters);
 
 const proto::ProtoObject* py_type_prepare(
     proto::ProtoContext* context,
