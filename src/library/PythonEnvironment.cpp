@@ -31,6 +31,9 @@
 #include <protoPython/PathlibModule.h>
 #include <protoPython/CollectionsAbcModule.h>
 #include <protoPython/OpcodeModule.h>
+#include <protoPython/MarshalModule.h>
+#include <protoPython/ImpModule.h>
+#include <protoPython/WarningsModule.h>
 #include <protoPython/AtexitModule.h>
 #include <protoPython/ExecutionEngine.h>
 #include <protoPython/Parser.h>
@@ -7874,6 +7877,9 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     nativeProvider->registerModule("_struct", [](proto::ProtoContext* ctx) { return struct_module::initialize(ctx); });
     // Optional native modules that might not be fully tracked yet
     nativeProvider->registerModule("_opcode", [](proto::ProtoContext* c) { return opcode_module::initialize(c); });
+    nativeProvider->registerModule("marshal", [](proto::ProtoContext* c) { return library::MarshalModule::createMarshalModule(c); });
+    nativeProvider->registerModule("_imp", [](proto::ProtoContext* c) { return library::ImpModule::createImpModule(c); });
+    nativeProvider->registerModule("_warnings", [](proto::ProtoContext* c) { return library::WarningsModule::createWarningsModule(c); });
 
     exceptionType = exceptionsMod->getAttribute(rootContext_, exceptionS);
     keyErrorType = exceptionsMod->getAttribute(rootContext_, keyErrorS);
