@@ -217,6 +217,8 @@ public:
 
     const proto::ProtoObject* getType(proto::ProtoContext* ctx, const proto::ProtoObject* obj);
 
+    bool isActuallyAClass(proto::ProtoContext* ctx, const proto::ProtoObject* obj);
+
     const proto::ProtoObject* setAttribute(proto::ProtoContext* ctx, const proto::ProtoObject* obj, const proto::ProtoString* name, const proto::ProtoObject* value);
 
     const proto::ProtoObject* compareObjects(proto::ProtoContext* ctx, const proto::ProtoObject* a, const proto::ProtoObject* b, int op);
