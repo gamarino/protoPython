@@ -4577,4 +4577,5 @@ const proto::ProtoObject* exported_runUserFunctionCall(proto::ProtoContext* ctx,
     return runUserFunctionCall(ctx, self, parentLink, args, kwargs);
 }
 
+
 } // namespace protoPython

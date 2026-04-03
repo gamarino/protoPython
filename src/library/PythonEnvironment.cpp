@@ -521,8 +521,8 @@ static const proto::ProtoObject* py_object_reduce(
 static const proto::ProtoObject* py_float_call(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    if (posArgs->getSize(ctx) == 0) return ctx->fromDouble(0.0);
-    const proto::ProtoObject* x = posArgs->getAt(ctx, 0);
+    if (!posArgs || posArgs->getSize(ctx) <= 1) return ctx->fromDouble(0.0);
+    const proto::ProtoObject* x = posArgs->getAt(ctx, 1);
     if (x->isInteger(ctx)) return ctx->fromDouble(static_cast<double>(x->asLong(ctx)));
     if (x->isDouble(ctx)) return x;
     if (x->isString(ctx)) {
@@ -7289,7 +7289,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     intPrototype = intPrototype->setAttribute(rootContext_, py_name, rootContext_->fromUTF8String("int"));
     intPrototype = intPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_type_repr));
     intPrototype = intPrototype->setAttribute(rootContext_, py_module, builtinsVal);
-    intPrototype = intPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__new__"), rootContext_->fromMethod(nullptr, py_int_call));
+    intPrototype = intPrototype->setAttribute(rootContext_, (rootContext_)->fromUTF8String("__new__")->asString(rootContext_), rootContext_->fromMethod(nullptr, py_int_call));
+    intPrototype = intPrototype->setAttribute(rootContext_, (rootContext_)->fromUTF8String("__init__")->asString(rootContext_), rootContext_->fromMethod(nullptr, protoPython::builtins::py_python_ignore_init));
     intPrototype = intPrototype->setAttribute(rootContext_, py_hash, rootContext_->fromMethod(nullptr, py_int_hash));
     intPrototype = intPrototype->setAttribute(rootContext_, py_bool, rootContext_->fromMethod(nullptr, py_int_bool));
     intPrototype = intPrototype->setAttribute(rootContext_, py_format_dunder, rootContext_->fromMethod(nullptr, py_int_format));
@@ -7314,7 +7315,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     strPrototype = strPrototype->setAttribute(rootContext_, py_name, rootContext_->fromUTF8String("str"));
     strPrototype = strPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_type_repr));
     strPrototype = strPrototype->setAttribute(rootContext_, py_module, builtinsVal);
-    strPrototype = strPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__new__"), rootContext_->fromMethod(nullptr, py_str_call));
+    strPrototype = strPrototype->setAttribute(rootContext_, (rootContext_)->fromUTF8String("__new__")->asString(rootContext_), rootContext_->fromMethod(nullptr, py_str_call));
+    strPrototype = strPrototype->setAttribute(rootContext_, (rootContext_)->fromUTF8String("__init__")->asString(rootContext_), rootContext_->fromMethod(nullptr, protoPython::builtins::py_python_ignore_init));
     strPrototype = strPrototype->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_str_iter));
     strPrototype = strPrototype->setAttribute(rootContext_, py_getitem, rootContext_->fromMethod(nullptr, py_str_getitem));
     strPrototype = strPrototype->setAttribute(rootContext_, py_contains, rootContext_->fromMethod(nullptr, py_str_contains));
@@ -7393,7 +7395,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     listPrototype = listPrototype->setAttribute(rootContext_, py_name, rootContext_->fromUTF8String("list"));
     listPrototype = listPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_type_repr));
     listPrototype = listPrototype->setAttribute(rootContext_, py_module, builtinsVal);
-    listPrototype = listPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__new__"), rootContext_->fromMethod(nullptr, py_list_call));
+    listPrototype = listPrototype->setAttribute(rootContext_, (rootContext_)->fromUTF8String("__new__")->asString(rootContext_), rootContext_->fromMethod(nullptr, py_list_call));
+    listPrototype = listPrototype->setAttribute(rootContext_, (rootContext_)->fromUTF8String("__init__")->asString(rootContext_), rootContext_->fromMethod(nullptr, protoPython::builtins::py_python_ignore_init));
     listPrototype = listPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_type_repr));
     listPrototype = listPrototype->setAttribute(rootContext_, py_append, rootContext_->fromMethod(nullptr, py_list_append));
     listPrototype = listPrototype->setAttribute(rootContext_, py_len, rootContext_->fromMethod(nullptr, py_list_len));
@@ -7457,7 +7460,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     dictPrototype = objectPrototype->newChild(rootContext_, true);
     dictPrototype = dictPrototype->setAttribute(rootContext_, py_class, typePrototype);
     dictPrototype = dictPrototype->setAttribute(rootContext_, py_name, rootContext_->fromUTF8String("dict"));
-    dictPrototype = dictPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__new__"), rootContext_->fromMethod(nullptr, py_dict_call));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, (rootContext_)->fromUTF8String("__new__")->asString(rootContext_), rootContext_->fromMethod(nullptr, py_dict_call));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, (rootContext_)->fromUTF8String("__init__")->asString(rootContext_), rootContext_->fromMethod(nullptr, protoPython::builtins::py_python_ignore_init));
     dictPrototype = dictPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__init__"), rootContext_->fromMethod(nullptr, py_dict_init));
     dictPrototype = dictPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_type_repr));
     dictPrototype = dictPrototype->setAttribute(rootContext_, py_module, builtinsVal);
@@ -7504,7 +7508,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     tuplePrototype = tuplePrototype->setAttribute(rootContext_, py_name, rootContext_->fromUTF8String("tuple"));
     tuplePrototype = tuplePrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_type_repr));
     tuplePrototype = tuplePrototype->setAttribute(rootContext_, py_module, builtinsVal);
-    tuplePrototype = tuplePrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__new__"), rootContext_->fromMethod(nullptr, py_tuple_call));
+    tuplePrototype = tuplePrototype->setAttribute(rootContext_, (rootContext_)->fromUTF8String("__new__")->asString(rootContext_), rootContext_->fromMethod(nullptr, py_tuple_call));
+    tuplePrototype = tuplePrototype->setAttribute(rootContext_, (rootContext_)->fromUTF8String("__init__")->asString(rootContext_), rootContext_->fromMethod(nullptr, protoPython::builtins::py_python_ignore_init));
     tuplePrototype = tuplePrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_type_repr));
     tuplePrototype = tuplePrototype->setAttribute(rootContext_, py_len, rootContext_->fromMethod(nullptr, py_tuple_len));
     tuplePrototype = tuplePrototype->setAttribute(rootContext_, py_getitem, rootContext_->fromMethod(nullptr, py_tuple_getitem));
@@ -7535,7 +7540,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     setPrototype = setPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_type_repr));
     setPrototype = setPrototype->setAttribute(rootContext_, py_module, builtinsVal);
     setPrototype = setPrototype->setAttribute(rootContext_, py_len, rootContext_->fromMethod(nullptr, py_set_len));
-    setPrototype = setPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__new__"), rootContext_->fromMethod(nullptr, py_set_call));
+    setPrototype = setPrototype->setAttribute(rootContext_, (rootContext_)->fromUTF8String("__new__")->asString(rootContext_), rootContext_->fromMethod(nullptr, py_set_call));
+    setPrototype = setPrototype->setAttribute(rootContext_, (rootContext_)->fromUTF8String("__init__")->asString(rootContext_), rootContext_->fromMethod(nullptr, protoPython::builtins::py_python_ignore_init));
     setPrototype = setPrototype->setAttribute(rootContext_, py_contains, rootContext_->fromMethod(nullptr, py_set_contains));
     setPrototype = setPrototype->setAttribute(rootContext_, py_bool, rootContext_->fromMethod(nullptr, py_set_bool));
     setPrototype = setPrototype->setAttribute(rootContext_, py_add, rootContext_->fromMethod(nullptr, py_set_add));
@@ -7635,6 +7641,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     floatPrototype = floatPrototype->setAttribute(rootContext_, py_module, builtinsVal);
     floatPrototype = floatPrototype->setAttribute(rootContext_, py_bool, rootContext_->fromMethod(nullptr, py_float_bool));
     floatPrototype = floatPrototype->setAttribute(rootContext_, py_call, rootContext_->fromMethod(nullptr, py_float_call));
+    floatPrototype = floatPrototype->setAttribute(rootContext_, (rootContext_)->fromUTF8String("__init__")->asString(rootContext_), rootContext_->fromMethod(nullptr, protoPython::builtins::py_python_ignore_init));
     const proto::ProtoString* py_is_integer = proto::ProtoString::fromUTF8String(rootContext_, "is_integer");
     floatPrototype = floatPrototype->setAttribute(rootContext_, py_is_integer, rootContext_->fromMethod(nullptr, py_float_is_integer));
     const proto::ProtoString* py_as_integer_ratio = proto::ProtoString::fromUTF8String(rootContext_, "as_integer_ratio");
@@ -7684,7 +7691,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     boolPrototype = boolPrototype->setAttribute(rootContext_, py_class, typePrototype);
     boolPrototype = boolPrototype->setAttribute(rootContext_, py_name, rootContext_->fromUTF8String("bool"));
     boolPrototype = boolPrototype->setAttribute(rootContext_, py_module, builtinsVal);
-    boolPrototype = boolPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8String(rootContext_, "__new__"), rootContext_->fromMethod(nullptr, py_bool_call));
+    boolPrototype = boolPrototype->setAttribute(rootContext_, (rootContext_)->fromUTF8String("__new__")->asString(rootContext_), rootContext_->fromMethod(nullptr, py_bool_call));
+    boolPrototype = boolPrototype->setAttribute(rootContext_, (rootContext_)->fromUTF8String("__init__")->asString(rootContext_), rootContext_->fromMethod(nullptr, protoPython::builtins::py_python_ignore_init));
     // Update boolean class name and repr
     boolPrototype = boolPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_type_repr));
     
@@ -8203,6 +8211,17 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
         addRoot(objectS->asObject(rootContext_));
         addRoot(typeS->asObject(rootContext_));
         addRoot(dictString->asObject(rootContext_));
+    }
+    const proto::ProtoString* initS = (rootContext_)->fromUTF8String("__init__")->asString(rootContext_);
+    for (auto* exc : {&exceptionType, &keyErrorType, &valueErrorType, &nameErrorType, 
+                      &attributeErrorType, &syntaxErrorType, &typeErrorType, &importErrorType, 
+                      &zeroDivisionErrorType, &indexErrorType, &osErrorType, &runtimeErrorType, 
+                      &stopIterationType, &assertionErrorType, &systemErrorType, 
+                      &baseExceptionType, &keyboardInterruptType, &systemExitType, 
+                      &recursionErrorType, &eofErrorType, &blockingIOErrorType}) {
+        if (exc && *exc && (*exc)->getAttribute(rootContext_, initS)) {
+             this->callObject(*exc, {});
+        }
     }
     // Final prototype initialization diagnostic removed
 }
@@ -10515,7 +10534,7 @@ void PythonEnvironment::delName(const std::string& name) {
     proto::ProtoContext* ctx = rootContext_;
     const proto::ProtoObject* frame = getCurrentFrame();
     if (frame) {
-        const_cast<proto::ProtoObject*>(frame)->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, name.c_str()), PROTO_NONE);
+        const_cast<proto::ProtoObject*>(frame)->setAttribute(ctx, (ctx)->fromUTF8String(name.c_str())->asString(ctx), PROTO_NONE);
     }
     invalidateResolveCache();
 }
