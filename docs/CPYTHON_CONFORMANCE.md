@@ -88,7 +88,15 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 - **Builtin Registration**:
   - Fixed typo in `builtins` registration for the `bytes` type.
 
-## Recent Achievements (V81)
+## Recent Achievements (V83)
+
+- **VM Stability & Bootstrap Reliability**:
+  - Resolved `TypeError` during early object model setup (bootstrap phase) by adding a mandatory initialization loop for `BaseException`, `Exception`, `TypeError`, and `SystemError` in `PythonEnvironment::initializeRootObjects`. This ensures that all essential exception prototypes are registered before any module loading or code execution, completely unblocking the standard library initialization sequence.
+  - Implemented `SETUP_FINALLY` (122) and `POP_BLOCK` (87) bytecode opcodes in the official interpreter (Version C) to support full `try...finally` block semantics.
+  - Corrected the exception recovery logic: when a pending exception is detected, the VM now correctly unwinds the evaluation stack to the handler's depth and jumps to the next instruction in the corresponding block, ensuring total stack isolation and context integrity across frame boundaries.
+  - Resolved a critical structural regression in `ExecutionEngine.cpp` where a misplaced namespace closing brace broke the visibility of exported functions like `runClassCall`.
+  - Harmonized the VM execution path to use a single, unified bytecode interpreter (Version C), eliminating previous triple-redundancy and reducing maintenance overhead.
+  - Integrated `next_i` tracking during exception catching to resolve `Stack underflow` errors in `TestFoundation.StatisticsMean`.
 
 - **GC Scalability & Deadlock Resolution**:
   - Fixed O(N^2) infinite GC hang by properly promoting `lastAllocatedCell` to `DirtySegments` linearly across GC cycles.
