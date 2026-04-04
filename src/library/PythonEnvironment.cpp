@@ -6968,6 +6968,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     classString = getInternedString(rootContext_, "__class__");
     newString = getInternedString(rootContext_, "__new__");
     prepareString = getInternedString(rootContext_, "__prepare__");
+    mroString = getInternedString(rootContext_, "__mro__");
+    basesString = getInternedString(rootContext_, "__bases__");
     executedString = proto::ProtoString::createSymbol(rootContext_, "__executed__");
     nameString = getInternedString(rootContext_, "__name__");
     callString = getInternedString(rootContext_, "__call__");
@@ -7105,14 +7107,18 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
 
     objectPrototype = objectPrototype->setAttribute(rootContext_, py_init, rootContext_->fromMethod(nullptr, py_object_init));
     // Core FIX: Bind __new__ directly immediately to prevent type fallback overshadowing it due to cache invalidations!
-    objectPrototype = objectPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8(rootContext_, "__new__"), py_object_new);
+    objectPrototype = objectPrototype->setAttribute(rootContext_, newString, py_object_new);
     objectPrototype = objectPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_object_repr));
     objectPrototype = objectPrototype->setAttribute(rootContext_, py_str, rootContext_->fromMethod(nullptr, py_object_str));
-    objectPrototype = objectPrototype->setAttribute(rootContext_, py_format_dunder, rootContext_->fromMethod(nullptr, py_object_format));
-    objectPrototype = objectPrototype->setAttribute(rootContext_, py_hash_dunder, rootContext_->fromMethod(nullptr, py_object_hash));
-    objectPrototype = objectPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8(rootContext_, "__reduce_ex__"), rootContext_->fromMethod(nullptr, py_object_reduce_ex));
-    objectPrototype = objectPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8(rootContext_, "__reduce__"), rootContext_->fromMethod(nullptr, py_object_reduce));
-    objectPrototype = objectPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8(rootContext_, "__is_python_class__"), PROTO_TRUE);
+    objectPrototype = objectPrototype->setAttribute(rootContext_, getInternedString(rootContext_, "__format__"), rootContext_->fromMethod(nullptr, py_object_format));
+    objectPrototype = objectPrototype->setAttribute(rootContext_, getInternedString(rootContext_, "__hash__"), rootContext_->fromMethod(nullptr, py_object_hash));
+    objectPrototype = objectPrototype->setAttribute(rootContext_, getInternedString(rootContext_, "__reduce_ex__"), rootContext_->fromMethod(nullptr, py_object_reduce_ex));
+    objectPrototype = objectPrototype->setAttribute(rootContext_, getInternedString(rootContext_, "__reduce__"), rootContext_->fromMethod(nullptr, py_object_reduce));
+    objectPrototype = objectPrototype->setAttribute(rootContext_, getInternedString(rootContext_, "__is_python_class__"), PROTO_TRUE);
+
+    // Set MRO and bases for object
+    objectPrototype = objectPrototype->setAttribute(rootContext_, mroString, rootContext_->newTupleFromList(rootContext_->newList()->appendLast(rootContext_, objectPrototype))->asObject(rootContext_));
+    objectPrototype = objectPrototype->setAttribute(rootContext_, basesString, rootContext_->newTupleFromList(rootContext_->newList())->asObject(rootContext_));
 
     // 2. Create 'type'
     typePrototype = objectPrototype->newChild(rootContext_, true);
@@ -7120,12 +7126,17 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     typePrototype = typePrototype->setAttribute(rootContext_, py_name, rootContext_->fromUTF8String("type"));
     typePrototype = typePrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_type_repr));
     typePrototype = typePrototype->setAttribute(rootContext_, py_module, builtinsVal);
-    typePrototype = typePrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8(rootContext_, "__call__"), rootContext_->fromMethod(nullptr, py_type_call));
-    typePrototype = typePrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8(rootContext_, "__is_python_class__"), PROTO_TRUE);
+    typePrototype = typePrototype->setAttribute(rootContext_, getInternedString(rootContext_, "__call__"), rootContext_->fromMethod(nullptr, py_type_call));
+    typePrototype = typePrototype->setAttribute(rootContext_, getInternedString(rootContext_, "__is_python_class__"), PROTO_TRUE);
     typePrototype = typePrototype->setAttribute(rootContext_, newString, rootContext_->fromMethod(nullptr, protoPython::builtins::py_type));
     typePrototype = typePrototype->setAttribute(rootContext_, prepareString, rootContext_->fromMethod(nullptr, protoPython::builtins::py_type_prepare));
-    typePrototype = typePrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8(rootContext_, "__class_getitem__"), rootContext_->fromMethod(nullptr, py_type_class_getitem));
-    typePrototype = typePrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8(rootContext_, "__or__"), rootContext_->fromMethod(nullptr, py_type_or));
+    typePrototype = typePrototype->setAttribute(rootContext_, getInternedString(rootContext_, "__class_getitem__"), rootContext_->fromMethod(nullptr, py_type_class_getitem));
+    typePrototype = typePrototype->setAttribute(rootContext_, getInternedString(rootContext_, "__or__"), rootContext_->fromMethod(nullptr, py_type_or));
+
+    // Set MRO and bases for type
+    const proto::ProtoList* typeMroList = rootContext_->newList()->appendLast(rootContext_, typePrototype)->appendLast(rootContext_, objectPrototype);
+    typePrototype = typePrototype->setAttribute(rootContext_, mroString, rootContext_->newTupleFromList(typeMroList)->asObject(rootContext_));
+    typePrototype = typePrototype->setAttribute(rootContext_, basesString, rootContext_->newTupleFromList(rootContext_->newList()->appendLast(rootContext_, objectPrototype))->asObject(rootContext_));
 
     // V75: Initialize specific prototypes for better type identity
     // IMPORTANT: methodPrototype MUST be initialized extremely early so that ALL subsequent methods get it natively!
@@ -7309,6 +7320,10 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     intPrototype = intPrototype->setAttribute(rootContext_, py_from_bytes, rootContext_->fromMethod(nullptr, py_int_from_bytes));
     intPrototype = intPrototype->setAttribute(rootContext_, py_to_bytes, rootContext_->fromMethod(nullptr, py_int_to_bytes));
 
+    // Set MRO and bases for int
+    intPrototype = intPrototype->setAttribute(rootContext_, mroString, rootContext_->newTupleFromList(rootContext_->newList()->appendLast(rootContext_, intPrototype)->appendLast(rootContext_, objectPrototype))->asObject(rootContext_));
+    intPrototype = intPrototype->setAttribute(rootContext_, basesString, rootContext_->newTupleFromList(rootContext_->newList()->appendLast(rootContext_, objectPrototype))->asObject(rootContext_));
+
     complexPrototype = objectPrototype->newChild(rootContext_, true);
     complexPrototype = complexPrototype->setAttribute(rootContext_, py_class, typePrototype);
     complexPrototype = complexPrototype->setAttribute(rootContext_, py_name, rootContext_->fromUTF8String("complex"));
@@ -7387,6 +7402,10 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     strPrototype = strPrototype->setAttribute(rootContext_, py_isdigit, rootContext_->fromMethod(nullptr, py_str_isdigit));
     strPrototype = strPrototype->setAttribute(rootContext_, py_isspace, rootContext_->fromMethod(nullptr, py_str_isspace));
     strPrototype = strPrototype->setAttribute(rootContext_, py_isalnum, rootContext_->fromMethod(nullptr, py_str_isalnum));
+
+    // Set MRO and bases for str
+    strPrototype = strPrototype->setAttribute(rootContext_, mroString, rootContext_->newTupleFromList(rootContext_->newList()->appendLast(rootContext_, strPrototype)->appendLast(rootContext_, objectPrototype))->asObject(rootContext_));
+    strPrototype = strPrototype->setAttribute(rootContext_, basesString, rootContext_->newTupleFromList(rootContext_->newList()->appendLast(rootContext_, objectPrototype))->asObject(rootContext_));
     const proto::ProtoString* py_isupper = proto::ProtoString::fromUTF8(rootContext_, "isupper");
     const proto::ProtoString* py_islower = proto::ProtoString::fromUTF8(rootContext_, "islower");
     strPrototype = strPrototype->setAttribute(rootContext_, py_isupper, rootContext_->fromMethod(nullptr, py_str_isupper));
@@ -7438,6 +7457,10 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     listPrototype = listPrototype->setAttribute(rootContext_, py_rmul, rootContext_->fromMethod(nullptr, py_list_mul));
     listPrototype = listPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8(rootContext_, "__add__"), rootContext_->fromMethod(nullptr, py_list_add));
     listPrototype = listPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8(rootContext_, "__iadd__"), rootContext_->fromMethod(nullptr, py_list_iadd));
+
+    // Set MRO and bases for list
+    listPrototype = listPrototype->setAttribute(rootContext_, mroString, rootContext_->newTupleFromList(rootContext_->newList()->appendLast(rootContext_, listPrototype)->appendLast(rootContext_, objectPrototype))->asObject(rootContext_));
+    listPrototype = listPrototype->setAttribute(rootContext_, basesString, rootContext_->newTupleFromList(rootContext_->newList()->appendLast(rootContext_, objectPrototype))->asObject(rootContext_));
 
     const proto::ProtoObject* listIterProto = objectPrototype->newChild(rootContext_, true);
     listIterProto = listIterProto->setAttribute(rootContext_, py_class, typePrototype);
@@ -7510,6 +7533,10 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     dictPrototype = dictPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8(rootContext_, "__ior__"), rootContext_->fromMethod(nullptr, py_dict_ior));
     dictPrototype = dictPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8(rootContext_, "__iror__"), rootContext_->fromMethod(nullptr, py_dict_iror));
 
+    // Set MRO and bases for dict
+    dictPrototype = dictPrototype->setAttribute(rootContext_, mroString, rootContext_->newTupleFromList(rootContext_->newList()->appendLast(rootContext_, dictPrototype)->appendLast(rootContext_, objectPrototype))->asObject(rootContext_));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, basesString, rootContext_->newTupleFromList(rootContext_->newList()->appendLast(rootContext_, objectPrototype))->asObject(rootContext_));
+
     tuplePrototype = objectPrototype->newChild(rootContext_, true);
     tuplePrototype = tuplePrototype->setAttribute(rootContext_, py_class, typePrototype);
     tuplePrototype = tuplePrototype->setAttribute(rootContext_, py_name, rootContext_->fromUTF8String("tuple"));
@@ -7530,6 +7557,10 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     tuplePrototype = tuplePrototype->setAttribute(rootContext_, py_tuple_count_name, rootContext_->fromMethod(nullptr, py_tuple_count));
     tuplePrototype = tuplePrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_tuple_repr));
     tuplePrototype = tuplePrototype->setAttribute(rootContext_, py_eq, rootContext_->fromMethod(nullptr, py_tuple_eq));
+
+    // Set MRO and bases for tuple
+    tuplePrototype = tuplePrototype->setAttribute(rootContext_, mroString, rootContext_->newTupleFromList(rootContext_->newList()->appendLast(rootContext_, tuplePrototype)->appendLast(rootContext_, objectPrototype))->asObject(rootContext_));
+    tuplePrototype = tuplePrototype->setAttribute(rootContext_, basesString, rootContext_->newTupleFromList(rootContext_->newList()->appendLast(rootContext_, objectPrototype))->asObject(rootContext_));
 
     const proto::ProtoObject* tupleIterProto = objectPrototype->newChild(rootContext_, true);
     tupleIterProto = tupleIterProto->setAttribute(rootContext_, py_class, typePrototype);
@@ -7569,6 +7600,10 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     setPrototype = setPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8(rootContext_, "__sub__"), rootContext_->fromMethod(nullptr, py_set_sub));
     setPrototype = setPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8(rootContext_, "__xor__"), rootContext_->fromMethod(nullptr, py_set_xor));
     setPrototype = setPrototype->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_set_iter));
+
+    // Set MRO and bases for set
+    setPrototype = setPrototype->setAttribute(rootContext_, mroString, rootContext_->newTupleFromList(rootContext_->newList()->appendLast(rootContext_, setPrototype)->appendLast(rootContext_, objectPrototype))->asObject(rootContext_));
+    setPrototype = setPrototype->setAttribute(rootContext_, basesString, rootContext_->newTupleFromList(rootContext_->newList()->appendLast(rootContext_, objectPrototype))->asObject(rootContext_));
 
     const proto::ProtoObject* setIterProto = objectPrototype->newChild(rootContext_, true);
     setIterProto = setIterProto->setAttribute(rootContext_, py_class, typePrototype);
@@ -7702,7 +7737,12 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     boolPrototype = boolPrototype->setAttribute(rootContext_, (rootContext_)->fromUTF8String("__init__")->asString(rootContext_), rootContext_->fromMethod(nullptr, protoPython::builtins::py_python_ignore_init));
     // Update boolean class name and repr
     boolPrototype = boolPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_type_repr));
-    
+    boolPrototype = boolPrototype->setAttribute(rootContext_, py_str, rootContext_->fromMethod(nullptr, py_bool_str));
+
+    // Set MRO and bases for bool
+    boolPrototype = boolPrototype->setAttribute(rootContext_, mroString, rootContext_->newTupleFromList(rootContext_->newList()->appendLast(rootContext_, boolPrototype)->appendLast(rootContext_, intPrototype)->appendLast(rootContext_, objectPrototype))->asObject(rootContext_));
+    boolPrototype = boolPrototype->setAttribute(rootContext_, basesString, rootContext_->newTupleFromList(rootContext_->newList()->appendLast(rootContext_, intPrototype))->asObject(rootContext_));
+
     // 4.5 Initialize modulePrototype
     modulePrototype = objectPrototype->newChild(rootContext_, true);
     modulePrototype = modulePrototype->setAttribute(rootContext_, getClassString(), typePrototype);
