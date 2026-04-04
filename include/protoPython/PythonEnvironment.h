@@ -6,7 +6,8 @@
 #include <functional>
 #include <iostream>
 #include <mutex>
-#include <string>
+#include <mutex>
+#include <unordered_map>
 #include <thread>
 #include <unordered_map>
 #include <vector>
@@ -960,6 +961,9 @@ private:
     const proto::ProtoString* py_le_s{nullptr};
     const proto::ProtoString* py_gt_s{nullptr};
     const proto::ProtoString* py_ge_s{nullptr};
+
+    std::unordered_map<std::string, const proto::ProtoString*> internPool_;
+    std::mutex internMutex_;
 
     /** Incremented on invalidateResolveCache(); per-thread caches check this (lock-free). */
     mutable std::atomic<uint64_t> resolveCacheGeneration_{0};

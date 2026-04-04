@@ -10162,13 +10162,17 @@ static const proto::ProtoObject* buildTraceback(proto::ProtoContext* ctx, const 
 }
 
 const proto::ProtoString* PythonEnvironment::getInternedString(proto::ProtoContext* ctx, const std::string& str) {
-    static thread_local std::unordered_map<std::string, const proto::ProtoString*> internPool;
-    auto it = internPool.find(str);
-    if (it != internPool.end()) {
+    PythonEnvironment* env = fromContext(ctx);
+    if (!env) {
+        return proto::ProtoString::fromUTF8(ctx, str.c_str());
+    }
+    std::lock_guard<std::mutex> lock(env->internMutex_);
+    auto it = env->internPool_.find(str);
+    if (it != env->internPool_.end()) {
         return it->second;
     }
     const proto::ProtoString* newStr = proto::ProtoString::fromUTF8(ctx, str.c_str());
-    internPool[str] = newStr;
+    env->internPool_[str] = newStr;
     return newStr;
 }
 
