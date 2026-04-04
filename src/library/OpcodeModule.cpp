@@ -69,7 +69,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     PythonEnvironment* env = PythonEnvironment::get(ctx);
     const proto::ProtoObject* mod = ctx->newObject(false);
     if (env && env->getObjectPrototype()) mod = mod->addParent(ctx, env->getObjectPrototype());
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__name__"), ctx->fromUTF8String("_opcode"));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__name__"), ctx->fromUTF8String("_opcode"));
 
     std::map<std::string, int> opmap_data = {
         {"LOAD_CONST", OP_LOAD_CONST}, {"RETURN_VALUE", OP_RETURN_VALUE},
@@ -139,7 +139,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     
     int maxOp = 255;
     for (const auto& pair : opmap_data) {
-        const proto::ProtoString* k = proto::ProtoString::fromUTF8String(ctx, pair.first.c_str());
+        const proto::ProtoString* k = proto::ProtoString::createSymbol(ctx, pair.first.c_str());
         if (env && opmap) {
             env->setItem(opmap, k->asObject(ctx), ctx->fromInteger(pair.second));
         } else {
@@ -147,7 +147,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         }
         if (pair.second > maxOp) maxOp = pair.second;
     }
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "opmap"), opmap);
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "opmap"), opmap);
 
     const proto::ProtoList* opname_list = ctx->newList();
     std::vector<std::string> namesVec(maxOp + 1, "");
@@ -168,25 +168,25 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     proto::ProtoObject* opname_obj = const_cast<proto::ProtoObject*>(ctx->newObject(false));
     if (env && env->getListPrototype()) {
         opname_obj = const_cast<proto::ProtoObject*>(opname_obj->addParent(ctx, env->getListPrototype()));
-        opname_obj = const_cast<proto::ProtoObject*>(opname_obj->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__class__"), env->getListPrototype()));
+        opname_obj = const_cast<proto::ProtoObject*>(opname_obj->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__class__"), env->getListPrototype()));
     }
-    opname_obj = const_cast<proto::ProtoObject*>(opname_obj->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__data__"), opname_list->asObject(ctx)));
+    opname_obj = const_cast<proto::ProtoObject*>(opname_obj->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__data__"), opname_list->asObject(ctx)));
 
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "opname"), opname_obj);
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "opname"), opname_obj);
 
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "stack_effect"), ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_stack_effect));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "has_arg"), ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_has_arg));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "has_const"), ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_false_stub));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "has_name"), ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_false_stub));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "has_jump"), ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_false_stub));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "has_free"), ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_false_stub));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "has_local"), ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_false_stub));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "has_exc"), ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_false_stub));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "stack_effect"), ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_stack_effect));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "has_arg"), ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_has_arg));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "has_const"), ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_false_stub));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "has_name"), ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_false_stub));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "has_jump"), ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_false_stub));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "has_free"), ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_false_stub));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "has_local"), ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_false_stub));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "has_exc"), ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_false_stub));
     
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "get_intrinsic1_descs"), ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_null_list_stub));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "get_intrinsic2_descs"), ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_null_list_stub));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "get_special_method_names"), ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_null_list_stub));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "get_nb_ops"), ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_null_list_stub));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "get_intrinsic1_descs"), ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_null_list_stub));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "get_intrinsic2_descs"), ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_null_list_stub));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "get_special_method_names"), ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_null_list_stub));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "get_nb_ops"), ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_null_list_stub));
 
     return mod;
 }

@@ -10,7 +10,7 @@ static double toDouble(proto::ProtoContext* ctx, const proto::ProtoObject* obj) 
     if (obj->isDouble(ctx)) return obj->asDouble(ctx);
     if (obj->isInteger(ctx)) return static_cast<double>(obj->asLong(ctx));
     /* Handle Python-style __data__ wrapper (e.g. int/float in __data__). */
-    const proto::ProtoObject* data = obj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__data__"));
+    const proto::ProtoObject* data = obj->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__data__"));
     if (data && data != PROTO_NONE) {
         if (data->isDouble(ctx)) return data->asDouble(ctx);
         if (data->isInteger(ctx)) return static_cast<double>(data->asLong(ctx));
@@ -168,7 +168,7 @@ static const proto::ProtoObject* py_invert(
     if (a->isInteger(ctx)) {
         try { n = a->asLong(ctx); } catch (...) { return PROTO_NONE; }
     } else {
-        const proto::ProtoObject* data = a->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__data__"));
+        const proto::ProtoObject* data = a->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__data__"));
         if (data && data != PROTO_NONE && data->isInteger(ctx)) {
             try { n = data->asLong(ctx); } catch (...) { return PROTO_NONE; }
         } else {
@@ -233,7 +233,7 @@ static const proto::ProtoObject* py_index(
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* obj = posArgs->getAt(ctx, 0);
-    const proto::ProtoObject* indexM = obj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__index__"));
+    const proto::ProtoObject* indexM = obj->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__index__"));
     if (indexM && indexM->asMethod(ctx)) {
         const proto::ProtoList* noArgs = ctx->newList();
         const proto::ProtoObject* result = indexM->asMethod(ctx)(ctx, obj, nullptr, noArgs, nullptr);
@@ -249,12 +249,12 @@ static const proto::ProtoObject* py_itemgetter_call(
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* obj = posArgs->getAt(ctx, 0);
-    const proto::ProtoObject* itemsObj = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__items__"));
+    const proto::ProtoObject* itemsObj = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__items__"));
     if (!itemsObj || !itemsObj->asList(ctx)) return PROTO_NONE;
     const proto::ProtoList* items = itemsObj->asList(ctx);
     
     auto getItem = [&](const proto::ProtoObject* key) -> const proto::ProtoObject* {
-        const proto::ProtoString* getItemS = proto::ProtoString::fromUTF8String(ctx, "__getitem__");
+        const proto::ProtoString* getItemS = proto::ProtoString::createSymbol(ctx, "__getitem__");
         const proto::ProtoObject* method = obj->getAttribute(ctx, getItemS);
         if (method && method->asMethod(ctx)) {
             const proto::ProtoList* args = ctx->newList()->appendLast(ctx, key);
@@ -281,51 +281,51 @@ static const proto::ProtoObject* py_itemgetter(
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     
     proto::ProtoObject* getter = const_cast<proto::ProtoObject*>(ctx->newObject(false));
-    getter->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__items__"), posArgs->asObject(ctx));
-    getter->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__call__"),
+    getter->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__items__"), posArgs->asObject(ctx));
+    getter->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__call__"),
         ctx->fromMethod(getter, py_itemgetter_call));
     return getter;
 }
 
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     const proto::ProtoObject* mod = ctx->newObject(false);
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "add"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "add"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_add));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "sub"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "sub"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_sub));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "mul"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "mul"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_mul));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "eq"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "eq"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_eq));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "lt"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "lt"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_lt));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "truediv"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "truediv"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_truediv));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "pow"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "pow"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_pow));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "floordiv"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "floordiv"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_floordiv));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "mod"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "mod"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_mod));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "neg"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "neg"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_neg));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "not_"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "not_"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_not_));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "invert"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "invert"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_invert));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "lshift"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "lshift"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_lshift));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "rshift"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "rshift"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_rshift));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "and_"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "and_"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_and_));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "or_"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "or_"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_or_));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "xor"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "xor"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_xor));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "index"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "index"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_index));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "itemgetter"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "itemgetter"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_itemgetter));
     return mod;
 }

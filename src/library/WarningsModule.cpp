@@ -34,7 +34,7 @@ static const proto::ProtoObject* py_warnings_warn(
     } else if (message) {
         // Handle custom exception instances as warnings by extracting their string representation
         PythonEnvironment* env = PythonEnvironment::fromContext(context);
-        const proto::ProtoString* strName = env ? env->getStrString() : proto::ProtoString::fromUTF8String(context, "__str__");
+        const proto::ProtoString* strName = env ? env->getStrString() : proto::ProtoString::createSymbol(context, "__str__");
         const proto::ProtoObject* strMethod = env ? env->getAttribute(context, message, strName) : message->getAttribute(context, strName);
         if (strMethod && strMethod->asMethod(context)) {
             const proto::ProtoList* emptyL = env ? env->getEmptyList() : context->newList();
@@ -48,7 +48,7 @@ static const proto::ProtoObject* py_warnings_warn(
     std::string catStr = "Warning";
     if (category && category != PROTO_NONE) {
         PythonEnvironment* env = PythonEnvironment::fromContext(context);
-        const proto::ProtoObject* nameAttr = env ? env->getAttribute(context, category, env->getNameString()) : category->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__name__"));
+        const proto::ProtoObject* nameAttr = env ? env->getAttribute(context, category, env->getNameString()) : category->getAttribute(context, proto::ProtoString::createSymbol(context, "__name__"));
         if (nameAttr && nameAttr->isString(context)) {
             nameAttr->asString(context)->toUTF8String(context, catStr);
         }
@@ -67,14 +67,14 @@ const proto::ProtoObject* WarningsModule::createWarningsModule(proto::ProtoConte
         moduleObj = const_cast<proto::ProtoObject*>(moduleObj->addParent(context, env->getModulePrototype()));
         moduleObj->setAttribute(context, env->getClassString(), env->getModulePrototype());
     } else {
-        moduleObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__class__"), proto::ProtoString::fromUTF8String(context, "module")->asObject(context));
+        moduleObj->setAttribute(context, proto::ProtoString::createSymbol(context, "__class__"), proto::ProtoString::createSymbol(context, "module")->asObject(context));
     }
 
-    const proto::ProtoString* nameS = env ? env->getNameString() : proto::ProtoString::fromUTF8String(context, "__name__");
-    moduleObj->setAttribute(context, nameS, proto::ProtoString::fromUTF8String(context, "_warnings")->asObject(context));
+    const proto::ProtoString* nameS = env ? env->getNameString() : proto::ProtoString::createSymbol(context, "__name__");
+    moduleObj->setAttribute(context, nameS, proto::ProtoString::createSymbol(context, "_warnings")->asObject(context));
 
     // Expose warn function
-    const proto::ProtoString* warnS = proto::ProtoString::fromUTF8String(context, "warn");
+    const proto::ProtoString* warnS = proto::ProtoString::createSymbol(context, "warn");
     moduleObj->setAttribute(context, warnS, context->fromMethod(moduleObj, py_warnings_warn));
 
     return moduleObj;

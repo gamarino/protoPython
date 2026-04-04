@@ -131,7 +131,7 @@ static const proto::ProtoObject* hpy_method_wrapper(
     const proto::ProtoSparseList* keywordParameters) {
     
     // Extract function pointer
-    const proto::ProtoString* methKey = proto::ProtoString::fromUTF8String(context, "__hpy_meth__");
+    const proto::ProtoString* methKey = proto::ProtoString::createSymbol(context, "__hpy_meth__");
     const proto::ProtoObject* methObj = self->getAttribute(context, methKey);
     if (!methObj || !methObj->isInteger(context)) return PROTO_NONE;
     
@@ -167,9 +167,9 @@ const proto::ProtoObject* HPy_WrapMethod(HPyContext* hctx, const char* name, HPy
     if (!hctx || !hctx->ctx || !meth) return nullptr;
     
     const proto::ProtoObject* wrap = hctx->ctx->newObject(false);
-    const proto::ProtoString* py_name = proto::ProtoString::fromUTF8String(hctx->ctx, "__name__");
-    const proto::ProtoString* py_call = proto::ProtoString::fromUTF8String(hctx->ctx, "__call__");
-    const proto::ProtoString* py_meth = proto::ProtoString::fromUTF8String(hctx->ctx, "__hpy_meth__");
+    const proto::ProtoString* py_name = proto::ProtoString::createSymbol(hctx->ctx, "__name__");
+    const proto::ProtoString* py_call = proto::ProtoString::createSymbol(hctx->ctx, "__call__");
+    const proto::ProtoString* py_meth = proto::ProtoString::createSymbol(hctx->ctx, "__hpy_meth__");
     
     wrap->setAttribute(hctx->ctx, py_name, hctx->ctx->fromUTF8String(name));
     wrap->setAttribute(hctx->ctx, py_meth, hctx->ctx->fromInteger(reinterpret_cast<long long>(meth)));
@@ -185,7 +185,7 @@ HPy HPyModule_Create(HPyContext* hctx, HPyModuleDef* def) {
     const proto::ProtoObject* mod = hctx->ctx->newObject(false);
     
     // 2. Set module name
-    const proto::ProtoString* py_name = proto::ProtoString::fromUTF8String(hctx->ctx, "__name__");
+    const proto::ProtoString* py_name = proto::ProtoString::createSymbol(hctx->ctx, "__name__");
     mod->setAttribute(hctx->ctx, py_name, hctx->ctx->fromUTF8String(def->m_name));
     
     // 3. Populate methods from HPyMethodDef array (Step 1215)
@@ -194,7 +194,7 @@ HPy HPyModule_Create(HPyContext* hctx, HPyModuleDef* def) {
         for (int i = 0; methods[i].ml_name != nullptr; ++i) {
             const proto::ProtoObject* methWrap = HPy_WrapMethod(hctx, methods[i].ml_name, methods[i].ml_meth);
             if (methWrap) {
-                const proto::ProtoString* methName = proto::ProtoString::fromUTF8String(hctx->ctx, methods[i].ml_name);
+                const proto::ProtoString* methName = proto::ProtoString::createSymbol(hctx->ctx, methods[i].ml_name);
                 mod->setAttribute(hctx->ctx, methName, methWrap);
             }
         }
@@ -265,7 +265,7 @@ void HPyErr_SetString(HPyContext* hctx, HPy type, const char* msg) {
     const proto::ProtoObject* t = hctx->asProtoObject(type);
     if (!t) return;
     const proto::ProtoList* args = hctx->ctx->newList()->appendLast(hctx->ctx, hctx->ctx->fromUTF8String(msg));
-    const proto::ProtoObject* exc = t->call(hctx->ctx, nullptr, proto::ProtoString::fromUTF8String(hctx->ctx, "__call__"), t, args, nullptr);
+    const proto::ProtoObject* exc = t->call(hctx->ctx, nullptr, proto::ProtoString::createSymbol(hctx->ctx, "__call__"), t, args, nullptr);
     if (exc) {
         // protoPython-specific exception setter would be called here if available via HPyContext
         // For now we just log it or set it if we have access to the PythonEnvironment (Phase 4 integration)
@@ -285,7 +285,7 @@ HPy HPy_Add(HPyContext* hctx, HPy h1, HPy h2) {
     const proto::ProtoObject* o1 = hctx->asProtoObject(h1);
     const proto::ProtoObject* o2 = hctx->asProtoObject(h2);
     if (!o1 || !o2) return 0;
-    const proto::ProtoString* addName = proto::ProtoString::fromUTF8String(hctx->ctx, "__add__");
+    const proto::ProtoString* addName = proto::ProtoString::createSymbol(hctx->ctx, "__add__");
     const proto::ProtoList* args = hctx->ctx->newList()->appendLast(hctx->ctx, o2);
     const proto::ProtoObject* res = o1->call(hctx->ctx, nullptr, addName, o1, args, nullptr);
     return hctx->fromProtoObject(res);
@@ -295,7 +295,7 @@ HPy HPy_Sub(HPyContext* hctx, HPy h1, HPy h2) {
     if (!hctx || !hctx->ctx) return 0;
     const proto::ProtoObject* o1 = hctx->asProtoObject(h1);
     const proto::ProtoObject* o2 = hctx->asProtoObject(h2);
-    const proto::ProtoString* subName = proto::ProtoString::fromUTF8String(hctx->ctx, "__sub__");
+    const proto::ProtoString* subName = proto::ProtoString::createSymbol(hctx->ctx, "__sub__");
     const proto::ProtoList* args = hctx->ctx->newList()->appendLast(hctx->ctx, o2);
     const proto::ProtoObject* res = o1->call(hctx->ctx, nullptr, subName, o1, args, nullptr);
     return hctx->fromProtoObject(res);
@@ -305,7 +305,7 @@ HPy HPy_Mul(HPyContext* hctx, HPy h1, HPy h2) {
     if (!hctx || !hctx->ctx) return 0;
     const proto::ProtoObject* o1 = hctx->asProtoObject(h1);
     const proto::ProtoObject* o2 = hctx->asProtoObject(h2);
-    const proto::ProtoString* mulName = proto::ProtoString::fromUTF8String(hctx->ctx, "__mul__");
+    const proto::ProtoString* mulName = proto::ProtoString::createSymbol(hctx->ctx, "__mul__");
     const proto::ProtoList* args = hctx->ctx->newList()->appendLast(hctx->ctx, o2);
     const proto::ProtoObject* res = o1->call(hctx->ctx, nullptr, mulName, o1, args, nullptr);
     return hctx->fromProtoObject(res);
@@ -315,7 +315,7 @@ HPy HPy_Div(HPyContext* hctx, HPy h1, HPy h2) {
     if (!hctx || !hctx->ctx) return 0;
     const proto::ProtoObject* o1 = hctx->asProtoObject(h1);
     const proto::ProtoObject* o2 = hctx->asProtoObject(h2);
-    const proto::ProtoString* divName = proto::ProtoString::fromUTF8String(hctx->ctx, "__truediv__");
+    const proto::ProtoString* divName = proto::ProtoString::createSymbol(hctx->ctx, "__truediv__");
     const proto::ProtoList* args = hctx->ctx->newList()->appendLast(hctx->ctx, o2);
     const proto::ProtoObject* res = o1->call(hctx->ctx, nullptr, divName, o1, args, nullptr);
     return hctx->fromProtoObject(res);
@@ -326,7 +326,7 @@ HPy HPy_GetItem(HPyContext* hctx, HPy obj, HPy key) {
     const proto::ProtoObject* o = hctx->asProtoObject(obj);
     const proto::ProtoObject* k = hctx->asProtoObject(key);
     if (!o || !k) return 0;
-    const proto::ProtoString* giName = proto::ProtoString::fromUTF8String(hctx->ctx, "__getitem__");
+    const proto::ProtoString* giName = proto::ProtoString::createSymbol(hctx->ctx, "__getitem__");
     const proto::ProtoList* args = hctx->ctx->newList()->appendLast(hctx->ctx, k);
     const proto::ProtoObject* res = o->call(hctx->ctx, nullptr, giName, o, args, nullptr);
     return hctx->fromProtoObject(res);
@@ -338,7 +338,7 @@ int HPy_SetItem(HPyContext* hctx, HPy obj, HPy key, HPy value) {
     const proto::ProtoObject* k = hctx->asProtoObject(key);
     const proto::ProtoObject* v = hctx->asProtoObject(value);
     if (!o || !k) return -1;
-    const proto::ProtoString* siName = proto::ProtoString::fromUTF8String(hctx->ctx, "__setitem__");
+    const proto::ProtoString* siName = proto::ProtoString::createSymbol(hctx->ctx, "__setitem__");
     const proto::ProtoList* args = hctx->ctx->newList()->appendLast(hctx->ctx, k)->appendLast(hctx->ctx, v);
     const proto::ProtoObject* res = o->call(hctx->ctx, nullptr, siName, o, args, nullptr);
     return (res != nullptr) ? 0 : -1;
@@ -348,7 +348,7 @@ size_t HPy_Length(HPyContext* hctx, HPy obj) {
     if (!hctx || !hctx->ctx) return 0;
     const proto::ProtoObject* o = hctx->asProtoObject(obj);
     if (!o) return 0;
-    const proto::ProtoString* lenName = proto::ProtoString::fromUTF8String(hctx->ctx, "__len__");
+    const proto::ProtoString* lenName = proto::ProtoString::createSymbol(hctx->ctx, "__len__");
     const proto::ProtoObject* res = o->call(hctx->ctx, nullptr, lenName, o, nullptr, nullptr);
     return (res && res->isInteger(hctx->ctx)) ? static_cast<size_t>(res->asLong(hctx->ctx)) : 0;
 }
@@ -358,7 +358,7 @@ int HPy_Contains(HPyContext* hctx, HPy container, HPy item) {
     const proto::ProtoObject* c = hctx->asProtoObject(container);
     const proto::ProtoObject* i = hctx->asProtoObject(item);
     if (!c || !i) return 0;
-    const proto::ProtoString* hasName = proto::ProtoString::fromUTF8String(hctx->ctx, "__contains__");
+    const proto::ProtoString* hasName = proto::ProtoString::createSymbol(hctx->ctx, "__contains__");
     const proto::ProtoList* args = hctx->ctx->newList()->appendLast(hctx->ctx, i);
     const proto::ProtoObject* res = c->call(hctx->ctx, nullptr, hasName, c, args, nullptr);
     return (res && res->isBoolean(hctx->ctx)) ? (res->asBoolean(hctx->ctx) ? 1 : 0) : 0;
@@ -391,7 +391,7 @@ HPy HPyErr_NewException(HPyContext* hctx, const char* name, HPy base, HPy dict) 
         baseObj = hctx->ctx->newObject(false); // Default to a new object if base unidentified
     }
     const proto::ProtoObject* exc = baseObj->newChild(hctx->ctx, true);
-    const proto::ProtoString* py_name = proto::ProtoString::fromUTF8String(hctx->ctx, "__name__");
+    const proto::ProtoString* py_name = proto::ProtoString::createSymbol(hctx->ctx, "__name__");
     exc->setAttribute(hctx->ctx, py_name, hctx->ctx->fromUTF8String(name));
     
     if (dict) {
@@ -420,7 +420,7 @@ HPy HPy_And(HPyContext* hctx, HPy h1, HPy h2) {
     if (!hctx || !hctx->ctx) return 0;
     const proto::ProtoObject* o1 = hctx->asProtoObject(h1);
     const proto::ProtoObject* o2 = hctx->asProtoObject(h2);
-    const proto::ProtoString* name = proto::ProtoString::fromUTF8String(hctx->ctx, "__and__");
+    const proto::ProtoString* name = proto::ProtoString::createSymbol(hctx->ctx, "__and__");
     const proto::ProtoList* args = hctx->ctx->newList()->appendLast(hctx->ctx, o2);
     return hctx->fromProtoObject(o1->call(hctx->ctx, nullptr, name, o1, args, nullptr));
 }
@@ -429,7 +429,7 @@ HPy HPy_Or(HPyContext* hctx, HPy h1, HPy h2) {
     if (!hctx || !hctx->ctx) return 0;
     const proto::ProtoObject* o1 = hctx->asProtoObject(h1);
     const proto::ProtoObject* o2 = hctx->asProtoObject(h2);
-    const proto::ProtoString* name = proto::ProtoString::fromUTF8String(hctx->ctx, "__or__");
+    const proto::ProtoString* name = proto::ProtoString::createSymbol(hctx->ctx, "__or__");
     const proto::ProtoList* args = hctx->ctx->newList()->appendLast(hctx->ctx, o2);
     return hctx->fromProtoObject(o1->call(hctx->ctx, nullptr, name, o1, args, nullptr));
 }
@@ -438,7 +438,7 @@ HPy HPy_Xor(HPyContext* hctx, HPy h1, HPy h2) {
     if (!hctx || !hctx->ctx) return 0;
     const proto::ProtoObject* o1 = hctx->asProtoObject(h1);
     const proto::ProtoObject* o2 = hctx->asProtoObject(h2);
-    const proto::ProtoString* name = proto::ProtoString::fromUTF8String(hctx->ctx, "__xor__");
+    const proto::ProtoString* name = proto::ProtoString::createSymbol(hctx->ctx, "__xor__");
     const proto::ProtoList* args = hctx->ctx->newList()->appendLast(hctx->ctx, o2);
     return hctx->fromProtoObject(o1->call(hctx->ctx, nullptr, name, o1, args, nullptr));
 }
@@ -447,7 +447,7 @@ HPy HPy_LShift(HPyContext* hctx, HPy h1, HPy h2) {
     if (!hctx || !hctx->ctx) return 0;
     const proto::ProtoObject* o1 = hctx->asProtoObject(h1);
     const proto::ProtoObject* o2 = hctx->asProtoObject(h2);
-    const proto::ProtoString* name = proto::ProtoString::fromUTF8String(hctx->ctx, "__lshift__");
+    const proto::ProtoString* name = proto::ProtoString::createSymbol(hctx->ctx, "__lshift__");
     const proto::ProtoList* args = hctx->ctx->newList()->appendLast(hctx->ctx, o2);
     return hctx->fromProtoObject(o1->call(hctx->ctx, nullptr, name, o1, args, nullptr));
 }
@@ -456,7 +456,7 @@ HPy HPy_RShift(HPyContext* hctx, HPy h1, HPy h2) {
     if (!hctx || !hctx->ctx) return 0;
     const proto::ProtoObject* o1 = hctx->asProtoObject(h1);
     const proto::ProtoObject* o2 = hctx->asProtoObject(h2);
-    const proto::ProtoString* name = proto::ProtoString::fromUTF8String(hctx->ctx, "__rshift__");
+    const proto::ProtoString* name = proto::ProtoString::createSymbol(hctx->ctx, "__rshift__");
     const proto::ProtoList* args = hctx->ctx->newList()->appendLast(hctx->ctx, o2);
     return hctx->fromProtoObject(o1->call(hctx->ctx, nullptr, name, o1, args, nullptr));
 }
@@ -475,7 +475,7 @@ HPy HPy_RichCompare(HPyContext* hctx, HPy h1, HPy h2, int op) {
         case HPy_GE: method = "__ge__"; break;
         default: return 0;
     }
-    const proto::ProtoString* name = proto::ProtoString::fromUTF8String(hctx->ctx, method);
+    const proto::ProtoString* name = proto::ProtoString::createSymbol(hctx->ctx, method);
     const proto::ProtoList* args = hctx->ctx->newList()->appendLast(hctx->ctx, o2);
     return hctx->fromProtoObject(o1->call(hctx->ctx, nullptr, name, o1, args, nullptr));
 }
@@ -517,14 +517,14 @@ HPy HPyTuple_New(HPyContext* hctx, size_t len) {
 HPy HPy_GetIter(HPyContext* hctx, HPy obj) {
     if (!hctx || !hctx->ctx) return 0;
     const proto::ProtoObject* o = hctx->asProtoObject(obj);
-    const proto::ProtoString* name = proto::ProtoString::fromUTF8String(hctx->ctx, "__iter__");
+    const proto::ProtoString* name = proto::ProtoString::createSymbol(hctx->ctx, "__iter__");
     return hctx->fromProtoObject(o->call(hctx->ctx, nullptr, name, o, nullptr, nullptr));
 }
 
 HPy HPy_Next(HPyContext* hctx, HPy iter) {
     if (!hctx || !hctx->ctx) return 0;
     const proto::ProtoObject* i = hctx->asProtoObject(iter);
-    const proto::ProtoString* name = proto::ProtoString::fromUTF8String(hctx->ctx, "__next__");
+    const proto::ProtoString* name = proto::ProtoString::createSymbol(hctx->ctx, "__next__");
     return hctx->fromProtoObject(i->call(hctx->ctx, nullptr, name, i, nullptr, nullptr));
 }
 
@@ -541,7 +541,7 @@ HPy HPySlice_New(HPyContext* hctx, HPy start, HPy stop, HPy step) {
 HPy HPyType_FromSpec(HPyContext* hctx, HPyType_Spec* spec) {
     if (!hctx || !hctx->ctx || !spec) return 0;
     const proto::ProtoObject* typeObj = hctx->ctx->newObject(false);
-    const proto::ProtoString* py_name = proto::ProtoString::fromUTF8String(hctx->ctx, "__name__");
+    const proto::ProtoString* py_name = proto::ProtoString::createSymbol(hctx->ctx, "__name__");
     typeObj->setAttribute(hctx->ctx, py_name, hctx->ctx->fromUTF8String(spec->name));
     // Implementation of slots would go here (Step 1256)
     return hctx->fromProtoObject(typeObj);
@@ -558,7 +558,7 @@ int HPyModule_AddIntConstant(HPyContext* hctx, HPy mod, const char* name, long l
 HPy HPy_CallMethod(HPyContext* hctx, HPy obj, const char* name, const HPy* args, size_t nargs) {
     if (!hctx || !hctx->ctx) return 0;
     const proto::ProtoObject* o = hctx->asProtoObject(obj);
-    const proto::ProtoString* attrName = proto::ProtoString::fromUTF8String(hctx->ctx, name);
+    const proto::ProtoString* attrName = proto::ProtoString::createSymbol(hctx->ctx, name);
     const proto::ProtoList* pyArgs = hctx->ctx->newList();
     for (size_t i = 0; i < nargs; ++i) {
         pyArgs->appendLast(hctx->ctx, hctx->asProtoObject(args[i]));

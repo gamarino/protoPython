@@ -16,7 +16,13 @@
 
 namespace protoPython {
 
-static bool get_env_diag() { return false; }
+static bool get_env_diag() {
+    static int cached = -1;
+    if (cached == -1) {
+        cached = (std::getenv("PROTO_ENV_DIAG") != nullptr) ? 1 : 0;
+    }
+    return cached == 1;
+}
 
 static bool opcodeHasArg(int op) {
     switch (op) {
@@ -3173,6 +3179,10 @@ const proto::ProtoObject* executeBytecodeRange(
                         stack.pop_back(); // Pop obj before raising error
                         std::string attr;
                         attrName->toUTF8String(ctx, attr);
+                        if (attr == "register") {
+                            fprintf(stderr, "DEBUG_OP_LOAD_ATTR_FAIL: register on obj=%p repr=%s\n", (void*)obj, env ? env->reprObject(ctx, obj).c_str() : "???");
+                            fflush(stderr);
+                        }
                         if (env) env->raiseAttributeError(ctx, obj, attr);
                         continue;
                     }
@@ -3692,9 +3702,17 @@ const proto::ProtoObject* executeBytecodeRange(
                 int firstIdx = stack.top - 4;
                 const proto::ProtoObject* body = stack[firstIdx + 3];
                 const proto::ProtoObject* kwds = stack[firstIdx + 2];
+                if (get_env_diag() && kwds && kwds != PROTO_NONE) {
+                    fprintf(stderr, "DEBUG OP_BUILD_CLASS: kwds=%p repr=%s\n", (void*)kwds, env ? env->reprObject(ctx, kwds).c_str() : "???");
+                    fflush(stderr);
+                }
                 const proto::ProtoObject* bases = stack[firstIdx + 1];
                 const proto::ProtoObject* name = stack[firstIdx];
                 if (get_env_diag()) {
+                    fprintf(stderr, "DEBUG OP_BUILD_CLASS: stack size=%lu top=%lu\n", (unsigned long)stack.size(), (unsigned long)stack.top);
+                    for (int i = 0; i < (int)stack.top; ++i) {
+                        fprintf(stderr, "  stack[%d] = %p repr=%s\n", i, (void*)stack[i], env ? env->reprObject(ctx, stack[i]).c_str() : "???");
+                    }
                     std::string n = "unknown";
                     if (name && name->isString(ctx)) name->asString(ctx)->toUTF8String(ctx, n);
                     fprintf(stderr, "DEBUG OP_BUILD_CLASS: building name='%s'\n", n.c_str());

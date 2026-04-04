@@ -31,18 +31,18 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     
     // ContextVar "class"
     const proto::ProtoObject* contextVarProto = ctx->newObject(false);
-    contextVarProto = contextVarProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "get"), 
+    contextVarProto = contextVarProto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "get"), 
         ctx->fromMethod(const_cast<proto::ProtoObject*>(contextVarProto), cv_get));
-    contextVarProto = contextVarProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "set"), 
+    contextVarProto = contextVarProto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "set"), 
         ctx->fromMethod(const_cast<proto::ProtoObject*>(contextVarProto), cv_set));
     
     // To make ContextVar('name') work, the object must be callable
-    contextVarProto = contextVarProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__call__"), 
+    contextVarProto = contextVarProto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__call__"), 
         ctx->fromMethod(const_cast<proto::ProtoObject*>(contextVarProto), cv_call));
     // Also satisfy potential checks for type
-    contextVarProto = contextVarProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__name__"), ctx->fromUTF8String("ContextVar"));
+    contextVarProto = contextVarProto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__name__"), ctx->fromUTF8String("ContextVar"));
 
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "ContextVar"), contextVarProto);
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "ContextVar"), contextVarProto);
     
     return mod;
 }

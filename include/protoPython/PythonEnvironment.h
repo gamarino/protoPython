@@ -177,6 +177,10 @@ public:
     const proto::ProtoString* getClassString() const { return classString; }
     const proto::ProtoString* getNameString() const { return nameString; }
     const proto::ProtoString* getCallString() const { return callString; }
+    const proto::ProtoString* getNewString() const { return newString; }
+    const proto::ProtoString* getPrepareString() const { return prepareString; }
+    const proto::ProtoString* getMroString() const { return mroString; }
+    const proto::ProtoString* getBasesString() const { return basesString; }
     const proto::ProtoString* getExecutedString() const { return executedString; }
     const proto::ProtoString* getGetItemString() const { return getItemString; }
     const proto::ProtoString* getSetItemString() const { return setItemString; }
@@ -800,6 +804,8 @@ private:
     const proto::ProtoString* classString{nullptr};
     const proto::ProtoString* nameString{nullptr};
     const proto::ProtoString* callString{nullptr};
+    const proto::ProtoString* newString{nullptr};
+    const proto::ProtoString* prepareString{nullptr};
     const proto::ProtoString* getItemString{nullptr};
     const proto::ProtoString* pathS{nullptr};
     const proto::ProtoString* modulesS{nullptr};
@@ -831,6 +837,9 @@ private:
     const proto::ProtoString* __closure__{nullptr};
     const proto::ProtoString* __defaults__{nullptr};
     const proto::ProtoString* __kwdefaults__{nullptr};
+    
+    const proto::ProtoString* mroString{nullptr};
+    const proto::ProtoString* basesString{nullptr};
 
     const proto::ProtoString* enumProtoS{nullptr};
     const proto::ProtoString* revProtoS{nullptr};

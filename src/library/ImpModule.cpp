@@ -57,7 +57,7 @@ static const proto::ProtoObject* imp_is_builtin(
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     const proto::ProtoObject* sysMods = env->resolve("sys", ctx);
     if (sysMods && sysMods != PROTO_NONE) {
-         const proto::ProtoObject* builtinsDef = sysMods->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "builtin_module_names"));
+         const proto::ProtoObject* builtinsDef = sysMods->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "builtin_module_names"));
          if (builtinsDef && builtinsDef->isTuple(ctx)) {
              // Logic to check tuple
          }
@@ -76,7 +76,7 @@ static const proto::ProtoObject* imp_create_builtin(
     if (!args || args->getSize(ctx) < 1) return PROTO_NONE;
     
     const proto::ProtoObject* specObj = args->getAt(ctx, 0);
-    const proto::ProtoObject* nameAttr = specObj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "name"));
+    const proto::ProtoObject* nameAttr = specObj->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "name"));
     
     std::string name;
     if (nameAttr && nameAttr->isString(ctx)) {
@@ -87,7 +87,7 @@ static const proto::ProtoObject* imp_create_builtin(
     
     const proto::ProtoObject* sysMod = env->resolve("sys", ctx);
     if (sysMod && sysMod != PROTO_NONE) {
-        const proto::ProtoObject* sysMods = sysMod->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "modules"));
+        const proto::ProtoObject* sysMods = sysMod->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "modules"));
         if (sysMods && sysMods != PROTO_NONE) {
             const proto::ProtoString* nameStr = nameAttr->isString(ctx) ? nameAttr->asString(ctx) : nullptr;
             if (nameStr) {
@@ -161,7 +161,7 @@ static const proto::ProtoObject* imp_extension_suffixes(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
     const proto::ProtoList* ret = ctx->newList();
-    ret = ret->appendLast(ctx, proto::ProtoString::fromUTF8String(ctx, ".so")->asObject(ctx));
+    ret = ret->appendLast(ctx, proto::ProtoString::createSymbol(ctx, ".so")->asObject(ctx));
     return ret->asObject(ctx);
 }
 
@@ -212,32 +212,32 @@ const proto::ProtoObject* ImpModule::createImpModule(proto::ProtoContext* ctx) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     
     // Core built-in module properties
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__name__"), proto::ProtoString::fromUTF8String(ctx, "_imp")->asObject(ctx));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__doc__"), proto::ProtoString::fromUTF8String(ctx, "(ext) _imp module for ProtoPython")->asObject(ctx));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "pyc_magic_number_token"), ctx->fromInteger(3495)); // Py3.14 roughly
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__name__"), proto::ProtoString::createSymbol(ctx, "_imp")->asObject(ctx));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__doc__"), proto::ProtoString::createSymbol(ctx, "(ext) _imp module for ProtoPython")->asObject(ctx));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "pyc_magic_number_token"), ctx->fromInteger(3495)); // Py3.14 roughly
     
     // Bind Methods
     proto::ProtoObject* mutMod = const_cast<proto::ProtoObject*>(mod);
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "acquire_lock"), ctx->fromMethod(mutMod, imp_acquire_lock));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "release_lock"), ctx->fromMethod(mutMod, imp_release_lock));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "lock_held"), ctx->fromMethod(mutMod, imp_lock_held));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "acquire_lock"), ctx->fromMethod(mutMod, imp_acquire_lock));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "release_lock"), ctx->fromMethod(mutMod, imp_release_lock));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "lock_held"), ctx->fromMethod(mutMod, imp_lock_held));
     
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "is_builtin"), ctx->fromMethod(mutMod, imp_is_builtin));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "create_builtin"), ctx->fromMethod(mutMod, imp_create_builtin));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "exec_builtin"), ctx->fromMethod(mutMod, imp_exec_builtin));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "is_builtin"), ctx->fromMethod(mutMod, imp_is_builtin));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "create_builtin"), ctx->fromMethod(mutMod, imp_create_builtin));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "exec_builtin"), ctx->fromMethod(mutMod, imp_exec_builtin));
     
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "is_frozen"), ctx->fromMethod(mutMod, imp_is_frozen));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "is_frozen_package"), ctx->fromMethod(mutMod, imp_is_frozen_package));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "get_frozen_object"), ctx->fromMethod(mutMod, imp_get_frozen_object));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "find_frozen"), ctx->fromMethod(mutMod, imp_find_frozen));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "is_frozen"), ctx->fromMethod(mutMod, imp_is_frozen));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "is_frozen_package"), ctx->fromMethod(mutMod, imp_is_frozen_package));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "get_frozen_object"), ctx->fromMethod(mutMod, imp_get_frozen_object));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "find_frozen"), ctx->fromMethod(mutMod, imp_find_frozen));
     
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "extension_suffixes"), ctx->fromMethod(mutMod, imp_extension_suffixes));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "create_dynamic"), ctx->fromMethod(mutMod, imp_create_dynamic));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "exec_dynamic"), ctx->fromMethod(mutMod, imp_exec_dynamic));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "extension_suffixes"), ctx->fromMethod(mutMod, imp_extension_suffixes));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "create_dynamic"), ctx->fromMethod(mutMod, imp_create_dynamic));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "exec_dynamic"), ctx->fromMethod(mutMod, imp_exec_dynamic));
     
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "source_hash"), ctx->fromMethod(mutMod, imp_source_hash));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_fix_co_filename"), ctx->fromMethod(mutMod, imp_fix_co_filename));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_override_multi_interp_extensions_check"), ctx->fromMethod(mutMod, imp_override_multi_interp_extensions_check));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "source_hash"), ctx->fromMethod(mutMod, imp_source_hash));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_fix_co_filename"), ctx->fromMethod(mutMod, imp_fix_co_filename));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_override_multi_interp_extensions_check"), ctx->fromMethod(mutMod, imp_override_multi_interp_extensions_check));
     
     return mod;
 }

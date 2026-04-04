@@ -60,4 +60,4 @@ set_target_properties(protoPython PROPERTIES
     SOVERSION 0
 )
 
-target_compile_options(protoPython PRIVATE -O0)
+target_compile_options(protoPython PRIVATE -O0 -g)

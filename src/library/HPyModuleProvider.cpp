@@ -108,9 +108,9 @@ const proto::ProtoObject* HPyModuleProvider::tryLoad(const std::string& logicalP
 
     // Step 1210: Module Wiring
     // Set __file__, __name__, and other metadata
-    const proto::ProtoString* py_file = proto::ProtoString::fromUTF8String(ctx, "__file__");
-    const proto::ProtoString* py_name = proto::ProtoString::fromUTF8String(ctx, "__name__");
-    const proto::ProtoString* py_loader = proto::ProtoString::fromUTF8String(ctx, "__loader__");
+    const proto::ProtoString* py_file = proto::ProtoString::createSymbol(ctx, "__file__");
+    const proto::ProtoString* py_name = proto::ProtoString::createSymbol(ctx, "__name__");
+    const proto::ProtoString* py_loader = proto::ProtoString::createSymbol(ctx, "__loader__");
 
     mod->setAttribute(ctx, py_file, ctx->fromUTF8String(foundPath.c_str()));
     mod->setAttribute(ctx, py_name, ctx->fromUTF8String(logicalPath.c_str()));

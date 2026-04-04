@@ -18,7 +18,7 @@ static const proto::ProtoObject* exception_init(
         startIdx = 1;
     }
 
-    const proto::ProtoString* argsName = proto::ProtoString::fromUTF8String(context, "args");
+    const proto::ProtoString* argsName = proto::ProtoString::createSymbol(context, "args");
     const proto::ProtoList* actualArgs = context->newList();
     if (positionalParameters && positionalParameters->getSize(context) > startIdx) {
         for (unsigned long i = startIdx; i < positionalParameters->getSize(context); ++i) {
@@ -27,7 +27,7 @@ static const proto::ProtoObject* exception_init(
     }
     const proto::ProtoObject* args = context->newTupleFromList(actualArgs)->asObject(context);
     instance = const_cast<proto::ProtoObject*>(instance)->setAttribute(context, argsName, args);
-    instance = const_cast<proto::ProtoObject*>(instance)->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__traceback__"), PROTO_NONE);
+    instance = const_cast<proto::ProtoObject*>(instance)->setAttribute(context, proto::ProtoString::createSymbol(context, "__traceback__"), PROTO_NONE);
     return PROTO_NONE;
 }
 
@@ -46,7 +46,7 @@ static const proto::ProtoObject* exception_str(
         instance = positionalParameters->getAt(context, 0);
     }
     
-    const proto::ProtoString* argsName = proto::ProtoString::fromUTF8String(context, "args");
+    const proto::ProtoString* argsName = proto::ProtoString::createSymbol(context, "args");
     const proto::ProtoObject* argsObj = instance->getAttribute(context, argsName);
     const proto::ProtoTuple* args = argsObj && argsObj->isTuple(context) ? argsObj->asTuple(context) : context->newTuple();
     
@@ -80,14 +80,14 @@ static const proto::ProtoObject* exception_repr(
         instance = positionalParameters->getAt(context, 0);
     }
     
-    const proto::ProtoString* argsName = proto::ProtoString::fromUTF8String(context, "args");
+    const proto::ProtoString* argsName = proto::ProtoString::createSymbol(context, "args");
     const proto::ProtoObject* argsObj = instance->getAttribute(context, argsName);
     const proto::ProtoTuple* args = argsObj && argsObj->isTuple(context) ? argsObj->asTuple(context) : context->newTuple();
-    const proto::ProtoObject* nameObj = instance->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__class__"));
+    const proto::ProtoObject* nameObj = instance->getAttribute(context, proto::ProtoString::createSymbol(context, "__class__"));
     if (nameObj && nameObj != PROTO_NONE) {
-        nameObj = nameObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__name__"));
+        nameObj = nameObj->getAttribute(context, proto::ProtoString::createSymbol(context, "__name__"));
     } else {
-        nameObj = instance->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__name__"));
+        nameObj = instance->getAttribute(context, proto::ProtoString::createSymbol(context, "__name__"));
     }
     
     std::string name = "Exception";
@@ -118,12 +118,12 @@ static const proto::ProtoObject* make_exception_type(proto::ProtoContext* ctx,
                                                 const proto::ProtoObject* typeProto,
                                                 const char* name,
                                                 const proto::ProtoObject* base) {
-    const proto::ProtoString* py_init = proto::ProtoString::fromUTF8String(ctx, "__init__");
-    const proto::ProtoString* py_repr = proto::ProtoString::fromUTF8String(ctx, "__repr__");
-    const proto::ProtoString* py_str = proto::ProtoString::fromUTF8String(ctx, "__str__");
-    const proto::ProtoString* py_name = proto::ProtoString::fromUTF8String(ctx, "__name__");
-    const proto::ProtoString* py_call = proto::ProtoString::fromUTF8String(ctx, "__call__");
-    const proto::ProtoString* py_class = proto::ProtoString::fromUTF8String(ctx, "__class__");
+    const proto::ProtoString* py_init = proto::ProtoString::createSymbol(ctx, "__init__");
+    const proto::ProtoString* py_repr = proto::ProtoString::createSymbol(ctx, "__repr__");
+    const proto::ProtoString* py_str = proto::ProtoString::createSymbol(ctx, "__str__");
+    const proto::ProtoString* py_name = proto::ProtoString::createSymbol(ctx, "__name__");
+    const proto::ProtoString* py_call = proto::ProtoString::createSymbol(ctx, "__call__");
+    const proto::ProtoString* py_class = proto::ProtoString::createSymbol(ctx, "__class__");
 
     const proto::ProtoObject* exc = base ? base->newChild(ctx, true) : ctx->newObject(false);
     if (std::getenv("PROTO_ENV_DIAG")) {
@@ -137,11 +137,11 @@ static const proto::ProtoObject* make_exception_type(proto::ProtoContext* ctx,
     if (base) {
         const proto::ProtoList* basesList = ctx->newList()->appendLast(ctx, base);
         const proto::ProtoObject* basesTuple = ctx->newTupleFromList(basesList)->asObject(ctx);
-        exc = exc->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__bases__"), basesTuple);
+        exc = exc->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__bases__"), basesTuple);
     } else {
-        exc = exc->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__bases__"), ctx->newTuple()->asObject(ctx));
+        exc = exc->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__bases__"), ctx->newTuple()->asObject(ctx));
     }
-    exc = exc->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__module__"), ctx->fromUTF8String("builtins"));
+    exc = exc->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__module__"), ctx->fromUTF8String("builtins"));
     exc = exc->setAttribute(ctx, py_init, ctx->fromMethod(nullptr, exception_init));
     exc = exc->setAttribute(ctx, py_repr, ctx->fromMethod(nullptr, exception_repr));
     exc = exc->setAttribute(ctx, py_str, ctx->fromMethod(nullptr, exception_str));
@@ -149,7 +149,7 @@ static const proto::ProtoObject* make_exception_type(proto::ProtoContext* ctx,
     // Set __mro__ for attribute lookup
     const proto::ProtoList* mroList = ctx->newList()->appendLast(ctx, exc);
     if (base) {
-        const proto::ProtoObject* baseMro = base->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__mro__"));
+        const proto::ProtoObject* baseMro = base->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__mro__"));
         if (baseMro && baseMro->isTuple(ctx)) {
             const proto::ProtoTuple* bt = baseMro->asTuple(ctx);
             for (size_t i = 0; i < bt->getSize(ctx); ++i) {
@@ -165,7 +165,7 @@ static const proto::ProtoObject* make_exception_type(proto::ProtoContext* ctx,
             if (base != objectProto) mroList = mroList->appendLast(ctx, objectProto);
         }
     }
-    exc = exc->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__mro__"), ctx->newTupleFromList(mroList)->asObject(ctx));
+    exc = exc->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__mro__"), ctx->newTupleFromList(mroList)->asObject(ctx));
     
     return exc;
 }
@@ -173,40 +173,40 @@ static const proto::ProtoObject* make_exception_type(proto::ProtoContext* ctx,
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx,
                                      const proto::ProtoObject* objectProto,
                                      const proto::ProtoObject* typeProto) {
-    const proto::ProtoString* py_baseexception = proto::ProtoString::fromUTF8String(ctx, "BaseException");
-    const proto::ProtoString* py_exception = proto::ProtoString::fromUTF8String(ctx, "Exception");
-    const proto::ProtoString* py_keyerror = proto::ProtoString::fromUTF8String(ctx, "KeyError");
-    const proto::ProtoString* py_valueerror = proto::ProtoString::fromUTF8String(ctx, "ValueError");
-    const proto::ProtoString* py_nameerror = proto::ProtoString::fromUTF8String(ctx, "NameError");
-    const proto::ProtoString* py_attrerror = proto::ProtoString::fromUTF8String(ctx, "AttributeError");
-    const proto::ProtoString* py_syntaxerror = proto::ProtoString::fromUTF8String(ctx, "SyntaxError");
-    const proto::ProtoString* py_typeerror = proto::ProtoString::fromUTF8String(ctx, "TypeError");
-    const proto::ProtoString* py_importerror = proto::ProtoString::fromUTF8String(ctx, "ImportError");
-    const proto::ProtoString* py_kbdinterrupt = proto::ProtoString::fromUTF8String(ctx, "KeyboardInterrupt");
-    const proto::ProtoString* py_systemexit = proto::ProtoString::fromUTF8String(ctx, "SystemExit");
-    const proto::ProtoString* py_recursionerror = proto::ProtoString::fromUTF8String(ctx, "RecursionError");
-    const proto::ProtoString* py_zerodivisionerror = proto::ProtoString::fromUTF8String(ctx, "ZeroDivisionError");
-    const proto::ProtoString* py_indexerror = proto::ProtoString::fromUTF8String(ctx, "IndexError");
-    const proto::ProtoString* py_eoferror = proto::ProtoString::fromUTF8String(ctx, "EOFError");
-    const proto::ProtoString* py_assertionerror = proto::ProtoString::fromUTF8String(ctx, "AssertionError");
-    const proto::ProtoString* py_stopiteration = proto::ProtoString::fromUTF8String(ctx, "StopIteration");
-    const proto::ProtoString* py_stopasynciteration = proto::ProtoString::fromUTF8String(ctx, "StopAsyncIteration");
-    const proto::ProtoString* py_systemerror = proto::ProtoString::fromUTF8String(ctx, "SystemError");
-    const proto::ProtoString* py_runtimeerror = proto::ProtoString::fromUTF8String(ctx, "RuntimeError");
-    const proto::ProtoString* py_oserror = proto::ProtoString::fromUTF8String(ctx, "OSError");
-    const proto::ProtoString* py_blockingioerror = proto::ProtoString::fromUTF8String(ctx, "BlockingIOError");
+    const proto::ProtoString* py_baseexception = proto::ProtoString::createSymbol(ctx, "BaseException");
+    const proto::ProtoString* py_exception = proto::ProtoString::createSymbol(ctx, "Exception");
+    const proto::ProtoString* py_keyerror = proto::ProtoString::createSymbol(ctx, "KeyError");
+    const proto::ProtoString* py_valueerror = proto::ProtoString::createSymbol(ctx, "ValueError");
+    const proto::ProtoString* py_nameerror = proto::ProtoString::createSymbol(ctx, "NameError");
+    const proto::ProtoString* py_attrerror = proto::ProtoString::createSymbol(ctx, "AttributeError");
+    const proto::ProtoString* py_syntaxerror = proto::ProtoString::createSymbol(ctx, "SyntaxError");
+    const proto::ProtoString* py_typeerror = proto::ProtoString::createSymbol(ctx, "TypeError");
+    const proto::ProtoString* py_importerror = proto::ProtoString::createSymbol(ctx, "ImportError");
+    const proto::ProtoString* py_kbdinterrupt = proto::ProtoString::createSymbol(ctx, "KeyboardInterrupt");
+    const proto::ProtoString* py_systemexit = proto::ProtoString::createSymbol(ctx, "SystemExit");
+    const proto::ProtoString* py_recursionerror = proto::ProtoString::createSymbol(ctx, "RecursionError");
+    const proto::ProtoString* py_zerodivisionerror = proto::ProtoString::createSymbol(ctx, "ZeroDivisionError");
+    const proto::ProtoString* py_indexerror = proto::ProtoString::createSymbol(ctx, "IndexError");
+    const proto::ProtoString* py_eoferror = proto::ProtoString::createSymbol(ctx, "EOFError");
+    const proto::ProtoString* py_assertionerror = proto::ProtoString::createSymbol(ctx, "AssertionError");
+    const proto::ProtoString* py_stopiteration = proto::ProtoString::createSymbol(ctx, "StopIteration");
+    const proto::ProtoString* py_stopasynciteration = proto::ProtoString::createSymbol(ctx, "StopAsyncIteration");
+    const proto::ProtoString* py_systemerror = proto::ProtoString::createSymbol(ctx, "SystemError");
+    const proto::ProtoString* py_runtimeerror = proto::ProtoString::createSymbol(ctx, "RuntimeError");
+    const proto::ProtoString* py_oserror = proto::ProtoString::createSymbol(ctx, "OSError");
+    const proto::ProtoString* py_blockingioerror = proto::ProtoString::createSymbol(ctx, "BlockingIOError");
 
-    const proto::ProtoString* py_warning = proto::ProtoString::fromUTF8String(ctx, "Warning");
-    const proto::ProtoString* py_userwarning = proto::ProtoString::fromUTF8String(ctx, "UserWarning");
-    const proto::ProtoString* py_deprecationwarning = proto::ProtoString::fromUTF8String(ctx, "DeprecationWarning");
-    const proto::ProtoString* py_pendingdeprecationwarning = proto::ProtoString::fromUTF8String(ctx, "PendingDeprecationWarning");
-    const proto::ProtoString* py_syntaxwarning = proto::ProtoString::fromUTF8String(ctx, "SyntaxWarning");
-    const proto::ProtoString* py_runtimewarning = proto::ProtoString::fromUTF8String(ctx, "RuntimeWarning");
-    const proto::ProtoString* py_futurewarning = proto::ProtoString::fromUTF8String(ctx, "FutureWarning");
-    const proto::ProtoString* py_importwarning = proto::ProtoString::fromUTF8String(ctx, "ImportWarning");
-    const proto::ProtoString* py_unicodewarning = proto::ProtoString::fromUTF8String(ctx, "UnicodeWarning");
-    const proto::ProtoString* py_byteswarning = proto::ProtoString::fromUTF8String(ctx, "BytesWarning");
-    const proto::ProtoString* py_resourcewarning = proto::ProtoString::fromUTF8String(ctx, "ResourceWarning");
+    const proto::ProtoString* py_warning = proto::ProtoString::createSymbol(ctx, "Warning");
+    const proto::ProtoString* py_userwarning = proto::ProtoString::createSymbol(ctx, "UserWarning");
+    const proto::ProtoString* py_deprecationwarning = proto::ProtoString::createSymbol(ctx, "DeprecationWarning");
+    const proto::ProtoString* py_pendingdeprecationwarning = proto::ProtoString::createSymbol(ctx, "PendingDeprecationWarning");
+    const proto::ProtoString* py_syntaxwarning = proto::ProtoString::createSymbol(ctx, "SyntaxWarning");
+    const proto::ProtoString* py_runtimewarning = proto::ProtoString::createSymbol(ctx, "RuntimeWarning");
+    const proto::ProtoString* py_futurewarning = proto::ProtoString::createSymbol(ctx, "FutureWarning");
+    const proto::ProtoString* py_importwarning = proto::ProtoString::createSymbol(ctx, "ImportWarning");
+    const proto::ProtoString* py_unicodewarning = proto::ProtoString::createSymbol(ctx, "UnicodeWarning");
+    const proto::ProtoString* py_byteswarning = proto::ProtoString::createSymbol(ctx, "BytesWarning");
+    const proto::ProtoString* py_resourcewarning = proto::ProtoString::createSymbol(ctx, "ResourceWarning");
 
     const proto::ProtoObject* baseExceptionType = make_exception_type(ctx, objectProto, typeProto, "BaseException", objectProto);
     const proto::ProtoObject* exceptionType = make_exception_type(ctx, objectProto, typeProto, "Exception", baseExceptionType);
@@ -276,7 +276,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx,
     mod = mod->setAttribute(ctx, py_resourcewarning, resourceWarningType);
 
     // StopIteration custom init
-    const proto::ProtoString* py_init = proto::ProtoString::fromUTF8String(ctx, "__init__");
+    const proto::ProtoString* py_init = proto::ProtoString::createSymbol(ctx, "__init__");
     proto::ProtoObject* stopIterMutable = const_cast<proto::ProtoObject*>(stopIterationType);
     stopIterMutable->setAttribute(ctx, py_init, ctx->fromMethod(stopIterMutable, [](proto::ProtoContext* context, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* positionalParameters, const proto::ProtoSparseList* keywordParameters) -> const proto::ProtoObject* {
         exception_init(context, self, parentLink, positionalParameters, keywordParameters);
@@ -288,14 +288,14 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx,
                  value = context->newTupleFromList(positionalParameters)->asObject(context);
             }
         }
-        self = self->setAttribute(context, proto::ProtoString::fromUTF8String(context, "value"), value);
+        self = self->setAttribute(context, proto::ProtoString::createSymbol(context, "value"), value);
         return PROTO_NONE;
     }));
 
     mod = mod->setAttribute(ctx, py_stopiteration, stopIterationType);
     mod = mod->setAttribute(ctx, py_stopasynciteration, stopAsyncIterationType);
     mod = mod->setAttribute(ctx, py_systemerror, systemErrorType);
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__name__"), ctx->fromUTF8String("exceptions"));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__name__"), ctx->fromUTF8String("exceptions"));
 
     return mod;
 }

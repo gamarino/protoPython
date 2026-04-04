@@ -184,9 +184,9 @@ static const proto::ProtoObject* py_dumps(
 
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     const proto::ProtoObject* mod = ctx->newObject(false);
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "loads"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "loads"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_loads));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "dumps"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "dumps"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_dumps));
     return mod;
 }

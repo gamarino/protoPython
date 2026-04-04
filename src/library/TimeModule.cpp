@@ -43,13 +43,13 @@ static const proto::ProtoObject* py_monotonic(
 
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     const proto::ProtoObject* mod = ctx->newObject(false);
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "time"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "time"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_time));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "sleep"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "sleep"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_sleep));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "monotonic"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "monotonic"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_monotonic));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "perf_counter"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "perf_counter"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_monotonic));
     return mod;
 }

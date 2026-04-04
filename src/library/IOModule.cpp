@@ -17,7 +17,7 @@ static const proto::ProtoObject* py_io_read(
     const proto::ParentLink*,
     const proto::ProtoList* posArgs,
     const proto::ProtoSparseList*) {
-    const proto::ProtoObject* bufObj = self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__file_buffer__"));
+    const proto::ProtoObject* bufObj = self->getAttribute(context, proto::ProtoString::createSymbol(context, "__file_buffer__"));
     if (!bufObj || !bufObj->asExternalPointer(context)) return context->fromUTF8String("");
     std::string* buffer = static_cast<std::string*>(bufObj->asExternalPointer(context)->getPointer(context));
     if (!buffer) return context->fromUTF8String("");
@@ -44,7 +44,7 @@ static const proto::ProtoObject* py_io_write(
     const proto::ProtoList* posArgs,
     const proto::ProtoSparseList*) {
     if (posArgs->getSize(context) < 1) return context->fromInteger(0);
-    const proto::ProtoObject* bufObj = self->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__file_buffer__"));
+    const proto::ProtoObject* bufObj = self->getAttribute(context, proto::ProtoString::createSymbol(context, "__file_buffer__"));
     if (!bufObj || !bufObj->asExternalPointer(context)) return context->fromInteger(0);
     std::string* buffer = static_cast<std::string*>(bufObj->asExternalPointer(context)->getPointer(context));
     if (!buffer) return context->fromInteger(0);
@@ -75,15 +75,15 @@ static const proto::ProtoObject* py_io_open(
     }
 
     const proto::ProtoObject* fileObj = context->newObject(false);
-    fileObj = fileObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "name"), fileArg);
-    fileObj = fileObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "mode"), context->fromUTF8String(mode.c_str()));
-    fileObj = fileObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "buffering"), context->fromInteger(-1));
+    fileObj = fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "name"), fileArg);
+    fileObj = fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "mode"), context->fromUTF8String(mode.c_str()));
+    fileObj = fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "buffering"), context->fromInteger(-1));
     std::string* buffer = new std::string();
-    fileObj = fileObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__file_buffer__"),
+    fileObj = fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "__file_buffer__"),
         context->fromExternalPointer(buffer, file_buffer_finalizer));
-    fileObj = fileObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "read"),
+    fileObj = fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "read"),
         context->fromMethod(const_cast<proto::ProtoObject*>(fileObj), py_io_read));
-    fileObj = fileObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "write"),
+    fileObj = fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "write"),
         context->fromMethod(const_cast<proto::ProtoObject*>(fileObj), py_io_write));
     return fileObj;
 }
@@ -98,24 +98,24 @@ static const proto::ProtoObject* py_io_register(
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     const proto::ProtoObject* ioMod = ctx->newObject(false);
     
-    ioMod = ioMod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "open"), ctx->fromMethod(const_cast<proto::ProtoObject*>(ioMod), py_io_open));
-    ioMod = ioMod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "open_code"), ctx->fromMethod(const_cast<proto::ProtoObject*>(ioMod), py_io_open));
-    ioMod = ioMod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "DEFAULT_BUFFER_SIZE"), ctx->fromInteger(8192));
+    ioMod = ioMod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "open"), ctx->fromMethod(const_cast<proto::ProtoObject*>(ioMod), py_io_open));
+    ioMod = ioMod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "open_code"), ctx->fromMethod(const_cast<proto::ProtoObject*>(ioMod), py_io_open));
+    ioMod = ioMod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "DEFAULT_BUFFER_SIZE"), ctx->fromInteger(8192));
     
     // Stubs for io.py requirements
-    const proto::ProtoString* py_name_s = proto::ProtoString::fromUTF8String(ctx, "__name__");
-    const proto::ProtoString* py_doc_s = proto::ProtoString::fromUTF8String(ctx, "__doc__");
-    const proto::ProtoString* py_module_s = proto::ProtoString::fromUTF8String(ctx, "__module__");
+    const proto::ProtoString* py_name_s = proto::ProtoString::createSymbol(ctx, "__name__");
+    const proto::ProtoString* py_doc_s = proto::ProtoString::createSymbol(ctx, "__doc__");
+    const proto::ProtoString* py_module_s = proto::ProtoString::createSymbol(ctx, "__module__");
     const proto::ProtoObject* py_io_s = ctx->fromUTF8String("_io");
     const proto::ProtoObject* py_empty_doc = ctx->fromUTF8String("");
 
     auto add_stub = [&](const char* name) {
-        const proto::ProtoString* nameS = proto::ProtoString::fromUTF8String(ctx, name);
+        const proto::ProtoString* nameS = proto::ProtoString::createSymbol(ctx, name);
         const proto::ProtoObject* stub = ctx->newObject(false);
         stub = stub->setAttribute(ctx, py_name_s, ctx->fromUTF8String(name));
         stub = stub->setAttribute(ctx, py_doc_s, py_empty_doc);
         stub = stub->setAttribute(ctx, py_module_s, py_io_s);
-        stub = stub->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "register"),
+        stub = stub->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "register"),
             ctx->fromMethod(const_cast<proto::ProtoObject*>(stub), py_io_register));
         
         ioMod = ioMod->setAttribute(ctx, nameS, stub);

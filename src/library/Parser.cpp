@@ -1171,10 +1171,10 @@ std::unique_ptr<ASTNode> Parser::parseLambda() {
     if (cur_.type != TokenType::Colon) {
         // Simple parameter parsing for lambda
         bool isKwOnly = false;
-        while (cur_.type == TokenType::Name || cur_.type == TokenType::Star || cur_.type == TokenType::DoubleStar) {
+        while (cur_.type == TokenType::Name || cur_.type == TokenType::Type || cur_.type == TokenType::Match || cur_.type == TokenType::Case || cur_.type == TokenType::Star || cur_.type == TokenType::DoubleStar) {
             if (cur_.type == TokenType::Star) {
                 advance();
-                if (cur_.type == TokenType::Name) {
+                if (cur_.type == TokenType::Name || cur_.type == TokenType::Type || cur_.type == TokenType::Match || cur_.type == TokenType::Case) {
                     node->vararg = cur_.value;
                     advance();
                     isKwOnly = true;

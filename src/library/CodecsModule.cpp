@@ -81,21 +81,21 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx,
                                      const proto::ProtoObject* typeProto) {
     const proto::ProtoObject* mod = ctx->newObject(false);
     
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "lookup"), ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_codecs_lookup));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "encode"), ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_codecs_encode));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "decode"), ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_codecs_decode));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "register"), ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_codecs_register));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "register_error"), ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_codecs_register_error));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "lookup_error"), ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_codecs_lookup_error));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__name__"), ctx->fromUTF8String("_codecs"));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "lookup"), ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_codecs_lookup));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "encode"), ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_codecs_encode));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "decode"), ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_codecs_decode));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "register"), ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_codecs_register));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "register_error"), ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_codecs_register_error));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "lookup_error"), ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_codecs_lookup_error));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__name__"), ctx->fromUTF8String("_codecs"));
 
     const proto::ProtoList* keys = ctx->newList();
     const char* attrs[] = {"lookup", "encode", "decode", "register", "register_error", "lookup_error"};
     for (const char* a : attrs) {
         keys = keys->appendLast(ctx, ctx->fromUTF8String(a));
     }
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__keys__"), keys->asObject(ctx));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__all__"), keys->asObject(ctx));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__keys__"), keys->asObject(ctx));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__all__"), keys->asObject(ctx));
 
     return mod;
 }

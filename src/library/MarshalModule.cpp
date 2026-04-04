@@ -49,15 +49,15 @@ const proto::ProtoObject* MarshalModule::createMarshalModule(proto::ProtoContext
         moduleObj = const_cast<proto::ProtoObject*>(moduleObj->addParent(context, env->getModulePrototype()));
         moduleObj->setAttribute(context, env->getClassString(), env->getModulePrototype());
     } else {
-        moduleObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__class__"), proto::ProtoString::fromUTF8String(context, "module")->asObject(context));
+        moduleObj->setAttribute(context, proto::ProtoString::createSymbol(context, "__class__"), proto::ProtoString::createSymbol(context, "module")->asObject(context));
     }
 
-    const proto::ProtoString* nameS = env ? env->getNameString() : proto::ProtoString::fromUTF8String(context, "__name__");
-    moduleObj->setAttribute(context, nameS, proto::ProtoString::fromUTF8String(context, "marshal")->asObject(context));
+    const proto::ProtoString* nameS = env ? env->getNameString() : proto::ProtoString::createSymbol(context, "__name__");
+    moduleObj->setAttribute(context, nameS, proto::ProtoString::createSymbol(context, "marshal")->asObject(context));
 
     // Expose functions
-    moduleObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "loads"), context->fromMethod(moduleObj, py_marshal_loads));
-    moduleObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "dumps"), context->fromMethod(moduleObj, py_marshal_dumps));
+    moduleObj->setAttribute(context, proto::ProtoString::createSymbol(context, "loads"), context->fromMethod(moduleObj, py_marshal_loads));
+    moduleObj->setAttribute(context, proto::ProtoString::createSymbol(context, "dumps"), context->fromMethod(moduleObj, py_marshal_dumps));
 
     return moduleObj;
 }

@@ -43,7 +43,7 @@ static const proto::ProtoObject* py_abc_check_methods(
     }
     if (!notImplemented) notImplemented = PROTO_NONE;
 
-    const proto::ProtoString* mroName = proto::ProtoString::fromUTF8String(ctx, "__mro__");
+    const proto::ProtoString* mroName = proto::ProtoString::createSymbol(ctx, "__mro__");
     const proto::ProtoObject* mroObj = C->getAttribute(ctx, mroName);
     if (!mroObj || !mroObj->asList(ctx)) return notImplemented;
 
@@ -78,15 +78,21 @@ static const proto::ProtoObject* py_abc_check_methods(
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     auto createAbc = [&](const char* name) {
         proto::ProtoObject* abc = const_cast<proto::ProtoObject*>(ctx->newObject(false));
-        abc->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__call__"),
+        abc->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__call__"),
             ctx->fromMethod(abc, py_abc_call));
-        abc->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "register"),
+        abc->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "register"),
             ctx->fromMethod(abc, py_abc_register));
-        abc->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__name__"),
+        abc->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__name__"),
             ctx->fromUTF8String(name));
         
         // Set __class__ to self for diagnostic clarity (raiseAttributeError uses it)
-        abc->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__class__"), abc);
+        abc->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__class__"), abc);
+
+        // Inherit from object to have a valid MRO
+        if (auto* env = PythonEnvironment::fromContext(ctx)) {
+            const proto::ProtoObject* objProto = env->getObjectPrototype();
+            if (objProto) abc->addParent(ctx, objProto);
+        }
 
         // Add dummy methods to satisfy collections/__init__.py inheritance of methods
         const char* methods[] = {
@@ -96,7 +102,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
             "__iter__", "__len__", "__contains__", "__hash__"
         };
         for (const char* m : methods) {
-            abc->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, m),
+            abc->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, m),
                 ctx->fromMethod(abc, py_abc_call)); // Reuse py_abc_call as a dummy method
         }
         return abc;
@@ -112,11 +118,18 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     };
 
     for (const char* name : names) {
-        mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, name), createAbc(name));
+        mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, name), createAbc(name));
     }
 
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_check_methods"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_check_methods"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_abc_check_methods));
+
+    const proto::ProtoList* allList = ctx->newList();
+    for (const char* name : names) {
+        allList = allList->appendLast(ctx, ctx->fromUTF8String(name));
+    }
+    allList = allList->appendLast(ctx, ctx->fromUTF8String("_check_methods"));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__all__"), allList->asObject(ctx));
 
     return mod;
 }

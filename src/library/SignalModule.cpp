@@ -71,16 +71,16 @@ static const proto::ProtoObject* py_getsig(
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     const proto::ProtoObject* mod = ctx->newObject(false);
     
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "signal"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "signal"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_signal));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "getsignal"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "getsignal"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_getsig));
         
     // Constants
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "SIGINT"), ctx->fromInteger(SIGINT));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "SIGTERM"), ctx->fromInteger(SIGTERM));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "SIG_DFL"), ctx->fromInteger(0));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "SIG_IGN"), ctx->fromInteger(1));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "SIGINT"), ctx->fromInteger(SIGINT));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "SIGTERM"), ctx->fromInteger(SIGTERM));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "SIG_DFL"), ctx->fromInteger(0));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "SIG_IGN"), ctx->fromInteger(1));
     
     return mod;
 }

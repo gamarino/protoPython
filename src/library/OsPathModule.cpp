@@ -22,11 +22,11 @@ static const proto::ProtoObject* py_join(
     const char* sep = "/";
     if (posArgs->getSize(ctx) == 1) {
         const proto::ProtoObject* iterable = posArgs->getAt(ctx, 0);
-        const proto::ProtoObject* iterM = iterable->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iter__"));
+        const proto::ProtoObject* iterM = iterable->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__iter__"));
         if (!iterM || !iterM->asMethod(ctx)) return ctx->fromUTF8String("");
         const proto::ProtoObject* it = iterM->asMethod(ctx)(ctx, iterable, nullptr, ctx->newList(), nullptr);
         if (!it) return ctx->fromUTF8String("");
-        const proto::ProtoObject* nextM = it->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__next__"));
+        const proto::ProtoObject* nextM = it->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__next__"));
         if (!nextM || !nextM->asMethod(ctx)) return ctx->fromUTF8String("");
         bool first = true;
         for (;;) {
@@ -145,17 +145,17 @@ static const proto::ProtoObject* py_normpath(
 
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     const proto::ProtoObject* mod = ctx->newObject(false);
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "join"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "join"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_join));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "exists"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "exists"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_exists));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "isfile"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "isfile"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_isfile));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "isdir"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "isdir"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_isdir));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "realpath"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "realpath"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_realpath));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "normpath"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "normpath"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_normpath));
     return mod;
 }

@@ -8,7 +8,7 @@ namespace ast {
 
 static const proto::ProtoObject* create_ast_node_type(proto::ProtoContext* ctx, const char* name, const proto::ProtoObject* base) {
     const proto::ProtoObject* type = base ? base->newChild(ctx, true) : ctx->newObject(false);
-    type = type->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__name__"), ctx->fromUTF8String(name));
+    type = type->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__name__"), ctx->fromUTF8String(name));
     return type;
 }
 
@@ -18,7 +18,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     const proto::ProtoObject* objectProto = env ? env->getObjectPrototype() : nullptr;
 
     const proto::ProtoObject* ast_base = create_ast_node_type(ctx, "AST", objectProto);
-    mod_obj = mod_obj->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "AST"), ast_base);
+    mod_obj = mod_obj->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "AST"), ast_base);
 
     // ASDL sum types (base types for others)
     const char* base_types[] = {
@@ -29,7 +29,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
 
     for (const char* name : base_types) {
         const proto::ProtoObject* type = create_ast_node_type(ctx, name, ast_base);
-        mod_obj = mod_obj->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, name), type);
+        mod_obj = mod_obj->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, name), type);
     }
 
     // ASDL product types and constructor types
@@ -59,15 +59,15 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         // Some heuristics for bases
         std::string n(name);
         if (n == "Module" || n == "Interactive" || n == "Expression" || n == "FunctionType") {
-             base = mod_obj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "mod"));
+             base = mod_obj->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "mod"));
         } else if (n == "FunctionDef" || n == "Return" || n == "If" || n == "For" || n == "Expr" || n == "Pass" || n == "Assign") {
-             base = mod_obj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "stmt"));
+             base = mod_obj->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "stmt"));
         } else if (n == "Name" || n == "Constant" || n == "BinOp" || n == "Call" || n == "Attribute") {
-             base = mod_obj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "expr"));
+             base = mod_obj->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "expr"));
         }
         
         const proto::ProtoObject* type = create_ast_node_type(ctx, name, base);
-        mod_obj = mod_obj->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, name), type);
+        mod_obj = mod_obj->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, name), type);
     }
 
     // Add __all__
@@ -78,12 +78,12 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     all_list = all_list->appendLast(ctx, ctx->fromUTF8String("PyCF_ONLY_AST"));
     all_list = all_list->appendLast(ctx, ctx->fromUTF8String("PyCF_OPTIMIZED_AST"));
     all_list = all_list->appendLast(ctx, ctx->fromUTF8String("PyCF_TYPE_COMMENTS"));
-    mod_obj = mod_obj->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__all__"), all_list->asObject(ctx));
+    mod_obj = mod_obj->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__all__"), all_list->asObject(ctx));
 
     // Flags
-    mod_obj = mod_obj->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "PyCF_ONLY_AST"), ctx->fromInteger(0x0400));
-    mod_obj = mod_obj->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "PyCF_OPTIMIZED_AST"), ctx->fromInteger(0x8000));
-    mod_obj = mod_obj->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "PyCF_TYPE_COMMENTS"), ctx->fromInteger(0x1000));
+    mod_obj = mod_obj->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "PyCF_ONLY_AST"), ctx->fromInteger(0x0400));
+    mod_obj = mod_obj->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "PyCF_OPTIMIZED_AST"), ctx->fromInteger(0x8000));
+    mod_obj = mod_obj->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "PyCF_TYPE_COMMENTS"), ctx->fromInteger(0x1000));
 
     return mod_obj;
 }

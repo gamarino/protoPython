@@ -52,9 +52,9 @@ const proto::ProtoObject* CompiledModuleProvider::tryLoad(const std::string& log
     const proto::ProtoObject* mod = ctx->newObject(false);
     if (ctx->space->objectPrototype) mod = mod->addParent(ctx, ctx->space->objectPrototype);
     
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__name__"), ctx->fromUTF8String(logicalPath.c_str()));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__file__"), ctx->fromUTF8String(foundPath.c_str()));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__loader__"), ctx->fromUTF8String("CompiledModuleProvider"));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__name__"), ctx->fromUTF8String(logicalPath.c_str()));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__file__"), ctx->fromUTF8String(foundPath.c_str()));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__loader__"), ctx->fromUTF8String("CompiledModuleProvider"));
 
     // To allow proto_module_init to work, we need to set the current globals to this module.
     // In protoPython, resolve() depends on s_currentGlobals.
@@ -62,7 +62,7 @@ const proto::ProtoObject* CompiledModuleProvider::tryLoad(const std::string& log
     PythonEnvironment::setCurrentGlobals(mod);
     
     // Also, we might need a way to mark it as executed
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__executed__"), PROTO_TRUE);
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__executed__"), PROTO_TRUE);
 
     initFunc();
 

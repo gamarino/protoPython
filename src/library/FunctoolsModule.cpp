@@ -9,8 +9,8 @@ static const proto::ProtoObject* py_partial_call(
     const proto::ParentLink*,
     const proto::ProtoList* posArgs,
     const proto::ProtoSparseList*) {
-    const proto::ProtoObject* func = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__partial_func__"));
-    const proto::ProtoObject* frozenObj = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__partial_args__"));
+    const proto::ProtoObject* func = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__partial_func__"));
+    const proto::ProtoObject* frozenObj = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__partial_args__"));
     if (!func) return PROTO_NONE;
 
     const proto::ProtoList* args = ctx->newList();
@@ -22,7 +22,7 @@ static const proto::ProtoObject* py_partial_call(
     for (unsigned long i = 0; i < posArgs->getSize(ctx); ++i)
         args = args->appendLast(ctx, posArgs->getAt(ctx, static_cast<int>(i)));
 
-    const proto::ProtoObject* callAttr = func->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__call__"));
+    const proto::ProtoObject* callAttr = func->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__call__"));
     if (!callAttr || !callAttr->asMethod(ctx)) return PROTO_NONE;
     return callAttr->asMethod(ctx)(ctx, func, nullptr, args, nullptr);
 }
@@ -39,21 +39,21 @@ static const proto::ProtoObject* py_partial(
     for (unsigned long i = 1; i < posArgs->getSize(ctx); ++i)
         frozen = frozen->appendLast(ctx, posArgs->getAt(ctx, static_cast<int>(i)));
 
-    const proto::ProtoObject* partialProto = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__partial_proto__"));
+    const proto::ProtoObject* partialProto = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__partial_proto__"));
     if (!partialProto) return PROTO_NONE;
     const proto::ProtoObject* p = partialProto->newChild(ctx, true);
-    p = p->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__partial_func__"), func);
-    p = p->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__partial_args__"), frozen->asObject(ctx));
+    p = p->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__partial_func__"), func);
+    p = p->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__partial_args__"), frozen->asObject(ctx));
     return p;
 }
 
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     const proto::ProtoObject* mod = ctx->newObject(false);
     const proto::ProtoObject* partialProto = ctx->newObject(false);
-    partialProto = partialProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__call__"),
+    partialProto = partialProto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__call__"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(partialProto), py_partial_call));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__partial_proto__"), partialProto);
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "partial"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__partial_proto__"), partialProto);
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "partial"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_partial));
     return mod;
 }

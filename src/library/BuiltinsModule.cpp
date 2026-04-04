@@ -1091,19 +1091,14 @@ static const proto::ProtoObject* py_object_init(
                        const proto::ProtoObject* nAttr = cls->getAttribute(context, env->getNameString());
                        if (nAttr && nAttr->isString(context)) nAttr->asString(context)->toUTF8String(context, clsName);
                        
-                       const proto::ProtoObject* newAttr = cls->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__new__"));
-                       if (std::getenv("PROTO_ENV_DIAG")) {
-                           fprintf(stderr, "DEBUG py_object_init: newAttr=%p isMethod=%d\n", (void*)newAttr, newAttr ? newAttr->isMethod(context) : 0);
-                       }
-                       if (newAttr && newAttr->isMethod(context)) {
-                           auto mPtr = newAttr->asMethod(context);
-                           if (std::getenv("PROTO_ENV_DIAG")) {
-                               fprintf(stderr, "DEBUG py_object_init: mPtr=%p py_object_new=%p\n", (void*)mPtr, (void*)py_object_new);
-                           }
-                           if (mPtr != py_object_new) {
-                               isNewOverridden = true;
-                           }
-                       }
+                        const proto::ProtoString* newStr = env ? env->getNewString() : (context)->fromUTF8String("__new__")->asString(context);
+                        const proto::ProtoObject* newAttr = cls->getAttribute(context, newStr);
+                        if (newAttr && env && env->getObjectPrototype()) {
+                             const proto::ProtoObject* baseNew = env->getObjectPrototype()->getAttribute(context, newStr);
+                             if (newAttr != baseNew) {
+                                 isNewOverridden = true;
+                             }
+                        }
                   }
              }
         }
@@ -1653,9 +1648,19 @@ static const proto::ProtoObject* py_super_getattr(
                     while (it && it->hasNext(context)) {
                         unsigned long hk = it->nextKey(context);
                         const proto::ProtoObject* vk = reinterpret_cast<const proto::ProtoObject*>(hk);
+                        const proto::ProtoObject* val = attrs->getAt(context, hk);
                         std::string k_str = "?";
                         if (vk && vk->isString(context)) vk->asString(context)->toUTF8String(context, k_str);
-                        fprintf(stderr, "DEBUG   - attr hash %lu (str='%s')\n", hk, k_str.c_str());
+                        std::string v_repr = "unknown";
+                        // Using toStdString can be dangerous if it's too long, but for dunders it's fine.
+                        // For now just check type.
+                        if (val) {
+                            if (val->isMethod(context)) v_repr = "method";
+                            else if (val->isInteger(context)) v_repr = "int";
+                            else if (val->isString(context)) v_repr = "str";
+                            else v_repr = "object";
+                        }
+                        fprintf(stderr, "DEBUG   - attr hash %lu (str='%s', val=%s)\n", hk, k_str.c_str(), v_repr.c_str());
                         it = const_cast<proto::ProtoSparseListIterator*>(it)->advance(context);
                     }
                 }
@@ -2716,6 +2721,9 @@ const proto::ProtoObject* py_type(
             if (!bases) targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__bases__"), context->newTupleFromList(emptyBases)->asObject(context)));
         }
         
+        fprintf(stderr, "DEBUG py_type: computeC3MRO returned mroList=%p\n", (void*)mroList);
+        fflush(stderr);
+        
         if (mroList) {
             targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__mro__"), context->newTupleFromList(mroList)->asObject(context)));
             // Update protoCore 'parents' list natively to reflect the exact same MRO list (minus self) backwards
@@ -3773,10 +3781,11 @@ static const proto::ProtoObject* py_filter_next(
         if (!val) return nullptr;
         
         const proto::ProtoObject* result = env ? env->callObject(func, {val}) : nullptr;
+        if (result && env && env->isTrue(result)) return val;
     }
 }
 
-static const proto::ProtoObject* py_ignore_init(
+const proto::ProtoObject* py_python_ignore_init(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
@@ -4073,7 +4082,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     rangeClass = rangeClass->setAttribute(ctx, py_name_local, proto::ProtoString::fromUTF8String(ctx, "range")->asObject(ctx));
     rangeClass = rangeClass->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__new__"), ctx->fromMethod(nullptr, py_range_new));
     rangeClass = rangeClass->setAttribute(ctx, pEnv ? pEnv->getIterString() : proto::ProtoString::fromUTF8String(ctx, "__iter__"), ctx->fromMethod(nullptr, py_range_iter));
-    rangeClass = rangeClass->setAttribute(ctx, pEnv ? pEnv->getInitString() : proto::ProtoString::fromUTF8String(ctx, "__init__"), ctx->fromMethod(nullptr, py_ignore_init));
+    rangeClass = rangeClass->setAttribute(ctx, pEnv ? pEnv->getInitString() : proto::ProtoString::fromUTF8String(ctx, "__init__"), ctx->fromMethod(nullptr, py_python_ignore_init));
     builtins = builtins->setAttribute(ctx, pEnv ? pEnv->getRangeString() : proto::ProtoString::fromUTF8String(ctx, "range"), rangeClass);
 
     const proto::ProtoObject* zipProto = ctx->newObject(false);
@@ -4081,7 +4090,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     if (typeProto) zipProto = zipProto->setAttribute(ctx, py_class_local, typeProto);
     zipProto = zipProto->setAttribute(ctx, py_name_local, proto::ProtoString::fromUTF8String(ctx, "zip")->asObject(ctx));
     zipProto = zipProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__new__"), ctx->fromMethod(nullptr, py_zip));
-    zipProto = zipProto->setAttribute(ctx, pEnv ? pEnv->getInitString() : proto::ProtoString::fromUTF8String(ctx, "__init__"), ctx->fromMethod(nullptr, py_ignore_init));
+    zipProto = zipProto->setAttribute(ctx, pEnv ? pEnv->getInitString() : proto::ProtoString::fromUTF8String(ctx, "__init__"), ctx->fromMethod(nullptr, py_python_ignore_init));
     zipProto = zipProto->setAttribute(ctx, pEnv->getIterString(), ctx->fromMethod(const_cast<proto::ProtoObject*>(zipProto), py_self_iter));
     zipProto = zipProto->setAttribute(ctx, pEnv->getNextString(), ctx->fromMethod(const_cast<proto::ProtoObject*>(zipProto), py_zip_next));
     builtins = builtins->setAttribute(ctx, pEnv->getZipProtoString(), zipProto);
@@ -4090,8 +4099,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     if (objectProto) filterProto = filterProto->addParent(ctx, objectProto);
     if (typeProto) filterProto = filterProto->setAttribute(ctx, py_class_local, typeProto);
     filterProto = filterProto->setAttribute(ctx, py_name_local, proto::ProtoString::fromUTF8String(ctx, "filter")->asObject(ctx));
-    filterProto = filterProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__new__"), ctx->fromMethod(nullptr, py_filter));
-    filterProto = filterProto->setAttribute(ctx, pEnv ? pEnv->getInitString() : proto::ProtoString::fromUTF8String(ctx, "__init__"), ctx->fromMethod(nullptr, py_ignore_init));
+    filterProto = filterProto->setAttribute(ctx, pEnv->getNewString(), ctx->fromMethod(nullptr, py_filter));
+    filterProto = filterProto->setAttribute(ctx, pEnv ? pEnv->getInitString() : proto::ProtoString::fromUTF8String(ctx, "__init__"), ctx->fromMethod(nullptr, py_python_ignore_init));
     filterProto = filterProto->setAttribute(ctx, pEnv->getIterString(), ctx->fromMethod(const_cast<proto::ProtoObject*>(filterProto), py_self_iter));
     filterProto = filterProto->setAttribute(ctx, pEnv->getNextString(), ctx->fromMethod(const_cast<proto::ProtoObject*>(filterProto), py_filter_next));
     builtins = builtins->setAttribute(ctx, pEnv->getFilterProtoString(), filterProto);
@@ -4100,8 +4109,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     if (objectProto) mapProto = mapProto->addParent(ctx, objectProto);
     if (typeProto) mapProto = mapProto->setAttribute(ctx, py_class_local, typeProto);
     mapProto = mapProto->setAttribute(ctx, py_name_local, proto::ProtoString::fromUTF8String(ctx, "map")->asObject(ctx));
-    mapProto = mapProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__new__"), ctx->fromMethod(nullptr, py_map));
-    mapProto = mapProto->setAttribute(ctx, pEnv ? pEnv->getInitString() : proto::ProtoString::fromUTF8String(ctx, "__init__"), ctx->fromMethod(nullptr, py_ignore_init));
+    mapProto = mapProto->setAttribute(ctx, pEnv->getNewString(), ctx->fromMethod(nullptr, py_map));
+    mapProto = mapProto->setAttribute(ctx, pEnv ? pEnv->getInitString() : proto::ProtoString::fromUTF8String(ctx, "__init__"), ctx->fromMethod(nullptr, py_python_ignore_init));
     mapProto = mapProto->setAttribute(ctx, pEnv->getIterString(), ctx->fromMethod(const_cast<proto::ProtoObject*>(mapProto), py_self_iter));
     mapProto = mapProto->setAttribute(ctx, pEnv->getNextString(), ctx->fromMethod(const_cast<proto::ProtoObject*>(mapProto), py_map_next));
     builtins = builtins->setAttribute(ctx, pEnv->getMapProtoString(), mapProto);
@@ -4114,8 +4123,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     if (objectProto) enumProto = enumProto->addParent(ctx, objectProto);
     if (typeProto) enumProto = enumProto->setAttribute(ctx, py_class_local, typeProto);
     enumProto = enumProto->setAttribute(ctx, py_name_local, proto::ProtoString::fromUTF8String(ctx, "enumerate")->asObject(ctx));
-    enumProto = enumProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__new__"), ctx->fromMethod(nullptr, py_enumerate));
-    enumProto = enumProto->setAttribute(ctx, pEnv ? pEnv->getInitString() : proto::ProtoString::fromUTF8String(ctx, "__init__"), ctx->fromMethod(nullptr, py_ignore_init));
+    enumProto = enumProto->setAttribute(ctx, pEnv->getNewString(), ctx->fromMethod(nullptr, py_enumerate));
+    enumProto = enumProto->setAttribute(ctx, pEnv ? pEnv->getInitString() : proto::ProtoString::fromUTF8String(ctx, "__init__"), ctx->fromMethod(nullptr, py_python_ignore_init));
     enumProto = enumProto->setAttribute(ctx, pEnv->getIterString(), ctx->fromMethod(const_cast<proto::ProtoObject*>(enumProto), py_self_iter));
     enumProto = enumProto->setAttribute(ctx, pEnv->getNextString(), ctx->fromMethod(const_cast<proto::ProtoObject*>(enumProto), py_enumerate_next));
     builtins = builtins->setAttribute(ctx, pEnv->getEnumProtoString(), enumProto);
@@ -4131,7 +4140,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     
     revProto = revProto->setAttribute(ctx, pEnv->getIterString(), ctx->fromMethod(const_cast<proto::ProtoObject*>(revProto), py_self_iter));
     revProto = revProto->setAttribute(ctx, pEnv->getNextString(), ctx->fromMethod(const_cast<proto::ProtoObject*>(revProto), py_reversed_next));
-    revProto = revProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__new__"), ctx->fromMethod(const_cast<proto::ProtoObject*>(revProto), py_reversed));
+    revProto = revProto->setAttribute(ctx, pEnv->getNewString(), ctx->fromMethod(const_cast<proto::ProtoObject*>(revProto), py_reversed));
     builtins = builtins->setAttribute(ctx, pEnv->getRevProtoString(), revProto);
     // Also update the builtins dict with the fully initialized revProto
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "reversed"), revProto);
@@ -4193,8 +4202,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     if (objectProto) memoryviewClass = memoryviewClass->addParent(ctx, objectProto);
     if (typeProto) memoryviewClass = memoryviewClass->setAttribute(ctx, py_class_local, typeProto);
     memoryviewClass = memoryviewClass->setAttribute(ctx, py_name_local, proto::ProtoString::fromUTF8String(ctx, "memoryview")->asObject(ctx));
-    memoryviewClass = memoryviewClass->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__new__"), ctx->fromMethod(nullptr, py_memoryview_new));
-    memoryviewClass = memoryviewClass->setAttribute(ctx, pEnv ? pEnv->getInitString() : proto::ProtoString::fromUTF8String(ctx, "__init__"), ctx->fromMethod(nullptr, py_ignore_init));
+    memoryviewClass = memoryviewClass->setAttribute(ctx, pEnv->getNewString(), ctx->fromMethod(nullptr, py_memoryview_new));
+    memoryviewClass = memoryviewClass->setAttribute(ctx, pEnv ? pEnv->getInitString() : proto::ProtoString::fromUTF8String(ctx, "__init__"), ctx->fromMethod(nullptr, py_python_ignore_init));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "memoryview"), memoryviewClass);
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "super"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_super));
     const proto::ProtoObject* propertyProto = ctx->newObject(false);
@@ -4203,7 +4212,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     propertyProto = propertyProto->setAttribute(ctx, py_name_local, proto::ProtoString::fromUTF8String(ctx, "property")->asObject(ctx));
     propertyProto = propertyProto->setAttribute(ctx, pEnv->getGetDunderString(), ctx->fromMethod(nullptr, py_property_get));
     propertyProto = propertyProto->setAttribute(ctx, pEnv->getSetDunderString(), ctx->fromMethod(nullptr, py_property_set));
-    propertyProto = propertyProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__new__"), ctx->fromMethod(nullptr, py_property));
+    propertyProto = propertyProto->setAttribute(ctx, pEnv->getNewString(), ctx->fromMethod(nullptr, py_property));
     const proto::ProtoString* initStr = pEnv ? pEnv->getInitString() : proto::ProtoString::fromUTF8String(ctx, "__init__");
     propertyProto = propertyProto->setAttribute(ctx, initStr, ctx->fromMethod(nullptr, py_property_init));
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "property"), propertyProto);
@@ -4229,10 +4238,10 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     classmethodProto = classmethodProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__is_python_class__"), PROTO_TRUE);
 
     classmethodProto = classmethodProto->setAttribute(ctx, pEnv->getGetDunderString(), ctx->fromMethod(nullptr, py_classmethod_get));
-    classmethodProto = classmethodProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__new__"), ctx->fromMethod(nullptr, py_classmethod));
+    classmethodProto = classmethodProto->setAttribute(ctx, pEnv->getNewString(), ctx->fromMethod(nullptr, py_classmethod));
     
     staticmethodProto = staticmethodProto->setAttribute(ctx, pEnv->getGetDunderString(), ctx->fromMethod(nullptr, py_staticmethod_get));
-    staticmethodProto = staticmethodProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__new__"), ctx->fromMethod(nullptr, py_staticmethod));
+    staticmethodProto = staticmethodProto->setAttribute(ctx, pEnv->getNewString(), ctx->fromMethod(nullptr, py_staticmethod));
 
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "staticmethod"), staticmethodProto);
     builtins = builtins->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "classmethod"), classmethodProto);

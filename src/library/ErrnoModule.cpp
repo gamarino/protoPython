@@ -35,7 +35,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
 
 // Map names to their C errno values
 #define ADD_ERRNO(name) \
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, #name), ctx->fromInteger(name))
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, #name), ctx->fromInteger(name))
 
     ADD_ERRNO(EPERM); ADD_ERRNO(ENOENT); ADD_ERRNO(ESRCH); ADD_ERRNO(EINTR);
     ADD_ERRNO(EIO); ADD_ERRNO(ENXIO); ADD_ERRNO(E2BIG); ADD_ERRNO(ENOEXEC);
@@ -65,7 +65,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     // errorcode map
     const proto::ProtoSparseList* errorcode = ctx->newSparseList();
     // For now we don't strictly need the name mapping, just the constants.
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "errorcode"), errorcode->asObject(ctx));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "errorcode"), errorcode->asObject(ctx));
 
     return mod;
 }

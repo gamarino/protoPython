@@ -13,7 +13,7 @@ namespace protoPython {
 namespace pathlib {
 
 static const proto::ProtoString* path_data_name(proto::ProtoContext* ctx) {
-    return proto::ProtoString::fromUTF8String(ctx, "__data__");
+    return proto::ProtoString::createSymbol(ctx, "__data__");
 }
 
 /** Path.__call__(*parts) -> new Path instance; stores path string in __data__. */
@@ -39,7 +39,7 @@ static const proto::ProtoObject* py_path_call(
             }
         }
     }
-    const proto::ProtoObject* pathProto = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__path_proto__"));
+    const proto::ProtoObject* pathProto = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__path_proto__"));
     if (!pathProto) return PROTO_NONE;
     const proto::ProtoObject* p = pathProto->newChild(ctx, true);
     p->setAttribute(ctx, path_data_name(ctx), ctx->fromUTF8String(path.c_str()));
@@ -178,26 +178,26 @@ static const proto::ProtoObject* py_path_write_text(
 
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     const proto::ProtoObject* pathProto = ctx->newObject(false);
-    pathProto = pathProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__path_proto__"), pathProto);
-    pathProto = pathProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__call__"),
+    pathProto = pathProto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__path_proto__"), pathProto);
+    pathProto = pathProto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__call__"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(pathProto), py_path_call));
-    pathProto = pathProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__str__"),
+    pathProto = pathProto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__str__"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(pathProto), py_path_str));
-    pathProto = pathProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "exists"),
+    pathProto = pathProto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "exists"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(pathProto), py_path_exists));
-    pathProto = pathProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "is_dir"),
+    pathProto = pathProto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "is_dir"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(pathProto), py_path_is_dir));
-    pathProto = pathProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "is_file"),
+    pathProto = pathProto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "is_file"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(pathProto), py_path_is_file));
-    pathProto = pathProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "mkdir"),
+    pathProto = pathProto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "mkdir"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(pathProto), py_path_mkdir));
-    pathProto = pathProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "read_text"),
+    pathProto = pathProto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "read_text"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(pathProto), py_path_read_text));
-    pathProto = pathProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "write_text"),
+    pathProto = pathProto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "write_text"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(pathProto), py_path_write_text));
 
     const proto::ProtoObject* mod = ctx->newObject(false);
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "Path"), pathProto);
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "Path"), pathProto);
     return mod;
 }
 

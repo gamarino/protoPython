@@ -71,7 +71,7 @@ int Compiler::addName(const std::string& name) {
     if (it != namesIndex_.end()) return it->second;
     int idx = static_cast<int>(namesVec_.size());
     auto* env = protoPython::PythonEnvironment::get(ctx_);
-    const proto::ProtoString* str = env ? env->getInternedString(ctx_, name.c_str()) : proto::ProtoString::fromUTF8String(ctx_, name.c_str());
+    const proto::ProtoString* str = env ? env->getInternedString(ctx_, name.c_str()) : proto::ProtoString::createSymbol(ctx_, name.c_str());
     namesVec_.push_back(reinterpret_cast<const proto::ProtoObject*>(str));
     namesIndex_[name] = idx;
     return idx;
@@ -2717,7 +2717,7 @@ bool Compiler::compileClassDef(ClassDefNode* n) {
     if (!n) return false;
     
     // 1. Name
-    int nameIdx = addConstant(proto::ProtoString::fromUTF8String(ctx_, n->name.c_str())->asObject(ctx_));
+    int nameIdx = addConstant(ctx_->fromUTF8String(n->name.c_str()));
     emit(OP_LOAD_CONST, nameIdx);
     
     // 2. Bases
@@ -2727,9 +2727,12 @@ bool Compiler::compileClassDef(ClassDefNode* n) {
     emit(OP_BUILD_TUPLE, static_cast<int>(n->bases.size()));
     
     // 2.5 Keywords
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        fprintf(stderr, "DEBUG Compiler: class '%s' keywords size=%zu\n", n->name.c_str(), n->keywords.size());
+    }
     if (!n->keywords.empty()) {
         for (auto& kw : n->keywords) {
-            int kIdx = addConstant(proto::ProtoString::fromUTF8String(ctx_, kw.first.c_str())->asObject(ctx_));
+            int kIdx = addConstant(ctx_->fromUTF8String(kw.first.c_str()));
             emit(OP_LOAD_CONST, kIdx);
             if (!compileNode(kw.second.get())) return false;
         }
@@ -2921,21 +2924,21 @@ const proto::ProtoObject* makeCodeObject(proto::ProtoContext* ctx,
     const proto::ProtoTuple* lnotab) {
     if (!ctx) return PROTO_NONE;
     const proto::ProtoObject* code = ctx->newObject(false);
-    code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_consts"), constants ? reinterpret_cast<const proto::ProtoObject*>(constants) : reinterpret_cast<const proto::ProtoObject*>(ctx->newTuple()));
-    code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_names"), names ? reinterpret_cast<const proto::ProtoObject*>(names) : reinterpret_cast<const proto::ProtoObject*>(ctx->newTuple()));
-    code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_code"), reinterpret_cast<const proto::ProtoObject*>(bytecode));
-    code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_filename"), filename ? reinterpret_cast<const proto::ProtoObject*>(filename) : reinterpret_cast<const proto::ProtoObject*>(ctx->fromUTF8String("<stdin>")));
-    code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_varnames"), varnames ? reinterpret_cast<const proto::ProtoObject*>(varnames) : reinterpret_cast<const proto::ProtoObject*>(ctx->newTuple()));
-    code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_nparams"), ctx->fromInteger(nparams));
-    code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_kwonlyargcount"), ctx->fromInteger(kwonlyargcount));
-    code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_automatic_count"), ctx->fromInteger(automatic_count + PYTHON_STACK_BUFFER));
-    code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_flags"), ctx->fromInteger(flags));
+    code = code->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "co_consts"), constants ? reinterpret_cast<const proto::ProtoObject*>(constants) : reinterpret_cast<const proto::ProtoObject*>(ctx->newTuple()));
+    code = code->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "co_names"), names ? reinterpret_cast<const proto::ProtoObject*>(names) : reinterpret_cast<const proto::ProtoObject*>(ctx->newTuple()));
+    code = code->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "co_code"), reinterpret_cast<const proto::ProtoObject*>(bytecode));
+    code = code->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "co_filename"), filename ? reinterpret_cast<const proto::ProtoObject*>(filename) : reinterpret_cast<const proto::ProtoObject*>(ctx->fromUTF8String("<stdin>")));
+    code = code->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "co_varnames"), varnames ? reinterpret_cast<const proto::ProtoObject*>(varnames) : reinterpret_cast<const proto::ProtoObject*>(ctx->newTuple()));
+    code = code->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "co_nparams"), ctx->fromInteger(nparams));
+    code = code->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "co_kwonlyargcount"), ctx->fromInteger(kwonlyargcount));
+    code = code->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "co_automatic_count"), ctx->fromInteger(automatic_count + PYTHON_STACK_BUFFER));
+    code = code->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "co_flags"), ctx->fromInteger(flags));
     bool isGenOrCoro = isGenerator || (flags & 0x80);
-    code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_is_generator"), ctx->fromBoolean(isGenOrCoro));
-    code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_name"), co_name ? reinterpret_cast<const proto::ProtoObject*>(co_name) : reinterpret_cast<const proto::ProtoObject*>(ctx->fromUTF8String("<module>")));
+    code = code->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "co_is_generator"), ctx->fromBoolean(isGenOrCoro));
+    code = code->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "co_name"), co_name ? reinterpret_cast<const proto::ProtoObject*>(co_name) : reinterpret_cast<const proto::ProtoObject*>(ctx->fromUTF8String("<module>")));
     
-    code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_firstlineno"), ctx->fromInteger(firstlineno));
-    code = code->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_lnotab"), lnotab ? reinterpret_cast<const proto::ProtoObject*>(lnotab) : reinterpret_cast<const proto::ProtoObject*>(ctx->newTuple()));
+    code = code->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "co_firstlineno"), ctx->fromInteger(firstlineno));
+    code = code->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "co_lnotab"), lnotab ? reinterpret_cast<const proto::ProtoObject*>(lnotab) : reinterpret_cast<const proto::ProtoObject*>(ctx->newTuple()));
 
     return code;
 }
@@ -3011,10 +3014,10 @@ const proto::ProtoObject* runCodeObject(proto::ProtoContext* ctx,
     
     CodeObjectScope cscope(codeObj);
 
-    const proto::ProtoObject* co_consts = codeObj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_consts"));
-    const proto::ProtoObject* co_names = codeObj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_names"));
-    const proto::ProtoObject* co_code = codeObj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_code"));
-    const proto::ProtoObject* co_varnames = codeObj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_varnames"));
+    const proto::ProtoObject* co_consts = codeObj->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "co_consts"));
+    const proto::ProtoObject* co_names = codeObj->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "co_names"));
+    const proto::ProtoObject* co_code = codeObj->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "co_code"));
+    const proto::ProtoObject* co_varnames = codeObj->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "co_varnames"));
 
     if (!co_consts || !co_consts->asTuple(ctx) || !co_code || !co_code->asTuple(ctx)) {
         if (std::getenv("PROTO_ENV_DIAG")) {
@@ -3023,7 +3026,7 @@ const proto::ProtoObject* runCodeObject(proto::ProtoContext* ctx,
         return PROTO_NONE;
     }
 
-    const proto::ProtoObject* co_automatic_obj = codeObj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "co_automatic_count"));
+    const proto::ProtoObject* co_automatic_obj = codeObj->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "co_automatic_count"));
     int automatic_count = (co_automatic_obj && co_automatic_obj->isInteger(ctx)) ? static_cast<int>(co_automatic_obj->asLong(ctx)) : 0;
 
     proto::ProtoContext* oldCtx = PythonEnvironment::getCurrentContext();

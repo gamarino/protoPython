@@ -34,9 +34,9 @@ const proto::ProtoObject* PythonModuleProvider::tryLoad(const std::string& logic
     std::string relPath = logicalPath;
     std::replace(relPath.begin(), relPath.end(), '.', '/');
 
-    const proto::ProtoString* nameKey = proto::ProtoString::fromUTF8String(ctx, "__name__");
-    const proto::ProtoString* fileKey = proto::ProtoString::fromUTF8String(ctx, "__file__");
-    const proto::ProtoString* pathKey = proto::ProtoString::fromUTF8String(ctx, "__path__");
+    const proto::ProtoString* nameKey = proto::ProtoString::createSymbol(ctx, "__name__");
+    const proto::ProtoString* fileKey = proto::ProtoString::createSymbol(ctx, "__file__");
+    const proto::ProtoString* pathKey = proto::ProtoString::createSymbol(ctx, "__path__");
 
     for (const auto& basePath : basePaths_) {
         // 2. Try <base>/<path>.py

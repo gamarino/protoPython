@@ -26,11 +26,11 @@ static const proto::ProtoObject* py_run_exitfuncs(
 
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     const proto::ProtoObject* mod = ctx->newObject(false);
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "register"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "register"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_register));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "unregister"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "unregister"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_unregister));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_run_exitfuncs"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_run_exitfuncs"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_run_exitfuncs));
     return mod;
 }

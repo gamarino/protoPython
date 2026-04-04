@@ -18,7 +18,7 @@ static double toDouble(proto::ProtoContext* ctx, const proto::ProtoObject* obj) 
         }
     }
     /* Handle Python-style __data__ wrapper (e.g. float/double stored in __data__) */
-    const proto::ProtoObject* data = obj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__data__"));
+    const proto::ProtoObject* data = obj->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__data__"));
     if (data && data != PROTO_NONE) {
         if (data->isDouble(ctx)) return data->asDouble(ctx);
         if (data->isInteger(ctx)) {
@@ -330,8 +330,8 @@ static const proto::ProtoObject* py_dist(
         const proto::ProtoObject* pb = posArgs->getAt(ctx, 1);
         const proto::ProtoList* la = nullptr;
         const proto::ProtoList* lb = nullptr;
-        const proto::ProtoObject* da = pa->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__data__"));
-        const proto::ProtoObject* db = pb->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__data__"));
+        const proto::ProtoObject* da = pa->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__data__"));
+        const proto::ProtoObject* db = pb->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__data__"));
         if (da && da->asList(ctx)) la = da->asList(ctx);
         else if (pa->asList(ctx)) la = pa->asList(ctx);
         if (db && db->asList(ctx)) lb = db->asList(ctx);
@@ -358,7 +358,7 @@ static long long getLongSafe(proto::ProtoContext* ctx, const proto::ProtoObject*
     if (obj->isInteger(ctx)) {
         try { return obj->asLong(ctx); } catch (...) { return 0; }
     }
-    const proto::ProtoObject* data = obj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__data__"));
+    const proto::ProtoObject* data = obj->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__data__"));
     if (data && data != PROTO_NONE && data->isInteger(ctx)) {
         try { return data->asLong(ctx); } catch (...) { return 0; }
     }
@@ -408,7 +408,7 @@ static const proto::ProtoObject* py_prod(
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* iterable = posArgs->getAt(ctx, 0);
     double result = 1.0;
-    const proto::ProtoObject* da = iterable->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__data__"));
+    const proto::ProtoObject* da = iterable->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__data__"));
     if (!da || !da->asList(ctx)) return PROTO_NONE;
     const proto::ProtoList* list = da->asList(ctx);
     for (int i = 0, sz = list->getSize(ctx); i < sz; ++i)
@@ -422,8 +422,8 @@ static const proto::ProtoObject* py_sumprod(
     if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
     const proto::ProtoObject* a = posArgs->getAt(ctx, 0);
     const proto::ProtoObject* b = posArgs->getAt(ctx, 1);
-    const proto::ProtoObject* da = a->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__data__"));
-    const proto::ProtoObject* db = b->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__data__"));
+    const proto::ProtoObject* da = a->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__data__"));
+    const proto::ProtoObject* db = b->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__data__"));
     if (!da || !db || !da->asList(ctx) || !db->asList(ctx)) return PROTO_NONE;
     const proto::ProtoList* la = da->asList(ctx);
     const proto::ProtoList* lb = db->asList(ctx);
@@ -623,126 +623,126 @@ static const proto::ProtoObject* py_lcm(
 
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     const proto::ProtoObject* mod = ctx->newObject(false);
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "sqrt"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "sqrt"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_sqrt));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "sin"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "sin"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_sin));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "cos"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "cos"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_cos));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "tan"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "tan"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_tan));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "asin"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "asin"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_asin));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "acos"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "acos"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_acos));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "atan"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "atan"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_atan));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "atan2"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "atan2"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_atan2));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "degrees"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "degrees"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_degrees));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "radians"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "radians"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_radians));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "floor"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "floor"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_floor));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "ceil"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "ceil"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_ceil));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "fabs"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "fabs"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_fabs));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "trunc"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "trunc"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_trunc));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "copysign"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "copysign"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_copysign));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "isclose"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "isclose"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_isclose));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "isinf"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "isinf"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_isinf));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "isfinite"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "isfinite"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_isfinite));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "isnan"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "isnan"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_isnan));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "log"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "log"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_log));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "log10"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "log10"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_log10));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "log2"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "log2"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_log2));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "log1p"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "log1p"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_log1p));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "hypot"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "hypot"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_hypot));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "fmod"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "fmod"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_fmod));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "remainder"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "remainder"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_remainder));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "erf"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "erf"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_erf));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "erfc"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "erfc"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_erfc));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "gamma"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "gamma"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_gamma));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "lgamma"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "lgamma"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_lgamma));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "exp"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "exp"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_exp));
     /* Register dist after perm to avoid hash collision overwrite (if dist/perm collide, dist wins). */
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "perm"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "perm"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_perm));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "dist"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "dist"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_dist));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "comb"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "comb"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_comb));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "factorial"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "factorial"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_factorial));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "prod"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "prod"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_prod));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "sumprod"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "sumprod"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_sumprod));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "isqrt"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "isqrt"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_isqrt));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "acosh"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "acosh"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_acosh));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "asinh"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "asinh"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_asinh));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "atanh"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "atanh"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_atanh));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "cosh"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "cosh"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_cosh));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "sinh"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "sinh"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_sinh));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "tanh"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "tanh"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_tanh));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "ulp"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "ulp"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_ulp));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "nextafter"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "nextafter"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_nextafter));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "ldexp"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "ldexp"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_ldexp));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "frexp"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "frexp"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_frexp));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "modf"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "modf"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_modf));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "cbrt"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "cbrt"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_cbrt));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "exp2"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "exp2"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_exp2));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "expm1"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "expm1"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_expm1));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "fma"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "fma"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_fma));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "gcd"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "gcd"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_gcd));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "lcm"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "lcm"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_lcm));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "pi"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "pi"),
         ctx->fromDouble(3.14159265358979323846));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "e"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "e"),
         ctx->fromDouble(2.71828182845904523536));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "tau"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "tau"),
         ctx->fromDouble(6.28318530717958647692));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "nan"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "nan"),
         ctx->fromDouble(std::numeric_limits<double>::quiet_NaN()));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "inf"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "inf"),
         ctx->fromDouble(std::numeric_limits<double>::infinity()));
     return mod;
 }

@@ -14,10 +14,10 @@ static const proto::ProtoObject* py_compile(
     if (posArgs->getSize(ctx) < 1 || !posArgs->getAt(ctx, 0)->isString(ctx)) return PROTO_NONE;
     std::string pat;
     posArgs->getAt(ctx, 0)->asString(ctx)->toUTF8String(ctx, pat);
-    const proto::ProtoObject* proto = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__pattern_proto__"));
+    const proto::ProtoObject* proto = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__pattern_proto__"));
     if (!proto) return PROTO_NONE;
     const proto::ProtoObject* p = proto->newChild(ctx, true);
-    p = p->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__re_pattern__"), ctx->fromUTF8String(pat.c_str()));
+    p = p->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__re_pattern__"), ctx->fromUTF8String(pat.c_str()));
     return p;
 }
 
@@ -30,10 +30,10 @@ static const proto::ProtoObject* py_match(
     if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
     const proto::ProtoObject* patObj = posArgs->getAt(ctx, 0);
     const proto::ProtoObject* strObj = posArgs->getAt(ctx, 1);
-    if (!patObj || !strObj || !patObj->isString(ctx) && !patObj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__re_pattern__")))
+    if (!patObj || !strObj || !patObj->isString(ctx) && !patObj->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__re_pattern__")))
         return PROTO_NONE;
     std::string pat;
-    const proto::ProtoObject* patAttr = patObj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__re_pattern__"));
+    const proto::ProtoObject* patAttr = patObj->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__re_pattern__"));
     if (patAttr && patAttr->isString(ctx))
         patAttr->asString(ctx)->toUTF8String(ctx, pat);
     else if (patObj->isString(ctx))
@@ -53,10 +53,10 @@ static const proto::ProtoObject* py_match(
     std::smatch m;
     if (!std::regex_search(s, m, re) || m.position() != 0) return PROTO_NONE;
 
-    const proto::ProtoObject* matchProto = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__match_proto__"));
+    const proto::ProtoObject* matchProto = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__match_proto__"));
     if (!matchProto) return PROTO_NONE;
     const proto::ProtoObject* mo = matchProto->newChild(ctx, true);
-    mo = mo->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__re_match_str__"), ctx->fromUTF8String(m.str().c_str()));
+    mo = mo->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__re_match_str__"), ctx->fromUTF8String(m.str().c_str()));
     return mo;
 }
 
@@ -71,7 +71,7 @@ static const proto::ProtoObject* py_search(
     const proto::ProtoObject* strObj = posArgs->getAt(ctx, 1);
     if (!patObj || !strObj) return PROTO_NONE;
     std::string pat;
-    const proto::ProtoObject* patAttr = patObj->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__re_pattern__"));
+    const proto::ProtoObject* patAttr = patObj->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__re_pattern__"));
     if (patAttr && patAttr->isString(ctx))
         patAttr->asString(ctx)->toUTF8String(ctx, pat);
     else if (patObj->isString(ctx))
@@ -91,10 +91,10 @@ static const proto::ProtoObject* py_search(
     std::smatch m;
     if (!std::regex_search(s, m, re)) return PROTO_NONE;
 
-    const proto::ProtoObject* matchProto = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__match_proto__"));
+    const proto::ProtoObject* matchProto = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__match_proto__"));
     if (!matchProto) return PROTO_NONE;
     const proto::ProtoObject* mo = matchProto->newChild(ctx, true);
-    mo = mo->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__re_match_str__"), ctx->fromUTF8String(m.str().c_str()));
+    mo = mo->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__re_match_str__"), ctx->fromUTF8String(m.str().c_str()));
     return mo;
 }
 
@@ -131,7 +131,7 @@ static const proto::ProtoObject* py_pattern_match(
     const proto::ProtoObject* strObj = posArgs->getAt(ctx, 0);
     
     std::string pat;
-    const proto::ProtoObject* patAttr = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__re_pattern__"));
+    const proto::ProtoObject* patAttr = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__re_pattern__"));
     if (patAttr && patAttr->isString(ctx))
         patAttr->asString(ctx)->toUTF8String(ctx, pat);
     else
@@ -150,12 +150,12 @@ static const proto::ProtoObject* py_pattern_match(
     std::smatch m;
     if (!std::regex_search(s, m, re) || m.position() != 0) return PROTO_NONE;
 
-    const proto::ProtoObject* matchProto = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__match_proto__"));
+    const proto::ProtoObject* matchProto = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__match_proto__"));
     // Fallback if the pattern doesn't have it (though it should)
     if (!matchProto) return PROTO_NONE;
     
     const proto::ProtoObject* mo = matchProto->newChild(ctx, true);
-    mo = mo->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__re_match_str__"), ctx->fromUTF8String(m.str().c_str()));
+    mo = mo->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__re_match_str__"), ctx->fromUTF8String(m.str().c_str()));
     return mo;
 }
 
@@ -169,7 +169,7 @@ static const proto::ProtoObject* py_pattern_search(
     const proto::ProtoObject* strObj = posArgs->getAt(ctx, 0);
     
     std::string pat;
-    const proto::ProtoObject* patAttr = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__re_pattern__"));
+    const proto::ProtoObject* patAttr = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__re_pattern__"));
     if (patAttr && patAttr->isString(ctx))
         patAttr->asString(ctx)->toUTF8String(ctx, pat);
     else
@@ -188,11 +188,11 @@ static const proto::ProtoObject* py_pattern_search(
     std::smatch m;
     if (!std::regex_search(s, m, re)) return PROTO_NONE;
 
-    const proto::ProtoObject* matchProto = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__match_proto__"));
+    const proto::ProtoObject* matchProto = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__match_proto__"));
     if (!matchProto) return PROTO_NONE;
     
     const proto::ProtoObject* mo = matchProto->newChild(ctx, true);
-    mo = mo->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__re_match_str__"), ctx->fromUTF8String(m.str().c_str()));
+    mo = mo->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__re_match_str__"), ctx->fromUTF8String(m.str().c_str()));
     return mo;
 }
 
@@ -207,7 +207,7 @@ static const proto::ProtoObject* py_pattern_sub(
     const proto::ProtoObject* strObj = posArgs->getAt(ctx, 1);
     
     std::string pat;
-    const proto::ProtoObject* patAttr = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__re_pattern__"));
+    const proto::ProtoObject* patAttr = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__re_pattern__"));
     if (patAttr && patAttr->isString(ctx))
         patAttr->asString(ctx)->toUTF8String(ctx, pat);
     else
@@ -247,44 +247,44 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     const proto::ProtoObject* patternProto = ctx->newObject(false);
     
     const proto::ProtoObject* matchProto = ctx->newObject(false);
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__match_proto__"), matchProto);
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__match_proto__"), matchProto);
     
-    patternProto = patternProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__match_proto__"), matchProto);
-    patternProto = patternProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "match"),
+    patternProto = patternProto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__match_proto__"), matchProto);
+    patternProto = patternProto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "match"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(patternProto), py_pattern_match));
-    patternProto = patternProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "search"),
+    patternProto = patternProto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "search"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(patternProto), py_pattern_search));
-    patternProto = patternProto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "sub"),
+    patternProto = patternProto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "sub"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(patternProto), py_pattern_sub));
         
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__pattern_proto__"), patternProto);
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "compile"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__pattern_proto__"), patternProto);
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "compile"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_compile));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "escape"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "escape"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_escape));
 
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "match"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "match"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_match));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "search"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "search"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_search));
 
     // Regex flags
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "IGNORECASE"), ctx->fromInteger(2));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "I"), ctx->fromInteger(2));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "LOCALE"), ctx->fromInteger(4));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "L"), ctx->fromInteger(4));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "MULTILINE"), ctx->fromInteger(8));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "M"), ctx->fromInteger(8));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "DOTALL"), ctx->fromInteger(16));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "S"), ctx->fromInteger(16));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "UNICODE"), ctx->fromInteger(32));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "U"), ctx->fromInteger(32));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "VERBOSE"), ctx->fromInteger(64));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "X"), ctx->fromInteger(64));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "DEBUG"), ctx->fromInteger(128));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "ASCII"), ctx->fromInteger(256));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "A"), ctx->fromInteger(256));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "NOFLAG"), ctx->fromInteger(0));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "IGNORECASE"), ctx->fromInteger(2));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "I"), ctx->fromInteger(2));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "LOCALE"), ctx->fromInteger(4));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "L"), ctx->fromInteger(4));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "MULTILINE"), ctx->fromInteger(8));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "M"), ctx->fromInteger(8));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "DOTALL"), ctx->fromInteger(16));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "S"), ctx->fromInteger(16));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "UNICODE"), ctx->fromInteger(32));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "U"), ctx->fromInteger(32));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "VERBOSE"), ctx->fromInteger(64));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "X"), ctx->fromInteger(64));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "DEBUG"), ctx->fromInteger(128));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "ASCII"), ctx->fromInteger(256));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "A"), ctx->fromInteger(256));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "NOFLAG"), ctx->fromInteger(0));
 
     return mod;
 }

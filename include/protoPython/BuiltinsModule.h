@@ -59,6 +59,20 @@ const proto::ProtoObject* py_type_prepare(
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters);
 
+const proto::ProtoObject* py_python_ignore_init(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters);
+
+const proto::ProtoObject* py_object_new(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters);
+
 } // namespace builtins
 } // namespace protoPython
 

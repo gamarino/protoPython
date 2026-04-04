@@ -41,7 +41,9 @@ TEST_F(FoundationTest, ListAppend) {
     auto context = env.getContext();
     
     // 1. Create a list instance
+    const proto::ProtoString* classS = proto::ProtoString::fromUTF8String(context, "__class__");
     const proto::ProtoObject* my_list = env.getListPrototype()->newChild(context, true);
+    my_list->setAttribute(context, classS, env.getListPrototype());
     
     // 2. Initialize it with empty ProtoList in __data__
     const proto::ProtoString* dataName = proto::ProtoString::fromUTF8String(context, "__data__");
@@ -155,6 +157,7 @@ TEST_F(FoundationTest, BuiltinFunctions) {
     // Test len() on a list
     const proto::ProtoObject* my_list = context->newObject(true);
     my_list = my_list->addParent(context, env.getListPrototype());
+    my_list->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__class__"), env.getListPrototype());
     my_list->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), context->newList()->appendLast(context, context->fromInteger(1))->asObject(context));
     
     const proto::ProtoObject* pyLen = env.resolve("len");
@@ -182,29 +185,34 @@ TEST_F(FoundationTest, BuiltinFunctions) {
 
 TEST_F(FoundationTest, AdvancedBuiltins) {
     proto::ProtoContext* context = env.getContext();
-    const proto::ProtoObject* my_list = context->newObject(true)->addParent(context, env.getListPrototype());
+    const proto::ProtoObject* list_class = env.resolve("list");
+    ASSERT_NE(list_class, nullptr);
+    const proto::ProtoObject* my_list = context->newObject(true)->addParent(context, list_class);
+    my_list->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__class__"), list_class);
     
     // Test isinstance(my_list, list)
-    const proto::ProtoObject* pyIsInstance = env.resolve("isinstance");
-    ASSERT_NE(pyIsInstance, nullptr);
-    const proto::ProtoList* args = context->newList()->appendLast(context, my_list)->appendLast(context, env.getListPrototype());
-    const proto::ProtoObject* result = pyIsInstance->asMethod(context)(context, PROTO_NONE, nullptr, args, nullptr);
-    EXPECT_NE(result, PROTO_FALSE);  // isinstance(list, list) must not be False
+    const proto::ProtoObject* isinstance_func = env.resolve("isinstance");
+    const proto::ProtoObject* result = env.callObject(isinstance_func, {my_list, list_class});
+    EXPECT_EQ(result, PROTO_TRUE);
     
     // Test range(5)
     const proto::ProtoObject* builtins = env.resolve("builtins");
     ASSERT_NE(builtins, nullptr);
     const proto::ProtoObject* pyRange = env.resolve("range");
     ASSERT_NE(pyRange, nullptr);
-    const proto::ProtoList* rangeArgs = context->newList()->appendLast(context, context->fromInteger(5));
-    const proto::ProtoObject* rangeObj = pyRange->asMethod(context)(context, builtins, nullptr, rangeArgs, nullptr);
+    const proto::ProtoObject* rangeObj = env.callObject(pyRange, {context->fromInteger(5)});
     ASSERT_NE(rangeObj, nullptr);
-    const proto::ProtoObject* nextMethod = rangeObj->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__next__"));
-    ASSERT_NE(nextMethod, nullptr);
+
+    const proto::ProtoObject* iter_func = env.resolve("iter");
+    const proto::ProtoObject* iterator = env.callObject(iter_func, {rangeObj});
+    ASSERT_NE(iterator, nullptr);
+
+    const proto::ProtoObject* next_func = env.resolve("next");
     const proto::ProtoList* values = context->newList();
-    for (;;) {
-        const proto::ProtoObject* val = nextMethod->asMethod(context)(context, rangeObj, nullptr, context->newList(), nullptr);
-        if (!val || val == PROTO_NONE) break;
+    for (int i = 0; i < 5; ++i) {
+        const proto::ProtoObject* val = env.callObject(next_func, {iterator});
+        ASSERT_NE(val, nullptr);
+        ASSERT_NE(val, PROTO_NONE);
         values = values->appendLast(context, val);
     }
     EXPECT_EQ(values->getSize(context), 5);
@@ -779,8 +787,7 @@ TEST_F(FoundationTest, SortedBuiltin) {
         ->appendLast(context, context->fromInteger(2));
     const proto::ProtoObject* listObj = env.getListPrototype()->newChild(context, true);
     listObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), inputList->asObject(context));
-    const proto::ProtoList* args = context->newList()->appendLast(context, listObj);
-    const proto::ProtoObject* result = pySorted->asMethod(context)(context, builtins, nullptr, args, nullptr);
+    const proto::ProtoObject* result = env.callObject(pySorted, {listObj});
     ASSERT_NE(result, nullptr);
     const proto::ProtoObject* data = result->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"));
     ASSERT_NE(data, nullptr);
@@ -804,10 +811,8 @@ TEST_F(FoundationTest, FilterBuiltin) {
         ->appendLast(context, context->fromInteger(0))
         ->appendLast(context, context->fromInteger(1))
         ->appendLast(context, context->fromInteger(2));
-    const proto::ProtoObject* listObj = env.getListPrototype()->newChild(context, true);
-    listObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), inputList->asObject(context));
-    const proto::ProtoList* args = context->newList()->appendLast(context, pyBool)->appendLast(context, listObj);
-    const proto::ProtoObject* result = pyFilter->asMethod(context)(context, builtins, nullptr, args, nullptr);
+    const proto::ProtoObject* listObj = env.callObject(env.getListPrototype(), {inputList->asObject(context)});
+    const proto::ProtoObject* result = env.callObject(pyFilter, {pyBool, listObj});
     ASSERT_NE(result, nullptr);
     const proto::ProtoObject* nextM = result->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__next__"));
     ASSERT_NE(nextM, nullptr);
@@ -902,10 +907,8 @@ TEST_F(FoundationTest, MapBuiltin) {
         ->appendLast(context, context->fromInteger(1))
         ->appendLast(context, context->fromInteger(2))
         ->appendLast(context, context->fromInteger(3));
-    const proto::ProtoObject* listObj = env.getListPrototype()->newChild(context, true);
-    listObj->setAttribute(context, proto::ProtoString::fromUTF8String(context, "__data__"), inputList->asObject(context));
-    const proto::ProtoList* args = context->newList()->appendLast(context, pyInt)->appendLast(context, listObj);
-    const proto::ProtoObject* result = pyMap->asMethod(context)(context, builtins, nullptr, args, nullptr);
+    const proto::ProtoObject* listObj = env.callObject(env.getListPrototype(), {inputList->asObject(context)});
+    const proto::ProtoObject* result = env.callObject(pyMap, {pyInt, listObj});
     ASSERT_NE(result, nullptr);
     const proto::ProtoObject* nextM = result->getAttribute(context, proto::ProtoString::fromUTF8String(context, "__next__"));
     ASSERT_NE(nextM, nullptr);

@@ -1,4 +1,4 @@
-print("DEBUG_TRACE: types.py importing")
+print("DEBUG_TRACE: types.py importing", flush=True)
 """
 Define names for built-in types that aren't directly accessible as a builtin.
 """
@@ -14,7 +14,9 @@ except ImportError:
     import sys
 
     def _f(): pass
+    print("DEBUG_TRACE: types.py defining FunctionType", flush=True)
     FunctionType = type(_f)
+    print("DEBUG_TRACE: types.py FunctionType done", flush=True)
     LambdaType = type(lambda: None)  # Same as FunctionType
     CodeType = type(_f.__code__)
     MappingProxyType = type(type.__dict__)
@@ -33,7 +35,9 @@ except ImportError:
 
     async def _c(): pass
     _c = _c()
+    print("DEBUG_TRACE: types.py defining CoroutineType", flush=True)
     CoroutineType = type(_c)
+    print("DEBUG_TRACE: types.py CoroutineType done", flush=True)
     _c.close()  # Prevent ResourceWarning
 
     async def _ag():
@@ -43,7 +47,9 @@ except ImportError:
 
     class _C:
         def _m(self): pass
+    print("DEBUG_TRACE: types.py defining MethodType", flush=True)
     MethodType = type(_C()._m)
+    print("DEBUG_TRACE: types.py MethodType done", flush=True)
 
     BuiltinFunctionType = type(len)
     BuiltinMethodType = type([].append)  # Same as BuiltinFunctionType
@@ -70,6 +76,7 @@ except ImportError:
     EllipsisType = type(Ellipsis)
     NoneType = type(None)
     NotImplementedType = type(NotImplemented)
+    print("DEBUG_TRACE: types.py fallback done", flush=True)
 
     # CapsuleType cannot be accessed from pure Python,
     # so there is no fallback definition.

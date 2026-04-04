@@ -39,7 +39,7 @@ static const proto::ProtoObject* py_direntry_is_dir(
     const proto::ParentLink* /*parentLink*/,
     const proto::ProtoList* /*posArgs*/,
     const proto::ProtoSparseList* /*kwargs*/) {
-    const proto::ProtoObject* pathObj = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "path"));
+    const proto::ProtoObject* pathObj = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "path"));
     if (!pathObj || !pathObj->isString(ctx)) return PROTO_FALSE;
     std::string path;
     pathObj->asString(ctx)->toUTF8String(ctx, path);
@@ -56,7 +56,7 @@ static const proto::ProtoObject* py_direntry_is_file(
     const proto::ParentLink* /*parentLink*/,
     const proto::ProtoList* /*posArgs*/,
     const proto::ProtoSparseList* /*kwargs*/) {
-    const proto::ProtoObject* pathObj = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "path"));
+    const proto::ProtoObject* pathObj = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "path"));
     if (!pathObj || !pathObj->isString(ctx)) return PROTO_FALSE;
     std::string path;
     pathObj->asString(ctx)->toUTF8String(ctx, path);
@@ -73,7 +73,7 @@ static const proto::ProtoObject* py_direntry_is_symlink(
     const proto::ParentLink* /*parentLink*/,
     const proto::ProtoList* /*posArgs*/,
     const proto::ProtoSparseList* /*kwargs*/) {
-    const proto::ProtoObject* pathObj = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "path"));
+    const proto::ProtoObject* pathObj = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "path"));
     if (!pathObj || !pathObj->isString(ctx)) return PROTO_FALSE;
     std::string path;
     pathObj->asString(ctx)->toUTF8String(ctx, path);
@@ -90,7 +90,7 @@ static const proto::ProtoObject* py_direntry_fspath(
     const proto::ParentLink* /*parentLink*/,
     const proto::ProtoList* /*posArgs*/,
     const proto::ProtoSparseList* /*kwargs*/) {
-    const proto::ProtoObject* path = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "path"));
+    const proto::ProtoObject* path = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "path"));
     if (path) return path;
     // If called on the prototype itself, or if path is missing, return None to avoid polluting fspath logic
     return PROTO_NONE;
@@ -102,7 +102,7 @@ static const proto::ProtoObject* py_scandir_next(
     const proto::ParentLink* /*parentLink*/,
     const proto::ProtoList* /*posArgs*/,
     const proto::ProtoSparseList* /*kwargs*/) {
-    const proto::ProtoObject* stateObj = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__state__"));
+    const proto::ProtoObject* stateObj = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__state__"));
     if (!stateObj || !stateObj->asExternalPointer(ctx)) return nullptr;
     ScandirState* state = static_cast<ScandirState*>(stateObj->asExternalPointer(ctx)->getPointer(ctx));
     if (!state || state->exhausted) return nullptr;
@@ -117,15 +117,15 @@ static const proto::ProtoObject* py_scandir_next(
         if (n[0] == '.' && (n[1] == '\0' || (n[1] == '.' && n[2] == '\0')))
             continue;
 
-        const proto::ProtoObject* direntry_proto = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_direntry_proto"));
+        const proto::ProtoObject* direntry_proto = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_direntry_proto"));
         const proto::ProtoObject* entry = direntry_proto && direntry_proto != PROTO_NONE ? direntry_proto->newChild(ctx, true) : ctx->newObject(false);
         
         std::string fullPath = state->path;
         if (fullPath.back() != '/') fullPath += "/";
         fullPath += n;
 
-        entry = entry->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "name"), ctx->fromUTF8String(n));
-        entry = entry->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "path"), ctx->fromUTF8String(fullPath.c_str()));
+        entry = entry->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "name"), ctx->fromUTF8String(n));
+        entry = entry->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "path"), ctx->fromUTF8String(fullPath.c_str()));
         return entry;
     }
 }
@@ -151,26 +151,26 @@ static const proto::ProtoObject* py_stat_result_getitem(
         "st_mode", "st_ino", "st_dev", "st_nlink", "st_uid", "st_gid", "st_size", "st_atime", "st_mtime", "st_ctime"
     };
     if (idx >= 0 && idx < 10) {
-        return self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, keys[idx]));
+        return self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, keys[idx]));
     }
     return PROTO_NONE;
 }
 
 static const proto::ProtoObject* make_stat_result(proto::ProtoContext* ctx, const struct stat& st) {
     const proto::ProtoObject* res = ctx->newObject(false);
-    res = res->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "st_mode"), ctx->fromInteger(st.st_mode));
-    res = res->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "st_ino"), ctx->fromInteger(st.st_ino));
-    res = res->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "st_dev"), ctx->fromInteger(st.st_dev));
-    res = res->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "st_nlink"), ctx->fromInteger(st.st_nlink));
-    res = res->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "st_uid"), ctx->fromInteger(st.st_uid));
-    res = res->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "st_gid"), ctx->fromInteger(st.st_gid));
-    res = res->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "st_size"), ctx->fromInteger(st.st_size));
-    res = res->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "st_atime"), ctx->fromInteger(st.st_atime));
-    res = res->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "st_mtime"), ctx->fromInteger(st.st_mtime));
-    res = res->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "st_ctime"), ctx->fromInteger(st.st_ctime));
+    res = res->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "st_mode"), ctx->fromInteger(st.st_mode));
+    res = res->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "st_ino"), ctx->fromInteger(st.st_ino));
+    res = res->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "st_dev"), ctx->fromInteger(st.st_dev));
+    res = res->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "st_nlink"), ctx->fromInteger(st.st_nlink));
+    res = res->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "st_uid"), ctx->fromInteger(st.st_uid));
+    res = res->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "st_gid"), ctx->fromInteger(st.st_gid));
+    res = res->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "st_size"), ctx->fromInteger(st.st_size));
+    res = res->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "st_atime"), ctx->fromInteger(st.st_atime));
+    res = res->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "st_mtime"), ctx->fromInteger(st.st_mtime));
+    res = res->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "st_ctime"), ctx->fromInteger(st.st_ctime));
     
     // Add __getitem__ for indexing support
-    res = res->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__getitem__"),
+    res = res->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__getitem__"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(res), py_stat_result_getitem));
     
     return res;
@@ -182,7 +182,7 @@ static const proto::ProtoObject* py_direntry_stat(
     const proto::ParentLink* /*parentLink*/,
     const proto::ProtoList* /*posArgs*/,
     const proto::ProtoSparseList* /*kwargs*/) {
-    const proto::ProtoObject* pathObj = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "path"));
+    const proto::ProtoObject* pathObj = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "path"));
     if (!pathObj || !pathObj->isString(ctx)) return PROTO_NONE;
     std::string path;
     pathObj->asString(ctx)->toUTF8String(ctx, path);
@@ -199,7 +199,7 @@ static const proto::ProtoObject* py_direntry_inode(
     const proto::ParentLink* /*parentLink*/,
     const proto::ProtoList* /*posArgs*/,
     const proto::ProtoSparseList* /*kwargs*/) {
-    const proto::ProtoObject* pathObj = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "path"));
+    const proto::ProtoObject* pathObj = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "path"));
     if (!pathObj || !pathObj->isString(ctx)) return PROTO_NONE;
     std::string path;
     pathObj->asString(ctx)->toUTF8String(ctx, path);
@@ -312,17 +312,17 @@ static const proto::ProtoObject* py_scandir(
 
     ScandirState* state = new ScandirState(d, path);
     const proto::ProtoObject* iter = ctx->newObject(false);
-    iter = iter->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__state__"),
+    iter = iter->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__state__"),
         ctx->fromExternalPointer(state, scandir_finalizer));
-    iter = iter->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__next__"),
+    iter = iter->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__next__"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(iter), py_scandir_next));
-    iter = iter->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__iter__"),
+    iter = iter->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__iter__"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(iter), py_scandir_iter));
     
     // Attach direntry_proto from module
-    const proto::ProtoObject* direntry_proto = self ? self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_direntry_proto")) : nullptr;
+    const proto::ProtoObject* direntry_proto = self ? self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_direntry_proto")) : nullptr;
     if (direntry_proto && direntry_proto != PROTO_NONE) {
-        iter = iter->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_direntry_proto"), direntry_proto);
+        iter = iter->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_direntry_proto"), direntry_proto);
     }
     
     return iter;
@@ -715,8 +715,8 @@ static const proto::ProtoObject* py_urandom(
     }
     
     const proto::ProtoObject* b = env->getBytesPrototype()->newChild(ctx, true);
-    b->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__class__"), env->getBytesPrototype());
-    b->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__data__"), ctx->fromUTF8String(buf.c_str()));
+    b->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__class__"), env->getBytesPrototype());
+    b->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__data__"), ctx->fromUTF8String(buf.c_str()));
     return b;
 }
 
@@ -808,110 +808,128 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     // Ensure direntry_proto is a fresh object and not polluting global Object prototype
     // In some protoCore versions, newObject(false) might return a shared object if not careful.
     // We set it explicitly to have no parent or a fresh one if possible.
-    direntry_proto = direntry_proto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "is_dir"),
+    direntry_proto = direntry_proto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "is_dir"),
         ctx->fromMethod(nullptr, py_direntry_is_dir));
-    direntry_proto = direntry_proto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "is_file"),
+    direntry_proto = direntry_proto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "is_file"),
         ctx->fromMethod(nullptr, py_direntry_is_file));
-    direntry_proto = direntry_proto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "is_symlink"),
+    direntry_proto = direntry_proto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "is_symlink"),
         ctx->fromMethod(nullptr, py_direntry_is_symlink));
-    direntry_proto = direntry_proto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "stat"),
+    direntry_proto = direntry_proto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "stat"),
         ctx->fromMethod(nullptr, py_direntry_stat));
-    direntry_proto = direntry_proto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "inode"),
+    direntry_proto = direntry_proto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "inode"),
         ctx->fromMethod(nullptr, py_direntry_inode));
-    direntry_proto = direntry_proto->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__fspath__"),
+    direntry_proto = direntry_proto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__fspath__"),
         ctx->fromMethod(nullptr, py_direntry_fspath));
 
 
 
     const proto::ProtoObject* mod = env && env->getObjectPrototype() ? env->getObjectPrototype()->newChild(ctx, true) : ctx->newObject(false);
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_direntry_proto"), direntry_proto);
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_direntry_proto"), direntry_proto);
     
     // Create Environ object
     const proto::ProtoObject* environProt = env && env->getObjectPrototype() ? env->getObjectPrototype()->newChild(ctx, false) : ctx->newObject(false);
-    environProt = environProt->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__getitem__"), 
+    environProt = environProt->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__getitem__"), 
         ctx->fromMethod(const_cast<proto::ProtoObject*>(environProt), py_environ_getitem));
-    environProt = environProt->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__setitem__"), 
+    environProt = environProt->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__setitem__"), 
         ctx->fromMethod(const_cast<proto::ProtoObject*>(environProt), py_environ_setitem));
-    environProt = environProt->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__delitem__"), 
+    environProt = environProt->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__delitem__"), 
         ctx->fromMethod(const_cast<proto::ProtoObject*>(environProt), py_environ_delitem));
-    environProt = environProt->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "keys"), 
+    environProt = environProt->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "keys"), 
         ctx->fromMethod(const_cast<proto::ProtoObject*>(environProt), py_environ_keys_method));
 
     const proto::ProtoObject* environObj = environProt->newChild(ctx, false);
 
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "environ"), environObj);
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "environ"), environObj);
 
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "getenv"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "getenv"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_getenv));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "putenv"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "putenv"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_setenv));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "unsetenv"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "unsetenv"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_unsetenv));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "getcwd"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "getcwd"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_getcwd));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "chdir"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "chdir"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_chdir));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "listdir"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "listdir"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_listdir));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "scandir"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "scandir"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_scandir));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "stat"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "stat"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_stat));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "lstat"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "lstat"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_lstat));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "remove"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "remove"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_remove));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "unlink"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "unlink"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_unlink));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "mkdir"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "mkdir"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_mkdir));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "rename"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "rename"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_rename));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "replace"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "replace"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_replace));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "access"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "access"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_access));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "rmdir"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "rmdir"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_rmdir));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "getuid"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "getuid"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_getuid));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "geteuid"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "geteuid"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_geteuid));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "getgid"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "getgid"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_getgid));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "getegid"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "getegid"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_getegid));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "environ_keys"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "environ_keys"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_environ_keys));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "waitpid"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "waitpid"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_waitpid));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "urandom"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "urandom"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_urandom));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "kill"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "kill"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_kill));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "cpu_count"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "cpu_count"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_cpu_count));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "pipe"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "pipe"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_pipe));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_exit"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_exit"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_exit));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "open"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "open"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_open));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "close"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "close"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_close));
 
     const proto::ProtoObject* statResultType = ctx->newObject(true); // make mutable just in case
-    statResultType = statResultType->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__name__"), ctx->fromUTF8String("stat_result"));
+    statResultType = statResultType->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__name__"), ctx->fromUTF8String("stat_result"));
     if (env && env->getTypePrototype()) {
-        statResultType = statResultType->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__class__"), env->getTypePrototype());
+        statResultType = statResultType->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__class__"), env->getTypePrototype());
     }
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "stat_result"), statResultType);
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "stat_result"), statResultType);
 
     // Common constants
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "F_OK"), ctx->fromInteger(0));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "R_OK"), ctx->fromInteger(4));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "W_OK"), ctx->fromInteger(2));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "X_OK"), ctx->fromInteger(1));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "F_OK"), ctx->fromInteger(0));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "R_OK"), ctx->fromInteger(4));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "W_OK"), ctx->fromInteger(2));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "X_OK"), ctx->fromInteger(1));
+
+    // ST_ constants (used by os.py/posixpath.py)
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "ST_MODE"), ctx->fromInteger(0));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "ST_INO"), ctx->fromInteger(1));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "ST_DEV"), ctx->fromInteger(2));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "ST_NLINK"), ctx->fromInteger(3));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "ST_UID"), ctx->fromInteger(4));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "ST_GID"), ctx->fromInteger(5));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "ST_SIZE"), ctx->fromInteger(6));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "ST_ATIME"), ctx->fromInteger(7));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "ST_MTIME"), ctx->fromInteger(8));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "ST_CTIME"), ctx->fromInteger(9));
+
+    // S_IF constants
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "S_IFMT"), ctx->fromInteger(0170000));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "S_IFDIR"), ctx->fromInteger(0040000));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "S_IFREG"), ctx->fromInteger(0100000));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "S_IFLNK"), ctx->fromInteger(0120000));
 
     // _have_functions (Minimal set for satisfying os.py)
     const proto::ProtoList* haveFuncs = ctx->newList();
@@ -919,7 +937,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     haveFuncs = haveFuncs->appendLast(ctx, ctx->fromUTF8String("HAVE_FSTATAT"));
     haveFuncs = haveFuncs->appendLast(ctx, ctx->fromUTF8String("HAVE_OPENAT"));
     haveFuncs = haveFuncs->appendLast(ctx, ctx->fromUTF8String("HAVE_FDOPENDIR"));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_have_functions"), haveFuncs->asObject(ctx));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_have_functions"), haveFuncs->asObject(ctx));
 
     // Export keys and all for 'from posix import *'
     const proto::ProtoList* keys = ctx->newList();
@@ -955,13 +973,27 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     keys = keys->appendLast(ctx, ctx->fromUTF8String("R_OK"));
     keys = keys->appendLast(ctx, ctx->fromUTF8String("W_OK"));
     keys = keys->appendLast(ctx, ctx->fromUTF8String("X_OK"));
+    keys = keys->appendLast(ctx, ctx->fromUTF8String("ST_MODE"));
+    keys = keys->appendLast(ctx, ctx->fromUTF8String("ST_INO"));
+    keys = keys->appendLast(ctx, ctx->fromUTF8String("ST_DEV"));
+    keys = keys->appendLast(ctx, ctx->fromUTF8String("ST_NLINK"));
+    keys = keys->appendLast(ctx, ctx->fromUTF8String("ST_UID"));
+    keys = keys->appendLast(ctx, ctx->fromUTF8String("ST_GID"));
+    keys = keys->appendLast(ctx, ctx->fromUTF8String("ST_SIZE"));
+    keys = keys->appendLast(ctx, ctx->fromUTF8String("ST_ATIME"));
+    keys = keys->appendLast(ctx, ctx->fromUTF8String("ST_MTIME"));
+    keys = keys->appendLast(ctx, ctx->fromUTF8String("ST_CTIME"));
+    keys = keys->appendLast(ctx, ctx->fromUTF8String("S_IFMT"));
+    keys = keys->appendLast(ctx, ctx->fromUTF8String("S_IFDIR"));
+    keys = keys->appendLast(ctx, ctx->fromUTF8String("S_IFREG"));
+    keys = keys->appendLast(ctx, ctx->fromUTF8String("S_IFLNK"));
     keys = keys->appendLast(ctx, ctx->fromUTF8String("_have_functions"));
     keys = keys->appendLast(ctx, ctx->fromUTF8String("open"));
     keys = keys->appendLast(ctx, ctx->fromUTF8String("close"));
     keys = keys->appendLast(ctx, ctx->fromUTF8String("stat_result"));
     
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__keys__"), keys->asObject(ctx));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__all__"), keys->asObject(ctx));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__keys__"), keys->asObject(ctx));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__all__"), keys->asObject(ctx));
 
 
     return mod;

@@ -9,7 +9,7 @@ static const proto::ProtoObject* py_weakref_ref_call(
     const proto::ProtoList*, const proto::ProtoSparseList*) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     fprintf(stderr, "DEBUG: _weakref env=%p\n", (void*)env); 
-    const proto::ProtoObject* data = self->getAttribute(ctx, env ? env->getDataString() : proto::ProtoString::fromUTF8String(ctx, "__data__"));
+    const proto::ProtoObject* data = self->getAttribute(ctx, env ? env->getDataString() : proto::ProtoString::createSymbol(ctx, "__data__"));
     return data ? data : PROTO_NONE;
 }
 
@@ -29,15 +29,15 @@ static const proto::ProtoObject* py_weakref_ref(
         fprintf(stderr, "DEBUG: _weakref inside if(env)\n"); 
         const proto::ProtoObject* mod = env->lookupName("_weakref");
         if (mod && mod != PROTO_NONE) {
-            const proto::ProtoObject* refType = mod->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "ReferenceType"));
+            const proto::ProtoObject* refType = mod->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "ReferenceType"));
             if (refType && refType != PROTO_NONE) {
                 refObj = const_cast<proto::ProtoObject*>(refObj->addParent(ctx, refType));
             }
         }
     }
 
-    refObj->setAttribute(ctx, env ? env->getDataString() : proto::ProtoString::fromUTF8String(ctx, "__data__"), obj);
-    refObj->setAttribute(ctx, env ? env->getCallString() : proto::ProtoString::fromUTF8String(ctx, "__call__"),
+    refObj->setAttribute(ctx, env ? env->getDataString() : proto::ProtoString::createSymbol(ctx, "__data__"), obj);
+    refObj->setAttribute(ctx, env ? env->getCallString() : proto::ProtoString::createSymbol(ctx, "__call__"),
         ctx->fromMethod(refObj, py_weakref_ref_call));
     return refObj;
 }
@@ -56,14 +56,14 @@ static const proto::ProtoObject* py_weakref_proxy(
         fprintf(stderr, "DEBUG: _weakref inside if(env)\n"); 
         const proto::ProtoObject* mod = env->lookupName("_weakref");
         if (mod && mod != PROTO_NONE) {
-            const proto::ProtoObject* proxyType = mod->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "ProxyType"));
+            const proto::ProtoObject* proxyType = mod->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "ProxyType"));
             if (proxyType && proxyType != PROTO_NONE) {
                 proxyObj = const_cast<proto::ProtoObject*>(proxyObj->addParent(ctx, proxyType));
             }
         }
     }
     
-    proxyObj->setAttribute(ctx, env ? env->getDataString() : proto::ProtoString::fromUTF8String(ctx, "__data__"), obj);
+    proxyObj->setAttribute(ctx, env ? env->getDataString() : proto::ProtoString::createSymbol(ctx, "__data__"), obj);
     return proxyObj;
 }
 
@@ -104,11 +104,11 @@ static const proto::ProtoObject* py_weakref_remove_dead_weakref(
 
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     proto::ProtoObject* mod = const_cast<proto::ProtoObject*>(ctx->newObject(false));
-    mod = const_cast<proto::ProtoObject*>(mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "getweakrefcount"),
+    mod = const_cast<proto::ProtoObject*>(mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "getweakrefcount"),
         ctx->fromMethod(mod, py_weakref_getweakrefcount)));
-    mod = const_cast<proto::ProtoObject*>(mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "getweakrefs"),
+    mod = const_cast<proto::ProtoObject*>(mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "getweakrefs"),
         ctx->fromMethod(mod, py_weakref_getweakrefs)));
-    mod = const_cast<proto::ProtoObject*>(mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_remove_dead_weakref"),
+    mod = const_cast<proto::ProtoObject*>(mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_remove_dead_weakref"),
         ctx->fromMethod(mod, py_weakref_remove_dead_weakref)));
 
     // Register types
@@ -120,27 +120,27 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         
         proto::ProtoObject* refType = const_cast<proto::ProtoObject*>(ctx->newObject(false));
         if (pyType && pyType != PROTO_NONE) refType = const_cast<proto::ProtoObject*>(refType->addParent(ctx, pyType));
-        refType = const_cast<proto::ProtoObject*>(refType->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__name__"), ctx->fromUTF8String("weakref"))); // CPython names the type 'weakref' typically, but 'ReferenceType' is its alias.
-        refType = const_cast<proto::ProtoObject*>(refType->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__new__"), ctx->fromMethod(nullptr, py_weakref_ref)));
-        refType = const_cast<proto::ProtoObject*>(refType->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__call__"), ctx->fromMethod(refType, py_weakref_ref))); // fallback
-        mod = const_cast<proto::ProtoObject*>(mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "ReferenceType"), refType));
-        mod = const_cast<proto::ProtoObject*>(mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "ref"), refType));
+        refType = const_cast<proto::ProtoObject*>(refType->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__name__"), ctx->fromUTF8String("weakref"))); // CPython names the type 'weakref' typically, but 'ReferenceType' is its alias.
+        refType = const_cast<proto::ProtoObject*>(refType->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__new__"), ctx->fromMethod(nullptr, py_weakref_ref)));
+        refType = const_cast<proto::ProtoObject*>(refType->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__call__"), ctx->fromMethod(refType, py_weakref_ref))); // fallback
+        mod = const_cast<proto::ProtoObject*>(mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "ReferenceType"), refType));
+        mod = const_cast<proto::ProtoObject*>(mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "ref"), refType));
         fprintf(stderr, "DEBUG: _weakref setAttribute(ref)\n");  // 'ref' is an alias for 'ReferenceType'
 
         proto::ProtoObject* proxyType = const_cast<proto::ProtoObject*>(ctx->newObject(false));
         if (pyType && pyType != PROTO_NONE) proxyType = const_cast<proto::ProtoObject*>(proxyType->addParent(ctx, pyType));
-        proxyType = const_cast<proto::ProtoObject*>(proxyType->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__name__"), ctx->fromUTF8String("weakproxy")));
-        proxyType = const_cast<proto::ProtoObject*>(proxyType->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__new__"), ctx->fromMethod(nullptr, py_weakref_proxy)));
-        proxyType = const_cast<proto::ProtoObject*>(proxyType->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__call__"), ctx->fromMethod(proxyType, py_weakref_proxy)));
-        mod = const_cast<proto::ProtoObject*>(mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "ProxyType"), proxyType));
-        mod = const_cast<proto::ProtoObject*>(mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "proxy"), proxyType));
+        proxyType = const_cast<proto::ProtoObject*>(proxyType->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__name__"), ctx->fromUTF8String("weakproxy")));
+        proxyType = const_cast<proto::ProtoObject*>(proxyType->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__new__"), ctx->fromMethod(nullptr, py_weakref_proxy)));
+        proxyType = const_cast<proto::ProtoObject*>(proxyType->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__call__"), ctx->fromMethod(proxyType, py_weakref_proxy)));
+        mod = const_cast<proto::ProtoObject*>(mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "ProxyType"), proxyType));
+        mod = const_cast<proto::ProtoObject*>(mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "proxy"), proxyType));
 
         proto::ProtoObject* callableProxyType = const_cast<proto::ProtoObject*>(ctx->newObject(false));
         if (pyType && pyType != PROTO_NONE) callableProxyType = const_cast<proto::ProtoObject*>(callableProxyType->addParent(ctx, pyType));
-        callableProxyType = const_cast<proto::ProtoObject*>(callableProxyType->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__name__"), ctx->fromUTF8String("weakcallableproxy")));
-        callableProxyType = const_cast<proto::ProtoObject*>(callableProxyType->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__new__"), ctx->fromMethod(nullptr, py_weakref_proxy)));
-        callableProxyType = const_cast<proto::ProtoObject*>(callableProxyType->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__call__"), ctx->fromMethod(callableProxyType, py_weakref_proxy)));
-        mod = const_cast<proto::ProtoObject*>(mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "CallableProxyType"), callableProxyType));
+        callableProxyType = const_cast<proto::ProtoObject*>(callableProxyType->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__name__"), ctx->fromUTF8String("weakcallableproxy")));
+        callableProxyType = const_cast<proto::ProtoObject*>(callableProxyType->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__new__"), ctx->fromMethod(nullptr, py_weakref_proxy)));
+        callableProxyType = const_cast<proto::ProtoObject*>(callableProxyType->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__call__"), ctx->fromMethod(callableProxyType, py_weakref_proxy)));
+        mod = const_cast<proto::ProtoObject*>(mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "CallableProxyType"), callableProxyType));
     }
 
     return mod;

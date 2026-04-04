@@ -43,7 +43,7 @@ static const proto::ProtoObject* py_lock_acquire(
     const proto::ParentLink* /*parentLink*/,
     const proto::ProtoList* posArgs,
     const proto::ProtoSparseList* /*kwargs*/) {
-    const proto::ProtoObject* handle = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_handle"));
+    const proto::ProtoObject* handle = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_handle"));
     if (!handle || handle == PROTO_NONE) {
         if (posArgs && posArgs->getSize(ctx) >= 1) handle = posArgs->getAt(ctx, 0);
         else return PROTO_FALSE;
@@ -74,7 +74,7 @@ static const proto::ProtoObject* py_lock_release(
     const proto::ParentLink* /*parentLink*/,
     const proto::ProtoList* posArgs,
     const proto::ProtoSparseList* /*kwargs*/) {
-    const proto::ProtoObject* handle = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_handle"));
+    const proto::ProtoObject* handle = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_handle"));
     if (!handle || handle == PROTO_NONE) {
         if (posArgs && posArgs->getSize(ctx) >= 1) handle = posArgs->getAt(ctx, 0);
         else return PROTO_NONE;
@@ -95,7 +95,7 @@ static const proto::ProtoObject* py_rlock_acquire(
     const proto::ParentLink* /*parentLink*/,
     const proto::ProtoList* posArgs,
     const proto::ProtoSparseList* /*kwargs*/) {
-    const proto::ProtoObject* handle = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_handle"));
+    const proto::ProtoObject* handle = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_handle"));
     if (!handle || handle == PROTO_NONE) {
         if (posArgs && posArgs->getSize(ctx) >= 1) handle = posArgs->getAt(ctx, 0);
         else return PROTO_FALSE;
@@ -126,7 +126,7 @@ static const proto::ProtoObject* py_rlock_release(
     const proto::ParentLink* /*parentLink*/,
     const proto::ProtoList* posArgs,
     const proto::ProtoSparseList* /*kwargs*/) {
-    const proto::ProtoObject* handle = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_handle"));
+    const proto::ProtoObject* handle = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_handle"));
     if (!handle || handle == PROTO_NONE) {
         if (posArgs && posArgs->getSize(ctx) >= 1) handle = posArgs->getAt(ctx, 0);
         else return PROTO_NONE;
@@ -165,7 +165,7 @@ static const proto::ProtoObject* py_rlock_locked(
     const proto::ParentLink* /*parentLink*/,
     const proto::ProtoList* /*posArgs*/,
     const proto::ProtoSparseList* /*kwargs*/) {
-    const proto::ProtoObject* handle = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_handle"));
+    const proto::ProtoObject* handle = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_handle"));
     if (!handle || handle == PROTO_NONE) return PROTO_FALSE;
     const proto::ProtoExternalPointer* ext = handle->asExternalPointer(ctx);
     if (!ext) return PROTO_FALSE;
@@ -274,7 +274,7 @@ static const proto::ProtoObject* py_start_new_thread(
             argsForThread = argsForThread->appendLast(ctx, second);
         }
     }
-    const proto::ProtoString* name = proto::ProtoString::fromUTF8String(ctx, "thread");
+    const proto::ProtoString* name = proto::ProtoString::createSymbol(ctx, "thread");
     const proto::ProtoThread* thread = ctx->space->newThread(ctx, name, thread_bootstrap, argsForThread, nullptr);
     return ctx->fromInteger(reinterpret_cast<uintptr_t>(thread));
 }
@@ -295,7 +295,7 @@ static const proto::ProtoObject* py_lock_locked(
     const proto::ParentLink* /*parentLink*/,
     const proto::ProtoList* /*posArgs*/,
     const proto::ProtoSparseList* /*kwargs*/) {
-    const proto::ProtoObject* handle = self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_handle"));
+    const proto::ProtoObject* handle = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_handle"));
     if (!handle || handle == PROTO_NONE) return PROTO_FALSE;
     const proto::ProtoExternalPointer* ext = handle->asExternalPointer(ctx);
     if (!ext) return PROTO_FALSE;
@@ -310,9 +310,9 @@ static const proto::ProtoObject* py_allocate_lock(
     const proto::ParentLink* /*parentLink*/,
     const proto::ProtoList* /*posArgs*/,
     const proto::ProtoSparseList* /*kwargs*/) {
-    const proto::ProtoObject* lockProt = self ? self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_lockProt")) : nullptr;
+    const proto::ProtoObject* lockProt = self ? self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_lockProt")) : nullptr;
     proto::ProtoObject* obj = lockProt ? const_cast<proto::ProtoObject*>(lockProt->newChild(ctx, true)) : const_cast<proto::ProtoObject*>(ctx->newObject(false));
-    obj->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_handle"), 
+    obj->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_handle"), 
         ctx->fromExternalPointer(new LockData, mutex_finalizer));
     return obj;
 }
@@ -323,9 +323,9 @@ static const proto::ProtoObject* py_allocate_rlock(
     const proto::ParentLink* /*parentLink*/,
     const proto::ProtoList* /*posArgs*/,
     const proto::ProtoSparseList* /*kwargs*/) {
-    const proto::ProtoObject* rlockProt = self ? self->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_rlockProt")) : nullptr;
+    const proto::ProtoObject* rlockProt = self ? self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_rlockProt")) : nullptr;
     proto::ProtoObject* obj = rlockProt ? const_cast<proto::ProtoObject*>(rlockProt->newChild(ctx, true)) : const_cast<proto::ProtoObject*>(ctx->newObject(false));
-    obj->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_handle"), 
+    obj->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_handle"), 
         ctx->fromExternalPointer(new RLockData, rmutex_finalizer));
     return obj;
 }
@@ -432,84 +432,84 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     const proto::ProtoObject* mod = ctx->newObject(false);
     
     const proto::ProtoObject* lockProt = ctx->newObject(false);
-    lockProt = lockProt->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "acquire"), 
+    lockProt = lockProt->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "acquire"), 
         ctx->fromMethod(nullptr, py_lock_acquire));
-    lockProt = lockProt->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "release"), 
+    lockProt = lockProt->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "release"), 
         ctx->fromMethod(nullptr, py_lock_release));
-    lockProt = lockProt->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "locked"), 
+    lockProt = lockProt->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "locked"), 
         ctx->fromMethod(nullptr, py_lock_locked));
-    lockProt = lockProt->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__enter__"), 
+    lockProt = lockProt->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__enter__"), 
         ctx->fromMethod(nullptr, py_lock_enter));
-    lockProt = lockProt->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__exit__"), 
+    lockProt = lockProt->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__exit__"), 
         ctx->fromMethod(nullptr, py_lock_exit));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_lockProt"), lockProt);
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_lockProt"), lockProt);
 
     const proto::ProtoObject* rlockProt = ctx->newObject(false);
-    rlockProt = rlockProt->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "acquire"), 
+    rlockProt = rlockProt->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "acquire"), 
         ctx->fromMethod(nullptr, py_rlock_acquire));
-    rlockProt = rlockProt->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "release"), 
+    rlockProt = rlockProt->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "release"), 
         ctx->fromMethod(nullptr, py_rlock_release));
-    rlockProt = rlockProt->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "locked"), 
+    rlockProt = rlockProt->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "locked"), 
         ctx->fromMethod(nullptr, py_rlock_locked));
-    rlockProt = rlockProt->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__enter__"), 
+    rlockProt = rlockProt->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__enter__"), 
         ctx->fromMethod(nullptr, py_rlock_enter));
-    rlockProt = rlockProt->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__exit__"), 
+    rlockProt = rlockProt->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__exit__"), 
         ctx->fromMethod(nullptr, py_rlock_exit));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_rlockProt"), rlockProt);
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_rlockProt"), rlockProt);
 
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "start_new_thread"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "start_new_thread"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_start_new_thread));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "join_thread"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "join_thread"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_join_thread));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "is_alive"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "is_alive"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_is_alive));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "get_ident"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "get_ident"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_get_ident));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "getpid"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "getpid"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_getpid));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "log_thread_ident"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "log_thread_ident"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_log_thread_ident));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "allocate_lock"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "allocate_lock"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_allocate_lock));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_lock_acquire"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_lock_acquire"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_lock_acquire));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_lock_release"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_lock_release"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_lock_release));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "allocate_rlock"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "allocate_rlock"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_allocate_rlock));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "RLock"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "RLock"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_allocate_rlock));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_rlock_acquire"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_rlock_acquire"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_rlock_acquire));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_rlock_release"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_rlock_release"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_rlock_release));
 
     // threading.py dependencies
     const proto::ProtoObject* pyType = protoPython::PythonEnvironment::fromContext(ctx) ? protoPython::PythonEnvironment::fromContext(ctx)->lookupName("type") : nullptr;
     const proto::ProtoObject* pyException = protoPython::PythonEnvironment::fromContext(ctx) ? protoPython::PythonEnvironment::fromContext(ctx)->lookupName("Exception") : nullptr;
 
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "LockType"), ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_allocate_lock));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "error"), pyException ? pyException : PROTO_NONE);
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "TIMEOUT_MAX"), ctx->fromDouble(9223372036.0));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_is_main_interpreter"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "LockType"), ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_allocate_lock));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "error"), pyException ? pyException : PROTO_NONE);
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "TIMEOUT_MAX"), ctx->fromDouble(9223372036.0));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_is_main_interpreter"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_is_main_interpreter));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_get_main_thread_ident"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_get_main_thread_ident"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_get_main_thread_ident));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "start_joinable_thread"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "start_joinable_thread"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_start_joinable_thread));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "daemon_threads_allowed"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "daemon_threads_allowed"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_daemon_threads_allowed));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_shutdown"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_shutdown"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_shutdown));
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_make_thread_handle"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_make_thread_handle"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_make_thread_handle));
     // Provide a callable for _ThreadHandle
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_ThreadHandle"), ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_make_thread_handle));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_ThreadHandle"), ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_make_thread_handle));
 
     auto py_thread_count = [](proto::ProtoContext* c, const proto::ProtoObject*, const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) -> const proto::ProtoObject* {
         return c->fromInteger(c->space->runningThreads.load());
     };
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_count"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_count"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_thread_count));
 
     auto py_get_handle = [](proto::ProtoContext* c, const proto::ProtoObject*, const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) -> const proto::ProtoObject* {
@@ -519,7 +519,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         if (!threads) return PROTO_NONE;
         return threads->getAt(c, tid);
     };
-    mod = mod->setAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "_get_thread_handle"),
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_get_thread_handle"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_get_handle));
 
     return mod;
