@@ -7737,7 +7737,6 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     boolPrototype = boolPrototype->setAttribute(rootContext_, (rootContext_)->fromUTF8String("__init__")->asString(rootContext_), rootContext_->fromMethod(nullptr, protoPython::builtins::py_python_ignore_init));
     // Update boolean class name and repr
     boolPrototype = boolPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_type_repr));
-    boolPrototype = boolPrototype->setAttribute(rootContext_, py_str, rootContext_->fromMethod(nullptr, py_bool_str));
 
     // Set MRO and bases for bool
     boolPrototype = boolPrototype->setAttribute(rootContext_, mroString, rootContext_->newTupleFromList(rootContext_->newList()->appendLast(rootContext_, boolPrototype)->appendLast(rootContext_, intPrototype)->appendLast(rootContext_, objectPrototype))->asObject(rootContext_));
