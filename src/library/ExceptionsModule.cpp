@@ -42,7 +42,7 @@ static const proto::ProtoObject* exception_str(
     
     const proto::ProtoObject* instance = self;
     if (!instance || instance == PROTO_NONE) {
-        if (!positionalParameters || positionalParameters->getSize(context) == 0) return context->fromUTF8String("");
+        if (!positionalParameters || positionalParameters->getSize(context) == 0) return proto::ProtoString::fromUTF8(context, "");
         instance = positionalParameters->getAt(context, 0);
     }
     
@@ -55,7 +55,7 @@ static const proto::ProtoObject* exception_str(
     }
     
     if (args->getSize(context) == 0) {
-        return context->fromUTF8String("");
+        return proto::ProtoString::fromUTF8(context, "");
     }
     if (args->getSize(context) == 1) {
         const proto::ProtoObject* firstArg = args->getAt(context, 0);
@@ -76,7 +76,7 @@ static const proto::ProtoObject* exception_repr(
     
     const proto::ProtoObject* instance = self;
     if (!instance || instance == PROTO_NONE) {
-        if (!positionalParameters || positionalParameters->getSize(context) == 0) return context->fromUTF8String("Exception()");
+        if (!positionalParameters || positionalParameters->getSize(context) == 0) return proto::ProtoString::fromUTF8(context, "Exception()");
         instance = positionalParameters->getAt(context, 0);
     }
     
@@ -92,10 +92,10 @@ static const proto::ProtoObject* exception_repr(
     
     std::string name = "Exception";
     if (nameObj && nameObj->isString(context)) {
-        nameObj->asString(context)->toUTF8String(context, name);
+        nameObj->toUTF8String(context, name);
     }
     if (args->getSize(context) == 0) {
-        return context->fromUTF8String((name + "()").c_str());
+        return proto::ProtoString::fromUTF8(context, (name + "()").c_str());
     }
     std::string out = name + "(";
     for (unsigned long i = 0; i < args->getSize(context) && i < 3; ++i) {
@@ -103,14 +103,14 @@ static const proto::ProtoObject* exception_repr(
         const proto::ProtoObject* a = args->getAt(context, static_cast<int>(i));
         if (a->isString(context)) {
             std::string s;
-            a->asString(context)->toUTF8String(context, s);
+            a->toUTF8String(context, s);
             out += "'" + s + "'";
         } else {
             out += "<obj>";
         }
     }
     out += ")";
-    return context->fromUTF8String(out.c_str());
+    return proto::ProtoString::fromUTF8(context, out.c_str());
 }
 
 static const proto::ProtoObject* make_exception_type(proto::ProtoContext* ctx,
@@ -131,7 +131,7 @@ static const proto::ProtoObject* make_exception_type(proto::ProtoContext* ctx,
         fflush(stderr);
     }
     exc = exc->setAttribute(ctx, py_class, typeProto);
-    exc = exc->setAttribute(ctx, py_name, ctx->fromUTF8String(name));
+    exc = exc->setAttribute(ctx, py_name, proto::ProtoString::fromUTF8(ctx, name));
     
     // Set __bases__ for issubclass()
     if (base) {
@@ -141,7 +141,7 @@ static const proto::ProtoObject* make_exception_type(proto::ProtoContext* ctx,
     } else {
         exc = exc->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__bases__"), ctx->newTuple()->asObject(ctx));
     }
-    exc = exc->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__module__"), ctx->fromUTF8String("builtins"));
+    exc = exc->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__module__"), proto::ProtoString::fromUTF8(ctx, "builtins"));
     exc = exc->setAttribute(ctx, py_init, ctx->fromMethod(nullptr, exception_init));
     exc = exc->setAttribute(ctx, py_repr, ctx->fromMethod(nullptr, exception_repr));
     exc = exc->setAttribute(ctx, py_str, ctx->fromMethod(nullptr, exception_str));
@@ -295,7 +295,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx,
     mod = mod->setAttribute(ctx, py_stopiteration, stopIterationType);
     mod = mod->setAttribute(ctx, py_stopasynciteration, stopAsyncIterationType);
     mod = mod->setAttribute(ctx, py_systemerror, systemErrorType);
-    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__name__"), ctx->fromUTF8String("exceptions"));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__name__"), proto::ProtoString::fromUTF8(ctx, "exceptions"));
 
     return mod;
 }

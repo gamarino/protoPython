@@ -30,7 +30,7 @@ static const proto::ProtoObject* py_warnings_warn(
     
     std::string msgStr = "<unknown warning message>";
     if (message && message->isString(context)) {
-        message->asString(context)->toUTF8String(context, msgStr);
+        message->toUTF8String(context, msgStr);
     } else if (message) {
         // Handle custom exception instances as warnings by extracting their string representation
         PythonEnvironment* env = PythonEnvironment::fromContext(context);
@@ -40,7 +40,7 @@ static const proto::ProtoObject* py_warnings_warn(
             const proto::ProtoList* emptyL = env ? env->getEmptyList() : context->newList();
             const proto::ProtoObject* sObj = strMethod->asMethod(context)(context, message, nullptr, emptyL, nullptr);
             if (sObj && sObj->isString(context)) {
-                sObj->asString(context)->toUTF8String(context, msgStr);
+                sObj->toUTF8String(context, msgStr);
             }
         }
     }
@@ -50,7 +50,7 @@ static const proto::ProtoObject* py_warnings_warn(
         PythonEnvironment* env = PythonEnvironment::fromContext(context);
         const proto::ProtoObject* nameAttr = env ? env->getAttribute(context, category, env->getNameString()) : category->getAttribute(context, proto::ProtoString::createSymbol(context, "__name__"));
         if (nameAttr && nameAttr->isString(context)) {
-            nameAttr->asString(context)->toUTF8String(context, catStr);
+            nameAttr->toUTF8String(context, catStr);
         }
     }
 

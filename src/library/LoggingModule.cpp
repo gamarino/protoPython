@@ -20,7 +20,7 @@ static const proto::ProtoObject* py_getLogger(
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
     const proto::ProtoObject* logger = ctx->newObject(false);
     logger = logger->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "name"),
-        posArgs->getSize(ctx) > 0 ? posArgs->getAt(ctx, 0) : ctx->fromUTF8String("root"));
+        posArgs->getSize(ctx) > 0 ? posArgs->getAt(ctx, 0) : proto::ProtoString::fromUTF8(ctx, "root"));
     logger = logger->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "info"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(logger), py_logger_info));
     return logger;

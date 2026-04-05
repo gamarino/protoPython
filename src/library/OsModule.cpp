@@ -42,7 +42,7 @@ static const proto::ProtoObject* py_direntry_is_dir(
     const proto::ProtoObject* pathObj = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "path"));
     if (!pathObj || !pathObj->isString(ctx)) return PROTO_FALSE;
     std::string path;
-    pathObj->asString(ctx)->toUTF8String(ctx, path);
+    pathObj->toUTF8String(ctx, path);
     struct stat st;
     if (stat(path.c_str(), &st) == 0) {
         return S_ISDIR(st.st_mode) ? PROTO_TRUE : PROTO_FALSE;
@@ -59,7 +59,7 @@ static const proto::ProtoObject* py_direntry_is_file(
     const proto::ProtoObject* pathObj = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "path"));
     if (!pathObj || !pathObj->isString(ctx)) return PROTO_FALSE;
     std::string path;
-    pathObj->asString(ctx)->toUTF8String(ctx, path);
+    pathObj->toUTF8String(ctx, path);
     struct stat st;
     if (stat(path.c_str(), &st) == 0) {
         return S_ISREG(st.st_mode) ? PROTO_TRUE : PROTO_FALSE;
@@ -76,7 +76,7 @@ static const proto::ProtoObject* py_direntry_is_symlink(
     const proto::ProtoObject* pathObj = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "path"));
     if (!pathObj || !pathObj->isString(ctx)) return PROTO_FALSE;
     std::string path;
-    pathObj->asString(ctx)->toUTF8String(ctx, path);
+    pathObj->toUTF8String(ctx, path);
     struct stat st;
     if (lstat(path.c_str(), &st) == 0) {
         return S_ISLNK(st.st_mode) ? PROTO_TRUE : PROTO_FALSE;
@@ -124,8 +124,8 @@ static const proto::ProtoObject* py_scandir_next(
         if (fullPath.back() != '/') fullPath += "/";
         fullPath += n;
 
-        entry = entry->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "name"), ctx->fromUTF8String(n));
-        entry = entry->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "path"), ctx->fromUTF8String(fullPath.c_str()));
+        entry = entry->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "name"), proto::ProtoString::fromUTF8(ctx, n));
+        entry = entry->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "path"), proto::ProtoString::fromUTF8(ctx, fullPath.c_str()));
         return entry;
     }
 }
@@ -185,7 +185,7 @@ static const proto::ProtoObject* py_direntry_stat(
     const proto::ProtoObject* pathObj = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "path"));
     if (!pathObj || !pathObj->isString(ctx)) return PROTO_NONE;
     std::string path;
-    pathObj->asString(ctx)->toUTF8String(ctx, path);
+    pathObj->toUTF8String(ctx, path);
     struct stat st;
     if (stat(path.c_str(), &st) == 0) {
         return make_stat_result(ctx, st);
@@ -202,7 +202,7 @@ static const proto::ProtoObject* py_direntry_inode(
     const proto::ProtoObject* pathObj = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "path"));
     if (!pathObj || !pathObj->isString(ctx)) return PROTO_NONE;
     std::string path;
-    pathObj->asString(ctx)->toUTF8String(ctx, path);
+    pathObj->toUTF8String(ctx, path);
     struct stat st;
     if (lstat(path.c_str(), &st) == 0) {
         return ctx->fromInteger(st.st_ino);
@@ -220,12 +220,12 @@ static const proto::ProtoObject* py_getenv(
     const proto::ProtoObject* keyObj = posArgs->getAt(ctx, 0);
     if (!keyObj->isString(ctx)) return PROTO_NONE;
     std::string key;
-    keyObj->asString(ctx)->toUTF8String(ctx, key);
+    keyObj->toUTF8String(ctx, key);
     if (std::getenv("PROTO_ENV_DIAG")) {
         // log removed
     }
     const char* val = std::getenv(key.c_str());
-    if (val) return ctx->fromUTF8String(val);
+    if (val) return proto::ProtoString::fromUTF8(ctx, val);
     if (posArgs->getSize(ctx) >= 2) return posArgs->getAt(ctx, 1);
     return PROTO_NONE;
 }
@@ -239,9 +239,9 @@ static const proto::ProtoObject* py_getcwd(
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
     char buf[4096];
     if (getcwd(buf, sizeof(buf)))
-        return ctx->fromUTF8String(buf);
+        return proto::ProtoString::fromUTF8(ctx, buf);
 #endif
-    return ctx->fromUTF8String(".");
+    return proto::ProtoString::fromUTF8(ctx, ".");
 }
 
 static const proto::ProtoObject* py_chdir(
@@ -254,7 +254,7 @@ static const proto::ProtoObject* py_chdir(
     const proto::ProtoObject* pathObj = posArgs->getAt(ctx, 0);
     if (!pathObj->isString(ctx)) return PROTO_NONE;
     std::string path;
-    pathObj->asString(ctx)->toUTF8String(ctx, path);
+    pathObj->toUTF8String(ctx, path);
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
     if (chdir(path.c_str()) == 0)
         return PROTO_NONE;
@@ -272,7 +272,7 @@ static const proto::ProtoObject* py_listdir(
     if (posArgs->getSize(ctx) >= 1) {
         const proto::ProtoObject* pathObj = posArgs->getAt(ctx, 0);
         if (pathObj->isString(ctx))
-            pathObj->asString(ctx)->toUTF8String(ctx, path);
+            pathObj->toUTF8String(ctx, path);
     }
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
     const proto::ProtoList* result = ctx->newList();
@@ -284,7 +284,7 @@ static const proto::ProtoObject* py_listdir(
         const char* n = e->d_name;
         if (n[0] == '.' && (n[1] == '\0' || (n[1] == '.' && n[2] == '\0')))
             continue;
-        result = result->appendLast(ctx, ctx->fromUTF8String(n));
+        result = result->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, n));
     }
     closedir(d);
     return result->asObject(ctx);
@@ -304,7 +304,7 @@ static const proto::ProtoObject* py_scandir(
     if (posArgs->getSize(ctx) >= 1) {
         const proto::ProtoObject* pathObj = posArgs->getAt(ctx, 0);
         if (pathObj->isString(ctx))
-            pathObj->asString(ctx)->toUTF8String(ctx, path);
+            pathObj->toUTF8String(ctx, path);
     }
 
     DIR* d = opendir(path.c_str());
@@ -338,7 +338,7 @@ static const proto::ProtoObject* py_stat(
     const proto::ProtoObject* pathObj = posArgs->getAt(ctx, 0);
     if (!pathObj->isString(ctx)) return PROTO_NONE;
     std::string path;
-    pathObj->asString(ctx)->toUTF8String(ctx, path);
+    pathObj->toUTF8String(ctx, path);
     struct stat st;
     if (stat(path.c_str(), &st) == 0) {
         return make_stat_result(ctx, st);
@@ -356,7 +356,7 @@ static const proto::ProtoObject* py_lstat(
     const proto::ProtoObject* pathObj = posArgs->getAt(ctx, 0);
     if (!pathObj->isString(ctx)) return PROTO_NONE;
     std::string path;
-    pathObj->asString(ctx)->toUTF8String(ctx, path);
+    pathObj->toUTF8String(ctx, path);
     struct stat st;
     if (lstat(path.c_str(), &st) == 0) {
         return make_stat_result(ctx, st);
@@ -374,7 +374,7 @@ static const proto::ProtoObject* py_remove(
     const proto::ProtoObject* pathObj = posArgs->getAt(ctx, 0);
     if (!pathObj->isString(ctx)) return PROTO_NONE;
     std::string path;
-    pathObj->asString(ctx)->toUTF8String(ctx, path);
+    pathObj->toUTF8String(ctx, path);
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
     if (unlink(path.c_str()) != 0) {
         // Handle error?
@@ -402,7 +402,7 @@ static const proto::ProtoObject* py_mkdir(
     const proto::ProtoObject* pathObj = posArgs->getAt(ctx, 0);
     if (!pathObj->isString(ctx)) return PROTO_NONE;
     std::string path;
-    pathObj->asString(ctx)->toUTF8String(ctx, path);
+    pathObj->toUTF8String(ctx, path);
     int mode = 0777;
     if (posArgs->getSize(ctx) >= 2) mode = static_cast<int>(posArgs->getAt(ctx, 1)->asLong(ctx));
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
@@ -419,8 +419,8 @@ static const proto::ProtoObject* py_rename(
     const proto::ProtoSparseList* /*kwargs*/) {
     if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
     std::string oldPath, newPath;
-    posArgs->getAt(ctx, 0)->asString(ctx)->toUTF8String(ctx, oldPath);
-    posArgs->getAt(ctx, 1)->asString(ctx)->toUTF8String(ctx, newPath);
+    posArgs->getAt(ctx, 0)->toUTF8String(ctx, oldPath);
+    posArgs->getAt(ctx, 1)->toUTF8String(ctx, newPath);
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
     (void)rename(oldPath.c_str(), newPath.c_str());
 #endif
@@ -444,7 +444,7 @@ static const proto::ProtoObject* py_access(
     const proto::ProtoSparseList* /*kwargs*/) {
     if (posArgs->getSize(ctx) < 2) return PROTO_FALSE;
     std::string path;
-    posArgs->getAt(ctx, 0)->asString(ctx)->toUTF8String(ctx, path);
+    posArgs->getAt(ctx, 0)->toUTF8String(ctx, path);
     int mode = static_cast<int>(posArgs->getAt(ctx, 1)->asLong(ctx));
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
     return access(path.c_str(), mode) == 0 ? PROTO_TRUE : PROTO_FALSE;
@@ -463,7 +463,7 @@ static const proto::ProtoObject* py_rmdir(
     const proto::ProtoObject* pathObj = posArgs->getAt(ctx, 0);
     if (!pathObj->isString(ctx)) return PROTO_NONE;
     std::string path;
-    pathObj->asString(ctx)->toUTF8String(ctx, path);
+    pathObj->toUTF8String(ctx, path);
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
     (void)rmdir(path.c_str());
 #endif
@@ -481,8 +481,8 @@ static const proto::ProtoObject* py_setenv(
     const proto::ProtoObject* valObj = posArgs->getAt(ctx, 1);
     if (!keyObj->isString(ctx) || !valObj->isString(ctx)) return PROTO_NONE;
     std::string key, val;
-    keyObj->asString(ctx)->toUTF8String(ctx, key);
-    valObj->asString(ctx)->toUTF8String(ctx, val);
+    keyObj->toUTF8String(ctx, key);
+    valObj->toUTF8String(ctx, val);
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
     if (std::getenv("PROTO_ENV_DIAG")) {
         // log removed
@@ -502,7 +502,7 @@ static const proto::ProtoObject* py_unsetenv(
     const proto::ProtoObject* keyObj = posArgs->getAt(ctx, 0);
     if (!keyObj->isString(ctx)) return PROTO_NONE;
     std::string key;
-    keyObj->asString(ctx)->toUTF8String(ctx, key);
+    keyObj->toUTF8String(ctx, key);
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
     if (std::getenv("PROTO_ENV_DIAG")) {
         // log removed
@@ -586,7 +586,7 @@ static const proto::ProtoObject* py_environ_keys(
             if (std::getenv("PROTO_ENV_DIAG")) {
                 // log removed
             }
-            result = result->appendLast(ctx, ctx->fromUTF8String(key.c_str()));
+            result = result->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, key.c_str()));
         }
     }
     // log removed
@@ -641,7 +641,7 @@ static const proto::ProtoObject* py_open(
     if (!pathObj->isString(ctx) || !flagsObj->isInteger(ctx)) return PROTO_NONE;
     
     std::string path;
-    pathObj->asString(ctx)->toUTF8String(ctx, path);
+    pathObj->toUTF8String(ctx, path);
     int flags = static_cast<int>(flagsObj->asLong(ctx));
     
     int mode = 0777;
@@ -711,12 +711,12 @@ static const proto::ProtoObject* py_urandom(
 
     PythonEnvironment* env = PythonEnvironment::get(ctx);
     if (!env || !env->getBytesPrototype()) {
-        return ctx->fromUTF8String(buf.c_str());
+        return proto::ProtoString::fromUTF8(ctx, buf.c_str());
     }
     
     const proto::ProtoObject* b = env->getBytesPrototype()->newChild(ctx, true);
     b->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__class__"), env->getBytesPrototype());
-    b->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__data__"), ctx->fromUTF8String(buf.c_str()));
+    b->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__data__"), proto::ProtoString::fromUTF8(ctx, buf.c_str()));
     return b;
 }
 
@@ -901,7 +901,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_close));
 
     const proto::ProtoObject* statResultType = ctx->newObject(true); // make mutable just in case
-    statResultType = statResultType->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__name__"), ctx->fromUTF8String("stat_result"));
+    statResultType = statResultType->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__name__"), proto::ProtoString::fromUTF8(ctx, "stat_result"));
     if (env && env->getTypePrototype()) {
         statResultType = statResultType->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__class__"), env->getTypePrototype());
     }
@@ -933,64 +933,64 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
 
     // _have_functions (Minimal set for satisfying os.py)
     const proto::ProtoList* haveFuncs = ctx->newList();
-    haveFuncs = haveFuncs->appendLast(ctx, ctx->fromUTF8String("HAVE_FACCESSAT"));
-    haveFuncs = haveFuncs->appendLast(ctx, ctx->fromUTF8String("HAVE_FSTATAT"));
-    haveFuncs = haveFuncs->appendLast(ctx, ctx->fromUTF8String("HAVE_OPENAT"));
-    haveFuncs = haveFuncs->appendLast(ctx, ctx->fromUTF8String("HAVE_FDOPENDIR"));
+    haveFuncs = haveFuncs->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, "HAVE_FACCESSAT"));
+    haveFuncs = haveFuncs->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, "HAVE_FSTATAT"));
+    haveFuncs = haveFuncs->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, "HAVE_OPENAT"));
+    haveFuncs = haveFuncs->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, "HAVE_FDOPENDIR"));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_have_functions"), haveFuncs->asObject(ctx));
 
     // Export keys and all for 'from posix import *'
     const proto::ProtoList* keys = ctx->newList();
-    keys = keys->appendLast(ctx, ctx->fromUTF8String("environ"));
-    keys = keys->appendLast(ctx, ctx->fromUTF8String("getenv"));
-    keys = keys->appendLast(ctx, ctx->fromUTF8String("putenv"));
-    keys = keys->appendLast(ctx, ctx->fromUTF8String("unsetenv"));
-    keys = keys->appendLast(ctx, ctx->fromUTF8String("getcwd"));
-    keys = keys->appendLast(ctx, ctx->fromUTF8String("chdir"));
-    keys = keys->appendLast(ctx, ctx->fromUTF8String("listdir"));
-    keys = keys->appendLast(ctx, ctx->fromUTF8String("remove"));
-    keys = keys->appendLast(ctx, ctx->fromUTF8String("unlink"));
-    keys = keys->appendLast(ctx, ctx->fromUTF8String("mkdir"));
-    keys = keys->appendLast(ctx, ctx->fromUTF8String("rename"));
-    keys = keys->appendLast(ctx, ctx->fromUTF8String("replace"));
-    keys = keys->appendLast(ctx, ctx->fromUTF8String("access"));
-    keys = keys->appendLast(ctx, ctx->fromUTF8String("rmdir"));
-    keys = keys->appendLast(ctx, ctx->fromUTF8String("getuid"));
-    keys = keys->appendLast(ctx, ctx->fromUTF8String("geteuid"));
-    keys = keys->appendLast(ctx, ctx->fromUTF8String("getgid"));
-    keys = keys->appendLast(ctx, ctx->fromUTF8String("getegid"));
-    keys = keys->appendLast(ctx, ctx->fromUTF8String("environ_keys"));
-    keys = keys->appendLast(ctx, ctx->fromUTF8String("waitpid"));
-    keys = keys->appendLast(ctx, ctx->fromUTF8String("urandom"));
-    keys = keys->appendLast(ctx, ctx->fromUTF8String("kill"));
-    keys = keys->appendLast(ctx, ctx->fromUTF8String("pipe"));
-    keys = keys->appendLast(ctx, ctx->fromUTF8String("cpu_count"));
-    keys = keys->appendLast(ctx, ctx->fromUTF8String("_exit"));
-    keys = keys->appendLast(ctx, ctx->fromUTF8String("scandir"));
-    keys = keys->appendLast(ctx, ctx->fromUTF8String("stat"));
-    keys = keys->appendLast(ctx, ctx->fromUTF8String("lstat"));
-    keys = keys->appendLast(ctx, ctx->fromUTF8String("F_OK"));
-    keys = keys->appendLast(ctx, ctx->fromUTF8String("R_OK"));
-    keys = keys->appendLast(ctx, ctx->fromUTF8String("W_OK"));
-    keys = keys->appendLast(ctx, ctx->fromUTF8String("X_OK"));
-    keys = keys->appendLast(ctx, ctx->fromUTF8String("ST_MODE"));
-    keys = keys->appendLast(ctx, ctx->fromUTF8String("ST_INO"));
-    keys = keys->appendLast(ctx, ctx->fromUTF8String("ST_DEV"));
-    keys = keys->appendLast(ctx, ctx->fromUTF8String("ST_NLINK"));
-    keys = keys->appendLast(ctx, ctx->fromUTF8String("ST_UID"));
-    keys = keys->appendLast(ctx, ctx->fromUTF8String("ST_GID"));
-    keys = keys->appendLast(ctx, ctx->fromUTF8String("ST_SIZE"));
-    keys = keys->appendLast(ctx, ctx->fromUTF8String("ST_ATIME"));
-    keys = keys->appendLast(ctx, ctx->fromUTF8String("ST_MTIME"));
-    keys = keys->appendLast(ctx, ctx->fromUTF8String("ST_CTIME"));
-    keys = keys->appendLast(ctx, ctx->fromUTF8String("S_IFMT"));
-    keys = keys->appendLast(ctx, ctx->fromUTF8String("S_IFDIR"));
-    keys = keys->appendLast(ctx, ctx->fromUTF8String("S_IFREG"));
-    keys = keys->appendLast(ctx, ctx->fromUTF8String("S_IFLNK"));
-    keys = keys->appendLast(ctx, ctx->fromUTF8String("_have_functions"));
-    keys = keys->appendLast(ctx, ctx->fromUTF8String("open"));
-    keys = keys->appendLast(ctx, ctx->fromUTF8String("close"));
-    keys = keys->appendLast(ctx, ctx->fromUTF8String("stat_result"));
+    keys = keys->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, "environ"));
+    keys = keys->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, "getenv"));
+    keys = keys->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, "putenv"));
+    keys = keys->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, "unsetenv"));
+    keys = keys->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, "getcwd"));
+    keys = keys->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, "chdir"));
+    keys = keys->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, "listdir"));
+    keys = keys->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, "remove"));
+    keys = keys->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, "unlink"));
+    keys = keys->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, "mkdir"));
+    keys = keys->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, "rename"));
+    keys = keys->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, "replace"));
+    keys = keys->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, "access"));
+    keys = keys->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, "rmdir"));
+    keys = keys->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, "getuid"));
+    keys = keys->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, "geteuid"));
+    keys = keys->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, "getgid"));
+    keys = keys->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, "getegid"));
+    keys = keys->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, "environ_keys"));
+    keys = keys->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, "waitpid"));
+    keys = keys->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, "urandom"));
+    keys = keys->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, "kill"));
+    keys = keys->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, "pipe"));
+    keys = keys->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, "cpu_count"));
+    keys = keys->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, "_exit"));
+    keys = keys->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, "scandir"));
+    keys = keys->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, "stat"));
+    keys = keys->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, "lstat"));
+    keys = keys->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, "F_OK"));
+    keys = keys->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, "R_OK"));
+    keys = keys->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, "W_OK"));
+    keys = keys->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, "X_OK"));
+    keys = keys->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, "ST_MODE"));
+    keys = keys->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, "ST_INO"));
+    keys = keys->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, "ST_DEV"));
+    keys = keys->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, "ST_NLINK"));
+    keys = keys->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, "ST_UID"));
+    keys = keys->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, "ST_GID"));
+    keys = keys->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, "ST_SIZE"));
+    keys = keys->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, "ST_ATIME"));
+    keys = keys->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, "ST_MTIME"));
+    keys = keys->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, "ST_CTIME"));
+    keys = keys->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, "S_IFMT"));
+    keys = keys->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, "S_IFDIR"));
+    keys = keys->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, "S_IFREG"));
+    keys = keys->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, "S_IFLNK"));
+    keys = keys->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, "_have_functions"));
+    keys = keys->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, "open"));
+    keys = keys->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, "close"));
+    keys = keys->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, "stat_result"));
     
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__keys__"), keys->asObject(ctx));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__all__"), keys->asObject(ctx));

@@ -83,7 +83,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         abc->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "register"),
             ctx->fromMethod(abc, py_abc_register));
         abc->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__name__"),
-            ctx->fromUTF8String(name));
+            proto::ProtoString::fromUTF8(ctx, name));
         
         // Set __class__ to self for diagnostic clarity (raiseAttributeError uses it)
         abc->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__class__"), abc);
@@ -126,9 +126,9 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
 
     const proto::ProtoList* allList = ctx->newList();
     for (const char* name : names) {
-        allList = allList->appendLast(ctx, ctx->fromUTF8String(name));
+        allList = allList->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, name));
     }
-    allList = allList->appendLast(ctx, ctx->fromUTF8String("_check_methods"));
+    allList = allList->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, "_check_methods"));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__all__"), allList->asObject(ctx));
 
     return mod;

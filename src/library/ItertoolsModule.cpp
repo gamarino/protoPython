@@ -348,9 +348,9 @@ static const proto::ProtoObject* accumulate_add(
     }
     if (left->isString(ctx) && right->isString(ctx)) {
         std::string sa, sb;
-        left->asString(ctx)->toUTF8String(ctx, sa);
-        right->asString(ctx)->toUTF8String(ctx, sb);
-        return ctx->fromUTF8String((sa + sb).c_str());
+        left->toUTF8String(ctx, sa);
+        right->toUTF8String(ctx, sb);
+        return proto::ProtoString::fromUTF8(ctx, (sa + sb).c_str());
     }
     const proto::ProtoObject* addM = left->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__add__"));
     if (addM && addM->asMethod(ctx)) {

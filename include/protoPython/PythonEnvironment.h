@@ -141,6 +141,16 @@ public:
     const proto::ProtoObject* resolve(const std::string& name, proto::ProtoContext* ctx = nullptr);
     const proto::ProtoObject* resolve(const proto::ProtoString* name, proto::ProtoContext* ctx = nullptr);
     bool isResolved(const std::string& name, proto::ProtoContext* ctx = nullptr);
+
+    static inline bool is_missing(const proto::ProtoObject* obj) {
+        return obj == nullptr || obj == PROTO_NONE;
+    }
+
+    static inline bool attribute_exists(proto::ProtoContext* ctx, const proto::ProtoObject* obj, const proto::ProtoString* name, const proto::ProtoObject* val) {
+        if (val != PROTO_NONE) return val != nullptr;
+        if (!obj || !name) return false;
+        return obj->hasAttribute(ctx, name) == PROTO_TRUE;
+    }
     
     /**
      * @brief Runs the event loop until the given coroutine is complete.

@@ -595,9 +595,9 @@ static const proto::ProtoObject* binaryAdd(proto::ProtoContext* ctx,
     }
     if (a->isString(ctx) && b->isString(ctx)) {
         std::string s1, s2;
-        a->asString(ctx)->toUTF8String(ctx, s1);
-        b->asString(ctx)->toUTF8String(ctx, s2);
-        return ctx->fromUTF8String((s1 + s2).c_str());
+        a->toUTF8String(ctx, s1);
+        b->toUTF8String(ctx, s2);
+        return proto::ProtoString::fromUTF8(ctx, (s1 + s2).c_str());
     }
 
     if (std::getenv("PROTO_ENV_DIAG")) {
@@ -703,12 +703,12 @@ static const proto::ProtoObject* binaryModulo(proto::ProtoContext* ctx,
     }
     if (a->isString(ctx)) {
         std::string* tplPtr = new std::string();
-        a->asString(ctx)->toUTF8String(ctx, *tplPtr);
+        a->toUTF8String(ctx, *tplPtr);
         
         auto getStr = [&](const proto::ProtoObject* obj) -> std::string {
             if (obj->isString(ctx)) {
                 std::string* sPtr = new std::string();
-                obj->asString(ctx)->toUTF8String(ctx, *sPtr);
+                obj->toUTF8String(ctx, *sPtr);
                 std::string res = *sPtr;
                 delete sPtr;
                 return res;
@@ -730,7 +730,7 @@ static const proto::ProtoObject* binaryModulo(proto::ProtoContext* ctx,
                     const proto::ProtoObject* rs = strM->asMethod(ctx)(ctx, obj, nullptr, env ? env->getEmptyList() : ctx->newList(), nullptr);
                     std::string* sPtr = new std::string();
                     if (rs && rs->isString(ctx)) {
-                        rs->asString(ctx)->toUTF8String(ctx, *sPtr);
+                        rs->toUTF8String(ctx, *sPtr);
                         std::string res = *sPtr;
                         delete sPtr;
                         return res;
@@ -771,7 +771,7 @@ static const proto::ProtoObject* binaryModulo(proto::ProtoContext* ctx,
                 // Potential formatting error or unsupported specifier
             }
         }
-        const proto::ProtoObject* res = ctx->fromUTF8String(tplPtr->c_str());
+        const proto::ProtoObject* res = proto::ProtoString::fromUTF8(ctx, tplPtr->c_str());
         delete tplPtr;
         return res;
     }
@@ -856,7 +856,7 @@ static const proto::ProtoObject* compareOp(proto::ProtoContext* ctx,
                 else if (data->isTuple(ctx)) lst = data->asTuple(ctx)->asList(ctx);
                 else if (data->asSparseList(ctx)) {
                     unsigned long hash = 0;
-                    if (a->isString(ctx)) hash = a->asString(ctx)->getHash(ctx);
+                    if (a->isString(ctx)) hash = a->getHash(ctx);
                     else if (a->isInteger(ctx)) hash = static_cast<unsigned long>(a->asLong(ctx));
                     
                     if (hash != 0 || a->isInteger(ctx)) {
@@ -899,8 +899,8 @@ static const proto::ProtoObject* compareOp(proto::ProtoContext* ctx,
                 found = false;
             } else if (b->isString(ctx) && a->isString(ctx)) {
                 std::string s_sub, s_full;
-                a->asString(ctx)->toUTF8String(ctx, s_sub);
-                b->asString(ctx)->toUTF8String(ctx, s_full);
+                a->toUTF8String(ctx, s_sub);
+                b->toUTF8String(ctx, s_full);
                 found = (s_full.find(s_sub) != std::string::npos);
             }
         }
@@ -933,7 +933,7 @@ static bool isTruthy(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
     
     if (obj->isInteger(ctx)) return (obj->asLong(ctx) != 0);
     if (obj->isDouble(ctx)) return (obj->asDouble(ctx) != 0.0);
-    if (obj->isString(ctx)) return (obj->asString(ctx)->getSize(ctx) > 0);
+    if (obj->isString(ctx)) return (obj->getSize(ctx) > 0);
     
     // Optimized native checks (works for both raw Proto objects and those without __bool__ override)
     if (obj->asTuple(ctx)) return (obj->asTuple(ctx)->getSize(ctx) > 0);
@@ -1037,7 +1037,7 @@ static const proto::ProtoObject* invokeCallable(proto::ProtoContext* ctx,
         const proto::ProtoObject* cls = callable->getAttribute(ctx, env ? env->getClassString() : getInternalString(ctx, "__class__"));
         if (cls) {
             const proto::ProtoObject* nameAttr = cls->getAttribute(ctx, env ? env->getNameString() : getInternalString(ctx, "__name__"));
-            if (nameAttr && nameAttr->isString(ctx)) nameAttr->asString(ctx)->toUTF8String(ctx, clsName);
+            if (nameAttr && nameAttr->isString(ctx)) nameAttr->toUTF8String(ctx, clsName);
         }
         fprintf(stderr, "DEBUG: invokeCallable callable=%p repr=%s class=%s\n", (void*)callable, repr.c_str(), clsName.c_str());
         fflush(stderr);
@@ -1135,7 +1135,7 @@ const proto::ProtoObject* py_generator_send_impl(
     // 1. Check if running
     const proto::ProtoObject* runningAttr = self->getAttribute(ctx, env->getGiRunningString());
     if (runningAttr == PROTO_TRUE) {
-        env->raiseValueError(ctx, ctx->fromUTF8String("generator already executing"));
+        env->raiseValueError(ctx, proto::ProtoString::fromUTF8(ctx, "generator already executing"));
         return PROTO_NONE;
     }
 
@@ -1353,18 +1353,18 @@ const proto::ProtoObject* py_generator_repr(
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    if (!env) return ctx->fromUTF8String("<generator object>");
+    if (!env) return proto::ProtoString::fromUTF8(ctx, "<generator object>");
 
     const proto::ProtoObject* code = self->getAttribute(ctx, env->getGiCodeString());
     std::string name = "<unknown>";
     if (code) {
         const proto::ProtoObject* co_name = code->getAttribute(ctx, env->getCoNameString());
-        if (co_name && co_name->isString(ctx)) co_name->asString(ctx)->toUTF8String(ctx, name);
+        if (co_name && co_name->isString(ctx)) co_name->toUTF8String(ctx, name);
     }
     
     char buf[128];
     snprintf(buf, sizeof(buf), "<generator object %s at %p>", name.c_str(), (void*)self);
-    return ctx->fromUTF8String(buf);
+    return proto::ProtoString::fromUTF8(ctx, buf);
 }
 
 const proto::ProtoObject* py_generator_next(
@@ -1561,7 +1561,7 @@ const proto::ProtoObject* runUserClassCall(proto::ProtoContext* ctx,
                  
                  std::string selfName = "unknown";
                  const proto::ProtoObject* nAttr = self->getAttribute(ctx, env ? env->getNameString() : nullptr);
-                 if (nAttr && nAttr->isString(ctx)) nAttr->asString(ctx)->toUTF8String(ctx, selfName);
+                 if (nAttr && nAttr->isString(ctx)) nAttr->toUTF8String(ctx, selfName);
                  
                  const proto::ProtoObject* typeProto = env ? env->getTypePrototype() : nullptr;
                  
@@ -1603,7 +1603,7 @@ static void updateContextLocation(proto::ProtoContext* ctx, proto::ProtoObject* 
         static std::unordered_map<const proto::ProtoObject*, std::string> filenameCache;
         if (filenameCache.find(fn) == filenameCache.end()) {
             std::string s;
-            fn->asString(ctx)->toUTF8String(ctx, s);
+            fn->toUTF8String(ctx, s);
             filenameCache[fn] = s;
         }
         ctx->currentFileName = const_cast<char*>(filenameCache[fn].c_str());
@@ -1714,19 +1714,19 @@ const proto::ProtoObject* executeBytecodeRange(
                 const proto::ProtoObject* cls = exc->getAttribute(ctx, env->getClassString());
                 if (cls) {
                      const proto::ProtoObject* nameAttr = cls->getAttribute(ctx, env->getNameString());
-                     if (nameAttr && nameAttr->isString(ctx)) nameAttr->asString(ctx)->toUTF8String(ctx, excName);
+                     if (nameAttr && nameAttr->isString(ctx)) nameAttr->toUTF8String(ctx, excName);
                 }
                 
                 std::string excMsg = "";
                 const proto::ProtoObject* strFunc = exc->getAttribute(ctx, env->getStrString());
                 if (strFunc) {
                     if (strFunc->isString(ctx)) {
-                        strFunc->asString(ctx)->toUTF8String(ctx, excMsg);
+                        strFunc->toUTF8String(ctx, excMsg);
                     } else if (strFunc->asMethod(ctx)) {
                         const proto::ProtoObject* funcSelf = strFunc->asMethodSelf(ctx);
                         const proto::ProtoObject* strRes = strFunc->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(funcSelf), nullptr, ctx->newList(), ctx->newSparseList());
                         if (strRes && strRes->isString(ctx)) {
-                            strRes->asString(ctx)->toUTF8String(ctx, excMsg);
+                            strRes->toUTF8String(ctx, excMsg);
                         }
                     }
                 }
@@ -1924,7 +1924,7 @@ const proto::ProtoObject* executeBytecodeRange(
             if (names && frame && static_cast<unsigned long>(arg) < names->getSize(ctx)) {
                 const proto::ProtoObject* nameObj = names->getAt(ctx, arg);
                 if (nameObj->isString(ctx)) {
-                    const proto::ProtoString* nameS = nameObj->asString(ctx);
+                    const proto::ProtoString* nameS = nameObj;
                     std::string nStr;
                     nameS->toUTF8String(ctx, nStr);
                     if (std::getenv("PROTO_ENV_DIAG")) {
@@ -1976,7 +1976,7 @@ const proto::ProtoObject* executeBytecodeRange(
             if (get_env_diag()) {
                 std::string nStr = "unknown";
                 if (names && arg < names->getSize(ctx)) {
-                    if (names->getAt(ctx, arg)->isString(ctx)) names->getAt(ctx, arg)->asString(ctx)->toUTF8String(ctx, nStr);
+                    if (names->getAt(ctx, arg)->isString(ctx)) names->getAt(ctx, arg)->toUTF8String(ctx, nStr);
                 }
                 fprintf(stderr, "DEBUG: OP_STORE_NAME start PC %lu names=%ld arg=%d name='%s'\n", i, names ? names->getSize(ctx) : -1, arg, nStr.c_str());
                 fflush(stderr);
@@ -1987,7 +1987,7 @@ const proto::ProtoObject* executeBytecodeRange(
                         const proto::ProtoObject* codeObj = frame ? frame->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__code__")) : nullptr;
                         std::string fname = "<unknown>";
                         if (codeObj && codeObj->hasAttribute(ctx, env->getNameString()) == PROTO_TRUE) {
-                            codeObj->getAttribute(ctx, env->getNameString())->asString(ctx)->toUTF8String(ctx, fname);
+                            codeObj->getAttribute(ctx, env->getNameString())->toUTF8String(ctx, fname);
                         }
                         fprintf(stderr, "OP_STORE_NAME: empty stack in %s! PC=%lu\n", fname.c_str(), i);
                         env->raiseTypeError(ctx, "stack underflow in OP_STORE_NAME");
@@ -2021,7 +2021,7 @@ const proto::ProtoObject* executeBytecodeRange(
                             if (setitem && setitem != PROTO_NONE) {
                                 handledBySetitem = true;
                                 if (get_env_diag()) {
-                                    std::string nStr; nameObj->asString(ctx)->toUTF8String(ctx, nStr);
+                                    std::string nStr; nameObj->toUTF8String(ctx, nStr);
                                     fprintf(stderr, "DEBUG OP_STORE_NAME: handledBySetitem intercepted '%s' type=%p\n", nStr.c_str(), (void*)frameType);
                                 }
                                 const proto::ProtoList* args = ctx->newList()->appendLast(ctx, nameObj)->appendLast(ctx, val);
@@ -2038,8 +2038,8 @@ const proto::ProtoObject* executeBytecodeRange(
                     if (!handledBySetitem) {
                         // Update frame (CoW support)
                         std::string nStr;
-                        nameObj->asString(ctx)->toUTF8String(ctx, nStr);
-                        const proto::ProtoObject* newFrame = frame->setAttribute(ctx, nameObj->asString(ctx), val);
+                        nameObj->toUTF8String(ctx, nStr);
+                        const proto::ProtoObject* newFrame = frame->setAttribute(ctx, nameObj, val);
                         frame = const_cast<proto::ProtoObject*>(newFrame);
                         
                         const proto::ProtoString* dataS = getInternalString(ctx, "__data__");
@@ -2189,7 +2189,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 stack.back() = res;
             } else {
                 PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-                if (env) env->setPendingException(ctx->fromUTF8String("TypeError: '@' operator not supported (stubbed)"));
+                if (env) env->setPendingException(proto::ProtoString::fromUTF8(ctx, "TypeError: '@' operator not supported (stubbed)"));
             }
         } else if (op == OP_INPLACE_MATRIX_MULTIPLY) {
             if (stack.size() < 2) { i = next_i; continue; }
@@ -2206,7 +2206,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 if (matmul && matmul != PROTO_NONE) {
                     stack.push_back(invokePythonCallable(ctx, matmul, ctx->newList()->appendLast(ctx, right), nullptr));
                 } else {
-                    env->setPendingException(ctx->fromUTF8String("TypeError: '@=' operator not supported (stubbed)"));
+                    env->setPendingException(proto::ProtoString::fromUTF8(ctx, "TypeError: '@=' operator not supported (stubbed)"));
                 }
             }
         } else if (op == OP_RERAISE) {
@@ -2572,17 +2572,17 @@ const proto::ProtoObject* executeBytecodeRange(
                     while (it && it->hasNext(ctx)) {
                         const proto::ProtoObject* nameObj = it->next(ctx);
                         if (nameObj && nameObj->isString(ctx)) {
-                            const proto::ProtoObject* val = mod->getAttribute(ctx, nameObj->asString(ctx));
+                            const proto::ProtoObject* val = mod->getAttribute(ctx, nameObj);
                             if (std::getenv("PROTO_RESOLVE_DIAG")) {
                             }
                             if (val) {
                                 std::string n;
-                                nameObj->asString(ctx)->toUTF8String(ctx, n);
+                                nameObj->toUTF8String(ctx, n);
                                 if (n == "_splitext") {
                                     fprintf(stderr, "DEBUG: OP_IMPORT_STAR storing _splitext from mod %p: val %p\n", (void*)mod, (void*)val);
             fflush(stderr);
                                 }
-                                frame = const_cast<proto::ProtoObject*>(frame->setAttribute(ctx, nameObj->asString(ctx), val));
+                                frame = const_cast<proto::ProtoObject*>(frame->setAttribute(ctx, nameObj, val));
                             }
                         }
                         it = it->advance(ctx);
@@ -2599,18 +2599,18 @@ const proto::ProtoObject* executeBytecodeRange(
                             const proto::ProtoObject* nameObj = it->next(ctx);
                             if (nameObj && nameObj->isString(ctx)) {
                                 std::string n;
-                                nameObj->asString(ctx)->toUTF8String(ctx, n);
+                                nameObj->toUTF8String(ctx, n);
                                 if (n.empty() || n[0] == '_') {
                                     it = it->advance(ctx);
                                     continue;
                                 }
-                                const proto::ProtoObject* val = mod->getAttribute(ctx, nameObj->asString(ctx));
+                                const proto::ProtoObject* val = mod->getAttribute(ctx, nameObj);
                                 if (val) {
                                     if (n == "_splitext") {
                                         fprintf(stderr, "DEBUG: OP_IMPORT_STAR (fallback) storing _splitext from mod %p: val %p\n", (void*)mod, (void*)val);
             fflush(stderr);
                                     }
-                                    frame = const_cast<proto::ProtoObject*>(frame->setAttribute(ctx, nameObj->asString(ctx), val));
+                                    frame = const_cast<proto::ProtoObject*>(frame->setAttribute(ctx, nameObj, val));
                                 }
                             }
                             it = it->advance(ctx);
@@ -2624,7 +2624,7 @@ const proto::ProtoObject* executeBytecodeRange(
                                 unsigned long key = it->nextKey(ctx);
                                 const proto::ProtoObject* keyObj = reinterpret_cast<const proto::ProtoObject*>(key);
                                 if (keyObj && keyObj->isString(ctx)) {
-                                    const proto::ProtoString* s = keyObj->asString(ctx);
+                                    const proto::ProtoString* s = keyObj;
                                     if (s) {
                                         std::string n;
                                         s->toUTF8String(ctx, n);
@@ -2660,7 +2660,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 const proto::ProtoObject* nameObj = names->getAt(ctx, arg);
                 
                 if (nameObj->isString(ctx)) {
-                    const proto::ProtoString* nameS = nameObj->asString(ctx);
+                    const proto::ProtoString* nameS = nameObj;
                     if (std::getenv("PROTO_ENV_DIAG")) {
                         std::string n; nameS->toUTF8String(ctx, n);
                         fprintf(stderr, "DEBUG: OP_IMPORT_FROM loading %s from mod=%p\n", n.c_str(), (void*)mod);
@@ -2685,14 +2685,14 @@ const proto::ProtoObject* executeBytecodeRange(
                             const proto::ProtoObject* mName = mod->getAttribute(ctx, env->getNameString());
                             if (mName && mName->isString(ctx)) {
                                 std::string mn;
-                                mName->asString(ctx)->toUTF8String(ctx, mn);
+                                mName->toUTF8String(ctx, mn);
                                 msg += " from '" + mn + "'";
                             }
                             // Also check file?
                              const proto::ProtoObject* fileAttr = mod->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__file__"));
                              if (fileAttr && fileAttr->isString(ctx)) {
                                  std::string fn;
-                                 fileAttr->asString(ctx)->toUTF8String(ctx, fn);
+                                 fileAttr->toUTF8String(ctx, fn);
                                  msg += " (" + fn + ")";
                              }
 
@@ -2966,7 +2966,7 @@ const proto::ProtoObject* executeBytecodeRange(
             if (names && frame && static_cast<unsigned long>(arg) < names->getSize(ctx)) {
                 const proto::ProtoObject* nameObj = names->getAt(ctx, arg);
                 if (nameObj && nameObj->isString(ctx)) {
-                    const proto::ProtoString* nameS = nameObj->asString(ctx);
+                    const proto::ProtoString* nameS = nameObj;
                     unsigned long h = nameObj->getHash(ctx);
                     if (std::getenv("PROTO_ENV_DIAG")) {
                     }
@@ -3050,7 +3050,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 stack.pop_back();
                 const proto::ProtoObject* nameObj = names->getAt(ctx, arg);
                 if (nameObj && nameObj->isString(ctx)) {
-                    const proto::ProtoString* nameS = nameObj->asString(ctx);
+                    const proto::ProtoString* nameS = nameObj;
                     unsigned long h = nameObj->getHash(ctx);
                     
                     const proto::ProtoList* worklist = ctx->newList();
@@ -3130,7 +3130,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 const proto::ProtoObject* obj = stack.back();
                 const proto::ProtoObject* nameObj = names->getAt(ctx, arg);
                 if (nameObj->isString(ctx)) {
-                    const proto::ProtoString* attrName = nameObj->asString(ctx);
+                    const proto::ProtoString* attrName = nameObj;
                     std::string attrNameStr;
                     if (std::getenv("PROTO_ENV_DIAG")) {
                         attrName->toUTF8String(ctx, attrNameStr);
@@ -3195,7 +3195,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 // Delay pop
                 const proto::ProtoObject* nameObj = names->getAt(ctx, arg);
                 if (nameObj->isString(ctx)) {
-                    const proto::ProtoString* nameS = nameObj->asString(ctx);
+                    const proto::ProtoString* nameS = nameObj;
                     if (std::getenv("PROTO_ENV_DIAG")) {
                     }
                     proto::ProtoObject* oldObj = const_cast<proto::ProtoObject*>(obj);
@@ -3315,8 +3315,8 @@ const proto::ProtoObject* executeBytecodeRange(
                         if (env->getListPrototype()) newListObj->addParent(ctx, env->getListPrototype());
                         stack.pop_back();
                         stack.back() = newListObj;
-                    } else if (data->asString(ctx)) {
-                        const proto::ProtoString* s = data->asString(ctx);
+                    } else if (data) {
+                        const proto::ProtoString* s = data;
                         long long size = static_cast<long long>(s->getSize(ctx));
                         if (key->isInteger(ctx)) {
                             long long idx = key->asLong(ctx);
@@ -3363,7 +3363,7 @@ const proto::ProtoObject* executeBytecodeRange(
                          const proto::ProtoObject* cls = container->getAttribute(ctx, env ? env->getClassString() : getInternalString(ctx, "__class__"));
                          if (cls) {
                              const proto::ProtoObject* nameAttr = cls->getAttribute(ctx, env ? env->getNameString() : getInternalString(ctx, "__name__"));
-                             if (nameAttr && nameAttr->isString(ctx)) nameAttr->asString(ctx)->toUTF8String(ctx, typeName);
+                             if (nameAttr && nameAttr->isString(ctx)) nameAttr->toUTF8String(ctx, typeName);
                          } else if (container == PROTO_NONE) {
                              typeName = "NoneType";
                          }
@@ -3438,7 +3438,7 @@ const proto::ProtoObject* executeBytecodeRange(
                     // This is ideal for Namespace objects (classes, modules)
                     if (std::getenv("PROTO_ENV_DIAG")) {
                     }
-                    container->setAttribute(ctx, key->asString(ctx), value);
+                    container->setAttribute(ctx, key, value);
                 } else {
                     // Dictionary-like storage in __data__ for non-string keys or explicit collections
                     const proto::ProtoString* dataS = getInternalString(ctx, "__data__");
@@ -3609,7 +3609,7 @@ const proto::ProtoObject* executeBytecodeRange(
                     const proto::ProtoObject* cls = starargs ? starargs->getAttribute(ctx, env->getClassString()) : nullptr;
                     if (cls) {
                         const proto::ProtoObject* nameAttr = cls->getAttribute(ctx, env->getNameString());
-                        if (nameAttr && nameAttr->isString(ctx)) nameAttr->asString(ctx)->toUTF8String(ctx, clsName);
+                        if (nameAttr && nameAttr->isString(ctx)) nameAttr->toUTF8String(ctx, clsName);
                     }
                     repr = PythonEnvironment::reprObject(ctx, starargs);
                 }
@@ -3714,7 +3714,7 @@ const proto::ProtoObject* executeBytecodeRange(
                         fprintf(stderr, "  stack[%d] = %p repr=%s\n", i, (void*)stack[i], env ? env->reprObject(ctx, stack[i]).c_str() : "???");
                     }
                     std::string n = "unknown";
-                    if (name && name->isString(ctx)) name->asString(ctx)->toUTF8String(ctx, n);
+                    if (name && name->isString(ctx)) name->toUTF8String(ctx, n);
                     fprintf(stderr, "DEBUG OP_BUILD_CLASS: building name='%s'\n", n.c_str());
                 }
                 
@@ -3796,9 +3796,9 @@ const proto::ProtoObject* executeBytecodeRange(
                                 }
                                 if (std::getenv("PROTO_ENV_DIAG")) {
                                     std::string bn, bmn, bestn;
-                                    if (base && base->getAttribute(ctx, nameS) && base->getAttribute(ctx, nameS)->isString(ctx)) base->getAttribute(ctx, nameS)->asString(ctx)->toUTF8String(ctx, bn);
-                                    if (baseMeta && baseMeta->getAttribute(ctx, nameS) && baseMeta->getAttribute(ctx, nameS)->isString(ctx)) baseMeta->getAttribute(ctx, nameS)->asString(ctx)->toUTF8String(ctx, bmn);
-                                    if (bestMeta && bestMeta->getAttribute(ctx, nameS) && bestMeta->getAttribute(ctx, nameS)->isString(ctx)) bestMeta->getAttribute(ctx, nameS)->asString(ctx)->toUTF8String(ctx, bestn);
+                                    if (base && base->getAttribute(ctx, nameS) && base->getAttribute(ctx, nameS)->isString(ctx)) base->getAttribute(ctx, nameS)->toUTF8String(ctx, bn);
+                                    if (baseMeta && baseMeta->getAttribute(ctx, nameS) && baseMeta->getAttribute(ctx, nameS)->isString(ctx)) baseMeta->getAttribute(ctx, nameS)->toUTF8String(ctx, bmn);
+                                    if (bestMeta && bestMeta->getAttribute(ctx, nameS) && bestMeta->getAttribute(ctx, nameS)->isString(ctx)) bestMeta->getAttribute(ctx, nameS)->toUTF8String(ctx, bestn);
                                     fprintf(stderr, "DEBUG METACLASS: base %p (%s) baseMeta %p (%s) bestMeta %p (%s) isSub=%d\n", (void*)base, bn.c_str(), (void*)baseMeta, bmn.c_str(), (void*)bestMeta, bestn.c_str(), isSub);
                                 }
                                 if (isSub) {
@@ -3822,7 +3822,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 if (metaclass) {
                     const proto::ProtoObject* mcName = metaclass->getAttribute(ctx, env ? env->getNameString() : getInternalString(ctx, "__name__"));
                     if (mcName && mcName->isString(ctx)) {
-                        std::string mn; mcName->asString(ctx)->toUTF8String(ctx, mn);
+                        std::string mn; mcName->toUTF8String(ctx, mn);
                         if (get_env_diag()) fprintf(stderr, "DEBUG OP_BUILD_CLASS: metaclass name='%s'\n", mn.c_str());
                     }
                 }
@@ -3929,7 +3929,7 @@ const proto::ProtoObject* executeBytecodeRange(
                     if (std::getenv("PROTO_ENV_DIAG")) {
                         std::string tName = "unknown";
                         const proto::ProtoObject* tNameAttr = targetClass->getAttribute(ctx, proto::ProtoString::fromUTF8String(ctx, "__name__"));
-                        if (tNameAttr && tNameAttr->isString(ctx)) tNameAttr->asString(ctx)->toUTF8String(ctx, tName);
+                        if (tNameAttr && tNameAttr->isString(ctx)) tNameAttr->toUTF8String(ctx, tName);
                         fprintf(stderr, "DEBUG: OP_BUILD_CLASS injecting __class__ = %p (name=%s) into ns = %p\n", (void*)targetClass, tName.c_str(), (void*)ns);
                     }
                     if (get_env_diag()) {
@@ -3988,7 +3988,7 @@ const proto::ProtoObject* executeBytecodeRange(
                             const proto::ProtoObject* cls = pendExc ? env->getAttribute(ctx, pendExc, env->getClassString()) : nullptr;
                             const proto::ProtoObject* name = cls ? env->getAttribute(ctx, cls, env->getNameString()) : nullptr;
                             std::string excName = "unknown";
-                            if (name && name->isString(ctx)) name->asString(ctx)->toUTF8String(ctx, excName);
+                            if (name && name->isString(ctx)) name->toUTF8String(ctx, excName);
                             fprintf(stderr, "DEBUG: OP_FOR_ITER falling through on pending exception: %s\n", excName.c_str());
                             fflush(stderr);
                         }
@@ -4118,7 +4118,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 if (names && frame && static_cast<unsigned long>(arg) < names->getSize(ctx)) {
                 const proto::ProtoObject* nameObj = names->getAt(ctx, arg);
                 if (nameObj->isString(ctx)) {
-                    const proto::ProtoString* nameS = nameObj->asString(ctx);
+                    const proto::ProtoString* nameS = nameObj;
                     const proto::ProtoObject* val = frame->getAttribute(ctx, nameS);
                     bool found = (val != nullptr);
                     if (!found) {
@@ -4161,7 +4161,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 if (nameObj->isString(ctx)) {
                     const proto::ProtoObject* globalsObj = PythonEnvironment::getCurrentGlobals();
                     if (!globalsObj) globalsObj = frame;
-                    const proto::ProtoObject* newGlobals = globalsObj->setAttribute(ctx, nameObj->asString(ctx), val);
+                    const proto::ProtoObject* newGlobals = globalsObj->setAttribute(ctx, nameObj, val);
                     PythonEnvironment::setCurrentGlobals(newGlobals);
                     const proto::ProtoString* fg = env ? env->getFGlobalsString() : getInternalString(ctx, "f_globals");
                     frame = const_cast<proto::ProtoObject*>(frame->setAttribute(ctx, fg, newGlobals));
@@ -4411,7 +4411,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 const proto::ProtoObject* nameObj = names->getAt(ctx, arg);
                 if (nameObj && nameObj->isString(ctx)) {
                     const proto::ProtoObject* nil = env ? env->getNonePrototype() : PROTO_NONE;
-                    obj->setAttribute(ctx, nameObj->asString(ctx), nil);
+                    obj->setAttribute(ctx, nameObj, nil);
                 }
             }
         } else if (op == OP_DELETE_SUBSCR) {
@@ -4516,11 +4516,11 @@ const proto::ProtoObject* executeBytecodeRange(
                  if (exc) {
                      const proto::ProtoObject* cls = env ? env->getAttribute(ctx, exc, env->getClassString()) : nullptr;
                      const proto::ProtoObject* name = cls ? env->getAttribute(ctx, cls, env->getNameString()) : nullptr;
-                     if (name && name->isString(ctx)) name->asString(ctx)->toUTF8String(ctx, excName);
+                     if (name && name->isString(ctx)) name->toUTF8String(ctx, excName);
                  }
                  if (type) {
                      const proto::ProtoObject* name = env ? env->getAttribute(ctx, type, env->getNameString()) : nullptr;
-                     if (name && name->isString(ctx)) name->asString(ctx)->toUTF8String(ctx, typeName);
+                     if (name && name->isString(ctx)) name->toUTF8String(ctx, typeName);
                  }
                  // Exception match diagnostic removed
              }

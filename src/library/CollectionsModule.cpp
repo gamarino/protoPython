@@ -135,13 +135,13 @@ static const proto::ProtoObject* py_module_repr(
     const proto::ProtoObject* name = self->getAttribute(context, proto::ProtoString::createSymbol(context, "__name__"));
     std::string s = "<module '";
     if (name && name->isString(context)) {
-        std::string n; name->asString(context)->toUTF8String(context, n);
+        std::string n; name->toUTF8String(context, n);
         s += n;
     } else {
         s += "unknown";
     }
     s += "'>";
-    return context->fromUTF8String(s.c_str());
+    return proto::ProtoString::fromUTF8(context, s.c_str());
 }
 
 static const proto::ProtoObject* py_deque_repr(
@@ -161,7 +161,7 @@ static const proto::ProtoObject* py_deque_repr(
         }
     }
     s += "])";
-    return context->fromUTF8String(s.c_str());
+    return proto::ProtoString::fromUTF8(context, s.c_str());
 }
 
 static const proto::ProtoObject* py_deque_iter(
@@ -379,7 +379,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, protoPython::Pyth
     if (env && env->getTypePrototype()) {
         dequePrototype = dequePrototype->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__class__"), env->getTypePrototype());
     }
-    dequePrototype = dequePrototype->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__name__"), ctx->fromUTF8String("deque"));
+    dequePrototype = dequePrototype->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__name__"), proto::ProtoString::fromUTF8(ctx, "deque"));
     dequePrototype = dequePrototype->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__call__"),
                                                  ctx->fromMethod(nullptr, py_deque_new));
     
@@ -425,7 +425,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, protoPython::Pyth
 
 
     const proto::ProtoObject* deque_iterator = ctx->newObject(false);
-    deque_iterator = deque_iterator->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__name__"), ctx->fromUTF8String("_deque_iterator"));
+    deque_iterator = deque_iterator->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__name__"), proto::ProtoString::fromUTF8(ctx, "_deque_iterator"));
     deque_iterator = deque_iterator->setAttribute(ctx, env->getNextString(),
                                                  ctx->fromMethod(nullptr, py_deque_iterator_next));
     deque_iterator = deque_iterator->setAttribute(ctx, env->getIterString(),
@@ -440,7 +440,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, protoPython::Pyth
     dequePrototype = dequePrototype->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__deque_iterator_proto__"), deque_iterator);
 
     const proto::ProtoObject* deque_reverse_iterator = ctx->newObject(false);
-    deque_reverse_iterator = deque_reverse_iterator->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__name__"), ctx->fromUTF8String("_deque_reverse_iterator"));
+    deque_reverse_iterator = deque_reverse_iterator->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__name__"), proto::ProtoString::fromUTF8(ctx, "_deque_reverse_iterator"));
     deque_reverse_iterator = deque_reverse_iterator->setAttribute(ctx, env->getNextString(),
                                                   ctx->fromMethod(nullptr, py_deque_reverse_iterator_next));
     deque_reverse_iterator = deque_reverse_iterator->setAttribute(ctx, env->getIterString(),
@@ -455,7 +455,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, protoPython::Pyth
                                  ctx->fromMethod(nullptr, py_collections_dummy));
 
     // Set __class__ on the module for better diagnostics
-    module = module->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__name__"), ctx->fromUTF8String("_collections"));
+    module = module->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__name__"), proto::ProtoString::fromUTF8(ctx, "_collections"));
     module = module->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__repr__"), ctx->fromMethod(nullptr, py_module_repr));
 
     return module;

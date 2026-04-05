@@ -52,7 +52,7 @@ static const proto::ProtoObject* imp_is_builtin(
     const proto::ProtoObject* nameArg = args->getAt(ctx, 0);
     if (!nameArg->isString(ctx)) return PROTO_FALSE;
     
-    std::string name; nameArg->asString(ctx)->toUTF8String(ctx, name);
+    std::string name; nameArg->toUTF8String(ctx, name);
     
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     const proto::ProtoObject* sysMods = env->resolve("sys", ctx);
@@ -80,7 +80,7 @@ static const proto::ProtoObject* imp_create_builtin(
     
     std::string name;
     if (nameAttr && nameAttr->isString(ctx)) {
-        nameAttr->asString(ctx)->toUTF8String(ctx, name);
+        nameAttr->toUTF8String(ctx, name);
     }
     
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
@@ -89,7 +89,7 @@ static const proto::ProtoObject* imp_create_builtin(
     if (sysMod && sysMod != PROTO_NONE) {
         const proto::ProtoObject* sysMods = sysMod->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "modules"));
         if (sysMods && sysMods != PROTO_NONE) {
-            const proto::ProtoString* nameStr = nameAttr->isString(ctx) ? nameAttr->asString(ctx) : nullptr;
+            const proto::ProtoString* nameStr = nameAttr->isString(ctx) ? nameAttr : nullptr;
             if (nameStr) {
                 const proto::ProtoObject* existing = sysMods->getAttribute(ctx, nameStr);
                 if (existing && existing != PROTO_NONE) {
@@ -122,7 +122,7 @@ static const proto::ProtoObject* imp_is_frozen(
     const proto::ProtoObject* nameArg = args->getAt(ctx, 0);
     if (!nameArg->isString(ctx)) return PROTO_FALSE;
     
-    std::string name; nameArg->asString(ctx)->toUTF8String(ctx, name);
+    std::string name; nameArg->toUTF8String(ctx, name);
     
     if (name == "_frozen_importlib" || name == "_frozen_importlib_external") {
         return PROTO_TRUE;

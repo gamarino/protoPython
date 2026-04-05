@@ -69,7 +69,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     PythonEnvironment* env = PythonEnvironment::get(ctx);
     const proto::ProtoObject* mod = ctx->newObject(false);
     if (env && env->getObjectPrototype()) mod = mod->addParent(ctx, env->getObjectPrototype());
-    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__name__"), ctx->fromUTF8String("_opcode"));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__name__"), proto::ProtoString::fromUTF8(ctx, "_opcode"));
 
     std::map<std::string, int> opmap_data = {
         {"LOAD_CONST", OP_LOAD_CONST}, {"RETURN_VALUE", OP_RETURN_VALUE},
@@ -157,9 +157,9 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     for (int i = 0; i <= maxOp; ++i) {
         const proto::ProtoObject* nameObj = nullptr;
         if (namesVec[i].empty()) {
-            nameObj = ctx->fromUTF8String(("<" + std::to_string(i) + ">").c_str());
+            nameObj = proto::ProtoString::fromUTF8(ctx, ("<" + std::to_string(i) + ">").c_str());
         } else {
-            nameObj = ctx->fromUTF8String(namesVec[i].c_str());
+            nameObj = proto::ProtoString::fromUTF8(ctx, namesVec[i].c_str());
         }
         if (env && env->getStrPrototype()) nameObj = nameObj->addParent(ctx, env->getStrPrototype());
         opname_list = opname_list->appendLast(ctx, nameObj);
