@@ -3,7 +3,7 @@
 # by abc.py to load everything else at startup.
 
 from _weakref import ref
-from types import GenericAlias
+GenericAlias = type(list[int])
 
 __all__ = ['WeakSet']
 
