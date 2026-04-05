@@ -17,17 +17,17 @@ static const proto::ProtoObject* py_join(
     const proto::ProtoSparseList*) {
     (void)self;
     if (!posArgs || posArgs->getSize(ctx) == 0)
-        return proto::ProtoString::fromUTF8(ctx, "");
+        return proto::ProtoString::fromUTF8(ctx, "")->asObject(ctx);
     std::string out;
     const char* sep = "/";
     if (posArgs->getSize(ctx) == 1) {
         const proto::ProtoObject* iterable = posArgs->getAt(ctx, 0);
         const proto::ProtoObject* iterM = iterable->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__iter__"));
-        if (!iterM || !iterM->asMethod(ctx)) return proto::ProtoString::fromUTF8(ctx, "");
+        if (!iterM || !iterM->asMethod(ctx)) return proto::ProtoString::fromUTF8(ctx, "")->asObject(ctx);
         const proto::ProtoObject* it = iterM->asMethod(ctx)(ctx, iterable, nullptr, ctx->newList(), nullptr);
-        if (!it) return proto::ProtoString::fromUTF8(ctx, "");
+        if (!it) return proto::ProtoString::fromUTF8(ctx, "")->asObject(ctx);
         const proto::ProtoObject* nextM = it->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__next__"));
-        if (!nextM || !nextM->asMethod(ctx)) return proto::ProtoString::fromUTF8(ctx, "");
+        if (!nextM || !nextM->asMethod(ctx)) return proto::ProtoString::fromUTF8(ctx, "")->asObject(ctx);
         bool first = true;
         for (;;) {
             const proto::ProtoObject* part = nextM->asMethod(ctx)(ctx, it, nullptr, ctx->newList(), nullptr);
@@ -51,7 +51,7 @@ static const proto::ProtoObject* py_join(
             }
         }
     }
-    return proto::ProtoString::fromUTF8(ctx, out.c_str());
+    return proto::ProtoString::fromUTF8(ctx, out.c_str())->asObject(ctx);
 }
 
 static const proto::ProtoObject* py_exists(
@@ -126,7 +126,7 @@ static const proto::ProtoObject* py_realpath(
     const proto::ProtoList* posArgs,
     const proto::ProtoSparseList*) {
     (void)self;
-    if (!posArgs || posArgs->getSize(ctx) < 1) return proto::ProtoString::fromUTF8(ctx, "");
+    if (!posArgs || posArgs->getSize(ctx) < 1) return proto::ProtoString::fromUTF8(ctx, "")->asObject(ctx);
     const proto::ProtoObject* path = posArgs->getAt(ctx, 0);
     return path->isString(ctx) ? path : proto::ProtoString::fromUTF8(ctx, "");
 }
@@ -138,7 +138,7 @@ static const proto::ProtoObject* py_normpath(
     const proto::ProtoList* posArgs,
     const proto::ProtoSparseList*) {
     (void)self;
-    if (!posArgs || posArgs->getSize(ctx) < 1) return proto::ProtoString::fromUTF8(ctx, "");
+    if (!posArgs || posArgs->getSize(ctx) < 1) return proto::ProtoString::fromUTF8(ctx, "")->asObject(ctx);
     const proto::ProtoObject* path = posArgs->getAt(ctx, 0);
     return path->isString(ctx) ? path : proto::ProtoString::fromUTF8(ctx, "");
 }

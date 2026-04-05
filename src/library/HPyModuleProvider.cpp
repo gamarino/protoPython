@@ -112,10 +112,10 @@ const proto::ProtoObject* HPyModuleProvider::tryLoad(const std::string& logicalP
     const proto::ProtoString* py_name = proto::ProtoString::createSymbol(ctx, "__name__");
     const proto::ProtoString* py_loader = proto::ProtoString::createSymbol(ctx, "__loader__");
 
-    mod->setAttribute(ctx, py_file, proto::ProtoString::fromUTF8(ctx, foundPath.c_str()));
-    mod->setAttribute(ctx, py_name, proto::ProtoString::fromUTF8(ctx, logicalPath.c_str()));
+    mod->setAttribute(ctx, py_file, proto::ProtoString::fromUTF8(ctx, foundPath.c_str())->asObject(ctx));
+    mod->setAttribute(ctx, py_name, proto::ProtoString::fromUTF8(ctx, logicalPath.c_str())->asObject(ctx));
     // For now, we don't have a specialized loader object, so we just set a string or None
-    mod->setAttribute(ctx, py_loader, proto::ProtoString::fromUTF8(ctx, "HPyModuleProvider"));
+    mod->setAttribute(ctx, py_loader, proto::ProtoString::fromUTF8(ctx, "HPyModuleProvider")->asObject(ctx));
 
     // Step 1300: Refine sys.modules wiring
     // In protoPython, the PythonEnvironment usually manages sys.modules. 

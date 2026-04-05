@@ -28,7 +28,7 @@ static const proto::ProtoObject* py_add(
         std::string sa, sb;
         a->toUTF8String(ctx, sa);
         b->toUTF8String(ctx, sb);
-        return proto::ProtoString::fromUTF8(ctx, (sa + sb).c_str());
+        return proto::ProtoString::fromUTF8(ctx, (sa + sb).c_str())->asObject(ctx);
     }
     if (a->isDouble(ctx) || b->isDouble(ctx))
         return ctx->fromDouble(toDouble(ctx, a) + toDouble(ctx, b));

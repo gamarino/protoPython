@@ -27,7 +27,7 @@ static const proto::ProtoObject* jsonParse(proto::ProtoContext* ctx, const std::
             else t += s[i++];
         }
         if (i < s.size()) ++i;
-        return proto::ProtoString::fromUTF8(ctx, t.c_str());
+        return proto::ProtoString::fromUTF8(ctx, t.c_str())->asObject(ctx)->asObject(ctx);
     }
     if (s[i] == '[') {
         ++i;
@@ -118,7 +118,7 @@ static const proto::ProtoObject* py_loads(
     const proto::ProtoSparseList*) {
     if (posArgs->getSize(ctx) < 1 || !posArgs->getAt(ctx, 0)->isString(ctx)) return PROTO_NONE;
     std::string s;
-    posArgs->getAt(ctx, 0)->toUTF8String(ctx, s);
+    posArgs->getAt(ctx, 0)->asString(ctx)->toUTF8String(ctx, s);
     size_t i = 0;
     return jsonParse(ctx, s, i);
 }
@@ -131,7 +131,7 @@ static void dumpValue(proto::ProtoContext* ctx, std::ostream& out, const proto::
     if (obj->isDouble(ctx)) { out << obj->asDouble(ctx); return; }
     if (obj->isString(ctx)) {
         std::string s;
-        obj->toUTF8String(ctx, s);
+        obj->asString(ctx)->toUTF8String(ctx, s);
         out << '"';
         for (char c : s) {
             if (c == '"' || c == '\\') out << '\\';
@@ -176,10 +176,10 @@ static const proto::ProtoObject* py_dumps(
     const proto::ParentLink*,
     const proto::ProtoList* posArgs,
     const proto::ProtoSparseList*) {
-    if (posArgs->getSize(ctx) < 1) return proto::ProtoString::fromUTF8(ctx, "null");
+    if (posArgs->getSize(ctx) < 1) return proto::ProtoString::fromUTF8(ctx, "null")->asObject(ctx)->asObject(ctx);
     std::ostringstream out;
     dumpValue(ctx, out, posArgs->getAt(ctx, 0));
-    return proto::ProtoString::fromUTF8(ctx, out.str().c_str());
+    return proto::ProtoString::fromUTF8(ctx, out.str().c_str())->asObject(ctx)->asObject(ctx);
 }
 
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {

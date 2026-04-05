@@ -42,7 +42,7 @@ static const proto::ProtoObject* py_path_call(
     const proto::ProtoObject* pathProto = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__path_proto__"));
     if (!pathProto) return PROTO_NONE;
     const proto::ProtoObject* p = pathProto->newChild(ctx, true);
-    p->setAttribute(ctx, path_data_name(ctx), proto::ProtoString::fromUTF8(ctx, path.c_str()));
+    p->setAttribute(ctx, path_data_name(ctx), proto::ProtoString::fromUTF8(ctx, path.c_str())->asObject(ctx));
     return p;
 }
 
@@ -55,7 +55,7 @@ static const proto::ProtoObject* py_path_str(
     const proto::ProtoSparseList*) {
     const proto::ProtoObject* data = self->getAttribute(ctx, path_data_name(ctx));
     if (data && data->isString(ctx)) return data;
-    return proto::ProtoString::fromUTF8(ctx, ".");
+    return proto::ProtoString::fromUTF8(ctx, ".")->asObject(ctx);
 }
 
 static std::string path_from_self(proto::ProtoContext* ctx, const proto::ProtoObject* self) {
@@ -145,13 +145,13 @@ static const proto::ProtoObject* py_path_read_text(
     std::string path = path_from_self(ctx, self);
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
     std::ifstream f(path);
-    if (!f) return proto::ProtoString::fromUTF8(ctx, "");
+    if (!f) return proto::ProtoString::fromUTF8(ctx, "")->asObject(ctx);
     std::ostringstream oss;
     oss << f.rdbuf();
-    return proto::ProtoString::fromUTF8(ctx, oss.str().c_str());
+    return proto::ProtoString::fromUTF8(ctx, oss.str().c_str())->asObject(ctx);
 #else
     (void)path;
-    return proto::ProtoString::fromUTF8(ctx, "");
+    return proto::ProtoString::fromUTF8(ctx, "")->asObject(ctx);
 #endif
 }
 

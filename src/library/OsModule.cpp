@@ -225,7 +225,7 @@ static const proto::ProtoObject* py_getenv(
         // log removed
     }
     const char* val = std::getenv(key.c_str());
-    if (val) return proto::ProtoString::fromUTF8(ctx, val);
+    if (val) return proto::ProtoString::fromUTF8(ctx, val)->asObject(ctx);
     if (posArgs->getSize(ctx) >= 2) return posArgs->getAt(ctx, 1);
     return PROTO_NONE;
 }
@@ -239,9 +239,9 @@ static const proto::ProtoObject* py_getcwd(
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
     char buf[4096];
     if (getcwd(buf, sizeof(buf)))
-        return proto::ProtoString::fromUTF8(ctx, buf);
+        return proto::ProtoString::fromUTF8(ctx, buf)->asObject(ctx);
 #endif
-    return proto::ProtoString::fromUTF8(ctx, ".");
+    return proto::ProtoString::fromUTF8(ctx, ".")->asObject(ctx);
 }
 
 static const proto::ProtoObject* py_chdir(
@@ -711,7 +711,7 @@ static const proto::ProtoObject* py_urandom(
 
     PythonEnvironment* env = PythonEnvironment::get(ctx);
     if (!env || !env->getBytesPrototype()) {
-        return proto::ProtoString::fromUTF8(ctx, buf.c_str());
+        return proto::ProtoString::fromUTF8(ctx, buf.c_str())->asObject(ctx);
     }
     
     const proto::ProtoObject* b = env->getBytesPrototype()->newChild(ctx, true);

@@ -98,7 +98,7 @@ static const proto::ProtoString* getInternalString(proto::ProtoContext* ctx, con
         if (std::strcmp(name, "__matmul__") == 0) return env->getMatMulString();
         if (std::strcmp(name, "__imatmul__") == 0) return env->getIMatMulString();
     }
-    return proto::ProtoString::fromUTF8String(ctx, name);
+    return proto::ProtoString::fromUTF8String(ctx, name)->asObject(ctx);
 }
 
 namespace {
@@ -597,7 +597,7 @@ static const proto::ProtoObject* binaryAdd(proto::ProtoContext* ctx,
         std::string s1, s2;
         a->toUTF8String(ctx, s1);
         b->toUTF8String(ctx, s2);
-        return proto::ProtoString::fromUTF8(ctx, (s1 + s2).c_str());
+        return proto::ProtoString::fromUTF8(ctx, (s1 + s2).c_str())->asObject(ctx);
     }
 
     if (std::getenv("PROTO_ENV_DIAG")) {
@@ -1353,7 +1353,7 @@ const proto::ProtoObject* py_generator_repr(
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    if (!env) return proto::ProtoString::fromUTF8(ctx, "<generator object>");
+    if (!env) return proto::ProtoString::fromUTF8(ctx, "<generator object>")->asObject(ctx);
 
     const proto::ProtoObject* code = self->getAttribute(ctx, env->getGiCodeString());
     std::string name = "<unknown>";
@@ -1364,7 +1364,7 @@ const proto::ProtoObject* py_generator_repr(
     
     char buf[128];
     snprintf(buf, sizeof(buf), "<generator object %s at %p>", name.c_str(), (void*)self);
-    return proto::ProtoString::fromUTF8(ctx, buf);
+    return proto::ProtoString::fromUTF8(ctx, buf)->asObject(ctx);
 }
 
 const proto::ProtoObject* py_generator_next(

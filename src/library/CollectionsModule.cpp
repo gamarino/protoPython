@@ -141,7 +141,7 @@ static const proto::ProtoObject* py_module_repr(
         s += "unknown";
     }
     s += "'>";
-    return proto::ProtoString::fromUTF8(context, s.c_str());
+    return proto::ProtoString::fromUTF8(context, s.c_str())->asObject(context);
 }
 
 static const proto::ProtoObject* py_deque_repr(
@@ -161,7 +161,7 @@ static const proto::ProtoObject* py_deque_repr(
         }
     }
     s += "])";
-    return proto::ProtoString::fromUTF8(context, s.c_str());
+    return proto::ProtoString::fromUTF8(context, s.c_str())->asObject(context);
 }
 
 static const proto::ProtoObject* py_deque_iter(

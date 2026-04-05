@@ -350,7 +350,7 @@ static const proto::ProtoObject* accumulate_add(
         std::string sa, sb;
         left->toUTF8String(ctx, sa);
         right->toUTF8String(ctx, sb);
-        return proto::ProtoString::fromUTF8(ctx, (sa + sb).c_str());
+        return proto::ProtoString::fromUTF8(ctx, (sa + sb).c_str())->asObject(ctx);
     }
     const proto::ProtoObject* addM = left->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__add__"));
     if (addM && addM->asMethod(ctx)) {

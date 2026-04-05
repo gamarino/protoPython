@@ -118,7 +118,7 @@ static const proto::ProtoObject* py_escape(
         }
         escaped += c;
     }
-    return proto::ProtoString::fromUTF8(ctx, escaped.c_str());
+    return proto::ProtoString::fromUTF8(ctx, escaped.c_str())->asObject(ctx);
 }
 
 static const proto::ProtoObject* py_pattern_match(
@@ -239,7 +239,7 @@ static const proto::ProtoObject* py_pattern_sub(
         return strObj;
     }
 
-    return proto::ProtoString::fromUTF8(ctx, res.c_str());
+    return proto::ProtoString::fromUTF8(ctx, res.c_str())->asObject(ctx);
 }
 
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {

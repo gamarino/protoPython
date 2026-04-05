@@ -18,9 +18,9 @@ static const proto::ProtoObject* py_io_read(
     const proto::ProtoList* posArgs,
     const proto::ProtoSparseList*) {
     const proto::ProtoObject* bufObj = self->getAttribute(context, proto::ProtoString::createSymbol(context, "__file_buffer__"));
-    if (!bufObj || !bufObj->asExternalPointer(context)) return proto::ProtoString::fromUTF8(context, "");
+    if (!bufObj || !bufObj->asExternalPointer(context)) return proto::ProtoString::fromUTF8(context, "")->asObject(context);
     std::string* buffer = static_cast<std::string*>(bufObj->asExternalPointer(context)->getPointer(context));
-    if (!buffer) return proto::ProtoString::fromUTF8(context, "");
+    if (!buffer) return proto::ProtoString::fromUTF8(context, "")->asObject(context);
     long long n = -1;
     if (posArgs->getSize(context) > 0 && posArgs->getAt(context, 0)->isInteger(context))
         n = posArgs->getAt(context, 0)->asLong(context);
@@ -34,7 +34,7 @@ static const proto::ProtoObject* py_io_read(
         result = buffer->substr(0, take);
         buffer->erase(0, take);
     }
-    return proto::ProtoString::fromUTF8(context, result.c_str());
+    return proto::ProtoString::fromUTF8(context, result.c_str())->asObject(context);
 }
 
 static const proto::ProtoObject* py_io_write(
@@ -112,7 +112,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     auto add_stub = [&](const char* name) {
         const proto::ProtoString* nameS = proto::ProtoString::createSymbol(ctx, name);
         const proto::ProtoObject* stub = ctx->newObject(false);
-        stub = stub->setAttribute(ctx, py_name_s, proto::ProtoString::fromUTF8(ctx, name));
+        stub = stub->setAttribute(ctx, py_name_s, proto::ProtoString::fromUTF8(ctx, name)->asObject(ctx));
         stub = stub->setAttribute(ctx, py_doc_s, py_empty_doc);
         stub = stub->setAttribute(ctx, py_module_s, py_io_s);
         stub = stub->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "register"),

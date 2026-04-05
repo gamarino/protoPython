@@ -89,7 +89,7 @@ static const proto::ProtoString* getInternalString(proto::ProtoContext* ctx, con
         if (std::strcmp(name, "__set__") == 0) return env->getSetDunderString();
         if (std::strcmp(name, "__delete__") == 0) return env->getDelDunderString();
     }
-    return proto::ProtoString::fromUTF8(ctx, name);
+    return proto::ProtoString::fromUTF8(ctx, name)->asObject(ctx);
 }
 
 static bool isEmbeddedValue(const proto::ProtoObject* obj) {
@@ -226,7 +226,7 @@ static const proto::ProtoObject* py_frame_repr(
     char buf[256];
     snprintf(buf, sizeof(buf), "<frame at %p, file '%s', code %s>", 
              (void*)self, filename.c_str(), name.c_str());
-    return proto::ProtoString::fromUTF8(context, buf);
+    return proto::ProtoString::fromUTF8(context, buf)->asObject(context);
 }
 
 extern const proto::ProtoObject* runUserClassCall(proto::ProtoContext* ctx,
@@ -261,7 +261,7 @@ static const proto::ProtoObject* py_type_repr(
         }
     }
     std::string out = "<class '" + nStr + "'>";
-    return proto::ProtoString::fromUTF8(context, out.c_str());
+    return proto::ProtoString::fromUTF8(context, out.c_str())->asObject(context);
 }
 
 static const proto::ProtoObject* py_mappingproxy_repr(
@@ -272,7 +272,7 @@ static const proto::ProtoObject* py_mappingproxy_repr(
     const proto::ProtoObject* data = self->getAttribute(context, env ? env->getDataString() : proto::ProtoString::fromUTF8(context, "__data__"));
     std::string r = PythonEnvironment::reprObject(context, data ? data : PROTO_NONE);
     std::string out = "mappingproxy(" + r + ")";
-    return proto::ProtoString::fromUTF8(context, out.c_str());
+    return proto::ProtoString::fromUTF8(context, out.c_str())->asObject(context);
 }
 
 static const proto::ProtoObject* py_mappingproxy_getitem(
@@ -438,21 +438,21 @@ static const proto::ProtoObject* py_object_repr(
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
     if (self->isInteger(context)) {
-        return proto::ProtoString::fromUTF8(context, std::to_string(self->asLong(context)).c_str());
+        return proto::ProtoString::fromUTF8(context, std::to_string(self->asLong(context)).c_str())->asObject(context);
     }
     if (self->isDouble(context)) {
-        return proto::ProtoString::fromUTF8(context, std::to_string(self->asDouble(context)).c_str());
+        return proto::ProtoString::fromUTF8(context, std::to_string(self->asDouble(context)).c_str())->asObject(context);
     }
     if (self->isString(context)) {
         std::string s;
         self->toUTF8String(context, s);
-        return proto::ProtoString::fromUTF8(context, ("'" + s + "'").c_str());
+        return proto::ProtoString::fromUTF8(context, ("'" + s + "'").c_str())->asObject(context);
     }
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
-    if (self == PROTO_TRUE) return proto::ProtoString::fromUTF8(context, "True");
-    if (self == PROTO_FALSE) return proto::ProtoString::fromUTF8(context, "False");
+    if (self == PROTO_TRUE) return proto::ProtoString::fromUTF8(context, "True")->asObject(context);
+    if (self == PROTO_FALSE) return proto::ProtoString::fromUTF8(context, "False")->asObject(context);
     if (self == PROTO_NONE || (env && self == env->getNonePrototype())) {
-        return proto::ProtoString::fromUTF8(context, "None");
+        return proto::ProtoString::fromUTF8(context, "None")->asObject(context);
     }
 
     // Basic <object at 0x...> repr
@@ -467,7 +467,7 @@ static const proto::ProtoObject* py_object_repr(
 
     char buffer[128];
     snprintf(buffer, sizeof(buffer), "<%s object at %p>", name.c_str(), (void*)self);
-    return proto::ProtoString::fromUTF8(context, buffer);
+    return proto::ProtoString::fromUTF8(context, buffer)->asObject(context);
 }
 
 static const proto::ProtoObject* py_object_reduce_ex(
@@ -587,7 +587,7 @@ static const proto::ProtoObject* py_float_hex(
     double d = self->asDouble(context);
     char buf[64];
     std::snprintf(buf, sizeof(buf), "%a", d);
-    return proto::ProtoString::fromUTF8(context, buf);
+    return proto::ProtoString::fromUTF8(context, buf)->asObject(context);
 }
 
 static const proto::ProtoObject* py_float_fromhex(
@@ -717,17 +717,17 @@ static const proto::ProtoObject* py_object_str(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
-    if (self == PROTO_NONE) return proto::ProtoString::fromUTF8(context, "None");
+    if (self == PROTO_NONE) return proto::ProtoString::fromUTF8(context, "None")->asObject(context);
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
 
     if (self == PROTO_NONE || (env && self == env->getNonePrototype())) {
-        return proto::ProtoString::fromUTF8(context, "None");
+        return proto::ProtoString::fromUTF8(context, "None")->asObject(context);
     }
     if (self->isString(context)) return self;
-    if (self->isInteger(context)) return proto::ProtoString::fromUTF8(context, std::to_string(self->asLong(context)).c_str());
-    if (self->isDouble(context)) return proto::ProtoString::fromUTF8(context, std::to_string(self->asDouble(context)).c_str());
-    if (self == PROTO_TRUE) return proto::ProtoString::fromUTF8(context, "True");
-    if (self == PROTO_FALSE) return proto::ProtoString::fromUTF8(context, "False");
+    if (self->isInteger(context)) return proto::ProtoString::fromUTF8(context, std::to_string(self->asLong(context)).c_str())->asObject(context);
+    if (self->isDouble(context)) return proto::ProtoString::fromUTF8(context, std::to_string(self->asDouble(context)).c_str())->asObject(context);
+    if (self == PROTO_TRUE) return proto::ProtoString::fromUTF8(context, "True")->asObject(context);
+    if (self == PROTO_FALSE) return proto::ProtoString::fromUTF8(context, "False")->asObject(context);
 
     // Default str(obj) calls repr(obj)
     const proto::ProtoList* args = context->newList()->appendLast(context, self);
@@ -768,7 +768,7 @@ static const proto::ProtoObject* py_str_call(
 static const proto::ProtoObject* py_repr_call(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink* parentLink,
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    if (!posArgs || posArgs->getSize(ctx) == 0) return proto::ProtoString::fromUTF8(ctx, "");
+    if (!posArgs || posArgs->getSize(ctx) == 0) return proto::ProtoString::fromUTF8(ctx, "")->asObject(ctx);
     const proto::ProtoObject* x = posArgs->getAt(ctx, 0);
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     const proto::ProtoObject* cls = env ? env->getType(ctx, x) : x->getAttribute(ctx, getInternalString(ctx, "__class__"));
@@ -1695,7 +1695,7 @@ static const proto::ProtoObject* py_list_repr(
     if (!list && data) {
         if (data->asTuple(context)) list = data->asTuple(context)->asList(context);
     }
-    if (!list) return proto::ProtoString::fromUTF8(context, "[]");
+    if (!list) return proto::ProtoString::fromUTF8(context, "[]")->asObject(context);
 
     unsigned long size = list->getSize(context);
     unsigned long limit = 20;
@@ -1710,7 +1710,7 @@ static const proto::ProtoObject* py_list_repr(
     }
     if (size > limit) out += ", ...";
     out += "]";
-    return proto::ProtoString::fromUTF8(context, out.c_str());
+    return proto::ProtoString::fromUTF8(context, out.c_str())->asObject(context);
 }
 
 static const proto::ProtoObject* py_list_str(
@@ -1742,7 +1742,7 @@ static const proto::ProtoObject* py_tuple_repr(
     const proto::ProtoList* list = tup ? tup->asList(context) : (data && data->asList(context) ? data->asList(context) : nullptr);
     if (!list) {
         if (get_env_diag()) printf("DEBUG: py_tuple_repr NO LIST FOUND -> returning ()\n");
-        return proto::ProtoString::fromUTF8(context, "()");
+        return proto::ProtoString::fromUTF8(context, "()")->asObject(context);
     }
 
     unsigned long size = list->getSize(context);
@@ -1755,7 +1755,7 @@ static const proto::ProtoObject* py_tuple_repr(
     if (size == 1) out += ",";
     if (size > limit) out += ", ...";
     out += ")";
-    return proto::ProtoString::fromUTF8(context, out.c_str());
+    return proto::ProtoString::fromUTF8(context, out.c_str())->asObject(context);
 }
 
 static const proto::ProtoObject* py_tuple_eq(
@@ -2213,11 +2213,11 @@ static const proto::ProtoObject* py_union_type_repr(
     PythonEnvironment* env = PythonEnvironment::get(context);
     const proto::ProtoObject* argsObj = self->getAttribute(context, proto::ProtoString::fromUTF8(context, "__args__"));
     const proto::ProtoList* args = argsObj ? argsObj->asList(context) : nullptr;
-    if (!args || args->getSize(context) < 2) return proto::ProtoString::fromUTF8(context, "UnionType");
+    if (!args || args->getSize(context) < 2) return proto::ProtoString::fromUTF8(context, "UnionType")->asObject(context);
     
     std::string s1 = PythonEnvironment::reprObject(context, args->getAt(context, 0));
     std::string s2 = PythonEnvironment::reprObject(context, args->getAt(context, 1));
-    return proto::ProtoString::fromUTF8(context, (s1 + " | " + s2).c_str());
+    return proto::ProtoString::fromUTF8(context, (s1 + " | " + s2).c_str())->asObject(context);
 }
 
 static const proto::ProtoObject* py_type_or(
@@ -2245,7 +2245,7 @@ static const proto::ProtoObject* py_none_repr(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
-    return proto::ProtoString::fromUTF8(context, "None")->asObject(context);
+    return proto::ProtoString::fromUTF8(context, "None")->asObject(context)->asObject(context);
 }
 
 static const proto::ProtoObject* py_int_bool(
@@ -2275,7 +2275,7 @@ static const proto::ProtoObject* py_bytes_repr(
         return py_type_repr(context, self, parentLink, positionalParameters, keywordParameters);
     }
     const proto::ProtoString* s = bytes_data(context, self);
-    if (!s) return proto::ProtoString::fromUTF8(context, "b''")->asObject(context);
+    if (!s) return proto::ProtoString::fromUTF8(context, "b''")->asObject(context)->asObject(context);
     
     std::string str;
     s->toUTF8String(context, str);
@@ -2301,7 +2301,7 @@ static const proto::ProtoObject* py_bytes_repr(
         }
     }
     res += "'";
-    return proto::ProtoString::fromUTF8(context, res.c_str())->asObject(context);
+    return proto::ProtoString::fromUTF8(context, res.c_str())->asObject(context)->asObject(context);
 }
 
 static const proto::ProtoString* bytes_data(proto::ProtoContext* context, const proto::ProtoObject* self) {
@@ -2879,7 +2879,7 @@ static const proto::ProtoObject* py_set_repr(
         return py_type_repr(context, self, parentLink, positionalParameters, keywordParameters);
     }
     const proto::ProtoSet* s = self->asSet(context);
-    if (!s || s->getSize(context) == 0) return proto::ProtoString::fromUTF8(context, "set()");
+    if (!s || s->getSize(context) == 0) return proto::ProtoString::fromUTF8(context, "set()")->asObject(context);
 
     std::string out = "{";
     const proto::ProtoSetIterator* it = s->getIterator(context);
@@ -2895,7 +2895,7 @@ static const proto::ProtoObject* py_set_repr(
         it = it->advance(context);
     }
     out += "}";
-    return proto::ProtoString::fromUTF8(context, out.c_str());
+    return proto::ProtoString::fromUTF8(context, out.c_str())->asObject(context);
 }
 
 static const proto::ProtoObject* py_set_discard(
@@ -3348,7 +3348,7 @@ static const proto::ProtoObject* py_int_format(
     long long v = self->asLong(context);
     char buf[32];
     snprintf(buf, sizeof(buf), "%lld", v);
-    return proto::ProtoString::fromUTF8(context, buf);
+    return proto::ProtoString::fromUTF8(context, buf)->asObject(context);
 }
 
 static const proto::ProtoString* str_from_self(proto::ProtoContext* context, const proto::ProtoObject* self);
@@ -3745,7 +3745,7 @@ static const proto::ProtoObject* py_bytes_hex(
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
     const proto::ProtoString* s = bytes_data(context, self);
-    if (!s) return proto::ProtoString::fromUTF8(context, "");
+    if (!s) return proto::ProtoString::fromUTF8(context, "")->asObject(context);
     std::string raw;
     s->toUTF8String(context, raw);
     static const char hex[] = "0123456789abcdef";
@@ -3755,7 +3755,7 @@ static const proto::ProtoObject* py_bytes_hex(
         out += hex[c >> 4];
         out += hex[c & 0x0f];
     }
-    return proto::ProtoString::fromUTF8(context, out.c_str());
+    return proto::ProtoString::fromUTF8(context, out.c_str())->asObject(context);
 }
 
 static const proto::ProtoObject* py_bytes_fromhex(
@@ -4475,7 +4475,7 @@ static const proto::ProtoObject* py_str_getitem(
         for (long long i = sb.start; (sb.step > 0 ? i < sb.stop : i > sb.stop); i += sb.step) {
             sub += s[static_cast<size_t>(i)];
         }
-        return proto::ProtoString::fromUTF8(context, sub.c_str());
+        return proto::ProtoString::fromUTF8(context, sub.c_str())->asObject(context);
     }
 
     if (indexObj->isInteger(context)) {
@@ -4487,7 +4487,7 @@ static const proto::ProtoObject* py_str_getitem(
             return PROTO_NONE;
         }
         char c[2] = { s[static_cast<size_t>(idx)], '\0' };
-        return proto::ProtoString::fromUTF8(context, c);
+        return proto::ProtoString::fromUTF8(context, c)->asObject(context);
     }
     
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
@@ -4543,7 +4543,7 @@ static const proto::ProtoObject* py_slice_repr(
     if (step && step != PROTO_NONE && (!step->isInteger(context) || step->asLong(context) != 1))
         out += ", " + (step->isInteger(context) ? std::to_string(step->asLong(context)) : "None");
     out += ")";
-    return proto::ProtoString::fromUTF8(context, out.c_str());
+    return proto::ProtoString::fromUTF8(context, out.c_str())->asObject(context);
 }
 
 static const proto::ProtoObject* py_str_upper(
@@ -4559,7 +4559,7 @@ static const proto::ProtoObject* py_str_upper(
     for (char& c : s) {
         if (c >= 'a' && c <= 'z') c -= 32;
     }
-    return proto::ProtoString::fromUTF8(context, s.c_str());
+    return proto::ProtoString::fromUTF8(context, s.c_str())->asObject(context);
 }
 
 static const proto::ProtoObject* py_str_format(
@@ -4592,7 +4592,7 @@ static const proto::ProtoObject* py_str_format(
             out += tpl[i];
         }
     }
-    return proto::ProtoString::fromUTF8(context, out.c_str());
+    return proto::ProtoString::fromUTF8(context, out.c_str())->asObject(context);
 }
 
 static const proto::ProtoObject* py_str_lower(
@@ -4608,7 +4608,7 @@ static const proto::ProtoObject* py_str_lower(
     for (char& c : s) {
         if (c >= 'A' && c <= 'Z') c += 32;
     }
-    return proto::ProtoString::fromUTF8(context, s.c_str());
+    return proto::ProtoString::fromUTF8(context, s.c_str())->asObject(context);
 }
 
 static const proto::ProtoObject* py_str_split(
@@ -4786,7 +4786,7 @@ static const proto::ProtoObject* py_str_strip(
     while (start < s.size() && char_in_chars(static_cast<unsigned char>(s[start]), chars)) start++;
     size_t end = s.size();
     while (end > start && char_in_chars(static_cast<unsigned char>(s[end - 1]), chars)) end--;
-    return proto::ProtoString::fromUTF8(context, s.substr(start, end - start).c_str());
+    return proto::ProtoString::fromUTF8(context, s.substr(start, end - start).c_str())->asObject(context);
 }
 
 
@@ -4804,7 +4804,7 @@ static const proto::ProtoObject* py_str_lstrip(
         posArgs->getAt(context, 0)->toUTF8String(context, chars);
     size_t start = 0;
     while (start < s.size() && char_in_chars(static_cast<unsigned char>(s[start]), chars)) start++;
-    return proto::ProtoString::fromUTF8(context, s.substr(start).c_str());
+    return proto::ProtoString::fromUTF8(context, s.substr(start).c_str())->asObject(context);
 }
 
 static const proto::ProtoObject* py_str_rstrip(
@@ -4820,7 +4820,7 @@ static const proto::ProtoObject* py_str_rstrip(
         posArgs->getAt(context, 0)->toUTF8String(context, chars);
     size_t end = s.size();
     while (end > 0 && char_in_chars(static_cast<unsigned char>(s[end - 1]), chars)) end--;
-    return proto::ProtoString::fromUTF8(context, s.substr(0, end).c_str());
+    return proto::ProtoString::fromUTF8(context, s.substr(0, end).c_str())->asObject(context);
 }
 
 static const proto::ProtoObject* py_str_removeprefix(
@@ -4835,8 +4835,8 @@ static const proto::ProtoObject* py_str_removeprefix(
     if (posArgs->getAt(context, 0)->isString(context))
         posArgs->getAt(context, 0)->toUTF8String(context, prefix);
     if (prefix.size() <= s.size() && s.compare(0, prefix.size(), prefix) == 0)
-        return proto::ProtoString::fromUTF8(context, s.substr(prefix.size()).c_str());
-    return proto::ProtoString::fromUTF8(context, s.c_str());
+        return proto::ProtoString::fromUTF8(context, s.substr(prefix.size()).c_str())->asObject(context);
+    return proto::ProtoString::fromUTF8(context, s.c_str())->asObject(context);
 }
 
 static const proto::ProtoObject* py_str_removesuffix(
@@ -4851,8 +4851,8 @@ static const proto::ProtoObject* py_str_removesuffix(
     if (posArgs->getAt(context, 0)->isString(context))
         posArgs->getAt(context, 0)->toUTF8String(context, suffix);
     if (suffix.size() <= s.size() && s.compare(s.size() - suffix.size(), suffix.size(), suffix) == 0)
-        return proto::ProtoString::fromUTF8(context, s.substr(0, s.size() - suffix.size()).c_str());
-    return proto::ProtoString::fromUTF8(context, s.c_str());
+        return proto::ProtoString::fromUTF8(context, s.substr(0, s.size() - suffix.size()).c_str())->asObject(context);
+    return proto::ProtoString::fromUTF8(context, s.c_str())->asObject(context);
 }
 
 static const proto::ProtoObject* py_str_startswith(
@@ -5007,7 +5007,7 @@ static const proto::ProtoObject* py_str_replace(
             replaced++;
         }
         if (count < 0 || replaced < count) result += newStr;
-        return proto::ProtoString::fromUTF8(context, result.c_str());
+        return proto::ProtoString::fromUTF8(context, result.c_str())->asObject(context);
     }
 
     size_t pos = 0;
@@ -5026,7 +5026,7 @@ static const proto::ProtoObject* py_str_replace(
     }
     if (pos < s.size())
         result += s.substr(pos);
-    return proto::ProtoString::fromUTF8(context, result.c_str());
+    return proto::ProtoString::fromUTF8(context, result.c_str())->asObject(context);
 }
 
 static const proto::ProtoObject* py_str_capitalize(
@@ -5037,12 +5037,12 @@ static const proto::ProtoObject* py_str_capitalize(
     if (!str) return PROTO_NONE;
     std::string s;
     str->toUTF8String(context, s);
-    if (s.empty()) return proto::ProtoString::fromUTF8(context, "");
+    if (s.empty()) return proto::ProtoString::fromUTF8(context, "")->asObject(context);
     std::string r;
     r += static_cast<char>(std::toupper(static_cast<unsigned char>(s[0])));
     for (size_t i = 1; i < s.size(); ++i)
         r += static_cast<char>(std::tolower(static_cast<unsigned char>(s[i])));
-    return proto::ProtoString::fromUTF8(context, r.c_str());
+    return proto::ProtoString::fromUTF8(context, r.c_str())->asObject(context);
 }
 
 static const proto::ProtoObject* py_str_title(
@@ -5064,7 +5064,7 @@ static const proto::ProtoObject* py_str_title(
             after_boundary = true;
         }
     }
-    return proto::ProtoString::fromUTF8(context, r.c_str());
+    return proto::ProtoString::fromUTF8(context, r.c_str())->asObject(context);
 }
 
 static const proto::ProtoObject* py_str_swapcase(
@@ -5081,7 +5081,7 @@ static const proto::ProtoObject* py_str_swapcase(
         else if (std::islower(c)) r += static_cast<char>(std::toupper(c));
         else r += static_cast<char>(c);
     }
-    return proto::ProtoString::fromUTF8(context, r.c_str());
+    return proto::ProtoString::fromUTF8(context, r.c_str())->asObject(context);
 }
 
 static const proto::ProtoObject* py_str_casefold(
@@ -5095,7 +5095,7 @@ static const proto::ProtoObject* py_str_casefold(
     std::string r;
     for (unsigned char c : s)
         r += static_cast<char>(std::tolower(c));
-    return proto::ProtoString::fromUTF8(context, r.c_str());
+    return proto::ProtoString::fromUTF8(context, r.c_str())->asObject(context);
 }
 
 static const proto::ProtoObject* py_str_isalpha(
@@ -5270,13 +5270,13 @@ static const proto::ProtoObject* py_str_center(
         posArgs->getAt(context, 1)->toUTF8String(context, fc);
         if (!fc.empty()) fillchar = fc[0];
     }
-    if (width <= static_cast<int>(s.size())) return proto::ProtoString::fromUTF8(context, s.c_str());
+    if (width <= static_cast<int>(s.size())) return proto::ProtoString::fromUTF8(context, s.c_str())->asObject(context);
     int pad = width - static_cast<int>(s.size());
     int left = pad / 2, right = pad - left;
     std::string result(left, fillchar);
     result += s;
     result.append(right, fillchar);
-    return proto::ProtoString::fromUTF8(context, result.c_str());
+    return proto::ProtoString::fromUTF8(context, result.c_str())->asObject(context);
 }
 
 static const proto::ProtoObject* py_str_ljust(
@@ -5294,9 +5294,9 @@ static const proto::ProtoObject* py_str_ljust(
         posArgs->getAt(context, 1)->toUTF8String(context, fc);
         if (!fc.empty()) fillchar = fc[0];
     }
-    if (width <= static_cast<int>(s.size())) return proto::ProtoString::fromUTF8(context, s.c_str());
+    if (width <= static_cast<int>(s.size())) return proto::ProtoString::fromUTF8(context, s.c_str())->asObject(context);
     s.append(width - static_cast<int>(s.size()), fillchar);
-    return proto::ProtoString::fromUTF8(context, s.c_str());
+    return proto::ProtoString::fromUTF8(context, s.c_str())->asObject(context);
 }
 
 static const proto::ProtoObject* py_str_rjust(
@@ -5314,10 +5314,10 @@ static const proto::ProtoObject* py_str_rjust(
         posArgs->getAt(context, 1)->toUTF8String(context, fc);
         if (!fc.empty()) fillchar = fc[0];
     }
-    if (width <= static_cast<int>(s.size())) return proto::ProtoString::fromUTF8(context, s.c_str());
+    if (width <= static_cast<int>(s.size())) return proto::ProtoString::fromUTF8(context, s.c_str())->asObject(context);
     std::string result(width - static_cast<int>(s.size()), fillchar);
     result += s;
-    return proto::ProtoString::fromUTF8(context, result.c_str());
+    return proto::ProtoString::fromUTF8(context, result.c_str())->asObject(context);
 }
 
 static const proto::ProtoObject* py_str_expandtabs(
@@ -5345,7 +5345,7 @@ static const proto::ProtoObject* py_str_expandtabs(
             else col++;
         }
     }
-    return proto::ProtoString::fromUTF8(context, result.c_str());
+    return proto::ProtoString::fromUTF8(context, result.c_str())->asObject(context);
 }
 
 static const proto::ProtoObject* py_str_zfill(
@@ -5357,13 +5357,13 @@ static const proto::ProtoObject* py_str_zfill(
     std::string s;
     str->toUTF8String(context, s);
     int width = static_cast<int>(posArgs->getAt(context, 0)->asLong(context));
-    if (width <= static_cast<int>(s.size())) return proto::ProtoString::fromUTF8(context, s.c_str());
+    if (width <= static_cast<int>(s.size())) return proto::ProtoString::fromUTF8(context, s.c_str())->asObject(context);
     size_t sign = 0;
     if (!s.empty() && (s[0] == '+' || s[0] == '-')) sign = 1;
     std::string result(sign, s[0]);
     result.append(width - static_cast<int>(s.size()), '0');
     result += s.substr(sign);
-    return proto::ProtoString::fromUTF8(context, result.c_str());
+    return proto::ProtoString::fromUTF8(context, result.c_str())->asObject(context);
 }
 
 static const proto::ProtoObject* py_str_partition(
@@ -5448,12 +5448,12 @@ static const proto::ProtoObject* py_str_join(
     }
     const proto::ProtoObject* it = iterM->asMethod(context)(context, iterable, nullptr, context->newList(), nullptr);
     if (!it || it == PROTO_NONE) {
-        return proto::ProtoString::fromUTF8(context, "");
+        return proto::ProtoString::fromUTF8(context, "")->asObject(context);
     }
     const proto::ProtoString* nextS = getInternalString(context, "__next__");
     const proto::ProtoObject* nextM = it->getAttribute(context, nextS);
     if (!nextM || !nextM->asMethod(context)) {
-        return proto::ProtoString::fromUTF8(context, "");
+        return proto::ProtoString::fromUTF8(context, "")->asObject(context);
     }
     auto nextFn = nextM->asMethod(context);
     std::string out;
@@ -5491,7 +5491,7 @@ static const proto::ProtoObject* py_str_join(
         partObj->toUTF8String(context, part);
         out += part;
     }
-    return proto::ProtoString::fromUTF8(context, out.c_str());
+    return proto::ProtoString::fromUTF8(context, out.c_str())->asObject(context);
 }
 
 static const proto::ProtoObject* py_dict_repr(
@@ -5511,7 +5511,7 @@ static const proto::ProtoObject* py_dict_repr(
     const proto::ProtoString* dataName = getInternalString(context, "__data__");
     const proto::ProtoObject* data = self->getAttribute(context, dataName);
     const proto::ProtoSparseList* dict = data && data->asSparseList(context) ? data->asSparseList(context) : nullptr;
-    if (!dict) return proto::ProtoString::fromUTF8(context, "{}");
+    if (!dict) return proto::ProtoString::fromUTF8(context, "{}")->asObject(context);
 
     unsigned long size = keys->getSize(context);
     unsigned long limit = 20;
@@ -5526,7 +5526,7 @@ static const proto::ProtoObject* py_dict_repr(
     }
     if (size > limit) out += ", ...";
     out += "}";
-    return proto::ProtoString::fromUTF8(context, out.c_str());
+    return proto::ProtoString::fromUTF8(context, out.c_str())->asObject(context);
 }
 
 static const proto::ProtoObject* py_dict_str(
@@ -7464,7 +7464,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
 
     const proto::ProtoObject* listIterProto = objectPrototype->newChild(rootContext_, true);
     listIterProto = listIterProto->setAttribute(rootContext_, py_class, typePrototype);
-    listIterProto = listIterProto->setAttribute(rootContext_, py_name, proto::ProtoString::fromUTF8(rootContext_, "list_iterator")->asObject(rootContext_));
+    listIterProto = listIterProto->setAttribute(rootContext_, py_name, proto::ProtoString::fromUTF8(rootContext_, "list_iterator")->asObject(rootContext_)->asObject(rootContext_));
     listIterProto = listIterProto->setAttribute(rootContext_, py_next, rootContext_->fromMethod(nullptr, py_list_iter_next));
     listIterProto = listIterProto->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_self_iter));
     listPrototype = listPrototype->setAttribute(rootContext_, py_iter_proto, listIterProto);
@@ -7472,7 +7472,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG PROTOS: Setting strIterProto on strPrototype=%p\n", (void*)strPrototype);
     const proto::ProtoObject* strIterProto = objectPrototype->newChild(rootContext_, true);
     strIterProto = strIterProto->setAttribute(rootContext_, py_class, typePrototype);
-    strIterProto = strIterProto->setAttribute(rootContext_, py_name, proto::ProtoString::fromUTF8(rootContext_, "str_iterator")->asObject(rootContext_));
+    strIterProto = strIterProto->setAttribute(rootContext_, py_name, proto::ProtoString::fromUTF8(rootContext_, "str_iterator")->asObject(rootContext_)->asObject(rootContext_));
     strIterProto = strIterProto->setAttribute(rootContext_, py_next, rootContext_->fromMethod(nullptr, py_str_iter_next));
     strIterProto = strIterProto->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_self_iter));
     strPrototype = strPrototype->setAttribute(rootContext_, py_iter_proto, strIterProto);
@@ -7481,7 +7481,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     strPrototype = strPrototype->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_list_iter));
     const proto::ProtoObject* listReverseIterProto = objectPrototype->newChild(rootContext_, true);
     listReverseIterProto = listReverseIterProto->setAttribute(rootContext_, py_class, typePrototype);
-    listReverseIterProto = listReverseIterProto->setAttribute(rootContext_, py_name, proto::ProtoString::fromUTF8(rootContext_, "list_reverseiterator")->asObject(rootContext_));
+    listReverseIterProto = listReverseIterProto->setAttribute(rootContext_, py_name, proto::ProtoString::fromUTF8(rootContext_, "list_reverseiterator")->asObject(rootContext_)->asObject(rootContext_));
     listReverseIterProto = listReverseIterProto->setAttribute(rootContext_, py_next, rootContext_->fromMethod(nullptr, py_list_reversed_next));
     listReverseIterProto = listReverseIterProto->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_self_iter));
     listPrototype = listPrototype->setAttribute(rootContext_, proto::ProtoString::fromUTF8(rootContext_, "__reversed_prototype__"), listReverseIterProto);
@@ -7503,7 +7503,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     
     const proto::ProtoObject* dictIterProto = objectPrototype->newChild(rootContext_, true);
     dictIterProto = dictIterProto->setAttribute(rootContext_, py_class, typePrototype);
-    dictIterProto = dictIterProto->setAttribute(rootContext_, py_name, proto::ProtoString::fromUTF8(rootContext_, "dict_keyiterator")->asObject(rootContext_));
+    dictIterProto = dictIterProto->setAttribute(rootContext_, py_name, proto::ProtoString::fromUTF8(rootContext_, "dict_keyiterator")->asObject(rootContext_)->asObject(rootContext_));
     dictIterProto = dictIterProto->setAttribute(rootContext_, py_next, rootContext_->fromMethod(nullptr, py_list_iter_next));
     dictIterProto = dictIterProto->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_self_iter));
     dictPrototype = dictPrototype->setAttribute(rootContext_, py_iter_proto, dictIterProto);
@@ -7564,7 +7564,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
 
     const proto::ProtoObject* tupleIterProto = objectPrototype->newChild(rootContext_, true);
     tupleIterProto = tupleIterProto->setAttribute(rootContext_, py_class, typePrototype);
-    tupleIterProto = tupleIterProto->setAttribute(rootContext_, py_name, proto::ProtoString::fromUTF8(rootContext_, "tuple_iterator")->asObject(rootContext_));
+    tupleIterProto = tupleIterProto->setAttribute(rootContext_, py_name, proto::ProtoString::fromUTF8(rootContext_, "tuple_iterator")->asObject(rootContext_)->asObject(rootContext_));
     tupleIterProto = tupleIterProto->setAttribute(rootContext_, py_next, rootContext_->fromMethod(nullptr, py_tuple_iter_next));
     tupleIterProto = tupleIterProto->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_self_iter));
     tuplePrototype = tuplePrototype->setAttribute(rootContext_, py_iter_proto, tupleIterProto);
@@ -7607,7 +7607,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
 
     const proto::ProtoObject* setIterProto = objectPrototype->newChild(rootContext_, true);
     setIterProto = setIterProto->setAttribute(rootContext_, py_class, typePrototype);
-    setIterProto = setIterProto->setAttribute(rootContext_, py_name, proto::ProtoString::fromUTF8(rootContext_, "set_iterator")->asObject(rootContext_));
+    setIterProto = setIterProto->setAttribute(rootContext_, py_name, proto::ProtoString::fromUTF8(rootContext_, "set_iterator")->asObject(rootContext_)->asObject(rootContext_));
     setIterProto = setIterProto->setAttribute(rootContext_, py_next, rootContext_->fromMethod(nullptr, py_set_iter_next));
     setIterProto = setIterProto->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_self_iter));
     setPrototype = setPrototype->setAttribute(rootContext_, py_iter_proto, setIterProto);
@@ -7635,7 +7635,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
 
     const proto::ProtoObject* bytesIterProto = objectPrototype->newChild(rootContext_, true);
     bytesIterProto = bytesIterProto->setAttribute(rootContext_, py_class, typePrototype);
-    bytesIterProto = bytesIterProto->setAttribute(rootContext_, py_name, proto::ProtoString::fromUTF8(rootContext_, "bytes_iterator")->asObject(rootContext_));
+    bytesIterProto = bytesIterProto->setAttribute(rootContext_, py_name, proto::ProtoString::fromUTF8(rootContext_, "bytes_iterator")->asObject(rootContext_)->asObject(rootContext_));
     bytesIterProto = bytesIterProto->setAttribute(rootContext_, py_next, rootContext_->fromMethod(nullptr, py_bytes_iter_next));
     bytesIterProto = bytesIterProto->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_self_iter));
     bytesPrototype = bytesPrototype->setAttribute(rootContext_, py_iter_proto, bytesIterProto);
@@ -8389,12 +8389,12 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain,
     const proto::ProtoString* nameKey = getInternalString(ctx, "__name__");
     const proto::ProtoString* pkgKey = getInternalString(ctx, "__package__");
     if (asMain) {
-        mutableModObj->setAttribute(ctx, nameKey, proto::ProtoString::fromUTF8(ctx, "__main__"));
+        mutableModObj->setAttribute(ctx, nameKey, proto::ProtoString::fromUTF8(ctx, "__main__")->asObject(ctx));
     } else {
-        mutableModObj->setAttribute(ctx, nameKey, proto::ProtoString::fromUTF8(ctx, moduleName.c_str()));
+        mutableModObj->setAttribute(ctx, nameKey, proto::ProtoString::fromUTF8(ctx, moduleName.c_str())->asObject(ctx));
         size_t lastDot = moduleName.find_last_of('.');
         if (lastDot != std::string::npos) {
-            mutableModObj->setAttribute(ctx, pkgKey, proto::ProtoString::fromUTF8(ctx, moduleName.substr(0, lastDot).c_str()));
+            mutableModObj->setAttribute(ctx, pkgKey, proto::ProtoString::fromUTF8(ctx, moduleName.substr(0, lastDot).c_str())->asObject(ctx));
         } else {
             mutableModObj->setAttribute(ctx, pkgKey, PROTO_NONE);
         }
@@ -8416,8 +8416,8 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain,
             unsigned long key = it->nextKey(ctx);
             const proto::ProtoObject* kObj = reinterpret_cast<const proto::ProtoObject*>(key);
             if (kObj && kObj->isString(ctx)) {
-                const proto::ProtoString* sKey = kObj;
                 // Don't overwrite if we already set it (like __name__)
+                const proto::ProtoString* sKey = kObj->asString(ctx);
                 if (mutableModObj->getAttribute(ctx, sKey) == PROTO_NONE) {
                     mutableModObj->setAttribute(ctx, sKey, mod->getAttribute(ctx, sKey));
                 }
@@ -10058,7 +10058,7 @@ const proto::ProtoObject* PythonEnvironment::buildString(const proto::ProtoObjec
             }
         }
     }
-    return proto::ProtoString::fromUTF8(ctx, result.c_str())->asObject(ctx);
+    return proto::ProtoString::fromUTF8(ctx, result.c_str())->asObject(ctx)->asObject(ctx);
 }
 
 void PythonEnvironment::storeName(const std::string& name, const proto::ProtoObject* val) {
@@ -10173,7 +10173,7 @@ static const proto::ProtoObject* buildTraceback(proto::ProtoContext* ctx, const 
 const proto::ProtoString* PythonEnvironment::getInternedString(proto::ProtoContext* ctx, const std::string& str) {
     PythonEnvironment* env = fromContext(ctx);
     if (!env) {
-        return proto::ProtoString::fromUTF8(ctx, str.c_str());
+        return proto::ProtoString::fromUTF8(ctx, str.c_str())->asObject(ctx);
     }
     std::lock_guard<std::mutex> lock(env->internMutex_);
     auto it = env->internPool_.find(str);

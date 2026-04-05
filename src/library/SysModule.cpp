@@ -179,7 +179,7 @@ static const proto::ProtoObject* sys_getfilesystemencoding(
     (void)parentLink;
     (void)positionalParameters;
     (void)keywordParameters;
-    return proto::ProtoString::fromUTF8(context, "utf-8");
+    return proto::ProtoString::fromUTF8(context, "utf-8")->asObject(context);
 }
 
 static const proto::ProtoObject* sys_getfilesystemencodeerrors(
@@ -192,7 +192,7 @@ static const proto::ProtoObject* sys_getfilesystemencodeerrors(
     (void)parentLink;
     (void)positionalParameters;
     (void)keywordParameters;
-    return proto::ProtoString::fromUTF8(context, "surrogateescape");
+    return proto::ProtoString::fromUTF8(context, "surrogateescape")->asObject(context);
 }
 
 static const proto::ProtoObject* sys_get_cpu_count_config(
