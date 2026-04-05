@@ -23,6 +23,29 @@ static const proto::ProtoObject* py_collections_dummy(
     return self->newChild(ctx, true);
 }
 
+static const proto::ProtoObject* py_tuple_getter_get(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (!posArgs || posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    const proto::ProtoObject* instance = posArgs->getAt(ctx, 0);
+    const proto::ProtoObject* indexObj = self->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__index__"));
+    if (instance && indexObj) {
+        const proto::ProtoTuple* tup = instance->asTuple(ctx);
+        long long index = indexObj->asLong(ctx);
+        if (tup && index >= 0 && (size_t)index < tup->getSize(ctx)) {
+            return tup->getAt(ctx, (size_t)index);
+        }
+    }
+    return PROTO_NONE;
+}
+
+static const proto::ProtoObject* py_tuplegetter(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (!posArgs || posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    const proto::ProtoObject* index = posArgs->getAt(ctx, 0);
+    const proto::ProtoObject* descriptor = ctx->newObject(false);
+    descriptor = descriptor->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__index__"), index);
+    descriptor = descriptor->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__get__"), ctx->fromMethod(const_cast<proto::ProtoObject*>(descriptor), py_tuple_getter_get));
+    return descriptor;
+}
+
 static void deque_finalizer(void* ptr) {
     delete static_cast<DequeState*>(ptr);
 }
@@ -141,7 +164,7 @@ static const proto::ProtoObject* py_module_repr(
         s += "unknown";
     }
     s += "'>";
-    return proto::ProtoString::fromUTF8(context, s.c_str())->asObject(context);
+    return PythonEnvironment::getInternedString(context, s.c_str())->asObject(context);
 }
 
 static const proto::ProtoObject* py_deque_repr(
@@ -161,7 +184,7 @@ static const proto::ProtoObject* py_deque_repr(
         }
     }
     s += "])";
-    return proto::ProtoString::fromUTF8(context, s.c_str())->asObject(context);
+    return PythonEnvironment::getInternedString(context, s.c_str())->asObject(context);
 }
 
 static const proto::ProtoObject* py_deque_iter(
@@ -379,7 +402,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, protoPython::Pyth
     if (env && env->getTypePrototype()) {
         dequePrototype = dequePrototype->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__class__"), env->getTypePrototype());
     }
-    dequePrototype = dequePrototype->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__name__"), proto::ProtoString::fromUTF8(ctx, "deque")->asObject(ctx));
+    dequePrototype = dequePrototype->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__name__"), PythonEnvironment::getInternedString(ctx, "deque")->asObject(ctx));
     dequePrototype = dequePrototype->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__call__"),
                                                  ctx->fromMethod(nullptr, py_deque_new));
     
@@ -404,6 +427,9 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, protoPython::Pyth
 
     module = module->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "deque"), dequePrototype);
 
+    // native _tuplegetter for namedtuple
+    module = module->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_tuplegetter"), ctx->fromMethod(nullptr, py_tuplegetter));
+
     const proto::ProtoString* py_getitem = proto::ProtoString::createSymbol(ctx, "__getitem__");
     const proto::ProtoObject* defaultdictPrototype = env && env->getDictPrototype() ? env->getDictPrototype()->newChild(ctx, true) : ctx->newObject(false);
     if (env && env->getTypePrototype()) {
@@ -425,7 +451,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, protoPython::Pyth
 
 
     const proto::ProtoObject* deque_iterator = ctx->newObject(false);
-    deque_iterator = deque_iterator->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__name__"), proto::ProtoString::fromUTF8(ctx, "_deque_iterator")->asObject(ctx));
+    deque_iterator = deque_iterator->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__name__"), PythonEnvironment::getInternedString(ctx, "_deque_iterator")->asObject(ctx));
     deque_iterator = deque_iterator->setAttribute(ctx, env->getNextString(),
                                                  ctx->fromMethod(nullptr, py_deque_iterator_next));
     deque_iterator = deque_iterator->setAttribute(ctx, env->getIterString(),
@@ -440,7 +466,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, protoPython::Pyth
     dequePrototype = dequePrototype->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__deque_iterator_proto__"), deque_iterator);
 
     const proto::ProtoObject* deque_reverse_iterator = ctx->newObject(false);
-    deque_reverse_iterator = deque_reverse_iterator->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__name__"), proto::ProtoString::fromUTF8(ctx, "_deque_reverse_iterator")->asObject(ctx));
+    deque_reverse_iterator = deque_reverse_iterator->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__name__"), PythonEnvironment::getInternedString(ctx, "_deque_reverse_iterator")->asObject(ctx));
     deque_reverse_iterator = deque_reverse_iterator->setAttribute(ctx, env->getNextString(),
                                                   ctx->fromMethod(nullptr, py_deque_reverse_iterator_next));
     deque_reverse_iterator = deque_reverse_iterator->setAttribute(ctx, env->getIterString(),
@@ -455,7 +481,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, protoPython::Pyth
                                  ctx->fromMethod(nullptr, py_collections_dummy));
 
     // Set __class__ on the module for better diagnostics
-    module = module->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__name__"), proto::ProtoString::fromUTF8(ctx, "_collections")->asObject(ctx));
+    module = module->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__name__"), PythonEnvironment::getInternedString(ctx, "_collections")->asObject(ctx));
     module = module->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__repr__"), ctx->fromMethod(nullptr, py_module_repr));
 
     return module;

@@ -20,16 +20,10 @@ only use functions that are defined by all platforms (e.g., unlink
 and opendir), and leave all pathname manipulation to os.path
 (e.g., split and join).
 """
-
-#'
-import abc
-pass
 import sys
-pass
 import stat as st
 
 from _collections_abc import _check_methods
-pass
 
 GenericAlias = type(list[int])
 
