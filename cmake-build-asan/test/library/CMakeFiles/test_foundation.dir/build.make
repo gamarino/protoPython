@@ -94,7 +94,7 @@ test/library/test_foundation: test/library/CMakeFiles/test_foundation.dir/TestFo
 test/library/test_foundation: test/library/CMakeFiles/test_foundation.dir/build.make
 test/library/test_foundation: src/library/libprotoPython.so.0.2.0
 test/library/test_foundation: lib/libgtest_main.a
-test/library/test_foundation: protoCore/libprotoCore.so.1.0.0
+test/library/test_foundation: protoCore/libprotoCore.so.1.1.0
 test/library/test_foundation: lib/libgtest.a
 test/library/test_foundation: test/library/CMakeFiles/test_foundation.dir/link.txt
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Linking CXX executable test_foundation"

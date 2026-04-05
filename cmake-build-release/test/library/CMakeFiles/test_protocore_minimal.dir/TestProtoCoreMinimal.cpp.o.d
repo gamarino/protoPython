@@ -1,7 +1,7 @@
 test/library/CMakeFiles/test_protocore_minimal.dir/TestProtoCoreMinimal.cpp.o: \
- /mnt/c/Users/gamar/PycharmProjects/protoPython/test/library/TestProtoCoreMinimal.cpp \
+ /home/gamarino/Documentos/proyectos/protoPython/test/library/TestProtoCoreMinimal.cpp \
  /usr/include/stdc-predef.h \
- /mnt/c/Users/gamar/PycharmProjects/protoCore/headers/protoCore.h \
+ /home/gamarino/Documentos/proyectos/protoCore/headers/protoCore.h \
  /usr/include/c++/13/atomic /usr/include/c++/13/bits/atomic_base.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/c++config.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/os_defines.h \

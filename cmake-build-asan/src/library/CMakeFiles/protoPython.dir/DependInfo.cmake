@@ -25,11 +25,14 @@ set(CMAKE_DEPENDS_DEPENDENCY_FILES
   "/home/gamarino/Documentos/proyectos/protoPython/src/library/HPyContext.cpp" "src/library/CMakeFiles/protoPython.dir/HPyContext.cpp.o" "gcc" "src/library/CMakeFiles/protoPython.dir/HPyContext.cpp.o.d"
   "/home/gamarino/Documentos/proyectos/protoPython/src/library/HPyModuleProvider.cpp" "src/library/CMakeFiles/protoPython.dir/HPyModuleProvider.cpp.o" "gcc" "src/library/CMakeFiles/protoPython.dir/HPyModuleProvider.cpp.o.d"
   "/home/gamarino/Documentos/proyectos/protoPython/src/library/IOModule.cpp" "src/library/CMakeFiles/protoPython.dir/IOModule.cpp.o" "gcc" "src/library/CMakeFiles/protoPython.dir/IOModule.cpp.o.d"
+  "/home/gamarino/Documentos/proyectos/protoPython/src/library/ImpModule.cpp" "src/library/CMakeFiles/protoPython.dir/ImpModule.cpp.o" "gcc" "src/library/CMakeFiles/protoPython.dir/ImpModule.cpp.o.d"
   "/home/gamarino/Documentos/proyectos/protoPython/src/library/ItertoolsModule.cpp" "src/library/CMakeFiles/protoPython.dir/ItertoolsModule.cpp.o" "gcc" "src/library/CMakeFiles/protoPython.dir/ItertoolsModule.cpp.o.d"
   "/home/gamarino/Documentos/proyectos/protoPython/src/library/JsonModule.cpp" "src/library/CMakeFiles/protoPython.dir/JsonModule.cpp.o" "gcc" "src/library/CMakeFiles/protoPython.dir/JsonModule.cpp.o.d"
   "/home/gamarino/Documentos/proyectos/protoPython/src/library/LoggingModule.cpp" "src/library/CMakeFiles/protoPython.dir/LoggingModule.cpp.o" "gcc" "src/library/CMakeFiles/protoPython.dir/LoggingModule.cpp.o.d"
+  "/home/gamarino/Documentos/proyectos/protoPython/src/library/MarshalModule.cpp" "src/library/CMakeFiles/protoPython.dir/MarshalModule.cpp.o" "gcc" "src/library/CMakeFiles/protoPython.dir/MarshalModule.cpp.o.d"
   "/home/gamarino/Documentos/proyectos/protoPython/src/library/MathModule.cpp" "src/library/CMakeFiles/protoPython.dir/MathModule.cpp.o" "gcc" "src/library/CMakeFiles/protoPython.dir/MathModule.cpp.o.d"
   "/home/gamarino/Documentos/proyectos/protoPython/src/library/NativeModuleProvider.cpp" "src/library/CMakeFiles/protoPython.dir/NativeModuleProvider.cpp.o" "gcc" "src/library/CMakeFiles/protoPython.dir/NativeModuleProvider.cpp.o.d"
+  "/home/gamarino/Documentos/proyectos/protoPython/src/library/OpcodeModule.cpp" "src/library/CMakeFiles/protoPython.dir/OpcodeModule.cpp.o" "gcc" "src/library/CMakeFiles/protoPython.dir/OpcodeModule.cpp.o.d"
   "/home/gamarino/Documentos/proyectos/protoPython/src/library/OperatorModule.cpp" "src/library/CMakeFiles/protoPython.dir/OperatorModule.cpp.o" "gcc" "src/library/CMakeFiles/protoPython.dir/OperatorModule.cpp.o.d"
   "/home/gamarino/Documentos/proyectos/protoPython/src/library/OsModule.cpp" "src/library/CMakeFiles/protoPython.dir/OsModule.cpp.o" "gcc" "src/library/CMakeFiles/protoPython.dir/OsModule.cpp.o.d"
   "/home/gamarino/Documentos/proyectos/protoPython/src/library/OsPathModule.cpp" "src/library/CMakeFiles/protoPython.dir/OsPathModule.cpp.o" "gcc" "src/library/CMakeFiles/protoPython.dir/OsPathModule.cpp.o.d"
@@ -46,6 +49,7 @@ set(CMAKE_DEPENDS_DEPENDENCY_FILES
   "/home/gamarino/Documentos/proyectos/protoPython/src/library/ThreadingStrategy.cpp" "src/library/CMakeFiles/protoPython.dir/ThreadingStrategy.cpp.o" "gcc" "src/library/CMakeFiles/protoPython.dir/ThreadingStrategy.cpp.o.d"
   "/home/gamarino/Documentos/proyectos/protoPython/src/library/TimeModule.cpp" "src/library/CMakeFiles/protoPython.dir/TimeModule.cpp.o" "gcc" "src/library/CMakeFiles/protoPython.dir/TimeModule.cpp.o.d"
   "/home/gamarino/Documentos/proyectos/protoPython/src/library/Tokenizer.cpp" "src/library/CMakeFiles/protoPython.dir/Tokenizer.cpp.o" "gcc" "src/library/CMakeFiles/protoPython.dir/Tokenizer.cpp.o.d"
+  "/home/gamarino/Documentos/proyectos/protoPython/src/library/WarningsModule.cpp" "src/library/CMakeFiles/protoPython.dir/WarningsModule.cpp.o" "gcc" "src/library/CMakeFiles/protoPython.dir/WarningsModule.cpp.o.d"
   "/home/gamarino/Documentos/proyectos/protoPython/src/library/WeakrefModule.cpp" "src/library/CMakeFiles/protoPython.dir/WeakrefModule.cpp.o" "gcc" "src/library/CMakeFiles/protoPython.dir/WeakrefModule.cpp.o.d"
   )
 

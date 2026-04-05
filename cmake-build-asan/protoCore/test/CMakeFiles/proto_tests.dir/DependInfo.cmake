@@ -20,6 +20,7 @@ set(CMAKE_DEPENDS_DEPENDENCY_FILES
   "/home/gamarino/Documentos/proyectos/protoCore/test/test_proto.cpp" "protoCore/test/CMakeFiles/proto_tests.dir/test_proto.cpp.o" "gcc" "protoCore/test/CMakeFiles/proto_tests.dir/test_proto.cpp.o.d"
   "/home/gamarino/Documentos/proyectos/protoCore/test/test_sets.cpp" "protoCore/test/CMakeFiles/proto_tests.dir/test_sets.cpp.o" "gcc" "protoCore/test/CMakeFiles/proto_tests.dir/test_sets.cpp.o.d"
   "/home/gamarino/Documentos/proyectos/protoCore/test/test_sparselist.cpp" "protoCore/test/CMakeFiles/proto_tests.dir/test_sparselist.cpp.o" "gcc" "protoCore/test/CMakeFiles/proto_tests.dir/test_sparselist.cpp.o.d"
+  "/home/gamarino/Documentos/proyectos/protoCore/test/test_string.cpp" "protoCore/test/CMakeFiles/proto_tests.dir/test_string.cpp.o" "gcc" "protoCore/test/CMakeFiles/proto_tests.dir/test_string.cpp.o.d"
   "/home/gamarino/Documentos/proyectos/protoCore/test/test_tuple.cpp" "protoCore/test/CMakeFiles/proto_tests.dir/test_tuple.cpp.o" "gcc" "protoCore/test/CMakeFiles/proto_tests.dir/test_tuple.cpp.o.d"
   )
 

@@ -1,8 +1,8 @@
 # CMake generated Testfile for 
-# Source directory: /mnt/c/Users/gamar/PycharmProjects/protoCore/test
-# Build directory: /mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release/protoCore/test
+# Source directory: /home/gamarino/Documentos/proyectos/protoCore/test
+# Build directory: /home/gamarino/Documentos/proyectos/protoPython/cmake-build-release/protoCore/test
 # 
 # This file includes the relevant testing commands required for 
 # testing this directory and lists subdirectories to be tested as well.
-include("/mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release/protoCore/test/proto_tests[1]_include.cmake")
+include("/home/gamarino/Documentos/proyectos/protoPython/cmake-build-release/protoCore/test/proto_tests[1]_include.cmake")
 subdirs("../../_deps/googletest-build")

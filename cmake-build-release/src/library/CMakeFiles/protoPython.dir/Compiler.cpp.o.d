@@ -1,9 +1,9 @@
 src/library/CMakeFiles/protoPython.dir/Compiler.cpp.o: \
- /mnt/c/Users/gamar/PycharmProjects/protoPython/src/library/Compiler.cpp \
+ /home/gamarino/Documentos/proyectos/protoPython/src/library/Compiler.cpp \
  /usr/include/stdc-predef.h \
- /mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython/Compiler.h \
- /mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython/Parser.h \
- /mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython/Tokenizer.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/Compiler.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/Parser.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/Tokenizer.h \
  /usr/include/c++/13/string /usr/include/c++/13/bits/requires_hosted.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/c++config.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/os_defines.h \
@@ -210,8 +210,8 @@ src/library/CMakeFiles/protoPython.dir/Compiler.cpp.o: \
  /usr/include/c++/13/bits/stl_map.h \
  /usr/include/c++/13/bits/stl_multimap.h \
  /usr/include/c++/13/bits/erase_if.h \
- /mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython/ExecutionEngine.h \
- /mnt/c/Users/gamar/PycharmProjects/protoCore/headers/protoCore.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/ExecutionEngine.h \
+ /home/gamarino/Documentos/proyectos/protoCore/headers/protoCore.h \
  /usr/include/c++/13/atomic /usr/include/c++/13/condition_variable \
  /usr/include/c++/13/bits/chrono.h /usr/include/c++/13/ratio \
  /usr/include/c++/13/limits /usr/include/c++/13/ctime \
@@ -235,6 +235,6 @@ src/library/CMakeFiles/protoPython.dir/Compiler.cpp.o: \
  /usr/include/c++/13/bits/algorithmfwd.h \
  /usr/include/c++/13/bits/stl_heap.h \
  /usr/include/c++/13/bits/uniform_int_dist.h \
- /mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython/PythonEnvironment.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/PythonEnvironment.h \
  /usr/include/c++/13/iostream /usr/include/c++/13/istream \
  /usr/include/c++/13/bits/istream.tcc

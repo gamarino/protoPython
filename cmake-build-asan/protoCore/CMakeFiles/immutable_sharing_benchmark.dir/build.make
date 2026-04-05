@@ -92,7 +92,7 @@ immutable_sharing_benchmark_EXTERNAL_OBJECTS =
 
 protoCore/immutable_sharing_benchmark: protoCore/CMakeFiles/immutable_sharing_benchmark.dir/performance/immutable_sharing_benchmark.cpp.o
 protoCore/immutable_sharing_benchmark: protoCore/CMakeFiles/immutable_sharing_benchmark.dir/build.make
-protoCore/immutable_sharing_benchmark: protoCore/libprotoCore.so.1.0.0
+protoCore/immutable_sharing_benchmark: protoCore/libprotoCore.so.1.1.0
 protoCore/immutable_sharing_benchmark: protoCore/CMakeFiles/immutable_sharing_benchmark.dir/link.txt
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Linking CXX executable immutable_sharing_benchmark"
 	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/protoCore && $(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/immutable_sharing_benchmark.dir/link.txt --verbose=$(VERBOSE)

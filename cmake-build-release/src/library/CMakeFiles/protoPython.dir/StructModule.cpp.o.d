@@ -1,8 +1,8 @@
 src/library/CMakeFiles/protoPython.dir/StructModule.cpp.o: \
- /mnt/c/Users/gamar/PycharmProjects/protoPython/src/library/StructModule.cpp \
+ /home/gamarino/Documentos/proyectos/protoPython/src/library/StructModule.cpp \
  /usr/include/stdc-predef.h \
- /mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython/StructModule.h \
- /mnt/c/Users/gamar/PycharmProjects/protoCore/headers/protoCore.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/StructModule.h \
+ /home/gamarino/Documentos/proyectos/protoCore/headers/protoCore.h \
  /usr/include/c++/13/atomic /usr/include/c++/13/bits/atomic_base.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/c++config.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/os_defines.h \

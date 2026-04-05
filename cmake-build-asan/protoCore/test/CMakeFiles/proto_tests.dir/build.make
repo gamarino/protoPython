@@ -237,10 +237,24 @@ protoCore/test/CMakeFiles/proto_tests.dir/test_sparselist.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/proto_tests.dir/test_sparselist.cpp.s"
 	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/protoCore/test && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/gamarino/Documentos/proyectos/protoCore/test/test_sparselist.cpp -o CMakeFiles/proto_tests.dir/test_sparselist.cpp.s
 
+protoCore/test/CMakeFiles/proto_tests.dir/test_string.cpp.o: protoCore/test/CMakeFiles/proto_tests.dir/flags.make
+protoCore/test/CMakeFiles/proto_tests.dir/test_string.cpp.o: /home/gamarino/Documentos/proyectos/protoCore/test/test_string.cpp
+protoCore/test/CMakeFiles/proto_tests.dir/test_string.cpp.o: protoCore/test/CMakeFiles/proto_tests.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/CMakeFiles --progress-num=$(CMAKE_PROGRESS_13) "Building CXX object protoCore/test/CMakeFiles/proto_tests.dir/test_string.cpp.o"
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/protoCore/test && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT protoCore/test/CMakeFiles/proto_tests.dir/test_string.cpp.o -MF CMakeFiles/proto_tests.dir/test_string.cpp.o.d -o CMakeFiles/proto_tests.dir/test_string.cpp.o -c /home/gamarino/Documentos/proyectos/protoCore/test/test_string.cpp
+
+protoCore/test/CMakeFiles/proto_tests.dir/test_string.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/proto_tests.dir/test_string.cpp.i"
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/protoCore/test && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/gamarino/Documentos/proyectos/protoCore/test/test_string.cpp > CMakeFiles/proto_tests.dir/test_string.cpp.i
+
+protoCore/test/CMakeFiles/proto_tests.dir/test_string.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/proto_tests.dir/test_string.cpp.s"
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/protoCore/test && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/gamarino/Documentos/proyectos/protoCore/test/test_string.cpp -o CMakeFiles/proto_tests.dir/test_string.cpp.s
+
 protoCore/test/CMakeFiles/proto_tests.dir/test_tuple.cpp.o: protoCore/test/CMakeFiles/proto_tests.dir/flags.make
 protoCore/test/CMakeFiles/proto_tests.dir/test_tuple.cpp.o: /home/gamarino/Documentos/proyectos/protoCore/test/test_tuple.cpp
 protoCore/test/CMakeFiles/proto_tests.dir/test_tuple.cpp.o: protoCore/test/CMakeFiles/proto_tests.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/CMakeFiles --progress-num=$(CMAKE_PROGRESS_13) "Building CXX object protoCore/test/CMakeFiles/proto_tests.dir/test_tuple.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/CMakeFiles --progress-num=$(CMAKE_PROGRESS_14) "Building CXX object protoCore/test/CMakeFiles/proto_tests.dir/test_tuple.cpp.o"
 	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/protoCore/test && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT protoCore/test/CMakeFiles/proto_tests.dir/test_tuple.cpp.o -MF CMakeFiles/proto_tests.dir/test_tuple.cpp.o.d -o CMakeFiles/proto_tests.dir/test_tuple.cpp.o -c /home/gamarino/Documentos/proyectos/protoCore/test/test_tuple.cpp
 
 protoCore/test/CMakeFiles/proto_tests.dir/test_tuple.cpp.i: cmake_force
@@ -265,6 +279,7 @@ proto_tests_OBJECTS = \
 "CMakeFiles/proto_tests.dir/test_proto.cpp.o" \
 "CMakeFiles/proto_tests.dir/test_sets.cpp.o" \
 "CMakeFiles/proto_tests.dir/test_sparselist.cpp.o" \
+"CMakeFiles/proto_tests.dir/test_string.cpp.o" \
 "CMakeFiles/proto_tests.dir/test_tuple.cpp.o"
 
 # External object files for target proto_tests
@@ -282,13 +297,15 @@ protoCore/test/proto_tests: protoCore/test/CMakeFiles/proto_tests.dir/test_primi
 protoCore/test/proto_tests: protoCore/test/CMakeFiles/proto_tests.dir/test_proto.cpp.o
 protoCore/test/proto_tests: protoCore/test/CMakeFiles/proto_tests.dir/test_sets.cpp.o
 protoCore/test/proto_tests: protoCore/test/CMakeFiles/proto_tests.dir/test_sparselist.cpp.o
+protoCore/test/proto_tests: protoCore/test/CMakeFiles/proto_tests.dir/test_string.cpp.o
 protoCore/test/proto_tests: protoCore/test/CMakeFiles/proto_tests.dir/test_tuple.cpp.o
 protoCore/test/proto_tests: protoCore/test/CMakeFiles/proto_tests.dir/build.make
-protoCore/test/proto_tests: protoCore/libprotoCore.so.1.0.0
+protoCore/test/proto_tests: protoCore/libprotoCore.so.1.1.0
+protoCore/test/proto_tests: lib/libgtest.a
 protoCore/test/proto_tests: lib/libgtest_main.a
 protoCore/test/proto_tests: lib/libgtest.a
 protoCore/test/proto_tests: protoCore/test/CMakeFiles/proto_tests.dir/link.txt
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/CMakeFiles --progress-num=$(CMAKE_PROGRESS_14) "Linking CXX executable proto_tests"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/CMakeFiles --progress-num=$(CMAKE_PROGRESS_15) "Linking CXX executable proto_tests"
 	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/protoCore/test && $(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/proto_tests.dir/link.txt --verbose=$(VERBOSE)
 	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/protoCore/test && /usr/bin/cmake -D TEST_TARGET=proto_tests -D TEST_EXECUTABLE=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/protoCore/test/proto_tests -D TEST_EXECUTOR= -D TEST_WORKING_DIR=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/protoCore/test -D TEST_EXTRA_ARGS= -D TEST_PROPERTIES= -D TEST_PREFIX= -D TEST_SUFFIX= -D TEST_FILTER= -D NO_PRETTY_TYPES=FALSE -D NO_PRETTY_VALUES=FALSE -D TEST_LIST=proto_tests_TESTS -D CTEST_FILE=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/protoCore/test/proto_tests[1]_tests.cmake -D TEST_DISCOVERY_TIMEOUT=5 -D TEST_XML_OUTPUT_DIR= -P /usr/share/cmake-3.28/Modules/GoogleTestAddTests.cmake
 

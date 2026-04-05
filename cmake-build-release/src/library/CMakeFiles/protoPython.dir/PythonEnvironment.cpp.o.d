@@ -1,8 +1,8 @@
 src/library/CMakeFiles/protoPython.dir/PythonEnvironment.cpp.o: \
- /mnt/c/Users/gamar/PycharmProjects/protoPython/src/library/PythonEnvironment.cpp \
+ /home/gamarino/Documentos/proyectos/protoPython/src/library/PythonEnvironment.cpp \
  /usr/include/stdc-predef.h \
- /mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython/PythonEnvironment.h \
- /mnt/c/Users/gamar/PycharmProjects/protoCore/headers/protoCore.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/PythonEnvironment.h \
+ /home/gamarino/Documentos/proyectos/protoCore/headers/protoCore.h \
  /usr/include/c++/13/atomic /usr/include/c++/13/bits/atomic_base.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/c++config.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/os_defines.h \
@@ -225,44 +225,48 @@ src/library/CMakeFiles/protoPython.dir/PythonEnvironment.cpp.o: \
  /usr/include/c++/13/bits/stl_heap.h \
  /usr/include/c++/13/bits/uniform_int_dist.h /usr/include/c++/13/iostream \
  /usr/include/c++/13/istream /usr/include/c++/13/bits/istream.tcc \
- /mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython/Tokenizer.h \
- /mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython/SignalModule.h \
- /mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython/PythonModuleProvider.h \
- /mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython/CompiledModuleProvider.h \
- /mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython/NativeModuleProvider.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/Tokenizer.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/SignalModule.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/PythonModuleProvider.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/CompiledModuleProvider.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/NativeModuleProvider.h \
  /usr/include/c++/13/map /usr/include/c++/13/bits/stl_tree.h \
  /usr/include/c++/13/bits/stl_map.h \
  /usr/include/c++/13/bits/stl_multimap.h \
- /mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython/SysModule.h \
- /mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython/HPyModuleProvider.h \
- /mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython/HPyContext.h \
- /mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython/TimeModule.h \
- /mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython/ThreadModule.h \
- /mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython/BuiltinsModule.h \
- /mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython/AstModule.h \
- /mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython/ErrnoModule.h \
- /mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython/StatModule.h \
- /mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython/StructModule.h \
- /mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython/ContextvarsModule.h \
- /mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython/CodecsModule.h \
- /mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython/IOModule.h \
- /mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython/CollectionsModule.h \
- /mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython/ExceptionsModule.h \
- /mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython/LoggingModule.h \
- /mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython/MathModule.h \
- /mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython/OperatorModule.h \
- /mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython/FunctoolsModule.h \
- /mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython/ItertoolsModule.h \
- /mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython/JsonModule.h \
- /mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython/ReModule.h \
- /mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython/OsModule.h \
- /mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython/OsPathModule.h \
- /mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython/PathlibModule.h \
- /mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython/CollectionsAbcModule.h \
- /mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython/AtexitModule.h \
- /mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython/ExecutionEngine.h \
- /mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython/Parser.h \
- /mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython/Compiler.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/SysModule.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/HPyModuleProvider.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/HPyContext.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/TimeModule.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/ThreadModule.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/BuiltinsModule.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/AstModule.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/ErrnoModule.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/StatModule.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/StructModule.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/ContextvarsModule.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/CodecsModule.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/IOModule.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/CollectionsModule.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/ExceptionsModule.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/LoggingModule.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/MathModule.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/OperatorModule.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/FunctoolsModule.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/ItertoolsModule.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/JsonModule.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/ReModule.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/OsModule.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/OsPathModule.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/PathlibModule.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/CollectionsAbcModule.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/OpcodeModule.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/MarshalModule.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/ImpModule.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/WarningsModule.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/AtexitModule.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/ExecutionEngine.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/Parser.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/Compiler.h \
  /usr/include/c++/13/unordered_set \
  /usr/include/c++/13/bits/unordered_set.h /usr/include/c++/13/algorithm \
  /usr/include/c++/13/bits/ranges_algo.h \

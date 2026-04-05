@@ -3,9 +3,9 @@
 # No other meaning or use of this file is supported.
 
 method=url
-command=/usr/bin/cmake;-P;/mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release/_deps/googletest-subbuild/googletest-populate-prefix/src/googletest-populate-stamp/download-googletest-populate.cmake;COMMAND;/usr/bin/cmake;-P;/mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release/_deps/googletest-subbuild/googletest-populate-prefix/src/googletest-populate-stamp/verify-googletest-populate.cmake;COMMAND;/usr/bin/cmake;-P;/mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release/_deps/googletest-subbuild/googletest-populate-prefix/src/googletest-populate-stamp/extract-googletest-populate.cmake
-source_dir=/mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release/_deps/googletest-src
-work_dir=/mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release/_deps
+command=/usr/bin/cmake;-P;/home/gamarino/Documentos/proyectos/protoPython/cmake-build-release/_deps/googletest-subbuild/googletest-populate-prefix/src/googletest-populate-stamp/download-googletest-populate.cmake;COMMAND;/usr/bin/cmake;-P;/home/gamarino/Documentos/proyectos/protoPython/cmake-build-release/_deps/googletest-subbuild/googletest-populate-prefix/src/googletest-populate-stamp/verify-googletest-populate.cmake;COMMAND;/usr/bin/cmake;-P;/home/gamarino/Documentos/proyectos/protoPython/cmake-build-release/_deps/googletest-subbuild/googletest-populate-prefix/src/googletest-populate-stamp/extract-googletest-populate.cmake
+source_dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-release/_deps/googletest-src
+work_dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-release/_deps
 url(s)=https://github.com/google/googletest/archive/refs/tags/v1.14.0.zip
 hash=
 no_extract=

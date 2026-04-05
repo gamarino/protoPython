@@ -613,6 +613,30 @@ IOModule.cpp.s:
 	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/IOModule.cpp.s
 .PHONY : IOModule.cpp.s
 
+ImpModule.o: ImpModule.cpp.o
+.PHONY : ImpModule.o
+
+# target to build an object file
+ImpModule.cpp.o:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/ImpModule.cpp.o
+.PHONY : ImpModule.cpp.o
+
+ImpModule.i: ImpModule.cpp.i
+.PHONY : ImpModule.i
+
+# target to preprocess a source file
+ImpModule.cpp.i:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/ImpModule.cpp.i
+.PHONY : ImpModule.cpp.i
+
+ImpModule.s: ImpModule.cpp.s
+.PHONY : ImpModule.s
+
+# target to generate assembly for a file
+ImpModule.cpp.s:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/ImpModule.cpp.s
+.PHONY : ImpModule.cpp.s
+
 ItertoolsModule.o: ItertoolsModule.cpp.o
 .PHONY : ItertoolsModule.o
 
@@ -685,6 +709,30 @@ LoggingModule.cpp.s:
 	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/LoggingModule.cpp.s
 .PHONY : LoggingModule.cpp.s
 
+MarshalModule.o: MarshalModule.cpp.o
+.PHONY : MarshalModule.o
+
+# target to build an object file
+MarshalModule.cpp.o:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/MarshalModule.cpp.o
+.PHONY : MarshalModule.cpp.o
+
+MarshalModule.i: MarshalModule.cpp.i
+.PHONY : MarshalModule.i
+
+# target to preprocess a source file
+MarshalModule.cpp.i:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/MarshalModule.cpp.i
+.PHONY : MarshalModule.cpp.i
+
+MarshalModule.s: MarshalModule.cpp.s
+.PHONY : MarshalModule.s
+
+# target to generate assembly for a file
+MarshalModule.cpp.s:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/MarshalModule.cpp.s
+.PHONY : MarshalModule.cpp.s
+
 MathModule.o: MathModule.cpp.o
 .PHONY : MathModule.o
 
@@ -732,6 +780,30 @@ NativeModuleProvider.s: NativeModuleProvider.cpp.s
 NativeModuleProvider.cpp.s:
 	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/NativeModuleProvider.cpp.s
 .PHONY : NativeModuleProvider.cpp.s
+
+OpcodeModule.o: OpcodeModule.cpp.o
+.PHONY : OpcodeModule.o
+
+# target to build an object file
+OpcodeModule.cpp.o:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/OpcodeModule.cpp.o
+.PHONY : OpcodeModule.cpp.o
+
+OpcodeModule.i: OpcodeModule.cpp.i
+.PHONY : OpcodeModule.i
+
+# target to preprocess a source file
+OpcodeModule.cpp.i:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/OpcodeModule.cpp.i
+.PHONY : OpcodeModule.cpp.i
+
+OpcodeModule.s: OpcodeModule.cpp.s
+.PHONY : OpcodeModule.s
+
+# target to generate assembly for a file
+OpcodeModule.cpp.s:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/OpcodeModule.cpp.s
+.PHONY : OpcodeModule.cpp.s
 
 OperatorModule.o: OperatorModule.cpp.o
 .PHONY : OperatorModule.o
@@ -1117,6 +1189,30 @@ Tokenizer.cpp.s:
 	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/Tokenizer.cpp.s
 .PHONY : Tokenizer.cpp.s
 
+WarningsModule.o: WarningsModule.cpp.o
+.PHONY : WarningsModule.o
+
+# target to build an object file
+WarningsModule.cpp.o:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/WarningsModule.cpp.o
+.PHONY : WarningsModule.cpp.o
+
+WarningsModule.i: WarningsModule.cpp.i
+.PHONY : WarningsModule.i
+
+# target to preprocess a source file
+WarningsModule.cpp.i:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/WarningsModule.cpp.i
+.PHONY : WarningsModule.cpp.i
+
+WarningsModule.s: WarningsModule.cpp.s
+.PHONY : WarningsModule.s
+
+# target to generate assembly for a file
+WarningsModule.cpp.s:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/WarningsModule.cpp.s
+.PHONY : WarningsModule.cpp.s
+
 WeakrefModule.o: WeakrefModule.cpp.o
 .PHONY : WeakrefModule.o
 
@@ -1208,6 +1304,9 @@ help:
 	@echo "... IOModule.o"
 	@echo "... IOModule.i"
 	@echo "... IOModule.s"
+	@echo "... ImpModule.o"
+	@echo "... ImpModule.i"
+	@echo "... ImpModule.s"
 	@echo "... ItertoolsModule.o"
 	@echo "... ItertoolsModule.i"
 	@echo "... ItertoolsModule.s"
@@ -1217,12 +1316,18 @@ help:
 	@echo "... LoggingModule.o"
 	@echo "... LoggingModule.i"
 	@echo "... LoggingModule.s"
+	@echo "... MarshalModule.o"
+	@echo "... MarshalModule.i"
+	@echo "... MarshalModule.s"
 	@echo "... MathModule.o"
 	@echo "... MathModule.i"
 	@echo "... MathModule.s"
 	@echo "... NativeModuleProvider.o"
 	@echo "... NativeModuleProvider.i"
 	@echo "... NativeModuleProvider.s"
+	@echo "... OpcodeModule.o"
+	@echo "... OpcodeModule.i"
+	@echo "... OpcodeModule.s"
 	@echo "... OperatorModule.o"
 	@echo "... OperatorModule.i"
 	@echo "... OperatorModule.s"
@@ -1271,6 +1376,9 @@ help:
 	@echo "... Tokenizer.o"
 	@echo "... Tokenizer.i"
 	@echo "... Tokenizer.s"
+	@echo "... WarningsModule.o"
+	@echo "... WarningsModule.i"
+	@echo "... WarningsModule.s"
 	@echo "... WeakrefModule.o"
 	@echo "... WeakrefModule.i"
 	@echo "... WeakrefModule.s"

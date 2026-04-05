@@ -1,8 +1,8 @@
 protoCore/CMakeFiles/protoCore.dir/core/ProtoMultiset.cpp.o: \
- /mnt/c/Users/gamar/PycharmProjects/protoCore/core/ProtoMultiset.cpp \
+ /home/gamarino/Documentos/proyectos/protoCore/core/ProtoMultiset.cpp \
  /usr/include/stdc-predef.h \
- /mnt/c/Users/gamar/PycharmProjects/protoCore/core/../headers/proto_internal.h \
- /mnt/c/Users/gamar/PycharmProjects/protoCore/core/../headers/protoCore.h \
+ /home/gamarino/Documentos/proyectos/protoCore/core/../headers/proto_internal.h \
+ /home/gamarino/Documentos/proyectos/protoCore/core/../headers/protoCore.h \
  /usr/include/c++/13/atomic /usr/include/c++/13/bits/atomic_base.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/c++config.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/os_defines.h \

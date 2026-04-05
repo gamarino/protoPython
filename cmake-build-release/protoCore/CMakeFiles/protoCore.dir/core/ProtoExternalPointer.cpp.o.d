@@ -1,8 +1,8 @@
 protoCore/CMakeFiles/protoCore.dir/core/ProtoExternalPointer.cpp.o: \
- /mnt/c/Users/gamar/PycharmProjects/protoCore/core/ProtoExternalPointer.cpp \
+ /home/gamarino/Documentos/proyectos/protoCore/core/ProtoExternalPointer.cpp \
  /usr/include/stdc-predef.h \
- /mnt/c/Users/gamar/PycharmProjects/protoCore/core/../headers/proto_internal.h \
- /mnt/c/Users/gamar/PycharmProjects/protoCore/core/../headers/protoCore.h \
+ /home/gamarino/Documentos/proyectos/protoCore/core/../headers/proto_internal.h \
+ /home/gamarino/Documentos/proyectos/protoCore/core/../headers/protoCore.h \
  /usr/include/c++/13/atomic /usr/include/c++/13/bits/atomic_base.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/c++config.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/os_defines.h \

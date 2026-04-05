@@ -93,7 +93,7 @@ test_basic_block_analysis_EXTERNAL_OBJECTS =
 test/library/test_basic_block_analysis: test/library/CMakeFiles/test_basic_block_analysis.dir/TestBasicBlockAnalysis.cpp.o
 test/library/test_basic_block_analysis: test/library/CMakeFiles/test_basic_block_analysis.dir/build.make
 test/library/test_basic_block_analysis: src/library/libprotoPython.so.0.2.0
-test/library/test_basic_block_analysis: protoCore/libprotoCore.so.1.0.0
+test/library/test_basic_block_analysis: protoCore/libprotoCore.so.1.1.0
 test/library/test_basic_block_analysis: lib/libgtest_main.a
 test/library/test_basic_block_analysis: lib/libgtest.a
 test/library/test_basic_block_analysis: test/library/CMakeFiles/test_basic_block_analysis.dir/link.txt

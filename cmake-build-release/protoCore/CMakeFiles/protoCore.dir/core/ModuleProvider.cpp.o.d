@@ -1,7 +1,7 @@
 protoCore/CMakeFiles/protoCore.dir/core/ModuleProvider.cpp.o: \
- /mnt/c/Users/gamar/PycharmProjects/protoCore/core/ModuleProvider.cpp \
+ /home/gamarino/Documentos/proyectos/protoCore/core/ModuleProvider.cpp \
  /usr/include/stdc-predef.h \
- /mnt/c/Users/gamar/PycharmProjects/protoCore/core/../headers/protoCore.h \
+ /home/gamarino/Documentos/proyectos/protoCore/core/../headers/protoCore.h \
  /usr/include/c++/13/atomic /usr/include/c++/13/bits/atomic_base.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/c++config.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/os_defines.h \
@@ -222,7 +222,7 @@ protoCore/CMakeFiles/protoCore.dir/core/ModuleProvider.cpp.o: \
  /usr/include/c++/13/bits/stl_vector.h \
  /usr/include/c++/13/bits/stl_bvector.h \
  /usr/include/c++/13/bits/vector.tcc \
- /mnt/c/Users/gamar/PycharmProjects/protoCore/core/ModuleCache.h \
+ /home/gamarino/Documentos/proyectos/protoCore/core/ModuleCache.h \
  /usr/include/c++/13/fstream /usr/include/c++/13/istream \
  /usr/include/c++/13/bits/istream.tcc /usr/include/c++/13/bits/codecvt.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/basic_file.h \
@@ -244,4 +244,4 @@ protoCore/CMakeFiles/protoCore.dir/core/ModuleProvider.cpp.o: \
  /usr/include/x86_64-linux-gnu/bits/statx-generic.h \
  /usr/include/x86_64-linux-gnu/bits/types/struct_statx_timestamp.h \
  /usr/include/x86_64-linux-gnu/bits/types/struct_statx.h \
- /mnt/c/Users/gamar/PycharmProjects/protoCore/core/ModuleProvider.h
+ /home/gamarino/Documentos/proyectos/protoCore/core/ModuleProvider.h

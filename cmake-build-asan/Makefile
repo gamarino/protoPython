@@ -231,6 +231,58 @@ concurrent_append_benchmark/fast:
 .PHONY : concurrent_append_benchmark/fast
 
 #=============================================================================
+# Target rules for targets named list_benchmark
+
+# Build rule for target.
+list_benchmark: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 list_benchmark
+.PHONY : list_benchmark
+
+# fast build rule for target.
+list_benchmark/fast:
+	$(MAKE) $(MAKESILENT) -f protoCore/CMakeFiles/list_benchmark.dir/build.make protoCore/CMakeFiles/list_benchmark.dir/build
+.PHONY : list_benchmark/fast
+
+#=============================================================================
+# Target rules for targets named object_access_benchmark
+
+# Build rule for target.
+object_access_benchmark: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 object_access_benchmark
+.PHONY : object_access_benchmark
+
+# fast build rule for target.
+object_access_benchmark/fast:
+	$(MAKE) $(MAKESILENT) -f protoCore/CMakeFiles/object_access_benchmark.dir/build.make protoCore/CMakeFiles/object_access_benchmark.dir/build
+.PHONY : object_access_benchmark/fast
+
+#=============================================================================
+# Target rules for targets named sparse_list_benchmark
+
+# Build rule for target.
+sparse_list_benchmark: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 sparse_list_benchmark
+.PHONY : sparse_list_benchmark
+
+# fast build rule for target.
+sparse_list_benchmark/fast:
+	$(MAKE) $(MAKESILENT) -f protoCore/CMakeFiles/sparse_list_benchmark.dir/build.make protoCore/CMakeFiles/sparse_list_benchmark.dir/build
+.PHONY : sparse_list_benchmark/fast
+
+#=============================================================================
+# Target rules for targets named string_concat_benchmark
+
+# Build rule for target.
+string_concat_benchmark: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 string_concat_benchmark
+.PHONY : string_concat_benchmark
+
+# fast build rule for target.
+string_concat_benchmark/fast:
+	$(MAKE) $(MAKESILENT) -f protoCore/CMakeFiles/string_concat_benchmark.dir/build.make protoCore/CMakeFiles/string_concat_benchmark.dir/build
+.PHONY : string_concat_benchmark/fast
+
+#=============================================================================
 # Target rules for targets named package_protocore_only
 
 # Build rule for target.
@@ -473,11 +525,15 @@ help:
 	@echo "... gtest"
 	@echo "... gtest_main"
 	@echo "... immutable_sharing_benchmark"
+	@echo "... list_benchmark"
+	@echo "... object_access_benchmark"
 	@echo "... protoCore"
 	@echo "... protoPython"
 	@echo "... proto_tests"
 	@echo "... protopy"
 	@echo "... protopyc"
+	@echo "... sparse_list_benchmark"
+	@echo "... string_concat_benchmark"
 	@echo "... test_basic_block_analysis"
 	@echo "... test_execution_engine"
 	@echo "... test_foundation"

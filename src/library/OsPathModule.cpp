@@ -36,7 +36,7 @@ static const proto::ProtoObject* py_join(
             first = false;
             if (part->isString(ctx)) {
                 std::string s;
-                part->toUTF8String(ctx, s);
+                part->asString(ctx)->toUTF8String(ctx, s);
                 out += s;
             }
         }
@@ -46,7 +46,7 @@ static const proto::ProtoObject* py_join(
             const proto::ProtoObject* part = posArgs->getAt(ctx, static_cast<int>(i));
             if (part->isString(ctx)) {
                 std::string s;
-                part->toUTF8String(ctx, s);
+                part->asString(ctx)->toUTF8String(ctx, s);
                 out += s;
             }
         }
@@ -65,7 +65,7 @@ static const proto::ProtoObject* py_exists(
     const proto::ProtoObject* pathObj = posArgs->getAt(ctx, 0);
     if (!pathObj->isString(ctx)) return PROTO_FALSE;
     std::string path;
-    pathObj->toUTF8String(ctx, path);
+    pathObj->asString(ctx)->toUTF8String(ctx, path);
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
     struct stat st;
     return (stat(path.c_str(), &st) == 0) ? PROTO_TRUE : PROTO_FALSE;
@@ -86,7 +86,7 @@ static const proto::ProtoObject* py_isfile(
     const proto::ProtoObject* pathObj = posArgs->getAt(ctx, 0);
     if (!pathObj->isString(ctx)) return PROTO_FALSE;
     std::string path;
-    pathObj->toUTF8String(ctx, path);
+    pathObj->asString(ctx)->toUTF8String(ctx, path);
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
     struct stat st;
     if (stat(path.c_str(), &st) != 0) return PROTO_FALSE;
@@ -108,7 +108,7 @@ static const proto::ProtoObject* py_isdir(
     const proto::ProtoObject* pathObj = posArgs->getAt(ctx, 0);
     if (!pathObj->isString(ctx)) return PROTO_FALSE;
     std::string path;
-    pathObj->toUTF8String(ctx, path);
+    pathObj->asString(ctx)->toUTF8String(ctx, path);
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
     struct stat st;
     if (stat(path.c_str(), &st) != 0) return PROTO_FALSE;
@@ -128,7 +128,7 @@ static const proto::ProtoObject* py_realpath(
     (void)self;
     if (!posArgs || posArgs->getSize(ctx) < 1) return proto::ProtoString::fromUTF8(ctx, "")->asObject(ctx);
     const proto::ProtoObject* path = posArgs->getAt(ctx, 0);
-    return path->isString(ctx) ? path : proto::ProtoString::fromUTF8(ctx, "");
+    return path->isString(ctx) ? path : proto::ProtoString::fromUTF8(ctx, "")->asObject(ctx);
 }
 
 static const proto::ProtoObject* py_normpath(
@@ -140,7 +140,7 @@ static const proto::ProtoObject* py_normpath(
     (void)self;
     if (!posArgs || posArgs->getSize(ctx) < 1) return proto::ProtoString::fromUTF8(ctx, "")->asObject(ctx);
     const proto::ProtoObject* path = posArgs->getAt(ctx, 0);
-    return path->isString(ctx) ? path : proto::ProtoString::fromUTF8(ctx, "");
+    return path->isString(ctx) ? path : proto::ProtoString::fromUTF8(ctx, "")->asObject(ctx);
 }
 
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {

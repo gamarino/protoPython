@@ -44,12 +44,14 @@ file(REMOVE_RECURSE
   "CMakeFiles/protoCore.dir/core/ProtoTuple.cpp.o.d"
   "CMakeFiles/protoCore.dir/core/ProviderRegistry.cpp.o"
   "CMakeFiles/protoCore.dir/core/ProviderRegistry.cpp.o.d"
+  "CMakeFiles/protoCore.dir/core/SymbolTable.cpp.o"
+  "CMakeFiles/protoCore.dir/core/SymbolTable.cpp.o.d"
   "CMakeFiles/protoCore.dir/core/Thread.cpp.o"
   "CMakeFiles/protoCore.dir/core/Thread.cpp.o.d"
   "libprotoCore.pdb"
   "libprotoCore.so"
   "libprotoCore.so.1"
-  "libprotoCore.so.1.0.0"
+  "libprotoCore.so.1.1.0"
 )
 
 # Per-language clean rules from dependency scanning.

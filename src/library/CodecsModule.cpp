@@ -18,7 +18,7 @@ static const proto::ProtoObject* py_codecs_lookup(
     if (!nameObj->isString(context)) return PROTO_NONE;
     
     std::string name;
-    nameObj->toUTF8String(context, name);
+    nameObj->asString(context)->toUTF8String(context, name);
     
     // Minimal lookup implementation. In a real system this would query a registry.
     // For now we return something that codecs.py can wrap.
@@ -87,12 +87,12 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx,
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "register"), ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_codecs_register));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "register_error"), ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_codecs_register_error));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "lookup_error"), ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_codecs_lookup_error));
-    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__name__"), proto::ProtoString::fromUTF8(ctx, "_codecs"));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__name__"), proto::ProtoString::fromUTF8(ctx, "_codecs")->asObject(ctx));
 
     const proto::ProtoList* keys = ctx->newList();
     const char* attrs[] = {"lookup", "encode", "decode", "register", "register_error", "lookup_error"};
     for (const char* a : attrs) {
-        keys = keys->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, a));
+        keys = keys->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, a)->asObject(ctx));
     }
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__keys__"), keys->asObject(ctx));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__all__"), keys->asObject(ctx));

@@ -8,7 +8,7 @@ set(CMAKE_DEPENDS_LANGUAGES
 
 # The set of dependency files which are needed:
 set(CMAKE_DEPENDS_DEPENDENCY_FILES
-  "/mnt/c/Users/gamar/PycharmProjects/protoPython/src/runtime/main.cpp" "src/runtime/CMakeFiles/protopy.dir/main.cpp.o" "gcc" "src/runtime/CMakeFiles/protopy.dir/main.cpp.o.d"
+  "/home/gamarino/Documentos/proyectos/protoPython/src/runtime/main.cpp" "src/runtime/CMakeFiles/protopy.dir/main.cpp.o" "gcc" "src/runtime/CMakeFiles/protopy.dir/main.cpp.o.d"
   )
 
 # Targets to which this target links which contain Fortran sources.

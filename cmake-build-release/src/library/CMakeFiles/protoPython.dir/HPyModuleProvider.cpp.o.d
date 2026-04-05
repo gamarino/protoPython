@@ -1,8 +1,8 @@
 src/library/CMakeFiles/protoPython.dir/HPyModuleProvider.cpp.o: \
- /mnt/c/Users/gamar/PycharmProjects/protoPython/src/library/HPyModuleProvider.cpp \
+ /home/gamarino/Documentos/proyectos/protoPython/src/library/HPyModuleProvider.cpp \
  /usr/include/stdc-predef.h \
- /mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython/HPyModuleProvider.h \
- /mnt/c/Users/gamar/PycharmProjects/protoCore/headers/protoCore.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/HPyModuleProvider.h \
+ /home/gamarino/Documentos/proyectos/protoCore/headers/protoCore.h \
  /usr/include/c++/13/atomic /usr/include/c++/13/bits/atomic_base.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/c++config.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/os_defines.h \
@@ -212,7 +212,7 @@ src/library/CMakeFiles/protoPython.dir/HPyModuleProvider.cpp.o: \
  /usr/include/c++/13/bits/stl_vector.h \
  /usr/include/c++/13/bits/stl_bvector.h \
  /usr/include/c++/13/bits/vector.tcc \
- /mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython/HPyContext.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/HPyContext.h \
  /usr/include/c++/13/map /usr/include/c++/13/bits/stl_tree.h \
  /usr/include/c++/13/bits/node_handle.h \
  /usr/include/c++/13/bits/stl_map.h \

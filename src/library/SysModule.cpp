@@ -54,7 +54,7 @@ static const proto::ProtoObject* sys_trace_default(
     (void)keywordParameters;
     if (positionalParameters->getSize(context) >= 2 && positionalParameters->getAt(context, 1)->isString(context)) {
         std::string ev;
-        positionalParameters->getAt(context, 1)->toUTF8String(context, ev);
+        positionalParameters->getAt(context, 1)->asString(context)->toUTF8String(context, ev);
         // log removed
     }
     return PROTO_NONE;
@@ -109,7 +109,7 @@ static const proto::ProtoObject* sys_getframe(
     
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     if (depth < 0) {
-        if (env) env->raiseValueError(context, proto::ProtoString::fromUTF8(context, "_getframe() depth must be >= 0"));
+        if (env) env->raiseValueError(context, proto::ProtoString::fromUTF8(context, "_getframe() depth must be >= 0")->asObject(context));
         return PROTO_NONE;
     }
 
@@ -118,14 +118,14 @@ static const proto::ProtoObject* sys_getframe(
     
     for (int i = 0; i < depth; ++i) {
         if (!frame || frame == PROTO_NONE) {
-            if (env) env->raiseValueError(context, proto::ProtoString::fromUTF8(context, "call stack is not deep enough"));
+            if (env) env->raiseValueError(context, proto::ProtoString::fromUTF8(context, "call stack is not deep enough")->asObject(context));
             return PROTO_NONE;
         }
         frame = frame->getAttribute(context, f_back_s);
     }
     
     if (!frame || frame == PROTO_NONE) {
-        if (env) env->raiseValueError(context, proto::ProtoString::fromUTF8(context, "call stack is not deep enough"));
+        if (env) env->raiseValueError(context, proto::ProtoString::fromUTF8(context, "call stack is not deep enough")->asObject(context));
         return PROTO_NONE;
     }
     
@@ -146,7 +146,7 @@ static const proto::ProtoObject* sys_setrecursionlimit(
             if (arg->isInteger(context)) {
                 int limit = static_cast<int>(arg->asLong(context));
                 if (limit <= 0) {
-                    if (env) env->raiseValueError(context, proto::ProtoString::fromUTF8(context, "recursion limit must be > 0"));
+                    if (env) env->raiseValueError(context, proto::ProtoString::fromUTF8(context, "recursion limit must be > 0")->asObject(context));
                     return PROTO_NONE;
                 }
                 if (env) env->setRecursionLimit(limit);
@@ -218,7 +218,7 @@ static const proto::ProtoObject* sys_file_write(
         const proto::ProtoObject* arg = positionalParameters->getAt(context, 0);
         if (arg->isString(context)) {
             std::string s;
-            arg->toUTF8String(context, s);
+            arg->asString(context)->toUTF8String(context, s);
             const proto::ProtoObject* streamType = self->getAttribute(context, proto::ProtoString::createSymbol(context, "_stream_type"));
             if (streamType && streamType->isInteger(context) && streamType->asLong(context) == 2) {
                 fprintf(stderr, "%s", s.c_str());
@@ -292,7 +292,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
 #else
     const char* plat = "linux";
 #endif
-    sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "platform"), proto::ProtoString::fromUTF8(ctx, plat));
+    sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "platform"), proto::ProtoString::fromUTF8(ctx, plat)->asObject(ctx));
     
     // sys.byteorder
 #if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
@@ -300,17 +300,17 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
 #else
     const char* bo = "little";
 #endif
-    sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "byteorder"), proto::ProtoString::fromUTF8(ctx, bo));
+    sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "byteorder"), proto::ProtoString::fromUTF8(ctx, bo)->asObject(ctx));
     
     // sys.version
-    sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "version"), proto::ProtoString::fromUTF8(ctx, "3.14.0 (protoPython, Feb 2026)"));
+    sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "version"), proto::ProtoString::fromUTF8(ctx, "3.14.0 (protoPython, Feb 2026)")->asObject(ctx));
 
     // sys.base_prefix and sys.prefix (Required for many stdlib modules like gettext)
     if (env) {
         std::string sl = env->getStdLibPath();
         if (sl.empty()) sl = ".";
-        sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "base_prefix"), proto::ProtoString::fromUTF8(ctx, sl.c_str()));
-        sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "prefix"), proto::ProtoString::fromUTF8(ctx, sl.c_str()));
+        sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "base_prefix"), proto::ProtoString::fromUTF8(ctx, sl.c_str())->asObject(ctx));
+        sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "prefix"), proto::ProtoString::fromUTF8(ctx, sl.c_str())->asObject(ctx));
     } else {
         sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "base_prefix"), PROTO_NONE);
         sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "prefix"), PROTO_NONE);
@@ -335,7 +335,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     if (argv) {
         printf("DEBUG SYS MODULE argv size=%zu\n", argv->size());
         for (const auto& s : *argv) {
-            const proto::ProtoObject* strObj = proto::ProtoString::fromUTF8(ctx, s.c_str());
+            const proto::ProtoObject* strObj = proto::ProtoString::fromUTF8(ctx, s.c_str())->asObject(ctx);
             if (env && env->getStrPrototype()) {
                 strObj = strObj->addParent(ctx, env->getStrPrototype());
             }
@@ -381,14 +381,14 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
         "exceptions", "_codecs", "_ast", "errno", "stat", "_collections_abc"
     };
     for (const char* name : builtin_names) {
-        builtinsList = builtinsList->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, name));
+        builtinsList = builtinsList->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, name)->asObject(ctx));
     }
     const proto::ProtoObject* bt = ctx->newTupleFromList(builtinsList)->asObject(ctx);
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "builtin_module_names"), bt);
 
     // sys.executable
     const char* exe_path = (argv && !argv->empty()) ? (*argv)[0].c_str() : "/usr/bin/protopy";
-    sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "executable"), proto::ProtoString::fromUTF8(ctx, exe_path));
+    sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "executable"), proto::ProtoString::fromUTF8(ctx, exe_path)->asObject(ctx));
 
     // sys.excepthook (AttributeError prevention)
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "excepthook"), PROTO_NONE);
@@ -420,13 +420,13 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
 
     // sys.implementation
     const proto::ProtoObject* impl = env && env->getObjectPrototype() ? env->getObjectPrototype()->newChild(ctx, true) : ctx->newObject(false);
-    impl = impl->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "name"), proto::ProtoString::fromUTF8(ctx, "protopython"));
+    impl = impl->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "name"), proto::ProtoString::fromUTF8(ctx, "protopython")->asObject(ctx));
     const proto::ProtoList* impl_version = ctx->newList();
     impl_version = impl_version->appendLast(ctx, ctx->fromInteger(0));
     impl_version = impl_version->appendLast(ctx, ctx->fromInteger(2));
     impl_version = impl_version->appendLast(ctx, ctx->fromInteger(0));
     impl = impl->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "version"), impl_version->asObject(ctx));
-    impl = impl->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "cache_tag"), proto::ProtoString::fromUTF8(ctx, "protopython-314"));
+    impl = impl->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "cache_tag"), proto::ProtoString::fromUTF8(ctx, "protopython-314")->asObject(ctx));
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "implementation"), impl);
 
     // sys.flags

@@ -493,6 +493,30 @@ test_sparselist.cpp.s:
 	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f protoCore/test/CMakeFiles/proto_tests.dir/build.make protoCore/test/CMakeFiles/proto_tests.dir/test_sparselist.cpp.s
 .PHONY : test_sparselist.cpp.s
 
+test_string.o: test_string.cpp.o
+.PHONY : test_string.o
+
+# target to build an object file
+test_string.cpp.o:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f protoCore/test/CMakeFiles/proto_tests.dir/build.make protoCore/test/CMakeFiles/proto_tests.dir/test_string.cpp.o
+.PHONY : test_string.cpp.o
+
+test_string.i: test_string.cpp.i
+.PHONY : test_string.i
+
+# target to preprocess a source file
+test_string.cpp.i:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f protoCore/test/CMakeFiles/proto_tests.dir/build.make protoCore/test/CMakeFiles/proto_tests.dir/test_string.cpp.i
+.PHONY : test_string.cpp.i
+
+test_string.s: test_string.cpp.s
+.PHONY : test_string.s
+
+# target to generate assembly for a file
+test_string.cpp.s:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f protoCore/test/CMakeFiles/proto_tests.dir/build.make protoCore/test/CMakeFiles/proto_tests.dir/test_string.cpp.s
+.PHONY : test_string.cpp.s
+
 test_tuple.o: test_tuple.cpp.o
 .PHONY : test_tuple.o
 
@@ -569,6 +593,9 @@ help:
 	@echo "... test_sparselist.o"
 	@echo "... test_sparselist.i"
 	@echo "... test_sparselist.s"
+	@echo "... test_string.o"
+	@echo "... test_string.i"
+	@echo "... test_string.s"
 	@echo "... test_tuple.o"
 	@echo "... test_tuple.i"
 	@echo "... test_tuple.s"

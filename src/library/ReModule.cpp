@@ -13,11 +13,11 @@ static const proto::ProtoObject* py_compile(
     const proto::ProtoSparseList*) {
     if (posArgs->getSize(ctx) < 1 || !posArgs->getAt(ctx, 0)->isString(ctx)) return PROTO_NONE;
     std::string pat;
-    posArgs->getAt(ctx, 0)->toUTF8String(ctx, pat);
+    posArgs->getAt(ctx, 0)->asString(ctx)->toUTF8String(ctx, pat);
     const proto::ProtoObject* proto = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__pattern_proto__"));
     if (!proto) return PROTO_NONE;
     const proto::ProtoObject* p = proto->newChild(ctx, true);
-    p = p->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__re_pattern__"), proto::ProtoString::fromUTF8(ctx, pat.c_str()));
+    p = p->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__re_pattern__"), proto::ProtoString::fromUTF8(ctx, pat.c_str())->asObject(ctx));
     return p;
 }
 
@@ -35,14 +35,14 @@ static const proto::ProtoObject* py_match(
     std::string pat;
     const proto::ProtoObject* patAttr = patObj->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__re_pattern__"));
     if (patAttr && patAttr->isString(ctx))
-        patAttr->toUTF8String(ctx, pat);
+        patAttr->asString(ctx)->toUTF8String(ctx, pat);
     else if (patObj->isString(ctx))
-        patObj->toUTF8String(ctx, pat);
+        patObj->asString(ctx)->toUTF8String(ctx, pat);
     else
         return PROTO_NONE;
     std::string s;
     if (!strObj->isString(ctx)) return PROTO_NONE;
-    strObj->toUTF8String(ctx, s);
+    strObj->asString(ctx)->toUTF8String(ctx, s);
 
     std::regex re;
     try {
@@ -56,7 +56,7 @@ static const proto::ProtoObject* py_match(
     const proto::ProtoObject* matchProto = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__match_proto__"));
     if (!matchProto) return PROTO_NONE;
     const proto::ProtoObject* mo = matchProto->newChild(ctx, true);
-    mo = mo->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__re_match_str__"), proto::ProtoString::fromUTF8(ctx, m.str().c_str()));
+    mo = mo->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__re_match_str__"), proto::ProtoString::fromUTF8(ctx, m.str().c_str())->asObject(ctx));
     return mo;
 }
 
@@ -73,14 +73,14 @@ static const proto::ProtoObject* py_search(
     std::string pat;
     const proto::ProtoObject* patAttr = patObj->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__re_pattern__"));
     if (patAttr && patAttr->isString(ctx))
-        patAttr->toUTF8String(ctx, pat);
+        patAttr->asString(ctx)->toUTF8String(ctx, pat);
     else if (patObj->isString(ctx))
-        patObj->toUTF8String(ctx, pat);
+        patObj->asString(ctx)->toUTF8String(ctx, pat);
     else
         return PROTO_NONE;
     std::string s;
     if (!strObj->isString(ctx)) return PROTO_NONE;
-    strObj->toUTF8String(ctx, s);
+    strObj->asString(ctx)->toUTF8String(ctx, s);
 
     std::regex re;
     try {
@@ -94,7 +94,7 @@ static const proto::ProtoObject* py_search(
     const proto::ProtoObject* matchProto = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__match_proto__"));
     if (!matchProto) return PROTO_NONE;
     const proto::ProtoObject* mo = matchProto->newChild(ctx, true);
-    mo = mo->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__re_match_str__"), proto::ProtoString::fromUTF8(ctx, m.str().c_str()));
+    mo = mo->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__re_match_str__"), proto::ProtoString::fromUTF8(ctx, m.str().c_str())->asObject(ctx));
     return mo;
 }
 
@@ -109,7 +109,7 @@ static const proto::ProtoObject* py_escape(
     if (!patObj->isString(ctx)) return patObj; // Or raise TypeError
 
     std::string s;
-    patObj->toUTF8String(ctx, s);
+    patObj->asString(ctx)->toUTF8String(ctx, s);
     
     std::string escaped;
     for (char c : s) {
@@ -133,13 +133,13 @@ static const proto::ProtoObject* py_pattern_match(
     std::string pat;
     const proto::ProtoObject* patAttr = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__re_pattern__"));
     if (patAttr && patAttr->isString(ctx))
-        patAttr->toUTF8String(ctx, pat);
+        patAttr->asString(ctx)->toUTF8String(ctx, pat);
     else
         return PROTO_NONE;
         
     std::string s;
     if (!strObj->isString(ctx)) return PROTO_NONE;
-    strObj->toUTF8String(ctx, s);
+    strObj->asString(ctx)->toUTF8String(ctx, s);
 
     std::regex re;
     try {
@@ -155,7 +155,7 @@ static const proto::ProtoObject* py_pattern_match(
     if (!matchProto) return PROTO_NONE;
     
     const proto::ProtoObject* mo = matchProto->newChild(ctx, true);
-    mo = mo->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__re_match_str__"), proto::ProtoString::fromUTF8(ctx, m.str().c_str()));
+    mo = mo->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__re_match_str__"), proto::ProtoString::fromUTF8(ctx, m.str().c_str())->asObject(ctx));
     return mo;
 }
 
@@ -171,13 +171,13 @@ static const proto::ProtoObject* py_pattern_search(
     std::string pat;
     const proto::ProtoObject* patAttr = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__re_pattern__"));
     if (patAttr && patAttr->isString(ctx))
-        patAttr->toUTF8String(ctx, pat);
+        patAttr->asString(ctx)->toUTF8String(ctx, pat);
     else
         return PROTO_NONE;
         
     std::string s;
     if (!strObj->isString(ctx)) return PROTO_NONE;
-    strObj->toUTF8String(ctx, s);
+    strObj->asString(ctx)->toUTF8String(ctx, s);
 
     std::regex re;
     try {
@@ -192,7 +192,7 @@ static const proto::ProtoObject* py_pattern_search(
     if (!matchProto) return PROTO_NONE;
     
     const proto::ProtoObject* mo = matchProto->newChild(ctx, true);
-    mo = mo->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__re_match_str__"), proto::ProtoString::fromUTF8(ctx, m.str().c_str()));
+    mo = mo->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__re_match_str__"), proto::ProtoString::fromUTF8(ctx, m.str().c_str())->asObject(ctx));
     return mo;
 }
 
@@ -209,13 +209,13 @@ static const proto::ProtoObject* py_pattern_sub(
     std::string pat;
     const proto::ProtoObject* patAttr = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__re_pattern__"));
     if (patAttr && patAttr->isString(ctx))
-        patAttr->toUTF8String(ctx, pat);
+        patAttr->asString(ctx)->toUTF8String(ctx, pat);
     else
         return PROTO_NONE;
         
     std::string replStr;
     if (replObj->isString(ctx)) {
-        replObj->toUTF8String(ctx, replStr);
+        replObj->asString(ctx)->toUTF8String(ctx, replStr);
     } else {
         // Can't handle callable repl right now, just fallback or ignore
         return strObj; 
@@ -223,7 +223,7 @@ static const proto::ProtoObject* py_pattern_sub(
     
     std::string s;
     if (!strObj->isString(ctx)) return PROTO_NONE;
-    strObj->toUTF8String(ctx, s);
+    strObj->asString(ctx)->toUTF8String(ctx, s);
 
     std::regex re;
     try {

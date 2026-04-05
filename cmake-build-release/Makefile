@@ -57,10 +57,10 @@ RM = /usr/bin/cmake -E rm -f
 EQUALS = =
 
 # The top-level source directory on which CMake was run.
-CMAKE_SOURCE_DIR = /mnt/c/Users/gamar/PycharmProjects/protoPython
+CMAKE_SOURCE_DIR = /home/gamarino/Documentos/proyectos/protoPython
 
 # The top-level build directory on which CMake was run.
-CMAKE_BINARY_DIR = /mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release
+CMAKE_BINARY_DIR = /home/gamarino/Documentos/proyectos/protoPython/cmake-build-release
 
 #=============================================================================
 # Targets provided globally by CMake.
@@ -78,7 +78,7 @@ package/fast: package
 # Special rule for the target package_source
 package_source:
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --cyan "Run CPack packaging tool for source..."
-	/usr/bin/cpack --config ./CPackSourceConfig.cmake /mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release/CPackSourceConfig.cmake
+	/usr/bin/cpack --config ./CPackSourceConfig.cmake /home/gamarino/Documentos/proyectos/protoPython/cmake-build-release/CPackSourceConfig.cmake
 .PHONY : package_source
 
 # Special rule for the target package_source
@@ -162,9 +162,9 @@ install/strip/fast: preinstall/fast
 
 # The main all target
 all: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release/CMakeFiles /mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release//CMakeFiles/progress.marks
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/gamarino/Documentos/proyectos/protoPython/cmake-build-release/CMakeFiles /home/gamarino/Documentos/proyectos/protoPython/cmake-build-release//CMakeFiles/progress.marks
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 all
-	$(CMAKE_COMMAND) -E cmake_progress_start /mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release/CMakeFiles 0
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/gamarino/Documentos/proyectos/protoPython/cmake-build-release/CMakeFiles 0
 .PHONY : all
 
 # The main clean target
@@ -229,6 +229,58 @@ concurrent_append_benchmark: cmake_check_build_system
 concurrent_append_benchmark/fast:
 	$(MAKE) $(MAKESILENT) -f protoCore/CMakeFiles/concurrent_append_benchmark.dir/build.make protoCore/CMakeFiles/concurrent_append_benchmark.dir/build
 .PHONY : concurrent_append_benchmark/fast
+
+#=============================================================================
+# Target rules for targets named list_benchmark
+
+# Build rule for target.
+list_benchmark: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 list_benchmark
+.PHONY : list_benchmark
+
+# fast build rule for target.
+list_benchmark/fast:
+	$(MAKE) $(MAKESILENT) -f protoCore/CMakeFiles/list_benchmark.dir/build.make protoCore/CMakeFiles/list_benchmark.dir/build
+.PHONY : list_benchmark/fast
+
+#=============================================================================
+# Target rules for targets named object_access_benchmark
+
+# Build rule for target.
+object_access_benchmark: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 object_access_benchmark
+.PHONY : object_access_benchmark
+
+# fast build rule for target.
+object_access_benchmark/fast:
+	$(MAKE) $(MAKESILENT) -f protoCore/CMakeFiles/object_access_benchmark.dir/build.make protoCore/CMakeFiles/object_access_benchmark.dir/build
+.PHONY : object_access_benchmark/fast
+
+#=============================================================================
+# Target rules for targets named sparse_list_benchmark
+
+# Build rule for target.
+sparse_list_benchmark: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 sparse_list_benchmark
+.PHONY : sparse_list_benchmark
+
+# fast build rule for target.
+sparse_list_benchmark/fast:
+	$(MAKE) $(MAKESILENT) -f protoCore/CMakeFiles/sparse_list_benchmark.dir/build.make protoCore/CMakeFiles/sparse_list_benchmark.dir/build
+.PHONY : sparse_list_benchmark/fast
+
+#=============================================================================
+# Target rules for targets named string_concat_benchmark
+
+# Build rule for target.
+string_concat_benchmark: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 string_concat_benchmark
+.PHONY : string_concat_benchmark
+
+# fast build rule for target.
+string_concat_benchmark/fast:
+	$(MAKE) $(MAKESILENT) -f protoCore/CMakeFiles/string_concat_benchmark.dir/build.make protoCore/CMakeFiles/string_concat_benchmark.dir/build
+.PHONY : string_concat_benchmark/fast
 
 #=============================================================================
 # Target rules for targets named package_protocore_only
@@ -473,11 +525,15 @@ help:
 	@echo "... gtest"
 	@echo "... gtest_main"
 	@echo "... immutable_sharing_benchmark"
+	@echo "... list_benchmark"
+	@echo "... object_access_benchmark"
 	@echo "... protoCore"
 	@echo "... protoPython"
 	@echo "... proto_tests"
 	@echo "... protopy"
 	@echo "... protopyc"
+	@echo "... sparse_list_benchmark"
+	@echo "... string_concat_benchmark"
 	@echo "... test_basic_block_analysis"
 	@echo "... test_execution_engine"
 	@echo "... test_foundation"

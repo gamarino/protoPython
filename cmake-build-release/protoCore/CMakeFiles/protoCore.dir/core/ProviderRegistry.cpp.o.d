@@ -1,7 +1,7 @@
 protoCore/CMakeFiles/protoCore.dir/core/ProviderRegistry.cpp.o: \
- /mnt/c/Users/gamar/PycharmProjects/protoCore/core/ProviderRegistry.cpp \
+ /home/gamarino/Documentos/proyectos/protoCore/core/ProviderRegistry.cpp \
  /usr/include/stdc-predef.h \
- /mnt/c/Users/gamar/PycharmProjects/protoCore/core/../headers/protoCore.h \
+ /home/gamarino/Documentos/proyectos/protoCore/core/../headers/protoCore.h \
  /usr/include/c++/13/atomic /usr/include/c++/13/bits/atomic_base.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/c++config.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/os_defines.h \

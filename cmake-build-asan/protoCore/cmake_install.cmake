@@ -49,7 +49,7 @@ endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "protoCore" OR NOT CMAKE_INSTALL_COMPONENT)
   foreach(file
-      "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/lib/libprotoCore.so.1.0.0"
+      "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/lib/libprotoCore.so.1.1.0"
       "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/lib/libprotoCore.so.1"
       )
     if(EXISTS "${file}" AND
@@ -60,11 +60,11 @@ if(CMAKE_INSTALL_COMPONENT STREQUAL "protoCore" OR NOT CMAKE_INSTALL_COMPONENT)
     endif()
   endforeach()
   file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib" TYPE SHARED_LIBRARY FILES
-    "/home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/protoCore/libprotoCore.so.1.0.0"
+    "/home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/protoCore/libprotoCore.so.1.1.0"
     "/home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/protoCore/libprotoCore.so.1"
     )
   foreach(file
-      "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/lib/libprotoCore.so.1.0.0"
+      "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/lib/libprotoCore.so.1.1.0"
       "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/lib/libprotoCore.so.1"
       )
     if(EXISTS "${file}" AND

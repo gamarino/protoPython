@@ -27,14 +27,14 @@ static const proto::ProtoObject* py_path_call(
     if (posArgs && posArgs->getSize(ctx) >= 1) {
         const proto::ProtoObject* first = posArgs->getAt(ctx, 0);
         if (first->isString(ctx)) {
-            first->toUTF8String(ctx, path);
+            first->asString(ctx)->toUTF8String(ctx, path);
         }
         for (unsigned long i = 1; i < posArgs->getSize(ctx); ++i) {
             path += "/";
             const proto::ProtoObject* part = posArgs->getAt(ctx, static_cast<int>(i));
             if (part->isString(ctx)) {
                 std::string s;
-                part->toUTF8String(ctx, s);
+                part->asString(ctx)->toUTF8String(ctx, s);
                 path += s;
             }
         }
@@ -62,7 +62,7 @@ static std::string path_from_self(proto::ProtoContext* ctx, const proto::ProtoOb
     const proto::ProtoObject* data = self->getAttribute(ctx, path_data_name(ctx));
     if (!data || !data->isString(ctx)) return ".";
     std::string s;
-    data->toUTF8String(ctx, s);
+    data->asString(ctx)->toUTF8String(ctx, s);
     return s;
 }
 
@@ -167,7 +167,7 @@ static const proto::ProtoObject* py_path_write_text(
     if (posArgs && posArgs->getSize(ctx) >= 1) {
         const proto::ProtoObject* data = posArgs->getAt(ctx, 0);
         if (data->isString(ctx))
-            data->toUTF8String(ctx, content);
+            data->asString(ctx)->toUTF8String(ctx, content);
     }
     std::ofstream f(path);
     if (f) f << content;

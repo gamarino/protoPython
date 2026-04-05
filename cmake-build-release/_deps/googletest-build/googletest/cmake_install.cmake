@@ -1,4 +1,4 @@
-# Install script for directory: /mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release/_deps/googletest-src/googletest
+# Install script for directory: /home/gamarino/Documentos/proyectos/protoPython/cmake-build-release/_deps/googletest-src/googletest
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)

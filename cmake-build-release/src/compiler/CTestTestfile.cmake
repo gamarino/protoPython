@@ -1,6 +1,6 @@
 # CMake generated Testfile for 
-# Source directory: /mnt/c/Users/gamar/PycharmProjects/protoPython/src/compiler
-# Build directory: /mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release/src/compiler
+# Source directory: /home/gamarino/Documentos/proyectos/protoPython/src/compiler
+# Build directory: /home/gamarino/Documentos/proyectos/protoPython/cmake-build-release/src/compiler
 # 
 # This file includes the relevant testing commands required for 
 # testing this directory and lists subdirectories to be tested as well.

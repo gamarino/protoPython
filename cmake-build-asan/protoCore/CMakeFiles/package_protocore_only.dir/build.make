@@ -69,12 +69,12 @@ include protoCore/CMakeFiles/package_protocore_only.dir/progress.make
 protoCore/CMakeFiles/package_protocore_only:
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --blue --bold --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Create TGZ with only protoCore runtime and header"
 	/usr/bin/cmake -E rm -rf /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/package_staging
-	/usr/bin/cmake -E make_directory /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/package_staging/protoCore-1.0.0-Linux/include
-	/usr/bin/cmake -E make_directory /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/package_staging/protoCore-1.0.0-Linux/lib
-	/usr/bin/cmake -E copy_if_different /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/protoCore/libprotoCore.so.1.0.0 /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/package_staging/protoCore-1.0.0-Linux/lib/
-	/usr/bin/cmake -E copy_if_different /home/gamarino/Documentos/proyectos/protoCore/headers/protoCore.h /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/package_staging/protoCore-1.0.0-Linux/include/
-	tar czf /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/protoCore-1.0.0-Linux.tar.gz -C /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/package_staging protoCore-1.0.0-Linux
-	/usr/bin/cmake -E echo Created\ /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/protoCore-1.0.0-Linux.tar.gz
+	/usr/bin/cmake -E make_directory /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/package_staging/protoCore-1.1.0-Linux/include
+	/usr/bin/cmake -E make_directory /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/package_staging/protoCore-1.1.0-Linux/lib
+	/usr/bin/cmake -E copy_if_different /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/protoCore/libprotoCore.so.1.1.0 /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/package_staging/protoCore-1.1.0-Linux/lib/
+	/usr/bin/cmake -E copy_if_different /home/gamarino/Documentos/proyectos/protoCore/headers/protoCore.h /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/package_staging/protoCore-1.1.0-Linux/include/
+	tar czf /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/protoCore-1.1.0-Linux.tar.gz -C /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/package_staging protoCore-1.1.0-Linux
+	/usr/bin/cmake -E echo Created\ /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/protoCore-1.1.0-Linux.tar.gz
 
 package_protocore_only: protoCore/CMakeFiles/package_protocore_only
 package_protocore_only: protoCore/CMakeFiles/package_protocore_only.dir/build.make

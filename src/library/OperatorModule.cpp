@@ -26,8 +26,8 @@ static const proto::ProtoObject* py_add(
     const proto::ProtoObject* b = posArgs->getAt(ctx, 1);
     if (a->isString(ctx) && b->isString(ctx)) {
         std::string sa, sb;
-        a->toUTF8String(ctx, sa);
-        b->toUTF8String(ctx, sb);
+        a->asString(ctx)->toUTF8String(ctx, sa);
+        b->asString(ctx)->toUTF8String(ctx, sb);
         return proto::ProtoString::fromUTF8(ctx, (sa + sb).c_str())->asObject(ctx);
     }
     if (a->isDouble(ctx) || b->isDouble(ctx))
@@ -147,7 +147,7 @@ static bool isTruthy(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
     if (obj == PROTO_TRUE) return true;
     if (obj->isInteger(ctx)) return obj->asLong(ctx) != 0;
     if (obj->isDouble(ctx)) return obj->asDouble(ctx) != 0.0;
-    if (obj->isString(ctx)) return obj->getSize(ctx) > 0;
+    if (obj->isString(ctx)) return obj->asString(ctx)->getSize(ctx) > 0;
     return true;
 }
 

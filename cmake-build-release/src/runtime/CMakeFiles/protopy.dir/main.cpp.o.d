@@ -1,8 +1,8 @@
 src/runtime/CMakeFiles/protopy.dir/main.cpp.o: \
- /mnt/c/Users/gamar/PycharmProjects/protoPython/src/runtime/main.cpp \
+ /home/gamarino/Documentos/proyectos/protoPython/src/runtime/main.cpp \
  /usr/include/stdc-predef.h \
- /mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython/PythonEnvironment.h \
- /mnt/c/Users/gamar/PycharmProjects/protoCore/headers/protoCore.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/PythonEnvironment.h \
+ /home/gamarino/Documentos/proyectos/protoCore/headers/protoCore.h \
  /usr/include/c++/13/atomic /usr/include/c++/13/bits/atomic_base.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/c++config.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/os_defines.h \
@@ -236,9 +236,9 @@ src/runtime/CMakeFiles/protopy.dir/main.cpp.o: \
  /usr/include/c++/13/bits/stl_heap.h \
  /usr/include/c++/13/bits/uniform_int_dist.h /usr/include/c++/13/iostream \
  /usr/include/c++/13/istream /usr/include/c++/13/bits/istream.tcc \
- /mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython/Tokenizer.h \
- /mnt/c/Users/gamar/PycharmProjects/protoCore/headers/proto_internal.h \
- /mnt/c/Users/gamar/PycharmProjects/protoCore/headers/protoCore.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/Tokenizer.h \
+ /home/gamarino/Documentos/proyectos/protoCore/headers/proto_internal.h \
+ /home/gamarino/Documentos/proyectos/protoCore/headers/protoCore.h \
  /usr/include/c++/13/unordered_set \
  /usr/include/c++/13/bits/unordered_set.h /usr/include/c++/13/algorithm \
  /usr/include/c++/13/bits/ranges_algo.h \

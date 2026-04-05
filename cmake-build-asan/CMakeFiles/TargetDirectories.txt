@@ -10,6 +10,10 @@
 /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/protoCore/CMakeFiles/protoCore.dir
 /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/protoCore/CMakeFiles/immutable_sharing_benchmark.dir
 /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/protoCore/CMakeFiles/concurrent_append_benchmark.dir
+/home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/protoCore/CMakeFiles/list_benchmark.dir
+/home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/protoCore/CMakeFiles/object_access_benchmark.dir
+/home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/protoCore/CMakeFiles/sparse_list_benchmark.dir
+/home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/protoCore/CMakeFiles/string_concat_benchmark.dir
 /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/protoCore/CMakeFiles/package_protocore_only.dir
 /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/protoCore/CMakeFiles/package.dir
 /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/protoCore/CMakeFiles/package_source.dir

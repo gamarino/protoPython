@@ -1,8 +1,8 @@
 src/library/CMakeFiles/protoPython.dir/ThreadingStrategy.cpp.o: \
- /mnt/c/Users/gamar/PycharmProjects/protoPython/src/library/ThreadingStrategy.cpp \
+ /home/gamarino/Documentos/proyectos/protoPython/src/library/ThreadingStrategy.cpp \
  /usr/include/stdc-predef.h \
- /mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython/ThreadingStrategy.h \
- /mnt/c/Users/gamar/PycharmProjects/protoCore/headers/protoCore.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/ThreadingStrategy.h \
+ /home/gamarino/Documentos/proyectos/protoCore/headers/protoCore.h \
  /usr/include/c++/13/atomic /usr/include/c++/13/bits/atomic_base.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/c++config.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/os_defines.h \
@@ -212,4 +212,4 @@ src/library/CMakeFiles/protoPython.dir/ThreadingStrategy.cpp.o: \
  /usr/include/c++/13/bits/stl_vector.h \
  /usr/include/c++/13/bits/stl_bvector.h \
  /usr/include/c++/13/bits/vector.tcc \
- /mnt/c/Users/gamar/PycharmProjects/protoPython/include/protoPython/ExecutionEngine.h
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/ExecutionEngine.h

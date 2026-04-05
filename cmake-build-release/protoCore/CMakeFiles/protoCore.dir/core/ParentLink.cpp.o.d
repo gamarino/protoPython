@@ -1,8 +1,8 @@
 protoCore/CMakeFiles/protoCore.dir/core/ParentLink.cpp.o: \
- /mnt/c/Users/gamar/PycharmProjects/protoCore/core/ParentLink.cpp \
+ /home/gamarino/Documentos/proyectos/protoCore/core/ParentLink.cpp \
  /usr/include/stdc-predef.h \
- /mnt/c/Users/gamar/PycharmProjects/protoCore/core/../headers/proto_internal.h \
- /mnt/c/Users/gamar/PycharmProjects/protoCore/core/../headers/protoCore.h \
+ /home/gamarino/Documentos/proyectos/protoCore/core/../headers/proto_internal.h \
+ /home/gamarino/Documentos/proyectos/protoCore/core/../headers/protoCore.h \
  /usr/include/c++/13/atomic /usr/include/c++/13/bits/atomic_base.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/c++config.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/os_defines.h \
@@ -239,4 +239,5 @@ protoCore/CMakeFiles/protoCore.dir/core/ParentLink.cpp.o: \
  /usr/include/c++/13/bits/istream.tcc /usr/include/c++/13/functional \
  /usr/include/c++/13/bits/std_function.h \
  /usr/include/c++/13/unordered_map \
- /usr/include/c++/13/bits/unordered_map.h /usr/include/c++/13/array
+ /usr/include/c++/13/bits/unordered_map.h /usr/include/c++/13/array \
+ /usr/include/execinfo.h /usr/include/c++/13/stdlib.h

@@ -94,7 +94,7 @@ test/regression/test_regr: test/regression/CMakeFiles/test_regr.dir/test_regr.cp
 test/regression/test_regr: test/regression/CMakeFiles/test_regr.dir/build.make
 test/regression/test_regr: src/library/libprotoPython.so.0.2.0
 test/regression/test_regr: lib/libgtest_main.a
-test/regression/test_regr: protoCore/libprotoCore.so.1.0.0
+test/regression/test_regr: protoCore/libprotoCore.so.1.1.0
 test/regression/test_regr: lib/libgtest.a
 test/regression/test_regr: test/regression/CMakeFiles/test_regr.dir/link.txt
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Linking CXX executable test_regr"

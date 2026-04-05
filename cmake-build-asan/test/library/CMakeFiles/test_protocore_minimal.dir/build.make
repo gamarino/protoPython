@@ -92,7 +92,7 @@ test_protocore_minimal_EXTERNAL_OBJECTS =
 
 test/library/test_protocore_minimal: test/library/CMakeFiles/test_protocore_minimal.dir/TestProtoCoreMinimal.cpp.o
 test/library/test_protocore_minimal: test/library/CMakeFiles/test_protocore_minimal.dir/build.make
-test/library/test_protocore_minimal: protoCore/libprotoCore.so.1.0.0
+test/library/test_protocore_minimal: protoCore/libprotoCore.so.1.1.0
 test/library/test_protocore_minimal: test/library/CMakeFiles/test_protocore_minimal.dir/link.txt
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Linking CXX executable test_protocore_minimal"
 	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan/test/library && $(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/test_protocore_minimal.dir/link.txt --verbose=$(VERBOSE)

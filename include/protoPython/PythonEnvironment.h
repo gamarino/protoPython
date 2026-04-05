@@ -127,6 +127,9 @@ public:
     /** @brief Gets the getset_descriptor prototype. */
     const proto::ProtoObject* getGetSetDescriptorPrototype() const { return getSetDescriptorPrototype; }
     
+    void setObjectPrototype(const proto::ProtoObject* p) { objectPrototype = p; }
+    void setTypePrototype(const proto::ProtoObject* p) { typePrototype = p; }
+    void setDictPrototype(const proto::ProtoObject* p) { dictPrototype = p; }
     /** @brief Gets the path to the standard library. */
     const std::string& getStdLibPath() const { return stdLibPath_; }
 

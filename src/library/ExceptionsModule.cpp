@@ -92,7 +92,7 @@ static const proto::ProtoObject* exception_repr(
     
     std::string name = "Exception";
     if (nameObj && nameObj->isString(context)) {
-        nameObj->toUTF8String(context, name);
+        nameObj->asString(context)->toUTF8String(context, name);
     }
     if (args->getSize(context) == 0) {
         return proto::ProtoString::fromUTF8(context, (name + "()").c_str())->asObject(context);
@@ -103,7 +103,7 @@ static const proto::ProtoObject* exception_repr(
         const proto::ProtoObject* a = args->getAt(context, static_cast<int>(i));
         if (a->isString(context)) {
             std::string s;
-            a->toUTF8String(context, s);
+            a->asString(context)->toUTF8String(context, s);
             out += "'" + s + "'";
         } else {
             out += "<obj>";
@@ -141,7 +141,7 @@ static const proto::ProtoObject* make_exception_type(proto::ProtoContext* ctx,
     } else {
         exc = exc->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__bases__"), ctx->newTuple()->asObject(ctx));
     }
-    exc = exc->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__module__"), proto::ProtoString::fromUTF8(ctx, "builtins"));
+    exc = exc->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__module__"), proto::ProtoString::fromUTF8(ctx, "builtins")->asObject(ctx));
     exc = exc->setAttribute(ctx, py_init, ctx->fromMethod(nullptr, exception_init));
     exc = exc->setAttribute(ctx, py_repr, ctx->fromMethod(nullptr, exception_repr));
     exc = exc->setAttribute(ctx, py_str, ctx->fromMethod(nullptr, exception_str));
@@ -295,7 +295,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx,
     mod = mod->setAttribute(ctx, py_stopiteration, stopIterationType);
     mod = mod->setAttribute(ctx, py_stopasynciteration, stopAsyncIterationType);
     mod = mod->setAttribute(ctx, py_systemerror, systemErrorType);
-    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__name__"), proto::ProtoString::fromUTF8(ctx, "exceptions"));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__name__"), proto::ProtoString::fromUTF8(ctx, "exceptions")->asObject(ctx));
 
     return mod;
 }

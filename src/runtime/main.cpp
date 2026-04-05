@@ -296,7 +296,8 @@ int main(int argc, char* argv[]) {
     }
 
     if (std::getenv("PROTO_ENV_DIAG")) {
-        if (std::getenv("PROTO_ENV_DIAG")) {}
+        fprintf(stderr, "DEBUG MAIN: PROTO_ENV_DIAG is SET (val=%s)\n", std::getenv("PROTO_ENV_DIAG"));
+        fflush(stderr);
     }
 
     std::vector<std::string> searchPaths;

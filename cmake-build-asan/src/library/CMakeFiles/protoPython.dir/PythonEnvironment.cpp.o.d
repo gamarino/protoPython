@@ -259,6 +259,10 @@ src/library/CMakeFiles/protoPython.dir/PythonEnvironment.cpp.o: \
  /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/OsPathModule.h \
  /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/PathlibModule.h \
  /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/CollectionsAbcModule.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/OpcodeModule.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/MarshalModule.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/ImpModule.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/WarningsModule.h \
  /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/AtexitModule.h \
  /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/ExecutionEngine.h \
  /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/Parser.h \

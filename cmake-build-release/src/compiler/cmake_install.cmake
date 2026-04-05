@@ -1,4 +1,4 @@
-# Install script for directory: /mnt/c/Users/gamar/PycharmProjects/protoPython/src/compiler
+# Install script for directory: /home/gamarino/Documentos/proyectos/protoPython/src/compiler
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)
@@ -49,12 +49,12 @@ if(CMAKE_INSTALL_COMPONENT STREQUAL "protoPython" OR NOT CMAKE_INSTALL_COMPONENT
          FILE "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/bin/protopyc"
          RPATH "\$ORIGIN/../lib")
   endif()
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/bin" TYPE EXECUTABLE FILES "/mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release/src/compiler/protopyc")
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/bin" TYPE EXECUTABLE FILES "/home/gamarino/Documentos/proyectos/protoPython/cmake-build-release/src/compiler/protopyc")
   if(EXISTS "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/bin/protopyc" AND
      NOT IS_SYMLINK "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/bin/protopyc")
     file(RPATH_CHANGE
          FILE "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/bin/protopyc"
-         OLD_RPATH "/mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release/src/library:/mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release/protoCore:"
+         OLD_RPATH "/home/gamarino/Documentos/proyectos/protoPython/cmake-build-release/src/library:/home/gamarino/Documentos/proyectos/protoPython/cmake-build-release/protoCore:"
          NEW_RPATH "\$ORIGIN/../lib")
     if(CMAKE_INSTALL_DO_STRIP)
       execute_process(COMMAND "/usr/bin/strip" "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/bin/protopyc")

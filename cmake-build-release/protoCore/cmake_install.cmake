@@ -1,4 +1,4 @@
-# Install script for directory: /mnt/c/Users/gamar/PycharmProjects/protoCore
+# Install script for directory: /home/gamarino/Documentos/proyectos/protoCore
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)
@@ -44,12 +44,12 @@ endif()
 
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   # Include the install script for the subdirectory.
-  include("/mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release/protoCore/test/cmake_install.cmake")
+  include("/home/gamarino/Documentos/proyectos/protoPython/cmake-build-release/protoCore/test/cmake_install.cmake")
 endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "protoCore" OR NOT CMAKE_INSTALL_COMPONENT)
   foreach(file
-      "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/lib/libprotoCore.so.1.0.0"
+      "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/lib/libprotoCore.so.1.1.0"
       "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/lib/libprotoCore.so.1"
       )
     if(EXISTS "${file}" AND
@@ -60,11 +60,11 @@ if(CMAKE_INSTALL_COMPONENT STREQUAL "protoCore" OR NOT CMAKE_INSTALL_COMPONENT)
     endif()
   endforeach()
   file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib" TYPE SHARED_LIBRARY FILES
-    "/mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release/protoCore/libprotoCore.so.1.0.0"
-    "/mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release/protoCore/libprotoCore.so.1"
+    "/home/gamarino/Documentos/proyectos/protoPython/cmake-build-release/protoCore/libprotoCore.so.1.1.0"
+    "/home/gamarino/Documentos/proyectos/protoPython/cmake-build-release/protoCore/libprotoCore.so.1"
     )
   foreach(file
-      "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/lib/libprotoCore.so.1.0.0"
+      "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/lib/libprotoCore.so.1.1.0"
       "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/lib/libprotoCore.so.1"
       )
     if(EXISTS "${file}" AND
@@ -77,10 +77,10 @@ if(CMAKE_INSTALL_COMPONENT STREQUAL "protoCore" OR NOT CMAKE_INSTALL_COMPONENT)
 endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "protoCore" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib" TYPE SHARED_LIBRARY FILES "/mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release/protoCore/libprotoCore.so")
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib" TYPE SHARED_LIBRARY FILES "/home/gamarino/Documentos/proyectos/protoPython/cmake-build-release/protoCore/libprotoCore.so")
 endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "protoCore" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/include" TYPE FILE FILES "/mnt/c/Users/gamar/PycharmProjects/protoCore/headers/protoCore.h")
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/include" TYPE FILE FILES "/home/gamarino/Documentos/proyectos/protoCore/headers/protoCore.h")
 endif()
 

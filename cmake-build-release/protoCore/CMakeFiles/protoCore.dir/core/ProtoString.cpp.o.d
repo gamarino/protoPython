@@ -1,8 +1,8 @@
 protoCore/CMakeFiles/protoCore.dir/core/ProtoString.cpp.o: \
- /mnt/c/Users/gamar/PycharmProjects/protoCore/core/ProtoString.cpp \
+ /home/gamarino/Documentos/proyectos/protoCore/core/ProtoString.cpp \
  /usr/include/stdc-predef.h \
- /mnt/c/Users/gamar/PycharmProjects/protoCore/core/../headers/proto_internal.h \
- /mnt/c/Users/gamar/PycharmProjects/protoCore/core/../headers/protoCore.h \
+ /home/gamarino/Documentos/proyectos/protoCore/core/../headers/proto_internal.h \
+ /home/gamarino/Documentos/proyectos/protoCore/core/../headers/protoCore.h \
  /usr/include/c++/13/atomic /usr/include/c++/13/bits/atomic_base.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/c++config.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/os_defines.h \
@@ -239,4 +239,8 @@ protoCore/CMakeFiles/protoCore.dir/core/ProtoString.cpp.o: \
  /usr/include/c++/13/bits/istream.tcc /usr/include/c++/13/functional \
  /usr/include/c++/13/bits/std_function.h \
  /usr/include/c++/13/unordered_map \
- /usr/include/c++/13/bits/unordered_map.h /usr/include/c++/13/array
+ /usr/include/c++/13/bits/unordered_map.h /usr/include/c++/13/array \
+ /usr/include/c++/13/cassert /usr/include/assert.h \
+ /usr/include/c++/13/cstring /usr/include/string.h /usr/include/strings.h \
+ /usr/include/x86_64-linux-gnu/bits/strings_fortified.h \
+ /usr/include/x86_64-linux-gnu/bits/string_fortified.h

@@ -4,7 +4,7 @@
 # compile CXX with /usr/bin/c++
 CXX_DEFINES = 
 
-CXX_INCLUDES = -I/mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release/_deps/googletest-src/googletest/include -I/mnt/c/Users/gamar/PycharmProjects/protoPython/cmake-build-release/_deps/googletest-src/googletest
+CXX_INCLUDES = -I/home/gamarino/Documentos/proyectos/protoPython/cmake-build-release/_deps/googletest-src/googletest/include -I/home/gamarino/Documentos/proyectos/protoPython/cmake-build-release/_deps/googletest-src/googletest
 
 CXX_FLAGS = -O3 -DNDEBUG -std=c++20 -Wall -Wshadow -Wundef -Wno-error=dangling-else -DGTEST_HAS_PTHREAD=1 -fexceptions -Wextra -Wno-unused-parameter -Wno-missing-field-initializers -fno-delete-null-pointer-checks
 

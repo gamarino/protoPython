@@ -234,6 +234,62 @@ concurrent_append_benchmark/fast:
 .PHONY : concurrent_append_benchmark/fast
 
 # Convenience name for target.
+protoCore/CMakeFiles/list_benchmark.dir/rule:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 protoCore/CMakeFiles/list_benchmark.dir/rule
+.PHONY : protoCore/CMakeFiles/list_benchmark.dir/rule
+
+# Convenience name for target.
+list_benchmark: protoCore/CMakeFiles/list_benchmark.dir/rule
+.PHONY : list_benchmark
+
+# fast build rule for target.
+list_benchmark/fast:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f protoCore/CMakeFiles/list_benchmark.dir/build.make protoCore/CMakeFiles/list_benchmark.dir/build
+.PHONY : list_benchmark/fast
+
+# Convenience name for target.
+protoCore/CMakeFiles/object_access_benchmark.dir/rule:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 protoCore/CMakeFiles/object_access_benchmark.dir/rule
+.PHONY : protoCore/CMakeFiles/object_access_benchmark.dir/rule
+
+# Convenience name for target.
+object_access_benchmark: protoCore/CMakeFiles/object_access_benchmark.dir/rule
+.PHONY : object_access_benchmark
+
+# fast build rule for target.
+object_access_benchmark/fast:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f protoCore/CMakeFiles/object_access_benchmark.dir/build.make protoCore/CMakeFiles/object_access_benchmark.dir/build
+.PHONY : object_access_benchmark/fast
+
+# Convenience name for target.
+protoCore/CMakeFiles/sparse_list_benchmark.dir/rule:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 protoCore/CMakeFiles/sparse_list_benchmark.dir/rule
+.PHONY : protoCore/CMakeFiles/sparse_list_benchmark.dir/rule
+
+# Convenience name for target.
+sparse_list_benchmark: protoCore/CMakeFiles/sparse_list_benchmark.dir/rule
+.PHONY : sparse_list_benchmark
+
+# fast build rule for target.
+sparse_list_benchmark/fast:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f protoCore/CMakeFiles/sparse_list_benchmark.dir/build.make protoCore/CMakeFiles/sparse_list_benchmark.dir/build
+.PHONY : sparse_list_benchmark/fast
+
+# Convenience name for target.
+protoCore/CMakeFiles/string_concat_benchmark.dir/rule:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 protoCore/CMakeFiles/string_concat_benchmark.dir/rule
+.PHONY : protoCore/CMakeFiles/string_concat_benchmark.dir/rule
+
+# Convenience name for target.
+string_concat_benchmark: protoCore/CMakeFiles/string_concat_benchmark.dir/rule
+.PHONY : string_concat_benchmark
+
+# fast build rule for target.
+string_concat_benchmark/fast:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f protoCore/CMakeFiles/string_concat_benchmark.dir/build.make protoCore/CMakeFiles/string_concat_benchmark.dir/build
+.PHONY : string_concat_benchmark/fast
+
+# Convenience name for target.
 protoCore/CMakeFiles/package_protocore_only.dir/rule:
 	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 protoCore/CMakeFiles/package_protocore_only.dir/rule
 .PHONY : protoCore/CMakeFiles/package_protocore_only.dir/rule
@@ -775,6 +831,30 @@ core/ProviderRegistry.cpp.s:
 	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f protoCore/CMakeFiles/protoCore.dir/build.make protoCore/CMakeFiles/protoCore.dir/core/ProviderRegistry.cpp.s
 .PHONY : core/ProviderRegistry.cpp.s
 
+core/SymbolTable.o: core/SymbolTable.cpp.o
+.PHONY : core/SymbolTable.o
+
+# target to build an object file
+core/SymbolTable.cpp.o:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f protoCore/CMakeFiles/protoCore.dir/build.make protoCore/CMakeFiles/protoCore.dir/core/SymbolTable.cpp.o
+.PHONY : core/SymbolTable.cpp.o
+
+core/SymbolTable.i: core/SymbolTable.cpp.i
+.PHONY : core/SymbolTable.i
+
+# target to preprocess a source file
+core/SymbolTable.cpp.i:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f protoCore/CMakeFiles/protoCore.dir/build.make protoCore/CMakeFiles/protoCore.dir/core/SymbolTable.cpp.i
+.PHONY : core/SymbolTable.cpp.i
+
+core/SymbolTable.s: core/SymbolTable.cpp.s
+.PHONY : core/SymbolTable.s
+
+# target to generate assembly for a file
+core/SymbolTable.cpp.s:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f protoCore/CMakeFiles/protoCore.dir/build.make protoCore/CMakeFiles/protoCore.dir/core/SymbolTable.cpp.s
+.PHONY : core/SymbolTable.cpp.s
+
 core/Thread.o: core/Thread.cpp.o
 .PHONY : core/Thread.o
 
@@ -847,6 +927,102 @@ performance/immutable_sharing_benchmark.cpp.s:
 	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f protoCore/CMakeFiles/immutable_sharing_benchmark.dir/build.make protoCore/CMakeFiles/immutable_sharing_benchmark.dir/performance/immutable_sharing_benchmark.cpp.s
 .PHONY : performance/immutable_sharing_benchmark.cpp.s
 
+performance/list_benchmark.o: performance/list_benchmark.cpp.o
+.PHONY : performance/list_benchmark.o
+
+# target to build an object file
+performance/list_benchmark.cpp.o:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f protoCore/CMakeFiles/list_benchmark.dir/build.make protoCore/CMakeFiles/list_benchmark.dir/performance/list_benchmark.cpp.o
+.PHONY : performance/list_benchmark.cpp.o
+
+performance/list_benchmark.i: performance/list_benchmark.cpp.i
+.PHONY : performance/list_benchmark.i
+
+# target to preprocess a source file
+performance/list_benchmark.cpp.i:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f protoCore/CMakeFiles/list_benchmark.dir/build.make protoCore/CMakeFiles/list_benchmark.dir/performance/list_benchmark.cpp.i
+.PHONY : performance/list_benchmark.cpp.i
+
+performance/list_benchmark.s: performance/list_benchmark.cpp.s
+.PHONY : performance/list_benchmark.s
+
+# target to generate assembly for a file
+performance/list_benchmark.cpp.s:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f protoCore/CMakeFiles/list_benchmark.dir/build.make protoCore/CMakeFiles/list_benchmark.dir/performance/list_benchmark.cpp.s
+.PHONY : performance/list_benchmark.cpp.s
+
+performance/object_access_benchmark.o: performance/object_access_benchmark.cpp.o
+.PHONY : performance/object_access_benchmark.o
+
+# target to build an object file
+performance/object_access_benchmark.cpp.o:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f protoCore/CMakeFiles/object_access_benchmark.dir/build.make protoCore/CMakeFiles/object_access_benchmark.dir/performance/object_access_benchmark.cpp.o
+.PHONY : performance/object_access_benchmark.cpp.o
+
+performance/object_access_benchmark.i: performance/object_access_benchmark.cpp.i
+.PHONY : performance/object_access_benchmark.i
+
+# target to preprocess a source file
+performance/object_access_benchmark.cpp.i:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f protoCore/CMakeFiles/object_access_benchmark.dir/build.make protoCore/CMakeFiles/object_access_benchmark.dir/performance/object_access_benchmark.cpp.i
+.PHONY : performance/object_access_benchmark.cpp.i
+
+performance/object_access_benchmark.s: performance/object_access_benchmark.cpp.s
+.PHONY : performance/object_access_benchmark.s
+
+# target to generate assembly for a file
+performance/object_access_benchmark.cpp.s:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f protoCore/CMakeFiles/object_access_benchmark.dir/build.make protoCore/CMakeFiles/object_access_benchmark.dir/performance/object_access_benchmark.cpp.s
+.PHONY : performance/object_access_benchmark.cpp.s
+
+performance/sparse_list_benchmark.o: performance/sparse_list_benchmark.cpp.o
+.PHONY : performance/sparse_list_benchmark.o
+
+# target to build an object file
+performance/sparse_list_benchmark.cpp.o:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f protoCore/CMakeFiles/sparse_list_benchmark.dir/build.make protoCore/CMakeFiles/sparse_list_benchmark.dir/performance/sparse_list_benchmark.cpp.o
+.PHONY : performance/sparse_list_benchmark.cpp.o
+
+performance/sparse_list_benchmark.i: performance/sparse_list_benchmark.cpp.i
+.PHONY : performance/sparse_list_benchmark.i
+
+# target to preprocess a source file
+performance/sparse_list_benchmark.cpp.i:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f protoCore/CMakeFiles/sparse_list_benchmark.dir/build.make protoCore/CMakeFiles/sparse_list_benchmark.dir/performance/sparse_list_benchmark.cpp.i
+.PHONY : performance/sparse_list_benchmark.cpp.i
+
+performance/sparse_list_benchmark.s: performance/sparse_list_benchmark.cpp.s
+.PHONY : performance/sparse_list_benchmark.s
+
+# target to generate assembly for a file
+performance/sparse_list_benchmark.cpp.s:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f protoCore/CMakeFiles/sparse_list_benchmark.dir/build.make protoCore/CMakeFiles/sparse_list_benchmark.dir/performance/sparse_list_benchmark.cpp.s
+.PHONY : performance/sparse_list_benchmark.cpp.s
+
+performance/string_concat_benchmark.o: performance/string_concat_benchmark.cpp.o
+.PHONY : performance/string_concat_benchmark.o
+
+# target to build an object file
+performance/string_concat_benchmark.cpp.o:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f protoCore/CMakeFiles/string_concat_benchmark.dir/build.make protoCore/CMakeFiles/string_concat_benchmark.dir/performance/string_concat_benchmark.cpp.o
+.PHONY : performance/string_concat_benchmark.cpp.o
+
+performance/string_concat_benchmark.i: performance/string_concat_benchmark.cpp.i
+.PHONY : performance/string_concat_benchmark.i
+
+# target to preprocess a source file
+performance/string_concat_benchmark.cpp.i:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f protoCore/CMakeFiles/string_concat_benchmark.dir/build.make protoCore/CMakeFiles/string_concat_benchmark.dir/performance/string_concat_benchmark.cpp.i
+.PHONY : performance/string_concat_benchmark.cpp.i
+
+performance/string_concat_benchmark.s: performance/string_concat_benchmark.cpp.s
+.PHONY : performance/string_concat_benchmark.s
+
+# target to generate assembly for a file
+performance/string_concat_benchmark.cpp.s:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-asan && $(MAKE) $(MAKESILENT) -f protoCore/CMakeFiles/string_concat_benchmark.dir/build.make protoCore/CMakeFiles/string_concat_benchmark.dir/performance/string_concat_benchmark.cpp.s
+.PHONY : performance/string_concat_benchmark.cpp.s
+
 # Help Target
 help:
 	@echo "The following are some of the valid targets for this Makefile:"
@@ -865,7 +1041,11 @@ help:
 	@echo "... package_protocore_only"
 	@echo "... concurrent_append_benchmark"
 	@echo "... immutable_sharing_benchmark"
+	@echo "... list_benchmark"
+	@echo "... object_access_benchmark"
 	@echo "... protoCore"
+	@echo "... sparse_list_benchmark"
+	@echo "... string_concat_benchmark"
 	@echo "... core/Cell.o"
 	@echo "... core/Cell.i"
 	@echo "... core/Cell.s"
@@ -932,6 +1112,9 @@ help:
 	@echo "... core/ProviderRegistry.o"
 	@echo "... core/ProviderRegistry.i"
 	@echo "... core/ProviderRegistry.s"
+	@echo "... core/SymbolTable.o"
+	@echo "... core/SymbolTable.i"
+	@echo "... core/SymbolTable.s"
 	@echo "... core/Thread.o"
 	@echo "... core/Thread.i"
 	@echo "... core/Thread.s"
@@ -941,6 +1124,18 @@ help:
 	@echo "... performance/immutable_sharing_benchmark.o"
 	@echo "... performance/immutable_sharing_benchmark.i"
 	@echo "... performance/immutable_sharing_benchmark.s"
+	@echo "... performance/list_benchmark.o"
+	@echo "... performance/list_benchmark.i"
+	@echo "... performance/list_benchmark.s"
+	@echo "... performance/object_access_benchmark.o"
+	@echo "... performance/object_access_benchmark.i"
+	@echo "... performance/object_access_benchmark.s"
+	@echo "... performance/sparse_list_benchmark.o"
+	@echo "... performance/sparse_list_benchmark.i"
+	@echo "... performance/sparse_list_benchmark.s"
+	@echo "... performance/string_concat_benchmark.o"
+	@echo "... performance/string_concat_benchmark.i"
+	@echo "... performance/string_concat_benchmark.s"
 .PHONY : help
 
 
