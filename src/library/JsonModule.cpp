@@ -27,7 +27,7 @@ static const proto::ProtoObject* jsonParse(proto::ProtoContext* ctx, const std::
             else t += s[i++];
         }
         if (i < s.size()) ++i;
-        return proto::ProtoString::fromUTF8(ctx, t.c_str())->asObject(ctx);
+        return PythonEnvironment::getInternedString(ctx, t.c_str())->asObject(ctx);
     }
     if (s[i] == '[') {
         ++i;
@@ -176,10 +176,10 @@ static const proto::ProtoObject* py_dumps(
     const proto::ParentLink*,
     const proto::ProtoList* posArgs,
     const proto::ProtoSparseList*) {
-    if (posArgs->getSize(ctx) < 1) return proto::ProtoString::fromUTF8(ctx, "null")->asObject(ctx);
+    if (posArgs->getSize(ctx) < 1) return PythonEnvironment::getInternedString(ctx, "null")->asObject(ctx);
     std::ostringstream out;
     dumpValue(ctx, out, posArgs->getAt(ctx, 0));
-    return proto::ProtoString::fromUTF8(ctx, out.str().c_str())->asObject(ctx);
+    return PythonEnvironment::getInternedString(ctx, out.str().c_str())->asObject(ctx);
 }
 
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {

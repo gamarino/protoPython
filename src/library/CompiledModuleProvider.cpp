@@ -52,9 +52,9 @@ const proto::ProtoObject* CompiledModuleProvider::tryLoad(const std::string& log
     const proto::ProtoObject* mod = ctx->newObject(false);
     if (ctx->space->objectPrototype) mod = mod->addParent(ctx, ctx->space->objectPrototype);
     
-    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__name__"), proto::ProtoString::fromUTF8(ctx, logicalPath.c_str())->asObject(ctx));
-    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__file__"), proto::ProtoString::fromUTF8(ctx, foundPath.c_str())->asObject(ctx));
-    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__loader__"), proto::ProtoString::fromUTF8(ctx, "CompiledModuleProvider")->asObject(ctx));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__name__"), PythonEnvironment::getInternedString(ctx, logicalPath.c_str())->asObject(ctx));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__file__"), PythonEnvironment::getInternedString(ctx, foundPath.c_str())->asObject(ctx));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__loader__"), PythonEnvironment::getInternedString(ctx, "CompiledModuleProvider")->asObject(ctx));
 
     // To allow proto_module_init to work, we need to set the current globals to this module.
     // In protoPython, resolve() depends on s_currentGlobals.

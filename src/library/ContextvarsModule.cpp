@@ -40,7 +40,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     contextVarProto = contextVarProto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__call__"), 
         ctx->fromMethod(const_cast<proto::ProtoObject*>(contextVarProto), cv_call));
     // Also satisfy potential checks for type
-    contextVarProto = contextVarProto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__name__"), proto::ProtoString::fromUTF8(ctx, "ContextVar"));
+    contextVarProto = contextVarProto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__name__"), PythonEnvironment::getInternedString(ctx, "ContextVar"));
 
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "ContextVar"), contextVarProto);
     

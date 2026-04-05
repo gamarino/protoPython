@@ -8,7 +8,7 @@ namespace ast {
 
 static const proto::ProtoObject* create_ast_node_type(proto::ProtoContext* ctx, const char* name, const proto::ProtoObject* base) {
     const proto::ProtoObject* type = base ? base->newChild(ctx, true) : ctx->newObject(false);
-    type = type->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__name__"), proto::ProtoString::fromUTF8(ctx, name)->asObject(ctx));
+    type = type->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__name__"), PythonEnvironment::getInternedString(ctx, name)->asObject(ctx));
     return type;
 }
 
@@ -72,12 +72,12 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
 
     // Add __all__
     const proto::ProtoList* all_list = ctx->newList();
-    all_list = all_list->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, "AST")->asObject(ctx));
-    for (const char* name : base_types) all_list = all_list->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, name)->asObject(ctx));
-    for (const char* name : node_names) all_list = all_list->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, name)->asObject(ctx));
-    all_list = all_list->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, "PyCF_ONLY_AST")->asObject(ctx));
-    all_list = all_list->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, "PyCF_OPTIMIZED_AST")->asObject(ctx));
-    all_list = all_list->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, "PyCF_TYPE_COMMENTS")->asObject(ctx));
+    all_list = all_list->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "AST")->asObject(ctx));
+    for (const char* name : base_types) all_list = all_list->appendLast(ctx, PythonEnvironment::getInternedString(ctx, name)->asObject(ctx));
+    for (const char* name : node_names) all_list = all_list->appendLast(ctx, PythonEnvironment::getInternedString(ctx, name)->asObject(ctx));
+    all_list = all_list->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "PyCF_ONLY_AST")->asObject(ctx));
+    all_list = all_list->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "PyCF_OPTIMIZED_AST")->asObject(ctx));
+    all_list = all_list->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "PyCF_TYPE_COMMENTS")->asObject(ctx));
     mod_obj = mod_obj->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__all__"), all_list->asObject(ctx));
 
     // Flags

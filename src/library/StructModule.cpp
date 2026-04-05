@@ -1,3 +1,4 @@
+#include <protoPython/PythonEnvironment.h>
 #include "protoPython/StructModule.h"
 
 namespace protoPython {
@@ -8,7 +9,7 @@ const proto::ProtoObject* py_calcsize(proto::ProtoContext* ctx, const proto::Pro
 }
 
 const proto::ProtoObject* py_pack(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* link, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
-    return proto::ProtoString::fromUTF8(ctx, "")->asObject(ctx); 
+    return PythonEnvironment::getInternedString(ctx, "")->asObject(ctx); 
 }
 
 const proto::ProtoObject* py_unpack(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* link, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
@@ -20,7 +21,7 @@ const proto::ProtoObject* py_struct_init(proto::ProtoContext* ctx, const proto::
 }
 
 const proto::ProtoObject* py_struct_pack(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* link, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
-    return proto::ProtoString::fromUTF8(ctx, "")->asObject(ctx); 
+    return PythonEnvironment::getInternedString(ctx, "")->asObject(ctx); 
 }
 
 const proto::ProtoObject* py_struct_unpack(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* link, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {

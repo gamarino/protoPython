@@ -1,3 +1,4 @@
+#include <protoPython/PythonEnvironment.h>
 #include <protoPython/ItertoolsModule.h>
 #include <string>
 
@@ -350,7 +351,7 @@ static const proto::ProtoObject* accumulate_add(
         std::string sa, sb;
         left->asString(ctx)->toUTF8String(ctx, sa);
         right->asString(ctx)->toUTF8String(ctx, sb);
-        return proto::ProtoString::fromUTF8(ctx, (sa + sb).c_str())->asObject(ctx);
+        return PythonEnvironment::getInternedString(ctx, (sa + sb).c_str())->asObject(ctx);
     }
     const proto::ProtoObject* addM = left->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__add__"));
     if (addM && addM->asMethod(ctx)) {

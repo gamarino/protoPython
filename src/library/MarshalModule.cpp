@@ -18,7 +18,7 @@ static const proto::ProtoObject* py_marshal_loads(
 
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     if (env) {
-        env->raiseValueError(context, proto::ProtoString::fromUTF8(context, "marshal.loads not implemented in ProtoPython")->asObject(context));
+        env->raiseValueError(context, PythonEnvironment::getInternedString(context, "marshal.loads not implemented in ProtoPython")->asObject(context));
     }
     return nullptr;
 }
@@ -36,7 +36,7 @@ static const proto::ProtoObject* py_marshal_dumps(
 
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     if (env) {
-        env->raiseValueError(context, proto::ProtoString::fromUTF8(context, "marshal.dumps not implemented in ProtoPython")->asObject(context));
+        env->raiseValueError(context, PythonEnvironment::getInternedString(context, "marshal.dumps not implemented in ProtoPython")->asObject(context));
     }
     return nullptr;
 }

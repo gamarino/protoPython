@@ -1,3 +1,4 @@
+#include <protoPython/PythonEnvironment.h>
 #include <protoPython/OperatorModule.h>
 #include <cmath>
 #include <string>
@@ -28,7 +29,7 @@ static const proto::ProtoObject* py_add(
         std::string sa, sb;
         a->asString(ctx)->toUTF8String(ctx, sa);
         b->asString(ctx)->toUTF8String(ctx, sb);
-        return proto::ProtoString::fromUTF8(ctx, (sa + sb).c_str())->asObject(ctx);
+        return PythonEnvironment::getInternedString(ctx, (sa + sb).c_str())->asObject(ctx);
     }
     if (a->isDouble(ctx) || b->isDouble(ctx))
         return ctx->fromDouble(toDouble(ctx, a) + toDouble(ctx, b));

@@ -1,3 +1,4 @@
+#include <protoPython/PythonEnvironment.h>
 #include <protoPython/ReModule.h>
 #include <regex>
 #include <string>
@@ -17,7 +18,7 @@ static const proto::ProtoObject* py_compile(
     const proto::ProtoObject* proto = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__pattern_proto__"));
     if (!proto) return PROTO_NONE;
     const proto::ProtoObject* p = proto->newChild(ctx, true);
-    p = p->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__re_pattern__"), proto::ProtoString::fromUTF8(ctx, pat.c_str())->asObject(ctx));
+    p = p->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__re_pattern__"), PythonEnvironment::getInternedString(ctx, pat.c_str())->asObject(ctx));
     return p;
 }
 
@@ -56,7 +57,7 @@ static const proto::ProtoObject* py_match(
     const proto::ProtoObject* matchProto = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__match_proto__"));
     if (!matchProto) return PROTO_NONE;
     const proto::ProtoObject* mo = matchProto->newChild(ctx, true);
-    mo = mo->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__re_match_str__"), proto::ProtoString::fromUTF8(ctx, m.str().c_str())->asObject(ctx));
+    mo = mo->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__re_match_str__"), PythonEnvironment::getInternedString(ctx, m.str().c_str())->asObject(ctx));
     return mo;
 }
 
@@ -94,7 +95,7 @@ static const proto::ProtoObject* py_search(
     const proto::ProtoObject* matchProto = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__match_proto__"));
     if (!matchProto) return PROTO_NONE;
     const proto::ProtoObject* mo = matchProto->newChild(ctx, true);
-    mo = mo->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__re_match_str__"), proto::ProtoString::fromUTF8(ctx, m.str().c_str())->asObject(ctx));
+    mo = mo->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__re_match_str__"), PythonEnvironment::getInternedString(ctx, m.str().c_str())->asObject(ctx));
     return mo;
 }
 
@@ -118,7 +119,7 @@ static const proto::ProtoObject* py_escape(
         }
         escaped += c;
     }
-    return proto::ProtoString::fromUTF8(ctx, escaped.c_str())->asObject(ctx);
+    return PythonEnvironment::getInternedString(ctx, escaped.c_str())->asObject(ctx);
 }
 
 static const proto::ProtoObject* py_pattern_match(
@@ -155,7 +156,7 @@ static const proto::ProtoObject* py_pattern_match(
     if (!matchProto) return PROTO_NONE;
     
     const proto::ProtoObject* mo = matchProto->newChild(ctx, true);
-    mo = mo->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__re_match_str__"), proto::ProtoString::fromUTF8(ctx, m.str().c_str())->asObject(ctx));
+    mo = mo->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__re_match_str__"), PythonEnvironment::getInternedString(ctx, m.str().c_str())->asObject(ctx));
     return mo;
 }
 
@@ -192,7 +193,7 @@ static const proto::ProtoObject* py_pattern_search(
     if (!matchProto) return PROTO_NONE;
     
     const proto::ProtoObject* mo = matchProto->newChild(ctx, true);
-    mo = mo->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__re_match_str__"), proto::ProtoString::fromUTF8(ctx, m.str().c_str())->asObject(ctx));
+    mo = mo->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__re_match_str__"), PythonEnvironment::getInternedString(ctx, m.str().c_str())->asObject(ctx));
     return mo;
 }
 
@@ -239,7 +240,7 @@ static const proto::ProtoObject* py_pattern_sub(
         return strObj;
     }
 
-    return proto::ProtoString::fromUTF8(ctx, res.c_str())->asObject(ctx);
+    return PythonEnvironment::getInternedString(ctx, res.c_str())->asObject(ctx);
 }
 
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {

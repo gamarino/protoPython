@@ -1,3 +1,4 @@
+#include <protoPython/PythonEnvironment.h>
 #include <protoPython/PythonModuleProvider.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -51,8 +52,8 @@ const proto::ProtoObject* PythonModuleProvider::tryLoad(const std::string& logic
             if (ctx->space->objectPrototype) {
                 module = module->addParent(ctx, ctx->space->objectPrototype);
             }
-            module = module->setAttribute(ctx, nameKey, proto::ProtoString::fromUTF8(ctx, logicalPath.c_str() )->asObject(ctx));
-            module = module->setAttribute(ctx, fileKey, proto::ProtoString::fromUTF8(ctx, pyPath.c_str() )->asObject(ctx));
+            module = module->setAttribute(ctx, nameKey, PythonEnvironment::getInternedString(ctx, logicalPath.c_str() )->asObject(ctx));
+            module = module->setAttribute(ctx, fileKey, PythonEnvironment::getInternedString(ctx, pyPath.c_str() )->asObject(ctx));
             return module;
         }
 
@@ -63,11 +64,11 @@ const proto::ProtoObject* PythonModuleProvider::tryLoad(const std::string& logic
             if (ctx->space->objectPrototype) {
                 module = module->addParent(ctx, ctx->space->objectPrototype);
             }
-            module = module->setAttribute(ctx, nameKey, proto::ProtoString::fromUTF8(ctx, logicalPath.c_str() )->asObject(ctx));
-            module = module->setAttribute(ctx, fileKey, proto::ProtoString::fromUTF8(ctx, initPath.c_str() )->asObject(ctx));
+            module = module->setAttribute(ctx, nameKey, PythonEnvironment::getInternedString(ctx, logicalPath.c_str() )->asObject(ctx));
+            module = module->setAttribute(ctx, fileKey, PythonEnvironment::getInternedString(ctx, initPath.c_str() )->asObject(ctx));
             
             const proto::ProtoList* pkgPath = ctx->newList();
-            pkgPath = pkgPath->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, joinPath(basePath, relPath).c_str())->asObject(ctx));
+            pkgPath = pkgPath->appendLast(ctx, PythonEnvironment::getInternedString(ctx, joinPath(basePath, relPath).c_str())->asObject(ctx));
             module = module->setAttribute(ctx, pathKey, pkgPath->asObject(ctx));
             return module;
         }
