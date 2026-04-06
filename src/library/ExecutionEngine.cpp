@@ -81,10 +81,45 @@ static bool opcodeHasArg(int op) {
 }
 
 
+
+RecursionScope::RecursionScope(PythonEnvironment* env, proto::ProtoContext* ctx) : env_(env), ctx_(ctx) {
+    if (!env_) return;
+    
+    int limit = env_->getRecursionLimit();
+
+    // If we are already raising a recursion error, allow more depth (up to a hard limit)
+    if (PythonEnvironment::s_inRecursionError) {
+        if (PythonEnvironment::s_recursionDepth >= limit + 100) {
+            overflowed_ = true;
+            return;
+        }
+        PythonEnvironment::s_recursionDepth++;
+        incremented_ = true;
+        return;
+    }
+
+    if (PythonEnvironment::s_recursionDepth >= limit) {
+        PythonEnvironment::s_inRecursionError = true;
+        env_->raiseRecursionError(ctx_);
+        PythonEnvironment::s_inRecursionError = false;
+        overflowed_ = true;
+    } else {
+        PythonEnvironment::s_recursionDepth++;
+        incremented_ = true;
+    }
+}
+RecursionScope::~RecursionScope() {
+    if (incremented_) {
+        PythonEnvironment::s_recursionDepth--;
+    }
+}
+
+
 namespace {
 
 static const proto::ProtoObject* invokeDunder(proto::ProtoContext* ctx, const proto::ProtoObject* container, const proto::ProtoString* name, const proto::ProtoList* args);
 static bool isTruthy(proto::ProtoContext* ctx, const proto::ProtoObject* obj);
+
 struct FrameScope {
     FrameScope(const proto::ProtoObject* frame) : oldFrame(PythonEnvironment::getCurrentFrame()) {
         PythonEnvironment::setCurrentFrame(frame);
@@ -958,45 +993,8 @@ static bool isTruthy(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
     return true;
 }
 
-struct RecursionScope {
-    RecursionScope(PythonEnvironment* env, proto::ProtoContext* ctx) : env_(env), ctx_(ctx) {
-        if (!env_) return;
-        
-        int limit = env_->getRecursionLimit();
 
-        // If we are already raising a recursion error, allow more depth (up to a hard limit)
-        if (PythonEnvironment::s_inRecursionError) {
-            if (PythonEnvironment::s_recursionDepth >= limit + 100) {
-                overflowed_ = true;
-                return;
-            }
-            PythonEnvironment::s_recursionDepth++;
-            incremented_ = true;
-            return;
-        }
 
-        if (PythonEnvironment::s_recursionDepth >= limit) {
-            PythonEnvironment::s_inRecursionError = true;
-            env_->raiseRecursionError(ctx_);
-            PythonEnvironment::s_inRecursionError = false;
-            overflowed_ = true;
-        } else {
-            PythonEnvironment::s_recursionDepth++;
-            incremented_ = true;
-        }
-    }
-    ~RecursionScope() {
-        if (incremented_) {
-            PythonEnvironment::s_recursionDepth--;
-        }
-    }
-    bool overflowed() const { return overflowed_; }
-private:
-    PythonEnvironment* env_;
-    proto::ProtoContext* ctx_;
-    bool overflowed_ = false;
-    bool incremented_ = false;
-};
 
 static const proto::ProtoObject* invokeCallable(proto::ProtoContext* ctx,
     const proto::ProtoObject* callable, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs = nullptr) {
@@ -1081,6 +1079,10 @@ static const proto::ProtoObject* invokeCallable(proto::ProtoContext* ctx,
 
 static const proto::ProtoObject* invokeDunder(proto::ProtoContext* ctx, const proto::ProtoObject* container, const proto::ProtoString* name, const proto::ProtoList* args) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    
+    RecursionScope recScope(env, ctx);
+    if (recScope.overflowed()) return nullptr;
+
     const proto::ProtoObject* method = env ? env->getAttribute(ctx, container, name) : container->getAttribute(ctx, name);
     if (!method || method == PROTO_NONE) return nullptr;
 
@@ -1296,6 +1298,9 @@ const proto::ProtoObject* py_generator_send_impl(
 
     // 8. Clear running 
     self->setAttribute(ctx, env->getGiRunningString(), PROTO_FALSE);
+    if (!yielded) {
+        nextPc = co_code_tuple->getSize(ctx);
+    }
     self->setAttribute(ctx, env->getGiPCString(), ctx->fromInteger(nextPc));
 
     if (std::getenv("PROTO_ENV_DIAG")) {
@@ -1475,7 +1480,11 @@ const proto::ProtoObject* runUserClassCall(proto::ProtoContext* ctx,
     const proto::ProtoString* newS = env ? env->getNewString() : protoPython::PythonEnvironment::getInternalString(ctx, "__new__");
     const proto::ProtoObject* newM = env ? env->getAttribute(ctx, self, newS) : self->getAttribute(ctx, newS);
     
-    if (get_env_diag()) {
+    if (std::getenv("PROTO_ENV_DEBUG")) {
+        std::string clsName = "unknown";
+        const proto::ProtoObject* nameAttr = self->getAttribute(ctx, env ? env->getNameString() : nullptr);
+        if (nameAttr && nameAttr->isString(ctx)) nameAttr->asString(ctx)->toUTF8String(ctx, clsName);
+        fprintf(stderr, "TRACE: runUserClassCall(cls=%p '%s') newM=%p\n", (void*)self, clsName.c_str(), (void*)newM);
     }
 
     proto::ProtoObject* obj = nullptr;
@@ -1521,13 +1530,14 @@ const proto::ProtoObject* runUserClassCall(proto::ProtoContext* ctx,
     if (obj && obj != PROTO_NONE) {
         bool isInstanceOfSelf = false;
         if (env) {
-            isInstanceOfSelf = (obj->isInstanceOf(ctx, self) == PROTO_TRUE);
+            const proto::ProtoObject* objCls = env->getType(ctx, obj);
+            isInstanceOfSelf = (objCls == self || (objCls && objCls->isInstanceOf(ctx, self) == PROTO_TRUE));
         } else {
             // Very naive fallback if env is missing
             const proto::ProtoObject* cls = obj->getAttribute(ctx, protoPython::PythonEnvironment::getInternalString(ctx, "__class__"));
             isInstanceOfSelf = (cls == self);
         }
-        
+
         if (isInstanceOfSelf) {
             const proto::ProtoString* initS = env ? env->getInitString() : protoPython::PythonEnvironment::getInternalString(ctx, "__init__");
             const proto::ProtoObject* initM = self->getAttribute(ctx, initS);
@@ -1634,6 +1644,10 @@ const proto::ProtoObject* executeBytecodeRange(
     unsigned long* finalTopPtr) {
     if (!ctx || !constants || !bytecode) return nullptr;
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+
+    RecursionScope recScope(env, ctx);
+    if (recScope.overflowed()) return nullptr;
+    
     if (!env && std::getenv("PROTO_THREAD_DIAG")) {
         // log removed
     }
