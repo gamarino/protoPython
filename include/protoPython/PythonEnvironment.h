@@ -29,6 +29,11 @@ public:
 
     // Global string interning for resolving cross-module identity matches
     static const proto::ProtoString* getInternedString(proto::ProtoContext* ctx, const std::string& str);
+    
+    /**
+     * @brief Returns a canonical dunder string for the given name.
+     */
+    static const proto::ProtoString* getInternalString(proto::ProtoContext* ctx, const char* name);
 
     /**
      * @brief Returns the process singleton ProtoSpace (L-Shape: one per process).

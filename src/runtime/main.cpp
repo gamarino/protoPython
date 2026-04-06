@@ -289,14 +289,27 @@ int main(int argc, char* argv[]) {
     }
 
     if (!resolved) {
-        // Special case for development: check ./lib/python3.14
-        if (std::filesystem::exists("lib/python3.14")) {
-            stdLibPath = "lib/python3.14";
+        // Special case for development: traverse up from exeDir to find lib/python3.14
+        std::filesystem::path curr = std::filesystem::absolute(exeDir);
+        bool found = false;
+        for (int i = 0; i < 5; ++i) { // Search up to 5 levels
+            if (std::filesystem::exists(curr / "lib/python3.14")) {
+                stdLibPath = (curr / "lib/python3.14").string();
+                resolved = true;
+                found = true;
+                break;
+            }
+            if (!curr.has_parent_path() || curr == curr.parent_path()) break;
+            curr = curr.parent_path();
+        }
+        if (!found && std::filesystem::exists("lib/python3.14")) {
+            stdLibPath = std::filesystem::absolute("lib/python3.14").string();
+            resolved = true;
         }
     }
 
-    if (std::getenv("PROTO_ENV_DIAG")) {
-        fprintf(stderr, "DEBUG MAIN: PROTO_ENV_DIAG is SET (val=%s)\n", std::getenv("PROTO_ENV_DIAG"));
+    if (std::getenv("PROTO_ENV_DIAG") || true) { // Force print stdlib for now
+        fprintf(stderr, "DEBUG MAIN: Resolved stdLibPath: %s\n", stdLibPath.c_str());
         fflush(stderr);
     }
 

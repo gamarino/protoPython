@@ -4,6 +4,18 @@
 #include <protoCore.h>
 
 namespace protoPython {
+class PythonEnvironment;
+
+struct RecursionScope {
+    RecursionScope(PythonEnvironment* env, proto::ProtoContext* ctx);
+    ~RecursionScope();
+    bool overflowed() const { return overflowed_; }
+private:
+    PythonEnvironment* env_;
+    proto::ProtoContext* ctx_;
+    bool overflowed_ = false;
+    bool incremented_ = false;
+};
 
 /** LOAD_CONST: push constants[index] onto stack. */
 constexpr int OP_LOAD_CONST = 100;
