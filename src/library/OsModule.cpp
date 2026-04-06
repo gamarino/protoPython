@@ -803,7 +803,7 @@ static const proto::ProtoObject* py_exit(
     return PROTO_NONE;
 }
 
-const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment* env) {
+const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment* env, const proto::ProtoObject* pathModule) {
     const proto::ProtoObject* direntry_proto = env && env->getObjectPrototype() ? env->getObjectPrototype()->newChild(ctx, false) : ctx->newObject(false);
     // Ensure direntry_proto is a fresh object and not polluting global Object prototype
     // In some protoCore versions, newObject(false) might return a shared object if not careful.
@@ -821,10 +821,11 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     direntry_proto = direntry_proto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__fspath__"),
         ctx->fromMethod(nullptr, py_direntry_fspath));
 
-
-
     const proto::ProtoObject* mod = env && env->getObjectPrototype() ? env->getObjectPrototype()->newChild(ctx, true) : ctx->newObject(false);
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_direntry_proto"), direntry_proto);
+    if (pathModule) {
+        mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "path"), pathModule);
+    }
     
     // Create Environ object
     const proto::ProtoObject* environProt = env && env->getObjectPrototype() ? env->getObjectPrototype()->newChild(ctx, false) : ctx->newObject(false);

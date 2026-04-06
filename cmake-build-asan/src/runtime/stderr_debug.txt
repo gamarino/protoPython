@@ -1,0 +1,143 @@
+DEBUG MAIN: Resolved stdLibPath: /home/gamarino/Documentos/proyectos/protoPython/lib/python3.14
+!!! DEBUG [IN] initializeRootObjects
+!!! DEBUG NATIVE: registerModule(sys)
+!!! DEBUG NATIVE: registerModule(_io)
+!!! DEBUG NATIVE: registerModule(builtins)
+!!! DEBUG NATIVE: registerModule(_collections)
+!!! DEBUG NATIVE: registerModule(_collections_abc)
+!!! DEBUG NATIVE: registerModule(logging)
+!!! DEBUG NATIVE: registerModule(operator)
+!!! DEBUG NATIVE: registerModule(_operator)
+!!! DEBUG NATIVE: registerModule(math)
+!!! DEBUG NATIVE: registerModule(time)
+!!! DEBUG NATIVE: registerModule(_os)
+!!! DEBUG NATIVE: registerModule(posix)
+!!! DEBUG NATIVE: registerModule(nt)
+!!! DEBUG NATIVE: registerModule(_signal)
+!!! DEBUG NATIVE: registerModule(_thread)
+!!! DEBUG NATIVE: registerModule(_functools)
+!!! DEBUG NATIVE: registerModule(itertools)
+!!! DEBUG NATIVE: registerModule(re)
+!!! DEBUG NATIVE: registerModule(json)
+!!! DEBUG NATIVE: registerModule(os.path)
+!!! DEBUG NATIVE: registerModule(pathlib)
+!!! DEBUG NATIVE: registerModule(atexit)
+!!! DEBUG NATIVE: registerModule(_weakref)
+!!! DEBUG NATIVE: registerModule(exceptions)
+!!! DEBUG NATIVE: registerModule(_codecs)
+!!! DEBUG NATIVE: registerModule(_ast)
+!!! DEBUG NATIVE: registerModule(errno)
+!!! DEBUG NATIVE: registerModule(stat)
+!!! DEBUG NATIVE: registerModule(_struct)
+!!! DEBUG NATIVE: registerModule(_opcode)
+!!! DEBUG NATIVE: registerModule(marshal)
+!!! DEBUG NATIVE: registerModule(_imp)
+!!! DEBUG NATIVE: registerModule(_warnings)
+DEBUG: assertionErrorType loaded successfully: 0x7c788c888740
+!!! DEBUG: End of initializeRootObjects
+!!! DEBUG NATIVE: tryLoad(__main__) - map size=33
+DEBUG: resolveModule __main__ -> modWrapper=0x141
+!!! DEBUG NATIVE: tryLoad(os) - map size=33
+DEBUG: resolveModule os -> modWrapper=0x7c788cb07880
+DEBUG: resolveModule os -> result=0x7c788cb07780
+!!! DEBUG NATIVE: tryLoad(abc) - map size=33
+DEBUG: resolveModule abc -> modWrapper=0x7c788a77ab00
+DEBUG: resolveModule abc -> result=0x7c788a77aa00
+DEBUG py_type: starting MRO computation
+DEBUG py_type before MRO: targetClass=0x7c788ac50200 tupleBases=0x7c788ab79e04 (size=1) listBases=(nil)
+DEBUG py_type: computeC3MRO returned mroList=0x7c788ac6a8c2
+DEBUG py_type: starting MRO computation
+DEBUG py_type before MRO: targetClass=0x7c788ad5cfc0 tupleBases=0x7c788ac86bc4 (size=1) listBases=(nil)
+DEBUG py_type: computeC3MRO returned mroList=0x7c788ad77682
+DEBUG py_type: starting MRO computation
+DEBUG py_type before MRO: targetClass=0x7c788ae69cc0 tupleBases=0x7c788ad80e04 (size=1) listBases=(nil)
+DEBUG py_type: computeC3MRO returned mroList=0x7c788ae7eec2
+!!! DEBUG NATIVE: tryLoad(_abc) - map size=33
+DEBUG: resolveModule _abc -> modWrapper=0x141
+DEBUG EXCEPTION: Raised ImportError exc=0x7c788cab2080
+!!! DEBUG NATIVE: tryLoad(_py_abc) - map size=33
+DEBUG: resolveModule _py_abc -> modWrapper=0x7c788ae942c0
+DEBUG: resolveModule _py_abc -> result=0x7c788ae941c0
+!!! DEBUG NATIVE: tryLoad(_weakrefset) - map size=33
+DEBUG: resolveModule _weakrefset -> modWrapper=0x7c788b129800
+DEBUG: resolveModule _weakrefset -> result=0x7c788b129700
+!!! DEBUG NATIVE: tryLoad(_weakref) - map size=33
+DEBUG: _weakref env=0x7c788f1017c0
+DEBUG: _weakref inside if(env)
+DEBUG: _weakref setAttribute(ref)
+DEBUG NATIVE: Loaded _weakref mod=0x7c7888e70dc0
+DEBUG: resolveModule _weakref -> modWrapper=0x7c7888e711c0
+DEBUG: resolveModule _weakref -> result=0x7c7888e710c0
+!!! DEBUG NATIVE: tryLoad(types) - map size=33
+DEBUG: resolveModule types -> modWrapper=0x7c7888e80480
+DEBUG: resolveModule types -> result=0x7c7888e80380
+!!! DEBUG NATIVE: tryLoad(_types) - map size=33
+DEBUG: resolveModule _types -> modWrapper=0x141
+DEBUG EXCEPTION: Raised ImportError exc=0x7c788cac4f00
+DEBUG py_type: starting MRO computation
+DEBUG py_type before MRO: targetClass=0x7c7889bd99c0 tupleBases=0x7c788c6ebcc4 (size=0) listBases=(nil)
+DEBUG computeC3MRO EMPTY BASES. cls=0x7c7889bd99c0 objProto=0x7c788c806600
+DEBUG py_type: computeC3MRO returned mroList=0x7c7889bee402
+DEBUG py_type: starting MRO computation
+DEBUG py_type before MRO: targetClass=0x7c7886fdb740 tupleBases=0x7c788c6ebcc4 (size=0) listBases=(nil)
+DEBUG computeC3MRO EMPTY BASES. cls=0x7c7886fdb740 objProto=0x7c788c806600
+DEBUG py_type: computeC3MRO returned mroList=0x7c788706b302
+DEBUG py_type: starting MRO computation
+DEBUG py_type before MRO: targetClass=0x7c7887150940 tupleBases=0x7c788c6ebcc4 (size=0) listBases=(nil)
+DEBUG computeC3MRO EMPTY BASES. cls=0x7c7887150940 objProto=0x7c788c806600
+DEBUG py_type: computeC3MRO returned mroList=0x7c78871b2442
+!!! DEBUG NATIVE: tryLoad(atexit) - map size=33
+DEBUG NATIVE: Loaded atexit mod=0x7c7889324c40
+DEBUG: resolveModule atexit -> modWrapper=0x7c7889324f40
+DEBUG: resolveModule atexit -> result=0x7c7889324e40
+DEBUG py_type: starting MRO computation
+DEBUG py_type before MRO: targetClass=0x7c788732a880 tupleBases=0x7c788c6ebcc4 (size=0) listBases=(nil)
+DEBUG computeC3MRO EMPTY BASES. cls=0x7c788732a880 objProto=0x7c788c806600
+DEBUG py_type: computeC3MRO returned mroList=0x7c78875ba902
+DEBUG: resolveModule atexit -> modWrapper=0x7c7888e1f440
+DEBUG: resolveModule atexit -> result=0x7c7889324e40
+DEBUG py_type: starting MRO computation
+DEBUG py_type before MRO: targetClass=0x7c7887682340 tupleBases=0x7c7888e2ed84 (size=1) listBases=(nil)
+DEBUG py_type: computeC3MRO returned mroList=0x7c78876c0342
+DEBUG: resolveModule atexit -> modWrapper=0x7c788b0f2280
+DEBUG: resolveModule atexit -> result=0x7c7889324e40
+DEBUG py_super_getattr(__new__): searching parent 0x7c788c6ebfc0 (attrs=0x7c788c806c48). Looking for hash 136857193797318
+DEBUG   - attr hash 59832642817 (str='mro', val=<class 'method'>) keyObjPtr=0xdee4dad01
+DEBUG   - attr hash 136857193959702 (str='', val=type) keyObjPtr=0x7c788c6e5116
+DEBUG   - attr hash 136857193959958 (str='', val=builtins) keyObjPtr=0x7c788c6e5216
+DEBUG   - attr hash 136857193966422 (str='', val=<class 'method'>) keyObjPtr=0x7c788c6e6b56
+DEBUG   - attr hash 136857193966870 (str='', val=<class 'method'>) keyObjPtr=0x7c788c6e6d16
+DEBUG   - attr hash 136857193985686 (str='', val=True) keyObjPtr=0x7c788c6eb696
+DEBUG   - attr hash 136857193986582 (str='', val=) keyObjPtr=0x7c788c6eba16
+DEBUG   - attr hash 136857193987414 (str='', val=(<object object at 0x7c788c6ebf80>,)) keyObjPtr=0x7c788c6ebd56
+DEBUG   - attr hash 136857193988246 (str='', val=<class 'type'>) keyObjPtr=0x7c788c6ec096
+DEBUG   - attr hash 136857193990294 (str='', val=<class 'method'>) keyObjPtr=0x7c788c6ec896
+DEBUG   - attr hash 136857193991958 (str='', val=<class 'method'>) keyObjPtr=0x7c788c6ecf16
+DEBUG   - attr hash 136857193998806 (str='', val=<class 'method'>) keyObjPtr=0x7c788c6ee9d6
+DEBUG   - attr hash 136857194050966 (str='', val=) keyObjPtr=0x7c788c6fb596
+DEBUG   - attr hash 136857194059606 (str='', val=) keyObjPtr=0x7c788c6fd756
+DEBUG   - attr hash 859042172382214401 (str='__or__', val=<class 'method'>) keyObjPtr=0xbebee4debebf901
+DEBUG py_super_getattr(__new__): parent 0x7c788c6ebfc0 returned val 0x141
+DEBUG HANG: raiseTypeError called with msg=''NoneType' object is not callable'
+DEBUG EXCEPTION: Raised TypeError exc=0x7c7889af2e80
+protopy: unhandled exception in module execution (abc):
+Traceback (most recent call last):
+  File "/home/gamarino/Documentos/proyectos/protoPython/lib/python3.14/abc.py", line 5, in <module>
+  File "/home/gamarino/Documentos/proyectos/protoPython/lib/python3.14/_py_abc.py", line 36, in __new__
+TypeError: 'NoneType' object is not callable
+
+protopy: unhandled exception in module execution (os):
+Traceback (most recent call last):
+  File "/home/gamarino/Documentos/proyectos/protoPython/lib/python3.14/os.py", line 23, in <module>
+  File "/home/gamarino/Documentos/proyectos/protoPython/lib/python3.14/abc.py", line 5, in <module>
+  File "/home/gamarino/Documentos/proyectos/protoPython/lib/python3.14/_py_abc.py", line 36, in __new__
+TypeError: 'NoneType' object is not callable
+
+protopy: unhandled exception in -c execution:
+DEBUG_HANDLE_EXC: exc=0x7c7889af2e80
+Traceback (most recent call last):
+  File "<unknown>", in <module>
+  File "/home/gamarino/Documentos/proyectos/protoPython/lib/python3.14/os.py", line 23, in <module>
+  File "/home/gamarino/Documentos/proyectos/protoPython/lib/python3.14/abc.py", line 5, in <module>
+  File "/home/gamarino/Documentos/proyectos/protoPython/lib/python3.14/_py_abc.py", line 36, in __new__
+TypeError: 'NoneType' object is not callable

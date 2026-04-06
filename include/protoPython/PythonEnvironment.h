@@ -14,6 +14,7 @@
 #include <protoPython/Tokenizer.h>
 
 namespace protoPython {
+class NativeModuleProvider;
 
 class PythonEnvironment {
 public:
@@ -699,6 +700,9 @@ private:
 
     /** Helper: checks if a string is a complete Python statement/expression (Step 1307). */
     bool isCompleteBlock(const std::string& code);
+
+    /** Helper to register a native module with generic decoration (__name__, __class__) */
+    void registerNativeModule(NativeModuleProvider* provider, const std::string& name, std::function<const proto::ProtoObject*(proto::ProtoContext*)> init);
 
     proto::ProtoSpace* space_;
     proto::ProtoContext* rootContext_;

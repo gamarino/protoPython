@@ -1296,9 +1296,9 @@ static const proto::ProtoObject* py_dir(
     
     // Wrap in a Python list object (Step 1347 fix)
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
-    const proto::ProtoObject* listType = self->getAttribute(context, env ? env->getListTypeString() : PythonEnvironment::getInternedString(context, "list"));
-    if (listType && listType != PROTO_NONE) {
-        const proto::ProtoObject* listObj = listType->newChild(context, true);
+    const proto::ProtoObject* listPrototype = env ? env->getListPrototype() : nullptr;
+    if (listPrototype && listPrototype != PROTO_NONE) {
+        const proto::ProtoObject* listObj = listPrototype->newChild(context, true);
         listObj->setAttribute(context, env ? env->getDataString() : PythonEnvironment::getInternedString(context, "__data__"), result->asObject(context));
         return listObj;
     }
@@ -2439,6 +2439,11 @@ const proto::ProtoObject* py_type(
         targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, py_name, name));
         
         // NEW RULE: Explicitly mark this as a Python class
+        if (std::getenv("PROTO_ENV_DEBUG")) {
+            std::string n;
+            name->asString(context)->toUTF8String(context, n);
+            fprintf(stderr, "TRACE: py_type CREATED class=%p name='%s'\n", (void*)targetClass, n.c_str());
+        }
         targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, PythonEnvironment::getInternedString(context, "__is_python_class__"), PROTO_TRUE));
 
         

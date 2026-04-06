@@ -1,7 +1,46 @@
 #include <protoPython/CollectionsAbcModule.h>
 #include <protoPython/PythonEnvironment.h>
+#include <protoCore.h>
+#include <proto_internal.h>
 
 namespace protoPython {
+static const proto::ProtoObject* py_check_methods(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList* sparseArgs) {
+    fprintf(stderr, "DEBUG_PY_CHECK_METHODS_CALLED\n");
+
+    if (!posArgs || posArgs->getSize(ctx) < 2) return PROTO_FALSE;
+    const proto::ProtoObject* C = posArgs->getAt(ctx, 0);
+    const proto::ProtoObject* mro = C->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__mro__"));
+    if (!mro) return PROTO_FALSE;
+    const proto::ProtoList* mroList = mro->asList(ctx);
+    if (!mroList) return PROTO_FALSE;
+
+    for (size_t i = 1; i < posArgs->getSize(ctx); ++i) {
+        const proto::ProtoObject* methodObj = posArgs->getAt(ctx, i);
+        const proto::ProtoString* methodName = methodObj ? methodObj->asString(ctx) : nullptr;
+        if (!methodName) continue;
+
+        bool found = false;
+        for (size_t j = 0; j < mroList->getSize(ctx); ++j) {
+            const proto::ProtoObject* base = mroList->getAt(ctx, j);
+            const proto::ProtoObject* dict = base->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__dict__"));
+            if (dict && dict->hasAttribute(ctx, methodName)) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) return PROTO_FALSE;
+    }
+    return PROTO_TRUE;
+}
+
+
+
+
 namespace collections_abc {
 
 /** Minimal __call__ for ABC stub: return new child (for isinstance/callable use). */
@@ -78,32 +117,51 @@ static const proto::ProtoObject* py_abc_check_methods(
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     auto createAbc = [&](const char* name) {
         proto::ProtoObject* abc = const_cast<proto::ProtoObject*>(ctx->newObject(false));
-        abc->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__call__"),
-            ctx->fromMethod(abc, py_abc_call));
-        abc->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "register"),
-            ctx->fromMethod(abc, py_abc_register));
-        abc->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__name__"),
-            PythonEnvironment::getInternedString(ctx, name)->asObject(ctx));
+        PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
         
-        // Set __class__ to self for diagnostic clarity (raiseAttributeError uses it)
-        abc->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__class__"), abc);
+        const proto::ProtoString* s_call = env ? env->getCallString() : PythonEnvironment::getInternedString(ctx, "__call__");
+        const proto::ProtoString* s_name = env ? env->getNameString() : PythonEnvironment::getInternedString(ctx, "__name__");
+        const proto::ProtoString* s_class = env ? env->getClassString() : PythonEnvironment::getInternedString(ctx, "__class__");
+        const proto::ProtoString* s_register = PythonEnvironment::getInternedString(ctx, "register");
+        const proto::ProtoString* s_is_py_class = PythonEnvironment::getInternedString(ctx, "__is_python_class__");
+        const proto::ProtoString* s_bases = env ? env->getBasesString() : PythonEnvironment::getInternedString(ctx, "__bases__");
+
+        abc = const_cast<proto::ProtoObject*>(abc->setAttribute(ctx, s_call, ctx->fromMethod(abc, py_abc_call)));
+        abc = const_cast<proto::ProtoObject*>(abc->setAttribute(ctx, s_register, ctx->fromMethod(abc, py_abc_register)));
+        abc = const_cast<proto::ProtoObject*>(abc->setAttribute(ctx, s_name, PythonEnvironment::getInternedString(ctx, name)->asObject(ctx)));
+        
+        // Set __class__ to type Prototype
+        if (env) {
+            abc = const_cast<proto::ProtoObject*>(abc->setAttribute(ctx, s_class, env->getTypePrototype()));
+        }
+
+        // Explicitly mark as a Python class for getType heuristic
+        abc = const_cast<proto::ProtoObject*>(abc->setAttribute(ctx, s_is_py_class, PROTO_TRUE));
+        if (std::getenv("PROTO_ENV_DIAG") != nullptr) fprintf(stderr, "DEBUG_ABC_SET_IS_CLASS: %s %p -> %p\n", name, (void*)abc, (void*)s_is_py_class);
 
         // Inherit from object to have a valid MRO
-        if (auto* env = PythonEnvironment::fromContext(ctx)) {
+        if (env) {
             const proto::ProtoObject* objProto = env->getObjectPrototype();
-            if (objProto) abc->addParent(ctx, objProto);
+            if (objProto) {
+                abc = const_cast<proto::ProtoObject*>(abc->addParent(ctx, objProto));
+                
+                // Also set __bases__ to (object,)
+                const proto::ProtoList* bases = ctx->newList();
+                bases = bases->appendLast(ctx, objProto);
+                abc = const_cast<proto::ProtoObject*>(abc->setAttribute(ctx, s_bases, bases->asObject(ctx)));
+            }
         }
 
         // Add dummy methods to satisfy collections/__init__.py inheritance of methods
         const char* methods[] = {
             "update", "get", "keys", "values", "items", "pop", "popitem", "clear",
             "setdefault", "index", "count", "append", "extend", "insert", "remove", "reverse",
-            "__eq__", "__ne__", "__lt__", "__le__", "__gt__", "__ge__",
+            "__eq__", "__ne__", "__lt__", "__gt__", "__ge__",
             "__iter__", "__len__", "__contains__", "__hash__"
         };
         for (const char* m : methods) {
-            abc->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, m),
-                ctx->fromMethod(abc, py_abc_call)); // Reuse py_abc_call as a dummy method
+            abc = const_cast<proto::ProtoObject*>(abc->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, m),
+                ctx->fromMethod(abc, py_abc_call))); 
         }
         return abc;
     };
@@ -118,20 +176,38 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     };
 
     for (const char* name : names) {
-        mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, name), createAbc(name));
+        const proto::ProtoString* sName = PythonEnvironment::getInternedString(ctx, name);
+        mod = mod->setAttribute(ctx, sName, createAbc(name));
     }
 
-    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_check_methods"),
-        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_abc_check_methods));
+    const proto::ProtoObject* checkMethodsFunc = ctx->fromMethod(nullptr, py_check_methods);
+    const proto::ProtoString* sCheck = PythonEnvironment::getInternedString(ctx, "_check_methods");
+    mod = mod->setAttribute(ctx, sCheck, checkMethodsFunc);
+    mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "check_methods"), checkMethodsFunc);
+
+    const proto::ProtoObject* abcMeta = createAbc("ABCMeta");
+    mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "ABCMeta"), abcMeta);
+
+    static const auto py_abstractmethod = [](proto::ProtoContext*, const proto::ProtoObject*, const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) {
+        if (args->getSize(nullptr) < 1) return PROTO_NONE;
+        return args->getAt(nullptr, 0);
+    };
+    mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "abstractmethod"), ctx->fromMethod(nullptr, py_abstractmethod));
 
     const proto::ProtoList* allList = ctx->newList();
     for (const char* name : names) {
         allList = allList->appendLast(ctx, PythonEnvironment::getInternedString(ctx, name)->asObject(ctx));
     }
     allList = allList->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "_check_methods")->asObject(ctx));
-    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__all__"), allList->asObject(ctx));
+    allList = allList->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "ABCMeta")->asObject(ctx));
+    mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__all__"), allList->asObject(ctx));
+
+    mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__name__"), PythonEnvironment::getInternedString(ctx, "_collections_abc")->asObject(ctx));
+    mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__loader__"), PROTO_NONE); 
+    mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__executed__"), PROTO_TRUE); 
 
     return mod;
+}
 }
 
 } // namespace collections_abc

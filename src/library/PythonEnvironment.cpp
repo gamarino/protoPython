@@ -63,8 +63,7 @@ static bool get_thread_diag() {
 }
 
 static bool get_env_diag() {
-    static bool diag = std::getenv("PROTO_ENV_DIAG") != nullptr;
-    return diag;
+    return std::getenv("PROTO_ENV_DIAG") != nullptr;
 }
 
 #include <cstring>
@@ -3347,9 +3346,22 @@ static const proto::ProtoObject* py_frozenset_call(
         }
     }
 
-    proto::ProtoObject* fs = const_cast<proto::ProtoObject*>(cls->newChild(context, true));
-    fs->setAttribute(context, PythonEnvironment::getInternalString(context, "__class__"), cls);
-    fs->setAttribute(context, PythonEnvironment::getInternalString(context, "__data__"), acc->asObject(context));
+    proto::ProtoObject* fs = const_cast<proto::ProtoObject*>(context->newObject(true));
+    fs->addParent(context, env->getFrozensetPrototype());
+    if (cls != env->getFrozensetPrototype()) fs->addParent(context, cls);
+    fs->setAttribute(context, env->getClassString(), cls);
+    fs->setAttribute(context, env->getDataString(), acc->asObject(context));
+    // Step V77: marker to ensure getType identifies it as an instance of its __class__
+    fs->setAttribute(context, PythonEnvironment::getInternedString(context, "__is_python_class__"), PROTO_TRUE);
+    
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        fprintf(stderr, "DEBUG_frozenset_call: obj=%p cls=%p clsS=%p\n", (void*)fs, (void*)cls, (void*)env->getClassString());
+        if (fs->hasAttribute(context, env->getClassString())) {
+            fprintf(stderr, "  - SUCCESSFULLY set __class__\n");
+        } else {
+            fprintf(stderr, "  - FAILED to set __class__\n");
+        }
+    }
     return fs;
 }
 
@@ -7635,6 +7647,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, newString, rootContext_->fromMethod(nullptr, py_frozenset_call));
     frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, py_len, rootContext_->fromMethod(nullptr, py_frozenset_len));
     frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, py_contains, rootContext_->fromMethod(nullptr, py_frozenset_contains));
+    // Step V76: Builtin frozenset requires alias for __contains__ explicitly in some cases
+    frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__contains__"), rootContext_->fromMethod(nullptr, py_frozenset_contains));
     frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, py_bool, rootContext_->fromMethod(nullptr, py_frozenset_bool));
     frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_frozenset_iter));
     frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, py_hash, rootContext_->fromMethod(nullptr, py_frozenset_hash));
@@ -7763,11 +7777,14 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     modulePrototype = modulePrototype->setAttribute(rootContext_, getClassString(), typePrototype);
     modulePrototype = modulePrototype->setAttribute(rootContext_, getNameString(), PythonEnvironment::getInternedString(rootContext_, "module")->asObject(rootContext_));
     modulePrototype = modulePrototype->setAttribute(rootContext_, getModuleString(), builtinsVal);
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        fprintf(stderr, "DEBUG_INIT: modulePrototype=%p\n", (void*)modulePrototype);
+    }
 
 
     tracebackPrototype = objectPrototype->newChild(rootContext_, true);
     tracebackPrototype = tracebackPrototype->setAttribute(rootContext_, py_class, typePrototype);
-    tracebackPrototype = tracebackPrototype->setAttribute(rootContext_, py_name, PythonEnvironment::getInternedString(rootContext_, "traceback")->asObject(rootContext_));
+    tracebackPrototype = tracebackPrototype->setAttribute(rootContext_, py_name, PythonEnvironment::getInternedString(rootContext_, "__traceback_native__")->asObject(rootContext_));
     tracebackPrototype = tracebackPrototype->setAttribute(rootContext_, py_module, builtinsVal);
 
     cellPrototype = objectPrototype->newChild(rootContext_, true);
@@ -7881,7 +7898,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     sysModule = sysModule->setAttribute(rootContext_, pathS, newListObj);
 
 
-    nativeProviderPtr->registerModule("sys", [this](proto::ProtoContext* ctx) { return sysModule; });
+    registerNativeModule(nativeProviderPtr, "sys", [this](proto::ProtoContext* ctx) { return sysModule; });
 
     // _io module (created before builtins so open() can delegate)
     const proto::ProtoObject* ioModule = io::initialize(rootContext_);
@@ -7889,7 +7906,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
         ioModule = ioModule->addParent(rootContext_, modulePrototype);
         ioModule = ioModule->setAttribute(rootContext_, py_class, modulePrototype);
     }
-    nativeProviderPtr->registerModule("_io", [ioModule](proto::ProtoContext*) { 
+    registerNativeModule(nativeProviderPtr, "_io", [ioModule](proto::ProtoContext*) { 
         return ioModule; 
     });
 
@@ -7947,45 +7964,49 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
         builtinsModule = builtinsModule->addParent(rootContext_, modulePrototype);
         builtinsModule = builtinsModule->setAttribute(rootContext_, py_class, modulePrototype);
     }
-    nativeProviderPtr->registerModule("builtins", [this](proto::ProtoContext* ctx) { return builtinsModule; });
+    registerNativeModule(nativeProviderPtr, "builtins", [this](proto::ProtoContext* ctx) { return builtinsModule; });
 
     // _collections module
-    nativeProviderPtr->registerModule("_collections", [this](proto::ProtoContext* ctx) { return collections::initialize(ctx, this); });
-    nativeProviderPtr->registerModule("_collections_abc", [](proto::ProtoContext* ctx) { return collections_abc::initialize(ctx); });
-    nativeProviderPtr->registerModule("logging", [](proto::ProtoContext* ctx) { return logging::initialize(ctx); });
-    nativeProviderPtr->registerModule("operator", [](proto::ProtoContext* ctx) { return operator_::initialize(ctx); });
-    nativeProviderPtr->registerModule("_operator", [](proto::ProtoContext* ctx) { return operator_::initialize(ctx); });
-    nativeProviderPtr->registerModule("math", [](proto::ProtoContext* ctx) { return math::initialize(ctx); });
-    nativeProviderPtr->registerModule("time", [](proto::ProtoContext* ctx) { return time_module::initialize(ctx); });
-    nativeProviderPtr->registerModule("_os", [this](proto::ProtoContext* ctx) { return os_module::initialize(ctx, this); });
-    nativeProviderPtr->registerModule("posix", [this](proto::ProtoContext* ctx) { return os_module::initialize(ctx, this); });
-    nativeProviderPtr->registerModule("nt", [this](proto::ProtoContext* ctx) { return os_module::initialize(ctx, this); });
-    nativeProviderPtr->registerModule("_signal", [](proto::ProtoContext* ctx) { return signal_module::initialize(ctx); });
-    nativeProviderPtr->registerModule("_thread", [](proto::ProtoContext* ctx) { return thread_module::initialize(ctx); });
-    nativeProviderPtr->registerModule("_functools", [](proto::ProtoContext* ctx) { return functools::initialize(ctx); });
-    nativeProviderPtr->registerModule("itertools", [](proto::ProtoContext* ctx) { return itertools::initialize(ctx); });
-    nativeProviderPtr->registerModule("re", [](proto::ProtoContext* ctx) { return re::initialize(ctx); });
-    nativeProviderPtr->registerModule("json", [](proto::ProtoContext* ctx) { return json::initialize(ctx); });
-    nativeProviderPtr->registerModule("os.path", [](proto::ProtoContext* ctx) { return os_path::initialize(ctx); });
-    nativeProviderPtr->registerModule("pathlib", [](proto::ProtoContext* ctx) { return pathlib::initialize(ctx); });
-    nativeProviderPtr->registerModule("atexit", [](proto::ProtoContext* ctx) { return atexit_module::initialize(ctx); });
-    nativeProviderPtr->registerModule("_weakref", [](proto::ProtoContext* ctx) { return weakref::initialize(ctx); });
+    registerNativeModule(nativeProviderPtr, "_collections", [this](proto::ProtoContext* ctx) { return collections::initialize(ctx, this); });
+
+    const proto::ProtoObject* collectionsAbcMod = collections_abc::initialize(rootContext_);
+    registerNativeModule(nativeProviderPtr, "_collections_abc", [collectionsAbcMod](proto::ProtoContext* ctx) { return collectionsAbcMod; });
+    registerNativeModule(nativeProviderPtr, "logging", [](proto::ProtoContext* ctx) { return logging::initialize(ctx); });
+    registerNativeModule(nativeProviderPtr, "operator", [](proto::ProtoContext* ctx) { return operator_::initialize(ctx); });
+    registerNativeModule(nativeProviderPtr, "_operator", [](proto::ProtoContext* ctx) { return operator_::initialize(ctx); });
+    registerNativeModule(nativeProviderPtr, "math", [](proto::ProtoContext* ctx) { return math::initialize(ctx); });
+    registerNativeModule(nativeProviderPtr, "time", [](proto::ProtoContext* ctx) { return time_module::initialize(ctx); });
+    const proto::ProtoObject* pathMod = os_path::initialize(rootContext_);
+    registerNativeModule(nativeProviderPtr, "os.path", [pathMod](proto::ProtoContext* ctx) { return pathMod; });
+
+    registerNativeModule(nativeProviderPtr, "_os", [this, pathMod](proto::ProtoContext* ctx) { return os_module::initialize(ctx, this, pathMod); });
+    registerNativeModule(nativeProviderPtr, "posix", [this, pathMod](proto::ProtoContext* ctx) { return os_module::initialize(ctx, this, pathMod); });
+    registerNativeModule(nativeProviderPtr, "nt", [this, pathMod](proto::ProtoContext* ctx) { return os_module::initialize(ctx, this, pathMod); });
+    registerNativeModule(nativeProviderPtr, "_signal", [](proto::ProtoContext* ctx) { return signal_module::initialize(ctx); });
+    registerNativeModule(nativeProviderPtr, "_thread", [](proto::ProtoContext* ctx) { return thread_module::initialize(ctx); });
+    registerNativeModule(nativeProviderPtr, "_functools", [](proto::ProtoContext* ctx) { return functools::initialize(ctx); });
+    registerNativeModule(nativeProviderPtr, "itertools", [](proto::ProtoContext* ctx) { return itertools::initialize(ctx); });
+    registerNativeModule(nativeProviderPtr, "re", [](proto::ProtoContext* ctx) { return re::initialize(ctx); });
+    registerNativeModule(nativeProviderPtr, "json", [](proto::ProtoContext* ctx) { return json::initialize(ctx); });
+    registerNativeModule(nativeProviderPtr, "pathlib", [](proto::ProtoContext* ctx) { return pathlib::initialize(ctx); });
+    registerNativeModule(nativeProviderPtr, "atexit", [](proto::ProtoContext* ctx) { return atexit_module::initialize(ctx); });
+    registerNativeModule(nativeProviderPtr, "_weakref", [](proto::ProtoContext* ctx) { return weakref::initialize(ctx); });
 
     const proto::ProtoObject* exceptionsMod = exceptions::initialize(rootContext_, objectPrototype, typePrototype);
-    nativeProviderPtr->registerModule("exceptions", [exceptionsMod](proto::ProtoContext* ctx) { return exceptionsMod; });
+    registerNativeModule(nativeProviderPtr, "exceptions", [exceptionsMod](proto::ProtoContext* ctx) { return exceptionsMod; });
 
     const proto::ProtoObject* codecsMod = codecs::initialize(rootContext_, objectPrototype, typePrototype);
-    nativeProviderPtr->registerModule("_codecs", [codecsMod](proto::ProtoContext* ctx) { return codecsMod; });
+    registerNativeModule(nativeProviderPtr, "_codecs", [codecsMod](proto::ProtoContext* ctx) { return codecsMod; });
 
-    nativeProviderPtr->registerModule("_ast", [](proto::ProtoContext* ctx) { return ast::initialize(ctx); });
-    nativeProviderPtr->registerModule("errno", [](proto::ProtoContext* ctx) { return errno_module::initialize(ctx); });
-    nativeProviderPtr->registerModule("stat", [](proto::ProtoContext* ctx) { return stat_module::initialize(ctx); });
-    nativeProviderPtr->registerModule("_struct", [](proto::ProtoContext* ctx) { return struct_module::initialize(ctx); });
+    registerNativeModule(nativeProviderPtr, "_ast", [](proto::ProtoContext* ctx) { return ast::initialize(ctx); });
+    registerNativeModule(nativeProviderPtr, "errno", [](proto::ProtoContext* ctx) { return errno_module::initialize(ctx); });
+    registerNativeModule(nativeProviderPtr, "stat", [](proto::ProtoContext* ctx) { return stat_module::initialize(ctx); });
+    registerNativeModule(nativeProviderPtr, "_struct", [](proto::ProtoContext* ctx) { return struct_module::initialize(ctx); });
     // Optional native modules that might not be fully tracked yet
-    nativeProviderPtr->registerModule("_opcode", [](proto::ProtoContext* c) { return opcode_module::initialize(c); });
-    nativeProviderPtr->registerModule("marshal", [](proto::ProtoContext* c) { return library::MarshalModule::createMarshalModule(c); });
-    nativeProviderPtr->registerModule("_imp", [](proto::ProtoContext* c) { return library::ImpModule::createImpModule(c); });
-    nativeProviderPtr->registerModule("_warnings", [](proto::ProtoContext* c) { return library::WarningsModule::createWarningsModule(c); });
+    registerNativeModule(nativeProviderPtr, "_opcode", [](proto::ProtoContext* c) { return opcode_module::initialize(c); });
+    registerNativeModule(nativeProviderPtr, "marshal", [](proto::ProtoContext* c) { return library::MarshalModule::createMarshalModule(c); });
+    registerNativeModule(nativeProviderPtr, "_imp", [](proto::ProtoContext* c) { return library::ImpModule::createImpModule(c); });
+    registerNativeModule(nativeProviderPtr, "_warnings", [](proto::ProtoContext* c) { return library::WarningsModule::createWarningsModule(c); });
 
     exceptionType = exceptionsMod->getAttribute(rootContext_, exceptionS);
     keyErrorType = exceptionsMod->getAttribute(rootContext_, keyErrorS);
@@ -8491,16 +8512,27 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain,
         mutableModObj->setAttribute(ctx, fileDunderKey, mod->getAttribute(ctx, fileDunderKey));
     }
 
+    const proto::ProtoString* sCheckDebug = PythonEnvironment::getInternedString(ctx, "_check_methods");
+    if (mod->hasAttribute(ctx, sCheckDebug) == PROTO_TRUE) {
+        if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG: executeModule %s - BEFORE CLONE HAS _check_methods (val=%p)\n", moduleName.c_str(), (void*)mod->getAttribute(ctx, sCheckDebug));
+    } else {
+        if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG: executeModule %s - BEFORE CLONE MISSING _check_methods\n", moduleName.c_str());
+    }
+
     const proto::ProtoSparseList* oldAttrs = mod->getAttributes(ctx);
     if (oldAttrs) {
+        if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG: executeModule %s - copying %lu attributes\n", moduleName.c_str(), oldAttrs->getSize(ctx));
         auto* it = const_cast<proto::ProtoSparseListIterator*>(oldAttrs->getIterator(ctx));
         while (it && it->hasNext(ctx)) {
             unsigned long key = it->nextKey(ctx);
             const proto::ProtoObject* kObj = reinterpret_cast<const proto::ProtoObject*>(key);
             if (kObj && kObj->isString(ctx)) {
-                // Don't overwrite if we already set it (like __name__)
                 const proto::ProtoString* sKey = kObj->asString(ctx);
+                std::string sKeyStr = sKey->toStdString(ctx);
+                if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG: executeModule %s - checking attr '%s'\n", moduleName.c_str(), sKeyStr.c_str());
+                // Don't overwrite if we already set it (like __name__)
                 if (mutableModObj->getAttribute(ctx, sKey) == PROTO_NONE) {
+                    if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG: executeModule %s - copying attr '%s'\n", moduleName.c_str(), sKeyStr.c_str());
                     mutableModObj->setAttribute(ctx, sKey, mod->getAttribute(ctx, sKey));
                 }
             }
@@ -9349,6 +9381,18 @@ bool PythonEnvironment::isActuallyAClass(proto::ProtoContext* ctx, const proto::
 }
 
 const proto::ProtoObject* PythonEnvironment::getType(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
+    if (std::getenv("PROTO_ENV_DEBUG")) {
+        static bool hashesPrinted = false;
+        if (!hashesPrinted) {
+            hashesPrinted = true;
+            fprintf(stderr, "TRACE: HASH __class__: %lu\n", (unsigned long)PythonEnvironment::getInternedString(ctx, "__class__")->getHash(ctx));
+            fprintf(stderr, "TRACE: HASH __name__: %lu\n", (unsigned long)PythonEnvironment::getInternedString(ctx, "__name__")->getHash(ctx));
+            fprintf(stderr, "TRACE: HASH __bases__: %lu\n", (unsigned long)PythonEnvironment::getInternedString(ctx, "__bases__")->getHash(ctx));
+            fprintf(stderr, "TRACE: HASH __is_python_class__: %lu\n", (unsigned long)PythonEnvironment::getInternedString(ctx, "__is_python_class__")->getHash(ctx));
+            fprintf(stderr, "TRACE: HASH __mro__: %lu\n", (unsigned long)PythonEnvironment::getInternedString(ctx, "__mro__")->getHash(ctx));
+        }
+        fprintf(stderr, "TRACE: getType(obj=%p)\n", (void*)obj);
+    }
     if (!obj || obj == PROTO_NONE) return getNoneTypePrototype();
 
     if (obj->isString(ctx)) return strPrototype;
@@ -9359,18 +9403,40 @@ const proto::ProtoObject* PythonEnvironment::getType(proto::ProtoContext* ctx, c
     // 1. Python-level __class__ (Explicit Identity)
     const proto::ProtoString* classS = getClassString() ? getClassString() : PythonEnvironment::getInternedString(ctx, "__class__");
     const proto::ProtoObject* cls = obj->proto::ProtoObject::getAttribute(ctx, classS);
-    if (cls && cls != PROTO_NONE) return cls;
+    if (cls && cls != PROTO_NONE) {
+        if (std::getenv("PROTO_ENV_DEBUG")) {
+            std::string clsName = "unknown";
+            const proto::ProtoObject* nameAttr = cls->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__name__"));
+            if (nameAttr && nameAttr->isString(ctx)) nameAttr->asString(ctx)->toUTF8String(ctx, clsName);
+            fprintf(stderr, "TRACE: getType(obj=%p) found __class__=%p ('%s')\n", (void*)obj, (void*)cls, clsName.c_str());
+        return cls;
+    }
 
-    // 2. Class/Type check using __bases__ or __mro__ (Metadata check)
-    // Instances do NOT have __bases__; only classes do.
+    // 2. Class/Type check using physical properties and Python markers
+    const proto::ProtoString* clsS = this->getClassString();
+    if (clsS) {
+        const proto::ProtoObject* cls = obj->proto::ProtoObject::getAttribute(ctx, clsS);
+        if (cls && cls != PROTO_NONE) return cls;
+    }
+
     const proto::ProtoString* basesS = PythonEnvironment::getInternedString(ctx, "__bases__");
-    if (obj->hasOwnAttribute(ctx, basesS) == PROTO_TRUE) return getTypePrototype();
+    if (obj->hasAttribute(ctx, basesS) == PROTO_TRUE) return getTypePrototype();
+
+    const proto::ProtoString* nameS = PythonEnvironment::getInternedString(ctx, "__name__");
+    if (obj->hasAttribute(ctx, nameS) == PROTO_TRUE) {
+        // Distinguish between module and class
+        const proto::ProtoString* pathS = PythonEnvironment::getInternedString(ctx, "__path__");
+        if (obj->hasAttribute(ctx, pathS) == PROTO_TRUE) return getModulePrototype();
+        
+        const proto::ProtoString* loaderS = PythonEnvironment::getInternedString(ctx, "__loader__");
+        if (obj->hasAttribute(ctx, loaderS) == PROTO_TRUE) return getModulePrototype();
+
+        if (modulePrototype && obj->isInstanceOf(ctx, modulePrototype)) return getModulePrototype();
+        
+        return getTypePrototype();
+    }
 
     // 3. Collection Heuristics (Structural Identity Fallback)
-    if (obj->asSparseList(ctx)) return dictPrototype;
-    if (obj->asList(ctx)) return listPrototype;
-    if (obj->asTuple(ctx)) return tuplePrototype;
-    if (obj->asSet(ctx)) return setPrototype;
     
     // Check for wrapped data dictionary
     const proto::ProtoObject* data = obj->proto::ProtoObject::getAttribute(ctx, this->getDataString() ? this->getDataString() : PythonEnvironment::getInternedString(ctx, "__data__"));
@@ -9385,6 +9451,19 @@ const proto::ProtoObject* PythonEnvironment::getType(proto::ProtoContext* ctx, c
     const proto::ProtoList* parents = obj->getParents(ctx);
     if (parents && parents->getSize(ctx) > 0) return parents->getAt(ctx, 0);
 
+    if (std::getenv("PROTO_ENV_DEBUG")) {
+        const proto::ProtoSparseList* attrs = obj->getAttributes(ctx);
+        if (attrs) {
+            fprintf(stderr, "TRACE: getType(%p) FAILED TO IDENTIFY. Own attributes:\n", (void*)obj);
+            auto* it = const_cast<proto::ProtoSparseListIterator*>(attrs->getIterator(ctx));
+            while (it && it->hasNext(ctx)) {
+                unsigned long k = it->nextKey(ctx);
+                fprintf(stderr, "  - Attr Hash: %lu\n", k);
+                it = const_cast<proto::ProtoSparseListIterator*>(it->advance(ctx));
+            }
+        }
+    }
+
     return getObjectPrototype();
 }
 
@@ -9393,9 +9472,38 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
     
     std::string nameStr;
     name->toUTF8String(ctx, nameStr);
+    if (std::getenv("PROTO_ENV_DEBUG")) {
+        fprintf(stderr, "TRACE: getAttribute(obj=%p, attr='%s')\n", (void*)obj, nameStr.c_str());
+    }
     bool tracing = std::getenv("PROTO_ENV_DIAG") != nullptr;
-    if (tracing && (nameStr == "Enum" || nameStr == "EnumType" || nameStr == "_EnumDict" || nameStr == "_generate_next_value" || nameStr == "_auto_called")) {
-         fprintf(stderr, "DEBUG getAttribute: obj=%p attr=%s\n", (void*)obj, nameStr.c_str());
+    if (tracing) {
+         fprintf(stderr, "DEBUG getAttribute: obj=%p attr=%s (namePtr=%p)\n", (void*)obj, nameStr.c_str(), (void*)name);
+         if (obj && obj != PROTO_NONE) {
+             const proto::ProtoObject* cls = this->getType(ctx, obj);
+             std::string clsName = "<unknown>";
+             if (cls) {
+                 const proto::ProtoObject* nm = cls->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__name__"));
+                 if (nm && nm->isString(ctx)) nm->asString(ctx)->toUTF8String(ctx, clsName);
+             }
+             fprintf(stderr, "  - obj class: %s\n", clsName.c_str());
+             
+             std::string objName = "unknown";
+             const proto::ProtoObject* objNameAttr = obj->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__name__"));
+             if (objNameAttr && objNameAttr->isString(ctx)) objNameAttr->asString(ctx)->toUTF8String(ctx, objName);
+             if (objName == "_collections_abc") {
+                 const proto::ProtoSparseList* attrs = obj->getAttributes(ctx);
+                 if (attrs) {
+                     fprintf(stderr, "  - _collections_abc attributes list:\n");
+                     auto* it = const_cast<proto::ProtoSparseListIterator*>(attrs->getIterator(ctx));
+                     while (it && it->hasNext(ctx)) {
+                         fprintf(stderr, "    * Hash: %lu\n", (unsigned long)it->nextKey(ctx));
+                         it = const_cast<proto::ProtoSparseListIterator*>(it->advance(ctx));
+                     }
+                 } else {
+                     fprintf(stderr, "  - _collections_abc HAS NO ATTRIBUTES!\n");
+                 }
+             }
+         }
          fflush(stderr);
     }
 
@@ -9751,20 +9859,12 @@ const proto::ProtoObject* PythonEnvironment::resolve(const std::string& name, pr
     }
     auto it = s_threadResolveCache.find(name);
     if (it != s_threadResolveCache.end()) {
-        if (std::getenv("PROTO_ENV_DIAG") && (name == "type" || name == "object")) {
-             fprintf(stderr, "DEBUG: resolve CACHE name=%s obj=%p\n", name.c_str(), (void*)it->second);
-             fflush(stderr);
-        }
         return it->second;
     }
 
     const proto::ProtoString* nameS = PythonEnvironment::getInternedString(ctx, name.c_str());
     const proto::ProtoObject* res = resolve(nameS, ctx);
     s_threadResolveCache[name] = res;
-    if (std::getenv("PROTO_ENV_DIAG") && (name == "type" || name == "object")) {
-         fprintf(stderr, "DEBUG: resolve NEW name=%s obj=%p\n", name.c_str(), (void*)res);
-         fflush(stderr);
-    }
     return res;
 }
 
@@ -9789,19 +9889,10 @@ const proto::ProtoObject* PythonEnvironment::resolve(const proto::ProtoString* n
         ~DepthGuard() { --d; }
     } dg(resolveDepth);
 
-    if (std::getenv("PROTO_ENV_DIAG")) {
-        fprintf(stderr, "DEBUG: resolve name=%s\n", nameStr.c_str());
-        fflush(stderr);
-    }
-
     // 1. Try current module's globals (Lock-free)
     if (s_currentGlobals) {
         if (s_currentGlobals->hasAttribute(ctx, nameObj) == PROTO_TRUE) {
             const proto::ProtoObject* result = s_currentGlobals->getAttribute(ctx, nameObj);
-            if (get_env_diag() && (nameStr == "tuple" || nameStr == "map" || nameStr == "None")) {
-                fprintf(stderr, "DEBUG: resolve GLOBALS name=%s result=%p repr=%s\n", nameStr.c_str(), (void*)result, PythonEnvironment::reprObject(ctx, result).c_str());
-                fflush(stderr);
-            }
             return result;
         }
 
@@ -9822,14 +9913,6 @@ const proto::ProtoObject* PythonEnvironment::resolve(const proto::ProtoString* n
     if (builtinsModule) {
         if (builtinsModule->hasAttribute(ctx, nameObj) == PROTO_TRUE) {
             const proto::ProtoObject* result = builtinsModule->getAttribute(ctx, nameObj);
-            if (get_env_diag() && (nameStr == "tuple" || nameStr == "map" || nameStr == "None")) {
-                fprintf(stderr, "DEBUG: resolve BUILTINS name=%s result=%p repr=%s\n", nameStr.c_str(), (void*)result, PythonEnvironment::reprObject(ctx, result).c_str());
-                fflush(stderr);
-            }
-            if (std::getenv("PROTO_ENV_DIAG") && (nameStr == "type" || nameStr == "object" || nameStr == "int")) {
-                 fprintf(stderr, "DEBUG: resolve BUILTINS found name=%s result=%p resultProto=%p objectPrototype=%p intPrototype=%p builtinsModule=%p\n", nameStr.c_str(), (void*)result, (void*)(result ? result->getPrototype(ctx) : nullptr), (void*)objectPrototype, (void*)intPrototype, (void*)builtinsModule);
-                 fflush(stderr);
-            }
             return result;
         }
     }
@@ -9851,10 +9934,6 @@ const proto::ProtoObject* PythonEnvironment::resolve(const proto::ProtoString* n
         else if (nameStr == "complex") result = complexPrototype;
         
         if (result) {
-            if (std::getenv("PROTO_ENV_DIAG")) {
-                fprintf(stderr, "DEBUG: resolve Quick-Path name=%s obj=%p\n", nameStr.c_str(), (void*)result);
-                fflush(stderr);
-            }
             return result;
         }
         
@@ -9878,17 +9957,12 @@ const proto::ProtoObject* PythonEnvironment::resolve(const proto::ProtoString* n
 
         // Module import search
         const proto::ProtoObject* modWrapper = ctx->space->getImportModule(ctx, nameStr.c_str(), "val");
-    fprintf(stderr, "DEBUG: resolveModule %s -> modWrapper=%p\n", nameStr.c_str(), (void*)modWrapper); 
         if (modWrapper && modWrapper != PROTO_NONE) {
             const proto::ProtoObject* result = modWrapper->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "val"));
-        fprintf(stderr, "DEBUG: resolveModule %s -> result=%p\n", nameStr.c_str(), (void*)result); 
             if (result && result != nullptr) {
                 const proto::ProtoString* executedKey = getExecutedString();
                 const proto::ProtoObject* executedVal = result->getAttribute(ctx, executedKey);
                 if (!executedVal || executedVal == PROTO_FALSE || executedVal == PROTO_NONE) {
-                    if (std::getenv("PROTO_RESOLVE_DIAG")) {
-                        // fprintf(stderr, "DEBUG: resolve(%s) executing module %p\n", nameStr.c_str(), (void*)result);
-                    }
                     int ret = executeModule(nameStr, false, ctx);
                     if (ret != 0) return nullptr;
                     
@@ -9906,9 +9980,6 @@ const proto::ProtoObject* PythonEnvironment::resolve(const proto::ProtoString* n
                     
                     result = modWrapper->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "val"));
                 }
-                if (std::getenv("PROTO_RESOLVE_DIAG")) {
-                    // fprintf(stderr, "DEBUG: resolve(%s) returning %p (type %p)\n", nameStr.c_str(), (void*)result, (void*)(result ? result->getAttribute(ctx, getClassString()) : nullptr));
-                }
                 return result;
             }
         }
@@ -9918,9 +9989,26 @@ const proto::ProtoObject* PythonEnvironment::resolve(const proto::ProtoString* n
 }
 
 const proto::ProtoObject* PythonEnvironment::resolveModule(const std::string& nameStr, proto::ProtoContext* ctx) {
+    // Quick cache check
     if (!ctx) ctx = s_threadContext ? s_threadContext : rootContext_;
     
-    // 4. Fallback to Imports/Sys (Locked)
+    // 1. ProtoSpace Cache (Highest priority for bootstrap consistency)
+    const proto::ProtoObject* cached = ctx->space->getImportModule(ctx, nameStr.c_str(), "val");
+    if (cached && cached != PROTO_NONE) {
+        const proto::ProtoObject* result = cached->getAttribute(ctx, proto::ProtoString::fromUTF8(ctx, "val"));
+        
+        // Step V75: Validate that we didn't just hit a native prototype type collider
+        if (result && typePrototype) {
+            const proto::ProtoObject* cls = result->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__class__"));
+            if (cls == typePrototype && nameStr != "collections" && nameStr != "_collections") {
+                cached = nullptr;
+                goto skip_cache_label;
+            }
+        }
+
+         return result;
+    }
+skip_cache_label:
     SafeImportLock lock(this, ctx);
     
     // Re-check sys.modules
@@ -9941,10 +10029,8 @@ const proto::ProtoObject* PythonEnvironment::resolveModule(const std::string& na
 
     // Module import search
     const proto::ProtoObject* modWrapper = ctx->space->getImportModule(ctx, nameStr.c_str(), "val");
-    fprintf(stderr, "DEBUG: resolveModule %s -> modWrapper=%p\n", nameStr.c_str(), (void*)modWrapper); 
     if (modWrapper && modWrapper != PROTO_NONE) {
-        const proto::ProtoObject* result = modWrapper->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "val"));
-        fprintf(stderr, "DEBUG: resolveModule %s -> result=%p\n", nameStr.c_str(), (void*)result); 
+        const proto::ProtoObject* result = modWrapper->getAttribute(ctx, proto::ProtoString::fromUTF8(ctx, "val"));
         if (result && result != nullptr) {
     const proto::ProtoString* executedKey = getExecutedString();
     const proto::ProtoObject* executedVal = result->getAttribute(ctx, executedKey);
@@ -10266,6 +10352,13 @@ static const proto::ProtoObject* buildTraceback(proto::ProtoContext* ctx, const 
 }
 
 const proto::ProtoString* PythonEnvironment::getInternedString(proto::ProtoContext* ctx, const std::string& str) {
+    proto::ProtoContext* originalCtx = ctx;
+    if (s_threadEnv && s_threadEnv->rootContext_) {
+        ctx = s_threadEnv->rootContext_;
+    } else if (s_threadEnv && s_threadEnv->getContext()) {
+        ctx = s_threadEnv->getContext();
+    }
+    
     if (!ctx) return nullptr;
     
     std::lock_guard<std::mutex> lock(g_internMutex);
@@ -10823,6 +10916,28 @@ bool PythonEnvironment::handleExhaustion(proto::ProtoContext* ctx) {
         return true;
     }
     return false;
+}
+
+void PythonEnvironment::registerNativeModule(NativeModuleProvider* provider, const std::string& name, std::function<const proto::ProtoObject*(proto::ProtoContext*)> init) {
+    if (!provider) return;
+    provider->registerModule(name, [this, name, init](proto::ProtoContext* ctx) {
+        PythonEnvironment::s_threadEnv = this;
+        const proto::ProtoObject* mod = init(ctx);
+        if (mod && mod != PROTO_NONE) {
+            // Decorate with __name__
+            mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__name__"), 
+                                  PythonEnvironment::getInternedString(ctx, name.c_str())->asObject(ctx));
+            
+            // Decorate with module class and parent if available
+            if (this->modulePrototype) {
+                const proto::ProtoObject* cls = mod->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__class__"));
+                if (!cls || cls == PROTO_NONE) {
+                    mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__class__"), this->modulePrototype);
+                }
+            }
+        }
+        return mod;
+    });
 }
 
 } // namespace protoPython

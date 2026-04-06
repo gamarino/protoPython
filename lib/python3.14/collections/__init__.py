@@ -14,6 +14,15 @@ list, set, and tuple.
 
 '''
 
+import sys as _sys
+import _collections_abc
+print(f"DEBUG: collections/__init__.py ENTER", file=_sys.stderr)
+print(f"DEBUG: _collections_abc mod={_collections_abc}", file=_sys.stderr)
+try:
+    print(f"DEBUG: _collections_abc.MutableSequence={_collections_abc.MutableSequence}", file=_sys.stderr)
+except Exception as e:
+    print(f"DEBUG: _collections_abc.MutableSequence FAILED: {e}", file=_sys.stderr)
+
 __all__ = [
     'ChainMap',
     'Counter',
@@ -26,8 +35,255 @@ __all__ = [
     'namedtuple',
 ]
 
-import _collections_abc
 import sys as _sys
+from keyword import iskeyword as _iskeyword
+from operator import itemgetter as _itemgetter
+
+################################################################################
+### namedtuple
+################################################################################
+
+try:
+    from _collections import _tuplegetter
+except ImportError:
+    _tuplegetter = lambda index, doc: property(_itemgetter(index), doc=doc)
+
+def namedtuple(typename, field_names, *, rename=False, defaults=None, module=None):
+    """Returns a new subclass of tuple with named fields.
+
+    >>> Point = namedtuple('Point', ['x', 'y'])
+    >>> Point.__doc__                   # docstring for the new class
+    'Point(x, y)'
+    >>> p = Point(11, y=22)             # instantiate with positional args or keywords
+    >>> p[0] + p[1]                     # indexable like a plain tuple
+    33
+    >>> x, y = p                        # unpack like a regular tuple
+    >>> x, y
+    (11, 22)
+    >>> p.x + p.y                       # fields also accessible by name
+    33
+    >>> d = p._asdict()                 # convert to a dictionary
+    >>> d['x']
+    11
+    >>> Point(**d)                      # convert from a dictionary
+    Point(x=11, y=22)
+    >>> p._replace(x=100)               # _replace() is like str.replace() but targets named fields
+    Point(x=100, y=22)
+
+    """
+
+    # Validate the field names.  At the user's option, either generate an error
+    # message or automatically replace the field name with a valid name.
+    if isinstance(field_names, str):
+        field_names = field_names.replace(',', ' ').split()
+    field_names = list(map(str, field_names))
+    typename = _sys.intern(str(typename))
+
+    if rename:
+        seen = set()
+        for index, name in enumerate(field_names):
+            if (not name.isidentifier()
+                or _iskeyword(name)
+                or name.startswith('_')
+                or name in seen):
+                field_names[index] = f'_{index}'
+            seen.add(name)
+
+    pass
+    for name in [typename] + field_names:
+        pass
+        if type(name) is not str:
+            raise TypeError('Type names and field names must be strings')
+        pass
+        if len(name) == 0:
+            pass
+        pass
+        is_ident = name.isidentifier()
+        pass
+        if not is_ident:
+            raise ValueError('Type names and field names must be valid '
+                             f'identifiers: {name!r}')
+        pass
+        if _iskeyword(name):
+            raise ValueError('Type names and field names cannot be a '
+                             f'keyword: {name!r}')
+        if type(name) is not str:
+            raise TypeError('Type names and field names must be strings')
+        if not name.isidentifier():
+            raise ValueError('Type names and field names must be valid '
+                             f'identifiers: {name!r}')
+        if _iskeyword(name):
+            raise ValueError('Type names and field names cannot be a '
+                             f'keyword: {name!r}')
+
+    seen = set()
+    for name in field_names:
+        if name.startswith('_') and not rename:
+            raise ValueError('Field names cannot start with an underscore: '
+                             f'{name!r}')
+        if name in seen:
+            raise ValueError(f'Encountered duplicate field name: {name!r}')
+        seen.add(name)
+
+    field_defaults = {}
+    if defaults is not None:
+        defaults = tuple(defaults)
+        if len(defaults) > len(field_names):
+            raise TypeError('Got more default values than field names')
+        field_defaults = dict(reversed(list(zip(reversed(field_names),
+                                                reversed(defaults)))))
+
+    # Variables used in the methods and docstrings
+    field_names = tuple(map(_sys.intern, field_names))
+    pass
+    num_fields = len(field_names)
+    arg_list = ', '.join(field_names)
+    if num_fields == 1:
+        arg_list += ','
+    repr_fmt = '(' + ', '.join(f'{name}=%r' for name in field_names) + ')'
+    tuple_new = tuple.__new__
+    _dict, _tuple, _len, _map, _zip = dict, tuple, len, map, zip
+
+    # Create all the named tuple methods to be added to the class namespace
+
+    # print("DEBUG: TRACE 1")
+    namespace = {
+        '_tuple_new': tuple_new,
+        '__builtins__': {},
+        '__name__': f'namedtuple_{typename}',
+    }
+    # print("DEBUG: TRACE 2")
+    code = f'lambda _cls, {arg_list}: _tuple_new(_cls, ({arg_list}))'
+    # print("DEBUG: TRACE 3")
+    try:
+        __new__ = eval(code, namespace)
+    except Exception as e:
+        # print("DEBUG: TRACE eval FAILED:", repr(e))
+        raise
+    # print("DEBUG: TRACE 4")
+    try:
+        __new__.__name__ = '__new__'
+    except Exception as e:
+        # print("DEBUG: TRACE __name__ FAILED:", repr(e))
+        raise
+    # print("DEBUG: TRACE 5")
+    if defaults is not None:
+        __new__.__defaults__ = defaults
+    pass
+
+    # print("DEBUG: TRACE 6.1: Before _make")
+    @classmethod
+    def _make(cls, iterable):
+        result = tuple_new(cls, iterable)
+        if _len(result) != num_fields:
+            raise TypeError(f'Expected {num_fields} arguments, got {len(result)}')
+        return result
+
+    # print("DEBUG: TRACE 6.2: Before _replace")
+    _make.__func__.__doc__ = (f'Make a new {typename} object from a sequence '
+                              'or iterable')
+
+    def _replace(self, /, **kwds):
+        result = self._make(_map(kwds.pop, field_names, self))
+        if kwds:
+            raise TypeError(f'Got unexpected field names: {list(kwds)!r}')
+        return result
+
+    # print("DEBUG: TRACE 6.3: Before __repr__")
+    _replace.__doc__ = (f'Return a new {typename} object replacing specified '
+                        'fields with new values')
+
+    def __repr__(self):
+        'Return a nicely formatted representation string'
+        return self.__class__.__name__ + repr_fmt % self
+
+    # print("DEBUG: TRACE 6.4: Before _asdict")
+    def _asdict(self):
+        'Return a new dict which maps field names to their values.'
+        return _dict(_zip(self._fields, self))
+
+    # print("DEBUG: TRACE 6.5: Before __getnewargs__")
+    def __getnewargs__(self):
+        'Return self as a plain tuple.  Used by copy and pickle.'
+        return _tuple(self)
+
+    pass
+
+    # Modify function metadata to help with introspection and debugging
+    for method in (
+        __new__,
+        _make.__func__,
+        _replace,
+        __repr__,
+        _asdict,
+        __getnewargs__,
+    ):
+        pass
+        method.__qualname__ = f'{typename}.{method.__name__}'
+
+    pass
+    # Build-up the class namespace dictionary
+    # and use type() to build the result class
+    try:
+        class_namespace = {
+            '__doc__': f'{typename}({arg_list})',
+            '__slots__': (),
+            '_fields': field_names,
+            '_field_defaults': field_defaults,
+            '__new__': __new__,
+            '_make': _make,
+            '__replace__': _replace,
+            '_replace': _replace,
+            '__repr__': __repr__,
+            '_asdict': _asdict,
+            '__getnewargs__': __getnewargs__,
+            '__match_args__': field_names,
+        }
+    except Exception as e:
+        # print("DEBUG: TRACE 8.1 dict creation failed:", repr(e))
+        raise
+
+    # print("DEBUG: TRACE 8.2 enumerate is:", enumerate)
+    # print("DEBUG: TRACE 8.3 _sys.intern is:", _sys.intern)
+    # print("DEBUG: TRACE 8.4 _tuplegetter is:", _tuplegetter)
+
+    try:
+        for index, name in enumerate(field_names):
+            pass
+            doc = _sys.intern(f'Alias for field number {index}')
+            class_namespace[name] = _tuplegetter(index, doc)
+    except Exception as e:
+        # print("DEBUG: TRACE 8.6 loop failed:", repr(e))
+        raise
+
+
+    pass
+    result = type(typename, (tuple,), class_namespace)
+
+    # print("DEBUG: TRACE 10: before sys.getframe()")
+    # For pickling to work, the __module__ variable needs to be set to the frame
+    # where the named tuple is created.  Bypass this step in environments where
+    if module is None:
+        try:
+            # print("DEBUG: TRACE 10.1: calling _sys._getframe(1)")
+            frame = _sys._getframe(1)
+            # print("DEBUG: TRACE 10.2: got frame", frame)
+            f_globals = frame.f_globals
+            # print("DEBUG: TRACE 10.3: got f_globals", f_globals)
+            module = f_globals.get('__name__', '__main__')
+            # print("DEBUG: TRACE 10.4: got module", module)
+        except (AttributeError, ValueError) as e:
+            pass
+        except Exception as e:
+            # print("DEBUG: TRACE 10.EXCEPT (OTHER):", repr(e))
+            raise
+    if module is not None:
+        result.__module__ = module
+
+    # print("DEBUG: TRACE 11: done!")
+    return result
+
+import _collections_abc
 
 _sys.modules['collections.abc'] = _collections_abc
 abc = _collections_abc
@@ -40,6 +296,17 @@ from operator import eq as _eq
 from operator import itemgetter as _itemgetter
 from reprlib import recursive_repr as _recursive_repr
 from _weakref import proxy as _proxy
+
+################################################################################
+### namedtuple
+################################################################################
+
+try:
+    from _collections import _tuplegetter
+except ImportError:
+    _tuplegetter = lambda index, doc: property(_itemgetter(index), doc=doc)
+
+
 
 try:
     from _collections import deque
@@ -349,248 +616,6 @@ except ImportError:
     pass
 
 
-################################################################################
-### namedtuple
-################################################################################
-
-try:
-    from _collections import _tuplegetter
-except ImportError:
-    _tuplegetter = lambda index, doc: property(_itemgetter(index), doc=doc)
-
-def namedtuple(typename, field_names, *, rename=False, defaults=None, module=None):
-    """Returns a new subclass of tuple with named fields.
-
-    >>> Point = namedtuple('Point', ['x', 'y'])
-    >>> Point.__doc__                   # docstring for the new class
-    'Point(x, y)'
-    >>> p = Point(11, y=22)             # instantiate with positional args or keywords
-    >>> p[0] + p[1]                     # indexable like a plain tuple
-    33
-    >>> x, y = p                        # unpack like a regular tuple
-    >>> x, y
-    (11, 22)
-    >>> p.x + p.y                       # fields also accessible by name
-    33
-    >>> d = p._asdict()                 # convert to a dictionary
-    >>> d['x']
-    11
-    >>> Point(**d)                      # convert from a dictionary
-    Point(x=11, y=22)
-    >>> p._replace(x=100)               # _replace() is like str.replace() but targets named fields
-    Point(x=100, y=22)
-
-    """
-
-    # Validate the field names.  At the user's option, either generate an error
-    # message or automatically replace the field name with a valid name.
-    if isinstance(field_names, str):
-        field_names = field_names.replace(',', ' ').split()
-    field_names = list(map(str, field_names))
-    typename = _sys.intern(str(typename))
-
-    if rename:
-        seen = set()
-        for index, name in enumerate(field_names):
-            if (not name.isidentifier()
-                or _iskeyword(name)
-                or name.startswith('_')
-                or name in seen):
-                field_names[index] = f'_{index}'
-            seen.add(name)
-
-    pass
-    for name in [typename] + field_names:
-        pass
-        if type(name) is not str:
-            raise TypeError('Type names and field names must be strings')
-        pass
-        if len(name) == 0:
-            pass
-        pass
-        is_ident = name.isidentifier()
-        pass
-        if not is_ident:
-            raise ValueError('Type names and field names must be valid '
-                             f'identifiers: {name!r}')
-        pass
-        if _iskeyword(name):
-            raise ValueError('Type names and field names cannot be a '
-                             f'keyword: {name!r}')
-        if type(name) is not str:
-            raise TypeError('Type names and field names must be strings')
-        if not name.isidentifier():
-            raise ValueError('Type names and field names must be valid '
-                             f'identifiers: {name!r}')
-        if _iskeyword(name):
-            raise ValueError('Type names and field names cannot be a '
-                             f'keyword: {name!r}')
-
-    seen = set()
-    for name in field_names:
-        if name.startswith('_') and not rename:
-            raise ValueError('Field names cannot start with an underscore: '
-                             f'{name!r}')
-        if name in seen:
-            raise ValueError(f'Encountered duplicate field name: {name!r}')
-        seen.add(name)
-
-    field_defaults = {}
-    if defaults is not None:
-        defaults = tuple(defaults)
-        if len(defaults) > len(field_names):
-            raise TypeError('Got more default values than field names')
-        field_defaults = dict(reversed(list(zip(reversed(field_names),
-                                                reversed(defaults)))))
-
-    # Variables used in the methods and docstrings
-    field_names = tuple(map(_sys.intern, field_names))
-    pass
-    num_fields = len(field_names)
-    arg_list = ', '.join(field_names)
-    if num_fields == 1:
-        arg_list += ','
-    repr_fmt = '(' + ', '.join(f'{name}=%r' for name in field_names) + ')'
-    tuple_new = tuple.__new__
-    _dict, _tuple, _len, _map, _zip = dict, tuple, len, map, zip
-
-    # Create all the named tuple methods to be added to the class namespace
-
-    # print("DEBUG: TRACE 1")
-    namespace = {
-        '_tuple_new': tuple_new,
-        '__builtins__': {},
-        '__name__': f'namedtuple_{typename}',
-    }
-    # print("DEBUG: TRACE 2")
-    code = f'lambda _cls, {arg_list}: _tuple_new(_cls, ({arg_list}))'
-    # print("DEBUG: TRACE 3")
-    try:
-        __new__ = eval(code, namespace)
-    except Exception as e:
-        # print("DEBUG: TRACE eval FAILED:", repr(e))
-        raise
-    # print("DEBUG: TRACE 4")
-    try:
-        __new__.__name__ = '__new__'
-    except Exception as e:
-        # print("DEBUG: TRACE __name__ FAILED:", repr(e))
-        raise
-    # print("DEBUG: TRACE 5")
-    if defaults is not None:
-        __new__.__defaults__ = defaults
-    pass
-
-    # print("DEBUG: TRACE 6.1: Before _make")
-    @classmethod
-    def _make(cls, iterable):
-        result = tuple_new(cls, iterable)
-        if _len(result) != num_fields:
-            raise TypeError(f'Expected {num_fields} arguments, got {len(result)}')
-        return result
-
-    # print("DEBUG: TRACE 6.2: Before _replace")
-    _make.__func__.__doc__ = (f'Make a new {typename} object from a sequence '
-                              'or iterable')
-
-    def _replace(self, /, **kwds):
-        result = self._make(_map(kwds.pop, field_names, self))
-        if kwds:
-            raise TypeError(f'Got unexpected field names: {list(kwds)!r}')
-        return result
-
-    # print("DEBUG: TRACE 6.3: Before __repr__")
-    _replace.__doc__ = (f'Return a new {typename} object replacing specified '
-                        'fields with new values')
-
-    def __repr__(self):
-        'Return a nicely formatted representation string'
-        return self.__class__.__name__ + repr_fmt % self
-
-    # print("DEBUG: TRACE 6.4: Before _asdict")
-    def _asdict(self):
-        'Return a new dict which maps field names to their values.'
-        return _dict(_zip(self._fields, self))
-
-    # print("DEBUG: TRACE 6.5: Before __getnewargs__")
-    def __getnewargs__(self):
-        'Return self as a plain tuple.  Used by copy and pickle.'
-        return _tuple(self)
-
-    pass
-
-    # Modify function metadata to help with introspection and debugging
-    for method in (
-        __new__,
-        _make.__func__,
-        _replace,
-        __repr__,
-        _asdict,
-        __getnewargs__,
-    ):
-        pass
-        method.__qualname__ = f'{typename}.{method.__name__}'
-
-    pass
-    # Build-up the class namespace dictionary
-    # and use type() to build the result class
-    try:
-        class_namespace = {
-            '__doc__': f'{typename}({arg_list})',
-            '__slots__': (),
-            '_fields': field_names,
-            '_field_defaults': field_defaults,
-            '__new__': __new__,
-            '_make': _make,
-            '__replace__': _replace,
-            '_replace': _replace,
-            '__repr__': __repr__,
-            '_asdict': _asdict,
-            '__getnewargs__': __getnewargs__,
-            '__match_args__': field_names,
-        }
-    except Exception as e:
-        # print("DEBUG: TRACE 8.1 dict creation failed:", repr(e))
-        raise
-
-    # print("DEBUG: TRACE 8.2 enumerate is:", enumerate)
-    # print("DEBUG: TRACE 8.3 _sys.intern is:", _sys.intern)
-    # print("DEBUG: TRACE 8.4 _tuplegetter is:", _tuplegetter)
-
-    try:
-        for index, name in enumerate(field_names):
-            pass
-            doc = _sys.intern(f'Alias for field number {index}')
-            class_namespace[name] = _tuplegetter(index, doc)
-    except Exception as e:
-        # print("DEBUG: TRACE 8.6 loop failed:", repr(e))
-        raise
-
-
-    pass
-    result = type(typename, (tuple,), class_namespace)
-
-    # print("DEBUG: TRACE 10: before sys.getframe()")
-    # For pickling to work, the __module__ variable needs to be set to the frame
-    # where the named tuple is created.  Bypass this step in environments where
-    if module is None:
-        try:
-            # print("DEBUG: TRACE 10.1: calling _sys._getframe(1)")
-            frame = _sys._getframe(1)
-            # print("DEBUG: TRACE 10.2: got frame", frame)
-            f_globals = frame.f_globals
-            # print("DEBUG: TRACE 10.3: got f_globals", f_globals)
-            module = f_globals.get('__name__', '__main__')
-            # print("DEBUG: TRACE 10.4: got module", module)
-        except (AttributeError, ValueError) as e:
-            pass
-        except Exception as e:
-            # print("DEBUG: TRACE 10.EXCEPT (OTHER):", repr(e))
-            raise
-    if module is not None:
-        result.__module__ = module
-
-    # print("DEBUG: TRACE 11: done!")
     return result
 
 

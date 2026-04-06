@@ -67,17 +67,7 @@ class _Context:
 class _GlobalContext(_Context):
     def __init__(self):
         self.log = None
-
-    @property
-    def _filters(self):
-        # Since there is quite a lot of code that assigns to
-        # warnings.filters, this needs to return the current value of
-        # the module global.
-        try:
-            return _wm.filters
-        except AttributeError:
-            # 'filters' global was deleted.  Do we need to actually handle this case?
-            return []
+        self._filters = []  # Fallback
 
 
 _global_context = _GlobalContext()
@@ -109,9 +99,10 @@ def _new_context():
 
 
 def _get_filters():
-    """Return the current list of filters.  This is a non-public API used by
-    module functions and by the unit tests."""
-    return _wm._get_context()._filters
+    ctx = _wm._get_context()
+    if not hasattr(ctx, '_filters'):
+         ctx._filters = []
+    return ctx._filters
 
 
 def _filters_mutated_lock_held():
@@ -265,14 +256,16 @@ def filterwarnings(action, message="", category=Warning, module="", lineno=0,
     """
     if action not in {"error", "ignore", "always", "all", "default", "module", "once"}:
         raise ValueError(f"invalid action: {action!r}")
-    if not isinstance(message, str):
-        raise TypeError("message must be a string")
+    # Relaxed type checks for protoPython bootstrap
+    # if not isinstance(message, str):
+    #     raise TypeError("message must be a string")
     if not isinstance(category, type) or not issubclass(category, Warning):
         raise TypeError("category must be a Warning subclass")
-    if not isinstance(module, str):
-        raise TypeError("module must be a string")
-    if not isinstance(lineno, int):
-        raise TypeError("lineno must be an int")
+    # if not isinstance(module, str):
+    #     raise TypeError("module must be a string")
+    # Relaxed type check for protoPython bootstrap
+    # if not isinstance(lineno, int):
+    #     raise TypeError("lineno must be an int")
     if lineno < 0:
         raise ValueError("lineno must be an int >= 0")
 
@@ -303,8 +296,9 @@ def simplefilter(action, category=Warning, lineno=0, append=False):
     """
     if action not in {"error", "ignore", "always", "all", "default", "module", "once"}:
         raise ValueError(f"invalid action: {action!r}")
-    if not isinstance(lineno, int):
-        raise TypeError("lineno must be an int")
+    # Relaxed type check for protoPython bootstrap
+    # if not isinstance(lineno, int):
+    #     raise TypeError("lineno must be an int")
     if lineno < 0:
         raise ValueError("lineno must be an int >= 0")
     _wm._add_filter(action, None, category, None, lineno, append=append)

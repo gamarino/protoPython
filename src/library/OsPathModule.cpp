@@ -132,6 +132,23 @@ static const proto::ProtoObject* py_realpath(
     return path->isString(ctx) ? path : PythonEnvironment::getInternedString(ctx, "")->asObject(ctx);
 }
 
+static const proto::ProtoObject* py_basename(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList*) {
+    (void)self;
+    if (!posArgs || posArgs->getSize(ctx) < 1) return PythonEnvironment::getInternedString(ctx, "")->asObject(ctx);
+    const proto::ProtoObject* pathObj = posArgs->getAt(ctx, 0);
+    if (!pathObj->isString(ctx)) return PythonEnvironment::getInternedString(ctx, "")->asObject(ctx);
+    std::string path;
+    pathObj->asString(ctx)->toUTF8String(ctx, path);
+    size_t lastSlash = path.find_last_of('/');
+    if (lastSlash == std::string::npos) return pathObj;
+    return PythonEnvironment::getInternedString(ctx, path.substr(lastSlash + 1).c_str())->asObject(ctx);
+}
+
 static const proto::ProtoObject* py_normpath(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
@@ -158,6 +175,27 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_realpath));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "normpath"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_normpath));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "basename"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_basename));
+
+    // Path constants
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "curdir"),
+        PythonEnvironment::getInternedString(ctx, ".")->asObject(ctx));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "pardir"),
+        PythonEnvironment::getInternedString(ctx, "..")->asObject(ctx));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "sep"),
+        PythonEnvironment::getInternedString(ctx, "/")->asObject(ctx));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "pathsep"),
+        PythonEnvironment::getInternedString(ctx, ":")->asObject(ctx));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "defpath"),
+        PythonEnvironment::getInternedString(ctx, ":/bin:/usr/bin")->asObject(ctx));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "extsep"),
+        PythonEnvironment::getInternedString(ctx, ".")->asObject(ctx));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "altsep"),
+        PROTO_NONE);
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "devnull"),
+        PythonEnvironment::getInternedString(ctx, "/dev/null")->asObject(ctx));
+
     return mod;
 }
 

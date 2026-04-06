@@ -1852,7 +1852,7 @@ def _prog_name(prog=None):
     return f'{py} {arg0}'
 
 
-class ArgumentParser(_AttributeHolder, _ActionsContainer):
+class ArgumentParser(_ActionsContainer, _AttributeHolder):
     """Object for parsing command line strings into Python objects.
 
     Keyword Arguments:
