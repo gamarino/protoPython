@@ -281,6 +281,8 @@ public:
     void importStar(const proto::ProtoObject* mod);
 
     const proto::ProtoObject* buildSlice(const proto::ProtoObject* start, const proto::ProtoObject* stop, const proto::ProtoObject* step);
+    const proto::ProtoObject* newTuple(const proto::ProtoList* list);
+    const proto::ProtoObject* newList(const proto::ProtoList* list);
     void delItem(const proto::ProtoObject* container, const proto::ProtoObject* key);
     void delAttr(const proto::ProtoObject* obj, const std::string& attr);
     void delName(const std::string& name);

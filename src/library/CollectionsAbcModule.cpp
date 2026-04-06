@@ -115,6 +115,7 @@ static const proto::ProtoObject* py_abc_check_methods(
 }
 
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     auto createAbc = [&](const char* name) {
         proto::ProtoObject* abc = const_cast<proto::ProtoObject*>(ctx->newObject(false));
         PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
@@ -148,7 +149,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
                 // Also set __bases__ to (object,)
                 const proto::ProtoList* bases = ctx->newList();
                 bases = bases->appendLast(ctx, objProto);
-                abc = const_cast<proto::ProtoObject*>(abc->setAttribute(ctx, s_bases, bases->asObject(ctx)));
+                abc = const_cast<proto::ProtoObject*>(abc->setAttribute(ctx, s_bases, env->newTuple(bases)));
             }
         }
 
@@ -200,14 +201,14 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     }
     allList = allList->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "_check_methods")->asObject(ctx));
     allList = allList->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "ABCMeta")->asObject(ctx));
-    mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__all__"), allList->asObject(ctx));
+    const proto::ProtoObject* allObj = env ? env->newList(allList) : allList->asObject(ctx);
+    mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__all__"), allObj);
 
     mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__name__"), PythonEnvironment::getInternedString(ctx, "_collections_abc")->asObject(ctx));
     mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__loader__"), PROTO_NONE); 
     mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__executed__"), PROTO_TRUE); 
 
     return mod;
-}
 }
 
 } // namespace collections_abc

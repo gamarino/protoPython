@@ -1,4 +1,5 @@
 #include <protoPython/NativeModuleProvider.h>
+#include <protoPython/PythonEnvironment.h>
 #include <iostream>
 
 namespace protoPython {
@@ -18,7 +19,12 @@ const proto::ProtoObject* NativeModuleProvider::tryLoad(const std::string& logic
         const proto::ProtoObject* mod = it->second(ctx);
         if (mod && mod != PROTO_NONE) {
             fprintf(stderr, "DEBUG NATIVE: Loaded %s mod=%p\n", logicalPath.c_str(), (void*)mod);
-            mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__executed__"), PROTO_TRUE);
+            PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+            if (env) {
+                mod = mod->setAttribute(ctx, env->getExecutedString(), PROTO_TRUE);
+            } else {
+                mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__executed__"), PROTO_TRUE);
+            }
         }
         return mod;
     }

@@ -21,6 +21,7 @@ and opendir), and leave all pathname manipulation to os.path
 (e.g., split and join).
 """
 import sys
+print("DEBUG: os.py import sys DONE")
 import stat as st
 
 from _collections_abc import _check_methods
@@ -1244,3 +1245,4 @@ if _exists('sched_getaffinity') and sys._get_cpu_count_config() < 0:
 else:
     # Just an alias to cpu_count() (same docstring)
     process_cpu_count = cpu_count
+print("OS MODULE LOADED SUCCESSFULLY")

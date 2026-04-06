@@ -442,6 +442,9 @@ static const proto::ProtoObject* py_iter(
 
     ::protoPython::PythonEnvironment* env = ::protoPython::PythonEnvironment::fromContext(context);
     if (env) {
+        if (std::getenv("PROTO_ENV_DIAG")) {
+            fprintf(stderr, "DEBUG: py_iter(obj=%p, repr=%s)\n", (void*)obj, PythonEnvironment::reprObject(context, obj).c_str());
+        }
         const proto::ProtoObject* it = env->iter(obj);
         if (it) return it;
     } else {
@@ -858,7 +861,7 @@ static const proto::ProtoObject* py_enumerate_next(
     const proto::ProtoList* l = context->newList();
     l = l->appendLast(context, idxObj);
     l = l->appendLast(context, value);
-    return context->newTupleFromList(l)->asObject(context);
+    return env ? env->newTuple(l) : context->newTupleFromList(l)->asObject(context);
 }
 
     extern const proto::ProtoObject* invokePythonCallable(proto::ProtoContext* ctx, const proto::ProtoObject* callable, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs);
@@ -1581,6 +1584,14 @@ static const proto::ProtoObject* py_super_getattr(
     // Get stored 'obj' and 'type' from proxy
     const proto::ProtoObject* obj = self->getAttribute(context, PythonEnvironment::getInternedString(context, "obj"));
     const proto::ProtoObject* type = self->getAttribute(context, PythonEnvironment::getInternedString(context, "type"));
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(context);
+        std::string name; nameObj->asString(context)->toUTF8String(context, name);
+        fprintf(stderr, "DEBUG_SUPER: getattr '%s' self=%p obj=%p (%s) type=%p (%s)\n",
+                name.c_str(), (void*)self, (void*)obj, env ? env->reprObject(context, obj).c_str() : "???",
+                (void*)type, env ? env->reprObject(context, type).c_str() : "???");
+        fflush(stderr);
+    }
     if (!obj || !type) return PROTO_NONE;
 
     // Search MRO. For Python classes, __mro__ from the `obj` is the source of truth perfectly linearized.
@@ -1595,22 +1606,23 @@ static const proto::ProtoObject* py_super_getattr(
         const proto::ProtoTuple* mro = mroAttr->asTuple(context);
         bool found = false;
         for (size_t i = 0; i < mro->getSize(context); ++i) {
+            const proto::ProtoObject* clsInMro = mro->getAt(context, i);
             if (found) {
-                parentsList.push_back(mro->getAt(context, i));
-            } else if (mro->getAt(context, i) == type) {
+                parentsList.push_back(clsInMro);
+            } else if (clsInMro == type) {
                 found = true;
-            }
-        }
-        if (!found && mro->getSize(context) > 1) {
-            for (size_t i = 1; i < mro->getSize(context); ++i) {
-                parentsList.push_back(mro->getAt(context, i));
             }
         }
     } else {
         const proto::ProtoList* parents = type->getParents(context);
         if (parents) {
             for (size_t i = 0; i < parents->getSize(context); ++i) {
-                parentsList.push_back(parents->getAt(context, i));
+                const proto::ProtoObject* p = parents->getAt(context, i);
+                // Skip the metaclass if it's there (ProtoPython adds it first at Line 2426)
+                if (p == env->getTypePrototype() || p == type->getAttribute(context, PythonEnvironment::getInternedString(context, "__class__"))) {
+                    continue;
+                }
+                parentsList.push_back(p);
             }
         }
     }
@@ -1632,6 +1644,9 @@ static const proto::ProtoObject* py_super_getattr(
                 // Invoke __get__(obj, type)
                 const proto::ProtoList* args = context->newList()->appendLast(context, obj)->appendLast(context, type);
                 return descrGet->asMethod(context)(context, val, nullptr, args, nullptr);
+            }
+            if (val->asMethod(context)) {
+                return context->fromMethod(const_cast<proto::ProtoObject*>(obj), val->asMethod(context));
             }
             return val;
         }
@@ -2163,7 +2178,18 @@ static const proto::ProtoObject* py_delattr(
     return PROTO_NONE;
 }
 
-static const proto::ProtoList* computeC3MRO(proto::ProtoContext* context, const proto::ProtoObject* cls, const proto::ProtoTuple* bases) {
+static const proto::ProtoList* computeC3MRO(proto::ProtoContext* context, const proto::ProtoObject* cls, const proto::ProtoObject* basesObj) {
+    auto asTupleRaw = [&](const proto::ProtoObject* obj) -> const proto::ProtoTuple* {
+        if (!obj) return nullptr;
+        const proto::ProtoTuple* t = obj->asTuple(context);
+        if (t) return t;
+        PythonEnvironment* env = PythonEnvironment::fromContext(context);
+        const proto::ProtoObject* dataAttr = obj->getAttribute(context, env ? env->getDataString() : PythonEnvironment::getInternedString(context, "__data__"));
+        if (dataAttr) return dataAttr->asTuple(context);
+        return nullptr;
+    };
+
+    const proto::ProtoTuple* bases = asTupleRaw(basesObj);
     if (!bases || bases->getSize(context) == 0) {
         PythonEnvironment* env = PythonEnvironment::fromContext(context);
         const proto::ProtoObject* objProto = env ? env->getObjectPrototype() : nullptr;
@@ -2625,29 +2651,35 @@ const proto::ProtoObject* py_type(
                 (void*)targetClass, (void*)tupleBases, tupleBases ? tupleBases->getSize(context) : 0, (void*)listBases);
         
         if (tupleBases) {
-            mroList = computeC3MRO(context, targetClass, tupleBases);
+            mroList = computeC3MRO(context, targetClass, tupleBases->asObject(context));
             targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, PythonEnvironment::getInternedString(context, "__bases__"), bases));
         } else if (listBases) {
-            const proto::ProtoTuple* convTup = context->newTupleFromList(listBases);
+            const proto::ProtoObject* convTup = env ? env->newTuple(listBases) : context->newTupleFromList(listBases)->asObject(context);
             mroList = computeC3MRO(context, targetClass, convTup);
             targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, PythonEnvironment::getInternedString(context, "__bases__"), bases));
         } else {
             const proto::ProtoList* emptyBases = context->newList();
-            mroList = computeC3MRO(context, targetClass, context->newTupleFromList(emptyBases));
-            if (!bases) targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, PythonEnvironment::getInternedString(context, "__bases__"), context->newTupleFromList(emptyBases)->asObject(context)));
+            mroList = computeC3MRO(context, targetClass, env ? env->newTuple(emptyBases) : context->newTupleFromList(emptyBases)->asObject(context));
+            if (!bases) targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, PythonEnvironment::getInternedString(context, "__bases__"), env ? env->newTuple(emptyBases) : context->newTupleFromList(emptyBases)->asObject(context)));
         }
         
         fprintf(stderr, "DEBUG py_type: computeC3MRO returned mroList=%p\n", (void*)mroList);
         fflush(stderr);
         
         if (mroList) {
-            targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, PythonEnvironment::getInternedString(context, "__mro__"), context->newTupleFromList(mroList)->asObject(context)));
+            const proto::ProtoObject* mroTup = env ? env->newTuple(mroList) : context->newTupleFromList(mroList)->asObject(context);
+            targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, PythonEnvironment::getInternedString(context, "__mro__"), mroTup));
             // Update protoCore 'parents' list natively to reflect the exact same MRO list (minus self) backwards
             // so that getParents() matches C3 precisely for any C++ recursive attributes lookups!
             for (int i = static_cast<int>(mroList->getSize(context)) - 1; i >= 1; --i) {
                 const proto::ProtoObject* parent = mroList->getAt(context, i);
                 targetClass = const_cast<proto::ProtoObject*>(targetClass->addParent(context, parent));
             }
+        }
+        
+        if (bases && std::getenv("PROTO_ENV_DIAG")) {
+             std::string basesRepr = env ? env->reprObject(context, bases) : "???";
+             fprintf(stderr, "DEBUG py_type: bases were %s (addr=%p)\n", basesRepr.c_str(), (void*)bases);
         }
 
         // Set __module__ if not present
@@ -3040,7 +3072,8 @@ static const proto::ProtoObject* py_divmod(
     const proto::ProtoList* pair = context->newList()
         ->appendLast(context, context->fromInteger(quot))
         ->appendLast(context, context->fromInteger(rem));
-    return context->newTupleFromList(pair)->asObject(context);
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    return env ? env->newTuple(pair) : context->newTupleFromList(pair)->asObject(context);
 }
 
 static const proto::ProtoObject* py_ascii(
@@ -3615,7 +3648,7 @@ static const proto::ProtoObject* py_zip_next(
         if (!val) return nullptr;
         resList = resList->appendLast(context, val);
     }
-    return context->newTupleFromList(resList)->asObject(context);
+    return env ? env->newTuple(resList) : context->newTupleFromList(resList)->asObject(context);
 }
 
 static const proto::ProtoObject* py_filter(

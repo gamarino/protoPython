@@ -253,7 +253,18 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
             if (co_varnames && idx < (int)co_varnames->getSize(calleeCtx) && co_varnames->getAt(calleeCtx, idx)->isString(calleeCtx)) {
                 co_varnames->getAt(calleeCtx, idx)->asString(calleeCtx)->toUTF8String(calleeCtx, pn);
             }
-            fprintf(stderr, "DEBUG: bindVar idx=%d param=%s val=%p co_flags=%d slots=%p frame=%p\n", idx, pn.c_str(), (void*)val, co_flags, (void*)slots, (void*)frame);
+            std::string valRepr = "?";
+            if (val) {
+                if (val->isString(calleeCtx)) {
+                    val->asString(calleeCtx)->toUTF8String(calleeCtx, valRepr);
+                    valRepr = "'" + valRepr + "'";
+                } else if (val->isInteger(calleeCtx)) {
+                    valRepr = std::to_string(val->asLong(calleeCtx));
+                } else {
+                    char buf[32]; sprintf(buf, "%p", (void*)val); valRepr = buf;
+                }
+            }
+            fprintf(stderr, "DEBUG: bindVar idx=%d param=%s val=%s (ptr=%p) co_flags=%d slots=%p frame=%p\n", idx, pn.c_str(), valRepr.c_str(), (void*)val, co_flags, (void*)slots, (void*)frame);
             fflush(stderr);
         }
         if ((co_flags & CO_OPTIMIZED) && slots && idx < (int)nSlots) {
@@ -288,7 +299,6 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
 
         for (int i = (int)argCount; i < nparams_count; ++i) {
             bool bound = false;
-            // First check if this argument was supplied in kwargs
             if (co_varnames && i < (int)co_varnames->getSize(calleeCtx) && kwargs) {
                 const proto::ProtoObject* paramName = co_varnames->getAt(calleeCtx, i);
                 if (paramName) {
@@ -1696,6 +1706,11 @@ const proto::ProtoObject* executeBytecodeRange(
                  ? static_cast<int>(bytecode->getAt(ctx, static_cast<int>(i + 1))->asLong(ctx)) : 0;
              if (std::getenv("PROTO_ENV_DIAG")) {
                  fprintf(stderr, "DEBUG HANG TRACE: [PC %lu] OP %d ARG %d\n", i, op, arg);
+                 fprintf(stderr, "  Stack (depth=%lu):", (unsigned long)stack.size());
+                 for (size_t k = 0; k < stack.size(); ++k) {
+                     fprintf(stderr, " [%lu]=%p", (unsigned long)k, (void*)stack[k]);
+                 }
+                 fprintf(stderr, "\n");
                  fflush(stderr);
              }
         }
@@ -3156,14 +3171,33 @@ const proto::ProtoObject* executeBytecodeRange(
                     } else if (val == PROTO_NONE) {
                         if (obj->hasAttribute(ctx, attrName) == PROTO_FALSE) {
                             const proto::ProtoString* getattrS = PythonEnvironment::getInternedString(ctx, "__getattr__");
-                            const proto::ProtoObject* cls = obj->getAttribute(ctx, env ? env->getClassString() : PythonEnvironment::getInternedString(ctx, "__class__"));
-                            bool hasGetattr = false;
-                            if (cls && cls != PROTO_NONE && cls->hasAttribute(ctx, getattrS) == PROTO_TRUE) {
-                                hasGetattr = true;
-                            } else if (obj->hasOwnAttribute(ctx, getattrS) == PROTO_TRUE) {
-                                hasGetattr = true;
+                            const proto::ProtoObject* getattr = nullptr;
+                            
+                            // Check instance first (e.g. for super() proxies that store __getattr__ on themselves)
+                            if (obj->hasOwnAttribute(ctx, getattrS) == PROTO_TRUE) {
+                                getattr = obj->getAttribute(ctx, getattrS);
+                            } else {
+                                // Search on class MRO
+                                const proto::ProtoObject* cls = obj->getAttribute(ctx, env ? env->getClassString() : PythonEnvironment::getInternedString(ctx, "__class__"));
+                                if (cls && cls != PROTO_NONE) {
+                                    getattr = env ? env->getAttribute(ctx, cls, getattrS) : cls->getAttribute(ctx, getattrS);
+                                }
                             }
-                            if (!hasGetattr) isMissing = true;
+                            
+                            if (getattr && getattr != PROTO_NONE) {
+                                const proto::ProtoList* posArgs = ctx->newList()->appendLast(ctx, obj)->appendLast(ctx, nameObj);
+                                val = invokePythonCallable(ctx, getattr, posArgs, nullptr);
+                                if (env && env->hasPendingException()) {
+                                    stack.pop_back(); continue;
+                                }
+                                if (val && val != PROTO_NONE) {
+                                    isMissing = false;
+                                } else {
+                                    isMissing = true;
+                                }
+                            } else {
+                                isMissing = true;
+                            }
                         }
                     }
 
@@ -3260,6 +3294,7 @@ const proto::ProtoObject* executeBytecodeRange(
             } else if (env && env->hasPendingException()) {
                 continue;
             } else {
+                bool handled = false;
                 // Fallback for minimal objects without __getitem__ (e.g. built-in lists/tuples if dunder is missing)
                 const proto::ProtoObject* data = container->getAttribute(ctx, env ? env->getDataString() : protoPython::PythonEnvironment::getInternalString(ctx, "__data__"));
                 if (!data) data = container; // Fallback to the object itself (for primitive strings/tuples)
@@ -3270,6 +3305,7 @@ const proto::ProtoObject* executeBytecodeRange(
                         const proto::ProtoList* list = data->asList(ctx);
                         const proto::ProtoObject* res = (idx >= 0 && static_cast<unsigned long>(idx) < list->getSize(ctx)) ? list->getAt(ctx, static_cast<int>(idx)) : PROTO_NONE;
                         stack.pop_back(); stack.back() = res;
+                        handled = true;
                     } else if (data->asList(ctx) && env && env->getSliceType() && (key->isInstanceOf(ctx, env->getSliceType())->asBoolean(ctx) || key->getAttribute(ctx, env->getStartString()))) {
                         // List Slicing
                         const proto::ProtoList* list = data->asList(ctx);
@@ -3304,53 +3340,64 @@ const proto::ProtoObject* executeBytecodeRange(
                                 newList = newList->appendLast(ctx, list->getAt(ctx, static_cast<int>(i)));
                             }
                         }
-                        
                         newListObj->setAttribute(ctx, env->getDataString(), newList->asObject(ctx));
                         if (env->getListPrototype()) newListObj->addParent(ctx, env->getListPrototype());
                         stack.pop_back();
                         stack.back() = newListObj;
-                    } else if (data) {
-                        const proto::ProtoString* s = data->asString(ctx);
-                        long long size = static_cast<long long>(s->getSize(ctx));
-                        if (key->isInteger(ctx)) {
-                            long long idx = key->asLong(ctx);
-                            if (idx < 0) idx += size;
-                            const proto::ProtoString* charStr = (idx >= 0 && static_cast<unsigned long>(idx) < s->getSize(ctx)) ? s->getSlice(ctx, static_cast<int>(idx), static_cast<int>(idx) + 1) : nullptr;
-                            const proto::ProtoObject* charObj = charStr ? charStr->asObject(ctx) : PROTO_NONE;
-                            proto::ProtoObject* resObj = const_cast<proto::ProtoObject*>(ctx->newObject(true));
-                            resObj->setAttribute(ctx, env ? env->getDataString() : protoPython::PythonEnvironment::getInternalString(ctx, "__data__"), charObj);
-                            if (env && env->getStrPrototype()) {
-                                resObj = const_cast<proto::ProtoObject*>(resObj->addParent(ctx, env->getStrPrototype()));
-                                resObj->setAttribute(ctx, env->getClassString(), env->getStrPrototype());
+                        handled = true;
+                        } else if (data->asString(ctx)) {
+                            const proto::ProtoString* s = data->asString(ctx);
+                            long long size = static_cast<long long>(s->getSize(ctx));
+                            if (key->isInteger(ctx)) {
+                                long long idx = key->asLong(ctx);
+                                if (idx < 0) idx += size;
+                                const proto::ProtoString* charStr = (idx >= 0 && static_cast<unsigned long>(idx) < s->getSize(ctx)) ? s->getSlice(ctx, static_cast<int>(idx), static_cast<int>(idx) + 1) : nullptr;
+                                const proto::ProtoObject* charObj = charStr ? charStr->asObject(ctx) : PROTO_NONE;
+                                proto::ProtoObject* resObj = const_cast<proto::ProtoObject*>(ctx->newObject(true));
+                                resObj->setAttribute(ctx, env ? env->getDataString() : protoPython::PythonEnvironment::getInternalString(ctx, "__data__"), charObj);
+                                if (env && env->getStrPrototype()) {
+                                    resObj = const_cast<proto::ProtoObject*>(resObj->addParent(ctx, env->getStrPrototype()));
+                                    resObj->setAttribute(ctx, env->getClassString(), env->getStrPrototype());
+                                }
+                                stack.pop_back(); stack.back() = resObj;
+                                handled = true;
+                            } else if (env && env->getSliceType() && (key->isInstanceOf(ctx, env->getSliceType())->asBoolean(ctx) || key->getAttribute(ctx, env->getStartString()))) {
+                                const proto::ProtoObject* startObj = key->getAttribute(ctx, env->getStartString());
+                                const proto::ProtoObject* stopObj = key->getAttribute(ctx, env->getStopString());
+                                // step is ignored for now to simplify, or implemented same as list
+                                long long start = (startObj && startObj != PROTO_NONE) ? startObj->asLong(ctx) : 0;
+                                long long stop = (stopObj && stopObj != PROTO_NONE) ? stopObj->asLong(ctx) : size;
+                                if (start < 0) start += size;
+                                if (stop < 0) stop += size;
+                                if (start < 0) start = 0; if (start > size) start = size;
+                                if (stop < 0) stop = 0; if (stop > size) stop = size;
+                                
+                                const proto::ProtoString* slice = s->getSlice(ctx, static_cast<int>(start), static_cast<int>(stop));
+                                proto::ProtoObject* resObj = const_cast<proto::ProtoObject*>(ctx->newObject(true));
+                                resObj->setAttribute(ctx, env ? env->getDataString() : protoPython::PythonEnvironment::getInternalString(ctx, "__data__"), slice->asObject(ctx));
+                                if (env && env->getStrPrototype()) {
+                                    resObj = const_cast<proto::ProtoObject*>(resObj->addParent(ctx, env->getStrPrototype()));
+                                    resObj->setAttribute(ctx, env->getClassString(), env->getStrPrototype());
+                                }
+                                stack.pop_back(); stack.back() = resObj;
+                                handled = true;
                             }
-                            stack.pop_back(); stack.back() = resObj;
-                        } else if (env && env->getSliceType() && (key->isInstanceOf(ctx, env->getSliceType())->asBoolean(ctx) || key->getAttribute(ctx, env->getStartString()))) {
-                            const proto::ProtoObject* startObj = key->getAttribute(ctx, env->getStartString());
-                            const proto::ProtoObject* stopObj = key->getAttribute(ctx, env->getStopString());
-                            // step is ignored for now to simplify, or implemented same as list
-                            long long start = (startObj && startObj != PROTO_NONE) ? startObj->asLong(ctx) : 0;
-                            long long stop = (stopObj && stopObj != PROTO_NONE) ? stopObj->asLong(ctx) : size;
-                            if (start < 0) start += size;
-                            if (stop < 0) stop += size;
-                            if (start < 0) start = 0; if (start > size) start = size;
-                            if (stop < 0) stop = 0; if (stop > size) stop = size;
-                            
-                            const proto::ProtoString* slice = s->getSlice(ctx, static_cast<int>(start), static_cast<int>(stop));
-                            proto::ProtoObject* resObj = const_cast<proto::ProtoObject*>(ctx->newObject(true));
-                            resObj->setAttribute(ctx, env ? env->getDataString() : protoPython::PythonEnvironment::getInternalString(ctx, "__data__"), slice->asObject(ctx));
-                            if (env && env->getStrPrototype()) {
-                                resObj = const_cast<proto::ProtoObject*>(resObj->addParent(ctx, env->getStrPrototype()));
-                                resObj->setAttribute(ctx, env->getClassString(), env->getStrPrototype());
-                            }
-                            stack.pop_back(); stack.back() = resObj;
                         }
-                    } else if (data->asSparseList(ctx)) {
+ else if (data->asSparseList(ctx)) {
                         unsigned long h = key->getHash(ctx);
                         const proto::ProtoObject* val = data->asSparseList(ctx)->getAt(ctx, h);
                         stack.pop_back();
                         stack.back() = (val ? val : PROTO_NONE);
+                        handled = true;
                     }
-                } else {
+                }
+                
+                if (!handled) {
+                    stack.pop_back();
+                    stack.back() = PROTO_NONE;
+                }
+                
+                if (stack.back() == PROTO_NONE && !env->hasPendingException()) {
                     // Start of Error Handling for unsubscriptable objects
                     std::string typeName = "unknown";
                     if (container) {
@@ -3576,6 +3623,7 @@ const proto::ProtoObject* executeBytecodeRange(
             } else if (starargs && starargs != PROTO_NONE) {
                 // Fallback: use getIter
                 if (env) {
+                    if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG: CALL_FUNCTION_EX calling iter(starargs)\n");
                     const proto::ProtoObject* it = env->iter(starargs);
                     if (it) {
                         const proto::ProtoList* L = ctx->newList();
@@ -3941,6 +3989,7 @@ const proto::ProtoObject* executeBytecodeRange(
             if (stack.empty()) { i = next_i; continue; }
             const proto::ProtoObject* iterable = stack.back();
             PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+            if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG: FOR_ITER calling iter(iterable)\n");
             const proto::ProtoObject* iterObj = env ? env->iter(iterable) : nullptr;
             if (std::getenv("PROTO_ENV_DIAG")) {
                 fprintf(stderr, "DEBUG: OP_GET_ITER iterable=%p iterObj=%p\n", (void*)iterable, (void*)iterObj);
@@ -4007,6 +4056,7 @@ const proto::ProtoObject* executeBytecodeRange(
 
             PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
             if (env) {
+                if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG: UNPACK_SEQUENCE calling iter(seq)\n");
                 const proto::ProtoObject* iterObj = env->iter(seq);
                 if (!iterObj) {
                     if (!env->hasPendingException()) env->raiseTypeError(ctx, "cannot unpack non-iterable object");
@@ -4234,6 +4284,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 
                 if (L && env) {
                     stack.push_back(L->asObject(ctx)); // TEMP ROOT at index top-1
+                    if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG: LIST_EXTEND calling iter(iterable)\n");
                     const proto::ProtoObject* iter = env->iter(iterable);
                     stack.push_back(iter); // TEMP ROOT at index top-1
                     while (iter) {
@@ -4308,6 +4359,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 const proto::ProtoSet* s = (data && data->asSet(ctx)) ? data->asSet(ctx) : nullptr;
                 
                 if (s && env) {
+                    if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG: SET_UPDATE calling iter(iterable)\n");
                     const proto::ProtoObject* iter = env->iter(iterable);
                     while (iter) {
                         const proto::ProtoObject* item = env->next(iter);

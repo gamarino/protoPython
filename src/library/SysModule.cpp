@@ -383,7 +383,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     for (const char* name : builtin_names) {
         builtinsList = builtinsList->appendLast(ctx, PythonEnvironment::getInternedString(ctx, name)->asObject(ctx));
     }
-    const proto::ProtoObject* bt = ctx->newTupleFromList(builtinsList)->asObject(ctx);
+    const proto::ProtoObject* bt = env ? env->newTuple(builtinsList) : ctx->newTupleFromList(builtinsList)->asObject(ctx);
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "builtin_module_names"), bt);
 
     // sys.executable
