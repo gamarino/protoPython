@@ -97,6 +97,10 @@ const proto::ProtoString* PythonEnvironment::getInternalString(proto::ProtoConte
         if (std::strcmp(name, "__set__") == 0) return env->getSetDunderString();
         if (std::strcmp(name, "__delete__") == 0) return env->getDelDunderString();
         if (std::strcmp(name, "__call__") == 0) return env->getCallString();
+        if (std::strcmp(name, "__self__") == 0) return env->getSelfDunderString();
+        if (std::strcmp(name, "__func__") == 0) return env->getFuncDunderString();
+        if (std::strcmp(name, "__code__") == 0) return env->getCodeString();
+        if (std::strcmp(name, "__globals__") == 0) return env->getGlobalsString();
         
         // Fallback to general interning for other strings
         return env->getInternedString(ctx, name);
@@ -7149,7 +7153,6 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     objectPrototype = objectPrototype->setAttribute(rootContext_, getInternedString(rootContext_, "__hash__"), rootContext_->fromMethod(nullptr, py_object_hash));
     objectPrototype = objectPrototype->setAttribute(rootContext_, getInternedString(rootContext_, "__reduce_ex__"), rootContext_->fromMethod(nullptr, py_object_reduce_ex));
     objectPrototype = objectPrototype->setAttribute(rootContext_, getInternedString(rootContext_, "__reduce__"), rootContext_->fromMethod(nullptr, py_object_reduce));
-    objectPrototype = objectPrototype->setAttribute(rootContext_, getInternedString(rootContext_, "__is_python_class__"), PROTO_TRUE);
 
     // 4. Set all dunders on type
     typePrototype = typePrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_type_repr));
@@ -7234,15 +7237,25 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
             
             const proto::ProtoObject* im_self = methodObj->getAttribute(ctx, env->getSelfDunderString());
             const proto::ProtoObject* im_func = methodObj->getAttribute(ctx, env->getFuncDunderString());
+
+            if (std::getenv("PROTO_ENV_DIAG")) {
+                fprintf(stderr, "DEBUG METHOD CALL: methodObj=%p im_self=%p im_func=%p actualArgsSize=%lu\n",
+                        (void*)methodObj, (void*)im_self, (void*)im_func, actualArgs ? actualArgs->getSize(ctx) : 0);
+                fflush(stderr);
+            }
             
             if (im_self && im_func && im_self != PROTO_NONE && im_func != PROTO_NONE) {
                 const proto::ProtoList* subArgs = ctx->newList()->appendLast(ctx, im_self);
                 if (actualArgs) {
                     for (size_t i = 0; i < actualArgs->getSize(ctx); ++i) {
-                        subArgs = subArgs->appendLast(ctx, actualArgs->getAt(ctx, i));
+                        subArgs = subArgs->appendLast(ctx, actualArgs->getAt(ctx, (int)i));
                     }
                 }
-                fprintf(stderr, "DEBUG METHOD CALL: forwarding to im_func=%p\n", (void*)im_func); fflush(stderr); return invokePythonCallable(ctx, im_func, subArgs, kwargs);
+                if (std::getenv("PROTO_ENV_DIAG")) {
+                    fprintf(stderr, "DEBUG METHOD CALL: forwarding to im_func=%p subArgsSize=%lu\n", (void*)im_func, subArgs->getSize(ctx));
+                    fflush(stderr);
+                }
+                return invokePythonCallable(ctx, im_func, subArgs, kwargs);
             }
             
             return invokePythonCallable(ctx, methodObj, actualArgs, kwargs);
@@ -9522,8 +9535,8 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
     }
 
 
-    const proto::ProtoString* isPyClassS = PythonEnvironment::getInternedString(ctx, "__is_python_class__");
-    bool isClass = (obj != PROTO_NONE) && (obj->hasOwnAttribute(ctx, isPyClassS) == PROTO_TRUE || (typePrototype && obj->isInstanceOf(ctx, typePrototype)));
+    bool isClass = this->isActuallyAClass(ctx, obj);
+
 
     if (nameStr == "__class__") {
         if (!isClass && obj != PROTO_NONE && obj->hasOwnAttribute(ctx, name) == PROTO_TRUE) {
@@ -9574,6 +9587,9 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
     
     // 1. Get the raw value from the primitive object hierarchy
     const proto::ProtoObject* val = obj->getAttribute(ctx, name);
+    if (std::getenv("PROTO_ENV_DIAG") && nameStr == "__defaults__") {
+        fprintf(stderr, "DEBUG getAttribute(__defaults__): obj=%p val=%p\n", (void*)obj, (void*)val);
+    }
     if (!val && std::getenv("PROTO_ENV_DEBUG")) {
         std::string n; name->toUTF8String(ctx, n);
         fprintf(stderr, "TRACE: getAttribute(obj=%p, attr='%s') FAILED\n", (void*)obj, n.c_str());
@@ -9816,6 +9832,8 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
             if (!py_name_s) py_name_s = PythonEnvironment::getInternedString(ctx, "__name__");
             bound = bound->setAttribute(ctx, py_name_s, name->asObject(ctx));
             bound = bound->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__qualname__"), name->asObject(ctx));
+            bound = bound->setAttribute(ctx, this->getFuncDunderString(), val);
+            bound = bound->setAttribute(ctx, this->getSelfDunderString(), obj);
             
 
             return bound;
@@ -9830,8 +9848,7 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
                  fprintf(stderr, "DEBUG_GET_FAIL: register not found on obj=%p\n", (void*)obj);
                  PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
                  if (env) {
-                     std::string r = env->reprObject(ctx, obj);
-                     fprintf(stderr, "DEBUG_GET_FAIL: obj repr=%s\n", r.c_str());
+                     fprintf(stderr, "DEBUG_GET_FAIL: obj repr=obj_repr_disabled\n");
                  }
                  fflush(stderr);
              }

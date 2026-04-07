@@ -2186,7 +2186,16 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
     }
 
     std::string dynamicReason = getDynamicLocalsReason(n->body.get());
-    const bool forceMapped = !dynamicReason.empty() || !captured.empty();
+    const bool forceMapped = !dynamicReason.empty();
+
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        fprintf(stderr, "DEBUG COMPILER: FunctionDef '%s' forceMapped=%d dynamicReason='%s' captured_size=%zu\n", 
+                n->name.c_str(), (int)forceMapped, dynamicReason.c_str(), captured.size());
+        for (const auto& c : captured) {
+            fprintf(stderr, "  - captured: %s\n", c.c_str());
+        }
+        fflush(stderr);
+    }
 
     std::vector<std::string> varnamesOrdered;
     // 1. Positional Parameters
@@ -2228,6 +2237,10 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
     }
 
     int nparams = static_cast<int>(params.size());
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        fprintf(stderr, "DEBUG COMPILER: %s:%d FunctionDef '%s' nparams=%d\n", filename_.c_str(), n->line, n->name.c_str(), nparams);
+        fflush(stderr);
+    }
     int kwonlyargcount = static_cast<int>(n->kwonlyargs.size());
 
     Compiler bodyCompiler(ctx_, filename_);
@@ -2324,7 +2337,7 @@ bool Compiler::compileLambda(LambdaNode* n) {
         if (!isParam) bodyNonlocals.insert(c);
     }
 
-    const bool forceMapped = !captured.empty();
+    const bool forceMapped = false; // Lambdas never have dynamic locals access like locals() or exec()
     std::vector<std::string> varnamesOrdered;
     // 1. Positional Parameters
     for (const auto& p : params) {
@@ -2443,7 +2456,7 @@ bool Compiler::compileAsyncFunctionDef(AsyncFunctionDefNode* n) {
     }
     
     std::string dynamicReason = getDynamicLocalsReason(n->body.get());
-    const bool forceMapped = !dynamicReason.empty() || !captured.empty();
+    const bool forceMapped = !dynamicReason.empty();
 
     std::vector<std::string> varnamesOrdered;
     // 1. Positional Parameters
@@ -2924,21 +2937,21 @@ const proto::ProtoObject* makeCodeObject(proto::ProtoContext* ctx,
     const proto::ProtoTuple* lnotab) {
     if (!ctx) return PROTO_NONE;
     const proto::ProtoObject* code = ctx->newObject(false);
-    code = code->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "co_consts"), constants ? reinterpret_cast<const proto::ProtoObject*>(constants) : reinterpret_cast<const proto::ProtoObject*>(ctx->newTuple()));
-    code = code->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "co_names"), names ? reinterpret_cast<const proto::ProtoObject*>(names) : reinterpret_cast<const proto::ProtoObject*>(ctx->newTuple()));
-    code = code->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "co_code"), reinterpret_cast<const proto::ProtoObject*>(bytecode));
-    code = code->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "co_filename"), filename ? filename->asObject(ctx) : PythonEnvironment::getInternedString(ctx, "<stdin>")->asObject(ctx));
-    code = code->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "co_varnames"), varnames ? reinterpret_cast<const proto::ProtoObject*>(varnames) : reinterpret_cast<const proto::ProtoObject*>(ctx->newTuple()));
-    code = code->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "co_nparams"), ctx->fromInteger(nparams));
-    code = code->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "co_kwonlyargcount"), ctx->fromInteger(kwonlyargcount));
-    code = code->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "co_automatic_count"), ctx->fromInteger(automatic_count + PYTHON_STACK_BUFFER));
-    code = code->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "co_flags"), ctx->fromInteger(flags));
+    code = code->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_consts"), constants ? reinterpret_cast<const proto::ProtoObject*>(constants) : reinterpret_cast<const proto::ProtoObject*>(ctx->newTuple()));
+    code = code->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_names"), names ? reinterpret_cast<const proto::ProtoObject*>(names) : reinterpret_cast<const proto::ProtoObject*>(ctx->newTuple()));
+    code = code->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_code"), reinterpret_cast<const proto::ProtoObject*>(bytecode));
+    code = code->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_filename"), filename ? filename->asObject(ctx) : PythonEnvironment::getInternedString(ctx, "<stdin>")->asObject(ctx));
+    code = code->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_varnames"), varnames ? reinterpret_cast<const proto::ProtoObject*>(varnames) : reinterpret_cast<const proto::ProtoObject*>(ctx->newTuple()));
+    code = code->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_nparams"), ctx->fromInteger(nparams));
+    code = code->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_kwonlyargcount"), ctx->fromInteger(kwonlyargcount));
+    code = code->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_automatic_count"), ctx->fromInteger(automatic_count + PYTHON_STACK_BUFFER));
+    code = code->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_flags"), ctx->fromInteger(flags));
     bool isGenOrCoro = isGenerator || (flags & 0x80);
-    code = code->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "co_is_generator"), ctx->fromBoolean(isGenOrCoro));
-    code = code->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "co_name"), co_name ? co_name->asObject(ctx) : PythonEnvironment::getInternedString(ctx, "<module>")->asObject(ctx));
+    code = code->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_is_generator"), ctx->fromBoolean(isGenOrCoro));
+    code = code->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_name"), co_name ? co_name->asObject(ctx) : PythonEnvironment::getInternedString(ctx, "<module>")->asObject(ctx));
     
-    code = code->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "co_firstlineno"), ctx->fromInteger(firstlineno));
-    code = code->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "co_lnotab"), lnotab ? reinterpret_cast<const proto::ProtoObject*>(lnotab) : reinterpret_cast<const proto::ProtoObject*>(ctx->newTuple()));
+    code = code->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_firstlineno"), ctx->fromInteger(firstlineno));
+    code = code->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_lnotab"), lnotab ? reinterpret_cast<const proto::ProtoObject*>(lnotab) : reinterpret_cast<const proto::ProtoObject*>(ctx->newTuple()));
 
     return code;
 }

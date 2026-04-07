@@ -803,6 +803,155 @@ static const proto::ProtoObject* py_exit(
     return PROTO_NONE;
 }
 
+static const proto::ProtoObject* py_getpid(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* /*self*/,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* /*posArgs*/,
+    const proto::ProtoSparseList* /*kwargs*/) {
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+    return ctx->fromInteger(getpid());
+#else
+    return ctx->fromInteger(0);
+#endif
+}
+
+static const proto::ProtoObject* py_getppid(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* /*self*/,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* /*posArgs*/,
+    const proto::ProtoSparseList* /*kwargs*/) {
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+    return ctx->fromInteger(getppid());
+#else
+    return ctx->fromInteger(0);
+#endif
+}
+
+static const proto::ProtoObject* py_create_environ(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* /*self*/,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* /*posArgs*/,
+    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoObject* dict = ctx->newObject(true);
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (env && env->getDictPrototype()) {
+        dict = dict->addParent(ctx, env->getDictPrototype());
+    }
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+    for (char** p = environ; p && *p; ++p) {
+        const char* eq = strchr(*p, '=');
+        if (eq && eq > *p) {
+            std::string key(*p, static_cast<size_t>(eq - *p));
+            std::string val(eq + 1);
+            dict = dict->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, key.c_str()), 
+                                      PythonEnvironment::getInternedString(ctx, val.c_str())->asObject(ctx));
+        }
+    }
+#endif
+    return dict;
+}
+
+static const proto::ProtoObject* py_path_splitroot_ex(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* /*self*/,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList* /*kwargs*/) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    const proto::ProtoObject* pathObj = posArgs->getAt(ctx, 0);
+    if (!pathObj->isString(ctx)) return PROTO_NONE;
+    std::string path;
+    pathObj->asString(ctx)->toUTF8String(ctx, path);
+
+    std::string drive = "";
+    std::string root = "";
+    std::string tail = path;
+
+    if (!path.empty() && path[0] == '/') {
+        if (path.size() >= 2 && path[1] == '/' && (path.size() == 2 || path[2] != '/')) {
+            size_t nextSlash = path.find('/', 2);
+            if (nextSlash != std::string::npos) {
+                drive = path.substr(0, nextSlash);
+                root = "/";
+                tail = path.substr(nextSlash + 1);
+            } else {
+                drive = path;
+                root = "";
+                tail = "";
+            }
+        } else {
+            root = "/";
+            tail = path.substr(1);
+        }
+    }
+
+    const proto::ProtoList* result = ctx->newList();
+    result = result->appendLast(ctx, PythonEnvironment::getInternedString(ctx, drive.c_str())->asObject(ctx));
+    result = result->appendLast(ctx, PythonEnvironment::getInternedString(ctx, root.c_str())->asObject(ctx));
+    result = result->appendLast(ctx, PythonEnvironment::getInternedString(ctx, tail.c_str())->asObject(ctx));
+    return ctx->newTupleFromList(result)->asObject(ctx);
+}
+
+static const proto::ProtoObject* py_path_normpath(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* /*self*/,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList* /*kwargs*/) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    const proto::ProtoObject* pathObj = posArgs->getAt(ctx, 0);
+    if (!pathObj->isString(ctx)) return PROTO_NONE;
+    return pathObj; // Passthrough for now, posixpath.py handles Most of it if needed
+}
+
+static const proto::ProtoObject* py_getpid_method(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* /*self*/,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* /*posArgs*/,
+    const proto::ProtoSparseList* /*kwargs*/) {
+    return py_getpid(ctx, nullptr, nullptr, nullptr, nullptr);
+}
+
+static const proto::ProtoObject* py_getppid_method(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* /*self*/,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* /*posArgs*/,
+    const proto::ProtoSparseList* /*kwargs*/) {
+    return py_getppid(ctx, nullptr, nullptr, nullptr, nullptr);
+}
+
+static const proto::ProtoObject* py_path_splitroot_ex_method(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList* kwargs) {
+    return py_path_splitroot_ex(ctx, self, parentLink, posArgs, kwargs);
+}
+
+static const proto::ProtoObject* py_path_normpath_method(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList* kwargs) {
+    return py_path_normpath(ctx, self, parentLink, posArgs, kwargs);
+}
+
+static const proto::ProtoObject* py_create_environ_method(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList* kwargs) {
+    return py_create_environ(ctx, self, parentLink, posArgs, kwargs);
+}
+
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment* env, const proto::ProtoObject* pathModule) {
     const proto::ProtoObject* direntry_proto = env && env->getObjectPrototype() ? env->getObjectPrototype()->newChild(ctx, false) : ctx->newObject(false);
     // Ensure direntry_proto is a fresh object and not polluting global Object prototype
@@ -900,6 +1049,16 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_open));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "close"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_close));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "getpid"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_getpid_method));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "getppid"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_getppid_method));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_path_splitroot_ex"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_path_splitroot_ex_method));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_path_normpath"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_path_normpath_method));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_create_environ"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_create_environ_method));
 
     const proto::ProtoObject* statResultType = ctx->newObject(true); // make mutable just in case
     statResultType = statResultType->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__name__"), PythonEnvironment::getInternedString(ctx, "stat_result")->asObject(ctx));
@@ -991,6 +1150,11 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "_have_functions")->asObject(ctx));
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "open")->asObject(ctx));
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "close")->asObject(ctx));
+    keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "getpid")->asObject(ctx));
+    keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "getppid")->asObject(ctx));
+    keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "_path_splitroot_ex")->asObject(ctx));
+    keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "_path_normpath")->asObject(ctx));
+    keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "_create_environ")->asObject(ctx));
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "stat_result")->asObject(ctx));
     
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__keys__"), keys->asObject(ctx));

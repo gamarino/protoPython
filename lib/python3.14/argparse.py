@@ -131,7 +131,7 @@ class _AttributeHolder(object):
         return '%s(%s)' % (type_name, ', '.join(arg_strings))
 
     def _get_kwargs(self):
-        return list(self.__dict__.items())
+        return list(getattr(self, '__dict__', {}).items())
 
     def _get_args(self):
         return []
@@ -1422,7 +1422,7 @@ class _ActionsContainer(object):
                  prefix_chars,
                  argument_default,
                  conflict_handler):
-        pass
+        print(f"DEBUG argparse: _ActionsContainer.__init__ self={id(self)}")
         super(_ActionsContainer, self).__init__()
 
         self.description = description
@@ -1434,7 +1434,7 @@ class _ActionsContainer(object):
         self._registries = {}
 
         # register actions
-        pass; self.register('action', None, _StoreAction); pass
+        self.register('action', None, _StoreAction)
         self.register('action', 'store', _StoreAction)
         self.register('action', 'store_const', _StoreConstAction)
         self.register('action', 'store_true', _StoreTrueAction)
@@ -1779,15 +1779,13 @@ class _ArgumentGroup(_ActionsContainer):
         update('conflict_handler', container.conflict_handler)
         update('prefix_chars', container.prefix_chars)
         update('argument_default', container.argument_default)
-        super_init = super(_ArgumentGroup, self).__init__
-        pass
-        super_init(description=description, **kwargs)
+        super().__init__(description=description, **kwargs)
 
         # group attributes
         self.title = title
         self._group_actions = []
 
-        # share most attributes with the container
+        print(f"DEBUG argparse: _ArgumentGroup.__init__ self={id(self)} hasRegistries={hasattr(self, '_registries')} container={id(container)} containerHasRegistries={hasattr(container, '_registries')}")
         self._registries = container._registries
         self._actions = container._actions
         self._option_string_actions = container._option_string_actions
@@ -1853,6 +1851,12 @@ def _prog_name(prog=None):
 
 
 class ArgumentParser(_ActionsContainer, _AttributeHolder):
+
+    def _get_kwargs(self):
+        return list(getattr(self, '__dict__', {}).items())
+
+    def _get_args(self):
+        return []
     """Object for parsing command line strings into Python objects.
 
     Keyword Arguments:
@@ -1895,11 +1899,12 @@ class ArgumentParser(_ActionsContainer, _AttributeHolder):
                  suggest_on_error=False,
                  color=True,
                  ):
-        superinit = super(ArgumentParser, self).__init__
-        superinit(description=description,
-                  prefix_chars=prefix_chars,
-                  argument_default=argument_default,
-                  conflict_handler=conflict_handler)
+        print(f"DEBUG argparse: ArgumentParser.__init__ self={id(self)}")
+        super().__init__(
+            description=description,
+            prefix_chars=prefix_chars,
+            argument_default=argument_default,
+            conflict_handler=conflict_handler)
 
         self.prog = _prog_name(prog)
         self.usage = usage

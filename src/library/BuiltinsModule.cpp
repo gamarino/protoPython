@@ -1585,11 +1585,9 @@ static const proto::ProtoObject* py_super_getattr(
     const proto::ProtoObject* obj = self->getAttribute(context, PythonEnvironment::getInternedString(context, "obj"));
     const proto::ProtoObject* type = self->getAttribute(context, PythonEnvironment::getInternedString(context, "type"));
     if (std::getenv("PROTO_ENV_DIAG")) {
-        PythonEnvironment* env = PythonEnvironment::fromContext(context);
         std::string name; nameObj->asString(context)->toUTF8String(context, name);
-        fprintf(stderr, "DEBUG_SUPER: getattr '%s' self=%p obj=%p (%s) type=%p (%s)\n",
-                name.c_str(), (void*)self, (void*)obj, env ? env->reprObject(context, obj).c_str() : "???",
-                (void*)type, env ? env->reprObject(context, type).c_str() : "???");
+        fprintf(stderr, "DEBUG_SUPER: getattr '%s' self=%p obj=%p type=%p\n",
+                name.c_str(), (void*)self, (void*)obj, (void*)type);
         fflush(stderr);
     }
     if (!obj || !type) return PROTO_NONE;
@@ -1646,7 +1644,29 @@ static const proto::ProtoObject* py_super_getattr(
                 return descrGet->asMethod(context)(context, val, nullptr, args, nullptr);
             }
             if (val->asMethod(context)) {
-                return context->fromMethod(const_cast<proto::ProtoObject*>(obj), val->asMethod(context));
+                // Return a bound method object with __self__ and __func__ set
+                PythonEnvironment* env = PythonEnvironment::fromContext(context);
+                const proto::ProtoObject* bound = context->newObject(true);
+                if (env && env->getMethodPrototype()) {
+                    bound = bound->addParent(context, env->getMethodPrototype());
+                    bound = bound->setAttribute(context, env->getClassString(), env->getMethodPrototype());
+                }
+                
+                // Set __self__ (the instance)
+                bound = bound->setAttribute(context, env ? env->getSelfDunderString() : PythonEnvironment::getInternalString(context, "__self__"),
+                                           obj);
+                
+                // Set __func__ (the original function)
+                bound = bound->setAttribute(context, env ? env->getFuncDunderString() : PythonEnvironment::getInternalString(context, "__func__"),
+                                           val);
+                
+                // Copy __name__ from the original function
+                const proto::ProtoObject* funcName = val->getAttribute(context, env ? env->getNameString() : PythonEnvironment::getInternalString(context, "__name__"));
+                if (funcName && funcName != PROTO_NONE) {
+                    bound = bound->setAttribute(context, env ? env->getNameString() : PythonEnvironment::getInternalString(context, "__name__"), funcName);
+                }
+
+                return bound;
             }
             return val;
         }
@@ -2276,6 +2296,21 @@ static const proto::ProtoList* computeC3MRO(proto::ProtoContext* context, const 
             }
         }
     }
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        std::string clsName = "unknown";
+        const proto::ProtoString* nameS = ::protoPython::PythonEnvironment::getInternedString(context, "__name__");
+        const proto::ProtoObject* nameAttr = cls->getAttribute(context, nameS);
+        if (nameAttr && nameAttr->isString(context)) nameAttr->asString(context)->toUTF8String(context, clsName);
+        fprintf(stderr, "!!! LOUD MRO: computing for %s (target=%p) !!!\n", clsName.c_str(), (void*)cls);
+        for (unsigned long i = 0; i < result->getSize(context); ++i) {
+            const proto::ProtoObject* baseObj = result->getAt(context, i);
+            std::string bName = "unknown";
+            const proto::ProtoObject* bn = baseObj->getAttribute(context, nameS);
+            if (bn && bn->isString(context)) bn->asString(context)->toUTF8String(context, bName);
+            fprintf(stderr, "  - %s (%p)\n", bName.c_str(), (void*)baseObj);
+        }
+        fflush(stderr);
+    }
     return result;
 }
 
@@ -2499,33 +2534,8 @@ const proto::ProtoObject* py_type(
                     if (keyObj && keyObj->isString(context)) {
                         const proto::ProtoString* k = keyObj->asString(context);
                         std::string ks; k->toUTF8String(context, ks);
-                        if (get_env_diag()) {
-                            fprintf(stderr, "DEBUG py_type attribute sync: attr '%s' from dict %p\n", ks.c_str(), (void*)dict);
-                            fflush(stderr);
-                        }
-                        
-                        const proto::ProtoObject* val = nullptr;
-                        const proto::ProtoString* getItemStr = PythonEnvironment::getInternedString(context, "__getitem__");
-                        const proto::ProtoObject* getItemMethod = env ? env->getAttribute(context, dict, getItemStr) : dict->getAttribute(context, getItemStr);
-                        if (get_env_diag()) {
-                            fprintf(stderr, "DEBUG py_type loop: key '%s' dict=%p getItemMethod=%p\n", ks.c_str(), (void*)dict, (void*)getItemMethod);
-                        }
-                        if (getItemMethod && getItemMethod != PROTO_NONE) {
-                            const proto::ProtoList* mArgs = context->newList()->appendLast(context, keyObj);
-                            val = protoPython::invokePythonCallable(context, getItemMethod, mArgs, nullptr);
-                            if (env && env->hasPendingException()) {
-                                if (get_env_diag()) fprintf(stderr, "DEBUG py_type loop: getItem exception caught\n");
-                                env->clearPendingException();
-                                val = nullptr;
-                            } else {
-                                if (get_env_diag()) fprintf(stderr, "DEBUG py_type loop: getItem returned %p\n", (void*)val);
-                            }
-                        }
-                        if (!val) { // nullptr ONLY! PROTO_NONE is a valid value.
-                            // Only copy if it's an own attribute of the dict (mapping)
-                            val = (dict->hasOwnAttribute(context, k)) ? dict->getAttribute(context, k) : nullptr;
-                            if (get_env_diag()) fprintf(stderr, "DEBUG py_type loop: fallback getAttribute returned %p\n", (void*)val);
-                        }
+                        const proto::ProtoObject* val = (dict->hasOwnAttribute(context, k)) ? dict->getAttribute(context, k) : nullptr;
+                        if (get_env_diag()) fprintf(stderr, "DEBUG py_type loop: key[%zu]='%s' val=%p\n", i, ks.c_str(), (void*)val);
                         
                         // Implicitly wrap special methods
                         if (val && env && val != PROTO_NONE) {
@@ -2674,7 +2684,14 @@ const proto::ProtoObject* py_type(
             for (int i = static_cast<int>(mroList->getSize(context)) - 1; i >= 1; --i) {
                 const proto::ProtoObject* parent = mroList->getAt(context, i);
                 targetClass = const_cast<proto::ProtoObject*>(targetClass->addParent(context, parent));
+                if (std::getenv("PROTO_ENV_DIAG")) {
+                    std::string pn = "unknown";
+                    const proto::ProtoObject* pName = parent->getAttribute(context, PythonEnvironment::getInternedString(context, "__name__"));
+                    if (pName && pName->isString(context)) pName->asString(context)->toUTF8String(context, pn);
+                    fprintf(stderr, "DEBUG py_type: added parent %s (%p) to class %p\n", pn.c_str(), (void*)parent, (void*)targetClass);
+                }
             }
+            fflush(stderr);
         }
         
         if (bases && std::getenv("PROTO_ENV_DIAG")) {
