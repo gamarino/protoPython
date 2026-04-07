@@ -8504,6 +8504,9 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain,
     if (!asMain && execValOrig == PROTO_TRUE) return 0;
     
     const proto::ProtoObject* fileObj = mod->getAttribute(ctx, fileKey);
+    if (!fileObj || fileObj == PROTO_NONE) {
+        fileObj = mod->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "path"));
+    }
     const bool willExec = fileObj && fileObj->isString(ctx) && (!execValOrig || execValOrig == PROTO_NONE || execValOrig == PROTO_FALSE);
     
     // Create a new MUTABLE module object so setAttribute works in-place
@@ -8531,6 +8534,8 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain,
     }
     if (mod->hasAttribute(ctx, fileDunderKey) == PROTO_TRUE) {
         mutableModObj->setAttribute(ctx, fileDunderKey, mod->getAttribute(ctx, fileDunderKey));
+    } else if (fileObj && fileObj->isString(ctx)) {
+        mutableModObj->setAttribute(ctx, fileDunderKey, fileObj);
     }
 
     const proto::ProtoString* sCheckDebug = PythonEnvironment::getInternedString(ctx, "_check_methods");
@@ -8681,14 +8686,18 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain,
                             
                             setCurrentGlobals(oldGlobals);
                             mod = mutableMod;
+                            ensureModuleInSysModules(ctx, moduleName, mutableMod);
                             // Re-cache if it changed
                             if (oldMod != mutableMod) {
                                 s_threadResolveCache[moduleName] = mutableMod;
                             }
                             const proto::ProtoObject* excAfterExec = peekPendingException();
                             if (excAfterExec && excAfterExec != PROTO_NONE) {
-                                std::cerr << "protopy: unhandled exception in module execution (" << moduleName << "):\n" 
-                                          << formatException(excAfterExec, nullptr) << std::endl;
+                                std::cerr << "protopy DEBUG: unhandled exception in module execution (" << moduleName << "):\n";
+                                if (std::getenv("PROTO_ENV_DIAG")) {
+                                    fprintf(stderr, "DEBUG HANG TRACE exc=%p\n", (void*)excAfterExec);
+                                }
+                                std::cerr << formatException(excAfterExec, nullptr) << std::endl;
                                 return -2;
                             }
                             // Update the wrapper's "val" so future resolves for this module see it as populated
@@ -10074,7 +10083,40 @@ const proto::ProtoObject* PythonEnvironment::resolve(const proto::ProtoString* n
     return nullptr;
 }
 
+void PythonEnvironment::registerInSysModules(proto::ProtoContext* ctx, const proto::ProtoObject* sysModule, const std::string& name, const proto::ProtoObject* mod) {
+    if (!sysModule || !mod || mod == PROTO_NONE) return;
+    
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    const proto::ProtoString* nameObj = PythonEnvironment::getInternedString(ctx, name.c_str());
+    const proto::ProtoString* modulesS = env ? env->getModulesS() : PythonEnvironment::getInternedString(ctx, "modules");
+    const proto::ProtoObject* modules = sysModule->getAttribute(ctx, modulesS);
+    if (!modules || modules == PROTO_NONE) return;
+    
+    const proto::ProtoString* dataString = env ? env->getDataString() : PythonEnvironment::getInternedString(ctx, "__data__");
+    const proto::ProtoObject* dataAttr = modules->getAttribute(ctx, dataString);
+    const proto::ProtoSparseList* dict = (dataAttr && dataAttr != PROTO_NONE) ? dataAttr->asSparseList(ctx) : modules->asSparseList(ctx);
+    
+    if (!dict || !dict->has(ctx, nameObj->getHash(ctx)) || dict->getAt(ctx, nameObj->getHash(ctx)) != mod) {
+        const_cast<proto::ProtoObject*>(modules)->setAttribute(ctx, nameObj, mod);
+        if (dataAttr && dataAttr != PROTO_NONE) {
+            const proto::ProtoSparseList* newDict = dataAttr->asSparseList(ctx)->setAt(ctx, nameObj->getHash(ctx), mod);
+            const_cast<proto::ProtoObject*>(modules)->setAttribute(ctx, dataString, newDict->asObject(ctx));
+        }
+        if (get_env_diag()) {
+            fprintf(stderr, "DEBUG: registerInSysModules %s -> %p\n", name.c_str(), (void*)mod);
+        }
+    }
+}
+
+void PythonEnvironment::ensureModuleInSysModules(proto::ProtoContext* ctx, const std::string& name, const proto::ProtoObject* mod) {
+    registerInSysModules(ctx, sysModule, name, mod);
+}
+
 const proto::ProtoObject* PythonEnvironment::resolveModule(const std::string& nameStr, proto::ProtoContext* ctx) {
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        fprintf(stderr, "DEBUG ENTER: resolveModule(name=%s)\n", nameStr.c_str());
+        fflush(stderr);
+    }
     // Quick cache check
     if (!ctx) ctx = s_threadContext ? s_threadContext : rootContext_;
     
@@ -10092,7 +10134,28 @@ const proto::ProtoObject* PythonEnvironment::resolveModule(const std::string& na
             }
         }
 
-         return result;
+        if (result && result != PROTO_NONE) {
+            const proto::ProtoString* executedKey = getExecutedString();
+            const proto::ProtoObject* executedVal = result->getAttribute(ctx, executedKey);
+            bool isNative = false;
+            if (sysModule) {
+                const proto::ProtoObject* modules = sysModule->getAttribute(ctx, modulesS);
+                if (modules && modules != PROTO_NONE) {
+                    const proto::ProtoObject* dataAttr = modules->getAttribute(ctx, dataString);
+                    const proto::ProtoSparseList* dict = (dataAttr && dataAttr != PROTO_NONE) ? dataAttr->asSparseList(ctx) : modules->asSparseList(ctx);
+                    if (dict && dict->has(ctx, PythonEnvironment::getInternedString(ctx, nameStr.c_str())->getHash(ctx))) {
+                        const proto::ProtoObject* sysMod = dict->getAt(ctx, PythonEnvironment::getInternedString(ctx, nameStr.c_str())->getHash(ctx));
+                        if (sysMod == result) isNative = true;
+                    }
+                }
+            }
+            if (!isNative && (!executedVal || executedVal == PROTO_FALSE || executedVal == PROTO_NONE)) {
+                // Not executed, so it must be evaluated by executeModule below
+                goto skip_cache_label;
+            }
+            ensureModuleInSysModules(ctx, nameStr, result);
+        }
+        return result;
     }
 skip_cache_label:
     SafeImportLock lock(this, ctx);
@@ -10108,6 +10171,9 @@ skip_cache_label:
             
             if (dict && dict->has(ctx, nameObj->getHash(ctx))) {
                 const proto::ProtoObject* mod = dict->getAt(ctx, nameObj->getHash(ctx));
+                if (std::getenv("PROTO_ENV_DIAG")) {
+                    fprintf(stderr, "DEBUG: resolveModule %s - FOUND in sys.modules (mod=%p)\n", nameStr.c_str(), (void*)mod);
+                }
                 return mod;
             }
         }
@@ -10117,7 +10183,8 @@ skip_cache_label:
     const proto::ProtoObject* modWrapper = ctx->space->getImportModule(ctx, nameStr.c_str(), "val");
     if (modWrapper && modWrapper != PROTO_NONE) {
         const proto::ProtoObject* result = modWrapper->getAttribute(ctx, proto::ProtoString::fromUTF8(ctx, "val"));
-        if (result && result != nullptr) {
+        if (result && result != PROTO_NONE) {
+            ensureModuleInSysModules(ctx, nameStr, result);
     const proto::ProtoString* executedKey = getExecutedString();
     const proto::ProtoObject* executedVal = result->getAttribute(ctx, executedKey);
         if (!executedVal || executedVal == PROTO_FALSE || executedVal == PROTO_NONE) {

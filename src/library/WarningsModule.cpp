@@ -59,6 +59,31 @@ static const proto::ProtoObject* py_warnings_warn(
     return PROTO_NONE;
 }
 
+static const proto::ProtoObject* py_warnings_filters_mutated_lock_held(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    (void)self; (void)parentLink; (void)positionalParameters; (void)keywordParameters;
+    
+    // Return a dummy object that acts as a context manager
+    proto::ProtoObject* lock = const_cast<proto::ProtoObject*>(context->newObject(true));
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    
+    auto dummyFunc = [](proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+        return PROTO_NONE;
+    };
+    
+    const proto::ProtoString* enterS = env ? env->getEnterString() : PythonEnvironment::getInternedString(context, "__enter__");
+    const proto::ProtoString* exitS = env ? env->getExitString() : PythonEnvironment::getInternedString(context, "__exit__");
+    
+    lock->setAttribute(context, enterS, context->fromMethod(lock, dummyFunc));
+    lock->setAttribute(context, exitS, context->fromMethod(lock, dummyFunc));
+    
+    return lock;
+}
+
 const proto::ProtoObject* WarningsModule::createWarningsModule(proto::ProtoContext* context) {
     proto::ProtoObject* moduleObj = const_cast<proto::ProtoObject*>(context->newObject(true));
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
@@ -74,8 +99,19 @@ const proto::ProtoObject* WarningsModule::createWarningsModule(proto::ProtoConte
     moduleObj->setAttribute(context, nameS, proto::ProtoString::createSymbol(context, "_warnings")->asObject(context));
 
     // Expose warn function
-    const proto::ProtoString* warnS = proto::ProtoString::createSymbol(context, "warn");
+    const proto::ProtoString* warnS = PythonEnvironment::getInternedString(context, "warn");
     moduleObj->setAttribute(context, warnS, context->fromMethod(moduleObj, py_warnings_warn));
+
+    // Expose _filters_version (Step V77 Fix)
+    const proto::ProtoString* filtersVersionS = PythonEnvironment::getInternedString(context, "_filters_version");
+    // CPython uses a list [0] or an integer. _py_warnings expects a list-like or mutable object if it does _filters_version[0] += 1
+    // Actually, _py_warnings.py:243 says "_filters_version[0] += 1"
+    const proto::ProtoList* versionList = context->newList()->appendLast(context, context->fromInteger(0));
+    moduleObj->setAttribute(context, filtersVersionS, versionList->asObject(context));
+
+    // Expose _filters_mutated_lock_held
+    const proto::ProtoString* lockS = PythonEnvironment::getInternedString(context, "_filters_mutated_lock_held");
+    moduleObj->setAttribute(context, lockS, context->fromMethod(moduleObj, py_warnings_filters_mutated_lock_held));
 
     return moduleObj;
 }

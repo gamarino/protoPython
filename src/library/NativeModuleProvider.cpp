@@ -21,9 +21,14 @@ const proto::ProtoObject* NativeModuleProvider::tryLoad(const std::string& logic
             fprintf(stderr, "DEBUG NATIVE: Loaded %s mod=%p\n", logicalPath.c_str(), (void*)mod);
             PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
             if (env) {
-                mod = mod->setAttribute(ctx, env->getExecutedString(), PROTO_TRUE);
+                if (mod->getAttribute(ctx, env->getExecutedString()) != PROTO_TRUE) {
+                    mod = mod->setAttribute(ctx, env->getExecutedString(), PROTO_TRUE);
+                }
             } else {
-                mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__executed__"), PROTO_TRUE);
+                const proto::ProtoString* executedS = proto::ProtoString::createSymbol(ctx, "__executed__");
+                if (mod->getAttribute(ctx, executedS) != PROTO_TRUE) {
+                    mod = mod->setAttribute(ctx, executedS, PROTO_TRUE);
+                }
             }
         }
         return mod;

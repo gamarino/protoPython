@@ -120,6 +120,48 @@ namespace {
 static const proto::ProtoObject* invokeDunder(proto::ProtoContext* ctx, const proto::ProtoObject* container, const proto::ProtoString* name, const proto::ProtoList* args);
 static bool isTruthy(proto::ProtoContext* ctx, const proto::ProtoObject* obj);
 
+static void syncModuleIdentity(proto::ProtoContext* ctx, PythonEnvironment* env, const proto::ProtoObject* oldMod, const proto::ProtoObject* newMod) {
+    if (oldMod == newMod || !env) return;
+    
+    // Check if oldMod is a module
+    if (env->getModulePrototype() && env->getType(ctx, oldMod) != env->getModulePrototype()) return;
+
+    // Get the name of the module
+    const proto::ProtoObject* nameAttr = oldMod->getAttribute(ctx, env->getNameString());
+    if (!nameAttr || !nameAttr->isString(ctx)) return;
+
+    // Update sys.modules
+    const proto::ProtoObject* sys = env->getSysModule();
+    if (sys) {
+        const proto::ProtoObject* modules = env->getAttribute(ctx, sys, env->getModulesS());
+        if (modules && modules != PROTO_NONE) {
+            const proto::ProtoString* modNameS = nameAttr->asString(ctx);
+            // 1. Update as attribute (internal lookup fallback)
+            if (modules->getAttribute(ctx, modNameS) == oldMod) {
+                const_cast<proto::ProtoObject*>(modules)->setAttribute(ctx, modNameS, newMod);
+            }
+            
+            // 2. Update as dict item (Python-side lookup)
+            const proto::ProtoObject* dataAttr = modules->getAttribute(ctx, env->getDataString());
+            if (dataAttr && dataAttr != PROTO_NONE) {
+                const proto::ProtoSparseList* dict = dataAttr->asSparseList(ctx);
+                if (dict && dict->has(ctx, modNameS->getHash(ctx)) && dict->getAt(ctx, modNameS->getHash(ctx)) == oldMod) {
+                    dict = dict->setAt(ctx, modNameS->getHash(ctx), newMod);
+                    const_cast<proto::ProtoObject*>(modules)->setAttribute(ctx, env->getDataString(), dict->asObject(ctx));
+                    
+                    // CRITICAL: Ensure resolve cache is invalidated
+                    const_cast<PythonEnvironment*>(env)->incrementResolveCacheGeneration();
+                    
+                    if (std::getenv("PROTO_ENV_DIAG")) {
+                        std::string m; modNameS->toUTF8String(ctx, m);
+                        fprintf(stderr, "DEBUG: syncModuleIdentity updated sys.modules[%s]: %p -> %p\n", m.c_str(), (void*)oldMod, (void*)newMod);
+                    }
+                }
+            }
+        }
+    }
+}
+
 struct FrameScope {
     FrameScope(const proto::ProtoObject* frame) : oldFrame(PythonEnvironment::getCurrentFrame()) {
         PythonEnvironment::setCurrentFrame(frame);
@@ -2158,15 +2200,20 @@ const proto::ProtoObject* executeBytecodeRange(
                         // Update frame (CoW support)
                         std::string nStr;
                         nameObj->asString(ctx)->toUTF8String(ctx, nStr);
+                        const proto::ProtoObject* oldFrame = frame;
                         const proto::ProtoObject* newFrame = frame->setAttribute(ctx, nameObj->asString(ctx), val);
                         frame = const_cast<proto::ProtoObject*>(newFrame);
+                        syncModuleIdentity(ctx, env, oldFrame, newFrame);
                         
                         const proto::ProtoString* dataS = protoPython::PythonEnvironment::getInternalString(ctx, "__data__");
                         const proto::ProtoObject* dataObj = frame->getAttribute(ctx, dataS);
                         if (dataObj && dataObj->asSparseList(ctx)) {
                             const proto::ProtoSparseList* dataList = dataObj->asSparseList(ctx);
                             dataList = dataList->setAt(ctx, nameObj->getHash(ctx), val);
-                            frame = const_cast<proto::ProtoObject*>(frame->setAttribute(ctx, dataS, dataList->asObject(ctx)));
+                            const proto::ProtoObject* oldF2 = frame;
+                            const proto::ProtoObject* newF2 = frame->setAttribute(ctx, dataS, dataList->asObject(ctx));
+                            frame = const_cast<proto::ProtoObject*>(newF2);
+                            syncModuleIdentity(ctx, env, oldF2, newF2);
                         }
                     }
                     stack.pop_back(); // Pop val now that it's stored
@@ -2791,7 +2838,12 @@ const proto::ProtoObject* executeBytecodeRange(
                     
                     if (std::getenv("PROTO_ENV_DIAG")) {
                         std::string n; nameS->toUTF8String(ctx, n);
-                        fprintf(stderr, "DEBUG: OP_IMPORT_FROM name=%s val=%p hasAttr=%d\n", n.c_str(), (void*)val, mod->hasAttribute(ctx, nameS) == PROTO_TRUE);
+                        fprintf(stderr, "DEBUG: OP_IMPORT_FROM '%s' from mod=%p result=%p hasAttr=%d\n", n.c_str(), (void*)mod, (void*)val, mod->hasAttribute(ctx, nameS) == PROTO_TRUE);
+                        if (!val || val == PROTO_NONE) {
+                            fprintf(stderr, "  - mod class: %s\n", env ? env->reprObject(ctx, mod->getAttribute(ctx, env->getClassString())).c_str() : "unknown");
+                            const proto::ProtoString* dequeS = PythonEnvironment::getInternedString(ctx, "deque");
+                            fprintf(stderr, "  - has 'deque' (interned): %d\n", mod->hasAttribute(ctx, dequeS) == PROTO_TRUE);
+                        }
                     }
 
                     if (val && (val != PROTO_NONE || mod->hasAttribute(ctx, nameS) == PROTO_TRUE)) {
@@ -3339,6 +3391,7 @@ const proto::ProtoObject* executeBytecodeRange(
                         newObj = mutableObj->setAttribute(ctx, nameS, val);
                     }
                     if (newObj != oldObj) {
+                         syncModuleIdentity(ctx, env, oldObj, newObj);
                          const proto::ProtoObject** slots = ctx->getAutomaticLocals();
                          if (slots) {
                              unsigned int nSlots = ctx->getAutomaticLocalsCount();

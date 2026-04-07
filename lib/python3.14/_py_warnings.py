@@ -106,6 +106,11 @@ def _get_filters():
 
 
 def _filters_mutated_lock_held():
+    import sys
+    if _wm is None or not hasattr(_wm, '_filters_version'):
+        sys.stderr.write(f"DEBUG warnings: _wm={_wm} hasattr={hasattr(_wm, '_filters_version') if _wm else 'N/A'}\n")
+        if _wm: sys.stderr.write(f"DEBUG warnings: dir(_wm)={dir(_wm)}\n")
+        sys.stderr.flush()
     _wm._filters_version += 1
 
 

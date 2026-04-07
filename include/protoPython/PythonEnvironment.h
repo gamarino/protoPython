@@ -144,6 +144,15 @@ public:
     /** @brief Gets the builtins module object. */
     const proto::ProtoObject* getBuiltins() const { return builtinsModule; }
 
+    /** @brief Gets the sys module object. */
+    const proto::ProtoObject* getSysModule() const { return sysModule; }
+    
+    /** @brief Ensures a module is registered in sys.modules. */
+    void ensureModuleInSysModules(proto::ProtoContext* ctx, const std::string& name, const proto::ProtoObject* mod);
+
+    /** @brief Internal registration logic for sys.modules. */
+    static void registerInSysModules(proto::ProtoContext* ctx, const proto::ProtoObject* sysModule, const std::string& name, const proto::ProtoObject* mod);
+
     /**
      * @brief Utility to resolve symbols in this environment.
      */
@@ -994,6 +1003,8 @@ private:
     std::istream* stdin_{&std::cin};
 
 public:
+    void incrementResolveCacheGeneration() { resolveCacheGeneration_.fetch_add(1, std::memory_order_release); }
+
     /** Signal handling flag (Step 1310). */
     static std::atomic<bool> s_sigintReceived;
     static std::thread::id s_mainThreadId;
