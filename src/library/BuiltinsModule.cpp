@@ -2668,9 +2668,13 @@ const proto::ProtoObject* py_type(
             mroList = computeC3MRO(context, targetClass, convTup);
             targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, PythonEnvironment::getInternedString(context, "__bases__"), bases));
         } else {
-            const proto::ProtoList* emptyBases = context->newList();
-            mroList = computeC3MRO(context, targetClass, env ? env->newTuple(emptyBases) : context->newTupleFromList(emptyBases)->asObject(context));
-            if (!bases) targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, PythonEnvironment::getInternedString(context, "__bases__"), env ? env->newTuple(emptyBases) : context->newTupleFromList(emptyBases)->asObject(context)));
+            const proto::ProtoList* defaultBasesList = context->newList();
+            const proto::ProtoObject* objectProto = env ? env->getObjectPrototype() : nullptr;
+            if (objectProto) defaultBasesList = defaultBasesList->appendLast(context, objectProto);
+            const proto::ProtoObject* defaultBases = env ? env->newTuple(defaultBasesList) : context->newTupleFromList(defaultBasesList)->asObject(context);
+            
+            mroList = computeC3MRO(context, targetClass, defaultBases);
+            if (!bases) targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, PythonEnvironment::getInternedString(context, "__bases__"), defaultBases));
         }
         
         fprintf(stderr, "DEBUG py_type: computeC3MRO returned mroList=%p\n", (void*)mroList);

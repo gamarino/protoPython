@@ -7165,15 +7165,27 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
 
     // 5. Set MROs and Bases
     objectPrototype = objectPrototype->setAttribute(rootContext_, mroString, rootContext_->newTupleFromList(rootContext_->newList()->appendLast(rootContext_, objectPrototype))->asObject(rootContext_));
+    this->objectPrototype = const_cast<proto::ProtoObject*>(objectPrototype);
+    this->space_->objectPrototype = const_cast<proto::ProtoObject*>(objectPrototype);
+
     objectPrototype = objectPrototype->setAttribute(rootContext_, basesString, rootContext_->newTupleFromList(rootContext_->newList())->asObject(rootContext_));
+    this->objectPrototype = const_cast<proto::ProtoObject*>(objectPrototype);
+    this->space_->objectPrototype = const_cast<proto::ProtoObject*>(objectPrototype);
 
     const proto::ProtoList* typeMroList = rootContext_->newList()->appendLast(rootContext_, typePrototype)->appendLast(rootContext_, objectPrototype);
     typePrototype = typePrototype->setAttribute(rootContext_, mroString, rootContext_->newTupleFromList(typeMroList)->asObject(rootContext_));
+    this->typePrototype = const_cast<proto::ProtoObject*>(typePrototype);
+
     typePrototype = typePrototype->setAttribute(rootContext_, basesString, rootContext_->newTupleFromList(rootContext_->newList()->appendLast(rootContext_, objectPrototype))->asObject(rootContext_));
+    this->typePrototype = const_cast<proto::ProtoObject*>(typePrototype);
 
     // 6. NOW set __class__ pointers to the FINAL versions
     objectPrototype = objectPrototype->setAttribute(rootContext_, py_class, typePrototype);
+    this->objectPrototype = const_cast<proto::ProtoObject*>(objectPrototype);
+    this->space_->objectPrototype = const_cast<proto::ProtoObject*>(objectPrototype);
+
     typePrototype = typePrototype->setAttribute(rootContext_, py_class, typePrototype);
+    this->typePrototype = const_cast<proto::ProtoObject*>(typePrototype);
 
     if (std::getenv("PROTO_ENV_DEBUG")) fprintf(stderr, "DEBUG_ROOT: typePrototype=%p objectPrototype=%p\n", (void*)typePrototype, (void*)objectPrototype);
 
@@ -8530,12 +8542,12 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain,
     const proto::ProtoString* pathKey = PythonEnvironment::getInternalString(ctx, "__path__");
     const proto::ProtoString* fileDunderKey = PythonEnvironment::getInternalString(ctx, "__file__");
     if (mod->hasAttribute(ctx, pathKey) == PROTO_TRUE) {
-        mutableModObj->setAttribute(ctx, pathKey, mod->getAttribute(ctx, pathKey));
+        mutableModObj = const_cast<proto::ProtoObject*>(mutableModObj->setAttribute(ctx, pathKey, mod->getAttribute(ctx, pathKey)));
     }
     if (mod->hasAttribute(ctx, fileDunderKey) == PROTO_TRUE) {
-        mutableModObj->setAttribute(ctx, fileDunderKey, mod->getAttribute(ctx, fileDunderKey));
+        mutableModObj = const_cast<proto::ProtoObject*>(mutableModObj->setAttribute(ctx, fileDunderKey, mod->getAttribute(ctx, fileDunderKey)));
     } else if (fileObj && fileObj->isString(ctx)) {
-        mutableModObj->setAttribute(ctx, fileDunderKey, fileObj);
+        mutableModObj = const_cast<proto::ProtoObject*>(mutableModObj->setAttribute(ctx, fileDunderKey, fileObj));
     }
 
     const proto::ProtoString* sCheckDebug = PythonEnvironment::getInternedString(ctx, "_check_methods");
@@ -8559,17 +8571,17 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain,
                 // Don't overwrite if we already set it (like __name__)
                 if (mutableModObj->getAttribute(ctx, sKey) == PROTO_NONE) {
                     if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG: executeModule %s - copying attr '%s'\n", moduleName.c_str(), sKeyStr.c_str());
-                    mutableModObj->setAttribute(ctx, sKey, mod->getAttribute(ctx, sKey));
+                    mutableModObj = const_cast<proto::ProtoObject*>(mutableModObj->setAttribute(ctx, sKey, mod->getAttribute(ctx, sKey)));
                 }
             }
             it = const_cast<proto::ProtoSparseListIterator*>(it->advance(ctx));
         }
     }
-    mutableModObj->setAttribute(ctx, executedKey, PROTO_TRUE);
+    mutableModObj = const_cast<proto::ProtoObject*>(mutableModObj->setAttribute(ctx, executedKey, PROTO_TRUE));
     
     // Set __builtins__ if missing
     if (mutableModObj->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__builtins__")) == PROTO_NONE) {
-        mutableModObj->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__builtins__"), builtinsModule);
+        mutableModObj = const_cast<proto::ProtoObject*>(mutableModObj->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__builtins__"), builtinsModule));
     }
 
     mod = mutableModObj;

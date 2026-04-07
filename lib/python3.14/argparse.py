@@ -1422,7 +1422,6 @@ class _ActionsContainer(object):
                  prefix_chars,
                  argument_default,
                  conflict_handler):
-        print(f"DEBUG argparse: _ActionsContainer.__init__ self={id(self)}")
         super(_ActionsContainer, self).__init__()
 
         self.description = description
@@ -1684,7 +1683,6 @@ class _ActionsContainer(object):
 
             # strings starting with two prefix characters are long options
             option_strings.append(option_string)
-            import sys; sys.stderr.write("DEBUG OP_STRING: " + repr(option_string) + "\n"); sys.stderr.flush()
             if len(option_string) > 1 and option_string[1] in self.prefix_chars:
                 long_option_strings.append(option_string)
 
@@ -1785,7 +1783,6 @@ class _ArgumentGroup(_ActionsContainer):
         self.title = title
         self._group_actions = []
 
-        print(f"DEBUG argparse: _ArgumentGroup.__init__ self={id(self)} hasRegistries={hasattr(self, '_registries')} container={id(container)} containerHasRegistries={hasattr(container, '_registries')}")
         self._registries = container._registries
         self._actions = container._actions
         self._option_string_actions = container._option_string_actions
@@ -1899,7 +1896,6 @@ class ArgumentParser(_ActionsContainer, _AttributeHolder):
                  suggest_on_error=False,
                  color=True,
                  ):
-        print(f"DEBUG argparse: ArgumentParser.__init__ self={id(self)}")
         super().__init__(
             description=description,
             prefix_chars=prefix_chars,
