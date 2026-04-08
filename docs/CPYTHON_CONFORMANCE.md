@@ -12,12 +12,12 @@ This document tracks the progress of `protoPython` in passing the official CPyth
 
 Core syntax, standard object model, and fundamental types.
 
-- [ ] `test_grammar.py`: FAIL (ImportError: No module named 'test.support')
-- [ ] `test_types.py`: FAIL (ImportError: No module named 'test.support')
-- [ ] `test_descr.py`: FAIL (ImportError: No module named 'test.support')
-- [ ] `test_generators.py`: FAIL (ImportError: No module named 'test.support')
-- [ ] `test_asyncgen.py`: FAIL (ImportError: No module named 'inspect')
-- [x] `test_json.py`: PASS (Basic `import json` verification, `json.loads` data mismatch identified)
+- [ ] `test_grammar.py`: FAIL (IndexError: list index out of range in `argparse.py:1673`)
+- [ ] `test_types.py`: FAIL (IndexError: list index out of range in `argparse.py:1673`)
+- [ ] `test_descr.py`: FAIL (KeyError: fromkeys in `types.py`)
+- [ ] `test_generators.py`: FAIL (KeyError: fromkeys in `types.py`)
+- [ ] `test_asyncgen.py`: FAIL (AttributeError: 'ArgumentParser' object has no attribute 'add_argument' in `inspect.py`)
+- [x] `test_json.py`: FAIL (ImportError: cannot import name 'namedtuple' from 'collections')
 - [ ] `test_base64.py`: FAIL (ImportError: No module named 'unittest')
 
 ### 🟠 Important (Standard Library Foundations)
@@ -25,7 +25,7 @@ Core syntax, standard object model, and fundamental types.
 Frequent modules used in modern Python applications.
 
 - [ ] `test_sys.py`: System parameters and functions. (Import PASS)
-- [x] `test_os.py`: PASS (Verified with `tests/test_os.py`)
+- [ ] `test_os.py`: FAIL (SyntaxError: expected expression, but got '*' at line 4680)
 - [ ] `test_re.py`: Regular expression operations.
 - [ ] `test_datetime.py`: Basic date and time types.
 - [ ] `test_collections.py`: Container datatypes.
@@ -50,15 +50,15 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 - [ ] `test_pydoc.py`
 - [ ] `test_warnings.py`
 
-## Progress Summary (V82 - 2026-03-08)
+## Progress Summary (V84 - 2026-04-07)
 
 | Category | Total | Checked | Passed | Success Rate |
 | :--- | :--- | :--- | :--- | :--- |
-| **Essential** | 7 | 7 | 1 | 14% |
-| **Important** | 6 | 2 | 1 | 16% |
-| **Necessary** | 5 | 3 | 3 | 60% |
+| **Essential** | 7 | 7 | 0 | 0% |
+| **Important** | 6 | 1 | 0 | 0% |
+| **Necessary** | 5 | 3 | 2 | 67% |
 | **Low Priority** | 4 | 0 | 0 | 0% |
-| **Total** | **22** | **12** | **5** | **22%** |
+| **Total** | **22** | **11** | **2** | **9%** |
 
 > [!NOTE]
 > **V80 Evaluation Cycle**: Focus shifted to unblocking the standard library test imports. Full native implementations of `time.monotonic` and `time.perf_counter` were added. Identified missing features in `_weakref`, `threading`, and `unittest` that block test execution and require complete native implementations to ensure strict standard library compatibility.
@@ -87,6 +87,16 @@ Tests for features that are not primary targets for `protoPython`'s performance 
   - Created `lib/python3.14/gc.py` library shim.
 - **Builtin Registration**:
   - Fixed typo in `builtins` registration for the `bytes` type.
+
+## Recent Achievements (V84)
+
+- **Standard Library Unblocking**:
+  - Successfully resolved the `ImportError: No module named 'test.support'` blockage by ensuring the standard library path `lib/python3.14` is correctly handled by the importer. This has enabled the execution of the official CPython Regression Test Suite (`Lib/test`) for several core modules.
+- **Improved Exception Diagnostics**:
+  - Enhanced traceback reporting now correctly identifies deep cascading failures during standard library initialization (e.g., `inspect -> annotationlib -> ast -> argparse`).
+- **Regression & Gap Identification**:
+  - Identified a critical `IndexError` in `argparse.py` and a `KeyError: fromkeys` in `types.py` that currently block full suite execution. These are prioritized for the next stabilization cycle.
+  - Documented a syntax error in `test_os.py` related to advanced Python syntax (variadic generics or keyword-only separators) requiring parser updates.
 
 ## Recent Achievements (V83)
 
