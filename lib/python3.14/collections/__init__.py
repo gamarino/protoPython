@@ -615,8 +615,7 @@ except ImportError:
     # Leave the pure Python version in place.
     pass
 
-
-    return result
+    pass
 
 
 ########################################################################

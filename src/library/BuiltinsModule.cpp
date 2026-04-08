@@ -79,7 +79,7 @@ const proto::ProtoObject* py_type_prepare(
         dictObj = dictObj->addParent(context, env->getDictPrototype());
     }
     // Initialize __data__ and __keys__ if needed
-    if (env) env->initDictStorage(context, dictObj);
+    if (env) dictObj = env->initDictStorage(context, dictObj);
     
     return dictObj;
 }
@@ -2479,14 +2479,14 @@ const proto::ProtoObject* py_type(
             printf("DEBUG: py_type(3) name=%p bases=%p dict=%p\n", (void*)name, (void*)bases, (void*)dict);
         }
 
-        proto::ProtoObject* targetClass = const_cast<proto::ProtoObject*>(context->newObject(true));
+        const proto::ProtoObject* targetClass = context->newObject(true);
         
         // Add metaclass first so that its attributes are searched after the class MRO bases 
         // (which are added below in reverse order, meaning they are searched before the metaclass).
         if (cls && cls != targetClass) {
-            targetClass = const_cast<proto::ProtoObject*>(targetClass->addParent(context, cls));
+            targetClass = targetClass->addParent(context, cls);
         } else if (env && env->getObjectPrototype()) {
-            targetClass = const_cast<proto::ProtoObject*>(targetClass->addParent(context, env->getObjectPrototype()));
+            targetClass = targetClass->addParent(context, env->getObjectPrototype());
         }
         
         if (std::getenv("PROTO_ENV_DIAG")) {
@@ -2495,9 +2495,9 @@ const proto::ProtoObject* py_type(
             fprintf(stderr, "DEBUG py_type: creating class '%s' targetClass=%p\n", n.c_str(), (void*)targetClass);
             fflush(stderr);
         }
-        targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, env ? env->getClassString() : PythonEnvironment::getInternedString(context, "__class__"), cls));
+        targetClass = targetClass->setAttribute(context, env ? env->getClassString() : PythonEnvironment::getInternedString(context, "__class__"), cls);
         const proto::ProtoString* py_name = env ? env->getNameString() : PythonEnvironment::getInternedString(context, "__name__");
-        targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, py_name, name));
+        targetClass = targetClass->setAttribute(context, py_name, name);
         
         // NEW RULE: Explicitly mark this as a Python class
         if (std::getenv("PROTO_ENV_DEBUG")) {
@@ -2505,11 +2505,11 @@ const proto::ProtoObject* py_type(
             name->asString(context)->toUTF8String(context, n);
             fprintf(stderr, "TRACE: py_type CREATED class=%p name='%s'\n", (void*)targetClass, n.c_str());
         }
-        targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, PythonEnvironment::getInternedString(context, "__is_python_class__"), PROTO_TRUE));
+        targetClass = targetClass->setAttribute(context, PythonEnvironment::getInternedString(context, "__is_python_class__"), PROTO_TRUE);
 
         
         // Ensure the new class has dictionary storage (for __dict__ and consistency)
-        if (env) env->initDictStorage(context, targetClass);
+        if (env) targetClass = env->initDictStorage(context, targetClass);
         if (get_env_diag()) {
             fprintf(stderr, "DEBUG py_type: initDictStorage done targetClass=%p\n", (void*)targetClass);
             fflush(stderr);
@@ -3861,15 +3861,15 @@ const proto::ProtoObject* py_object_new(
     const proto::ProtoObject* cls = positionalParameters->getAt(context, 0);
     
     // Create new instance of cls natively
-    proto::ProtoObject* obj = const_cast<proto::ProtoObject*>(cls->newChild(context, true));
+    const proto::ProtoObject* obj = cls->newChild(context, true);
     
     // Set __class__ to cls explicitly natively
-    obj = const_cast<proto::ProtoObject*>(obj->setAttribute(context, PythonEnvironment::getInternedString(context, "__class__"), cls));
+    obj = obj->setAttribute(context, PythonEnvironment::getInternedString(context, "__class__"), cls);
     
     // Initialize properties tracking specifically dictionary 
     ::protoPython::PythonEnvironment* env = ::protoPython::PythonEnvironment::fromContext(context);
     if (env) {
-        env->initDictStorage(context, obj);
+        obj = env->initDictStorage(context, obj);
     }
     
     return obj;

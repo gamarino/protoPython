@@ -134,7 +134,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     } else {
         opmap = ctx->newObject(false);
         if (env && env->getDictPrototype()) opmap = opmap->addParent(ctx, env->getDictPrototype());
-        if (env) env->initDictStorage(ctx, opmap);
+        if (env) opmap = env->initDictStorage(ctx, opmap);
     }
     
     int maxOp = 255;

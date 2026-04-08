@@ -281,7 +281,7 @@ public:
     const proto::ProtoObject* buildString(const proto::ProtoObject** parts, size_t count);
     const proto::ProtoObject* getItem(const proto::ProtoObject* container, const proto::ProtoObject* key);
     void setItem(const proto::ProtoObject* container, const proto::ProtoObject* key, const proto::ProtoObject* value);
-    void initDictStorage(proto::ProtoContext* ctx, const proto::ProtoObject* obj);
+    const proto::ProtoObject* initDictStorage(proto::ProtoContext* ctx, const proto::ProtoObject* obj);
     const proto::ProtoObject* getAttr(const proto::ProtoObject* obj, const std::string& attr);
     void setAttr(const proto::ProtoObject* obj, const std::string& attr, const proto::ProtoObject* val);
     bool isTrue(const proto::ProtoObject* obj);

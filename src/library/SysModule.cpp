@@ -326,7 +326,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     // sys.modules (dict mapping names to modules)
     const proto::ProtoObject* modulesObj = env && env->getDictPrototype() ? env->getDictPrototype()->newChild(ctx, true) : ctx->newObject(false);
     if (env) {
-        env->initDictStorage(ctx, modulesObj);
+        modulesObj = env->initDictStorage(ctx, modulesObj);
     }
     sys = sys->setAttribute(ctx, env ? env->getModulesS() : proto::ProtoString::createSymbol(ctx, "modules"), modulesObj);
 
