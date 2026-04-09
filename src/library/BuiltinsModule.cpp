@@ -2764,6 +2764,14 @@ const proto::ProtoObject* py_type(
 }
 
 static bool checkInterfaceInstanceOf(proto::ProtoContext* context, const proto::ProtoObject* obj, const proto::ProtoObject* cls) {
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(context);
+        std::string objRepr = env ? env->reprObject(context, obj) : "???";
+        std::string clsRepr = env ? env->reprObject(context, cls) : "???";
+        const proto::ProtoObject* proto = obj->getPrototype(context);
+        std::string protoRepr = env ? env->reprObject(context, proto) : "???";
+        fprintf(stderr, "DEBUG checkInterfaceInstanceOf obj=%p (%s) proto=%p (%s) cls=%p (%s)\n", (void*)obj, objRepr.c_str(), (void*)proto, protoRepr.c_str(), (void*)cls, clsRepr.c_str());
+    }
     if (cls->isTuple(context)) {
         const proto::ProtoTuple* tup = cls->asTuple(context);
         for (size_t i = 0; i < tup->getSize(context); ++i) {
@@ -2772,7 +2780,9 @@ static bool checkInterfaceInstanceOf(proto::ProtoContext* context, const proto::
         return false;
     }
     if (obj == cls) return true;
-    return obj->isInstanceOf(context, cls) == PROTO_TRUE;
+    bool res = obj->isInstanceOf(context, cls) == PROTO_TRUE;
+    if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG checkInterfaceInstanceOf result=%d\n", res);
+    return res;
 }
 
 static const proto::ProtoObject* resolveClassType(protoPython::PythonEnvironment* env, const proto::ProtoObject* self, proto::ProtoContext* context, const proto::ProtoObject* cls) {
@@ -2780,15 +2790,22 @@ static const proto::ProtoObject* resolveClassType(protoPython::PythonEnvironment
     const proto::ProtoObject* typeAttr = self->getAttribute(context, PythonEnvironment::getInternedString(context, "type"));
     const proto::ProtoObject* listAttr = self->getAttribute(context, PythonEnvironment::getInternedString(context, "list"));
     if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG resolveClassType cls=%p self=%p listAttr=%p typeAttr=%p\n", (void*)cls, (void*)self, (void*)listAttr, (void*)typeAttr);
-    if (cls == typeAttr) {
-        return env->getTypePrototype();
+    const proto::ProtoObject* tupAttr = self->getAttribute(context, PythonEnvironment::getInternedString(context, "tuple"));
+    const proto::ProtoObject* dictAttr = self->getAttribute(context, PythonEnvironment::getInternedString(context, "dict"));
+    const proto::ProtoObject* strAttr = self->getAttribute(context, PythonEnvironment::getInternedString(context, "str"));
+
+    if (std::getenv("PROTO_RESOLVE_DIAG")) {
+        fprintf(stderr, "DEBUG resolveClassType: cls=%p tupleAttr=%p dictAttr=%p strAttr=%p\n", (void*)cls, (void*)tupAttr, (void*)dictAttr, (void*)strAttr);
+        fprintf(stderr, "DEBUG resolveClassType IDs: envTuple=%p envDict=%p envStr=%p\n", (void*)env->getTuplePrototype(), (void*)env->getDictPrototype(), (void*)env->getStrPrototype());
     }
+
+    if (cls == typeAttr) return env->getTypePrototype();
     if (cls == listAttr) return env->getListPrototype();
-    if (cls == self->getAttribute(context, PythonEnvironment::getInternedString(context, "tuple"))) return env->getTuplePrototype();
-    if (cls == self->getAttribute(context, PythonEnvironment::getInternedString(context, "dict"))) return env->getDictPrototype();
+    if (cls == tupAttr) return env->getTuplePrototype();
+    if (cls == dictAttr) return env->getDictPrototype();
     if (cls == self->getAttribute(context, PythonEnvironment::getInternedString(context, "int"))) return env->getIntPrototype();
     if (cls == self->getAttribute(context, PythonEnvironment::getInternedString(context, "float"))) return env->getFloatPrototype();
-    if (cls == self->getAttribute(context, PythonEnvironment::getInternedString(context, "str"))) return env->getStrPrototype();
+    if (cls == strAttr) return env->getStrPrototype();
     if (cls == self->getAttribute(context, PythonEnvironment::getInternedString(context, "bytes"))) return env->getBytesPrototype();
     if (cls == self->getAttribute(context, PythonEnvironment::getInternedString(context, "bytearray"))) return env->getBytesPrototype();
     if (cls == self->getAttribute(context, PythonEnvironment::getInternedString(context, "set"))) return env->getSetPrototype();
@@ -2854,8 +2871,20 @@ static bool py_issubclass_check_single(proto::ProtoContext* context, const proto
 
     if (cls == base) return true;
 
+    if (depth == 0 && std::getenv("PROTO_ENV_DIAG")) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(context);
+        std::string clsRepr = env ? env->reprObject(context, cls) : "???";
+        std::string baseRepr = env ? env->reprObject(context, base) : "???";
+        fprintf(stderr, "DEBUG py_issubclass: cls=%p (%s) base=%p (%s)\n", (void*)cls, clsRepr.c_str(), (void*)base, baseRepr.c_str());
+    }
+
     // Fast path: use __mro__
     const proto::ProtoObject* mro = cls->getAttribute(context, PythonEnvironment::getInternedString(context, "__mro__"));
+    if (depth == 0 && std::getenv("PROTO_ENV_DIAG")) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(context);
+        std::string mroRepr = env ? env->reprObject(context, mro) : "???";
+        fprintf(stderr, "DEBUG py_issubclass: mro=%p repr=%s list=%p tuple=%p\n", (void*)mro, mroRepr.c_str(), (void*)(mro?mro->asList(context):nullptr), (void*)(mro?mro->asTuple(context):nullptr));
+    }
     if (mro && (mro->asList(context) || mro->asTuple(context))) {
         const proto::ProtoList* mroList = mro->asList(context);
         const proto::ProtoTuple* mroTuple = mro->asTuple(context);

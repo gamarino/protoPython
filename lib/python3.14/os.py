@@ -1137,6 +1137,8 @@ def _fspath(path):
     pass
     if type(path).__name__ == 'module':
         pass
+    if type(path).__name__ == 'str' and not isinstance(path, str):
+        print(f"DEBUG: Type mismatch! path type={type(path)} hex={hex(id(type(path)))} global str={str} hex={hex(id(str))}")
     if isinstance(path, (str, bytes)):
         return path
 

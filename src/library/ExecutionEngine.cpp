@@ -341,19 +341,6 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
         if (im_func && im_func != PROTO_NONE) codeOwner = im_func;
     }
     
-    std::string co_name = "???";
-    std::string co_filename = "???";
-    int co_firstlineno = -1;
-    const proto::ProtoObject* traceCodeObj = codeOwner->getAttribute(calleeCtx, env ? env->getCodeString() : PythonEnvironment::getInternedString(calleeCtx, "__code__"));
-    if (traceCodeObj && traceCodeObj != PROTO_NONE) {
-        const proto::ProtoObject* nameObj = traceCodeObj->getAttribute(calleeCtx, PythonEnvironment::getInternedString(calleeCtx, "co_name"));
-        const proto::ProtoObject* fileObj = traceCodeObj->getAttribute(calleeCtx, PythonEnvironment::getInternedString(calleeCtx, "co_filename"));
-        const proto::ProtoObject* lineObj = traceCodeObj->getAttribute(calleeCtx, PythonEnvironment::getInternedString(calleeCtx, "co_firstlineno"));
-        if (nameObj && nameObj->isString(calleeCtx)) nameObj->asString(calleeCtx)->toUTF8String(calleeCtx, co_name);
-        if (fileObj && fileObj->isString(calleeCtx)) fileObj->asString(calleeCtx)->toUTF8String(calleeCtx, co_filename);
-        if (lineObj && lineObj->isInteger(calleeCtx)) co_firstlineno = (int)lineObj->asLong(calleeCtx);
-    }
-
     // 1. Positional arguments
     for (unsigned long i = 0; i < (unsigned long)nparams_count && i < argCount; ++i) {
         bindVar(static_cast<int>(i), args->getAt(calleeCtx, static_cast<int>(i)));
@@ -367,32 +354,6 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
         const proto::ProtoTuple* defaults = has_defaults ? defaultsObj->asTuple(calleeCtx) : nullptr;
         int num_defaults = defaults ? (int)defaults->getSize(calleeCtx) : 0;
 
-        if (std::getenv("PROTO_ENV_DIAG")) {
-            std::string oRepr = env ? PythonEnvironment::reprObject(calleeCtx, codeOwner) : "???";
-            std::string dRepr = (defaultsObj && env) ? PythonEnvironment::reprObject(calleeCtx, defaultsObj) : "null";
-            fprintf(stderr, "DEBUG DEFAULTS: name=%s (code=%s in %s:%d) co_flags=0x%x num_defaults=%d defaults_ptr=%p defaultsObj=%p repr=%s defRepr=%s\n", 
-                fnName.c_str(), co_name.c_str(), co_filename.c_str(), co_firstlineno, co_flags, num_defaults, (void*)defaults, (void*)defaultsObj, oRepr.c_str(), dRepr.c_str());
-            
-            if (!defaultsObj || defaultsObj == PROTO_NONE) {
-                fprintf(stderr, "  DEBUG: defaults missing! Attributes of codeOwner:\n");
-                const proto::ProtoSparseList* attrs = codeOwner->getAttributes(calleeCtx);
-                if (attrs) {
-                    auto it = attrs->getIterator(calleeCtx);
-                    while (it && it->hasNext(calleeCtx)) {
-                        unsigned long key = it->nextKey(calleeCtx);
-                        fprintf(stderr, "    - Hash: %lu\n", key);
-                        it = const_cast<proto::ProtoSparseListIterator*>(it)->advance(calleeCtx);
-                    }
-                }
-            }
-
-            if (defaults) {
-                for (int d = 0; d < num_defaults; ++d) {
-                    fprintf(stderr, "  - default[%d]=%p repr=%s\n", d, (void*)defaults->getAt(calleeCtx, d), env ? PythonEnvironment::reprObject(calleeCtx, defaults->getAt(calleeCtx, d)).c_str() : "???");
-                }
-            }
-            fflush(stderr);
-        }
         int defaults_start_at = nparams_count - num_defaults;
 
         for (int i = (int)argCount; i < nparams_count; ++i) {
@@ -415,17 +376,6 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
         }
     }
 
-    if (std::getenv("PROTO_ENV_DIAG")) {
-        for (int j = 0; j < nparams_count && co_varnames && j < (int)co_varnames->getSize(calleeCtx); ++j) {
-            std::string pn; co_varnames->getAt(calleeCtx, j)->asString(calleeCtx)->toUTF8String(calleeCtx, pn);
-            const proto::ProtoObject* val = (j < (int)nSlots) ? slots[j] : nullptr;
-            const proto::ProtoObject* fVal = frame->getAttribute(calleeCtx, co_varnames->getAt(calleeCtx, j)->asString(calleeCtx));
-            fprintf(stderr, "DEBUG FINAL BIND (%s:%d): param[%d]=%s val=%p frameVal=%p hasAttr=%p\n", 
-                    fnName.c_str(), co_firstlineno, j, pn.c_str(), (void*)val, (void*)fVal, (void*)frame->hasAttribute(calleeCtx, co_varnames->getAt(calleeCtx, j)->asString(calleeCtx)));
-        }
-        fflush(stderr);
-    }
-    
     // 3. Keyword-only arguments
     const proto::ProtoString* kwdefaults_name = env ? env->getKwdefaultsString() : PythonEnvironment::getInternedString(calleeCtx, "__kwdefaults__");
     const proto::ProtoObject* kwDefaultsObj = self->getAttribute(calleeCtx, kwdefaults_name);
@@ -555,32 +505,8 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
         
         if (bytecode && consts) {
             unsigned long stackOffset = co_varnames ? co_varnames->getSize(calleeCtx) : 0;
-            // The following variables are not defined in this scope and would cause a compilation error.
-            // Assuming they are intended to be defined elsewhere or this snippet is part of a larger context.
-            // For now, we will use the original call to executeBytecodeRange and add the requested prints.
-            // If the intent was to change the signature of executeBytecodeRange, that would require
-            // changes to its definition and the definition of these variables.
-            // result = executeBytecodeRange(calleeCtx, consts, bytecode, names, frame, nextPc, bytecode->getSize(ctx), stackOffset, &finalPc, &yielded, &blockStack, initialTop, &finalTop);
-            if (std::getenv("PROTO_ENV_DIAG") && co_varnames) {
-                for (size_t k = 0; k < co_varnames->getSize(calleeCtx); ++k) {
-                    const proto::ProtoObject* nameObj = co_varnames->getAt(calleeCtx, k);
-                    if (nameObj && nameObj->isString(calleeCtx)) {
-                        const proto::ProtoString* nameS = nameObj->asString(calleeCtx);
-                        std::string nStr; nameS->toUTF8String(calleeCtx, nStr);
-                        const proto::ProtoObject* val = frame ? frame->getAttribute(calleeCtx, nameS) : nullptr;
-                        const proto::ProtoObject* hasAttr = frame ? frame->hasAttribute(calleeCtx, nameS) : nullptr;
-                        fprintf(stderr, "DEBUG FINAL BIND (%s:%d): param[%zu]=%s val=%p hasAttr=%p\n", 
-                            co_name.c_str(), co_firstlineno, k, nStr.c_str(), (void*)val, (void*)hasAttr);
-                    }
-                }
-            }
             result = executeBytecodeRange(calleeCtx, consts, bytecode, names, frame, 0, bytecode->getSize(calleeCtx), stackOffset);
-            if (std::getenv("PROTO_ENV_DIAG")) {
-                std::string repr = env ? PythonEnvironment::reprObject(calleeCtx, result) : "???";
-                fprintf(stderr, "DEBUG HANG: runUserFunctionCall executeBytecodeRange returned result=%p repr=%s\n", (void*)result, repr.c_str());
-            }
         } else {
-            if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG HANG: function missing bytecode or consts!\n");
             result = PROTO_NONE;
         }
     }
@@ -611,10 +537,6 @@ const proto::ProtoObject* runBoundMethodCall(proto::ProtoContext* ctx,
         }
     }
 
-    if (std::getenv("PROTO_ENV_DIAG")) {
-        fprintf(stderr, "DEBUG: runBoundMethodCall forwarding to im_func=%p with newArgs size=%lu\n", (void*)im_func, newArgs ? newArgs->getSize(ctx) : 0);
-        fflush(stderr);
-    }
     return invokePythonCallable(ctx, im_func, newArgs, kwargs);
 }
 
@@ -625,13 +547,6 @@ static const proto::ProtoObject* py_function_get(proto::ProtoContext* ctx,
     const proto::ProtoList* args,
     const proto::ProtoSparseList* /*kwargs*/) {
     if (!ctx || !self || !args || args->getSize(ctx) < 1) return self;
-    if (std::getenv("PROTO_ENV_DIAG")) {
-        const proto::ProtoObject* nameAttr = self->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__name__"));
-        std::string name = "???";
-        if (nameAttr && nameAttr->isString(ctx)) nameAttr->asString(ctx)->toUTF8String(ctx, name);
-        fprintf(stderr, "DEBUG_FUNCTION_GET: func=%s instance=%p owner=%p\n", name.c_str(), (void*)args->getAt(ctx, 0), (void*)(args->getSize(ctx) > 1 ? args->getAt(ctx, 1) : nullptr));
-        fflush(stderr);
-    }
     const proto::ProtoObject* instance = args->getAt(ctx, 0);
     // In Python, calling __get__ on a class (instance == None) returns the function itself.
     if (!instance || instance == PROTO_NONE) return self;
@@ -659,7 +574,7 @@ static const proto::ProtoObject* py_function_get(proto::ProtoContext* ctx,
     }
     const proto::ProtoObject* funcQualname = self->getAttribute(ctx, env ? env->getInternedString(ctx, "__qualname__") : PythonEnvironment::getInternedString(ctx, "__qualname__"));
     if (funcQualname && funcQualname != PROTO_NONE) {
-        bound = bound->setAttribute(ctx, env ? env->getInternedString(ctx, "__qualname__") : PythonEnvironment::getInternedString(ctx, "__qualname__"), funcQualname);
+        bound = bound->setAttribute(ctx, env ? env->getInternedString(ctx, "__qualname__") : protoPython::PythonEnvironment::getInternalString(ctx, "__qualname__"), funcQualname);
     }
     
     // Set __call__ to skip runBoundMethodCall and use methodPrototype.__call__
@@ -726,10 +641,6 @@ static proto::ProtoObject* createUserFunction(proto::ProtoContext* ctx, const pr
     }
     if (defaults && env) {
         fn = fn->setAttribute(ctx, env->getDefaultsString(), defaults);
-        if (get_env_diag()) {
-            const proto::ProtoObject* check = fn->getAttribute(ctx, env->getDefaultsString());
-            fprintf(stderr, "DEBUG createUserFunction: set __defaults__=%p check=%p\n", (void*)defaults, (void*)check);
-        }
     }
     if (kwDefaults && env) {
         fn = fn->setAttribute(ctx, env->getKwdefaultsString(), kwDefaults);
@@ -761,10 +672,6 @@ static const proto::ProtoObject* binaryAdd(proto::ProtoContext* ctx,
         return PythonEnvironment::getInternedString(ctx, (s1 + s2).c_str())->asObject(ctx);
     }
 
-    if (std::getenv("PROTO_ENV_DIAG")) {
-        fprintf(stderr, "DEBUG: binaryAdd a=%p class=%s b=%p class=%s\n", (void*)a, PythonEnvironment::reprObject(ctx, a).c_str(), (void*)b, PythonEnvironment::reprObject(ctx, b).c_str());
-        fflush(stderr);
-    }
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     const proto::ProtoList* l1 = a->asList(ctx);
     if (!l1) {
@@ -850,9 +757,6 @@ static const proto::ProtoObject* binaryTrueDivide(proto::ProtoContext* ctx,
 
 static const proto::ProtoObject* binaryModulo(proto::ProtoContext* ctx,
     const proto::ProtoObject* a, const proto::ProtoObject* b) {
-    if (std::getenv("PROTO_DEBUG_MODULO")) {
-        // log removed
-    }
     if (a->isInteger(ctx) || a->isDouble(ctx)) {
         if ((b->isInteger(ctx) && b->asLong(ctx) == 0) || (b->isDouble(ctx) && b->asDouble(ctx) == 0.0)) {
             PythonEnvironment::fromContext(ctx)->raiseZeroDivisionError(ctx);
@@ -1102,10 +1006,6 @@ static bool isTruthy(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
     if (obj->asSparseList(ctx)) return (obj->asSparseList(ctx)->getSize(ctx) > 0);
 
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    if (std::getenv("PROTO_ENV_DIAG")) {
-        fprintf(stderr, "DEBUG isTruthy: obj=%p (type-ident logic follow-through)\n", (void*)obj);
-        fflush(stderr);
-    }
     if (env && obj == env->getNonePrototype()) return false;
     
     // Evaluate __bool__ method
@@ -1154,13 +1054,6 @@ static const proto::ProtoObject* invokeCallable(proto::ProtoContext* ctx,
         return nullptr;
     }
 
-    if (std::getenv("PROTO_ENV_DIAG")) {
-        std::string repr = "unknown";
-        if (env) repr = PythonEnvironment::reprObject(ctx, callable);
-        std::string clsName = "unknown";
-        const proto::ProtoObject* cls = callable->getAttribute(ctx, env ? env->getClassString() : protoPython::PythonEnvironment::getInternalString(ctx, "__class__"));
-        if (cls) {
-            const proto::ProtoObject* nameAttr = cls->getAttribute(ctx, env ? env->getNameString() : protoPython::PythonEnvironment::getInternalString(ctx, "__name__"));
             if (nameAttr && nameAttr->isString(ctx)) nameAttr->asString(ctx)->toUTF8String(ctx, clsName);
         }
         fprintf(stderr, "DEBUG: invokeCallable callable=%p repr=%s class=%s\n", (void*)callable, repr.c_str(), clsName.c_str());
@@ -2096,6 +1989,10 @@ const proto::ProtoObject* executeBytecodeRange(
                     }
                     if (hasAttrRes == PROTO_TRUE) {
                         val = frame->getAttribute(ctx, nameS);
+                        if (std::getenv("PROTO_RESOLVE_DIAG")) {
+                            fprintf(stderr, "DEBUG OP_LOAD_NAME FOUND IN FRAME: %s = %p\n", nStr.c_str(), (void*)val);
+                            fflush(stderr);
+                        }
                         if (std::getenv("PROTO_ENV_DIAG")) {
                             fprintf(stderr, "DEBUG: OP_LOAD_NAME('%s') getAttribute returned %p\n", nStr.c_str(), (void*)val);
                             fflush(stderr);
