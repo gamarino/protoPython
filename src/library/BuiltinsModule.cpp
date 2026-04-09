@@ -2780,6 +2780,21 @@ static bool checkInterfaceInstanceOf(proto::ProtoContext* context, const proto::
         return false;
     }
     if (obj == cls) return true;
+    
+    // V78: Explicit identity bridge for primitives where native prototype and Python prototype may diverge in pointer address
+    // but represent the same conceptual type.
+    protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(context);
+    if (env) {
+        if (obj->isString(context) && cls == env->getStrPrototype()) return true;
+        if (obj->isInteger(context) && (cls == env->getIntPrototype() || cls == env->getBoolPrototype())) return true;
+        if (obj->isFloat(context) && cls == env->getFloatPrototype()) return true;
+        if (obj->isBoolean(context) && (cls == env->getBoolPrototype() || cls == env->getIntPrototype())) return true;
+        if (obj->asList(context) != nullptr && cls == env->getListPrototype()) return true;
+        if (obj->isTuple(context) && cls == env->getTuplePrototype()) return true;
+        if (obj->asSparseList(context) && cls == env->getDictPrototype()) return true;
+        if (obj->isSet(context) && cls == env->getSetPrototype()) return true;
+    }
+
     bool res = obj->isInstanceOf(context, cls) == PROTO_TRUE;
     if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG checkInterfaceInstanceOf result=%d\n", res);
     return res;

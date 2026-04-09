@@ -78,12 +78,10 @@ public:
     /**
      * @brief Gets the Python 'dict' prototype.
      */
-    const proto::ProtoObject* getDictPrototype() const { return dictPrototype; }
 
     /**
      * @brief Gets the Python 'tuple' prototype.
      */
-    const proto::ProtoObject* getTuplePrototype() const { return tuplePrototype; }
 
     /**
      * @brief Gets the Python 'set' prototype.

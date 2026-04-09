@@ -1054,6 +1054,12 @@ static const proto::ProtoObject* invokeCallable(proto::ProtoContext* ctx,
         return nullptr;
     }
 
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        std::string repr = PythonEnvironment::reprObject(ctx, callable);
+        std::string clsName = "<unknown>";
+        const proto::ProtoObject* cls = env ? env->getType(ctx, callable) : nullptr;
+        if (cls) {
+            const proto::ProtoObject* nameAttr = env->getAttribute(ctx, cls, env->getNameString());
             if (nameAttr && nameAttr->isString(ctx)) nameAttr->asString(ctx)->toUTF8String(ctx, clsName);
         }
         fprintf(stderr, "DEBUG: invokeCallable callable=%p repr=%s class=%s\n", (void*)callable, repr.c_str(), clsName.c_str());
@@ -1064,10 +1070,8 @@ static const proto::ProtoObject* invokeCallable(proto::ProtoContext* ctx,
     if (recScope.overflowed()) return nullptr;
 
     if (callable->isNone(ctx)) {
-        fprintf(stderr, "!!! LOUD DEBUG: NoneType is not callable in invokeCallable !!!\n");
         if (env) {
             std::string msg = "'NoneType' object is not callable";
-            if (std::getenv("PROTO_ENV_DIAG")) msg += " (during bootstrap investigation)";
             env->raiseTypeError(ctx, msg.c_str());
         }
         return nullptr;
@@ -1080,9 +1084,6 @@ static const proto::ProtoObject* invokeCallable(proto::ProtoContext* ctx,
     /* FALLBACK TO PUBLIC API __call__ */
     const proto::ProtoString* callS = env ? env->getCallString() : PythonEnvironment::getInternedString(ctx, "__call__");
     
-    // In Python, special methods like __call__ are always looked up on the TYPE of the object,
-    // bypassing the object's own namespace. This prevents class definitions of __call__ from 
-    // interfering with class instantiation (which uses type.__call__).
     const proto::ProtoObject* typeObj = nullptr;
     if (env) {
         typeObj = env->getType(ctx, callable);
@@ -1090,10 +1091,8 @@ static const proto::ProtoObject* invokeCallable(proto::ProtoContext* ctx,
         typeObj = callable->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__class__"));
     }
     
-    // Now get the __call__ attribute specifically from the type object.
     const proto::ProtoObject* callAttr = nullptr;
     if (typeObj && typeObj != PROTO_NONE) {
-        // We use env->getAttribute so that any descriptor logic (like binding the method to the callable) executes naturally.
         callAttr = env ? env->getAttribute(ctx, typeObj, callS) : typeObj->getAttribute(ctx, callS);
     }
 
@@ -1102,12 +1101,11 @@ static const proto::ProtoObject* invokeCallable(proto::ProtoContext* ctx,
             std::string repr = PythonEnvironment::reprObject(ctx, callable);
             env->raiseTypeError(ctx, "'" + repr + "' object is not callable");
         }
-        return nullptr; // Return nullptr on error
+        return nullptr;
     }
     
     if (std::getenv("PROTO_ENV_DIAG")) {
         fprintf(stderr, "DEBUG: invokeCallable calling __call__ asMethod\n");
-            fflush(stderr);
         fflush(stderr);
     }
 

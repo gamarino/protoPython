@@ -7394,15 +7394,15 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     complexPrototype = complexPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__call__"), rootContext_->fromMethod(nullptr, protoPython::builtins::py_complex));
 
     // 1. Retrieve authoritative prototypes from ProtoSpace
-    intPrototype = space_->getSmallIntegerPrototype();
-    strPrototype = space_->getStringPrototype();
-    listPrototype = space_->getListPrototype();
-    dictPrototype = space_->getSparseListPrototype();
-    tuplePrototype = space_->getTuplePrototype();
-    bytesPrototype = space_->getBytesPrototype();
-    boolPrototype = space_->getBoolPrototype();
-    floatPrototype = space_->getDoublePrototype();
-    nonePrototype = space_->getNonePrototype();
+    intPrototype = space_->smallIntegerPrototype;
+    strPrototype = space_->stringPrototype;
+    listPrototype = space_->listPrototype;
+    dictPrototype = space_->sparseListPrototype;
+    tuplePrototype = space_->tuplePrototype;
+    bytesPrototype = space_->bytePrototype;
+    boolPrototype = space_->booleanPrototype;
+    floatPrototype = space_->floatPrototype;
+    nonePrototype = space_->nonePrototype;
 
     if (std::getenv("PROTO_ENV_DIAG")) {
         fprintf(stderr, "DEBUG PROTOSPACE SYNC: int=%p str=%p list=%p dict=%p tuple=%p\n", 
@@ -8141,23 +8141,39 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
             fprintf(stderr, "DEBUG setupCoreType: proto=%p mro=%p isTuple=%d\n", (void*)proto, (void*)mro, mro->asTuple(rootContext_) != nullptr);
         }
         proto = const_cast<proto::ProtoObject*>(proto->setAttribute(rootContext_, mroString, mro));
-        const proto::ProtoObject* mroCheck = proto->getAttribute(rootContext_, mroString);
-        if (std::getenv("PROTO_ENV_DIAG")) {
-            fprintf(stderr, "DEBUG setupCoreType: mroCheck=%p isTuple=%d\n", (void*)mroCheck, mroCheck->asTuple(rootContext_) != nullptr);
-        }
         const proto::ProtoObject* bases = rootContext_->newTupleFromList(rootContext_->newList()->appendLast(rootContext_, objectPrototype))->asObject(rootContext_);
         proto = const_cast<proto::ProtoObject*>(proto->setAttribute(rootContext_, basesString, bases));
     };
 
     setupCoreType(strPrototype);
+    if (space_) space_->stringPrototype = const_cast<proto::ProtoObject*>(strPrototype);
+
     setupCoreType(intPrototype);
+    if (space_) {
+        space_->smallIntegerPrototype = const_cast<proto::ProtoObject*>(intPrototype);
+        space_->largeIntegerPrototype = const_cast<proto::ProtoObject*>(intPrototype);
+    }
+
     setupCoreType(listPrototype);
+    if (space_) space_->listPrototype = const_cast<proto::ProtoObject*>(listPrototype);
+
     setupCoreType(dictPrototype);
+    if (space_) space_->sparseListPrototype = const_cast<proto::ProtoObject*>(dictPrototype);
+
     setupCoreType(tuplePrototype);
+    if (space_) space_->tuplePrototype = const_cast<proto::ProtoObject*>(tuplePrototype);
+
     setupCoreType(setPrototype);
+    if (space_) space_->setPrototype = const_cast<proto::ProtoObject*>(setPrototype);
+
     setupCoreType(bytesPrototype);
+    if (space_) space_->bytePrototype = const_cast<proto::ProtoObject*>(bytesPrototype);
+
     setupCoreType(boolPrototype);
+    if (space_) space_->booleanPrototype = const_cast<proto::ProtoObject*>(boolPrototype);
+
     setupCoreType(floatPrototype);
+    if (space_) space_->floatPrototype = const_cast<proto::ProtoObject*>(floatPrototype);
 
     // Re-export synced prototypes to builtins module to ensure __dict__ parity
     // 1. Initialize dictionary storage for all core prototypes (V78: ensures consistent identity after builtins augmentation)
@@ -8195,6 +8211,19 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
         builtinsModule = builtinsModule->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "list"), listPrototype);
         builtinsModule = builtinsModule->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "dict"), dictPrototype);
         
+        // V78: Synchronize Python prototypes back to ProtoSpace to ensure identity stability
+        // across native/Python boundaries.
+        if (space_) {
+            space_->stringPrototype = const_cast<proto::ProtoObject*>(strPrototype);
+            space_->listPrototype = const_cast<proto::ProtoObject*>(listPrototype);
+            space_->tuplePrototype = const_cast<proto::ProtoObject*>(tuplePrototype);
+            space_->sparseListPrototype = const_cast<proto::ProtoObject*>(dictPrototype);
+            space_->booleanPrototype = const_cast<proto::ProtoObject*>(boolPrototype);
+            space_->floatPrototype = const_cast<proto::ProtoObject*>(floatPrototype);
+            space_->bytePrototype = const_cast<proto::ProtoObject*>(bytesPrototype);
+            space_->objectPrototype = const_cast<proto::ProtoObject*>(objectPrototype);
+        }
+
         // Ensure __dict__ descriptor is available for types
         dictPrototype = dictPrototype->setAttribute(rootContext_, dictString, py_type_get_dict(rootContext_, dictPrototype, nullptr, nullptr, nullptr));
         
@@ -8218,18 +8247,6 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     space_->bufferPrototype = const_cast<proto::ProtoObject*>(bytesPrototype);
 
     // Final synchronization of all prototypes to ProtoSpace (V78: MUST happen after all initDictStorage calls)
-    space_->objectPrototype = const_cast<proto::ProtoObject*>(objectPrototype);
-    space_->typePrototype = const_cast<proto::ProtoObject*>(typePrototype);
-    space_->intPrototype = const_cast<proto::ProtoObject*>(intPrototype);
-    space_->stringPrototype = const_cast<proto::ProtoObject*>(strPrototype);
-    space_->listPrototype = const_cast<proto::ProtoObject*>(listPrototype);
-    space_->sparseListPrototype = const_cast<proto::ProtoObject*>(dictPrototype);
-    space_->tuplePrototype = const_cast<proto::ProtoObject*>(tuplePrototype);
-    space_->setPrototype = const_cast<proto::ProtoObject*>(setPrototype);
-    space_->bytesPrototype = const_cast<proto::ProtoObject*>(bytesPrototype);
-    space_->boolPrototype = const_cast<proto::ProtoObject*>(boolPrototype);
-    space_->doublePrototype = const_cast<proto::ProtoObject*>(floatPrototype);
-    space_->nonePrototype = const_cast<proto::ProtoObject*>(nonePrototype);
 
     if (std::getenv("PROTO_ENV_DIAG")) {
         fprintf(stderr, "DEBUG FINAL SYNC: tupleProto=%p dictProto=%p strProto=%p\n", 
@@ -10211,7 +10228,6 @@ const proto::ProtoObject* PythonEnvironment::resolve(const proto::ProtoString* n
                 return result;
             }
         }
-    }
 
     return nullptr;
 }
