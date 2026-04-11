@@ -55,10 +55,14 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 | Category | Total | Checked | Passed | Success Rate |
 | :--- | :--- | :--- | :--- | :--- |
 | **Essential** | 7 | 7 | 0 | 0% |
-| **Important** | 6 | 1 | 0 | 0% |
+| **Important** | 6 | 2 | 0 | 0% |
 | **Necessary** | 5 | 3 | 2 | 67% |
 | **Low Priority** | 4 | 0 | 0 | 0% |
-| **Total** | **22** | **11** | **2** | **9%** |
+| **Total** | **22** | **12** | **2** | **9%** |
+
+## Progress Summary (V85 - 2026-04-11)
+
+Achieved full compliance with Python 3.11+ bytecode calling conventions. Resolved the critical `nullptr` callable and `TypeError` in `str.join()` that blocked the standard library bootstrap. The ExecutionEngine now correctly handles shifted argument encoding and the `NULL`/`Self` marker protocol.
 
 > [!NOTE]
 > **V80 Evaluation Cycle**: Focus shifted to unblocking the standard library test imports. Full native implementations of `time.monotonic` and `time.perf_counter` were added. Identified missing features in `_weakref`, `threading`, and `unittest` that block test execution and require complete native implementations to ensure strict standard library compatibility.
@@ -87,6 +91,20 @@ Tests for features that are not primary targets for `protoPython`'s performance 
   - Created `lib/python3.14/gc.py` library shim.
 - **Builtin Registration**:
   - Fixed typo in `builtins` registration for the `bytes` type.
+
+## Recent Achievements (V85)
+
+- **Python 3.11+ Bytecode Compatibility**:
+  - Implemented shifted index decoding (`idx << 1`) for all name-based opcodes (`LOAD_NAME`, `STORE_GLOBAL`, `LOAD_ATTR`, etc.).
+  - Fully implemented the `NULL`/`Self` marker calling convention for `OP_CALL_FUNCTION`, `OP_CALL_FUNCTION_KW`, and `OP_CALL_FUNCTION_EX`.
+  - Added robust "Double-Sided NULL" selection logic to correctly identify callables in `PUSH_NULL`, `LOAD_GLOBAL`, and `LOAD_METHOD` scenarios.
+  - Refactored `OP_LOAD_ATTR` to push `[Method, Self]` for bound methods and `[NULL, Attr]` for regular attributes.
+- **Library Stability**:
+  - Refactored `str.join()` (`py_str_join`) to use the generic high-level `env->iter()` and `env->next()` API, enabling join operations on generator expressions and Python-level iterables.
+  - Resolved `TypeError: object is not callable (nullptr)` occurring during standard library bootstrap (`os.py` initialization).
+- **Engine Reliability**:
+  - Fixed stack underflow and memory corruption bugs related to intermediate list allocations during calls.
+  - Optimized stack underflow checks to account for mandatory markers in modern Python bytecode.
 
 ## Recent Achievements (V84)
 

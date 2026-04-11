@@ -5470,39 +5470,29 @@ static const proto::ProtoObject* py_str_join(
     std::string sepStr;
     sep->toUTF8String(context, sepStr);
     const proto::ProtoObject* iterable = posArgs->getAt(context, 0);
-    const proto::ProtoString* iterS = PythonEnvironment::getInternalString(context, "__iter__");
-    const proto::ProtoObject* iterM = iterable->getAttribute(context, iterS);
-    if (!iterM || !iterM->asMethod(context)) {
-        PythonEnvironment* env = PythonEnvironment::fromContext(context);
-        if (env) env->raiseTypeError(context, "join() arg must be an iterable");
+    
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::ProtoObject* it = env ? env->iter(iterable) : nullptr;
+    if (!it) {
+        if (env && !env->hasPendingException()) {
+            env->raiseTypeError(context, "join() arg must be an iterable");
+        }
         if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG: py_str_join not iterable\n");
         return nullptr;
     }
-    const proto::ProtoObject* it = iterM->asMethod(context)(context, iterable, nullptr, context->newList(), nullptr);
-    if (!it || it == PROTO_NONE) {
-        return PythonEnvironment::getInternedString(context, "")->asObject(context);
-    }
-    const proto::ProtoString* nextS = PythonEnvironment::getInternalString(context, "__next__");
-    const proto::ProtoObject* nextM = it->getAttribute(context, nextS);
-    if (!nextM || !nextM->asMethod(context)) {
-        return PythonEnvironment::getInternedString(context, "")->asObject(context);
-    }
-    auto nextFn = nextM->asMethod(context);
+
     std::string out;
     bool first = true;
     for (int i = 0; ; i++) {
-        const proto::ProtoObject* item = nextFn(context, it, nullptr, context->newList(), nullptr);
+        const proto::ProtoObject* item = env->next(it);
         if (!item) {
-            PythonEnvironment* env = PythonEnvironment::fromContext(context);
-            if (env && env->hasPendingException()) {
+            if (env->hasPendingException()) {
                 if (env->isStopIteration(context, env->peekPendingException())) {
                     env->clearPendingException();
                     break;
                 }
-                if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG: py_str_join exception\n");
-                return nullptr;
+                return nullptr; // Propagate other exceptions
             }
-            if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG: py_str_join unexpected stop (!item no exc)\n");
             break;
         }
         if (item == PROTO_NONE) break;
