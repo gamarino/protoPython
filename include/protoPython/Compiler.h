@@ -55,11 +55,11 @@ private:
     void emit(int op, int arg = 0);
     bool compileNode(ASTNode* node);
     bool compileConstant(ConstantNode* n);
-    bool compileName(NameNode* n);
+    bool compileName(NameNode* n, bool pushNull = false);
     bool compileBinOp(BinOpNode* n);
     bool compileUnaryOp(UnaryOpNode* n);
     bool compileCall(CallNode* n);
-    bool compileAttribute(AttributeNode* n);
+    bool compileAttribute(AttributeNode* n, bool pushNull = false);
     bool compileSubscript(SubscriptNode* n);
     bool compileSlice(SliceNode* n);
     bool compileListLiteral(ListLiteralNode* n);
@@ -107,7 +107,7 @@ private:
     bool compileSuite(SuiteNode* n);
     enum class TargetCtx { Load, Store, Delete };
     bool compileTarget(ASTNode* target, TargetCtx ctx);
-    bool emitNameOp(const std::string& id, TargetCtx ctx);
+    bool emitNameOp(const std::string& id, TargetCtx ctx, bool pushNull = false);
     /** True if executing this node leaves a value on the stack (expression stmt). */
     static bool statementLeavesValue(ASTNode* node);
     /** Collect names from function body: globals from GlobalNode, locals (ordered) from Name/Assign. */

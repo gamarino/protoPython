@@ -78,6 +78,9 @@ int Compiler::addName(const std::string& name) {
 }
 
 void Compiler::emit(int op, int arg) {
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        fprintf(stderr, "COMPILING [%p]: offset=%zu op=%d arg=%d\n", (void*)this, bytecodeVec_.size(), op, arg);
+    }
     bytecodeVec_.push_back(ctx_->fromInteger(op));
     bytecodeVec_.push_back(ctx_->fromInteger(arg));
 }
@@ -155,9 +158,9 @@ bool Compiler::compileConstant(ConstantNode* n) {
     return true;
 }
 
-bool Compiler::compileName(NameNode* n) {
+bool Compiler::compileName(NameNode* n, bool pushNull) {
     if (!n) return false;
-    return emitNameOp(n->id, TargetCtx::Load);
+    return emitNameOp(n->id, TargetCtx::Load, pushNull);
 }
 
 bool Compiler::compileBinOp(BinOpNode* n) {
@@ -264,7 +267,18 @@ bool Compiler::compileStarred(StarredNode* n) {
 }
 
 bool Compiler::compileCall(CallNode* n) {
-    if (!n || !compileNode(n->func.get())) return false;
+    if (!n) return false;
+    
+    // For 3.11+ compatibility, we must ensure there are 2 slots for the callable segment.
+    if (auto* attrN = dynamic_cast<AttributeNode*>(n->func.get())) {
+        // Attributes handle their own marker (self or NULL)
+        if (!compileAttribute(attrN, true)) return false;
+    } else {
+        // Names and complex expressions need an explicit NULL marker.
+        emit(OP_PUSH_NULL);
+        if (!compileNode(n->func.get())) return false;
+    }
+
     
     bool hasUnpacking = false;
     for (auto& a : n->args) if (dynamic_cast<StarredNode*>(a.get())) { hasUnpacking = true; break; }
@@ -329,10 +343,10 @@ bool Compiler::compileCall(CallNode* n) {
     return true;
 }
 
-bool Compiler::compileAttribute(AttributeNode* n) {
+bool Compiler::compileAttribute(AttributeNode* n, bool pushNull) {
     if (!n || !compileNode(n->value.get())) return false;
     int idx = addName(n->attr);
-    emit(OP_LOAD_ATTR, idx);
+    emit(OP_LOAD_ATTR, (idx << 1) | (pushNull ? 1 : 0)); 
     return true;
 }
 
@@ -488,15 +502,7 @@ bool Compiler::compileSetLiteral(SetLiteralNode* n) {
     return true;
 }
 
-bool Compiler::emitNameOp(const std::string& id, TargetCtx ctx) {
-    if (globalNames_.count(id)) {
-        int idx = addName(id);
-        int op = OP_LOAD_GLOBAL;
-        if (ctx == TargetCtx::Store) op = OP_STORE_GLOBAL;
-        else if (ctx == TargetCtx::Delete) op = OP_DELETE_GLOBAL;
-        emit(op, idx);
-        return true;
-    }
+bool Compiler::emitNameOp(const std::string& id, TargetCtx ctx, bool pushNull) {
     if (nonlocalNames_.count(id)) {
         int idx = addName(id);
         int op = OP_LOAD_DEREF;
@@ -512,11 +518,17 @@ bool Compiler::emitNameOp(const std::string& id, TargetCtx ctx) {
         emit(op, it->second);
         return true;
     }
+
     int idx = addName(id);
-    int op = OP_LOAD_NAME;
-    if (ctx == TargetCtx::Store) op = OP_STORE_NAME;
-    else if (ctx == TargetCtx::Delete) op = OP_DELETE_NAME;
-    emit(op, idx);
+    if (globalNames_.count(id)) {
+        int op = (ctx == TargetCtx::Load) ? OP_LOAD_GLOBAL : (ctx == TargetCtx::Store ? OP_STORE_GLOBAL : OP_DELETE_GLOBAL);
+        int arg = (idx << 1) | ((op == OP_LOAD_GLOBAL && pushNull) ? 1 : 0);
+        emit(op, arg);
+        return true;
+    }
+    int op = (ctx == TargetCtx::Load) ? OP_LOAD_NAME : (ctx == TargetCtx::Store ? OP_STORE_NAME : OP_DELETE_NAME);
+    int arg = (idx << 1) | ((op == OP_LOAD_NAME && pushNull) ? 1 : 0);
+    emit(op, arg);
     return true;
 }
 
@@ -529,11 +541,11 @@ bool Compiler::compileTarget(ASTNode* target, TargetCtx ctx) {
         if (!compileNode(att->value.get())) return false;
         int idx = addName(att->attr);
         if (ctx == TargetCtx::Store)
-            emit(OP_STORE_ATTR, idx);
+            emit(OP_STORE_ATTR, (idx << 1));
         else if (ctx == TargetCtx::Delete)
-            emit(OP_DELETE_ATTR, idx);
+            emit(OP_DELETE_ATTR, (idx << 1));
         else
-            emit(OP_LOAD_ATTR, idx);
+            emit(OP_LOAD_ATTR, (idx << 1) | 1);
         return true;
     }
     if (auto* sub = dynamic_cast<SubscriptNode*>(target)) {
@@ -651,7 +663,7 @@ bool Compiler::compileAssert(AssertNode* n) {
     
     // if test is false, raise AssertionError
     int idxAlt = addName("AssertionError");
-    emit(OP_LOAD_GLOBAL, idxAlt);
+    emit(OP_LOAD_GLOBAL, (idxAlt << 1) | 1);
     if (n->msg) {
         if (!compileNode(n->msg.get())) return false;
         emit(OP_CALL_FUNCTION, 1);
@@ -1197,7 +1209,7 @@ bool Compiler::compileComprehension(const std::vector<Comprehension>& generators
         addPatch(setupFinallySlot + 1, handlerTarget);
         
         int idx = addName("StopAsyncIteration");
-        emit(OP_LOAD_GLOBAL, idx);
+        emit(OP_LOAD_GLOBAL, (idx << 1) | 1);
         emit(OP_EXCEPTION_MATCH);
         
         int popJumpSlot = bytecodeOffset();
@@ -1250,7 +1262,7 @@ bool Compiler::compileComprehension(const std::vector<Comprehension>& generators
 bool Compiler::compileImport(ImportNode* n) {
     // Load __import__
     int idxImport = addName("__import__");
-    emit(OP_LOAD_NAME, idxImport);
+    emit(OP_LOAD_NAME, (idxImport << 1));
     // Load module name string
     int idxMod = addConstant(PythonEnvironment::getInternedString(ctx_, n->moduleName.c_str())->asObject(ctx_));
     emit(OP_LOAD_CONST, idxMod);
@@ -1271,7 +1283,7 @@ bool Compiler::compileImport(ImportNode* n) {
 bool Compiler::compileImportFrom(ImportFromNode* n) {
     // Load __import__
     int idxImport = addName("__import__");
-    emit(OP_LOAD_NAME, idxImport);
+    emit(OP_LOAD_NAME, (idxImport << 1));
     
     // name
     int idxMod = addConstant(PythonEnvironment::getInternedString(ctx_, n->moduleName.c_str())->asObject(ctx_));
@@ -1304,8 +1316,8 @@ bool Compiler::compileImportFrom(ImportFromNode* n) {
     // Stack has module object.
     for (auto& p : n->names) {
         // OP_IMPORT_FROM keeps module on stack and pushes attribute
-        int idxAttr = addName(p.first);
-        emit(OP_IMPORT_FROM, idxAttr);
+        int idx = addName(p.first);
+        emit(OP_IMPORT_FROM, (idx << 1));
         std::string alias = p.second.empty() ? p.first : p.second;
         emitNameOp(alias, TargetCtx::Store);
     }
@@ -1516,7 +1528,7 @@ bool Compiler::compileAugAssign(AugAssignNode* n) {
     } else if (auto* att = dynamic_cast<AttributeNode*>(n->target.get())) {
         if (!compileNode(att->value.get())) return false;
         int nameIdx = addName(att->attr);
-        emit(OP_STORE_ATTR, nameIdx);
+        emit(OP_STORE_ATTR, (nameIdx << 1));
         return true;
     } else if (auto* sub = dynamic_cast<SubscriptNode*>(n->target.get())) {
         emit(OP_STORE_SUBSCR, 0);
@@ -2612,7 +2624,7 @@ bool Compiler::compileAsyncFor(AsyncForNode* n) {
     addPatch(setupFinallySlot + 1, handlerTarget);
 
     int idx = addName("StopAsyncIteration");
-    emit(OP_LOAD_GLOBAL, idx);
+    emit(OP_LOAD_GLOBAL, (idx << 1) | 1);
     emit(OP_EXCEPTION_MATCH);
     
     int popJumpSlot = bytecodeOffset();
@@ -3014,6 +3026,7 @@ struct CodeObjectScope {
 const proto::ProtoObject* runCodeObject(proto::ProtoContext* ctx,
     const proto::ProtoObject* codeObj,
     proto::ProtoObject*& frame) {
+    fprintf(stderr, "!!! runCodeObject START codeObj=%p frame=%p\n", (void*)codeObj, (void*)frame);
     if (!ctx || !codeObj || !frame) {
         if (std::getenv("PROTO_ENV_DIAG")) {
             fprintf(stderr, "DEBUG: runCodeObject early return: ctx=%p codeObj=%p frame=%p\n", (void*)ctx, (void*)codeObj, (void*)frame);
@@ -3099,15 +3112,15 @@ bool Compiler::compileJoinedStr(JoinedStrNode* n) {
 bool Compiler::compileFormattedValue(FormattedValueNode* n) {
     if (!n) return false;
     if (n->conversion == 'r') {
-        emit(OP_LOAD_NAME, addName("repr"));
+        emit(OP_LOAD_NAME, (addName("repr") << 1));
         if (!compileNode(n->value.get())) return false;
         emit(OP_CALL_FUNCTION, 1);
     } else if (n->conversion == 's') {
-        emit(OP_LOAD_NAME, addName("str"));
+        emit(OP_LOAD_NAME, (addName("str") << 1));
         if (!compileNode(n->value.get())) return false;
         emit(OP_CALL_FUNCTION, 1);
     } else if (n->conversion == 'a') {
-        emit(OP_LOAD_NAME, addName("ascii"));
+        emit(OP_LOAD_NAME, (addName("ascii") << 1));
         if (!compileNode(n->value.get())) return false;
         emit(OP_CALL_FUNCTION, 1);
     } else {

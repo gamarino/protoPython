@@ -215,6 +215,8 @@ constexpr int OP_POP_EXCEPT = 202;
 /** Pop module, copy all attributes to current frame (globals/locals). */
 constexpr int OP_IMPORT_STAR = 203;
 constexpr int OP_IMPORT_FROM = 206;
+/** PUSH_NULL: push a nullptr (NULL marker for 3.11+ CALL_FUNCTION). */
+constexpr int OP_PUSH_NULL = 207;
 
 /**
  * @brief Executes a range of bytecode (one basic block). No per-instruction
