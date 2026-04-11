@@ -1856,21 +1856,23 @@ const proto::ProtoObject* executeBytecodeRange(
         const proto::ProtoObject* instr = bytecode->getAt(ctx, static_cast<int>(i));
         int op = (instr && instr->isInteger(ctx)) ? static_cast<int>(instr->asLong(ctx)) : 0;
 
-        if (std::getenv("PROTO_PC_TRACE")) {
-            if (opcodeHasArg(op)) {
-                // Need to peek arg safely
-                int peekArg = (i + 1 < n && bytecode->getAt(ctx, static_cast<int>(i + 1))->isInteger(ctx))
-                    ? static_cast<int>(bytecode->getAt(ctx, static_cast<int>(i + 1))->asLong(ctx)) : 0;
-                fprintf(stderr, "TRACE: PC %lu OP %d ARG %d\n", i, op, peekArg);
-            } else {
-                fprintf(stderr, "TRACE: PC %lu OP %d\n", i, op);
-            }
-        }
-
         // Every opcode in protoPython now consumes 2 slots (opcode + arg) to match the Compiler.
         int arg = (i + 1 < n && bytecode->getAt(ctx, static_cast<int>(i + 1))->isInteger(ctx))
             ? static_cast<int>(bytecode->getAt(ctx, static_cast<int>(i + 1))->asLong(ctx)) : 0;
         
+        const char* diag_env = std::getenv("PROTO_ENV_DIAG");
+        int diag_level = diag_env ? std::atoi(diag_env) : 0;
+        next_i = i + 2;
+        if (diag_level >= 2) {
+             fprintf(stderr, "TRACE: PC %lu OP %d ARG %d depth=%zu\n", i, op, (opcodeHasArg(op) ? arg : 0), stack.top);
+             fprintf(stderr, "  STACK:");
+             for (size_t k = 0; k < stack.top && k < 10; ++k) {
+                 fprintf(stderr, " [%zu]=%p", k, (void*)stack.slots[k]);
+             }
+             if (stack.top > 10) fprintf(stderr, " ...");
+             fprintf(stderr, "\n");
+        }
+
         next_i = i + 2;
 
         if (op == OP_LOAD_CONST) {
@@ -2988,7 +2990,8 @@ const proto::ProtoObject* executeBytecodeRange(
                 result = val;
             } else {
                 std::string r = PythonEnvironment::reprObject(ctx, val);
-                result = proto::ProtoString::fromUTF8String(ctx, r.c_str())->asObject(ctx);
+                const proto::ProtoString* pstr = proto::ProtoString::fromUTF8(ctx, r.c_str());
+                result = pstr ? pstr->asObject(ctx) : nullptr;
             }
             stack.push_back(result ? result : (env ? env->getNonePrototype() : PROTO_NONE));
         } else if (op == OP_PUSH_NULL) {
@@ -3585,55 +3588,52 @@ const proto::ProtoObject* executeBytecodeRange(
             if (!namesTuple) { i = next_i; continue; }
             int nkw = namesTuple->getSize(ctx);
             int npos = arg - nkw;
-            if (stack.size() < static_cast<size_t>(arg) + 2) { // Account for X, Y markers
+            if (stack.size() < static_cast<size_t>(arg) + 1) { 
                  if (env) env->raiseRuntimeError(ctx, "Stack underflow in OP_CALL_FUNCTION_KW");
                  i = next_i;
                  continue;
             }
 
-            int firstKwPos = stack.top - nkw;
-            int firstPosIdx = firstKwPos - npos;
-
-            // Build positional args list. Use stack to track the intermediate list.
+            // Robust detection of modern vs legacy stack layout
+            bool isModern = (stack.top >= (size_t)(arg + 2)); 
+            unsigned long firstArgIdx = stack.top - arg;
+            
+            // Build positional args list. Use stack to root it.
             stack.push_back(ctx->newList()->asObject(ctx));
-            for (int p = 0; p < npos; ++p) {
+            for (int j = 0; j < npos; ++j) {
                 const proto::ProtoList* l = stack.back()->asList(ctx);
-                l = l->appendLast(ctx, stack[firstPosIdx + p]);
+                l = l->appendLast(ctx, stack[firstArgIdx + j]);
                 stack[stack.top - 1] = l->asObject(ctx);
             }
             const proto::ProtoList* plArgs = stack.back()->asList(ctx);
-            stack.pop_back();
-
-            // Build keyword map. Use stack to track it.
-            stack.push_back(ctx->newSparseList()->asObject(ctx));
-            for (int k = 0; k < nkw; ++k) {
-                const proto::ProtoObject* nameStr = namesTuple->getAt(ctx, k);
-                if (nameStr->isString(ctx)) {
-                    const proto::ProtoSparseList* m = stack.back()->asSparseList(ctx);
-                    m = m->setAt(ctx, nameStr->getHash(ctx), stack[firstKwPos + k]);
-                    stack[stack.top - 1] = m->asObject(ctx);
-                }
-            }
-            const proto::ProtoSparseList* kwMap = stack.back()->asSparseList(ctx);
             
-            const proto::ProtoObject* Y = stack[firstPosIdx - 1];
-            const proto::ProtoObject* X = (firstPosIdx >= 2) ? stack[firstPosIdx - 2] : nullptr;
+            // Kw map
+            stack.push_back(ctx->newSparseList()->asObject(ctx));
+            const proto::ProtoSparseList* kwMap = stack.back()->asSparseList(ctx);
+            for (int j = 0; j < nkw; ++j) {
+                const proto::ProtoObject* key = namesTuple->getAt(ctx, j);
+                const proto::ProtoObject* val = stack[firstArgIdx + npos + j];
+                kwMap = kwMap->setAt(ctx, key->getHash(ctx), val);
+                stack[stack.top - 1] = kwMap->asObject(ctx);
+            }
+            
+            const proto::ProtoObject* Y = isModern ? stack[firstArgIdx - 1] : nullptr;
+            const proto::ProtoObject* X = (isModern && firstArgIdx >= 2) ? stack[firstArgIdx - 2] : nullptr;
             
             const proto::ProtoObject* callable = nullptr;
             const proto::ProtoList* callArgs = nullptr;
             
-            if (X == nullptr) {
-                // [NULL, Callable, Args...]
+            if (!isModern) {
+                callable = stack[firstArgIdx - 1];
+                callArgs = plArgs;
+            } else if (X == nullptr) {
                 callable = Y;
                 callArgs = plArgs;
             } else if (Y == nullptr) {
-                // [Callable, NULL, Args...]
                 callable = X;
                 callArgs = plArgs;
             } else {
-                // [Method, Self, Args...]
                 callable = X;
-                // Prepend Y (Self) to positional args
                 const proto::ProtoList* selfArgs = ctx->newList()->appendLast(ctx, Y);
                 for (unsigned long j = 0; j < plArgs->getSize(ctx); ++j) {
                     selfArgs = selfArgs->appendLast(ctx, plArgs->getAt(ctx, j));
@@ -3641,17 +3641,13 @@ const proto::ProtoObject* executeBytecodeRange(
                 callArgs = selfArgs;
             }
             
-            if (std::getenv("PROTO_ENV_DIAG")) {
-                fprintf(stderr, "DEBUG: OP_CALL_FUNCTION_KW PC %lu callable=%p (X=%p, Y=%p) argCount=%d\n", i, (void*)callable, (void*)X, (void*)Y, arg);
-                fflush(stderr);
-            }
-
             if (env) env->pushKwNames(namesTuple);
             const proto::ProtoObject* result = invokeCallable(ctx, callable, callArgs, kwMap);
             if (env) env->popKwNames();
             
-            // Now stack contains: X, Y, (arg) items, and kwMap. Total to pop: arg + 3.
-            for (int j = 0; j < arg + 3; ++j) {
+            // Cleanup: Pop accurately.
+            int itemsToPop = arg + (isModern ? 2 : 1) + 2; // +2 for intermediate lists
+            for (int j = 0; j < itemsToPop; ++j) {
                 if (!stack.empty()) stack.pop_back(); 
             }
             if (!result && env && env->hasPendingException()) {
@@ -3660,15 +3656,14 @@ const proto::ProtoObject* executeBytecodeRange(
             stack.push_back(result ? result : (env ? env->getNonePrototype() : PROTO_NONE));
         } else if (op == OP_CALL_FUNCTION) {
             if (stack.size() < (unsigned long)(arg + 1)) {
-                 if (get_env_diag()) fprintf(stderr, "DEBUG: OP_CALL_FUNCTION FATAL underflow size=%lu arg=%d\n", (unsigned long)stack.size(), arg);
+                 if (get_env_diag()) fprintf(stderr, "DEBUG: OP_CALL_FUNCTION FATAL underflow size=%lu arg=%d PC=%lu\n", (unsigned long)stack.size(), arg, i);
                  i = next_i;
                  continue;
             }
-            if (get_env_diag() && stack.size() < (unsigned long)(arg + 2)) {
-                 fprintf(stderr, "DEBUG: OP_CALL_FUNCTION WARNING size=%lu arg=%d (missing 3.11 marker?)\n", (unsigned long)stack.size(), arg);
-            }
-            // Stack: [X, Y, Arg1, ..., ArgN]
-            int firstArgIdx = stack.top - arg;
+            
+            // Robust detection of modern vs legacy stack layout
+            bool isModern = (stack.top >= (size_t)(arg + 2)); 
+            unsigned long firstArgIdx = stack.top - arg;
             
             // Build the args list. Use stack to root it.
             stack.push_back(ctx->newList()->asObject(ctx));
@@ -3679,25 +3674,23 @@ const proto::ProtoObject* executeBytecodeRange(
             }
             const proto::ProtoList* args = stack.back()->asList(ctx);
             
-            // Re-calculate indices after push: stack[firstArgIdx-1] is Y, stack[firstArgIdx-2] is X
-            const proto::ProtoObject* Y = stack[firstArgIdx - 1];
-            const proto::ProtoObject* X = (firstArgIdx >= 2) ? stack[firstArgIdx - 2] : nullptr;
+            const proto::ProtoObject* Y = isModern ? stack[firstArgIdx - 1] : nullptr;
+            const proto::ProtoObject* X = (isModern && firstArgIdx >= 2) ? stack[firstArgIdx - 2] : nullptr;
             
             const proto::ProtoObject* callable = nullptr;
             const proto::ProtoList* callArgs = nullptr;
             
-            if (X == nullptr) {
-                // [NULL, Callable, Args...]
+            if (!isModern) {
+                callable = stack[firstArgIdx - 1];
+                callArgs = args;
+            } else if (X == nullptr) {
                 callable = Y;
                 callArgs = args;
             } else if (Y == nullptr) {
-                // [Callable, NULL, Args...]
                 callable = X;
                 callArgs = args;
             } else {
-                // [Method, Self, Args...]
                 callable = X;
-                // Prepend Y (Self) to args
                 const proto::ProtoList* selfArgs = ctx->newList()->appendLast(ctx, Y);
                 for (unsigned long j = 0; j < args->getSize(ctx); ++j) {
                     selfArgs = selfArgs->appendLast(ctx, args->getAt(ctx, j));
@@ -3705,16 +3698,11 @@ const proto::ProtoObject* executeBytecodeRange(
                 callArgs = selfArgs;
             }
             
-            if (std::getenv("PROTO_ENV_DIAG")) {
-                fprintf(stderr, "DEBUG: OP_CALL_FUNCTION PC %lu callable=%p (X=%p, Y=%p) argCount=%d\n", i, (void*)callable, (void*)X, (void*)Y, arg);
-                fflush(stderr);
-            }
-
             const proto::ProtoObject* result = invokeCallable(ctx, callable, callArgs);
-            PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
             
-            // Cleanup: Pop X, Y, args, and the intermediate list
-            for (int j = 0; j < arg + 3; ++j) {
+            // Cleanup: Pop accurately.
+            int toPop = arg + (isModern ? 2 : 1) + 1; // +1 for intermediate args list
+            for (int j = 0; j < toPop; ++j) {
                 if (!stack.empty()) stack.pop_back();
             }
             if (!result && env && env->hasPendingException()) {
@@ -3722,39 +3710,46 @@ const proto::ProtoObject* executeBytecodeRange(
             }
             stack.push_back(result ? result : (env ? env->getNonePrototype() : PROTO_NONE));
         } else if (op == OP_CALL_FUNCTION_EX) {
-            // In Python 3.11+, CALL_FUNCTION_EX expects [NULL/Self, Callable, starargs, [kwargs]]
+            // Robust detection of modern vs legacy stack layout
+            bool isModern = false;
+            // EX stack: ...[X][Y][starargs][kwargs]
+            int segmentsSlots = (arg & 1) ? 4 : 3;
+            if (stack.top >= (size_t)segmentsSlots) {
+                const proto::ProtoObject* maybeX = stack[stack.top - (segmentsSlots)];
+                // If X is NULL, it's definitely modern 3.11+ layout.
+                if (maybeX == nullptr) isModern = true;
+                else isModern = true; // For EX, we assume modern if we have enough slots.
+            }
+
             const proto::ProtoObject* kwargs = (arg & 1) ? stack.back() : nullptr;
             const proto::ProtoObject* starargs = (arg & 1) ? stack[stack.top - 2] : stack.back();
-            const proto::ProtoObject* callable = (arg & 1) ? stack[stack.top - 3] : stack[stack.top - 2];
-            const proto::ProtoObject* nullMarker = (arg & 1) ? stack[stack.top - 4] : stack[stack.top - 3];
+            const proto::ProtoObject* Y = (arg & 1) ? stack[stack.top - 3] : stack[stack.top - 2];
+            const proto::ProtoObject* X = isModern ? ((arg & 1) ? stack[stack.top - 4] : stack[stack.top - 3]) : nullptr;
             
             const proto::ProtoList* posArgs = nullptr;
             if (starargs && starargs->asList(ctx)) {
                 posArgs = starargs->asList(ctx);
-            } else if (starargs && starargs->isTuple(ctx)) {
-                const proto::ProtoTuple* tup = starargs->asTuple(ctx);
-                const proto::ProtoList* L = ctx->newList();
-                for (size_t i = 0; i < tup->getSize(ctx); ++i) {
-                    L = L->appendLast(ctx, tup->getAt(ctx, i));
+            } else if (starargs && starargs->asTuple(ctx)) {
+                posArgs = ctx->newList();
+                const proto::ProtoTuple* t = starargs->asTuple(ctx);
+                for (unsigned long j = 0; j < t->getSize(ctx); ++j) {
+                    posArgs = posArgs->appendLast(ctx, t->getAt(ctx, j));
                 }
-                posArgs = L;
-            } else if (starargs && starargs != PROTO_NONE) {
-                if (env) {
-                    const proto::ProtoObject* it = env->iter(starargs);
-                    if (it) {
-                        const proto::ProtoList* L = ctx->newList();
-                        while (const proto::ProtoObject* nextVal = env->next(it)) {
-                            L = L->appendLast(ctx, nextVal);
-                        }
-                        if (env->hasPendingException()) {
-                            const proto::ProtoObject* exc = env->takePendingException();
-                            if (!env->isStopIteration(ctx, exc)) {
-                                env->setPendingException(exc);
-                                i = next_i; continue;
-                            }
-                        }
-                        posArgs = L;
+            } else if (starargs && starargs != PROTO_NONE && env) {
+                const proto::ProtoObject* it = env->iter(starargs);
+                if (it) {
+                    const proto::ProtoList* L = ctx->newList();
+                    while (const proto::ProtoObject* nextVal = env->next(it)) {
+                        L = L->appendLast(ctx, nextVal);
                     }
+                    if (env->hasPendingException()) {
+                        const proto::ProtoObject* exc = env->takePendingException();
+                        if (!env->isStopIteration(ctx, exc)) {
+                            env->setPendingException(exc);
+                            i = next_i; continue;
+                        }
+                    }
+                    posArgs = L;
                 }
             }
             if (!posArgs) posArgs = ctx->newList();
@@ -3781,12 +3776,16 @@ const proto::ProtoObject* executeBytecodeRange(
             const proto::ProtoObject* targetCallable = nullptr;
             const proto::ProtoList* targetArgs = posArgs;
             
-            if (nullMarker == nullptr) {
-                targetCallable = callable;
+            if (!isModern) {
+                targetCallable = Y;
+            } else if (X == nullptr) {
+                targetCallable = Y;
+            } else if (Y == nullptr) {
+                targetCallable = X;
             } else {
-                targetCallable = nullMarker;
-                // Prepend callable (Self) to targetArgs
-                const proto::ProtoList* selfArgs = ctx->newList()->appendLast(ctx, callable);
+                targetCallable = X;
+                // Prepend Y (Self) to targetArgs
+                const proto::ProtoList* selfArgs = ctx->newList()->appendLast(ctx, Y);
                 for (unsigned long j = 0; j < posArgs->getSize(ctx); ++j) {
                     selfArgs = selfArgs->appendLast(ctx, posArgs->getAt(ctx, j));
                 }
@@ -3796,9 +3795,9 @@ const proto::ProtoObject* executeBytecodeRange(
             result = invokePythonCallable(ctx, targetCallable, targetArgs, kwArgs);
             if (pushed && env) env->popKwNames();
             
-            // Pop: nullMarker, callable, starargs, [kwargs]
-            int toPop = (arg & 1) ? 4 : 3;
-            for (int j = 0; j < toPop; ++j) {
+            // Cleanup: Pop correctly.
+            int itemsToPop = (isModern ? 1 : 0) + 2 + ((arg & 1) ? 1 : 0);
+            for (int j = 0; j < itemsToPop; ++j) {
                 if (!stack.empty()) stack.pop_back();
             }
             if (!result && env && env->hasPendingException()) {

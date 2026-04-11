@@ -273,8 +273,11 @@ bool Compiler::compileCall(CallNode* n) {
     if (auto* attrN = dynamic_cast<AttributeNode*>(n->func.get())) {
         // Attributes handle their own marker (self or NULL)
         if (!compileAttribute(attrN, true)) return false;
+    } else if (auto* nameN = dynamic_cast<NameNode*>(n->func.get())) {
+        // Names handles their own NULL marker bit
+        if (!compileName(nameN, true)) return false;
     } else {
-        // Names and complex expressions need an explicit NULL marker.
+        // Complex expressions (e.g. results of other calls) need an explicit NULL marker.
         emit(OP_PUSH_NULL);
         if (!compileNode(n->func.get())) return false;
     }
