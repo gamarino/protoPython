@@ -29,7 +29,12 @@ from _collections_abc import _check_methods
 GenericAlias = type(list[int])
 
 _names = sys.builtin_module_names
-pass
+print(f"DEBUG: os.py _names={_names}")
+if 'posix' in _names:
+    print("DEBUG: os.py found 'posix' in _names")
+    import posix
+    print(f"DEBUG: os.py posix module={posix}")
+    print(f"DEBUG: os.py posix.environ type={type(getattr(posix, 'environ', None))}")
 
 # Note:  more names are added to __all__ later.
 __all__ = ["altsep", "curdir", "pardir", "sep", "pathsep", "linesep",
@@ -820,6 +825,12 @@ try:
 except (TypeError, Exception):
     # proto: _create_environ_mapping (e.g. encode) or del/__mro__ can raise; use minimal environ
     environ = _Environ({}, lambda v: v if isinstance(v, str) else str(v), lambda v: v, lambda v: v)
+    print(f"DEBUG: os.py environ type={type(environ)}")
+    
+    environb = _Environ(environ._data,
+                        lambda v: v if isinstance(v, bytes) else bytes(v, 'ascii'),
+                        lambda v: v, lambda v: v)
+    print(f"DEBUG: os.py environb type={type(environb)}")
 
 if _exists("_create_environ"):
     def reload_environ():

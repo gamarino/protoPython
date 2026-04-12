@@ -16,6 +16,38 @@
 
 namespace protoPython {
 
+static bool areSameClassesVM(proto::ProtoContext* context, const proto::ProtoObject* c1, const proto::ProtoObject* c2) {
+    if (c1 == c2) return true;
+    if (!c1 || !c2) return false;
+    
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::ProtoString* nS = PythonEnvironment::getInternedString(context, "__name__");
+    const proto::ProtoString* mS = PythonEnvironment::getInternedString(context, "__module__");
+    
+    // Use raw because name resolution itself might be recursive during bootstrap
+    const proto::ProtoObject* n1O = c1->proto::ProtoObject::getAttribute(context, nS);
+    const proto::ProtoObject* n2O = c2->proto::ProtoObject::getAttribute(context, nS);
+    
+    if (n1O && n2O && n1O->isString(context) && n2O->isString(context)) {
+        std::string s1, s2;
+        n1O->asString(context)->toUTF8String(context, s1);
+        n2O->asString(context)->toUTF8String(context, s2);
+        if (s1 == s2 && !s1.empty()) {
+            const proto::ProtoObject* m1O = c1->proto::ProtoObject::getAttribute(context, mS);
+            const proto::ProtoObject* m2O = c2->proto::ProtoObject::getAttribute(context, mS);
+            if (m1O && m2O && m1O->isString(context) && m2O->isString(context)) {
+                std::string ms1, ms2;
+                m1O->asString(context)->toUTF8String(context, ms1);
+                m2O->asString(context)->toUTF8String(context, ms2);
+                if (ms1 == ms2) return true;
+            } else {
+                return true; // Match by name only if module is missing
+            }
+        }
+    }
+    return false;
+}
+
 static bool get_env_diag() {
     static int cached = -1;
     if (cached == -1) {
@@ -1698,21 +1730,20 @@ const proto::ProtoObject* executeBytecodeRange(
     }
     const bool sync_globals = (frame == PythonEnvironment::getCurrentGlobals());
     for (unsigned long i = pcStart; i <= pcEnd; ) {
-        unsigned long next_i = i + 1;
-        {
-             const proto::ProtoObject* opObj = bytecode->getAt(ctx, i);
-             int op = static_cast<int>(opObj->asLong(ctx));
-             int arg = (i + 1 < n && bytecode->getAt(ctx, static_cast<int>(i + 1))->isInteger(ctx))
-                 ? static_cast<int>(bytecode->getAt(ctx, static_cast<int>(i + 1))->asLong(ctx)) : 0;
-             if (std::getenv("PROTO_ENV_DIAG")) {
-                 fprintf(stderr, "DEBUG HANG TRACE: [PC %lu] OP %d ARG %d\n", i, op, arg);
-                 fprintf(stderr, "  Stack (depth=%lu):", (unsigned long)stack.size());
-                 for (size_t k = 0; k < stack.size(); ++k) {
-                     fprintf(stderr, " [%lu]=%p", (unsigned long)k, (void*)stack[k]);
-                 }
-                 fprintf(stderr, "\n");
-                 fflush(stderr);
-             }
+        const proto::ProtoObject* opObj = bytecode->getAt(ctx, i);
+        int op = (opObj && opObj->isInteger(ctx)) ? static_cast<int>(opObj->asLong(ctx)) : 0;
+        int arg = (i + 1 < n && bytecode->getAt(ctx, static_cast<int>(i + 1))->isInteger(ctx))
+            ? static_cast<int>(bytecode->getAt(ctx, static_cast<int>(i + 1))->asLong(ctx)) : 0;
+        unsigned long next_i = i + 2; 
+
+        if (std::getenv("PROTO_ENV_DIAG")) {
+            fprintf(stderr, "DEBUG HANG TRACE: [PC %lu] OP %d ARG %d\n", i, op, arg);
+            fprintf(stderr, "  Stack (depth=%lu):", (unsigned long)stack.size());
+            for (size_t k = 0; k < stack.size(); ++k) {
+                fprintf(stderr, " [%lu]=%p", (unsigned long)k, (void*)stack[k]);
+            }
+            fprintf(stderr, "\n");
+            fflush(stderr);
         }
         if (env && env->hasPendingException()) {
             const proto::ProtoObject* exc = env->peekPendingException();
@@ -1807,23 +1838,11 @@ const proto::ProtoObject* executeBytecodeRange(
             return nullptr;
         }
         
-        // Update location for possible trace/debug
-        if ((i & 0x1F) == 0) { // Update every 32 instructions or so to save perf, or just when exception occurs
-             updateContextLocation(ctx, frame, i);
-        }
-        if (get_env_diag()) {
-        }
+        // Location updated at start of loop
         if ((i & 0x7FF) == 0) checkSTW(ctx);
-        const proto::ProtoObject* instr = bytecode->getAt(ctx, static_cast<int>(i));
-        int op = (instr && instr->isInteger(ctx)) ? static_cast<int>(instr->asLong(ctx)) : 0;
-
-        // Every opcode in protoPython now consumes 2 slots (opcode + arg) to match the Compiler.
-        int arg = (i + 1 < n && bytecode->getAt(ctx, static_cast<int>(i + 1))->isInteger(ctx))
-            ? static_cast<int>(bytecode->getAt(ctx, static_cast<int>(i + 1))->asLong(ctx)) : 0;
         
         const char* diag_env = std::getenv("PROTO_ENV_DIAG");
         int diag_level = diag_env ? std::atoi(diag_env) : 0;
-        next_i = i + 2;
         if (diag_level >= 2) {
              fprintf(stderr, "TRACE: PC %lu OP %d ARG %d depth=%zu\n", i, op, (opcodeHasArg(op) ? arg : 0), stack.top);
              fprintf(stderr, "  STACK:");
@@ -1833,8 +1852,6 @@ const proto::ProtoObject* executeBytecodeRange(
              if (stack.top > 10) fprintf(stderr, " ...");
              fprintf(stderr, "\n");
         }
-
-        next_i = i + 2;
 
         if (op == OP_LOAD_CONST) {
             if (static_cast<unsigned long>(arg) < constants->getSize(ctx)) {
@@ -2004,7 +2021,7 @@ const proto::ProtoObject* executeBytecodeRange(
                             frameType != env->getDictPrototype() &&
                             frameType != env->getModulePrototype()) {
                             
-                            const proto::ProtoObject* setitem = env->getAttribute(ctx, frameType, env->getSetItemString());
+                            const proto::ProtoObject* setitem = env->getAttribute(ctx, frameType, env->getSetItemString(), false);
                             if (setitem && setitem != PROTO_NONE) {
                                 handledBySetitem = true;
                                 if (get_env_diag()) {
@@ -3228,6 +3245,7 @@ const proto::ProtoObject* executeBytecodeRange(
                         stack.pop_back(); // Pop obj before raising error
                         std::string attr;
                         attrName->toUTF8String(ctx, attr);
+    if (std::getenv("PROTO_ENV_DIAG")) { fprintf(stderr, "!!! ExecEngine raiseAttrError: obj=%p attr=%s\n", (void*)obj, attr.c_str()); fflush(stderr); }
                         if (env) env->raiseAttributeError(ctx, obj, attr);
                         continue;
                     }
@@ -3831,7 +3849,6 @@ const proto::ProtoObject* executeBytecodeRange(
                     stack.push_back(fn);
                 }
             }
-
         } else if (op == OP_BUILD_CLASS) {
             if (stack.size() >= 4 && frame) {
                 // Keep name, bases, kwds, body on stack as roots.
@@ -3893,28 +3910,34 @@ const proto::ProtoObject* executeBytecodeRange(
                         size_t basesSize = tupleBases ? tupleBases->getSize(ctx) : (listBases ? listBases->getSize(ctx) : 0);
                         for (size_t i = 0; i < basesSize; ++i) {
                             const proto::ProtoObject* base = tupleBases ? tupleBases->getAt(ctx, i) : listBases->getAt(ctx, i);
+                            if (!base || base == PROTO_NONE) continue;
+
                             const proto::ProtoObject* baseMeta = nullptr;
                             if (env) {
-                                baseMeta = base->getAttribute(ctx, env->getClassString());
+                                baseMeta = env->getAttribute(ctx, base, env->getClassString(), false);
                                 if (!baseMeta || baseMeta == PROTO_NONE) {
                                     baseMeta = env->getType(ctx, base);
                                 }
                             } else {
                                 baseMeta = base->getAttribute(ctx, protoPython::PythonEnvironment::getInternalString(ctx, "__class__"));
                             }
-                            if (!baseMeta || baseMeta == PROTO_NONE || baseMeta == objectProto) {
+                            if (!baseMeta || baseMeta == PROTO_NONE || areSameClassesVM(ctx, baseMeta, objectProto)) {
                                 // If a native base accidentally lacks a metaclass (evaluating to object), default it to type
                                 baseMeta = typeProto;
                             }
                             // Compute derivation: if baseMeta is a subclass of bestMeta, it becomes the new best
-                            if (baseMeta != bestMeta && bestMeta) {
+                            if (!areSameClassesVM(ctx, baseMeta, bestMeta) && bestMeta) {
                                 const proto::ProtoObject* mro = baseMeta->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__mro__"));
                                 bool isSub = false;
                                 if (mro) {
                                     const proto::ProtoTuple* mroTuple = mro->asTuple(ctx);
+                                    if (!mroTuple) {
+                                        const proto::ProtoObject* data = env ? env->getAttribute(ctx, mro, env->getDataString(), false) : mro->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__data__"));
+                                        if (data) mroTuple = data->asTuple(ctx);
+                                    }
                                     if (mroTuple) {
                                         for (size_t j = 0; j < mroTuple->getSize(ctx); ++j) {
-                                            if (mroTuple->getAt(ctx, j) == bestMeta) {
+                                            if (areSameClassesVM(ctx, mroTuple->getAt(ctx, j), bestMeta)) {
                                                 isSub = true;
                                                 break;
                                             }
@@ -3923,7 +3946,7 @@ const proto::ProtoObject* executeBytecodeRange(
                                         const proto::ProtoList* mroList = mro->asList(ctx);
                                         if (mroList) {
                                             for (unsigned long j = 0; j < mroList->getSize(ctx); ++j) {
-                                                if (mroList->getAt(ctx, j) == bestMeta) {
+                                                if (areSameClassesVM(ctx, mroList->getAt(ctx, j), bestMeta)) {
                                                     isSub = true;
                                                     break;
                                                 }
@@ -3933,9 +3956,13 @@ const proto::ProtoObject* executeBytecodeRange(
                                 }
                                 if (std::getenv("PROTO_ENV_DIAG")) {
                                     std::string bn, bmn, bestn;
-                                    if (base && base->getAttribute(ctx, nameS) && base->getAttribute(ctx, nameS)->isString(ctx)) base->getAttribute(ctx, nameS)->asString(ctx)->toUTF8String(ctx, bn);
-                                    if (baseMeta && baseMeta->getAttribute(ctx, nameS) && baseMeta->getAttribute(ctx, nameS)->isString(ctx)) baseMeta->getAttribute(ctx, nameS)->asString(ctx)->toUTF8String(ctx, bmn);
-                                    if (bestMeta && bestMeta->getAttribute(ctx, nameS) && bestMeta->getAttribute(ctx, nameS)->isString(ctx)) bestMeta->getAttribute(ctx, nameS)->asString(ctx)->toUTF8String(ctx, bestn);
+                                    const proto::ProtoString* nS = PythonEnvironment::getInternedString(ctx, "__name__");
+                                    const proto::ProtoObject* n1 = base->proto::ProtoObject::getAttribute(ctx, nS);
+                                    const proto::ProtoObject* n2 = baseMeta->proto::ProtoObject::getAttribute(ctx, nS);
+                                    const proto::ProtoObject* n3 = bestMeta->proto::ProtoObject::getAttribute(ctx, nS);
+                                    if (n1 && n1->isString(ctx)) n1->asString(ctx)->toUTF8String(ctx, bn);
+                                    if (n2 && n2->isString(ctx)) n2->asString(ctx)->toUTF8String(ctx, bmn);
+                                    if (n3 && n3->isString(ctx)) n3->asString(ctx)->toUTF8String(ctx, bestn);
                                     fprintf(stderr, "DEBUG METACLASS: base %p (%s) baseMeta %p (%s) bestMeta %p (%s) isSub=%d\n", (void*)base, bn.c_str(), (void*)baseMeta, bmn.c_str(), (void*)bestMeta, bestn.c_str(), isSub);
                                 }
                                 if (isSub) {

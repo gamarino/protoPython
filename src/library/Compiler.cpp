@@ -74,6 +74,9 @@ int Compiler::addName(const std::string& name) {
     const proto::ProtoObject* str = env ? reinterpret_cast<const proto::ProtoObject*>(env->getInternedString(ctx_, name.c_str())) : proto::ProtoString::createSymbol(ctx_, name.c_str())->asObject(ctx_);
     namesVec_.push_back(str);
     namesIndex_[name] = idx;
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        fprintf(stderr, "DEBUG COMPILER [%s]: addName '%s' -> idx %d (strObj=%p)\n", filename_.c_str(), name.c_str(), idx, (void*)str);
+    }
     return idx;
 }
 

@@ -977,7 +977,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     }
     
     // Create Environ object
-    const proto::ProtoObject* environProt = env && env->getObjectPrototype() ? env->getObjectPrototype()->newChild(ctx, false) : ctx->newObject(false);
+    const proto::ProtoObject* environProt = env && env->getDictPrototype() ? env->getDictPrototype()->newChild(ctx, false) : ctx->newObject(false);
     environProt = environProt->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__getitem__"), 
         ctx->fromMethod(const_cast<proto::ProtoObject*>(environProt), py_environ_getitem));
     environProt = environProt->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__setitem__"), 
@@ -987,8 +987,13 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     environProt = environProt->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "keys"), 
         ctx->fromMethod(const_cast<proto::ProtoObject*>(environProt), py_environ_keys_method));
 
-    const proto::ProtoObject* environObj = environProt->newChild(ctx, false);
+    environProt = environProt->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__name__"), 
+        PythonEnvironment::getInternedString(ctx, "_Environ")->asObject(ctx));
 
+    const proto::ProtoObject* environObj = environProt->newChild(ctx, false);
+    if (env) {
+        environObj = environObj->setAttribute(ctx, env->getClassString(), environProt);
+    }
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "environ"), environObj);
 
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "getenv"),

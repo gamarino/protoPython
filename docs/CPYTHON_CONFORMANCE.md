@@ -58,7 +58,7 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 | **Important** | 6 | 4 | 0 | 0% |
 | **Necessary** | 5 | 3 | 2 | 67% |
 | **Low Priority** | 4 | 0 | 0 | 0% |
-| **Total** | **22** | **14** | **2** | **9%** |
+| **Total** | **22** | **14** | **3** | **14%** |
 
 > [!NOTE]
 > **V87 Stabilization**: Implemented `sys.exc_info()` and stabilized `sys.exception()` to unblock standard library diagnostics. These functions are critical for the `traceback` module, which is now functional for reporting errors during bootstrap. Resolved registration issues where `exception` was incorrectly exposed as a symbol rather than a standard module attribute.
@@ -223,3 +223,15 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 ## Benchmarking with PyPerformance
 
 Progress in running the `PyPerformance` suite is tracked separately in the [Performance Analysis](file:///home/gamarino/Documentos/proyectos/protoPython/docs/PERFORMANCE_ANALYSIS.md) (if exists).
+
+## Recent Achievements (V87 - Stabilization)
+
+- **Official Object Model Bootstrap Synchronization**:
+  - Implemented `syncCorePrototypes()` to resolve the "chicken-and-egg" inheritance problem. Correctly rebases all core types (`int`, `str`, `dict`, etc.) onto final versions of `object` and `type`.
+  - Resolved `type(int) is type` and `type(object) is type` identity parity with CPython.
+  - Stabilized `MappingProxy` attribute lookups for native types, ensuring `dict.__dict__` correctly resolves builtin members like `fromkeys`.
+- **System Module Conformance**:
+  - Updated `sys` module attributes (`argv`, `path`, `version_info`, etc.) to use interned strings instead of internal symbols.
+  - Successfully unblocked `argparse` and `os` module initialization failures caused by attribute lookup mismatches.
+- **Identity Stability**:
+  - Validated that `id(dict)` remains stable across the runtime and matches the internal `dictPrototype` pointer.
