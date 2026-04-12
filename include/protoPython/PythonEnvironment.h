@@ -244,7 +244,7 @@ public:
     const proto::ProtoString* getFileDunderS() const { return fileDunderS; }
     const proto::ProtoString* getModulesS() const { return modulesS; }
 
-    const proto::ProtoObject* getAttribute(proto::ProtoContext* ctx, const proto::ProtoObject* obj, const proto::ProtoString* name);
+    const proto::ProtoObject* getAttribute(proto::ProtoContext* ctx, const proto::ProtoObject* obj, const proto::ProtoString* name, bool raiseError = true);
 
     const proto::ProtoObject* getType(proto::ProtoContext* ctx, const proto::ProtoObject* obj);
 

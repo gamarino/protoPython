@@ -1124,7 +1124,7 @@ static const proto::ProtoObject* invokeDunder(proto::ProtoContext* ctx, const pr
     RecursionScope recScope(env, ctx);
     if (recScope.overflowed()) return nullptr;
 
-    const proto::ProtoObject* method = env ? env->getAttribute(ctx, container, name) : container->getAttribute(ctx, name);
+    const proto::ProtoObject* method = env ? env->getAttribute(ctx, container, name, false) : container->getAttribute(ctx, name);
     if (!method || method == PROTO_NONE) return nullptr;
 
     const proto::ProtoSparseList* kwargs = env ? env->getEmptySparseList() : ctx->newSparseList();
@@ -1521,15 +1521,7 @@ const proto::ProtoObject* runUserClassCall(proto::ProtoContext* ctx,
     const proto::ProtoString* newS = env ? env->getNewString() : protoPython::PythonEnvironment::getInternalString(ctx, "__new__");
     const proto::ProtoObject* newM = env ? env->getAttribute(ctx, self, newS) : self->getAttribute(ctx, newS);
     
-    if (std::getenv("PROTO_ENV_DEBUG")) {
-        std::string clsName = "unknown";
-        const proto::ProtoObject* nameAttr = self->getAttribute(ctx, env ? env->getNameString() : nullptr);
-        if (nameAttr && nameAttr->isString(ctx)) nameAttr->asString(ctx)->toUTF8String(ctx, clsName);
-        fprintf(stderr, "TRACE: runUserClassCall(cls=%p '%s') newM=%p\n", (void*)self, clsName.c_str(), (void*)newM);
-    }
-
     proto::ProtoObject* obj = nullptr;
-    if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG runUserClassCall: self=%p newM=%p\n", (void*)self, (void*)newM);
     if (newM && newM != PROTO_NONE) {
         
         // In Python, __new__ is acts like a staticmethod, so looking it up on a class 
@@ -1543,13 +1535,6 @@ const proto::ProtoObject* runUserClassCall(proto::ProtoContext* ctx,
         }
         
         obj = const_cast<proto::ProtoObject*>(invokeCallable(ctx, newM, newArgs, kwargs));
-        if (std::getenv("PROTO_ENV_DIAG")) {
-            fprintf(stderr, "DEBUG runUserClassCall: invokeCallable(newM) returned obj=%p\n", (void*)obj);
-            if (!obj || obj == PROTO_NONE) {
-                fprintf(stderr, "DEBUG TRAP: runUserClassCall newM returned nullptr or NoneType for class %p!\n", (void*)self);
-            }
-            fflush(stderr);
-        }
         if (!obj || obj == PROTO_NONE) {
              if (env && env->hasPendingException()) {
                  if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG runUserClassCall: Pending exception detected!\n");
@@ -1582,30 +1567,6 @@ const proto::ProtoObject* runUserClassCall(proto::ProtoContext* ctx,
         if (isInstanceOfSelf) {
             const proto::ProtoString* initS = env ? env->getInitString() : protoPython::PythonEnvironment::getInternalString(ctx, "__init__");
             const proto::ProtoObject* initM = self->getAttribute(ctx, initS);
-             if (std::getenv("PROTO_ENV_DIAG")) {
-                 std::string initS_str;
-                 initS->toUTF8String(ctx, initS_str);
-                 
-                 // If initM is a function, get its code object info
-                 std::string co_info = "???";
-                 if (initM && env) {
-                     const proto::ProtoObject* codeObj = initM->getAttribute(ctx, env->getInternedString(ctx, "__code__"));
-                     if (codeObj) {
-                         const proto::ProtoObject* nameAttr = codeObj->getAttribute(ctx, env->getInternedString(ctx, "co_name"));
-                         const proto::ProtoObject* fileAttr = codeObj->getAttribute(ctx, env->getInternedString(ctx, "co_filename"));
-                         const proto::ProtoObject* lineAttr = codeObj->getAttribute(ctx, env->getInternedString(ctx, "co_firstlineno"));
-                         std::string n, f; int l = -1;
-                         if (nameAttr && nameAttr->isString(ctx)) nameAttr->asString(ctx)->toUTF8String(ctx, n);
-                         if (fileAttr && fileAttr->isString(ctx)) fileAttr->asString(ctx)->toUTF8String(ctx, f);
-                         if (lineAttr && lineAttr->isInteger(ctx)) l = (int)lineAttr->asLong(ctx);
-                         char buf[512];
-                         sprintf(buf, "%s at %s:%d", n.c_str(), f.c_str(), l);
-                         co_info = buf;
-                     }
-                 }
-
-                 fprintf(stderr, "DEBUG runUserClassCall initS='%s' initM=%p code=%s self=%p\n", initS_str.c_str(), (void*)initM, co_info.c_str(), (void*)self);
-             }
             if (initM && initM != PROTO_NONE) {
                 // Since we looked it up on the class (self), we must manually pass `obj` as first arg
                 const proto::ProtoList* initArgs = ctx->newList()->appendLast(ctx, obj);
@@ -3243,12 +3204,14 @@ const proto::ProtoObject* executeBytecodeRange(
                             const proto::ProtoObject* method = nullptr;
                             const proto::ProtoObject* selfObj = obj;
                             
-                            if (val->isMethod(ctx)) {
+                            const proto::ProtoObject* actualVal = val ? val : (env ? env->getNonePrototype() : PROTO_NONE);
+
+                            if (actualVal->isMethod(ctx)) {
                                 // It's already a bound method from getAttribute/descriptor
                                 isMethod = true;
-                                method = val->getAttribute(ctx, env ? env->getFuncDunderString() : PythonEnvironment::getInternedString(ctx, "__func__"));
-                                selfObj = val->getAttribute(ctx, env ? env->getSelfDunderString() : PythonEnvironment::getInternedString(ctx, "__self__"));
-                                if (!method) { method = val; isMethod = false; } // Fallback
+                                method = actualVal->getAttribute(ctx, env ? env->getFuncDunderString() : PythonEnvironment::getInternedString(ctx, "__func__"));
+                                selfObj = actualVal->getAttribute(ctx, env ? env->getSelfDunderString() : PythonEnvironment::getInternedString(ctx, "__self__"));
+                                if (!method) { method = actualVal; isMethod = false; } // Fallback
                             }
                             
                             if (isMethod) {
@@ -3256,7 +3219,7 @@ const proto::ProtoObject* executeBytecodeRange(
                                 stack.push_back(selfObj);
                             } else {
                                 stack.back() = nullptr; // NULL marker
-                                stack.push_back(val ? val : (env ? env->getNonePrototype() : PROTO_NONE));
+                                stack.push_back(actualVal);
                             }
                         } else {
                             stack.back() = val ? val : (env ? env->getNonePrototype() : PROTO_NONE); // Replace obj with result
@@ -3661,50 +3624,62 @@ const proto::ProtoObject* executeBytecodeRange(
                  continue;
             }
             
-            // Robust detection of modern vs legacy stack layout
-            bool isModern = (stack.top >= (size_t)(arg + 2)); 
+            // In 3.11+, CALL always consumes argc + 2 slots.
+            // Layout: [NULL|Self, Callable, Arg1, ... ArgN]
+            // We expect at least arg + 1 + 1 (the NULL/Self marker).
             unsigned long firstArgIdx = stack.top - arg;
             
-            // Build the args list. Use stack to root it.
-            stack.push_back(ctx->newList()->asObject(ctx));
-            for (int j = 0; j < arg; ++j) {
-                const proto::ProtoList* l = stack.back()->asList(ctx);
-                l = l->appendLast(ctx, stack[firstArgIdx + j]);
-                stack[stack.top - 1] = l->asObject(ctx);
+            // Safety check: if the stack isn't deep enough to have a marker, it's a legacy call.
+            bool isModern = (stack.top >= (size_t)(arg + 2));
+            
+            const proto::ProtoObject* Y = stack[firstArgIdx - 1];
+            const proto::ProtoObject* X = isModern ? stack[firstArgIdx - 2] : nullptr;
+            
+            if (get_env_diag()) {
+                fprintf(stderr, "DEBUG CALL: argc=%d top=%zu firstArgIdx=%lu X=%p Y=%p isModern=%d\n", 
+                        arg, stack.top, firstArgIdx, (void*)X, (void*)Y, isModern);
             }
-            const proto::ProtoList* args = stack.back()->asList(ctx);
-            
-            const proto::ProtoObject* Y = isModern ? stack[firstArgIdx - 1] : nullptr;
-            const proto::ProtoObject* X = (isModern && firstArgIdx >= 2) ? stack[firstArgIdx - 2] : nullptr;
-            
+
             const proto::ProtoObject* callable = nullptr;
             const proto::ProtoList* callArgs = nullptr;
-            
+            const proto::ProtoList* args = ctx->newList();
+            for (int j = 0; j < arg; ++j) {
+                args = args->appendLast(ctx, stack[firstArgIdx + j]);
+            }
+
             if (!isModern) {
-                callable = stack[firstArgIdx - 1];
+                callable = Y; // In legacy, Y is the callable and there is no X.
                 callArgs = args;
             } else if (X == nullptr) {
+                // [NULL, Callable, Arg1...]
                 callable = Y;
                 callArgs = args;
-            } else if (Y == nullptr) {
-                callable = X;
-                callArgs = args;
             } else {
+                // [Method, Self, Arg1...]
                 callable = X;
                 const proto::ProtoList* selfArgs = ctx->newList()->appendLast(ctx, Y);
-                for (unsigned long j = 0; j < args->getSize(ctx); ++j) {
+                unsigned long asize = args->getSize(ctx);
+                for (unsigned long j = 0; j < asize; ++j) {
                     selfArgs = selfArgs->appendLast(ctx, args->getAt(ctx, j));
                 }
                 callArgs = selfArgs;
             }
             
+            if (!callable) {
+                 if (get_env_diag()) fprintf(stderr, "DEBUG: OP_CALL_FUNCTION nullptr callable detected! PC=%lu\n", i);
+                 if (env) env->raiseTypeError(ctx, "object is not callable (nullptr)");
+                 i = next_i;
+                 continue;
+            }
+
             const proto::ProtoObject* result = invokeCallable(ctx, callable, callArgs);
             
-            // Cleanup: Pop accurately.
-            int toPop = arg + (isModern ? 2 : 1) + 1; // +1 for intermediate args list
-            for (int j = 0; j < toPop; ++j) {
+            // Cleanup: Pop (arg + slots)
+            int itemsToPop = arg + (isModern ? 2 : 1);
+            for (int j = 0; j < itemsToPop; ++j) {
                 if (!stack.empty()) stack.pop_back();
             }
+            
             if (!result && env && env->hasPendingException()) {
                 continue;
             }
@@ -3851,6 +3826,8 @@ const proto::ProtoObject* executeBytecodeRange(
                     fflush(stderr);
                 }
                 if (fn) {
+                    // Python 3.11+ expects two slots for CALL: [NULL, Func]
+                    stack.push_back(nullptr); // NULL marker
                     stack.push_back(fn);
                 }
             }

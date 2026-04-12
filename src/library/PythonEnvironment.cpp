@@ -316,8 +316,25 @@ static const proto::ProtoObject* py_mappingproxy_getitem(
         }
 
         if (isType) {
-             const proto::ProtoObject* res = data->getAttribute(context, key->asString(context));
+             const proto::ProtoString* sKey = nullptr;
+             if (key->isString(context)) {
+                 sKey = key->asString(context);
+             } else if (env) {
+                 const proto::ProtoObject* kData = key->getAttribute(context, env->getDataString());
+                 if (kData && kData->isString(context)) sKey = kData->asString(context);
+             }
+             const proto::ProtoObject* res = sKey ? data->getAttribute(context, sKey) : nullptr;
+             if (!res && sKey && env) {
+                 res = env->getAttribute(context, data, sKey);
+             }
              if (res) return res;
+             
+             // Fallback: check internal dictionary storage if attributes were moved
+             if (env) {
+                 const proto::ProtoObject* internalRes = env->getItem(data, key);
+                 if (internalRes) return internalRes;
+             }
+             
              if (env) env->raiseKeyError(context, key);
              return nullptr;
         }
@@ -350,8 +367,26 @@ static const proto::ProtoObject* py_mappingproxy_contains(
         }
 
         if (isType) {
-             const proto::ProtoObject* res = data->getAttribute(context, key->asString(context));
+             const proto::ProtoString* sKey = nullptr;
+             if (key->isString(context)) {
+                 sKey = key->asString(context);
+             } else if (env) {
+                 const proto::ProtoObject* kData = key->getAttribute(context, env->getDataString());
+                 if (kData && kData->isString(context)) sKey = kData->asString(context);
+             }
+             
+             const proto::ProtoObject* res = sKey ? data->getAttribute(context, sKey) : nullptr;
+             if (!res && sKey && env) {
+                 res = env->getAttribute(context, data, sKey);
+             }
              if (res) return PROTO_TRUE;
+             
+             // Fallback for types whose attributes were moved to internal dictionary
+             if (env) {
+                 const proto::ProtoObject* internalRes = env->getItem(data, key);
+                 if (internalRes) return PROTO_TRUE;
+             }
+             
              return PROTO_FALSE;
         }
 
@@ -1641,7 +1676,7 @@ std::string PythonEnvironment::reprObject(proto::ProtoContext* context, const pr
         const proto::ProtoObject* rawAttr = cls->getAttribute(context, reprS);
         if (rawAttr && rawAttr != PROTO_NONE) {
             // If it's a python descriptor or regular method, bind it to `obj`
-            const proto::ProtoObject* getM = env ? env->getAttribute(context, env->getType(context, rawAttr), PythonEnvironment::getInternalString(context, "__get__")) : nullptr;
+            const proto::ProtoObject* getM = env ? env->getAttribute(context, env->getType(context, rawAttr), PythonEnvironment::getInternalString(context, "__get__"), false) : nullptr;
             if (getM && getM != PROTO_NONE) {
                 const proto::ProtoList* getArgs = context->newList()->appendLast(context, obj)->appendLast(context, cls);
                 if (getM->asMethod(context)) {
@@ -5660,6 +5695,21 @@ static const proto::ProtoObject* py_dict_items(
     return listObj;
 }
 
+struct KeyCollector {
+    proto::ProtoContext* ctx;
+    PythonEnvironment* env;
+    const proto::ProtoList* keysList;
+};
+
+static void collectKey(proto::ProtoContext* ctx, void* self, unsigned long key, const proto::ProtoObject*) {
+    KeyCollector* s = (KeyCollector*)self;
+    const proto::ProtoObject* kObj = reinterpret_cast<const proto::ProtoObject*>(key);
+    if (kObj && kObj->isString(ctx)) {
+        if (s->env && s->env->getStrPrototype()) kObj = kObj->addParent(ctx, s->env->getStrPrototype());
+        s->keysList = s->keysList->appendLast(ctx, kObj);
+    }
+}
+
 static const proto::ProtoObject* py_mappingproxy_keys(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -5669,6 +5719,36 @@ static const proto::ProtoObject* py_mappingproxy_keys(
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     const proto::ProtoObject* data = self->getAttribute(context, env ? env->getDataString() : PythonEnvironment::getInternedString(context, "__data__"));
     if (!data) return env ? env->getListPrototype()->newChild(context, true) : nullptr;
+    
+    const proto::ProtoObject* cls = data->getAttribute(context, env ? env->getClassString() : PythonEnvironment::getInternedString(context, "__class__"));
+    bool isType = false;
+    if (env && cls == env->getTypePrototype()) isType = true;
+    else if (data->getAttribute(context, PythonEnvironment::getInternedString(context, "__mro__"))) isType = true;
+
+    if (isType) {
+        KeyCollector s = { context, env, context->newList() };
+        const proto::ProtoSparseList* attrs = data->getOwnAttributes(context);
+        if (attrs) {
+            attrs->processElements(context, &s, collectKey);
+        }
+        
+        const proto::ProtoList* keysList = s.keysList;
+        // Also check __keys__ if it exists (for moved attributes)
+        const proto::ProtoObject* kObj = data->getAttribute(context, env ? env->getKeysString() : PythonEnvironment::getInternedString(context, "__keys__"));
+        if (kObj && kObj->asList(context)) {
+            const proto::ProtoList* innerKeys = kObj->asList(context);
+            unsigned long iSize = innerKeys->getSize(context);
+            for (unsigned long i = 0; i < iSize; ++i) {
+                keysList = keysList->appendLast(context, innerKeys->getAt(context, static_cast<int>(i)));
+            }
+        }
+        
+        const proto::ProtoObject* listProto = env ? env->getListPrototype() : nullptr;
+        proto::ProtoObject* listObj = const_cast<proto::ProtoObject*>(listProto ? listProto->newChild(context, true) : context->newObject());
+        listObj->setAttribute(context, env ? env->getDataString() : PythonEnvironment::getInternedString(context, "__data__"), keysList->asObject(context));
+        return listObj;
+    }
+
     return py_dict_keys(context, data, parentLink, positionalParameters, keywordParameters);
 }
 
@@ -6707,7 +6787,14 @@ void PythonEnvironment::raiseAttributeError(proto::ProtoContext* ctx, const prot
         if (nameAttr && nameAttr->isString(ctx)) nameAttr->asString(ctx)->toUTF8String(ctx, typeName);
     } else {
         if (obj->isInteger(ctx)) typeName = "int";
-        else if (obj->isString(ctx)) typeName = "str";
+        else if (obj->isString(ctx)) {
+            typeName = "str";
+            if (attr == "_data") {
+                std::string val;
+                obj->asString(ctx)->toUTF8String(ctx, val);
+                fprintf(stderr, "DEBUG ATTR ERROR: str '%s' (at %p) has no attribute '_data'\n", val.c_str(), (void*)obj);
+            }
+        }
         else if (obj->asList(ctx)) typeName = "list";
     }
     std::string msg = "'" + typeName + "' object has no attribute '" + attr + "'";
@@ -7149,6 +7236,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     typePrototype = typePrototype->setAttribute(rootContext_, getInternedString(rootContext_, "__call__"), rootContext_->fromMethod(nullptr, py_type_call));
     typePrototype = typePrototype->setAttribute(rootContext_, getInternedString(rootContext_, "__is_python_class__"), PROTO_TRUE);
     typePrototype = typePrototype->setAttribute(rootContext_, newString, rootContext_->fromMethod(nullptr, protoPython::builtins::py_type));
+    typePrototype = typePrototype->setAttribute(rootContext_, py_init, rootContext_->fromMethod(nullptr, protoPython::builtins::py_type_init));
     typePrototype = typePrototype->setAttribute(rootContext_, prepareString, rootContext_->fromMethod(nullptr, protoPython::builtins::py_type_prepare));
     typePrototype = typePrototype->setAttribute(rootContext_, getInternedString(rootContext_, "__class_getitem__"), rootContext_->fromMethod(nullptr, py_type_class_getitem));
     typePrototype = typePrototype->setAttribute(rootContext_, getInternedString(rootContext_, "__or__"), rootContext_->fromMethod(nullptr, py_type_or));
@@ -8167,6 +8255,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
 
     // Re-export synced prototypes to builtins module to ensure __dict__ parity
     // 1. Initialize dictionary storage for all core prototypes (V78: ensures consistent identity after builtins augmentation)
+    // Re-export synced prototypes to builtins module to ensure __dict__ parity
+    // 1. Initialize dictionary storage for all core prototypes (V78: ensures consistent identity after builtins augmentation)
     if (objectPrototype) objectPrototype = initDictStorage(rootContext_, objectPrototype);
     if (typePrototype) typePrototype = initDictStorage(rootContext_, typePrototype);
     if (intPrototype) intPrototype = initDictStorage(rootContext_, intPrototype);
@@ -8190,7 +8280,57 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     if (framePrototype) framePrototype = initDictStorage(rootContext_, framePrototype);
     if (modulePrototype) modulePrototype = initDictStorage(rootContext_, modulePrototype);
 
-    // 2. Synchronize final prototypes with the builtins module
+    // V87: Final bootstrap synchronization. Ensure ALL core prototypes point to the
+    // FINAL, fully-populated versions of objectPrototype and typePrototype.
+    // This resolves the "chicken-and-egg" linking problem where early prototypes
+    // (like 'type') inherit from a stale, empty version of 'object'.
+    auto syncCorePrototypes = [&]() {
+        auto rebase = [&](const proto::ProtoObject*& p) {
+            if (!p) return;
+            // Ensure final class identity (all core types are instances of 'type')
+            p = p->setAttribute(rootContext_, py_class, typePrototype);
+            if (p != objectPrototype) {
+                // Re-apply object as parent so we pick up all fully-populated dunders (__str__, etc.)
+                p = p->addParent(rootContext_, objectPrototype);
+                // Refresh MRO and bases for CPython parity
+                const proto::ProtoList* mroList = rootContext_->newList()->appendLast(rootContext_, p)->appendLast(rootContext_, objectPrototype);
+                p = p->setAttribute(rootContext_, mroString, rootContext_->newTupleFromList(mroList)->asObject(rootContext_));
+                const proto::ProtoList* basesList = rootContext_->newList()->appendLast(rootContext_, objectPrototype);
+                p = p->setAttribute(rootContext_, basesString, rootContext_->newTupleFromList(basesList)->asObject(rootContext_));
+            }
+        };
+
+        // Order matters; sync type and object first
+        rebase(typePrototype);
+        rebase(objectPrototype);
+        
+        rebase(strPrototype);
+        rebase(intPrototype);
+        rebase(listPrototype);
+        rebase(dictPrototype);
+        rebase(tuplePrototype);
+        rebase(boolPrototype);
+        rebase(floatPrototype);
+        rebase(bytesPrototype);
+        rebase(setPrototype);
+        rebase(complexPrototype);
+        rebase(sliceType);
+        rebase(frozensetPrototype);
+        rebase(mappingProxyPrototype);
+        rebase(methodPrototype);
+        rebase(functionPrototype);
+    };
+
+    syncCorePrototypes();
+
+    // V87: Augment prototypes with descriptors and internal storage AFTER final sync
+    // but BEFORE exporting to builtins/space.
+    if (dictPrototype) {
+        dictPrototype = dictPrototype->setAttribute(rootContext_, dictString, py_type_get_dict(rootContext_, dictPrototype, nullptr, nullptr, nullptr));
+    }
+    // (Add other descriptors here if needed)
+
+    // 2. Synchronize final prototypes with the builtins module (V87: FINAL versions)
     if (builtinsModule) {
         builtinsModule = builtinsModule->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "object"), objectPrototype);
         builtinsModule = builtinsModule->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "type"), typePrototype);
@@ -8200,23 +8340,6 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
         builtinsModule = builtinsModule->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "str"), strPrototype);
         builtinsModule = builtinsModule->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "list"), listPrototype);
         builtinsModule = builtinsModule->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "dict"), dictPrototype);
-        
-        // V78: Synchronize Python prototypes back to ProtoSpace to ensure identity stability
-        // across native/Python boundaries.
-        if (space_) {
-            space_->stringPrototype = const_cast<proto::ProtoObject*>(strPrototype);
-            space_->listPrototype = const_cast<proto::ProtoObject*>(listPrototype);
-            space_->tuplePrototype = const_cast<proto::ProtoObject*>(tuplePrototype);
-            space_->sparseListPrototype = const_cast<proto::ProtoObject*>(dictPrototype);
-            space_->booleanPrototype = const_cast<proto::ProtoObject*>(boolPrototype);
-            space_->floatPrototype = const_cast<proto::ProtoObject*>(floatPrototype);
-            space_->bytePrototype = const_cast<proto::ProtoObject*>(bytesPrototype);
-            space_->objectPrototype = const_cast<proto::ProtoObject*>(objectPrototype);
-        }
-
-        // Ensure __dict__ descriptor is available for types
-        dictPrototype = dictPrototype->setAttribute(rootContext_, dictString, py_type_get_dict(rootContext_, dictPrototype, nullptr, nullptr, nullptr));
-        
         builtinsModule = builtinsModule->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "tuple"), tuplePrototype);
         builtinsModule = builtinsModule->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "set"), setPrototype);
         builtinsModule = builtinsModule->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "bytes"), bytesPrototype);
@@ -8225,16 +8348,21 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
         }
     }
 
-    // Sync core prototypes back to space one last time to ensure consistency after builtins augmentation
-    space_->smallIntegerPrototype = const_cast<proto::ProtoObject*>(intPrototype);
-    space_->largeIntegerPrototype = const_cast<proto::ProtoObject*>(intPrototype);
-    space_->stringPrototype = const_cast<proto::ProtoObject*>(strPrototype);
-    space_->listPrototype = const_cast<proto::ProtoObject*>(listPrototype);
-    space_->tuplePrototype = const_cast<proto::ProtoObject*>(tuplePrototype);
-    space_->sparseListPrototype = const_cast<proto::ProtoObject*>(dictPrototype);
-    space_->booleanPrototype = const_cast<proto::ProtoObject*>(boolPrototype);
-    space_->doublePrototype = const_cast<proto::ProtoObject*>(floatPrototype);
-    space_->bufferPrototype = const_cast<proto::ProtoObject*>(bytesPrototype);
+    // Final synchronization to ProtoSpace (V78/V87: MUST happen after all updates)
+    if (space_) {
+        space_->objectPrototype = const_cast<proto::ProtoObject*>(objectPrototype);
+        space_->stringPrototype = const_cast<proto::ProtoObject*>(strPrototype);
+        space_->listPrototype = const_cast<proto::ProtoObject*>(listPrototype);
+        space_->tuplePrototype = const_cast<proto::ProtoObject*>(tuplePrototype);
+        space_->sparseListPrototype = const_cast<proto::ProtoObject*>(dictPrototype);
+        space_->booleanPrototype = const_cast<proto::ProtoObject*>(boolPrototype);
+        space_->floatPrototype = const_cast<proto::ProtoObject*>(floatPrototype);
+        space_->doublePrototype = const_cast<proto::ProtoObject*>(floatPrototype);
+        space_->bytePrototype = const_cast<proto::ProtoObject*>(bytesPrototype);
+        space_->bufferPrototype = const_cast<proto::ProtoObject*>(bytesPrototype);
+        space_->smallIntegerPrototype = const_cast<proto::ProtoObject*>(intPrototype);
+        space_->largeIntegerPrototype = const_cast<proto::ProtoObject*>(intPrototype);
+    }
 
     // Final synchronization of all prototypes to ProtoSpace (V78: MUST happen after all initDictStorage calls)
 
@@ -9523,15 +9651,29 @@ bool PythonEnvironment::isCompleteBlock(const std::string& code) {
 }
 
 bool PythonEnvironment::isActuallyAClass(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
-    if (!obj || obj == PROTO_NONE) return false;
+    if (!obj || obj == PROTO_NONE || obj->isString(ctx) || obj->isInteger(ctx) || obj->isBoolean(ctx)) return false;
     const proto::ProtoObject* tProto = getTypePrototype();
     if (obj == tProto) return true;
 
-    // Standard classes have an own __name__ attribute.
-    if (obj->hasOwnAttribute(ctx, getNameString()) == PROTO_FALSE) return false;
+    // Use a special marker if available, or fall back to signature attributes
+    const proto::ProtoString* pythonClsS = PythonEnvironment::getInternedString(ctx, "__is_python_class__");
+    if (obj->hasOwnAttribute(ctx, pythonClsS) == PROTO_TRUE) return true;
 
-    const proto::ProtoObject* cls = getType(ctx, obj);
-    return (cls == tProto) || (cls && cls->isInstanceOf(ctx, tProto) == PROTO_TRUE);
+    // Safer check that avoids full getType recursion if possible
+    const proto::ProtoString* classS = getClassString();
+    if (classS) {
+        const proto::ProtoObject* cls = obj->proto::ProtoObject::getAttribute(ctx, classS);
+        if (cls == tProto) return true;
+        if (cls && tProto && cls->isInstanceOf(ctx, tProto) == PROTO_TRUE) return true;
+    }
+
+    // Fallback: if it has __bases__ and __name__ (raw check), it's very likely a class
+    if (obj->proto::ProtoObject::getAttribute(ctx, getNameString()) != nullptr &&
+        obj->proto::ProtoObject::getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__bases__")) != nullptr) {
+        return true;
+    }
+
+    return false;
 }
 
 const proto::ProtoObject* PythonEnvironment::getType(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
@@ -9555,39 +9697,38 @@ const proto::ProtoObject* PythonEnvironment::getType(proto::ProtoContext* ctx, c
     if (obj->isBoolean(ctx)) return boolPrototype;
 
     // 1. Python-level __class__ (Explicit Identity)
+    // We prioritize this to allow metaclasses to define the type of a class object.
     const proto::ProtoString* classS = getClassString() ? getClassString() : PythonEnvironment::getInternedString(ctx, "__class__");
     const proto::ProtoObject* cls = obj->proto::ProtoObject::getAttribute(ctx, classS);
-    if (cls && cls != PROTO_NONE) {
+    if (cls && cls != PROTO_NONE && cls != obj) {
         if (std::getenv("PROTO_ENV_DEBUG")) {
             std::string clsName = "unknown";
-            const proto::ProtoObject* nameAttr = cls->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__name__"));
+            // Use RAW getAttribute to avoid recursion in diagnostics
+            const proto::ProtoObject* nameAttr = cls->proto::ProtoObject::getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__name__"));
             if (nameAttr && nameAttr->isString(ctx)) nameAttr->asString(ctx)->toUTF8String(ctx, clsName);
             fprintf(stderr, "TRACE: getType(obj=%p) found __class__=%p ('%s')\n", (void*)obj, (void*)cls, clsName.c_str());
         }
         return cls;
     }
 
-    // 2. Class/Type check using physical properties and Python markers
-    const proto::ProtoString* clsS = this->getClassString();
-    if (clsS) {
-        const proto::ProtoObject* cls = obj->proto::ProtoObject::getAttribute(ctx, clsS);
-        if (cls && cls != PROTO_NONE) return cls;
-    }
-
+    // 2. Class signature attributes (Fallbacks)
     const proto::ProtoString* basesS = PythonEnvironment::getInternedString(ctx, "__bases__");
-    if (obj->hasAttribute(ctx, basesS) == PROTO_TRUE) return getTypePrototype();
+    const proto::ProtoString* nameS = getNameString() ? getNameString() : PythonEnvironment::getInternedString(ctx, "__name__");
+    
+    // If it has __bases__, it's a class, so its type is 'type' (unless __class__ specified otherwise above)
+    if (obj->proto::ProtoObject::getAttribute(ctx, basesS) != nullptr) return getTypePrototype();
 
-    const proto::ProtoString* nameS = PythonEnvironment::getInternedString(ctx, "__name__");
-    if (obj->hasAttribute(ctx, nameS) == PROTO_TRUE) {
+    if (obj->proto::ProtoObject::getAttribute(ctx, nameS) != nullptr) {
         // Distinguish between module and class
         const proto::ProtoString* pathS = PythonEnvironment::getInternedString(ctx, "__path__");
-        if (obj->hasAttribute(ctx, pathS) == PROTO_TRUE) return getModulePrototype();
+        if (obj->proto::ProtoObject::getAttribute(ctx, pathS) != nullptr) return getModulePrototype();
         
         const proto::ProtoString* loaderS = PythonEnvironment::getInternedString(ctx, "__loader__");
-        if (obj->hasAttribute(ctx, loaderS) == PROTO_TRUE) return getModulePrototype();
+        if (obj->proto::ProtoObject::getAttribute(ctx, loaderS) != nullptr) return getModulePrototype();
 
         if (modulePrototype && obj->isInstanceOf(ctx, modulePrototype)) return getModulePrototype();
         
+        // If it got here and has __name__, it's likely a class/type
         return getTypePrototype();
     }
 
@@ -9622,56 +9763,14 @@ const proto::ProtoObject* PythonEnvironment::getType(proto::ProtoContext* ctx, c
     return getObjectPrototype();
 }
 
-const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* ctx, const proto::ProtoObject* obj, const proto::ProtoString* name) {
+const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* ctx, const proto::ProtoObject* obj, const proto::ProtoString* name, bool raiseError) {
     if (!obj || !name) return nullptr;
     
     std::string nameStr;
     name->toUTF8String(ctx, nameStr);
-    if (std::getenv("PROTO_ENV_DEBUG")) {
-        fprintf(stderr, "TRACE: getAttribute(obj=%p, attr='%s')\n", (void*)obj, nameStr.c_str());
-    }
     bool tracing = std::getenv("PROTO_ENV_DIAG") != nullptr;
     if (tracing) {
          fprintf(stderr, "DEBUG getAttribute: obj=%p attr=%s (namePtr=%p)\n", (void*)obj, nameStr.c_str(), (void*)name);
-         if (obj && obj != PROTO_NONE) {
-             const proto::ProtoObject* cls = this->getType(ctx, obj);
-             std::string clsName = "<unknown>";
-             if (cls) {
-                 const proto::ProtoObject* nm = cls->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__name__"));
-                 if (nm && nm->isString(ctx)) nm->asString(ctx)->toUTF8String(ctx, clsName);
-             }
-             fprintf(stderr, "  - obj class: %s\n", clsName.c_str());
-             
-             std::string objName = "unknown";
-             const proto::ProtoObject* objNameAttr = obj->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__name__"));
-             if (objNameAttr && objNameAttr->isString(ctx)) objNameAttr->asString(ctx)->toUTF8String(ctx, objName);
-             if (objName == "_collections_abc") {
-                 const proto::ProtoSparseList* attrs = obj->getAttributes(ctx);
-                 if (attrs) {
-                     fprintf(stderr, "  - _collections_abc attributes list:\n");
-                     auto* it = const_cast<proto::ProtoSparseListIterator*>(attrs->getIterator(ctx));
-                     while (it && it->hasNext(ctx)) {
-                         fprintf(stderr, "    * Hash: %lu\n", (unsigned long)it->nextKey(ctx));
-                         it = const_cast<proto::ProtoSparseListIterator*>(it->advance(ctx));
-                     }
-                 } else {
-                     fprintf(stderr, "  - _collections_abc HAS NO ATTRIBUTES!\n");
-                 }
-             }
-         }
-         fflush(stderr);
-    }
-
-
-    bool isClass = this->isActuallyAClass(ctx, obj);
-
-
-    if (nameStr == "__class__") {
-        if (!isClass && obj != PROTO_NONE && obj->hasOwnAttribute(ctx, name) == PROTO_TRUE) {
-             // Let it be found below
-        } else if (!isClass) {
-             return this->getType(ctx, obj);
-        }
     }
 
     // Recursion Guard for binding logic
@@ -9683,8 +9782,18 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
     } adg(getAttrDepth);
 
     if (getAttrDepth > 50) {
-        if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG: Env::getAttribute RECURSION LIMIT depth=%d\n", getAttrDepth);
+        if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG: Env::getAttribute RECURSION LIMIT depth=%d for attr '%s'\n", getAttrDepth, nameStr.c_str());
         return obj->getAttribute(ctx, name);
+    }
+
+    bool isClass = this->isActuallyAClass(ctx, obj);
+
+    if (nameStr == "__class__") {
+        if (!isClass && obj != PROTO_NONE && obj->hasOwnAttribute(ctx, name) == PROTO_TRUE) {
+             // Let it be found below
+        } else if (!isClass) {
+             return this->getType(ctx, obj);
+        }
     }
 
     // Global recursion limit integration
@@ -9709,21 +9818,11 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
         }
     }
     
-    // isClass already determined above
-    
     bool foundOnClassOrMro = false;
     
     // 1. Get the raw value from the primitive object hierarchy
     const proto::ProtoObject* val = obj->getAttribute(ctx, name);
-    if (std::getenv("PROTO_ENV_DIAG") && nameStr == "__defaults__") {
-        fprintf(stderr, "DEBUG getAttribute(__defaults__): obj=%p val=%p\n", (void*)obj, (void*)val);
-    }
-    if (!val && std::getenv("PROTO_ENV_DEBUG")) {
-        std::string n; name->toUTF8String(ctx, n);
-        fprintf(stderr, "TRACE: getAttribute(obj=%p, attr='%s') FAILED\n", (void*)obj, n.c_str());
-    }
     bool isExplicitNone = (val == PROTO_NONE && obj->hasAttribute(ctx, name) == PROTO_TRUE);
-
 
     if (val && val != PROTO_NONE) {
         if (!isClass) {
@@ -9732,47 +9831,39 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
             if (obj->hasOwnAttribute(ctx, name) == PROTO_TRUE) {
                 foundOnClassOrMro = true;
             } else {
-                const proto::ProtoObject* mroObj = obj->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__mro__"));
-                if (mroObj) {
+                const proto::ProtoObject* mroObj = obj->proto::ProtoObject::getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__mro__"));
+                if (mroObj && mroObj->asList(ctx)) {
                     const proto::ProtoList* mroList = mroObj->asList(ctx);
-                    if (mroList) {
-                        for (unsigned long i = 0; i < mroList->getSize(ctx); ++i) {
-                            const proto::ProtoObject* baseCls = mroList->getAt(ctx, i);
-                            if (baseCls && baseCls->hasOwnAttribute(ctx, name) == PROTO_TRUE) {
-                                foundOnClassOrMro = true;
-                                break;
-                            }
+                    for (unsigned long i = 0; i < mroList->getSize(ctx); ++i) {
+                        const proto::ProtoObject* baseCls = mroList->getAt(ctx, i);
+                        if (baseCls && baseCls->hasOwnAttribute(ctx, name) == PROTO_TRUE) {
+                            foundOnClassOrMro = true;
+                            break;
                         }
                     }
                 }
             }
         }
     }
-    
-    
 
     // 1.1 MRO Lookup (Inheritance Prototype Chain)
     if (!val || (!isExplicitNone && val == PROTO_NONE)) {
         const proto::ProtoObject* searchObj = isClass ? obj : this->getType(ctx, obj);
-        if (std::getenv("PROTO_ENV_DEBUG")) fprintf(stderr, "DEBUG_GET: searchObj=%p isClass=%d\n", (void*)searchObj, isClass);
         if (searchObj && searchObj != PROTO_NONE && (searchObj != obj || isClass)) {
-            const proto::ProtoObject* mroObj = searchObj->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__mro__"));
+            const proto::ProtoObject* mroObj = searchObj->proto::ProtoObject::getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__mro__"));
             if (mroObj && mroObj != PROTO_NONE && mroObj->asList(ctx)) {
                 const proto::ProtoList* mroList = mroObj->asList(ctx);
-                if (mroList) {
-                    for (unsigned long i = 0; i < mroList->getSize(ctx); ++i) {
-                        const proto::ProtoObject* baseCls = mroList->getAt(ctx, i);
-                        if (baseCls == obj) continue;
-                        val = baseCls->proto::ProtoObject::getAttribute(ctx, name);
-                        if (val && val != PROTO_NONE) {
-                            foundOnClassOrMro = true;
-                            break;
-                        }
+                for (unsigned long i = 0; i < mroList->getSize(ctx); ++i) {
+                    const proto::ProtoObject* baseCls = mroList->getAt(ctx, i);
+                    if (baseCls == obj) continue;
+                    val = baseCls->proto::ProtoObject::getAttribute(ctx, name);
+                    if (val && val != PROTO_NONE) {
+                        foundOnClassOrMro = true;
+                        break;
                     }
                 }
             } else {
                  // Fallback to raw parents if __mro__ is missing or is a descriptor (common in bootstrap)
-                 // CHECK searchObj ITSELF FIRST!
                  val = searchObj->proto::ProtoObject::getAttribute(ctx, name);
                  if (val && val != PROTO_NONE) {
                      foundOnClassOrMro = true;
@@ -9782,16 +9873,20 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
                          for (size_t i = 0; i < parents->getSize(ctx); ++i) {
                              const proto::ProtoObject* baseCls = parents->getAt(ctx, i);
                              if (!baseCls) continue;
-                             
-                             // Search current base
                              val = baseCls->proto::ProtoObject::getAttribute(ctx, name);
                              if (val && val != PROTO_NONE) {
                                  foundOnClassOrMro = true;
                                  break;
                              }
-                             
-                             // Recursive search in parents (since MRO is missing/descriptor)
-                             val = this->getAttribute(ctx, baseCls, name);
+                             // Recursive search in parents is strictly raw to avoid loops
+                             const proto::ProtoObject* p = baseCls;
+                             while (p && (!val || val == PROTO_NONE)) {
+                                 const proto::ProtoList* pp = p->getParents(ctx);
+                                 if (!pp || pp->getSize(ctx) == 0) break;
+                                 p = pp->getAt(ctx, 0);
+                                 if (!p) break;
+                                 val = p->proto::ProtoObject::getAttribute(ctx, name);
+                             }
                              if (val && val != PROTO_NONE) {
                                  foundOnClassOrMro = true;
                                  break;
@@ -9806,229 +9901,118 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
     // 1.2 Metaclass Lookup (for classes)
     if (isClass && (!val || (!isExplicitNone && val == PROTO_NONE))) {
         const proto::ProtoObject* meta = this->getType(ctx, obj);
-        if (std::getenv("PROTO_ENV_DEBUG")) fprintf(stderr, "DEBUG_GET: meta=%p for obj=%p\n", (void*)meta, (void*)obj);
         if (meta && meta != PROTO_NONE && meta != obj) {
-            const proto::ProtoObject* mroObj = meta->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__mro__"));
+            const proto::ProtoObject* mroObj = meta->proto::ProtoObject::getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__mro__"));
             if (mroObj && mroObj != PROTO_NONE && mroObj->asList(ctx)) {
                 const proto::ProtoList* mroList = mroObj->asList(ctx);
-                if (mroList) {
-                    if (std::getenv("PROTO_ENV_DEBUG")) fprintf(stderr, "DEBUG_GET: searching meta MRO (size %lu)\n", (unsigned long)mroList->getSize(ctx));
-                    for (unsigned long i = 0; i < mroList->getSize(ctx); ++i) {
-                        const proto::ProtoObject* baseCls = mroList->getAt(ctx, i);
-                        val = baseCls->proto::ProtoObject::getAttribute(ctx, name);
-                        if (std::getenv("PROTO_ENV_DEBUG")) fprintf(stderr, "  - meta MRO[%lu]: %p, val=%p\n", i, (void*)baseCls, (void*)val);
-                        if (val && val != PROTO_NONE) {
-                            foundOnClassOrMro = true;
-                            break;
-                        }
+                for (unsigned long i = 0; i < mroList->getSize(ctx); ++i) {
+                    const proto::ProtoObject* baseCls = mroList->getAt(ctx, i);
+                    val = baseCls->proto::ProtoObject::getAttribute(ctx, name);
+                    if (val && val != PROTO_NONE) {
+                        foundOnClassOrMro = true;
+                        break;
                     }
                 }
             } else {
-                 // Metaclass MRO missing or descriptor, fallback to parents
-                 // CHECK meta ITSELF FIRST!
+                 // Metaclass MRO missing, fallback to raw parents
                  val = meta->proto::ProtoObject::getAttribute(ctx, name);
-                 if (val && val != PROTO_NONE) {
-                     foundOnClassOrMro = true;
-                 } else {
+                 if (!val || val == PROTO_NONE) {
                      const proto::ProtoList* parents = meta->getParents(ctx);
                      if (parents) {
                          for (size_t i = 0; i < parents->getSize(ctx); ++i) {
-                             const proto::ProtoObject* baseCls = parents->getAt(ctx, i);
-                             if (!baseCls) continue;
-                             val = baseCls->proto::ProtoObject::getAttribute(ctx, name);
-                             if (val && val != PROTO_NONE) {
-                                 foundOnClassOrMro = true;
-                                 break;
-                             }
-                             // Recursive search for Bootstrap
-                             val = this->getAttribute(ctx, baseCls, name);
+                             val = parents->getAt(ctx, i)->proto::ProtoObject::getAttribute(ctx, name);
                              if (val && val != PROTO_NONE) {
                                  foundOnClassOrMro = true;
                                  break;
                              }
                          }
                      }
+                 } else {
+                     foundOnClassOrMro = true;
                  }
             }
         }
     }
 
-// 1.5 Descriptor Protocol Check (__get__)
-    // If the attribute found (val) has a __get__ method ON ITS TYPE, invoke it.
-    // This allows properties, methods, and other descriptors to work correctly.
-    const proto::ProtoString* dunderGet = this->getGetDunderString();
-    const proto::ProtoObject* valType = val ? this->getType(ctx, val) : nullptr;
-    const proto::ProtoObject* getM = valType ? valType->getAttribute(ctx, dunderGet) : nullptr;
-    
-    if (std::getenv("PROTO_ENV_DIAG")) {
-        fprintf(stderr, "DEBUG_GET: val=%p valType=%p getM=%p\n", (void*)val, (void*)valType, (void*)getM);
-    }
-    
-    bool isInstanceDict = (!isClass && obj->hasOwnAttribute(ctx, name) == PROTO_TRUE);
-    
-    if (dunderGet && getM && getM->isMethod(ctx) && !isInstanceDict) {
-        // Do not bind if obj is a module! Modules are namespaces, not classes.
-        const proto::ProtoObject* objClass = obj->proto::ProtoObject::getAttribute(ctx, this->getClassString());
-        if (!this->modulePrototype || (obj != this->modulePrototype && objClass != this->modulePrototype)) {
-                 const proto::ProtoObject* instance = obj;
-                 const proto::ProtoObject* owner = objClass;
-                 
-                 // If obj is a class and the attribute was found on the class itself (or its bases),
-                 // we are accessing an attribute ON a class. So instance = None, owner = the class (obj).
-                 if (isClass && foundOnClassOrMro) {
-                     bool metaclassDataDescr = false;
-                     if (owner && owner != PROTO_NONE) {
-                          const proto::ProtoObject* mVal = owner->getAttribute(ctx, name);
-                          if (mVal == val) {
-                              const proto::ProtoObject* mValType = this->getType(ctx, mVal);
-                              if (mValType && mValType->hasAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__set__")) == PROTO_TRUE) {
-                                  metaclassDataDescr = true;
-                              } else if (mValType) {
-                                  const proto::ProtoObject* tName = mValType->getAttribute(ctx, this->getNameString());
-                                  if (tName && tName->isString(ctx)) {
-                                      std::string str; tName->asString(ctx)->toUTF8String(ctx, str);
-                                      if (str == "getset_descriptor" || str == "property" || str == "member_descriptor") {
-                                          metaclassDataDescr = true;
-                                      }
-                                  }
-                              }
-                          }
-                     }
-                     if (std::getenv("PROTO_ENV_DIAG")) {
-                         const proto::ProtoObject* mV = owner ? owner->getAttribute(ctx, name) : nullptr;
-                         const proto::ProtoObject* mT = mV ? this->getType(ctx, mV) : nullptr;
-                         std::string tNameStr = mT ? "" : "null";
-                         if (mT) {
-                             const proto::ProtoObject* tn = mT->getAttribute(ctx, this->getNameString());
-                             if (tn && tn->isString(ctx)) tn->asString(ctx)->toUTF8String(ctx, tNameStr);
-                         }
-                         fprintf(stderr, "DEBUG_GET: metaclassDataDescr=%d owner=%p mVal=%p val=%p mValType=%p (%s)\n",
-                                 metaclassDataDescr, (void*)owner, (void*)mV, (void*)val, (void*)mT, tNameStr.c_str());
-                     }
-                     if (metaclassDataDescr) {
-                         instance = obj;
-                         // owner is already objClass
-                     } else {
+    // 1.5 Descriptor Protocol Check (__get__)
+    // CRITICAL: Avoid recursion if searching for __get__ itself or other bootstrap-critical names
+    if (nameStr != "__get__" && nameStr != "__mro__" && nameStr != "__class__") {
+        const proto::ProtoString* dunderGet = this->getGetDunderString();
+        const proto::ProtoObject* valType = val ? this->getType(ctx, val) : nullptr;
+        // Use RAW lookup for __get__ to avoid infinite recursion
+        const proto::ProtoObject* getM = (valType && dunderGet) ? valType->proto::ProtoObject::getAttribute(ctx, dunderGet) : nullptr;
+        
+        // If not found rawly, try a limited lookup (one level of parents)
+        if (valType && dunderGet && (!getM || getM == PROTO_NONE)) {
+            const proto::ProtoList* parents = valType->getParents(ctx);
+            if (parents && parents->getSize(ctx) > 0) {
+                getM = parents->getAt(ctx, 0)->proto::ProtoObject::getAttribute(ctx, dunderGet);
+            }
+        }
+
+        bool isInstanceDict = (!isClass && obj->hasOwnAttribute(ctx, name) == PROTO_TRUE);
+        
+        if (getM && getM->isMethod(ctx) && !isInstanceDict) {
+            const proto::ProtoObject* objClass = this->getType(ctx, obj);
+            if (!this->modulePrototype || (obj != this->modulePrototype && objClass != this->modulePrototype)) {
+                     const proto::ProtoObject* instance = obj;
+                     const proto::ProtoObject* owner = objClass;
+                     
+                     if (isClass) {
+                         // Descriptor Protocol for Classes
                          instance = PROTO_NONE;
                          owner = obj;
                      }
-                 }
-                 
-                 const proto::ProtoList* args = ctx->newList()->appendLast(ctx, instance)->appendLast(ctx, owner ? owner : PROTO_NONE);
-                 const proto::ProtoObject* res = getM->asMethod(ctx)(ctx, val, nullptr, args, nullptr);
-                 if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG_GET: PythonEnvironment::getAttribute returning descriptor result %p\n", (void*)res);
-                 return res;
-             }
+                     
+                     const proto::ProtoList* args = ctx->newList()->appendLast(ctx, instance)->appendLast(ctx, owner ? owner : PROTO_NONE);
+                     // If we are deep in getAttribute, maybe don't call descriptor methods to avoid hangs?
+                     // But properties need it. We trust RecursionScope and AttrDepthGuard.
+                     const proto::ProtoObject* res = getM->asMethod(ctx)(ctx, val, nullptr, args, nullptr);
+                     return res;
+            }
         }
+    }
 
-    // 2. Minimalist Binding logic: if it's a method cell from a prototype, bind it to 'obj'
-    if (val->isCell(ctx) && val->isMethod(ctx)) {
-        // Skip binding for if looking up module markers themselves
+    // 2. Binding logic
+    if (val && val->isCell(ctx) && val->isMethod(ctx)) {
         if (fileDunderS && pathDunderS && name != fileDunderS && name != pathDunderS) {
-            // Do not bind if obj is a module! Modules are namespaces, not classes.
             const proto::ProtoObject* objClass = this->getType(ctx, obj);
             if (this->modulePrototype && (obj == this->modulePrototype || objClass == this->modulePrototype)) {
-                // Return unbound module function
-
                 return val;
             }
-            
-            // In Python, functions stored directly on an instance are NOT bound as methods.
-            // Check if it's an instance, the attribute is its own, and it's a Python function (has __code__).
             if (!isClass && obj->hasOwnAttribute(ctx, name) == PROTO_TRUE) {
                 if (val->hasAttribute(ctx, this->getCodeString() ? this->getCodeString() : PythonEnvironment::getInternedString(ctx, "__code__")) == PROTO_TRUE) {
-
                     return val;
                 }
             }
-            
-            // If it's a method cell, bind it to 'obj'.
-            // In a pure protoCore.h world, we can't easily check if it's already bound,
-            // so we bind it here for consistency with instance method access.
-            // EXCEPTION: In Python, accessing an instance method via the class returns the unbound function.
-            const proto::ProtoObject* tProto = getTypePrototype();
-            bool isActuallyAClass = this->isActuallyAClass(ctx, obj);
-
-            if (isActuallyAClass) {
-
+            if (isClass) {
                 return val;
             }
             const proto::ProtoObject* bound = ctx->fromMethod(const_cast<proto::ProtoObject*>(obj), val->asMethod(ctx));
-            
-            // Native built-in bound methods need standard introspection primitives identically to user functions.
             const proto::ProtoString* py_name_s = this->getNameString();
             if (!py_name_s) py_name_s = PythonEnvironment::getInternedString(ctx, "__name__");
             bound = bound->setAttribute(ctx, py_name_s, name->asObject(ctx));
             bound = bound->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__qualname__"), name->asObject(ctx));
             bound = bound->setAttribute(ctx, this->getFuncDunderString(), val);
             bound = bound->setAttribute(ctx, this->getSelfDunderString(), obj);
-            
-
             return bound;
         }
     }
-    
-    // Fallback: __getattr__
-    // This is required for objects like 'super' proxies that rely on __getattr__
-    if (!val || val == PROTO_NONE) {
-        if (nameStr == "register") {
-             if (std::getenv("PROTO_ENV_DIAG")) {
-                 fprintf(stderr, "DEBUG_GET_FAIL: register not found on obj=%p\n", (void*)obj);
-                 PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-                 if (env) {
-                     fprintf(stderr, "DEBUG_GET_FAIL: obj repr=obj_repr_disabled\n");
-                 }
-                 fflush(stderr);
-             }
-        }
-    }
+
     if (!val || (!isExplicitNone && val == PROTO_NONE)) {
-        if (getAttrDepth < 10) {
-            const proto::ProtoString* getattrS = PythonEnvironment::getInternedString(ctx, "__getattr__");
-            // Ensure we ONLY do this for actual instances, not classes/types, or strictly for super proxies.
-            // Since we lack a perfect type check here, we check if the object's class has __getattr__.
-            // Wait, Python's __getattr__ is ONLY called from the class: `type(obj).__getattr__(obj, name)`.
-            const proto::ProtoObject* cls = obj->proto::ProtoObject::getAttribute(ctx, this->getClassString());
-            if (cls && cls != PROTO_NONE && cls->hasOwnAttribute(ctx, getattrS) == PROTO_TRUE) {
-                const proto::ProtoObject* getattrM = cls->getAttribute(ctx, getattrS);
-                if (getattrM && getattrM->isMethod(ctx)) {
-                     const proto::ProtoList* args = ctx->newList()->appendLast(ctx, obj)->appendLast(ctx, name->asObject(ctx));
-                     const proto::ProtoObject* res = getattrM->asMethod(ctx)(ctx, cls, nullptr, args, nullptr);
-
-                     return res;
-                }
-            } else if (obj->hasOwnAttribute(ctx, getattrS) == PROTO_TRUE) {
-                // Legacy support for super proxy which might hold __getattr__ on the object itself in protoCore
-                const proto::ProtoObject* getattrM = obj->getAttribute(ctx, getattrS);
-                if (getattrM && getattrM->isMethod(ctx)) {
-                     const proto::ProtoList* args = ctx->newList()->appendLast(ctx, name->asObject(ctx));
-                     const proto::ProtoObject* res = getattrM->asMethod(ctx)(ctx, obj, nullptr, args, nullptr);
-
-                     return res;
-                }
-            }
+        if (!raiseError) return nullptr;
+        std::string objName = "object";
+        const proto::ProtoObject* t = this->getType(ctx, obj);
+        if (t) {
+            const proto::ProtoObject* n = t->proto::ProtoObject::getAttribute(ctx, getNameString());
+            if (n && n->isString(ctx)) n->asString(ctx)->toUTF8String(ctx, objName);
         }
-    }
-
-    if (!val && name) {
-        std::string attrStr;
-        name->toUTF8String(ctx, attrStr);
-        if (attrStr == "update") {
-            std::string clsName = "unknown";
-            const proto::ProtoObject* cls = obj ? obj->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__class__")) : nullptr;
-            if (cls) {
-                 const proto::ProtoObject* n = cls->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__name__"));
-                 if (n && n->isString(ctx)) n->asString(ctx)->toUTF8String(ctx, clsName);
-            }
-            fprintf(stderr, "DEBUG TRAP: Failed to find 'update' on object %p (class: %s)\n", (void*)obj, clsName.c_str());
-            if (obj && obj->isInstanceOf(ctx, getTypePrototype()) == PROTO_TRUE) {
-                fprintf(stderr, "DEBUG TRAP: Object is a TYPE!\n");
-            }
-        }
+        std::string msg = "'" + objName + "' object has no attribute '" + nameStr + "'";
+        this->raiseAttributeError(ctx, obj, nameStr);
+        return nullptr;
     }
     return val;
 }
-
 
 const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* ctx, const proto::ProtoObject* obj, const proto::ProtoString* name, const proto::ProtoObject* value) {
     if (!obj || isEmbeddedValue(obj) || !name || !value) return obj;
@@ -10935,10 +10919,10 @@ void PythonEnvironment::addTraceback(const proto::ProtoObject* exc, const proto:
     newTb = newTb->setAttribute(rootContext_, tbLastiName, rootContext_->fromInteger(lasti));
     newTb = newTb->setAttribute(rootContext_, tbLinenoName, rootContext_->fromInteger(lineno));
     
-    if (currentTb && currentTb != PROTO_NONE) {
+    if (currentTb && currentTb != this->getNonePrototype() && currentTb != PROTO_NONE) {
         newTb = newTb->setAttribute(rootContext_, tbNextName, currentTb);
     } else {
-        newTb = newTb->setAttribute(rootContext_, tbNextName, PROTO_NONE);
+        newTb = newTb->setAttribute(rootContext_, tbNextName, this->getNonePrototype());
     }
     
     if (std::getenv("PROTO_ENV_DIAG")) {

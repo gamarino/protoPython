@@ -347,17 +347,18 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "byteorder"), PythonEnvironment::getInternedString(ctx, bo)->asObject(ctx));
     
     // sys.version
-    sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "version"), PythonEnvironment::getInternedString(ctx, "3.14.0 (protoPython, Feb 2026)")->asObject(ctx));
+    // sys.version
+    sys = sys->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "version"), PythonEnvironment::getInternedString(ctx, "3.14.0 (protoPython, Feb 2026)")->asObject(ctx));
 
     // sys.base_prefix and sys.prefix (Required for many stdlib modules like gettext)
     if (env) {
         std::string sl = env->getStdLibPath();
         if (sl.empty()) sl = ".";
-        sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "base_prefix"), PythonEnvironment::getInternedString(ctx, sl.c_str())->asObject(ctx));
-        sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "prefix"), PythonEnvironment::getInternedString(ctx, sl.c_str())->asObject(ctx));
+        sys = sys->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "base_prefix"), PythonEnvironment::getInternedString(ctx, sl.c_str())->asObject(ctx));
+        sys = sys->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "prefix"), PythonEnvironment::getInternedString(ctx, sl.c_str())->asObject(ctx));
     } else {
-        sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "base_prefix"), PROTO_NONE);
-        sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "prefix"), PROTO_NONE);
+        sys = sys->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "base_prefix"), PROTO_NONE);
+        sys = sys->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "prefix"), PROTO_NONE);
     }
 
     // sys.path (empty for now, PythonEnvironment will populate it)
@@ -365,14 +366,14 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     if (env && env->getListPrototype()) {
         pathList = pathList->addParent(ctx, env->getListPrototype());
     }
-    sys = sys->setAttribute(ctx, env ? env->getPathS() : proto::ProtoString::createSymbol(ctx, "path"), pathList);
+    sys = sys->setAttribute(ctx, env ? env->getPathS() : PythonEnvironment::getInternedString(ctx, "path"), pathList);
 
     // sys.modules (dict mapping names to modules)
     const proto::ProtoObject* modulesObj = env && env->getDictPrototype() ? env->getDictPrototype()->newChild(ctx, true) : ctx->newObject(false);
     if (env) {
         modulesObj = env->initDictStorage(ctx, modulesObj);
     }
-    sys = sys->setAttribute(ctx, env ? env->getModulesS() : proto::ProtoString::createSymbol(ctx, "modules"), modulesObj);
+    sys = sys->setAttribute(ctx, env ? env->getModulesS() : PythonEnvironment::getInternedString(ctx, "modules"), modulesObj);
 
     // sys.argv
     const proto::ProtoList* argvList = ctx->newList();
@@ -389,32 +390,32 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     const proto::ProtoObject* argvWrapper = ctx->newObject(false);
     if (env && env->getListPrototype()) {
         argvWrapper = argvWrapper->addParent(ctx, env->getListPrototype());
-        argvWrapper = argvWrapper->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__class__"), env->getListPrototype());
+        argvWrapper = argvWrapper->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__class__"), env->getListPrototype());
     }
-    argvWrapper = argvWrapper->setAttribute(ctx, env ? env->getDataString() : proto::ProtoString::createSymbol(ctx, "__data__"), argvList->asObject(ctx));
-    sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "argv"), argvWrapper);
+    argvWrapper = argvWrapper->setAttribute(ctx, env ? env->getDataString() : PythonEnvironment::getInternedString(ctx, "__data__"), argvList->asObject(ctx));
+    sys = sys->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "argv"), argvWrapper);
 
     // sys.warnoptions (empty list by default)
     const proto::ProtoList* warnList = ctx->newList();
     const proto::ProtoObject* warnWrapper = ctx->newObject(false);
     if (env && env->getListPrototype()) {
         warnWrapper = warnWrapper->addParent(ctx, env->getListPrototype());
-        warnWrapper = warnWrapper->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__class__"), env->getListPrototype());
+        warnWrapper = warnWrapper->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__class__"), env->getListPrototype());
     }
-    warnWrapper = warnWrapper->setAttribute(ctx, env ? env->getDataString() : proto::ProtoString::createSymbol(ctx, "__data__"), warnList->asObject(ctx));
-    sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "warnoptions"), warnWrapper);
+    warnWrapper = warnWrapper->setAttribute(ctx, env ? env->getDataString() : PythonEnvironment::getInternedString(ctx, "__data__"), warnList->asObject(ctx));
+    sys = sys->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "warnoptions"), warnWrapper);
 
     // sys.version_info (3, 14, 0)
     const proto::ProtoList* vi = ctx->newList();
     vi = vi->appendLast(ctx, ctx->fromInteger(3));
     vi = vi->appendLast(ctx, ctx->fromInteger(14));
     vi = vi->appendLast(ctx, ctx->fromInteger(0));
-    sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "version_info"), vi->asObject(ctx));
+    sys = sys->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "version_info"), vi->asObject(ctx));
 
     const proto::ProtoObject* stats = env && env->getObjectPrototype() ? env->getObjectPrototype()->newChild(ctx, false) : ctx->newObject(false);
-    stats = stats->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "calls"), ctx->fromInteger(0));
-    stats = stats->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "objects_created"), ctx->fromInteger(0));
-    sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "stats"), stats);
+    stats = stats->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "calls"), ctx->fromInteger(0));
+    stats = stats->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "objects_created"), ctx->fromInteger(0));
+    sys = sys->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "stats"), stats);
 
     // sys.builtin_module_names
     const proto::ProtoList* builtinsList = ctx->newList();
@@ -428,14 +429,14 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
         builtinsList = builtinsList->appendLast(ctx, PythonEnvironment::getInternedString(ctx, name)->asObject(ctx));
     }
     const proto::ProtoObject* bt = env ? env->newTuple(builtinsList) : ctx->newTupleFromList(builtinsList)->asObject(ctx);
-    sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "builtin_module_names"), bt);
+    sys = sys->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "builtin_module_names"), bt);
 
     // sys.executable
     const char* exe_path = (argv && !argv->empty()) ? (*argv)[0].c_str() : "/usr/bin/protopy";
-    sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "executable"), PythonEnvironment::getInternedString(ctx, exe_path)->asObject(ctx));
+    sys = sys->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "executable"), PythonEnvironment::getInternedString(ctx, exe_path)->asObject(ctx));
 
     // sys.excepthook (AttributeError prevention)
-    sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "excepthook"), PROTO_NONE);
+    sys = sys->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "excepthook"), PROTO_NONE);
 
     // sys.last_*
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "last_type"), PROTO_NONE);
