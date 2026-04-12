@@ -169,6 +169,48 @@ static const proto::ProtoObject* sys_intern(
     return PROTO_NONE;
 }
 
+static const proto::ProtoObject* sys_exception(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    (void)self; (void)parentLink; (void)positionalParameters; (void)keywordParameters;
+    const proto::ProtoObject* exc = PythonEnvironment::getActiveException();
+    return exc ? exc : PROTO_NONE;
+}
+
+static const proto::ProtoObject* sys_exc_info(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    (void)self; (void)parentLink; (void)positionalParameters; (void)keywordParameters;
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::ProtoObject* exc = PythonEnvironment::getActiveException();
+    if (!exc || exc == PROTO_NONE) {
+        const proto::ProtoList* l = context->newList()->appendLast(context, PROTO_NONE)->appendLast(context, PROTO_NONE)->appendLast(context, PROTO_NONE);
+        const proto::ProtoObject* tupleObj = context->newTupleFromList(l)->asObject(context);
+        if (env && env->getTuplePrototype()) {
+            tupleObj = tupleObj->addParent(context, env->getTuplePrototype());
+            tupleObj = tupleObj->setAttribute(context, PythonEnvironment::getInternedString(context, "__class__"), env->getTuplePrototype());
+        }
+        return tupleObj;
+    }
+    const proto::ProtoObject* type = env ? env->getType(context, exc) : PROTO_NONE;
+    const proto::ProtoObject* tb = env ? env->getAttribute(context, exc, PythonEnvironment::getInternedString(context, "__traceback__"), false) : PROTO_NONE;
+    if (!tb) tb = PROTO_NONE;
+    
+    const proto::ProtoList* l = context->newList()->appendLast(context, type)->appendLast(context, exc)->appendLast(context, tb);
+    const proto::ProtoObject* tupleObj = context->newTupleFromList(l)->asObject(context);
+    if (env && env->getTuplePrototype()) {
+        tupleObj = tupleObj->addParent(context, env->getTuplePrototype());
+        tupleObj = tupleObj->setAttribute(context, PythonEnvironment::getInternedString(context, "__class__"), env->getTuplePrototype());
+    }
+    return tupleObj;
+}
+
 static const proto::ProtoObject* sys_getfilesystemencoding(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -268,6 +310,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     // Store env pointer for trace functions and exit
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__env_ptr__"), ctx->fromExternalPointer(env));
 
+    sys = sys->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "exception"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_exception));
+    sys = sys->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "exc_info"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_exc_info));
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "exit"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_exit));
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "settrace"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_settrace));
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "gettrace"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_gettrace));

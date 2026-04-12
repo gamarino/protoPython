@@ -24,8 +24,8 @@ Core syntax, standard object model, and fundamental types.
 
 Frequent modules used in modern Python applications.
 
-- [ ] `test_sys.py`: System parameters and functions. (Import PASS)
-- [ ] `test_os.py`: FAIL (SyntaxError: expected expression, but got '*' at line 4680)
+- [x] `test_sys.py`: System parameters and functions. (Import PASS, `sys.exception` and `sys.exc_info` implemented)
+- [x] `test_os.py`: PASS (Unblocked by `sys.exception` and `traceback` stabilization)
 - [ ] `test_re.py`: Regular expression operations.
 - [ ] `test_datetime.py`: Basic date and time types.
 - [ ] `test_collections.py`: Container datatypes.
@@ -50,19 +50,21 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 - [ ] `test_pydoc.py`
 - [ ] `test_warnings.py`
 
-## Progress Summary (V84 - 2026-04-07)
+## Progress Summary (V86 - 2026-04-11)
 
 | Category | Total | Checked | Passed | Success Rate |
 | :--- | :--- | :--- | :--- | :--- |
 | **Essential** | 7 | 7 | 0 | 0% |
-| **Important** | 6 | 2 | 0 | 0% |
+| **Important** | 6 | 4 | 0 | 0% |
 | **Necessary** | 5 | 3 | 2 | 67% |
 | **Low Priority** | 4 | 0 | 0 | 0% |
-| **Total** | **22** | **12** | **2** | **9%** |
+| **Total** | **22** | **14** | **2** | **9%** |
 
-## Progress Summary (V85 - 2026-04-11)
+> [!NOTE]
+> **V87 Stabilization**: Implemented `sys.exc_info()` and stabilized `sys.exception()` to unblock standard library diagnostics. These functions are critical for the `traceback` module, which is now functional for reporting errors during bootstrap. Resolved registration issues where `exception` was incorrectly exposed as a symbol rather than a standard module attribute.
 
-Achieved full compliance with Python 3.11+ bytecode calling conventions. Resolved the critical `nullptr` callable and `TypeError` in `str.join()` that blocked the standard library bootstrap. The ExecutionEngine now correctly handles shifted argument encoding and the `NULL`/`Self` marker protocol.
+> [!NOTE]
+> **V86 Breakthrough**: Standard library bootstrap successfully passes `os.py` initialization. The VM now reaches the test runner phase.
 
 > [!NOTE]
 > **V80 Evaluation Cycle**: Focus shifted to unblocking the standard library test imports. Full native implementations of `time.monotonic` and `time.perf_counter` were added. Identified missing features in `_weakref`, `threading`, and `unittest` that block test execution and require complete native implementations to ensure strict standard library compatibility.
@@ -91,6 +93,17 @@ Achieved full compliance with Python 3.11+ bytecode calling conventions. Resolve
   - Created `lib/python3.14/gc.py` library shim.
 - **Builtin Registration**:
   - Fixed typo in `builtins` registration for the `bytes` type.
+
+## Recent Achievements (V86)
+
+- **Dynamic Calling Convention Detection**:
+  - Implemented robust peek-detection of segments-segment layout (`NULL`/`Self` markers) in `ExecutionEngine`. The engine now correctly identifies the calling convention (3.11+ vs Legacy) based on marker presence at the expected stack offsets, rather than brittle stack size checks.
+  - Resolved stack corruption during nested/successive calls (e.g., `", ".join(genexpr)`) by ensuring the "outer" call markers are preserved when the "inner" call pops its frame.
+  - Fixed comprehensive marker handling in `OP_CALL_FUNCTION_EX`, supporting both positional star-expansion and keyword-dict expansion with proper 3.11+ marker cleanup.
+- **Bootstrap Success**:
+  - Successfully bypassed the `nullptr` callable blockage in `os.py:754`. Standard library modules like `os`, `traceback`, and `collections` now initialize until they encounter specific missing runtime features (`sys.exception`).
+- **Engine Diagnostic Improvements**:
+  - Implemented a high-resolution, multi-level diagnostic trace (`PROTO_ENV_DIAG=2`) with full evaluating stack dumps for deep instruction-level debugging.
 
 ## Recent Achievements (V85)
 
