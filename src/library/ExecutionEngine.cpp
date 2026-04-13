@@ -1098,10 +1098,15 @@ static const proto::ProtoObject* invokeCallable(proto::ProtoContext* ctx,
         fflush(stderr);
     }
 
+    if (env && env->hasPendingException()) return nullptr;
     RecursionScope recScope(env, ctx);
     if (recScope.overflowed()) return nullptr;
 
     if (callable->isNone(ctx)) {
+        if (std::getenv("PROTO_ENV_DIAG")) {
+            fprintf(stderr, "DEBUG_CALL_NONE: call targeted None! trace follows.\n");
+            fflush(stderr);
+        }
         if (env) {
             std::string msg = "'NoneType' object is not callable";
             env->raiseTypeError(ctx, msg.c_str());
@@ -1129,6 +1134,7 @@ static const proto::ProtoObject* invokeCallable(proto::ProtoContext* ctx,
     }
 
     if (!callAttr || !callAttr->asMethod(ctx)) {
+        if (env && env->hasPendingException()) return nullptr;
         if (env) {
             std::string repr = PythonEnvironment::reprObject(ctx, callable);
             env->raiseTypeError(ctx, "'" + repr + "' object is not callable");
@@ -3239,7 +3245,17 @@ const proto::ProtoObject* executeBytecodeRange(
                                 stack.push_back(actualVal);
                             }
                         } else {
-                            stack.back() = val ? val : (env ? env->getNonePrototype() : PROTO_NONE); // Replace obj with result
+                            if (!val) {
+                                if (env && env->hasPendingException()) {
+                                    stack.pop_back(); continue;
+                                }
+                                if (std::getenv("PROTO_ENV_DIAG")) {
+                                     fprintf(stderr, "DEBUG_OP_LOAD_ATTR: val is NULL, pushing None! (no pending exc)\n");
+                                     fflush(stderr);
+                                }
+                                val = (env ? env->getNonePrototype() : PROTO_NONE);
+                            }
+                            stack.back() = val; // Replace obj with result
                         }
                     } else {
                         stack.pop_back(); // Pop obj before raising error

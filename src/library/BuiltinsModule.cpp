@@ -1607,7 +1607,7 @@ static const proto::ProtoObject* py_super_getattr(
                 name.c_str(), (void*)self, (void*)obj, (void*)type);
         fflush(stderr);
     }
-    if (!obj || !type) return PROTO_NONE;
+    if (!obj || !type) return nullptr;
 
     // Search MRO. For Python classes, __mro__ from the `obj` is the source of truth perfectly linearized.
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
@@ -1627,6 +1627,16 @@ static const proto::ProtoObject* py_super_getattr(
         }
         
         if (mro) {
+            if (std::getenv("PROTO_ENV_DIAG")) {
+                fprintf(stderr, "DEBUG_SUPER: MRO size=%lu\n", (unsigned long)mro->getSize(context));
+                for (size_t i = 0; i < mro->getSize(context); ++i) {
+                     std::string cname;
+                     const proto::ProtoObject* c = mro->getAt(context, i);
+                     const proto::ProtoObject* n = c->proto::ProtoObject::getAttribute(context, PythonEnvironment::getInternedString(context, "__name__"));
+                     if (n && n->isString(context)) n->asString(context)->toUTF8String(context, cname);
+                     fprintf(stderr, "  MRO[%zu]: %p (%s)\n", i, (void*)c, cname.c_str());
+                }
+            }
             bool foundStart = false;
             for (size_t i = 0; i < mro->getSize(context); ++i) {
                 const proto::ProtoObject* clsInMro = mro->getAt(context, static_cast<int>(i));
@@ -1654,11 +1664,18 @@ static const proto::ProtoObject* py_super_getattr(
     for (const proto::ProtoObject* target : targets) {
         if (!target || target == PROTO_NONE) continue;
         const proto::ProtoObject* val = target->proto::ProtoObject::getAttribute(context, nameObj->asString(context));
-        if (!val || val == PROTO_NONE) val = target->getAttribute(context, nameObj->asString(context));
         
         if (val && val != PROTO_NONE) {
+            if (std::getenv("PROTO_ENV_DIAG")) {
+                std::string n; nameObj->asString(context)->toUTF8String(context, n);
+                const proto::ProtoObject* codeAttr = val->proto::ProtoObject::getAttribute(context, PythonEnvironment::getInternedString(context, "__code__"));
+                fprintf(stderr, "DEBUG_SUPER: found '%s' in target %p val=%p asMethod=%d code=%p\n", 
+                        n.c_str(), (void*)target, (void*)val, (val ? (val->asMethod(context) != nullptr) : 0), (void*)codeAttr);
+                fflush(stderr);
+            }
             const proto::ProtoString* getStr = env ? env->getGetDunderString() : PythonEnvironment::getInternedString(context, "__get__");
-            const proto::ProtoObject* descrGet = val->proto::ProtoObject::getAttribute(context, getStr);
+            const proto::ProtoObject* descrGet = env ? env->getAttribute(context, val, getStr, false) : val->getAttribute(context, getStr);
+            
             if (descrGet && descrGet != PROTO_NONE && descrGet->asMethod(context)) {
                 const proto::ProtoList* args = context->newList()->appendLast(context, obj)->appendLast(context, type);
                 return descrGet->asMethod(context)(context, val, nullptr, args, nullptr);
@@ -1675,6 +1692,12 @@ static const proto::ProtoObject* py_super_getattr(
             }
             return val;
         }
+    }
+    
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        std::string n; nameObj->asString(context)->toUTF8String(context, n);
+        fprintf(stderr, "DEBUG_SUPER: getattr '%s' failed to find attribute in targets (count=%zu)\n", n.c_str(), targets.size());
+        fflush(stderr);
     }
     
     if (env) {
@@ -1705,12 +1728,45 @@ static const proto::ProtoObject* py_super_setattr(
     return obj->setAttribute(context, nameObj->asString(context), valueObj);
 }
 
+static const proto::ProtoObject* py_super_repr(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::ProtoObject* type = self->getAttribute(context, PythonEnvironment::getInternedString(context, "type"));
+    const proto::ProtoObject* obj = self->getAttribute(context, PythonEnvironment::getInternedString(context, "obj"));
+    
+    std::string typeName = "None";
+    if (type && type != PROTO_NONE) {
+        const proto::ProtoObject* n = type->getAttribute(context, env ? env->getNameString() : PythonEnvironment::getInternedString(context, "__name__"));
+        if (n && n->isString(context)) n->asString(context)->toUTF8String(context, typeName);
+    }
+    
+    char buf[128];
+    snprintf(buf, sizeof(buf), "<super: <class '%s'>, %p>", typeName.c_str(), (void*)obj);
+    return PythonEnvironment::getInternedString(context, buf)->asObject(context);
+}
+
+static const proto::ProtoObject* py_super_init(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    return PROTO_NONE;
+}
+
 static const proto::ProtoObject* py_super(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
+    (void)self;
+    (void)parentLink;
+    (void)keywordParameters;
 
     const proto::ProtoObject* type = nullptr;
     const proto::ProtoObject* obj = nullptr;
@@ -1941,6 +1997,8 @@ static const proto::ProtoObject* py_super(
     proxy->setAttribute(context, PythonEnvironment::getInternedString(context, "obj"), obj);
     proxy->setAttribute(context, PythonEnvironment::getInternedString(context, "__getattr__"), context->fromMethod(proxy, py_super_getattr));
     proxy->setAttribute(context, PythonEnvironment::getInternedString(context, "__setattr__"), context->fromMethod(proxy, py_super_setattr));
+    proxy->setAttribute(context, PythonEnvironment::getInternedString(context, "__repr__"), context->fromMethod(proxy, py_super_repr));
+    proxy->setAttribute(context, PythonEnvironment::getInternedString(context, "__init__"), context->fromMethod(proxy, py_super_init));
     proxy->setAttribute(context, PythonEnvironment::getInternedString(context, "__is_super_proxy__"), context->fromBoolean(true));
 
     return proxy;

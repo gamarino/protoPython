@@ -119,6 +119,7 @@ static bool isEmbeddedValue(const proto::ProtoObject* obj) {
 
 // --- Dunder Methods Implementation ---
 
+extern const proto::ProtoObject* invokePythonCallable(proto::ProtoContext* ctx, const proto::ProtoObject* callable, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs);
 extern const proto::ProtoObject* exported_runUserFunctionCall(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs);
 extern const proto::ProtoObject* exported_py_function_get(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs);
 extern const proto::ProtoObject* exported_py_function_code_get(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs);
@@ -6777,10 +6778,17 @@ void PythonEnvironment::raiseNameError(proto::ProtoContext* ctx, const std::stri
 }
 
 void PythonEnvironment::raiseAttributeError(proto::ProtoContext* ctx, const proto::ProtoObject* obj, const std::string& attr) {
-    const proto::ProtoString* clsS = PythonEnvironment::getInternedString(ctx, "__class__");
-    const proto::ProtoString* nameS = PythonEnvironment::getInternedString(ctx, "__name__");
-    if (!attributeErrorType) return;
+    if (!attributeErrorType) {
+        // Fallback during bootstrap
+        if (std::getenv("PROTO_ENV_DIAG")) {
+            fprintf(stderr, "DEBUG WARNING: raiseAttributeError called before AttributeError was ready (attr='%s')\n", attr.c_str());
+        }
+        // Use a generic object as exception marker if types aren't ready
+        this->setPendingException(PythonEnvironment::getInternedString(ctx, ("AttributeError: " + attr).c_str())->asObject(ctx));
+        return;
+    }
     std::string typeName = "object";
+    const proto::ProtoString* clsS = PythonEnvironment::getInternedString(ctx, "__class__");
     const proto::ProtoObject* cls = this->getType(ctx, obj);
     if (cls) {
         const proto::ProtoObject* nameAttr = cls->getAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__name__"));
@@ -7157,6 +7165,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     const proto::ProtoString* py_class = classString;
     const proto::ProtoString* py_name = nameString;
     const proto::ProtoString* py_module = getModuleString();
+    const proto::ProtoString* py_call = callString;
     const proto::ProtoObject* builtinsVal = builtinsString->asObject(rootContext_);
     const proto::ProtoString* py_append = PythonEnvironment::getInternedString(rootContext_, "append");
     const proto::ProtoString* py_getitem = getItemString;
@@ -7436,7 +7445,16 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     functionPrototype = functionPrototype->setAttribute(rootContext_, py_name, PythonEnvironment::getInternedString(rootContext_, "function")->asObject(rootContext_));
     functionPrototype = functionPrototype->setAttribute(rootContext_, py_module, builtinsVal);
     functionPrototype = functionPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__call__"), rootContext_->fromMethod(nullptr, protoPython::exported_runUserFunctionCall));
-    functionPrototype = functionPrototype->setAttribute(rootContext_, getDunderString, rootContext_->fromMethod(nullptr, protoPython::exported_py_function_get));
+    functionPrototype = functionPrototype->setAttribute(rootContext_, getDunderString, rootContext_->fromMethod(nullptr, PythonEnvironment::py_function_get));
+
+    // Create 'method' prototype
+    methodPrototype = objectPrototype->newChild(rootContext_, true);
+    methodPrototype = methodPrototype->setAttribute(rootContext_, py_class, typePrototype);
+    methodPrototype = methodPrototype->setAttribute(rootContext_, py_name, PythonEnvironment::getInternedString(rootContext_, "method")->asObject(rootContext_));
+    methodPrototype = methodPrototype->setAttribute(rootContext_, py_module, builtinsVal);
+    methodPrototype = methodPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, PythonEnvironment::py_method_repr));
+    methodPrototype = methodPrototype->setAttribute(rootContext_, py_call, rootContext_->fromMethod(nullptr, PythonEnvironment::py_method_call));
+
 
     // 6. Basic types
     intPrototype = objectPrototype->newChild(rootContext_, true);
@@ -7730,7 +7748,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     setIterProto = setIterProto->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_self_iter));
     setPrototype = setPrototype->setAttribute(rootContext_, py_iter_proto, setIterProto);
 
-    const proto::ProtoString* py_call = PythonEnvironment::getInternedString(rootContext_, "__call__");
+    py_call = PythonEnvironment::getInternedString(rootContext_, "__call__");
     frozensetPrototype = objectPrototype->newChild(rootContext_, true);
     frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, py_class, typePrototype);
     frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, py_name, PythonEnvironment::getInternedString(rootContext_, "frozenset")->asObject(rootContext_));
@@ -11313,4 +11331,75 @@ const proto::ProtoObject* PythonEnvironment::newList(const proto::ProtoList* lis
     return obj;
 }
 
+const proto::ProtoObject* PythonEnvironment::py_function_get(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        std::string name;
+        const proto::ProtoObject* n = self->proto::ProtoObject::getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__name__"));
+        if (n && n->isString(ctx)) n->asString(ctx)->toUTF8String(ctx, name);
+        const proto::ProtoObject* codeAttr = self->proto::ProtoObject::getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__code__"));
+        fprintf(stderr, "DEBUG: py_function_get(func='%s', code=%p, args_count=%zu)\n", name.c_str(), (void*)codeAttr, args ? args->getSize(ctx) : 0);
+        fflush(stderr);
+    }
+    if (!args || args->getSize(ctx) < 1) return self;
+    const proto::ProtoObject* instance = args->getAt(ctx, 0);
+    if (!instance || instance == PROTO_NONE) return self;
+    
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!env) return self;
+
+    const proto::ProtoObject* bound = ctx->newObject(true);
+    if (env->getMethodPrototype()) {
+        bound = bound->addParent(ctx, env->getMethodPrototype());
+        bound = bound->setAttribute(ctx, env->getClassString(), env->getMethodPrototype());
+    }
+    
+    bound = bound->setAttribute(ctx, env->getSelfDunderString(), instance);
+    bound = bound->setAttribute(ctx, env->getFuncDunderString(), self);
+    
+    return bound;
+}
+
+const proto::ProtoObject* PythonEnvironment::py_method_call(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!env) return PROTO_NONE;
+
+    const proto::ProtoObject* func = self->getAttribute(ctx, env->getFuncDunderString());
+    const proto::ProtoObject* instance = self->getAttribute(ctx, env->getSelfDunderString());
+
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        fprintf(stderr, "DEBUG: py_method_call(func=%p, inst=%p)\n", (void*)func, (void*)instance);
+        fflush(stderr);
+    }
+    
+    if (!func || func == PROTO_NONE) {
+        env->raiseTypeError(ctx, "bound method has no __func__");
+        return PROTO_NONE;
+    }
+    
+    // Prepend self to positional arguments
+    const proto::ProtoList* newArgs = ctx->newList()->appendLast(ctx, instance);
+    if (args) {
+        for (size_t i = 0; i < args->getSize(ctx); ++i) {
+            newArgs = newArgs->appendLast(ctx, args->getAt(ctx, (int)i));
+        }
+    }
+    
+    return invokePythonCallable(ctx, func, newArgs, kwargs);
+}
+
+const proto::ProtoObject* PythonEnvironment::py_method_repr(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!env) return PROTO_NONE;
+    const proto::ProtoObject* func = self->getAttribute(ctx, env->getFuncDunderString());
+    const proto::ProtoObject* instance = self->getAttribute(ctx, env->getSelfDunderString());
+    
+    std::string fs = PythonEnvironment::reprObject(ctx, func);
+    std::string is = PythonEnvironment::reprObject(ctx, instance);
+    
+    char buf[1024];
+    snprintf(buf, sizeof(buf), "<bound method %s of %s>", fs.c_str(), is.c_str());
+    return PythonEnvironment::getInternedString(ctx, buf)->asObject(ctx);
+}
+
 } // namespace protoPython
+
