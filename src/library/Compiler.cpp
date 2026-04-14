@@ -2954,7 +2954,11 @@ const proto::ProtoObject* makeCodeObject(proto::ProtoContext* ctx,
     int firstlineno,
     const proto::ProtoTuple* lnotab) {
     if (!ctx) return PROTO_NONE;
+    PythonEnvironment* env = PythonEnvironment::get(ctx);
     const proto::ProtoObject* code = ctx->newObject(false);
+    if (env && env->getCodePrototype()) {
+        code = code->addParent(ctx, env->getCodePrototype());
+    }
     code = code->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_consts"), constants ? reinterpret_cast<const proto::ProtoObject*>(constants) : reinterpret_cast<const proto::ProtoObject*>(ctx->newTuple()));
     code = code->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_names"), names ? reinterpret_cast<const proto::ProtoObject*>(names) : reinterpret_cast<const proto::ProtoObject*>(ctx->newTuple()));
     code = code->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_code"), reinterpret_cast<const proto::ProtoObject*>(bytecode));

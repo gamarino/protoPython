@@ -1472,9 +1472,13 @@ const proto::ProtoObject* py_generator_close(
     }
 
     // Raise GeneratorExit
-    const proto::ProtoObject* genExitType = env->getAttribute(ctx, env->getGlobals(), PythonEnvironment::getInternedString(ctx, "GeneratorExit"));
+    const proto::ProtoObject* genExitType = env->getGeneratorExitType();
     if (!genExitType || genExitType == PROTO_NONE) {
-        // Fallback: create it if missing? For now just skip.
+        // Fallback: search in builtins if cached is null (during bootstrap)
+        genExitType = env->getAttribute(ctx, env->getBuiltins(), PythonEnvironment::getInternedString(ctx, "GeneratorExit"), false);
+    }
+    
+    if (!genExitType || genExitType == PROTO_NONE) {
         return PROTO_NONE;
     }
     const proto::ProtoObject* genExit = ctx->newObject(true);
@@ -3860,28 +3864,33 @@ const proto::ProtoObject* executeBytecodeRange(
                     fflush(stderr);
                 }
                 if (fn) {
-                    // Python 3.11+ expects two slots for CALL: [NULL, Func]
-                    stack.push_back(nullptr); // NULL marker
                     stack.push_back(fn);
                 }
             }
         } else if (op == OP_BUILD_CLASS) {
             if (stack.size() >= 4 && frame) {
-                // Keep name, bases, kwds, body on stack as roots.
-                // stack order: [..., name, bases, kwds, body]
+                // Robust detection: in modern bytecode, the function result of MAKE_FUNCTION
+                // might have been pushed with a NULL marker if it was meant to be called.
+                // But in BUILD_CLASS opcode (legacy path), we expect items directly.
                 int firstIdx = stack.top - 4;
                 const proto::ProtoObject* body = stack[firstIdx + 3];
                 const proto::ProtoObject* kwds = stack[firstIdx + 2];
-                if (get_env_diag() && kwds && kwds != PROTO_NONE) {
-                    fprintf(stderr, "DEBUG OP_BUILD_CLASS: kwds=%p repr=%s\n", (void*)kwds, env ? env->reprObject(ctx, kwds).c_str() : "???");
-                    fflush(stderr);
-                }
                 const proto::ProtoObject* bases = stack[firstIdx + 1];
                 const proto::ProtoObject* name = stack[firstIdx];
+
+                if (body == nullptr && stack.top >= 5) {
+                    // Oops, there was a NULL marker. Shift.
+                    firstIdx = stack.top - 5;
+                    body = stack[firstIdx + 4];
+                    kwds = stack[firstIdx + 3];
+                    bases = stack[firstIdx + 2];
+                    name = stack[firstIdx + 1];
+                }
+
                 if (get_env_diag()) {
                     fprintf(stderr, "DEBUG OP_BUILD_CLASS: stack size=%lu top=%lu\n", (unsigned long)stack.size(), (unsigned long)stack.top);
-                    for (int i = 0; i < (int)stack.top; ++i) {
-                        fprintf(stderr, "  stack[%d] = %p repr=%s\n", i, (void*)stack[i], env ? env->reprObject(ctx, stack[i]).c_str() : "???");
+                    for (int j = 0; j < (int)stack.top; ++j) {
+                        fprintf(stderr, "  stack[%d] = %p repr=%s\n", j, (void*)stack[j], env ? env->reprObject(ctx, stack[j]).c_str() : "???");
                     }
                     std::string n = "unknown";
                     if (name && name->isString(ctx)) name->asString(ctx)->toUTF8String(ctx, n);

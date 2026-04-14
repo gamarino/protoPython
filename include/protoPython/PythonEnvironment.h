@@ -141,6 +141,8 @@ public:
 
     /** @brief Gets the builtins module object. */
     const proto::ProtoObject* getBuiltins() const { return builtinsModule; }
+    const proto::ProtoObject* getGeneratorExitType() const { return generatorExitType; }
+    const proto::ProtoObject* getStopIterationType() const { return stopIterationType; }
 
     /** @brief Gets the sys module object. */
     const proto::ProtoObject* getSysModule() const { return sysModule; }
@@ -324,6 +326,8 @@ public:
     const proto::ProtoObject* getOneInteger() const { return oneInteger; }
     const proto::ProtoObject* getRangeIteratorProto() const { return rangeIteratorProto; }
     void setRangeIteratorProto(const proto::ProtoObject* p) { rangeIteratorProto = p; }
+
+    const proto::ProtoObject* getCodePrototype() const { return codePrototype; }
 
     const proto::ProtoString* getCodeString() const { return __code__; }
     const proto::ProtoString* getGlobalsString() const { return __globals__; }
@@ -787,6 +791,10 @@ private:
     const proto::ProtoObject* stopIterationType = nullptr;
     const proto::ProtoObject* eofErrorType = nullptr;
     const proto::ProtoObject* assertionErrorType = nullptr;
+    const proto::ProtoObject* generatorExitType = nullptr;
+    const proto::ProtoObject* arithmeticErrorType = nullptr;
+    const proto::ProtoObject* lookupErrorType = nullptr;
+    const proto::ProtoObject* unboundLocalErrorType = nullptr;
     const proto::ProtoObject* zeroDivisionErrorType = nullptr;
     const proto::ProtoObject* indexErrorType{nullptr};
     const proto::ProtoObject* systemErrorType{nullptr};

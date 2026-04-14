@@ -4,6 +4,7 @@
 #include <sstream>
 #include <string>
 #include <iostream>
+#include <fstream>
 
 namespace protoPython {
 namespace io {
@@ -80,6 +81,14 @@ static const proto::ProtoObject* py_io_open(
     fileObj = fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "mode"), PythonEnvironment::getInternedString(context, mode.c_str())->asObject(context));
     fileObj = fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "buffering"), context->fromInteger(-1));
     std::string* buffer = new std::string();
+    if (mode.find('r') != std::string::npos) {
+        std::ifstream f(filename);
+        if (f) {
+            std::stringstream ss;
+            ss << f.rdbuf();
+            *buffer = ss.str();
+        }
+    }
     fileObj = fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "__file_buffer__"),
         context->fromExternalPointer(buffer, file_buffer_finalizer));
     fileObj = fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "read"),

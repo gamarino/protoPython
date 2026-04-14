@@ -102,16 +102,32 @@ const proto::ProtoObject* WarningsModule::createWarningsModule(proto::ProtoConte
     const proto::ProtoString* warnS = PythonEnvironment::getInternedString(context, "warn");
     moduleObj->setAttribute(context, warnS, context->fromMethod(moduleObj, py_warnings_warn));
 
+    // Expose _acquire_lock and _release_lock (dummy for single-threaded V78)
+    auto dummyFunc = [](proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+        return PROTO_NONE;
+    };
+    moduleObj->setAttribute(context, PythonEnvironment::getInternedString(context, "_acquire_lock"), context->fromMethod(moduleObj, dummyFunc));
+    moduleObj->setAttribute(context, PythonEnvironment::getInternedString(context, "_release_lock"), context->fromMethod(moduleObj, dummyFunc));
+
     // Expose _filters_version (Step V77 Fix)
     const proto::ProtoString* filtersVersionS = PythonEnvironment::getInternedString(context, "_filters_version");
-    // CPython uses a list [0] or an integer. _py_warnings expects a list-like or mutable object if it does _filters_version[0] += 1
-    // Actually, _py_warnings.py:243 says "_filters_version[0] += 1"
     const proto::ProtoList* versionList = context->newList()->appendLast(context, context->fromInteger(0));
     moduleObj->setAttribute(context, filtersVersionS, versionList->asObject(context));
 
     // Expose _filters_mutated_lock_held
     const proto::ProtoString* lockS = PythonEnvironment::getInternedString(context, "_filters_mutated_lock_held");
     moduleObj->setAttribute(context, lockS, context->fromMethod(moduleObj, py_warnings_filters_mutated_lock_held));
+
+    // Expose _onceregistry
+    moduleObj->setAttribute(context, PythonEnvironment::getInternedString(context, "_onceregistry"), (context->newObject(true)));
+    // Expose filters
+    moduleObj->setAttribute(context, PythonEnvironment::getInternedString(context, "filters"), (context->newList())->asObject(context));
+    // Expose _warnings_defaults
+    moduleObj->setAttribute(context, PythonEnvironment::getInternedString(context, "_warnings_context"), (context->newObject(true)));
+    // Expose _defaultaction
+    moduleObj->setAttribute(context, PythonEnvironment::getInternedString(context, "_defaultaction"), PythonEnvironment::getInternedString(context, "default")->asObject(context));
+    // Expose warn_explicit (dummy)
+    moduleObj->setAttribute(context, PythonEnvironment::getInternedString(context, "warn_explicit"), context->fromMethod(moduleObj, dummyFunc));
 
     return moduleObj;
 }

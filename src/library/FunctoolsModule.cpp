@@ -1,4 +1,5 @@
 #include <protoPython/FunctoolsModule.h>
+#include <protoPython/PythonEnvironment.h>
 
 namespace protoPython {
 namespace functools {
@@ -47,14 +48,66 @@ static const proto::ProtoObject* py_partial(
     return p;
 }
 
+static const proto::ProtoObject* py_cmp_to_key(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* /*self*/,
+    const proto::ParentLink*,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    // Just return a wrapper (minimal implementation for now)
+    return posArgs->getAt(ctx, 0); 
+}
+
+static const proto::ProtoObject* py_reduce(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* /*self*/,
+    const proto::ParentLink*,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
+    const proto::ProtoObject* func = posArgs->getAt(ctx, 0);
+    const proto::ProtoObject* iterable = posArgs->getAt(ctx, 1);
+    
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    const proto::ProtoObject* it = env ? env->iter(iterable) : nullptr;
+    if (!it) return PROTO_NONE;
+    
+    const proto::ProtoObject* res = (posArgs->getSize(ctx) > 2) ? posArgs->getAt(ctx, 2) : nullptr;
+    if (!res) {
+        res = env->next(it);
+        if (!res) return PROTO_NONE;
+    }
+    
+    while (const proto::ProtoObject* item = env->next(it)) {
+        res = env->callObject(func, {res, item});
+        if (env->hasPendingException()) return nullptr;
+    }
+    return res;
+}
+
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     const proto::ProtoObject* mod = ctx->newObject(false);
+    
+    // Create Placeholder singleton and its type
+    const proto::ProtoObject* placeholderType = ctx->newObject(false);
+    const proto::ProtoObject* placeholder = ctx->newObject(false);
+    placeholder = placeholder->addParent(ctx, placeholderType);
+
     const proto::ProtoObject* partialProto = ctx->newObject(false);
     partialProto = partialProto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__call__"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(partialProto), py_partial_call));
+    
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__partial_proto__"), partialProto);
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "partial"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_partial));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "cmp_to_key"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_cmp_to_key));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "reduce"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_reduce));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "Placeholder"), placeholder);
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_PlaceholderType"), placeholderType);
+    
     return mod;
 }
 

@@ -596,6 +596,52 @@ static const proto::ProtoObject* py_environ_keys(
 #endif
 }
 
+static const proto::ProtoObject* py_environ_values(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* /*self*/,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* /*posArgs*/,
+    const proto::ProtoSparseList* /*kwargs*/) {
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+    const proto::ProtoList* result = ctx->newList();
+    for (char** p = environ; p && *p; ++p) {
+        const char* eq = strchr(*p, '=');
+        if (eq && eq > *p) {
+            std::string value(eq + 1);
+            result = result->appendLast(ctx, PythonEnvironment::getInternedString(ctx, value.c_str())->asObject(ctx));
+        }
+    }
+    return result->asObject(ctx);
+#else
+    return ctx->newList()->asObject(ctx);
+#endif
+}
+
+static const proto::ProtoObject* py_environ_items(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* /*self*/,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* /*posArgs*/,
+    const proto::ProtoSparseList* /*kwargs*/) {
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+    const proto::ProtoList* result = ctx->newList();
+    for (char** p = environ; p && *p; ++p) {
+        const char* eq = strchr(*p, '=');
+        if (eq && eq > *p) {
+            std::string key(*p, static_cast<size_t>(eq - *p));
+            std::string value(eq + 1);
+            const proto::ProtoList* pair = ctx->newList();
+            pair = pair->appendLast(ctx, PythonEnvironment::getInternedString(ctx, key.c_str())->asObject(ctx));
+            pair = pair->appendLast(ctx, PythonEnvironment::getInternedString(ctx, value.c_str())->asObject(ctx));
+            result = result->appendLast(ctx, ctx->newTupleFromList(pair)->asObject(ctx));
+        }
+    }
+    return result->asObject(ctx);
+#else
+    return ctx->newList()->asObject(ctx);
+#endif
+}
+
 static const proto::ProtoObject* py_environ_getitem(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
@@ -604,6 +650,17 @@ static const proto::ProtoObject* py_environ_getitem(
     const proto::ProtoSparseList* /*kwargs*/) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     return py_getenv(ctx, nullptr, nullptr, posArgs, nullptr);
+}
+
+static const proto::ProtoObject* py_environ_iter(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* /*posArgs*/,
+    const proto::ProtoSparseList* /*kwargs*/) {
+    const proto::ProtoObject* keys = py_environ_keys(ctx, self, nullptr, nullptr, nullptr);
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    return env ? env->iter(keys) : nullptr;
 }
 
 static const proto::ProtoObject* py_environ_setitem(
@@ -679,6 +736,24 @@ static const proto::ProtoObject* py_environ_keys_method(
     const proto::ProtoList* /*posArgs*/,
     const proto::ProtoSparseList* /*kwargs*/) {
     return py_environ_keys(ctx, nullptr, nullptr, nullptr, nullptr);
+}
+
+static const proto::ProtoObject* py_environ_values_method(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* /*self*/,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* /*posArgs*/,
+    const proto::ProtoSparseList* /*kwargs*/) {
+    return py_environ_values(ctx, nullptr, nullptr, nullptr, nullptr);
+}
+
+static const proto::ProtoObject* py_environ_items_method(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* /*self*/,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* /*posArgs*/,
+    const proto::ProtoSparseList* /*kwargs*/) {
+    return py_environ_items(ctx, nullptr, nullptr, nullptr, nullptr);
 }
 
 
@@ -984,8 +1059,14 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
         ctx->fromMethod(const_cast<proto::ProtoObject*>(environProt), py_environ_setitem));
     environProt = environProt->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__delitem__"), 
         ctx->fromMethod(const_cast<proto::ProtoObject*>(environProt), py_environ_delitem));
+    environProt = environProt->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__iter__"), 
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(environProt), py_environ_iter));
     environProt = environProt->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "keys"), 
         ctx->fromMethod(const_cast<proto::ProtoObject*>(environProt), py_environ_keys_method));
+    environProt = environProt->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "values"), 
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(environProt), py_environ_values_method));
+    environProt = environProt->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "items"), 
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(environProt), py_environ_items_method));
 
     environProt = environProt->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__name__"), 
         PythonEnvironment::getInternedString(ctx, "_Environ")->asObject(ctx));

@@ -190,6 +190,10 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx,
     const proto::ProtoString* py_indexerror = PythonEnvironment::getInternedString(ctx, "IndexError");
     const proto::ProtoString* py_eoferror = PythonEnvironment::getInternedString(ctx, "EOFError");
     const proto::ProtoString* py_assertionerror = PythonEnvironment::getInternedString(ctx, "AssertionError");
+    const proto::ProtoString* py_unboundlocalerror = PythonEnvironment::getInternedString(ctx, "UnboundLocalError");
+    const proto::ProtoString* py_generatorexit = PythonEnvironment::getInternedString(ctx, "GeneratorExit");
+    const proto::ProtoString* py_lookuperror = PythonEnvironment::getInternedString(ctx, "LookupError");
+    const proto::ProtoString* py_arithmeticerror = PythonEnvironment::getInternedString(ctx, "ArithmeticError");
     const proto::ProtoString* py_stopiteration = PythonEnvironment::getInternedString(ctx, "StopIteration");
     const proto::ProtoString* py_stopasynciteration = PythonEnvironment::getInternedString(ctx, "StopAsyncIteration");
     const proto::ProtoString* py_systemerror = PythonEnvironment::getInternedString(ctx, "SystemError");
@@ -225,6 +229,10 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx,
     const proto::ProtoObject* indexErrorType = make_exception_type(ctx, objectProto, typeProto, "IndexError", exceptionType);
     const proto::ProtoObject* eofErrorType = make_exception_type(ctx, objectProto, typeProto, "EOFError", exceptionType);
     const proto::ProtoObject* assertionErrorType = make_exception_type(ctx, objectProto, typeProto, "AssertionError", exceptionType);
+    const proto::ProtoObject* arithmeticErrorType = make_exception_type(ctx, objectProto, typeProto, "ArithmeticError", exceptionType);
+    const proto::ProtoObject* lookupErrorType = make_exception_type(ctx, objectProto, typeProto, "LookupError", exceptionType);
+    const proto::ProtoObject* generatorExitType = make_exception_type(ctx, objectProto, typeProto, "GeneratorExit", baseExceptionType);
+    const proto::ProtoObject* unboundLocalErrorType = make_exception_type(ctx, objectProto, typeProto, "UnboundLocalError", nameErrorType);
     const proto::ProtoObject* stopIterationType = make_exception_type(ctx, objectProto, typeProto, "StopIteration", exceptionType);
     const proto::ProtoObject* stopAsyncIterationType = make_exception_type(ctx, objectProto, typeProto, "StopAsyncIteration", exceptionType);
     const proto::ProtoObject* systemErrorType = make_exception_type(ctx, objectProto, typeProto, "SystemError", exceptionType);
@@ -262,6 +270,10 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx,
     mod = mod->setAttribute(ctx, py_indexerror, indexErrorType);
     mod = mod->setAttribute(ctx, py_eoferror, eofErrorType);
     mod = mod->setAttribute(ctx, py_assertionerror, assertionErrorType);
+    mod = mod->setAttribute(ctx, py_generatorexit, generatorExitType);
+    mod = mod->setAttribute(ctx, py_unboundlocalerror, unboundLocalErrorType);
+    mod = mod->setAttribute(ctx, py_lookuperror, lookupErrorType);
+    mod = mod->setAttribute(ctx, py_arithmeticerror, arithmeticErrorType);
     mod = mod->setAttribute(ctx, py_oserror, osErrorType);
     mod = mod->setAttribute(ctx, py_blockingioerror, blockingIOErrorType);
     mod = mod->setAttribute(ctx, py_warning, warningType);

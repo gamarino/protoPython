@@ -716,7 +716,7 @@ def _lru_cache_wrapper(user_function, maxsize, typed, _CacheInfo):
 
 try:
     from _functools import _lru_cache_wrapper
-except ImportError:
+except (ImportError, AttributeError):
     pass
 
 
