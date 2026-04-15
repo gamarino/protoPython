@@ -8,17 +8,14 @@ NativeModuleProvider::NativeModuleProvider()
     : guid_("protoPython.native"), alias_("native") {}
 
 void NativeModuleProvider::registerModule(const std::string& name, ModuleInitializer init) {
-    std::cerr << "!!! DEBUG NATIVE: registerModule(" << name << ")" << std::endl;
     modules_[name] = std::move(init);
 }
 
 const proto::ProtoObject* NativeModuleProvider::tryLoad(const std::string& logicalPath, proto::ProtoContext* ctx) {
-    std::cerr << "!!! DEBUG NATIVE: tryLoad(" << logicalPath << ") - map size=" << modules_.size() << std::endl;
     auto it = modules_.find(logicalPath);
     if (it != modules_.end()) {
         const proto::ProtoObject* mod = it->second(ctx);
         if (mod && mod != PROTO_NONE) {
-            fprintf(stderr, "DEBUG NATIVE: Loaded %s mod=%p\n", logicalPath.c_str(), (void*)mod);
             PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
             if (env) {
                 if (mod->getAttribute(ctx, env->getExecutedString()) != PROTO_TRUE) {

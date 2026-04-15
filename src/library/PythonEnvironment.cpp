@@ -406,6 +406,46 @@ static const proto::ProtoObject* py_mappingproxy_contains(
     return PROTO_FALSE;
 }
 
+// MappingProxy.get(key, default=None) — dict-style lookup with a default fallback.
+// For class-wrapping proxies only returns attributes defined *directly* on the class,
+// matching CPython's cls.__dict__ semantics (no inherited attributes).
+static const proto::ProtoObject* py_mappingproxy_get(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!args || args->getSize(context) < 1) return PROTO_NONE;
+    const proto::ProtoObject* key = args->getAt(context, 0);
+    const proto::ProtoObject* defaultVal = (args->getSize(context) > 1) ? args->getAt(context, 1) : PROTO_NONE;
+
+    const proto::ProtoObject* data = self->getAttribute(context, env ? env->getDataString() : PythonEnvironment::getInternedString(context, "__data__"));
+    if (!data || data == PROTO_NONE) return defaultVal;
+
+    const proto::ProtoString* sKey = nullptr;
+    if (key && key->isString(context)) {
+        sKey = key->asString(context);
+    } else if (key && env) {
+        const proto::ProtoObject* kData = key->getAttribute(context, env->getDataString());
+        if (kData && kData->isString(context)) sKey = kData->asString(context);
+    }
+    if (!sKey) return defaultVal;
+
+    // Only return attributes defined directly on the wrapped object (no inheritance),
+    // consistent with CPython's cls.__dict__ which is the class's own namespace.
+    if (data->hasOwnAttribute(context, sKey) == PROTO_TRUE) {
+        const proto::ProtoObject* val = data->proto::ProtoObject::getAttribute(context, sKey);
+        if (val && val != PROTO_NONE) return val;
+    }
+
+    // Fallback: check internal __data__ sparse list (for attrs stored via dict.__setitem__)
+    if (env) {
+        const proto::ProtoObject* internalVal = env->getItem(data, key);
+        if (internalVal && internalVal != PROTO_NONE) return internalVal;
+    }
+
+    return defaultVal;
+}
+
 static const proto::ProtoObject* py_type_get_mro(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -428,7 +468,6 @@ static const proto::ProtoObject* py_type_get_mro(
     }
     
     if (get_env_diag()) {
-        fprintf(stderr, "DEBUG py_type_get_mro: falling back for %p\n", (void*)self);
     }
     const proto::ProtoList* fallback = context->newList();
     fallback = fallback->appendLast(context, self);
@@ -1078,7 +1117,7 @@ static const proto::ProtoObject* py_list_iter(
     const proto::ProtoString* iterItName = PythonEnvironment::getInternedString(context, "__iter_it__");
     iterObj = iterObj->setAttribute(context, iterListName, data);
     iterObj = iterObj->setAttribute(context, iterItName, it->asObject(context));
-    fprintf(stderr, "DEBUG py_list_iter: returning iterObj=%p\n", (void*)iterObj); return iterObj;
+    return iterObj;
 }
 
 static const proto::ProtoObject* py_list_iter_next(
@@ -1371,16 +1410,6 @@ static const proto::ProtoObject* py_dict_getitem(
         unsigned long hash = key->getHash(context);
         const proto::ProtoSparseList* dict = data->asSparseList(context);
         
-        if (std::getenv("PROTO_ENV_DIAG")) {
-            std::string ks = "unknown";
-            if (key->isString(context)) key->asString(context)->toUTF8String(context, ks);
-            if (ks == "_generate_next_value_" || ks == "_auto_called") {
-                fprintf(stderr, "DEBUG py_dict_getitem: realSelf=%p key='%s' hash=%lu found=%d\n", 
-                        (void*)realSelf, ks.c_str(), hash, (int)dict->has(context, hash));
-                fflush(stderr);
-            }
-        }
-
         if (dict->has(context, hash)) {
             const proto::ProtoObject* res = dict->getAt(context, hash);
             return res;
@@ -1416,7 +1445,6 @@ static const proto::ProtoObject* py_dict_setitem(
         std::string ks = "unknown";
         if (keyArg && keyArg->isString(context)) keyArg->asString(context)->toUTF8String(context, ks);
         std::string rsRepr = env ? env->reprObject(context, realSelf) : "???";
-        fprintf(stderr, "DEBUG py_dict_setitem: self=%p realSelf=%p realSelfRepr=%s key='%s'\n", (void*)self, (void*)realSelf, rsRepr.c_str(), ks.c_str());
         fflush(stderr);
     }
 
@@ -1438,7 +1466,6 @@ static const proto::ProtoObject* py_dict_setitem(
         
         if (std::getenv("PROTO_ENV_DIAG")) {
             std::string ks; if (key->isString(context)) key->asString(context)->toUTF8String(context, ks);
-            fprintf(stderr, "DEBUG py_dict_setitem: adding new key '%s' to __keys__ for dict %p\n", ks.c_str(), (void*)realSelf);
             fflush(stderr);
         }
         
@@ -1543,7 +1570,7 @@ static const proto::ProtoObject* py_dict_iter(
     const proto::ProtoObject* iterObj = iterProto->newChild(context, true);
     const proto::ProtoString* iterItName = PythonEnvironment::getInternedString(context, "__iter_it__");
     iterObj = const_cast<proto::ProtoObject*>(iterObj->setAttribute(context, iterItName, it->asObject(context)));
-    fprintf(stderr, "DEBUG py_list_iter: returning iterObj=%p\n", (void*)iterObj); return iterObj;
+    return iterObj;
 }
 
 static const proto::ProtoObject* py_dict_contains(
@@ -1667,13 +1694,11 @@ std::string PythonEnvironment::reprObject(proto::ProtoContext* context, const pr
     }
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     const proto::ProtoString* reprS = env ? env->getReprString() : PythonEnvironment::getInternalString(context, "__repr__");
-    
+
     // Dunder Bypass Rule: repr() looks up __repr__ on type(obj), not obj.__dict__.
     const proto::ProtoObject* cls = env ? env->getType(context, obj) : obj->getAttribute(context, PythonEnvironment::getInternalString(context, "__class__"));
     const proto::ProtoObject* reprMethod = nullptr;
     if (cls) {
-        // Native getAttribute bypasses Python descriptor __get__ logic 
-        // so it won't accidentally bind instance methods to the class object `cls`.
         const proto::ProtoObject* rawAttr = cls->getAttribute(context, reprS);
         if (rawAttr && rawAttr != PROTO_NONE) {
             // If it's a python descriptor or regular method, bind it to `obj`
@@ -1695,19 +1720,7 @@ std::string PythonEnvironment::reprObject(proto::ProtoContext* context, const pr
     } else {
         reprMethod = obj->getAttribute(context, reprS);
     }
-    
-    if (std::getenv("PROTO_ENV_DIAG")) {
-        std::string clsName = "<unknown>";
-        if (cls) {
-            const proto::ProtoObject* nameAttr = env ? env->getAttribute(context, cls, env->getNameString()) : cls->getAttribute(context, PythonEnvironment::getInternalString(context, "__name__"));
-            if (nameAttr && nameAttr->isString(context)) {
-                nameAttr->asString(context)->toUTF8String(context, clsName);
-            }
-        }
-        fprintf(stderr, "DEBUG: reprObject obj=%p class=%s\n", (void*)obj, clsName.c_str());
-        fflush(stderr);
-    }
-    
+
     if (reprMethod && reprMethod != PROTO_NONE) {
         const proto::ProtoObject* out = nullptr;
         if (reprMethod->asMethod(context)) {
@@ -1716,10 +1729,6 @@ std::string PythonEnvironment::reprObject(proto::ProtoContext* context, const pr
         } else {
             // Since it's a bound method or function correctly evaluated, invoke it with no extra arguments
             out = invokePythonCallable(context, reprMethod, context->newList(), nullptr);
-        }
-        if (std::getenv("PROTO_ENV_DIAG")) {
-            fprintf(stderr, "DEBUG: reprObject out=%p\n", (void*)out);
-            fflush(stderr);
         }
         if (out && out->isString(context)) {
             std::string s;
@@ -2430,7 +2439,7 @@ static const proto::ProtoObject* py_bytes_iter(
     const proto::ProtoObject* iterObj = iterProto->newChild(context, true);
     iterObj->setAttribute(context, PythonEnvironment::getInternedString(context, "__bytes_data__"), s->asObject(context));
     iterObj->setAttribute(context, PythonEnvironment::getInternedString(context, "__bytes_index__"), context->fromInteger(0));
-    fprintf(stderr, "DEBUG py_list_iter: returning iterObj=%p\n", (void*)iterObj); return iterObj;
+    return iterObj;
 }
 
 static const proto::ProtoObject* py_bytes_iter_next(
@@ -2559,7 +2568,6 @@ static const proto::ProtoObject* py_list_call(
     if (positionalParameters && positionalParameters->getSize(context) >= 2) {
         const proto::ProtoObject* iterable = positionalParameters->getAt(context, 1);
         if (std::getenv("PROTO_ENV_DIAG")) {
-            fprintf(stderr, "DEBUG: py_list_call(iterable=%p, repr=%s)\n", (void*)iterable, PythonEnvironment::reprObject(context, iterable).c_str());
         }
         const proto::ProtoList* otherL = iterable->asList(context);
         if (otherL) {
@@ -2642,7 +2650,6 @@ static const proto::ProtoObject* py_tuple_call(
                         }
                         if (get_env_diag()) {
                             std::string r = PythonEnvironment::reprObject(context, item);
-                            fprintf(stderr, "DEBUG: py_tuple_call item=%p repr=%s\n", (void*)item, r.c_str());
                             fflush(stderr);
                         }
                         l = const_cast<proto::ProtoList*>(l->appendLast(context, item));
@@ -2678,15 +2685,11 @@ static const proto::ProtoObject* py_dict_call(
 
     if (positionalParameters && positionalParameters->getSize(context) >= 2) {
         const proto::ProtoObject* mapping = positionalParameters->getAt(context, 1);
-        fprintf(stderr, "DEBUG py_dict_call: positional args provided. mapping=%p\n", (void*)mapping);
-        
         // Fast path for native dict objects
         const proto::ProtoObject* d_data = (mapping->hasOwnAttribute(context, dataName) == PROTO_TRUE) ? mapping->getAttribute(context, dataName) : nullptr;
         const proto::ProtoObject* d_keys = (mapping->hasOwnAttribute(context, keysName) == PROTO_TRUE) ? mapping->getAttribute(context, keysName) : nullptr;
-        fprintf(stderr, "DEBUG py_dict_call: d_data=%p d_keys=%p\n", (void*)d_data, (void*)d_keys);
-        
+
         if (d_data && d_keys && d_data->asSparseList(context) && d_keys->asList(context)) {
-            fprintf(stderr, "DEBUG py_dict_call: Fast path for native dict objects executing\n");
             const proto::ProtoSparseList* otherD = d_data->asSparseList(context);
             const proto::ProtoList* otherKeys = d_keys->asList(context);
             for (size_t i = 0; i < otherKeys->getSize(context); ++i) {
@@ -2794,12 +2797,9 @@ static const proto::ProtoObject* py_dict_call(
                 }
             }
         }
-    } else {
-        fprintf(stderr, "DEBUG py_dict_call: NO positional args provided\n");
     }
-    
+
     const proto::ProtoTuple* kwNames = env ? env->getCurrentKwNames() : nullptr;
-    fprintf(stderr, "DEBUG py_dict_call: kwNames=%p keywordParameters=%p\n", (void*)kwNames, (void*)keywordParameters);
     if (kwNames && keywordParameters) {
         unsigned long sz = kwNames->getSize(context);
         for (unsigned long i = 0; i < sz; ++i) {
@@ -2822,12 +2822,10 @@ static const proto::ProtoObject* py_dict_call(
     instance = const_cast<proto::ProtoObject*>(instance->setAttribute(context, keysName, keysList->asObject(context)));
     if (get_env_diag()) {
         if (get_env_diag()) {
-            fprintf(stderr, "DEBUG py_dict_call: successfully returning instance %p with %zu keys\n", (void*)instance, keysList->getSize(context));
         }
         for (size_t k_i = 0; k_i < keysList->getSize(context); ++k_i) {
             std::string ks_str = "unknown";
             if (keysList->getAt(context, k_i)->isString(context)) keysList->getAt(context, k_i)->asString(context)->toUTF8String(context, ks_str);
-            fprintf(stderr, "DEBUG py_dict_call: key[%zu] = %s\n", k_i, ks_str.c_str());
         }
         fflush(stderr);
     }
@@ -3030,7 +3028,8 @@ static const proto::ProtoObject* py_set_union(
     const proto::ProtoObject* parent = env->getSetPrototype();
     if (!parent) return PROTO_NONE;
     proto::ProtoObject* result = const_cast<proto::ProtoObject*>(parent->newChild(context, true));
-    result->setAttribute(context, PythonEnvironment::getInternalString(context, "__data__"), acc->asObject(context));
+    result = const_cast<proto::ProtoObject*>(result->setAttribute(context, env->getClassString(), parent));
+    result = const_cast<proto::ProtoObject*>(result->setAttribute(context, PythonEnvironment::getInternalString(context, "__data__"), acc->asObject(context)));
     return result;
 }
 
@@ -3070,7 +3069,8 @@ static const proto::ProtoObject* py_set_intersection(
     const proto::ProtoObject* parent = env->getSetPrototype();
     if (!parent) return PROTO_NONE;
     proto::ProtoObject* result = const_cast<proto::ProtoObject*>(parent->newChild(context, true));
-    result->setAttribute(context, PythonEnvironment::getInternalString(context, "__data__"), acc->asObject(context));
+    result = const_cast<proto::ProtoObject*>(result->setAttribute(context, env->getClassString(), parent));
+    result = const_cast<proto::ProtoObject*>(result->setAttribute(context, PythonEnvironment::getInternalString(context, "__data__"), acc->asObject(context)));
     return result;
 }
 
@@ -3104,7 +3104,8 @@ static const proto::ProtoObject* py_set_difference(
     const proto::ProtoObject* parent = env->getSetPrototype();
     if (!parent) return PROTO_NONE;
     proto::ProtoObject* result = const_cast<proto::ProtoObject*>(parent->newChild(context, true));
-    result->setAttribute(context, PythonEnvironment::getInternalString(context, "__data__"), acc->asObject(context));
+    result = const_cast<proto::ProtoObject*>(result->setAttribute(context, env->getClassString(), parent));
+    result = const_cast<proto::ProtoObject*>(result->setAttribute(context, PythonEnvironment::getInternalString(context, "__data__"), acc->asObject(context)));
     return result;
 }
 
@@ -3140,7 +3141,8 @@ static const proto::ProtoObject* py_set_symmetric_difference(
     const proto::ProtoObject* parent = env->getSetPrototype();
     if (!parent) return PROTO_NONE;
     proto::ProtoObject* result = const_cast<proto::ProtoObject*>(parent->newChild(context, true));
-    result->setAttribute(context, PythonEnvironment::getInternalString(context, "__data__"), acc->asObject(context));
+    result = const_cast<proto::ProtoObject*>(result->setAttribute(context, env->getClassString(), parent));
+    result = const_cast<proto::ProtoObject*>(result->setAttribute(context, PythonEnvironment::getInternalString(context, "__data__"), acc->asObject(context)));
     return result;
 }
 
@@ -3263,7 +3265,6 @@ static const proto::ProtoObject* py_set_iter(
     const proto::ProtoString* iterItName = PythonEnvironment::getInternedString(context, "__iter_it__");
     iterObj->setAttribute(context, iterItName, it->asObject(context));
     if (get_env_diag()) {
-        fprintf(stderr, "DEBUG py_list_iter: returning iterObj=%p\n", (void*)iterObj); 
     }
     return iterObj;
 }
@@ -3307,7 +3308,6 @@ static const proto::ProtoObject* py_frozenset_contains(
     const proto::ProtoObject* item = positionalParameters->getAt(context, 0);
     const proto::ProtoObject* res = s->has(context, item);
     if (std::getenv("PROTO_ENV_DIAG")) {
-        fprintf(stderr, "DEBUG: frozenset.__contains__ item=%p repr=%s res=%s\n", (void*)item, PythonEnvironment::reprObject(context, item).c_str(), (res == PROTO_TRUE ? "True" : "False"));
         fflush(stderr);
     }
     return res;
@@ -3339,7 +3339,7 @@ static const proto::ProtoObject* py_frozenset_iter(
     const proto::ProtoObject* iterObj = iterProto->newChild(context, true);
     const proto::ProtoString* iterItName = PythonEnvironment::getInternedString(context, "__iter_it__");
     iterObj->setAttribute(context, iterItName, it->asObject(context));
-    fprintf(stderr, "DEBUG py_list_iter: returning iterObj=%p\n", (void*)iterObj); return iterObj;
+    return iterObj;
 }
 
 static const proto::ProtoObject* py_frozenset_hash(
@@ -3399,11 +3399,8 @@ static const proto::ProtoObject* py_frozenset_call(
     fs->setAttribute(context, PythonEnvironment::getInternedString(context, "__is_python_class__"), PROTO_TRUE);
     
     if (std::getenv("PROTO_ENV_DIAG")) {
-        fprintf(stderr, "DEBUG_frozenset_call: obj=%p cls=%p clsS=%p\n", (void*)fs, (void*)cls, (void*)env->getClassString());
         if (fs->hasAttribute(context, env->getClassString())) {
-            fprintf(stderr, "  - SUCCESSFULLY set __class__\n");
         } else {
-            fprintf(stderr, "  - FAILED to set __class__\n");
         }
     }
     return fs;
@@ -3610,7 +3607,6 @@ static const proto::ProtoObject* py_tuple_getitem(
         if (index < 0) index += size;
         if (index < 0 || index >= size) {
             if (std::getenv("PROTO_ENV_DIAG")) {
-                fprintf(stderr, "DEBUG py_tuple_getitem INDEX ERROR: index=%lld size=%lld self=%p tuple=%p\n", index, size, (void*)self, (void*)tuple);
                 fflush(stderr);
             }
             PythonEnvironment* env = PythonEnvironment::fromContext(context);
@@ -3651,7 +3647,7 @@ static const proto::ProtoObject* py_tuple_iter(
     iterObj = const_cast<proto::ProtoObject*>(iterObj->setAttribute(context, iterTupleName, data));
     iterObj = const_cast<proto::ProtoObject*>(iterObj->setAttribute(context, iterIndexName, context->fromInteger(0)));
     if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG py_tuple_iter CREATING: iterObj=%p for tuple=%p\n", (void*)iterObj, (void*)data);
-    fprintf(stderr, "DEBUG py_list_iter: returning iterObj=%p\n", (void*)iterObj); return iterObj;
+    return iterObj;
 }
 
 static const proto::ProtoObject* py_tuple_reversed(
@@ -3722,7 +3718,6 @@ static const proto::ProtoObject* py_tuple_iter_next(
     const proto::ProtoObject* value = tuple->getAt(context, index);
     const proto::ProtoObject* nextObj = self->setAttribute(context, iterIndexName, context->fromInteger(index + 1));
     if (std::getenv("PROTO_ENV_DIAG")) {
-        fprintf(stderr, "DEBUG py_tuple_iter_next index=%d -> %d, self=%p, nextObj=%p\n", index, index + 1, (void*)self, (void*)nextObj);
         fflush(stderr);
     }
     return value;
@@ -4708,6 +4703,164 @@ static const proto::ProtoObject* py_str_format(
     return PythonEnvironment::getInternedString(context, out.c_str())->asObject(context);
 }
 
+// str.__mod__(other): implements "format_string % args"
+static const proto::ProtoObject* py_str_mod(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList*) {
+    const proto::ProtoString* fmtStr = str_from_self(context, self);
+    if (!fmtStr) return PROTO_NONE;
+    std::string fmt;
+    fmtStr->toUTF8String(context, fmt);
+
+    // Collect arguments: single value or a tuple
+    const proto::ProtoObject* argObj = (positionalParameters && positionalParameters->getSize(context) >= 1)
+        ? positionalParameters->getAt(context, 0) : PROTO_NONE;
+    const proto::ProtoTuple* argTuple = argObj ? argObj->asTuple(context) : nullptr;
+    unsigned long argCount = argTuple ? argTuple->getSize(context) : 1;
+    unsigned long argIdx = 0;
+
+    auto getNextArg = [&]() -> const proto::ProtoObject* {
+        if (argTuple) {
+            if (argIdx >= argTuple->getSize(context)) return PROTO_NONE;
+            return argTuple->getAt(context, static_cast<int>(argIdx++));
+        }
+        if (argIdx > 0) return PROTO_NONE;
+        argIdx++;
+        return argObj;
+    };
+
+    std::string out;
+    for (size_t i = 0; i < fmt.size(); ++i) {
+        if (fmt[i] != '%') {
+            out += fmt[i];
+            continue;
+        }
+        ++i;
+        if (i >= fmt.size()) break;
+
+        // Skip optional flags, width, precision
+        while (i < fmt.size() && (fmt[i] == '-' || fmt[i] == '+' || fmt[i] == ' ' || fmt[i] == '0' || fmt[i] == '#'))
+            ++i;
+        // Width
+        while (i < fmt.size() && fmt[i] >= '0' && fmt[i] <= '9') ++i;
+        // Precision
+        if (i < fmt.size() && fmt[i] == '.') {
+            ++i;
+            while (i < fmt.size() && fmt[i] >= '0' && fmt[i] <= '9') ++i;
+        }
+
+        if (i >= fmt.size()) break;
+        char spec = fmt[i];
+
+        if (spec == '%') {
+            out += '%';
+            continue;
+        }
+
+        const proto::ProtoObject* arg = getNextArg();
+        switch (spec) {
+            case 's': {
+                out += PythonEnvironment::reprObject(context, arg);
+                // reprObject with strings returns the string value directly (no quotes)
+                // That's correct for %s. For non-strings reprObject is fine.
+                // But reprObject wraps strings WITHOUT quotes, which is exactly what %s needs.
+                break;
+            }
+            case 'r': {
+                // %r: repr of the argument (with quotes for strings)
+                if (arg && arg->isString(context)) {
+                    std::string s;
+                    arg->asString(context)->toUTF8String(context, s);
+                    out += '\'';
+                    for (unsigned char c : s) {
+                        if (c == '\'') { out += '\\'; out += '\''; }
+                        else if (c == '\\') { out += "\\\\"; }
+                        else if (c == '\n') { out += "\\n"; }
+                        else if (c == '\r') { out += "\\r"; }
+                        else if (c == '\t') { out += "\\t"; }
+                        else if (c < 32 || c >= 127) { char buf[8]; snprintf(buf, sizeof(buf), "\\x%02x", c); out += buf; }
+                        else out += c;
+                    }
+                    out += '\'';
+                } else {
+                    out += PythonEnvironment::reprObject(context, arg);
+                }
+                break;
+            }
+            case 'd':
+            case 'i': {
+                long long v = arg ? arg->asLong(context) : 0LL;
+                char buf[32]; snprintf(buf, sizeof(buf), "%lld", v);
+                out += buf;
+                break;
+            }
+            case 'u': {
+                unsigned long long v = static_cast<unsigned long long>(arg ? arg->asLong(context) : 0LL);
+                char buf[32]; snprintf(buf, sizeof(buf), "%llu", v);
+                out += buf;
+                break;
+            }
+            case 'o': {
+                long long v = arg ? arg->asLong(context) : 0LL;
+                char buf[32]; snprintf(buf, sizeof(buf), "%llo", v);
+                out += buf;
+                break;
+            }
+            case 'x': {
+                long long v = arg ? arg->asLong(context) : 0LL;
+                char buf[32]; snprintf(buf, sizeof(buf), "%llx", v);
+                out += buf;
+                break;
+            }
+            case 'X': {
+                long long v = arg ? arg->asLong(context) : 0LL;
+                char buf[32]; snprintf(buf, sizeof(buf), "%llX", v);
+                out += buf;
+                break;
+            }
+            case 'f':
+            case 'F': {
+                double v = arg ? arg->asDouble(context) : 0.0;
+                char buf[64]; snprintf(buf, sizeof(buf), "%.6f", v);
+                out += buf;
+                break;
+            }
+            case 'e':
+            case 'E': {
+                double v = arg ? arg->asDouble(context) : 0.0;
+                char buf[64]; snprintf(buf, sizeof(buf), spec == 'e' ? "%e" : "%E", v);
+                out += buf;
+                break;
+            }
+            case 'g':
+            case 'G': {
+                double v = arg ? arg->asDouble(context) : 0.0;
+                char buf[64]; snprintf(buf, sizeof(buf), spec == 'g' ? "%g" : "%G", v);
+                out += buf;
+                break;
+            }
+            case 'c': {
+                if (arg && arg->isString(context)) {
+                    std::string s;
+                    arg->asString(context)->toUTF8String(context, s);
+                    if (!s.empty()) out += s[0];
+                } else if (arg) {
+                    out += static_cast<char>(arg->asLong(context) & 0xFF);
+                }
+                break;
+            }
+            default:
+                out += '%';
+                out += spec;
+                break;
+        }
+    }
+    return PythonEnvironment::getInternedString(context, out.c_str())->asObject(context);
+}
+
 static const proto::ProtoObject* py_str_lower(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -5022,7 +5175,6 @@ static const proto::ProtoObject* py_str_startswith(
             const proto::ProtoString* nameStr = PythonEnvironment::getInternedString(context, "__name__");
             const proto::ProtoObject* cl = prefixObj->getAttribute(context, clsStr);
             if (cl && cl->hasAttribute(context, nameStr) == PROTO_TRUE) cl->getAttribute(context, nameStr)->asString(context)->toUTF8String(context, tn);
-            fprintf(stderr, "DEBUG py_str_startswith TYPE FAILURE: prefixObj=%p type=%s\n", (void*)prefixObj, tn.c_str());
         }
         env->raiseTypeError(context, "startswith arg must be str or tuple of str");
     }
@@ -5580,7 +5732,6 @@ static const proto::ProtoObject* py_str_join(
         const proto::ProtoString* partObj = str_from_self(context, item);
         if (!partObj) {
             if (std::getenv("PROTO_ENV_DIAG")) {
-                fprintf(stderr, "DEBUG: py_str_join: non-string item at index %d, pointer=%p\n", i, (void*)item);
                 fflush(stderr);
             }
             PythonEnvironment* env = PythonEnvironment::fromContext(context);
@@ -5661,7 +5812,7 @@ static const proto::ProtoObject* py_dict_keys(
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
     const proto::ProtoString* keysName = PythonEnvironment::getInternalString(context, "__keys__");
-    const proto::ProtoObject* keysObj = self->proto::ProtoObject::getAttribute(context, keysName);
+    const proto::ProtoObject* keysObj = self->getAttribute(context, keysName);
     const proto::ProtoList* keys = keysObj && keysObj->asList(context) ? keysObj->asList(context) : context->newList();
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     const proto::ProtoObject* listProto = env ? env->getListPrototype() : nullptr;
@@ -5677,11 +5828,12 @@ static const proto::ProtoObject* py_dict_values(
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
     const proto::ProtoString* keysName = PythonEnvironment::getInternalString(context, "__keys__");
-    const proto::ProtoObject* keysObj = self->proto::ProtoObject::getAttribute(context, keysName);
+    // Use virtual getAttribute to correctly resolve mutable dict instance attributes.
+    const proto::ProtoObject* keysObj = self->getAttribute(context, keysName);
     const proto::ProtoList* keys = keysObj && keysObj->asList(context) ? keysObj->asList(context) : context->newList();
 
     const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "__data__");
-    const proto::ProtoObject* data = self->proto::ProtoObject::getAttribute(context, dataName);
+    const proto::ProtoObject* data = self->getAttribute(context, dataName);
     const proto::ProtoSparseList* dict = data && data->asSparseList(context) ? data->asSparseList(context) : nullptr;
     if (!dict) return context->newList()->asObject(context);
 
@@ -5707,11 +5859,12 @@ static const proto::ProtoObject* py_dict_items(
     const proto::ProtoSparseList* keywordParameters) {
     if (!self) return context->newList()->asObject(context);
     const proto::ProtoString* keysName = PythonEnvironment::getInternalString(context, "__keys__");
-    const proto::ProtoObject* keysObj = self->proto::ProtoObject::getAttribute(context, keysName);
+    // Use virtual getAttribute to correctly resolve mutable dict instance attributes.
+    const proto::ProtoObject* keysObj = self->getAttribute(context, keysName);
     const proto::ProtoList* keys = keysObj && keysObj->asList(context) ? keysObj->asList(context) : context->newList();
 
     const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "__data__");
-    const proto::ProtoObject* data = self->proto::ProtoObject::getAttribute(context, dataName);
+    const proto::ProtoObject* data = self->getAttribute(context, dataName);
     const proto::ProtoSparseList* dict = data && data->asSparseList(context) ? data->asSparseList(context) : nullptr;
     
     const proto::ProtoList* items = context->newList();
@@ -5810,6 +5963,27 @@ static const proto::ProtoObject* py_mappingproxy_values(
     return py_dict_values(context, data, parentLink, positionalParameters, keywordParameters);
 }
 
+struct ItemCollector {
+    proto::ProtoContext* ctx;
+    PythonEnvironment* env;
+    const proto::ProtoObject* dataObj;  // class object to read values from
+    const proto::ProtoList* itemsList;
+};
+
+static void collectItem(proto::ProtoContext* ctx, void* self, unsigned long key, const proto::ProtoObject* val) {
+    ItemCollector* s = (ItemCollector*)self;
+    const proto::ProtoObject* kObj = reinterpret_cast<const proto::ProtoObject*>(key);
+    if (!kObj || !kObj->isString(ctx)) return;
+    if (s->env && s->env->getStrPrototype()) kObj = kObj->addParent(ctx, s->env->getStrPrototype());
+    // Read current value from the class object (not the snapshot in processElements, which
+    // may be stale for Python-set attributes).
+    const proto::ProtoObject* v = s->dataObj->getAttribute(ctx, kObj->asString(ctx));
+    if (!v) v = PROTO_NONE;
+    const proto::ProtoList* pair = ctx->newList()->appendLast(ctx, kObj)->appendLast(ctx, v);
+    const proto::ProtoObject* pairTuple = ctx->newTupleFromList(pair)->asObject(ctx);
+    s->itemsList = s->itemsList->appendLast(ctx, pairTuple);
+}
+
 static const proto::ProtoObject* py_mappingproxy_items(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -5819,6 +5993,40 @@ static const proto::ProtoObject* py_mappingproxy_items(
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     const proto::ProtoObject* data = self->getAttribute(context, env ? env->getDataString() : PythonEnvironment::getInternedString(context, "__data__"));
     if (!data) return env ? env->getListPrototype()->newChild(context, true) : nullptr;
+
+    // For type/class objects, attributes live in the C++ own-attribute slots (not in
+    // __data__). Detect a class the same way py_mappingproxy_keys does.
+    bool isType = false;
+    const proto::ProtoObject* cls = data->getAttribute(context, env ? env->getClassString() : PythonEnvironment::getInternedString(context, "__class__"));
+    if (env && cls == env->getTypePrototype()) isType = true;
+    else if (data->getAttribute(context, PythonEnvironment::getInternedString(context, "__mro__"))) isType = true;
+
+    if (isType) {
+        ItemCollector s = { context, env, data, context->newList() };
+        const proto::ProtoSparseList* attrs = data->getOwnAttributes(context);
+        if (attrs) attrs->processElements(context, &s, collectItem);
+
+        // Also include attributes tracked in __keys__ (Python-level dict storage).
+        const proto::ProtoObject* kObj = data->getAttribute(context, env ? env->getKeysString() : PythonEnvironment::getInternedString(context, "__keys__"));
+        if (kObj && kObj->asList(context)) {
+            const proto::ProtoList* innerKeys = kObj->asList(context);
+            for (unsigned long i = 0; i < innerKeys->getSize(context); ++i) {
+                const proto::ProtoObject* k = innerKeys->getAt(context, static_cast<int>(i));
+                if (!k || !k->isString(context)) continue;
+                const proto::ProtoObject* v = data->getAttribute(context, k->asString(context));
+                if (!v) v = PROTO_NONE;
+                const proto::ProtoList* pair = context->newList()->appendLast(context, k)->appendLast(context, v);
+                const proto::ProtoObject* pairTuple = context->newTupleFromList(pair)->asObject(context);
+                s.itemsList = s.itemsList->appendLast(context, pairTuple);
+            }
+        }
+
+        const proto::ProtoObject* listProto = env ? env->getListPrototype() : nullptr;
+        proto::ProtoObject* listObj = const_cast<proto::ProtoObject*>(listProto ? listProto->newChild(context, true) : context->newObject());
+        listObj->setAttribute(context, PythonEnvironment::getInternalString(context, "__data__"), s.itemsList->asObject(context));
+        return listObj;
+    }
+
     return py_dict_items(context, data, parentLink, positionalParameters, keywordParameters);
 }
 
@@ -6006,13 +6214,11 @@ static const proto::ProtoObject* py_dict_copy(
     const proto::ProtoObject* gnvObj = self->getAttribute(context, gnvName);
     if (gnvObj && gnvObj != PROTO_NONE) {
         if (std::getenv("PROTO_ENV_DIAG")) {
-            fprintf(stderr, "DEBUG py_dict_copy: COPYING _generate_next_value from %p to %p\n", (void*)self, (void*)copyObj);
             fflush(stderr);
         }
         copyObj = copyObj->setAttribute(context, gnvName, gnvObj);
     } else {
         if (std::getenv("PROTO_ENV_DIAG")) {
-            fprintf(stderr, "DEBUG py_dict_copy: _generate_next_value NOT FOUND on %p\n", (void*)self);
             fflush(stderr);
         }
     }
@@ -6387,7 +6593,6 @@ void PythonEnvironment::setPendingException(const proto::ProtoObject* exc) {
     const proto::ProtoString* key = s_threadEnv ? s_threadEnv->pendingExcString : proto::ProtoString::fromUTF8(s_threadContext, "_pending_exc");
     s_currentPyThread = const_cast<proto::ProtoObject*>(getPyThread(s_threadContext))->setAttribute(s_threadContext, key, exc ? exc : PROTO_NONE);
     if (std::getenv("PROTO_ENV_DIAG")) {
-        fprintf(stderr, "DEBUG EXCEPTION SET: threadKey=%p val=%p\n", (void*)key, (void*)exc);
     }
 }
 
@@ -6397,7 +6602,6 @@ const proto::ProtoObject* PythonEnvironment::takePendingException() {
     const proto::ProtoObject* e = getPyThread(s_threadContext)->getAttribute(s_threadContext, key);
     if (e == PROTO_NONE) e = nullptr;
     if (std::getenv("PROTO_ENV_DIAG")) {
-        fprintf(stderr, "DEBUG EXCEPTION TAKE: threadKey=%p val=%p\n", (void*)key, (void*)e);
         fflush(stderr);
     }
     s_currentPyThread = const_cast<proto::ProtoObject*>(getPyThread(s_threadContext))->setAttribute(s_threadContext, key, PROTO_NONE);
@@ -6410,7 +6614,6 @@ bool PythonEnvironment::hasPendingException() const {
     const proto::ProtoObject* e = getPyThread(s_threadContext)->getAttribute(s_threadContext, key);
     bool r = e && e != PROTO_NONE;
     if (std::getenv("PROTO_ENV_DIAG")) {
-        fprintf(stderr, "DEBUG EXCEPTION GET: threadKey=%p val=%p res=%d\n", (void*)key, (void*)e, r);
     }
     return r;
 }
@@ -6426,7 +6629,6 @@ void PythonEnvironment::clearPendingException() {
     if (!s_threadContext) return;
     const proto::ProtoString* key = pendingExcString ? pendingExcString : proto::ProtoString::fromUTF8(s_threadContext, "_pending_exc");
     if (std::getenv("PROTO_ENV_DIAG")) {
-        fprintf(stderr, "DEBUG EXCEPTION CLEAR: threadKey=%p\n", (void*)key);
         fflush(stderr);
     }
     s_currentPyThread = const_cast<proto::ProtoObject*>(getPyThread(s_threadContext))->setAttribute(s_threadContext, key, PROTO_NONE);
@@ -6440,7 +6642,6 @@ void PythonEnvironment::pushActiveException(const proto::ProtoObject* exc) {
     l = l->appendLast(s_threadContext, exc ? exc : PROTO_NONE);
     s_currentPyThread = const_cast<proto::ProtoObject*>(getPyThread(s_threadContext))->setAttribute(s_threadContext, key, l->asObject(s_threadContext));
     if (std::getenv("PROTO_ENV_DIAG")) {
-        fprintf(stderr, "DEBUG EXCEPTION: pushed active exception %p. New size = %lu\n", (void*)exc, l->getSize(s_threadContext));
         fflush(stderr);
     }
 }
@@ -6469,14 +6670,12 @@ const proto::ProtoObject* PythonEnvironment::getActiveException() {
         if (size > 0) {
             const proto::ProtoObject* e = l->getAt(s_threadContext, size - 1);
             if (std::getenv("PROTO_ENV_DIAG")) {
-                fprintf(stderr, "DEBUG EXCEPTION: getActiveException() returning %p, list size=%lu\n", (void*)e, size);
                 fflush(stderr);
             }
             return e == PROTO_NONE ? nullptr : e;
         }
     }
     if (std::getenv("PROTO_ENV_DIAG")) {
-        fprintf(stderr, "DEBUG EXCEPTION: getActiveException() returning nullptr. listObj=%p\n", (void*)listObj);
         fflush(stderr);
     }
     return nullptr;
@@ -6539,7 +6738,6 @@ static std::atomic<int> s_pythonEnvInstanceCount{0};
 PythonEnvironment::PythonEnvironment(const std::string& stdLibPath, const std::vector<std::string>& searchPaths,
                                      const std::vector<std::string>& argv) : space_(getProcessSpace()), rootContext_(new proto::ProtoContext(space_)), argv_(argv), stdLibPath_(stdLibPath) {
     if (get_env_diag()) {
-        fprintf(stderr, "DEBUG: PythonEnvironment CONSTRUCTOR START\n");
         fflush(stderr);
     }
     int prev = s_pythonEnvInstanceCount.fetch_add(1, std::memory_order_relaxed);
@@ -6746,14 +6944,15 @@ void PythonEnvironment::raiseKeyError(proto::ProtoContext* ctx, const proto::Pro
         exc = exc->addParent(ctx, keyErrorType);
         exc = exc->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "args"), args->asObject(ctx));
     }
-    if (exc && exc != PROTO_NONE) { std::string excName = "Exception"; if(exc && exc->hasAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__class__")) == PROTO_TRUE) { const proto::ProtoObject* cls = exc->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__class__")); if (cls->hasAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__name__")) == PROTO_TRUE) { cls->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__name__"))->asString(ctx)->toUTF8String(ctx, excName); } } fprintf(stderr, "DEBUG EXCEPTION: Raised %s exc=%p\n", excName.c_str(), (void*)exc); setPendingException(exc); } else { fprintf(stderr, "raiseTypeError FAILED exc=%p\n", exc); }
 }
 
 void PythonEnvironment::raiseValueError(proto::ProtoContext* ctx, const proto::ProtoObject* msg) {
     if (!valueErrorType) return;
     const proto::ProtoList* args = ctx->newList()->appendLast(ctx, msg);
     const proto::ProtoObject* exc = invokePythonCallable(ctx, valueErrorType, args, nullptr);
-    if (exc && exc != PROTO_NONE) { std::string excName = "Exception"; if(exc && exc->hasAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__class__")) == PROTO_TRUE) { const proto::ProtoObject* cls = exc->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__class__")); if (cls->hasAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__name__")) == PROTO_TRUE) { cls->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__name__"))->asString(ctx)->toUTF8String(ctx, excName); } } fprintf(stderr, "DEBUG EXCEPTION: Raised %s exc=%p\n", excName.c_str(), (void*)exc); setPendingException(exc); } else { fprintf(stderr, "raiseTypeError FAILED exc=%p\n", exc); }
+    if (exc && exc != PROTO_NONE) {
+        setPendingException(exc);
+    }
 }
 
 static int levenshtein_distance(const std::string& s1, const std::string& s2) {
@@ -6805,7 +7004,9 @@ void PythonEnvironment::raiseImportError(const std::string& msg) {
     proto::ProtoContext* ctx = rootContext_;
     const proto::ProtoList* args = ctx->newList()->appendLast(ctx, PythonEnvironment::getInternedString(ctx, msg.c_str())->asObject(ctx));
     const proto::ProtoObject* exc = invokePythonCallable(ctx, importErrorType, args, nullptr);
-    if (exc && exc != PROTO_NONE) { std::string excName = "Exception"; if(exc && exc->hasAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__class__")) == PROTO_TRUE) { const proto::ProtoObject* cls = exc->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__class__")); if (cls->hasAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__name__")) == PROTO_TRUE) { cls->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__name__"))->asString(ctx)->toUTF8String(ctx, excName); } } fprintf(stderr, "DEBUG EXCEPTION: Raised %s exc=%p\n", excName.c_str(), (void*)exc); setPendingException(exc); } else { fprintf(stderr, "raiseTypeError FAILED exc=%p\n", exc); }
+    if (exc && exc != PROTO_NONE) {
+        setPendingException(exc);
+    }
 }
 
 void PythonEnvironment::raiseNameError(proto::ProtoContext* ctx, const std::string& name) {
@@ -6824,7 +7025,6 @@ void PythonEnvironment::raiseAttributeError(proto::ProtoContext* ctx, const prot
     if (!attributeErrorType) {
         // Fallback during bootstrap
         if (std::getenv("PROTO_ENV_DIAG")) {
-            fprintf(stderr, "DEBUG WARNING: raiseAttributeError called before AttributeError was ready (attr='%s')\n", attr.c_str());
         }
         // Use a generic object as exception marker if types aren't ready
         this->setPendingException(PythonEnvironment::getInternedString(ctx, ("AttributeError: " + attr).c_str())->asObject(ctx));
@@ -6841,9 +7041,7 @@ void PythonEnvironment::raiseAttributeError(proto::ProtoContext* ctx, const prot
         else if (obj->isString(ctx)) {
             typeName = "str";
             if (attr == "_data") {
-                std::string val;
-                obj->asString(ctx)->toUTF8String(ctx, val);
-                fprintf(stderr, "DEBUG ATTR ERROR: str '%s' (at %p) has no attribute '_data'\n", val.c_str(), (void*)obj);
+                // str has no '_data' attribute — intentional; nothing to log here
             }
         }
         else if (obj->asList(ctx)) typeName = "list";
@@ -6860,19 +7058,21 @@ void PythonEnvironment::raiseAttributeError(proto::ProtoContext* ctx, const prot
 }
 
 void PythonEnvironment::raiseTypeError(proto::ProtoContext* ctx, const std::string& msg) {
-    fprintf(stderr, "DEBUG HANG: raiseTypeError called with msg='%s'\n", msg.c_str());
-    fflush(stderr);
     if (!typeErrorType) return;
     const proto::ProtoList* args = ctx->newList()->appendLast(ctx, PythonEnvironment::getInternedString(ctx, msg.c_str())->asObject(ctx));
     const proto::ProtoObject* exc = invokePythonCallable(ctx, typeErrorType, args, nullptr);
-    if (exc && exc != PROTO_NONE) { std::string excName = "Exception"; if(exc && exc->hasAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__class__")) == PROTO_TRUE) { const proto::ProtoObject* cls = exc->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__class__")); if (cls->hasAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__name__")) == PROTO_TRUE) { cls->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__name__"))->asString(ctx)->toUTF8String(ctx, excName); } } fprintf(stderr, "DEBUG EXCEPTION: Raised %s exc=%p\n", excName.c_str(), (void*)exc); setPendingException(exc); } else { fprintf(stderr, "raiseTypeError FAILED exc=%p\n", exc); }
+    if (exc && exc != PROTO_NONE) {
+        setPendingException(exc);
+    }
 }
 
 void PythonEnvironment::raiseRuntimeError(proto::ProtoContext* ctx, const std::string& msg) {
     if (!runtimeErrorType) return;
     const proto::ProtoList* args = ctx->newList()->appendLast(ctx, PythonEnvironment::getInternedString(ctx, msg.c_str())->asObject(ctx));
     const proto::ProtoObject* exc = invokePythonCallable(ctx, runtimeErrorType, args, nullptr);
-    if (exc && exc != PROTO_NONE) { std::string excName = "Exception"; if(exc && exc->hasAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__class__")) == PROTO_TRUE) { const proto::ProtoObject* cls = exc->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__class__")); if (cls->hasAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__name__")) == PROTO_TRUE) { cls->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__name__"))->asString(ctx)->toUTF8String(ctx, excName); } } fprintf(stderr, "DEBUG EXCEPTION: Raised %s exc=%p msg='%s'\n", excName.c_str(), (void*)exc, msg.c_str()); setPendingException(exc); } else { fprintf(stderr, "raiseTypeError FAILED exc=%p\n", exc); }
+    if (exc && exc != PROTO_NONE) {
+        setPendingException(exc);
+    }
 }
 
 void PythonEnvironment::raiseImportError(proto::ProtoContext* ctx, const std::string& msg) {
@@ -6901,7 +7101,6 @@ void PythonEnvironment::raiseImportError(proto::ProtoContext* ctx, const std::st
     const proto::ProtoList* args = ctx->newList()->appendLast(ctx, PythonEnvironment::getInternedString(ctx, hintMsg.c_str())->asObject(ctx));
     const proto::ProtoObject* exc = invokePythonCallable(ctx, importErrorType, args, nullptr);
     if (exc && exc != PROTO_NONE) {
-        fprintf(stderr, "DEBUG EXCEPTION: Raised ImportError msg='%s'\n", hintMsg.c_str());
         setPendingException(exc);
     }
 }
@@ -6910,7 +7109,9 @@ void PythonEnvironment::raiseKeyboardInterrupt(proto::ProtoContext* ctx) {
     if (!keyboardInterruptType) return;
     const proto::ProtoList* args = ctx->newList();
     const proto::ProtoObject* exc = invokePythonCallable(ctx, keyboardInterruptType, args, nullptr);
-    if (exc && exc != PROTO_NONE) { std::string excName = "Exception"; if(exc && exc->hasAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__class__")) == PROTO_TRUE) { const proto::ProtoObject* cls = exc->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__class__")); if (cls->hasAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__name__")) == PROTO_TRUE) { cls->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__name__"))->asString(ctx)->toUTF8String(ctx, excName); } } fprintf(stderr, "DEBUG EXCEPTION: Raised %s exc=%p\n", excName.c_str(), (void*)exc); setPendingException(exc); } else { fprintf(stderr, "raiseTypeError FAILED exc=%p\n", exc); }
+    if (exc && exc != PROTO_NONE) {
+        setPendingException(exc);
+    }
 }
 
 void PythonEnvironment::raiseSyntaxError(proto::ProtoContext* ctx, const std::string& msg, int lineno, int offset, const std::string& text) {
@@ -6929,7 +7130,9 @@ void PythonEnvironment::raiseEOFError(proto::ProtoContext* ctx) {
     if (!eofErrorType) return;
     const proto::ProtoList* args = ctx->newList()->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "EOF when reading a line")->asObject(ctx));
     const proto::ProtoObject* exc = invokePythonCallable(ctx, eofErrorType, args, nullptr);
-    if (exc && exc != PROTO_NONE) { std::string excName = "Exception"; if(exc && exc->hasAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__class__")) == PROTO_TRUE) { const proto::ProtoObject* cls = exc->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__class__")); if (cls->hasAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__name__")) == PROTO_TRUE) { cls->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__name__"))->asString(ctx)->toUTF8String(ctx, excName); } } fprintf(stderr, "DEBUG EXCEPTION: Raised %s exc=%p\n", excName.c_str(), (void*)exc); setPendingException(exc); } else { fprintf(stderr, "raiseTypeError FAILED exc=%p\n", exc); }
+    if (exc && exc != PROTO_NONE) {
+        setPendingException(exc);
+    }
 }
 
 void PythonEnvironment::raiseSystemExit(proto::ProtoContext* ctx, int code) {
@@ -6946,7 +7149,6 @@ void PythonEnvironment::raiseRecursionError(proto::ProtoContext* ctx) {
     if (!recursionErrorType) return;
     const proto::ProtoList* args = ctx->newList()->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "maximum recursion depth exceeded")->asObject(ctx));
     const proto::ProtoObject* exc = invokePythonCallable(ctx, recursionErrorType, args, nullptr);
-    if (exc && exc != PROTO_NONE) { std::string excName = "Exception"; if(exc && exc->hasAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__class__")) == PROTO_TRUE) { const proto::ProtoObject* cls = exc->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__class__")); if (cls->hasAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__name__")) == PROTO_TRUE) { cls->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__name__"))->asString(ctx)->toUTF8String(ctx, excName); } } fprintf(stderr, "DEBUG EXCEPTION: Raised %s exc=%p\n", excName.c_str(), (void*)exc); setPendingException(exc); } else { fprintf(stderr, "raiseTypeError FAILED exc=%p\n", exc); }
 }
 
 void PythonEnvironment::raiseAssertionError(proto::ProtoContext* ctx, const proto::ProtoObject* msg) {
@@ -6954,21 +7156,18 @@ void PythonEnvironment::raiseAssertionError(proto::ProtoContext* ctx, const prot
     const proto::ProtoList* args = ctx->newList();
     if (msg) args = args->appendLast(ctx, msg);
     const proto::ProtoObject* exc = invokePythonCallable(ctx, assertionErrorType, args, nullptr);
-    if (exc && exc != PROTO_NONE) { std::string excName = "Exception"; if(exc && exc->hasAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__class__")) == PROTO_TRUE) { const proto::ProtoObject* cls = exc->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__class__")); if (cls->hasAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__name__")) == PROTO_TRUE) { cls->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__name__"))->asString(ctx)->toUTF8String(ctx, excName); } } fprintf(stderr, "DEBUG EXCEPTION: Raised %s exc=%p\n", excName.c_str(), (void*)exc); setPendingException(exc); } else { fprintf(stderr, "raiseTypeError FAILED exc=%p\n", exc); }
 }
 
 void PythonEnvironment::raiseZeroDivisionError(proto::ProtoContext* ctx) {
     if (!zeroDivisionErrorType) return;
     const proto::ProtoList* args = ctx->newList()->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "division by zero")->asObject(ctx));
     const proto::ProtoObject* exc = invokePythonCallable(ctx, zeroDivisionErrorType, args, nullptr);
-    if (exc && exc != PROTO_NONE) { std::string excName = "Exception"; if(exc && exc->hasAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__class__")) == PROTO_TRUE) { const proto::ProtoObject* cls = exc->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__class__")); if (cls->hasAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__name__")) == PROTO_TRUE) { cls->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__name__"))->asString(ctx)->toUTF8String(ctx, excName); } } fprintf(stderr, "DEBUG EXCEPTION: Raised %s exc=%p\n", excName.c_str(), (void*)exc); setPendingException(exc); } else { fprintf(stderr, "raiseTypeError FAILED exc=%p\n", exc); }
 }
 
 void PythonEnvironment::raiseIndexError(proto::ProtoContext* ctx, const std::string& msg) {
     if (!indexErrorType) return;
     const proto::ProtoList* args = ctx->newList()->appendLast(ctx, PythonEnvironment::getInternedString(ctx, msg.c_str())->asObject(ctx));
     const proto::ProtoObject* exc = invokePythonCallable(ctx, indexErrorType, args, nullptr);
-    if (exc && exc != PROTO_NONE) { std::string excName = "Exception"; if(exc && exc->hasAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__class__")) == PROTO_TRUE) { const proto::ProtoObject* cls = exc->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__class__")); if (cls->hasAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__name__")) == PROTO_TRUE) { cls->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__name__"))->asString(ctx)->toUTF8String(ctx, excName); } } fprintf(stderr, "DEBUG EXCEPTION: Raised %s exc=%p\n", excName.c_str(), (void*)exc); setPendingException(exc); } else { fprintf(stderr, "raiseTypeError FAILED exc=%p\n", exc); }
 }
 
 void PythonEnvironment::raiseStopIteration(proto::ProtoContext* ctx, const proto::ProtoObject* value) {
@@ -6978,14 +7177,12 @@ void PythonEnvironment::raiseStopIteration(proto::ProtoContext* ctx, const proto
     const proto::ProtoList* args = ctx->newList();
     if (value) args = args->appendLast(ctx, value);
     const proto::ProtoObject* exc = invokePythonCallable(ctx, stopIterationType, args, nullptr);
-    if (exc && exc != PROTO_NONE) { std::string excName = "Exception"; if(exc && exc->hasAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__class__")) == PROTO_TRUE) { const proto::ProtoObject* cls = exc->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__class__")); if (cls->hasAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__name__")) == PROTO_TRUE) { cls->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__name__"))->asString(ctx)->toUTF8String(ctx, excName); } } fprintf(stderr, "DEBUG EXCEPTION: Raised %s exc=%p\n", excName.c_str(), (void*)exc); setPendingException(exc); } else { fprintf(stderr, "raiseTypeError FAILED exc=%p\n", exc); }
 }
 
 void PythonEnvironment::raiseStopAsyncIteration(proto::ProtoContext* ctx) {
     if (!stopAsyncIterationType) return;
     const proto::ProtoList* args = ctx->newList();
     const proto::ProtoObject* exc = invokePythonCallable(ctx, stopAsyncIterationType, args, nullptr);
-    if (exc && exc != PROTO_NONE) { std::string excName = "Exception"; if(exc && exc->hasAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__class__")) == PROTO_TRUE) { const proto::ProtoObject* cls = exc->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__class__")); if (cls->hasAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__name__")) == PROTO_TRUE) { cls->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__name__"))->asString(ctx)->toUTF8String(ctx, excName); } } fprintf(stderr, "DEBUG EXCEPTION: Raised %s exc=%p\n", excName.c_str(), (void*)exc); setPendingException(exc); } else { fprintf(stderr, "raiseTypeError FAILED exc=%p\n", exc); }
 }
 
 
@@ -7014,7 +7211,6 @@ static const proto::ProtoObject* py_getset_get(
 }
 
 void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, const std::vector<std::string>& searchPaths) {
-    std::cerr << "!!! DEBUG [IN] initializeRootObjects" << std::endl;
     s_threadEnv = this;
     s_globalThreadRootsDict = rootContext_->newObject(false);
     space_->moduleRoots.push_back(s_globalThreadRootsDict);
@@ -7422,6 +7618,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     unionTypePrototype = unionTypePrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_union_type_repr));
     mappingProxyPrototype = mappingProxyPrototype->setAttribute(rootContext_, getItemString, rootContext_->fromMethod(nullptr, py_mappingproxy_getitem));
     mappingProxyPrototype = mappingProxyPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__contains__"), rootContext_->fromMethod(nullptr, py_mappingproxy_contains));
+    mappingProxyPrototype = mappingProxyPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "get"), rootContext_->fromMethod(nullptr, py_mappingproxy_get));
     mappingProxyPrototype = mappingProxyPrototype->setAttribute(rootContext_, py_module, builtinsVal);
 
     // Initialize getset_descriptor
@@ -7617,6 +7814,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     strPrototype = strPrototype->setAttribute(rootContext_, py_isdigit, rootContext_->fromMethod(nullptr, py_str_isdigit));
     strPrototype = strPrototype->setAttribute(rootContext_, py_isspace, rootContext_->fromMethod(nullptr, py_str_isspace));
     strPrototype = strPrototype->setAttribute(rootContext_, py_isalnum, rootContext_->fromMethod(nullptr, py_str_isalnum));
+    strPrototype = strPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__mod__"), rootContext_->fromMethod(nullptr, py_str_mod));
 
     // Set MRO and bases for str
     strPrototype = strPrototype->setAttribute(rootContext_, mroString, rootContext_->newTupleFromList(rootContext_->newList()->appendLast(rootContext_, strPrototype)->appendLast(rootContext_, objectPrototype))->asObject(rootContext_));
@@ -8067,12 +8265,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
         return ioModule; 
     });
 
-    fprintf(stderr, "DEBUG BEFORE BUILTINS INIT: tupleProto=%p dictProto=%p strProto=%p\n", 
-            (void*)tuplePrototype, (void*)dictPrototype, (void*)strPrototype);
-
     // builtins module
-    fprintf(stderr, "DEBUG BEFORE BUILTINS INIT: tuple=%p dict=%p none=%p\n", (void*)tuplePrototype, (void*)dictPrototype, (void*)nonePrototype);
-    fflush(stderr);
     builtinsModule = builtins::initialize(rootContext_, objectPrototype, typePrototype, intPrototype, strPrototype, listPrototype, dictPrototype, tuplePrototype, setPrototype, bytesPrototype, nonePrototype, ellipsisPrototype, notImplementedPrototype, sliceType, frozensetPrototype, floatPrototype, boolPrototype, complexPrototype, ioModule);
     if (std::getenv("PROTO_ENV_DIAG")) {
         fprintf(stderr, "DEBUG AFTER BUILTINS INIT: builtinsModule=%p\n", (void*)builtinsModule);
@@ -8157,13 +8350,6 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     lookupErrorType = exceptionsMod->getAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "LookupError"));
     unboundLocalErrorType = exceptionsMod->getAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "UnboundLocalError"));
     generatorExitType = exceptionsMod->getAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "GeneratorExit"));
-    if (!assertionErrorType || assertionErrorType == PROTO_NONE) {
-        fprintf(stderr, "DEBUG: assertionErrorType is missing from exceptionsMod!\n");
-        fflush(stderr);
-    } else {
-        fprintf(stderr, "DEBUG: assertionErrorType loaded successfully: %p\n", (void*)assertionErrorType);
-        fflush(stderr);
-    }
     zeroDivisionErrorType = exceptionsMod->getAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "ZeroDivisionError"));
     indexErrorType = exceptionsMod->getAttribute(rootContext_, indexErrorS);
     systemErrorType = exceptionsMod->getAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "SystemError"));
@@ -8282,20 +8468,12 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
 
     dictPrototype = dictPrototype->setAttribute(rootContext_, mroString, rootContext_->newTupleFromList(rootContext_->newList()->appendLast(rootContext_, dictPrototype)->appendLast(rootContext_, objectPrototype))->asObject(rootContext_));
     dictPrototype = dictPrototype->setAttribute(rootContext_, basesString, rootContext_->newTupleFromList(rootContext_->newList()->appendLast(rootContext_, objectPrototype))->asObject(rootContext_));
-    {
-        const proto::ProtoSparseList* attrs = dictPrototype->getOwnAttributes(rootContext_);
-        fprintf(stderr, "DEBUG_DICT_PROTO: dictPrototype=%p attrs=%p size=%lu mutable_ref=%lu\n", (void*)dictPrototype, (void*)attrs, (attrs ? attrs->getSize(rootContext_) : 0), (unsigned long)((const size_t*)dictPrototype)[3]);
-    }
-
     // Back-fill dictionary storage for all core prototypes so they have a valid __dict__ (CPython parity) at the VERY END
     objectPrototype = initDictStorage(rootContext_, objectPrototype);
     typePrototype = initDictStorage(rootContext_, typePrototype);
     auto setupCoreType = [&](const proto::ProtoObject*& proto) {
         proto = initDictStorage(rootContext_, proto);
         const proto::ProtoObject* mro = rootContext_->newTupleFromList(rootContext_->newList()->appendLast(rootContext_, proto)->appendLast(rootContext_, objectPrototype))->asObject(rootContext_);
-        if (std::getenv("PROTO_ENV_DIAG")) {
-            fprintf(stderr, "DEBUG setupCoreType: proto=%p mro=%p isTuple=%d\n", (void*)proto, (void*)mro, mro->asTuple(rootContext_) != nullptr);
-        }
         proto = const_cast<proto::ProtoObject*>(proto->setAttribute(rootContext_, mroString, mro));
         const proto::ProtoObject* bases = rootContext_->newTupleFromList(rootContext_->newList()->appendLast(rootContext_, objectPrototype))->asObject(rootContext_);
         proto = const_cast<proto::ProtoObject*>(proto->setAttribute(rootContext_, basesString, bases));
@@ -8449,7 +8627,6 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
                 (void*)tuplePrototype, (void*)dictPrototype, (void*)strPrototype);
     }
 
-    std::cerr << "!!! DEBUG: End of initializeRootObjects" << std::endl;
     if (get_env_diag()) {
         fprintf(stderr, "DEBUG FINAL typeProto=%p\n", (void*)typePrototype);
         if (typePrototype) {
@@ -9018,7 +9195,7 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain,
                             }
                             const proto::ProtoObject* excAfterExec = peekPendingException();
                             if (excAfterExec && excAfterExec != PROTO_NONE) {
-                                std::cerr << "protopy DEBUG: unhandled exception in module execution (" << moduleName << "):\n";
+                                std::cerr << "protopy: unhandled exception in module execution (" << moduleName << "):\n";
                                 if (std::getenv("PROTO_ENV_DIAG")) {
                                     fprintf(stderr, "DEBUG HANG TRACE exc=%p\n", (void*)excAfterExec);
                                 }
@@ -9058,10 +9235,12 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain,
         }
     }
 
-    int ret = runModuleMain(moduleName);
-    if (ret != 0) {
-        if (executionHook) executionHook(moduleName, 1);
-        return ret == -1 ? -1 : -2;
+    if (asMain) {
+        int ret = runModuleMain(moduleName);
+        if (ret != 0) {
+            if (executionHook) executionHook(moduleName, 1);
+            return ret == -1 ? -1 : -2;
+        }
     }
 
     const proto::ProtoObject* exc = peekPendingException();
@@ -9230,8 +9409,6 @@ std::vector<std::string> PythonEnvironment::collectCandidates(const proto::Proto
 
 void PythonEnvironment::handleException(const proto::ProtoObject* exc, const proto::ProtoObject* frame, std::ostream& out) {
     if (!exc) return;
-    fprintf(stderr, "DEBUG_HANDLE_EXC: exc=%p\n", (void*)exc);
-    fflush(stderr);
     proto::ProtoContext* context = s_threadContext ? s_threadContext : rootContext_;
     
     // Step 1335: sys.last_type, sys.last_value, sys.last_traceback
@@ -9737,17 +9914,21 @@ bool PythonEnvironment::isActuallyAClass(proto::ProtoContext* ctx, const proto::
     const proto::ProtoString* pythonClsS = PythonEnvironment::getInternedString(ctx, "__is_python_class__");
     if (obj->hasOwnAttribute(ctx, pythonClsS) == PROTO_TRUE) return true;
 
-    // Safer check that avoids full getType recursion if possible
+    // Safer check: an object is a class if its OWN __class__ IS typePrototype (type(obj) is type).
+    // MUST use hasOwnAttribute — do NOT inherit via the prototype chain, because instances
+    // inherit __class__=typePrototype from their class prototype (e.g. dict instances
+    // inherit dictPrototype.__class__=typePrototype), causing false positives.
     const proto::ProtoString* classS = getClassString();
-    if (classS) {
+    if (classS && obj->hasOwnAttribute(ctx, classS) == PROTO_TRUE) {
         const proto::ProtoObject* cls = obj->proto::ProtoObject::getAttribute(ctx, classS);
         if (cls == tProto) return true;
-        if (cls && tProto && cls->isInstanceOf(ctx, tProto) == PROTO_TRUE) return true;
     }
 
-    // Fallback: if it has __bases__ and __name__ (raw check), it's very likely a class
-    if (obj->proto::ProtoObject::getAttribute(ctx, getNameString()) != nullptr &&
-        obj->proto::ProtoObject::getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__bases__")) != nullptr) {
+    // Fallback: if obj ITSELF (not via inheritance) has both __bases__ and __name__, it's a class.
+    // Use hasOwnAttribute to avoid inheriting these from the prototype.
+    const proto::ProtoString* basesS = PythonEnvironment::getInternedString(ctx, "__bases__");
+    if (obj->hasOwnAttribute(ctx, getNameString()) == PROTO_TRUE &&
+        obj->hasOwnAttribute(ctx, basesS) == PROTO_TRUE) {
         return true;
     }
 
@@ -9763,8 +9944,15 @@ const proto::ProtoObject* PythonEnvironment::getType(proto::ProtoContext* ctx, c
     if (obj->isFloat(ctx)) return floatPrototype;
     if (obj->isBoolean(ctx)) return boolPrototype;
 
+    // 1.5 Early check: native ProtoTuple instances (NOT class objects).
+    // Must come BEFORE the __class__ lookup because a tuple instance inherits
+    // __class__=typePrototype from tuplePrototype (a class), which would incorrectly
+    // cause getType to return typePrototype for tuple instances.
+    // isActuallyAClass guards against misidentifying tuplePrototype itself.
+    if (obj->isTuple(ctx) && !this->isActuallyAClass(ctx, obj)) return tuplePrototype;
+
     // 2. Python-level __class__ (Explicit Identity)
-    // CRITICAL: We use raw attribute access here to avoid recursion loops 
+    // CRITICAL: We use raw attribute access here to avoid recursion loops
     // when getType is called from within getAttribute.
     const proto::ProtoString* classS = getClassString() ? getClassString() : PythonEnvironment::getInternedString(ctx, "__class__");
     const proto::ProtoObject* cls = obj->proto::ProtoObject::getAttribute(ctx, classS);
@@ -9843,7 +10031,27 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
     }
 
     bool isClass = this->isActuallyAClass(ctx, obj);
-    
+
+    // Special case: cls.__dict__ is always a data descriptor defined on the metaclass (type).
+    // It must be invoked with instance = cls, not instance = None.  The MRO search below
+    // incorrectly finds dictDescr via native parent chain of MRO members (section 1.1) and
+    // then falls through with foundOnMeta = false, causing py_getset_get to return the raw
+    // descriptor.  Bypass the whole machinery here so we always get a MappingProxy.
+    if (isClass && dictString && nameStr == "__dict__" && typePrototype) {
+        const proto::ProtoObject* dictDescr = typePrototype->proto::ProtoObject::getAttribute(ctx, dictString);
+        if (dictDescr && dictDescr != PROTO_NONE) {
+            const proto::ProtoString* dunderGet = this->getGetDunderString();
+            const proto::ProtoObject* getM = dunderGet ? dictDescr->proto::ProtoObject::getAttribute(ctx, dunderGet) : nullptr;
+            if (getM && getM != PROTO_NONE && getM->isMethod(ctx)) {
+                const proto::ProtoObject* typeOfCls = this->getType(ctx, obj);
+                const proto::ProtoList* args = ctx->newList()
+                    ->appendLast(ctx, obj)
+                    ->appendLast(ctx, typeOfCls ? typeOfCls : PROTO_NONE);
+                return getM->asMethod(ctx)(ctx, dictDescr, nullptr, args, nullptr);
+            }
+        }
+    }
+
     // Special handling for __class__
     if (nameStr == "__class__" && !isClass) {
         return this->getType(ctx, obj);
@@ -9966,6 +10174,7 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
     }
 
     // 1.2 Metaclass Lookup (for classes)
+    bool foundOnMeta = false;  // Tracks if val was found via metaclass (not class's own MRO)
     if (isClass && !foundOnClassOrMro) {
         const proto::ProtoObject* meta = this->getType(ctx, obj);
         if (meta && meta != PROTO_NONE && meta != obj) {
@@ -9977,6 +10186,7 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
                     val = baseCls->proto::ProtoObject::getAttribute(ctx, name);
                     if (val && val != PROTO_NONE) {
                         foundOnClassOrMro = true;
+                        foundOnMeta = true;
                         break;
                     }
                     // ROBUST FALLBACK (Metaclass MRO): Name-based search
@@ -9990,6 +10200,7 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
                                 if (ks == nameStr) {
                                     val = baseCls->proto::ProtoObject::getAttribute(ctx, keyO->asString(ctx));
                                     foundOnClassOrMro = true;
+                                    foundOnMeta = true;
                                     break;
                                 }
                             }
@@ -10008,6 +10219,7 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
                              val = baseCls->proto::ProtoObject::getAttribute(ctx, name);
                              if (val && val != PROTO_NONE) {
                                  foundOnClassOrMro = true;
+                                 foundOnMeta = true;
                                  break;
                              }
                              // ROBUST FALLBACK (Metaclass Parent): Name-based search
@@ -10021,6 +10233,7 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
                                          if (ks == nameStr) {
                                              val = baseCls->proto::ProtoObject::getAttribute(ctx, keyO->asString(ctx));
                                              foundOnClassOrMro = true;
+                                             foundOnMeta = true;
                                              break;
                                          }
                                      }
@@ -10031,6 +10244,7 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
                      }
                  } else {
                      foundOnClassOrMro = true;
+                     foundOnMeta = true;
                  }
             }
         }
@@ -10059,13 +10273,20 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
             if (!this->modulePrototype || (obj != this->modulePrototype && objClass != this->modulePrototype)) {
                      const proto::ProtoObject* instance = obj;
                      const proto::ProtoObject* owner = objClass;
-                     
+
                      if (isClass) {
-                         // Descriptor Protocol for Classes
-                         instance = PROTO_NONE;
-                         owner = obj;
+                         if (foundOnMeta) {
+                             // Descriptor found on metaclass: the class IS the instance
+                             // (e.g. cls.__dict__ where __dict__ is a getset_descriptor on type)
+                             instance = obj;
+                             owner = objClass;  // metaclass
+                         } else {
+                             // Descriptor found on class's own MRO (e.g. classmethod, property on the class)
+                             instance = PROTO_NONE;
+                             owner = obj;
+                         }
                      }
-                     
+
                      const proto::ProtoList* args = ctx->newList()->appendLast(ctx, instance)->appendLast(ctx, owner ? owner : PROTO_NONE);
                      // If we are deep in getAttribute, maybe don't call descriptor methods to avoid hangs?
                      // But properties need it. We trust RecursionScope and AttrDepthGuard.
@@ -10370,7 +10591,13 @@ const proto::ProtoObject* PythonEnvironment::resolveModule(const std::string& na
                     const proto::ProtoSparseList* dict = (dataAttr && dataAttr != PROTO_NONE) ? dataAttr->asSparseList(ctx) : modules->asSparseList(ctx);
                     if (dict && dict->has(ctx, PythonEnvironment::getInternedString(ctx, nameStr.c_str())->getHash(ctx))) {
                         const proto::ProtoObject* sysMod = dict->getAt(ctx, PythonEnvironment::getInternedString(ctx, nameStr.c_str())->getHash(ctx));
-                        if (sysMod == result) isNative = true;
+                        if (sysMod == result) {
+                            isNative = true;
+                        } else if (sysMod && sysMod != PROTO_NONE) {
+                            // sys.modules has a richer version (e.g., Python posixpath vs native os.path stub).
+                            // Prefer sys.modules over the ProtoSpace native stub.
+                            return sysMod;
+                        }
                     }
                 }
             }
@@ -10542,9 +10769,14 @@ const proto::ProtoObject* PythonEnvironment::binaryOp(const proto::ProtoObject* 
 
     if (dunder) {
         const proto::ProtoObject* method = a->getAttribute(ctx, dunder);
-        if (method && method->asMethod(ctx)) {
+        if (method) {
             const proto::ProtoList* args = ctx->newList()->appendLast(ctx, b);
-            return method->asMethod(ctx)(ctx, a, nullptr, args, nullptr);
+            if (method->asMethod(ctx)) {
+                return method->asMethod(ctx)(ctx, a, nullptr, args, nullptr);
+            }
+            // Handle Python callable (function/bound method)
+            const proto::ProtoList* selfArgs = ctx->newList()->appendLast(ctx, a)->appendLast(ctx, b);
+            return invokePythonCallable(ctx, method, selfArgs, nullptr);
         }
     }
 
@@ -10868,7 +11100,7 @@ const proto::ProtoObject* PythonEnvironment::iter(const proto::ProtoObject* obj)
             const proto::ProtoObject* iterObj = iterProto->newChild(ctx, true);
             iterObj = iterObj->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__iter_list__"), obj);
             iterObj = iterObj->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__iter_it__"), it->asObject(ctx));
-            fprintf(stderr, "DEBUG py_list_iter: returning iterObj=%p\n", (void*)iterObj); return iterObj;
+            return iterObj;
         }
     } else if (obj->asTuple(ctx)) {
         const proto::ProtoString* iterProtoName = PythonEnvironment::getInternedString(ctx, "__iter_prototype__");
@@ -10880,7 +11112,7 @@ const proto::ProtoObject* PythonEnvironment::iter(const proto::ProtoObject* obj)
                 const proto::ProtoObject* iterObj = iterProto->newChild(ctx, true);
                 iterObj = iterObj->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__iter_list__"), obj);
                 iterObj = iterObj->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__iter_it__"), it->asObject(ctx));
-                fprintf(stderr, "DEBUG py_list_iter: returning iterObj=%p\n", (void*)iterObj); return iterObj;
+                return iterObj;
             }
         }
     } else if (obj->isString(ctx)) {
@@ -10899,7 +11131,7 @@ const proto::ProtoObject* PythonEnvironment::iter(const proto::ProtoObject* obj)
                 const proto::ProtoObject* iterObj = iterProto->newChild(ctx, true);
                 iterObj = iterObj->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__iter_list__"), keysObj);
                 iterObj = iterObj->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__iter_it__"), it->asObject(ctx));
-                fprintf(stderr, "DEBUG py_list_iter: returning iterObj=%p\n", (void*)iterObj); return iterObj;
+                return iterObj;
             }
         }
     } else if (obj->asSet(ctx) || (obj->getPrototype(ctx) && obj->getPrototype(ctx) == setPrototype)) {
@@ -10933,21 +11165,23 @@ const proto::ProtoObject* PythonEnvironment::iter(const proto::ProtoObject* obj)
         return obj; 
     }
 
-    fprintf(stderr, "DEBUG ITER: object %p is NOT iterable. type=%s repr=%s\n", (void*)obj, reprObject(ctx, getType(ctx, obj)).c_str(), reprObject(ctx, obj).c_str());
-    const proto::ProtoObject* frame = getCurrentFrame();
-    if (frame) {
-        const proto::ProtoObject* code = frame->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "f_code"));
-        if (code) {
-           std::string filename = "unknown";
-           const proto::ProtoObject* fn = code->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_filename"));
-           if (fn && fn->isString(ctx)) fn->asString(ctx)->toUTF8String(ctx, filename);
-           fprintf(stderr, "  - At file: %s\n", filename.c_str());
+    if (std::getenv("PROTO_ENV_DIAG")) {
+        fprintf(stderr, "DEBUG ITER: object %p is NOT iterable. type=%s repr=%s\n", (void*)obj, reprObject(ctx, getType(ctx, obj)).c_str(), reprObject(ctx, obj).c_str());
+        const proto::ProtoObject* frame = getCurrentFrame();
+        if (frame) {
+            const proto::ProtoObject* code = frame->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "f_code"));
+            if (code) {
+               std::string filename = "unknown";
+               const proto::ProtoObject* fn = code->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_filename"));
+               if (fn && fn->isString(ctx)) fn->asString(ctx)->toUTF8String(ctx, filename);
+               fprintf(stderr, "  - At file: %s\n", filename.c_str());
+            }
         }
+        void* array[10];
+        size_t size = backtrace(array, 10);
+        backtrace_symbols_fd(array, size, STDERR_FILENO);
+        fflush(stderr);
     }
-    void* array[10];
-    size_t size = backtrace(array, 10);
-    backtrace_symbols_fd(array, size, STDERR_FILENO);
-    fflush(stderr);
     raiseTypeError(ctx, "object is not iterable");
     return nullptr;
 }
@@ -10966,7 +11200,7 @@ const proto::ProtoObject* PythonEnvironment::next(const proto::ProtoObject* obj)
     }
 
     if (!obj || obj == PROTO_NONE) return nullptr;
-    
+
     const proto::ProtoObject* method = obj->getAttribute(ctx, getNextString());
     if (method && method->asMethod(ctx)) {
         const proto::ProtoObject* res = method->asMethod(ctx)(ctx, obj, nullptr, getEmptyList(), nullptr);
@@ -11431,11 +11665,6 @@ const proto::ProtoObject* PythonEnvironment::py_method_call(proto::ProtoContext*
     const proto::ProtoObject* func = self->getAttribute(ctx, env->getFuncDunderString());
     const proto::ProtoObject* instance = self->getAttribute(ctx, env->getSelfDunderString());
 
-    if (std::getenv("PROTO_ENV_DIAG")) {
-        fprintf(stderr, "DEBUG: py_method_call(func=%p, inst=%p)\n", (void*)func, (void*)instance);
-        fflush(stderr);
-    }
-    
     if (!func || func == PROTO_NONE) {
         env->raiseTypeError(ctx, "bound method has no __func__");
         return PROTO_NONE;

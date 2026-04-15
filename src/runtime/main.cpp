@@ -308,7 +308,7 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    if (std::getenv("PROTO_ENV_DIAG") || true) { // Force print stdlib for now
+    if (std::getenv("PROTO_ENV_DIAG")) {
         fprintf(stderr, "DEBUG MAIN: Resolved stdLibPath: %s\n", stdLibPath.c_str());
         fflush(stderr);
     }
@@ -333,7 +333,6 @@ int main(int argc, char* argv[]) {
     else argvVec.push_back("");
     
     argvVec.insert(argvVec.end(), options.targetArgs.begin(), options.targetArgs.end());
-    printf("DEBUG RUNTIME argvVec size=%zu\n", argvVec.size());
 
 
     if (options.repl) {

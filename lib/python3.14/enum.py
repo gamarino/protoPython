@@ -504,10 +504,9 @@ class EnumType(type):
         #
         # get data type of member and the controlling Enum class
         member_type, first_enum = EnumType._get_mixins_(metacls, cls, bases)
-        tmp_new = EnumType._find_new_(
+        member_new, save_new, use_args = EnumType._find_new_(
                 metacls, classdict, member_type, first_enum,
                 )
-        member_new, save_new, use_args = tmp_new
         dict.__setitem__(classdict, '_new_member_', member_new)
         dict.__setitem__(classdict, '_use_args_', use_args)
         #
@@ -537,12 +536,8 @@ class EnumType(type):
             dict.__setitem__(classdict, '_%s__in_progress' % cls, True)
         except:
             pass
-        try:
-            enum_class = _type.__new__(metacls, cls, bases, classdict, **kwds)
-        except:
-            # try with fewer args if type.__new__ fails
-            enum_class = _type.__new__(metacls, cls, bases, classdict)
-        
+        enum_class = _type.__new__(metacls, cls, bases, classdict, **kwds)
+
         # update classdict with any changes made by __init_subclass__
         # (CPython 3.12+ does this)
         if hasattr(enum_class, '__init_subclass__'):
@@ -712,7 +707,6 @@ class EnumType(type):
         return cls._member_map_[name]
 
     def __iter__(cls):
-        print(f"DEBUG_ITER: cls={cls} names={getattr(cls, '_member_names_', 'MISSING')}")
         return (cls._member_map_[name] for name in cls._member_names_)
 
     def __len__(cls):
@@ -956,12 +950,13 @@ class EnumType(type):
             for method in ('__new_member__', '__new__'):
                 for possible in (member_type, first_enum):
                     target = getattr(possible, method, None)
-                    if target not in {
+                    _cmp_set = {
                             None,
                             None.__new__,
                             object.__new__,
                             Enum.__new__,
-                            }:
+                            }
+                    if target not in _cmp_set:
                         member_new = target
                         break
                 if member_new is not None:
@@ -1743,6 +1738,15 @@ def _simple_enum(etype=Enum, *, boundary=None, use_args=None):
         # however, if the method is defined in the Enum itself, don't replace
         # it
         enum_class = EnumType(cls_name, (etype, ), body, boundary=boundary, _simple=True)
+        # EnumType.__new__ replaces _member_map_ and other dicts with fresh objects;
+        # re-bind local variables so mutations in the loops below are visible on enum_class.
+        member_map = enum_class._member_map_
+        value2member_map = enum_class._value2member_map_
+        hashable_values = enum_class._hashable_values_
+        unhashable_values = enum_class._unhashable_values_
+        # _use_args_ and _new_member_ may also have been updated by EnumType.__new__
+        use_args = enum_class._use_args_
+        new_member = enum_class._new_member_
         for name in ('__repr__', '__str__', '__format__', '__reduce_ex__'):
             if name not in body:
                 # check for mixin overrides before replacing
@@ -1753,7 +1757,8 @@ def _simple_enum(etype=Enum, *, boundary=None, use_args=None):
                 if found_method in (data_type_method, object_method):
                     setattr(enum_class, name, enum_method)
         gnv_last_values = []
-        if issubclass(enum_class, Flag):
+        _is_flag = issubclass(enum_class, Flag)
+        if _is_flag:
             # Flag / IntFlag
             single_bits = multi_bits = 0
             for name, value in attrs.items():

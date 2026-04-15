@@ -238,11 +238,17 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     const proto::ProtoString* code_name = env ? env->getCodeString() : PythonEnvironment::getInternedString(ctx, "__code__");
     const proto::ProtoObject* codeObj = self->getAttribute(ctx, code_name);
-    if (!codeObj || codeObj == PROTO_NONE) return PROTO_NONE;
+    if (!codeObj || codeObj == PROTO_NONE) {
+        fprintf(stderr, "DIAG_USERFN: self=%p codeObj=NULL EARLY_RETURN\n", (void*)self);
+        fflush(stderr);
+        return PROTO_NONE;
+    }
 
     const proto::ProtoString* globals_name = env ? env->getGlobalsString() : PythonEnvironment::getInternedString(ctx, "__globals__");
     const proto::ProtoObject* globalsObj = self->getAttribute(ctx, globals_name);
-    if (!globalsObj || globalsObj == PROTO_NONE) return PROTO_NONE;
+    if (!globalsObj || globalsObj == PROTO_NONE) {
+        return PROTO_NONE;
+    }
 
     const proto::ProtoString* co_flags_name = env ? env->getCoFlagsString() : PythonEnvironment::getInternedString(ctx, "co_flags");
     const proto::ProtoObject* co_flags_obj = codeObj->getAttribute(ctx, co_flags_name);
@@ -498,8 +504,9 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
     if (isGenerator) {
         proto::ProtoObject* gen = const_cast<proto::ProtoObject*>(calleeCtx->newObject(true));
         if (env && env->getGeneratorPrototype()) {
-            gen = const_cast<proto::ProtoObject*>(gen->addParent(calleeCtx, env->getGeneratorPrototype()));
-            gen->setAttribute(calleeCtx, env->getClassString(), env->getGeneratorPrototype());
+            const proto::ProtoObject* genProto = env->getGeneratorPrototype();
+            gen = const_cast<proto::ProtoObject*>(gen->addParent(calleeCtx, genProto));
+            gen->setAttribute(calleeCtx, env->getClassString(), genProto);
         }
         gen->setAttribute(calleeCtx, env ? env->getGiCodeString() : PythonEnvironment::getInternedString(calleeCtx, "gi_code"), codeObj);
         gen->setAttribute(calleeCtx, env ? env->getGiFrameString() : PythonEnvironment::getInternedString(calleeCtx, "gi_frame"), frame);
@@ -799,78 +806,14 @@ static const proto::ProtoObject* binaryModulo(proto::ProtoContext* ctx,
         return a->modulo(ctx, b);
     }
     if (a->isString(ctx)) {
-        std::string* tplPtr = new std::string();
-        a->asString(ctx)->toUTF8String(ctx, *tplPtr);
-        
-        auto getStr = [&](const proto::ProtoObject* obj) -> std::string {
-            if (obj->isString(ctx)) {
-                std::string* sPtr = new std::string();
-                obj->asString(ctx)->toUTF8String(ctx, *sPtr);
-                std::string res = *sPtr;
-                delete sPtr;
-                return res;
-            } else if (obj->isInteger(ctx)) {
-                return std::to_string(obj->asLong(ctx));
-            } else if (obj->isDouble(ctx)) {
-                return std::to_string(obj->asDouble(ctx));
-            } else if (obj == PROTO_TRUE) {
-                return "True";
-            } else if (obj == PROTO_FALSE) {
-                return "False";
-            } else if (obj == PROTO_NONE || !obj) {
-                return "None";
-            } else {
-                PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-                const proto::ProtoString* strS = env ? env->getStrString() : protoPython::PythonEnvironment::getInternalString(ctx, "__str__");
-                const proto::ProtoObject* strM = env ? env->getAttribute(ctx, obj, strS) : obj->getAttribute(ctx, strS);
-                if (strM && strM->asMethod(ctx)) {
-                    const proto::ProtoObject* rs = strM->asMethod(ctx)(ctx, obj, nullptr, env ? env->getEmptyList() : ctx->newList(), nullptr);
-                    std::string* sPtr = new std::string();
-                    if (rs && rs->isString(ctx)) {
-                        rs->asString(ctx)->toUTF8String(ctx, *sPtr);
-                        std::string res = *sPtr;
-                        delete sPtr;
-                        return res;
-                    }
-                    delete sPtr;
-                }
-                return "<object>";
-            }
-        };
-
-        if (b->isTuple(ctx)) {
-            const proto::ProtoTuple* bt = b->asTuple(ctx);
-            unsigned long n = bt->getSize(ctx);
-            for (unsigned long i = 0; i < n; ++i) {
-                std::string val = getStr(bt->getAt(ctx, i));
-                size_t pos = tplPtr->find("%s");
-                if (pos == std::string::npos) pos = tplPtr->find("%d");
-                if (pos != std::string::npos) {
-                    tplPtr->replace(pos, 2, val);
-                }
-            }
-        } else {
-            std::string valStr = getStr(b);
-            size_t pos = 0;
-            bool replaced = false;
-            while ((pos = tplPtr->find("%s", pos)) != std::string::npos) {
-                tplPtr->replace(pos, 2, valStr);
-                pos += valStr.length();
-                replaced = true;
-            }
-            pos = 0;
-            while ((pos = tplPtr->find("%d", pos)) != std::string::npos) {
-                tplPtr->replace(pos, 2, valStr);
-                pos += valStr.length();
-                replaced = true;
-            }
-            if (!replaced && tplPtr->find('%') != std::string::npos) {
-                // Potential formatting error or unsupported specifier
-            }
+        // Delegate to str.__mod__ via the Python env attribute lookup (respects strPrototype chain).
+        protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(ctx);
+        const proto::ProtoString* modS = protoPython::PythonEnvironment::getInternalString(ctx, "__mod__");
+        const proto::ProtoObject* method = env ? env->getAttribute(ctx, a, modS) : a->getAttribute(ctx, modS);
+        if (method && method != PROTO_NONE && method->asMethod(ctx)) {
+            const proto::ProtoList* args = ctx->newList()->appendLast(ctx, b);
+            return method->asMethod(ctx)(ctx, a, nullptr, args, nullptr);
         }
-        const proto::ProtoObject* res = PythonEnvironment::getInternedString(ctx, tplPtr->c_str())->asObject(ctx);
-        delete tplPtr;
-        return res;
     }
     return PROTO_NONE;
 }
@@ -1460,7 +1403,7 @@ const proto::ProtoObject* py_generator_close(
     const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (!env) return PROTO_NONE;
-    
+
     // Check if already closed
     const proto::ProtoObject* pcObj = self->getAttribute(ctx, env->getGiPCString());
     const proto::ProtoObject* codeObj = self->getAttribute(ctx, env->getGiCodeString());
@@ -1477,17 +1420,51 @@ const proto::ProtoObject* py_generator_close(
         // Fallback: search in builtins if cached is null (during bootstrap)
         genExitType = env->getAttribute(ctx, env->getBuiltins(), PythonEnvironment::getInternedString(ctx, "GeneratorExit"), false);
     }
-    
+
     if (!genExitType || genExitType == PROTO_NONE) {
         return PROTO_NONE;
     }
-    const proto::ProtoObject* genExit = ctx->newObject(true);
-    genExit = genExit->addParent(ctx, genExitType);
-    
+    // Create GeneratorExit instance via proper Python constructor call so that
+    // the prototype chain is fully set up for isInstanceOf to work correctly.
+    const proto::ProtoList* emptyArgs = ctx->newList();
+    const proto::ProtoObject* genExit = invokePythonCallable(ctx, genExitType, emptyArgs, nullptr);
+    if (!genExit || genExit == PROTO_NONE) {
+        // Fallback: bare object with parent (may not be fully recognized by isinstance)
+        genExit = ctx->newObject(true);
+        genExit = genExit->addParent(ctx, genExitType);
+    }
+    // Clear any exception that may have been set during instance construction.
+    if (env->hasPendingException()) {
+        env->clearPendingException();
+    }
+
     try {
         py_generator_send_impl(ctx, self, PROTO_NONE, genExit);
     } catch (...) {
-        // In Python, GeneratorExit is special.
+        // C++ exception: clear any pending protoPython exception and return.
+        if (env->hasPendingException()) {
+            env->clearPendingException();
+        }
+        return PROTO_NONE;
+    }
+
+    // py_generator_send_impl sets a pending exception when the generator
+    // does not handle GeneratorExit (the common case for a simple generator).
+    // Python semantics: close() must swallow GeneratorExit and StopIteration;
+    // any other exception propagates to the caller.
+    if (env->hasPendingException()) {
+        const proto::ProtoObject* exc = env->peekPendingException();
+        bool isGenExit = false;
+        if (genExitType && exc) {
+            isGenExit = (exc == genExitType) ||
+                        (exc->getPrototype(ctx) == genExitType) ||
+                        (exc->isInstanceOf(ctx, genExitType) == PROTO_TRUE);
+        }
+        bool isStopIt = env->isStopIteration(ctx, exc);
+        if (isGenExit || isStopIt) {
+            env->clearPendingException();
+        }
+        // Otherwise leave the exception pending so it propagates.
     }
     return PROTO_NONE;
 }
@@ -2595,20 +2572,12 @@ const proto::ProtoObject* executeBytecodeRange(
                             if (std::getenv("PROTO_RESOLVE_DIAG")) {
                             }
                             if (val) {
-                                std::string n;
-                                nameObj->asString(ctx)->toUTF8String(ctx, n);
-                                if (n == "_splitext") {
-                                    fprintf(stderr, "DEBUG: OP_IMPORT_STAR storing _splitext from mod %p: val %p\n", (void*)mod, (void*)val);
-            fflush(stderr);
-                                }
                                 frame = const_cast<proto::ProtoObject*>(frame->setAttribute(ctx, nameObj->asString(ctx), val));
                             }
                         }
                         it = it->advance(ctx);
                     }
-                    fprintf(stderr, "OP_IMPORT_STAR finished loop 1\n"); fflush(stderr);
                 } else {
-                    fprintf(stderr, "OP_IMPORT_STAR using __keys__\n");
                     // 2. Iterate over all attributes if __keys__ is available
                     const proto::ProtoObject* keysObj = mod->getAttribute(ctx, protoPython::PythonEnvironment::getInternalString(ctx, "__keys__"));
                     if (keysObj && keysObj->asList(ctx)) {
@@ -2625,10 +2594,6 @@ const proto::ProtoObject* executeBytecodeRange(
                                 }
                                 const proto::ProtoObject* val = mod->getAttribute(ctx, nameObj->asString(ctx));
                                 if (val) {
-                                    if (n == "_splitext") {
-                                        fprintf(stderr, "DEBUG: OP_IMPORT_STAR (fallback) storing _splitext from mod %p: val %p\n", (void*)mod, (void*)val);
-            fflush(stderr);
-                                    }
                                     frame = const_cast<proto::ProtoObject*>(frame->setAttribute(ctx, nameObj->asString(ctx), val));
                                 }
                             }
@@ -2909,6 +2874,15 @@ const proto::ProtoObject* executeBytecodeRange(
                             lst = lst->appendLast(ctx, fromList->getAt(ctx, j));
                         }
                         lstObj->setAttribute(ctx, dataString, lst->asObject(ctx));
+                    } else {
+                        // Handle ProtoTuple iterables (e.g. raw *args tuple from varargs binding)
+                        const proto::ProtoTuple* fromTuple = (fromData && fromData->asTuple(ctx)) ? fromData->asTuple(ctx) : iterable->asTuple(ctx);
+                        if (fromTuple) {
+                            for (unsigned long j = 0; j < fromTuple->getSize(ctx); ++j) {
+                                lst = lst->appendLast(ctx, fromTuple->getAt(ctx, j));
+                            }
+                            lstObj->setAttribute(ctx, dataString, lst->asObject(ctx));
+                        }
                     }
                 }
                 stack.pop_back(); // Pop iterable
@@ -2940,6 +2914,8 @@ const proto::ProtoObject* executeBytecodeRange(
             stack.push_back(setObj); // Root setObj
             if (env && env->getSetPrototype()) {
                 setObj = const_cast<proto::ProtoObject*>(setObj->addParent(ctx, env->getSetPrototype()));
+                stack.back() = setObj;
+                setObj = const_cast<proto::ProtoObject*>(setObj->setAttribute(ctx, env->getClassString(), env->getSetPrototype()));
                 stack.back() = setObj;
             }
             const proto::ProtoSet* data = ctx->newSet();
@@ -3017,7 +2993,8 @@ const proto::ProtoObject* executeBytecodeRange(
                         visited.insert(curr);
                         
                         val = curr->getAttribute(ctx, nameS);
-                        if (val && val != PROTO_NONE) { found = true; break; }
+                        // getAttribute returns nullptr when not found; PROTO_NONE is a valid Python None value
+                        if (val != nullptr) { found = true; break; }
 
                     if (env) {
                         const proto::ProtoObject* closureAttr = curr->getAttribute(ctx, env->getClosureString());
@@ -3040,12 +3017,13 @@ const proto::ProtoObject* executeBytecodeRange(
                             }
                         }
                     }
-                    
+
                     const proto::ProtoString* dName = env ? env->getDataString() : protoPython::PythonEnvironment::getInternalString(ctx, "__data__");
                     const proto::ProtoObject* dataObj = curr->getAttribute(ctx, dName);
                     if (dataObj && dataObj->asSparseList(ctx)) {
                         val = dataObj->asSparseList(ctx)->getAt(ctx, h);
-                        if (val && val != PROTO_NONE) { found = true; break; }
+                        // asSparseList->getAt returns nullptr when key not found
+                        if (val != nullptr) { found = true; break; }
                     }
 
                     const proto::ProtoList* parents = curr->getParents(ctx);
@@ -3233,17 +3211,30 @@ const proto::ProtoObject* executeBytecodeRange(
                             
                             const proto::ProtoObject* actualVal = val ? val : (env ? env->getNonePrototype() : PROTO_NONE);
 
-                            if (actualVal->isMethod(ctx)) {
-                                // It's already a bound method from getAttribute/descriptor
+                            if (actualVal->isMethod(ctx) && actualVal->asMethodSelf(ctx) != nullptr) {
+                                // It's a bound method from getAttribute/descriptor.
+                                // Push [NULL, bound_method] so invokeCallable uses
+                                // bound_method->asMethodSelf() as the correct self.
+                                // Do NOT decompose into [__func__, __self__] — __func__
+                                // is the unbound prototype method (asMethodSelf=nullptr),
+                                // which would cause self=null in native functions.
+                                stack.back() = nullptr; // NULL marker
+                                stack.push_back(actualVal);
+                            } else if (actualVal->isMethod(ctx)) {
+                                // Unbound method (asMethodSelf=nullptr) — treat as regular callable.
+                                // This handles Python-level method descriptors where __self__ is
+                                // stored as an attribute rather than via asMethodSelf.
                                 isMethod = true;
                                 method = actualVal->getAttribute(ctx, env ? env->getFuncDunderString() : PythonEnvironment::getInternedString(ctx, "__func__"));
                                 selfObj = actualVal->getAttribute(ctx, env ? env->getSelfDunderString() : PythonEnvironment::getInternedString(ctx, "__self__"));
-                                if (!method) { method = actualVal; isMethod = false; } // Fallback
-                            }
-                            
-                            if (isMethod) {
-                                stack.back() = method;
-                                stack.push_back(selfObj);
+                                if (!method || !selfObj) {
+                                    // No __func__/__self__ — keep whole and push as [NULL, attr]
+                                    stack.back() = nullptr;
+                                    stack.push_back(actualVal);
+                                } else {
+                                    stack.back() = method;
+                                    stack.push_back(selfObj);
+                                }
                             } else {
                                 stack.back() = nullptr; // NULL marker
                                 stack.push_back(actualVal);
@@ -3702,7 +3693,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 }
                 callArgs = selfArgs;
             }
-            
+
             if (!callable) {
                  if (get_env_diag()) fprintf(stderr, "DEBUG: OP_CALL_FUNCTION nullptr callable detected! PC=%lu\n", i);
                  if (env) env->raiseTypeError(ctx, "object is not callable (nullptr)");
@@ -3711,7 +3702,8 @@ const proto::ProtoObject* executeBytecodeRange(
             }
 
             const proto::ProtoObject* result = invokeCallable(ctx, callable, callArgs);
-            
+
+
             // Cleanup: Pop (arg + slots)
             int itemsToPop = arg + (isModern ? 2 : 1);
             for (int j = 0; j < itemsToPop; ++j) {
@@ -3858,7 +3850,39 @@ const proto::ProtoObject* executeBytecodeRange(
                     fprintf(stderr, "DEBUG: OP_BUILD_FUNCTION PC=%lu arg=0x%lx codeObj=%p (line %d) defaults=%p kwDefaults=%p\n", i, (unsigned long)arg, (void*)codeObj, line, (void*)defaults, (void*)kwDefaults);
                     fflush(stderr);
                 }
-                proto::ProtoObject* fn = createUserFunction(ctx, codeObj, const_cast<proto::ProtoObject*>(PythonEnvironment::getCurrentGlobals()), frame, defaults, kwDefaults);
+
+                // Snapshot current CO_OPTIMIZED slot values into the closure frame.
+                // In CO_OPTIMIZED functions, local variables live in ctx->getAutomaticLocals()
+                // slots and are NOT stored as frame attributes. The inner function's LOAD_DEREF
+                // searches through the frame chain by attribute name, so we must write the slot
+                // values into the frame object before using it as a closure.
+                // The closureFrame is GC-rooted on the evaluation stack throughout this process.
+                proto::ProtoObject* closureFrame = frame;
+                // The frame stores the code object as f_code (not __code__)
+                const proto::ProtoString* codeKey = env ? env->getFCodeString() : PythonEnvironment::getInternedString(ctx, "f_code");
+                const proto::ProtoObject* outerCodeAttr = frame->getAttribute(ctx, codeKey);
+                if (outerCodeAttr && outerCodeAttr != PROTO_NONE) {
+                    const proto::ProtoObject* coVarnamesObj = outerCodeAttr->getAttribute(ctx, env ? env->getCoVarnamesString() : PythonEnvironment::getInternedString(ctx, "co_varnames"));
+                    if (coVarnamesObj && coVarnamesObj != PROTO_NONE) {
+                        const proto::ProtoTuple* coVarnames = coVarnamesObj->asTuple(ctx);
+                        if (coVarnames) {
+                            // Push closureFrame onto stack to keep it GC-rooted during setAttribute calls.
+                            stack.push_back(closureFrame);
+                            const proto::ProtoObject** outerSlots = ctx->getAutomaticLocals();
+                            unsigned int outerNSlots = ctx->getAutomaticLocalsCount();
+                            for (unsigned int j = 0; j < coVarnames->getSize(ctx) && j < outerNSlots; ++j) {
+                                const proto::ProtoObject* vnameObj = coVarnames->getAt(ctx, j);
+                                if (vnameObj && vnameObj->isString(ctx) && outerSlots[j]) {
+                                    closureFrame = const_cast<proto::ProtoObject*>(closureFrame->setAttribute(ctx, vnameObj->asString(ctx), outerSlots[j]));
+                                    stack.back() = closureFrame; // Keep GC root updated
+                                }
+                            }
+                            stack.pop_back(); // Remove GC root
+                        }
+                    }
+                }
+
+                proto::ProtoObject* fn = createUserFunction(ctx, codeObj, const_cast<proto::ProtoObject*>(PythonEnvironment::getCurrentGlobals()), closureFrame, defaults, kwDefaults);
                 if (get_env_diag()) {
                     fprintf(stderr, "DEBUG: OP_BUILD_FUNCTION finished createUserFunction fn=%p\n", (void*)fn);
                     fflush(stderr);
@@ -4136,12 +4160,7 @@ const proto::ProtoObject* executeBytecodeRange(
             if (stack.empty()) { i = next_i; continue; }
             const proto::ProtoObject* iterable = stack.back();
             PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-            if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG: FOR_ITER calling iter(iterable)\n");
             const proto::ProtoObject* iterObj = env ? env->iter(iterable) : nullptr;
-            if (std::getenv("PROTO_ENV_DIAG")) {
-                fprintf(stderr, "DEBUG: OP_GET_ITER iterable=%p iterObj=%p\n", (void*)iterable, (void*)iterObj);
-                fflush(stderr);
-            }
             if (iterObj) {
                 stack.back() = iterObj;
             } else {

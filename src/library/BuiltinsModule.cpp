@@ -728,15 +728,11 @@ static const proto::ProtoObject* py_repr(
     }
 
     ::protoPython::PythonEnvironment* env = ::protoPython::PythonEnvironment::fromContext(context);
-    const proto::ProtoString* reprS = env ? env->getReprString() : PythonEnvironment::getInternedString(context, "__repr__");
-    const proto::ProtoList* emptyL = env ? env->getEmptyList() : context->newList();
 
-    const proto::ProtoObject* cls = env ? env->getType(context, obj) : obj->getAttribute(context, PythonEnvironment::getInternedString(context, "__class__"));
-    const proto::ProtoObject* reprMethod = cls ? cls->getAttribute(context, reprS) : obj->getAttribute(context, reprS);
-    if (reprMethod && reprMethod->asMethod(context)) {
-        return reprMethod->asMethod(context)(context, obj, nullptr, emptyL, nullptr);
-    }
-    return PythonEnvironment::getInternedString(context, "<object>")->asObject(context);
+    // Delegate to PythonEnvironment::reprObject which handles both native methods
+    // and Python callables via the full descriptor protocol (type-based __repr__ lookup).
+    std::string result = PythonEnvironment::reprObject(context, obj);
+    return PythonEnvironment::getInternedString(context, result.c_str())->asObject(context);
 }
 
 static const proto::ProtoObject* py_format(
@@ -1069,16 +1065,19 @@ static const proto::ProtoObject* py_callable(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
-    if (positionalParameters->getSize(context) < 1) return PROTO_FALSE;
+    if (!positionalParameters || positionalParameters->getSize(context) < 1) return PROTO_FALSE;
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
+    // None, null, or bare integers/booleans are not callable
+    if (!obj || obj == PROTO_NONE) return PROTO_FALSE;
+    if (obj->isInteger(context) || obj->isBoolean(context)) return PROTO_FALSE;
+    // Native methods are directly callable
     if (obj->asMethod(context)) return PROTO_TRUE;
 
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
-    const proto::ProtoObject* proto = obj->getPrototype(context);
     const proto::ProtoString* callS = env ? env->getCallString() : PythonEnvironment::getInternedString(context, "__call__");
-    const proto::ProtoObject* call = proto ? (env ? env->getAttribute(context, proto, callS) : proto->getAttribute(context, callS)) : nullptr;
-    
-    return (call && call != PROTO_NONE && call->asMethod(context)) ? PROTO_TRUE : PROTO_FALSE;
+    // Search for __call__ on the object itself and its prototype chain
+    const proto::ProtoObject* call = obj->getAttribute(context, callS);
+    return (call && call != PROTO_NONE) ? PROTO_TRUE : PROTO_FALSE;
 }
 
 /** object.__init__(self) **/
@@ -2676,8 +2675,6 @@ const proto::ProtoObject* py_type(
         targetClass = targetClass->setAttribute(context, py_name_s, name);
         targetClass = targetClass->setAttribute(context, PythonEnvironment::getInternedString(context, "__is_python_class__"), PROTO_TRUE);
 
-        // Redundant call removed - initDictStorage is for instances, py_type handles class storage manually.
-
         // 1. Copy dictionary attributes and handle special wrappers
         if (dict) {
             const proto::ProtoString* keysName = env ? env->getKeysString() : PythonEnvironment::getInternedString(context, "__keys__");
@@ -2698,12 +2695,32 @@ const proto::ProtoObject* py_type(
 
                     if (keyObj && keyObj->isString(context)) {
                         const proto::ProtoString* k = keyObj->asString(context);
-                        const proto::ProtoObject* val = (dict->hasOwnAttribute(context, k)) ? dict->getAttribute(context, k) : nullptr;
-                        if (std::getenv("PROTO_ENV_DIAG")) {
-                             std::string ks; k->toUTF8String(context, ks);
-                             fprintf(stderr, "DEBUG py_type: key=%s val=%p\n", ks.c_str(), (void*)val);
+
+                        // Skip keys that py_type sets explicitly or that are internal storage
+                        // primitives — these must never be overwritten from classdict, even if
+                        // a polluted __keys__ list (e.g. inherited from dictPrototype) contains them.
+                        {
+                            std::string ks; k->toUTF8String(context, ks);
+                            if (ks == "__name__" || ks == "__mro__" || ks == "__bases__" ||
+                                ks == "__class__" || ks == "__is_python_class__" ||
+                                ks == "__keys__" || ks == "__data__") {
+                                continue;
+                            }
                         }
-                        
+
+                        const proto::ProtoObject* val = (dict->hasOwnAttribute(context, k)) ? dict->getAttribute(context, k) : nullptr;
+                        // Also check __data__ sparse list (values stored via dict.__setitem__, e.g. from EnumDict).
+                        // Use only the classdict's OWN __data__ to avoid inheriting dictPrototype's storage.
+                        if (!val) {
+                            const proto::ProtoString* dataS = env ? env->getDataString() : PythonEnvironment::getInternedString(context, "__data__");
+                            const proto::ProtoSparseList* dictOwnAttrs = dict->proto::ProtoObject::getOwnAttributes(context);
+                            if (dictOwnAttrs) {
+                                const proto::ProtoObject* dataObj = toImpl<const proto::ProtoSparseListImplementation>(dictOwnAttrs)->implGetAt(context, reinterpret_cast<uintptr_t>(dataS));
+                                if (dataObj && dataObj->asSparseList(context)) {
+                                    val = dataObj->asSparseList(context)->getAt(context, k->getHash(context));
+                                }
+                            }
+                        }
                         // Implicitly wrap special methods
                         if (val && env && val != PROTO_NONE) {
                             std::string ks; k->toUTF8String(context, ks);
@@ -2731,13 +2748,19 @@ const proto::ProtoObject* py_type(
                         
                         targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, k, val));
                         
-                        // Update targetClass.__keys__
+                        // Update targetClass.__keys__ — use OWN-only lookup to avoid
+                        // inheriting typePrototype.__keys__ (which contains type built-in
+                        // method names like 'mro', '__init__', etc.) as the initial list.
                         if (keysName) {
-                            const proto::ProtoObject* tKeysObj = targetClass->getAttribute(context, keysName);
+                            const proto::ProtoObject* tKeysObj = nullptr;
+                            const proto::ProtoSparseList* tcOwnAttrs = targetClass->proto::ProtoObject::getOwnAttributes(context);
+                            if (tcOwnAttrs) {
+                                tKeysObj = toImpl<const proto::ProtoSparseListImplementation>(tcOwnAttrs)->implGetAt(context, reinterpret_cast<uintptr_t>(keysName));
+                            }
                             const proto::ProtoList* tKeysList = tKeysObj ? tKeysObj->asList(context) : nullptr;
                             if (tKeysList) {
                                 if (!tKeysList->has(context, keyObj)) {
-                                     targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, keysName, tKeysList->appendLast(context, keyObj)->asObject(context)));
+                                    targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, keysName, tKeysList->appendLast(context, keyObj)->asObject(context)));
                                 }
                             } else {
                                 const proto::ProtoList* newList = context->newList()->appendLast(context, keyObj);
@@ -2748,6 +2771,8 @@ const proto::ProtoObject* py_type(
                 }
             }
         }
+
+
 
         // 2. Bases and MRO Computation
         const proto::ProtoList* mroList = nullptr;
@@ -2807,9 +2832,10 @@ const proto::ProtoObject* py_type(
         }
 
         if (mroList) {
-            targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, PythonEnvironment::getInternedString(context, "__mro__"), 
-                env ? env->newTuple(mroList) : context->newTupleFromList(mroList)->asObject(context)));
-            
+            const proto::ProtoString* mroName2 = PythonEnvironment::getInternedString(context, "__mro__");
+            const proto::ProtoObject* mroTupleVal = env ? env->newTuple(mroList) : context->newTupleFromList(mroList)->asObject(context);
+            targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, mroName2, mroTupleVal));
+
             // Synchronize native parents
             for (unsigned long i = 1; i < mroList->getSize(context); ++i) {
                 const proto::ProtoObject* p = mroList->getAt(context, i);
@@ -2818,24 +2844,7 @@ const proto::ProtoObject* py_type(
                 }
             }
         }
-        
-        if (mroList) {
-            const proto::ProtoObject* mroTup = env ? env->newTuple(mroList) : context->newTupleFromList(mroList)->asObject(context);
-            targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, PythonEnvironment::getInternedString(context, "__mro__"), mroTup));
-            // Update protoCore 'parents' list natively to reflect the exact same MRO list (minus self)
-            // so that getParents() matches C3 priority order for any C++ recursive attributes lookups.
-            for (size_t i = 1; i < mroList->getSize(context); ++i) {
-                const proto::ProtoObject* parent = mroList->getAt(context, static_cast<int>(i));
-                targetClass = const_cast<proto::ProtoObject*>(targetClass->addParent(context, parent));
-                if (std::getenv("PROTO_ENV_DIAG")) {
-                    std::string pn = "unknown";
-                    const proto::ProtoObject* pName = parent->getAttribute(context, PythonEnvironment::getInternedString(context, "__name__"));
-                    if (pName && pName->isString(context)) pName->asString(context)->toUTF8String(context, pn);
-                    fprintf(stderr, "DEBUG py_type: added parent %s (%p) to class %p\n", pn.c_str(), (void*)parent, (void*)targetClass);
-                }
-            }
-            fflush(stderr);
-        }
+
         
         // Set __module__ if not present
         const proto::ProtoString* py_module = PythonEnvironment::getInternedString(context, "__module__");
@@ -2863,7 +2872,7 @@ const proto::ProtoObject* py_type(
                         if (setName && setName != PROTO_NONE) {
                             const proto::ProtoList* setNameArgs = context->newList()->appendLast(context, val)->appendLast(context, targetClass)->appendLast(context, keyObj);
                             protoPython::invokePythonCallable(context, setName, setNameArgs, nullptr);
-                            if (pe && pe->hasPendingException()) return nullptr;
+                            if (pe && pe->hasPendingException()) { return nullptr; }
                         }
                     }
                 }
@@ -3377,6 +3386,66 @@ static const proto::ProtoObject* py_property_init(
     // property.__init__ ignores its positional and keyword parameters.
     // Initialization is already done natively in __new__.
     return PROTO_NONE;
+}
+
+// Helper: create a copy of a property with one slot replaced.
+static const proto::ProtoObject* py_property_copy_with(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const char* slotName,
+    const proto::ProtoObject* newFn) {
+    proto::ProtoObject* prop = const_cast<proto::ProtoObject*>(self->newChild(context, true));
+    const proto::ProtoString* fgetKey = PythonEnvironment::getInternedString(context, "fget");
+    const proto::ProtoString* fsetKey = PythonEnvironment::getInternedString(context, "fset");
+    const proto::ProtoString* fdelKey = PythonEnvironment::getInternedString(context, "fdel");
+    const proto::ProtoString* classKey = PythonEnvironment::getInternedString(context, "__class__");
+    const proto::ProtoObject* fget = self->getAttribute(context, fgetKey);
+    const proto::ProtoObject* fset = self->getAttribute(context, fsetKey);
+    const proto::ProtoObject* fdel = self->getAttribute(context, fdelKey);
+    const proto::ProtoObject* cls  = self->getAttribute(context, classKey);
+    if (cls  && cls  != PROTO_NONE) prop->setAttribute(context, classKey, cls);
+    if (fget && fget != PROTO_NONE) prop->setAttribute(context, fgetKey, fget);
+    if (fset && fset != PROTO_NONE) prop->setAttribute(context, fsetKey, fset);
+    if (fdel && fdel != PROTO_NONE) prop->setAttribute(context, fdelKey, fdel);
+    // Override the named slot
+    prop->setAttribute(context, PythonEnvironment::getInternedString(context, slotName), newFn);
+    return prop;
+}
+
+// property.getter(fget) -> new property with fget replaced
+static const proto::ProtoObject* py_property_getter_method(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    const proto::ProtoObject* newFget = positionalParameters->getAt(context, 0);
+    return py_property_copy_with(context, self, "fget", newFget);
+}
+
+// property.setter(fset) -> new property with fset replaced
+static const proto::ProtoObject* py_property_setter_method(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    const proto::ProtoObject* newFset = positionalParameters->getAt(context, 0);
+    return py_property_copy_with(context, self, "fset", newFset);
+}
+
+// property.deleter(fdel) -> new property with fdel replaced
+static const proto::ProtoObject* py_property_deleter_method(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    const proto::ProtoObject* newFdel = positionalParameters->getAt(context, 0);
+    return py_property_copy_with(context, self, "fdel", newFdel);
 }
 
 static const proto::ProtoObject* py_property(
@@ -4365,6 +4434,9 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     propertyProto = propertyProto->setAttribute(ctx, pEnv->getNewString(), ctx->fromMethod(nullptr, py_property));
     const proto::ProtoString* initStr = pEnv ? pEnv->getInitString() : PythonEnvironment::getInternedString(ctx, "__init__");
     propertyProto = propertyProto->setAttribute(ctx, initStr, ctx->fromMethod(nullptr, py_property_init));
+    propertyProto = propertyProto->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "getter"),  ctx->fromMethod(nullptr, py_property_getter_method));
+    propertyProto = propertyProto->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "setter"),  ctx->fromMethod(nullptr, py_property_setter_method));
+    propertyProto = propertyProto->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "deleter"), ctx->fromMethod(nullptr, py_property_deleter_method));
     builtins = builtins->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "property"), propertyProto);
     
     const proto::ProtoObject* staticmethodProto = ctx->newObject(true);

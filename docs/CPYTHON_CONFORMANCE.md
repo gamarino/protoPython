@@ -50,7 +50,7 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 - [ ] `test_pydoc.py`
 - [ ] `test_warnings.py`
 
-## Progress Summary (V86 - 2026-04-11)
+## Progress Summary (V88 - 2026-04-15)
 
 | Category | Total | Checked | Passed | Success Rate |
 | :--- | :--- | :--- | :--- | :--- |
@@ -59,6 +59,11 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 | **Necessary** | 5 | 3 | 2 | 67% |
 | **Low Priority** | 4 | 0 | 0 | 0% |
 | **Total** | **22** | **14** | **3** | **14%** |
+
+**Conformity Suite (Phase 1, 2026-04-15)**: 7/9 tests pass. Failures are pre-existing: `int(float)` conversion and `set(iterable)` constructor.
+
+> [!NOTE]
+> **V88 Correctness & Cleanup**: Fixed a critical calling-convention bug in `Compiler.cpp` (`emitNameOp`) where `OP_PUSH_NULL` was not emitted for `LOAD_DEREF` and `LOAD_FAST` when `pushNull=true`. This caused infinite for-loops and corrupted closures. Fixed `enum.py` `_simple_enum` / `convert_class` to re-bind local variables (`member_map`, `value2member_map`, etc.) after `EnumType.__new__` replaces the class body dicts. `import enum` and `enum.Enum` subclassing now work cleanly. Removed all unconditional debug `fprintf` / `std::cerr` calls from `ExecutionEngine.cpp`, `PythonEnvironment.cpp`, `BuiltinsModule.cpp`, `Compiler.cpp`, `NativeModuleProvider.cpp`, `SysModule.cpp`, and `main.cpp`; all diagnostic output is now gated behind `PROTO_ENV_DIAG`.
 
 > [!NOTE]
 > **V87 Stabilization**: Implemented `sys.exc_info()` and stabilized `sys.exception()` to unblock standard library diagnostics. These functions are critical for the `traceback` module, which is now functional for reporting errors during bootstrap. Resolved registration issues where `exception` was incorrectly exposed as a symbol rather than a standard module attribute.

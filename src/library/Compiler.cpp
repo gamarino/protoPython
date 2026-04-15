@@ -513,6 +513,8 @@ bool Compiler::emitNameOp(const std::string& id, TargetCtx ctx, bool pushNull) {
         int idx = addName(id);
         int op = OP_LOAD_DEREF;
         if (ctx == TargetCtx::Store) op = OP_STORE_DEREF;
+        // For function calls, push NULL marker before the callable (3.11+ calling convention)
+        if (ctx == TargetCtx::Load && pushNull) emit(OP_PUSH_NULL, 0);
         emit(op, idx);
         return true;
     }
@@ -521,6 +523,8 @@ bool Compiler::emitNameOp(const std::string& id, TargetCtx ctx, bool pushNull) {
         int op = OP_LOAD_FAST;
         if (ctx == TargetCtx::Store) op = OP_STORE_FAST;
         else if (ctx == TargetCtx::Delete) op = OP_DELETE_FAST;
+        // For function calls, push NULL marker before the callable (3.11+ calling convention)
+        if (op == OP_LOAD_FAST && pushNull) emit(OP_PUSH_NULL, 0);
         emit(op, it->second);
         return true;
     }
@@ -3036,7 +3040,6 @@ struct CodeObjectScope {
 const proto::ProtoObject* runCodeObject(proto::ProtoContext* ctx,
     const proto::ProtoObject* codeObj,
     proto::ProtoObject*& frame) {
-    fprintf(stderr, "!!! runCodeObject START codeObj=%p frame=%p\n", (void*)codeObj, (void*)frame);
     if (!ctx || !codeObj || !frame) {
         if (std::getenv("PROTO_ENV_DIAG")) {
             fprintf(stderr, "DEBUG: runCodeObject early return: ctx=%p codeObj=%p frame=%p\n", (void*)ctx, (void*)codeObj, (void*)frame);

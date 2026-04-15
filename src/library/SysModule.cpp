@@ -378,7 +378,6 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     // sys.argv
     const proto::ProtoList* argvList = ctx->newList();
     if (argv) {
-        printf("DEBUG SYS MODULE argv size=%zu\n", argv->size());
         for (const auto& s : *argv) {
             const proto::ProtoObject* strObj = PythonEnvironment::getInternedString(ctx, s.c_str())->asObject(ctx);
             if (env && env->getStrPrototype()) {
