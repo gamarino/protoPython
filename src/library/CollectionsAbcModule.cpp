@@ -145,11 +145,19 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
             const proto::ProtoObject* objProto = env->getObjectPrototype();
             if (objProto) {
                 abc = const_cast<proto::ProtoObject*>(abc->addParent(ctx, objProto));
-                
-                // Also set __bases__ to (object,)
+
+                // Set __bases__ to (object,)
                 const proto::ProtoList* bases = ctx->newList();
                 bases = bases->appendLast(ctx, objProto);
                 abc = const_cast<proto::ProtoObject*>(abc->setAttribute(ctx, s_bases, env->newTuple(bases)));
+
+                // Set __mro__ = (abc, object) so subclass MRO computation includes this ABC.
+                const proto::ProtoList* mroList = ctx->newList();
+                mroList = mroList->appendLast(ctx, abc);
+                mroList = mroList->appendLast(ctx, objProto);
+                abc = const_cast<proto::ProtoObject*>(abc->setAttribute(ctx,
+                    PythonEnvironment::getInternedString(ctx, "__mro__"),
+                    ctx->newTupleFromList(mroList)->asObject(ctx)));
             }
         }
 
@@ -169,11 +177,11 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
 
     const proto::ProtoObject* mod = ctx->newObject(false);
     const char* names[] = {
-        "Hashable", "Iterable", "Iterator", "Sized", "Container", "Collection",
+        "Hashable", "Iterable", "Iterator", "Reversible", "Sized", "Container", "Collection",
         "Mapping", "MutableMapping", "Sequence", "MutableSequence",
         "Set", "MutableSet", "Callable", "Awaitable", "Coroutine",
         "AsyncIterable", "AsyncIterator", "AsyncGenerator", "Generator",
-        "KeysView", "ValuesView", "ItemsView", "MappingView"
+        "KeysView", "ValuesView", "ItemsView", "MappingView", "ByteString"
     };
 
     for (const char* name : names) {

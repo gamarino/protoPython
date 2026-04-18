@@ -350,16 +350,24 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     // sys.version
     sys = sys->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "version"), PythonEnvironment::getInternedString(ctx, "3.14.0 (protoPython, Feb 2026)")->asObject(ctx));
 
-    // sys.base_prefix and sys.prefix (Required for many stdlib modules like gettext)
+    // sys.base_prefix, sys.prefix, sys.exec_prefix, sys.base_exec_prefix
     if (env) {
         std::string sl = env->getStdLibPath();
         if (sl.empty()) sl = ".";
-        sys = sys->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "base_prefix"), PythonEnvironment::getInternedString(ctx, sl.c_str())->asObject(ctx));
-        sys = sys->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "prefix"), PythonEnvironment::getInternedString(ctx, sl.c_str())->asObject(ctx));
+        const proto::ProtoObject* prefixVal = PythonEnvironment::getInternedString(ctx, sl.c_str())->asObject(ctx);
+        sys = sys->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "base_prefix"),      prefixVal);
+        sys = sys->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "prefix"),           prefixVal);
+        sys = sys->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "exec_prefix"),      prefixVal);
+        sys = sys->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "base_exec_prefix"), prefixVal);
     } else {
-        sys = sys->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "base_prefix"), PROTO_NONE);
-        sys = sys->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "prefix"), PROTO_NONE);
+        sys = sys->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "base_prefix"),      PROTO_NONE);
+        sys = sys->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "prefix"),           PROTO_NONE);
+        sys = sys->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "exec_prefix"),      PROTO_NONE);
+        sys = sys->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "base_exec_prefix"), PROTO_NONE);
     }
+
+    // sys.pycache_prefix: None means use default __pycache__ dirs (we don't write .pyc files)
+    sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "pycache_prefix"), PROTO_NONE);
 
     // sys.path (empty for now, PythonEnvironment will populate it)
     const proto::ProtoObject* pathList = ctx->newList()->asObject(ctx);
@@ -419,10 +427,11 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     // sys.builtin_module_names
     const proto::ProtoList* builtinsList = ctx->newList();
     const char* builtin_names[] = {
-        "builtins", "sys", "_io", "_os", "posix", "nt", "time", "_thread", 
-        "_signal", "re", "_weakref", "_collections", "logging", "operator", 
-        "_operator", "math", "_functools", "itertools", "json", "atexit", 
-        "exceptions", "_codecs", "_ast", "errno", "stat", "_collections_abc"
+        "builtins", "sys", "_io", "_os", "posix", "nt", "time", "_thread",
+        "_signal", "re", "_weakref", "_warnings", "_collections", "logging",
+        "operator", "_operator", "math", "_functools", "itertools", "json",
+        "atexit", "exceptions", "_codecs", "_ast", "errno", "stat",
+        "_collections_abc"
     };
     for (const char* name : builtin_names) {
         builtinsList = builtinsList->appendLast(ctx, PythonEnvironment::getInternedString(ctx, name)->asObject(ctx));
@@ -475,15 +484,87 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
 
     // sys.flags
     const proto::ProtoObject* flags = env && env->getObjectPrototype() ? env->getObjectPrototype()->newChild(ctx, true) : ctx->newObject(false);
-    flags = flags->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "optimize"), ctx->fromInteger(0));
-    flags = flags->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "ignore_environment"), ctx->fromInteger(0));
-    flags = flags->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "dont_write_bytecode"), ctx->fromInteger(1));
-    flags = flags->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "dev_mode"), ctx->fromInteger(0));
-    flags = flags->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "context_aware_warnings"), ctx->fromInteger(0));
+    flags = flags->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "debug"),                   ctx->fromInteger(0));
+    flags = flags->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "inspect"),                 ctx->fromInteger(0));
+    flags = flags->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "interactive"),             ctx->fromInteger(0));
+    flags = flags->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "optimize"),                ctx->fromInteger(0));
+    flags = flags->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "dont_write_bytecode"),     ctx->fromInteger(1));
+    flags = flags->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "no_user_site"),            ctx->fromInteger(0));
+    flags = flags->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "no_site"),                 ctx->fromInteger(0));
+    flags = flags->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "ignore_environment"),      ctx->fromInteger(0));
+    flags = flags->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "verbose"),                 ctx->fromInteger(0));
+    flags = flags->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "bytes_warning"),           ctx->fromInteger(0));
+    flags = flags->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "quiet"),                   ctx->fromInteger(0));
+    flags = flags->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "hash_randomization"),      ctx->fromInteger(1));
+    flags = flags->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "isolated"),                ctx->fromInteger(0));
+    flags = flags->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "dev_mode"),                ctx->fromInteger(0));
+    flags = flags->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "utf8_mode"),               ctx->fromInteger(0));
+    flags = flags->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "warn_default_encoding"),   ctx->fromInteger(0));
+    flags = flags->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "safe_path"),               ctx->fromInteger(0));
+    flags = flags->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "int_max_str_digits"),      ctx->fromInteger(4300));
+    flags = flags->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "context_aware_warnings"),   ctx->fromInteger(0));
+    flags = flags->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "thread_inherit_context"),   ctx->fromInteger(0));
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "flags"), flags);
 
     // sys.maxsize (64-bit signed max)
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "maxsize"), ctx->fromInteger(9223372036854775807LL));
+
+    // sys.hash_info — CPython-compatible hash parameters
+    const proto::ProtoObject* hash_info = env && env->getObjectPrototype()
+        ? env->getObjectPrototype()->newChild(ctx, true)
+        : ctx->newObject(false);
+    hash_info = hash_info->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "width"),    ctx->fromInteger(64));
+    hash_info = hash_info->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "modulus"),  ctx->fromInteger(2305843009213693951LL));
+    hash_info = hash_info->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "inf"),      ctx->fromInteger(314159));
+    hash_info = hash_info->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "nan"),      ctx->fromInteger(0));
+    hash_info = hash_info->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "imag"),     ctx->fromInteger(1000003));
+    hash_info = hash_info->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "algorithm"), proto::ProtoString::createSymbol(ctx, "siphash24")->asObject(ctx));
+    hash_info = hash_info->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "hash_bits"),  ctx->fromInteger(64));
+    hash_info = hash_info->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "seed_bits"),  ctx->fromInteger(128));
+    hash_info = hash_info->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "cutoff"),     ctx->fromInteger(0));
+    sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "hash_info"), hash_info);
+
+    // sys.int_info — CPython-compatible int internal details
+    const proto::ProtoObject* int_info = env && env->getObjectPrototype()
+        ? env->getObjectPrototype()->newChild(ctx, true)
+        : ctx->newObject(false);
+    int_info = int_info->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "bits_per_digit"),     ctx->fromInteger(30));
+    int_info = int_info->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "sizeof_digit"),       ctx->fromInteger(4));
+    int_info = int_info->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "default_max_str_digits"), ctx->fromInteger(4300));
+    int_info = int_info->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "str_digits_check_threshold"), ctx->fromInteger(640));
+    sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "int_info"), int_info);
+
+    // sys.float_info — IEEE 754 double info
+    const proto::ProtoObject* float_info = env && env->getObjectPrototype()
+        ? env->getObjectPrototype()->newChild(ctx, true)
+        : ctx->newObject(false);
+    float_info = float_info->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "max"),       ctx->fromDouble(1.7976931348623157e+308));
+    float_info = float_info->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "max_exp"),   ctx->fromInteger(1024));
+    float_info = float_info->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "max_10_exp"), ctx->fromInteger(308));
+    float_info = float_info->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "min"),       ctx->fromDouble(2.2250738585072014e-308));
+    float_info = float_info->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "min_exp"),   ctx->fromInteger(-1021));
+    float_info = float_info->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "min_10_exp"), ctx->fromInteger(-307));
+    float_info = float_info->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "dig"),       ctx->fromInteger(15));
+    float_info = float_info->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "mant_dig"),  ctx->fromInteger(53));
+    float_info = float_info->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "epsilon"),   ctx->fromDouble(2.220446049250313e-16));
+    float_info = float_info->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "radix"),     ctx->fromInteger(2));
+    float_info = float_info->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "rounds"),    ctx->fromInteger(1));
+    sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "float_info"), float_info);
+
+    // sys._jit — stub for Python 3.14 JIT API (protoPython has no JIT)
+    static const auto py_jit_is_enabled = [](proto::ProtoContext* ctx,
+                                              const proto::ProtoObject*,
+                                              const proto::ParentLink*,
+                                              const proto::ProtoList*,
+                                              const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+        (void)ctx; return PROTO_FALSE;
+    };
+    const proto::ProtoObject* jit_obj = env && env->getObjectPrototype()
+        ? env->getObjectPrototype()->newChild(ctx, true)
+        : ctx->newObject(false);
+    jit_obj = jit_obj->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "is_enabled"),
+        ctx->fromMethod(nullptr, py_jit_is_enabled));
+    sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_jit"), jit_obj);
 
     return sys;
 }

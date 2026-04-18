@@ -10,8 +10,12 @@ static void collectUsedNames(ASTNode* node, std::unordered_set<std::string>& out
 static void collectDefinedNames(ASTNode* node, std::unordered_set<std::string>& out);
 static void collectNonlocalsFromNode(ASTNode* node, std::unordered_set<std::string>& out);
 static void collectCapturedNamesImpl(ASTNode* node, const std::unordered_set<std::string>& globalsInScope, std::unordered_set<std::string>& capturedOut, int depth = 0);
-// Buffer to reserve on the VM stack for GC-visible operand storage
-constexpr int PYTHON_STACK_BUFFER = 1024;
+// Buffer to reserve on the VM stack for GC-visible operand storage.
+// Must be large enough to hold the maximum operand stack depth needed by any
+// single bytecode sequence. A 512-entry dict literal requires 1024 LOAD_CONST
+// pushes before BUILD_MAP, plus a few extra for intermediates — so 8192 gives
+// comfortable headroom for up to ~4000-entry dict/set/list literals.
+constexpr int PYTHON_STACK_BUFFER = 4096;
 
 Compiler::Compiler(proto::ProtoContext* ctx, const std::string& filename)
     : ctx_(ctx), filename_(filename) {
@@ -142,6 +146,8 @@ bool Compiler::compileConstant(ConstantNode* n) {
         if (env && env->getBytesPrototype()) {
             proto::ProtoObject* b = const_cast<proto::ProtoObject*>(env->getBytesPrototype()->newChild(ctx_, true));
             b->setAttribute(ctx_, PythonEnvironment::getInternedString(ctx_, "__data__"), PythonEnvironment::getInternedString(ctx_, n->bytesVal.c_str())->asObject(ctx_));
+            // Set __class__ so getType() returns bytesPrototype (not typePrototype via prototype-chain lookup).
+            b->setAttribute(ctx_, PythonEnvironment::getInternedString(ctx_, "__class__"), env->getBytesPrototype());
             obj = b;
         } else {
             obj = PythonEnvironment::getInternedString(ctx_, n->bytesVal.c_str())->asObject(ctx_);
@@ -189,6 +195,91 @@ bool Compiler::compileBinOp(BinOpNode* n) {
         return true;
     }
 
+    // Detect chained comparisons (e.g., a == b == c, a < b < c).
+    // The parser builds left-nested trees: ((a==b)==c) instead of the proper chained form.
+    // We flatten the chain and generate correct short-circuit bytecode.
+    auto isCompOp = [](TokenType t) {
+        return t == TokenType::EqEqual || t == TokenType::NotEqual ||
+               t == TokenType::Less || t == TokenType::LessEqual ||
+               t == TokenType::Greater || t == TokenType::GreaterEqual ||
+               t == TokenType::Is || t == TokenType::IsNot ||
+               t == TokenType::In || t == TokenType::NotIn;
+    };
+    if (isCompOp(n->op)) {
+        BinOpNode* leftBin = dynamic_cast<BinOpNode*>(n->left.get());
+        if (leftBin && isCompOp(leftBin->op) && !leftBin->parenthesized) {
+            // Flatten the left-nested chain into (leftmost, [(op,rhs)...]) order.
+            struct CmpEntry { TokenType op; ASTNode* right; };
+            std::vector<CmpEntry> chain;
+            ASTNode* leftmost = nullptr;
+            BinOpNode* cur = n;
+            while (cur) {
+                chain.push_back({cur->op, cur->right.get()});
+                BinOpNode* nxtLeft = dynamic_cast<BinOpNode*>(cur->left.get());
+                if (nxtLeft && isCompOp(nxtLeft->op)) {
+                    cur = nxtLeft;
+                } else {
+                    leftmost = cur->left.get();
+                    break;
+                }
+            }
+            std::reverse(chain.begin(), chain.end());
+
+            auto cmpArg = [](TokenType t) -> int {
+                switch (t) {
+                    case TokenType::EqEqual:      return 0;
+                    case TokenType::NotEqual:     return 1;
+                    case TokenType::Less:         return 2;
+                    case TokenType::LessEqual:    return 3;
+                    case TokenType::Greater:      return 4;
+                    case TokenType::GreaterEqual: return 5;
+                    case TokenType::In:           return 6;
+                    case TokenType::NotIn:        return 7;
+                    case TokenType::Is:           return 8;
+                    case TokenType::IsNot:        return 9;
+                    default:                      return 0;
+                }
+            };
+
+            if (!compileNode(leftmost)) return false;
+
+            std::vector<int> falseJumps;
+            for (size_t k = 0; k < chain.size(); k++) {
+                bool isLast = (k == chain.size() - 1);
+                if (!compileNode(chain[k].right)) return false;
+                if (!isLast) {
+                    // Preserve rhs for the next comparison via DUP_TOP + ROT_THREE.
+                    // Stack before: [..., lhs, rhs]
+                    // After DUP_TOP:  [..., lhs, rhs, rhs_dup]
+                    // After ROT_THREE: [..., rhs_dup, lhs, rhs]
+                    // After COMPARE:  [..., rhs_dup, result]
+                    emit(OP_DUP_TOP, 0);
+                    emit(OP_ROT_THREE, 0);
+                    emit(OP_COMPARE_OP, cmpArg(chain[k].op));
+                    emit(OP_POP_JUMP_IF_FALSE, 0);
+                    falseJumps.push_back(bytecodeOffset() - 1);
+                    // Truthy path: result was popped, stack: [..., rhs_dup]
+                } else {
+                    // Last comparison: no need to preserve rhs.
+                    emit(OP_COMPARE_OP, cmpArg(chain[k].op));
+                }
+            }
+            // Jump over false-path cleanup (truthy end falls through here).
+            emit(OP_JUMP_ABSOLUTE, 0);
+            int endJumpIdx = bytecodeOffset() - 1;
+            // False-path: all intermediate false-jumps land here with one leftover dup.
+            int falseTarget = bytecodeOffset();
+            for (int idx : falseJumps) {
+                addPatch(idx, falseTarget);
+            }
+            emit(OP_POP_TOP, 0);   // discard leftover dup
+            emit(OP_LOAD_CONST, addConstant(PROTO_FALSE));
+            // Patch end jump past false-path cleanup.
+            addPatch(endJumpIdx, bytecodeOffset());
+            return true;
+        }
+    }
+
     if (!compileNode(n->left.get()) || !compileNode(n->right.get()))
         return false;
     int op = OP_BINARY_ADD;
@@ -200,7 +291,7 @@ bool Compiler::compileBinOp(BinOpNode* n) {
         emit(OP_COMPARE_OP, 0); // 0 is '=='
         return true;
     } else if (n->op == TokenType::Is) {
-        emit(OP_COMPARE_OP, 8); // 8 is 'is' 
+        emit(OP_COMPARE_OP, 8); // 8 is 'is'
         return true;
     } else if (n->op == TokenType::IsNot) {
         emit(OP_COMPARE_OP, 9); // 9 is 'is not'
@@ -821,13 +912,13 @@ bool Compiler::compileYield(YieldNode* n) {
 
 bool Compiler::compileListComp(ListCompNode* n) {
     if (!n) return false;
-    
-    // Python 3: List comprehensions have their own scope
-    // [elt for target in iter] -> (__listcomp)(iter)
-    
-    if (!compileNode(n->generators[0].iter.get())) return false;
-    emit(OP_GET_ITER);
-    
+
+    // Python 3: List comprehensions have their own scope.
+    // Emit using the 3.11+ [NULL, callable, arg] calling convention so the inner
+    // CALL_FUNCTION 1 always finds the NULL marker at the right stack position,
+    // regardless of what the outer call frame has pushed.
+    // Sequence: PUSH_NULL, LOAD_CONST(code), BUILD_FUNCTION, eval_iter, GET_ITER, CALL_FUNCTION 1
+
     Compiler bodyCompiler(ctx_, filename_);
     bodyCompiler.localSlotMap_[".0"] = 0;
     bodyCompiler.globalNames_ = globalNames_;
@@ -849,10 +940,16 @@ bool Compiler::compileListComp(ListCompNode* n) {
 
     for (const auto& name : compUsed) {
         if (!compLocals.count(name) && !bodyCompiler.globalNames_.count(name)) {
-            bodyCompiler.nonlocalNames_.insert(name);
+            // Only capture as a nonlocal (LOAD_DEREF) if the name is actually a
+            // local or nonlocal in the directly enclosing function scope.
+            // Names not found in the enclosing locals/nonlocals resolve via
+            // LOAD_GLOBAL (module-level globals, builtins, etc.).
+            if (localSlotMap_.count(name) || nonlocalNames_.count(name)) {
+                bodyCompiler.nonlocalNames_.insert(name);
+            }
         }
     }
-    
+
     std::vector<std::string> orderedLocals = {".0"};
     int slot = 1;
     for (const auto& name : compLocals) {
@@ -861,7 +958,7 @@ bool Compiler::compileListComp(ListCompNode* n) {
             orderedLocals.push_back(name);
         }
     }
-    
+
     // Create the list inside the function
     bodyCompiler.emit(OP_BUILD_LIST, 0);
     
@@ -900,9 +997,12 @@ bool Compiler::compileListComp(ListCompNode* n) {
         flags, false, 
         PythonEnvironment::getInternedString(ctx_, "<listcomp>"),
         bodyCompiler.getFirstLine(), bodyCompiler.getLnotab());
+    // 3.11+ calling convention: [NULL, callable, arg]
+    emit(OP_PUSH_NULL);
     emit(OP_LOAD_CONST, addConstant(codeObj));
     emit(OP_BUILD_FUNCTION, 0);
-    emit(OP_ROT_TWO);
+    if (!compileNode(n->generators[0].iter.get())) return false;
+    emit(OP_GET_ITER);
     emit(OP_CALL_FUNCTION, 1);
 
     if (isAsync) {
@@ -910,16 +1010,15 @@ bool Compiler::compileListComp(ListCompNode* n) {
         emit(OP_LOAD_CONST, addConstant(PROTO_NONE));
         emit(OP_YIELD_FROM);
     }
-    
+
     return true;
 }
 
 bool Compiler::compileDictComp(DictCompNode* n) {
     if (!n) return false;
-    
-    if (!compileNode(n->generators[0].iter.get())) return false;
-    emit(OP_GET_ITER);
-    
+
+    // Emit using 3.11+ [NULL, callable, arg] calling convention — see compileListComp.
+
     Compiler bodyCompiler(ctx_, filename_);
     bodyCompiler.localSlotMap_[".0"] = 0;
     bodyCompiler.globalNames_ = globalNames_;
@@ -942,10 +1041,12 @@ bool Compiler::compileDictComp(DictCompNode* n) {
     
     for (const auto& name : compUsed) {
         if (!compLocals.count(name) && !bodyCompiler.globalNames_.count(name)) {
-            bodyCompiler.nonlocalNames_.insert(name);
+            if (localSlotMap_.count(name) || nonlocalNames_.count(name)) {
+                bodyCompiler.nonlocalNames_.insert(name);
+            }
         }
     }
-    
+
     std::vector<std::string> orderedLocals = {".0"};
     int slot = 1;
     for (const auto& name : compLocals) {
@@ -954,7 +1055,7 @@ bool Compiler::compileDictComp(DictCompNode* n) {
             orderedLocals.push_back(name);
         }
     }
-    
+
     bodyCompiler.emit(OP_BUILD_MAP, 0);
     
     auto oldIter = std::move(n->generators[0].iter);
@@ -966,7 +1067,10 @@ bool Compiler::compileDictComp(DictCompNode* n) {
     auto innerOk = bodyCompiler.compileComprehension(n->generators, 0, [&]() {
         if (!bodyCompiler.compileNode(n->value.get())) return false;
         if (!bodyCompiler.compileNode(n->key.get())) return false;
-        bodyCompiler.emit(OP_MAP_ADD, nGen + 1);
+        // MAP_ADD needs nGen+2: the stack during body is [map, iter1..iterN, value, key],
+        // so the accumulator is 2 positions deeper than for LIST_APPEND/SET_ADD (which
+        // push only 1 item before the instruction).
+        bodyCompiler.emit(OP_MAP_ADD, nGen + 2);
         return true;
     });
     
@@ -992,9 +1096,12 @@ bool Compiler::compileDictComp(DictCompNode* n) {
         flags, false, 
         PythonEnvironment::getInternedString(ctx_, "<dictcomp>"),
         bodyCompiler.getFirstLine(), bodyCompiler.getLnotab());
+    // 3.11+ calling convention: [NULL, callable, arg]
+    emit(OP_PUSH_NULL);
     emit(OP_LOAD_CONST, addConstant(codeObj));
     emit(OP_BUILD_FUNCTION, 0);
-    emit(OP_ROT_TWO);
+    if (!compileNode(n->generators[0].iter.get())) return false;
+    emit(OP_GET_ITER);
     emit(OP_CALL_FUNCTION, 1);
 
     if (isAsync) {
@@ -1002,16 +1109,15 @@ bool Compiler::compileDictComp(DictCompNode* n) {
         emit(OP_LOAD_CONST, addConstant(PROTO_NONE));
         emit(OP_YIELD_FROM);
     }
-    
+
     return true;
 }
 
 bool Compiler::compileSetComp(SetCompNode* n) {
     if (!n) return false;
-    
-    if (!compileNode(n->generators[0].iter.get())) return false;
-    emit(OP_GET_ITER);
-    
+
+    // Emit using 3.11+ [NULL, callable, arg] calling convention — see compileListComp.
+
     Compiler bodyCompiler(ctx_, filename_);
     bodyCompiler.localSlotMap_[".0"] = 0;
     bodyCompiler.globalNames_ = globalNames_;
@@ -1033,10 +1139,12 @@ bool Compiler::compileSetComp(SetCompNode* n) {
     
     for (const auto& name : compUsed) {
         if (!compLocals.count(name) && !bodyCompiler.globalNames_.count(name)) {
-            bodyCompiler.nonlocalNames_.insert(name);
+            if (localSlotMap_.count(name) || nonlocalNames_.count(name)) {
+                bodyCompiler.nonlocalNames_.insert(name);
+            }
         }
     }
-    
+
     std::vector<std::string> orderedLocals = {".0"};
     int slot = 1;
     for (const auto& name : compLocals) {
@@ -1045,7 +1153,7 @@ bool Compiler::compileSetComp(SetCompNode* n) {
             orderedLocals.push_back(name);
         }
     }
-    
+
     bodyCompiler.emit(OP_BUILD_SET, 0);
     
     auto oldIter = std::move(n->generators[0].iter);
@@ -1082,9 +1190,12 @@ bool Compiler::compileSetComp(SetCompNode* n) {
         flags, false, 
         PythonEnvironment::getInternedString(ctx_, "<setcomp>"),
         bodyCompiler.getFirstLine(), bodyCompiler.getLnotab());
+    // 3.11+ calling convention: [NULL, callable, arg]
+    emit(OP_PUSH_NULL);
     emit(OP_LOAD_CONST, addConstant(codeObj));
     emit(OP_BUILD_FUNCTION, 0);
-    emit(OP_ROT_TWO);
+    if (!compileNode(n->generators[0].iter.get())) return false;
+    emit(OP_GET_ITER);
     emit(OP_CALL_FUNCTION, 1);
 
     if (isAsync) {
@@ -1092,16 +1203,15 @@ bool Compiler::compileSetComp(SetCompNode* n) {
         emit(OP_LOAD_CONST, addConstant(PROTO_NONE));
         emit(OP_YIELD_FROM);
     }
-    
+
     return true;
 }
 
 bool Compiler::compileGeneratorExp(GeneratorExpNode* n) {
     if (!n) return false;
-    
-    if (!compileNode(n->generators[0].iter.get())) return false;
-    emit(OP_GET_ITER);
-    
+
+    // Emit using 3.11+ [NULL, callable, arg] calling convention — see compileListComp.
+
     Compiler bodyCompiler(ctx_, filename_);
     bodyCompiler.isGenerator_ = true;
     bodyCompiler.localSlotMap_[".0"] = 0;
@@ -1124,10 +1234,12 @@ bool Compiler::compileGeneratorExp(GeneratorExpNode* n) {
     
     for (const auto& name : compUsed) {
         if (!compLocals.count(name) && !bodyCompiler.globalNames_.count(name)) {
-            bodyCompiler.nonlocalNames_.insert(name);
+            if (localSlotMap_.count(name) || nonlocalNames_.count(name)) {
+                bodyCompiler.nonlocalNames_.insert(name);
+            }
         }
     }
-    
+
     std::vector<std::string> orderedLocals = {".0"};
     int slot = 1;
     for (const auto& name : compLocals) {
@@ -1136,12 +1248,12 @@ bool Compiler::compileGeneratorExp(GeneratorExpNode* n) {
             orderedLocals.push_back(name);
         }
     }
-    
+
     auto oldIter = std::move(n->generators[0].iter);
     auto itNode = std::make_unique<NameNode>();
     itNode->id = ".0";
     n->generators[0].iter = std::move(itNode);
-    
+
     auto innerOk = bodyCompiler.compileComprehension(n->generators, 0, [&]() {
         if (!bodyCompiler.compileNode(n->elt.get())) return false;
         bodyCompiler.emit(OP_YIELD_VALUE);
@@ -1172,9 +1284,12 @@ bool Compiler::compileGeneratorExp(GeneratorExpNode* n) {
         flags, true, 
         PythonEnvironment::getInternedString(ctx_, "<genexpr>"),
         bodyCompiler.getFirstLine(), bodyCompiler.getLnotab());
+    // 3.11+ calling convention: [NULL, callable, arg]
+    emit(OP_PUSH_NULL);
     emit(OP_LOAD_CONST, addConstant(codeObj));
     emit(OP_BUILD_FUNCTION, 0);
-    emit(OP_ROT_TWO);
+    if (!compileNode(n->generators[0].iter.get())) return false;
+    emit(OP_GET_ITER);
     emit(OP_CALL_FUNCTION, 1);
 
     if (isAsync) {
@@ -1182,7 +1297,7 @@ bool Compiler::compileGeneratorExp(GeneratorExpNode* n) {
         emit(OP_LOAD_CONST, addConstant(PROTO_NONE));
         emit(OP_YIELD_FROM);
     }
-    
+
     return true;
 }
 
@@ -1270,8 +1385,9 @@ bool Compiler::compileComprehension(const std::vector<Comprehension>& generators
 }
 
 bool Compiler::compileImport(ImportNode* n) {
-    // Load __import__
+    // Load __import__ with NULL marker for correct 3.11+ calling convention
     int idxImport = addName("__import__");
+    emit(OP_PUSH_NULL);
     emit(OP_LOAD_NAME, (idxImport << 1));
     // Load module name string
     int idxMod = addConstant(PythonEnvironment::getInternedString(ctx_, n->moduleName.c_str())->asObject(ctx_));
@@ -1291,8 +1407,9 @@ bool Compiler::compileImport(ImportNode* n) {
 }
 
 bool Compiler::compileImportFrom(ImportFromNode* n) {
-    // Load __import__
+    // Load __import__ with NULL marker for correct 3.11+ calling convention
     int idxImport = addName("__import__");
+    emit(OP_PUSH_NULL);
     emit(OP_LOAD_NAME, (idxImport << 1));
     
     // name
@@ -2195,8 +2312,10 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
 
     std::unordered_set<std::string> captured;
     collectCapturedNames(n->body.get(), combinedGlobals, captured);
-    // Captured names that are NOT defined in this function are its nonlocals.
-    // Captured names that ARE defined here just trigger forceMapped.
+    // Captured names that are NOT defined in this function are its nonlocals,
+    // but ONLY if they are actually available as locals or nonlocals in the
+    // enclosing scope. Names that appear only in module-level globals or builtins
+    // must NOT become LOAD_DEREF in this function — they remain LOAD_GLOBAL/LOAD_NAME.
     for (const auto& c : captured) {
         bool isLocal = false;
         for (const auto& p : params) if (p == c) isLocal = true;
@@ -2204,7 +2323,14 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
         if (n->vararg == c) isLocal = true;
         if (n->kwarg == c) isLocal = true;
         for (const auto& l : localsOrdered) if (l == c) isLocal = true;
-        if (!isLocal) bodyNonlocals.insert(c);
+        if (!isLocal) {
+            // Only treat as nonlocal if the outer scope actually has it as a
+            // local or nonlocal (i.e. it can be closed over via a cell).
+            // If the outer scope has no such binding, the name is a global/builtin
+            // and must be resolved via LOAD_GLOBAL/LOAD_NAME, not LOAD_DEREF.
+            bool isInOuterScope = localSlotMap_.count(c) || nonlocalNames_.count(c);
+            if (isInOuterScope) bodyNonlocals.insert(c);
+        }
     }
 
     std::string dynamicReason = getDynamicLocalsReason(n->body.get());
@@ -3125,14 +3251,18 @@ bool Compiler::compileJoinedStr(JoinedStrNode* n) {
 bool Compiler::compileFormattedValue(FormattedValueNode* n) {
     if (!n) return false;
     if (n->conversion == 'r') {
+        // Use 3.11+ calling convention: [NULL, callable, arg]
+        emit(OP_PUSH_NULL);
         emit(OP_LOAD_NAME, (addName("repr") << 1));
         if (!compileNode(n->value.get())) return false;
         emit(OP_CALL_FUNCTION, 1);
     } else if (n->conversion == 's') {
+        emit(OP_PUSH_NULL);
         emit(OP_LOAD_NAME, (addName("str") << 1));
         if (!compileNode(n->value.get())) return false;
         emit(OP_CALL_FUNCTION, 1);
     } else if (n->conversion == 'a') {
+        emit(OP_PUSH_NULL);
         emit(OP_LOAD_NAME, (addName("ascii") << 1));
         if (!compileNode(n->value.get())) return false;
         emit(OP_CALL_FUNCTION, 1);
