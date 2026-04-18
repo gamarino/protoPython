@@ -4961,6 +4961,125 @@ static const proto::ProtoObject* py_str_upper(
     return PythonEnvironment::getInternedString(context, s.c_str())->asObject(context);
 }
 
+// Apply a format spec (like "02d", ".2f", ">10s") to an object's string representation.
+static std::string applyFormatSpec(proto::ProtoContext* context, const proto::ProtoObject* obj, const std::string& spec) {
+    if (spec.empty()) {
+        return PythonEnvironment::reprObject(context, obj);
+    }
+    // Parse the format spec: [[fill]align][sign][#][0][width][grouping][.precision][type]
+    size_t si = 0;
+    char fill = ' ';
+    char align = '\0';
+    // Check for optional [[fill]align]
+    if (spec.size() >= 2 && (spec[1] == '<' || spec[1] == '>' || spec[1] == '^' || spec[1] == '=')) {
+        fill = spec[si++];
+        align = spec[si++];
+    } else if (si < spec.size() && (spec[si] == '<' || spec[si] == '>' || spec[si] == '^' || spec[si] == '=')) {
+        align = spec[si++];
+    }
+    // Sign
+    char signChar = '\0';
+    if (si < spec.size() && (spec[si] == '+' || spec[si] == '-' || spec[si] == ' '))
+        signChar = spec[si++];
+    // '#' alt form
+    bool altForm = false;
+    if (si < spec.size() && spec[si] == '#') { altForm = true; si++; }
+    // Zero-fill flag: a leading '0' before width digits is always the zero-fill flag
+    if (si < spec.size() && spec[si] == '0') {
+        si++;  // consume the zero-fill flag
+        if (align == '\0') { align = '='; fill = '0'; }
+    }
+    // Width (digits after optional zero-fill)
+    int width = 0;
+    while (si < spec.size() && spec[si] >= '0' && spec[si] <= '9')
+        width = width * 10 + (spec[si++] - '0');
+    // Grouping
+    if (si < spec.size() && (spec[si] == '_' || spec[si] == ',')) si++;
+    // Precision
+    int prec = -1;
+    if (si < spec.size() && spec[si] == '.') {
+        si++;
+        prec = 0;
+        while (si < spec.size() && spec[si] >= '0' && spec[si] <= '9')
+            prec = prec * 10 + (spec[si++] - '0');
+    }
+    // Type
+    char type = '\0';
+    if (si < spec.size()) type = spec[si];
+
+    // Build snprintf-compatible format string and convert object
+    std::string result;
+    if (type == 'd' || type == 'i' || type == 'o' || type == 'x' || type == 'X'
+        || type == 'b' || type == 'u' || type == 'n') {
+        long long v = obj ? obj->asLong(context) : 0LL;
+        // Reconstruct a C format string
+        std::string cfmt = "%";
+        if (signChar) cfmt += signChar;
+        if (altForm && (type == 'x' || type == 'X' || type == 'o')) cfmt += '#';
+        if (fill == '0' && (align == '=' || align == '\0')) cfmt += '0';
+        if (width > 0) cfmt += std::to_string(width);
+        if (prec >= 0) { cfmt += '.'; cfmt += std::to_string(prec); }
+        cfmt += "ll";
+        if (type == 'b') {
+            // binary: manual
+            if (v == 0) { result = "0"; }
+            else {
+                unsigned long long uv = static_cast<unsigned long long>(v);
+                result = "";
+                while (uv > 0) { result = (char)('0' + (uv & 1)) + result; uv >>= 1; }
+            }
+            if (altForm) result = "0b" + result;
+        } else {
+            char t = (type == 'u' || type == 'n') ? 'd' : type;
+            cfmt += t;
+            char buf[128]; snprintf(buf, sizeof(buf), cfmt.c_str(), v);
+            result = buf;
+        }
+    } else if (type == 'f' || type == 'F' || type == 'e' || type == 'E'
+               || type == 'g' || type == 'G' || type == '%') {
+        double v = obj ? obj->asDouble(context) : 0.0;
+        if (type == '%') v *= 100.0;
+        std::string cfmt = "%";
+        if (signChar) cfmt += signChar;
+        if (fill == '0' && (align == '=' || align == '\0')) cfmt += '0';
+        if (width > 0) cfmt += std::to_string(width);
+        if (prec >= 0) { cfmt += '.'; cfmt += std::to_string(prec); }
+        else if (type == 'f' || type == 'F' || type == '%') { cfmt += ".6"; }
+        cfmt += (type == '%') ? 'f' : type;
+        char buf[256]; snprintf(buf, sizeof(buf), cfmt.c_str(), v);
+        result = buf;
+        if (type == '%') result += '%';
+    } else if (type == 's' || type == '\0') {
+        result = PythonEnvironment::reprObject(context, obj);
+        if (prec >= 0 && static_cast<int>(result.size()) > prec)
+            result = result.substr(0, prec);
+    } else if (type == 'c') {
+        if (obj && obj->isString(context)) {
+            std::string s; obj->asString(context)->toUTF8String(context, s);
+            result = s.empty() ? "" : std::string(1, s[0]);
+        } else {
+            result = std::string(1, static_cast<char>(obj ? obj->asLong(context) : 0));
+        }
+    } else {
+        result = PythonEnvironment::reprObject(context, obj);
+    }
+
+    // Apply width and alignment
+    if (width > 0 && static_cast<int>(result.size()) < width) {
+        int pad = width - static_cast<int>(result.size());
+        if (align == '<' || (align == '\0' && (type == 's' || type == '\0'))) {
+            result = result + std::string(pad, fill);
+        } else if (align == '^') {
+            int lpad = pad / 2, rpad = pad - lpad;
+            result = std::string(lpad, fill) + result + std::string(rpad, fill);
+        } else {
+            // '>' or '=' or default for numbers
+            result = std::string(pad, fill) + result;
+        }
+    }
+    return result;
+}
+
 static const proto::ProtoObject* py_str_format(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -4972,23 +5091,81 @@ static const proto::ProtoObject* py_str_format(
     std::string tpl;
     str->toUTF8String(context, tpl);
     std::string out;
-    unsigned long idx = 0;
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    unsigned long autoIdx = 0;
+
     for (size_t i = 0; i < tpl.size(); ++i) {
-        if (tpl[i] == '{' && i + 1 < tpl.size() && tpl[i + 1] == '}') {
-            if (idx < positionalParameters->getSize(context)) {
-                const proto::ProtoObject* obj = positionalParameters->getAt(context, static_cast<int>(idx));
-                const proto::ProtoObject* strM = obj->getAttribute(context, PythonEnvironment::getInternalString(context, "__str__"));
-                if (strM && strM->asMethod(context)) {
-                    std::string s;
-                    const proto::ProtoObject* so = strM->asMethod(context)(context, obj, nullptr, context->newList(), nullptr);
-                    if (so && so->isString(context)) so->asString(context)->toUTF8String(context, s);
-                    out += s;
-                }
-            }
-            idx++;
-            i++;
+        if (tpl[i] == '{' && i + 1 < tpl.size() && tpl[i + 1] == '{') {
+            out += '{'; i++; continue;
+        }
+        if (tpl[i] == '}' && i + 1 < tpl.size() && tpl[i + 1] == '}') {
+            out += '}'; i++; continue;
+        }
+        if (tpl[i] != '{') { out += tpl[i]; continue; }
+
+        // Find matching '}'
+        ++i;
+        size_t fieldStart = i;
+        int depth = 1;
+        while (i < tpl.size() && depth > 0) {
+            if (tpl[i] == '{') ++depth;
+            else if (tpl[i] == '}') --depth;
+            if (depth > 0) ++i;
+        }
+        std::string field = tpl.substr(fieldStart, i - fieldStart);
+
+        // Parse: field_name (!conversion) (:format_spec)
+        std::string fieldName, formatSpec;
+        char conversion = '\0';
+        size_t excl = field.find('!');
+        size_t colon = field.find(':');
+        // colon inside nested braces is part of format_spec
+        if (excl != std::string::npos && (colon == std::string::npos || excl < colon)) {
+            fieldName = field.substr(0, excl);
+            if (excl + 1 < field.size()) conversion = field[excl + 1];
+            if (colon != std::string::npos) formatSpec = field.substr(colon + 1);
+        } else if (colon != std::string::npos) {
+            fieldName = field.substr(0, colon);
+            formatSpec = field.substr(colon + 1);
         } else {
-            out += tpl[i];
+            fieldName = field;
+        }
+
+        // Resolve value
+        const proto::ProtoObject* val = PROTO_NONE;
+        if (fieldName.empty()) {
+            // auto-index
+            if (positionalParameters && autoIdx < positionalParameters->getSize(context))
+                val = positionalParameters->getAt(context, static_cast<int>(autoIdx));
+            autoIdx++;
+        } else if (!fieldName.empty() && fieldName[0] >= '0' && fieldName[0] <= '9') {
+            // numeric index
+            unsigned long idx = std::stoul(fieldName);
+            if (positionalParameters && idx < positionalParameters->getSize(context))
+                val = positionalParameters->getAt(context, static_cast<int>(idx));
+        } else {
+            // keyword
+            if (keywordParameters && env) {
+                const proto::ProtoString* keyS = PythonEnvironment::getInternedString(context, fieldName.c_str());
+                const proto::ProtoObject* found = keywordParameters->getAt(context, keyS->getHash(context));
+                if (found) val = found;
+            }
+        }
+
+        // Apply conversion
+        if (conversion == 'r') {
+            std::string s = PythonEnvironment::reprObject(context, val);
+            // Add quotes for strings
+            if (val && val->isString(context)) {
+                std::string raw; val->asString(context)->toUTF8String(context, raw);
+                s = "'" + raw + "'";
+            }
+            out += formatSpec.empty() ? s : applyFormatSpec(context, PythonEnvironment::getInternedString(context, s.c_str())->asObject(context), formatSpec);
+        } else if (conversion == 's') {
+            std::string s = PythonEnvironment::reprObject(context, val);
+            out += formatSpec.empty() ? s : applyFormatSpec(context, PythonEnvironment::getInternedString(context, s.c_str())->asObject(context), formatSpec);
+        } else {
+            out += applyFormatSpec(context, val, formatSpec);
         }
     }
     return PythonEnvironment::getInternedString(context, out.c_str())->asObject(context);
@@ -5049,15 +5226,18 @@ static const proto::ProtoObject* py_str_mod(
             }
         }
 
-        // Skip optional flags, width, precision
+        // Collect flags, width, precision to reconstruct snprintf format spec
+        std::string fmtFlags;
         while (i < fmt.size() && (fmt[i] == '-' || fmt[i] == '+' || fmt[i] == ' ' || fmt[i] == '0' || fmt[i] == '#'))
-            ++i;
-        // Width
-        while (i < fmt.size() && fmt[i] >= '0' && fmt[i] <= '9') ++i;
-        // Precision
+            fmtFlags += fmt[i++];
+        std::string fmtWidth;
+        while (i < fmt.size() && fmt[i] >= '0' && fmt[i] <= '9')
+            fmtWidth += fmt[i++];
+        std::string fmtPrec;
         if (i < fmt.size() && fmt[i] == '.') {
-            ++i;
-            while (i < fmt.size() && fmt[i] >= '0' && fmt[i] <= '9') ++i;
+            fmtPrec += fmt[i++];
+            while (i < fmt.size() && fmt[i] >= '0' && fmt[i] <= '9')
+                fmtPrec += fmt[i++];
         }
 
         if (i >= fmt.size()) break;
@@ -5068,85 +5248,105 @@ static const proto::ProtoObject* py_str_mod(
             continue;
         }
 
+        // Rebuild a snprintf-compatible format string from collected parts
+        // For integers: use ll; for floats: use standard; for strings: apply width/flags manually
+        auto makeIntFmt = [&](char suffix) -> std::string {
+            return std::string("%") + fmtFlags + fmtWidth + fmtPrec + "ll" + suffix;
+        };
+        auto makeFltFmt = [&](char suffix) -> std::string {
+            return std::string("%") + fmtFlags + fmtWidth + fmtPrec + suffix;
+        };
+
         const proto::ProtoObject* arg = dictArg ? dictArg : getNextArg();
         switch (spec) {
             case 's': {
-                out += PythonEnvironment::reprObject(context, arg);
-                // reprObject with strings returns the string value directly (no quotes)
-                // That's correct for %s. For non-strings reprObject is fine.
-                // But reprObject wraps strings WITHOUT quotes, which is exactly what %s needs.
+                std::string s = PythonEnvironment::reprObject(context, arg);
+                if (fmtWidth.empty() && fmtFlags.empty()) {
+                    out += s;
+                } else {
+                    // Apply width and alignment manually for strings
+                    int width = fmtWidth.empty() ? 0 : std::stoi(fmtWidth);
+                    bool leftAlign = fmtFlags.find('-') != std::string::npos;
+                    int pad = width - static_cast<int>(s.size());
+                    if (!leftAlign && pad > 0) out.append(pad, ' ');
+                    out += s;
+                    if (leftAlign && pad > 0) out.append(pad, ' ');
+                }
                 break;
             }
             case 'r': {
-                // %r: repr of the argument (with quotes for strings)
+                std::string s;
                 if (arg && arg->isString(context)) {
-                    std::string s;
-                    arg->asString(context)->toUTF8String(context, s);
-                    out += '\'';
-                    for (unsigned char c : s) {
-                        if (c == '\'') { out += '\\'; out += '\''; }
-                        else if (c == '\\') { out += "\\\\"; }
-                        else if (c == '\n') { out += "\\n"; }
-                        else if (c == '\r') { out += "\\r"; }
-                        else if (c == '\t') { out += "\\t"; }
-                        else if (c < 32 || c >= 127) { char buf[8]; snprintf(buf, sizeof(buf), "\\x%02x", c); out += buf; }
-                        else out += c;
+                    std::string raw;
+                    arg->asString(context)->toUTF8String(context, raw);
+                    s += '\'';
+                    for (unsigned char c : raw) {
+                        if (c == '\'') { s += '\\'; s += '\''; }
+                        else if (c == '\\') { s += "\\\\"; }
+                        else if (c == '\n') { s += "\\n"; }
+                        else if (c == '\r') { s += "\\r"; }
+                        else if (c == '\t') { s += "\\t"; }
+                        else if (c < 32 || c >= 127) { char buf[8]; snprintf(buf, sizeof(buf), "\\x%02x", c); s += buf; }
+                        else s += c;
                     }
-                    out += '\'';
+                    s += '\'';
                 } else {
-                    out += PythonEnvironment::reprObject(context, arg);
+                    s = PythonEnvironment::reprObject(context, arg);
                 }
+                out += s;
                 break;
             }
             case 'd':
             case 'i': {
                 long long v = arg ? arg->asLong(context) : 0LL;
-                char buf[32]; snprintf(buf, sizeof(buf), "%lld", v);
+                char buf[64]; snprintf(buf, sizeof(buf), makeIntFmt('d').c_str(), v);
                 out += buf;
                 break;
             }
             case 'u': {
                 unsigned long long v = static_cast<unsigned long long>(arg ? arg->asLong(context) : 0LL);
-                char buf[32]; snprintf(buf, sizeof(buf), "%llu", v);
+                char buf[64]; snprintf(buf, sizeof(buf), makeIntFmt('u').c_str(), v);
                 out += buf;
                 break;
             }
             case 'o': {
                 long long v = arg ? arg->asLong(context) : 0LL;
-                char buf[32]; snprintf(buf, sizeof(buf), "%llo", v);
+                char buf[64]; snprintf(buf, sizeof(buf), makeIntFmt('o').c_str(), v);
                 out += buf;
                 break;
             }
             case 'x': {
                 long long v = arg ? arg->asLong(context) : 0LL;
-                char buf[32]; snprintf(buf, sizeof(buf), "%llx", v);
+                char buf[64]; snprintf(buf, sizeof(buf), makeIntFmt('x').c_str(), v);
                 out += buf;
                 break;
             }
             case 'X': {
                 long long v = arg ? arg->asLong(context) : 0LL;
-                char buf[32]; snprintf(buf, sizeof(buf), "%llX", v);
+                char buf[64]; snprintf(buf, sizeof(buf), makeIntFmt('X').c_str(), v);
                 out += buf;
                 break;
             }
             case 'f':
             case 'F': {
                 double v = arg ? arg->asDouble(context) : 0.0;
-                char buf[64]; snprintf(buf, sizeof(buf), "%.6f", v);
+                std::string ff = makeFltFmt(fmtPrec.empty() ? 'f' : spec);
+                if (fmtPrec.empty()) ff = std::string("%") + fmtFlags + fmtWidth + ".6f";
+                char buf[128]; snprintf(buf, sizeof(buf), ff.c_str(), v);
                 out += buf;
                 break;
             }
             case 'e':
             case 'E': {
                 double v = arg ? arg->asDouble(context) : 0.0;
-                char buf[64]; snprintf(buf, sizeof(buf), spec == 'e' ? "%e" : "%E", v);
+                char buf[128]; snprintf(buf, sizeof(buf), makeFltFmt(spec).c_str(), v);
                 out += buf;
                 break;
             }
             case 'g':
             case 'G': {
                 double v = arg ? arg->asDouble(context) : 0.0;
-                char buf[64]; snprintf(buf, sizeof(buf), spec == 'g' ? "%g" : "%G", v);
+                char buf[128]; snprintf(buf, sizeof(buf), makeFltFmt(spec).c_str(), v);
                 out += buf;
                 break;
             }

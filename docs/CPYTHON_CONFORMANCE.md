@@ -23,12 +23,12 @@ Core syntax, standard object model, and fundamental types.
 
 Frequent modules used in modern Python applications.
 
-- [x] `test_sys.py`: System parameters and functions. (Import PASS, `sys.exception` and `sys.exc_info` implemented)
-- [x] `test_os.py`: PASS (Unblocked by `sys.exception` and `traceback` stabilization)
-- [ ] `test_re.py`: Regular expression operations.
-- [ ] `test_datetime.py`: Basic date and time types.
-- [ ] `test_collections.py`: Container datatypes.
-- [ ] `test_functools.py`: FAIL (TypeError: 'NoneType' object is not iterable in `namedtuple`)
+- [x] `test_sys.py`: **PASS** (System parameters and functions — V91)
+- [x] `test_os.py`: **PASS** (Unblocked by `sys.exception` and `traceback` stabilization — V91)
+- [x] `test_re.py`: **PASS** (Regular expression operations — V91)
+- [x] `test_datetime.py`: **PASS** (Basic date and time types — V91)
+- [x] `test_collections.py`: **PASS** (namedtuple, ChainMap — V91)
+- [x] `test_functools.py`: **PASS** (V91)
 
 ### 🟡 Necessary (Advanced Language Features)
 
@@ -49,17 +49,27 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 - [ ] `test_pydoc.py`
 - [ ] `test_warnings.py`
 
-## Progress Summary (V90 - 2026-04-18)
+## Progress Summary (V91 - 2026-04-18)
 
 | Category | Total | Checked | Passed | Success Rate |
 | :--- | :--- | :--- | :--- | :--- |
 | **Essential** | 6 | 6 | 6 | 100% |
-| **Important** | 6 | 4 | 0 | 0% |
+| **Important** | 6 | 6 | 6 | 100% |
 | **Necessary** | 5 | 3 | 2 | 67% |
 | **Low Priority** | 4 | 0 | 0 | 0% |
-| **Total** | **21** | **13** | **8** | **62%** |
+| **Total** | **21** | **15** | **14** | **93%** |
 
 **Conformity Suite (Phase 1, 2026-04-15)**: 7/9 tests pass. Failures are pre-existing: `int(float)` conversion and `set(iterable)` constructor.
+
+> [!NOTE]
+> **V91 Important Tests Complete (2026-04-18)**: All 6 Important CPython conformance tests now pass (100%). Key fixes applied across multiple sessions:
+> - `test_re.py`: Added `re.subn()` and `re.finditer()` functions; added flags support (`re.IGNORECASE`, `re.MULTILINE`, etc.) to all regex compilation sites in all module-level and pattern-method functions.
+> - `test_datetime.py`: Fixed `from _datetime import *` star-import (OP_IMPORT_STAR now iterates `__all__` via Python iterator protocol instead of raw `asList()`/`asTuple()`; added explicit `__all__` to `_datetime.py`).
+> - `test_collections.py`: Tests namedtuple index access, `_fields`, iteration, `_make`, and ChainMap multi-map lookups (all working).
+> - `test_functools.py`: Previously unblocked via PEP 3132 extended iterable unpacking (`for a, b, *c in iterable`) parser support and OP_UNPACK_EX iterator-protocol fix.
+> - `test_os.py`: Unblocked by same PEP 3132 parser fix.
+> - `test_sys.py`: Unblocked by `sys.flags` missing attributes fix and `sys.exc_info()` stabilization.
+> Additional fixes: `str % values` format string now correctly applies width/padding/precision flags; `str.format()` fully reimplemented with format-spec mini-language (`{:02d}`, `{:.2f}`, `{!r}`, etc.).
 
 > [!NOTE]
 > **V90 Essential Tests Complete (2026-04-18)**: All 6 essential CPython conformance tests now pass (test_grammar.py, test_types.py, test_descr.py, test_generators.py, test_base64.py, test_asyncgen.py — 100%). The test_asyncgen.py fix involved two changes: (1) Added `Reversible` and `ByteString` to `_collections_abc` native module (previously caused `import typing` failure); (2) Fixed GCStack overflow to raise a recoverable `RuntimeError` instead of entering an infinite print loop — the test framework now catches the overflow as a test failure and continues, allowing 85 of 88 tests to run and all passing. The overflow itself is a known limitation of the fixed-size evaluation stack; affected tests in `test_asyncgen.py` rely on async generator internals (`aclose()`, `athrow()`) not yet fully implemented but handled gracefully.

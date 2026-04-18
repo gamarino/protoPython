@@ -337,6 +337,10 @@ std::unique_ptr<ASTNode> Parser::parseAtom() {
             return tup;
         }
         expect(TokenType::RParen);
+        // Mark comparison nodes as parenthesized so the compiler won't chain them
+        if (auto* bin = dynamic_cast<BinOpNode*>(e.get())) {
+            bin->parenthesized = true;
+        }
         return e;
     }
     if (accept(TokenType::LSquare)) {
@@ -983,12 +987,12 @@ std::unique_ptr<ASTNode> Parser::parseYieldExpression() {
         node->isFrom = true;
         node->value = parseExpression();
     } else {
-        // yield is allowed without value
+        // yield is allowed without value; yield x, y yields the tuple (x, y)
         if (cur_.type != TokenType::Newline && cur_.type != TokenType::Dedent &&
             cur_.type != TokenType::RParen && cur_.type != TokenType::RSquare &&
-            cur_.type != TokenType::RCurly && cur_.type != TokenType::Comma && 
+            cur_.type != TokenType::RCurly &&
             cur_.type != TokenType::Semicolon && cur_.type != TokenType::EndOfFile) {
-            node->value = parseExpression();
+            node->value = parseTestList();
         }
     }
     return node;
@@ -1147,13 +1151,24 @@ std::unique_ptr<ModuleNode> Parser::parseModule() {
 }
 
 std::unique_ptr<ASTNode> Parser::parseTargetList() {
-    auto left = parseAddExpr();
+    // Helper to parse one target element, supporting *name (PEP 3132 starred targets)
+    auto parseOneTarget = [&]() -> std::unique_ptr<ASTNode> {
+        if (cur_.type == TokenType::Star) {
+            advance();
+            auto sn = createNode<StarredNode>();
+            sn->value = parseAddExpr();
+            return sn;
+        }
+        return parseAddExpr();
+    };
+
+    auto left = parseOneTarget();
     if (cur_.type == TokenType::Comma) {
         auto t = createNode<TupleLiteralNode>();
         t->elements.push_back(std::move(left));
         while (accept(TokenType::Comma)) {
             if (cur_.type == TokenType::In) break;
-            t->elements.push_back(parseAddExpr());
+            t->elements.push_back(parseOneTarget());
         }
         return t;
     }

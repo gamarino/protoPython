@@ -2773,23 +2773,31 @@ const proto::ProtoObject* executeBytecodeRange(
             if (mod && mod != PROTO_NONE) {
                 if (std::getenv("PROTO_RESOLVE_DIAG")) {
                 }
-                // 1. Check for __all__
+                // 1. Check for __all__ — iterate via Python iterator protocol to handle list, tuple, or custom types
                 const proto::ProtoObject* allObj = mod->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__all__"));
-                if (allObj && allObj->asList(ctx)) {
-                    const proto::ProtoList* allList = allObj->asList(ctx);
-                    const proto::ProtoListIterator* it = allList->getIterator(ctx);
-                    while (it && it->hasNext(ctx)) {
-                        const proto::ProtoObject* nameObj = it->next(ctx);
-                        if (nameObj && nameObj->isString(ctx)) {
-                            const proto::ProtoString* nameS = nameObj->asString(ctx);
-                            const proto::ProtoObject* val = mod->getAttribute(ctx, nameS);
-                            if (val) {
-                                frame = const_cast<proto::ProtoObject*>(frame->setAttribute(ctx, nameS, val));
+                bool importedFromAll = false;
+                if (allObj && allObj != PROTO_NONE && env) {
+                    const proto::ProtoObject* iterObj = env->iter(allObj);
+                    if (iterObj) {
+                        importedFromAll = true;
+                        while (true) {
+                            const proto::ProtoObject* nameObj = env->next(iterObj);
+                            if (!nameObj) {
+                                if (env->hasPendingException() && env->isStopIteration(ctx, env->peekPendingException()))
+                                    env->clearPendingException();
+                                break;
+                            }
+                            if (nameObj->isString(ctx)) {
+                                const proto::ProtoString* nameS = nameObj->asString(ctx);
+                                const proto::ProtoObject* val = mod->getAttribute(ctx, nameS);
+                                if (val) {
+                                    frame = const_cast<proto::ProtoObject*>(frame->setAttribute(ctx, nameS, val));
+                                }
                             }
                         }
-                        it = it->advance(ctx);
                     }
-                } else {
+                }
+                if (!importedFromAll) {
                     // 2. Iterate over all attributes if __keys__ is available
                     const proto::ProtoObject* keysObj = mod->getAttribute(ctx, protoPython::PythonEnvironment::getInternalString(ctx, "__keys__"));
                     if (keysObj && keysObj->asList(ctx)) {
@@ -4571,14 +4579,36 @@ const proto::ProtoObject* executeBytecodeRange(
             stack.pop_back();
 
             std::vector<const proto::ProtoObject*> all;
-            const proto::ProtoList* list = seq->asList(ctx);
-            const proto::ProtoTuple* tup = seq->asTuple(ctx);
-            if (list) {
-                for (size_t i = 0; i < list->getSize(ctx); ++i) all.push_back(list->getAt(ctx, i));
-            } else if (tup) {
-                for (size_t i = 0; i < tup->getSize(ctx); ++i) all.push_back(tup->getAt(ctx, i));
+            if (env) {
+                const proto::ProtoObject* iterObj = env->iter(seq);
+                if (!iterObj) {
+                    if (!env->hasPendingException()) env->raiseTypeError(ctx, "cannot unpack non-iterable object");
+                    i = next_i; continue;
+                }
+                while (true) {
+                    const proto::ProtoObject* val = env->next(iterObj);
+                    if (!val) {
+                        if (env->hasPendingException() && env->isStopIteration(ctx, env->peekPendingException()))
+                            env->clearPendingException();
+                        break;
+                    }
+                    all.push_back(val);
+                }
+                if (env->hasPendingException()) { i = next_i; continue; }
             } else {
-                continue;
+                const proto::ProtoList* list = seq->asList(ctx);
+                const proto::ProtoTuple* tup = seq->asTuple(ctx);
+                if (!list && !tup) {
+                    const proto::ProtoObject* data = seq->getAttribute(ctx, protoPython::PythonEnvironment::getInternalString(ctx, "__data__"));
+                    if (data) { list = data->asList(ctx); tup = data->asTuple(ctx); }
+                }
+                if (list) {
+                    for (size_t j = 0; j < list->getSize(ctx); ++j) all.push_back(list->getAt(ctx, j));
+                } else if (tup) {
+                    for (size_t j = 0; j < tup->getSize(ctx); ++j) all.push_back(tup->getAt(ctx, j));
+                } else {
+                    continue;
+                }
             }
 
             if (static_cast<int>(all.size()) < num_before + num_after) {
@@ -4587,18 +4617,28 @@ const proto::ProtoObject* executeBytecodeRange(
             }
 
             // Push after elements (in reverse order for stack)
-            for (int i = static_cast<int>(all.size()) - 1; i >= static_cast<int>(all.size()) - num_after; --i) {
-                stack.push_back(all[i]);
+            for (int idx = static_cast<int>(all.size()) - 1; idx >= static_cast<int>(all.size()) - num_after; --idx) {
+                stack.push_back(all[idx]);
             }
-            // Push middle list
-            const proto::ProtoList* middle = ctx->newList();
-            for (int i = num_before; i < static_cast<int>(all.size()) - num_after; ++i) {
-                middle = middle->appendLast(ctx, all[i]);
+            // Push middle as a Python list
+            {
+                const proto::ProtoList* middle = ctx->newList();
+                for (int idx = num_before; idx < static_cast<int>(all.size()) - num_after; ++idx) {
+                    middle = middle->appendLast(ctx, all[idx]);
+                }
+                const proto::ProtoObject* listProto = env ? env->getListPrototype() : nullptr;
+                if (listProto) {
+                    proto::ProtoObject* listObj = const_cast<proto::ProtoObject*>(listProto->newChild(ctx, true));
+                    listObj = const_cast<proto::ProtoObject*>(listObj->setAttribute(ctx,
+                        PythonEnvironment::getInternedString(ctx, "__data__"), middle->asObject(ctx)));
+                    stack.push_back(listObj);
+                } else {
+                    stack.push_back(middle->asObject(ctx));
+                }
             }
-            stack.push_back(middle->asObject(ctx));
             // Push before elements (in reverse order)
-            for (int i = num_before - 1; i >= 0; --i) {
-                stack.push_back(all[i]);
+            for (int idx = num_before - 1; idx >= 0; --idx) {
+                stack.push_back(all[idx]);
             }
         } else if (op == OP_LOAD_GLOBAL) {
             bool pushNull = (arg & 1);
