@@ -3,6 +3,7 @@
 #include <protoPython/PythonEnvironment.h>
 #include <protoPython/MemoryManager.hpp>
 #include <protoCore.h>
+#include <proto_internal.h>
 #include <cmath>
 #include <cstdint>
 #include <iostream>
@@ -239,8 +240,6 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
     const proto::ProtoString* code_name = env ? env->getCodeString() : PythonEnvironment::getInternedString(ctx, "__code__");
     const proto::ProtoObject* codeObj = self->getAttribute(ctx, code_name);
     if (!codeObj || codeObj == PROTO_NONE) {
-        fprintf(stderr, "DIAG_USERFN: self=%p codeObj=NULL EARLY_RETURN\n", (void*)self);
-        fflush(stderr);
         return PROTO_NONE;
     }
 
@@ -287,23 +286,26 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
             for (int i = 0; i < nparams_count; ++i)
                 parameterNames = parameterNames->appendLast(ctx, co_varnames->getAt(ctx, i));
         }
-        if (automatic_count > 0) {
+        // Only build names for actual variables — NOT the PYTHON_STACK_BUFFER portion.
+        // The total slot count (automatic_count) is passed directly to ContextScope so
+        // ProtoContext allocates the full array without iterating 32768+ times.
+        if (co_varnames_size > 0) {
             localNames = ctx->newList();
-            for (int i = 0; i < automatic_count; ++i) {
-                const proto::ProtoObject* name = (i < co_varnames_size) ? co_varnames->getAt(ctx, i) : PROTO_NONE;
-                localNames = localNames->appendLast(ctx, name);
-            }
+            for (int i = 0; i < co_varnames_size; ++i)
+                localNames = localNames->appendLast(ctx, co_varnames->getAt(ctx, i));
         }
     }
 
     // We pass nullptr for args and kwargs to skip ProtoContext's internal binding,
     // as we handle it manually below to support Python-specific semantics like *args and **kwargs.
-    ContextScope scope(ctx->space, ctx, parameterNames, localNames, nullptr, nullptr);
+    const proto::ProtoObject* result = PROTO_NONE;
+    {
+    ContextScope scope(ctx->space, ctx, parameterNames, localNames, nullptr, nullptr, (size_t)automatic_count);
     proto::ProtoContext* calleeCtx = scope.context();
     unsigned long argCount = args->getSize(calleeCtx);
 
     // 5. Build Execution Frame (for locals()/sys._getframe)
-    proto::ProtoObject* frame = const_cast<proto::ProtoObject*>(calleeCtx->newObject(true));
+    proto::ProtoObject* frame = const_cast<proto::ProtoObject*>(calleeCtx->newObject(false));
     if (env) {
         const proto::ProtoObject* closure = self->getAttribute(calleeCtx, env->getClosureString());
         if (closure && closure != PROTO_NONE) {
@@ -464,17 +466,23 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
         int kwargIdx = nparams_count + kwonly_count + ((co_flags & CO_VARARGS) ? 1 : 0);
         proto::ProtoObject* kwDict = const_cast<proto::ProtoObject*>(calleeCtx->newObject(true));
         if (env && env->getDictPrototype()) kwDict = const_cast<proto::ProtoObject*>(kwDict->addParent(calleeCtx, env->getDictPrototype()));
-        
+
         const proto::ProtoString* dataName = env ? env->getDataString() : PythonEnvironment::getInternedString(calleeCtx, "__data__");
-        
+        const proto::ProtoString* keysName = env ? env->getKeysString() : PythonEnvironment::getInternedString(calleeCtx, "__keys__");
+
         const proto::ProtoSparseList* data = calleeCtx->newSparseList();
-        
+        const proto::ProtoList* keysList = calleeCtx->newList();
+
+        // Build a hash→nameObject map from the caller's kwNames tuple so we can
+        // populate __keys__ (the list of actual key string objects) alongside __data__.
+        const proto::ProtoTuple* kwNamesTuple = env ? env->getCurrentKwNames() : nullptr;
+
         if (kwargs) {
             auto it = kwargs->getIterator(calleeCtx);
             while (it && it->hasNext(calleeCtx)) {
                 unsigned long key = it->nextKey(calleeCtx);
                 const proto::ProtoObject* val = it->nextValue(calleeCtx);
-                
+
                 // Only add if not already bound to a positional or kwonly param
                 bool alreadyBound = false;
                 for (unsigned long i = 0; i < (unsigned long)(nparams_count + kwonly_count); ++i) {
@@ -486,11 +494,26 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
                 }
                 if (!alreadyBound) {
                     data = data->setAt(calleeCtx, key, val);
+                    // Find the actual key name object to populate __keys__.
+                    const proto::ProtoObject* keyNameObj = nullptr;
+                    if (kwNamesTuple) {
+                        for (int ni = 0; ni < kwNamesTuple->getSize(calleeCtx); ++ni) {
+                            const proto::ProtoObject* nm = kwNamesTuple->getAt(calleeCtx, ni);
+                            if (nm && nm->getHash(calleeCtx) == key) {
+                                keyNameObj = nm;
+                                break;
+                            }
+                        }
+                    }
+                    if (keyNameObj) {
+                        keysList = keysList->appendLast(calleeCtx, keyNameObj);
+                    }
                 }
                 it = const_cast<proto::ProtoSparseListIterator*>(it)->advance(calleeCtx);
             }
         }
         kwDict->setAttribute(calleeCtx, dataName, data->asObject(calleeCtx));
+        kwDict->setAttribute(calleeCtx, keysName, keysList->asObject(calleeCtx));
         bindVar(kwargIdx, kwDict);
     }
 
@@ -530,18 +553,18 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
         PythonEnvironment::setCurrentFrame(frame);
     }
 
-    const proto::ProtoObject* result = nullptr;
+    result = nullptr;
     {
         GlobalsScope gscope(globalsObj);
-        
+
         const proto::ProtoObject* bytecodeObj = codeObj->getAttribute(calleeCtx, env->getCoCodeString());
         const proto::ProtoObject* constsObj = codeObj->getAttribute(calleeCtx, env->getCoConstsString());
         const proto::ProtoObject* namesObj = codeObj->getAttribute(calleeCtx, env->getCoNamesString());
-        
+
         const proto::ProtoTuple* bytecode = bytecodeObj ? bytecodeObj->asTuple(calleeCtx) : nullptr;
         const proto::ProtoTuple* consts = constsObj ? constsObj->asTuple(calleeCtx) : nullptr;
         const proto::ProtoTuple* names = namesObj ? namesObj->asTuple(calleeCtx) : nullptr;
-        
+
         if (bytecode && consts) {
             unsigned long stackOffset = co_varnames ? co_varnames->getSize(calleeCtx) : 0;
             result = executeBytecodeRange(calleeCtx, consts, bytecode, names, frame, 0, bytecode->getSize(calleeCtx), stackOffset);
@@ -550,6 +573,7 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
         }
     }
     promote(calleeCtx, result);
+    } // ContextScope destroyed here
     return result;
 }
 
@@ -704,14 +728,37 @@ static const proto::ProtoObject* binaryAdd(proto::ProtoContext* ctx,
     if ((a->isInteger(ctx) || a->isDouble(ctx)) && (b->isInteger(ctx) || b->isDouble(ctx))) {
         return a->add(ctx, b);
     }
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+
+    // Detect bytes objects before the isString fast-path: bytes stores content
+    // in __data__ (a ProtoString) so isString() returns true for them, but
+    // bytes + bytes must produce a bytes object, not a plain str.
+    auto isBytesObj = [&](const proto::ProtoObject* obj) -> bool {
+        if (!env || !env->getBytesPrototype()) return false;
+        const proto::ProtoObject* cls2 = obj->getAttribute(ctx, env->getClassString());
+        if (cls2 == env->getBytesPrototype()) return true;
+        if (obj->getPrototype(ctx) == env->getBytesPrototype()) return true;
+        return false;
+    };
+    if (a->isString(ctx) && b->isString(ctx) && (isBytesObj(a) || isBytesObj(b))) {
+        // bytes + bytes → new bytes object
+        std::string s1, s2;
+        a->asString(ctx)->toUTF8String(ctx, s1);
+        b->asString(ctx)->toUTF8String(ctx, s2);
+        std::string combined = s1 + s2;
+        const proto::ProtoObject* bytesProto = env->getBytesPrototype();
+        proto::ProtoObject* result = const_cast<proto::ProtoObject*>(bytesProto->newChild(ctx, true));
+        result->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__data__"),
+                             PythonEnvironment::getInternedString(ctx, combined.c_str())->asObject(ctx));
+        result->setAttribute(ctx, env->getClassString(), bytesProto);
+        return result;
+    }
     if (a->isString(ctx) && b->isString(ctx)) {
         std::string s1, s2;
         a->asString(ctx)->toUTF8String(ctx, s1);
         b->asString(ctx)->toUTF8String(ctx, s2);
         return PythonEnvironment::getInternedString(ctx, (s1 + s2).c_str())->asObject(ctx);
     }
-
-    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     const proto::ProtoList* l1 = a->asList(ctx);
     if (!l1) {
         const proto::ProtoObject* data = a->getAttribute(ctx, env->getDataString());
@@ -737,19 +784,21 @@ static const proto::ProtoObject* binaryAdd(proto::ProtoContext* ctx,
         for (unsigned long i = 0; i < n1; ++i) resL = const_cast<proto::ProtoList*>(resL->appendLast(ctx, l1->getAt(ctx, i)));
         for (unsigned long i = 0; i < n2; ++i) resL = const_cast<proto::ProtoList*>(resL->appendLast(ctx, l2->getAt(ctx, i)));
         
-        const proto::ProtoObject* aCls = env ? a->getAttribute(ctx, env->getClassString()) : a->getAttribute(ctx, protoPython::PythonEnvironment::getInternalString(ctx, "__class__"));
+        const proto::ProtoObject* aCls = env ? env->getType(ctx, a) : a->getAttribute(ctx, protoPython::PythonEnvironment::getInternalString(ctx, "__class__"));
         proto::ProtoObject* resObj = const_cast<proto::ProtoObject*>(ctx->newObject(true));
-        
+
         bool isTuple = env && (aCls == env->getTuplePrototype());
+        const proto::ProtoString* dataS = env ? env->getDataString() : protoPython::PythonEnvironment::getInternalString(ctx, "__data__");
         if (isTuple) {
-             resObj->setAttribute(ctx, env->getDataString(), ctx->newTupleFromList(resL)->asObject(ctx));
+            // Save setAttribute result: these are immutable persistent objects.
+            resObj = const_cast<proto::ProtoObject*>(resObj->setAttribute(ctx, dataS, ctx->newTupleFromList(resL)->asObject(ctx)));
         } else {
-             resObj->setAttribute(ctx, env ? env->getDataString() : protoPython::PythonEnvironment::getInternalString(ctx, "__data__"), resL->asObject(ctx));
+            resObj = const_cast<proto::ProtoObject*>(resObj->setAttribute(ctx, dataS, resL->asObject(ctx)));
         }
-        
+
         if (aCls) {
             resObj = const_cast<proto::ProtoObject*>(resObj->addParent(ctx, aCls));
-            resObj->setAttribute(ctx, env ? env->getClassString() : protoPython::PythonEnvironment::getInternalString(ctx, "__class__"), aCls);
+            resObj = const_cast<proto::ProtoObject*>(resObj->setAttribute(ctx, env ? env->getClassString() : protoPython::PythonEnvironment::getInternalString(ctx, "__class__"), aCls));
         }
         return resObj;
     }
@@ -769,6 +818,76 @@ static const proto::ProtoObject* binaryMultiply(proto::ProtoContext* ctx,
     const proto::ProtoObject* a, const proto::ProtoObject* b) {
     if ((a->isInteger(ctx) || a->isDouble(ctx)) && (b->isInteger(ctx) || b->isDouble(ctx))) {
         return a->multiply(ctx, b);
+    }
+    // String/bytes repetition: str * int or int * str (or bytes * int)
+    const proto::ProtoObject* strObj = nullptr;
+    const proto::ProtoObject* intObj = nullptr;
+    if (a->isString(ctx) && b->isInteger(ctx)) { strObj = a; intObj = b; }
+    else if (a->isInteger(ctx) && b->isString(ctx)) { strObj = b; intObj = a; }
+    if (strObj && intObj) {
+        protoPython::PythonEnvironment* env2 = protoPython::PythonEnvironment::fromContext(ctx);
+        bool isBytes = false;
+        if (env2 && env2->getBytesPrototype()) {
+            const proto::ProtoObject* cls2 = strObj->getAttribute(ctx, env2->getClassString());
+            if (cls2 == env2->getBytesPrototype() || strObj->getPrototype(ctx) == env2->getBytesPrototype())
+                isBytes = true;
+        }
+        long long n = intObj->asLong(ctx);
+        std::string s;
+        strObj->asString(ctx)->toUTF8String(ctx, s);
+        std::string result;
+        if (n > 0) {
+            result.reserve(s.size() * static_cast<size_t>(n));
+            for (long long i = 0; i < n; ++i) result += s;
+        }
+        if (isBytes && env2) {
+            const proto::ProtoObject* bytesProto = env2->getBytesPrototype();
+            proto::ProtoObject* res = const_cast<proto::ProtoObject*>(bytesProto->newChild(ctx, true));
+            res->setAttribute(ctx, protoPython::PythonEnvironment::getInternedString(ctx, "__data__"),
+                              protoPython::PythonEnvironment::getInternedString(ctx, result.c_str())->asObject(ctx));
+            res->setAttribute(ctx, env2->getClassString(), bytesProto);
+            return res;
+        }
+        return proto::ProtoString::fromUTF8(ctx, result.c_str())->asObject(ctx);
+    }
+    // Tuple repetition: tuple * int or int * tuple
+    const proto::ProtoObject* tupleObj = nullptr;
+    intObj = nullptr;
+    if (a->asTuple(ctx) && b->isInteger(ctx)) { tupleObj = a; intObj = b; }
+    else if (a->isInteger(ctx) && b->asTuple(ctx)) { tupleObj = b; intObj = a; }
+    if (tupleObj && intObj) {
+        long long n = intObj->asLong(ctx);
+        if (n <= 0) return ctx->newTupleFromList(ctx->newList())->asObject(ctx);
+        const proto::ProtoTuple* t = tupleObj->asTuple(ctx);
+        size_t seqSize = t->getSize(ctx);
+        proto::ProtoList* resultList = const_cast<proto::ProtoList*>(ctx->newList());
+        for (long long rep = 0; rep < n; ++rep) {
+            for (size_t idx = 0; idx < seqSize; ++idx) {
+                const proto::ProtoObject* elem = t->getAt(ctx, idx);
+                if (elem) resultList = const_cast<proto::ProtoList*>(resultList->appendLast(ctx, elem));
+            }
+        }
+        return ctx->newTupleFromList(resultList)->asObject(ctx);
+    }
+    // Try __mul__ on the left operand, then __rmul__ on the right
+    protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(ctx);
+    const proto::ProtoString* mulS = protoPython::PythonEnvironment::getInternalString(ctx, "__mul__");
+    if (!a->isInteger(ctx) && !a->isDouble(ctx)) {
+        const proto::ProtoObject* mul = env ? env->getAttribute(ctx, a, mulS) : a->getAttribute(ctx, mulS);
+        if (mul && mul != PROTO_NONE && mul->asMethod(ctx)) {
+            const proto::ProtoList* args = ctx->newList()->appendLast(ctx, b);
+            const proto::ProtoObject* r = mul->asMethod(ctx)(ctx, a, nullptr, args, nullptr);
+            if (r && r != PROTO_NONE) return r;
+        }
+    }
+    const proto::ProtoString* rmulS = protoPython::PythonEnvironment::getInternalString(ctx, "__rmul__");
+    if (!b->isInteger(ctx) && !b->isDouble(ctx)) {
+        const proto::ProtoObject* rmul = env ? env->getAttribute(ctx, b, rmulS) : b->getAttribute(ctx, rmulS);
+        if (rmul && rmul != PROTO_NONE && rmul->asMethod(ctx)) {
+            const proto::ProtoList* args = ctx->newList()->appendLast(ctx, a);
+            const proto::ProtoObject* r = rmul->asMethod(ctx)(ctx, b, nullptr, args, nullptr);
+            if (r && r != PROTO_NONE) return r;
+        }
     }
     return PROTO_NONE;
 }
@@ -861,12 +980,19 @@ static const proto::ProtoObject* binaryFloorDivide(proto::ProtoContext* ctx,
 static const proto::ProtoObject* compareOp(proto::ProtoContext* ctx,
     const proto::ProtoObject* a, const proto::ProtoObject* b, int op) {
     bool result = false;
-    if (op == 8) { // is
-        result = (a == b);
-        return result ? PROTO_TRUE : PROTO_FALSE;
-    }
-    if (op == 9) { // is not
-        result = (a != b);
+    if (op == 8 || op == 9) { // is / is not
+        // Normalize None-like values: nonePrototype and PROTO_NONE are both Python None
+        PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+        const proto::ProtoObject* noneProto = env ? env->getNonePrototype() : nullptr;
+        auto isNoneLike = [noneProto](const proto::ProtoObject* v) {
+            return v == PROTO_NONE || (noneProto && v == noneProto);
+        };
+        bool aIsNone = isNoneLike(a);
+        bool bIsNone = isNoneLike(b);
+        if (aIsNone && bIsNone) result = true;
+        else if (aIsNone || bIsNone) result = false;
+        else result = (a == b);
+        if (op == 9) result = !result;
         return result ? PROTO_TRUE : PROTO_FALSE;
     }
     
@@ -881,12 +1007,21 @@ static const proto::ProtoObject* compareOp(proto::ProtoContext* ctx,
 
     if (op == 6 || op == 7) { // in, not in
         bool found = false;
+        // Fast path: string-in-string uses native substring search
+        if (b->isString(ctx) && a->isString(ctx)) {
+            std::string s_sub, s_full;
+            a->asString(ctx)->toUTF8String(ctx, s_sub);
+            b->asString(ctx)->toUTF8String(ctx, s_full);
+            found = (s_full.find(s_sub) != std::string::npos);
+            result = (op == 6) ? found : !found;
+            return result ? PROTO_TRUE : PROTO_FALSE;
+        }
         const proto::ProtoList* lst = b->asList(ctx);
         if (!lst && b->isTuple(ctx)) {
             const proto::ProtoTuple* tup = b->asTuple(ctx);
             if (tup) lst = tup->asList(ctx);
         }
-        
+
         if (!lst) {
             // Try dictionary keys or __data__ fallback
             const proto::ProtoString* dataS = protoPython::PythonEnvironment::getInternalString(ctx, "__data__");
@@ -1076,7 +1211,7 @@ static const proto::ProtoObject* invokeCallable(proto::ProtoContext* ctx,
         callAttr = env ? env->getAttribute(ctx, typeObj, callS) : typeObj->getAttribute(ctx, callS);
     }
 
-    if (!callAttr || !callAttr->asMethod(ctx)) {
+    if (!callAttr || callAttr == PROTO_NONE) {
         if (env && env->hasPendingException()) return nullptr;
         if (env) {
             std::string repr = PythonEnvironment::reprObject(ctx, callable);
@@ -1084,7 +1219,18 @@ static const proto::ProtoObject* invokeCallable(proto::ProtoContext* ctx,
         }
         return nullptr;
     }
-    
+
+    // If callAttr is a Python callable (not a native method cell), invoke it recursively
+    // with the instance prepended to args, i.e., type(callable).__call__(callable, *args).
+    if (!callAttr->asMethod(ctx)) {
+        const proto::ProtoList* selfPrependedArgs = ctx->newList()->appendLast(ctx, callable);
+        unsigned long nargs = args ? args->getSize(ctx) : 0;
+        for (unsigned long j = 0; j < nargs; ++j) {
+            selfPrependedArgs = selfPrependedArgs->appendLast(ctx, args->getAt(ctx, j));
+        }
+        return invokeCallable(ctx, callAttr, selfPrependedArgs, kwargs);
+    }
+
     if (std::getenv("PROTO_ENV_DIAG")) {
         fprintf(stderr, "DEBUG: invokeCallable calling __call__ asMethod\n");
         fflush(stderr);
@@ -1101,11 +1247,12 @@ static const proto::ProtoObject* invokeCallable(proto::ProtoContext* ctx,
 
 static const proto::ProtoObject* invokeDunder(proto::ProtoContext* ctx, const proto::ProtoObject* container, const proto::ProtoString* name, const proto::ProtoList* args) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    
+
     RecursionScope recScope(env, ctx);
     if (recScope.overflowed()) return nullptr;
 
     const proto::ProtoObject* method = env ? env->getAttribute(ctx, container, name, false) : container->getAttribute(ctx, name);
+
     if (!method || method == PROTO_NONE) return nullptr;
 
     const proto::ProtoSparseList* kwargs = env ? env->getEmptySparseList() : ctx->newSparseList();
@@ -1487,14 +1634,21 @@ struct GCStack {
     const proto::ProtoObject** slots;
     size_t top;
     size_t capacity;
+    bool overflowed;
 
-    GCStack(const proto::ProtoObject** s, size_t cap) : slots(s), top(0), capacity(cap) {}
+    GCStack(const proto::ProtoObject** s, size_t cap) : slots(s), top(0), capacity(cap), overflowed(false) {}
 
     void push_back(const proto::ProtoObject* obj) {
         if (top < capacity) {
             slots[top++] = obj;
-        } else {
-            if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG: GCStack overflow! top=%lu capacity=%lu\n", top, capacity);
+        } else if (!overflowed) {
+            // Mark overflow so the interpreter loop can raise a clean MemoryError
+            // rather than printing an infinite stream of diagnostics.
+            overflowed = true;
+            fprintf(stderr, "FATAL: GCStack overflow! top=%lu capacity=%lu — "
+                    "increase PYTHON_STACK_BUFFER in Compiler.cpp\n",
+                    (unsigned long)top, (unsigned long)capacity);
+            fflush(stderr);
         }
     }
 
@@ -1732,6 +1886,10 @@ const proto::ProtoObject* executeBytecodeRange(
             fprintf(stderr, "\n");
             fflush(stderr);
         }
+        if (stack.overflowed) {
+            if (env) env->raiseRuntimeError(ctx, "evaluation stack overflow (maximum expression depth exceeded)");
+            return nullptr;
+        }
         if (env && env->hasPendingException()) {
             const proto::ProtoObject* exc = env->peekPendingException();
             if (exc) {
@@ -1942,33 +2100,76 @@ const proto::ProtoObject* executeBytecodeRange(
                 const proto::ProtoObject* nameObj = names->getAt(ctx, nameIdx);
                 if (nameObj->isString(ctx)) {
                     const proto::ProtoString* nameS = nameObj->asString(ctx);
-                    std::string nStr;
-                    nameS->toUTF8String(ctx, nStr);
-                    
+
                     const proto::ProtoObject* val = nullptr;
                     bool found = false;
-                    const proto::ProtoObject* hasAttrRes = frame->hasAttribute(ctx, nameS);
-                    if (hasAttrRes == PROTO_TRUE) {
-                        val = frame->getAttribute(ctx, nameS);
-                        found = true;
+
+                    // Fast path: direct O(1) own-attribute lookup using raw pointer hash (same
+                    // key used by STORE_NAME → setAttribute). Bypasses hasAttribute()'s
+                    // symbolTable canonicalization which always returns PROTO_FALSE for
+                    // bytecode-originated strings, forcing every LOAD_NAME through resolve().
+                    {
+                        const proto::ProtoSparseList* frameOwn = frame->proto::ProtoObject::getOwnAttributes(ctx);
+                        if (frameOwn) {
+                            val = toImpl<const proto::ProtoSparseListImplementation>(frameOwn)->implGetAt(
+                                ctx, reinterpret_cast<uintptr_t>(nameS));
+                            if (val) found = true;
+                        }
                     }
-                    
+
+                    // Closure parent chain: free variables live in parent frames. All name strings
+                    // are interned (co_names uses getInternedString), so getAttribute's symbolTable
+                    // lookup succeeds and traverses the prototype chain correctly.
+                    if (!found) {
+                        val = frame->getAttribute(ctx, nameS);
+                        if (val != nullptr) found = true;
+                    }
+
+                    // For custom class namespace dicts (e.g. EnumDict from __prepare__), call
+                    // __getitem__ to mirror the __setitem__ interception done in STORE_NAME.
+                    if (!found && env) {
+                        const proto::ProtoObject* frameType = env->getType(ctx, frame);
+                        // Mirror the same __class__-fallback used by STORE_NAME: EnumDict and
+                        // other __prepare__ namespaces may report as the base dict prototype but
+                        // carry a __class__ attribute pointing to the actual subtype.
+                        if (frameType == env->getDictPrototype()) {
+                            const proto::ProtoString* classS = env->getClassString()
+                                ? env->getClassString()
+                                : PythonEnvironment::getInternedString(ctx, "__class__");
+                            const proto::ProtoObject* cls = frame->proto::ProtoObject::getAttribute(ctx, classS);
+                            if (cls && cls != PROTO_NONE) frameType = cls;
+                        }
+                        if (frameType && frameType != PROTO_NONE &&
+                            frameType != env->getDictPrototype() &&
+                            frameType != env->getModulePrototype()) {
+                            const proto::ProtoObject* getitem = env->getAttribute(ctx, frameType, env->getGetItemString(), false);
+                            if (getitem && getitem != PROTO_NONE) {
+                                const proto::ProtoList* giArgs = ctx->newList()->appendLast(ctx, nameObj);
+                                val = invokeDunder(ctx, frame, env->getGetItemString(), giArgs);
+                                if (env->hasPendingException()) {
+                                    env->clearPendingException(); // KeyError means not found
+                                } else if (val && val != PROTO_NONE) {
+                                    found = true;
+                                }
+                            }
+                        }
+                    }
+
+                    // Fallback: builtins, sys.modules, etc.
+                    if (!found) {
+                        val = env ? env->resolve(nameS, ctx) : nullptr;
+                        if (val) found = true;
+                    }
+
                     if (found) {
                         if (pushNull) stack.push_back(nullptr);
                         stack.push_back(val);
-                    } else if (env) {
-                        const proto::ProtoObject* r = env->resolve(nameS, ctx);
-                        if (r) {
-                            if (pushNull) stack.push_back(nullptr);
-                            stack.push_back(r);
-                        } else {
-                            if (!env->hasPendingException()) env->raiseNameError(ctx, nStr);
-                            i = next_i;
-                            continue;
-                        }
                     } else {
-                        if (pushNull) stack.push_back(nullptr);
-                        stack.push_back(PROTO_NONE);
+                        std::string nStr;
+                        nameS->toUTF8String(ctx, nStr);
+                        if (env && !env->hasPendingException()) env->raiseNameError(ctx, nStr);
+                        i = next_i;
+                        continue;
                     }
                 } else {
                     if (pushNull) stack.push_back(nullptr);
@@ -2007,7 +2208,7 @@ const proto::ProtoObject* executeBytecodeRange(
                         if (frameType && frameType != PROTO_NONE &&
                             frameType != env->getDictPrototype() &&
                             frameType != env->getModulePrototype()) {
-                            
+
                             const proto::ProtoObject* setitem = env->getAttribute(ctx, frameType, env->getSetItemString(), false);
                             if (setitem && setitem != PROTO_NONE) {
                                 handledBySetitem = true;
@@ -2016,7 +2217,8 @@ const proto::ProtoObject* executeBytecodeRange(
                                     fprintf(stderr, "DEBUG OP_STORE_NAME: handledBySetitem intercepted '%s' type=%p\n", nStr.c_str(), (void*)frameType);
                                 }
                                 const proto::ProtoList* args = ctx->newList()->appendLast(ctx, nameObj)->appendLast(ctx, val);
-                                invokeDunder(ctx, frame, env->getSetItemString(), args);
+                                const proto::ProtoObject* setRet = invokeDunder(ctx, frame, env->getSetItemString(), args);
+                                (void)setRet;
                                 if (env->hasPendingException()) {
                                     stack.pop_back();
                                     i = next_i;
@@ -2026,15 +2228,25 @@ const proto::ProtoObject* executeBytecodeRange(
                         }
                     }
 
+                    // O(1) pre-check: is this key already present in the frame's own attributes?
+                    // Using raw-pointer implHas avoids both the O(n) keysList->has() scan and the
+                    // hasOwnAttribute() canonicalization bug (which would always return false for
+                    // bytecode-originated strings not in the global symbol table).
+                    bool isNewKey = true;
+                    {
+                        const proto::ProtoSparseList* frameOwn = frame->proto::ProtoObject::getOwnAttributes(ctx);
+                        if (frameOwn) {
+                            isNewKey = !toImpl<const proto::ProtoSparseListImplementation>(frameOwn)->implHas(
+                                ctx, reinterpret_cast<uintptr_t>(nS));
+                        }
+                    }
+
                     if (!handledBySetitem) {
-                        // Update frame (CoW support)
-                        std::string nStr;
-                        nameObj->asString(ctx)->toUTF8String(ctx, nStr);
                         const proto::ProtoObject* oldFrame = frame;
-                        const proto::ProtoObject* newFrame = frame->setAttribute(ctx, nameObj->asString(ctx), val);
+                        const proto::ProtoObject* newFrame = frame->setAttribute(ctx, nS, val);
                         frame = const_cast<proto::ProtoObject*>(newFrame);
                         syncModuleIdentity(ctx, env, oldFrame, newFrame);
-                        
+
                         const proto::ProtoString* dataS = protoPython::PythonEnvironment::getInternalString(ctx, "__data__");
                         const proto::ProtoObject* dataObj = frame->getAttribute(ctx, dataS);
                         if (dataObj && dataObj->asSparseList(ctx)) {
@@ -2048,17 +2260,19 @@ const proto::ProtoObject* executeBytecodeRange(
                     }
                     stack.pop_back(); // Pop val now that it's stored
 
-                    // Track key for reflection (locals(), vars())
-                    const proto::ProtoObject* keysObj = frame->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__keys__"));
-                    const proto::ProtoList* keysList = (keysObj && keysObj->asList(ctx)) ? keysObj->asList(ctx) : ctx->newList();
-                    if (!keysList->has(ctx, nameObj)) {
+                    // Only add to __keys__ when the key is genuinely new (first store), O(1) total.
+                    if (isNewKey) {
+                        const proto::ProtoObject* keysObj = frame->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__keys__"));
+                        const proto::ProtoList* keysList = (keysObj && keysObj->asList(ctx)) ? keysObj->asList(ctx) : ctx->newList();
                         keysList = keysList->appendLast(ctx, nameObj);
                         frame = const_cast<proto::ProtoObject*>(frame->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__keys__"), keysList->asObject(ctx)));
                     }
                     if (env) {
                         PythonEnvironment::setCurrentFrame(frame);
-                        if (sync_globals) {
-                            // Ensure __globals__ self-reference is updated to new frame pointer (CoW stability)
+                        // Only sync globals when the frame pointer actually changed (immutable CoW).
+                        // For mutable frames the pointer never changes, so this is always a no-op there,
+                        // and skipping it eliminates a costly mutableRoot write per STORE_NAME.
+                        if (sync_globals && frame != PythonEnvironment::getCurrentGlobals()) {
                             frame = const_cast<proto::ProtoObject*>(frame->setAttribute(ctx, env->getFGlobalsString(), frame));
                             PythonEnvironment::setCurrentGlobals(frame);
                         }
@@ -2564,15 +2778,13 @@ const proto::ProtoObject* executeBytecodeRange(
                 if (allObj && allObj->asList(ctx)) {
                     const proto::ProtoList* allList = allObj->asList(ctx);
                     const proto::ProtoListIterator* it = allList->getIterator(ctx);
-                    if (std::getenv("PROTO_RESOLVE_DIAG")) {}
                     while (it && it->hasNext(ctx)) {
                         const proto::ProtoObject* nameObj = it->next(ctx);
                         if (nameObj && nameObj->isString(ctx)) {
-                            const proto::ProtoObject* val = mod->getAttribute(ctx, nameObj->asString(ctx));
-                            if (std::getenv("PROTO_RESOLVE_DIAG")) {
-                            }
+                            const proto::ProtoString* nameS = nameObj->asString(ctx);
+                            const proto::ProtoObject* val = mod->getAttribute(ctx, nameS);
                             if (val) {
-                                frame = const_cast<proto::ProtoObject*>(frame->setAttribute(ctx, nameObj->asString(ctx), val));
+                                frame = const_cast<proto::ProtoObject*>(frame->setAttribute(ctx, nameS, val));
                             }
                         }
                         it = it->advance(ctx);
@@ -2651,9 +2863,13 @@ const proto::ProtoObject* executeBytecodeRange(
                         : mod->getAttribute(ctx, nameS);
                     
                     if (val && (val != PROTO_NONE || mod->hasAttribute(ctx, nameS) == PROTO_TRUE)) {
+                        if (env) env->clearPendingException();
                         stack.push_back(val);
                     } else {
                         if (env) {
+                            // Clear any pending AttributeError from getAttribute so that
+                            // raiseImportError can set the correct ImportError.
+                            env->clearPendingException();
                             std::string n;
                             nameS->toUTF8String(ctx, n);
                             std::string msg = "cannot import name '" + n + "'";
@@ -3154,51 +3370,54 @@ const proto::ProtoObject* executeBytecodeRange(
                         if (get_env_diag()) fprintf(stderr, "DEBUG: OP_LOAD_ATTR '__new__' env=%p obj=%p\n", (void*)env, (void*)obj);
                     }
 
-                    const proto::ProtoObject* val = env ? env->getAttribute(ctx, obj, attrName) : obj->getAttribute(ctx, attrName);
-                    
+                    // Use raiseError=false so we can try __getattr__ before raising AttributeError.
+                    const proto::ProtoObject* val = env ? env->getAttribute(ctx, obj, attrName, false) : obj->getAttribute(ctx, attrName);
+                    if (!val && env && env->hasPendingException()) {
+                        // A descriptor or __getattr__ already raised an exception — propagate it.
+                        stack.pop_back();
+                        continue;
+                    }
+
                     if (std::getenv("PROTO_ENV_DIAG")) {
                         fprintf(stderr, "DEBUG: OP_LOAD_ATTR returned val=%p\n", (void*)val);
                         fflush(stderr);
                     }
-                    
+
                     bool isMissing = false;
-                    if (!val) {
-                        if (env && env->hasPendingException()) {
-                            stack.pop_back(); // Pop obj
-                            continue; // Exception already set by __getattr__ or descriptor
-                        }
-                        isMissing = true;
-                    } else if (val == PROTO_NONE) {
-                        if (obj->hasAttribute(ctx, attrName) == PROTO_FALSE) {
-                            const proto::ProtoString* getattrS = PythonEnvironment::getInternedString(ctx, "__getattr__");
-                            const proto::ProtoObject* getattr = nullptr;
-                            
-                            // Check instance first (e.g. for super() proxies that store __getattr__ on themselves)
-                            if (obj->hasOwnAttribute(ctx, getattrS) == PROTO_TRUE) {
-                                getattr = obj->getAttribute(ctx, getattrS);
-                            } else {
-                                // Search on class MRO
-                                const proto::ProtoObject* cls = obj->getAttribute(ctx, env ? env->getClassString() : PythonEnvironment::getInternedString(ctx, "__class__"));
-                                if (cls && cls != PROTO_NONE) {
-                                    getattr = env ? env->getAttribute(ctx, cls, getattrS) : cls->getAttribute(ctx, getattrS);
-                                }
+                    // Check if attribute is missing (nullptr or PROTO_NONE with no own attribute)
+                    bool attrNotFound = (!val) || (val == PROTO_NONE && obj->hasAttribute(ctx, attrName) == PROTO_FALSE);
+                    if (attrNotFound) {
+                        // Try __getattr__ before raising AttributeError
+                        const proto::ProtoString* getattrS = PythonEnvironment::getInternedString(ctx, "__getattr__");
+                        const proto::ProtoObject* getattr = nullptr;
+
+                        // Check instance first (e.g. for super() proxies that store __getattr__ on themselves)
+                        if (obj->hasOwnAttribute(ctx, getattrS) == PROTO_TRUE) {
+                            getattr = obj->getAttribute(ctx, getattrS);
+                        } else {
+                            // Search on class MRO
+                            const proto::ProtoObject* cls = obj->getAttribute(ctx, env ? env->getClassString() : PythonEnvironment::getInternedString(ctx, "__class__"));
+                            if (cls && cls != PROTO_NONE) {
+                                getattr = env ? env->getAttribute(ctx, cls, getattrS, false) : cls->getAttribute(ctx, getattrS);
                             }
-                            
-                            if (getattr && getattr != PROTO_NONE) {
-                                const proto::ProtoList* posArgs = ctx->newList()->appendLast(ctx, obj)->appendLast(ctx, nameObj);
-                                val = invokePythonCallable(ctx, getattr, posArgs, nullptr);
-                                if (env && env->hasPendingException()) {
-                                    stack.pop_back(); continue;
-                                }
-                                if (val && val != PROTO_NONE) {
-                                    isMissing = false;
-                                } else {
-                                    isMissing = true;
-                                }
+                        }
+
+                        if (getattr && getattr != PROTO_NONE) {
+                            const proto::ProtoList* posArgs = ctx->newList()->appendLast(ctx, obj)->appendLast(ctx, nameObj);
+                            val = invokePythonCallable(ctx, getattr, posArgs, nullptr);
+                            if (env && env->hasPendingException()) {
+                                stack.pop_back(); continue;
+                            }
+                            if (val) {
+                                isMissing = false;
                             } else {
                                 isMissing = true;
                             }
+                        } else {
+                            isMissing = true;
                         }
+                    } else if (!val) {
+                        isMissing = true;
                     }
 
                     if (!isMissing) {
@@ -3320,9 +3539,18 @@ const proto::ProtoObject* executeBytecodeRange(
             if (stack.size() < 2) { i = next_i; continue; }
             const proto::ProtoObject* key = stack.back();
             const proto::ProtoObject* container = stack[stack.top - 2];
-            
+
             const proto::ProtoString* getItemS = env ? env->getGetItemString() : PythonEnvironment::getInternedString(ctx, "__getitem__");
             const proto::ProtoList* args = ctx->newList()->appendLast(ctx, key);
+            if (std::getenv("PROTO_SUBSCR_DIAG")) {
+                std::string ks = "?";
+                if (key && key->isString(ctx)) key->asString(ctx)->toUTF8String(ctx, ks);
+                const proto::ProtoObject* getItemMethod = env ? env->getAttribute(ctx, container, getItemS, false) : container->getAttribute(ctx, getItemS);
+                fprintf(stderr, "DEBUG_SUBSCR: key='%s' container=%p __getitem__=%p method=%p\n",
+                        ks.c_str(), (void*)container, (void*)getItemMethod,
+                        getItemMethod ? (void*)getItemMethod->asMethod(ctx) : nullptr);
+                fflush(stderr);
+            }
             const proto::ProtoObject* result = invokeDunder(ctx, container, getItemS, args);
             
             if (get_env_diag()) {
@@ -3340,7 +3568,10 @@ const proto::ProtoObject* executeBytecodeRange(
                 fflush(stderr);
             }
 
-            if (result) {
+            if (result && env && env->hasPendingException()) {
+                // __getitem__ raised an exception (e.g. KeyError) — honour it even if a value was returned
+                continue;
+            } else if (result) {
                 stack.pop_back();
                 stack.back() = result;
             } else if (env && env->hasPendingException()) {
@@ -3437,6 +3668,15 @@ const proto::ProtoObject* executeBytecodeRange(
                         }
  else if (data->asSparseList(ctx)) {
                         unsigned long h = key->getHash(ctx);
+                        if (std::getenv("PROTO_SUBSCR_DIAG")) {
+                            std::string ks2 = "?";
+                            if (key && key->isString(ctx)) key->asString(ctx)->toUTF8String(ctx, ks2);
+                            fprintf(stderr, "DEBUG_SUBSCR_FALLBACK: key='%s' hash=%lu dict=%p size=%lu has=%d\n",
+                                    ks2.c_str(), h, (void*)data->asSparseList(ctx),
+                                    data->asSparseList(ctx)->getSize(ctx),
+                                    (int)data->asSparseList(ctx)->has(ctx, h));
+                            fflush(stderr);
+                        }
                         const proto::ProtoObject* val = data->asSparseList(ctx)->getAt(ctx, h);
                         stack.pop_back();
                         stack.back() = (val ? val : PROTO_NONE);
@@ -3851,13 +4091,14 @@ const proto::ProtoObject* executeBytecodeRange(
                     fflush(stderr);
                 }
 
-                // Snapshot current CO_OPTIMIZED slot values into the closure frame.
-                // In CO_OPTIMIZED functions, local variables live in ctx->getAutomaticLocals()
-                // slots and are NOT stored as frame attributes. The inner function's LOAD_DEREF
-                // searches through the frame chain by attribute name, so we must write the slot
-                // values into the frame object before using it as a closure.
-                // The closureFrame is GC-rooted on the evaluation stack throughout this process.
-                proto::ProtoObject* closureFrame = frame;
+                // Snapshot current CO_OPTIMIZED slot values into a mutable closure frame.
+                // We use a mutable object as the closure so that after the function is built,
+                // we can store the function under its own co_name — enabling self-referential
+                // and forward-referencing closures without CPython-style cell objects.
+                // All inner functions that capture this frame see the same mutable object,
+                // so a later assignment (e.g. STORE_FAST inner) is reflected via the parent.
+                proto::ProtoObject* closureFrame = const_cast<proto::ProtoObject*>(ctx->newObject(true));
+                closureFrame = const_cast<proto::ProtoObject*>(closureFrame->addParent(ctx, frame));
                 // The frame stores the code object as f_code (not __code__)
                 const proto::ProtoString* codeKey = env ? env->getFCodeString() : PythonEnvironment::getInternedString(ctx, "f_code");
                 const proto::ProtoObject* outerCodeAttr = frame->getAttribute(ctx, codeKey);
@@ -3883,6 +4124,26 @@ const proto::ProtoObject* executeBytecodeRange(
                 }
 
                 proto::ProtoObject* fn = createUserFunction(ctx, codeObj, const_cast<proto::ProtoObject*>(PythonEnvironment::getCurrentGlobals()), closureFrame, defaults, kwDefaults);
+                // Store fn under its own co_name in the closure frame to enable self-referential
+                // and forward-referencing inner functions. If closureFrame is truly mutable and
+                // setAttribute is in-place, fn.__closure__[0] already sees this update.
+                // If setAttribute returns a new object, we update the closure tuple in fn.
+                if (fn && env) {
+                    const proto::ProtoObject* nameAttr = codeObj->getAttribute(ctx,
+                        PythonEnvironment::getInternedString(ctx, "co_name"));
+                    if (nameAttr && nameAttr->isString(ctx)) {
+                        const proto::ProtoObject* updatedFrame =
+                            const_cast<proto::ProtoObject*>(closureFrame)->setAttribute(
+                                ctx, nameAttr->asString(ctx), fn);
+                        if (updatedFrame != closureFrame) {
+                            // Not in-place: rebuild closure tuple so fn sees the updated frame
+                            const proto::ProtoList* newClosure =
+                                ctx->newList()->appendLast(ctx, updatedFrame);
+                            fn = const_cast<proto::ProtoObject*>(fn->setAttribute(
+                                ctx, env->getClosureString(), newClosure->asObject(ctx)));
+                        }
+                    }
+                }
                 if (get_env_diag()) {
                     fprintf(stderr, "DEBUG: OP_BUILD_FUNCTION finished createUserFunction fn=%p\n", (void*)fn);
                     fflush(stderr);
@@ -4134,9 +4395,24 @@ const proto::ProtoObject* executeBytecodeRange(
                 if (get_env_diag()) fprintf(stderr, "DEBUG OP_BUILD_CLASS: targetClass=%p\n", (void*)targetClass);
                 
                 if (targetClass && targetClass != PROTO_NONE) {
-                    // Inject __class__ into the class namespace (frame) so methods can interpret it 
+                    // Set __qualname__ if not already present (falls back to __name__ for top-level classes).
+                    const proto::ProtoString* qualnameS = PythonEnvironment::getInternedString(ctx, "__qualname__");
+                    const proto::ProtoObject* existingQN = targetClass->getAttribute(ctx, qualnameS);
+                    if (!existingQN || existingQN == PROTO_NONE) {
+                        // Try to get __qualname__ from the class namespace (set by the class body).
+                        const proto::ProtoObject* nsQN = ns ? ns->getAttribute(ctx, qualnameS) : nullptr;
+                        if (nsQN && nsQN != PROTO_NONE && nsQN->isString(ctx)) {
+                            targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(ctx, qualnameS, nsQN));
+                        } else {
+                            // Default: qualname equals __name__ for top-level classes.
+                            targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(ctx, qualnameS, name));
+                        }
+                        stack.back() = targetClass; // update rooted reference
+                    }
+
+                    // Inject __class__ into the class namespace (frame) so methods can interpret it
                     // via closure (parent frame reference).
-                    // Note: object.__class__ data descriptor prevents this from shadowing the type 
+                    // Note: object.__class__ data descriptor prevents this from shadowing the type
                     // on the class object itself, so this is safe.
                     const proto::ProtoString* clsName = env ? env->getClassString() : protoPython::PythonEnvironment::getInternalString(ctx, "__class__");
                     if (std::getenv("PROTO_ENV_DIAG")) {

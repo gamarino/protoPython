@@ -10,7 +10,7 @@ static const proto::ProtoObject* py_check_methods(
     const proto::ParentLink*,
     const proto::ProtoList* posArgs,
     const proto::ProtoSparseList* sparseArgs) {
-    fprintf(stderr, "DEBUG_PY_CHECK_METHODS_CALLED\n");
+
 
     if (!posArgs || posArgs->getSize(ctx) < 2) return PROTO_FALSE;
     const proto::ProtoObject* C = posArgs->getAt(ctx, 0);
