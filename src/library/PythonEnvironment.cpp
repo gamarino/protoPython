@@ -8159,6 +8159,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     dataString = getInternedString(rootContext_, "__data__");
     space_->literalData = const_cast<proto::ProtoString*>(dataString);
     keysString = getInternedString(rootContext_, "__keys__");
+    isSuperProxyString = getInternedString(rootContext_, "__is_super_proxy__");
+    getattrDunderString = getInternedString(rootContext_, "__getattr__");
     startString = getInternedString(rootContext_, "start");
     stopString = getInternedString(rootContext_, "stop");
     stepString = getInternedString(rootContext_, "step");
@@ -10992,10 +10994,20 @@ const proto::ProtoObject* PythonEnvironment::getType(proto::ProtoContext* ctx, c
 
 const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* ctx, const proto::ProtoObject* obj, const proto::ProtoString* name, bool raiseError) {
     if (!obj || !name) return nullptr;
-    
-    std::string nameStr;
-    name->toUTF8String(ctx, nameStr);
-    
+
+    // nameStr is computed lazily — only when a fallback path or debug logging requires it.
+    // The fast path (interned attribute names) never needs string content comparison.
+    // Capture name and ctx by value so the compiler can keep them in registers in the outer body.
+    std::string nameStr_;
+    bool nameStr_computed_ = false;
+    auto getNameStr = [&]() -> const std::string& {
+        if (!nameStr_computed_) {
+            name->toUTF8String(ctx, nameStr_);
+            nameStr_computed_ = true;
+        }
+        return nameStr_;
+    };
+
     // Global recursion limit integration
     RecursionScope rs(this, ctx);
     if (rs.overflowed()) return nullptr;
@@ -11004,10 +11016,10 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
     bool isModule = (objClass == this->modulePrototype);
 
     if (isModule && std::getenv("PROTO_ENV_DIAG")) {
-        const proto::ProtoObject* modNameObj = obj->proto::ProtoObject::getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__name__"));
+        const proto::ProtoObject* modNameObj = obj->proto::ProtoObject::getAttribute(ctx, nameString ? nameString : PythonEnvironment::getInternedString(ctx, "__name__"));
         std::string modName = "unknown";
         if (modNameObj && modNameObj->isString(ctx)) modNameObj->asString(ctx)->toUTF8String(ctx, modName);
-        fprintf(stderr, "DEBUG getAttribute MODULE: mod=%s (%p) attr=%s\n", modName.c_str(), (void*)obj, nameStr.c_str());
+        fprintf(stderr, "DEBUG getAttribute MODULE: mod=%s (%p) attr=%s\n", modName.c_str(), (void*)obj, getNameStr().c_str());
         fflush(stderr);
     }
     
@@ -11024,8 +11036,8 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
     }
 
     // super() proxy handling
-    if (obj->proto::ProtoObject::getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__is_super_proxy__")) == PROTO_TRUE) {
-        const proto::ProtoString* getattrS = PythonEnvironment::getInternedString(ctx, "__getattr__");
+    if (isSuperProxyString && obj->proto::ProtoObject::getAttribute(ctx, isSuperProxyString) == PROTO_TRUE) {
+        const proto::ProtoString* getattrS = getattrDunderString ? getattrDunderString : PythonEnvironment::getInternedString(ctx, "__getattr__");
         const proto::ProtoObject* getattrM = obj->getAttribute(ctx, getattrS);
         if (getattrM && getattrM->isMethod(ctx)) {
              const proto::ProtoList* args = ctx->newList()->appendLast(ctx, name->asObject(ctx));
@@ -11040,7 +11052,7 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
     // incorrectly finds dictDescr via native parent chain of MRO members (section 1.1) and
     // then falls through with foundOnMeta = false, causing py_getset_get to return the raw
     // descriptor.  Bypass the whole machinery here so we always get a MappingProxy.
-    if (isClass && dictString && nameStr == "__dict__" && typePrototype) {
+    if (isClass && dictString && name == dictString && typePrototype) {
         const proto::ProtoObject* dictDescr = typePrototype->proto::ProtoObject::getAttribute(ctx, dictString);
         if (dictDescr && dictDescr != PROTO_NONE) {
             const proto::ProtoString* dunderGet = this->getGetDunderString();
@@ -11056,7 +11068,7 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
     }
 
     // Special handling for __class__
-    if (nameStr == "__class__" && !isClass) {
+    if (classString && name == classString && !isClass) {
         return this->getType(ctx, obj);
     }
 
@@ -11068,34 +11080,40 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
     // 1. Get the raw value from the primitive object hierarchy
     const proto::ProtoObject* val = obj->getAttribute(ctx, name);
     bool isExplicitNone = (val == PROTO_NONE && obj->hasAttribute(ctx, name) == PROTO_TRUE);
-    if (std::getenv("PROTO_DICT_DIAG2") && nameStr == "__dict__" && !isClass) {
+    if (std::getenv("PROTO_DICT_DIAG2") && dictString && name == dictString && !isClass) {
         std::string objNameStr = "?";
-        const proto::ProtoObject* nn = obj->proto::ProtoObject::getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__name__"));
+        const proto::ProtoObject* nn = obj->proto::ProtoObject::getAttribute(ctx, nameString ? nameString : PythonEnvironment::getInternedString(ctx, "__name__"));
         if (nn && nn->isString(ctx)) nn->asString(ctx)->toUTF8String(ctx, objNameStr);
         fprintf(stderr, "DEBUG_DICT_MODULE: obj=%p name=%s val=%p isClass=%d hasOwn=%d\n",
                 (void*)obj, objNameStr.c_str(), (void*)val, isClass?1:0,
                 (obj->hasOwnAttribute(ctx, name) == PROTO_TRUE) ? 1 : 0);
         fflush(stderr);
     }
-    if (std::getenv("PROTO_META_DIAG") && nameStr == "_convert_") {
-        bool ownAttr = (obj->hasOwnAttribute(ctx, name) == PROTO_TRUE);
-        fprintf(stderr, "DEBUG_META_RAW: val=%p isClass=%d ownAttr=%d isExplicitNone=%d\n",
-                (void*)val, isClass?1:0, ownAttr?1:0, isExplicitNone?1:0);
-        fflush(stderr);
+    if (std::getenv("PROTO_META_DIAG")) {
+        std::string ns = getNameStr();
+        if (ns == "_convert_") {
+            bool ownAttr = (obj->hasOwnAttribute(ctx, name) == PROTO_TRUE);
+            fprintf(stderr, "DEBUG_META_RAW: val=%p isClass=%d ownAttr=%d isExplicitNone=%d\n",
+                    (void*)val, isClass?1:0, ownAttr?1:0, isExplicitNone?1:0);
+            fflush(stderr);
+        }
     }
 
     // ROBUST FALLBACK (Initial): If pointer lookup fails, try name-based search in __keys__
     if (!val || (!isExplicitNone && val == PROTO_NONE)) {
-         const proto::ProtoObject* kObj = obj->proto::ProtoObject::getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__keys__"));
+         const proto::ProtoObject* kObj = keysString ? obj->proto::ProtoObject::getAttribute(ctx, keysString) : nullptr;
          if (kObj && kObj->asList(ctx)) {
              const proto::ProtoList* kl = kObj->asList(ctx);
              for (size_t k = 0; k < kl->getSize(ctx); ++k) {
                  const proto::ProtoObject* keyO = kl->getAt(ctx, k);
                  if (keyO && keyO->isString(ctx)) {
-                     std::string ks; keyO->asString(ctx)->toUTF8String(ctx, ks);
-                     if (ks == nameStr) {
-                         val = obj->proto::ProtoObject::getAttribute(ctx, keyO->asString(ctx));
-                         isExplicitNone = (val == PROTO_NONE && obj->hasAttribute(ctx, keyO->asString(ctx)) == PROTO_TRUE);
+                     // Fast: interned-string pointer equality. Fallback: UTF-8 content comparison.
+                     const proto::ProtoString* keyS = keyO->asString(ctx);
+                     bool match = (keyS == name);
+                     if (!match) { std::string ks; keyS->toUTF8String(ctx, ks); match = (ks == getNameStr()); }
+                     if (match) {
+                         val = obj->proto::ProtoObject::getAttribute(ctx, keyS);
+                         isExplicitNone = (val == PROTO_NONE && obj->hasAttribute(ctx, keyS) == PROTO_TRUE);
                          break;
                      }
                  }
@@ -11109,10 +11127,12 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
             foundOnClassOrMro = true;
         }
     }
-    if (std::getenv("PROTO_META_DIAG") && nameStr == "_convert_") {
-        fprintf(stderr, "DEBUG_META_FOCM: foundOnClassOrMro=%d val_after_raw=%p\n",
-                foundOnClassOrMro?1:0, (void*)val);
-        fflush(stderr);
+    if (std::getenv("PROTO_META_DIAG")) {
+        if (getNameStr() == "_convert_") {
+            fprintf(stderr, "DEBUG_META_FOCM: foundOnClassOrMro=%d val_after_raw=%p\n",
+                    foundOnClassOrMro?1:0, (void*)val);
+            fflush(stderr);
+        }
     }
 
     // 1.1 MRO Lookup (Inheritance Prototype Chain)
@@ -11120,7 +11140,7 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
         const proto::ProtoObject* searchObj = isClass ? obj : this->getType(ctx, obj);
         if (searchObj && searchObj != PROTO_NONE && (searchObj != obj || isClass)) {
             // Check __mro__ attribute specifically
-            const proto::ProtoString* mroS = PythonEnvironment::getInternedString(ctx, "__mro__");
+            const proto::ProtoString* mroS = mroString ? mroString : PythonEnvironment::getInternedString(ctx, "__mro__");
             const proto::ProtoObject* mroObj = searchObj->proto::ProtoObject::getAttribute(ctx, mroS);
 
             const proto::ProtoList* mroList = nullptr;
@@ -11147,15 +11167,17 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
                         }
                     }
                     // ROBUST FALLBACK: Name-based search in this base class (own keys only)
-                    const proto::ProtoObject* bkObj = baseCls->proto::ProtoObject::getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__keys__"));
+                    const proto::ProtoObject* bkObj = keysString ? baseCls->proto::ProtoObject::getAttribute(ctx, keysString) : nullptr;
                     if (bkObj && bkObj->asList(ctx)) {
                         const proto::ProtoList* bkl = bkObj->asList(ctx);
                         for (size_t k = 0; k < bkl->getSize(ctx); ++k) {
                             const proto::ProtoObject* keyO = bkl->getAt(ctx, k);
                             if (keyO && keyO->isString(ctx)) {
-                                std::string ks; keyO->asString(ctx)->toUTF8String(ctx, ks);
-                                if (ks == nameStr) {
-                                    val = baseCls->proto::ProtoObject::getAttribute(ctx, keyO->asString(ctx));
+                                const proto::ProtoString* keyS = keyO->asString(ctx);
+                                bool match = (keyS == name);
+                                if (!match) { std::string ks; keyS->toUTF8String(ctx, ks); match = (ks == getNameStr()); }
+                                if (match) {
+                                    val = baseCls->proto::ProtoObject::getAttribute(ctx, keyS);
                                     foundOnClassOrMro = true;
                                     break;
                                 }
@@ -11181,15 +11203,17 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
                             break;
                         }
                         // ROBUST FALLBACK (Parent): Name-based search
-                        const proto::ProtoObject* bkObj = baseCls->proto::ProtoObject::getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__keys__"));
+                        const proto::ProtoObject* bkObj = keysString ? baseCls->proto::ProtoObject::getAttribute(ctx, keysString) : nullptr;
                         if (bkObj && bkObj->asList(ctx)) {
                             const proto::ProtoList* bkl = bkObj->asList(ctx);
                             for (size_t k = 0; k < bkl->getSize(ctx); ++k) {
                                 const proto::ProtoObject* keyO = bkl->getAt(ctx, k);
                                 if (keyO && keyO->isString(ctx)) {
-                                    std::string ks; keyO->asString(ctx)->toUTF8String(ctx, ks);
-                                    if (ks == nameStr) {
-                                        val = baseCls->proto::ProtoObject::getAttribute(ctx, keyO->asString(ctx));
+                                    const proto::ProtoString* keyS = keyO->asString(ctx);
+                                    bool match = (keyS == name);
+                                    if (!match) { std::string ks; keyS->toUTF8String(ctx, ks); match = (ks == getNameStr()); }
+                                    if (match) {
+                                        val = baseCls->proto::ProtoObject::getAttribute(ctx, keyS);
                                         foundOnClassOrMro = true;
                                         break;
                                     }
@@ -11208,7 +11232,8 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
     if (isClass && !foundOnClassOrMro) {
         const proto::ProtoObject* meta = this->getType(ctx, obj);
         if (meta && meta != PROTO_NONE && meta != obj) {
-            const proto::ProtoObject* mroObj = meta->proto::ProtoObject::getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__mro__"));
+            const proto::ProtoString* mroS2 = mroString ? mroString : PythonEnvironment::getInternedString(ctx, "__mro__");
+            const proto::ProtoObject* mroObj = meta->proto::ProtoObject::getAttribute(ctx, mroS2);
             if (mroObj && mroObj != PROTO_NONE && mroObj->asList(ctx)) {
                 const proto::ProtoList* mroList = mroObj->asList(ctx);
                 for (unsigned long i = 0; i < mroList->getSize(ctx); ++i) {
@@ -11220,15 +11245,17 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
                         break;
                     }
                     // ROBUST FALLBACK (Metaclass MRO): Name-based search
-                    const proto::ProtoObject* bkObj = baseCls->proto::ProtoObject::getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__keys__"));
+                    const proto::ProtoObject* bkObj = keysString ? baseCls->proto::ProtoObject::getAttribute(ctx, keysString) : nullptr;
                     if (bkObj && bkObj->asList(ctx)) {
                         const proto::ProtoList* bkl = bkObj->asList(ctx);
                         for (size_t k = 0; k < bkl->getSize(ctx); ++k) {
                             const proto::ProtoObject* keyO = bkl->getAt(ctx, k);
                             if (keyO && keyO->isString(ctx)) {
-                                std::string ks; keyO->asString(ctx)->toUTF8String(ctx, ks);
-                                if (ks == nameStr) {
-                                    val = baseCls->proto::ProtoObject::getAttribute(ctx, keyO->asString(ctx));
+                                const proto::ProtoString* keyS = keyO->asString(ctx);
+                                bool match = (keyS == name);
+                                if (!match) { std::string ks; keyS->toUTF8String(ctx, ks); match = (ks == getNameStr()); }
+                                if (match) {
+                                    val = baseCls->proto::ProtoObject::getAttribute(ctx, keyS);
                                     foundOnClassOrMro = true;
                                     foundOnMeta = true;
                                     break;
@@ -11253,15 +11280,17 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
                                  break;
                              }
                              // ROBUST FALLBACK (Metaclass Parent): Name-based search
-                             const proto::ProtoObject* bkObj = baseCls->proto::ProtoObject::getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__keys__"));
+                             const proto::ProtoObject* bkObj = keysString ? baseCls->proto::ProtoObject::getAttribute(ctx, keysString) : nullptr;
                              if (bkObj && bkObj->asList(ctx)) {
                                  const proto::ProtoList* bkl = bkObj->asList(ctx);
                                  for (size_t k = 0; k < bkl->getSize(ctx); ++k) {
                                      const proto::ProtoObject* keyO = bkl->getAt(ctx, k);
                                      if (keyO && keyO->isString(ctx)) {
-                                         std::string ks; keyO->asString(ctx)->toUTF8String(ctx, ks);
-                                         if (ks == nameStr) {
-                                             val = baseCls->proto::ProtoObject::getAttribute(ctx, keyO->asString(ctx));
+                                         const proto::ProtoString* keyS = keyO->asString(ctx);
+                                         bool match = (keyS == name);
+                                         if (!match) { std::string ks; keyS->toUTF8String(ctx, ks); match = (ks == getNameStr()); }
+                                         if (match) {
+                                             val = baseCls->proto::ProtoObject::getAttribute(ctx, keyS);
                                              foundOnClassOrMro = true;
                                              foundOnMeta = true;
                                              break;
@@ -11280,7 +11309,7 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
         }
     }
 
-    if (std::getenv("PROTO_META_DIAG") && nameStr == "_convert_") {
+    if (std::getenv("PROTO_META_DIAG") && getNameStr() == "_convert_") {
         fprintf(stderr, "DEBUG_META_AFTER_LOOKUP: foundOnMeta=%d foundOnClassOrMro=%d val=%p\n",
                 foundOnMeta?1:0, foundOnClassOrMro?1:0, (void*)val);
         fflush(stderr);
@@ -11288,12 +11317,13 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
 
     // 1.5 Descriptor Protocol Check (__get__)
     // CRITICAL: Avoid recursion if searching for __get__ itself or other bootstrap-critical names
-    if (nameStr != "__get__" && nameStr != "__mro__" && nameStr != "__class__") {
-        const proto::ProtoString* dunderGet = this->getGetDunderString();
+    const proto::ProtoString* getDunderS = this->getGetDunderString();
+    if (name != getDunderS && name != mroString && name != classString) {
+        const proto::ProtoString* dunderGet = getDunderS;
         const proto::ProtoObject* valType = val ? this->getType(ctx, val) : nullptr;
         // Use RAW lookup for __get__ to avoid infinite recursion
         const proto::ProtoObject* getM = (valType && dunderGet) ? valType->proto::ProtoObject::getAttribute(ctx, dunderGet) : nullptr;
-        if (std::getenv("PROTO_META_DIAG") && nameStr == "_convert_") {
+        if (std::getenv("PROTO_META_DIAG") && getNameStr() == "_convert_") {
             fprintf(stderr, "DEBUG_META_1.5: val=%p valType=%p getM=%p isMethod=%d foundOnMeta=%d isClass=%d isInstanceDict=%d\n",
                     (void*)val, (void*)valType, (void*)getM,
                     (getM && getM->isMethod(ctx)) ? 1 : 0,
@@ -11367,9 +11397,9 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
     }
 
     if (!val || (!isExplicitNone && val == PROTO_NONE)) {
-        if (std::getenv("PROTO_ATTR_DIAG") && nameStr == "__dict__") {
+        if (std::getenv("PROTO_ATTR_DIAG") && dictString && name == dictString) {
             std::string objNameDiag = "?";
-            const proto::ProtoObject* nn2 = obj->proto::ProtoObject::getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__name__"));
+            const proto::ProtoObject* nn2 = obj->proto::ProtoObject::getAttribute(ctx, nameString ? nameString : PythonEnvironment::getInternedString(ctx, "__name__"));
             if (nn2 && nn2->isString(ctx)) nn2->asString(ctx)->toUTF8String(ctx, objNameDiag);
             fprintf(stderr, "DEBUG_ATTR_ERR: __dict__ not found on obj=%p name=%s isClass=%d val=%p depth=%d raiseError=%d\n",
                     (void*)obj, objNameDiag.c_str(), isClass?1:0, (void*)val, getAttrDepth, raiseError?1:0);
@@ -11388,6 +11418,7 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
             const proto::ProtoObject* n = t->proto::ProtoObject::getAttribute(ctx, getNameString());
             if (n && n->isString(ctx)) n->asString(ctx)->toUTF8String(ctx, objName);
         }
+        std::string nameStr = getNameStr();
         std::string msg = "'" + objName + "' object has no attribute '" + nameStr + "'";
         this->raiseAttributeError(ctx, obj, nameStr);
         return nullptr;
