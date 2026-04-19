@@ -150,6 +150,9 @@ static long long current_thread_id() {
 #endif
 }
 
+// Captured once at module initialization — the OS-level thread ID of the main thread.
+static long long g_main_thread_id = current_thread_id();
+
 /** Return current process id (PID). */
 static long long current_process_id() {
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
@@ -374,8 +377,7 @@ static const proto::ProtoObject* py_get_main_thread_ident(
     proto::ProtoContext* ctx,
     const proto::ProtoObject*, const proto::ParentLink*,
     const proto::ProtoList*, const proto::ProtoSparseList*) {
-    // Return early thread ID or main identifier. For now, 0.
-    return ctx->fromInteger(0);
+    return ctx->fromInteger(g_main_thread_id);
 }
 
 static const proto::ProtoObject* py_start_joinable_thread(

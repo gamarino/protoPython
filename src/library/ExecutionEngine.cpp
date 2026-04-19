@@ -3,7 +3,6 @@
 #include <protoPython/PythonEnvironment.h>
 #include <protoPython/MemoryManager.hpp>
 #include <protoCore.h>
-#include <proto_internal.h>
 #include <cmath>
 #include <cstdint>
 #include <iostream>
@@ -283,25 +282,21 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
     if (env && env->getFnMetaCacheString()) {
         const proto::ProtoObject* cacheAttr = self->getAttribute(ctx, env->getFnMetaCacheString());
         if (cacheAttr && cacheAttr != PROTO_NONE) {
-            proto::ProtoObjectPointer pp{};
-            pp.oid = cacheAttr;
-            if (pp.op.pointer_tag == POINTER_TAG_BYTE_BUFFER) {
-                const auto* impl = proto::toImpl<const proto::ProtoByteBufferImplementation>(cacheAttr);
-                if (impl) {
-                    const FunctionMetaCache* cache =
-                        reinterpret_cast<const FunctionMetaCache*>(impl->implGetBuffer(ctx));
-                    codeObj                = cache->codeObj;
-                    globalsObj             = cache->globalsObj;
-                    co_flags               = cache->co_flags;
-                    nparams_count          = cache->nparams;
-                    kwonly_count           = cache->kwonly;
-                    automatic_count        = cache->automatic_count;
-                    isGenerator            = cache->is_generator;
-                    co_varnames            = cache->co_varnames;
-                    cacheNoInnerFunctions  = cache->no_inner_functions;
-                    cacheNoLoadDeref       = cache->no_load_deref;
-                    cacheHit = true;
-                }
+            char* cacheData = cacheAttr->getDataIfByteBuffer(ctx);
+            if (cacheData) {
+                const FunctionMetaCache* cache =
+                    reinterpret_cast<const FunctionMetaCache*>(cacheData);
+                codeObj                = cache->codeObj;
+                globalsObj             = cache->globalsObj;
+                co_flags               = cache->co_flags;
+                nparams_count          = cache->nparams;
+                kwonly_count           = cache->kwonly;
+                automatic_count        = cache->automatic_count;
+                isGenerator            = cache->is_generator;
+                co_varnames            = cache->co_varnames;
+                cacheNoInnerFunctions  = cache->no_inner_functions;
+                cacheNoLoadDeref       = cache->no_load_deref;
+                cacheHit = true;
             }
         }
     }
@@ -638,15 +633,9 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
         if (env->getCoNativeBytecodeString()) {
             const proto::ProtoObject* nativeBcObj = codeObj->getAttribute(calleeCtx, env->getCoNativeBytecodeString());
             if (nativeBcObj && nativeBcObj != PROTO_NONE) {
-                proto::ProtoObjectPointer p{};
-                p.oid = nativeBcObj;
-                if (p.op.pointer_tag == POINTER_TAG_BYTE_BUFFER) {
-                    // toImpl masks the 6 lower tag bits before dereferencing; using the raw
-                    // union field (p.byteBufferImplementation) would read a misaligned pointer.
-                    const auto* impl = proto::toImpl<const proto::ProtoByteBufferImplementation>(nativeBcObj);
-                    if (impl) {
-                        nativeBc = reinterpret_cast<const int*>(impl->implGetBuffer(calleeCtx));
-                    }
+                char* nbData = nativeBcObj->getDataIfByteBuffer(calleeCtx);
+                if (nbData) {
+                    nativeBc = reinterpret_cast<const int*>(nbData);
                 }
             }
         }
@@ -692,25 +681,21 @@ static const proto::ProtoObject* runUserFunctionCallRaw(
     if (env && env->getFnMetaCacheString()) {
         const proto::ProtoObject* cacheAttr = self->getAttribute(ctx, env->getFnMetaCacheString());
         if (cacheAttr && cacheAttr != PROTO_NONE) {
-            proto::ProtoObjectPointer pp{};
-            pp.oid = cacheAttr;
-            if (pp.op.pointer_tag == POINTER_TAG_BYTE_BUFFER) {
-                const auto* impl = proto::toImpl<const proto::ProtoByteBufferImplementation>(cacheAttr);
-                if (impl) {
-                    const FunctionMetaCache* cache =
-                        reinterpret_cast<const FunctionMetaCache*>(impl->implGetBuffer(ctx));
-                    codeObj               = cache->codeObj;
-                    globalsObj            = cache->globalsObj;
-                    co_flags              = cache->co_flags;
-                    nparams_count         = cache->nparams;
-                    kwonly_count          = cache->kwonly;
-                    automatic_count       = cache->automatic_count;
-                    isGenerator           = cache->is_generator;
-                    co_varnames           = cache->co_varnames;
-                    cacheNoInnerFunctions = cache->no_inner_functions;
-                    cacheNoLoadDeref      = cache->no_load_deref;
-                    cacheHit = true;
-                }
+            char* cacheData = cacheAttr->getDataIfByteBuffer(ctx);
+            if (cacheData) {
+                const FunctionMetaCache* cache =
+                    reinterpret_cast<const FunctionMetaCache*>(cacheData);
+                codeObj               = cache->codeObj;
+                globalsObj            = cache->globalsObj;
+                co_flags              = cache->co_flags;
+                nparams_count         = cache->nparams;
+                kwonly_count          = cache->kwonly;
+                automatic_count       = cache->automatic_count;
+                isGenerator           = cache->is_generator;
+                co_varnames           = cache->co_varnames;
+                cacheNoInnerFunctions = cache->no_inner_functions;
+                cacheNoLoadDeref      = cache->no_load_deref;
+                cacheHit = true;
             }
         }
     }
@@ -776,12 +761,8 @@ static const proto::ProtoObject* runUserFunctionCallRaw(
         if (env->getCoNativeBytecodeString()) {
             const proto::ProtoObject* nativeBcObj = codeObj->getAttribute(calleeCtx, env->getCoNativeBytecodeString());
             if (nativeBcObj && nativeBcObj != PROTO_NONE) {
-                proto::ProtoObjectPointer p{};
-                p.oid = nativeBcObj;
-                if (p.op.pointer_tag == POINTER_TAG_BYTE_BUFFER) {
-                    const auto* impl = proto::toImpl<const proto::ProtoByteBufferImplementation>(nativeBcObj);
-                    if (impl) nativeBc = reinterpret_cast<const int*>(impl->implGetBuffer(calleeCtx));
-                }
+                char* nbData2 = nativeBcObj->getDataIfByteBuffer(calleeCtx);
+                if (nbData2) nativeBc = reinterpret_cast<const int*>(nbData2);
             }
         }
 
@@ -964,13 +945,11 @@ static proto::ProtoObject* createUserFunction(proto::ProtoContext* ctx, const pr
         if (env->getCoNativeBytecodeString()) {
             const proto::ProtoObject* nbObj = codeObj->getAttribute(ctx, env->getCoNativeBytecodeString());
             if (nbObj && nbObj != PROTO_NONE) {
-                proto::ProtoObjectPointer nbp{};
-                nbp.oid = nbObj;
-                if (nbp.op.pointer_tag == POINTER_TAG_BYTE_BUFFER) {
-                    const auto* nbImpl = proto::toImpl<const proto::ProtoByteBufferImplementation>(nbObj);
-                    if (nbImpl) {
-                        const int* nb = reinterpret_cast<const int*>(nbImpl->implGetBuffer(ctx));
-                        size_t nbLen  = nbImpl->implGetSize(ctx) / sizeof(int);
+                char* nbData3 = nbObj->getDataIfByteBuffer(ctx);
+                if (nbData3) {
+                    {
+                        const int* nb = reinterpret_cast<const int*>(nbData3);
+                        size_t nbLen  = nbObj->asByteBuffer(ctx)->getSize(ctx) / sizeof(int);
                         bool hasBuild = false, hasDeref = false;
                         for (size_t bi = 0; bi < nbLen; bi += 2) {
                             int op = nb[bi];
@@ -2403,16 +2382,14 @@ const proto::ProtoObject* executeBytecodeRange(
                     const proto::ProtoObject* val = nullptr;
                     bool found = false;
 
-                    // Fast path: direct O(1) own-attribute lookup using raw pointer hash (same
-                    // key used by STORE_NAME → setAttribute). Bypasses hasAttribute()'s
-                    // symbolTable canonicalization which always returns PROTO_FALSE for
-                    // bytecode-originated strings, forcing every LOAD_NAME through resolve().
+                    // Fast path: direct own-attribute lookup using the public SparseList API.
+                    // getAt() returns PROTO_NONE when the key is absent, so we check for that.
                     {
                         const proto::ProtoSparseList* frameOwn = frame->proto::ProtoObject::getOwnAttributes(ctx);
                         if (frameOwn) {
-                            val = toImpl<const proto::ProtoSparseListImplementation>(frameOwn)->implGetAt(
+                            const proto::ProtoObject* tmp = frameOwn->getAt(
                                 ctx, reinterpret_cast<uintptr_t>(nameS));
-                            if (val) found = true;
+                            if (tmp && tmp != PROTO_NONE) { val = tmp; found = true; }
                         }
                     }
 
@@ -2528,15 +2505,11 @@ const proto::ProtoObject* executeBytecodeRange(
                     }
 
                     // O(1) pre-check: is this key already present in the frame's own attributes?
-                    // Using raw-pointer implHas avoids both the O(n) keysList->has() scan and the
-                    // hasOwnAttribute() canonicalization bug (which would always return false for
-                    // bytecode-originated strings not in the global symbol table).
                     bool isNewKey = true;
                     {
                         const proto::ProtoSparseList* frameOwn = frame->proto::ProtoObject::getOwnAttributes(ctx);
                         if (frameOwn) {
-                            isNewKey = !toImpl<const proto::ProtoSparseListImplementation>(frameOwn)->implHas(
-                                ctx, reinterpret_cast<uintptr_t>(nS));
+                            isNewKey = !frameOwn->has(ctx, reinterpret_cast<uintptr_t>(nS));
                         }
                     }
 
@@ -3671,24 +3644,29 @@ const proto::ProtoObject* executeBytecodeRange(
                     }
 
                     // Fast path: plain instance own-attribute read (e.g. self.field).
-                    // Bypasses RecursionScope, isActuallyAClass, MRO walk, and descriptor
-                    // protocol — all of which are unnecessary when the attribute is stored
-                    // directly on the instance and its value is not a method descriptor.
+                    // Bypasses RecursionScope, isActuallyAClass, MRO walk, descriptor
+                    // protocol, and the V94 double mutable_ref resolution.
+                    //
+                    // V95: Uses ProtoObject::getOwnAttributeDirect() — resolves mutable state
+                    // once and does a single own-attributes lookup, replacing the V94 pattern
+                    // of hasOwnAttribute (no cache, 2 traversals) + getAttribute (cache hit).
+                    //
+                    // Invariant: co_names entries are POINTER_TAG_SYMBOL (Compiler::addName
+                    // calls getInternedString → createSymbol), so the interned pointer IS the
+                    // stable sparse-list key — no symbolTable mutex fires inside the call.
                     const proto::ProtoObject* val = nullptr;
                     bool fastPathTaken = false;
                     if (env && obj != PROTO_NONE
                             && !obj->isString(ctx) && !obj->isInteger(ctx) && !obj->isBoolean(ctx)) {
-                        if (obj->hasOwnAttribute(ctx, attrName) == PROTO_TRUE) {
-                            const proto::ProtoObject* fv = obj->getAttribute(ctx, attrName);
-                            if (fv && fv != PROTO_NONE && !fv->isMethod(ctx)) {
-                                if (pushNull) {
-                                    stack.back() = nullptr;
-                                    stack.push_back(fv);
-                                } else {
-                                    stack.back() = fv;
-                                }
-                                fastPathTaken = true;
+                        const proto::ProtoObject* fv = obj->getOwnAttributeDirect(ctx, attrName);
+                        if (fv && fv != PROTO_NONE && !fv->isMethod(ctx)) {
+                            if (pushNull) {
+                                stack.back() = nullptr;
+                                stack.push_back(fv);
+                            } else {
+                                stack.back() = fv;
                             }
+                            fastPathTaken = true;
                         }
                     }
                     if (fastPathTaken) { i = next_i; continue; }

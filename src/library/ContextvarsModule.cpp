@@ -1,7 +1,6 @@
 #include <protoPython/ContextvarsModule.h>
 #include <protoPython/PythonEnvironment.h>
 #include <protoCore.h>
-#include <proto_internal.h>
 
 namespace protoPython {
 namespace contextvars {

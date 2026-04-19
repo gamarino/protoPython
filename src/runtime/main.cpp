@@ -5,7 +5,6 @@
 
 #include <protoPython/PythonEnvironment.h>
 #include <protoCore.h>
-#include <proto_internal.h>
 #include <algorithm>
 #include <filesystem>
 #include <fstream>

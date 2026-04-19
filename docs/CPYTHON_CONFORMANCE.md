@@ -49,7 +49,7 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 - [ ] `test_pydoc.py`
 - [ ] `test_warnings.py`
 
-## Progress Summary (V94 - 2026-04-19)
+## Progress Summary (V95 - 2026-04-19)
 
 | Category | Total | Checked | Passed | Success Rate |
 | :--- | :--- | :--- | :--- | :--- |
@@ -61,22 +61,41 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 
 **Conformity Suite (Phase 1, 2026-04-15)**: 7/9 tests pass. Failures are pre-existing: `int(float)` conversion and `set(iterable)` constructor.
 
-### V94 Benchmark Results (2026-04-19)
+### V95 Benchmark Results (2026-04-19)
 
-| Benchmark          | protoPython (ms) | CPython (ms) | Ratio         |
-| :----------------- | ---------------: | -----------: | :------------ |
-| startup_empty      | 40.5             | 35.7         | 1.13× slower  |
-| int_sum_loop       | 42.9             | 37.4         | 1.15× slower  |
-| list_append_loop   | 482.5            | 40.8         | 11.8× slower  |
-| str_concat_loop    | 478.7            | 38.6         | 12.4× slower  |
-| range_iterate      | 464.4            | 39.9         | 11.6× slower  |
-| multithread_cpu    | 39.3             | 41.0         | 0.96× faster  |
-| **attr_lookup**    | **785**          | **52.9**     | **14.8× slower** |
-| call_recursion     | 2993.8           | 51.2         | 58.4× slower  |
-| memory_pressure    | 38059            | 72.6         | 524× slower   |
-| **Geomean**        |                  |              | **9.96×**     |
+| Benchmark          | protoPython (ms) | CPython (ms) | Ratio              |
+| :----------------- | ---------------: | -----------: | :----------------- |
+| startup_empty      | 39.0             | 36.0         | 1.09× slower       |
+| int_sum_loop       | 40.5             | 34.6         | 1.17× slower       |
+| list_append_loop   | 474.8            | 36.2         | 13.1× slower       |
+| str_concat_loop    | 463.6            | 38.9         | 11.9× slower       |
+| range_iterate      | 446.6            | 40.6         | 11.0× slower       |
+| multithread_cpu    | 35.6             | 45.3         | 0.79× faster¹      |
+| **attr_lookup**    | **754**          | **46.3**     | **16.3× slower**   |
+| call_recursion     | 2880.8           | 49.0         | 58.8× slower       |
+| memory_pressure    | 32682            | 79.9         | 409× slower        |
+| **Geomean**        |                  |              | **9.57×**          |
 
-**Previous V93 baseline**: geomean 10.7×; attr_lookup 2065 ms (49.9×). V94 brought geomean under 10× for the first time.
+¹ Threading falls back to sequential (see note below). Not directly comparable to V93/V94 threaded results.
+
+**V95 vs V94 absolute improvement**: attr_lookup −4% (754 ms vs 785 ms); call_recursion −3.8% (2880 ms vs 2994 ms). Stable. Geomean improved slightly (9.57× vs 9.96×).
+
+**V95 vs V93 Step 5 absolute improvement**: attr_lookup −68% (754 ms vs 2391 ms); call_recursion −92% (2880 ms vs 36097 ms). The large improvement vs V93 originates from the V94 `LOAD_ATTR` fast path and V93 function-call optimizations — V95 inherits all of these.
+
+> [!NOTE]
+> **V95 Public API Architecture Cleanup (2026-04-19)**: Eliminated all direct usage of `proto_internal.h` from protoPython. This header is private to protoCore and must not be accessed across DSO boundaries. protoPython now communicates exclusively through the public `protoCore.h` API. Changes:
+>
+> - **protoCore**: Seven new public methods added to expose formerly internal operations:
+>   - `ProtoObject::getOwnAttributeDirect(ctx, name)` — resolves mutable_ref once and performs a single own-attributes lookup, replacing the two-call `hasOwnAttribute` + `getAttribute` sequence used in V94's `LOAD_ATTR` fast path. Eliminates one cross-DSO call per fast-path hit.
+>   - `ProtoObject::getDataIfByteBuffer(ctx)` — returns `char*` data pointer if the object is a ByteBuffer, else nullptr. Replaces the three-call sequence `isByteBuffer` + `asByteBuffer` + `implGetBuffer` with a single cross-DSO call. Critical for `FunctionMetaCache` reads on every function invocation.
+>   - `ProtoObject::isByteBuffer(ctx)`, `ProtoObject::isNativeRangeIterator(ctx)`, `ProtoObject::asByteBuffer(ctx)`, `ProtoObject::nextInNativeRange(ctx)` — type-safe accessors for tagged-pointer types.
+>   - `ProtoContext::newRangeIterator(start, stop, step)` — factory for native range iterators.
+>
+> - **protoPython**: Removed `#include <proto_internal.h>` from `ExecutionEngine.cpp`, `PythonEnvironment.cpp`, `BuiltinsModule.cpp`, `CollectionsAbcModule.cpp`, `ContextvarsModule.cpp`, and `main.cpp`.
+>
+> - **Critical bug fix**: Class attributes with value `None` were silently dropped during class construction in `py_type` (`BuiltinsModule.cpp`). The V94 migration from `implGetAt` (returns `nullptr` for not-found) to `getAt()` (returns `PROTO_NONE` for not-found) introduced an ambiguity: `getAt() == PROTO_NONE` cannot distinguish "attribute absent" from "attribute present with value `None`". Fixed by using `has()` + `getAt()` with a `valFound` boolean to separate the two cases. Symptom: `hasattr(Foo, 'y')` returned False when `y = None` was defined in the class body; `import functools` failed with `AttributeError: 'type' object has no attribute '__instance__'`.
+>
+> - **`_thread._get_main_thread_ident()` fix**: The stub always returned `0` instead of the main thread's OS-level ID. `threading.py` uses this to pre-register the main thread in `_active` so that `current_thread()` finds it without creating a `_DummyThread`. Fixed by capturing `current_thread_id()` at module-static initialization time (`g_main_thread_id`). Note: `threading` still fails to import in V95 due to the unrelated `__dict__` compatibility limitation (Python instance attribute namespaces are not yet exposed as mutable dicts via `obj.__dict__[key] = value`); `multithread_cpu` falls back to sequential execution.
 
 > [!NOTE]
 > **V94 Attribute-Lookup Fast Path (2026-04-19)**: Inline fast path added to `OP_LOAD_ATTR` in `ExecutionEngine.cpp`. For plain instance own-attribute reads (`self.field`), the handler now detects when: (a) `obj` is a protoCore object (not string/int/bool primitive), (b) the attribute exists as an own attribute (`hasOwnAttribute` returns PROTO_TRUE), and (c) the raw value is not a method descriptor — and short-circuits directly to the value without entering `PythonEnvironment::getAttribute`. This bypasses `RecursionScope`, `isActuallyAClass` (3 `hasOwnAttribute` calls), the super-proxy check (1 extra `getAttribute` call), MRO traversal, descriptor protocol, and method binding — reducing ~10 attribute lookups per `LOAD_ATTR` to 2 (one `hasOwnAttribute` + one cached `getAttribute`). Additionally removed the unconditional `toUTF8String` conversion that previously executed on every `OP_LOAD_ATTR` even without debug flags (a `malloc+copy` per attribute read). Result: `attr_lookup` benchmark improved 3.4× (2065 ms → 760 ms; 49.9× → 14.8× vs CPython). Geomean across all benchmarks improved from 10.7× to **9.96×** — first time under 10× vs CPython. Correctness confirmed: inherited attributes, properties (descriptors), `__getattr__` fallback, and method calls all correctly bypass the fast path.

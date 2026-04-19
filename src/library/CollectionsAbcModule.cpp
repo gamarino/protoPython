@@ -1,7 +1,6 @@
 #include <protoPython/CollectionsAbcModule.h>
 #include <protoPython/PythonEnvironment.h>
 #include <protoCore.h>
-#include <proto_internal.h>
 
 namespace protoPython {
 static const proto::ProtoObject* py_check_methods(

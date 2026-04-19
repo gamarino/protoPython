@@ -39,7 +39,6 @@
 #include <protoPython/Parser.h>
 #include <protoPython/Compiler.h>
 #include <protoCore.h>
-#include <proto_internal.h>
 #include <algorithm>
 #include <atomic>
 #include <iostream>
@@ -12324,14 +12323,8 @@ const proto::ProtoObject* PythonEnvironment::next(const proto::ProtoObject* obj)
     if (!obj || obj == PROTO_NONE) return nullptr;
 
     // Fast-path: native range iterator — zero attribute lookups, zero allocations per step.
-    {
-        proto::ProtoObjectPointer pa{};
-        pa.oid = obj;
-        if (pa.op.pointer_tag == POINTER_TAG_RANGE_ITERATOR) {
-            pa.op.pointer_tag = 0;  // clear tag bits before pointer dereference (mirrors toImpl)
-            auto* impl = const_cast<proto::ProtoRangeIteratorImplementation*>(pa.rangeIteratorImplementation);
-            return impl->implNext(ctx);
-        }
+    if (obj->isNativeRangeIterator(ctx)) {
+        return obj->nextInNativeRange(ctx);
     }
 
     const proto::ProtoObject* method = obj->getAttribute(ctx, getNextString());

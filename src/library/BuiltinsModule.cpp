@@ -5,7 +5,6 @@
 #include <protoPython/Compiler.h>
 #include <protoPython/Tokenizer.h>
 #include <protoCore.h>
-#include <proto_internal.h>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -348,7 +347,7 @@ static const proto::ProtoObject* py_len(
     if (lenMethod && lenMethod->asMethod(context)) {
         const proto::ProtoList* emptyArgs = env ? env->getEmptyList() : context->newList();
         const proto::ProtoObject* res = lenMethod->asMethod(context)(context, obj, nullptr, emptyArgs, nullptr);
-        if (res && res != PROTO_NONE && proto::isInteger(res)) {
+        if (res && res != PROTO_NONE && res->isInteger(context)) {
             return res;
         }
     }
@@ -2906,8 +2905,8 @@ const proto::ProtoObject* py_type(
             const proto::ProtoSparseList* dictOwn = dict->proto::ProtoObject::getOwnAttributes(context);
             if (dictOwn) {
                 // Pointer-based lookup for native objects that stored __keys__ via initDictStorage
-                keysObj = toImpl<const proto::ProtoSparseListImplementation>(dictOwn)->implGetAt(context, reinterpret_cast<uintptr_t>(keysName));
-                if (keysObj) keysFromImpl = true;
+                const proto::ProtoObject* tmp = dictOwn->getAt(context, reinterpret_cast<uintptr_t>(keysName));
+                if (tmp && tmp != PROTO_NONE) { keysObj = tmp; keysFromImpl = true; }
             }
             // Fall back to hash-based lookup for Python dicts whose __keys__ was stored via setAttribute
             if (!keysObj) {
@@ -2938,22 +2937,25 @@ const proto::ProtoObject* py_type(
                             }
                         }
 
-                        // hasOwnAttribute() canonicalizes the string pointer through the global symbolTable,
-                        // which can return a DIFFERENT pointer than the one used by setAttribute() (which
-                        // stores keyed by raw pointer). Using implGetAt with the raw pointer from __keys__
-                        // (which is the same pointer used by STORE_NAME → setAttribute) is the correct lookup.
+                        // Use has() + getAt() so that attributes with value None (PROTO_NONE) are
+                        // correctly carried through to the class. getAt() alone returns PROTO_NONE
+                        // for both "not found" and "found with value None"; has() distinguishes them.
                         const proto::ProtoObject* val = nullptr;
-                        if (dictOwn) {
-                            val = toImpl<const proto::ProtoSparseListImplementation>(dictOwn)->implGetAt(context, reinterpret_cast<uintptr_t>(k));
+                        bool valFound = false;
+                        if (dictOwn && dictOwn->has(context, reinterpret_cast<uintptr_t>(k))) {
+                            val = dictOwn->getAt(context, reinterpret_cast<uintptr_t>(k));
+                            valFound = true;
                         }
                         // Also check __data__ sparse list (values stored via dict.__setitem__, e.g. from EnumDict).
                         // Use only the classdict's OWN __data__ to avoid inheriting dictPrototype's storage.
                         const proto::ProtoString* dataS = env ? env->getDataString() : PythonEnvironment::getInternedString(context, "__data__");
-                        if (!val) {
+                        if (!valFound) {
                             if (dictOwn) {
-                                const proto::ProtoObject* dataObj = toImpl<const proto::ProtoSparseListImplementation>(dictOwn)->implGetAt(context, reinterpret_cast<uintptr_t>(dataS));
-                                if (dataObj && dataObj->asSparseList(context)) {
+                                const proto::ProtoObject* dataObj = dictOwn->getAt(context, reinterpret_cast<uintptr_t>(dataS));
+                                if (dataObj && dataObj != PROTO_NONE && dataObj->asSparseList(context)) {
                                     val = dataObj->asSparseList(context)->getAt(context, k->getHash(context));
+                                    if (val == PROTO_NONE) val = nullptr;
+                                    if (val) valFound = true;
                                 }
                             }
                         }
@@ -2980,8 +2982,8 @@ const proto::ProtoObject* py_type(
                             }
                         }
                         
-                        if (!val) continue;
-                        
+                        if (!valFound) continue;
+
                         targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, k, val));
                         
                         // Update targetClass.__keys__ — use OWN-only lookup to avoid
@@ -2991,7 +2993,8 @@ const proto::ProtoObject* py_type(
                             const proto::ProtoObject* tKeysObj = nullptr;
                             const proto::ProtoSparseList* tcOwnAttrs = targetClass->proto::ProtoObject::getOwnAttributes(context);
                             if (tcOwnAttrs) {
-                                tKeysObj = toImpl<const proto::ProtoSparseListImplementation>(tcOwnAttrs)->implGetAt(context, reinterpret_cast<uintptr_t>(keysName));
+                                const proto::ProtoObject* tmp = tcOwnAttrs->getAt(context, reinterpret_cast<uintptr_t>(keysName));
+                                if (tmp && tmp != PROTO_NONE) tKeysObj = tmp;
                             }
                             const proto::ProtoList* tKeysList = tKeysObj ? tKeysObj->asList(context) : nullptr;
                             if (tKeysList) {
@@ -4097,14 +4100,8 @@ static const proto::ProtoObject* py_range_next(
     // Fast-path: native ProtoRangeIteratorImplementation (what py_range_iter now returns).
     // Direct C++ field comparison and increment — zero attribute lookups, zero allocations.
     // nullptr return signals exhaustion; OP_FOR_ITER treats null+no-exception as loop end.
-    {
-        proto::ProtoObjectPointer pa{};
-        pa.oid = self;
-        if (pa.op.pointer_tag == POINTER_TAG_RANGE_ITERATOR) {
-            pa.op.pointer_tag = 0;  // clear tag bits before pointer dereference (mirrors toImpl)
-            auto* impl = const_cast<proto::ProtoRangeIteratorImplementation*>(pa.rangeIteratorImplementation);
-            return impl->implNext(context);
-        }
+    if (self->isNativeRangeIterator(context)) {
+        return self->nextInNativeRange(context);
     }
 
     // Legacy path: Python-object-style iterators with __range_cur__/__range_stop__/__range_step__.
@@ -4149,9 +4146,9 @@ static const proto::ProtoObject* py_range_iter(
     long long stop = self->getAttribute(context, stopS)->asLong(context);
     long long step = self->getAttribute(context, stepS)->asLong(context);
 
-    // Return a native ProtoRangeIteratorImplementation: direct C++ fields, zero attribute
+    // Return a native range iterator: direct C++ fields, zero attribute
     // lookups per iteration, zero allocations per step (small integers are tagged pointers).
-    return (new(context) proto::ProtoRangeIteratorImplementation(context, start, stop, step))->implAsObject(context);
+    return context->newRangeIterator(start, stop, step);
 }
 
 static const proto::ProtoObject* py_range(
