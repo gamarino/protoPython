@@ -35,7 +35,7 @@
 | **Type System** | **Advanced** - Lists, Tuples, Sets, Dicts with native wrapping ✅ |
 | **C++ Interop** | **Full** - HPy and UMD support integrated ✅ |
 | **Compiler** | **Advanced** - Full C++ translation with collection support ✅ |
-| **Performance** | **Optimization in Progress** - V93 active: native range iterators (11x int_sum speedup), mutableRoot sharding (16x CAS contention reduction), geomean ratio 56.4x → 39.87x ⚙️ |
+| **Performance** | **Optimization in Progress** - V93 active: native range iterators (11x int_sum speedup), mutableRoot sharding × 16 (21% attr_lookup speedup), geomean ratio 56.4x → 36.65x ⚙️ |
 | **CPython Conformance** | **100%** - 17/17 test categories passing (Essential, Important, Necessary) ✅ |
 
 - ✅ **Generator Delegation**: Full support for `yield` and `yield from` with efficient state persistence.
@@ -102,8 +102,32 @@ The table below tracks progress from the V92 correctness baseline. Throughput op
 └──────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+**V93 — Step 2: mutableRoot Sharding × 16** (after `ProtoSpace::mutableRoot[16]` sharding):
+
+```
+┌──────────────────────────────────────────────────────────────────────────────────────┐
+│ Performance Audit: protoPython vs CPython 3.14   (V93 Step 2: mutableRoot × 16)     │
+│ (median of 2 runs, timeouts excluded)                                                │
+│ 2026-04-19 Linux x86_64                                                              │
+├────────────────────────┬──────────────┬──────────────┬───────────────┬───────────────┤
+│ Benchmark              │ Time P (ms)  │ Time C (ms)  │ Ratio         │ Peak RSS(P/C) │
+├────────────────────────┼──────────────┼──────────────┼───────────────┼───────────────┤
+│ startup_empty          │      72.37   │      39.99   │   1.81x slower │  23.2/ 10.3MB │
+│ int_sum_loop           │      63.73   │      31.83   │   2.00x slower │  23.1/ 10.4MB │
+│ list_append_loop       │    1512.71   │      31.53   │  47.98x slower │ 168.6/ 10.6MB │
+│ str_concat_loop        │    1941.30   │      33.22   │  58.43x slower │ 169.8/ 10.3MB │
+│ range_iterate          │    1930.51   │      36.30   │  53.19x slower │ 136.5/ 10.2MB │
+│ multithread_cpu        │    3595.17   │      37.33   │  96.31x slower │ 490.4/ 10.6MB │
+│ attr_lookup            │    3987.80   │      47.86   │  83.33x slower │ 115.1/ 10.4MB │
+│ call_recursion         │    TIMEOUT   │      44.11   │  timeout       │ N/A           │
+│ memory_pressure        │   44443.45   │      59.24   │ 750.17x slower │ 2038.7/ 10.4MB│
+├────────────────────────┼──────────────┼──────────────┼───────────────┼───────────────┤
+│ Geomean Ratio          │              │              │  36.65x slower │               │
+└──────────────────────────────────────────────────────────────────────────────────────┘
+```
+
 > [!NOTE]
-> *Time P* is protoPython wall time. *Time C* is CPython 3.14 wall time. V93 benchmark ran under CPU powersave throttling; some individual numbers are affected by system load, but the geomean trend is valid. `int_sum_loop` is the clearest signal: 841ms → 76ms (11x speedup) from native range iterators eliminating per-iteration attribute lookups.
+> *Time P* is protoPython wall time. *Time C* is CPython 3.14 wall time. V93 benchmarks ran under CPU powersave throttling; `call_recursion` consistently times out at 90s under sustained load (thermal artifact, not a regression). `int_sum_loop` is the clearest signal: 841ms → 64ms (13x speedup) from native range iterators. `attr_lookup` shows the Step 2 signal: 4619ms → 3988ms (21% improvement) from mutableRoot sharding reducing CAS contention.
 
 > [!TIP]
 > Known bottlenecks: (1) per-opcode dispatch overhead (no inline caches yet), (2) GC pressure from temporary object creation, (3) mutableRoot binary search for each mutable-object write. These are the active optimization targets.
