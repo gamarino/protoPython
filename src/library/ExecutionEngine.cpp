@@ -3663,22 +3663,39 @@ const proto::ProtoObject* executeBytecodeRange(
                 const proto::ProtoObject* nameObj = names->getAt(ctx, nameIdx);
                 if (nameObj->isString(ctx)) {
                     const proto::ProtoString* attrName = nameObj->asString(ctx);
-                    std::string attrNameStr;
                     if (std::getenv("PROTO_ENV_DIAG")) {
+                        std::string attrNameStr;
                         attrName->toUTF8String(ctx, attrNameStr);
-                        // ...
                         fprintf(stderr, "DEBUG: OP_LOAD_ATTR calling getAttribute env=%p obj=%p attr=%s\n", (void*)env, (void*)obj, attrNameStr.c_str());
-            fflush(stderr);
                         fflush(stderr);
                     }
-                    
-                    if (attrNameStr.empty()) attrName->toUTF8String(ctx, attrNameStr);
-                    if (attrNameStr == "__new__") {
-                        if (get_env_diag()) fprintf(stderr, "DEBUG: OP_LOAD_ATTR '__new__' env=%p obj=%p\n", (void*)env, (void*)obj);
-                    }
 
+                    // Fast path: plain instance own-attribute read (e.g. self.field).
+                    // Bypasses RecursionScope, isActuallyAClass, MRO walk, and descriptor
+                    // protocol — all of which are unnecessary when the attribute is stored
+                    // directly on the instance and its value is not a method descriptor.
+                    const proto::ProtoObject* val = nullptr;
+                    bool fastPathTaken = false;
+                    if (env && obj != PROTO_NONE
+                            && !obj->isString(ctx) && !obj->isInteger(ctx) && !obj->isBoolean(ctx)) {
+                        if (obj->hasOwnAttribute(ctx, attrName) == PROTO_TRUE) {
+                            const proto::ProtoObject* fv = obj->getAttribute(ctx, attrName);
+                            if (fv && fv != PROTO_NONE && !fv->isMethod(ctx)) {
+                                if (pushNull) {
+                                    stack.back() = nullptr;
+                                    stack.push_back(fv);
+                                } else {
+                                    stack.back() = fv;
+                                }
+                                fastPathTaken = true;
+                            }
+                        }
+                    }
+                    if (fastPathTaken) { i = next_i; continue; }
+
+                    // Slow path: full Python attribute protocol (descriptors, MRO, __getattr__).
                     // Use raiseError=false so we can try __getattr__ before raising AttributeError.
-                    const proto::ProtoObject* val = env ? env->getAttribute(ctx, obj, attrName, false) : obj->getAttribute(ctx, attrName);
+                    val = env ? env->getAttribute(ctx, obj, attrName, false) : obj->getAttribute(ctx, attrName);
                     if (!val && env && env->hasPendingException()) {
                         // A descriptor or __getattr__ already raised an exception — propagate it.
                         stack.pop_back();
@@ -3691,7 +3708,9 @@ const proto::ProtoObject* executeBytecodeRange(
                     }
 
                     bool isMissing = false;
-                    // Check if attribute is missing (nullptr or PROTO_NONE with no own attribute)
+                    // Short-circuit: if val is non-null and non-PROTO_NONE, the attribute was found.
+                    // Only do the expensive hasAttribute check when val == PROTO_NONE to distinguish
+                    // "explicitly stored None" from "attribute absent".
                     bool attrNotFound = (!val) || (val == PROTO_NONE && obj->hasAttribute(ctx, attrName) == PROTO_FALSE);
                     if (attrNotFound) {
                         // Try __getattr__ before raising AttributeError

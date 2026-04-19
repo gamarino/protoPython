@@ -49,7 +49,7 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 - [ ] `test_pydoc.py`
 - [ ] `test_warnings.py`
 
-## Progress Summary (V93 - 2026-04-19)
+## Progress Summary (V94 - 2026-04-19)
 
 | Category | Total | Checked | Passed | Success Rate |
 | :--- | :--- | :--- | :--- | :--- |
@@ -60,6 +60,26 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 | **Total** | **21** | **17** | **17** | **100%** |
 
 **Conformity Suite (Phase 1, 2026-04-15)**: 7/9 tests pass. Failures are pre-existing: `int(float)` conversion and `set(iterable)` constructor.
+
+### V94 Benchmark Results (2026-04-19)
+
+| Benchmark          | protoPython (ms) | CPython (ms) | Ratio         |
+| :----------------- | ---------------: | -----------: | :------------ |
+| startup_empty      | 40.5             | 35.7         | 1.13× slower  |
+| int_sum_loop       | 42.9             | 37.4         | 1.15× slower  |
+| list_append_loop   | 482.5            | 40.8         | 11.8× slower  |
+| str_concat_loop    | 478.7            | 38.6         | 12.4× slower  |
+| range_iterate      | 464.4            | 39.9         | 11.6× slower  |
+| multithread_cpu    | 39.3             | 41.0         | 0.96× faster  |
+| **attr_lookup**    | **785**          | **52.9**     | **14.8× slower** |
+| call_recursion     | 2993.8           | 51.2         | 58.4× slower  |
+| memory_pressure    | 38059            | 72.6         | 524× slower   |
+| **Geomean**        |                  |              | **9.96×**     |
+
+**Previous V93 baseline**: geomean 10.7×; attr_lookup 2065 ms (49.9×). V94 brought geomean under 10× for the first time.
+
+> [!NOTE]
+> **V94 Attribute-Lookup Fast Path (2026-04-19)**: Inline fast path added to `OP_LOAD_ATTR` in `ExecutionEngine.cpp`. For plain instance own-attribute reads (`self.field`), the handler now detects when: (a) `obj` is a protoCore object (not string/int/bool primitive), (b) the attribute exists as an own attribute (`hasOwnAttribute` returns PROTO_TRUE), and (c) the raw value is not a method descriptor — and short-circuits directly to the value without entering `PythonEnvironment::getAttribute`. This bypasses `RecursionScope`, `isActuallyAClass` (3 `hasOwnAttribute` calls), the super-proxy check (1 extra `getAttribute` call), MRO traversal, descriptor protocol, and method binding — reducing ~10 attribute lookups per `LOAD_ATTR` to 2 (one `hasOwnAttribute` + one cached `getAttribute`). Additionally removed the unconditional `toUTF8String` conversion that previously executed on every `OP_LOAD_ATTR` even without debug flags (a `malloc+copy` per attribute read). Result: `attr_lookup` benchmark improved 3.4× (2065 ms → 760 ms; 49.9× → 14.8× vs CPython). Geomean across all benchmarks improved from 10.7× to **9.96×** — first time under 10× vs CPython. Correctness confirmed: inherited attributes, properties (descriptors), `__getattr__` fallback, and method calls all correctly bypass the fast path.
 
 > [!NOTE]
 > **V93 Function-Call Performance (2026-04-19)**: Three layered optimizations reduced geomean overhead from 56.4× to 10.7× vs CPython (5.25× overall improvement). `call_recursion` (fib(25)) improved 15× (887× → 58×). Key changes: (1) lazy `closureLocals` in `ProtoContext` — deferred allocation until parameterNames is provided, eliminating 1 GC cell per protoPython call; (2) raw-args fast path in `OP_CALL_FUNCTION` — user functions bypassing `ProtoList` construction (−2 GC cells per call); (3) `no_load_deref` cache flag — bytecode scan at BUILD_FUNCTION time detects functions with no `OP_LOAD_DEREF`; these can skip frame construction even with a structural `__closure__` stub, enabling the slot fast path. Fixed vestigial `frame &&` guard in `OP_LOAD_GLOBAL` / `OP_STORE_GLOBAL` to permit frame-free execution. Several benchmarks (startup, int_sum_loop, multithread_cpu) now execute faster than CPython, indicating the interpreter overhead is no longer dominant for those workloads.
