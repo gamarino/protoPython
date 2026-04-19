@@ -35,7 +35,7 @@
 | **Type System** | **Advanced** - Lists, Tuples, Sets, Dicts with native wrapping ✅ |
 | **C++ Interop** | **Full** - HPy and UMD support integrated ✅ |
 | **Compiler** | **Advanced** - Full C++ translation with collection support ✅ |
-| **Performance** | **Optimization in Progress** - Correctness baseline (V92) established; throughput tuning is the active next phase ⚙️ |
+| **Performance** | **Optimization in Progress** - V93 active: native range iterators (11x int_sum speedup), mutableRoot sharding (16x CAS contention reduction), geomean ratio 56.4x → 39.87x ⚙️ |
 | **CPython Conformance** | **100%** - 17/17 test categories passing (Essential, Important, Necessary) ✅ |
 
 - ✅ **Generator Delegation**: Full support for `yield` and `yield from` with efficient state persistence.
