@@ -17,6 +17,24 @@
 
 namespace protoPython {
 
+// Compact metadata cache pre-computed at createUserFunction time.
+// Stored as a ProtoByteBuffer on the function object (__fn_meta_cache__) so
+// runUserFunctionCall can retrieve all constant values with a single attribute
+// lookup instead of 7 separate codeObj/self attribute reads per call.
+struct FunctionMetaCache {
+    int co_flags;
+    int nparams;
+    int kwonly;
+    int automatic_count;
+    bool is_generator;
+    uint8_t _pad[3];
+    // Raw pointers — safe because codeObj and globalsObj are kept alive by the
+    // function object's own __code__ / __globals__ attributes.
+    const proto::ProtoObject* codeObj;
+    const proto::ProtoObject* globalsObj;
+    const proto::ProtoTuple* co_varnames;  // kept alive by codeObj's co_varnames attr
+};
+
 static bool areSameClassesVM(proto::ProtoContext* context, const proto::ProtoObject* c1, const proto::ProtoObject* c2) {
     if (c1 == c2) return true;
     if (!c1 || !c2) return false;
@@ -237,36 +255,68 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
     const proto::ProtoSparseList* kwargs) {
     if (!ctx || !self || !args) return PROTO_NONE;
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    const proto::ProtoString* code_name = env ? env->getCodeString() : PythonEnvironment::getInternedString(ctx, "__code__");
-    const proto::ProtoObject* codeObj = self->getAttribute(ctx, code_name);
-    if (!codeObj || codeObj == PROTO_NONE) {
-        return PROTO_NONE;
+
+    // Fast path: retrieve all constant metadata from the pre-computed FunctionMetaCache
+    // (one ByteBuffer attribute lookup instead of 7 individual codeObj reads).
+    const proto::ProtoObject* codeObj = nullptr;
+    const proto::ProtoObject* globalsObj = nullptr;
+    int co_flags = 0, nparams_count = 0, kwonly_count = 0, automatic_count = 0;
+    bool isGenerator = false;
+    const proto::ProtoTuple* co_varnames = nullptr;
+
+    bool cacheHit = false;
+    if (env && env->getFnMetaCacheString()) {
+        const proto::ProtoObject* cacheAttr = self->getAttribute(ctx, env->getFnMetaCacheString());
+        if (cacheAttr && cacheAttr != PROTO_NONE) {
+            proto::ProtoObjectPointer pp{};
+            pp.oid = cacheAttr;
+            if (pp.op.pointer_tag == POINTER_TAG_BYTE_BUFFER) {
+                const auto* impl = proto::toImpl<const proto::ProtoByteBufferImplementation>(cacheAttr);
+                if (impl) {
+                    const FunctionMetaCache* cache =
+                        reinterpret_cast<const FunctionMetaCache*>(impl->implGetBuffer(ctx));
+                    codeObj          = cache->codeObj;
+                    globalsObj       = cache->globalsObj;
+                    co_flags         = cache->co_flags;
+                    nparams_count    = cache->nparams;
+                    kwonly_count     = cache->kwonly;
+                    automatic_count  = cache->automatic_count;
+                    isGenerator      = cache->is_generator;
+                    co_varnames      = cache->co_varnames;
+                    cacheHit = true;
+                }
+            }
+        }
     }
 
-    const proto::ProtoString* globals_name = env ? env->getGlobalsString() : PythonEnvironment::getInternedString(ctx, "__globals__");
-    const proto::ProtoObject* globalsObj = self->getAttribute(ctx, globals_name);
-    if (!globalsObj || globalsObj == PROTO_NONE) {
-        return PROTO_NONE;
+    if (!cacheHit) {
+        // Fallback: read individually (generators resuming, legacy code paths)
+        const proto::ProtoString* code_name = env ? env->getCodeString() : PythonEnvironment::getInternedString(ctx, "__code__");
+        codeObj = self->getAttribute(ctx, code_name);
+        if (!codeObj || codeObj == PROTO_NONE) return PROTO_NONE;
+
+        const proto::ProtoString* globals_name = env ? env->getGlobalsString() : PythonEnvironment::getInternedString(ctx, "__globals__");
+        globalsObj = self->getAttribute(ctx, globals_name);
+        if (!globalsObj || globalsObj == PROTO_NONE) return PROTO_NONE;
+
+        auto getInt = [&](const proto::ProtoString* key) -> int {
+            const proto::ProtoObject* v = key ? codeObj->getAttribute(ctx, key) : nullptr;
+            return (v && v->isInteger(ctx)) ? static_cast<int>(v->asLong(ctx)) : 0;
+        };
+        co_flags       = getInt(env ? env->getCoFlagsString()         : nullptr);
+        nparams_count  = getInt(env ? env->getCoNparamsString()        : nullptr);
+        kwonly_count   = getInt(env ? env->getCoKwonlyargcountString() : nullptr);
+        automatic_count= getInt(env ? env->getCoAutomaticCountString() : nullptr);
+        const proto::ProtoObject* cvObj = (env && env->getCoVarnamesString())
+            ? codeObj->getAttribute(ctx, env->getCoVarnamesString()) : nullptr;
+        co_varnames = (cvObj && cvObj->asTuple(ctx)) ? cvObj->asTuple(ctx) : nullptr;
+        const proto::ProtoObject* isGenObj = (env && env->getCoIsGeneratorString())
+            ? codeObj->getAttribute(ctx, env->getCoIsGeneratorString()) : nullptr;
+        isGenerator = isGenObj && isGenObj->isBoolean(ctx) && isGenObj->asBoolean(ctx);
     }
 
-    const proto::ProtoString* co_flags_name = env ? env->getCoFlagsString() : PythonEnvironment::getInternedString(ctx, "co_flags");
-    const proto::ProtoObject* co_flags_obj = codeObj->getAttribute(ctx, co_flags_name);
-    int co_flags = (co_flags_obj && co_flags_obj->isInteger(ctx)) ? static_cast<int>(co_flags_obj->asLong(ctx)) : 0;
-
-    const proto::ProtoString* co_varnames_name = env ? env->getCoVarnamesString() : PythonEnvironment::getInternedString(ctx, "co_varnames");
-    const proto::ProtoString* co_nparams_name = env ? env->getCoNparamsString() : PythonEnvironment::getInternedString(ctx, "co_nparams");
-    const proto::ProtoString* co_automatic_name = env ? env->getCoAutomaticCountString() : PythonEnvironment::getInternedString(ctx, "co_automatic_count");
-
-    const proto::ProtoObject* co_varnames_obj = codeObj->getAttribute(ctx, co_varnames_name);
-    const proto::ProtoObject* co_nparams_obj = codeObj->getAttribute(ctx, co_nparams_name);
-    const proto::ProtoString* co_kwonly_name = env ? env->getCoKwonlyargcountString() : PythonEnvironment::getInternedString(ctx, "co_kwonlyargcount");
-    const proto::ProtoObject* co_kwonly_obj = codeObj->getAttribute(ctx, co_kwonly_name);
-    const proto::ProtoObject* co_automatic_obj = codeObj->getAttribute(ctx, co_automatic_name);
-
-    const proto::ProtoTuple* co_varnames = co_varnames_obj && co_varnames_obj->asTuple(ctx) ? co_varnames_obj->asTuple(ctx) : nullptr;
-    int nparams_count = (co_nparams_obj && co_nparams_obj->isInteger(ctx)) ? static_cast<int>(co_nparams_obj->asLong(ctx)) : 0;
-    int kwonly_count = (co_kwonly_obj && co_kwonly_obj->isInteger(ctx)) ? static_cast<int>(co_kwonly_obj->asLong(ctx)) : 0;
-    int automatic_count = (co_automatic_obj && co_automatic_obj->isInteger(ctx)) ? static_cast<int>(co_automatic_obj->asLong(ctx)) : 0;
+    if (!codeObj || codeObj == PROTO_NONE) return PROTO_NONE;
+    if (!globalsObj || globalsObj == PROTO_NONE) return PROTO_NONE;
 
     std::string fnName = "unknown";
     if (std::getenv("PROTO_ENV_DIAG")) {
@@ -513,9 +563,6 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
         frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getFLocalsString(), frame));
     }
 
-    const proto::ProtoObject* isGenObj = codeObj->getAttribute(calleeCtx, env ? env->getCoIsGeneratorString() : PythonEnvironment::getInternedString(calleeCtx, "co_is_generator"));
-    bool isGenerator = isGenObj && isGenObj->isBoolean(calleeCtx) && isGenObj->asBoolean(calleeCtx);
-
     if (isGenerator) {
         proto::ProtoObject* gen = const_cast<proto::ProtoObject*>(calleeCtx->newObject(true));
         if (env && env->getGeneratorPrototype()) {
@@ -725,6 +772,37 @@ static proto::ProtoObject* createUserFunction(proto::ProtoContext* ctx, const pr
         ctx->fromMethod(const_cast<proto::ProtoObject*>(fn), runUserFunctionCall));
     fn = fn->setAttribute(ctx, env ? env->getGetDunderString() : PythonEnvironment::getInternedString(ctx, "__get__"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(fn), py_function_get));
+
+    // Build FunctionMetaCache: pre-compute constant codeObj scalars once here so
+    // runUserFunctionCall reads one ByteBuffer field instead of 7 separate getAttribute calls.
+    if (env && env->getFnMetaCacheString() && codeObj && ctx->space) {
+        const proto::ProtoObject* globalsObj = globalsFrame;
+        auto getInt = [&](const proto::ProtoString* key) -> int {
+            const proto::ProtoObject* v = codeObj->getAttribute(ctx, key);
+            return (v && v->isInteger(ctx)) ? static_cast<int>(v->asLong(ctx)) : 0;
+        };
+        FunctionMetaCache* cache = new FunctionMetaCache{};
+        cache->co_flags       = env->getCoFlagsString()          ? getInt(env->getCoFlagsString())          : 0;
+        cache->nparams        = env->getCoNparamsString()         ? getInt(env->getCoNparamsString())         : 0;
+        cache->kwonly         = env->getCoKwonlyargcountString()  ? getInt(env->getCoKwonlyargcountString())  : 0;
+        cache->automatic_count= env->getCoAutomaticCountString()  ? getInt(env->getCoAutomaticCountString())  : 0;
+        const proto::ProtoObject* isGenObj = env->getCoIsGeneratorString()
+            ? codeObj->getAttribute(ctx, env->getCoIsGeneratorString()) : nullptr;
+        cache->is_generator   = isGenObj && isGenObj->isBoolean(ctx) && isGenObj->asBoolean(ctx);
+        cache->codeObj        = codeObj;
+        cache->globalsObj     = globalsObj;
+        const proto::ProtoObject* cvObj = env->getCoVarnamesString()
+            ? codeObj->getAttribute(ctx, env->getCoVarnamesString()) : nullptr;
+        cache->co_varnames    = (cvObj && cvObj->asTuple(ctx)) ? cvObj->asTuple(ctx) : nullptr;
+
+        const proto::ProtoObject* cacheObj = ctx->fromBuffer(
+            sizeof(FunctionMetaCache), reinterpret_cast<char*>(cache), true);
+        if (cacheObj) {
+            ctx->space->moduleRoots.push_back(cacheObj);
+            fn = fn->setAttribute(ctx, env->getFnMetaCacheString(), cacheObj);
+        }
+    }
+
     return const_cast<proto::ProtoObject*>(fn);
 }
 

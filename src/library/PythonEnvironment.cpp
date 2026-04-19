@@ -8011,6 +8011,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     co_names = PythonEnvironment::getInternedString(rootContext_, "co_names");
     co_code = PythonEnvironment::getInternedString(rootContext_, "co_code");
     co_bytecode_native = PythonEnvironment::getInternedString(rootContext_, "co_bytecode_native");
+    fn_meta_cache = PythonEnvironment::getInternedString(rootContext_, "__fn_meta_cache__");
     sendString = PythonEnvironment::getInternedString(rootContext_, "send");
     throwString = PythonEnvironment::getInternedString(rootContext_, "throw");
     closeString = PythonEnvironment::getInternedString(rootContext_, "close");
