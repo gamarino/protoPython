@@ -49,7 +49,7 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 - [ ] `test_pydoc.py`
 - [ ] `test_warnings.py`
 
-## Progress Summary (V92 - 2026-04-18)
+## Progress Summary (V93 - 2026-04-19)
 
 | Category | Total | Checked | Passed | Success Rate |
 | :--- | :--- | :--- | :--- | :--- |
@@ -60,6 +60,9 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 | **Total** | **21** | **17** | **17** | **100%** |
 
 **Conformity Suite (Phase 1, 2026-04-15)**: 7/9 tests pass. Failures are pre-existing: `int(float)` conversion and `set(iterable)` constructor.
+
+> [!NOTE]
+> **V93 Function-Call Performance (2026-04-19)**: Three layered optimizations reduced geomean overhead from 56.4× to 10.7× vs CPython (5.25× overall improvement). `call_recursion` (fib(25)) improved 15× (887× → 58×). Key changes: (1) lazy `closureLocals` in `ProtoContext` — deferred allocation until parameterNames is provided, eliminating 1 GC cell per protoPython call; (2) raw-args fast path in `OP_CALL_FUNCTION` — user functions bypassing `ProtoList` construction (−2 GC cells per call); (3) `no_load_deref` cache flag — bytecode scan at BUILD_FUNCTION time detects functions with no `OP_LOAD_DEREF`; these can skip frame construction even with a structural `__closure__` stub, enabling the slot fast path. Fixed vestigial `frame &&` guard in `OP_LOAD_GLOBAL` / `OP_STORE_GLOBAL` to permit frame-free execution. Several benchmarks (startup, int_sum_loop, multithread_cpu) now execute faster than CPython, indicating the interpreter overhead is no longer dominant for those workloads.
 
 > [!NOTE]
 > **V92 Necessary Tests Complete (2026-04-18)**: All 5 Necessary CPython conformance tests now pass (100%). Key fixes:
@@ -245,6 +248,33 @@ Tests for features that are not primary targets for `protoPython`'s performance 
   - Robust `async for` and `async with` compilation with `else` block support.
   - Improved recursive `del` target handling.
 
+## V93 Performance Update (2026-04-19)
+
+Three layered optimizations targeting function-call overhead:
+1. **lazy `closureLocals`** (protoCore): `newSparseList()` deferred until parameters are actually bound — 0 GC cells per protoPython call at construction time.
+2. **raw-args fast path** (`OP_CALL_FUNCTION`): user-defined functions detected via `hasOwnAttribute(__code__)` and dispatched via `runUserFunctionCallRaw`, bypassing `ProtoList` construction entirely (−2 GC cells per call).
+3. **`no_load_deref` slot path**: new `FunctionMetaCache` flag scanned from native bytecode; when no `OP_LOAD_DEREF` is present the slot fast path runs even when `__closure__` is non-empty (all functions carry a structural closure stub), allowing frame construction to be skipped. Also removed vestigial `frame &&` guard from `OP_LOAD_GLOBAL` / `OP_STORE_GLOBAL` so those opcodes work correctly in frame-free contexts.
+
+| Benchmark | protoPython (ms) | CPython 3.14 (ms) | Ratio | vs V92 |
+|---|---|---|---|---|
+| startup_empty | 66.16 | 79.00 | **0.84× faster** | — |
+| int_sum_loop | 40.69 | 43.69 | **0.93× faster** | 20.7× imp. |
+| list_append_loop | 470.14 | 37.00 | 12.7× slower | 2.4× imp. |
+| str_concat_loop | 450.96 | 34.96 | 12.9× slower | 1.7× imp. |
+| range_iterate | 440.08 | 41.32 | 10.7× slower | 5.0× imp. |
+| multithread_cpu | 35.24 | 39.81 | **0.89× faster** | 97× imp. |
+| attr_lookup | 2 065.81 | 42.06 | 49.1× slower | 1.5× imp. |
+| call_recursion | 2 840.20 | 48.67 | 58.4× slower | **15× imp.** |
+| memory_pressure | 36 499.90 | 66.30 | 551× slower | 1.3× imp. |
+| **Geomean** | | | **10.7× slower** | **5.25× imp.** |
+
+**V92 baseline** (for comparison): Geomean 56.4×, call_recursion 887×.
+
+**Remaining bottlenecks:**
+1. `memory_pressure` (551×): dominated by copy-on-write allocation — every dict/list write creates a new immutable AVL node. Mutable fast-path is the primary next target.
+2. `attr_lookup` (49×): no inline caches — every attribute access traverses the full prototype chain. PIC insertion is planned.
+3. `list_append_loop` / `str_concat_loop` (12–13×): structural sharing overhead for append-heavy workloads. Mutable rope / mutable list fast-path will address this.
+
 ## V92 Performance Baseline (2026-04-19)
 
 With 17/17 conformance tests passing, the benchmark scripts now execute to completion for the first time. Prior runs measured only startup time of failing scripts. This is the first honest end-to-end measurement.
@@ -267,8 +297,6 @@ With 17/17 conformance tests passing, the benchmark scripts now execute to compl
 2. GC pressure — high temporary object creation rate keeps the concurrent GC busy. Inline value caching (integers, short strings) will reduce allocation volume.
 3. No inline caches — attribute lookup and function dispatch traverse the full prototype chain on every call. PIC (polymorphic inline cache) insertion is planned.
 4. `call_recursion` (fib(25), ~75 k recursive calls) and `memory_pressure` (100 k alloc/dealloc cycles) are the most GC-sensitive benchmarks and show the largest gap.
-
-Interpreter throughput optimization is the primary focus of the phase following V92.
 
 ## Benchmarking with PyPerformance
 
