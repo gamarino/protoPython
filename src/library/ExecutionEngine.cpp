@@ -30,7 +30,10 @@ struct FunctionMetaCache {
     // True when no OP_BUILD_FUNCTION or OP_BUILD_CLASS appear in the native bytecode.
     // Safe to skip frame construction when this is true and the function has no closures.
     bool no_inner_functions;
-    uint8_t _pad[2];
+    // True when no OP_LOAD_DEREF appears in the native bytecode.
+    // Safe to skip closure frame lookup even if __closure__ is present.
+    bool no_load_deref;
+    uint8_t _pad[1];
     // Raw pointers — safe because codeObj and globalsObj are kept alive by the
     // function object's own __code__ / __globals__ attributes.
     const proto::ProtoObject* codeObj;
@@ -249,7 +252,14 @@ struct GlobalsScope {
 static const proto::ProtoObject* invokeCallable(proto::ProtoContext* ctx,
     const proto::ProtoObject* callable, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs);
 
-
+// Internal fast-path: accepts a raw C++ argument slice instead of a ProtoList.
+// Called from OP_CALL_FUNCTION when the callee is a known user function, bypassing
+// the newList() + appendLast() per-call cell allocations.
+static const proto::ProtoObject* runUserFunctionCallRaw(proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ProtoSparseList* kwargs,
+    const proto::ProtoObject* const* rawArgs,
+    unsigned long rawArgCount);
 
 static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
@@ -269,6 +279,7 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
 
     bool cacheHit = false;
     bool cacheNoInnerFunctions = false;
+    bool cacheNoLoadDeref = false;
     if (env && env->getFnMetaCacheString()) {
         const proto::ProtoObject* cacheAttr = self->getAttribute(ctx, env->getFnMetaCacheString());
         if (cacheAttr && cacheAttr != PROTO_NONE) {
@@ -288,6 +299,7 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
                     isGenerator            = cache->is_generator;
                     co_varnames            = cache->co_varnames;
                     cacheNoInnerFunctions  = cache->no_inner_functions;
+                    cacheNoLoadDeref       = cache->no_load_deref;
                     cacheHit = true;
                 }
             }
@@ -347,16 +359,22 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
     // in the hot path (LOAD_FAST/STORE_FAST use slots). Skip the ~4 AVL-tree object
     // allocations to reduce per-call GC pressure — the dominant cost in deep recursion.
     const proto::ProtoObject* closure = env ? self->getAttribute(calleeCtx, env->getClosureString()) : nullptr;
-    bool hasClosure = closure && closure != PROTO_NONE;
-    bool skipFrame = env && (co_flags & CO_OPTIMIZED) && !isGenerator && !hasClosure && cacheNoInnerFunctions;
+    // An empty closure tuple/list means no captured variables — treat as no closure.
+    const proto::ProtoList* closureList0 = closure ? closure->asList(calleeCtx) : nullptr;
+    bool hasClosure = closure && closure != PROTO_NONE
+        && closureList0 && closureList0->getSize(calleeCtx) > 0;
+    // Also skip frame when cacheNoLoadDeref: even if closure exists, the function never
+    // accesses it via LOAD_DEREF, so the closure frame is unused during execution.
+    bool skipFrame = env && (co_flags & CO_OPTIMIZED) && !isGenerator && cacheNoInnerFunctions
+        && (!hasClosure || cacheNoLoadDeref);
     proto::ProtoObject* frame = nullptr;
     if (!skipFrame) {
         frame = const_cast<proto::ProtoObject*>(calleeCtx->newObject(false));
         if (env) {
             if (hasClosure) {
-                const proto::ProtoList* closureList = closure->asList(calleeCtx);
-                if (closureList && closureList->getSize(calleeCtx) > 0) {
-                    const proto::ProtoObject* outerFrame = closureList->getAt(calleeCtx, 0);
+                // closureList0 is already validated non-null and non-empty above.
+                if (closureList0) {
+                    const proto::ProtoObject* outerFrame = closureList0->getAt(calleeCtx, 0);
                     if (outerFrame && outerFrame != PROTO_NONE) {
                         frame = const_cast<proto::ProtoObject*>(frame->addParent(calleeCtx, outerFrame));
                     }
@@ -646,6 +664,141 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
     return result;
 }
 
+// Fast-path version: accepts raw C++ arg slice instead of ProtoList.
+// Used by OP_CALL_FUNCTION when the callee is a known user function, eliminating
+// the ctx->newList() + appendLast() cell allocations on the hot recursive call path.
+// Falls back to runUserFunctionCall (via a temporary ProtoList) for generators,
+// closures, and functions with more args than a small inline buffer.
+static const proto::ProtoObject* runUserFunctionCallRaw(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ProtoSparseList* kwargs,
+    const proto::ProtoObject* const* rawArgs,
+    unsigned long rawArgCount) {
+
+    if (!ctx || !self) return PROTO_NONE;
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+
+    // Read FunctionMetaCache (identical to runUserFunctionCall fast path).
+    const proto::ProtoObject* codeObj = nullptr;
+    const proto::ProtoObject* globalsObj = nullptr;
+    int co_flags = 0, nparams_count = 0, kwonly_count = 0, automatic_count = 0;
+    bool isGenerator = false;
+    bool cacheNoInnerFunctions = false;
+    bool cacheNoLoadDeref = false;
+    const proto::ProtoTuple* co_varnames = nullptr;
+
+    bool cacheHit = false;
+    if (env && env->getFnMetaCacheString()) {
+        const proto::ProtoObject* cacheAttr = self->getAttribute(ctx, env->getFnMetaCacheString());
+        if (cacheAttr && cacheAttr != PROTO_NONE) {
+            proto::ProtoObjectPointer pp{};
+            pp.oid = cacheAttr;
+            if (pp.op.pointer_tag == POINTER_TAG_BYTE_BUFFER) {
+                const auto* impl = proto::toImpl<const proto::ProtoByteBufferImplementation>(cacheAttr);
+                if (impl) {
+                    const FunctionMetaCache* cache =
+                        reinterpret_cast<const FunctionMetaCache*>(impl->implGetBuffer(ctx));
+                    codeObj               = cache->codeObj;
+                    globalsObj            = cache->globalsObj;
+                    co_flags              = cache->co_flags;
+                    nparams_count         = cache->nparams;
+                    kwonly_count          = cache->kwonly;
+                    automatic_count       = cache->automatic_count;
+                    isGenerator           = cache->is_generator;
+                    co_varnames           = cache->co_varnames;
+                    cacheNoInnerFunctions = cache->no_inner_functions;
+                    cacheNoLoadDeref      = cache->no_load_deref;
+                    cacheHit = true;
+                }
+            }
+        }
+    }
+
+    // For any non-trivial case (generator, closure, kwargs, kwonly args, varargs, no cache),
+    // fall back to the full implementation via a temporary ProtoList.
+    bool hasClosure = false;
+    if (cacheHit && !isGenerator) {
+        const proto::ProtoObject* cl = env
+            ? self->getAttribute(ctx, env->getClosureString()) : nullptr;
+        // An empty closure tuple/list means no captured variables — treat as no closure.
+        const proto::ProtoList* clList = cl ? cl->asList(ctx) : nullptr;
+        hasClosure = cl && cl != PROTO_NONE && clList && clList->getSize(ctx) > 0;
+    }
+
+    // cacheNoLoadDeref: safe to skip closure frame even when hasClosure — the function
+    // never accesses captured variables via LOAD_DEREF during execution.
+    bool useSlotFastPath = cacheHit && !isGenerator && (!hasClosure || cacheNoLoadDeref)
+        && cacheNoInnerFunctions && (co_flags & CO_OPTIMIZED)
+        && kwonly_count == 0 && !(co_flags & CO_VARARGS) && !(co_flags & CO_VARKEYWORDS)
+        && (!kwargs || !kwargs->getSize(ctx));
+
+    if (!useSlotFastPath) {
+        // Build a temporary ProtoList and call the full implementation.
+        const proto::ProtoList* argsList = ctx->newList();
+        for (unsigned long i = 0; i < rawArgCount; ++i)
+            argsList = argsList->appendLast(ctx, rawArgs[i]);
+        return runUserFunctionCall(ctx, self, nullptr, argsList, kwargs);
+    }
+
+    if (!codeObj || codeObj == PROTO_NONE) return PROTO_NONE;
+    if (!globalsObj || globalsObj == PROTO_NONE) return PROTO_NONE;
+
+    const proto::ProtoObject* result = PROTO_NONE;
+    {
+    ContextScope scope(ctx->space, ctx, nullptr, nullptr, nullptr, nullptr, (size_t)automatic_count);
+    proto::ProtoContext* calleeCtx = scope.context();
+
+    // Bind positional args directly to slots (no ProtoList traversal).
+    unsigned int nSlots = calleeCtx->getAutomaticLocalsCount();
+    proto::ProtoObject** slots = const_cast<proto::ProtoObject**>(calleeCtx->getAutomaticLocals());
+    for (unsigned long i = 0; i < rawArgCount && i < (unsigned long)nparams_count && i < nSlots; ++i)
+        slots[i] = const_cast<proto::ProtoObject*>(rawArgs[i]);
+
+    // Frame is not needed for CO_OPTIMIZED + no-inner-functions (same logic as runUserFunctionCall).
+    proto::ProtoObject* frame = nullptr;
+
+    if (env) PythonEnvironment::setCurrentFrame(frame);
+
+    result = nullptr;
+    {
+        GlobalsScope gscope(globalsObj);
+
+        const proto::ProtoObject* bytecodeObj = codeObj->getAttribute(calleeCtx, env->getCoCodeString());
+        const proto::ProtoObject* constsObj   = codeObj->getAttribute(calleeCtx, env->getCoConstsString());
+        const proto::ProtoObject* namesObj    = codeObj->getAttribute(calleeCtx, env->getCoNamesString());
+
+        const proto::ProtoTuple* bytecode = bytecodeObj ? bytecodeObj->asTuple(calleeCtx) : nullptr;
+        const proto::ProtoTuple* consts   = constsObj   ? constsObj->asTuple(calleeCtx)   : nullptr;
+        const proto::ProtoTuple* names    = namesObj    ? namesObj->asTuple(calleeCtx)    : nullptr;
+
+        const int* nativeBc = nullptr;
+        if (env->getCoNativeBytecodeString()) {
+            const proto::ProtoObject* nativeBcObj = codeObj->getAttribute(calleeCtx, env->getCoNativeBytecodeString());
+            if (nativeBcObj && nativeBcObj != PROTO_NONE) {
+                proto::ProtoObjectPointer p{};
+                p.oid = nativeBcObj;
+                if (p.op.pointer_tag == POINTER_TAG_BYTE_BUFFER) {
+                    const auto* impl = proto::toImpl<const proto::ProtoByteBufferImplementation>(nativeBcObj);
+                    if (impl) nativeBc = reinterpret_cast<const int*>(impl->implGetBuffer(calleeCtx));
+                }
+            }
+        }
+
+        if (bytecode && consts) {
+            unsigned long stackOffset = co_varnames ? co_varnames->getSize(calleeCtx) : 0;
+            result = executeBytecodeRange(calleeCtx, consts, bytecode, names, frame,
+                                          0, bytecode->getSize(calleeCtx), stackOffset,
+                                          nullptr, nullptr, nullptr, 0, nullptr, nativeBc);
+        } else {
+            result = PROTO_NONE;
+        }
+    }
+    promote(calleeCtx, result);
+    } // ContextScope destroyed here
+    return result;
+}
+
 } // namespace
 
 const proto::ProtoObject* runBoundMethodCall(proto::ProtoContext* ctx,
@@ -818,12 +971,14 @@ static proto::ProtoObject* createUserFunction(proto::ProtoContext* ctx, const pr
                     if (nbImpl) {
                         const int* nb = reinterpret_cast<const int*>(nbImpl->implGetBuffer(ctx));
                         size_t nbLen  = nbImpl->implGetSize(ctx) / sizeof(int);
-                        bool hasBuild = false;
+                        bool hasBuild = false, hasDeref = false;
                         for (size_t bi = 0; bi < nbLen; bi += 2) {
                             int op = nb[bi];
-                            if (op == OP_BUILD_FUNCTION || op == OP_BUILD_CLASS) { hasBuild = true; break; }
+                            if (op == OP_BUILD_FUNCTION || op == OP_BUILD_CLASS) hasBuild = true;
+                            if (op == OP_LOAD_DEREF) hasDeref = true;
                         }
                         cache->no_inner_functions = !hasBuild;
+                        cache->no_load_deref = !hasDeref;
                     }
                 }
             }
@@ -4063,6 +4218,26 @@ const proto::ProtoObject* executeBytecodeRange(
 
             const proto::ProtoObject* callable = nullptr;
             const proto::ProtoList* callArgs = nullptr;
+
+            // User-function fast path: [NULL, func, arg1...argN] — bypass ProtoList construction.
+            // Eliminates 2 cell allocations (newList + appendLast) per user-function call.
+            const proto::ProtoObject* result_fast = nullptr;
+            bool usedFastPath = false;
+            if ((isModern && X == nullptr) || !isModern) {
+                const proto::ProtoObject* candidate = Y;
+                if (candidate && env && env->getCodeString() &&
+                    candidate->hasOwnAttribute(ctx, env->getCodeString()) == PROTO_TRUE) {
+                    const proto::ProtoObject* const* rawArgSlice = stack.slots + firstArgIdx;
+                    result_fast = runUserFunctionCallRaw(ctx, candidate, nullptr,
+                                                          rawArgSlice, (unsigned long)arg);
+                    usedFastPath = true;
+                }
+            }
+
+            const proto::ProtoObject* result = nullptr;
+            if (usedFastPath) {
+                result = result_fast;
+            } else {
             const proto::ProtoList* args = ctx->newList();
             for (int j = 0; j < arg; ++j) {
                 args = args->appendLast(ctx, stack[firstArgIdx + j]);
@@ -4093,7 +4268,8 @@ const proto::ProtoObject* executeBytecodeRange(
                  continue;
             }
 
-            const proto::ProtoObject* result = invokeCallable(ctx, callable, callArgs);
+            result = invokeCallable(ctx, callable, callArgs);
+            } // end slow path
 
 
             // Cleanup: Pop (arg + slots)
@@ -4787,7 +4963,9 @@ const proto::ProtoObject* executeBytecodeRange(
         } else if (op == OP_LOAD_GLOBAL) {
             bool pushNull = (arg & 1);
             int nameIdx = arg >> 1;
-            if (names && frame && static_cast<unsigned long>(nameIdx) < names->getSize(ctx)) {
+            // No `frame` guard: LOAD_GLOBAL resolves via env->resolve()/getCurrentGlobals(),
+            // not via frame. This allows LOAD_GLOBAL in frame-free (slot fast path) contexts.
+            if (names && static_cast<unsigned long>(nameIdx) < names->getSize(ctx)) {
                 const proto::ProtoObject* nameObj = names->getAt(ctx, nameIdx);
                 if (nameObj->isString(ctx)) {
                     const proto::ProtoString* nameS = nameObj->asString(ctx);
@@ -4814,7 +4992,7 @@ const proto::ProtoObject* executeBytecodeRange(
             }
         } else if (op == OP_STORE_GLOBAL) {
             int nameIdx = arg >> 1;
-            if (names && frame && static_cast<unsigned long>(nameIdx) < names->getSize(ctx)) {
+            if (names && static_cast<unsigned long>(nameIdx) < names->getSize(ctx)) {
                 if (stack.empty()) { i = next_i; continue; }
                 const proto::ProtoObject* nameObj = names->getAt(ctx, nameIdx);
                 const proto::ProtoObject* val = stack.back();
@@ -4824,9 +5002,11 @@ const proto::ProtoObject* executeBytecodeRange(
                     if (!globalsObj) globalsObj = frame;
                     const proto::ProtoObject* newGlobals = globalsObj->setAttribute(ctx, nameObj->asString(ctx), val);
                     PythonEnvironment::setCurrentGlobals(newGlobals);
+                    if (frame) {
                     const proto::ProtoString* fg = env ? env->getFGlobalsString() : protoPython::PythonEnvironment::getInternalString(ctx, "f_globals");
                     frame = const_cast<proto::ProtoObject*>(frame->setAttribute(ctx, fg, newGlobals));
                     PythonEnvironment::setCurrentFrame(frame);
+                    } // if (frame)
                     if (env) env->invalidateResolveCache();
                 }
             }
