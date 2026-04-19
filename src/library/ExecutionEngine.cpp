@@ -1105,37 +1105,30 @@ static bool isTruthy(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
     if (!obj || obj == PROTO_NONE) return false;
     if (obj == PROTO_FALSE) return false;
     if (obj == PROTO_TRUE) return true;
-    
+
     if (obj->isInteger(ctx)) return (obj->asLong(ctx) != 0);
     if (obj->isDouble(ctx)) return (obj->asDouble(ctx) != 0.0);
     if (obj->isString(ctx)) return (obj->asString(ctx)->getSize(ctx) > 0);
-    
-    // Optimized native checks (works for both raw Proto objects and those without __bool__ override)
-    if (obj->asTuple(ctx)) return (obj->asTuple(ctx)->getSize(ctx) > 0);
-    if (obj->asList(ctx)) return (obj->asList(ctx)->getSize(ctx) > 0);
-    if (obj->asSparseList(ctx)) return (obj->asSparseList(ctx)->getSize(ctx) > 0);
 
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (env && obj == env->getNonePrototype()) return false;
-    
-    // Evaluate __bool__ method
+
+    // Python semantics: __bool__ takes priority over all native checks.
+    // Check the class (not the instance) to avoid descriptor confusion.
     const proto::ProtoString* boolS = env ? env->getBoolString() : PythonEnvironment::getInternedString(ctx, "__bool__");
     const proto::ProtoObject* cls = env ? env->getType(ctx, obj) : nullptr;
     if (!cls) cls = obj->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__class__"));
-    
+
     const proto::ProtoObject* boolMethod = cls ? cls->getAttribute(ctx, boolS) : obj->getAttribute(ctx, boolS);
     if (boolMethod && boolMethod->asMethod(ctx)) {
         const proto::ProtoList* emptyL = env ? env->getEmptyList() : ctx->newList();
         const proto::ProtoObject* result = boolMethod->asMethod(ctx)(ctx, obj, nullptr, emptyL, nullptr);
         if (result == PROTO_FALSE) return false;
         if (result == PROTO_TRUE) return true;
-        
-        // If it doesn't return exactly True or False, try to convert result to bool or check its truthiness
-        // This is simplified but matching py_bool logic
-        return isTruthy(ctx, result); 
+        return isTruthy(ctx, result);
     }
-    
-    // Evaluate __len__ method fallback
+
+    // __len__ fallback (before native checks so custom containers win).
     const proto::ProtoString* lenS = env ? env->getLenString() : PythonEnvironment::getInternedString(ctx, "__len__");
     const proto::ProtoObject* lenMethod = cls ? cls->getAttribute(ctx, lenS) : obj->getAttribute(ctx, lenS);
     if (lenMethod && lenMethod->asMethod(ctx)) {
@@ -1145,7 +1138,12 @@ static bool isTruthy(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
             return (result->asLong(ctx) > 0);
         }
     }
-    
+
+    // Native container checks for raw Proto objects that have no Python class wrapper.
+    if (obj->asTuple(ctx)) return (obj->asTuple(ctx)->getSize(ctx) > 0);
+    if (obj->asList(ctx)) return (obj->asList(ctx)->getSize(ctx) > 0);
+    if (obj->asSparseList(ctx)) return (obj->asSparseList(ctx)->getSize(ctx) > 0);
+
     return true;
 }
 

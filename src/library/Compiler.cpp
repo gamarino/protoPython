@@ -742,9 +742,20 @@ bool Compiler::compileAnnAssign(AnnAssignNode* n) {
     if (!n) return false;
     if (n->value) {
         if (!compileNode(n->value.get())) return false;
-        return compileTarget(n->target.get(), TargetCtx::Store);
+        if (!compileTarget(n->target.get(), TargetCtx::Store)) return false;
     }
-    // Just an annotation like x: int, nothing to do at runtime usually
+    // In a class body, store the annotation into __annotations__['name'] = type.
+    // STORE_SUBSCR expects stack: [value, container, key(TOS)] → container[key] = value.
+    if (isClassBody_) {
+        auto* nm = dynamic_cast<NameNode*>(n->target.get());
+        if (nm) {
+            if (!compileNode(n->annotation.get())) return false;  // value
+            emitNameOp("__annotations__", TargetCtx::Load);       // container
+            int keyIdx = addConstant(PythonEnvironment::getInternedString(ctx_, nm->id.c_str())->asObject(ctx_));
+            emit(OP_LOAD_CONST, keyIdx);                           // key (TOS)
+            emit(OP_STORE_SUBSCR);
+        }
+    }
     return true;
 }
 
@@ -2906,6 +2917,20 @@ bool Compiler::compileClassDef(ClassDefNode* n) {
     Compiler bodyCompiler(ctx_, filename_);
     bodyCompiler.globalNames_ = globalNames_;
     bodyCompiler.nonlocalNames_ = nonlocalNames_;
+    bodyCompiler.isClassBody_ = true;
+
+    // If the class body contains any annotations, initialise __annotations__ = {} first.
+    bool hasAnnotations = false;
+    if (auto* suite = dynamic_cast<SuiteNode*>(n->body.get())) {
+        for (auto& stmt : suite->statements) {
+            if (dynamic_cast<AnnAssignNode*>(stmt.get())) { hasAnnotations = true; break; }
+        }
+    }
+    if (hasAnnotations) {
+        bodyCompiler.emit(OP_BUILD_MAP, 0);
+        bodyCompiler.emitNameOp("__annotations__", TargetCtx::Store);
+    }
+
     if (!bodyCompiler.compileNode(n->body.get())) return false;
     bodyCompiler.emit(OP_RETURN_VALUE);
     bodyCompiler.applyPatches();

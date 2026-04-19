@@ -126,6 +126,7 @@ private:
     /** Optional: name -> slot index for LOAD_FAST/STORE_FAST. Set when compiling a function body. */
     std::unordered_map<std::string, int> localSlotMap_;
     bool isGenerator_ = false;
+    bool isClassBody_ = false;
     int bytecodeOffset() const;
     /** Record a jump arg slot to be patched later with target (bytecode list index). */
     void addPatch(int argSlotIndex, int targetBytecodeIndex);

@@ -8457,7 +8457,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     // 4. Create 'frame' prototype
     framePrototype = objectPrototype->newChild(rootContext_, true);
     framePrototype = framePrototype->setAttribute(rootContext_, py_class, typePrototype);
-    framePrototype = framePrototype->setAttribute(rootContext_, py_name, PythonEnvironment::getInternedString(rootContext_, "frame")->asObject(rootContext_));
+    // Do NOT set __name__ on framePrototype: Python frame objects have no __name__ attribute,
+    // and inheriting it through the prototype chain shadows module-level __name__ lookups.
     framePrototype = framePrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__qualname__"), PythonEnvironment::getInternedString(rootContext_, "frame")->asObject(rootContext_));
     framePrototype = framePrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_frame_repr));
     framePrototype = framePrototype->setAttribute(rootContext_, py_module, builtinsVal);

@@ -430,7 +430,7 @@ def _tuple_str(obj_name, fields):
     if not fields:
         return '()'
     # Note the trailing comma, needed if this turns out to be a 1-tuple.
-    return f'({",".join([f"{obj_name}.{f.name}" for f in fields])},)'
+    return '(' + ','.join([f'{obj_name}.{f.name}' for f in fields]) + ',)'
 
 
 class _FuncBuilder:
@@ -473,7 +473,8 @@ class _FuncBuilder:
         body = '\n'.join(body)
 
         # Compute the text of the entire function, add it to the text we're generating.
-        self.src.append(f'{f' {decorator}\n' if decorator else ''} def {name}({args}){return_annotation}:\n{body}')
+        dec_str = f' {decorator}\n' if decorator else ''
+        self.src.append(f'{dec_str} def {name}({args}){return_annotation}:\n{body}')
 
     def add_fns_to_class(self, cls):
         # The source to all of the functions we're generating.
@@ -501,9 +502,15 @@ class _FuncBuilder:
         #   return f"cls(x={self.x!r},y={self.y!r})"
         # return __init__,__repr__
 
-        txt = f"def __create_fn__({local_vars}):\n{fns_src}\n return {return_names}"
+        txt = f"def __create_fn__({local_vars}):\n{fns_src}\n return {return_names}\n"
         ns = {}
-        exec(txt, self.globals, ns)
+        import sys as _sys_dc
+        _impl = getattr(getattr(_sys_dc, 'implementation', None), 'name', '')
+        if _impl == 'protopython' and not self.globals:
+            _exec_globals = {}
+        else:
+            _exec_globals = self.globals
+        exec(txt, _exec_globals, ns)
         fns = ns['__create_fn__'](**self.locals)
 
         # Now that we've generated the functions, assign them into cls.
@@ -940,7 +947,12 @@ def _process_class(cls, init, repr, eq, order, unsafe_hash, frozen,
     fields = {}
 
     if cls.__module__ in sys.modules:
-        globals = sys.modules[cls.__module__].__dict__
+        _mod = sys.modules[cls.__module__]
+        if _mod is not None:
+            _mod_dict = getattr(_mod, '__dict__', None)
+            globals = _mod_dict if _mod_dict is not None else {}
+        else:
+            globals = {}
     else:
         # Theoretically this can happen if someone writes
         # a custom string to cls.__module__.  In which case
@@ -995,7 +1007,7 @@ def _process_class(cls, init, repr, eq, order, unsafe_hash, frozen,
     cls_fields = []
     # Get a reference to this module for the _is_kw_only() test.
     KW_ONLY_seen = False
-    dataclasses = sys.modules[__name__]
+    dataclasses = sys.modules.get(__name__) or sys.modules.get('dataclasses')
     for name, type in cls_annotations.items():
         # See if this is a marker to change the value of kw_only.
         if (_is_kw_only(type, dataclasses)
@@ -1162,7 +1174,7 @@ def _process_class(cls, init, repr, eq, order, unsafe_hash, frozen,
     # signature.
     func_builder.add_fns_to_class(cls)
 
-    if not getattr(cls, '__doc__'):
+    if not getattr(cls, '__doc__', None):
         # Create a class doc-string.
         try:
             # In some cases fetching a signature is not possible.
@@ -1285,7 +1297,8 @@ def _add_slots(cls, is_frozen, weakref_slot, defined_fields):
 
     # gh-102069: Remove existing __weakref__ descriptor.
     # gh-135228: Make sure the original class can be garbage collected.
-    sys._clear_type_descriptors(cls)
+    if hasattr(sys, '_clear_type_descriptors'):
+        sys._clear_type_descriptors(cls)
 
     # Create a new dict for our new class.
     cls_dict = dict(cls.__dict__)

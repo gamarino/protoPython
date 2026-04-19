@@ -36,9 +36,9 @@ Semantics required for complex frameworks and libraries.
 
 - [x] `test_decorators.py`: PASS (via `tests/test_decorator.py`)
 - [x] `test_metaclass.py`: PASS (Verified with `test_metaclass.py`)
-- [ ] `test_contextlib.py`: Utilities for `with`-statement contexts.
+- [x] `test_contextlib.py`: **PASS** (contextmanager, suppress, closing, nullcontext, ExitStack — V92)
 - [x] `test_abc.py`: PASS (Verified with `tests/test_abc.py`)
-- [ ] `test_dataclasses.py`: Data Classes.
+- [x] `test_dataclasses.py`: **PASS** (dataclass, field, fields, asdict, astuple, is_dataclass — V92)
 
 ### 🟢 Low Priority (UI, Legacy, and Platform-Specific)
 
@@ -49,17 +49,22 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 - [ ] `test_pydoc.py`
 - [ ] `test_warnings.py`
 
-## Progress Summary (V91 - 2026-04-18)
+## Progress Summary (V92 - 2026-04-18)
 
 | Category | Total | Checked | Passed | Success Rate |
 | :--- | :--- | :--- | :--- | :--- |
 | **Essential** | 6 | 6 | 6 | 100% |
 | **Important** | 6 | 6 | 6 | 100% |
-| **Necessary** | 5 | 3 | 2 | 67% |
+| **Necessary** | 5 | 5 | 5 | 100% |
 | **Low Priority** | 4 | 0 | 0 | 0% |
-| **Total** | **21** | **15** | **14** | **93%** |
+| **Total** | **21** | **17** | **17** | **100%** |
 
 **Conformity Suite (Phase 1, 2026-04-15)**: 7/9 tests pass. Failures are pre-existing: `int(float)` conversion and `set(iterable)` constructor.
+
+> [!NOTE]
+> **V92 Necessary Tests Complete (2026-04-18)**: All 5 Necessary CPython conformance tests now pass (100%). Key fixes:
+> - `test_contextlib.py`: Fixed `deque` truthiness (`isTruthy` now checks `__bool__`/`__len__` before native `asList`/`asSparseList` checks so custom containers get Python-correct truthiness); `contextlib.ExitStack` now drains callbacks correctly.
+> - `test_dataclasses.py`: Three-part fix: (1) `compileAnnAssign` now emits `LOAD_NAME '__annotations__'` / `LOAD_CONST 'field_name'` / `<annotation expr>` / `STORE_SUBSCR` in class bodies, populating `__annotations__` at runtime; (2) `compileClassDef` now sets `isClassBody_ = true` on the body compiler and pre-emits `BUILD_MAP 0; STORE_NAME '__annotations__'` when any annotation is present; (3) Removed `__name__ = 'frame'` from `framePrototype` — frame objects do not have a `__name__` attribute in CPython, and the inherited attribute shadowed module-level `__name__` lookups in both `LOAD_NAME` and `LOAD_GLOBAL` handlers, causing `sys.modules['frame']` → `KeyError: frame` inside `dataclasses._get_field`.
 
 > [!NOTE]
 > **V91 Important Tests Complete (2026-04-18)**: All 6 Important CPython conformance tests now pass (100%). Key fixes applied across multiple sessions:
