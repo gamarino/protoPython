@@ -3133,6 +3133,30 @@ const proto::ProtoObject* makeCodeObject(proto::ProtoContext* ctx,
     code = code->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_consts"), constants ? reinterpret_cast<const proto::ProtoObject*>(constants) : reinterpret_cast<const proto::ProtoObject*>(ctx->newTuple()));
     code = code->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_names"), names ? reinterpret_cast<const proto::ProtoObject*>(names) : reinterpret_cast<const proto::ProtoObject*>(ctx->newTuple()));
     code = code->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_code"), reinterpret_cast<const proto::ProtoObject*>(bytecode));
+
+    // Pre-compute a native int[] from the bytecode ProtoTuple once at compile time.
+    // fromBuffer takes ownership of the heap allocation (freeOnExit=true); the GC calls
+    // delete[] when the ByteBuffer Cell is collected, so lifetime matches the code object.
+    // In executeBytecodeRange the int* is used directly, eliminating 16 AVL lookups +
+    // 1 malloc/free per function call (paid on every recursive fib invocation in Step 5).
+    if (bytecode && env && env->getCoNativeBytecodeString()) {
+        const unsigned long bcSize = bytecode->getSize(ctx);
+        if (bcSize > 0) {
+            int* intBuf = new int[bcSize];
+            for (unsigned long j = 0; j < bcSize; ++j) {
+                const proto::ProtoObject* elem = bytecode->getAt(ctx, j);
+                intBuf[j] = (elem && elem->isInteger(ctx)) ? static_cast<int>(elem->asLong(ctx)) : 0;
+            }
+            const proto::ProtoObject* nativeBcObj = ctx->fromBuffer(
+                bcSize * sizeof(int), reinterpret_cast<char*>(intBuf), true);
+            // Pin the ByteBuffer in moduleRoots so the GC never finalizes it while any
+            // function using this code object is alive. Same pattern as getInternedString.
+            if (ctx->space) {
+                ctx->space->moduleRoots.push_back(nativeBcObj);
+            }
+            code = code->setAttribute(ctx, env->getCoNativeBytecodeString(), nativeBcObj);
+        }
+    }
     code = code->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_filename"), filename ? filename->asObject(ctx) : PythonEnvironment::getInternedString(ctx, "<stdin>")->asObject(ctx));
     code = code->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_varnames"), varnames ? reinterpret_cast<const proto::ProtoObject*>(varnames) : reinterpret_cast<const proto::ProtoObject*>(ctx->newTuple()));
     code = code->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_nparams"), ctx->fromInteger(nparams));

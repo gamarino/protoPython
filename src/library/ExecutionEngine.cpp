@@ -557,9 +557,30 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
         const proto::ProtoTuple* consts = constsObj ? constsObj->asTuple(calleeCtx) : nullptr;
         const proto::ProtoTuple* names = namesObj ? namesObj->asTuple(calleeCtx) : nullptr;
 
+        // Extract pre-computed native bytecode int[] from co_bytecode_native (allocated once at
+        // compile time by makeCodeObject). Passing int* to executeBytecodeRange avoids the per-call
+        // std::vector rebuild (16 AVL lookups + malloc/free) that Step 5 still paid.
+        const int* nativeBc = nullptr;
+        if (env->getCoNativeBytecodeString()) {
+            const proto::ProtoObject* nativeBcObj = codeObj->getAttribute(calleeCtx, env->getCoNativeBytecodeString());
+            if (nativeBcObj && nativeBcObj != PROTO_NONE) {
+                proto::ProtoObjectPointer p{};
+                p.oid = nativeBcObj;
+                if (p.op.pointer_tag == POINTER_TAG_BYTE_BUFFER) {
+                    // toImpl masks the 6 lower tag bits before dereferencing; using the raw
+                    // union field (p.byteBufferImplementation) would read a misaligned pointer.
+                    const auto* impl = proto::toImpl<const proto::ProtoByteBufferImplementation>(nativeBcObj);
+                    if (impl) {
+                        nativeBc = reinterpret_cast<const int*>(impl->implGetBuffer(calleeCtx));
+                    }
+                }
+            }
+        }
+
         if (bytecode && consts) {
             unsigned long stackOffset = co_varnames ? co_varnames->getSize(calleeCtx) : 0;
-            result = executeBytecodeRange(calleeCtx, consts, bytecode, names, frame, 0, bytecode->getSize(calleeCtx), stackOffset);
+            result = executeBytecodeRange(calleeCtx, consts, bytecode, names, frame, 0, bytecode->getSize(calleeCtx), stackOffset,
+                nullptr, nullptr, nullptr, 0, nullptr, nativeBc);
         } else {
             result = PROTO_NONE;
         }
@@ -1814,7 +1835,8 @@ const proto::ProtoObject* executeBytecodeRange(
     bool* yielded,
     std::vector<Block>* externalBlockStack,
     unsigned long initialTop,
-    unsigned long* finalTopPtr) {
+    unsigned long* finalTopPtr,
+    const int* nativeBc) {
     if (!ctx || !constants || !bytecode) return nullptr;
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
 
@@ -1835,15 +1857,19 @@ const proto::ProtoObject* executeBytecodeRange(
     }
     if (pcEnd >= n) pcEnd = n - 1;
 
-    // Cache the entire bytecode as a flat native int array. This trades the one-time
-    // cost of n AVL-tree lookups upfront for O(1) random access in the hot dispatch loop.
-    // For functions called thousands of times (e.g. recursion), the amortized benefit is large:
-    // each instruction pair goes from 2+ AVL comparisons to 2 cache-warm native reads.
-    std::vector<int> bc;
-    bc.resize(n);
-    for (unsigned long j = 0; j < n; ++j) {
-        const proto::ProtoObject* obj = bytecode->getAt(ctx, j);
-        bc[j] = (obj && obj->isInteger(ctx)) ? static_cast<int>(obj->asLong(ctx)) : 0;
+    // Use pre-computed native bytecode int[] from co_bytecode_native (built once at compile time
+    // by makeCodeObject). Falls back to building a local vector if not available (module-level
+    // code or generators resuming without nativeBc). The hot path (user function calls) always
+    // has nativeBc set by runUserFunctionCall, so the fallback is cold.
+    std::vector<int> bc_fallback;
+    const int* bc = nativeBc;
+    if (!bc) {
+        bc_fallback.resize(n);
+        for (unsigned long j = 0; j < n; ++j) {
+            const proto::ProtoObject* obj = bytecode->getAt(ctx, j);
+            bc_fallback[j] = (obj && obj->isInteger(ctx)) ? static_cast<int>(obj->asLong(ctx)) : 0;
+        }
+        bc = bc_fallback.data();
     }
 
     unsigned int nSlots = ctx->getAutomaticLocalsCount();

@@ -241,7 +241,8 @@ const proto::ProtoObject* executeBytecodeRange(
     bool* yielded = nullptr,
     std::vector<Block>* externalBlockStack = nullptr,
     unsigned long initialTop = 0,
-    unsigned long* finalTopPtr = nullptr);
+    unsigned long* finalTopPtr = nullptr,
+    const int* nativeBc = nullptr);
 
 /**
  * @brief Python-compatible generator methods.

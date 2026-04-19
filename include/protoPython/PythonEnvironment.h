@@ -341,6 +341,7 @@ public:
     const proto::ProtoString* getCoNameString() const { return co_name; }
     const proto::ProtoString* getCoNamesString() const { return co_names; }
     const proto::ProtoString* getCoCodeString() const { return co_code; }
+    const proto::ProtoString* getCoNativeBytecodeString() const { return co_bytecode_native; }
     const proto::ProtoString* getSendString() const { return sendString; }
     const proto::ProtoString* getThrowString() const { return throwString; }
     const proto::ProtoString* getCloseString() const { return closeString; }
@@ -919,6 +920,7 @@ private:
     const proto::ProtoString* co_name{nullptr};
     const proto::ProtoString* co_names{nullptr};
     const proto::ProtoString* co_code{nullptr};
+    const proto::ProtoString* co_bytecode_native{nullptr};
     const proto::ProtoString* giNativeCallbackString{nullptr};
     const proto::ProtoString* sendString{nullptr};
     const proto::ProtoString* throwString{nullptr};
