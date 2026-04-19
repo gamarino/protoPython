@@ -4093,10 +4093,21 @@ static const proto::ProtoObject* py_range_next(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
-    
-    // Fast path removed to adhere to architectural rules.
 
-    // Fallback for old range objects
+    // Fast-path: native ProtoRangeIteratorImplementation (what py_range_iter now returns).
+    // Direct C++ field comparison and increment — zero attribute lookups, zero allocations.
+    // nullptr return signals exhaustion; OP_FOR_ITER treats null+no-exception as loop end.
+    {
+        proto::ProtoObjectPointer pa{};
+        pa.oid = self;
+        if (pa.op.pointer_tag == POINTER_TAG_RANGE_ITERATOR) {
+            pa.op.pointer_tag = 0;  // clear tag bits before pointer dereference (mirrors toImpl)
+            auto* impl = const_cast<proto::ProtoRangeIteratorImplementation*>(pa.rangeIteratorImplementation);
+            return impl->implNext(context);
+        }
+    }
+
+    // Legacy path: Python-object-style iterators with __range_cur__/__range_stop__/__range_step__.
     ::protoPython::PythonEnvironment* env = ::protoPython::PythonEnvironment::fromContext(context);
     const proto::ProtoString* curS = env ? env->getRangeCurString() : PythonEnvironment::getInternedString(context, "__range_cur__");
     const proto::ProtoString* stopS = env ? env->getRangeStopString() : PythonEnvironment::getInternedString(context, "__range_stop__");
@@ -4138,16 +4149,9 @@ static const proto::ProtoObject* py_range_iter(
     long long stop = self->getAttribute(context, stopS)->asLong(context);
     long long step = self->getAttribute(context, stepS)->asLong(context);
 
-    // Create a standard Python object as iterator using the rangeIteratorProto
-    const proto::ProtoObject* rangeIterProto = env ? env->getRangeIteratorProto() : nullptr;
-    const proto::ProtoObject* iterObj = rangeIterProto ? rangeIterProto->newChild(context, true) : context->newObject(false);
-    
-    // Store original range values in the iterator
-    iterObj = iterObj->setAttribute(context, curS, context->fromInteger(start));
-    iterObj = iterObj->setAttribute(context, stopS, context->fromInteger(stop));
-    iterObj = iterObj->setAttribute(context, stepS, context->fromInteger(step));
-    
-    return iterObj;
+    // Return a native ProtoRangeIteratorImplementation: direct C++ fields, zero attribute
+    // lookups per iteration, zero allocations per step (small integers are tagged pointers).
+    return (new(context) proto::ProtoRangeIteratorImplementation(context, start, stop, step))->implAsObject(context);
 }
 
 static const proto::ProtoObject* py_range(
@@ -4755,6 +4759,9 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     rangeIterProto = rangeIterProto->setAttribute(ctx, pEnv->getNextString(), ctx->fromMethod(nullptr, py_range_next));
     builtins = builtins->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "range_iterator"), rangeIterProto);
     pEnv->setRangeIteratorProto(rangeIterProto);
+    // Wire the native cell prototype so ProtoRangeIteratorImplementation tagged pointers
+    // resolve attribute lookups (e.g. __iter__, __next__) via the Python-visible prototype.
+    ctx->space->rangeIteratorPrototype = const_cast<proto::ProtoObject*>(rangeIterProto);
 
     builtins = builtins->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "abs"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_abs));
     builtins = builtins->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "min"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_min));

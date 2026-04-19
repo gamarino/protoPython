@@ -52,9 +52,9 @@
 
 ## 📊 Performance Benchmarks (V92 Baseline)
 
-The table below is the **V92 correctness baseline** — the first measurement taken after all 17 CPython conformance test categories passed. Prior benchmark runs recorded startup-only times because the scripts were not executing to completion; these results reflect genuine end-to-end execution.
+The table below tracks progress from the V92 correctness baseline. Throughput optimization is the active focus.
 
-The architecture (GIL-free, lock-free primitives, immutable core) is correct and sound. Interpreter throughput — reducing per-opcode overhead, object-allocation cost, and GC pressure — is the active optimization focus starting from this baseline.
+**V92 Correctness Baseline** (first measurement after all 17 CPython conformance tests passed):
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────────────┐
@@ -77,11 +77,36 @@ The architecture (GIL-free, lock-free primitives, immutable core) is correct and
 │ Geomean Ratio          │              │              │  56.4x slower │               │
 └──────────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+**V93 — Step 1: Native Range Iterator** (after attribute-cache fix + native `ProtoRangeIteratorImplementation`):
+
+```
+┌──────────────────────────────────────────────────────────────────────────────────────┐
+│ Performance Audit: protoPython vs CPython 3.14   (V93 Step 1: native range iterator) │
+│ (median of 5 runs, timeouts excluded)                                                │
+│ 2026-04-19 Linux x86_64                                                              │
+├────────────────────────┬──────────────┬──────────────┬───────────────┬───────────────┤
+│ Benchmark              │ Time P (ms)  │ Time C (ms)  │ Ratio         │ Peak RSS(P/C) │
+├────────────────────────┼──────────────┼──────────────┼───────────────┼───────────────┤
+│ startup_empty          │      91.26   │      36.50   │  2.50x slower │  23.2/ 10.4MB │
+│ int_sum_loop           │      76.37   │      36.20   │  2.11x slower │  23.1/ 10.4MB │
+│ list_append_loop       │    1851.90   │      36.52   │ 50.71x slower │ 168.6/ 10.6MB │
+│ str_concat_loop        │    2076.89   │      33.88   │ 61.30x slower │ 169.9/ 10.2MB │
+│ range_iterate          │    2267.08   │      41.20   │ 55.03x slower │ 168.4/ 10.2MB │
+│ multithread_cpu        │    4121.51   │      41.19   │100.07x slower │ 506.2/ 10.6MB │
+│ attr_lookup            │    4619.89   │      43.68   │105.76x slower │ 115.3/ 10.4MB │
+│ call_recursion         │    TIMEOUT   │      54.37   │ timeout       │ N/A            │
+│ memory_pressure        │   55503.73   │      83.08   │668.08x slower │2235.1/ 10.4MB │
+├────────────────────────┼──────────────┼──────────────┼───────────────┼───────────────┤
+│ Geomean Ratio          │              │              │  39.87x slower│               │
+└──────────────────────────────────────────────────────────────────────────────────────┘
+```
+
 > [!NOTE]
-> *Time P* is protoPython wall time. *Time C* is CPython 3.14 wall time. These numbers establish the correctness baseline; throughput optimization is underway.
+> *Time P* is protoPython wall time. *Time C* is CPython 3.14 wall time. V93 benchmark ran under CPU powersave throttling; some individual numbers are affected by system load, but the geomean trend is valid. `int_sum_loop` is the clearest signal: 841ms → 76ms (11x speedup) from native range iterators eliminating per-iteration attribute lookups.
 
 > [!TIP]
-> Known bottlenecks driving the overhead: (1) per-opcode immutable-copy overhead from the copy-on-write object model, (2) GC pressure from temporary object creation per operation, (3) lack of inline caches for attribute lookup and function dispatch. These are architectural optimization targets, not design flaws.
+> Known bottlenecks: (1) per-opcode dispatch overhead (no inline caches yet), (2) GC pressure from temporary object creation, (3) mutableRoot binary search for each mutable-object write. These are the active optimization targets.
 
 ---
 
