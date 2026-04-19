@@ -1207,6 +1207,13 @@ static const proto::ProtoObject* invokeCallable(proto::ProtoContext* ctx,
         return callable->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(callable->asMethodSelf(ctx)), nullptr, args, kwargs);
     }
 
+    // Fast path for user-defined Python functions: they always have __code__ as an own attribute
+    // (set in createUserFunction). Avoid the expensive getType + getAttribute(__call__) path.
+    if (env && env->getCodeString() &&
+        callable->hasOwnAttribute(ctx, env->getCodeString()) == PROTO_TRUE) {
+        return runUserFunctionCall(ctx, callable, nullptr, args, kwargs);
+    }
+
     /* FALLBACK TO PUBLIC API __call__ */
     const proto::ProtoString* callS = env ? env->getCallString() : PythonEnvironment::getInternedString(ctx, "__call__");
     
