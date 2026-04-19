@@ -649,6 +649,7 @@ public:
     void raiseNameError(proto::ProtoContext* context, const std::string& name);
     void raiseAttributeError(proto::ProtoContext* context, const proto::ProtoObject* obj, const std::string& attr);
     void raiseRuntimeError(proto::ProtoContext* context, const std::string& msg);
+    void raiseOSError(proto::ProtoContext* context, int errnum, const std::string& strerr, const std::string& filename = "");
     void raiseTypeError(proto::ProtoContext* context, const std::string& msg);
     void raiseImportError(proto::ProtoContext* context, const std::string& msg);
     void raiseKeyboardInterrupt(proto::ProtoContext* context);
@@ -784,6 +785,7 @@ private:
     const proto::ProtoObject* typeErrorType{nullptr};
     const proto::ProtoObject* runtimeErrorType{nullptr};
     const proto::ProtoObject* importErrorType{nullptr};
+    const proto::ProtoObject* moduleNotFoundErrorType{nullptr};
     const proto::ProtoObject* baseExceptionType{nullptr};
     const proto::ProtoObject* keyboardInterruptType{nullptr};
     const proto::ProtoObject* systemExitType{nullptr};

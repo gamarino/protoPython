@@ -35,7 +35,7 @@
 | **Type System** | **Advanced** - Lists, Tuples, Sets, Dicts with native wrapping ✅ |
 | **C++ Interop** | **Full** - HPy and UMD support integrated ✅ |
 | **Compiler** | **Advanced** - Full C++ translation with collection support ✅ |
-| **Performance** | **Optimization in Progress** - V93 active: native range iterators (11x int_sum speedup), mutableRoot sharding × 16, batched STW poll (25% list_append speedup), geomean ratio 56.4x → 35.76x ⚙️ |
+| **Performance** | **Optimization in Progress** - V93 active: native range iterators, mutableRoot sharding × 16, batched STW poll, function call fast-path (isFunctionScope + LOAD_GLOBAL skip + fewer allocs), geomean ratio 56.4x → **24.06x** ⚙️ |
 | **CPython Conformance** | **100%** - 17/17 test categories passing (Essential, Important, Necessary) ✅ |
 
 - ✅ **Generator Delegation**: Full support for `yield` and `yield from` with efficient state persistence.
@@ -150,11 +150,35 @@ The table below tracks progress from the V92 correctness baseline. Throughput op
 └──────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+**V93 — Step 4: Function Call Fast-Path** (Release build, full benchmark):
+
+```
+┌──────────────────────────────────────────────────────────────────────────────────────┐
+│ Performance Audit: protoPython vs CPython 3.14   (V93 Step 4: function call fast-path)│
+│ (median of 2 runs, Release build)                                                    │
+│ 2026-04-19 Linux x86_64                                                              │
+├────────────────────────┬──────────────┬──────────────┬───────────────┬───────────────┤
+│ Benchmark              │ Time P (ms)  │ Time C (ms)  │ Ratio         │ Peak RSS(P/C) │
+├────────────────────────┼──────────────┼──────────────┼───────────────┼───────────────┤
+│ startup_empty          │      47.28   │      45.07   │   1.05x slower │  22.0/ 10.4MB │
+│ int_sum_loop           │      50.75   │      47.99   │   1.06x slower │  22.0/ 10.3MB │
+│ list_append_loop       │     552.59   │      41.98   │  13.16x slower │ 132.6/ 10.6MB │
+│ str_concat_loop        │     520.47   │      41.26   │  12.61x slower │ 132.6/ 10.4MB │
+│ range_iterate          │     515.42   │      53.26   │   9.68x slower │ 132.6/ 10.3MB │
+│ multithread_cpu        │    2111.65   │      39.37   │  53.64x slower │ 401.1/ 10.6MB │
+│ attr_lookup            │    3339.69   │      63.28   │  52.77x slower │ 114.4/ 10.4MB │
+│ call_recursion         │   38480.19   │      42.25   │ 910.88x slower │ 235.3/ 10.3MB │
+│ memory_pressure        │   33184.44   │      56.49   │ 587.47x slower │ 2005.9/ 10.4MB│
+├────────────────────────┼──────────────┼──────────────┼───────────────┼───────────────┤
+│ Geomean Ratio          │              │              │  24.06x slower │               │
+└──────────────────────────────────────────────────────────────────────────────────────┘
+```
+
 > [!NOTE]
-> *Time P* is protoPython wall time. *Time C* is CPython 3.14 wall time. V93 benchmarks ran under CPU powersave throttling; `call_recursion` consistently times out at 90s under sustained load (thermal artifact, not a regression). `list_append_loop` shows the Step 3 signal: 47.98x → 36.29x (25% improvement) from eliminating 63/64 seq_cst atomic loads in `allocCell`. `multithread_cpu` also improves: 96.31x → 82.89x (14% improvement).
+> *Time P* is protoPython wall time. *Time C* is CPython 3.14 wall time. Step 4 uses a proper Release build (`-DCMAKE_BUILD_TYPE=Release`). Key signals: `startup_empty` and `int_sum_loop` now at **1.05x / 1.06x** (near parity with CPython). `call_recursion` (fib(25)) **no longer times out** — completes in 38.5s. Loop benchmarks (str_concat, range_iterate) improved 5–6×. Geomean: 35.76x → **24.06x** (33% additional improvement, 57% total from V92 baseline of 56.4x). Dominant remaining bottleneck: function call overhead (~158µs/call vs CPython's ~63ns) driven by per-call AVL tree allocations in frame construction.
 
 > [!TIP]
-> Known bottlenecks: (1) per-opcode dispatch overhead (no inline caches yet), (2) recursive function call overhead (fib(25) timeouts). These are the active optimization targets.
+> Known bottlenecks: (1) frame construction per call (5 setAttribute/addParent → ~20 cell allocs), (2) `call_recursion` 910x slowdown from per-call frame cost. Active optimization target: frame pooling / stack-allocated frames.
 
 ---
 

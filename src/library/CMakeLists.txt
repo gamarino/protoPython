@@ -42,6 +42,8 @@ add_library(protoPython SHARED
     ImpModule.cpp
     WarningsModule.cpp
     OpcodeModule.cpp
+    StringModule.cpp
+    BinasciiModule.cpp
 )
 
 target_include_directories(protoPython PUBLIC

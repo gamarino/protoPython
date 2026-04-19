@@ -1,21 +1,21 @@
 ```
 ┌──────────────────────────────────────────────────────────────────────────────────────┐
-│ Performance Audit: protoPython vs CPython 3.14   (V93 Step 3: batched STW poll)      │
-│ (median of 2 runs, timeouts excluded)                                                │
+│ Performance Audit: protoPython vs CPython 3.14   (V93 Step 4: function call fast-path)│
+│ (median of 2 runs, Release build)                                                    │
 │ 2026-04-19 Linux x86_64                                                              │
 ├────────────────────────┬──────────────┬──────────────┬───────────────┬───────────────┤
 │ Benchmark              │ Time P (ms)  │ Time C (ms)  │ Ratio         │ Peak RSS(P/C) │
 ├────────────────────────┼──────────────┼──────────────┼───────────────┼───────────────┤
-│ startup_empty          │      71.87   │      32.64   │   2.20x slower │  22.4/ 10.3MB │
-│ int_sum_loop           │      61.03   │      31.22   │   1.95x slower │  22.5/ 10.3MB │
-│ list_append_loop       │    1497.83   │      41.28   │  36.29x slower │ 168.1/ 10.5MB │
-│ str_concat_loop        │    1955.34   │      29.87   │  65.47x slower │ 169.1/ 10.3MB │
-│ range_iterate          │    1835.73   │      36.56   │  50.21x slower │ 136.0/ 10.2MB │
-│ multithread_cpu        │    3627.50   │      43.76   │  82.89x slower │ 505.9/ 10.6MB │
-│ attr_lookup            │    3943.94   │      43.95   │  89.73x slower │ 114.8/ 10.3MB │
-│ call_recursion         │    TIMEOUT   │      54.99   │  timeout       │ N/A           │
-│ memory_pressure        │   41435.45   │      59.18   │ 700.19x slower │ 2046.3/ 10.5MB│
+│ startup_empty          │      47.28   │      45.07   │   1.05x slower │  22.0/ 10.4MB │
+│ int_sum_loop           │      50.75   │      47.99   │   1.06x slower │  22.0/ 10.3MB │
+│ list_append_loop       │     552.59   │      41.98   │  13.16x slower │ 132.6/ 10.6MB │
+│ str_concat_loop        │     520.47   │      41.26   │  12.61x slower │ 132.6/ 10.4MB │
+│ range_iterate          │     515.42   │      53.26   │   9.68x slower │ 132.6/ 10.3MB │
+│ multithread_cpu        │    2111.65   │      39.37   │  53.64x slower │ 401.1/ 10.6MB │
+│ attr_lookup            │    3339.69   │      63.28   │  52.77x slower │ 114.4/ 10.4MB │
+│ call_recursion         │   38480.19   │      42.25   │ 910.88x slower │ 235.3/ 10.3MB │
+│ memory_pressure        │   33184.44   │      56.49   │ 587.47x slower │ 2005.9/ 10.4MB│
 ├────────────────────────┼──────────────┼──────────────┼───────────────┼───────────────┤
-│ Geomean Time Ratio     │              │              │  35.76x        │               │
+│ Geomean Time Ratio     │              │              │  24.06x        │               │
 └──────────────────────────────────────────────────────────────────────────────────────┘
 ```

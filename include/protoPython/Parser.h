@@ -32,6 +32,7 @@ struct BinOpNode : ASTNode {
     std::unique_ptr<ASTNode> left;
     TokenType op = TokenType::Plus;
     std::unique_ptr<ASTNode> right;
+    bool parenthesized = false; // true when this comparison node was explicitly wrapped in ()
 };
 
 struct UnaryOpNode : ASTNode {

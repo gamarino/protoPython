@@ -627,6 +627,15 @@ bool Compiler::emitNameOp(const std::string& id, TargetCtx ctx, bool pushNull) {
         emit(op, arg);
         return true;
     }
+    // In function scope, unresolved names are globals/builtins — use LOAD_GLOBAL for a faster
+    // lookup path (skips frame->getAttribute, goes straight to env->resolve() ptrCache).
+    // At module and class scope, LOAD_NAME is correct (local namespace dict must be checked first).
+    if (isFunctionScope_ && !isClassBody_) {
+        int gop = (ctx == TargetCtx::Load) ? OP_LOAD_GLOBAL : (ctx == TargetCtx::Store ? OP_STORE_GLOBAL : OP_DELETE_GLOBAL);
+        int garg = (idx << 1) | ((gop == OP_LOAD_GLOBAL && pushNull) ? 1 : 0);
+        emit(gop, garg);
+        return true;
+    }
     int op = (ctx == TargetCtx::Load) ? OP_LOAD_NAME : (ctx == TargetCtx::Store ? OP_STORE_NAME : OP_DELETE_NAME);
     int arg = (idx << 1) | ((op == OP_LOAD_NAME && pushNull) ? 1 : 0);
     emit(op, arg);
@@ -933,7 +942,8 @@ bool Compiler::compileListComp(ListCompNode* n) {
     Compiler bodyCompiler(ctx_, filename_);
     bodyCompiler.localSlotMap_[".0"] = 0;
     bodyCompiler.globalNames_ = globalNames_;
-    
+    bodyCompiler.isFunctionScope_ = true;
+
     // Collect locals and nonlocals for comprehension scope
     std::unordered_set<std::string> compLocals;
     for (const auto& gen : n->generators) collectDefinedNames(gen.target.get(), compLocals);
@@ -1033,7 +1043,8 @@ bool Compiler::compileDictComp(DictCompNode* n) {
     Compiler bodyCompiler(ctx_, filename_);
     bodyCompiler.localSlotMap_[".0"] = 0;
     bodyCompiler.globalNames_ = globalNames_;
-    
+    bodyCompiler.isFunctionScope_ = true;
+
     // Collect locals and nonlocals for comprehension scope
     std::unordered_set<std::string> compLocals;
     for (const auto& gen : n->generators) collectDefinedNames(gen.target.get(), compLocals);
@@ -1132,7 +1143,8 @@ bool Compiler::compileSetComp(SetCompNode* n) {
     Compiler bodyCompiler(ctx_, filename_);
     bodyCompiler.localSlotMap_[".0"] = 0;
     bodyCompiler.globalNames_ = globalNames_;
-    
+    bodyCompiler.isFunctionScope_ = true;
+
     // Collect locals and nonlocals for comprehension scope
     std::unordered_set<std::string> compLocals;
     for (const auto& gen : n->generators) collectDefinedNames(gen.target.get(), compLocals);
@@ -1227,6 +1239,7 @@ bool Compiler::compileGeneratorExp(GeneratorExpNode* n) {
     bodyCompiler.isGenerator_ = true;
     bodyCompiler.localSlotMap_[".0"] = 0;
     bodyCompiler.globalNames_ = globalNames_;
+    bodyCompiler.isFunctionScope_ = true;
     
     // Collect locals and nonlocals for generator expression scope
     std::unordered_set<std::string> compLocals;
@@ -2407,8 +2420,9 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
     for (const auto& g : bodyGlobals) bodyCompiler.globalNames_.insert(g);
     bodyCompiler.nonlocalNames_ = bodyNonlocals;
     bodyCompiler.localSlotMap_ = slotMap;
+    bodyCompiler.isFunctionScope_ = true;
     if (!bodyCompiler.compileNode(n->body.get())) return false;
-    
+
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx_);
     int noneIdx = bodyCompiler.addConstant(env ? env->getNonePrototype() : PROTO_NONE);
     bodyCompiler.emit(OP_LOAD_CONST, noneIdx);
@@ -2537,7 +2551,8 @@ bool Compiler::compileLambda(LambdaNode* n) {
     for (const auto& g : bodyGlobals) bodyCompiler.globalNames_.insert(g);
     bodyCompiler.nonlocalNames_ = bodyNonlocals;
     bodyCompiler.localSlotMap_ = slotMap;
-    
+    bodyCompiler.isFunctionScope_ = true;
+
     if (!bodyCompiler.compileNode(n->body.get())) return false;
     bodyCompiler.emit(OP_RETURN_VALUE);
     bodyCompiler.applyPatches();
@@ -2663,8 +2678,9 @@ bool Compiler::compileAsyncFunctionDef(AsyncFunctionDefNode* n) {
     for (const auto& g : bodyGlobals) bodyCompiler.globalNames_.insert(g);
     bodyCompiler.nonlocalNames_ = bodyNonlocals;
     bodyCompiler.localSlotMap_ = slotMap;
+    bodyCompiler.isFunctionScope_ = true;
     if (!bodyCompiler.compileNode(n->body.get())) return false;
-    
+
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx_);
     int noneIdx = bodyCompiler.addConstant(env ? env->getNonePrototype() : PROTO_NONE);
     bodyCompiler.emit(OP_LOAD_CONST, noneIdx);

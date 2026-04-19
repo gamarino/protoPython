@@ -35,9 +35,10 @@ public:
                  const proto::ProtoList* parameterNames,
                  const proto::ProtoList* localNames,
                  const proto::ProtoList* args,
-                 const proto::ProtoSparseList* kwargs)
+                 const proto::ProtoSparseList* kwargs,
+                 size_t totalSlots = 0)
         : parent_(parent ? parent : PythonEnvironment::getCurrentContext()) {
-        ctx_ = new proto::ProtoContext(space, parent_, parameterNames, localNames, args, kwargs);
+        ctx_ = new proto::ProtoContext(space, parent_, parameterNames, localNames, args, kwargs, totalSlots);
         PythonEnvironment::setCurrentContext(ctx_);
     }
 

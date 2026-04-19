@@ -127,6 +127,7 @@ private:
     std::unordered_map<std::string, int> localSlotMap_;
     bool isGenerator_ = false;
     bool isClassBody_ = false;
+    bool isFunctionScope_ = false;
     int bytecodeOffset() const;
     /** Record a jump arg slot to be patched later with target (bytecode list index). */
     void addPatch(int argSlotIndex, int targetBytecodeIndex);

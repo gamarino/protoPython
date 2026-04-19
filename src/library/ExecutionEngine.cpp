@@ -277,30 +277,13 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
     }
 
 
-    const proto::ProtoList* parameterNames = nullptr;
-    const proto::ProtoList* localNames = nullptr;
-    if (co_varnames) {
-        int co_varnames_size = static_cast<int>(co_varnames->getSize(ctx));
-        if (nparams_count > 0 && nparams_count <= co_varnames_size) {
-            parameterNames = ctx->newList();
-            for (int i = 0; i < nparams_count; ++i)
-                parameterNames = parameterNames->appendLast(ctx, co_varnames->getAt(ctx, i));
-        }
-        // Only build names for actual variables — NOT the PYTHON_STACK_BUFFER portion.
-        // The total slot count (automatic_count) is passed directly to ContextScope so
-        // ProtoContext allocates the full array without iterating 32768+ times.
-        if (co_varnames_size > 0) {
-            localNames = ctx->newList();
-            for (int i = 0; i < co_varnames_size; ++i)
-                localNames = localNames->appendLast(ctx, co_varnames->getAt(ctx, i));
-        }
-    }
-
-    // We pass nullptr for args and kwargs to skip ProtoContext's internal binding,
-    // as we handle it manually below to support Python-specific semantics like *args and **kwargs.
+    // Pass nullptr for parameterNames/localNames/args/kwargs: ProtoContext's internal binding is
+    // skipped entirely (early-exit at parameterNames==nullptr check). Python-specific argument
+    // binding is handled manually below via bindVar. automatic_count alone is sufficient for
+    // slot allocation (max(totalSlots, nameCount) reduces to totalSlots when localNames=nullptr).
     const proto::ProtoObject* result = PROTO_NONE;
     {
-    ContextScope scope(ctx->space, ctx, parameterNames, localNames, nullptr, nullptr, (size_t)automatic_count);
+    ContextScope scope(ctx->space, ctx, nullptr, nullptr, nullptr, nullptr, (size_t)automatic_count);
     proto::ProtoContext* calleeCtx = scope.context();
     unsigned long argCount = args->getSize(calleeCtx);
 
@@ -334,11 +317,11 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
     proto::ProtoObject** slots = const_cast<proto::ProtoObject**>(calleeCtx->getAutomaticLocals());
 
     auto bindVar = [&](int idx, const proto::ProtoObject* val) {
-        std::string pn = "unknown";
-        if (co_varnames && idx < (int)co_varnames->getSize(calleeCtx) && co_varnames->getAt(calleeCtx, idx)->isString(calleeCtx)) {
-            co_varnames->getAt(calleeCtx, idx)->asString(calleeCtx)->toUTF8String(calleeCtx, pn);
-        }
         if (std::getenv("PROTO_ENV_DIAG")) {
+            std::string pn = "unknown";
+            if (co_varnames && idx < (int)co_varnames->getSize(calleeCtx) && co_varnames->getAt(calleeCtx, idx)->isString(calleeCtx)) {
+                co_varnames->getAt(calleeCtx, idx)->asString(calleeCtx)->toUTF8String(calleeCtx, pn);
+            }
             std::string valRepr = "?";
             if (val) {
                 if (val->isString(calleeCtx)) {
@@ -363,7 +346,8 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
                 frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, nameS, val));
                 const proto::ProtoObject* hasAttr = frame->hasAttribute(calleeCtx, nameS);
                 if (std::getenv("PROTO_ENV_DIAG")) {
-                    fprintf(stderr, "DEBUG bindVar (frame): set %s = %p. frame: %p -> %p (hasAttr=%p)\n", pn.c_str(), (void*)val, (void*)oldFrame, (void*)frame, (void*)hasAttr);
+                    std::string pn2; nameS->toUTF8String(calleeCtx, pn2);
+                    fprintf(stderr, "DEBUG bindVar (frame): set %s = %p. frame: %p -> %p (hasAttr=%p)\n", pn2.c_str(), (void*)val, (void*)oldFrame, (void*)frame, (void*)hasAttr);
                 }
             }
         }
@@ -4645,38 +4629,24 @@ const proto::ProtoObject* executeBytecodeRange(
                 const proto::ProtoObject* nameObj = names->getAt(ctx, nameIdx);
                 if (nameObj->isString(ctx)) {
                     const proto::ProtoString* nameS = nameObj->asString(ctx);
-                    const proto::ProtoObject* val = frame->getAttribute(ctx, nameS);
-                    bool found = (val != nullptr);
-                    if (!found) {
-                        const proto::ProtoString* dName = env ? env->getDataString() : protoPython::PythonEnvironment::getInternalString(ctx, "__data__");
-                        const proto::ProtoObject* dataObj = frame->getAttribute(ctx, dName);
-                        if (dataObj && dataObj->asSparseList(ctx)) {
-                            if (dataObj->asSparseList(ctx)->has(ctx, nameObj->getHash(ctx))) {
-                                val = dataObj->asSparseList(ctx)->getAt(ctx, nameObj->getHash(ctx));
-                                found = true;
-                            }
-                        }
-                    }
-                    if (found) {
-                        if (pushNull) stack.push_back(nullptr);
-                        stack.push_back(val);
-                    } else {
-                        if (env) {
-                            val = env->resolve(nameS, ctx);
-                            if (val != nullptr) {
-                                if (pushNull) stack.push_back(nullptr);
-                                stack.push_back(val);
-                            } else {
-                                if (!env->hasPendingException()) {
-                                    std::string n;
-                                    nameS->toUTF8String(ctx, n);
-                                    env->raiseNameError(ctx, n);
-                                }
-                                continue;
-                            }
+                    // LOAD_GLOBAL resolves in globals+builtins only — never in the local frame.
+                    // env->resolve() checks getCurrentGlobals() (ptrCache hit after first lookup),
+                    // then builtins. Skipping frame->getAttribute() saves 2 attribute lookups per call.
+                    if (env) {
+                        const proto::ProtoObject* val = env->resolve(nameS, ctx);
+                        if (val != nullptr) {
+                            if (pushNull) stack.push_back(nullptr);
+                            stack.push_back(val);
                         } else {
+                            if (!env->hasPendingException()) {
+                                std::string n;
+                                nameS->toUTF8String(ctx, n);
+                                env->raiseNameError(ctx, n);
+                            }
                             continue;
                         }
+                    } else {
+                        continue;
                     }
                 }
             }
