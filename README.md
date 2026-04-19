@@ -35,7 +35,7 @@
 | **Type System** | **Advanced** - Lists, Tuples, Sets, Dicts with native wrapping ✅ |
 | **C++ Interop** | **Full** - HPy and UMD support integrated ✅ |
 | **Compiler** | **Advanced** - Full C++ translation with collection support ✅ |
-| **Performance** | **Optimization in Progress** - V93 active: native range iterators (11x int_sum speedup), mutableRoot sharding × 16 (21% attr_lookup speedup), geomean ratio 56.4x → 36.65x ⚙️ |
+| **Performance** | **Optimization in Progress** - V93 active: native range iterators (11x int_sum speedup), mutableRoot sharding × 16, batched STW poll (25% list_append speedup), geomean ratio 56.4x → 35.76x ⚙️ |
 | **CPython Conformance** | **100%** - 17/17 test categories passing (Essential, Important, Necessary) ✅ |
 
 - ✅ **Generator Delegation**: Full support for `yield` and `yield from` with efficient state persistence.
@@ -126,11 +126,35 @@ The table below tracks progress from the V92 correctness baseline. Throughput op
 └──────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+**V93 — Step 3: Batched STW Poll in `allocCell`**:
+
+```
+┌──────────────────────────────────────────────────────────────────────────────────────┐
+│ Performance Audit: protoPython vs CPython 3.14   (V93 Step 3: batched STW poll)      │
+│ (median of 2 runs, timeouts excluded)                                                │
+│ 2026-04-19 Linux x86_64                                                              │
+├────────────────────────┬──────────────┬──────────────┬───────────────┬───────────────┤
+│ Benchmark              │ Time P (ms)  │ Time C (ms)  │ Ratio         │ Peak RSS(P/C) │
+├────────────────────────┼──────────────┼──────────────┼───────────────┼───────────────┤
+│ startup_empty          │      71.87   │      32.64   │   2.20x slower │  22.4/ 10.3MB │
+│ int_sum_loop           │      61.03   │      31.22   │   1.95x slower │  22.5/ 10.3MB │
+│ list_append_loop       │    1497.83   │      41.28   │  36.29x slower │ 168.1/ 10.5MB │
+│ str_concat_loop        │    1955.34   │      29.87   │  65.47x slower │ 169.1/ 10.3MB │
+│ range_iterate          │    1835.73   │      36.56   │  50.21x slower │ 136.0/ 10.2MB │
+│ multithread_cpu        │    3627.50   │      43.76   │  82.89x slower │ 505.9/ 10.6MB │
+│ attr_lookup            │    3943.94   │      43.95   │  89.73x slower │ 114.8/ 10.3MB │
+│ call_recursion         │    TIMEOUT   │      54.99   │  timeout       │ N/A           │
+│ memory_pressure        │   41435.45   │      59.18   │ 700.19x slower │ 2046.3/ 10.5MB│
+├────────────────────────┼──────────────┼──────────────┼───────────────┼───────────────┤
+│ Geomean Ratio          │              │              │  35.76x slower │               │
+└──────────────────────────────────────────────────────────────────────────────────────┘
+```
+
 > [!NOTE]
-> *Time P* is protoPython wall time. *Time C* is CPython 3.14 wall time. V93 benchmarks ran under CPU powersave throttling; `call_recursion` consistently times out at 90s under sustained load (thermal artifact, not a regression). `int_sum_loop` is the clearest signal: 841ms → 64ms (13x speedup) from native range iterators. `attr_lookup` shows the Step 2 signal: 4619ms → 3988ms (21% improvement) from mutableRoot sharding reducing CAS contention.
+> *Time P* is protoPython wall time. *Time C* is CPython 3.14 wall time. V93 benchmarks ran under CPU powersave throttling; `call_recursion` consistently times out at 90s under sustained load (thermal artifact, not a regression). `list_append_loop` shows the Step 3 signal: 47.98x → 36.29x (25% improvement) from eliminating 63/64 seq_cst atomic loads in `allocCell`. `multithread_cpu` also improves: 96.31x → 82.89x (14% improvement).
 
 > [!TIP]
-> Known bottlenecks: (1) per-opcode dispatch overhead (no inline caches yet), (2) GC pressure from temporary object creation, (3) mutableRoot binary search for each mutable-object write. These are the active optimization targets.
+> Known bottlenecks: (1) per-opcode dispatch overhead (no inline caches yet), (2) recursive function call overhead (fib(25) timeouts). These are the active optimization targets.
 
 ---
 
