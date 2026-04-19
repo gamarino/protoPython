@@ -11,6 +11,7 @@
 #include <protoCore.h>
 #include <new>
 #include <cstddef>
+#include <algorithm>
 
 namespace protoPython {
 
@@ -26,9 +27,24 @@ inline void promote(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
  * RAII scope for a callee ProtoContext. On construction, pushes a new context
  * (parent = caller); on destruction, restores the thread's current context to parent
  * and destroys the callee context (GC and promotion run in ~ProtoContext).
- * Use stack-allocated storage for the context so the destructor always runs.
+ *
+ * Small-buffer optimisation (SBO): for functions with <= SBO_SLOTS local variables,
+ * both the ProtoContext struct and its slot array are allocated on the C++ call stack
+ * — zero heap allocation per function call on the common path.
+ *
+ * For functions with more than SBO_SLOTS locals (rare), the slots fall back to heap
+ * while the ProtoContext struct itself still lives on the stack.
  */
 class ContextScope {
+    static constexpr size_t SBO_SLOTS = 24;
+
+    // Stack storage for the ProtoContext struct itself — no heap alloc for the struct.
+    alignas(proto::ProtoContext) char ctxStorage_[sizeof(proto::ProtoContext)];
+
+    // Stack storage for the slot array — avoids the internal new[] in ProtoContext.
+    // Valid only when totalSlots <= SBO_SLOTS; initialised to PROTO_NONE before use.
+    alignas(void*) const proto::ProtoObject* slotsBuf_[SBO_SLOTS];
+
 public:
     ContextScope(proto::ProtoSpace* space,
                  proto::ProtoContext* parent,
@@ -37,15 +53,25 @@ public:
                  const proto::ProtoList* args,
                  const proto::ProtoSparseList* kwargs,
                  size_t totalSlots = 0)
-        : parent_(parent ? parent : PythonEnvironment::getCurrentContext()) {
-        ctx_ = new proto::ProtoContext(space, parent_, parameterNames, localNames, args, kwargs, totalSlots);
+        : parent_(parent ? parent : PythonEnvironment::getCurrentContext()),
+          ctx_(nullptr) {
+        // Prepare the external slot buffer when the count fits in SBO_SLOTS.
+        const proto::ProtoObject** extSlots = nullptr;
+        if (totalSlots > 0 && totalSlots <= SBO_SLOTS) {
+            std::fill(slotsBuf_, slotsBuf_ + totalSlots, PROTO_NONE);
+            extSlots = slotsBuf_;
+        }
+        // Placement-new: ProtoContext lives inside ctxStorage_ (stack memory).
+        ctx_ = new (ctxStorage_) proto::ProtoContext(
+            space, parent_, parameterNames, localNames, args, kwargs, totalSlots, extSlots);
         PythonEnvironment::setCurrentContext(ctx_);
     }
 
     ~ContextScope() {
         if (ctx_) {
             PythonEnvironment::setCurrentContext(parent_);
-            delete ctx_;
+            // Explicit destructor — context lives in ctxStorage_, not on heap.
+            ctx_->~ProtoContext();
             ctx_ = nullptr;
         }
     }
