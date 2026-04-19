@@ -27,7 +27,10 @@ struct FunctionMetaCache {
     int kwonly;
     int automatic_count;
     bool is_generator;
-    uint8_t _pad[3];
+    // True when no OP_BUILD_FUNCTION or OP_BUILD_CLASS appear in the native bytecode.
+    // Safe to skip frame construction when this is true and the function has no closures.
+    bool no_inner_functions;
+    uint8_t _pad[2];
     // Raw pointers — safe because codeObj and globalsObj are kept alive by the
     // function object's own __code__ / __globals__ attributes.
     const proto::ProtoObject* codeObj;
@@ -265,6 +268,7 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
     const proto::ProtoTuple* co_varnames = nullptr;
 
     bool cacheHit = false;
+    bool cacheNoInnerFunctions = false;
     if (env && env->getFnMetaCacheString()) {
         const proto::ProtoObject* cacheAttr = self->getAttribute(ctx, env->getFnMetaCacheString());
         if (cacheAttr && cacheAttr != PROTO_NONE) {
@@ -275,14 +279,15 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
                 if (impl) {
                     const FunctionMetaCache* cache =
                         reinterpret_cast<const FunctionMetaCache*>(impl->implGetBuffer(ctx));
-                    codeObj          = cache->codeObj;
-                    globalsObj       = cache->globalsObj;
-                    co_flags         = cache->co_flags;
-                    nparams_count    = cache->nparams;
-                    kwonly_count     = cache->kwonly;
-                    automatic_count  = cache->automatic_count;
-                    isGenerator      = cache->is_generator;
-                    co_varnames      = cache->co_varnames;
+                    codeObj                = cache->codeObj;
+                    globalsObj             = cache->globalsObj;
+                    co_flags               = cache->co_flags;
+                    nparams_count          = cache->nparams;
+                    kwonly_count           = cache->kwonly;
+                    automatic_count        = cache->automatic_count;
+                    isGenerator            = cache->is_generator;
+                    co_varnames            = cache->co_varnames;
+                    cacheNoInnerFunctions  = cache->no_inner_functions;
                     cacheHit = true;
                 }
             }
@@ -338,32 +343,36 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
     unsigned long argCount = args->getSize(calleeCtx);
 
     // 5. Build Execution Frame (for locals()/sys._getframe)
-    proto::ProtoObject* frame = const_cast<proto::ProtoObject*>(calleeCtx->newObject(false));
-    if (env) {
-        const proto::ProtoObject* closure = self->getAttribute(calleeCtx, env->getClosureString());
-        if (closure && closure != PROTO_NONE) {
-            const proto::ProtoList* closureList = closure->asList(calleeCtx);
-            if (closureList && closureList->getSize(calleeCtx) > 0) {
-                const proto::ProtoObject* outerFrame = closureList->getAt(calleeCtx, 0);
-                if (outerFrame && outerFrame != PROTO_NONE) {
-                    frame = const_cast<proto::ProtoObject*>(frame->addParent(calleeCtx, outerFrame));
+    // CO_OPTIMIZED functions with no closure and not generators never access the frame
+    // in the hot path (LOAD_FAST/STORE_FAST use slots). Skip the ~4 AVL-tree object
+    // allocations to reduce per-call GC pressure — the dominant cost in deep recursion.
+    const proto::ProtoObject* closure = env ? self->getAttribute(calleeCtx, env->getClosureString()) : nullptr;
+    bool hasClosure = closure && closure != PROTO_NONE;
+    bool skipFrame = env && (co_flags & CO_OPTIMIZED) && !isGenerator && !hasClosure && cacheNoInnerFunctions;
+    proto::ProtoObject* frame = nullptr;
+    if (!skipFrame) {
+        frame = const_cast<proto::ProtoObject*>(calleeCtx->newObject(false));
+        if (env) {
+            if (hasClosure) {
+                const proto::ProtoList* closureList = closure->asList(calleeCtx);
+                if (closureList && closureList->getSize(calleeCtx) > 0) {
+                    const proto::ProtoObject* outerFrame = closureList->getAt(calleeCtx, 0);
+                    if (outerFrame && outerFrame != PROTO_NONE) {
+                        frame = const_cast<proto::ProtoObject*>(frame->addParent(calleeCtx, outerFrame));
+                    }
+                } else {
+                    frame = const_cast<proto::ProtoObject*>(frame->addParent(calleeCtx, closure));
                 }
-            } else {
-                frame = const_cast<proto::ProtoObject*>(frame->addParent(calleeCtx, closure));
+                frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getClosureString(), closure));
             }
-            frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getClosureString(), closure));
-        }
-        frame = const_cast<proto::ProtoObject*>(frame->addParent(calleeCtx, env->getFramePrototype()));
-        frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getFCodeString(), codeObj));
-        frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getFGlobalsString(), globalsObj));
-        // f_back and f_locals are only needed for tracebacks and locals()/sys._getframe().
-        // Skip them for CO_OPTIMIZED functions (parameters in slots, not frame attrs) to reduce
-        // per-call AVL-tree allocations in the hot path. 2 fewer immutable-object reconstructions
-        // per call: saves ~8-10 cell allocs per recursive invocation.
-        if (!(co_flags & CO_OPTIMIZED)) {
-            const proto::ProtoObject* parentFrame = PythonEnvironment::getCurrentFrame();
-            if (parentFrame) {
-                frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getFBackString(), parentFrame));
+            frame = const_cast<proto::ProtoObject*>(frame->addParent(calleeCtx, env->getFramePrototype()));
+            frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getFCodeString(), codeObj));
+            frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getFGlobalsString(), globalsObj));
+            if (!(co_flags & CO_OPTIMIZED)) {
+                const proto::ProtoObject* parentFrame = PythonEnvironment::getCurrentFrame();
+                if (parentFrame) {
+                    frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getFBackString(), parentFrame));
+                }
             }
         }
     }
@@ -794,6 +803,31 @@ static proto::ProtoObject* createUserFunction(proto::ProtoContext* ctx, const pr
         const proto::ProtoObject* cvObj = env->getCoVarnamesString()
             ? codeObj->getAttribute(ctx, env->getCoVarnamesString()) : nullptr;
         cache->co_varnames    = (cvObj && cvObj->asTuple(ctx)) ? cvObj->asTuple(ctx) : nullptr;
+
+        // Scan native bytecode for OP_BUILD_FUNCTION (156) or OP_BUILD_CLASS (160).
+        // If neither appears, the function never defines nested functions, so frame
+        // construction can be skipped entirely for CO_OPTIMIZED + no-closure calls.
+        cache->no_inner_functions = false;
+        if (env->getCoNativeBytecodeString()) {
+            const proto::ProtoObject* nbObj = codeObj->getAttribute(ctx, env->getCoNativeBytecodeString());
+            if (nbObj && nbObj != PROTO_NONE) {
+                proto::ProtoObjectPointer nbp{};
+                nbp.oid = nbObj;
+                if (nbp.op.pointer_tag == POINTER_TAG_BYTE_BUFFER) {
+                    const auto* nbImpl = proto::toImpl<const proto::ProtoByteBufferImplementation>(nbObj);
+                    if (nbImpl) {
+                        const int* nb = reinterpret_cast<const int*>(nbImpl->implGetBuffer(ctx));
+                        size_t nbLen  = nbImpl->implGetSize(ctx) / sizeof(int);
+                        bool hasBuild = false;
+                        for (size_t bi = 0; bi < nbLen; bi += 2) {
+                            int op = nb[bi];
+                            if (op == OP_BUILD_FUNCTION || op == OP_BUILD_CLASS) { hasBuild = true; break; }
+                        }
+                        cache->no_inner_functions = !hasBuild;
+                    }
+                }
+            }
+        }
 
         const proto::ProtoObject* cacheObj = ctx->fromBuffer(
             sizeof(FunctionMetaCache), reinterpret_cast<char*>(cache), true);
