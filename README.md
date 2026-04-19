@@ -35,7 +35,7 @@
 | **Type System** | **Advanced** - Lists, Tuples, Sets, Dicts with native wrapping ✅ |
 | **C++ Interop** | **Full** - HPy and UMD support integrated ✅ |
 | **Compiler** | **Advanced** - Full C++ translation with collection support ✅ |
-| **Performance** | **Optimization in Progress** - V93 active: native range iterators, mutableRoot sharding × 16, batched STW poll, function call fast-path, bytecode native cache; protoPython absolute times 7–29% faster than Step 4 ⚙️ |
+| **Performance** | **Optimization in Progress** - V94 active: OP_LOAD_ATTR inline fast path for own-attribute reads; geomean **9.96×** vs CPython (first time under 10×). Prior milestones: function call fast-path, bytecode native cache, lazy closureLocals, no_load_deref flag. ⚙️ |
 | **CPython Conformance** | **100%** - 17/17 test categories passing (Essential, Important, Necessary) ✅ |
 
 - ✅ **Generator Delegation**: Full support for `yield` and `yield from` with efficient state persistence.
@@ -196,6 +196,60 @@ The table below tracks progress from the V92 correctness baseline. Throughput op
 
 > [!TIP]
 > Known bottlenecks: (1) frame construction per call (4 setAttribute/addParent → ~16 cell allocs after Step 5), (2) `call_recursion` still 865x-910x slower. Active optimization target: reduce per-call ProtoContext allocation cost.
+
+**V93 — Final (function-call fast-path + bytecode native cache + lazy closureLocals + no_load_deref)**:
+
+```
+┌──────────────────────────────────────────────────────────────────────────────────────┐
+│ Performance Audit: protoPython vs CPython 3.14   (V93 final)                         │
+│ (median of 5 runs, Release build)                                                    │
+│ 2026-04-19 Linux x86_64                                                              │
+├────────────────────────┬──────────────┬──────────────┬───────────────┬───────────────┤
+│ Benchmark              │ Time P (ms)  │ Time C (ms)  │ Ratio         │ Peak RSS(P/C) │
+├────────────────────────┼──────────────┼──────────────┼───────────────┼───────────────┤
+│ startup_empty          │      40.05   │      38.70   │   1.03x slower │  22.0/ 10.4MB │
+│ int_sum_loop           │      44.00   │      38.41   │   1.15x slower │  22.1/ 10.3MB │
+│ list_append_loop       │     506.17   │      39.30   │  12.88x slower │ 132.3/ 10.6MB │
+│ str_concat_loop        │     498.43   │      41.02   │  12.15x slower │ 132.2/ 10.4MB │
+│ range_iterate          │     462.08   │      41.59   │  11.11x slower │ 132.4/ 10.3MB │
+│ multithread_cpu        │      46.44   │      44.49   │   1.04x slower │  22.2/ 10.6MB │
+│ attr_lookup            │    2065.24   │      42.25   │  48.88x slower │  22.2/ 10.4MB │
+│ call_recursion         │    2201.02   │      38.89   │  56.59x slower │  22.9/ 10.3MB │
+│ memory_pressure        │   37748.88   │      70.07   │ 538.80x slower │1965.1/ 10.4MB │
+├────────────────────────┼──────────────┼──────────────┼───────────────┼───────────────┤
+│ Geomean Ratio          │              │              │  10.70x slower │               │
+└──────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+> [!NOTE]
+> V93 final delivered the function-call fast-path (raw-args slice, ContextScope SBO, lazy closureLocals, no_load_deref scan). `startup_empty`, `int_sum_loop`, and `multithread_cpu` now run near CPython parity. `call_recursion` dropped from timeout to 56.6×. Geomean: **10.70×**.
+
+**V94 — OP_LOAD_ATTR inline fast path for own-attribute reads**:
+
+```
+┌──────────────────────────────────────────────────────────────────────────────────────┐
+│ Performance Audit: protoPython vs CPython 3.14   (V94)                               │
+│ (median of 5 runs, Release build)                                                    │
+│ 2026-04-19 Linux x86_64                                                              │
+├────────────────────────┬──────────────┬──────────────┬───────────────┬───────────────┤
+│ Benchmark              │ Time P (ms)  │ Time C (ms)  │ Ratio         │ Peak RSS(P/C) │
+├────────────────────────┼──────────────┼──────────────┼───────────────┼───────────────┤
+│ startup_empty          │      40.45   │      35.66   │   1.13x slower │  22.2/ 10.8MB │
+│ int_sum_loop           │      42.92   │      37.41   │   1.15x slower │  22.4/ 10.8MB │
+│ list_append_loop       │     482.47   │      40.76   │  11.84x slower │ 133.1/ 11.0MB │
+│ str_concat_loop        │     478.72   │      38.59   │  12.40x slower │ 133.0/ 10.6MB │
+│ range_iterate          │     464.40   │      39.89   │  11.64x slower │ 133.0/ 10.6MB │
+│ multithread_cpu        │      39.31   │      41.04   │   0.96x faster │  22.5/ 11.0MB │
+│ attr_lookup            │     785.18   │      52.92   │  14.84x slower │  22.5/ 10.6MB │
+│ call_recursion         │    2993.80   │      51.24   │  58.43x slower │  23.3/ 10.6MB │
+│ memory_pressure        │   38058.99   │      72.64   │ 523.96x slower │1973.8/ 10.9MB │
+├────────────────────────┼──────────────┼──────────────┼───────────────┼───────────────┤
+│ Geomean Ratio          │              │              │   9.96x slower │               │
+└──────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+> [!NOTE]
+> V94 adds an inline fast path in `OP_LOAD_ATTR`: when an attribute is stored directly on the instance (`hasOwnAttribute` == PROTO_TRUE) and the value is not a method descriptor, the handler short-circuits without entering `PythonEnvironment::getAttribute`. This bypasses ~10 attribute lookups (RecursionScope, super-proxy check, isActuallyAClass, MRO search, descriptor protocol) and reduces to 2. Also removed the unconditional `toUTF8String` call that executed on every LOAD_ATTR. Result: `attr_lookup` 49.9× → 14.8×; geomean **9.96×** — **first time under 10× vs CPython**.
 
 ---
 
