@@ -4,7 +4,7 @@ Welcome to **ProtoPython**, a high-performance, GIL-free Python 3.14 compatible 
 
 ## Introduction
 
-ProtoPython is designed for elite performance and true parallel concurrency. Unlike standard CPython, ProtoPython does not have a Global Interpreter Lock (GIL), allowing OS threads to execute Python code in parallel across all available CPU cores.
+ProtoPython is a GIL-free Python 3.14 runtime focused on true parallel concurrency and correctness. Unlike CPython, it runs OS threads in parallel across all available CPU cores with no Global Interpreter Lock. As of V92 all 17 CPython conformance test categories pass; interpreter throughput optimization (reducing per-opcode overhead and GC pressure) is the active next phase.
 
 ## CLI Usage
 

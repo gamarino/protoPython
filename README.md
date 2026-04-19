@@ -1,13 +1,14 @@
-# protoPython: Elite Python Performance. GIL-Free Concurrency.
+# protoPython: GIL-Free Python 3.14 Runtime
 
 [![Language](https://img.shields.io/badge/Language-C%2B%2B20-blue.svg)](https://isocpp.org/)
 [![Build System](https://img.shields.io/badge/Build-CMake-green.svg)](https://cmake.org/)
 [![Status](https://img.shields.io/badge/Status-Phase%207%20Complete-green.svg)]()
+[![Conformance](https://img.shields.io/badge/CPython%20Conformance-17%2F17%20(100%25)-brightgreen.svg)]()
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-> **"The GIL is no longer a limit. Immutability is no longer a constraint. Speed is no longer a trade-off. Welcome to the era of the Swarm of One."**
+> **"The GIL is no longer a limit. Immutability is no longer a constraint. Welcome to the era of the Swarm of One."**
 
-**protoPython** is a high-performance, Python 3.14 compatible environment built from the ground up on top of [**protoCore**](https://github.com/numaes/protoCore). It delivers a modern, highly parallel Python runtime that eliminates the Global Interpreter Lock (GIL) and leverages immutable data structures for elite thread safety and performance.
+**protoPython** is a Python 3.14 compatible environment built from the ground up on top of [**protoCore**](https://github.com/numaes/protoCore). It delivers a parallel Python runtime that eliminates the Global Interpreter Lock (GIL) and leverages immutable data structures for thread safety. The current focus is correctness: all 17 CPython conformance test categories pass. Interpreter throughput optimization is the active next phase.
 
 > [!IMPORTANT]
 > **protoPython**, **protopy**, and **protopyc** are now **Ready for community review**. We invite the community to audit the architecture, test edge cases, and provide performance feedback. The compiler now supports full C++ translation with incremental collection building and runtime support.
@@ -34,8 +35,8 @@
 | **Type System** | **Advanced** - Lists, Tuples, Sets, Dicts with native wrapping ✅ |
 | **C++ Interop** | **Full** - HPy and UMD support integrated ✅ |
 | **Compiler** | **Advanced** - Full C++ translation with collection support ✅ |
-| **Performance** | **Elite** - Hardware-aligned, lock-free primitives ✅ |
-| **Test Pass Rate** | **100%** - Comprehensive regression and feature tests passing ✅ |
+| **Performance** | **Optimization in Progress** - Correctness baseline (V92) established; throughput tuning is the active next phase ⚙️ |
+| **CPython Conformance** | **100%** - 17/17 test categories passing (Essential, Important, Necessary) ✅ |
 
 - ✅ **Generator Delegation**: Full support for `yield` and `yield from` with efficient state persistence.
 - ✅ **Smart Collection Unwrapping**: Seamless bridge between Python objects and native C++ collection methods.
@@ -49,33 +50,38 @@
 
 ---
 
-## � Performance Benchmarks
+## 📊 Performance Benchmarks (V92 Baseline)
 
-protoPython is built for elite throughput. Below is a median-of-runs performance audit vs CPython 3.14 (running on Linux x86_64).
+The table below is the **V92 correctness baseline** — the first measurement taken after all 17 CPython conformance test categories passed. Prior benchmark runs recorded startup-only times because the scripts were not executing to completion; these results reflect genuine end-to-end execution.
+
+The architecture (GIL-free, lock-free primitives, immutable core) is correct and sound. Interpreter throughput — reducing per-opcode overhead, object-allocation cost, and GC pressure — is the active optimization focus starting from this baseline.
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────────────┐
-│ Performance Audit: protoPython vs CPython 3.14                                       │
-│ (median of 5 runs, timeouts excluded)                                                │
-│ 2026-02-15 Linux x86_64                                           │
-├────────────────────────┬──────────────┬──────────────┬──────────────┬────────────────┤
-│ Benchmark              │ Time P (ms)  │ Time C (ms)  │ Ratio        │ Peak RSS (P/C) │
-├────────────────────────┼──────────────┼──────────────┼──────────────┼────────────────┤
-│ startup_empty          │       1.86   │      24.55   │ 0.08x faster │   0.8/  8.0MB  │
-│ int_sum_loop           │       1.85   │      26.41   │ 0.07x faster │   0.8/  8.0MB  │
-│ list_append_loop       │       1.96   │      25.79   │ 0.08x faster │   0.8/  8.5MB  │
-│ str_concat_loop        │       1.73   │      24.50   │ 0.07x faster │   0.8/  8.1MB  │
-│ range_iterate          │       1.66   │      29.25   │ 0.06x faster │   0.8/  8.1MB  │
-│ multithread_cpu        │       1.82   │      28.83   │ 0.06x faster │   0.6/  8.0MB  │
-│ attr_lookup            │       1.60   │      36.26   │ 0.04x faster │   0.8/  8.0MB  │
-│ call_recursion         │       1.57   │      39.02   │ 0.04x faster │   0.8/  8.0MB  │
-│ memory_pressure        │       1.57   │      59.05   │ 0.03x faster │   0.8/  8.1MB  │
-├────────────────────────┼──────────────┼──────────────┼──────────────┼────────────────┤
-│ Geomean Time Ratio     │              │              │  0.06x        │                │
+│ Performance Audit: protoPython vs CPython 3.14   (V92 correctness baseline)          │
+│ (median of 2 runs, timeouts excluded)                                                │
+│ 2026-04-19 Linux x86_64                                                              │
+├────────────────────────┬──────────────┬──────────────┬───────────────┬───────────────┤
+│ Benchmark              │ Time P (ms)  │ Time C (ms)  │ Ratio         │ Peak RSS(P/C) │
+├────────────────────────┼──────────────┼──────────────┼───────────────┼───────────────┤
+│ startup_empty          │      39.24   │      32.44   │  1.2x slower  │ 23.1/ 10.2MB  │
+│ int_sum_loop           │     841.80   │      31.35   │  26.9x slower │183.0/ 10.2MB  │
+│ list_append_loop       │     957.59   │      32.08   │  29.9x slower │184.4/ 10.5MB  │
+│ str_concat_loop        │     786.21   │      31.48   │  25.0x slower │153.7/ 10.2MB  │
+│ range_iterate          │    2191.19   │      42.04   │  52.1x slower │286.7/ 10.2MB  │
+│ multithread_cpu        │    3403.53   │      35.62   │  95.6x slower │505.7/ 10.4MB  │
+│ attr_lookup            │    3198.93   │      50.17   │  63.8x slower │221.6/ 10.2MB  │
+│ call_recursion         │   38870.44   │      43.80   │ 887.4x slower │236.1/ 10.2MB  │
+│ memory_pressure        │   48947.88   │      57.50   │ 851.3x slower │  2.4/  0.0GB  │
+├────────────────────────┼──────────────┼──────────────┼───────────────┼───────────────┤
+│ Geomean Ratio          │              │              │  56.4x slower │               │
 └──────────────────────────────────────────────────────────────────────────────────────┘
 ```
 > [!NOTE]
-> *Time P* is protoPython wall time. *Time C* is CPython 3.14 wall time. Lower ratios indicate higher performance.
+> *Time P* is protoPython wall time. *Time C* is CPython 3.14 wall time. These numbers establish the correctness baseline; throughput optimization is underway.
+
+> [!TIP]
+> Known bottlenecks driving the overhead: (1) per-opcode immutable-copy overhead from the copy-on-write object model, (2) GC pressure from temporary object creation per operation, (3) lack of inline caches for attribute lookup and function dispatch. These are architectural optimization targets, not design flaws.
 
 ---
 

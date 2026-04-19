@@ -245,6 +245,31 @@ Tests for features that are not primary targets for `protoPython`'s performance 
   - Robust `async for` and `async with` compilation with `else` block support.
   - Improved recursive `del` target handling.
 
+## V92 Performance Baseline (2026-04-19)
+
+With 17/17 conformance tests passing, the benchmark scripts now execute to completion for the first time. Prior runs measured only startup time of failing scripts. This is the first honest end-to-end measurement.
+
+| Benchmark | protoPython (ms) | CPython 3.14 (ms) | Ratio |
+|---|---|---|---|
+| startup_empty | 39.24 | 32.44 | 1.2× slower |
+| int_sum_loop | 841.80 | 31.35 | 26.9× slower |
+| list_append_loop | 957.59 | 32.08 | 29.9× slower |
+| str_concat_loop | 786.21 | 31.48 | 25.0× slower |
+| range_iterate | 2 191.19 | 42.04 | 52.1× slower |
+| multithread_cpu | 3 403.53 | 35.62 | 95.6× slower |
+| attr_lookup | 3 198.93 | 50.17 | 63.8× slower |
+| call_recursion | 38 870.44 | 43.80 | 887× slower |
+| memory_pressure | 48 947.88 | 57.50 | 851× slower |
+| **Geomean** | | | **56.4× slower** |
+
+**Known bottlenecks driving the overhead:**
+1. Per-opcode copy-on-write allocation — every attribute write, list append, or dict update creates a new immutable node. Adding a mutable fast-path is the primary target.
+2. GC pressure — high temporary object creation rate keeps the concurrent GC busy. Inline value caching (integers, short strings) will reduce allocation volume.
+3. No inline caches — attribute lookup and function dispatch traverse the full prototype chain on every call. PIC (polymorphic inline cache) insertion is planned.
+4. `call_recursion` (fib(25), ~75 k recursive calls) and `memory_pressure` (100 k alloc/dealloc cycles) are the most GC-sensitive benchmarks and show the largest gap.
+
+Interpreter throughput optimization is the primary focus of the phase following V92.
+
 ## Benchmarking with PyPerformance
 
 Progress in running the `PyPerformance` suite is tracked separately in the [Performance Analysis](file:///home/gamarino/Documentos/proyectos/protoPython/docs/PERFORMANCE_ANALYSIS.md) (if exists).
