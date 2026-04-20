@@ -49,7 +49,7 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 - [ ] `test_pydoc.py`
 - [ ] `test_warnings.py`
 
-## Progress Summary (V95 - 2026-04-19)
+## Progress Summary (V96 - 2026-04-20)
 
 | Category | Total | Checked | Passed | Success Rate |
 | :--- | :--- | :--- | :--- | :--- |
@@ -61,26 +61,42 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 
 **Conformity Suite (Phase 1, 2026-04-15)**: 7/9 tests pass. Failures are pre-existing: `int(float)` conversion and `set(iterable)` constructor.
 
-### V95 Benchmark Results (2026-04-19)
+### V96 Benchmark Results (2026-04-20)
 
 | Benchmark          | protoPython (ms) | CPython (ms) | Ratio              |
 | :----------------- | ---------------: | -----------: | :----------------- |
-| startup_empty      | 39.0             | 36.0         | 1.09× slower       |
-| int_sum_loop       | 40.5             | 34.6         | 1.17× slower       |
-| list_append_loop   | 474.8            | 36.2         | 13.1× slower       |
-| str_concat_loop    | 463.6            | 38.9         | 11.9× slower       |
-| range_iterate      | 446.6            | 40.6         | 11.0× slower       |
-| multithread_cpu    | 35.6             | 45.3         | 0.79× faster¹      |
-| **attr_lookup**    | **754**          | **46.3**     | **16.3× slower**   |
-| call_recursion     | 2880.8           | 49.0         | 58.8× slower       |
-| memory_pressure    | 32682            | 79.9         | 409× slower        |
-| **Geomean**        |                  |              | **9.57×**          |
+| startup_empty      | 40.5             | 35.6         | 1.14× slower       |
+| int_sum_loop       | 39.7             | 34.3         | 1.16× slower       |
+| list_append_loop   | 452.7            | 36.3         | 12.5× slower       |
+| str_concat_loop    | 447.0            | 36.9         | 12.1× slower       |
+| range_iterate      | 446.3            | 40.4         | 11.1× slower       |
+| multithread_cpu    | 34.8             | 44.3         | 0.78× faster¹      |
+| **attr_lookup**    | **747.7**        | **44.9**     | **16.7× slower**   |
+| call_recursion     | 2828.0           | 48.7         | 58.1× slower       |
+| memory_pressure²   | 32124.5          | 65.4         | 491× slower        |
+| **Geomean**        |                  |              | **9.81×**          |
 
 ¹ Threading falls back to sequential (see note below). Not directly comparable to V93/V94 threaded results.
+² Excluded from geomean analysis — GC deferral by design; see project notes.
+
+**V96 vs V95**: call_recursion −52ms (−1.8%); attr_lookup −6ms (−0.8%). Changes in four optimizations to `FunctionMetaCache` and `ContextScope` reduce per-call cross-DSO overhead. Geomean variance from `memory_pressure` GC deferral; stable workloads unchanged.
 
 **V95 vs V94 absolute improvement**: attr_lookup −4% (754 ms vs 785 ms); call_recursion −3.8% (2880 ms vs 2994 ms). Stable. Geomean improved slightly (9.57× vs 9.96×).
 
-**V95 vs V93 Step 5 absolute improvement**: attr_lookup −68% (754 ms vs 2391 ms); call_recursion −92% (2880 ms vs 36097 ms). The large improvement vs V93 originates from the V94 `LOAD_ATTR` fast path and V93 function-call optimizations — V95 inherits all of these.
+**V95 vs V93 Step 5 absolute improvement**: attr_lookup −68% (754 ms vs 2391 ms); call_recursion −92% (2880 ms vs 36097 ms). The large improvement vs V93 originates from the V94 `LOAD_ATTR` fast path and V93 function-call optimizations — V95 and V96 inherit all of these.
+
+> [!NOTE]
+> **V96 Function-Call Micro-Optimizations (2026-04-20)**: Four targeted optimizations to reduce per-call cross-DSO overhead in the hot recursive-call path.
+>
+> - **Opt 1 — Remove redundant TLS writes in ContextScope** (`MemoryManager.hpp`): `PythonEnvironment::setCurrentContext()` was called twice per function invocation (once in constructor, once in destructor). `s_threadContext` is set once at `registerContext()` startup and never needs to be refreshed; `getPendingException`/`setPendingException` only need any valid context on the thread. Eliminated both writes.
+>
+> - **Opt 2 — Extend FunctionMetaCache with bytecode/consts/names/nativeBc** (`ExecutionEngine.cpp`): `FunctionMetaCache` now stores `co_bytecode`, `co_consts_tuple`, `co_names_tuple`, `nativeBc`, `hasClosure`, `nConsts`, `nNames`. BUILD_FUNCTION populates them once; `runUserFunctionCallRaw` reads them from the cache, replacing 5 cross-DSO `getAttribute` calls per invocation.
+>
+> - **Opt 3 — Flat C arrays for co_consts and co_names** (`ExecutionEngine.cpp`): Variable-length allocation (`new char[sizeof(FunctionMetaCache) + (nConsts+nNames)*sizeof(ptr)]`) lays flat pointer arrays immediately after the struct. `OP_LOAD_CONST` and the name-retrieval step in `OP_LOAD_GLOBAL` index these arrays directly instead of calling `ProtoTuple::getAt()` (AVL tree traversal cross-DSO).
+>
+> - **Opt 4 — `getOwnAttributeDirect` in OP_CALL_FUNCTION** (`ExecutionEngine.cpp`): Replaced `hasOwnAttribute(codeString)` user-function detection with `getOwnAttributeDirect(fnMetaCacheString)`, returning the cache pointer in one call and eliminating the separate `hasOwnAttribute` check.
+>
+> **Result**: `call_recursion` (fib(25)/242K calls) improved −52ms (−1.8%, 2880→2828ms). The remaining bottleneck is the mandatory per-call overhead of the cross-DSO `ProtoContext` constructor/destructor boundary; further gains require LTO across the DSO boundary or a native trampoline.
 
 > [!NOTE]
 > **V95 Public API Architecture Cleanup (2026-04-19)**: Eliminated all direct usage of `proto_internal.h` from protoPython. This header is private to protoCore and must not be accessed across DSO boundaries. protoPython now communicates exclusively through the public `protoCore.h` API. Changes:

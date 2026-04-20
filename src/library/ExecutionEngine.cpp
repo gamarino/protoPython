@@ -32,12 +32,24 @@ struct FunctionMetaCache {
     // True when no OP_LOAD_DEREF appears in the native bytecode.
     // Safe to skip closure frame lookup even if __closure__ is present.
     bool no_load_deref;
-    uint8_t _pad[1];
+    // True when __closure__ is a non-empty list at BUILD_FUNCTION time.
+    bool hasClosure;
     // Raw pointers — safe because codeObj and globalsObj are kept alive by the
     // function object's own __code__ / __globals__ attributes.
     const proto::ProtoObject* codeObj;
     const proto::ProtoObject* globalsObj;
     const proto::ProtoTuple* co_varnames;  // kept alive by codeObj's co_varnames attr
+    // Cached tuple/bytecode pointers — kept alive by codeObj's attributes.
+    const proto::ProtoTuple* co_bytecode;       // codeObj.__code__ (as tuple)
+    const proto::ProtoTuple* co_consts_tuple;   // codeObj.co_consts (as tuple)
+    const proto::ProtoTuple* co_names_tuple;    // codeObj.co_names (as tuple)
+    const int*               nativeBc;          // co_bytecode_native ByteBuffer data
+    uint32_t                 nConsts;           // number of elements in co_consts
+    uint32_t                 nNames;            // number of elements in co_names
+    // Followed in memory by flat arrays:
+    //   const proto::ProtoObject* nativeConsts[nConsts]
+    //   const proto::ProtoObject* nativeNames[nNames]
+    // Access via: reinterpret_cast<const proto::ProtoObject**>(cache + 1)
 };
 
 static bool areSameClassesVM(proto::ProtoContext* context, const proto::ProtoObject* c1, const proto::ProtoObject* c2) {
@@ -668,7 +680,7 @@ static const proto::ProtoObject* runUserFunctionCallRaw(
     if (!ctx || !self) return PROTO_NONE;
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
 
-    // Read FunctionMetaCache (identical to runUserFunctionCall fast path).
+    // Read FunctionMetaCache — a single attribute lookup replaces all per-call codeObj reads.
     const proto::ProtoObject* codeObj = nullptr;
     const proto::ProtoObject* globalsObj = nullptr;
     int co_flags = 0, nparams_count = 0, kwonly_count = 0, automatic_count = 0;
@@ -676,6 +688,16 @@ static const proto::ProtoObject* runUserFunctionCallRaw(
     bool cacheNoInnerFunctions = false;
     bool cacheNoLoadDeref = false;
     const proto::ProtoTuple* co_varnames = nullptr;
+    // Extended cached fields (Opt 2).
+    const proto::ProtoTuple* cached_bytecode = nullptr;
+    const proto::ProtoTuple* cached_consts   = nullptr;
+    const proto::ProtoTuple* cached_names    = nullptr;
+    const int*               cached_nativeBc = nullptr;
+    bool                     cached_hasClosure = false;
+    uint32_t                 cached_nConsts = 0;
+    uint32_t                 cached_nNames  = 0;
+    const proto::ProtoObject** cached_nativeConsts = nullptr;
+    const proto::ProtoObject** cached_nativeNames  = nullptr;
 
     bool cacheHit = false;
     if (env && env->getFnMetaCacheString()) {
@@ -695,6 +717,17 @@ static const proto::ProtoObject* runUserFunctionCallRaw(
                 co_varnames           = cache->co_varnames;
                 cacheNoInnerFunctions = cache->no_inner_functions;
                 cacheNoLoadDeref      = cache->no_load_deref;
+                // Extended fields cached at BUILD_FUNCTION time.
+                cached_bytecode       = cache->co_bytecode;
+                cached_consts         = cache->co_consts_tuple;
+                cached_names          = cache->co_names_tuple;
+                cached_nativeBc       = cache->nativeBc;
+                cached_hasClosure     = cache->hasClosure;
+                cached_nConsts        = cache->nConsts;
+                cached_nNames         = cache->nNames;
+                cached_nativeConsts   = reinterpret_cast<const proto::ProtoObject**>(
+                                            const_cast<FunctionMetaCache*>(cache) + 1);
+                cached_nativeNames    = cached_nativeConsts + cached_nConsts;
                 cacheHit = true;
             }
         }
@@ -702,14 +735,8 @@ static const proto::ProtoObject* runUserFunctionCallRaw(
 
     // For any non-trivial case (generator, closure, kwargs, kwonly args, varargs, no cache),
     // fall back to the full implementation via a temporary ProtoList.
-    bool hasClosure = false;
-    if (cacheHit && !isGenerator) {
-        const proto::ProtoObject* cl = env
-            ? self->getAttribute(ctx, env->getClosureString()) : nullptr;
-        // An empty closure tuple/list means no captured variables — treat as no closure.
-        const proto::ProtoList* clList = cl ? cl->asList(ctx) : nullptr;
-        hasClosure = cl && cl != PROTO_NONE && clList && clList->getSize(ctx) > 0;
-    }
+    // Use the cached hasClosure flag instead of a getAttribute call on the hot path.
+    bool hasClosure = cacheHit ? cached_hasClosure : false;
 
     // cacheNoLoadDeref: safe to skip closure frame even when hasClosure — the function
     // never accesses captured variables via LOAD_DEREF during execution.
@@ -749,28 +776,19 @@ static const proto::ProtoObject* runUserFunctionCallRaw(
     {
         GlobalsScope gscope(globalsObj);
 
-        const proto::ProtoObject* bytecodeObj = codeObj->getAttribute(calleeCtx, env->getCoCodeString());
-        const proto::ProtoObject* constsObj   = codeObj->getAttribute(calleeCtx, env->getCoConstsString());
-        const proto::ProtoObject* namesObj    = codeObj->getAttribute(calleeCtx, env->getCoNamesString());
-
-        const proto::ProtoTuple* bytecode = bytecodeObj ? bytecodeObj->asTuple(calleeCtx) : nullptr;
-        const proto::ProtoTuple* consts   = constsObj   ? constsObj->asTuple(calleeCtx)   : nullptr;
-        const proto::ProtoTuple* names    = namesObj    ? namesObj->asTuple(calleeCtx)    : nullptr;
-
-        const int* nativeBc = nullptr;
-        if (env->getCoNativeBytecodeString()) {
-            const proto::ProtoObject* nativeBcObj = codeObj->getAttribute(calleeCtx, env->getCoNativeBytecodeString());
-            if (nativeBcObj && nativeBcObj != PROTO_NONE) {
-                char* nbData2 = nativeBcObj->getDataIfByteBuffer(calleeCtx);
-                if (nbData2) nativeBc = reinterpret_cast<const int*>(nbData2);
-            }
-        }
+        // Use values cached at BUILD_FUNCTION time — avoids 4 cross-DSO getAttribute calls
+        // and 3 asTuple conversions on every function invocation.
+        const proto::ProtoTuple* bytecode = cached_bytecode;
+        const proto::ProtoTuple* consts   = cached_consts;
+        const proto::ProtoTuple* names    = cached_names;
+        const int* nativeBc               = cached_nativeBc;
 
         if (bytecode && consts) {
             unsigned long stackOffset = co_varnames ? co_varnames->getSize(calleeCtx) : 0;
             result = executeBytecodeRange(calleeCtx, consts, bytecode, names, frame,
                                           0, bytecode->getSize(calleeCtx), stackOffset,
-                                          nullptr, nullptr, nullptr, 0, nullptr, nativeBc);
+                                          nullptr, nullptr, nullptr, 0, nullptr, nativeBc,
+                                          cached_nativeConsts, cached_nativeNames);
         } else {
             result = PROTO_NONE;
         }
@@ -917,54 +935,113 @@ static proto::ProtoObject* createUserFunction(proto::ProtoContext* ctx, const pr
         ctx->fromMethod(const_cast<proto::ProtoObject*>(fn), py_function_get));
 
     // Build FunctionMetaCache: pre-compute constant codeObj scalars once here so
-    // runUserFunctionCall reads one ByteBuffer field instead of 7 separate getAttribute calls.
+    // runUserFunctionCall reads one ByteBuffer field instead of multiple separate getAttribute calls.
+    // The cache is extended with flat arrays of const ProtoObject* for co_consts and co_names,
+    // laid out immediately after the FunctionMetaCache struct in the same ByteBuffer allocation.
     if (env && env->getFnMetaCacheString() && codeObj && ctx->space) {
         const proto::ProtoObject* globalsObj = globalsFrame;
         auto getInt = [&](const proto::ProtoString* key) -> int {
             const proto::ProtoObject* v = codeObj->getAttribute(ctx, key);
             return (v && v->isInteger(ctx)) ? static_cast<int>(v->asLong(ctx)) : 0;
         };
-        FunctionMetaCache* cache = new FunctionMetaCache{};
-        cache->co_flags       = env->getCoFlagsString()          ? getInt(env->getCoFlagsString())          : 0;
-        cache->nparams        = env->getCoNparamsString()         ? getInt(env->getCoNparamsString())         : 0;
-        cache->kwonly         = env->getCoKwonlyargcountString()  ? getInt(env->getCoKwonlyargcountString())  : 0;
-        cache->automatic_count= env->getCoAutomaticCountString()  ? getInt(env->getCoAutomaticCountString())  : 0;
+
+        // Gather all data needed before allocating the variable-length cache buffer.
+        int co_flags_val       = env->getCoFlagsString()          ? getInt(env->getCoFlagsString())          : 0;
+        int nparams_val        = env->getCoNparamsString()         ? getInt(env->getCoNparamsString())         : 0;
+        int kwonly_val         = env->getCoKwonlyargcountString()  ? getInt(env->getCoKwonlyargcountString())  : 0;
+        int automatic_val      = env->getCoAutomaticCountString()  ? getInt(env->getCoAutomaticCountString())  : 0;
         const proto::ProtoObject* isGenObj = env->getCoIsGeneratorString()
             ? codeObj->getAttribute(ctx, env->getCoIsGeneratorString()) : nullptr;
-        cache->is_generator   = isGenObj && isGenObj->isBoolean(ctx) && isGenObj->asBoolean(ctx);
-        cache->codeObj        = codeObj;
-        cache->globalsObj     = globalsObj;
+        bool is_generator_val  = isGenObj && isGenObj->isBoolean(ctx) && isGenObj->asBoolean(ctx);
+
         const proto::ProtoObject* cvObj = env->getCoVarnamesString()
             ? codeObj->getAttribute(ctx, env->getCoVarnamesString()) : nullptr;
-        cache->co_varnames    = (cvObj && cvObj->asTuple(ctx)) ? cvObj->asTuple(ctx) : nullptr;
+        const proto::ProtoTuple* co_varnames_val = (cvObj && cvObj->asTuple(ctx)) ? cvObj->asTuple(ctx) : nullptr;
 
-        // Scan native bytecode for OP_BUILD_FUNCTION (156) or OP_BUILD_CLASS (160).
-        // If neither appears, the function never defines nested functions, so frame
-        // construction can be skipped entirely for CO_OPTIMIZED + no-closure calls.
-        cache->no_inner_functions = false;
+        // Resolve the co_consts, co_names, and co_bytecode tuples.
+        const proto::ProtoObject* constsObj = env->getCoConstsString()
+            ? codeObj->getAttribute(ctx, env->getCoConstsString()) : nullptr;
+        const proto::ProtoTuple* co_consts_val = constsObj ? constsObj->asTuple(ctx) : nullptr;
+
+        const proto::ProtoObject* namesObj = env->getCoNamesString()
+            ? codeObj->getAttribute(ctx, env->getCoNamesString()) : nullptr;
+        const proto::ProtoTuple* co_names_val = namesObj ? namesObj->asTuple(ctx) : nullptr;
+
+        const proto::ProtoObject* codeObjTupleObj = env->getCoCodeString()
+            ? codeObj->getAttribute(ctx, env->getCoCodeString()) : nullptr;
+        const proto::ProtoTuple* co_bytecode_val = codeObjTupleObj ? codeObjTupleObj->asTuple(ctx) : nullptr;
+
+        // Resolve native bytecode and scan for special opcodes.
+        const int* nativeBc_val = nullptr;
+        bool no_inner_functions_val = false;
+        bool no_load_deref_val = false;
         if (env->getCoNativeBytecodeString()) {
             const proto::ProtoObject* nbObj = codeObj->getAttribute(ctx, env->getCoNativeBytecodeString());
             if (nbObj && nbObj != PROTO_NONE) {
                 char* nbData3 = nbObj->getDataIfByteBuffer(ctx);
                 if (nbData3) {
-                    {
-                        const int* nb = reinterpret_cast<const int*>(nbData3);
-                        size_t nbLen  = nbObj->asByteBuffer(ctx)->getSize(ctx) / sizeof(int);
-                        bool hasBuild = false, hasDeref = false;
-                        for (size_t bi = 0; bi < nbLen; bi += 2) {
-                            int op = nb[bi];
-                            if (op == OP_BUILD_FUNCTION || op == OP_BUILD_CLASS) hasBuild = true;
-                            if (op == OP_LOAD_DEREF) hasDeref = true;
-                        }
-                        cache->no_inner_functions = !hasBuild;
-                        cache->no_load_deref = !hasDeref;
+                    nativeBc_val = reinterpret_cast<const int*>(nbData3);
+                    size_t nbLen = nbObj->asByteBuffer(ctx)->getSize(ctx) / sizeof(int);
+                    bool hasBuild = false, hasDeref = false;
+                    for (size_t bi = 0; bi < nbLen; bi += 2) {
+                        int op = nativeBc_val[bi];
+                        if (op == OP_BUILD_FUNCTION || op == OP_BUILD_CLASS) hasBuild = true;
+                        if (op == OP_LOAD_DEREF) hasDeref = true;
                     }
+                    no_inner_functions_val = !hasBuild;
+                    no_load_deref_val = !hasDeref;
                 }
             }
         }
 
+        // Determine closure status at build time.
+        // An empty closure tuple/list means no captured variables — treat as no closure.
+        bool hasClosure_val = false;
+        if (closureFrame) {
+            // closureFrame is the closure frame passed in to createUserFunction —
+            // if it exists, the function has captured variables.
+            hasClosure_val = true;
+        }
+
+        // Compute flat array sizes.
+        uint32_t nConsts_val = co_consts_val ? static_cast<uint32_t>(co_consts_val->getSize(ctx)) : 0;
+        uint32_t nNames_val  = co_names_val  ? static_cast<uint32_t>(co_names_val->getSize(ctx))  : 0;
+
+        // Allocate variable-length buffer: struct + two flat pointer arrays.
+        size_t totalBytes = sizeof(FunctionMetaCache)
+            + (static_cast<size_t>(nConsts_val) + static_cast<size_t>(nNames_val))
+              * sizeof(const proto::ProtoObject*);
+        char* buf = new char[totalBytes];
+        FunctionMetaCache* cache = new(buf) FunctionMetaCache{};
+
+        cache->co_flags           = co_flags_val;
+        cache->nparams            = nparams_val;
+        cache->kwonly             = kwonly_val;
+        cache->automatic_count    = automatic_val;
+        cache->is_generator       = is_generator_val;
+        cache->no_inner_functions = no_inner_functions_val;
+        cache->no_load_deref      = no_load_deref_val;
+        cache->hasClosure         = hasClosure_val;
+        cache->codeObj            = codeObj;
+        cache->globalsObj         = globalsObj;
+        cache->co_varnames        = co_varnames_val;
+        cache->co_bytecode        = co_bytecode_val;
+        cache->co_consts_tuple    = co_consts_val;
+        cache->co_names_tuple     = co_names_val;
+        cache->nativeBc           = nativeBc_val;
+        cache->nConsts            = nConsts_val;
+        cache->nNames             = nNames_val;
+
+        // Fill flat arrays of pre-fetched ProtoObject pointers.
+        const proto::ProtoObject** nativeConsts = reinterpret_cast<const proto::ProtoObject**>(cache + 1);
+        const proto::ProtoObject** nativeNames  = nativeConsts + nConsts_val;
+        for (uint32_t i2 = 0; i2 < nConsts_val; ++i2)
+            nativeConsts[i2] = co_consts_val->getAt(ctx, static_cast<int>(i2));
+        for (uint32_t i2 = 0; i2 < nNames_val; ++i2)
+            nativeNames[i2] = co_names_val->getAt(ctx, static_cast<int>(i2));
+
         const proto::ProtoObject* cacheObj = ctx->fromBuffer(
-            sizeof(FunctionMetaCache), reinterpret_cast<char*>(cache), true);
+            totalBytes, buf, true);
         if (cacheObj) {
             ctx->space->moduleRoots.push_back(cacheObj);
             fn = fn->setAttribute(ctx, env->getFnMetaCacheString(), cacheObj);
@@ -2089,7 +2166,9 @@ const proto::ProtoObject* executeBytecodeRange(
     std::vector<Block>* externalBlockStack,
     unsigned long initialTop,
     unsigned long* finalTopPtr,
-    const int* nativeBc) {
+    const int* nativeBc,
+    const proto::ProtoObject** nativeConsts,
+    const proto::ProtoObject** nativeNames) {
     if (!ctx || !constants || !bytecode) return nullptr;
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
 
@@ -2277,8 +2356,14 @@ const proto::ProtoObject* executeBytecodeRange(
         }
 
         if (op == OP_LOAD_CONST) {
-            if (static_cast<unsigned long>(arg) < constants->getSize(ctx)) {
-                const proto::ProtoObject* val = constants->getAt(ctx, arg);
+            // Use flat pre-fetched array when available (avoids cross-DSO AVL lookup).
+            const proto::ProtoObject* val = nullptr;
+            if (nativeConsts && static_cast<uint32_t>(arg) < static_cast<uint32_t>(constants->getSize(ctx))) {
+                val = nativeConsts[arg];
+            } else if (static_cast<unsigned long>(arg) < constants->getSize(ctx)) {
+                val = constants->getAt(ctx, arg);
+            }
+            if (val) {
                 if (get_env_diag()) {
                     fprintf(stderr, "DEBUG: LOAD_CONST arg=%d val=%p repr=%s\n", arg, (void*)val, PythonEnvironment::reprObject(ctx, val).c_str());
                     fflush(stderr);
@@ -4218,16 +4303,22 @@ const proto::ProtoObject* executeBytecodeRange(
 
             // User-function fast path: [NULL, func, arg1...argN] — bypass ProtoList construction.
             // Eliminates 2 cell allocations (newList + appendLast) per user-function call.
+            // Opt 4: detect user functions via getOwnAttributeDirect on fnMetaCacheString instead of
+            // hasOwnAttribute on codeString. Same cost, but avoids a redundant cache re-read inside
+            // runUserFunctionCallRaw since the cache pointer is already resolved here.
             const proto::ProtoObject* result_fast = nullptr;
             bool usedFastPath = false;
             if ((isModern && X == nullptr) || !isModern) {
                 const proto::ProtoObject* candidate = Y;
-                if (candidate && env && env->getCodeString() &&
-                    candidate->hasOwnAttribute(ctx, env->getCodeString()) == PROTO_TRUE) {
-                    const proto::ProtoObject* const* rawArgSlice = stack.slots + firstArgIdx;
-                    result_fast = runUserFunctionCallRaw(ctx, candidate, nullptr,
-                                                          rawArgSlice, (unsigned long)arg);
-                    usedFastPath = true;
+                if (candidate && env && env->getFnMetaCacheString()) {
+                    const proto::ProtoObject* cacheAttr =
+                        candidate->getOwnAttributeDirect(ctx, env->getFnMetaCacheString());
+                    if (cacheAttr && cacheAttr != PROTO_NONE) {
+                        const proto::ProtoObject* const* rawArgSlice = stack.slots + firstArgIdx;
+                        result_fast = runUserFunctionCallRaw(ctx, candidate, nullptr,
+                                                              rawArgSlice, (unsigned long)arg);
+                        usedFastPath = true;
+                    }
                 }
             }
 
@@ -4962,29 +5053,34 @@ const proto::ProtoObject* executeBytecodeRange(
             int nameIdx = arg >> 1;
             // No `frame` guard: LOAD_GLOBAL resolves via env->resolve()/getCurrentGlobals(),
             // not via frame. This allows LOAD_GLOBAL in frame-free (slot fast path) contexts.
-            if (names && static_cast<unsigned long>(nameIdx) < names->getSize(ctx)) {
-                const proto::ProtoObject* nameObj = names->getAt(ctx, nameIdx);
-                if (nameObj->isString(ctx)) {
-                    const proto::ProtoString* nameS = nameObj->asString(ctx);
+            {
+                // Use flat pre-fetched nativeNames array when available — avoids cross-DSO
+                // AVL lookup + isString/asString conversions since all nativeNames are ProtoString*.
+                const proto::ProtoString* nameS = nullptr;
+                if (nativeNames && names && static_cast<unsigned long>(nameIdx) < names->getSize(ctx)) {
+                    const proto::ProtoObject* n = nativeNames[nameIdx];
+                    nameS = n ? n->asString(ctx) : nullptr;
+                } else if (names && static_cast<unsigned long>(nameIdx) < names->getSize(ctx)) {
+                    const proto::ProtoObject* nameObj = names->getAt(ctx, nameIdx);
+                    if (nameObj && nameObj->isString(ctx))
+                        nameS = nameObj->asString(ctx);
+                }
+                if (nameS && env) {
                     // LOAD_GLOBAL resolves in globals+builtins only — never in the local frame.
-                    // env->resolve() checks getCurrentGlobals() (ptrCache hit after first lookup),
-                    // then builtins. Skipping frame->getAttribute() saves 2 attribute lookups per call.
-                    if (env) {
-                        const proto::ProtoObject* val = env->resolve(nameS, ctx);
-                        if (val != nullptr) {
-                            if (pushNull) stack.push_back(nullptr);
-                            stack.push_back(val);
-                        } else {
-                            if (!env->hasPendingException()) {
-                                std::string n;
-                                nameS->toUTF8String(ctx, n);
-                                env->raiseNameError(ctx, n);
-                            }
-                            continue;
-                        }
+                    const proto::ProtoObject* val = env->resolve(nameS, ctx);
+                    if (val != nullptr) {
+                        if (pushNull) stack.push_back(nullptr);
+                        stack.push_back(val);
                     } else {
+                        if (!env->hasPendingException()) {
+                            std::string n;
+                            nameS->toUTF8String(ctx, n);
+                            env->raiseNameError(ctx, n);
+                        }
                         continue;
                     }
+                } else if (!nameS) {
+                    continue;
                 }
             }
         } else if (op == OP_STORE_GLOBAL) {

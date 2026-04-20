@@ -242,7 +242,9 @@ const proto::ProtoObject* executeBytecodeRange(
     std::vector<Block>* externalBlockStack = nullptr,
     unsigned long initialTop = 0,
     unsigned long* finalTopPtr = nullptr,
-    const int* nativeBc = nullptr);
+    const int* nativeBc = nullptr,
+    const proto::ProtoObject** nativeConsts = nullptr,
+    const proto::ProtoObject** nativeNames  = nullptr);
 
 /**
  * @brief Python-compatible generator methods.

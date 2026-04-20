@@ -64,12 +64,14 @@ public:
         // Placement-new: ProtoContext lives inside ctxStorage_ (stack memory).
         ctx_ = new (ctxStorage_) proto::ProtoContext(
             space, parent_, parameterNames, localNames, args, kwargs, totalSlots, extSlots);
-        PythonEnvironment::setCurrentContext(ctx_);
+        // NOTE: setCurrentContext is intentionally omitted. s_threadContext is set once by
+        // registerContext() at thread startup and remains valid for the lifetime of the thread.
+        // All getPendingException/setPendingException callers only need a valid (non-null)
+        // context on the same thread — the root context works fine for those operations.
     }
 
     ~ContextScope() {
         if (ctx_) {
-            PythonEnvironment::setCurrentContext(parent_);
             // Explicit destructor — context lives in ctxStorage_, not on heap.
             ctx_->~ProtoContext();
             ctx_ = nullptr;
