@@ -1532,6 +1532,16 @@ static const proto::ProtoObject* invokeCallable(proto::ProtoContext* ctx,
         return runUserFunctionCall(ctx, callable, nullptr, args, kwargs);
     }
 
+    // If callable is a Python class, dispatch directly to runUserClassCall.
+    // This prevents type(cls).__call__ from resolving to an instance method
+    // like ContextDecorator.__call__ instead of type.__call__ = py_type_call.
+    {
+        const proto::ProtoString* isPyClsS = PythonEnvironment::getInternedString(ctx, "__is_python_class__");
+        if (isPyClsS && callable->hasOwnAttribute(ctx, isPyClsS) == PROTO_TRUE) {
+            return runUserClassCall(ctx, callable, nullptr, args, kwargs);
+        }
+    }
+
     /* FALLBACK TO PUBLIC API __call__ */
     const proto::ProtoString* callS = env ? env->getCallString() : PythonEnvironment::getInternedString(ctx, "__call__");
     
@@ -2073,9 +2083,30 @@ const proto::ProtoObject* runUserClassCall(proto::ProtoContext* ctx,
             isInstanceOfSelf = (cls == self);
         }
 
+        if (get_env_diag()) {
+            std::string selfName = "?";
+            if (env) {
+                const proto::ProtoObject* nameA = env->getAttribute(ctx, self, env->getNameString());
+                if (nameA && nameA->isString(ctx)) nameA->asString(ctx)->toUTF8String(ctx, selfName);
+            }
+            const proto::ProtoObject* objCls2 = env ? env->getType(ctx, obj) : nullptr;
+            fprintf(stderr, "DEBUG runUserClassCall: self='%s' isInstanceOfSelf=%d objCls=%p self=%p\n",
+                    selfName.c_str(), (int)isInstanceOfSelf, (void*)objCls2, (void*)self);
+            fflush(stderr);
+        }
         if (isInstanceOfSelf) {
             const proto::ProtoString* initS = env ? env->getInitString() : protoPython::PythonEnvironment::getInternalString(ctx, "__init__");
-            const proto::ProtoObject* initM = self->getAttribute(ctx, initS);
+            // Use env->getAttribute to follow the Python MRO, not the raw protoCore chain.
+            const proto::ProtoObject* initM = env ? env->getAttribute(ctx, self, initS) : self->getAttribute(ctx, initS);
+            if (get_env_diag()) {
+                bool isNative = initM && initM->asMethod(ctx) != nullptr;
+                bool hascode = initM && env && env->getCodeString() &&
+                               initM->hasOwnAttribute(ctx, env->getCodeString()) == PROTO_TRUE;
+                std::string initRepr = initM ? PythonEnvironment::reprObject(ctx, initM) : "null";
+                fprintf(stderr, "DEBUG runUserClassCall: initM=%p isNativeMethod=%d hasCode=%d repr=%s\n",
+                        (void*)initM, (int)isNative, (int)hascode, initRepr.c_str());
+                fflush(stderr);
+            }
             if (initM && initM != PROTO_NONE) {
                 // Since we looked it up on the class (self), we must manually pass `obj` as first arg
                 const proto::ProtoList* initArgs = ctx->newList()->appendLast(ctx, obj);
@@ -5347,14 +5378,35 @@ const proto::ProtoObject* executeBytecodeRange(
                 slots[arg] = nullptr; 
             }
         } else if (op == OP_DELETE_ATTR) {
-            // i++;
             if (!stack.empty()) {
                 const proto::ProtoObject* obj = stack.back();
                 stack.pop_back();
-                const proto::ProtoObject* nameObj = names->getAt(ctx, arg);
+                int nameIdx = arg >> 1;
+                const proto::ProtoObject* nameObj = names->getAt(ctx, nameIdx);
                 if (nameObj && nameObj->isString(ctx)) {
+                    const proto::ProtoString* nameS = nameObj->asString(ctx);
+                    // Remove from __data__ sparse list if present (dict-backed instances)
+                    const proto::ProtoString* dataName = env ? env->getDataString() : protoPython::PythonEnvironment::getInternalString(ctx, "__data__");
+                    const proto::ProtoString* keysName = env ? env->getKeysString() : protoPython::PythonEnvironment::getInternalString(ctx, "__keys__");
+                    const proto::ProtoObject* d = (obj->hasOwnAttribute(ctx, dataName) == PROTO_TRUE) ? obj->proto::ProtoObject::getAttribute(ctx, dataName) : nullptr;
+                    const proto::ProtoObject* k = (keysName && obj->hasOwnAttribute(ctx, keysName) == PROTO_TRUE) ? obj->proto::ProtoObject::getAttribute(ctx, keysName) : nullptr;
+                    if (d && d != PROTO_NONE && d->asSparseList(ctx)) {
+                        d->asSparseList(ctx)->removeAt(ctx, nameS->getHash(ctx));
+                        if (env && env->hasPendingException()) env->clearPendingException();
+                    }
+                    if (k && k != PROTO_NONE && k->asList(ctx)) {
+                        unsigned long targetHash = nameS->getHash(ctx);
+                        const proto::ProtoList* newKeys = ctx->newList();
+                        for (unsigned long ki = 0; ki < k->asList(ctx)->getSize(ctx); ++ki) {
+                            const proto::ProtoObject* key = k->asList(ctx)->getAt(ctx, ki);
+                            if (key && key->isString(ctx) && key->getHash(ctx) == targetHash) continue;
+                            newKeys = newKeys->appendLast(ctx, key);
+                        }
+                        const_cast<proto::ProtoObject*>(obj)->proto::ProtoObject::setAttribute(ctx, keysName, newKeys->asObject(ctx));
+                    }
+                    // Mark native attribute as deleted (None) so subsequent LOAD_ATTR fails gracefully
                     const proto::ProtoObject* nil = env ? env->getNonePrototype() : PROTO_NONE;
-                    obj->setAttribute(ctx, nameObj->asString(ctx) /* TEST */, nil);
+                    const_cast<proto::ProtoObject*>(obj)->proto::ProtoObject::setAttribute(ctx, nameS, nil);
                 }
             }
         } else if (op == OP_DELETE_SUBSCR) {
@@ -5511,6 +5563,7 @@ const proto::ProtoObject* executeMinimalBytecode(
     PythonEnvironment::setCurrentGlobals(savedGlobals);
     return result;
 }
+
 
 const proto::ProtoObject* exported_py_function_get(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
     return py_function_get(ctx, self, parentLink, args, kwargs);

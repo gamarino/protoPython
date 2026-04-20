@@ -2,9 +2,15 @@
 def colorize(source, *args, **kwargs):
     return source
 
+class _DummySubTheme:
+    """A sub-theme where every attribute is an empty string."""
+    def __getattr__(self, name):
+        return ""
+
 class _DummyTheme:
     def __init__(self):
         self.argparse = self
+        self.unittest = _DummySubTheme()
         self.heading = ""
         self.reset = ""
         self.prog = ""

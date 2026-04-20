@@ -115,10 +115,16 @@ static int stackEffect(int op, int arg) {
         case OP_UNARY_NOT:      case OP_UNARY_INVERT:
         case OP_GET_ITER:       case OP_LIST_TO_TUPLE:
         case OP_GET_LEN:        // actually +1 (pushes len w/o popping), count as 0 → safe
-        case OP_BUILD_FUNCTION: case OP_LOAD_ATTR:
+        case OP_BUILD_FUNCTION:
         case OP_GET_AWAITABLE:  case OP_GET_AITER:
         case OP_GET_YIELD_FROM_ITER:
             return 0;
+
+        // LOAD_ATTR: pops object, but when loading a method replaces it with NULL and
+        // pushes the method (+1 net). Accounting for the worst case (method) avoids
+        // GCStack overflow from systematic underestimation of max stack depth.
+        case OP_LOAD_ATTR:
+            return 1;
 
         // Binary ops (-1 net: pop 2, push 1)
         case OP_BINARY_ADD:       case OP_BINARY_SUBTRACT:
@@ -176,6 +182,10 @@ static int stackEffect(int op, int arg) {
         case OP_MAP_ADD:
             return -2;
 
+        // IMPORT_FROM: keeps module on stack and pushes the imported attribute (+1 net)
+        case OP_IMPORT_FROM:
+            return 1;
+
         // Sequence helpers
         case OP_LIST_EXTEND: case OP_DICT_UPDATE: case OP_SET_UPDATE:
             return -1;
@@ -194,9 +204,11 @@ static int stackEffect(int op, int arg) {
         case OP_WITH_CLEANUP:
             return -1;
         case OP_POP_BLOCK: case OP_SETUP_FINALLY:
-        case OP_SETUP_WITH: case OP_SETUP_ASYNC_WITH:
         case OP_RERAISE:
             return 0;
+        // SETUP_WITH pops the context manager and pushes __exit__ + __enter__() result (+1 net)
+        case OP_SETUP_WITH: case OP_SETUP_ASYNC_WITH:
+            return 1;
 
         case OP_RAISE_VARARGS:
             return -arg;
@@ -486,7 +498,25 @@ bool Compiler::compileStarred(StarredNode* n) {
 
 bool Compiler::compileCall(CallNode* n) {
     if (!n) return false;
-    
+
+    // Special case: super() with no args inside a class method.
+    // Rewrite to super(__class__, self) where __class__ is the enclosing class name (global lookup)
+    // and self is the first parameter (LOAD_FAST 0). This mirrors CPython's __classcell__ mechanism
+    // without requiring cell variables.
+    if (isFunctionScope_ && !currentClassName_.empty() && n->args.empty() && n->keywords.empty()) {
+        if (auto* nameN = dynamic_cast<NameNode*>(n->func.get())) {
+            if (nameN->id == "super") {
+                int superIdx = addName("super");
+                emit(OP_LOAD_GLOBAL, (superIdx << 1) | 1);   // NULL marker + super
+                int classIdx = addName(currentClassName_);
+                emit(OP_LOAD_GLOBAL, classIdx << 1);          // the defining class
+                emit(OP_LOAD_FAST, 0);                        // self (first parameter)
+                emit(OP_CALL_FUNCTION, 2);
+                return true;
+            }
+        }
+    }
+
     // For 3.11+ compatibility, we must ensure there are 2 slots for the callable segment.
     if (auto* attrN = dynamic_cast<AttributeNode*>(n->func.get())) {
         // Attributes handle their own marker (self or NULL)
@@ -1428,7 +1458,7 @@ bool Compiler::compileGeneratorExp(GeneratorExpNode* n) {
     const proto::ProtoObject* codeObj = makeCodeObject(ctx_, 
         bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), 
         PythonEnvironment::getInternedString(ctx_, filename_.c_str()), 
-        co_varnames, 1, 0, static_cast<int>(orderedLocals.size()) + bodyCompiler.getMaxStack() + 16,
+        co_varnames, 1, 0, static_cast<int>(orderedLocals.size()) + bodyCompiler.getMaxStack() + 32,
         flags, true,
         PythonEnvironment::getInternedString(ctx_, "<genexpr>"),
         bodyCompiler.getFirstLine(), bodyCompiler.getLnotab());
@@ -1533,10 +1563,10 @@ bool Compiler::compileComprehension(const std::vector<Comprehension>& generators
 }
 
 bool Compiler::compileImport(ImportNode* n) {
-    // Load __import__ with NULL marker for correct 3.11+ calling convention
+    // Load __import__ via LOAD_GLOBAL (not LOAD_NAME) so it works in frame-free fast-path
+    // function contexts where frame==nullptr would cause LOAD_NAME to silently push None.
     int idxImport = addName("__import__");
-    emit(OP_PUSH_NULL);
-    emit(OP_LOAD_NAME, (idxImport << 1));
+    emit(OP_LOAD_GLOBAL, (idxImport << 1) | 1);
     // Load module name string
     int idxMod = addConstant(PythonEnvironment::getInternedString(ctx_, n->moduleName.c_str())->asObject(ctx_));
     emit(OP_LOAD_CONST, idxMod);
@@ -1555,10 +1585,9 @@ bool Compiler::compileImport(ImportNode* n) {
 }
 
 bool Compiler::compileImportFrom(ImportFromNode* n) {
-    // Load __import__ with NULL marker for correct 3.11+ calling convention
+    // Load __import__ via LOAD_GLOBAL so it works in frame-free fast-path function contexts.
     int idxImport = addName("__import__");
-    emit(OP_PUSH_NULL);
-    emit(OP_LOAD_NAME, (idxImport << 1));
+    emit(OP_LOAD_GLOBAL, (idxImport << 1) | 1);
     
     // name
     int idxMod = addConstant(PythonEnvironment::getInternedString(ctx_, n->moduleName.c_str())->asObject(ctx_));
@@ -2443,8 +2472,17 @@ bool Compiler::compileSuite(SuiteNode* n) {
     if (n->statements.empty()) return true;
     for (size_t i = 0; i < n->statements.size(); ++i) {
         if (!compileNode(n->statements[i].get())) return false;
-        if (statementLeavesValue(n->statements[i].get()))
+        if (statementLeavesValue(n->statements[i].get())) {
+            // In a class body, the first string literal expression becomes the docstring.
+            if (isClassBody_ && i == 0) {
+                auto* c = dynamic_cast<ConstantNode*>(n->statements[i].get());
+                if (c && c->constType == ConstantNode::ConstType::Str) {
+                    emitNameOp("__doc__", TargetCtx::Store);
+                    continue;
+                }
+            }
             emit(OP_POP_TOP, 0);
+        }
     }
     return true;
 }
@@ -2549,8 +2587,12 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
     bodyCompiler.nonlocalNames_ = bodyNonlocals;
     bodyCompiler.localSlotMap_ = slotMap;
     bodyCompiler.isFunctionScope_ = true;
+    // Only propagate currentClassName_ when this function is a direct class method
+    // (i.e., defined inside a class body). Nested functions inside methods do not
+    // inherit the class name to avoid false super() rewrites.
+    if (isClassBody_) bodyCompiler.currentClassName_ = currentClassName_;
     if (!bodyCompiler.compileNode(n->body.get())) return false;
-    if (!forceMapped) automatic_count += bodyCompiler.getMaxStack() + 16;
+    if (!forceMapped) automatic_count += bodyCompiler.getMaxStack() + 32;
 
     int noneIdx = bodyCompiler.addConstant(PROTO_NONE);
     bodyCompiler.emit(OP_LOAD_CONST, noneIdx);
@@ -2680,11 +2722,12 @@ bool Compiler::compileLambda(LambdaNode* n) {
     bodyCompiler.nonlocalNames_ = bodyNonlocals;
     bodyCompiler.localSlotMap_ = slotMap;
     bodyCompiler.isFunctionScope_ = true;
+    if (isClassBody_) bodyCompiler.currentClassName_ = currentClassName_;
 
     if (!bodyCompiler.compileNode(n->body.get())) return false;
     bodyCompiler.emit(OP_RETURN_VALUE);
     bodyCompiler.applyPatches();
-    if (!forceMapped) automatic_count += bodyCompiler.getMaxStack() + 16;
+    if (!forceMapped) automatic_count += bodyCompiler.getMaxStack() + 32;
 
     std::vector<const proto::ProtoObject*> varnamesVec;
     varnamesVec.reserve(varnamesOrdered.size());
@@ -2816,7 +2859,7 @@ bool Compiler::compileAsyncFunctionDef(AsyncFunctionDefNode* n) {
     bodyCompiler.emit(OP_RETURN_VALUE);
 
     bodyCompiler.applyPatches();
-    if (!forceMapped) automatic_count += bodyCompiler.getMaxStack() + 16;
+    if (!forceMapped) automatic_count += bodyCompiler.getMaxStack() + 32;
 
     std::vector<const proto::ProtoObject*> varnamesVec;
     varnamesVec.reserve(varnamesOrdered.size());
@@ -3064,6 +3107,7 @@ bool Compiler::compileClassDef(ClassDefNode* n) {
     bodyCompiler.globalNames_ = globalNames_;
     bodyCompiler.nonlocalNames_ = nonlocalNames_;
     bodyCompiler.isClassBody_ = true;
+    bodyCompiler.currentClassName_ = n->name;
 
     // If the class body contains any annotations, initialise __annotations__ = {} first.
     bool hasAnnotations = false;

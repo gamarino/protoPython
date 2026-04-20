@@ -1913,9 +1913,7 @@ class ArgumentParser(_ActionsContainer, _AttributeHolder):
         self.suggest_on_error = suggest_on_error
         self.color = color
 
-        pass
-        pass
-        add_group = getattr(self, 'add_argument_group', None)
+        add_group = self.add_argument_group
         try:
             self._positionals = add_group(_('positional arguments'))
         except TypeError as e:

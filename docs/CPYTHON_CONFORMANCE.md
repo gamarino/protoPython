@@ -49,7 +49,7 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 - [ ] `test_pydoc.py`
 - [ ] `test_warnings.py`
 
-## Progress Summary (V99 - 2026-04-20)
+## Progress Summary (V100 - 2026-04-20)
 
 | Category | Total | Checked | Passed | Success Rate |
 | :--- | :--- | :--- | :--- | :--- |
@@ -60,6 +60,13 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 | **Total** | **21** | **17** | **17** | **100%** |
 
 **Conformity Suite (Phase 1, 2026-04-15)**: 7/9 tests pass. Failures are pre-existing: `int(float)` conversion and `set(iterable)` constructor.
+
+### V100 Changes (2026-04-20)
+
+- **`test_grammar.py` confirmed passing** (75/75): Fixed two root causes blocking `unittest.main()` via argparse:
+  1. **Zero-argument `super()` in class methods** — compile-time rewrite to `super(ClassName, self)` via `currentClassName_` propagation through the class→method compiler chain. Mirrors CPython's `__classcell__` mechanism without requiring cell variables.
+  2. **`import` inside function bodies** — `compileImport`/`compileImportFrom` emitted `OP_LOAD_NAME` for `__import__`, which silently pushes `PROTO_NONE` when `frame == nullptr` in the slot fast-path (`runUserFunctionCallRaw`). Fixed to `OP_LOAD_GLOBAL` (uses `env->resolve()` directly, frame-independent).
+- **Cleanup**: removed leftover debug prints from `argparse.py`, `os.py:_fspath`, `weakref.py`, and `test_grammar.py`.
 
 ### V99 Benchmark Results (2026-04-20)
 

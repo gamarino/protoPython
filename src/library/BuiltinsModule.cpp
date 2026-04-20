@@ -2954,9 +2954,12 @@ const proto::ProtoObject* py_type(
                             if (dictOwn) {
                                 const proto::ProtoObject* dataObj = dictOwn->getAt(context, reinterpret_cast<uintptr_t>(dataS));
                                 if (dataObj && dataObj != PROTO_NONE && dataObj->asSparseList(context)) {
-                                    val = dataObj->asSparseList(context)->getAt(context, k->getHash(context));
-                                    if (val == PROTO_NONE) val = nullptr;
-                                    if (val) valFound = true;
+                                    const proto::ProtoSparseList* dataSparse = dataObj->asSparseList(context);
+                                    unsigned long dataHash = k->getHash(context);
+                                    if (dataSparse->has(context, dataHash)) {
+                                        val = dataSparse->getAt(context, dataHash);
+                                        valFound = true;
+                                    }
                                 }
                             }
                         }

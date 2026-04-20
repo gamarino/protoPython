@@ -606,5 +606,15 @@
     "failed_tests": [
       "/home/gamarino/Documentos/proyectos/protoPython/build/src/runtime/protopy"
     ]
+  },
+  {
+    "passed": 0,
+    "failed": 1,
+    "total": 1,
+    "compatibility_pct": 0.0,
+    "timestamp": "2026-04-20T13:27:39.665635+00:00",
+    "failed_tests": [
+      "/home/gamarino/Documentos/proyectos/protoPython/build/src/runtime/protopy"
+    ]
   }
 ]

@@ -572,4 +572,4 @@ class finalize:
             finalize._shutdown = True
             if reenable_gc:
                 gc.enable()
-print("WEAKREF DONE")
+

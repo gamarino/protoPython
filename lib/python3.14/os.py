@@ -1142,10 +1142,6 @@ def _fspath(path):
     path representation is not str or bytes, TypeError is raised. If the
     provided path is not str, bytes, or os.PathLike, TypeError is raised.
     """
-    import sys
-    caller = getattr(sys._getframe().f_back, 'f_code', None)
-    caller_name = getattr(caller, 'co_name', '<unknown>') if caller else '<unknown>'
-    pass
     if isinstance(path, (str, bytes)):
         return path
 

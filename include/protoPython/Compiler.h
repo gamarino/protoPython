@@ -128,6 +128,9 @@ private:
     bool isGenerator_ = false;
     bool isClassBody_ = false;
     bool isFunctionScope_ = false;
+    /** The name of the immediately enclosing class, propagated to method compilers
+     *  so that zero-argument super() can be rewritten to super(ClassName, self). */
+    std::string currentClassName_;
     int bytecodeOffset() const;
     /** Record a jump arg slot to be patched later with target (bytecode list index). */
     void addPatch(int argSlotIndex, int targetBytecodeIndex);
