@@ -98,7 +98,14 @@ static const proto::ProtoObject* imp_create_builtin(
             }
         }
     }
-    
+
+    // Module not in sys.modules yet; use the native module provider to create and
+    // initialize it. resolveModule() bypasses s_currentGlobals (which may shadow the
+    // name with None during bootstrap), going directly to the provider registry.
+    if (!name.empty() && env) {
+        return env->resolveModule(name, ctx);
+    }
+
     return nullptr;
 }
 

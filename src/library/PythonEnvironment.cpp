@@ -11339,8 +11339,17 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
         }
 
         bool isInstanceDict = (!isClass && obj->hasOwnAttribute(ctx, name) == PROTO_TRUE);
-        
-        if (getM && getM->isMethod(ctx) && !isInstanceDict) {
+
+        bool getmIsNative = getM && getM->isMethod(ctx);
+        bool getmIsPyFunc = false;
+        if (getM && !getmIsNative) {
+            const proto::ProtoString* codeStr = this->getCodeString();
+            if (!codeStr) codeStr = PythonEnvironment::getInternedString(ctx, "__code__");
+            getmIsPyFunc = codeStr && (getM->hasOwnAttribute(ctx, codeStr) == PROTO_TRUE ||
+                                       getM->hasAttribute(ctx, codeStr) == PROTO_TRUE);
+        }
+
+        if ((getmIsNative || getmIsPyFunc) && !isInstanceDict) {
             const proto::ProtoObject* objClass = this->getType(ctx, obj);
             if (!this->modulePrototype || (obj != this->modulePrototype && objClass != this->modulePrototype)) {
                      const proto::ProtoObject* instance = obj;
@@ -11360,9 +11369,17 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
                      }
 
                      const proto::ProtoList* args = ctx->newList()->appendLast(ctx, instance)->appendLast(ctx, owner ? owner : PROTO_NONE);
-                     // If we are deep in getAttribute, maybe don't call descriptor methods to avoid hangs?
-                     // But properties need it. We trust RecursionScope and AttrDepthGuard.
-                     const proto::ProtoObject* res = getM->asMethod(ctx)(ctx, val, nullptr, args, nullptr);
+                     const proto::ProtoObject* res;
+                     if (getmIsNative) {
+                         res = getM->asMethod(ctx)(ctx, val, nullptr, args, nullptr);
+                     } else {
+                         // Python callable __get__: invoke as __get__(descriptor, instance, owner)
+                         const proto::ProtoList* callArgs = ctx->newList()
+                             ->appendLast(ctx, val)
+                             ->appendLast(ctx, instance)
+                             ->appendLast(ctx, owner ? owner : PROTO_NONE);
+                         res = invokePythonCallable(ctx, getM, callArgs, nullptr);
+                     }
                      return res;
             }
         }

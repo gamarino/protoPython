@@ -947,12 +947,21 @@ class EnumType(type):
         if member_new is None:
             # check all possibles for __new_member__ before falling back to
             # __new__
+            # Use getattr() for __new__ comparisons to ensure the descriptor
+            # protocol is applied consistently: some Python implementations may
+            # return the raw staticmethod wrapper via direct attribute access
+            # (e.g. Enum.__new__) rather than the underlying function, causing
+            # set-membership checks to fail spuriously.
+            _object_new = getattr(object, '__new__', object.__new__)
+            _enum_new = getattr(Enum, '__new__', Enum.__new__) if Enum is not None else None
             for method in ('__new_member__', '__new__'):
                 for possible in (member_type, first_enum):
                     target = getattr(possible, method, None)
                     _cmp_set = {
                             None,
                             None.__new__,
+                            _object_new,
+                            _enum_new,
                             object.__new__,
                             Enum.__new__,
                             }
@@ -967,7 +976,9 @@ class EnumType(type):
         # if a non-object.__new__ is used then whatever value/tuple was
         # assigned to the enum member name will be passed to __new__ and to the
         # new enum member's __init__
-        if first_enum is None or member_new in (Enum.__new__, object.__new__):
+        _object_new2 = getattr(object, '__new__', object.__new__)
+        _enum_new2 = getattr(Enum, '__new__', Enum.__new__) if Enum is not None else None
+        if first_enum is None or member_new in (Enum.__new__, object.__new__, _enum_new2, _object_new2):
             use_args = False
         else:
             use_args = True

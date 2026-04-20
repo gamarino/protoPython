@@ -115,6 +115,20 @@ for name, val in opmap.items():
     if val < len(opname):
         opname[val] = name
 
+# Standard CPython compiler flag bit values (co_flags).
+COMPILER_FLAG_NAMES = {
+    0x01: 'OPTIMIZED',
+    0x02: 'NEWLOCALS',
+    0x04: 'VARARGS',
+    0x08: 'VARKEYWORDS',
+    0x10: 'NESTED',
+    0x20: 'GENERATOR',
+    0x40: 'NOFREE',
+    0x100: 'COROUTINE',
+    0x200: 'ITERABLE_COROUTINE',
+    0x400: 'ASYNC_GENERATOR',
+}
+
 def get_instructions(co):
     code = list(co.co_code)
     for i in range(0, len(code), 2):

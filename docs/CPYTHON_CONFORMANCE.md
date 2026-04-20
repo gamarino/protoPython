@@ -37,10 +37,16 @@ Frequent modules used in modern Python applications.
 Semantics required for complex frameworks and libraries. The tests below are protoPython-specific test files (not CPython's `Lib/test/`) that verify language features.
 
 - [x] `test_decorator.py`: **PASS** (custom protoPython test — `tests/test_decorator.py`)
-- [x] `test_metaclass.py`: **PASS** (custom protoPython test — `tests/test_metaclass.py`)
-- [x] `test_contextlib.py`: **PASS** (contextmanager, suppress, closing, nullcontext, ExitStack — custom test, V92)
 - [x] `test_abc.py`: **PASS** (custom protoPython test — `tests/test_abc.py`)
-- [x] `test_dataclasses.py`: **PASS** (dataclass, field, fields, asdict, astuple, is_dataclass — custom test, V92)
+- [ ] `test_contextlib.py`: **FAIL** — `ExitStack` callbacks not invoked; pre-existing `deque.append` bug: `DequeState` external pointer not visible after `setAttribute` on immutable object
+- [ ] `test_dataclasses.py`: **FAIL** — `annotationlib.py` line ~834 raises `NameError: name 'ann' is not defined`; pre-existing walrus/comprehension scoping gap in `get_annotations`
+
+### 🔵 Bootstrap Capabilities (V101)
+
+Key import-chain capabilities now verified working:
+
+- [x] `import importlib` — works end-to-end (V101)
+- [x] `import inspect` — works end-to-end (V101)
 
 ### 🟢 Low Priority (UI, Legacy, and Platform-Specific)
 
@@ -51,19 +57,31 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 - [ ] `test_pydoc.py`
 - [ ] `test_warnings.py`
 
-## Progress Summary (v1.0.0 — 2026-04-20)
+## Progress Summary (v1.0.0 — 2026-04-20, V101)
 
 | Category | Total | Tested | Passed | Notes |
 | :--- | :--- | :--- | :--- | :--- |
 | **Essential (CPython)** | 6 | 1 | 1 | 5 blocked by missing `test.support` / `asyncio` |
 | **Important (CPython)** | 6 | 0 | 0 | All blocked by missing `test.support` |
-| **Necessary (custom)** | 5 | 5 | 5 | protoPython-specific tests; all pass |
+| **Necessary (custom)** | 4 | 4 | 2 | `test_decorator`, `test_abc` pass; `test_contextlib`, `test_dataclasses` fail (pre-existing) |
+| **Bootstrap** | 2 | 2 | 2 | `import importlib`, `import inspect` now work (V101) |
 | **Low Priority** | 4 | 0 | 0 | Out of scope for v1.0 |
-| **Total** | **21** | **6** | **6** | — |
 
 **Conformity Suite (internal, 2026-04-15)**: 7/9 tests pass. Failures are pre-existing: `int(float)` conversion and `set(iterable)` constructor.
 
-**Next milestone**: Implement `test.support` minimal shim to unblock the CPython Essential/Important suites.
+**Next milestone**: Fix `deque.append` (`DequeState` external pointer lookup) and `annotationlib.py` walrus scoping gap to restore `test_contextlib` and `test_dataclasses`.
+
+### V101 Changes (2026-04-20)
+
+- **`import importlib` and `import inspect` now work end-to-end.** This unblocks the entire standard-library import chain for modules that depend on these two.
+- **`OP_LOAD_ATTR` fast path fix** (`src/library/ExecutionEngine.cpp`): Fast path is now skipped when the receiver has `__is_python_class__` as an own attribute. Previously, the fast path bypassed the descriptor protocol for Python-level classes, causing `classmethod`/`staticmethod`/`property` descriptors to return the raw wrapper object instead of calling `__get__`. Symptom: `_imp.BuiltinImporter.find_spec` returned the `classmethod` object, crashing with `AttributeError: 'classmethod' object has no attribute 'loader'`.
+- **`_imp.create_builtin()` fallback** (`src/library/ImpModule.cpp`): When the requested native module is not yet in `sys.modules`, the function now calls `env->resolveModule(name, ctx)` directly (bypassing `s_currentGlobals` which may shadow the name with `None` during bootstrap). Previously returned `None`, causing `_weakref.ref` to be missing and all `weakref`-dependent code to fail.
+- **`dis.COMPILER_FLAG_NAMES`** (`lib/python3.14/dis.py`): Added the standard dict mapping flag bits to names. Required by `inspect.py` to define `CO_*` module-level constants.
+- **`inspect._static_getmro` / `_get_dunder_dict_of_class`** (`lib/python3.14/inspect.py`): Replaced the CPython-specific `type.__dict__['__mro__'].__get__` hack (which fails in protoPython because `type.__dict__['__mro__']` returns the raw MRO tuple, not a `getset_descriptor`) with equivalent lambda expressions.
+- **Descriptor protocol: Python `__get__`** (`src/library/PythonEnvironment.cpp`): Section 1.5 of `getAttribute` now recognizes Python-defined `__get__` methods (not only native ones) and invokes them through `invokePythonCallable`, enabling property-like descriptors written in Python.
+- **`operator.attrgetter`** (`src/library/OperatorModule.cpp`): Implemented `attrgetter` callable factory (single and dotted-path forms); also fixed `itemgetter` to use the correct immutable `setAttribute` pattern.
+- **`enum.py` `__new__` comparison fix** (`lib/python3.14/enum.py`): Added `getattr()`-resolved copies of `object.__new__` and `Enum.__new__` to the `_cmp_set` so the `staticmethod` wrapper equality check works correctly in protoPython.
+- **`annotationlib.py` `_BASE_GET_ANNOTATIONS` fallback** (`lib/python3.14/annotationlib.py`): Wrapped the `type.__dict__["__annotations__"].__get__` call in a `try/except TypeError` with a `getattr()`-based fallback.
 
 ### v1.0.0 / V100 Changes (2026-04-20)
 

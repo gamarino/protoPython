@@ -1038,7 +1038,12 @@ def _get_and_call_annotate(obj, format):
     return None
 
 
-_BASE_GET_ANNOTATIONS = type.__dict__["__annotations__"].__get__
+try:
+    _BASE_GET_ANNOTATIONS = type.__dict__["__annotations__"].__get__
+except TypeError:
+    # Fallback: type.__dict__ may return a descriptor object instead of a mappingproxy
+    # on some implementations. Use getattr() to get the proper mappingproxy.
+    _BASE_GET_ANNOTATIONS = getattr(type, '__dict__')["__annotations__"].__get__
 
 
 def _get_dunder_annotations(obj):

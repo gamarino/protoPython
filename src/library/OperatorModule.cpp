@@ -280,12 +280,103 @@ static const proto::ProtoObject* py_itemgetter(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
-    
-    proto::ProtoObject* getter = const_cast<proto::ProtoObject*>(ctx->newObject(false));
-    getter->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__items__"), posArgs->asObject(ctx));
-    getter->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__call__"),
-        ctx->fromMethod(getter, py_itemgetter_call));
-    return getter;
+
+    const proto::ProtoObject* holder = ctx->newObject(false);
+    holder = holder->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__items__"), posArgs->asObject(ctx));
+    return ctx->fromMethod(const_cast<proto::ProtoObject*>(holder), py_itemgetter_call);
+}
+
+// attrgetter implementation
+static const proto::ProtoObject* py_attrgetter_call(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (!posArgs || posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    const proto::ProtoObject* obj = posArgs->getAt(ctx, 0);
+    const proto::ProtoObject* attrsObj = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__attrs__"));
+    if (!attrsObj || !attrsObj->asList(ctx)) return PROTO_NONE;
+    const proto::ProtoList* attrs = attrsObj->asList(ctx);
+
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+
+    auto getNestedAttr = [&](const proto::ProtoObject* target, const proto::ProtoObject* attrNameObj) -> const proto::ProtoObject* {
+        if (!attrNameObj || !attrNameObj->isString(ctx)) return PROTO_NONE;
+        std::string attrStr;
+        attrNameObj->asString(ctx)->toUTF8String(ctx, attrStr);
+        const proto::ProtoObject* current = target;
+        // Handle dotted attribute names like "name.first"
+        size_t start = 0;
+        while (start < attrStr.size()) {
+            size_t dot = attrStr.find('.', start);
+            std::string part = (dot == std::string::npos) ? attrStr.substr(start) : attrStr.substr(start, dot - start);
+            const proto::ProtoString* partS = PythonEnvironment::getInternedString(ctx, part.c_str());
+            current = env ? env->getAttribute(ctx, current, partS, false) : current->getAttribute(ctx, partS);
+            if (!current || current == PROTO_NONE) return PROTO_NONE;
+            if (dot == std::string::npos) break;
+            start = dot + 1;
+        }
+        return current;
+    };
+
+    if (attrs->getSize(ctx) == 1) {
+        return getNestedAttr(obj, attrs->getAt(ctx, 0));
+    }
+    const proto::ProtoList* results = ctx->newList();
+    for (unsigned long i = 0; i < attrs->getSize(ctx); ++i) {
+        results = results->appendLast(ctx, getNestedAttr(obj, attrs->getAt(ctx, i)));
+    }
+    const proto::ProtoTuple* tup = ctx->newTupleFromList(results);
+    return tup ? tup->asObject(ctx) : PROTO_NONE;
+}
+
+static const proto::ProtoObject* py_attrgetter(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (!posArgs || posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    const proto::ProtoObject* holder = ctx->newObject(false);
+    holder = holder->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__attrs__"), posArgs->asObject(ctx));
+    return ctx->fromMethod(const_cast<proto::ProtoObject*>(holder), py_attrgetter_call);
+}
+
+// methodcaller implementation
+static const proto::ProtoObject* py_methodcaller_call(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList* kwargs) {
+    if (!posArgs || posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    const proto::ProtoObject* obj = posArgs->getAt(ctx, 0);
+    const proto::ProtoObject* nameObj = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__mc_name__"));
+    const proto::ProtoObject* argsObj = self->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__mc_args__"));
+    if (!nameObj || !nameObj->isString(ctx)) return PROTO_NONE;
+
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    const proto::ProtoObject* method = env
+        ? env->getAttribute(ctx, obj, nameObj->asString(ctx))
+        : obj->getAttribute(ctx, nameObj->asString(ctx));
+    if (!method || method == PROTO_NONE) return PROTO_NONE;
+
+    std::vector<const proto::ProtoObject*> callArgVec;
+    if (argsObj && argsObj->asList(ctx)) {
+        const proto::ProtoList* stored = argsObj->asList(ctx);
+        for (unsigned long i = 0; i < stored->getSize(ctx); ++i)
+            callArgVec.push_back(stored->getAt(ctx, i));
+    }
+    if (env) return env->callObjectEx(method, callArgVec, {});
+    const proto::ProtoList* callArgs = ctx->newList();
+    for (auto* a : callArgVec) callArgs = callArgs->appendLast(ctx, a);
+    return method->call(ctx, nullptr, nullptr, const_cast<proto::ProtoObject*>(obj), callArgs, nullptr);
+}
+
+static const proto::ProtoObject* py_methodcaller(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList* kwargs) {
+    if (!posArgs || posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    const proto::ProtoObject* name = posArgs->getAt(ctx, 0);
+    const proto::ProtoObject* holder = ctx->newObject(false);
+    holder = holder->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__mc_name__"), name);
+    const proto::ProtoList* extraArgs = ctx->newList();
+    for (unsigned long i = 1; i < posArgs->getSize(ctx); ++i)
+        extraArgs = extraArgs->appendLast(ctx, posArgs->getAt(ctx, i));
+    holder = holder->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__mc_args__"), extraArgs->asObject(ctx));
+    return ctx->fromMethod(const_cast<proto::ProtoObject*>(holder), py_methodcaller_call);
 }
 
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
@@ -328,6 +419,10 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_index));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "itemgetter"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_itemgetter));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "attrgetter"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_attrgetter));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "methodcaller"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_methodcaller));
     return mod;
 }
 

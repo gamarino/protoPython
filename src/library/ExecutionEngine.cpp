@@ -3767,17 +3767,21 @@ const proto::ProtoObject* executeBytecodeRange(
                     // stable sparse-list key — no symbolTable mutex fires inside the call.
                     const proto::ProtoObject* val = nullptr;
                     bool fastPathTaken = false;
-                    if (env && obj != PROTO_NONE
-                            && !obj->isString(ctx) && !obj->isInteger(ctx) && !obj->isBoolean(ctx)) {
-                        const proto::ProtoObject* fv = obj->getOwnAttributeDirect(ctx, attrName);
-                        if (fv && fv != PROTO_NONE && !fv->isMethod(ctx)) {
-                            if (pushNull) {
-                                stack.back() = nullptr;
-                                stack.push_back(fv);
-                            } else {
-                                stack.back() = fv;
+                    {
+                        const proto::ProtoString* isPyClsS = env ? PythonEnvironment::getInternedString(ctx, "__is_python_class__") : nullptr;
+                        bool objIsPyClass = isPyClsS && obj->hasOwnAttribute(ctx, isPyClsS) == PROTO_TRUE;
+                        if (env && obj != PROTO_NONE && !objIsPyClass
+                                && !obj->isString(ctx) && !obj->isInteger(ctx) && !obj->isBoolean(ctx)) {
+                            const proto::ProtoObject* fv = obj->getOwnAttributeDirect(ctx, attrName);
+                            if (fv && fv != PROTO_NONE && !fv->isMethod(ctx)) {
+                                if (pushNull) {
+                                    stack.back() = nullptr;
+                                    stack.push_back(fv);
+                                } else {
+                                    stack.back() = fv;
+                                }
+                                fastPathTaken = true;
                             }
-                            fastPathTaken = true;
                         }
                     }
                     if (fastPathTaken) { i = next_i; continue; }
