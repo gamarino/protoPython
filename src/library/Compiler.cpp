@@ -1428,8 +1428,8 @@ bool Compiler::compileGeneratorExp(GeneratorExpNode* n) {
     const proto::ProtoObject* codeObj = makeCodeObject(ctx_, 
         bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), 
         PythonEnvironment::getInternedString(ctx_, filename_.c_str()), 
-        co_varnames, 1, 0, static_cast<int>(orderedLocals.size()), 
-        flags, true, 
+        co_varnames, 1, 0, static_cast<int>(orderedLocals.size()) + bodyCompiler.getMaxStack() + 16,
+        flags, true,
         PythonEnvironment::getInternedString(ctx_, "<genexpr>"),
         bodyCompiler.getFirstLine(), bodyCompiler.getLnotab());
     // 3.11+ calling convention: [NULL, callable, arg]
@@ -2431,6 +2431,10 @@ static void collectCapturedNamesImpl(ASTNode* node, const std::unordered_set<std
         for (const auto& name : used) {
             if (!defined.count(name) && !globalsInScope.count(name)) capturedOut.insert(name);
         }
+    } else if (auto* nm = dynamic_cast<NameNode*>(node)) {
+        // Bare name reference: candidate for capture from an enclosing scope.
+        // The caller filters by isLocal/isInOuterScope, so collecting all names is safe.
+        if (!globalsInScope.count(nm->id)) capturedOut.insert(nm->id);
     }
 }
 
@@ -2548,11 +2552,10 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
     if (!bodyCompiler.compileNode(n->body.get())) return false;
     if (!forceMapped) automatic_count += bodyCompiler.getMaxStack() + 16;
 
-    PythonEnvironment* env = PythonEnvironment::fromContext(ctx_);
-    int noneIdx = bodyCompiler.addConstant(env ? env->getNonePrototype() : PROTO_NONE);
+    int noneIdx = bodyCompiler.addConstant(PROTO_NONE);
     bodyCompiler.emit(OP_LOAD_CONST, noneIdx);
     bodyCompiler.emit(OP_RETURN_VALUE);
-    
+
     bodyCompiler.applyPatches();
 
     int co_flags = CO_NEWLOCALS;

@@ -322,6 +322,11 @@ Token Tokenizer::next() {
         skipWhitespace();
     }
     if (pos_ >= source_.size()) {
+        // Emit synthetic DEDENTs for any outstanding indentation levels (as CPython does).
+        if (nestingLevel_ == 0 && indentStack_.size() > 1) {
+            indentStack_.pop_back();
+            return makeToken(TokenType::Dedent);
+        }
         return makeToken(TokenType::EndOfFile);
     }
     char c = source_[pos_];

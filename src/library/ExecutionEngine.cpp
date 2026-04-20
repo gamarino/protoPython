@@ -737,7 +737,8 @@ static const proto::ProtoObject* runUserFunctionCallRaw(
     bool useSlotFastPath = cacheHit && !isGenerator && (!hasClosure || cacheNoLoadDeref)
         && cacheNoInnerFunctions && (co_flags & CO_OPTIMIZED)
         && kwonly_count == 0 && !(co_flags & CO_VARARGS) && !(co_flags & CO_VARKEYWORDS)
-        && (!kwargs || !kwargs->getSize(ctx));
+        && (!kwargs || !kwargs->getSize(ctx))
+        && rawArgCount >= (unsigned long)nparams_count; // fall back to full path when defaults needed
 
     if (!useSlotFastPath) {
         // Build a temporary ProtoList and call the full implementation.
@@ -5502,6 +5503,9 @@ const proto::ProtoObject* executeMinimalBytecode(
     // leave stale pointers that corrupt subsequent tests running in a fresh ProtoContext.
     const proto::ProtoObject* savedFrame = PythonEnvironment::getCurrentFrame();
     const proto::ProtoObject* savedGlobals = PythonEnvironment::getCurrentGlobals();
+    // Set globals to frame so BUILD_FUNCTION captures the correct __globals__, and so that
+    // sync_globals=true enables STORE_NAME to keep getCurrentGlobals() in sync with frame CoW.
+    PythonEnvironment::setCurrentGlobals(frame);
     const proto::ProtoObject* result = executeBytecodeRange(ctx, constants, bytecode, names, frame, 0, n ? n - 1 : 0, 0, nullptr, nullptr, nullptr, 0, nullptr);
     PythonEnvironment::setCurrentFrame(savedFrame);
     PythonEnvironment::setCurrentGlobals(savedGlobals);
