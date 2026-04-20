@@ -49,7 +49,7 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 - [ ] `test_pydoc.py`
 - [ ] `test_warnings.py`
 
-## Progress Summary (V98 - 2026-04-19)
+## Progress Summary (V99 - 2026-04-20)
 
 | Category | Total | Checked | Passed | Success Rate |
 | :--- | :--- | :--- | :--- | :--- |
@@ -61,23 +61,27 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 
 **Conformity Suite (Phase 1, 2026-04-15)**: 7/9 tests pass. Failures are pre-existing: `int(float)` conversion and `set(iterable)` constructor.
 
-### V98 Benchmark Results (2026-04-19)
+### V99 Benchmark Results (2026-04-20)
 
 | Benchmark          | protoPython (ms) | CPython (ms) | Ratio              |
 | :----------------- | ---------------: | -----------: | :----------------- |
 | startup_empty      | 20.0             | 35.6         | 0.56× **faster**   |
 | int_sum_loop       | 30.0             | 34.3         | 0.88× **faster**   |
-| list_append_loop   | 230.0            | 36.3         | 6.34× slower       |
-| str_concat_loop    | 190.0            | 36.9         | 5.14× slower       |
-| range_iterate      | 190.0            | 40.4         | 4.71× slower       |
+| list_append_loop   | 180.0            | 36.3         | 4.96× slower       |
+| str_concat_loop    | 180.0            | 36.9         | 4.87× slower       |
+| range_iterate      | 180.0            | 40.4         | 4.46× slower       |
 | multithread_cpu    | 20.0             | 44.3         | 0.45× **faster**¹  |
-| attr_lookup        | 290.0            | 44.9         | 6.46× slower       |
-| **call_recursion** | **660.0**        | **48.7**     | **13.55× slower**  |
+| attr_lookup        | 270.0            | 44.9         | 6.02× slower       |
+| **call_recursion** | **600.0**        | **48.7**     | **12.32× slower**  |
 | memory_pressure²   | excluded         | 65.4         | n/a                |
-| **Geomean**        |                  |              | **2.72×**          |
+| **Geomean**        |                  |              | **2.55×**          |
 
 ¹ Threading falls back to sequential (see note below). Not directly comparable to V93/V94 threaded results.
 ² Excluded from geomean analysis — GC deferral by design; see project notes.
+
+Values are minimum-of-10 runs (high system load during measurement; minimum avoids scheduling noise).
+
+**V99 vs V98**: call_recursion −9% (660→600ms, 13.6×→12.3×); attr_lookup −7% (290→270ms); list_append_loop −22%. Geomean 2.72×→**2.55×**. Improvement from replacing function-local `static const bool` guard check with namespace-scope initializer in `diagEnabled()` — see V99 note below.
 
 **V98 vs V97**: call_recursion −75% (2699→660ms, 47.3×→13.6×); startup_empty −49% (39→20ms); list/str/range −49–57%; int_sum_loop −25%. Geomean 8.38×→**2.72×**. All improvement from eliminating per-call heap allocation of 4352-slot arrays — see V98 note below.
 
@@ -88,6 +92,9 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 **V95 vs V94 absolute improvement**: attr_lookup −4% (754 ms vs 785 ms); call_recursion −3.8% (2880 ms vs 2994 ms). Stable. Geomean improved slightly (9.57× vs 9.96×).
 
 **V95 vs V93 Step 5 absolute improvement**: attr_lookup −68% (754 ms vs 2391 ms); call_recursion −92% (2880 ms vs 36097 ms). The large improvement vs V93 originates from the V94 `LOAD_ATTR` fast path and V93 function-call optimizations — V95 and V96 inherit all of these.
+
+> [!NOTE]
+> **V99 diagEnabled Guard-Check Fix (2026-04-20)**: Replaced function-local `static const bool val = (std::getenv(...) != nullptr)` in `diagEnabled()` with a namespace-scope `const bool g_diag_enabled` (anonymous namespace in `DiagUtils.h`). The function-local static required a C++ guard check (TLS load + branch) on every invocation — even after initialization — because the initializer is non-trivially-constructible. In V98 perf profiling, `get_env_diag()` + `diagEnabled()` + their PLT stubs consumed ~5% of runtime (visible as entries in both `libprotoPython.so` and `__tls_get_addr`). The namespace-scope bool is initialized once at program startup and accessed as a plain data-segment load thereafter. Result: `call_recursion` −9% (660→600ms, 13.6×→12.3×); `attr_lookup` −7% (290→270ms); `list_append_loop` −22% (230→180ms); geomean improved from **2.72× to 2.55×** vs CPython.
 
 > [!NOTE]
 > **V98 SBO Stack-Slot Fix (2026-04-19)**: Eliminated per-call heap allocation of oversized slot arrays. Every Python function stored `co_automatic_count = nLocals + 4352` (hardcoded `256 + PYTHON_STACK_BUFFER(4096)`). The `ContextScope` SBO had only 24 inline slots, so *every* real function bypassed it, triggering `new const ProtoObject*[4353]` + `memset(34 KB)` + `delete[]` per call. For `fib(25)×5` (≈1.2M calls) this amounted to ~3 s of allocator overhead — 24.6% of total time in `_int_free` (confirmed by `perf`). Fix: (1) added `stackEffect(op,arg)` to the compiler and wired it into `emit()` to track `maxStack_`; (2) set `co_automatic_count = nLocals + maxStack + 16` after body compilation instead of `nLocals + 4352`; (3) increased `SBO_SLOTS` from 24 to 64 so typical functions (fib: 22 slots) stay on-stack. Result: `call_recursion` improved −75% (2699→660ms, 47×→13.6×); startup/loop benchmarks improved 25–57%; geomean improved from **8.38× to 2.72×** vs CPython.

@@ -4,13 +4,14 @@
 #include <cstdlib>
 
 namespace protoPython {
-
-// Returns true if PROTO_ENV_DIAG is set in the environment.
-// Result is cached after the first call — safe to call in hot paths.
-inline bool diagEnabled() {
-    static const bool val = (std::getenv("PROTO_ENV_DIAG") != nullptr);
-    return val;
+namespace {
+    // Initialized once at program startup (before main()); no per-call guard check.
+    // A function-local static would require a C++ guard check (TLS + atomic branch)
+    // on every invocation, adding ~5% overhead in hot bytecode dispatch loops.
+    const bool g_diag_enabled = (std::getenv("PROTO_ENV_DIAG") != nullptr);
 }
+
+inline bool diagEnabled() { return g_diag_enabled; }
 
 } // namespace protoPython
 
