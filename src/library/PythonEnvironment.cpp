@@ -12076,9 +12076,16 @@ const proto::ProtoString* PythonEnvironment::getInternedString(proto::ProtoConte
     } else if (s_threadEnv && s_threadEnv->getContext()) {
         ctx = s_threadEnv->getContext();
     }
-    
+
     if (!ctx) return nullptr;
-    
+
+    // Without a PythonEnvironment, the ProtoSpace is ephemeral (unit-test scope).
+    // Caching ProtoString* from an ephemeral ProtoSpace into g_internPool would
+    // leave dangling pointers after that space is destroyed, corrupting subsequent tests.
+    if (!s_threadEnv) {
+        return proto::ProtoString::createSymbol(ctx, str.c_str());
+    }
+
     std::lock_guard<std::mutex> lock(g_internMutex);
     auto it = g_internPool.find(str);
     if (it != g_internPool.end()) {

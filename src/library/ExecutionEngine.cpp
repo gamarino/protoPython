@@ -5073,7 +5073,18 @@ const proto::ProtoObject* executeBytecodeRange(
                         }
                         continue;
                     }
-                } else if (!nameS) {
+                } else if (nameS) {
+                    // env is null (unit-test context) — fall back to getCurrentGlobals() or frame.
+                    const proto::ProtoObject* globalsObj = PythonEnvironment::getCurrentGlobals();
+                    if (!globalsObj) globalsObj = frame;
+                    const proto::ProtoObject* val = globalsObj ? globalsObj->getAttribute(ctx, nameS) : nullptr;
+                    if (val && val != PROTO_NONE) {
+                        if (pushNull) stack.push_back(nullptr);
+                        stack.push_back(val);
+                    } else {
+                        continue;
+                    }
+                } else {
                     continue;
                 }
             }
@@ -5486,7 +5497,15 @@ const proto::ProtoObject* executeMinimalBytecode(
     proto::ProtoObject*& frame) {
     if (!ctx || !constants || !bytecode) return nullptr;
     unsigned long n = bytecode->getSize(ctx);
-    return executeBytecodeRange(ctx, constants, bytecode, names, frame, 0, n ? n - 1 : 0, 0, nullptr, nullptr, nullptr, 0, nullptr);
+    // Save and restore thread-local/global singletons so unit tests don't pollute each other.
+    // STORE_NAME/STORE_GLOBAL handlers call setCurrentFrame/setCurrentGlobals, which would
+    // leave stale pointers that corrupt subsequent tests running in a fresh ProtoContext.
+    const proto::ProtoObject* savedFrame = PythonEnvironment::getCurrentFrame();
+    const proto::ProtoObject* savedGlobals = PythonEnvironment::getCurrentGlobals();
+    const proto::ProtoObject* result = executeBytecodeRange(ctx, constants, bytecode, names, frame, 0, n ? n - 1 : 0, 0, nullptr, nullptr, nullptr, 0, nullptr);
+    PythonEnvironment::setCurrentFrame(savedFrame);
+    PythonEnvironment::setCurrentGlobals(savedGlobals);
+    return result;
 }
 
 const proto::ProtoObject* exported_py_function_get(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
