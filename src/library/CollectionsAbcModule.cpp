@@ -1,4 +1,5 @@
 #include <protoPython/CollectionsAbcModule.h>
+#include <protoPython/DiagUtils.h>
 #include <protoPython/PythonEnvironment.h>
 #include <protoCore.h>
 
@@ -137,7 +138,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
 
         // Explicitly mark as a Python class for getType heuristic
         abc = const_cast<proto::ProtoObject*>(abc->setAttribute(ctx, s_is_py_class, PROTO_TRUE));
-        if (std::getenv("PROTO_ENV_DIAG") != nullptr) fprintf(stderr, "DEBUG_ABC_SET_IS_CLASS: %s %p -> %p\n", name, (void*)abc, (void*)s_is_py_class);
+        if (get_env_diag()) fprintf(stderr, "DEBUG_ABC_SET_IS_CLASS: %s %p -> %p\n", name, (void*)abc, (void*)s_is_py_class);
 
         // Inherit from object to have a valid MRO
         if (env) {

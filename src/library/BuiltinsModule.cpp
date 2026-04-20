@@ -1,4 +1,5 @@
 #include <protoPython/BuiltinsModule.h>
+#include <protoPython/DiagUtils.h>
 #include <protoPython/PythonEnvironment.h>
 #include <protoPython/ExecutionEngine.h>
 #include <protoPython/Parser.h>
@@ -98,7 +99,7 @@ static const proto::ProtoObject* py_import(
     if (nameObj && nameObj->isString(context)) {
         nameObj->asString(context)->toUTF8String(context, moduleName);
     }
-    if (std::getenv("PROTO_ENV_DIAG")) {
+    if (get_env_diag()) {
         fprintf(stderr, "DEBUG: __import__('%s') level=%d\n", moduleName.c_str(), (int)((argCount >= 5) ? (positionalParameters->getAt(context, 4)->isInteger(context) ? positionalParameters->getAt(context, 4)->asLong(context) : 0) : 0));
         fflush(stderr);
     }
@@ -370,7 +371,7 @@ static const proto::ProtoObject* py_print(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
-    if (std::getenv("PROTO_ENV_DIAG")) {
+    if (get_env_diag()) {
         fprintf(stderr, "DEBUG: py_print called with %lu args\n", positionalParameters->getSize(context));
     }
     (void)keywordParameters;
@@ -442,7 +443,7 @@ static const proto::ProtoObject* py_iter(
 
     ::protoPython::PythonEnvironment* env = ::protoPython::PythonEnvironment::fromContext(context);
     if (env) {
-        if (std::getenv("PROTO_ENV_DIAG")) {
+        if (get_env_diag()) {
             fprintf(stderr, "DEBUG: py_iter(obj=%p, repr=%s)\n", (void*)obj, PythonEnvironment::reprObject(context, obj).c_str());
         }
         const proto::ProtoObject* it = env->iter(obj);
@@ -1104,7 +1105,7 @@ static const proto::ProtoObject* py_object_init(
             if (inst) {
                 const proto::ProtoObject* cls = inst->getAttribute(context, env->getClassString());
                 if (cls) {
-                    if (std::getenv("PROTO_ENV_DIAG")) {
+                    if (get_env_diag()) {
                         std::string cn = "???";
                         const proto::ProtoObject* nAttr = cls->getAttribute(context, env->getNameString());
                         if (nAttr && nAttr->isString(context)) nAttr->asString(context)->toUTF8String(context, cn);
@@ -1139,7 +1140,7 @@ static const proto::ProtoObject* py_object_init(
                 return PROTO_NONE; 
             }
         } else {
-            if (std::getenv("PROTO_ENV_DIAG")) {
+            if (get_env_diag()) {
                  fprintf(stderr, "DEBUG: py_object_init IGNORING args for class '%s' (new_over=%d, init_over=%d)\n", clsName.c_str(), isNewOverridden, isInitOverridden);
             }
         }
@@ -1822,7 +1823,7 @@ static const proto::ProtoObject* py_super_getattr(
     // Get stored 'obj' and 'type' from proxy
     const proto::ProtoObject* obj = self->getAttribute(context, PythonEnvironment::getInternedString(context, "obj"));
     const proto::ProtoObject* type = self->getAttribute(context, PythonEnvironment::getInternedString(context, "type"));
-    if (std::getenv("PROTO_ENV_DIAG")) {
+    if (get_env_diag()) {
         std::string name; nameObj->asString(context)->toUTF8String(context, name);
         fprintf(stderr, "DEBUG_SUPER: getattr '%s' self=%p obj=%p type=%p\n",
                 name.c_str(), (void*)self, (void*)obj, (void*)type);
@@ -1848,7 +1849,7 @@ static const proto::ProtoObject* py_super_getattr(
         }
         
         if (mro) {
-            if (std::getenv("PROTO_ENV_DIAG")) {
+            if (get_env_diag()) {
                 fprintf(stderr, "DEBUG_SUPER: MRO size=%lu\n", (unsigned long)mro->getSize(context));
                 for (size_t i = 0; i < mro->getSize(context); ++i) {
                      std::string cname;
@@ -1882,12 +1883,12 @@ static const proto::ProtoObject* py_super_getattr(
         }
     }
 
-    if (std::getenv("PROTO_ENV_DIAG")) {
+    if (get_env_diag()) {
         fprintf(stderr, "DEBUG_SUPER: targets size=%lu\n", (unsigned long)targets.size());
     }
     for (const proto::ProtoObject* target : targets) {
         if (!target || target == PROTO_NONE) continue;
-        if (std::getenv("PROTO_ENV_DIAG")) {
+        if (get_env_diag()) {
             fprintf(stderr, "DEBUG_SUPER_TARGET: target=%p (%s)\n", (void*)target, env ? env->reprObject(context, target).c_str() : "?");
         }
 
@@ -1921,7 +1922,7 @@ static const proto::ProtoObject* py_super_getattr(
             if (target->proto::ProtoObject::hasOwnAttribute(context, nameObj->asString(context)) == PROTO_TRUE) legit = true;
         }
 
-        if (std::getenv("PROTO_ENV_DIAG")) {
+        if (get_env_diag()) {
             std::string n; nameObj->asString(context)->toUTF8String(context, n);
             fprintf(stderr, "DEBUG_SUPER_SEARCH: target=%p attr=%s legit=%d isPy=%d hasCode=%d isObj=%d\n", 
                     (void*)target, n.c_str(), (int)legit, (int)isPythonClass, (int)hasCode, (int)isObject);
@@ -1930,7 +1931,7 @@ static const proto::ProtoObject* py_super_getattr(
         if (!legit) continue;
 
         if (val && val != PROTO_NONE) {
-            if (std::getenv("PROTO_ENV_DIAG")) {
+            if (get_env_diag()) {
                 std::string n; nameObj->asString(context)->toUTF8String(context, n);
                 const proto::ProtoObject* codeAttr = val->proto::ProtoObject::getAttribute(context, PythonEnvironment::getInternedString(context, "__code__"));
                 fprintf(stderr, "DEBUG_SUPER: found '%s' in target %p val=%p asMethod=%d code=%p\n", 
@@ -1958,7 +1959,7 @@ static const proto::ProtoObject* py_super_getattr(
         }
     }
     
-    if (std::getenv("PROTO_ENV_DIAG")) {
+    if (get_env_diag()) {
         std::string n; nameObj->asString(context)->toUTF8String(context, n);
         fprintf(stderr, "DEBUG_SUPER: getattr '%s' failed to find attribute in targets (count=%zu)\n", n.c_str(), targets.size());
         fflush(stderr);
@@ -2045,7 +2046,7 @@ static const proto::ProtoObject* py_super(
        // Check fast locals (slots) first if available
        if (context->getAutomaticLocalsCount() > 0 && context->getAutomaticLocals()) {
            obj = context->getAutomaticLocals()[0];
-           if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG: py_super found obj in fast locals: %p\n", (void*)obj);
+           if (get_env_diag()) fprintf(stderr, "DEBUG: py_super found obj in fast locals: %p\n", (void*)obj);
        }
        
        const proto::ProtoObject* locals = frame->getAttribute(context, env->getFLocalsString());
@@ -2065,7 +2066,7 @@ static const proto::ProtoObject* py_super(
                            if (slowObj && slowObj != PROTO_NONE) {
                                obj = slowObj;
                                foundArg = true;
-                               if (std::getenv("PROTO_ENV_DIAG")) {
+                               if (get_env_diag()) {
                                    std::string n;
                                    firstArgName->asString(context)->toUTF8String(context, n);
                                    fprintf(stderr, "DEBUG: py_super found obj in locals (%s): %p\n", n.c_str(), (void*)obj);
@@ -2111,7 +2112,7 @@ static const proto::ProtoObject* py_super(
                // 1. Check frame locals (fast locals usually include freevars)
                const proto::ProtoObject* locals = curr->getAttribute(context, env->getFLocalsString());
                if (locals && locals != PROTO_NONE) {
-                     if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG: py_super BFS checking locals of scope %p\n", (void*)curr);
+                     if (get_env_diag()) fprintf(stderr, "DEBUG: py_super BFS checking locals of scope %p\n", (void*)curr);
                      // Fix: locals is a ProtoObject (dict or frame), not a SparseList directly.
                      // Use getAttribute to retrieve the value.
                      const proto::ProtoObject* val = PROTO_NONE;
@@ -2120,7 +2121,7 @@ static const proto::ProtoObject* py_super(
                       }
                       if (val && val != PROTO_NONE) {
                           type = val;
-                          if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG: py_super found __class__ in f_locals of scope %p\n", (void*)curr);
+                          if (get_env_diag()) fprintf(stderr, "DEBUG: py_super found __class__ in f_locals of scope %p\n", (void*)curr);
                           goto found_class;
                      }
                }
@@ -2129,7 +2130,7 @@ static const proto::ProtoObject* py_super(
                const proto::ProtoObject* code = curr->getAttribute(context, env->getFCodeString());
                const proto::ProtoObject* closure = curr->getAttribute(context, env->getClosureString());
 
-               if (std::getenv("PROTO_ENV_DIAG")) {
+               if (get_env_diag()) {
                    fprintf(stderr, "DEBUG: py_super BFS scope %p: code=%p, closure=%p, closure_is_tuple=%d\n", 
                            (void*)curr, (void*)code, (void*)closure, 
                            (closure && closure->isTuple(context)));
@@ -2143,14 +2144,14 @@ static const proto::ProtoObject* py_super(
                           for (size_t i = 0; i < freeTup->getSize(context); ++i) {
                                const proto::ProtoObject* name = freeTup->getAt(context, i);
                                if (name->isString(context) && name->asString(context)->cmp_to_string(context, classStr) == 0) {
-                                    if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG: py_super found __class__ in freevars at index %zu\n", i);
+                                    if (get_env_diag()) fprintf(stderr, "DEBUG: py_super found __class__ in freevars at index %zu\n", i);
                                     if (i < closureTup->getSize(context)) {
                                          const proto::ProtoObject* cell = closureTup->getAt(context, i);
                                          // Use getAttribute("cell_contents")
                                          const proto::ProtoObject* val = cell->getAttribute(context, PythonEnvironment::getInternedString(context, "cell_contents"));
                                          if (val && val != PROTO_NONE) {
                                               type = val;
-                                              if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG: py_super retrieved __class__ from closure cell\n");
+                                              if (get_env_diag()) fprintf(stderr, "DEBUG: py_super retrieved __class__ from closure cell\n");
                                               goto found_class;
                                          }
                                     }
@@ -2196,11 +2197,11 @@ static const proto::ProtoObject* py_super(
                         const proto::ProtoObject* mroSrc = isClass ? obj : env->getType(context, obj);
                         const proto::ProtoObject* mroObj = mroSrc ? mroSrc->getAttribute(context, PythonEnvironment::getInternedString(context, "__mro__")) : nullptr;
                         const proto::ProtoTuple* mro = (mroObj && mroObj != PROTO_NONE) ? mroObj->asTuple(context) : nullptr;
-                        if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG_SUPER_MRO_CHECK: obj=%p isClass=%d mroSrc=%p mroObj=%p mro=%p co_name=%p co_nameStr=%d\n", (void*)obj, isClass, (void*)mroSrc, (void*)mroObj, (void*)mro, (void*)co_name, co_name ? co_name->isString(context) : 0);
+                        if (get_env_diag()) fprintf(stderr, "DEBUG_SUPER_MRO_CHECK: obj=%p isClass=%d mroSrc=%p mroObj=%p mro=%p co_name=%p co_nameStr=%d\n", (void*)obj, isClass, (void*)mroSrc, (void*)mroObj, (void*)mro, (void*)co_name, co_name ? co_name->isString(context) : 0);
                         if (mro && co_name && co_name->isString(context)) {
                             for (size_t i = 0; i < mro->getSize(context); ++i) {
                                 const proto::ProtoObject* cls = mro->getAt(context, i);
-                                if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG_SUPER_MRO: cls=%p hasOwn=%d\n", (void*)cls, cls->hasOwnAttribute(context, co_name->asString(context)) == PROTO_TRUE);
+                                if (get_env_diag()) fprintf(stderr, "DEBUG_SUPER_MRO: cls=%p hasOwn=%d\n", (void*)cls, cls->hasOwnAttribute(context, co_name->asString(context)) == PROTO_TRUE);
                                 if (cls->hasOwnAttribute(context, co_name->asString(context)) == PROTO_TRUE) {
                                     const proto::ProtoObject* attr = cls->getAttribute(context, co_name->asString(context));
                                     const proto::ProtoObject* attrCode = attr ? attr->getAttribute(context, PythonEnvironment::getInternedString(context, "__code__")) : nullptr;
@@ -2210,10 +2211,10 @@ static const proto::ProtoObject* py_super(
                                             attrCode = func->getAttribute(context, PythonEnvironment::getInternedString(context, "__code__"));
                                         }
                                     }
-                                    if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG_SUPER_MRO: cls=%p attr=%p attrCode=%p codeObj=%p\n", (void*)cls, (void*)attr, (void*)attrCode, (void*)codeObj);
+                                    if (get_env_diag()) fprintf(stderr, "DEBUG_SUPER_MRO: cls=%p attr=%p attrCode=%p codeObj=%p\n", (void*)cls, (void*)attr, (void*)attrCode, (void*)codeObj);
                                     if (attrCode == codeObj) {
                                         type = cls;
-                                        if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG_SUPER_MRO: MATCH (PTR)! type set to %p\n", (void*)type);
+                                        if (get_env_diag()) fprintf(stderr, "DEBUG_SUPER_MRO: MATCH (PTR)! type set to %p\n", (void*)type);
                                         break;
                                     } else if (attrCode && attrCode != PROTO_NONE && codeObj) {
                                         // Robust fallback for code match (names)
@@ -2221,7 +2222,7 @@ static const proto::ProtoObject* py_super(
                                         const proto::ProtoObject* n2 = codeObj->getAttribute(context, PythonEnvironment::getInternedString(context, "co_name"));
                                         if (n1 && n2 && n1 == n2 && n1 != PROTO_NONE) {
                                             type = cls;
-                                            if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG_SUPER_MRO: MATCH (NAME)! type set to %p\n", (void*)type);
+                                            if (get_env_diag()) fprintf(stderr, "DEBUG_SUPER_MRO: MATCH (NAME)! type set to %p\n", (void*)type);
                                             break;
                                         }
                                     }
@@ -2238,7 +2239,7 @@ static const proto::ProtoObject* py_super(
                         type = obj->getAttribute(context, PythonEnvironment::getInternedString(context, "__class__"));
                     }
                 }
-                if (std::getenv("PROTO_ENV_DIAG")) {
+                if (get_env_diag()) {
                     std::string tname = "Unknown";
                     if (type && type != PROTO_NONE) {
                         const proto::ProtoObject* n = type->getAttribute(context, PythonEnvironment::getInternedString(context, "__name__"));
@@ -2248,7 +2249,7 @@ static const proto::ProtoObject* py_super(
                 }
             }
         } else {
-            if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG: py_super 0-arg failed to find self/cls\n");
+            if (get_env_diag()) fprintf(stderr, "DEBUG: py_super 0-arg failed to find self/cls\n");
             return PROTO_NONE;
         }
     } else {
@@ -2257,13 +2258,13 @@ static const proto::ProtoObject* py_super(
     }
     
     if (!type || !obj) {
-        if (std::getenv("PROTO_ENV_DIAG")) {
+        if (get_env_diag()) {
              fprintf(stderr, "DEBUG: py_super returning NONE (type=%p, obj=%p)\n", (void*)type, (void*)obj);
         }
         return PROTO_NONE;
     }
 
-    if (std::getenv("PROTO_ENV_DIAG")) {
+    if (get_env_diag()) {
         std::string tname = "Unknown";
         const proto::ProtoObject* n = type->getAttribute(context, PythonEnvironment::getInternedString(context, "__name__"));
         if (n && n->isString(context)) n->asString(context)->toUTF8String(context, tname);
@@ -2640,7 +2641,7 @@ static const proto::ProtoList* computeC3MRO(proto::ProtoContext* context, const 
         }
     }
     
-    if (std::getenv("PROTO_ENV_DIAG")) {
+    if (get_env_diag()) {
         std::string cn = "unknown";
         const proto::ProtoObject* nO = cls->proto::ProtoObject::getAttribute(context, PythonEnvironment::getInternedString(context, "__name__"));
         if (nO && nO->isString(context)) nO->asString(context)->toUTF8String(context, cn);
@@ -2710,7 +2711,7 @@ static const proto::ProtoList* computeC3MRO(proto::ProtoContext* context, const 
             break; 
         }
     }
-    if (std::getenv("PROTO_ENV_DIAG")) {
+    if (get_env_diag()) {
         std::string clsName = "unknown";
         const proto::ProtoString* nameS = ::protoPython::PythonEnvironment::getInternedString(context, "__name__");
         const proto::ProtoObject* nameAttr = cls->getAttribute(context, nameS);
@@ -2825,7 +2826,7 @@ const proto::ProtoObject* py_type(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
-    if (std::getenv("PROTO_ENV_DIAG")) {
+    if (get_env_diag()) {
         fprintf(stderr, "DEBUG: py_type executing early unconditional: size=%zu\n", positionalParameters ? positionalParameters->getSize(context) : 0);
     }
     
@@ -2837,7 +2838,7 @@ const proto::ProtoObject* py_type(
         return PROTO_NONE;
     }
     size_t argCount = positionalParameters ? positionalParameters->getSize(context) : 0;
-    if (std::getenv("PROTO_ENV_DIAG")) {
+    if (get_env_diag()) {
         std::string sRepr = env ? env->reprObject(context, self) : "???";
         fprintf(stderr, "DEBUG py_type: TOP self=%s argCount=%zu\n", sRepr.c_str(), argCount);
         for (size_t i = 0; i < argCount; ++i) {
@@ -3033,7 +3034,7 @@ const proto::ProtoObject* py_type(
             }
         }
         
-        if (std::getenv("PROTO_ENV_DIAG")) {
+        if (get_env_diag()) {
             std::string nStr;
             if (name && name->isString(context)) name->asString(context)->toUTF8String(context, nStr);
             fprintf(stderr, "DEBUG py_type: creating class %s (targetClass=%p)\n", nStr.c_str(), (void*)targetClass);
@@ -3041,7 +3042,7 @@ const proto::ProtoObject* py_type(
         }
 
         if (tupleBases) {
-            if (std::getenv("PROTO_ENV_DIAG")) {
+            if (get_env_diag()) {
                 fprintf(stderr, "DEBUG py_type: tupleBases size=%lu\n", tupleBases->getSize(context));
                 for (size_t i = 0; i < tupleBases->getSize(context); ++i) {
                     const proto::ProtoObject* b = tupleBases->getAt(context, static_cast<int>(i));
@@ -3133,7 +3134,7 @@ const proto::ProtoObject* py_type(
 }
 
 static bool checkInterfaceInstanceOf(proto::ProtoContext* context, const proto::ProtoObject* obj, const proto::ProtoObject* cls) {
-    if (std::getenv("PROTO_ENV_DIAG")) {
+    if (get_env_diag()) {
         protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(context);
         std::string objRepr = env ? env->reprObject(context, obj) : "???";
         std::string clsRepr = env ? env->reprObject(context, cls) : "???";
@@ -3179,7 +3180,7 @@ static bool checkInterfaceInstanceOf(proto::ProtoContext* context, const proto::
     }
 
     bool res = obj->isInstanceOf(context, cls) == PROTO_TRUE;
-    if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG checkInterfaceInstanceOf result=%d\n", res);
+    if (get_env_diag()) fprintf(stderr, "DEBUG checkInterfaceInstanceOf result=%d\n", res);
     return res;
 }
 
@@ -3187,7 +3188,7 @@ static const proto::ProtoObject* resolveClassType(protoPython::PythonEnvironment
     if (!env || !self) return cls;
     const proto::ProtoObject* typeAttr = self->getAttribute(context, PythonEnvironment::getInternedString(context, "type"));
     const proto::ProtoObject* listAttr = self->getAttribute(context, PythonEnvironment::getInternedString(context, "list"));
-    if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG resolveClassType cls=%p self=%p listAttr=%p typeAttr=%p\n", (void*)cls, (void*)self, (void*)listAttr, (void*)typeAttr);
+    if (get_env_diag()) fprintf(stderr, "DEBUG resolveClassType cls=%p self=%p listAttr=%p typeAttr=%p\n", (void*)cls, (void*)self, (void*)listAttr, (void*)typeAttr);
     const proto::ProtoObject* tupAttr = self->getAttribute(context, PythonEnvironment::getInternedString(context, "tuple"));
     const proto::ProtoObject* dictAttr = self->getAttribute(context, PythonEnvironment::getInternedString(context, "dict"));
     const proto::ProtoObject* strAttr = self->getAttribute(context, PythonEnvironment::getInternedString(context, "str"));
@@ -3227,7 +3228,7 @@ static const proto::ProtoObject* py_isinstance(
     const proto::ProtoObject* cls = positionalParameters->getAt(context, 1);
     cls = resolveClassType(env, self, context, cls);
     
-    if (std::getenv("PROTO_ENV_DIAG")) {
+    if (get_env_diag()) {
         std::string objRepr = env ? env->reprObject(context, obj) : "???";
         std::string clsRepr = env ? env->reprObject(context, cls) : "???";
         if (clsRepr.find("EnumType") != std::string::npos || clsRepr.find("Enum") != std::string::npos) {
@@ -3276,7 +3277,7 @@ static bool py_issubclass_check_single(proto::ProtoContext* context, const proto
 
     if (cls == base) return true;
 
-    if (depth == 0 && std::getenv("PROTO_ENV_DIAG")) {
+    if (depth == 0 && get_env_diag()) {
         PythonEnvironment* env = PythonEnvironment::fromContext(context);
         std::string clsRepr = env ? env->reprObject(context, cls) : "???";
         std::string baseRepr = env ? env->reprObject(context, base) : "???";
@@ -3285,7 +3286,7 @@ static bool py_issubclass_check_single(proto::ProtoContext* context, const proto
 
     // Fast path: use __mro__
     const proto::ProtoObject* mro = cls->getAttribute(context, PythonEnvironment::getInternedString(context, "__mro__"));
-    if (depth == 0 && std::getenv("PROTO_ENV_DIAG")) {
+    if (depth == 0 && get_env_diag()) {
         PythonEnvironment* env = PythonEnvironment::fromContext(context);
         std::string mroRepr = env ? env->reprObject(context, mro) : "???";
         fprintf(stderr, "DEBUG py_issubclass: mro=%p repr=%s list=%p tuple=%p\n", (void*)mro, mroRepr.c_str(), (void*)(mro?mro->asList(context):nullptr), (void*)(mro?mro->asTuple(context):nullptr));
@@ -3343,7 +3344,7 @@ static const proto::ProtoObject* py_issubclass(
     const proto::ProtoObject* cls = positionalParameters->getAt(context, 0);
     const proto::ProtoObject* base = positionalParameters->getAt(context, 1);
     
-    if (std::getenv("PROTO_ENV_DIAG")) {
+    if (get_env_diag()) {
         fprintf(stderr, "DEBUG py_issubclass: entry cls=%p base=%p\n", (void*)cls, (void*)base);
     }
     
@@ -3667,7 +3668,7 @@ static const proto::ProtoObject* py_property_get(
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
     if (obj == PROTO_NONE) return self;
     const proto::ProtoObject* fget = self->getAttribute(context, PythonEnvironment::getInternedString(context, "fget"));
-    if (std::getenv("PROTO_ENV_DIAG")) {
+    if (get_env_diag()) {
         fprintf(stderr, "DEBUG py_property_get: fget=%p\n", (void*)fget);
     }
     if (fget && fget != PROTO_NONE) {
@@ -3675,7 +3676,7 @@ static const proto::ProtoObject* py_property_get(
         if (env) {
             std::vector<const proto::ProtoObject*> argsVec = {obj};
             const proto::ProtoObject* res = env->callObject(fget, argsVec);
-            if (std::getenv("PROTO_ENV_DIAG")) {
+            if (get_env_diag()) {
                 fprintf(stderr, "DEBUG py_property_get: callObject res=%p\n", (void*)res);
             }
             return res ? res : PROTO_NONE;
@@ -3804,7 +3805,7 @@ static const proto::ProtoObject* py_property(
         prop->setAttribute(context, PythonEnvironment::getInternedString(context, "fdel"), positionalParameters->getAt(context, 3));
     }
     
-    if (std::getenv("PROTO_ENV_DIAG")) {
+    if (get_env_diag()) {
         fprintf(stderr, "DEBUG py_property (__new__): prop=%p cls=%p fget=%p\n", (void*)prop, (void*)cls, (void*)(positionalParameters->getSize(context) >= 2 ? positionalParameters->getAt(context, 1) : nullptr));
     }
     return prop;
@@ -4137,7 +4138,7 @@ static const proto::ProtoObject* py_range_iter(
     const proto::ProtoString* stepS = env ? env->getRangeStepString() : PythonEnvironment::getInternedString(context, "__range_step__");
 
     const proto::ProtoObject* curObj = self->getAttribute(context, curS);
-    if (std::getenv("PROTO_ENV_DIAG")) {
+    if (get_env_diag()) {
         fprintf(stderr, "DEBUG: py_range_iter called with self=%p, curObj=%p\n", (void*)self, (void*)curObj);
         fflush(stderr);
     }
@@ -4317,7 +4318,7 @@ static const proto::ProtoObject* py_filter_next(
     const proto::ProtoObject* func = self->getAttribute(context, funcS);
     const proto::ProtoObject* it = self->getAttribute(context, iterS);
     if (!func || !it) {
-        if (std::getenv("PROTO_ENV_DIAG")) {
+        if (get_env_diag()) {
             fprintf(stderr, "DEBUG: py_map_next failing: func=%p it=%p\n", (void*)func, (void*)it);
             fflush(stderr);
         }
@@ -4325,7 +4326,7 @@ static const proto::ProtoObject* py_filter_next(
     }
     const proto::ProtoObject* nextM = it->getAttribute(context, nextS);
     if (!nextM || !nextM->asMethod(context)) {
-        if (std::getenv("PROTO_ENV_DIAG")) {
+        if (get_env_diag()) {
             fprintf(stderr, "DEBUG: py_map_next failing: it=%p nextM=%p\n", (void*)it, (void*)nextM);
             fflush(stderr);
         }
@@ -4372,14 +4373,14 @@ static const proto::ProtoObject* py_map(
 
     const proto::ProtoObject* it = py_iter(context, nullptr, nullptr, context->newList()->appendLast(context, iterable), nullptr);
     if (!it || it == noneObj) {
-        if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG: py_map failing: py_iter returned None or nullptr\n");
+        if (get_env_diag()) fprintf(stderr, "DEBUG: py_map failing: py_iter returned None or nullptr\n");
         return PROTO_NONE;
     }
     const proto::ProtoObject* cls = positionalParameters->getAt(context, 0);
     const proto::ProtoObject* mapObj = cls->newChild(context, true);
     mapObj = mapObj->setAttribute(context, mapFuncS, func);
     mapObj = mapObj->setAttribute(context, mapIterS, it);
-    if (std::getenv("PROTO_ENV_DIAG")) {
+    if (get_env_diag()) {
         fprintf(stderr, "DEBUG: py_map created mapObj=%p func=%p iter=%p\n", (void*)mapObj, (void*)func, (void*)it);
         fflush(stderr);
     }
@@ -4398,7 +4399,7 @@ static const proto::ProtoObject* py_map_next(
     const proto::ProtoObject* func = self->getAttribute(context, funcS);
     const proto::ProtoObject* it = self->getAttribute(context, iterS);
     if (!func || !it) {
-        if (std::getenv("PROTO_ENV_DIAG")) {
+        if (get_env_diag()) {
             fprintf(stderr, "DEBUG: py_map_next failing: func=%p it=%p\n", (void*)func, (void*)it);
             fflush(stderr);
         }
@@ -4406,7 +4407,7 @@ static const proto::ProtoObject* py_map_next(
     }
     const proto::ProtoObject* nextM = it->getAttribute(context, nextS);
     if (!nextM || !nextM->asMethod(context)) {
-        if (std::getenv("PROTO_ENV_DIAG")) {
+        if (get_env_diag()) {
             fprintf(stderr, "DEBUG: py_map_next failing: it=%p nextM=%p\n", (void*)it, (void*)nextM);
             fflush(stderr);
         }
@@ -4416,7 +4417,7 @@ static const proto::ProtoObject* py_map_next(
     const proto::ProtoList* emptyL = env ? env->getEmptyList() : context->newList();
     const proto::ProtoObject* val = nextM->asMethod(context)(context, it, nullptr, emptyL, nullptr);
     if (!val) {
-        if (std::getenv("PROTO_ENV_DIAG")) {
+        if (get_env_diag()) {
             fprintf(stderr, "DEBUG: py_map_next: it=%p __next__ returned nullptr (end of iteration)\n", (void*)it);
             fflush(stderr);
         }
@@ -4467,7 +4468,7 @@ const proto::ProtoObject* py_object_new(
 }
 
 const proto::ProtoObject* py_bytearray_fallback(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* link, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
-    if (std::getenv("PROTO_ENV_DIAG")) fprintf(stderr, "DEBUG: py_bytearray_fallback called\n");
+    if (get_env_diag()) fprintf(stderr, "DEBUG: py_bytearray_fallback called\n");
     // If called with a bytes/string argument, return it directly (protoPython simplification:
     // bytearray is treated as immutable bytes since mutation is not widely used in stdlib).
     if (args && args->getSize(ctx) >= 1) {
@@ -4498,7 +4499,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
                                     const proto::ProtoObject* floatProto, const proto::ProtoObject* boolProto,
                                    const proto::ProtoObject* complexProto,
                                    const proto::ProtoObject* ioModule) {
-    if (std::getenv("PROTO_ENV_DIAG")) {
+    if (get_env_diag()) {
         fprintf(stderr, "DEBUG BUILTINS INIT START: ctx=%p objectProto=%p\n", (void*)ctx, (void*)objectProto);
         fflush(stderr);
     }
@@ -4508,7 +4509,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     if (noneProto) {
         builtins = builtins->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "None"), noneProto);
     }
-    if (std::getenv("PROTO_ENV_DIAG")) {
+    if (get_env_diag()) {
         fprintf(stderr, "DEBUG IN BUILTINS INIT: 1 obInB=%p\n", (void*)builtins->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "object")));
     }
     if (ioModule && ioModule != PROTO_NONE) {
@@ -4564,7 +4565,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
         ctx->space->objectPrototype = const_cast<proto::ProtoObject*>(objectProto);
     }
     builtins = builtins->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "object"), objectProto);
-    if (std::getenv("PROTO_ENV_DIAG")) {
+    if (get_env_diag()) {
         fprintf(stderr, "DEBUG IN BUILTINS INIT: 2 (AFTER SET) obInB=%p\n", (void*)builtins->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "object")));
     }
     if (typeProto) {
@@ -4589,7 +4590,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     builtins = builtins->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "int"), intProto);
     builtins = builtins->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "str"), strProto);
     builtins = builtins->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "list"), listProto);
-    if (std::getenv("PROTO_ENV_DIAG")) {
+    if (get_env_diag()) {
         const proto::ProtoObject* dNew = dictProto ? dictProto->getAttribute(ctx, pEnv->getNewString()) : nullptr;
         fprintf(stderr, "DEBUG IN BUILTINS INIT: dictProto=%p dict.__new__=%p\n", (void*)dictProto, (void*)dNew);
     }
@@ -4599,7 +4600,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
         if (pEnv) pEnv->setDictPrototype(dictProto);
     }
     builtins = builtins->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "dict"), dictProto);
-    if (std::getenv("PROTO_ENV_DIAG")) {
+    if (get_env_diag()) {
         const proto::ProtoObject* dInB = builtins->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "dict"));
         const proto::ProtoObject* dNew = dInB ? dInB->getAttribute(ctx, pEnv->getNewString()) : nullptr;
         fprintf(stderr, "DEBUG IN BUILTINS INIT: dictInB=%p dictInB.__new__=%p\n", (void*)dInB, (void*)dNew);
@@ -4640,7 +4641,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     builtins = builtins->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__package__"), PythonEnvironment::getInternedString(ctx, "")->asObject(ctx));
     builtins = builtins->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "open"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_open));
     // print registration diagnostic removed
-    if (std::getenv("PROTO_ENV_DIAG")) {
+    if (get_env_diag()) {
     }
     builtins = builtins->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "print"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_print));
     builtins = builtins->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "dir"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_dir));
@@ -4656,12 +4657,12 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     builtins = builtins->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "in"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_contains));
     builtins = builtins->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "isinstance"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_isinstance));
     builtins = builtins->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "issubclass"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_issubclass));
-    if (std::getenv("PROTO_ENV_DIAG")) {
+    if (get_env_diag()) {
         fprintf(stderr, "DEBUG BUILTINS INIT: before pEnv lookup\n");
         fflush(stderr);
     }
     pEnv = PythonEnvironment::fromContext(ctx);
-    if (std::getenv("PROTO_ENV_DIAG")) {
+    if (get_env_diag()) {
         fprintf(stderr, "DEBUG BUILTINS INIT: pEnv=%p\n", (void*)pEnv);
         fflush(stderr);
     }
@@ -4852,7 +4853,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     builtins = builtins->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "classmethod"), classmethodProto);
     
     builtins = builtins->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__import__"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_import));
-    if (std::getenv("PROTO_ENV_DIAG")) {
+    if (get_env_diag()) {
         fprintf(stderr, "DEBUG IN BUILTINS INIT: END obInB=%p\n", (void*)builtins->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "object")));
         fflush(stderr);
     }

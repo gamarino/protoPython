@@ -1,4 +1,5 @@
 #include <protoPython/Compiler.h>
+#include <protoPython/DiagUtils.h>
 #include <protoPython/ExecutionEngine.h>
 #include <protoPython/PythonEnvironment.h>
 #include <iostream>
@@ -78,14 +79,14 @@ int Compiler::addName(const std::string& name) {
     const proto::ProtoObject* str = env ? reinterpret_cast<const proto::ProtoObject*>(env->getInternedString(ctx_, name.c_str())) : proto::ProtoString::createSymbol(ctx_, name.c_str())->asObject(ctx_);
     namesVec_.push_back(str);
     namesIndex_[name] = idx;
-    if (std::getenv("PROTO_ENV_DIAG")) {
+    if (get_env_diag()) {
         fprintf(stderr, "DEBUG COMPILER [%s]: addName '%s' -> idx %d (strObj=%p)\n", filename_.c_str(), name.c_str(), idx, (void*)str);
     }
     return idx;
 }
 
 void Compiler::emit(int op, int arg) {
-    if (std::getenv("PROTO_ENV_DIAG")) {
+    if (get_env_diag()) {
         fprintf(stderr, "COMPILING [%p]: offset=%zu op=%d arg=%d\n", (void*)this, bytecodeVec_.size(), op, arg);
     }
     bytecodeVec_.push_back(ctx_->fromInteger(op));
@@ -2360,7 +2361,7 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
     std::string dynamicReason = getDynamicLocalsReason(n->body.get());
     const bool forceMapped = !dynamicReason.empty();
 
-    if (std::getenv("PROTO_ENV_DIAG")) {
+    if (get_env_diag()) {
         fprintf(stderr, "DEBUG COMPILER: FunctionDef '%s' forceMapped=%d dynamicReason='%s' captured_size=%zu\n", 
                 n->name.c_str(), (int)forceMapped, dynamicReason.c_str(), captured.size());
         for (const auto& c : captured) {
@@ -2409,7 +2410,7 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
     }
 
     int nparams = static_cast<int>(params.size());
-    if (std::getenv("PROTO_ENV_DIAG")) {
+    if (get_env_diag()) {
         fprintf(stderr, "DEBUG COMPILER: %s:%d FunctionDef '%s' nparams=%d\n", filename_.c_str(), n->line, n->name.c_str(), nparams);
         fflush(stderr);
     }
@@ -2915,7 +2916,7 @@ bool Compiler::compileClassDef(ClassDefNode* n) {
     emit(OP_BUILD_TUPLE, static_cast<int>(n->bases.size()));
     
     // 2.5 Keywords
-    if (std::getenv("PROTO_ENV_DIAG")) {
+    if (get_env_diag()) {
         fprintf(stderr, "DEBUG Compiler: class '%s' keywords size=%zu\n", n->name.c_str(), n->keywords.size());
     }
     if (!n->keywords.empty()) {
@@ -3232,13 +3233,13 @@ const proto::ProtoObject* runCodeObject(proto::ProtoContext* ctx,
     const proto::ProtoObject* codeObj,
     proto::ProtoObject*& frame) {
     if (!ctx || !codeObj || !frame) {
-        if (std::getenv("PROTO_ENV_DIAG")) {
+        if (get_env_diag()) {
             fprintf(stderr, "DEBUG: runCodeObject early return: ctx=%p codeObj=%p frame=%p\n", (void*)ctx, (void*)codeObj, (void*)frame);
         }
         return PROTO_NONE;
     }
     
-    if (std::getenv("PROTO_ENV_DIAG")) {
+    if (get_env_diag()) {
         fprintf(stderr, "DEBUG: runCodeObject started\n");
     }
     
@@ -3250,7 +3251,7 @@ const proto::ProtoObject* runCodeObject(proto::ProtoContext* ctx,
     const proto::ProtoObject* co_varnames = codeObj->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "co_varnames"));
 
     if (!co_consts || !co_consts->asTuple(ctx) || !co_code || !co_code->asTuple(ctx)) {
-        if (std::getenv("PROTO_ENV_DIAG")) {
+        if (get_env_diag()) {
             fprintf(stderr, "DEBUG: runCodeObject missing co_consts (%p) or co_code (%p)\n", (void*)co_consts, (void*)co_code);
         }
         return PROTO_NONE;
@@ -3280,7 +3281,7 @@ const proto::ProtoObject* runCodeObject(proto::ProtoContext* ctx,
 
     unsigned long stackOffset = (co_varnames && co_varnames->asTuple(execCtx)) ? co_varnames->asTuple(execCtx)->getSize(execCtx) : 0;
 
-    if (std::getenv("PROTO_ENV_DIAG")) {
+    if (get_env_diag()) {
         fprintf(stderr, "DEBUG: runCodeObject co_code size=%lu co_consts size=%lu stackOffset=%lu\n",
             co_code->asTuple(execCtx)->getSize(execCtx),
             co_consts->asTuple(execCtx)->getSize(execCtx),
@@ -3291,7 +3292,7 @@ const proto::ProtoObject* runCodeObject(proto::ProtoContext* ctx,
         co_names ? co_names->asTuple(execCtx) : nullptr, frame, 0, co_code->asTuple(execCtx)->getSize(execCtx),
         stackOffset);
 
-    if (std::getenv("PROTO_ENV_DIAG")) {
+    if (get_env_diag()) {
         fprintf(stderr, "DEBUG: runCodeObject result=%p\n", (void*)result);
     }
 

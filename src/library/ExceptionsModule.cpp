@@ -1,4 +1,5 @@
 #include <protoPython/PythonEnvironment.h>
+#include <protoPython/DiagUtils.h>
 #include <protoPython/ExceptionsModule.h>
 
 namespace protoPython {
@@ -51,7 +52,7 @@ static const proto::ProtoObject* exception_str(
     const proto::ProtoObject* argsObj = instance->getAttribute(context, argsName);
     const proto::ProtoTuple* args = argsObj && argsObj->isTuple(context) ? argsObj->asTuple(context) : context->newTuple();
     
-    if (std::getenv("PROTO_ENV_DIAG")) {
+    if (get_env_diag()) {
         fprintf(stderr, "DEBUG exception_str: args size %lu\n", args->getSize(context));
     }
     
@@ -60,7 +61,7 @@ static const proto::ProtoObject* exception_str(
     }
     if (args->getSize(context) == 1) {
         const proto::ProtoObject* firstArg = args->getAt(context, 0);
-        if (std::getenv("PROTO_ENV_DIAG")) {
+        if (get_env_diag()) {
             fprintf(stderr, "DEBUG exception_str: returning firstArg=%p isString=%d\n", (void*)firstArg, firstArg->isString(context));
         }
         return firstArg;
@@ -127,7 +128,7 @@ static const proto::ProtoObject* make_exception_type(proto::ProtoContext* ctx,
     const proto::ProtoString* py_class = PythonEnvironment::getInternedString(ctx, "__class__");
 
     const proto::ProtoObject* exc = base ? base->newChild(ctx, true) : ctx->newObject(false);
-    if (std::getenv("PROTO_ENV_DIAG")) {
+    if (get_env_diag()) {
         fprintf(stderr, "DEBUG: make_exception_type name='%s' type=%p base=%p\n", name, (void*)exc, (void*)base);
         fflush(stderr);
     }

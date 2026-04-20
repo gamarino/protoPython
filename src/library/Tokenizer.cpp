@@ -1,4 +1,5 @@
 #include <protoPython/Tokenizer.h>
+#include <protoPython/DiagUtils.h>
 #include <cctype>
 #include <stdexcept>
 #include <iostream>
@@ -324,7 +325,7 @@ Token Tokenizer::next() {
         return makeToken(TokenType::EndOfFile);
     }
     char c = source_[pos_];
-    if (std::getenv("PROTO_ENV_DIAG")) {
+    if (get_env_diag()) {
     }
     if (c == '\n') {
         pos_++;

@@ -1,4 +1,5 @@
 #include <protoPython/OsModule.h>
+#include <protoPython/DiagUtils.h>
 #include <protoPython/PythonEnvironment.h>
 #include <protoCore.h>
 #include <cstdlib>
@@ -221,7 +222,7 @@ static const proto::ProtoObject* py_getenv(
     if (!keyObj->isString(ctx)) return PROTO_NONE;
     std::string key;
     keyObj->asString(ctx)->toUTF8String(ctx, key);
-    if (std::getenv("PROTO_ENV_DIAG")) {
+    if (get_env_diag()) {
         // log removed
     }
     const char* val = std::getenv(key.c_str());
@@ -484,7 +485,7 @@ static const proto::ProtoObject* py_setenv(
     keyObj->asString(ctx)->toUTF8String(ctx, key);
     valObj->asString(ctx)->toUTF8String(ctx, val);
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
-    if (std::getenv("PROTO_ENV_DIAG")) {
+    if (get_env_diag()) {
         // log removed
     }
     setenv(key.c_str(), val.c_str(), 1);
@@ -504,7 +505,7 @@ static const proto::ProtoObject* py_unsetenv(
     std::string key;
     keyObj->asString(ctx)->toUTF8String(ctx, key);
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
-    if (std::getenv("PROTO_ENV_DIAG")) {
+    if (get_env_diag()) {
         // log removed
     }
     unsetenv(key.c_str());
@@ -583,7 +584,7 @@ static const proto::ProtoObject* py_environ_keys(
         const char* eq = strchr(*p, '=');
         if (eq && eq > *p) {
             std::string key(*p, static_cast<size_t>(eq - *p));
-            if (std::getenv("PROTO_ENV_DIAG")) {
+            if (get_env_diag()) {
                 // log removed
             }
             result = result->appendLast(ctx, PythonEnvironment::getInternedString(ctx, key.c_str())->asObject(ctx));
