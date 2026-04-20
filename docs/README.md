@@ -17,7 +17,7 @@ This directory contains the technical documentation for protoPython, a high-perf
 ## Project Overview
 
 - **Objective:** A GIL-less, high-performance Python 3.14 runtime leveraging protoCore's immutable object system and parallel architecture.
-- **Status:** Phase 5 (HPy, REPL, error reporting) complete; Phase 6 (full stubs, threading, networking) in progress. Experimental; not production ready.
+- **Status:** v1.0.0 (2026-04-20). Core language features, the bytecode interpreter, standard-library foundations, and the HPy extension interface are complete. CPython's `test_grammar.py` passes (75/75). Not production ready — `test.support`, `asyncio`, `inspect`, and `_datetime` are not yet implemented; the remaining CPython conformance tests are blocked on these.
 - **Key differentiator:** True parallel execution (no Global Interpreter Lock), zero-copy interop via HPy/UMD, and hardware-aligned memory layout.
 
 ---

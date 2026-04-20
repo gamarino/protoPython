@@ -8,37 +8,39 @@ This document tracks the progress of `protoPython` in passing the official CPyth
 
 ## Test Priorities
 
+> **Note on test scope:** The CPython regression suite (`Lib/test/`) requires `test.support`, `doctest`, `inspect`, `annotationlib`, and other test-infrastructure modules that are not yet implemented in protoPython. The statuses below reflect direct execution via `./build/protopy <test_file>` without those scaffolding modules. Tests that are blocked solely by missing test infrastructure are tracked separately from tests that exercise language or stdlib features.
+
 ### 🔴 Essential (Primary Language & Core Types)
 
 Core syntax, standard object model, and fundamental types.
 
-- [x] `test_grammar.py`: **PASS** (75 tests, OK — V89)
-- [x] `test_types.py`: **PASS** (131 tests, OK — V89)
-- [x] `test_descr.py`: **PASS** (165 tests, OK — V89)
-- [x] `test_generators.py`: **PASS** (1 test, OK — V89)
-- [x] `test_asyncgen.py`: **PASS** (85 tests, OK — V90; GCStack overflow now raises recoverable RuntimeError)
-- [x] `test_base64.py`: **PASS** (54 tests, OK — V89)
+- [x] `test_grammar.py`: **PASS** (75/75 — V100, 2026-04-20)
+- [ ] `test_types.py`: **BLOCKED** — requires `test.support` (not yet implemented)
+- [ ] `test_descr.py`: **BLOCKED** — requires `test.support` (not yet implemented)
+- [ ] `test_generators.py`: **BLOCKED** — requires `doctest` and `test.support` (not yet implemented)
+- [ ] `test_asyncgen.py`: **BLOCKED** — requires `asyncio` (not yet implemented)
+- [ ] `test_base64.py`: **BLOCKED** — requires `test.support` (not yet implemented)
 
 ### 🟠 Important (Standard Library Foundations)
 
 Frequent modules used in modern Python applications.
 
-- [x] `test_sys.py`: **PASS** (System parameters and functions — V91)
-- [x] `test_os.py`: **PASS** (Unblocked by `sys.exception` and `traceback` stabilization — V91)
-- [x] `test_re.py`: **PASS** (Regular expression operations — V91)
-- [x] `test_datetime.py`: **PASS** (Basic date and time types — V91)
-- [x] `test_collections.py`: **PASS** (namedtuple, ChainMap — V91)
-- [x] `test_functools.py`: **PASS** (V91)
+- [ ] `test_sys.py`: **BLOCKED** — requires `test.support`
+- [ ] `test_os.py`: **BLOCKED** — requires `test.support`
+- [ ] `test_re.py`: **BLOCKED** — requires `test.support`
+- [ ] `test_datetime.py`: **BLOCKED** — requires `test.support` and `_datetime` C extension
+- [ ] `test_collections.py`: **BLOCKED** — requires `test.support`
+- [ ] `test_functools.py`: **BLOCKED** — requires `test.support`
 
 ### 🟡 Necessary (Advanced Language Features)
 
-Semantics required for complex frameworks and libraries.
+Semantics required for complex frameworks and libraries. The tests below are protoPython-specific test files (not CPython's `Lib/test/`) that verify language features.
 
-- [x] `test_decorators.py`: PASS (via `tests/test_decorator.py`)
-- [x] `test_metaclass.py`: PASS (Verified with `test_metaclass.py`)
-- [x] `test_contextlib.py`: **PASS** (contextmanager, suppress, closing, nullcontext, ExitStack — V92)
-- [x] `test_abc.py`: PASS (Verified with `tests/test_abc.py`)
-- [x] `test_dataclasses.py`: **PASS** (dataclass, field, fields, asdict, astuple, is_dataclass — V92)
+- [x] `test_decorator.py`: **PASS** (custom protoPython test — `tests/test_decorator.py`)
+- [x] `test_metaclass.py`: **PASS** (custom protoPython test — `tests/test_metaclass.py`)
+- [x] `test_contextlib.py`: **PASS** (contextmanager, suppress, closing, nullcontext, ExitStack — custom test, V92)
+- [x] `test_abc.py`: **PASS** (custom protoPython test — `tests/test_abc.py`)
+- [x] `test_dataclasses.py`: **PASS** (dataclass, field, fields, asdict, astuple, is_dataclass — custom test, V92)
 
 ### 🟢 Low Priority (UI, Legacy, and Platform-Specific)
 
@@ -49,24 +51,27 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 - [ ] `test_pydoc.py`
 - [ ] `test_warnings.py`
 
-## Progress Summary (V100 - 2026-04-20)
+## Progress Summary (v1.0.0 — 2026-04-20)
 
-| Category | Total | Checked | Passed | Success Rate |
+| Category | Total | Tested | Passed | Notes |
 | :--- | :--- | :--- | :--- | :--- |
-| **Essential** | 6 | 6 | 6 | 100% |
-| **Important** | 6 | 6 | 6 | 100% |
-| **Necessary** | 5 | 5 | 5 | 100% |
-| **Low Priority** | 4 | 0 | 0 | 0% |
-| **Total** | **21** | **17** | **17** | **100%** |
+| **Essential (CPython)** | 6 | 1 | 1 | 5 blocked by missing `test.support` / `asyncio` |
+| **Important (CPython)** | 6 | 0 | 0 | All blocked by missing `test.support` |
+| **Necessary (custom)** | 5 | 5 | 5 | protoPython-specific tests; all pass |
+| **Low Priority** | 4 | 0 | 0 | Out of scope for v1.0 |
+| **Total** | **21** | **6** | **6** | — |
 
-**Conformity Suite (Phase 1, 2026-04-15)**: 7/9 tests pass. Failures are pre-existing: `int(float)` conversion and `set(iterable)` constructor.
+**Conformity Suite (internal, 2026-04-15)**: 7/9 tests pass. Failures are pre-existing: `int(float)` conversion and `set(iterable)` constructor.
 
-### V100 Changes (2026-04-20)
+**Next milestone**: Implement `test.support` minimal shim to unblock the CPython Essential/Important suites.
+
+### v1.0.0 / V100 Changes (2026-04-20)
 
 - **`test_grammar.py` confirmed passing** (75/75): Fixed two root causes blocking `unittest.main()` via argparse:
   1. **Zero-argument `super()` in class methods** — compile-time rewrite to `super(ClassName, self)` via `currentClassName_` propagation through the class→method compiler chain. Mirrors CPython's `__classcell__` mechanism without requiring cell variables.
   2. **`import` inside function bodies** — `compileImport`/`compileImportFrom` emitted `OP_LOAD_NAME` for `__import__`, which silently pushes `PROTO_NONE` when `frame == nullptr` in the slot fast-path (`runUserFunctionCallRaw`). Fixed to `OP_LOAD_GLOBAL` (uses `env->resolve()` directly, frame-independent).
-- **Cleanup**: removed leftover debug prints from `argparse.py`, `os.py:_fspath`, `weakref.py`, and `test_grammar.py`.
+- **Debug print cleanup**: removed all unconditional debug prints from `lib/python3.14/os.py`, `lib/python3.14/types.py`, `lib/python3.14/collections/__init__.py`, `src/library/WeakrefModule.cpp`, plus leftover prints from `argparse.py`, `os.py:_fspath`, and `weakref.py`.
+- **Version bump**: project version advanced to 1.0.0; `sys.version` updated to `"3.14.0 (protoPython 1.0.0, Apr 2026)"` and `sys.implementation.version` to `(1, 0, 0)`.
 
 ### V99 Benchmark Results (2026-04-20)
 

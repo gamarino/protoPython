@@ -348,7 +348,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     
     // sys.version
     // sys.version
-    sys = sys->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "version"), PythonEnvironment::getInternedString(ctx, "3.14.0 (protoPython, Feb 2026)")->asObject(ctx));
+    sys = sys->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "version"), PythonEnvironment::getInternedString(ctx, "3.14.0 (protoPython 1.0.0, Apr 2026)")->asObject(ctx));
 
     // sys.base_prefix, sys.prefix, sys.exec_prefix, sys.base_exec_prefix
     if (env) {
@@ -475,8 +475,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     const proto::ProtoObject* impl = env && env->getObjectPrototype() ? env->getObjectPrototype()->newChild(ctx, true) : ctx->newObject(false);
     impl = impl->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "name"), PythonEnvironment::getInternedString(ctx, "protopython")->asObject(ctx));
     const proto::ProtoList* impl_version = ctx->newList();
+    impl_version = impl_version->appendLast(ctx, ctx->fromInteger(1));
     impl_version = impl_version->appendLast(ctx, ctx->fromInteger(0));
-    impl_version = impl_version->appendLast(ctx, ctx->fromInteger(2));
     impl_version = impl_version->appendLast(ctx, ctx->fromInteger(0));
     impl = impl->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "version"), impl_version->asObject(ctx));
     impl = impl->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "cache_tag"), PythonEnvironment::getInternedString(ctx, "protopython-314")->asObject(ctx));

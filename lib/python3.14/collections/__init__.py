@@ -16,12 +16,6 @@ list, set, and tuple.
 
 import sys as _sys
 import _collections_abc
-print(f"DEBUG: collections/__init__.py ENTER", file=_sys.stderr)
-print(f"DEBUG: _collections_abc mod={_collections_abc}", file=_sys.stderr)
-try:
-    print(f"DEBUG: _collections_abc.MutableSequence={_collections_abc.MutableSequence}", file=_sys.stderr)
-except Exception as e:
-    print(f"DEBUG: _collections_abc.MutableSequence FAILED: {e}", file=_sys.stderr)
 
 __all__ = [
     'ChainMap',
