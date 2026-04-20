@@ -157,6 +157,17 @@ private:
     int lastLine_ = 0;
     std::vector<unsigned char> lnotabVec_;
     void setLineNumber(int line);
+
+    // Stack depth tracking — updated by emit() for each opcode emitted.
+    // currentStack_: depth after the last emitted instruction.
+    // maxStack_:     highest depth seen; used as co_stacksize for slot allocation.
+    int currentStack_ = 0;
+    int maxStack_     = 0;
+
+public:
+    int getMaxStack() const { return maxStack_; }
+
+private:
 };
 
 /** Build a code object (ProtoObject with co_consts, co_names, co_code) from compiler output.

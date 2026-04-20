@@ -49,7 +49,7 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 - [ ] `test_pydoc.py`
 - [ ] `test_warnings.py`
 
-## Progress Summary (V97 - 2026-04-19)
+## Progress Summary (V98 - 2026-04-19)
 
 | Category | Total | Checked | Passed | Success Rate |
 | :--- | :--- | :--- | :--- | :--- |
@@ -61,23 +61,25 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 
 **Conformity Suite (Phase 1, 2026-04-15)**: 7/9 tests pass. Failures are pre-existing: `int(float)` conversion and `set(iterable)` constructor.
 
-### V97 Benchmark Results (2026-04-19)
+### V98 Benchmark Results (2026-04-19)
 
 | Benchmark          | protoPython (ms) | CPython (ms) | Ratio              |
 | :----------------- | ---------------: | -----------: | :----------------- |
-| startup_empty      | 39.2             | 35.6         | 1.07× slower       |
-| int_sum_loop       | 40.1             | 34.3         | 1.15× slower       |
-| list_append_loop   | 452.7            | 36.3         | 12.5× slower       |
-| str_concat_loop    | 447.0            | 36.9         | 12.1× slower       |
-| range_iterate      | 446.3            | 40.4         | 11.1× slower       |
-| multithread_cpu    | 34.8             | 44.3         | 0.78× faster¹      |
-| **attr_lookup**    | **308.9**        | **44.9**     | **7.19× slower**   |
-| **call_recursion** | **2698.5**       | **48.7**     | **47.3× slower**   |
-| memory_pressure²   | 32124.5          | 65.4         | 491× slower        |
-| **Geomean**        |                  |              | **8.38×**          |
+| startup_empty      | 20.0             | 35.6         | 0.56× **faster**   |
+| int_sum_loop       | 30.0             | 34.3         | 0.88× **faster**   |
+| list_append_loop   | 230.0            | 36.3         | 6.34× slower       |
+| str_concat_loop    | 190.0            | 36.9         | 5.14× slower       |
+| range_iterate      | 190.0            | 40.4         | 4.71× slower       |
+| multithread_cpu    | 20.0             | 44.3         | 0.45× **faster**¹  |
+| attr_lookup        | 290.0            | 44.9         | 6.46× slower       |
+| **call_recursion** | **660.0**        | **48.7**     | **13.55× slower**  |
+| memory_pressure²   | excluded         | 65.4         | n/a                |
+| **Geomean**        |                  |              | **2.72×**          |
 
 ¹ Threading falls back to sequential (see note below). Not directly comparable to V93/V94 threaded results.
 ² Excluded from geomean analysis — GC deferral by design; see project notes.
+
+**V98 vs V97**: call_recursion −75% (2699→660ms, 47.3×→13.6×); startup_empty −49% (39→20ms); list/str/range −49–57%; int_sum_loop −25%. Geomean 8.38×→**2.72×**. All improvement from eliminating per-call heap allocation of 4352-slot arrays — see V98 note below.
 
 **V97 vs V96**: attr_lookup −59% (748→309ms, 16.7×→7.19×); call_recursion −4.6% (2828→2699ms, 58×→47×). Geomean 9.81×→8.38×. All improvement from replacing 200+ uncached `std::getenv("PROTO_ENV_DIAG")` calls with a single cached boolean — including one call on every bytecode dispatch.
 
@@ -86,6 +88,9 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 **V95 vs V94 absolute improvement**: attr_lookup −4% (754 ms vs 785 ms); call_recursion −3.8% (2880 ms vs 2994 ms). Stable. Geomean improved slightly (9.57× vs 9.96×).
 
 **V95 vs V93 Step 5 absolute improvement**: attr_lookup −68% (754 ms vs 2391 ms); call_recursion −92% (2880 ms vs 36097 ms). The large improvement vs V93 originates from the V94 `LOAD_ATTR` fast path and V93 function-call optimizations — V95 and V96 inherit all of these.
+
+> [!NOTE]
+> **V98 SBO Stack-Slot Fix (2026-04-19)**: Eliminated per-call heap allocation of oversized slot arrays. Every Python function stored `co_automatic_count = nLocals + 4352` (hardcoded `256 + PYTHON_STACK_BUFFER(4096)`). The `ContextScope` SBO had only 24 inline slots, so *every* real function bypassed it, triggering `new const ProtoObject*[4353]` + `memset(34 KB)` + `delete[]` per call. For `fib(25)×5` (≈1.2M calls) this amounted to ~3 s of allocator overhead — 24.6% of total time in `_int_free` (confirmed by `perf`). Fix: (1) added `stackEffect(op,arg)` to the compiler and wired it into `emit()` to track `maxStack_`; (2) set `co_automatic_count = nLocals + maxStack + 16` after body compilation instead of `nLocals + 4352`; (3) increased `SBO_SLOTS` from 24 to 64 so typical functions (fib: 22 slots) stay on-stack. Result: `call_recursion` improved −75% (2699→660ms, 47×→13.6×); startup/loop benchmarks improved 25–57%; geomean improved from **8.38× to 2.72×** vs CPython.
 
 > [!NOTE]
 > **V97 Diagnostic Cache Fix (2026-04-19)**: Replaced all uncached `std::getenv("PROTO_ENV_DIAG")` calls across 8 source files with a cached boolean (`get_env_diag()` from new `include/protoPython/DiagUtils.h`). The critical site was the hot bytecode dispatch loop in `ExecutionEngine.cpp`, which called `getenv()` on every opcode. For `fib(25)` × 10 iterations this removed ~26.7M `getenv()` calls from `executeBytecodeRange` alone, plus ~79 in `PythonEnvironment.cpp` (attr reads), 62 in `BuiltinsModule.cpp`, and 10 more in `Compiler.cpp`. Result: `attr_lookup` improved −59% (748→309ms); `call_recursion` improved −4.6% (2828→2699ms); geomean improved from 9.81× to **8.38×** vs CPython.

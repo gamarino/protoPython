@@ -36,7 +36,7 @@ inline void promote(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
  * while the ProtoContext struct itself still lives on the stack.
  */
 class ContextScope {
-    static constexpr size_t SBO_SLOTS = 24;
+    static constexpr size_t SBO_SLOTS = 64;
 
     // Stack storage for the ProtoContext struct itself — no heap alloc for the struct.
     alignas(proto::ProtoContext) char ctxStorage_[sizeof(proto::ProtoContext)];

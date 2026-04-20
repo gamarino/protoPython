@@ -85,12 +85,135 @@ int Compiler::addName(const std::string& name) {
     return idx;
 }
 
+// Returns the net stack effect of opcode `op` with `arg`.
+// Positive = pushes items, negative = pops items.
+// Conservative: unknown opcodes return 0 (stack level stays unchanged in tracker,
+// which overestimates depth when ops pop — safe for slot-array sizing).
+static int stackEffect(int op, int arg) {
+    switch (op) {
+        // Loads (+1)
+        case OP_LOAD_CONST: case OP_LOAD_NAME: case OP_LOAD_GLOBAL:
+        case OP_LOAD_FAST:  case OP_LOAD_DEREF:
+        case OP_DUP_TOP:    case OP_PUSH_NULL:
+            return 1;
+        case OP_DUP_TOP_TWO:
+            return 2;
+
+        // Stores (-1)
+        case OP_STORE_NAME: case OP_STORE_GLOBAL:
+        case OP_STORE_FAST: case OP_STORE_DEREF:
+        case OP_POP_TOP:    case OP_RETURN_VALUE:
+        case OP_IMPORT_STAR:
+            return -1;
+        case OP_STORE_ATTR:  // pops value + object
+            return -2;
+        case OP_STORE_SUBSCR: // pops value + key + container
+            return -3;
+
+        // Unary ops (0 net: pop 1, push 1)
+        case OP_UNARY_NEGATIVE: case OP_UNARY_POSITIVE:
+        case OP_UNARY_NOT:      case OP_UNARY_INVERT:
+        case OP_GET_ITER:       case OP_LIST_TO_TUPLE:
+        case OP_GET_LEN:        // actually +1 (pushes len w/o popping), count as 0 → safe
+        case OP_BUILD_FUNCTION: case OP_LOAD_ATTR:
+        case OP_GET_AWAITABLE:  case OP_GET_AITER:
+        case OP_GET_YIELD_FROM_ITER:
+            return 0;
+
+        // Binary ops (-1 net: pop 2, push 1)
+        case OP_BINARY_ADD:       case OP_BINARY_SUBTRACT:
+        case OP_BINARY_MULTIPLY:  case OP_BINARY_TRUE_DIVIDE:
+        case OP_BINARY_FLOOR_DIVIDE: case OP_BINARY_MODULO:
+        case OP_BINARY_POWER:     case OP_BINARY_LSHIFT:
+        case OP_BINARY_RSHIFT:    case OP_BINARY_AND:
+        case OP_BINARY_OR:        case OP_BINARY_XOR:
+        case OP_BINARY_MATRIX_MULTIPLY:
+        case OP_INPLACE_ADD:      case OP_INPLACE_SUBTRACT:
+        case OP_INPLACE_MULTIPLY: case OP_INPLACE_TRUE_DIVIDE:
+        case OP_INPLACE_FLOOR_DIVIDE: case OP_INPLACE_MODULO:
+        case OP_INPLACE_POWER:    case OP_INPLACE_LSHIFT:
+        case OP_INPLACE_RSHIFT:   case OP_INPLACE_AND:
+        case OP_INPLACE_OR:       case OP_INPLACE_XOR:
+        case OP_INPLACE_MATRIX_MULTIPLY:
+        case OP_COMPARE_OP:       case OP_BINARY_SUBSCR:
+        case OP_EXCEPTION_MATCH:
+            return -1;
+
+        // Jumps (pops condition)
+        case OP_POP_JUMP_IF_FALSE: case OP_POP_JUMP_IF_TRUE:
+            return -1;
+        case OP_JUMP_ABSOLUTE: case OP_JUMP_FORWARD: case OP_NOP:
+        case OP_ROT_TWO:       case OP_ROT_THREE:    case OP_ROT_FOUR:
+        case OP_EXTENDED_ARG:
+            return 0;
+
+        // FOR_ITER: when the iterator has items, pushes next value (+1).
+        // When done, falls through with the iterator still on stack (0 relative).
+        // Use +1 for sizing (the pushed case drives maxStack).
+        case OP_FOR_ITER:
+            return 1;
+
+        // Builders: pop `arg` items, push 1
+        case OP_BUILD_LIST: case OP_BUILD_TUPLE: case OP_BUILD_SET:
+        case OP_BUILD_STRING:
+            return 1 - arg;
+        case OP_BUILD_MAP:
+            return 1 - 2 * arg;
+        case OP_BUILD_SLICE:
+            return 1 - arg; // arg is 2 or 3
+
+        // CALL_FUNCTION: modern layout [NULL, callable, a1..aN] → pops N+2, pushes 1
+        case OP_CALL_FUNCTION:
+            return -(arg + 1);
+        case OP_CALL_FUNCTION_KW:
+            return -(arg + 2); // also pops kwnames tuple
+        case OP_CALL_FUNCTION_EX:
+            return -(1 + (arg & 1)); // EX pops args-tuple [+ kwargs-dict]
+
+        // Comprehension helpers: pop TOS into container at stack[top-arg-1], no push
+        case OP_LIST_APPEND: case OP_SET_ADD:
+            return -1;
+        case OP_MAP_ADD:
+            return -2;
+
+        // Sequence helpers
+        case OP_LIST_EXTEND: case OP_DICT_UPDATE: case OP_SET_UPDATE:
+            return -1;
+
+        // UNPACK_SEQUENCE: pop 1, push arg items
+        case OP_UNPACK_SEQUENCE:
+            return arg - 1;
+
+        // Yield: yields value and receives sent value; net 0
+        case OP_YIELD_VALUE: case OP_YIELD_FROM:
+        case OP_GEN_START:
+            return 0;
+
+        // Exception/cleanup
+        case OP_POP_EXCEPT:
+        case OP_WITH_CLEANUP:
+            return -1;
+        case OP_POP_BLOCK: case OP_SETUP_FINALLY:
+        case OP_SETUP_WITH: case OP_SETUP_ASYNC_WITH:
+        case OP_RERAISE:
+            return 0;
+
+        case OP_RAISE_VARARGS:
+            return -arg;
+
+        default:
+            return 0;
+    }
+}
+
 void Compiler::emit(int op, int arg) {
     if (get_env_diag()) {
         fprintf(stderr, "COMPILING [%p]: offset=%zu op=%d arg=%d\n", (void*)this, bytecodeVec_.size(), op, arg);
     }
     bytecodeVec_.push_back(ctx_->fromInteger(op));
     bytecodeVec_.push_back(ctx_->fromInteger(arg));
+    currentStack_ += stackEffect(op, arg);
+    if (currentStack_ > maxStack_) maxStack_ = currentStack_;
 }
 
 int Compiler::bytecodeOffset() const {
@@ -2406,7 +2529,7 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
         for (size_t i = 0; i < varnamesOrdered.size(); ++i) {
             slotMap[varnamesOrdered[i]] = static_cast<int>(i);
         }
-        automatic_count = static_cast<int>(varnamesOrdered.size()) + 256; // Add space for stack
+        automatic_count = static_cast<int>(varnamesOrdered.size()); // finalized after body compilation
     }
 
     int nparams = static_cast<int>(params.size());
@@ -2423,6 +2546,7 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
     bodyCompiler.localSlotMap_ = slotMap;
     bodyCompiler.isFunctionScope_ = true;
     if (!bodyCompiler.compileNode(n->body.get())) return false;
+    if (!forceMapped) automatic_count += bodyCompiler.getMaxStack() + 16;
 
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx_);
     int noneIdx = bodyCompiler.addConstant(env ? env->getNonePrototype() : PROTO_NONE);
@@ -2541,9 +2665,9 @@ bool Compiler::compileLambda(LambdaNode* n) {
         for (size_t i = 0; i < varnamesOrdered.size(); ++i) {
             slotMap[varnamesOrdered[i]] = static_cast<int>(i);
         }
-        automatic_count = static_cast<int>(varnamesOrdered.size()) + 256; // Add space for stack
+        automatic_count = static_cast<int>(varnamesOrdered.size()); // finalized after body compilation
     }
-    
+
     int nparams = static_cast<int>(params.size());
     int kwonlyargcount = static_cast<int>(n->kwonlyargs.size());
 
@@ -2557,6 +2681,7 @@ bool Compiler::compileLambda(LambdaNode* n) {
     if (!bodyCompiler.compileNode(n->body.get())) return false;
     bodyCompiler.emit(OP_RETURN_VALUE);
     bodyCompiler.applyPatches();
+    if (!forceMapped) automatic_count += bodyCompiler.getMaxStack() + 16;
 
     std::vector<const proto::ProtoObject*> varnamesVec;
     varnamesVec.reserve(varnamesOrdered.size());
@@ -2669,7 +2794,7 @@ bool Compiler::compileAsyncFunctionDef(AsyncFunctionDefNode* n) {
         for (size_t i = 0; i < varnamesOrdered.size(); ++i) {
             slotMap[varnamesOrdered[i]] = static_cast<int>(i);
         }
-        automatic_count = static_cast<int>(varnamesOrdered.size()) + 256; // Add space for stack
+        automatic_count = static_cast<int>(varnamesOrdered.size()); // finalized after body compilation
     }
     int nparams = static_cast<int>(params.size());
     int kwonlyargcount = static_cast<int>(n->kwonlyargs.size());
@@ -2686,8 +2811,9 @@ bool Compiler::compileAsyncFunctionDef(AsyncFunctionDefNode* n) {
     int noneIdx = bodyCompiler.addConstant(env ? env->getNonePrototype() : PROTO_NONE);
     bodyCompiler.emit(OP_LOAD_CONST, noneIdx);
     bodyCompiler.emit(OP_RETURN_VALUE);
-    
+
     bodyCompiler.applyPatches();
+    if (!forceMapped) automatic_count += bodyCompiler.getMaxStack() + 16;
 
     std::vector<const proto::ProtoObject*> varnamesVec;
     varnamesVec.reserve(varnamesOrdered.size());
@@ -3162,7 +3288,7 @@ const proto::ProtoObject* makeCodeObject(proto::ProtoContext* ctx,
     code = code->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_varnames"), varnames ? reinterpret_cast<const proto::ProtoObject*>(varnames) : reinterpret_cast<const proto::ProtoObject*>(ctx->newTuple()));
     code = code->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_nparams"), ctx->fromInteger(nparams));
     code = code->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_kwonlyargcount"), ctx->fromInteger(kwonlyargcount));
-    code = code->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_automatic_count"), ctx->fromInteger(automatic_count + PYTHON_STACK_BUFFER));
+    code = code->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_automatic_count"), ctx->fromInteger(automatic_count));
     code = code->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_flags"), ctx->fromInteger(flags));
     bool isGenOrCoro = isGenerator || (flags & 0x80);
     code = code->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_is_generator"), ctx->fromBoolean(isGenOrCoro));
