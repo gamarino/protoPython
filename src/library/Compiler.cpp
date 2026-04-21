@@ -763,15 +763,17 @@ bool Compiler::emitNameOp(const std::string& id, TargetCtx ctx, bool pushNull) {
         emit(op, idx);
         return true;
     }
-    auto it = localSlotMap_.find(id);
-    if (it != localSlotMap_.end()) {
-        int op = OP_LOAD_FAST;
-        if (ctx == TargetCtx::Store) op = OP_STORE_FAST;
-        else if (ctx == TargetCtx::Delete) op = OP_DELETE_FAST;
-        // For function calls, push NULL marker before the callable (3.11+ calling convention)
-        if (op == OP_LOAD_FAST && pushNull) emit(OP_PUSH_NULL, 0);
-        emit(op, it->second);
-        return true;
+    if (!forceMapped_) {
+        auto it = localSlotMap_.find(id);
+        if (it != localSlotMap_.end()) {
+            int op = OP_LOAD_FAST;
+            if (ctx == TargetCtx::Store) op = OP_STORE_FAST;
+            else if (ctx == TargetCtx::Delete) op = OP_DELETE_FAST;
+            // For function calls, push NULL marker before the callable (3.11+ calling convention)
+            if (op == OP_LOAD_FAST && pushNull) emit(OP_PUSH_NULL, 0);
+            emit(op, it->second);
+            return true;
+        }
     }
 
     int idx = addName(id);
@@ -784,7 +786,7 @@ bool Compiler::emitNameOp(const std::string& id, TargetCtx ctx, bool pushNull) {
     // In function scope, unresolved names are globals/builtins — use LOAD_GLOBAL for a faster
     // lookup path (skips frame->getAttribute, goes straight to env->resolve() ptrCache).
     // At module and class scope, LOAD_NAME is correct (local namespace dict must be checked first).
-    if (isFunctionScope_ && !isClassBody_) {
+    if (isFunctionScope_ && !isClassBody_ && !forceMapped_) {
         int gop = (ctx == TargetCtx::Load) ? OP_LOAD_GLOBAL : (ctx == TargetCtx::Store ? OP_STORE_GLOBAL : OP_DELETE_GLOBAL);
         int garg = (idx << 1) | ((gop == OP_LOAD_GLOBAL && pushNull) ? 1 : 0);
         emit(gop, garg);
@@ -2064,6 +2066,9 @@ static void collectUsedNames(ASTNode* node, std::unordered_set<std::string>& out
     if (auto* c = dynamic_cast<CallNode*>(node)) {
         collectUsedNames(c->func.get(), out);
         for (auto& arg : c->args) collectUsedNames(arg.get(), out);
+        for (auto& kw : c->keywords) {
+            if (kw.second) collectUsedNames(kw.second.get(), out);
+        }
         return;
     }
     if (auto* att = dynamic_cast<AttributeNode*>(node)) {
@@ -2100,7 +2105,6 @@ static void collectUsedNames(ASTNode* node, std::unordered_set<std::string>& out
         }
         if (t->orelse) collectUsedNames(t->orelse.get(), out);
         if (t->finalbody) collectUsedNames(t->finalbody.get(), out);
-        return;
     }
     if (auto* w = dynamic_cast<WhileNode*>(node)) {
         collectUsedNames(w->test.get(), out);
@@ -2108,10 +2112,19 @@ static void collectUsedNames(ASTNode* node, std::unordered_set<std::string>& out
         if (w->orelse) collectUsedNames(w->orelse.get(), out);
         return;
     }
-    if (auto* cond = dynamic_cast<CondExprNode*>(node)) {
+    if (auto* cond = dynamic_cast<ConditionalExprNode*>(node)) {
         collectUsedNames(cond->body.get(), out);
-        collectUsedNames(cond->cond.get(), out);
+        collectUsedNames(cond->test.get(), out);
         collectUsedNames(cond->orelse.get(), out);
+        return;
+    }
+    if (auto* starred = dynamic_cast<StarredNode*>(node)) {
+        collectUsedNames(starred->value.get(), out);
+        return;
+    }
+    if (auto* named = dynamic_cast<NamedExprNode*>(node)) {
+        collectUsedNames(named->value.get(), out);
+        collectUsedNames(named->target.get(), out);
         return;
     }
     if (auto* lst = dynamic_cast<ListLiteralNode*>(node)) {
@@ -2171,6 +2184,58 @@ static void collectUsedNames(ASTNode* node, std::unordered_set<std::string>& out
         collectUsedNames(ge->elt.get(), out);
         return;
     }
+    if (auto* slice = dynamic_cast<SliceNode*>(node)) {
+        if (slice->start) collectUsedNames(slice->start.get(), out);
+        if (slice->stop) collectUsedNames(slice->stop.get(), out);
+        if (slice->step) collectUsedNames(slice->step.get(), out);
+        return;
+    }
+    if (auto* set = dynamic_cast<SetLiteralNode*>(node)) {
+        for (auto& e : set->elements) collectUsedNames(e.get(), out);
+        return;
+    }
+    if (auto* as = dynamic_cast<AssertNode*>(node)) {
+        collectUsedNames(as->test.get(), out);
+        if (as->msg) collectUsedNames(as->msg.get(), out);
+        return;
+    }
+    if (auto* w = dynamic_cast<WithNode*>(node)) {
+        for (auto& item : w->items) {
+            collectUsedNames(item.context_expr.get(), out);
+            if (item.optional_vars) collectUsedNames(item.optional_vars.get(), out);
+        }
+        collectUsedNames(w->body.get(), out);
+        return;
+    }
+    if (auto* d = dynamic_cast<DeleteNode*>(node)) {
+        for (auto& target : d->targets) collectUsedNames(target.get(), out);
+        return;
+    }
+    if (auto* r = dynamic_cast<RaiseNode*>(node)) {
+        if (r->exc) collectUsedNames(r->exc.get(), out);
+        if (r->cause) collectUsedNames(r->cause.get(), out);
+        return;
+    }
+    if (auto* y = dynamic_cast<YieldNode*>(node)) {
+        if (y->value) collectUsedNames(y->value.get(), out);
+        return;
+    }
+    if (auto* aw = dynamic_cast<AwaitNode*>(node)) {
+        collectUsedNames(aw->value.get(), out);
+        return;
+    }
+    if (auto* js = dynamic_cast<JoinedStrNode*>(node)) {
+        for (auto& v : js->values) collectUsedNames(v.get(), out);
+        return;
+    }
+    if (auto* fv = dynamic_cast<FormattedValueNode*>(node)) {
+        collectUsedNames(fv->value.get(), out);
+        return;
+    }
+    if (auto* s = dynamic_cast<SuiteNode*>(node)) {
+        for (auto& st : s->statements) collectUsedNames(st.get(), out);
+        return;
+    }
 }
 
 /** Collect names defined in node (assigned or are params of a nested def). */
@@ -2178,6 +2243,14 @@ static void collectDefinedNames(ASTNode* node, std::unordered_set<std::string>& 
     if (!node) return;
     if (auto* a = dynamic_cast<AssignNode*>(node)) {
         for (auto& t : a->targets) collectDefinedNames(t.get(), out);
+        return;
+    }
+    if (auto* named = dynamic_cast<NamedExprNode*>(node)) {
+        collectDefinedNames(named->target.get(), out);
+        return;
+    }
+    if (auto* nm = dynamic_cast<NameNode*>(node)) {
+        out.insert(nm->id);
         return;
     }
     if (auto* s = dynamic_cast<SuiteNode*>(node)) {
@@ -2398,6 +2471,11 @@ static void collectCapturedNamesImpl(ASTNode* node, const std::unordered_set<std
         if (sl->step) collectCapturedNamesImpl(sl->step.get(), globalsInScope, capturedOut, depth);
     } else if (auto* u = dynamic_cast<UnaryOpNode*>(node)) {
         collectCapturedNamesImpl(u->operand.get(), globalsInScope, capturedOut, depth);
+    } else if (auto* starred = dynamic_cast<StarredNode*>(node)) {
+        collectCapturedNamesImpl(starred->value.get(), globalsInScope, capturedOut, depth);
+    } else if (auto* named = dynamic_cast<NamedExprNode*>(node)) {
+        collectCapturedNamesImpl(named->value.get(), globalsInScope, capturedOut, depth);
+        collectCapturedNamesImpl(named->target.get(), globalsInScope, capturedOut, depth);
     } else if (auto* lst = dynamic_cast<ListLiteralNode*>(node)) {
         for (auto& e : lst->elements) collectCapturedNamesImpl(e.get(), globalsInScope, capturedOut, depth);
     } else if (auto* tup = dynamic_cast<TupleLiteralNode*>(node)) {
@@ -2460,6 +2538,105 @@ static void collectCapturedNamesImpl(ASTNode* node, const std::unordered_set<std
         for (const auto& name : used) {
             if (!defined.count(name) && !globalsInScope.count(name)) capturedOut.insert(name);
         }
+    } else if (auto* dc = dynamic_cast<DictCompNode*>(node)) {
+        std::unordered_set<std::string> defined;
+        for (const auto& gen : dc->generators) collectDefinedNames(gen.target.get(), defined);
+        std::unordered_set<std::string> used;
+        for (const auto& gen : dc->generators) {
+            collectUsedNames(gen.iter.get(), used);
+            collectUsedNames(gen.target.get(), used);
+            for (const auto& i : gen.ifs) collectUsedNames(i.get(), used);
+        }
+        collectUsedNames(dc->key.get(), used);
+        collectUsedNames(dc->value.get(), used);
+        for (const auto& name : used) {
+            if (!defined.count(name) && !globalsInScope.count(name)) capturedOut.insert(name);
+        }
+    } else if (auto* sc = dynamic_cast<SetCompNode*>(node)) {
+        std::unordered_set<std::string> defined;
+        for (const auto& gen : sc->generators) collectDefinedNames(gen.target.get(), defined);
+        std::unordered_set<std::string> used;
+        for (const auto& gen : sc->generators) {
+            collectUsedNames(gen.iter.get(), used);
+            collectUsedNames(gen.target.get(), used);
+            for (const auto& i : gen.ifs) collectUsedNames(i.get(), used);
+        }
+        collectUsedNames(sc->elt.get(), used);
+        for (const auto& name : used) {
+            if (!defined.count(name) && !globalsInScope.count(name)) capturedOut.insert(name);
+        }
+    } else if (auto* ge = dynamic_cast<GeneratorExpNode*>(node)) {
+        std::unordered_set<std::string> defined;
+        for (const auto& gen : ge->generators) collectDefinedNames(gen.target.get(), defined);
+        std::unordered_set<std::string> used;
+        for (const auto& gen : ge->generators) {
+            collectUsedNames(gen.iter.get(), used);
+            collectUsedNames(gen.target.get(), used);
+            for (const auto& i : gen.ifs) collectUsedNames(i.get(), used);
+        }
+        collectUsedNames(ge->elt.get(), used);
+        for (const auto& name : used) {
+            if (!defined.count(name) && !globalsInScope.count(name)) capturedOut.insert(name);
+        }
+    } else if (auto* bin = dynamic_cast<BinOpNode*>(node)) {
+        collectCapturedNamesImpl(bin->left.get(), globalsInScope, capturedOut, depth);
+        collectCapturedNamesImpl(bin->right.get(), globalsInScope, capturedOut, depth);
+    } else if (auto* cond = dynamic_cast<ConditionalExprNode*>(node)) {
+        collectCapturedNamesImpl(cond->test.get(), globalsInScope, capturedOut, depth);
+        collectCapturedNamesImpl(cond->body.get(), globalsInScope, capturedOut, depth);
+        collectCapturedNamesImpl(cond->orelse.get(), globalsInScope, capturedOut, depth);
+    } else if (auto* js = dynamic_cast<JoinedStrNode*>(node)) {
+        for (auto& v : js->values) collectCapturedNamesImpl(v.get(), globalsInScope, capturedOut, depth);
+    } else if (auto* fv = dynamic_cast<FormattedValueNode*>(node)) {
+        collectCapturedNamesImpl(fv->value.get(), globalsInScope, capturedOut, depth);
+    } else if (auto* iff = dynamic_cast<IfNode*>(node)) {
+        collectCapturedNamesImpl(iff->test.get(), globalsInScope, capturedOut, depth);
+        collectCapturedNamesImpl(iff->body.get(), globalsInScope, capturedOut, depth);
+        if (iff->orelse) collectCapturedNamesImpl(iff->orelse.get(), globalsInScope, capturedOut, depth);
+    } else if (auto* wh = dynamic_cast<WhileNode*>(node)) {
+        collectCapturedNamesImpl(wh->test.get(), globalsInScope, capturedOut, depth);
+        collectCapturedNamesImpl(wh->body.get(), globalsInScope, capturedOut, depth);
+        if (wh->orelse) collectCapturedNamesImpl(wh->orelse.get(), globalsInScope, capturedOut, depth);
+    } else if (auto* fr = dynamic_cast<ForNode*>(node)) {
+        collectCapturedNamesImpl(fr->iter.get(), globalsInScope, capturedOut, depth);
+        collectCapturedNamesImpl(fr->target.get(), globalsInScope, capturedOut, depth);
+        collectCapturedNamesImpl(fr->body.get(), globalsInScope, capturedOut, depth);
+    } else if (auto* tr = dynamic_cast<TryNode*>(node)) {
+        collectCapturedNamesImpl(tr->body.get(), globalsInScope, capturedOut, depth);
+        for (auto& h : tr->handlers) {
+            collectCapturedNamesImpl(h.type.get(), globalsInScope, capturedOut, depth);
+            collectCapturedNamesImpl(h.body.get(), globalsInScope, capturedOut, depth);
+        }
+        if (tr->orelse) collectCapturedNamesImpl(tr->orelse.get(), globalsInScope, capturedOut, depth);
+        if (tr->finalbody) collectCapturedNamesImpl(tr->finalbody.get(), globalsInScope, capturedOut, depth);
+    } else if (auto* wn = dynamic_cast<WithNode*>(node)) {
+        for (auto& item : wn->items) {
+            collectCapturedNamesImpl(item.context_expr.get(), globalsInScope, capturedOut, depth);
+            if (item.optional_vars) collectCapturedNamesImpl(item.optional_vars.get(), globalsInScope, capturedOut, depth);
+        }
+        collectCapturedNamesImpl(wn->body.get(), globalsInScope, capturedOut, depth);
+    } else if (auto* as = dynamic_cast<AssertNode*>(node)) {
+        collectCapturedNamesImpl(as->test.get(), globalsInScope, capturedOut, depth);
+        if (as->msg) collectCapturedNamesImpl(as->msg.get(), globalsInScope, capturedOut, depth);
+    } else if (auto* r = dynamic_cast<RaiseNode*>(node)) {
+        if (r->exc) collectCapturedNamesImpl(r->exc.get(), globalsInScope, capturedOut, depth);
+        if (r->cause) collectCapturedNamesImpl(r->cause.get(), globalsInScope, capturedOut, depth);
+    } else if (auto* y = dynamic_cast<YieldNode*>(node)) {
+        if (y->value) collectCapturedNamesImpl(y->value.get(), globalsInScope, capturedOut, depth);
+    } else if (auto* aw = dynamic_cast<AwaitNode*>(node)) {
+        collectCapturedNamesImpl(aw->value.get(), globalsInScope, capturedOut, depth);
+    } else if (auto* ass = dynamic_cast<AssignNode*>(node)) {
+        for (auto& t : ass->targets) collectCapturedNamesImpl(t.get(), globalsInScope, capturedOut, depth);
+        collectCapturedNamesImpl(ass->value.get(), globalsInScope, capturedOut, depth);
+    } else if (auto* aan = dynamic_cast<AnnAssignNode*>(node)) {
+        collectCapturedNamesImpl(aan->target.get(), globalsInScope, capturedOut, depth);
+        collectCapturedNamesImpl(aan->annotation.get(), globalsInScope, capturedOut, depth);
+        if (aan->value) collectCapturedNamesImpl(aan->value.get(), globalsInScope, capturedOut, depth);
+    } else if (auto* aug = dynamic_cast<AugAssignNode*>(node)) {
+        collectCapturedNamesImpl(aug->target.get(), globalsInScope, capturedOut, depth);
+        collectCapturedNamesImpl(aug->value.get(), globalsInScope, capturedOut, depth);
+    } else if (auto* s = dynamic_cast<SuiteNode*>(node)) {
+        for (auto& st : s->statements) collectCapturedNamesImpl(st.get(), globalsInScope, capturedOut, depth);
     } else if (auto* nm = dynamic_cast<NameNode*>(node)) {
         // Bare name reference: candidate for capture from an enclosing scope.
         // The caller filters by isLocal/isInOuterScope, so collecting all names is safe.
@@ -2587,6 +2764,7 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
     bodyCompiler.nonlocalNames_ = bodyNonlocals;
     bodyCompiler.localSlotMap_ = slotMap;
     bodyCompiler.isFunctionScope_ = true;
+    bodyCompiler.forceMapped_ = forceMapped;
     // Only propagate currentClassName_ when this function is a direct class method
     // (i.e., defined inside a class body). Nested functions inside methods do not
     // inherit the class name to avoid false super() rewrites.

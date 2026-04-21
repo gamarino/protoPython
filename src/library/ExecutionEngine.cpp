@@ -4557,11 +4557,17 @@ const proto::ProtoObject* executeBytecodeRange(
                             stack.push_back(closureFrame);
                             const proto::ProtoObject** outerSlots = ctx->getAutomaticLocals();
                             unsigned int outerNSlots = ctx->getAutomaticLocalsCount();
-                            for (unsigned int j = 0; j < coVarnames->getSize(ctx) && j < outerNSlots; ++j) {
+                            for (unsigned int j = 0; j < coVarnames->getSize(ctx); ++j) {
                                 const proto::ProtoObject* vnameObj = coVarnames->getAt(ctx, j);
-                                if (vnameObj && vnameObj->isString(ctx) && outerSlots[j]) {
-                                    closureFrame = const_cast<proto::ProtoObject*>(closureFrame->setAttribute(ctx, vnameObj->asString(ctx), outerSlots[j]));
-                                    stack.back() = closureFrame; // Keep GC root updated
+                                if (vnameObj && vnameObj->isString(ctx)) {
+                                    const proto::ProtoObject* val = (j < outerNSlots) ? outerSlots[j] : nullptr;
+                                    // If not in slots, try frame attributes (for non-optimized/mapped frames)
+                                    if (!val) val = frame->getAttribute(ctx, vnameObj->asString(ctx));
+                                    
+                                    if (val && val != PROTO_NONE) {
+                                        closureFrame = const_cast<proto::ProtoObject*>(closureFrame->setAttribute(ctx, vnameObj->asString(ctx), val));
+                                        stack.back() = closureFrame; // Keep GC root updated
+                                    }
                                 }
                             }
                             stack.pop_back(); // Remove GC root
