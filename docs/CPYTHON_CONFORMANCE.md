@@ -38,8 +38,8 @@ Semantics required for complex frameworks and libraries. The tests below are pro
 
 - [x] `test_decorator.py`: **PASS** (custom protoPython test — `tests/test_decorator.py`)
 - [x] `test_abc.py`: **PASS** (custom protoPython test — `tests/test_abc.py`)
-- [ ] `test_contextlib.py`: **FAIL** — `ExitStack` callbacks not invoked; pre-existing `deque.append` bug: `DequeState` external pointer not visible after `setAttribute` on immutable object
-- [ ] `test_dataclasses.py`: **FAIL** — `annotationlib.py` line ~834 raises `NameError: name 'ann' is not defined`; pre-existing walrus/comprehension scoping gap in `get_annotations`
+- [x] `test_contextlib.py`: **PASS** (custom protoPython test — `tests/test_contextlib.py`)
+- [x] `test_dataclasses.py`: **PASS** (custom protoPython test — `tests/test_dataclasses.py`)
 
 ### 🔵 Bootstrap Capabilities (V101)
 
@@ -57,19 +57,25 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 - [ ] `test_pydoc.py`
 - [ ] `test_warnings.py`
 
-## Progress Summary (v1.0.0 — 2026-04-20, V101)
+## Progress Summary (v1.0.0 — 2026-04-21, V102)
 
 | Category | Total | Tested | Passed | Notes |
 | :--- | :--- | :--- | :--- | :--- |
 | **Essential (CPython)** | 6 | 1 | 1 | 5 blocked by missing `test.support` / `asyncio` |
 | **Important (CPython)** | 6 | 0 | 0 | All blocked by missing `test.support` |
-| **Necessary (custom)** | 4 | 4 | 2 | `test_decorator`, `test_abc` pass; `test_contextlib`, `test_dataclasses` fail (pre-existing) |
+| **Necessary (custom)** | 4 | 4 | 4 | `test_decorator`, `test_abc`, `test_contextlib`, `test_dataclasses` all pass |
 | **Bootstrap** | 2 | 2 | 2 | `import importlib`, `import inspect` now work (V101) |
 | **Low Priority** | 4 | 0 | 0 | Out of scope for v1.0 |
 
 **Conformity Suite (internal, 2026-04-15)**: 7/9 tests pass. Failures are pre-existing: `int(float)` conversion and `set(iterable)` constructor.
 
-**Next milestone**: Fix `deque.append` (`DequeState` external pointer lookup) and `annotationlib.py` walrus scoping gap to restore `test_contextlib` and `test_dataclasses`.
+**Next milestone**: Implement `test.support` and `unittest` stubs to unblock remaining 11 CPython regression tests in Essential/Important categories.
+
+### V102 Changes (2026-04-21)
+
+- **`test_dataclasses.py` now passes.** Fixed a root-cause `NameError` in `annotationlib.py` by hardening the compiler's closure variable tracking. The compiler now correctly identifies lexical captures in walrus expressions and comprehensions inside class-level function definitions, ensuring `exec()` environments have correctly populated closures.
+- **`test_contextlib.py` now passes.** Fixed a critical bug in `deque.append` where the `DequeState` external pointer was lost during `setAttribute` calls on the immutable container wrapper. The VM now correctly preserves internal native state pointers when updating Python-level attributes on native-backed objects.
+- **Improved attribute lookup robustness.** Resolved several `AttributeError` edge cases during VM bootstrap by refining the descriptor protocol's fallback logic for non-dictionary objects.
 
 ### V101 Changes (2026-04-20)
 
