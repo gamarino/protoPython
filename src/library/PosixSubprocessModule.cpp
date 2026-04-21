@@ -39,55 +39,18 @@ static const proto::ProtoObject* py_fork_exec(
     int errpipe_read = posArgs->getAt(ctx, 12) ? posArgs->getAt(ctx, 12)->asLong(ctx) : -1;
     int errpipe_write = posArgs->getAt(ctx, 13) ? posArgs->getAt(ctx, 13)->asLong(ctx) : -1;
 
-    std::vector<std::string> argsStr;
-    if (argsObj && argsObj->isTuple(ctx)) {
-        const proto::ProtoTuple* t = argsObj->asTuple(ctx);
-        for (size_t i = 0; i < t->getSize(ctx); ++i) {
-            const proto::ProtoObject* elem = t->getAt(ctx, i);
-            if (elem) {
-                std::string s;
-                if (elem->isString(ctx)) elem->asString(ctx)->toUTF8String(ctx, s);
-                argsStr.push_back(s);
-            }
-        }
-    } else if (argsObj && argsObj->asList(ctx)) {
-        const proto::ProtoList* t = argsObj->asList(ctx);
-        for (size_t i = 0; i < t->getSize(ctx); ++i) {
-            const proto::ProtoObject* elem = t->getAt(ctx, i);
-            if (elem) {
-                std::string s;
-                if (elem->isString(ctx)) elem->asString(ctx)->toUTF8String(ctx, s);
-                argsStr.push_back(s);
-            }
-        }
-    }
+    size_t argsCount = 0;
+    if (argsObj && argsObj->isTuple(ctx)) argsCount = argsObj->asTuple(ctx)->getSize(ctx);
+    else if (argsObj && argsObj->asList(ctx)) argsCount = argsObj->asList(ctx)->getSize(ctx);
 
-    std::vector<std::string> execListStr;
-    if (execListObj && execListObj->isTuple(ctx)) {
-        const proto::ProtoTuple* t = execListObj->asTuple(ctx);
-        for (size_t i = 0; i < t->getSize(ctx); ++i) {
-            const proto::ProtoObject* elem = t->getAt(ctx, i);
-            if (elem) {
-                std::string s;
-                if (elem->isString(ctx)) elem->asString(ctx)->toUTF8String(ctx, s);
-                execListStr.push_back(s);
-            }
-        }
-    }
+    size_t execCount = 0;
+    if (execListObj && execListObj->isTuple(ctx)) execCount = execListObj->asTuple(ctx)->getSize(ctx);
 
-    std::vector<std::string> envListStr;
+    size_t envCount = 0;
     bool hasEnv = false;
     if (envListObj && envListObj->asList(ctx)) {
+        envCount = envListObj->asList(ctx)->getSize(ctx);
         hasEnv = true;
-        const proto::ProtoList* t = envListObj->asList(ctx);
-        for (size_t i = 0; i < t->getSize(ctx); ++i) {
-            const proto::ProtoObject* elem = t->getAt(ctx, i);
-            if (elem) {
-                std::string s;
-                if (elem->isString(ctx)) elem->asString(ctx)->toUTF8String(ctx, s);
-                envListStr.push_back(s);
-            }
-        }
     }
 
     std::string cwdStr;
@@ -113,34 +76,47 @@ static const proto::ProtoObject* py_fork_exec(
 
         if (hasCwd) {
             if (chdir(cwdStr.c_str()) != 0) {
-                // Ignore chdir failure for now, or report through errpipe
                 _exit(1);
             }
         }
 
-        std::vector<char*> c_args;
-        for (auto& s : argsStr) {
-            c_args.push_back(const_cast<char*>(s.c_str()));
+        // Build args array
+        char** c_args = new char*[argsCount + 1];
+        for (size_t i = 0; i < argsCount; ++i) {
+            const proto::ProtoObject* elem = argsObj->isTuple(ctx) ? argsObj->asTuple(ctx)->getAt(ctx, i) : argsObj->asList(ctx)->getAt(ctx, i);
+            std::string s;
+            if (elem && elem->isString(ctx)) elem->asString(ctx)->toUTF8String(ctx, s);
+            // We need to keep the string alive. 
+            // In a child process after fork, we don't care much about memory leaks before exec.
+            c_args[i] = strdup(s.c_str());
         }
-        c_args.push_back(nullptr);
+        c_args[argsCount] = nullptr;
 
-        std::vector<char*> c_env;
+        // Build env array
+        char** c_env = nullptr;
         if (hasEnv) {
-            for (auto& s : envListStr) {
-                c_env.push_back(const_cast<char*>(s.c_str()));
+            c_env = new char*[envCount + 1];
+            for (size_t i = 0; i < envCount; ++i) {
+                const proto::ProtoObject* elem = envListObj->asList(ctx)->getAt(ctx, i);
+                std::string s;
+                if (elem && elem->isString(ctx)) elem->asString(ctx)->toUTF8String(ctx, s);
+                c_env[i] = strdup(s.c_str());
             }
-            c_env.push_back(nullptr);
+            c_env[envCount] = nullptr;
         }
 
-        for (auto& exec_path : execListStr) {
+        for (size_t i = 0; i < execCount; ++i) {
+            const proto::ProtoObject* execPathObj = execListObj->asTuple(ctx)->getAt(ctx, i);
+            std::string exec_path;
+            if (execPathObj && execPathObj->isString(ctx)) execPathObj->asString(ctx)->toUTF8String(ctx, exec_path);
+            
             if (hasEnv) {
-                execve(exec_path.c_str(), c_args.data(), c_env.data());
+                execve(exec_path.c_str(), c_args, c_env);
             } else {
-                execv(exec_path.c_str(), c_args.data());
+                execv(exec_path.c_str(), c_args);
             }
         }
         
-        // If we reach here, exec failed
         _exit(255);
     }
 

@@ -510,7 +510,16 @@ class _FuncBuilder:
             _exec_globals = {}
         else:
             _exec_globals = self.globals
+        
+        if _impl == 'protopython':
+            print(f"DEBUG: dataclasses exec txt:\n{txt}")
+            print(f"DEBUG: dataclasses _exec_globals type: {type(_exec_globals)}")
+            
         exec(txt, _exec_globals, ns)
+        if _impl == 'protopython' and '__create_fn__' not in ns:
+             print("DEBUG: __create_fn__ not in ns after exec!")
+             print(f"DEBUG: ns keys: {list(ns.keys())}")
+        
         fns = ns['__create_fn__'](**self.locals)
 
         # Now that we've generated the functions, assign them into cls.
@@ -624,7 +633,7 @@ def _init_param(f):
 
 def _init_fn(fields, std_fields, kw_only_fields, frozen, has_post_init,
              self_name, func_builder, slots):
-    # fields contains both real fields and InitVar pseudo-fields.
+    print(f"DEBUG: _init_fn called with {len(fields)} fields")
 
     # Make sure we don't have fields without defaults following fields
     # with defaults.  This actually would be caught when exec-ing the

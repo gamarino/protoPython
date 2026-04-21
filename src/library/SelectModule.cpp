@@ -10,26 +10,31 @@
 namespace protoPython {
 namespace select_module {
 
-// Helper to read a list/tuple of FDs from a ProtoObject
-static std::vector<int> extractFdSet(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
-    std::vector<int> fds;
-    if (!obj) return fds;
+// Helper to fill a fd_set from a ProtoObject (List or Tuple)
+static int fillFdSet(proto::ProtoContext* ctx, const proto::ProtoObject* obj, fd_set* set) {
+    int maxfd = -1;
+    if (!obj) return maxfd;
+    
+    auto process = [&](const proto::ProtoObject* fd) {
+        if (fd && fd->isInteger(ctx)) {
+            int f = (int)fd->asLong(ctx);
+            if (f >= 0 && f < FD_SETSIZE) {
+                FD_SET(f, set);
+                if (f > maxfd) maxfd = f;
+            }
+        }
+    };
+
     const proto::ProtoList* list = obj->asList(ctx);
     if (!list) {
         const proto::ProtoTuple* tup = obj->asTuple(ctx);
         if (tup) {
-            for (size_t i = 0; i < tup->getSize(ctx); ++i) {
-                const proto::ProtoObject* fd = tup->getAt(ctx, i);
-                if (fd && fd->isInteger(ctx)) fds.push_back((int)fd->asLong(ctx));
-            }
+            for (size_t i = 0; i < tup->getSize(ctx); ++i) process(tup->getAt(ctx, i));
         }
     } else {
-        for (size_t i = 0; i < list->getSize(ctx); ++i) {
-            const proto::ProtoObject* fd = list->getAt(ctx, i);
-            if (fd && fd->isInteger(ctx)) fds.push_back((int)fd->asLong(ctx));
-        }
+        for (size_t i = 0; i < list->getSize(ctx); ++i) process(list->getAt(ctx, i));
     }
-    return fds;
+    return maxfd;
 }
 
 // select(rlist, wlist, xlist[, timeout]) -> (rlist, wlist, xlist)
@@ -45,9 +50,9 @@ static const proto::ProtoObject* py_select(
         return nullptr;
     }
 
-    auto rList = extractFdSet(ctx, posArgs->getAt(ctx, 0));
-    auto wList = extractFdSet(ctx, posArgs->getAt(ctx, 1));
-    auto xList = extractFdSet(ctx, posArgs->getAt(ctx, 2));
+    const proto::ProtoObject* rObj = posArgs->getAt(ctx, 0);
+    const proto::ProtoObject* wObj = posArgs->getAt(ctx, 1);
+    const proto::ProtoObject* xObj = posArgs->getAt(ctx, 2);
 
     double timeout_sec = -1.0;
     if (posArgs->getSize(ctx) >= 4) {
@@ -60,11 +65,12 @@ static const proto::ProtoObject* py_select(
 
     fd_set rfds, wfds, efds;
     FD_ZERO(&rfds); FD_ZERO(&wfds); FD_ZERO(&efds);
-    int maxfd = 0;
+    int maxfd = -1;
 
-    for (int fd : rList) { FD_SET(fd, &rfds); if (fd > maxfd) maxfd = fd; }
-    for (int fd : wList) { FD_SET(fd, &wfds); if (fd > maxfd) maxfd = fd; }
-    for (int fd : xList) { FD_SET(fd, &efds); if (fd > maxfd) maxfd = fd; }
+    int m1 = fillFdSet(ctx, rObj, &rfds);
+    int m2 = fillFdSet(ctx, wObj, &wfds);
+    int m3 = fillFdSet(ctx, xObj, &efds);
+    maxfd = std::max({m1, m2, m3});
 
     struct timeval tv;
     struct timeval* tvp = nullptr;
@@ -80,20 +86,35 @@ static const proto::ProtoObject* py_select(
         return nullptr;
     }
 
-    auto makeFdList = [&](const std::vector<int>& fds, fd_set& set) {
+    auto makeResultList = [&](const proto::ProtoObject* original, fd_set& set) {
         const proto::ProtoList* result = ctx->newList();
-        for (int fd : fds) {
-            if (FD_ISSET(fd, &set)) {
-                result = result->appendLast(ctx, ctx->fromInteger(fd));
+        if (!original) return result->asObject(ctx);
+        const proto::ProtoList* list = original->asList(ctx);
+        if (!list) {
+            const proto::ProtoTuple* tup = original->asTuple(ctx);
+            if (tup) {
+                for (size_t i = 0; i < tup->getSize(ctx); ++i) {
+                    const proto::ProtoObject* fd = tup->getAt(ctx, i);
+                    if (fd && fd->isInteger(ctx) && FD_ISSET((int)fd->asLong(ctx), &set)) {
+                        result = result->appendLast(ctx, fd);
+                    }
+                }
+            }
+        } else {
+            for (size_t i = 0; i < list->getSize(ctx); ++i) {
+                const proto::ProtoObject* fd = list->getAt(ctx, i);
+                if (fd && fd->isInteger(ctx) && FD_ISSET((int)fd->asLong(ctx), &set)) {
+                    result = result->appendLast(ctx, fd);
+                }
             }
         }
         return result->asObject(ctx);
     };
 
     const proto::ProtoList* tuple = ctx->newList();
-    tuple = tuple->appendLast(ctx, makeFdList(rList, rfds));
-    tuple = tuple->appendLast(ctx, makeFdList(wList, wfds));
-    tuple = tuple->appendLast(ctx, makeFdList(xList, efds));
+    tuple = tuple->appendLast(ctx, makeResultList(rObj, rfds));
+    tuple = tuple->appendLast(ctx, makeResultList(wObj, wfds));
+    tuple = tuple->appendLast(ctx, makeResultList(xObj, efds));
     return ctx->newTupleFromList(tuple)->asObject(ctx);
 }
 

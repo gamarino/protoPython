@@ -37,6 +37,11 @@
 #include <protoPython/ImpModule.h>
 #include <protoPython/WarningsModule.h>
 #include <protoPython/AtexitModule.h>
+#include <protoPython/PosixSubprocessModule.h>
+#include <protoPython/SelectModule.h>
+#include <protoPython/BisectModule.h>
+#include <protoPython/HeapqModule.h>
+#include <protoPython/FaulthandlerModule.h>
 #include <protoPython/ExecutionEngine.h>
 #include <protoPython/Parser.h>
 #include <protoPython/Compiler.h>
@@ -9257,6 +9262,11 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     registerNativeModule(nativeProviderPtr, "_string", [](proto::ProtoContext* c) { return string_module::initialize(c); });
     registerNativeModule(nativeProviderPtr, "binascii", [](proto::ProtoContext* c) { return binascii::initialize(c); });
     registerNativeModule(nativeProviderPtr, "_datetime", [](proto::ProtoContext* c) { return datetime::initialize(c); });
+    registerNativeModule(nativeProviderPtr, "_posixsubprocess", [this](proto::ProtoContext* c) { return posixsubprocess_module::initialize(c, this); });
+    registerNativeModule(nativeProviderPtr, "select", [this](proto::ProtoContext* c) { return select_module::initialize(c, this); });
+    registerNativeModule(nativeProviderPtr, "_bisect", [](proto::ProtoContext* c) { return bisect::initialize(c); });
+    registerNativeModule(nativeProviderPtr, "_heapq", [](proto::ProtoContext* c) { return heapq::initialize(c); });
+    registerNativeModule(nativeProviderPtr, "faulthandler", [](proto::ProtoContext* c) { return faulthandler::initialize(c); });
 
     exceptionType = exceptionsMod->getAttribute(rootContext_, exceptionS);
     keyErrorType = exceptionsMod->getAttribute(rootContext_, keyErrorS);

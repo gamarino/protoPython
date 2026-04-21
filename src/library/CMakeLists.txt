@@ -47,6 +47,9 @@ add_library(protoPython SHARED
     DatetimeModule.cpp
     PosixSubprocessModule.cpp
     SelectModule.cpp
+    BisectModule.cpp
+    HeapqModule.cpp
+    FaulthandlerModule.cpp
 )
 
 target_include_directories(protoPython PUBLIC
