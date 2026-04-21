@@ -30,6 +30,9 @@ static const proto::ProtoObject* exception_init(
     const proto::ProtoObject* args = context->newTupleFromList(actualArgs)->asObject(context);
     instance = const_cast<proto::ProtoObject*>(instance)->setAttribute(context, argsName, args);
     instance = const_cast<proto::ProtoObject*>(instance)->setAttribute(context, PythonEnvironment::getInternedString(context, "__traceback__"), PROTO_NONE);
+    instance = const_cast<proto::ProtoObject*>(instance)->setAttribute(context, PythonEnvironment::getInternedString(context, "__context__"), PROTO_NONE);
+    instance = const_cast<proto::ProtoObject*>(instance)->setAttribute(context, PythonEnvironment::getInternedString(context, "__cause__"), PROTO_NONE);
+    instance = const_cast<proto::ProtoObject*>(instance)->setAttribute(context, PythonEnvironment::getInternedString(context, "__suppress_context__"), PROTO_FALSE);
     return PROTO_NONE;
 }
 

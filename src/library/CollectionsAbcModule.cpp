@@ -1,6 +1,7 @@
 #include <protoPython/CollectionsAbcModule.h>
 #include <protoPython/DiagUtils.h>
 #include <protoPython/PythonEnvironment.h>
+#include <cstring>
 #include <protoCore.h>
 
 namespace protoPython {
@@ -114,6 +115,34 @@ static const proto::ProtoObject* py_abc_check_methods(
     return PROTO_TRUE;
 }
 
+static const proto::ProtoObject* py_abc_get(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList* args,
+    const proto::ProtoSparseList*) {
+    if (!self || !args || args->getSize(ctx) < 1) return PROTO_NONE;
+    const proto::ProtoObject* key = args->getAt(ctx, 0);
+    const proto::ProtoObject* def = (args->getSize(ctx) > 1) ? args->getAt(ctx, 1) : PROTO_NONE;
+    
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!env) return def;
+
+    const proto::ProtoObject* val = env->getItem(self, key, ctx);
+    if (val && val != PROTO_NONE) return val;
+    if (val == PROTO_NONE) return val; // If found and is None, return None
+    
+    if (env->hasPendingException()) {
+        const proto::ProtoObject* exc = env->peekPendingException();
+        const proto::ProtoObject* keyError = env->lookupName("KeyError");
+        if (keyError && env->isException(exc, keyError)) {
+            env->clearPendingException();
+            return def;
+        }
+    }
+    return def;
+}
+
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     auto createAbc = [&](const char* name) {
@@ -127,8 +156,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         const proto::ProtoString* s_is_py_class = PythonEnvironment::getInternedString(ctx, "__is_python_class__");
         const proto::ProtoString* s_bases = env ? env->getBasesString() : PythonEnvironment::getInternedString(ctx, "__bases__");
 
-        abc = const_cast<proto::ProtoObject*>(abc->setAttribute(ctx, s_call, ctx->fromMethod(abc, py_abc_call)));
-        abc = const_cast<proto::ProtoObject*>(abc->setAttribute(ctx, s_register, ctx->fromMethod(abc, py_abc_register)));
+        abc = const_cast<proto::ProtoObject*>(abc->setAttribute(ctx, s_call, ctx->fromMethod(nullptr, py_abc_call)));
+        abc = const_cast<proto::ProtoObject*>(abc->setAttribute(ctx, s_register, ctx->fromMethod(nullptr, py_abc_register)));
         abc = const_cast<proto::ProtoObject*>(abc->setAttribute(ctx, s_name, PythonEnvironment::getInternedString(ctx, name)->asObject(ctx)));
         
         // Set __class__ to type Prototype
@@ -138,9 +167,23 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
 
         // Explicitly mark as a Python class for getType heuristic
         abc = const_cast<proto::ProtoObject*>(abc->setAttribute(ctx, s_is_py_class, PROTO_TRUE));
-        if (get_env_diag()) fprintf(stderr, "DEBUG_ABC_SET_IS_CLASS: %s %p -> %p\n", name, (void*)abc, (void*)s_is_py_class);
 
-        // Inherit from object to have a valid MRO
+        // 1. Add dummy methods to satisfy collections/__init__.py inheritance of methods
+        const char* methods[] = {
+            "update", "get", "keys", "values", "items", "pop", "popitem", "clear",
+            "setdefault", "index", "count", "append", "extend", "insert", "remove", "reverse",
+            "__eq__", "__ne__", "__lt__", "__gt__", "__ge__",
+            "__iter__", "__len__", "__contains__", "__hash__"
+        };
+        for (const char* m : methods) {
+            const proto::ProtoObject* impl = ctx->fromMethod(nullptr, py_abc_call);
+            if (strcmp(m, "get") == 0 && (strcmp(name, "Mapping") == 0 || strcmp(name, "MutableMapping") == 0)) {
+                impl = ctx->fromMethod(nullptr, py_abc_get);
+            }
+            abc = const_cast<proto::ProtoObject*>(abc->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, m), impl)); 
+        }
+
+        // 2. Inherit from object to have a valid MRO
         if (env) {
             const proto::ProtoObject* objProto = env->getObjectPrototype();
             if (objProto) {
@@ -161,17 +204,6 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
             }
         }
 
-        // Add dummy methods to satisfy collections/__init__.py inheritance of methods
-        const char* methods[] = {
-            "update", "get", "keys", "values", "items", "pop", "popitem", "clear",
-            "setdefault", "index", "count", "append", "extend", "insert", "remove", "reverse",
-            "__eq__", "__ne__", "__lt__", "__gt__", "__ge__",
-            "__iter__", "__len__", "__contains__", "__hash__"
-        };
-        for (const char* m : methods) {
-            abc = const_cast<proto::ProtoObject*>(abc->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, m),
-                ctx->fromMethod(abc, py_abc_call))); 
-        }
         return abc;
     };
 

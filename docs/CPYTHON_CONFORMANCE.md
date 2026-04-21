@@ -57,19 +57,26 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 - [ ] `test_pydoc.py`
 - [ ] `test_warnings.py`
 
-## Progress Summary (v1.0.0 — 2026-04-21, V102)
+## Progress Summary (v1.0.0 — 2026-04-21, V103)
 
 | Category | Total | Tested | Passed | Notes |
 | :--- | :--- | :--- | :--- | :--- |
 | **Essential (CPython)** | 6 | 1 | 1 | 5 blocked by missing `test.support` / `asyncio` |
 | **Important (CPython)** | 6 | 0 | 0 | All blocked by missing `test.support` |
 | **Necessary (custom)** | 4 | 4 | 4 | `test_decorator`, `test_abc`, `test_contextlib`, `test_dataclasses` all pass |
-| **Bootstrap** | 2 | 2 | 2 | `import importlib`, `import inspect` now work (V101) |
+| **Bootstrap** | 4 | 4 | 4 | `importlib`, `inspect`, `sysconfig`, and `os.environ` work (V103) |
 | **Low Priority** | 4 | 0 | 0 | Out of scope for v1.0 |
 
 **Conformity Suite (internal, 2026-04-15)**: 7/9 tests pass. Failures are pre-existing: `int(float)` conversion and `set(iterable)` constructor.
 
 **Next milestone**: Implement `test.support` and `unittest` stubs to unblock remaining 11 CPython regression tests in Essential/Important categories.
+
+### V103 Changes (2026-04-21)
+
+- **`os.environ.get()` resolved.** Fixed `AttributeError: '_Environ' object has no attribute 'get'` by hardening the `_collections_abc` native stubs and ensuring proper method binding.
+- **`import sysconfig` unblocked.** Resolved `AttributeError: 'NoneType' object has no attribute 'st_mode'` by hardening `OsModule.cpp` to raise `OSError` instead of returning `None` on `stat`/`lstat` failures.
+- **ABC Inheritance Integrity**: Reordered ABC creation in `CollectionsAbcModule.cpp` to ensure methods are registered before the class is added to its own MRO. This prevents stale pointer capture in inheritance chains where subclasses would previously see "incomplete" versions of parent ABCs.
+- **Lazy Native Initialization**: Switched `_collections_abc` to lazy initialization to ensure it uses the correct context during the first import, improving bootstrap reliability.
 
 ### V102 Changes (2026-04-21)
 

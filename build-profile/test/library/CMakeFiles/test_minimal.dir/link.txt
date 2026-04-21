@@ -1,0 +1,1 @@
+/usr/bin/c++ -fno-omit-frame-pointer -g -O2 -g -DNDEBUG CMakeFiles/test_minimal.dir/TestMinimal.cpp.o -o test_minimal  -Wl,-rpath,/home/gamarino/Documentos/proyectos/protoPython/build-profile/src/library:/home/gamarino/Documentos/proyectos/protoPython/build-profile/protoCore ../../src/library/libprotoPython.so.0.2.0 ../../protoCore/libprotoCore.so.1.1.0 

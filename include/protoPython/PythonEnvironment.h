@@ -282,8 +282,8 @@ public:
                                           const proto::ProtoObject* starargs = nullptr,
                                           const proto::ProtoObject* kwargs = nullptr);
     const proto::ProtoObject* buildString(const proto::ProtoObject** parts, size_t count);
-    const proto::ProtoObject* getItem(const proto::ProtoObject* container, const proto::ProtoObject* key);
-    void setItem(const proto::ProtoObject* container, const proto::ProtoObject* key, const proto::ProtoObject* value);
+    const proto::ProtoObject* getItem(const proto::ProtoObject* container, const proto::ProtoObject* key, proto::ProtoContext* ctx = nullptr);
+    void setItem(const proto::ProtoObject* container, const proto::ProtoObject* key, const proto::ProtoObject* value, proto::ProtoContext* ctx = nullptr);
     const proto::ProtoObject* initDictStorage(proto::ProtoContext* ctx, const proto::ProtoObject* obj);
     const proto::ProtoObject* getAttr(const proto::ProtoObject* obj, const std::string& attr);
     void setAttr(const proto::ProtoObject* obj, const std::string& attr, const proto::ProtoObject* val);
@@ -295,7 +295,7 @@ public:
     const proto::ProtoObject* buildSlice(const proto::ProtoObject* start, const proto::ProtoObject* stop, const proto::ProtoObject* step);
     const proto::ProtoObject* newTuple(const proto::ProtoList* list);
     const proto::ProtoObject* newList(const proto::ProtoList* list);
-    void delItem(const proto::ProtoObject* container, const proto::ProtoObject* key);
+    void delItem(const proto::ProtoObject* container, const proto::ProtoObject* key, proto::ProtoContext* ctx = nullptr);
     void delAttr(const proto::ProtoObject* obj, const std::string& attr);
     void delName(const std::string& name);
 

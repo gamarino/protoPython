@@ -340,7 +340,7 @@ static const proto::ProtoObject* py_mappingproxy_getitem(
              return nullptr;
         }
 
-        return env ? env->getItem(data, key) : data->getAttribute(context, key->asString(context));
+        return env ? env->getItem(data, key, context) : data->getAttribute(context, key->asString(context));
     }
     return nullptr;
 }
@@ -439,7 +439,7 @@ static const proto::ProtoObject* py_mappingproxy_get(
 
     // Fallback: check internal __data__ sparse list (for attrs stored via dict.__setitem__)
     if (env) {
-        const proto::ProtoObject* internalVal = env->getItem(data, key);
+        const proto::ProtoObject* internalVal = env->getItem(data, key, context);
         if (internalVal && internalVal != PROTO_NONE) return internalVal;
     }
 
@@ -559,6 +559,50 @@ static const proto::ProtoObject* py_object_repr(
     char buffer[128];
     snprintf(buffer, sizeof(buffer), "<%s object at %p>", name.c_str(), (void*)self);
     return PythonEnvironment::getInternedString(context, buffer)->asObject(context);
+}
+
+static const proto::ProtoObject* py_object_get_dict(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!self || !env) return PROTO_NONE;
+
+    if (env->isActuallyAClass(context, self)) {
+        // Classes have MappingProxy (read-only view)
+        proto::ProtoObject* proxy = const_cast<proto::ProtoObject*>(env->getMappingProxyPrototype()->newChild(context, true));
+        proxy->setAttribute(context, env->getDataString(), self);
+        return proxy;
+    }
+
+    // Instances have a mutable dict.
+    // For V102, we return a DictWrapper that directly uses the instance's storage.
+    // This allows obj.__dict__[key] = value to update the instance attributes.
+    const proto::ProtoObject* dictProto = env->getDictPrototype();
+    if (!dictProto) return PROTO_NONE;
+
+    // Ensure self has dict storage (initializes __data__ and __keys__)
+    const proto::ProtoObject* mutableSelf = env->initDictStorage(context, self);
+    
+    // Create a new dict object
+    proto::ProtoObject* d = const_cast<proto::ProtoObject*>(dictProto->newChild(context, true));
+    
+    // Link the dict's storage to the instance's storage.
+    // In ProtoCore, sparse lists are objects, so they are passed by reference.
+    const proto::ProtoString* dataS = env->getDataString();
+    const proto::ProtoString* keysS = env->getKeysString();
+    
+    const proto::ProtoObject* data = mutableSelf->getAttribute(context, dataS);
+    const proto::ProtoObject* keys = mutableSelf->getAttribute(context, keysS);
+    
+    d->setAttribute(context, dataS, data);
+    d->setAttribute(context, keysS, keys);
+    
+    // CRITICAL: We need a way to ensure that if 'd' is modified, 'mutableSelf' is also updated.
+    // In a full implementation, we'd use a proxy. For now, since they share the same SparseList object,
+    // they are somewhat linked, but ProtoCore's setAttribute on the dict won't update the instance.
+    // We'll address this by making the DictWrapper more robust if needed.
+    return d;
 }
 
 static const proto::ProtoObject* py_object_reduce_ex(
@@ -5220,7 +5264,7 @@ static const proto::ProtoObject* py_str_mod(
             // Look up the key in the dict argument
             const proto::ProtoString* keyStr = PythonEnvironment::getInternedString(context, keyName.c_str());
             if (env && argObj && argObj != PROTO_NONE) {
-                dictArg = env->getItem(argObj, keyStr->asObject(context));
+                dictArg = env->getItem(argObj, keyStr->asObject(context), context);
             }
         }
 
@@ -8261,6 +8305,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     objectPrototype = objectPrototype->setAttribute(rootContext_, py_init, rootContext_->fromMethod(nullptr, py_object_init));
     objectPrototype = objectPrototype->setAttribute(rootContext_, newString, rootContext_->fromMethod(nullptr, protoPython::builtins::py_object_new));
     objectPrototype = objectPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_object_repr));
+    objectPrototype = objectPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__dict__"), rootContext_->fromMethod(nullptr, py_object_get_dict));
     objectPrototype = objectPrototype->setAttribute(rootContext_, py_str, rootContext_->fromMethod(nullptr, py_object_str));
     objectPrototype = objectPrototype->setAttribute(rootContext_, getInternedString(rootContext_, "__format__"), rootContext_->fromMethod(nullptr, py_object_format));
     objectPrototype = objectPrototype->setAttribute(rootContext_, getInternedString(rootContext_, "__hash__"), rootContext_->fromMethod(nullptr, py_object_hash));
@@ -9156,8 +9201,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     // _collections module
     registerNativeModule(nativeProviderPtr, "_collections", [this](proto::ProtoContext* ctx) { return collections::initialize(ctx, this); });
 
-    const proto::ProtoObject* collectionsAbcMod = collections_abc::initialize(rootContext_);
-    registerNativeModule(nativeProviderPtr, "_collections_abc", [collectionsAbcMod](proto::ProtoContext* ctx) { return collectionsAbcMod; });
+    registerNativeModule(nativeProviderPtr, "_collections_abc", [](proto::ProtoContext* ctx) { return collections_abc::initialize(ctx); });
     registerNativeModule(nativeProviderPtr, "logging", [](proto::ProtoContext* ctx) { return logging::initialize(ctx); });
     registerNativeModule(nativeProviderPtr, "operator", [](proto::ProtoContext* ctx) { return operator_::initialize(ctx); });
     registerNativeModule(nativeProviderPtr, "_operator", [](proto::ProtoContext* ctx) { return operator_::initialize(ctx); });
@@ -11125,13 +11169,6 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
             foundOnClassOrMro = true;
         }
     }
-    if (std::getenv("PROTO_META_DIAG")) {
-        if (getNameStr() == "_convert_") {
-            fprintf(stderr, "DEBUG_META_FOCM: foundOnClassOrMro=%d val_after_raw=%p\n",
-                    foundOnClassOrMro?1:0, (void*)val);
-            fflush(stderr);
-        }
-    }
 
     // 1.1 MRO Lookup (Inheritance Prototype Chain)
     if (!foundOnClassOrMro) {
@@ -11154,6 +11191,7 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
                 for (unsigned long i = 0; i < mroList->getSize(ctx); ++i) {
                     const proto::ProtoObject* baseCls = mroList->getAt(ctx, i);
                     if (baseCls == obj) continue;
+
                     // Use hasOwnAttribute to avoid picking up metaclass attributes that leaked
                     // into the protoCore parent chain. Each MRO entry should only contribute
                     // attributes it DIRECTLY owns (its __dict__), not inherited-via-prototype ones.
@@ -12030,7 +12068,7 @@ const proto::ProtoObject* PythonEnvironment::callObjectEx(const proto::ProtoObje
                 const proto::ProtoObject* k = kList->getAt(ctx, i);
                 if (k && k->isString(ctx)) {
                     const proto::ProtoString* ks = k->asString(ctx);
-                    psKwargs = psKwargs->setAt(ctx, ks->getHash(ctx), this->getItem(kwargs, k));
+                    psKwargs = psKwargs->setAt(ctx, ks->getHash(ctx), this->getItem(kwargs, k, ctx));
                     kwNames = kwNames->appendLast(ctx, ks->asObject(ctx));
                 }
             }
@@ -12053,31 +12091,40 @@ const proto::ProtoObject* PythonEnvironment::callObjectEx(const proto::ProtoObje
     return result ? result : PROTO_NONE;
 }
 
-const proto::ProtoObject* PythonEnvironment::getItem(const proto::ProtoObject* container, const proto::ProtoObject* key) {
-    proto::ProtoContext* ctx = rootContext_;
-    if (!container || !key) return PROTO_NONE;
-    
-    // No shortcuts here to ensure we always trigger __getitem__ which handles slices and exceptions
+const proto::ProtoObject* PythonEnvironment::getItem(const proto::ProtoObject* container, const proto::ProtoObject* key, proto::ProtoContext* ctx) {
+    if (!ctx) ctx = rootContext_;
+    if (!container || !key) return nullptr;
     
     const proto::ProtoObject* method = container->getAttribute(ctx, getItemString);
-    if (method && method->asMethod(ctx)) {
-        const proto::ProtoList* args = ctx->newList()->appendLast(ctx, key);
-        return method->asMethod(ctx)(ctx, container, nullptr, args, getEmptySparseList());
+    if (!method || method == PROTO_NONE) return nullptr;
+
+    const proto::ProtoList* args = ctx->newList();
+    if (method->isMethod(ctx)) {
+        // Native method cell: container will be passed as self by asMethod() call
+        args = args->appendLast(ctx, key);
+        const proto::ProtoObject* result = method->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(container), nullptr, args, this->getEmptySparseList());
+        if (this->hasPendingException()) return nullptr;
+        return result;
+    } else {
+        // Python callable: check if bound, otherwise prepend self
+        const proto::ProtoString* selfS = this->getSelfDunderString();
+        bool isBound = selfS && (method->hasAttribute(ctx, selfS) == PROTO_TRUE);
+        if (!isBound) {
+            args = args->appendLast(ctx, container);
+        }
+        args = args->appendLast(ctx, key);
+        const proto::ProtoObject* result = invokePythonCallable(ctx, method, args, getEmptySparseList());
+        if (this->hasPendingException()) return nullptr;
+        return result;
     }
-    return PROTO_NONE;
 }
 
-void PythonEnvironment::setItem(const proto::ProtoObject* container, const proto::ProtoObject* key, const proto::ProtoObject* value) {
-    proto::ProtoContext* ctx = rootContext_;
+void PythonEnvironment::setItem(const proto::ProtoObject* container, const proto::ProtoObject* key, const proto::ProtoObject* value, proto::ProtoContext* ctx) {
+    if (!ctx) ctx = rootContext_;
     if (!container || !key || !value) return;
 
-    // No shortcuts here to ensure we always trigger __setitem__ or fallback
-
-    const proto::ProtoObject* method = container->getAttribute(ctx, setItemString);
-    if (method && method->asMethod(ctx)) {
-        const proto::ProtoList* args = ctx->newList()->appendLast(ctx, key)->appendLast(ctx, value);
-        method->asMethod(ctx)(ctx, container, nullptr, args, nullptr);
-    }
+    const proto::ProtoList* args = ctx->newList()->appendLast(ctx, key)->appendLast(ctx, value);
+    container->call(ctx, nullptr, setItemString, container, args, nullptr);
 }
 
 // Helper function used to generate stack traces
@@ -12572,20 +12619,12 @@ const proto::ProtoObject* PythonEnvironment::buildSlice(const proto::ProtoObject
     return sliceObj;
 }
 
-void PythonEnvironment::delItem(const proto::ProtoObject* container, const proto::ProtoObject* key) {
-    proto::ProtoContext* ctx = rootContext_;
+void PythonEnvironment::delItem(const proto::ProtoObject* container, const proto::ProtoObject* key, proto::ProtoContext* ctx) {
+    if (!ctx) ctx = rootContext_;
     if (!container || !key) return;
     
     const proto::ProtoList* args = ctx->newList()->appendLast(ctx, key);
-    const proto::ProtoObject* method = container->getAttribute(ctx, delItemString);
-    if (method && method->asMethod(ctx)) {
-        method->asMethod(ctx)(ctx, container, nullptr, args, nullptr);
-    } else {
-        const proto::ProtoObject* data = container->getAttribute(ctx, dataString);
-        if (data && data->asSparseList(ctx)) {
-            data->asSparseList(ctx)->removeAt(ctx, key->getHash(ctx));
-        }
-    }
+    container->call(ctx, nullptr, delItemString, container, args, nullptr);
 }
 
 void PythonEnvironment::delAttr(const proto::ProtoObject* obj, const std::string& attr) {

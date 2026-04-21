@@ -1,0 +1,2 @@
+# Hashes of file build rules.
+baf8923da20b33256bba429201da0c95 protoCore/CMakeFiles/package_protocore_only

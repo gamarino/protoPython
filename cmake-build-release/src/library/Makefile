@@ -277,6 +277,30 @@ BasicBlockAnalysis.cpp.s:
 	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-release && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/BasicBlockAnalysis.cpp.s
 .PHONY : BasicBlockAnalysis.cpp.s
 
+BinasciiModule.o: BinasciiModule.cpp.o
+.PHONY : BinasciiModule.o
+
+# target to build an object file
+BinasciiModule.cpp.o:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-release && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/BinasciiModule.cpp.o
+.PHONY : BinasciiModule.cpp.o
+
+BinasciiModule.i: BinasciiModule.cpp.i
+.PHONY : BinasciiModule.i
+
+# target to preprocess a source file
+BinasciiModule.cpp.i:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-release && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/BinasciiModule.cpp.i
+.PHONY : BinasciiModule.cpp.i
+
+BinasciiModule.s: BinasciiModule.cpp.s
+.PHONY : BinasciiModule.s
+
+# target to generate assembly for a file
+BinasciiModule.cpp.s:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-release && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/BinasciiModule.cpp.s
+.PHONY : BinasciiModule.cpp.s
+
 BuiltinsModule.o: BuiltinsModule.cpp.o
 .PHONY : BuiltinsModule.o
 
@@ -1045,6 +1069,30 @@ StatModule.cpp.s:
 	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-release && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/StatModule.cpp.s
 .PHONY : StatModule.cpp.s
 
+StringModule.o: StringModule.cpp.o
+.PHONY : StringModule.o
+
+# target to build an object file
+StringModule.cpp.o:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-release && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/StringModule.cpp.o
+.PHONY : StringModule.cpp.o
+
+StringModule.i: StringModule.cpp.i
+.PHONY : StringModule.i
+
+# target to preprocess a source file
+StringModule.cpp.i:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-release && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/StringModule.cpp.i
+.PHONY : StringModule.cpp.i
+
+StringModule.s: StringModule.cpp.s
+.PHONY : StringModule.s
+
+# target to generate assembly for a file
+StringModule.cpp.s:
+	cd /home/gamarino/Documentos/proyectos/protoPython/cmake-build-release && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/StringModule.cpp.s
+.PHONY : StringModule.cpp.s
+
 StructModule.o: StructModule.cpp.o
 .PHONY : StructModule.o
 
@@ -1262,6 +1310,9 @@ help:
 	@echo "... BasicBlockAnalysis.o"
 	@echo "... BasicBlockAnalysis.i"
 	@echo "... BasicBlockAnalysis.s"
+	@echo "... BinasciiModule.o"
+	@echo "... BinasciiModule.i"
+	@echo "... BinasciiModule.s"
 	@echo "... BuiltinsModule.o"
 	@echo "... BuiltinsModule.i"
 	@echo "... BuiltinsModule.s"
@@ -1358,6 +1409,9 @@ help:
 	@echo "... StatModule.o"
 	@echo "... StatModule.i"
 	@echo "... StatModule.s"
+	@echo "... StringModule.o"
+	@echo "... StringModule.i"
+	@echo "... StringModule.s"
 	@echo "... StructModule.o"
 	@echo "... StructModule.i"
 	@echo "... StructModule.s"

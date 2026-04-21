@@ -8,6 +8,7 @@
 #include <iostream>
 #include <fstream>
 #include <thread>
+#include <cerrno>
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
 #include <signal.h>
 #include <unistd.h>
@@ -191,7 +192,11 @@ static const proto::ProtoObject* py_direntry_stat(
     if (stat(path.c_str(), &st) == 0) {
         return make_stat_result(ctx, st);
     }
-    return PROTO_NONE;
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (env) {
+        env->raiseOSError(ctx, errno, std::strerror(errno), path);
+    }
+    return nullptr;
 }
 
 static const proto::ProtoObject* py_direntry_inode(
@@ -208,7 +213,11 @@ static const proto::ProtoObject* py_direntry_inode(
     if (lstat(path.c_str(), &st) == 0) {
         return ctx->fromInteger(st.st_ino);
     }
-    return PROTO_NONE;
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (env) {
+        env->raiseOSError(ctx, errno, std::strerror(errno), path);
+    }
+    return nullptr;
 }
 
 static const proto::ProtoObject* py_getenv(
@@ -344,7 +353,11 @@ static const proto::ProtoObject* py_stat(
     if (stat(path.c_str(), &st) == 0) {
         return make_stat_result(ctx, st);
     }
-    return PROTO_NONE;
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (env) {
+        env->raiseOSError(ctx, errno, std::strerror(errno), path);
+    }
+    return nullptr;
 }
 
 static const proto::ProtoObject* py_lstat(
@@ -362,7 +375,11 @@ static const proto::ProtoObject* py_lstat(
     if (lstat(path.c_str(), &st) == 0) {
         return make_stat_result(ctx, st);
     }
-    return PROTO_NONE;
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (env) {
+        env->raiseOSError(ctx, errno, std::strerror(errno), path);
+    }
+    return nullptr;
 }
 
 static const proto::ProtoObject* py_remove(
@@ -1028,6 +1045,19 @@ static const proto::ProtoObject* py_create_environ_method(
     return py_create_environ(ctx, self, parentLink, posArgs, kwargs);
 }
 
+static const proto::ProtoObject* py_os_readlink(proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    if (args->getSize(ctx) < 1) return PROTO_NONE;
+    const proto::ProtoObject* pathObj = args->getAt(ctx, 0);
+    if (!pathObj->isString(ctx)) return PROTO_NONE;
+    std::string path;
+    pathObj->asString(ctx)->toUTF8String(ctx, path);
+    char buf[1024];
+    ssize_t len = readlink(path.c_str(), buf, sizeof(buf)-1);
+    if (len < 0) return pathObj; // Return path as dummy if failed
+    buf[len] = '\0';
+    return PythonEnvironment::getInternedString(ctx, buf)->asObject(ctx);
+}
+
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment* env, const proto::ProtoObject* pathModule) {
     const proto::ProtoObject* direntry_proto = env && env->getObjectPrototype() ? env->getObjectPrototype()->newChild(ctx, false) : ctx->newObject(false);
     // Ensure direntry_proto is a fresh object and not polluting global Object prototype
@@ -1086,6 +1116,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_unsetenv));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "getcwd"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_getcwd));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "readlink"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_os_readlink));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "chdir"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_chdir));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "listdir"),
@@ -1193,6 +1225,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "putenv")->asObject(ctx));
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "unsetenv")->asObject(ctx));
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "getcwd")->asObject(ctx));
+    keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "readlink")->asObject(ctx));
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "chdir")->asObject(ctx));
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "listdir")->asObject(ctx));
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "remove")->asObject(ctx));

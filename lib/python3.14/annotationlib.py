@@ -884,44 +884,45 @@ def get_annotations(
     if eval_str and format != Format.VALUE:
         raise ValueError("eval_str=True is only supported with format=Format.VALUE")
 
-    match format:
-        case Format.VALUE:
-            # For VALUE, we first look at __annotations__
+    # Note: match statement bodies are not yet executed in protoPython; use if/elif.
+    if format == Format.VALUE:
+        # For VALUE, we first look at __annotations__
+        ann = _get_dunder_annotations(obj)
+
+        # If it's not there, try __annotate__ instead
+        if ann is None:
+            ann = _get_and_call_annotate(obj, format)
+    elif format == Format.FORWARDREF:
+        # For FORWARDREF, we use __annotations__ if it exists
+        try:
             ann = _get_dunder_annotations(obj)
-
-            # If it's not there, try __annotate__ instead
-            if ann is None:
-                ann = _get_and_call_annotate(obj, format)
-        case Format.FORWARDREF:
-            # For FORWARDREF, we use __annotations__ if it exists
-            try:
-                ann = _get_dunder_annotations(obj)
-            except Exception:
-                pass
-            else:
-                if ann is not None:
-                    return dict(ann)
-
-            # But if __annotations__ threw a NameError, we try calling __annotate__
-            ann = _get_and_call_annotate(obj, format)
-            if ann is None:
-                # If that didn't work either, we have a very weird object: evaluating
-                # __annotations__ threw NameError and there is no __annotate__. In that case,
-                # we fall back to trying __annotations__ again.
-                ann = _get_dunder_annotations(obj)
-        case Format.STRING:
-            # For STRING, we try to call __annotate__
-            ann = _get_and_call_annotate(obj, format)
+        except Exception:
+            pass
+        else:
             if ann is not None:
                 return dict(ann)
-            # But if we didn't get it, we use __annotations__ instead.
+
+        # But if __annotations__ threw a NameError, we try calling __annotate__
+        ann = _get_and_call_annotate(obj, format)
+        if ann is None:
+            # If that didn't work either, we have a very weird object: evaluating
+            # __annotations__ threw NameError and there is no __annotate__. In that case,
+            # we fall back to trying __annotations__ again.
             ann = _get_dunder_annotations(obj)
-            if ann is not None:
-                return annotations_to_string(ann)
-        case Format.VALUE_WITH_FAKE_GLOBALS:
-            raise ValueError("The VALUE_WITH_FAKE_GLOBALS format is for internal use only")
-        case _:
-            raise ValueError(f"Unsupported format {format!r}")
+    elif format == Format.STRING:
+        # For STRING, we try to call __annotate__
+        ann = _get_and_call_annotate(obj, format)
+        if ann is not None:
+            return dict(ann)
+        # But if we didn't get it, we use __annotations__ instead.
+        ann = _get_dunder_annotations(obj)
+        if ann is not None:
+            return annotations_to_string(ann)
+    elif format == Format.VALUE_WITH_FAKE_GLOBALS:
+        raise ValueError("The VALUE_WITH_FAKE_GLOBALS format is for internal use only")
+    else:
+        raise ValueError(f"Unsupported format {format!r}")
+    ann = ann if ann is not None else None  # ensure ann is always bound
 
     if ann is None:
         if isinstance(obj, type) or callable(obj):

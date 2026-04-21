@@ -1,0 +1,1 @@
+/usr/bin/c++ -fno-omit-frame-pointer -g -pg -O2 -g -DNDEBUG -pg CMakeFiles/string_concat_benchmark.dir/performance/string_concat_benchmark.cpp.o -o string_concat_benchmark  -Wl,-rpath,/home/gamarino/Documentos/proyectos/protoPython/build-gprof/protoCore libprotoCore.so.1.1.0 

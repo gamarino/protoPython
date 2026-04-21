@@ -254,7 +254,12 @@ static const proto::ProtoObject* py_itemgetter_call(
     if (!itemsObj || !itemsObj->asList(ctx)) return PROTO_NONE;
     const proto::ProtoList* items = itemsObj->asList(ctx);
     
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     auto getItem = [&](const proto::ProtoObject* key) -> const proto::ProtoObject* {
+        if (env) {
+            const proto::ProtoObject* res = env->getItem(obj, key, ctx);
+            return res ? res : PROTO_NONE;
+        }
         const proto::ProtoString* getItemS = proto::ProtoString::createSymbol(ctx, "__getitem__");
         const proto::ProtoObject* method = obj->getAttribute(ctx, getItemS);
         if (method && method->asMethod(ctx)) {
