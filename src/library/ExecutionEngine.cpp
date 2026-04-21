@@ -2256,7 +2256,7 @@ const proto::ProtoObject* executeBytecodeRange(
         stackBase = allSlots + stackOffset;
         stackCap = nSlots - stackOffset;
     } else {
-        fallbackStack.resize(1024); // Default capacity for manual/test execution
+        fallbackStack.resize(4096); // Default capacity for manual/test execution
         stackBase = fallbackStack.data();
         stackCap = fallbackStack.size();
     }
@@ -4806,7 +4806,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 // Add to keys
                 const proto::ProtoObject* keysObj = ns->getAttribute(ctx, keysS);
                 if (keysObj && keysObj->asList(ctx)) {
-                    ns->setAttribute(ctx, keysS, keysObj->asList(ctx)->appendLast(ctx, nameS->asObject(ctx))->asObject(ctx));
+                    ns = const_cast<proto::ProtoObject*>(ns->setAttribute(ctx, keysS, keysObj->asList(ctx)->appendLast(ctx, nameS->asObject(ctx))->asObject(ctx)));
                 }
 
                 const proto::ProtoObject* globals = env ? env->getCurrentGlobals() : nullptr;
@@ -4816,7 +4816,7 @@ const proto::ProtoObject* executeBytecodeRange(
                     // Re-fetch keysObj to avoid stale pointer if setAttribute returns new version or updates state
                     keysObj = ns->getAttribute(ctx, keysS);
                     if (keysObj && keysObj->asList(ctx)) {
-                        ns->setAttribute(ctx, keysS, keysObj->asList(ctx)->appendLast(ctx, py_module_s->asObject(ctx))->asObject(ctx));
+                        ns = const_cast<proto::ProtoObject*>(ns->setAttribute(ctx, keysS, keysObj->asList(ctx)->appendLast(ctx, py_module_s->asObject(ctx))->asObject(ctx)));
                     }
                 }
                 if (env) {
@@ -4828,14 +4828,15 @@ const proto::ProtoObject* executeBytecodeRange(
                     stack.back() = ns;
                 }
 
-                // 3. Execute body with ns as locals
+                // 3. Execute class body
                 if (body) {
-                    const proto::ProtoObject* codeObj = body->getAttribute(ctx, env ? env->getCodeString() : PythonEnvironment::getInternedString(ctx, "__code__"));
+                    const proto::ProtoString* callS = env ? env->getCallString() : protoPython::PythonEnvironment::getInternalString(ctx, "__call__");
+                    const proto::ProtoString* codeS = env ? env->getCodeString() : protoPython::PythonEnvironment::getInternalString(ctx, "__code__");
+                    const proto::ProtoObject* codeObj = body->getAttribute(ctx, codeS);
                     if (codeObj && codeObj != PROTO_NONE) {
-                        if (get_env_diag()) {
-                            fprintf(stderr, "DEBUG OP_BUILD_CLASS: before body run ns=%p\n", (void*)ns);
-                        }
+                        if (get_env_diag()) fprintf(stderr, "DEBUG OP_BUILD_CLASS: before body run ns=%p\n", (void*)ns);
                         runCodeObject(ctx, codeObj, ns);
+                        if (env && env->hasPendingException()) return nullptr;
                         if (get_env_diag()) {
                             const proto::ProtoObject* keysObj = ns->getAttribute(ctx, env ? env->getKeysString() : protoPython::PythonEnvironment::getInternalString(ctx, "__keys__"));
                             const proto::ProtoList* keysList = keysObj ? keysObj->asList(ctx) : nullptr;
@@ -4846,9 +4847,11 @@ const proto::ProtoObject* executeBytecodeRange(
                         const proto::ProtoObject* callM = body->getAttribute(ctx, callS);
                         if (callM && callM->asMethod(ctx)) {
                             callM->asMethod(ctx)(ctx, body, nullptr, ctx->newList(), nullptr);
+                            if (env && env->hasPendingException()) return nullptr;
                         }
                     }
                 }
+
 
                 if (get_env_diag()) {
                 }

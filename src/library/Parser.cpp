@@ -1263,7 +1263,20 @@ std::unique_ptr<ASTNode> Parser::parseFString() {
                 i += 2;
             } else {
                 i++;
-                size_t closeBrace = raw.find('}', i);
+                size_t closeBrace = std::string::npos;
+                int braceDepth = 1;
+                for (size_t searchIdx = i; searchIdx < raw.size(); ++searchIdx) {
+                    if (raw[searchIdx] == '{') {
+                        braceDepth++;
+                    } else if (raw[searchIdx] == '}') {
+                        braceDepth--;
+                        if (braceDepth == 0) {
+                            closeBrace = searchIdx;
+                            break;
+                        }
+                    }
+                }
+                
                 if (closeBrace == std::string::npos) {
                     error("f-string: missing '}'");
                     return nullptr;
@@ -1720,6 +1733,9 @@ std::unique_ptr<ASTNode> Parser::parseAsync() {
         auto tmpFn = createNode<FunctionDefNode>();
         tmpFn->type_params = parseTypeParams();
         if (!parseParameters(tmpFn.get())) return nullptr;
+        if (accept(TokenType::Arrow)) {
+            tmpFn->returns = parseExpression();
+        }
         if (!expect(TokenType::Colon)) return nullptr;
         auto body = parseSuite();
         if (!body) return nullptr;
@@ -1727,9 +1743,7 @@ std::unique_ptr<ASTNode> Parser::parseAsync() {
         auto fn = createNode<AsyncFunctionDefNode>();
         fn->name = funcName;
         fn->type_params = std::move(tmpFn->type_params);
-        if (accept(TokenType::Arrow)) {
-            fn->returns = parseExpression();
-        }
+        fn->returns = std::move(tmpFn->returns);
         fn->parameters = std::move(tmpFn->parameters);
         fn->kwonlyargs = std::move(tmpFn->kwonlyargs);
         fn->defaults = std::move(tmpFn->defaults);

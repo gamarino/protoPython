@@ -2918,7 +2918,9 @@ const proto::ProtoObject* py_type(
                 }
             }
             const proto::ProtoList* keysList = (keysObj && keysObj->asList(context)) ? keysObj->asList(context) : nullptr;
-
+            if (get_env_diag()) {
+                fprintf(stderr, "DEBUG py_type: dict=%p keysObj=%p keysList=%p\n", (void*)dict, (void*)keysObj, (void*)keysList);
+            }
             if (keysList) {
                 for (size_t i = 0; i < keysList->getSize(context); ++i) {
                     const proto::ProtoObject* keyObj = keysList->getAt(context, i);
@@ -2986,10 +2988,14 @@ const proto::ProtoObject* py_type(
                             }
                         }
                         
-                        if (!valFound) continue;
-
-                        targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, k, val));
-                        
+                        if (valFound) {
+                    targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, k, val));
+                    if (get_env_diag() && (k->toStdString(context) == "_value_repr_" || k->toStdString(context) == "_member_type_")) {
+                        bool hasOwn = (targetClass->hasOwnAttribute(context, k) == PROTO_TRUE);
+                        fprintf(stderr, "DEBUG py_type: attr %s persistence: %s\n", k->toStdString(context).c_str(), hasOwn ? "OK" : "FAILED");
+                    }
+                }
+              
                         // Update targetClass.__keys__ — use OWN-only lookup to avoid
                         // inheriting typePrototype.__keys__ (which contains type built-in
                         // method names like 'mro', '__init__', etc.) as the initial list.

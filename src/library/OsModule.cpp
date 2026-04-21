@@ -555,6 +555,57 @@ static const proto::ProtoObject* py_waitpid(
 #endif
 }
 
+static const proto::ProtoObject* py_waitstatus_to_exitcode(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* /*self*/,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList* /*kwargs*/) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    int status = static_cast<int>(posArgs->getAt(ctx, 0)->asLong(ctx));
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+    if (WIFEXITED(status)) {
+        return ctx->fromInteger(WEXITSTATUS(status));
+    } else if (WIFSIGNALED(status)) {
+        return ctx->fromInteger(-WTERMSIG(status));
+    }
+    // CPython raises ValueError if neither exited nor signaled, but return None is okay for now
+    return PROTO_NONE;
+#else
+    return PROTO_NONE;
+#endif
+}
+
+static const proto::ProtoObject* py_WIFSTOPPED(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* /*self*/,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList* /*kwargs*/) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    int status = static_cast<int>(posArgs->getAt(ctx, 0)->asLong(ctx));
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+    return WIFSTOPPED(status) ? PROTO_TRUE : PROTO_FALSE;
+#else
+    return PROTO_FALSE;
+#endif
+}
+
+static const proto::ProtoObject* py_WSTOPSIG(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* /*self*/,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList* /*kwargs*/) {
+    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    int status = static_cast<int>(posArgs->getAt(ctx, 0)->asLong(ctx));
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+    return ctx->fromInteger(WSTOPSIG(status));
+#else
+    return ctx->fromInteger(0);
+#endif
+}
+
 static const proto::ProtoObject* py_kill(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
@@ -1154,6 +1205,12 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_environ_keys));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "waitpid"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_waitpid));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "waitstatus_to_exitcode"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_waitstatus_to_exitcode));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "WIFSTOPPED"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_WIFSTOPPED));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "WSTOPSIG"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_WSTOPSIG));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "urandom"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_urandom));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "kill"),
@@ -1191,6 +1248,52 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "R_OK"), ctx->fromInteger(4));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "W_OK"), ctx->fromInteger(2));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "X_OK"), ctx->fromInteger(1));
+
+    // O_ constants
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "O_RDONLY"), ctx->fromInteger(O_RDONLY));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "O_WRONLY"), ctx->fromInteger(O_WRONLY));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "O_RDWR"), ctx->fromInteger(O_RDWR));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "O_APPEND"), ctx->fromInteger(O_APPEND));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "O_CREAT"), ctx->fromInteger(O_CREAT));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "O_EXCL"), ctx->fromInteger(O_EXCL));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "O_TRUNC"), ctx->fromInteger(O_TRUNC));
+#ifdef O_BINARY
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "O_BINARY"), ctx->fromInteger(O_BINARY));
+#endif
+#ifdef O_NOFOLLOW
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "O_NOFOLLOW"), ctx->fromInteger(O_NOFOLLOW));
+#endif
+#ifdef O_CLOEXEC
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "O_CLOEXEC"), ctx->fromInteger(O_CLOEXEC));
+#endif
+#ifdef O_NONBLOCK
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "O_NONBLOCK"), ctx->fromInteger(O_NONBLOCK));
+#endif
+#ifdef O_NDELAY
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "O_NDELAY"), ctx->fromInteger(O_NDELAY));
+#endif
+#ifdef O_SYNC
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "O_SYNC"), ctx->fromInteger(O_SYNC));
+#endif
+#ifdef O_ASYNC
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "O_ASYNC"), ctx->fromInteger(O_ASYNC));
+#endif
+#ifdef O_DIRECTORY
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "O_DIRECTORY"), ctx->fromInteger(O_DIRECTORY));
+#endif
+#ifdef O_TMPFILE
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "O_TMPFILE"), ctx->fromInteger(O_TMPFILE));
+#endif
+
+
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+    // Wait constants
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "WNOHANG"), ctx->fromInteger(WNOHANG));
+    
+    // WIFSTOPPED, WSTOPSIG are macros, but os module has them as functions that take status!
+    // Wait, os.WIFSTOPPED and os.WSTOPSIG are FUNCTIONS in CPython!
+    // Ah, wait! `subprocess.py` accesses them. 
+#endif
 
     // ST_ constants (used by os.py/posixpath.py)
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "ST_MODE"), ctx->fromInteger(0));
@@ -1241,6 +1344,10 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "getegid")->asObject(ctx));
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "environ_keys")->asObject(ctx));
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "waitpid")->asObject(ctx));
+    keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "waitstatus_to_exitcode")->asObject(ctx));
+    keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "WIFSTOPPED")->asObject(ctx));
+    keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "WSTOPSIG")->asObject(ctx));
+    keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "WNOHANG")->asObject(ctx));
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "urandom")->asObject(ctx));
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "kill")->asObject(ctx));
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "pipe")->asObject(ctx));
@@ -1253,7 +1360,42 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "R_OK")->asObject(ctx));
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "W_OK")->asObject(ctx));
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "X_OK")->asObject(ctx));
+    keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "O_RDONLY")->asObject(ctx));
+    keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "O_WRONLY")->asObject(ctx));
+    keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "O_RDWR")->asObject(ctx));
+    keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "O_APPEND")->asObject(ctx));
+    keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "O_CREAT")->asObject(ctx));
+    keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "O_EXCL")->asObject(ctx));
+    keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "O_TRUNC")->asObject(ctx));
+#ifdef O_BINARY
+    keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "O_BINARY")->asObject(ctx));
+#endif
+#ifdef O_NOFOLLOW
+    keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "O_NOFOLLOW")->asObject(ctx));
+#endif
+#ifdef O_CLOEXEC
+    keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "O_CLOEXEC")->asObject(ctx));
+#endif
+#ifdef O_NONBLOCK
+    keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "O_NONBLOCK")->asObject(ctx));
+#endif
+#ifdef O_NDELAY
+    keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "O_NDELAY")->asObject(ctx));
+#endif
+#ifdef O_SYNC
+    keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "O_SYNC")->asObject(ctx));
+#endif
+#ifdef O_ASYNC
+    keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "O_ASYNC")->asObject(ctx));
+#endif
+#ifdef O_DIRECTORY
+    keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "O_DIRECTORY")->asObject(ctx));
+#endif
+#ifdef O_TMPFILE
+    keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "O_TMPFILE")->asObject(ctx));
+#endif
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "ST_MODE")->asObject(ctx));
+
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "ST_INO")->asObject(ctx));
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "ST_DEV")->asObject(ctx));
     keys = keys->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "ST_NLINK")->asObject(ctx));

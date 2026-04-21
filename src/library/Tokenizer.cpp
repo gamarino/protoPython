@@ -178,6 +178,65 @@ Token Tokenizer::scanString(char quote, const std::string& prefix) {
             break;
         }
         char c = source_[pos_++];
+
+        // PEP 701: inside f-string expressions, nested quotes are allowed.
+        // When we see '{' that starts an expression, skip over any nested string
+        // literals inside the expression so we don't break on their quote chars.
+        // We let the raw source text flow through as-is into 's'; parseFString
+        // handles {{, }}, and {expr} in the token value.
+        if (isF && c == '{') {
+            s += '{';
+            if (pos_ < source_.size() && source_[pos_] == '{') {
+                // {{ escape — add the second { and continue
+                s += source_[pos_++];
+                continue;
+            }
+            // Real expression: depth-track and skip embedded string literals
+            int depth = 1;
+            while (pos_ < source_.size() && depth > 0) {
+                char ec = source_[pos_++];
+                s += ec;
+                if (ec == '{') {
+                    depth++;
+                } else if (ec == '}') {
+                    depth--;
+                } else if ((ec == '\'' || ec == '"') && depth > 0) {
+                    // Nested string literal inside expression — scan to its end
+                    char innerQuote = ec;
+                    bool innerTriple = false;
+                    if (pos_ + 1 < source_.size()
+                        && source_[pos_] == innerQuote
+                        && source_[pos_+1] == innerQuote) {
+                        innerTriple = true;
+                        s += source_[pos_++];
+                        s += source_[pos_++];
+                    }
+                    while (pos_ < source_.size()) {
+                        if (innerTriple && pos_ + 2 < source_.size()
+                            && source_[pos_] == innerQuote
+                            && source_[pos_+1] == innerQuote
+                            && source_[pos_+2] == innerQuote) {
+                            s += source_[pos_++];
+                            s += source_[pos_++];
+                            s += source_[pos_++];
+                            break;
+                        } else if (!innerTriple && source_[pos_] == innerQuote) {
+                            s += source_[pos_++];
+                            break;
+                        }
+                        char nc = source_[pos_++];
+                        s += nc;
+                        if (nc == '\\' && pos_ < source_.size()) {
+                            s += source_[pos_++];
+                        }
+                    }
+                } else if (ec == '\\' && pos_ < source_.size()) {
+                    s += source_[pos_++];
+                }
+            }
+            continue;
+        }
+
         if (c == '\\' && pos_ < source_.size()) {
             if (!isRaw) {
                 char e = source_[pos_++];
@@ -193,7 +252,6 @@ Token Tokenizer::scanString(char quote, const std::string& prefix) {
                 else s += e;
             } else {
                 // In raw strings, a backslash followed by a quote does NOT end the string.
-                // Both characters are added to the value.
                 if (source_[pos_] == quote || source_[pos_] == '\\') {
                     s += '\\';
                     s += source_[pos_++];

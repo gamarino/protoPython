@@ -885,9 +885,15 @@ static const proto::ProtoObject* py_str_call(
         x = posArgs->getAt(ctx, 1);
         PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
         const proto::ProtoObject* cls = env ? env->getType(ctx, x) : x->getAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__class__"));
-        const proto::ProtoObject* strMethod = cls ? cls->getAttribute(ctx, env ? env->getStrString() : PythonEnvironment::getInternalString(ctx, "__str__")) : nullptr;
-        if (strMethod && strMethod->asMethod(ctx)) {
-            x = strMethod->asMethod(ctx)(ctx, x, nullptr, env ? env->getEmptyList() : ctx->newList(), nullptr);
+        const proto::ProtoString* strS = env ? env->getStrString() : PythonEnvironment::getInternalString(ctx, "__str__");
+        const proto::ProtoObject* strMethod = cls ? cls->getAttribute(ctx, strS) : nullptr;
+        if (strMethod && strMethod != PROTO_NONE) {
+            if (strMethod->asMethod(ctx)) {
+                x = strMethod->asMethod(ctx)(ctx, x, nullptr, env ? env->getEmptyList() : ctx->newList(), nullptr);
+            } else {
+                const proto::ProtoList* args = (env ? env->getEmptyList() : ctx->newList())->appendLast(ctx, x);
+                x = invokePythonCallable(ctx, strMethod, args, nullptr);
+            }
         } else {
             x = py_object_str(ctx, x, parentLink, nullptr, nullptr);
         }
@@ -917,10 +923,16 @@ static const proto::ProtoObject* py_repr_call(
     }
     ++s_reprDepth;
     const proto::ProtoObject* cls = env ? env->getType(ctx, x) : x->getAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__class__"));
-    const proto::ProtoObject* reprMethod = cls ? cls->getAttribute(ctx, env ? env->getReprString() : PythonEnvironment::getInternalString(ctx, "__repr__")) : nullptr;
-    const proto::ProtoObject* result;
-    if (reprMethod && reprMethod->asMethod(ctx)) {
-        result = reprMethod->asMethod(ctx)(ctx, x, nullptr, env ? env->getEmptyList() : ctx->newList(), nullptr);
+    const proto::ProtoString* reprS = env ? env->getReprString() : PythonEnvironment::getInternalString(ctx, "__repr__");
+    const proto::ProtoObject* reprMethod = cls ? cls->getAttribute(ctx, reprS) : nullptr;
+    const proto::ProtoObject* result = nullptr;
+    if (reprMethod && reprMethod != PROTO_NONE) {
+        if (reprMethod->asMethod(ctx)) {
+            result = reprMethod->asMethod(ctx)(ctx, x, nullptr, env ? env->getEmptyList() : ctx->newList(), nullptr);
+        } else {
+            const proto::ProtoList* args = (env ? env->getEmptyList() : ctx->newList())->appendLast(ctx, x);
+            result = invokePythonCallable(ctx, reprMethod, args, nullptr);
+        }
     } else {
         result = py_object_repr(ctx, x, parentLink, nullptr, nullptr);
     }

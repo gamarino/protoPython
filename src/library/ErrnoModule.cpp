@@ -61,6 +61,105 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
 #ifdef EILSEQ
     ADD_ERRNO(EILSEQ);
 #endif
+#ifdef ENOTSOCK
+    ADD_ERRNO(ENOTSOCK);
+#endif
+#ifdef EDESTADDRREQ
+    ADD_ERRNO(EDESTADDRREQ);
+#endif
+#ifdef EMSGSIZE
+    ADD_ERRNO(EMSGSIZE);
+#endif
+#ifdef EPROTOTYPE
+    ADD_ERRNO(EPROTOTYPE);
+#endif
+#ifdef ENOPROTOOPT
+    ADD_ERRNO(ENOPROTOOPT);
+#endif
+#ifdef EPROTONOSUPPORT
+    ADD_ERRNO(EPROTONOSUPPORT);
+#endif
+#ifdef ESOCKTNOSUPPORT
+    ADD_ERRNO(ESOCKTNOSUPPORT);
+#endif
+#ifdef EOPNOTSUPP
+    ADD_ERRNO(EOPNOTSUPP);
+#endif
+#ifdef EPFNOSUPPORT
+    ADD_ERRNO(EPFNOSUPPORT);
+#endif
+#ifdef EAFNOSUPPORT
+    ADD_ERRNO(EAFNOSUPPORT);
+#endif
+#ifdef EADDRINUSE
+    ADD_ERRNO(EADDRINUSE);
+#endif
+#ifdef EADDRNOTAVAIL
+    ADD_ERRNO(EADDRNOTAVAIL);
+#endif
+#ifdef ENETDOWN
+    ADD_ERRNO(ENETDOWN);
+#endif
+#ifdef ENETUNREACH
+    ADD_ERRNO(ENETUNREACH);
+#endif
+#ifdef ENETRESET
+    ADD_ERRNO(ENETRESET);
+#endif
+#ifdef ECONNABORTED
+    ADD_ERRNO(ECONNABORTED);
+#endif
+#ifdef ECONNRESET
+    ADD_ERRNO(ECONNRESET);
+#endif
+#ifdef ENOBUFS
+    ADD_ERRNO(ENOBUFS);
+#endif
+#ifdef EISCONN
+    ADD_ERRNO(EISCONN);
+#endif
+#ifdef ENOTCONN
+    ADD_ERRNO(ENOTCONN);
+#endif
+#ifdef ESHUTDOWN
+    ADD_ERRNO(ESHUTDOWN);
+#endif
+#ifdef ETOOMANYREFS
+    ADD_ERRNO(ETOOMANYREFS);
+#endif
+#ifdef ETIMEDOUT
+    ADD_ERRNO(ETIMEDOUT);
+#endif
+#ifdef ECONNREFUSED
+    ADD_ERRNO(ECONNREFUSED);
+#endif
+#ifdef EHOSTDOWN
+    ADD_ERRNO(EHOSTDOWN);
+#endif
+#ifdef EHOSTUNREACH
+    ADD_ERRNO(EHOSTUNREACH);
+#endif
+#ifdef EALREADY
+    ADD_ERRNO(EALREADY);
+#endif
+#ifdef EINPROGRESS
+    ADD_ERRNO(EINPROGRESS);
+#endif
+#ifdef ESTALE
+    ADD_ERRNO(ESTALE);
+#endif
+#ifdef ENOMEDIUM
+    ADD_ERRNO(ENOMEDIUM);
+#endif
+#ifdef ECANCELED
+    ADD_ERRNO(ECANCELED);
+#endif
+#ifdef EOWNERDEAD
+    ADD_ERRNO(EOWNERDEAD);
+#endif
+#ifdef ENOTRECOVERABLE
+    ADD_ERRNO(ENOTRECOVERABLE);
+#endif
 
     // errorcode map
     const proto::ProtoSparseList* errorcode = ctx->newSparseList();

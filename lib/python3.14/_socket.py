@@ -116,6 +116,8 @@ NI_DGRAM = 16
 def has_dualstack_ipv6():
     return False
 
+has_ipv6 = True
+
 # gethostname
 def gethostname():
     return _os.uname().nodename if hasattr(_os, 'uname') else 'localhost'

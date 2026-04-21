@@ -45,6 +45,8 @@ add_library(protoPython SHARED
     StringModule.cpp
     BinasciiModule.cpp
     DatetimeModule.cpp
+    PosixSubprocessModule.cpp
+    SelectModule.cpp
 )
 
 target_include_directories(protoPython PUBLIC
