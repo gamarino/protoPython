@@ -19,6 +19,7 @@
 #include <protoPython/IOModule.h>
 #include <protoPython/CollectionsModule.h>
 #include <protoPython/ExceptionsModule.h>
+#include <protoPython/DatetimeModule.h>
 #include <protoPython/LoggingModule.h>
 #include <protoPython/MathModule.h>
 #include <protoPython/OperatorModule.h>
@@ -9243,6 +9244,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     registerNativeModule(nativeProviderPtr, "_warnings", [](proto::ProtoContext* c) { return library::WarningsModule::createWarningsModule(c); });
     registerNativeModule(nativeProviderPtr, "_string", [](proto::ProtoContext* c) { return string_module::initialize(c); });
     registerNativeModule(nativeProviderPtr, "binascii", [](proto::ProtoContext* c) { return binascii::initialize(c); });
+    registerNativeModule(nativeProviderPtr, "_datetime", [](proto::ProtoContext* c) { return datetime::initialize(c); });
 
     exceptionType = exceptionsMod->getAttribute(rootContext_, exceptionS);
     keyErrorType = exceptionsMod->getAttribute(rootContext_, keyErrorS);
@@ -9298,11 +9300,27 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
         builtinsModule = builtinsModule->setAttribute(rootContext_, blockingIOErrorS, blockingIOErrorType);
         builtinsModule = builtinsModule->setAttribute(rootContext_, syntaxErrorS, syntaxErrorType);
         builtinsModule = builtinsModule->setAttribute(rootContext_, typeErrorS, typeErrorType);
+        const proto::ProtoString* unicodeErrorS = PythonEnvironment::getInternedString(rootContext_, "UnicodeError");
+        builtinsModule = builtinsModule->setAttribute(rootContext_, unicodeErrorS, exceptionsMod->getAttribute(rootContext_, unicodeErrorS));
+        const proto::ProtoString* unicodeEncodeErrorS = PythonEnvironment::getInternedString(rootContext_, "UnicodeEncodeError");
+        builtinsModule = builtinsModule->setAttribute(rootContext_, unicodeEncodeErrorS, exceptionsMod->getAttribute(rootContext_, unicodeEncodeErrorS));
+        const proto::ProtoString* unicodeDecodeErrorS = PythonEnvironment::getInternedString(rootContext_, "UnicodeDecodeError");
+        builtinsModule = builtinsModule->setAttribute(rootContext_, unicodeDecodeErrorS, exceptionsMod->getAttribute(rootContext_, unicodeDecodeErrorS));
+        const proto::ProtoString* unicodeTranslateErrorS = PythonEnvironment::getInternedString(rootContext_, "UnicodeTranslateError");
+        builtinsModule = builtinsModule->setAttribute(rootContext_, unicodeTranslateErrorS, exceptionsMod->getAttribute(rootContext_, unicodeTranslateErrorS));
         builtinsModule = builtinsModule->setAttribute(rootContext_, importErrorS, importErrorType);
         {
-            const proto::ProtoObject* modNotFoundType = exceptionsMod->getAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "ModuleNotFoundError"));
-            if (modNotFoundType && modNotFoundType != PROTO_NONE)
-                builtinsModule = builtinsModule->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "ModuleNotFoundError"), modNotFoundType);
+            static const std::vector<std::string> osErrors = {
+                "FileNotFoundError", "PermissionError", "FileExistsError", "NotADirectoryError",
+                "IsADirectoryError", "TimeoutError", "InterruptedError", "ChildProcessError",
+                "ConnectionError", "BrokenPipeError", "ModuleNotFoundError"
+            };
+            for (const auto& name : osErrors) {
+                const proto::ProtoString* nameS = PythonEnvironment::getInternedString(rootContext_, name.c_str());
+                const proto::ProtoObject* excType = exceptionsMod->getAttribute(rootContext_, nameS);
+                if (excType && excType != PROTO_NONE)
+                    builtinsModule = builtinsModule->setAttribute(rootContext_, nameS, excType);
+            }
         }
         builtinsModule = builtinsModule->setAttribute(rootContext_, runtimeErrorS, runtimeErrorType);
         builtinsModule = builtinsModule->setAttribute(rootContext_, stopIterationS, stopIterationType);

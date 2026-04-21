@@ -61,15 +61,20 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 
 | Category | Total | Tested | Passed | Notes |
 | :--- | :--- | :--- | :--- | :--- |
-| **Essential (CPython)** | 6 | 1 | 1 | 5 blocked by missing `test.support` / `asyncio` |
-| **Important (CPython)** | 6 | 0 | 0 | All blocked by missing `test.support` |
+| **Essential (CPython)** | 6 | 1 | 1 | 5 blocked by missing `asyncio` |
+| **Important (CPython)** | 6 | 0 | 0 | All currently being unblocked by `test.support` |
 | **Necessary (custom)** | 4 | 4 | 4 | `test_decorator`, `test_abc`, `test_contextlib`, `test_dataclasses` all pass |
-| **Bootstrap** | 4 | 4 | 4 | `importlib`, `inspect`, `sysconfig`, and `os.environ` work (V103) |
+| **Bootstrap** | 5 | 5 | 5 | `importlib`, `inspect`, `sysconfig`, `os.environ`, and `test.support` work (V104) |
 | **Low Priority** | 4 | 0 | 0 | Out of scope for v1.0 |
 
 **Conformity Suite (internal, 2026-04-15)**: 7/9 tests pass. Failures are pre-existing: `int(float)` conversion and `set(iterable)` constructor.
 
-**Next milestone**: Implement `test.support` and `unittest` stubs to unblock remaining 11 CPython regression tests in Essential/Important categories.
+**Next milestone**: Implement `_datetime` C extension to enable `test_datetime.py`.
+
+### V104 Changes (2026-04-21)
+
+- **`test.support` import unblocked.** Hardened `TimeModule.cpp` by implementing `strftime`, `localtime`, and `gmtime`. This satisfies the core dependencies of the CPython test infrastructure.
+- **OsModule hardening**: (from V103) correctly raising `OSError` instead of returning `None` on stat failures.
 
 ### V103 Changes (2026-04-21)
 

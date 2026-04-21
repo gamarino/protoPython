@@ -204,6 +204,21 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx,
     const proto::ProtoString* py_runtimeerror = PythonEnvironment::getInternedString(ctx, "RuntimeError");
     const proto::ProtoString* py_oserror = PythonEnvironment::getInternedString(ctx, "OSError");
     const proto::ProtoString* py_blockingioerror = PythonEnvironment::getInternedString(ctx, "BlockingIOError");
+    const proto::ProtoString* py_filenotfounderror = PythonEnvironment::getInternedString(ctx, "FileNotFoundError");
+    const proto::ProtoString* py_permissionerror = PythonEnvironment::getInternedString(ctx, "PermissionError");
+    const proto::ProtoString* py_fileexistserror = PythonEnvironment::getInternedString(ctx, "FileExistsError");
+    const proto::ProtoString* py_notadirectoryerror = PythonEnvironment::getInternedString(ctx, "NotADirectoryError");
+    const proto::ProtoString* py_isadirectoryerror = PythonEnvironment::getInternedString(ctx, "IsADirectoryError");
+    const proto::ProtoString* py_timeouterror = PythonEnvironment::getInternedString(ctx, "TimeoutError");
+    const proto::ProtoString* py_interruptederror = PythonEnvironment::getInternedString(ctx, "InterruptedError");
+    const proto::ProtoString* py_childprocesserror = PythonEnvironment::getInternedString(ctx, "ChildProcessError");
+    const proto::ProtoString* py_connectionerror = PythonEnvironment::getInternedString(ctx, "ConnectionError");
+    const proto::ProtoString* py_brokenpipeerror = PythonEnvironment::getInternedString(ctx, "BrokenPipeError");
+    const proto::ProtoString* py_modulenotfounderror = PythonEnvironment::getInternedString(ctx, "ModuleNotFoundError");
+    const proto::ProtoString* py_unicodetranslateerror = PythonEnvironment::getInternedString(ctx, "UnicodeTranslateError");
+    const proto::ProtoString* py_unicodeerror = PythonEnvironment::getInternedString(ctx, "UnicodeError");
+    const proto::ProtoString* py_unicodeencodeerror = PythonEnvironment::getInternedString(ctx, "UnicodeEncodeError");
+    const proto::ProtoString* py_unicodedecodeerror = PythonEnvironment::getInternedString(ctx, "UnicodeDecodeError");
 
     const proto::ProtoString* py_warning = PythonEnvironment::getInternedString(ctx, "Warning");
     const proto::ProtoString* py_userwarning = PythonEnvironment::getInternedString(ctx, "UserWarning");
@@ -226,6 +241,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx,
     const proto::ProtoObject* syntaxErrorType = make_exception_type(ctx, objectProto, typeProto, "SyntaxError", exceptionType);
     const proto::ProtoObject* typeErrorType = make_exception_type(ctx, objectProto, typeProto, "TypeError", exceptionType);
     const proto::ProtoObject* importErrorType = make_exception_type(ctx, objectProto, typeProto, "ImportError", exceptionType);
+    const proto::ProtoObject* moduleNotFoundErrorType = make_exception_type(ctx, objectProto, typeProto, "ModuleNotFoundError", importErrorType);
     const proto::ProtoObject* keyboardInterruptType = make_exception_type(ctx, objectProto, typeProto, "KeyboardInterrupt", baseExceptionType);
     const proto::ProtoObject* systemExitType = make_exception_type(ctx, objectProto, typeProto, "SystemExit", baseExceptionType);
     const proto::ProtoObject* recursionErrorType = make_exception_type(ctx, objectProto, typeProto, "RecursionError", exceptionType);
@@ -243,6 +259,21 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx,
     const proto::ProtoObject* runtimeErrorType = make_exception_type(ctx, objectProto, typeProto, "RuntimeError", exceptionType);
     const proto::ProtoObject* osErrorType = make_exception_type(ctx, objectProto, typeProto, "OSError", exceptionType);
     const proto::ProtoObject* blockingIOErrorType = make_exception_type(ctx, objectProto, typeProto, "BlockingIOError", osErrorType);
+    const proto::ProtoObject* fileNotFoundErrorType = make_exception_type(ctx, objectProto, typeProto, "FileNotFoundError", osErrorType);
+    const proto::ProtoObject* permissionErrorType = make_exception_type(ctx, objectProto, typeProto, "PermissionError", osErrorType);
+    const proto::ProtoObject* fileExistsErrorType = make_exception_type(ctx, objectProto, typeProto, "FileExistsError", osErrorType);
+    const proto::ProtoObject* notADirectoryErrorType = make_exception_type(ctx, objectProto, typeProto, "NotADirectoryError", osErrorType);
+    const proto::ProtoObject* isADirectoryErrorType = make_exception_type(ctx, objectProto, typeProto, "IsADirectoryError", osErrorType);
+    const proto::ProtoObject* timeoutErrorType = make_exception_type(ctx, objectProto, typeProto, "TimeoutError", osErrorType);
+    const proto::ProtoObject* interruptedErrorType = make_exception_type(ctx, objectProto, typeProto, "InterruptedError", osErrorType);
+    const proto::ProtoObject* childProcessErrorType = make_exception_type(ctx, objectProto, typeProto, "ChildProcessError", osErrorType);
+    const proto::ProtoObject* connectionErrorType = make_exception_type(ctx, objectProto, typeProto, "ConnectionError", osErrorType);
+    const proto::ProtoObject* brokenPipeErrorType = make_exception_type(ctx, objectProto, typeProto, "BrokenPipeError", connectionErrorType);
+
+    const proto::ProtoObject* unicodeErrorType = make_exception_type(ctx, objectProto, typeProto, "UnicodeError", valueErrorType);
+    const proto::ProtoObject* unicodeEncodeErrorType = make_exception_type(ctx, objectProto, typeProto, "UnicodeEncodeError", unicodeErrorType);
+    const proto::ProtoObject* unicodeDecodeErrorType = make_exception_type(ctx, objectProto, typeProto, "UnicodeDecodeError", unicodeErrorType);
+    const proto::ProtoObject* unicodeTranslateErrorType = make_exception_type(ctx, objectProto, typeProto, "UnicodeTranslateError", unicodeErrorType);
 
     const proto::ProtoObject* warningType = make_exception_type(ctx, objectProto, typeProto, "Warning", exceptionType);
     const proto::ProtoObject* userWarningType = make_exception_type(ctx, objectProto, typeProto, "UserWarning", warningType);
@@ -280,6 +311,21 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx,
     mod = mod->setAttribute(ctx, py_arithmeticerror, arithmeticErrorType);
     mod = mod->setAttribute(ctx, py_oserror, osErrorType);
     mod = mod->setAttribute(ctx, py_blockingioerror, blockingIOErrorType);
+    mod = mod->setAttribute(ctx, py_filenotfounderror, fileNotFoundErrorType);
+    mod = mod->setAttribute(ctx, py_permissionerror, permissionErrorType);
+    mod = mod->setAttribute(ctx, py_fileexistserror, fileExistsErrorType);
+    mod = mod->setAttribute(ctx, py_notadirectoryerror, notADirectoryErrorType);
+    mod = mod->setAttribute(ctx, py_isadirectoryerror, isADirectoryErrorType);
+    mod = mod->setAttribute(ctx, py_timeouterror, timeoutErrorType);
+    mod = mod->setAttribute(ctx, py_interruptederror, interruptedErrorType);
+    mod = mod->setAttribute(ctx, py_childprocesserror, childProcessErrorType);
+    mod = mod->setAttribute(ctx, py_connectionerror, connectionErrorType);
+    mod = mod->setAttribute(ctx, py_brokenpipeerror, brokenPipeErrorType);
+    mod = mod->setAttribute(ctx, py_modulenotfounderror, moduleNotFoundErrorType);
+    mod = mod->setAttribute(ctx, py_unicodetranslateerror, unicodeTranslateErrorType);
+    mod = mod->setAttribute(ctx, py_unicodeerror, unicodeErrorType);
+    mod = mod->setAttribute(ctx, py_unicodeencodeerror, unicodeEncodeErrorType);
+    mod = mod->setAttribute(ctx, py_unicodedecodeerror, unicodeDecodeErrorType);
     mod = mod->setAttribute(ctx, py_warning, warningType);
     mod = mod->setAttribute(ctx, py_userwarning, userWarningType);
     mod = mod->setAttribute(ctx, py_deprecationwarning, deprecationWarningType);

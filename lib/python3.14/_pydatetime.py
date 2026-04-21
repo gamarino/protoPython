@@ -46,7 +46,9 @@ del dbm, dim
 
 def _is_leap(year):
     "year -> 1 if leap year, else 0."
-    return year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)
+    if year % 4 == 0 and (year % 100 != 0 or year % 400 == 0):
+        return 1
+    return 0
 
 def _days_before_year(year):
     "year -> number of days before January 1st of year."
@@ -647,6 +649,7 @@ class timedelta:
 
     def __new__(cls, days=0, seconds=0, microseconds=0,
                 milliseconds=0, minutes=0, hours=0, weeks=0):
+
         # Doing this efficiently and accurately in C is going to be difficult
         # and error-prone, due to ubiquitous overflow possibilities, and that
         # C double doesn't have enough bits of precision to represent
@@ -2321,7 +2324,6 @@ class datetime(date):
             if isinstance(other, timedelta):
                 return self + -other
             return NotImplemented
-
         days1 = self.toordinal()
         days2 = other.toordinal()
         secs1 = self._second + self._minute * 60 + self._hour * 3600

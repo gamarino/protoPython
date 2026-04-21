@@ -1048,7 +1048,19 @@ static proto::ProtoObject* createUserFunction(proto::ProtoContext* ctx, const pr
 
 
 
-/** Return true if obj is an embedded value (e.g. small int, bool); do not call getAttribute on it. */
+static const proto::ProtoObject* binaryOpDispatch(proto::ProtoContext* ctx, const proto::ProtoObject* a, const proto::ProtoObject* b, const char* dunder, const char* rdunder) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    const proto::ProtoString* dunderS = PythonEnvironment::getInternedString(ctx, dunder);
+    const proto::ProtoList* argsB = ctx->newList()->appendLast(ctx, b);
+    const proto::ProtoObject* res = invokeDunder(ctx, a, dunderS, argsB);
+    if (!res || (env && res == env->getNotImplementedPrototype())) {
+        const proto::ProtoString* rdunderS = PythonEnvironment::getInternedString(ctx, rdunder);
+        const proto::ProtoList* argsA = ctx->newList()->appendLast(ctx, a);
+        res = invokeDunder(ctx, b, rdunderS, argsA);
+    }
+    return res;
+}
+
 static bool isEmbeddedValue(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
     if (!obj || obj == PROTO_NONE) return false;
     return obj->isInteger(ctx) || obj->isBoolean(ctx) || obj->isNone(ctx);
@@ -1134,7 +1146,8 @@ static const proto::ProtoObject* binaryAdd(proto::ProtoContext* ctx,
         return resObj;
     }
 
-    return PROTO_NONE;
+    const proto::ProtoObject* r = binaryOpDispatch(ctx, a, b, "__add__", "__radd__");
+    return r ? r : PROTO_NONE;
 }
 
 static const proto::ProtoObject* binarySubtract(proto::ProtoContext* ctx,
@@ -1142,7 +1155,8 @@ static const proto::ProtoObject* binarySubtract(proto::ProtoContext* ctx,
     if ((a->isInteger(ctx) || a->isDouble(ctx)) && (b->isInteger(ctx) || b->isDouble(ctx))) {
         return a->subtract(ctx, b);
     }
-    return PROTO_NONE;
+    const proto::ProtoObject* r = binaryOpDispatch(ctx, a, b, "__sub__", "__rsub__");
+    return r ? r : PROTO_NONE;
 }
 
 static const proto::ProtoObject* binaryMultiply(proto::ProtoContext* ctx,

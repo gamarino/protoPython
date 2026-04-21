@@ -44,6 +44,7 @@ add_library(protoPython SHARED
     OpcodeModule.cpp
     StringModule.cpp
     BinasciiModule.cpp
+    DatetimeModule.cpp
 )
 
 target_include_directories(protoPython PUBLIC
