@@ -23,7 +23,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
                                    const proto::ProtoObject* floatProto = nullptr,
                                    const proto::ProtoObject* boolProto = nullptr,
                                    const proto::ProtoObject* complexProto = nullptr,
-                                   const proto::ProtoObject* ioModule = nullptr);
+                                   const proto::ProtoObject* ioModule = nullptr,
+                                   const proto::ProtoObject* exceptionsModule = nullptr);
 
 const proto::ProtoObject* py_object_hash(
     proto::ProtoContext* context,

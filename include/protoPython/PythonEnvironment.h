@@ -772,6 +772,7 @@ public:
 private:
     const proto::ProtoObject* sysModule;
     const proto::ProtoObject* builtinsModule;
+    const proto::ProtoObject* exceptionsModule;
     std::string stdLibPath_;
     std::vector<std::string> argv_;
     int exitRequested_{0};

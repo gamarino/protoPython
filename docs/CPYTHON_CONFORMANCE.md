@@ -64,12 +64,18 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 | **Essential (CPython)** | 6 | 1 | 1 | 5 blocked by missing `asyncio` |
 | **Important (CPython)** | 6 | 0 | 0 | All currently being unblocked by `test.support` |
 | **Necessary (custom)** | 4 | 4 | 4 | `test_decorator`, `test_abc`, `test_contextlib`, `test_dataclasses` all pass |
-| **Bootstrap** | 5 | 5 | 5 | `importlib`, `inspect`, `sysconfig`, `os.environ`, and `test.support` work (V104) |
+| **Bootstrap** | 5 | 5 | 5 | `importlib`, `inspect`, `sysconfig`, `os.environ`, `test.support` work; stabilized prototype identity (V105) |
 | **Low Priority** | 4 | 0 | 0 | Out of scope for v1.0 |
 
 **Conformity Suite (internal, 2026-04-15)**: 7/9 tests pass. Failures are pre-existing: `int(float)` conversion and `set(iterable)` constructor.
 
 **Next milestone**: Implement `_datetime` C extension to enable `test_datetime.py`.
+
+### V105 Changes (2026-04-22)
+- **Prototype Identity Resolution stabilized.** Resolved the persistent fragmentation of core Python prototypes during VM bootstrap.
+- **`sys.modules` misclassification fixed.** Resolved the issue where `type(sys.modules)` incorrectly reported as `<class 'type'>`. Corrected the `getType` resolution logic to prioritize native container heuristics over inherited class metadata.
+- **Identity Synchronization verified.** Confirmed through Python-level `id()` and `type()` checks that `type(sys.modules) is dict` evaluates to `True`, ensuring perfect alignment between native pointers and Python-level type reporting.
+- **Bootstrap Hardening**: Optimized `PythonEnvironment::initializeRootObjects` to re-create `sys.modules` at the very end of the sequence, ensuring it always captures the final finalized dictionary prototype.
 
 ### V104 Changes (2026-04-21)
 

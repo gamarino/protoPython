@@ -183,6 +183,24 @@ static const proto::ProtoObject* py_import(
                 // Only try to resolve as a submodule if the parent module is a package (has __path__)
                 // and the attribute is not already present.
                 if (leaf->hasAttribute(context, itemObj->asString(context)) == PROTO_FALSE) {
+                    if (std::getenv("PROTO_IMPORT_DIAG")) {
+                        fprintf(stderr, "DEBUG IMPORT: attr '%s' NOT FOUND in module '%s'\n", itemName.c_str(), moduleName.c_str());
+                        const proto::ProtoSparseList* attrs = leaf->getAttributes(context);
+                        if (attrs) {
+                            fprintf(stderr, "DEBUG IMPORT: Module has %lu attributes:\n", attrs->getSize(context));
+                            const proto::ProtoSparseListIterator* it = attrs->getIterator(context);
+                            while (it && it->hasNext(context)) {
+                                unsigned long key = it->nextKey(context);
+                                const proto::ProtoObject* kObj = reinterpret_cast<const proto::ProtoObject*>(key);
+                                if (kObj && kObj->isString(context)) {
+                                    std::string kn;
+                                    kObj->asString(context)->toUTF8String(context, kn);
+                                    fprintf(stderr, "  - %s\n", kn.c_str());
+                                }
+                                it = const_cast<proto::ProtoSparseListIterator*>(it)->advance(context);
+                            }
+                        }
+                    }
                     const proto::ProtoObject* pathAttr = leaf->getAttribute(context, PythonEnvironment::getInternedString(context, "__path__"));
                     if (pathAttr && pathAttr != PROTO_NONE) {
                         std::string subModuleName = moduleName + "." + itemName;
@@ -385,45 +403,47 @@ static const proto::ProtoObject* py_print(
     unsigned long size = positionalParameters->getSize(context);
     for (unsigned long i = 0; i < size; ++i) {
         const proto::ProtoObject* obj = positionalParameters->getAt(context, static_cast<int>(i));
-
-        const proto::ProtoObject* strObj = PROTO_NONE;
-        if (!obj || obj == PROTO_NONE || (env && obj == env->getNonePrototype())) {
-            strObj = PythonEnvironment::getInternedString(context, "None")->asObject(context);
-        } else if (obj->isInteger(context)) {
-            strObj = PythonEnvironment::getInternedString(context, std::to_string(obj->asLong(context)).c_str())->asObject(context);
-        } else if (obj->isDouble(context)) {
-            strObj = PythonEnvironment::getInternedString(context, std::to_string(obj->asDouble(context)).c_str())->asObject(context);
-        } else if (obj->isString(context)) {
-            strObj = obj;
-        } else if (obj == PROTO_TRUE) {
-            strObj = PythonEnvironment::getInternedString(context, "True")->asObject(context);
-        } else if (obj == PROTO_FALSE) {
-            strObj = PythonEnvironment::getInternedString(context, "False")->asObject(context);
-        } else {
-            const proto::ProtoString* strS = env ? env->getStrString() : PythonEnvironment::getInternedString(context, "__str__");
-            const proto::ProtoString* reprS = env ? env->getReprString() : PythonEnvironment::getInternedString(context, "__repr__");
-            
-            // Try __str__ first, then __repr__
-            const proto::ProtoObject* strMethod = env ? env->getAttribute(context, obj, strS) : obj->getAttribute(context, strS);
-            if (!strMethod || strMethod == PROTO_NONE) {
-                strMethod = env ? env->getAttribute(context, obj, reprS) : obj->getAttribute(context, reprS);
-            }
-
-            if (strMethod && strMethod != PROTO_NONE && env) {
-                // If we have an environment, use callObject which handles descriptors and bound methods correctly
-                strObj = env->callObject(strMethod, {});
-            } else if (strMethod && strMethod != PROTO_NONE) {
-                // Fallback for minimal runtime
-                strObj = obj->call(context, nullptr, strS, obj, emptyL, nullptr);
-            }
+        if (get_env_diag()) {
+            fprintf(stderr, "DEBUG: py_print arg[%lu]=%p noneProto=%p\n", i, (void*)obj, (void*)(env ? env->getNonePrototype() : nullptr));
         }
 
-        if (strObj && strObj->isString(context)) {
-            std::string out;
-            strObj->asString(context)->toUTF8String(context, out);
-            std::cout << out;
+        bool isNone = !obj || obj == PROTO_NONE || (env && obj == env->getNonePrototype());
+        if (get_env_diag()) {
+            fprintf(stderr, "DEBUG: py_print isNone=%d obj=%p noneProto=%p\n", isNone, (void*)obj, (void*)(env ? env->getNonePrototype() : nullptr));
+        }
+        if (isNone) {
+            std::cout << "None";
+        } else if (obj->isInteger(context)) {
+            std::cout << std::to_string(obj->asLong(context));
+        } else if (obj->isDouble(context)) {
+            std::cout << std::to_string(obj->asDouble(context));
+        } else if (obj->isString(context)) {
+            std::string s;
+            obj->asString(context)->toUTF8String(context, s);
+            std::cout << s;
+        } else if (obj == PROTO_TRUE) {
+            std::cout << "True";
+        } else if (obj == PROTO_FALSE) {
+            std::cout << "False";
         } else {
-            std::cout << "<unprintable>";
+            if (env) {
+                std::cout << env->reprObject(context, obj);
+            } else {
+                const proto::ProtoString* reprS = PythonEnvironment::getInternedString(context, "__repr__");
+                const proto::ProtoObject* reprMethod = obj->getAttribute(context, reprS);
+                if (reprMethod && reprMethod != PROTO_NONE) {
+                    const proto::ProtoObject* out = obj->call(context, nullptr, reprS, obj, emptyL, nullptr);
+                    if (out && out->isString(context)) {
+                        std::string s;
+                        out->asString(context)->toUTF8String(context, s);
+                        std::cout << s;
+                    } else {
+                        std::cout << "<unprintable>";
+                    }
+                } else {
+                    std::cout << "<unprintable>";
+                }
+            }
         }
 
         if (i < size - 1) std::cout << sep;
@@ -2832,6 +2852,11 @@ const proto::ProtoObject* py_type(
         
         if (obj == PROTO_NONE) return env->getNoneTypePrototype();
         
+        if (get_env_diag()) {
+            std::string oRepr = env ? env->reprObject(context, obj) : "???";
+            fprintf(stderr, "DEBUG: py_type(obj=%p repr='%s')\n", (void*)obj, oRepr.c_str());
+        }
+        const proto::ProtoObject* res = env ? env->getType(context, obj) : obj->getAttribute(context, PythonEnvironment::getInternedString(context, "__class__"));
         return env ? env->getType(context, obj) : obj->getAttribute(context, PythonEnvironment::getInternedString(context, "__class__"));
     }
     
@@ -4484,7 +4509,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
                                    const proto::ProtoObject* sliceType, const proto::ProtoObject* frozensetProto,
                                     const proto::ProtoObject* floatProto, const proto::ProtoObject* boolProto,
                                    const proto::ProtoObject* complexProto,
-                                   const proto::ProtoObject* ioModule) {
+                                   const proto::ProtoObject* ioModule,
+                                   const proto::ProtoObject* exceptionsModule) {
     if (get_env_diag()) {
         fprintf(stderr, "DEBUG BUILTINS INIT START: ctx=%p objectProto=%p\n", (void*)ctx, (void*)objectProto);
         fflush(stderr);
@@ -4839,6 +4865,24 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     builtins = builtins->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "classmethod"), classmethodProto);
     
     builtins = builtins->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__import__"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_import));
+    
+    // V105: Export exceptions to builtins
+    if (exceptionsModule) {
+        const proto::ProtoSparseList* attrs = exceptionsModule->getAttributes(ctx);
+        if (attrs) {
+            const proto::ProtoSparseListIterator* it = attrs->getIterator(ctx);
+            while (it && it->hasNext(ctx)) {
+                unsigned long keyHash = it->nextKey(ctx);
+                const proto::ProtoObject* val = it->nextValue(ctx);
+                const proto::ProtoString* keyS = reinterpret_cast<const proto::ProtoString*>(keyHash);
+                if (keyS) {
+                    builtins = builtins->setAttribute(ctx, keyS, val);
+                }
+                it = const_cast<proto::ProtoSparseListIterator*>(it)->advance(ctx);
+            }
+        }
+    }
+
     if (get_env_diag()) {
         fprintf(stderr, "DEBUG IN BUILTINS INIT: END obInB=%p\n", (void*)builtins->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "object")));
         fflush(stderr);
