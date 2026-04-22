@@ -54,35 +54,7 @@ struct FunctionMetaCache {
 };
 
 static bool areSameClassesVM(proto::ProtoContext* context, const proto::ProtoObject* c1, const proto::ProtoObject* c2) {
-    if (c1 == c2) return true;
-    if (!c1 || !c2) return false;
-    
-    PythonEnvironment* env = PythonEnvironment::fromContext(context);
-    const proto::ProtoString* nS = PythonEnvironment::getInternedString(context, "__name__");
-    const proto::ProtoString* mS = PythonEnvironment::getInternedString(context, "__module__");
-    
-    // Use raw because name resolution itself might be recursive during bootstrap
-    const proto::ProtoObject* n1O = c1->proto::ProtoObject::getAttribute(context, nS);
-    const proto::ProtoObject* n2O = c2->proto::ProtoObject::getAttribute(context, nS);
-    
-    if (n1O && n2O && n1O->isString(context) && n2O->isString(context)) {
-        std::string s1, s2;
-        n1O->asString(context)->toUTF8String(context, s1);
-        n2O->asString(context)->toUTF8String(context, s2);
-        if (s1 == s2 && !s1.empty()) {
-            const proto::ProtoObject* m1O = c1->proto::ProtoObject::getAttribute(context, mS);
-            const proto::ProtoObject* m2O = c2->proto::ProtoObject::getAttribute(context, mS);
-            if (m1O && m2O && m1O->isString(context) && m2O->isString(context)) {
-                std::string ms1, ms2;
-                m1O->asString(context)->toUTF8String(context, ms1);
-                m2O->asString(context)->toUTF8String(context, ms2);
-                if (ms1 == ms2) return true;
-            } else {
-                return true; // Match by name only if module is missing
-            }
-        }
-    }
-    return false;
+    return c1 == c2;
 }
 
 
@@ -366,8 +338,7 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
         && closureList0 && closureList0->getSize(calleeCtx) > 0;
     // Also skip frame when cacheNoLoadDeref: even if closure exists, the function never
     // accesses it via LOAD_DEREF, so the closure frame is unused during execution.
-    bool skipFrame = env && (co_flags & CO_OPTIMIZED) && !isGenerator && cacheNoInnerFunctions
-        && (!hasClosure || cacheNoLoadDeref);
+    bool skipFrame = false; // env && (co_flags & CO_OPTIMIZED) && !isGenerator && cacheNoInnerFunctions && (!hasClosure || cacheNoLoadDeref);
     proto::ProtoObject* frame = nullptr;
     if (!skipFrame) {
         frame = const_cast<proto::ProtoObject*>(calleeCtx->newObject(false));
@@ -387,11 +358,10 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
             frame = const_cast<proto::ProtoObject*>(frame->addParent(calleeCtx, env->getFramePrototype()));
             frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getFCodeString(), codeObj));
             frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getFGlobalsString(), globalsObj));
-            if (!(co_flags & CO_OPTIMIZED)) {
-                const proto::ProtoObject* parentFrame = PythonEnvironment::getCurrentFrame();
-                if (parentFrame) {
-                    frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getFBackString(), parentFrame));
-                }
+
+            const proto::ProtoObject* parentFrame = PythonEnvironment::getCurrentFrame();
+            if (parentFrame) {
+                frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getFBackString(), parentFrame));
             }
         }
     }
@@ -779,10 +749,19 @@ static const proto::ProtoObject* runUserFunctionCallRaw(
     for (unsigned long i = 0; i < rawArgCount && i < (unsigned long)nparams_count && i < nSlots; ++i)
         slots[i] = const_cast<proto::ProtoObject*>(rawArgs[i]);
 
-    // Frame is not needed for CO_OPTIMIZED + no-inner-functions (same logic as runUserFunctionCall).
-    proto::ProtoObject* frame = nullptr;
-
-    if (env) PythonEnvironment::setCurrentFrame(frame);
+    // Frame creation for fast path (required for sys._getframe and tracebacks)
+    proto::ProtoObject* frame = const_cast<proto::ProtoObject*>(calleeCtx->newObject(false));
+    if (env) {
+        frame = const_cast<proto::ProtoObject*>(frame->addParent(calleeCtx, env->getFramePrototype()));
+        frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getFCodeString(), codeObj));
+        frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getFGlobalsString(), globalsObj));
+        const proto::ProtoObject* parentFrame = PythonEnvironment::getCurrentFrame();
+        if (parentFrame) {
+            frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getFBackString(), parentFrame));
+        }
+        PythonEnvironment::setCurrentFrame(frame);
+    }
+    FrameScope fscope(frame);
 
     result = nullptr;
     {
