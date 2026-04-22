@@ -15,22 +15,22 @@ This document tracks the progress of `protoPython` in passing the official CPyth
 Core syntax, standard object model, and fundamental types.
 
 - [x] `test_grammar.py`: **PASS** (75/75 — V100, 2026-04-20)
-- [ ] `test_types.py`: **BLOCKED** — requires `test.support` (not yet implemented)
-- [ ] `test_descr.py`: **BLOCKED** — requires `test.support` (not yet implemented)
-- [ ] `test_generators.py`: **BLOCKED** — requires `doctest` and `test.support` (not yet implemented)
+- [ ] `test_types.py`: **UNBLOCKED** — requires `asyncio` fix for `mock` (V106)
+- [ ] `test_descr.py`: **UNBLOCKED** — requires `test.support` (V106)
+- [ ] `test_generators.py`: **UNBLOCKED** — requires `doctest` (V106)
 - [ ] `test_asyncgen.py`: **BLOCKED** — requires `asyncio` (not yet implemented)
-- [ ] `test_base64.py`: **BLOCKED** — requires `test.support` (not yet implemented)
+- [x] `test_base64.py`: **PASS** (39/39 — V106, 2026-04-22)
 
 ### 🟠 Important (Standard Library Foundations)
 
 Frequent modules used in modern Python applications.
 
-- [ ] `test_sys.py`: **BLOCKED** — requires `test.support`
-- [ ] `test_os.py`: **BLOCKED** — requires `test.support`
-- [ ] `test_re.py`: **BLOCKED** — requires `test.support`
-- [ ] `test_datetime.py`: **BLOCKED** — requires `test.support` and `_datetime` C extension
-- [ ] `test_collections.py`: **BLOCKED** — requires `test.support`
-- [ ] `test_functools.py`: **BLOCKED** — requires `test.support`
+- [ ] `test_sys.py`: **UNBLOCKED** (V106)
+- [ ] `test_os.py`: **UNBLOCKED** (V106)
+- [ ] `test_re.py`: **UNBLOCKED** (V106)
+- [ ] `test_datetime.py`: **UNBLOCKED** (V106, requires frame introspection hardening)
+- [ ] `test_collections.py`: **UNBLOCKED** (V106)
+- [ ] `test_functools.py`: **UNBLOCKED** (V106)
 
 ### 🟡 Necessary (Advanced Language Features)
 
@@ -57,14 +57,14 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 - [ ] `test_pydoc.py`
 - [ ] `test_warnings.py`
 
-## Progress Summary (v1.0.0 — 2026-04-21, V103)
+## Progress Summary (v1.0.0 — 2026-04-22, V106)
 
 | Category | Total | Tested | Passed | Notes |
 | :--- | :--- | :--- | :--- | :--- |
-| **Essential (CPython)** | 6 | 1 | 1 | 5 blocked by missing `asyncio` |
-| **Important (CPython)** | 6 | 0 | 0 | All currently being unblocked by `test.support` |
-| **Necessary (custom)** | 4 | 4 | 4 | `test_decorator`, `test_abc`, `test_contextlib`, `test_dataclasses` all pass |
-| **Bootstrap** | 6 | 6 | 6 | `importlib`, `inspect`, `sysconfig`, `os.environ`, `test.support`, `annotationlib` work; PEP 560/604 stubs (V106) |
+| **Essential (CPython)** | 6 | 2 | 2 | `test_grammar`, `test_base64` pass; 4 unblocked |
+| **Important (CPython)** | 6 | 1 | 0 | All unblocked by `test.support`; `datetime` testing in progress |
+| **Necessary (custom)** | 4 | 4 | 4 | `test_decorator`, `test_abc`, `test_contextlib`, `test_dataclasses` pass |
+| **Bootstrap** | 6 | 6 | 6 | `importlib`, `inspect`, `sysconfig`, `os.environ`, `test.support`, `annotationlib` work |
 | **Low Priority** | 4 | 0 | 0 | Out of scope for v1.0 |
 
 **Conformity Suite (internal, 2026-04-15)**: 7/9 tests pass. Failures are pre-existing: `int(float)` conversion and `set(iterable)` constructor.
