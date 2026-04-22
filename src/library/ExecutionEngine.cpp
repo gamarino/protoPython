@@ -533,6 +533,10 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
     if (co_flags & CO_VARKEYWORDS) {
         int kwargIdx = nparams_count + kwonly_count + ((co_flags & CO_VARARGS) ? 1 : 0);
         proto::ProtoObject* kwDict = const_cast<proto::ProtoObject*>(calleeCtx->newObject(true));
+        if (get_env_diag()) {
+            fprintf(stderr, "DEBUG runUserFunctionCall: env=%p dictProto=%p\n", (void*)env, (void*)(env ? env->getDictPrototype() : nullptr));
+            fflush(stderr);
+        }
         if (env && env->getDictPrototype()) kwDict = const_cast<proto::ProtoObject*>(kwDict->addParent(calleeCtx, env->getDictPrototype()));
 
         const proto::ProtoString* dataName = env ? env->getDataString() : PythonEnvironment::getInternedString(calleeCtx, "__data__");
@@ -582,6 +586,19 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
         }
         kwDict->setAttribute(calleeCtx, dataName, data->asObject(calleeCtx));
         kwDict->setAttribute(calleeCtx, keysName, keysList->asObject(calleeCtx));
+        if (get_env_diag()) {
+             const proto::ProtoList* keys = keysList;
+             unsigned long size = keys ? keys->getSize(calleeCtx) : 0;
+             fprintf(stderr, "DEBUG runUserFunctionCall: kwDict populated with %lu keys\n", size);
+             for (unsigned long i = 0; i < size; ++i) {
+                 const proto::ProtoObject* k = keys->getAt(calleeCtx, i);
+                 std::string ks = env ? env->reprObject(calleeCtx, k) : "???";
+                 fprintf(stderr, "  key[%lu]=%s\n", i, ks.c_str());
+             }
+             std::string r = env ? env->reprObject(calleeCtx, kwDict) : "???";
+             fprintf(stderr, "DEBUG runUserFunctionCall: kwDict repr=%s\n", r.c_str());
+             fflush(stderr);
+        }
         bindVar(kwargIdx, kwDict);
     }
 
@@ -4460,12 +4477,14 @@ const proto::ProtoObject* executeBytecodeRange(
             if (!posArgs) posArgs = ctx->newList();
             
             const proto::ProtoSparseList* kwArgs = nullptr;
-            if (kwargs && kwargs->asSparseList(ctx)) {
-                kwArgs = kwargs->asSparseList(ctx);
-            } else if (kwargs && kwargs != PROTO_NONE && env) {
+            if (kwargs && kwargs != PROTO_NONE && env) {
                  const proto::ProtoString* dName = env->getDataString();
                  const proto::ProtoObject* data = kwargs->getAttribute(ctx, dName);
-                 if (data && data->asSparseList(ctx)) kwArgs = data->asSparseList(ctx);
+                 if (data && data->asSparseList(ctx)) {
+                     kwArgs = data->asSparseList(ctx);
+                 } else if (kwargs->asSparseList(ctx)) {
+                     kwArgs = kwargs->asSparseList(ctx);
+                 }
             }
             
             bool pushed = false;

@@ -511,15 +511,7 @@ class _FuncBuilder:
         else:
             _exec_globals = self.globals
         
-        if _impl == 'protopython':
-            print(f"DEBUG: dataclasses exec txt:\n{txt}")
-            print(f"DEBUG: dataclasses _exec_globals type: {type(_exec_globals)}")
-            
         exec(txt, _exec_globals, ns)
-        if _impl == 'protopython' and '__create_fn__' not in ns:
-             print("DEBUG: __create_fn__ not in ns after exec!")
-             print(f"DEBUG: ns keys: {list(ns.keys())}")
-        
         fns = ns['__create_fn__'](**self.locals)
 
         # Now that we've generated the functions, assign them into cls.
@@ -548,15 +540,15 @@ def _field_assign(frozen, name, value, self_name):
     # self_name is what "self" is called in this function: don't
     # hard-code "self", since that might be a field name.
     if frozen:
-        return f'  __dataclass_builtins_object__.__setattr__({self_name},{name!r},{value})'
-    return f'  {self_name}.{name}={value}'
+        return '  __dataclass_builtins_object__.__setattr__(' + self_name + ',' + repr(name) + ',' + value + ')'
+    return '  ' + self_name + '.' + name + '=' + value
 
 
 def _field_init(f, frozen, globals, self_name, slots):
     # Return the text of the line in the body of __init__ that will
     # initialize this field.
 
-    default_name = f'__dataclass_dflt_{f.name}__'
+    default_name = '__dataclass_dflt_' + f.name + '__'
     if f.default_factory is not MISSING:
         if f.init:
             # This field has a default factory.  If a parameter is
@@ -633,7 +625,6 @@ def _init_param(f):
 
 def _init_fn(fields, std_fields, kw_only_fields, frozen, has_post_init,
              self_name, func_builder, slots):
-    print(f"DEBUG: _init_fn called with {len(fields)} fields")
 
     # Make sure we don't have fields without defaults following fields
     # with defaults.  This actually would be caught when exec-ing the
@@ -651,11 +642,11 @@ def _init_fn(fields, std_fields, kw_only_fields, frozen, has_post_init,
                 raise TypeError(f'non-default argument {f.name!r} '
                                 f'follows default argument {seen_default.name!r}')
 
-    locals = {**{f'__dataclass_type_{f.name}__': f.type for f in fields},
-              **{'__dataclass_HAS_DEFAULT_FACTORY__': _HAS_DEFAULT_FACTORY,
-                 '__dataclass_builtins_object__': object,
-                 }
-              }
+    locals = {}
+    for f in fields:
+        locals['__dataclass_type_' + f.name + '__'] = f.type
+    locals['__dataclass_HAS_DEFAULT_FACTORY__'] = _HAS_DEFAULT_FACTORY
+    locals['__dataclass_builtins_object__'] = object
 
     body_lines = []
     for f in fields:
@@ -1271,23 +1262,27 @@ def _update_func_cell_for__class__(f, oldcls, newcls):
 
 
 def _create_slots(defined_fields, inherited_slots, field_names, weakref_slot):
+    print(f"DEBUG: _create_slots: inherited_slots={inherited_slots} field_names={field_names}")
     # The slots for our class.  Remove slots from our base classes.  Add
     # '__weakref__' if weakref_slot was given, unless it is already present.
     seen_docs = False
     slots = {}
-    for slot in itertools.filterfalse(
+    print("DEBUG: _create_slots: before filterfalse")
+    ff = itertools.filterfalse(
         inherited_slots.__contains__,
         itertools.chain(
-            # gh-93521: '__weakref__' also needs to be filtered out if
-            # already present in inherited_slots
             field_names, ('__weakref__',) if weakref_slot else ()
         )
-    ):
+    )
+    print(f"DEBUG: _create_slots: ff={ff}")
+    for slot in ff:
+        print(f"DEBUG: _create_slots: processing slot={slot}")
         doc = getattr(defined_fields.get(slot), 'doc', None)
         if doc is not None:
             seen_docs = True
         slots[slot] = doc
 
+    print(f"DEBUG: _create_slots: finished loop slots={slots}")
     # We only return dict if there's at least one doc member,
     # otherwise we return tuple, which is the old default format.
     if seen_docs:
@@ -1313,9 +1308,14 @@ def _add_slots(cls, is_frozen, weakref_slot, defined_fields):
     cls_dict = dict(cls.__dict__)
     field_names = tuple(f.name for f in fields(cls))
     # Make sure slots don't overlap with those in base classes.
+    mro_to_check = cls.__mro__[1:-1]
+    print(f"DEBUG: _add_slots: mro_to_check={mro_to_check}")
+    slots_map = map(_get_slots, mro_to_check)
+    print(f"DEBUG: _add_slots: slots_map={slots_map}")
     inherited_slots = set(
-        itertools.chain.from_iterable(map(_get_slots, cls.__mro__[1:-1]))
+        itertools.chain.from_iterable(slots_map)
     )
+    print(f"DEBUG: _add_slots: inherited_slots={inherited_slots}")
 
     cls_dict["__slots__"] = _create_slots(
         defined_fields, inherited_slots, field_names, weakref_slot,

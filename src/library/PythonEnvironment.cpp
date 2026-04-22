@@ -1818,10 +1818,8 @@ std::string PythonEnvironment::reprObject(proto::ProtoContext* context, const pr
     if (reprMethod && reprMethod != PROTO_NONE) {
         const proto::ProtoObject* out = nullptr;
         if (reprMethod->asMethod(context)) {
-            // Native ProtoMethod expects self as the second argument
             out = reprMethod->asMethod(context)(context, obj, nullptr, context->newList(), nullptr);
         } else {
-            // Since it's a bound method or function correctly evaluated, invoke it with no extra arguments
             out = invokePythonCallable(context, reprMethod, context->newList(), nullptr);
         }
         if (out && out->isString(context)) {
@@ -6337,13 +6335,16 @@ static const proto::ProtoObject* py_dict_repr(
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (get_env_diag()) {
+        fprintf(stderr, "DEBUG py_dict_repr: self=%p\n", (void*)self);
+        fflush(stderr);
+    }
     if (env && self == env->getDictPrototype()) {
         return py_type_repr(context, self, parentLink, positionalParameters, keywordParameters);
     }
     const proto::ProtoString* keysName = PythonEnvironment::getInternalString(context, "__keys__");
     const proto::ProtoObject* keysObj = self->getAttribute(context, keysName);
     const proto::ProtoList* keys = keysObj && keysObj->asList(context) ? keysObj->asList(context) : context->newList();
-
     const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "__data__");
     const proto::ProtoObject* data = self->getAttribute(context, dataName);
     const proto::ProtoSparseList* dict = data && data->asSparseList(context) ? data->asSparseList(context) : nullptr;
@@ -8306,7 +8307,10 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     // 1. Create 'object' base
     // 1. Create raw objects
     objectPrototype = rootContext_->newObject(false);
-    typePrototype = objectPrototype->newChild(rootContext_, true); // Link natively!
+    typePrototype = objectPrototype->newChild(rootContext_, true);
+    dictPrototype = objectPrototype->newChild(rootContext_, true);
+    listPrototype = objectPrototype->newChild(rootContext_, true);
+    tuplePrototype = objectPrototype->newChild(rootContext_, true);
     
     const proto::ProtoString* py_format_dunder = PythonEnvironment::getInternedString(rootContext_, "__format__");
     const proto::ProtoString* py_hash_dunder = PythonEnvironment::getInternedString(rootContext_, "__hash__");
@@ -8721,15 +8725,14 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
 
     space_->stringPrototype = const_cast<proto::ProtoObject*>(strPrototype);
 
-    listPrototype = objectPrototype->newChild(rootContext_, true);
+    // listPrototype already created at start
     listPrototype = listPrototype->setAttribute(rootContext_, py_class, typePrototype);
     listPrototype = listPrototype->setAttribute(rootContext_, py_name, PythonEnvironment::getInternedString(rootContext_, "list")->asObject(rootContext_));
     listPrototype = listPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__qualname__"), PythonEnvironment::getInternedString(rootContext_, "list")->asObject(rootContext_));
-    listPrototype = listPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_type_repr));
+    listPrototype = listPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_list_repr));
     listPrototype = listPrototype->setAttribute(rootContext_, py_module, builtinsVal);
     listPrototype = listPrototype->setAttribute(rootContext_, newString, rootContext_->fromMethod(nullptr, py_list_call));
     listPrototype = listPrototype->setAttribute(rootContext_, PythonEnvironment::getInternalString(rootContext_, "__init__"), rootContext_->fromMethod(nullptr, protoPython::builtins::py_python_ignore_init));
-    listPrototype = listPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_type_repr));
     listPrototype = listPrototype->setAttribute(rootContext_, py_append, rootContext_->fromMethod(nullptr, py_list_append));
     listPrototype = listPrototype->setAttribute(rootContext_, py_len, rootContext_->fromMethod(nullptr, py_list_len));
     listPrototype = listPrototype->setAttribute(rootContext_, py_getitem, rootContext_->fromMethod(nullptr, py_list_getitem));
@@ -8742,7 +8745,6 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     listPrototype = listPrototype->setAttribute(rootContext_, py_le, rootContext_->fromMethod(nullptr, py_list_le));
     listPrototype = listPrototype->setAttribute(rootContext_, py_gt, rootContext_->fromMethod(nullptr, py_list_gt));
     listPrototype = listPrototype->setAttribute(rootContext_, py_ge, rootContext_->fromMethod(nullptr, py_list_ge));
-    listPrototype = listPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_list_repr));
 
     space_->listPrototype = const_cast<proto::ProtoObject*>(listPrototype);
     listPrototype = listPrototype->setAttribute(rootContext_, py_str, rootContext_->fromMethod(nullptr, py_list_str));
@@ -8752,6 +8754,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     listPrototype = listPrototype->setAttribute(rootContext_, py_insert, rootContext_->fromMethod(nullptr, py_list_insert));
     listPrototype = listPrototype->setAttribute(rootContext_, py_remove, rootContext_->fromMethod(nullptr, py_list_remove));
     listPrototype = listPrototype->setAttribute(rootContext_, py_clear, rootContext_->fromMethod(nullptr, py_list_clear));
+    this->listPrototype = const_cast<proto::ProtoObject*>(listPrototype);
     listPrototype = listPrototype->setAttribute(rootContext_, py_reverse, rootContext_->fromMethod(nullptr, py_list_reverse));
     listPrototype = listPrototype->setAttribute(rootContext_, py_sort, rootContext_->fromMethod(nullptr, py_list_sort));
     listPrototype = listPrototype->setAttribute(rootContext_, py_copy, rootContext_->fromMethod(nullptr, py_list_copy));
@@ -8798,15 +8801,12 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     listPrototype = listPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__reversed_prototype__"), listReverseIterProto);
     listPrototype = listPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__reversed__"), rootContext_->fromMethod(nullptr, py_list_reversed));
 
-    dictPrototype = objectPrototype->newChild(rootContext_, true);
-    // dictPrototype registration moved to end to prevent overwrite by builtins
+    // dictPrototype already created at start
 
     // Set MRO and bases for dict
     dictPrototype = dictPrototype->setAttribute(rootContext_, mroString, rootContext_->newTupleFromList(rootContext_->newList()->appendLast(rootContext_, dictPrototype)->appendLast(rootContext_, objectPrototype))->asObject(rootContext_));
     dictPrototype = dictPrototype->setAttribute(rootContext_, basesString, rootContext_->newTupleFromList(rootContext_->newList()->appendLast(rootContext_, objectPrototype))->asObject(rootContext_));
-    tuplePrototype = objectPrototype->newChild(rootContext_, true);
-
-    tuplePrototype = objectPrototype->newChild(rootContext_, true);
+    // tuplePrototype already created at start
     tuplePrototype = tuplePrototype->setAttribute(rootContext_, py_class, typePrototype);
     tuplePrototype = tuplePrototype->setAttribute(rootContext_, py_name, PythonEnvironment::getInternedString(rootContext_, "tuple")->asObject(rootContext_));
     tuplePrototype = tuplePrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__qualname__"), PythonEnvironment::getInternedString(rootContext_, "tuple")->asObject(rootContext_));
@@ -8829,6 +8829,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
 
     space_->tuplePrototype = const_cast<proto::ProtoObject*>(tuplePrototype);
     tuplePrototype = tuplePrototype->setAttribute(rootContext_, py_eq, rootContext_->fromMethod(nullptr, py_tuple_eq));
+    this->tuplePrototype = const_cast<proto::ProtoObject*>(tuplePrototype);
 
     // Set MRO and bases for tuple
     tuplePrototype = tuplePrototype->setAttribute(rootContext_, mroString, rootContext_->newTupleFromList(rootContext_->newList()->appendLast(rootContext_, tuplePrototype)->appendLast(rootContext_, objectPrototype))->asObject(rootContext_));
@@ -9187,6 +9188,54 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
 
     registerNativeModule(nativeProviderPtr, "sys", [this](proto::ProtoContext* ctx) { return sysModule; });
 
+    // --- Core Prototype Enrichment (V87: Move before builtins::initialize) ---
+    dictPrototype = dictPrototype->setAttribute(rootContext_, py_class, typePrototype);
+    dictPrototype = dictPrototype->setAttribute(rootContext_, py_name, PythonEnvironment::getInternedString(rootContext_, "dict")->asObject(rootContext_));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__qualname__"), PythonEnvironment::getInternedString(rootContext_, "dict")->asObject(rootContext_));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, newString, rootContext_->fromMethod(nullptr, py_dict_call));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, PythonEnvironment::getInternalString(rootContext_, "__init__"), rootContext_->fromMethod(nullptr, py_dict_init));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_dict_repr));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, py_module, builtinsVal);
+    dictPrototype = dictPrototype->setAttribute(rootContext_, py_getitem, rootContext_->fromMethod(nullptr, py_dict_getitem));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, py_setitem, rootContext_->fromMethod(nullptr, py_dict_setitem));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, delItemString, rootContext_->fromMethod(nullptr, py_dict_delitem));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, py_len, rootContext_->fromMethod(nullptr, py_dict_len));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_dict_iter));
+    
+    const proto::ProtoObject* dictIterProto = objectPrototype->newChild(rootContext_, true);
+    dictIterProto = dictIterProto->setAttribute(rootContext_, py_class, typePrototype);
+    dictIterProto = dictIterProto->setAttribute(rootContext_, py_name, PythonEnvironment::getInternedString(rootContext_, "dict_keyiterator")->asObject(rootContext_));
+    dictIterProto = dictIterProto->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__qualname__"), PythonEnvironment::getInternedString(rootContext_, "dict_keyiterator")->asObject(rootContext_));
+    dictIterProto = dictIterProto->setAttribute(rootContext_, py_next, rootContext_->fromMethod(nullptr, py_list_iter_next));
+    dictIterProto = dictIterProto->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_self_iter));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, py_iter_proto, dictIterProto);
+    dictPrototype = dictPrototype->setAttribute(rootContext_, py_contains, rootContext_->fromMethod(nullptr, py_dict_contains));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, py_eq, rootContext_->fromMethod(nullptr, py_dict_eq));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, py_lt, rootContext_->fromMethod(nullptr, py_dict_lt));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, py_le, rootContext_->fromMethod(nullptr, py_dict_le));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, py_gt, rootContext_->fromMethod(nullptr, py_dict_gt));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, py_ge, rootContext_->fromMethod(nullptr, py_dict_ge));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, py_str, rootContext_->fromMethod(nullptr, py_dict_str));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, py_bool, rootContext_->fromMethod(nullptr, py_dict_bool));
+    this->dictPrototype = const_cast<proto::ProtoObject*>(dictPrototype);
+
+    dictPrototype = dictPrototype->setAttribute(rootContext_, keysS, rootContext_->fromMethod(nullptr, py_dict_keys));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, valuesS, rootContext_->fromMethod(nullptr, py_dict_values));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, itemsS, rootContext_->fromMethod(nullptr, py_dict_items));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, py_get, rootContext_->fromMethod(nullptr, py_dict_get));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, py_setdefault, rootContext_->fromMethod(nullptr, py_dict_setdefault));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, py_pop, rootContext_->fromMethod(nullptr, py_dict_pop));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "popitem"), rootContext_->fromMethod(nullptr, py_dict_popitem));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, py_update, rootContext_->fromMethod(nullptr, py_dict_update));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, py_clear, rootContext_->fromMethod(nullptr, py_dict_clear));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, py_copy, rootContext_->fromMethod(nullptr, py_dict_copy));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "fromkeys"), rootContext_->fromMethod(nullptr, py_dict_fromkeys));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__or__"), rootContext_->fromMethod(nullptr, py_dict_or));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__ror__"), rootContext_->fromMethod(nullptr, py_dict_ror));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__ior__"), rootContext_->fromMethod(nullptr, py_dict_ior));
+    dictPrototype = dictPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__iror__"), rootContext_->fromMethod(nullptr, py_dict_iror));
+    // --- End dict enrichment ---
+
     // _io module (created before builtins so open() can delegate)
     const proto::ProtoObject* ioModule = io::initialize(rootContext_);
     if (modulePrototype) {
@@ -9197,24 +9246,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
         return ioModule; 
     });
 
-    // builtins module
-    builtinsModule = builtins::initialize(rootContext_, objectPrototype, typePrototype, intPrototype, strPrototype, listPrototype, dictPrototype, tuplePrototype, setPrototype, bytesPrototype, nonePrototype, ellipsisPrototype, notImplementedPrototype, sliceType, frozensetPrototype, floatPrototype, boolPrototype, complexPrototype, ioModule);
-    if (get_env_diag()) {
-        fprintf(stderr, "DEBUG AFTER BUILTINS INIT: builtinsModule=%p\n", (void*)builtinsModule);
-    }
-    
-    // IMPORTANT: BuiltinsModule::initialize enrichment check
-    if (rootContext_->space->objectPrototype && rootContext_->space->objectPrototype != objectPrototype) {
-         if (get_env_diag()) fprintf(stderr, "DEBUG: Syncing enriched objectPrototype from space: %p -> %p\n", (void*)objectPrototype, (void*)rootContext_->space->objectPrototype);
-         objectPrototype = rootContext_->space->objectPrototype;
-    }
-    if (modulePrototype) {
-        builtinsModule = builtinsModule->addParent(rootContext_, modulePrototype);
-        builtinsModule = builtinsModule->setAttribute(rootContext_, py_class, modulePrototype);
-    }
-    // Set __dict__ so that builtins.__dict__ works (Python modules expose their namespace as __dict__)
-    builtinsModule = builtinsModule->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__dict__"), builtinsModule);
-    registerNativeModule(nativeProviderPtr, "builtins", [this](proto::ProtoContext* ctx) { return builtinsModule; });
+    // builtins initialization moved to end
 
     // _collections module
     registerNativeModule(nativeProviderPtr, "_collections", [this](proto::ProtoContext* ctx) { return collections::initialize(ctx, this); });
@@ -9407,54 +9439,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     proto::ProviderRegistry::instance().registerProvider(std::make_unique<PythonModuleProvider>(allPaths));
     proto::ProviderRegistry::instance().registerProvider(std::make_unique<CompiledModuleProvider>(allPaths));
     // Register native methods for dict AGAIN (to ensure they are on the final prototype)
-    dictPrototype = dictPrototype->setAttribute(rootContext_, py_class, typePrototype);
-    dictPrototype = dictPrototype->setAttribute(rootContext_, py_name, PythonEnvironment::getInternedString(rootContext_, "dict")->asObject(rootContext_));
-    dictPrototype = dictPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__qualname__"), PythonEnvironment::getInternedString(rootContext_, "dict")->asObject(rootContext_));
-    dictPrototype = dictPrototype->setAttribute(rootContext_, newString, rootContext_->fromMethod(nullptr, py_dict_call));
-    dictPrototype = dictPrototype->setAttribute(rootContext_, PythonEnvironment::getInternalString(rootContext_, "__init__"), rootContext_->fromMethod(nullptr, py_dict_init));
-    dictPrototype = dictPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_type_repr));
-    dictPrototype = dictPrototype->setAttribute(rootContext_, py_module, builtinsVal);
-    dictPrototype = dictPrototype->setAttribute(rootContext_, py_getitem, rootContext_->fromMethod(nullptr, py_dict_getitem));
-    dictPrototype = dictPrototype->setAttribute(rootContext_, py_setitem, rootContext_->fromMethod(nullptr, py_dict_setitem));
-    dictPrototype = dictPrototype->setAttribute(rootContext_, delItemString, rootContext_->fromMethod(nullptr, py_dict_delitem));
-    dictPrototype = dictPrototype->setAttribute(rootContext_, py_len, rootContext_->fromMethod(nullptr, py_dict_len));
-    dictPrototype = dictPrototype->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_dict_iter));
-    
-    const proto::ProtoObject* dictIterProto = objectPrototype->newChild(rootContext_, true);
-    dictIterProto = dictIterProto->setAttribute(rootContext_, py_class, typePrototype);
-    dictIterProto = dictIterProto->setAttribute(rootContext_, py_name, PythonEnvironment::getInternedString(rootContext_, "dict_keyiterator")->asObject(rootContext_));
-    dictIterProto = dictIterProto->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__qualname__"), PythonEnvironment::getInternedString(rootContext_, "dict_keyiterator")->asObject(rootContext_));
-    dictIterProto = dictIterProto->setAttribute(rootContext_, py_next, rootContext_->fromMethod(nullptr, py_list_iter_next));
-    dictIterProto = dictIterProto->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_self_iter));
-    dictPrototype = dictPrototype->setAttribute(rootContext_, py_iter_proto, dictIterProto);
-    dictPrototype = dictPrototype->setAttribute(rootContext_, py_contains, rootContext_->fromMethod(nullptr, py_dict_contains));
-    dictPrototype = dictPrototype->setAttribute(rootContext_, py_eq, rootContext_->fromMethod(nullptr, py_dict_eq));
-    dictPrototype = dictPrototype->setAttribute(rootContext_, py_lt, rootContext_->fromMethod(nullptr, py_dict_lt));
-    dictPrototype = dictPrototype->setAttribute(rootContext_, py_le, rootContext_->fromMethod(nullptr, py_dict_le));
-    dictPrototype = dictPrototype->setAttribute(rootContext_, py_gt, rootContext_->fromMethod(nullptr, py_dict_gt));
-    dictPrototype = dictPrototype->setAttribute(rootContext_, py_ge, rootContext_->fromMethod(nullptr, py_dict_ge));
-    dictPrototype = dictPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_dict_repr));
-    dictPrototype = dictPrototype->setAttribute(rootContext_, py_str, rootContext_->fromMethod(nullptr, py_dict_str));
-    dictPrototype = dictPrototype->setAttribute(rootContext_, py_bool, rootContext_->fromMethod(nullptr, py_dict_bool));
-
-    dictPrototype = dictPrototype->setAttribute(rootContext_, keysS, rootContext_->fromMethod(nullptr, py_dict_keys));
-    dictPrototype = dictPrototype->setAttribute(rootContext_, valuesS, rootContext_->fromMethod(nullptr, py_dict_values));
-    dictPrototype = dictPrototype->setAttribute(rootContext_, itemsS, rootContext_->fromMethod(nullptr, py_dict_items));
-    dictPrototype = dictPrototype->setAttribute(rootContext_, py_get, rootContext_->fromMethod(nullptr, py_dict_get));
-    dictPrototype = dictPrototype->setAttribute(rootContext_, py_setdefault, rootContext_->fromMethod(nullptr, py_dict_setdefault));
-    dictPrototype = dictPrototype->setAttribute(rootContext_, py_pop, rootContext_->fromMethod(nullptr, py_dict_pop));
-    dictPrototype = dictPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "popitem"), rootContext_->fromMethod(nullptr, py_dict_popitem));
-    dictPrototype = dictPrototype->setAttribute(rootContext_, py_update, rootContext_->fromMethod(nullptr, py_dict_update));
-    dictPrototype = dictPrototype->setAttribute(rootContext_, py_clear, rootContext_->fromMethod(nullptr, py_dict_clear));
-    dictPrototype = dictPrototype->setAttribute(rootContext_, py_copy, rootContext_->fromMethod(nullptr, py_dict_copy));
-    dictPrototype = dictPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "fromkeys"), rootContext_->fromMethod(nullptr, py_dict_fromkeys));
-    dictPrototype = dictPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__or__"), rootContext_->fromMethod(nullptr, py_dict_or));
-    dictPrototype = dictPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__ror__"), rootContext_->fromMethod(nullptr, py_dict_ror));
-    dictPrototype = dictPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__ior__"), rootContext_->fromMethod(nullptr, py_dict_ior));
-    dictPrototype = dictPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__iror__"), rootContext_->fromMethod(nullptr, py_dict_iror));
-
-    dictPrototype = dictPrototype->setAttribute(rootContext_, mroString, rootContext_->newTupleFromList(rootContext_->newList()->appendLast(rootContext_, dictPrototype)->appendLast(rootContext_, objectPrototype))->asObject(rootContext_));
-    dictPrototype = dictPrototype->setAttribute(rootContext_, basesString, rootContext_->newTupleFromList(rootContext_->newList()->appendLast(rootContext_, objectPrototype))->asObject(rootContext_));
+    // dict enrichment moved early
     // Back-fill dictionary storage for all core prototypes so they have a valid __dict__ (CPython parity) at the VERY END
     objectPrototype = initDictStorage(rootContext_, objectPrototype);
     typePrototype = initDictStorage(rootContext_, typePrototype);
@@ -9540,12 +9525,17 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
                 p = p->setAttribute(rootContext_, mroString, rootContext_->newTupleFromList(mroList)->asObject(rootContext_));
                 const proto::ProtoList* basesList = rootContext_->newList()->appendLast(rootContext_, objectPrototype);
                 p = p->setAttribute(rootContext_, basesString, rootContext_->newTupleFromList(basesList)->asObject(rootContext_));
+            } else {
+                // V87: object itself must have correct MRO [object] and empty bases ()
+                const proto::ProtoList* mroList = rootContext_->newList()->appendLast(rootContext_, p);
+                p = p->setAttribute(rootContext_, mroString, rootContext_->newTupleFromList(mroList)->asObject(rootContext_));
+                const proto::ProtoList* basesList = rootContext_->newList();
+                p = p->setAttribute(rootContext_, basesString, rootContext_->newTupleFromList(basesList)->asObject(rootContext_));
             }
         };
 
-        // Order matters; sync type and object first
-        rebase(typePrototype);
         rebase(objectPrototype);
+        rebase(typePrototype);
         
         rebase(strPrototype);
         rebase(intPrototype);
@@ -9562,9 +9552,54 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
         rebase(mappingProxyPrototype);
         rebase(methodPrototype);
         rebase(functionPrototype);
+
+        // Pass 2: Ensure ALL point to the final typePrototype as their class
+        auto fixClass = [&](const proto::ProtoObject*& p) {
+            if (p) p = p->setAttribute(rootContext_, py_class, typePrototype);
+        };
+        fixClass(objectPrototype);
+        fixClass(typePrototype);
+        fixClass(strPrototype);
+        fixClass(intPrototype);
+        fixClass(listPrototype);
+        fixClass(dictPrototype);
+        fixClass(tuplePrototype);
+        fixClass(boolPrototype);
+        fixClass(floatPrototype);
+        fixClass(bytesPrototype);
+        fixClass(setPrototype);
+        fixClass(complexPrototype);
+        fixClass(sliceType);
+        fixClass(frozensetPrototype);
+        fixClass(mappingProxyPrototype);
+        fixClass(methodPrototype);
+        fixClass(functionPrototype);
     };
 
     syncCorePrototypes();
+    
+    // Invalidate resolution cache to ensure everyone sees the final prototypes
+    invalidateResolveCache();
+    
+    if (builtinsModule) {
+        if (get_env_diag()) fprintf(stderr, "DEBUG FINAL SYNC BEFORE: tupleProto=%p dictProto=%p builtins=%p\n", (void*)tuplePrototype, (void*)dictPrototype, (void*)builtinsModule);
+        builtinsModule = builtinsModule->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "dict"), dictPrototype);
+        if (get_env_diag()) {
+            const proto::ProtoObject* d = builtinsModule->getAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "dict"));
+            fprintf(stderr, "DEBUG FINAL SYNC AFTER: builtins.dict=%p dictProto=%p builtins=%p\n", (void*)d, (void*)dictPrototype, (void*)builtinsModule);
+        }
+        builtinsModule = builtinsModule->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "list"), listPrototype);
+        builtinsModule = builtinsModule->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "tuple"), tuplePrototype);
+        builtinsModule = builtinsModule->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "set"), setPrototype);
+        builtinsModule = builtinsModule->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "str"), strPrototype);
+        builtinsModule = builtinsModule->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "int"), intPrototype);
+        builtinsModule = builtinsModule->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "float"), floatPrototype);
+        builtinsModule = builtinsModule->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "bool"), boolPrototype);
+        builtinsModule = builtinsModule->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "bytes"), bytesPrototype);
+        builtinsModule = builtinsModule->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "complex"), complexPrototype);
+        builtinsModule = builtinsModule->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "object"), objectPrototype);
+        builtinsModule = builtinsModule->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "type"), typePrototype);
+    }
 
     // V87: Augment prototypes with descriptors and internal storage AFTER final sync
     // but BEFORE exporting to builtins/space.
@@ -9572,6 +9607,21 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
         dictPrototype = dictPrototype->setAttribute(rootContext_, dictString, py_type_get_dict(rootContext_, dictPrototype, nullptr, nullptr, nullptr));
     }
     // (Add other descriptors here if needed)
+
+    // builtins module (V87: Move to end to ensure final prototypes)
+    builtinsModule = builtins::initialize(rootContext_, objectPrototype, typePrototype, intPrototype, strPrototype, listPrototype, dictPrototype, tuplePrototype, setPrototype, bytesPrototype, nonePrototype, ellipsisPrototype, notImplementedPrototype, sliceType, frozensetPrototype, floatPrototype, boolPrototype, complexPrototype, ioModule);
+    
+    // V87: SECOND SYNC pass to ensure all core prototypes point to the VERY FINAL versions
+    // produced by builtins::initialize (which might have augmented objectPrototype).
+    syncCorePrototypes();
+    
+    if (modulePrototype) {
+        builtinsModule = builtinsModule->addParent(rootContext_, modulePrototype);
+        builtinsModule = builtinsModule->setAttribute(rootContext_, py_class, modulePrototype);
+    }
+    // Set __dict__ so that builtins.__dict__ works (Python modules expose their namespace as __dict__)
+    builtinsModule = builtinsModule->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__dict__"), builtinsModule);
+    registerNativeModule(nativeProviderPtr, "builtins", [this](proto::ProtoContext* ctx) { return builtinsModule; });
 
     // 2. Synchronize final prototypes with the builtins module (V87: FINAL versions)
     if (builtinsModule) {
@@ -9609,34 +9659,6 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
 
     // Final synchronization of all prototypes to ProtoSpace (V78: MUST happen after all initDictStorage calls)
 
-    if (get_env_diag()) {
-        fprintf(stderr, "DEBUG FINAL SYNC: tupleProto=%p dictProto=%p strProto=%p\n", 
-                (void*)tuplePrototype, (void*)dictPrototype, (void*)strPrototype);
-    }
-
-    if (get_env_diag()) {
-        fprintf(stderr, "DEBUG FINAL typeProto=%p\n", (void*)typePrototype);
-        if (typePrototype) {
-            const proto::ProtoSparseList* attrs = typePrototype->getOwnAttributes(rootContext_);
-            if (attrs) {
-                auto* it = const_cast<proto::ProtoSparseListIterator*>(attrs->getIterator(rootContext_));
-                while (it && it->hasNext(rootContext_)) {
-                    unsigned long k = it->nextKey(rootContext_);
-                    const proto::ProtoObject* v = it->nextValue(rootContext_);
-                    std::string ks = "???";
-                    if (k != 0) {
-                        const proto::ProtoObject* ko = reinterpret_cast<const proto::ProtoObject*>(k);
-                        if (ko->isString(rootContext_)) ko->asString(rootContext_)->toUTF8String(rootContext_, ks);
-                    }
-                    fprintf(stderr, "DEBUG   type attr: %s (%lu) = %p\n", ks.c_str(), k, (void*)v);
-                    it = const_cast<proto::ProtoSparseListIterator*>(it->advance(rootContext_));
-                }
-            }
-            const proto::ProtoObject* mro = typePrototype->getAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__mro__"));
-            fprintf(stderr, "DEBUG   type __mro__ = %p\n", (void*)mro);
-        }
-    }
-    
     // 7. sys.modules population (using interned strings)
     // a. Create sys.modules and add sys/builtins
     const proto::ProtoObject* modulesDictObj = sysModule->getAttribute(rootContext_, modulesS);

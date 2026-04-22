@@ -2641,14 +2641,6 @@ static const proto::ProtoList* computeC3MRO(proto::ProtoContext* context, const 
         }
     }
     
-    if (get_env_diag()) {
-        std::string cn = "unknown";
-        const proto::ProtoObject* nO = cls->proto::ProtoObject::getAttribute(context, PythonEnvironment::getInternedString(context, "__name__"));
-        if (nO && nO->isString(context)) nO->asString(context)->toUTF8String(context, cn);
-        fprintf(stderr, "DEBUG computeC3MRO: cls=%s basesObj=%p\n", cn.c_str(), (void*)basesObj);
-        fflush(stderr);
-    }
-
     const proto::ProtoList* result = context->newList()->appendLast(context, cls);
     
     // Optimized C3 merge: track cursor-style heads instead of slicing lists
@@ -2675,7 +2667,7 @@ static const proto::ProtoList* computeC3MRO(proto::ProtoContext* context, const 
                     // Use pointer identity: two class objects are the same only if they are
                     // the exact same object. Name-based comparison causes false matches when
                     // a subclass has the same __name__ as its base (e.g. class Random(_random.Random)).
-                    if (mros[j]->getAt(context, static_cast<int>(k)) == cand) {
+                    if (areSameClasses(context, mros[j]->getAt(context, static_cast<int>(k)), cand)) {
                         foundInTail = true;
                         break;
                     }
@@ -2692,7 +2684,7 @@ static const proto::ProtoList* computeC3MRO(proto::ProtoContext* context, const 
             // Deduplicate: only add if not already in result. Use pointer identity.
             bool alreadyIn = false;
             for (unsigned long r = 0; r < result->getSize(context); ++r) {
-                if (result->getAt(context, static_cast<int>(r)) == candidate) {
+                if (areSameClasses(context, result->getAt(context, static_cast<int>(r)), candidate)) {
                     alreadyIn = true;
                     break;
                 }
@@ -2710,21 +2702,6 @@ static const proto::ProtoList* computeC3MRO(proto::ProtoContext* context, const 
             // C3 failure (inconsistent MRO), just break or fallback
             break; 
         }
-    }
-    if (get_env_diag()) {
-        std::string clsName = "unknown";
-        const proto::ProtoString* nameS = ::protoPython::PythonEnvironment::getInternedString(context, "__name__");
-        const proto::ProtoObject* nameAttr = cls->getAttribute(context, nameS);
-        if (nameAttr && nameAttr->isString(context)) nameAttr->asString(context)->toUTF8String(context, clsName);
-        fprintf(stderr, "!!! LOUD MRO: computing for %s (target=%p) !!!\n", clsName.c_str(), (void*)cls);
-        for (unsigned long i = 0; i < result->getSize(context); ++i) {
-            const proto::ProtoObject* baseObj = result->getAt(context, i);
-            std::string bName = "unknown";
-            const proto::ProtoObject* bn = baseObj->getAttribute(context, nameS);
-            if (bn && bn->isString(context)) bn->asString(context)->toUTF8String(context, bName);
-            fprintf(stderr, "  - %s (%p)\n", bName.c_str(), (void*)baseObj);
-        }
-        fflush(stderr);
     }
     return result;
 }

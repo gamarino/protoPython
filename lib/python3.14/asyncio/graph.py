@@ -9,6 +9,15 @@ from . import events
 from . import futures
 from . import tasks
 
+import asyncio
+print(f"DEBUG: graph.py: futures={futures}")
+print(f"DEBUG: graph.py: hasattr(futures, 'Future')={hasattr(futures, 'Future')}")
+print(f"DEBUG: graph.py: asyncio={asyncio}")
+try:
+    print(f"DEBUG: graph.py: asyncio.Future={asyncio.Future}")
+except AttributeError as e:
+    print(f"DEBUG: graph.py: asyncio.Future error={e}")
+
 __all__ = (
     'capture_call_graph',
     'format_call_graph',
