@@ -6,9 +6,34 @@
 namespace protoPython {
 namespace ast {
 
+static const proto::ProtoObject* py_ast_node_call(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    (void)parentLink;
+    (void)positionalParameters;
+    (void)keywordParameters;
+    // Basic constructor: return a new instance with self as class
+    const proto::ProtoObject* instance = ctx->newObject(false);
+    instance = instance->addParent(ctx, self);
+    // Set __class__ to self
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (env) {
+        instance = instance->setAttribute(ctx, env->getClassString(), self);
+    }
+    return instance;
+}
+
 static const proto::ProtoObject* create_ast_node_type(proto::ProtoContext* ctx, const char* name, const proto::ProtoObject* base) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     const proto::ProtoObject* type = base ? base->newChild(ctx, true) : ctx->newObject(false);
-    type = type->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__name__"), PythonEnvironment::getInternedString(ctx, name)->asObject(ctx));
+    if (env && env->getTypePrototype()) {
+        type = type->setAttribute(ctx, env->getClassString(), env->getTypePrototype());
+    }
+    type = type->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__name__"), PythonEnvironment::getInternedString(ctx, name)->asObject(ctx));
+    type = type->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__call__"), ctx->fromMethod(nullptr, py_ast_node_call));
     return type;
 }
 

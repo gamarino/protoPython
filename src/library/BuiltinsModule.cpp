@@ -2734,6 +2734,32 @@ extern const proto::ProtoObject* runUserClassCall(proto::ProtoContext* ctx,
     const proto::ProtoList* args,
     const proto::ProtoSparseList* kwargs);
 
+const proto::ProtoObject* py_type_class_getitem(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    (void)parentLink;
+    (void)keywordParameters;
+    // For now, just return self to satisfy the requirement that types are subscriptable.
+    // In a full implementation, this would return a GenericAlias.
+    return self;
+}
+
+const proto::ProtoObject* py_type_or(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    (void)parentLink;
+    (void)keywordParameters;
+    // For now, just return self to satisfy the requirement that types support |.
+    // In a full implementation, this would return a UnionType.
+    return self;
+}
+
 namespace builtins {
 
 const proto::ProtoObject* py_type_mro(
@@ -4887,6 +4913,27 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
         fprintf(stderr, "DEBUG IN BUILTINS INIT: END obInB=%p\n", (void*)builtins->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "object")));
         fflush(stderr);
     }
+    const proto::ProtoObject* classGetItem = ctx->fromMethod(nullptr, py_type_class_getitem);
+    const proto::ProtoObject* typeOr = ctx->fromMethod(nullptr, py_type_or);
+    const proto::ProtoString* classGetItemS = PythonEnvironment::getInternedString(ctx, "__class_getitem__");
+    const proto::ProtoString* orS = PythonEnvironment::getInternedString(ctx, "__or__");
+    const proto::ProtoString* rorS = PythonEnvironment::getInternedString(ctx, "__ror__");
+
+    auto registerGenericSupport = [&](const proto::ProtoObject* proto) {
+        if (!proto) return;
+        const_cast<proto::ProtoObject*>(proto)->setAttribute(ctx, classGetItemS, classGetItem);
+    };
+
+    registerGenericSupport(typeProto);
+    registerGenericSupport(listProto);
+    registerGenericSupport(dictProto);
+    registerGenericSupport(tupleProto);
+    registerGenericSupport(setProto);
+    registerGenericSupport(frozensetProto);
+
+    const_cast<proto::ProtoObject*>(typeProto)->setAttribute(ctx, orS, typeOr);
+    const_cast<proto::ProtoObject*>(typeProto)->setAttribute(ctx, rorS, typeOr);
+
     return builtins;
 }
 

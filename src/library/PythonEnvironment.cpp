@@ -9181,6 +9181,45 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     dictPrototype = dictPrototype->setAttribute(rootContext_, py_ge, rootContext_->fromMethod(nullptr, py_dict_ge));
     dictPrototype = dictPrototype->setAttribute(rootContext_, py_str, rootContext_->fromMethod(nullptr, py_dict_str));
     dictPrototype = dictPrototype->setAttribute(rootContext_, py_bool, rootContext_->fromMethod(nullptr, py_dict_bool));
+    auto setNames = [&](const proto::ProtoObject* p, const char* name) -> const proto::ProtoObject* {
+        if (!p) return nullptr;
+        const proto::ProtoString* nameS = PythonEnvironment::getInternedString(rootContext_, name);
+        p = p->setAttribute(rootContext_, py_name, nameS->asObject(rootContext_));
+        p = p->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__qualname__"), nameS->asObject(rootContext_));
+        return p;
+    };
+
+    objectPrototype = setNames(objectPrototype, "object");
+    typePrototype = setNames(typePrototype, "type");
+    intPrototype = setNames(intPrototype, "int");
+    strPrototype = setNames(strPrototype, "str");
+    listPrototype = setNames(listPrototype, "list");
+    dictPrototype = setNames(dictPrototype, "dict");
+    tuplePrototype = setNames(tuplePrototype, "tuple");
+    setPrototype = setNames(setPrototype, "set");
+    frozensetPrototype = setNames(frozensetPrototype, "frozenset");
+    boolPrototype = setNames(boolPrototype, "bool");
+    floatPrototype = setNames(floatPrototype, "float");
+    bytesPrototype = setNames(bytesPrototype, "bytes");
+    complexPrototype = setNames(complexPrototype, "complex");
+    sliceType = setNames(sliceType, "slice");
+    noneTypeProto = setNames(noneTypeProto, "NoneType");
+    
+    if (ellipsisPrototype) {
+        const proto::ProtoObject* eClass = ellipsisPrototype->getAttribute(rootContext_, py_class);
+        if (eClass) {
+            eClass = setNames(eClass, "ellipsis");
+            ellipsisPrototype = ellipsisPrototype->setAttribute(rootContext_, py_class, eClass);
+        }
+    }
+    if (notImplementedPrototype) {
+        const proto::ProtoObject* niClass = notImplementedPrototype->getAttribute(rootContext_, py_class);
+        if (niClass) {
+            niClass = setNames(niClass, "NotImplementedType");
+            notImplementedPrototype = notImplementedPrototype->setAttribute(rootContext_, py_class, niClass);
+        }
+    }
+
     this->dictPrototype = const_cast<proto::ProtoObject*>(dictPrototype);
     if (get_env_diag()) {
         fprintf(stderr, "DEBUG IN ROOT INIT: dictPrototype=%p\n", (void*)dictPrototype);

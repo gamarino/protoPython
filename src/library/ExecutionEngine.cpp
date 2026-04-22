@@ -1585,7 +1585,7 @@ static const proto::ProtoObject* invokeCallable(proto::ProtoContext* ctx,
     
     const proto::ProtoObject* callAttr = nullptr;
     if (typeObj && typeObj != PROTO_NONE) {
-        callAttr = env ? env->getAttribute(ctx, typeObj, callS) : typeObj->getAttribute(ctx, callS);
+        callAttr = env ? env->getAttribute(ctx, typeObj, callS, false) : typeObj->getAttribute(ctx, callS);
     }
 
     if (!callAttr || callAttr == PROTO_NONE) {
@@ -4139,7 +4139,7 @@ const proto::ProtoObject* executeBytecodeRange(
                     stack.back() = PROTO_NONE;
                 }
                 
-                if (stack.back() == PROTO_NONE && !env->hasPendingException()) {
+                if (!handled && stack.back() == PROTO_NONE && !env->hasPendingException()) {
                     // Start of Error Handling for unsubscriptable objects
                     std::string typeName = "unknown";
                     if (container) {
