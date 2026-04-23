@@ -94,11 +94,38 @@ def RAND_bytes(n):
     return b'\x00' * n
 
 # txt2obj / nid2obj (stubs)
+_oids = {
+    '1.3.6.1.5.5.7.3.1': (129, 'serverAuth', 'TLS Web Server Authentication', '1.3.6.1.5.5.7.3.1'),
+    '1.3.6.1.5.5.7.3.2': (130, 'clientAuth', 'TLS Web Client Authentication', '1.3.6.1.5.5.7.3.2'),
+}
+_nids = {v[0]: v for v in _oids.values()}
+
 def txt2obj(txt, name=False):
-    raise NotImplementedError("_ssl stub: txt2obj not available")
+    if txt in _oids:
+        return _oids[txt]
+    if name:
+        for oid, (nid, sn, ln, o) in _oids.items():
+            if txt in (sn, ln, oid):
+                return (nid, sn, ln, o)
+    raise ValueError(f"unknown object '{txt}'")
 
 def nid2obj(nid):
-    raise NotImplementedError("_ssl stub: nid2obj not available")
+    if nid in _nids:
+        return _nids[nid]
+    raise ValueError(f"unknown nid {nid}")
+
+def get_default_verify_paths():
+    return ("SSL_CERT_FILE", "/usr/lib/ssl/cert.pem", "SSL_CERT_DIR", "/usr/lib/ssl/certs")
+
+# Verification constants
+VERIFY_DEFAULT = 0
+VERIFY_CRL_CHECK_LEAF = 0x4
+VERIFY_CRL_CHECK_CHAIN = 0x8
+VERIFY_X509_STRICT = 0x20
+VERIFY_X509_PARTIAL_CHAIN = 0x80000
+
+# Host flags
+HOSTFLAG_NEVER_CHECK_SUBJECT = 0x20
 
 
 # Exception hierarchy — must match ssl module expectations

@@ -12558,6 +12558,10 @@ const proto::ProtoObject* PythonEnvironment::iter(const proto::ProtoObject* obj)
         backtrace_symbols_fd(array, size, STDERR_FILENO);
         fflush(stderr);
     }
+    if (true) { // Temporarily enable for all failures
+        fprintf(stderr, "DEBUG ITER: object %p is NOT iterable. type=%s repr=%s\n", (void*)obj, reprObject(ctx, getType(ctx, obj)).c_str(), reprObject(ctx, obj).c_str());
+        fflush(stderr);
+    }
     raiseTypeError(ctx, "object is not iterable");
     return nullptr;
 }

@@ -1926,7 +1926,15 @@ static const proto::ProtoObject* py_super_getattr(
                 isObject = (tNameStr == "object");
             }
         }
-        const proto::ProtoObject* codeAttr = val->proto::ProtoObject::getAttribute(context, PythonEnvironment::getInternedString(context, "__code__"), false);
+        const proto::ProtoString* codeStr = env ? env->getCodeString() : PythonEnvironment::getInternedString(context, "__code__");
+        const proto::ProtoObject* codeAttr = val->proto::ProtoObject::getAttribute(context, codeStr, false);
+        if (!codeAttr || codeAttr == PROTO_NONE) {
+            // Check for wrapped function in staticmethod/classmethod
+            const proto::ProtoObject* func = val->proto::ProtoObject::getAttribute(context, PythonEnvironment::getInternedString(context, "__func__"), false);
+            if (func && func != PROTO_NONE) {
+                codeAttr = func->proto::ProtoObject::getAttribute(context, codeStr, false);
+            }
+        }
         bool hasCode = (codeAttr && codeAttr != PROTO_NONE && (env ? codeAttr != env->getNonePrototype() : true));
         bool isNativeCallable = (val->asMethod(context) != nullptr);
 
