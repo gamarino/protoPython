@@ -3142,6 +3142,50 @@ const proto::ProtoObject* py_type(
     return PROTO_NONE;
 }
 
+static const proto::ProtoObject* resolveClassType(protoPython::PythonEnvironment* env, const proto::ProtoObject* self, proto::ProtoContext* context, const proto::ProtoObject* cls) {
+    if (!env || !self) return cls;
+    const proto::ProtoObject* typeAttr = self->getAttribute(context, PythonEnvironment::getInternedString(context, "type"));
+    const proto::ProtoObject* objectAttr = self->getAttribute(context, PythonEnvironment::getInternedString(context, "object"));
+    const proto::ProtoObject* listAttr = self->getAttribute(context, PythonEnvironment::getInternedString(context, "list"));
+    if (get_env_diag()) fprintf(stderr, "DEBUG resolveClassType cls=%p self=%p listAttr=%p typeAttr=%p\n", (void*)cls, (void*)self, (void*)listAttr, (void*)typeAttr);
+    const proto::ProtoObject* tupAttr = self->getAttribute(context, PythonEnvironment::getInternedString(context, "tuple"));
+    const proto::ProtoObject* dictAttr = self->getAttribute(context, PythonEnvironment::getInternedString(context, "dict"));
+    const proto::ProtoObject* strAttr = self->getAttribute(context, PythonEnvironment::getInternedString(context, "str"));
+
+    if (cls == typeAttr) return env->getTypePrototype();
+    if (cls == objectAttr) return env->getObjectPrototype();
+
+    auto matchesAuthoritative = [&](const proto::ProtoObject* auth) {
+        if (!auth) return false;
+        if (cls == auth) return true;
+        const proto::ProtoString* newS = env->getNewString();
+        const proto::ProtoObject* authNew = auth->getAttribute(context, newS);
+        // Only fuzzy match if it's a specific native constructor, not the generic object/type constructor
+        if (!authNew || authNew == PROTO_NONE) return false;
+        const proto::ProtoObject* objNew = env->getObjectPrototype()->getAttribute(context, newS);
+        const proto::ProtoObject* typeNew = env->getTypePrototype()->getAttribute(context, newS);
+        if (authNew == objNew || authNew == typeNew) return false;
+        
+        const proto::ProtoObject* clsNew = cls->getAttribute(context, newS);
+        return (authNew == clsNew);
+    };
+
+    if (matchesAuthoritative(typeAttr)) return env->getTypePrototype();
+    if (matchesAuthoritative(listAttr)) return env->getListPrototype();
+    if (matchesAuthoritative(tupAttr)) return env->getTuplePrototype();
+    if (matchesAuthoritative(dictAttr)) return env->getDictPrototype();
+    if (matchesAuthoritative(self->getAttribute(context, PythonEnvironment::getInternedString(context, "int")))) return env->getIntPrototype();
+    if (matchesAuthoritative(self->getAttribute(context, PythonEnvironment::getInternedString(context, "float")))) return env->getFloatPrototype();
+    if (matchesAuthoritative(strAttr)) return env->getStrPrototype();
+    if (matchesAuthoritative(self->getAttribute(context, PythonEnvironment::getInternedString(context, "bytes")))) return env->getBytesPrototype();
+    if (matchesAuthoritative(self->getAttribute(context, PythonEnvironment::getInternedString(context, "bytearray")))) return env->getBytesPrototype();
+    if (matchesAuthoritative(self->getAttribute(context, PythonEnvironment::getInternedString(context, "set")))) return env->getSetPrototype();
+    if (matchesAuthoritative(self->getAttribute(context, PythonEnvironment::getInternedString(context, "frozenset")))) return env->getFrozensetPrototype();
+    if (matchesAuthoritative(self->getAttribute(context, PythonEnvironment::getInternedString(context, "bool")))) return env->getBoolPrototype();
+    if (matchesAuthoritative(self->getAttribute(context, PythonEnvironment::getInternedString(context, "complex")))) return env->getComplexPrototype();
+    return cls;
+}
+
 static bool checkInterfaceInstanceOf(proto::ProtoContext* context, const proto::ProtoObject* obj, const proto::ProtoObject* cls) {
     if (get_env_diag()) {
         protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(context);
@@ -3188,40 +3232,31 @@ static bool checkInterfaceInstanceOf(proto::ProtoContext* context, const proto::
         if (obj->isSet(context) && cls == env->getSetPrototype()) return true;
     }
 
-    bool res = obj->isInstanceOf(context, cls) == PROTO_TRUE;
-    if (get_env_diag()) fprintf(stderr, "DEBUG checkInterfaceInstanceOf result=%d\n", res);
-    return res;
-}
+    if (obj->isInstanceOf(context, cls) == PROTO_TRUE) return true;
 
-static const proto::ProtoObject* resolveClassType(protoPython::PythonEnvironment* env, const proto::ProtoObject* self, proto::ProtoContext* context, const proto::ProtoObject* cls) {
-    if (!env || !self) return cls;
-    const proto::ProtoObject* typeAttr = self->getAttribute(context, PythonEnvironment::getInternedString(context, "type"));
-    const proto::ProtoObject* listAttr = self->getAttribute(context, PythonEnvironment::getInternedString(context, "list"));
-    if (get_env_diag()) fprintf(stderr, "DEBUG resolveClassType cls=%p self=%p listAttr=%p typeAttr=%p\n", (void*)cls, (void*)self, (void*)listAttr, (void*)typeAttr);
-    const proto::ProtoObject* tupAttr = self->getAttribute(context, PythonEnvironment::getInternedString(context, "tuple"));
-    const proto::ProtoObject* dictAttr = self->getAttribute(context, PythonEnvironment::getInternedString(context, "dict"));
-    const proto::ProtoObject* strAttr = self->getAttribute(context, PythonEnvironment::getInternedString(context, "str"));
-
-    if (std::getenv("PROTO_RESOLVE_DIAG")) {
-        fprintf(stderr, "DEBUG resolveClassType: cls=%p tupleAttr=%p dictAttr=%p strAttr=%p\n", (void*)cls, (void*)tupAttr, (void*)dictAttr, (void*)strAttr);
-        fprintf(stderr, "DEBUG resolveClassType IDs: envTuple=%p envDict=%p envStr=%p\n", (void*)env->getTuplePrototype(), (void*)env->getDictPrototype(), (void*)env->getStrPrototype());
+    // V88: Fallback for Python-level subclasses where identity mismatch occurred during bootstrap (e.g. IntEnum inheriting from an older intPrototype)
+    if (env) {
+        const proto::ProtoString* classS = env->getClassString();
+        const proto::ProtoObject* objClass = obj->getAttribute(context, classS);
+        if (!objClass) objClass = obj->getPrototype(context);
+        
+        if (objClass) {
+            const proto::ProtoObject* mroObj = objClass->getAttribute(context, PythonEnvironment::getInternedString(context, "__mro__"));
+            if (mroObj && mroObj->isTuple(context)) {
+                const proto::ProtoTuple* mro = mroObj->asTuple(context);
+                const proto::ProtoObject* builtins = env->getBuiltins();
+                for (size_t i = 0; i < mro->getSize(context); i++) {
+                    const proto::ProtoObject* item = mro->getAt(context, i);
+                    const proto::ProtoObject* resolvedItem = resolveClassType(env, builtins, context, item);
+                    if (item == cls || resolvedItem == cls) return true;
+                }
+            }
+        }
     }
 
-    if (cls == typeAttr) return env->getTypePrototype();
-    if (cls == listAttr) return env->getListPrototype();
-    if (cls == tupAttr) return env->getTuplePrototype();
-    if (cls == dictAttr) return env->getDictPrototype();
-    if (cls == self->getAttribute(context, PythonEnvironment::getInternedString(context, "int"))) return env->getIntPrototype();
-    if (cls == self->getAttribute(context, PythonEnvironment::getInternedString(context, "float"))) return env->getFloatPrototype();
-    if (cls == strAttr) return env->getStrPrototype();
-    if (cls == self->getAttribute(context, PythonEnvironment::getInternedString(context, "bytes"))) return env->getBytesPrototype();
-    if (cls == self->getAttribute(context, PythonEnvironment::getInternedString(context, "bytearray"))) return env->getBytesPrototype();
-    if (cls == self->getAttribute(context, PythonEnvironment::getInternedString(context, "set"))) return env->getSetPrototype();
-    if (cls == self->getAttribute(context, PythonEnvironment::getInternedString(context, "frozenset"))) return env->getFrozensetPrototype();
-    if (cls == self->getAttribute(context, PythonEnvironment::getInternedString(context, "bool"))) return env->getBoolPrototype();
-    if (cls == self->getAttribute(context, PythonEnvironment::getInternedString(context, "complex"))) return env->getComplexPrototype();
-    return cls;
+    return false;
 }
+
 
 static bool py_issubclass_check_single(proto::ProtoContext* context, const proto::ProtoObject* cls, const proto::ProtoObject* base, int depth = 0);
 
@@ -3304,9 +3339,15 @@ static bool py_issubclass_check_single(proto::ProtoContext* context, const proto
         const proto::ProtoList* mroList = mro->asList(context);
         const proto::ProtoTuple* mroTuple = mro->asTuple(context);
         unsigned long size = mroList ? mroList->getSize(context) : (mroTuple ? mroTuple->getSize(context) : 0);
+        PythonEnvironment* env = PythonEnvironment::fromContext(context);
+        const proto::ProtoObject* builtins = env ? env->getBuiltins() : nullptr;
         for (unsigned long i = 0; i < size; ++i) {
             const proto::ProtoObject* item = mroList ? mroList->getAt(context, i) : mroTuple->getAt(context, i);
             if (item == base) return true;
+            if (env && builtins) {
+                const proto::ProtoObject* resolvedItem = resolveClassType(env, builtins, context, item);
+                if (resolvedItem == base) return true;
+            }
         }
         // If __mro__ is present and valid, it contains the entire hierarchy.
         // We do not need to check __bases__ recursively.

@@ -71,6 +71,11 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 
 **Next milestone**: Implement `_datetime` C extension to enable `test_datetime.py`.
 
+### V108 Changes (2026-04-22)
+- **IntEnum Isinstance Identity Fix**: Resolved the identity mismatch between native builtins and MRO entries caused by bootstrap pointer shifts.
+- **Robust Type Resolution**: Implemented `resolveClassType` with `__new__` fuzzy matching to unify divergent native prototypes based on their native constructor handlers (e.g., `py_int_call`).
+- **Subclassing Conformance**: Fixed `isinstance` and `issubclass` to correctly recognize Python-defined subclasses of native types, unblocking critical validation logic in `enum.py` and `asyncio`.
+
 ### V107 Changes (2026-04-22)
 - **Native Type Subclassing Support**: Implemented proper subclassing for `int` and `float` by allowing `newChild` instantiation and `__data__` attribute storage.
 - **Arithmetic Dispatch Hardening**: Updated the execution engine to automatically unwrap primitive values from subclass instances, enabling native performance for `IntEnum` and other native-backed subclasses.
