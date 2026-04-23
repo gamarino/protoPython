@@ -10302,6 +10302,10 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain,
                             mutableMod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "update"),
                                 ctx->fromMethod(const_cast<proto::ProtoObject*>(mutableMod), py_module_update));
 
+                            // CRITICAL: Update modWrapper and sys.modules IMMEDIATELY after cloning/init
+                            const_cast<proto::ProtoObject*>(modWrapper)->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "val"), mutableMod);
+                            ensureModuleInSysModules(ctx, moduleName, mutableMod);
+
                             // Batch 1: Set frame attributes on module object
                             // __dict__ = self: the module object IS its own namespace (CPython behavior)
                             mutableMod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__dict__"), mutableMod);
@@ -10393,12 +10397,29 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain,
                             if (get_env_diag()) { fprintf(stderr, "DEBUG: executeModule starting runCodeObject mutableMod=%p (%s)\n", (void*)mutableMod, moduleName.c_str()); fflush(stderr); }
                             proto::ProtoObject* framePtr = const_cast<proto::ProtoObject*>(mutableMod);
                             runCodeObject(ctx, codeObj, framePtr);
-                            mutableMod = framePtr;
-                            if (get_env_diag()) { fprintf(stderr, "DEBUG: executeModule finished runCodeObject mutableMod=%p (has CodeType=%d)\n", (void*)mutableMod, mutableMod->hasAttribute(ctx, PythonEnvironment::getInternedString(ctx, "CodeType"))==PROTO_TRUE); fflush(stderr); }
-                            
+
+                            // Sync attributes from final frame back to module object (Persistence Fix)
+                            if (framePtr != mutableMod) {
+                                const proto::ProtoSparseList* finalAttrs = framePtr->getAttributes(ctx);
+                                if (finalAttrs) {
+                                    auto* it = const_cast<proto::ProtoSparseListIterator*>(finalAttrs->getIterator(ctx));
+                                    while (it && it->hasNext(ctx)) {
+                                        unsigned long key = it->nextKey(ctx);
+                                        const proto::ProtoObject* kObj = reinterpret_cast<const proto::ProtoObject*>(key);
+                                        if (kObj && kObj->isString(ctx)) {
+                                            const proto::ProtoString* sKey = kObj->asString(ctx);
+                                            const_cast<proto::ProtoObject*>(mutableMod)->setAttribute(ctx, sKey, framePtr->getAttribute(ctx, sKey));
+                                        }
+                                        it = const_cast<proto::ProtoSparseListIterator*>(it->advance(ctx));
+                                    }
+                                }
+                                mutableMod = framePtr;
+                            }
+
                             setCurrentGlobals(oldGlobals);
                             mod = mutableMod;
                             ensureModuleInSysModules(ctx, moduleName, mutableMod);
+                            const_cast<proto::ProtoObject*>(modWrapper)->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "val"), mutableMod);
                             // Re-cache if it changed
                             if (oldMod != mutableMod) {
                                 s_threadResolveCache[moduleName] = mutableMod;

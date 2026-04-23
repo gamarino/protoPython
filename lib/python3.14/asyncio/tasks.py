@@ -25,8 +25,6 @@ from . import coroutines
 from . import events
 from . import exceptions
 from . import futures
-print(f"DEBUG: tasks.py: futures.Future={getattr(futures, 'Future', 'MISSING')}")
-print(f"DEBUG: tasks.py: futures._PyFuture={getattr(futures, '_PyFuture', 'MISSING')}")
 from . import queues
 from . import timeouts
 

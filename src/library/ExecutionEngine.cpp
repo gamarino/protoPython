@@ -170,12 +170,20 @@ static void syncModuleIdentity(proto::ProtoContext* ctx, PythonEnvironment* env,
         const proto::ProtoObject* modules = env->getAttribute(ctx, sys, env->getModulesS());
         if (modules && modules != PROTO_NONE) {
             const proto::ProtoString* modNameS = nameAttr->asString(ctx);
+            std::string moduleName;
+            modNameS->toUTF8String(ctx, moduleName);
+
             // 1. Update as attribute (internal lookup fallback)
             if (modules->getAttribute(ctx, modNameS) == oldMod) {
                 const_cast<proto::ProtoObject*>(modules)->setAttribute(ctx, modNameS, newMod);
             }
-            
-            // 2. Update as dict item (Python-side lookup)
+            // 2. Also update ProtoCore's internal import cache
+            const proto::ProtoObject* modWrapper = ctx->space->getImportModule(ctx, moduleName.c_str(), "val");
+            if (modWrapper && modWrapper != PROTO_NONE) {
+                const_cast<proto::ProtoObject*>(modWrapper)->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "val"), newMod);
+            }
+
+            // 3. Update as dict item (Python-side lookup)
             const proto::ProtoObject* dataAttr = modules->getAttribute(ctx, env->getDataString());
             if (dataAttr && dataAttr != PROTO_NONE) {
                 const proto::ProtoSparseList* dict = dataAttr->asSparseList(ctx);

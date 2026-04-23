@@ -29,10 +29,21 @@ static const proto::ProtoObject* py_getLogger(
 
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     const proto::ProtoObject* mod = ctx->newObject(false);
-    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "basicConfig"),
+    mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "basicConfig"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_basicConfig));
-    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "getLogger"),
+    mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "getLogger"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_getLogger));
+    
+    // Standard logging levels
+    mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "CRITICAL"), ctx->fromInteger(50));
+    mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "FATAL"), ctx->fromInteger(50));
+    mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "ERROR"), ctx->fromInteger(40));
+    mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "WARNING"), ctx->fromInteger(30));
+    mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "WARN"), ctx->fromInteger(30));
+    mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "INFO"), ctx->fromInteger(20));
+    mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "DEBUG"), ctx->fromInteger(10));
+    mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "NOTSET"), ctx->fromInteger(0));
+
     return mod;
 }
 

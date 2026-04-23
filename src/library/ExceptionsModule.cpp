@@ -219,6 +219,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx,
     const proto::ProtoString* py_unicodeerror = PythonEnvironment::getInternedString(ctx, "UnicodeError");
     const proto::ProtoString* py_unicodeencodeerror = PythonEnvironment::getInternedString(ctx, "UnicodeEncodeError");
     const proto::ProtoString* py_unicodedecodeerror = PythonEnvironment::getInternedString(ctx, "UnicodeDecodeError");
+    const proto::ProtoString* py_notimplementederror = PythonEnvironment::getInternedString(ctx, "NotImplementedError");
 
     const proto::ProtoString* py_warning = PythonEnvironment::getInternedString(ctx, "Warning");
     const proto::ProtoString* py_userwarning = PythonEnvironment::getInternedString(ctx, "UserWarning");
@@ -257,6 +258,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx,
     const proto::ProtoObject* stopAsyncIterationType = make_exception_type(ctx, objectProto, typeProto, "StopAsyncIteration", exceptionType);
     const proto::ProtoObject* systemErrorType = make_exception_type(ctx, objectProto, typeProto, "SystemError", exceptionType);
     const proto::ProtoObject* runtimeErrorType = make_exception_type(ctx, objectProto, typeProto, "RuntimeError", exceptionType);
+    const proto::ProtoObject* notImplementedErrorType = make_exception_type(ctx, objectProto, typeProto, "NotImplementedError", runtimeErrorType);
     const proto::ProtoObject* osErrorType = make_exception_type(ctx, objectProto, typeProto, "OSError", exceptionType);
     const proto::ProtoObject* blockingIOErrorType = make_exception_type(ctx, objectProto, typeProto, "BlockingIOError", osErrorType);
     const proto::ProtoObject* fileNotFoundErrorType = make_exception_type(ctx, objectProto, typeProto, "FileNotFoundError", osErrorType);
@@ -302,6 +304,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx,
     mod = mod->setAttribute(ctx, py_recursionerror, recursionErrorType);
     mod = mod->setAttribute(ctx, py_zerodivisionerror, zeroDivisionErrorType);
     mod = mod->setAttribute(ctx, py_runtimeerror, runtimeErrorType);
+    mod = mod->setAttribute(ctx, py_notimplementederror, notImplementedErrorType);
     mod = mod->setAttribute(ctx, py_indexerror, indexErrorType);
     mod = mod->setAttribute(ctx, py_eoferror, eofErrorType);
     mod = mod->setAttribute(ctx, py_assertionerror, assertionErrorType);

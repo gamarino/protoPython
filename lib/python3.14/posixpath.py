@@ -123,12 +123,9 @@ def split(p):
 # pathname component; the root is everything before that.
 # It is always true that root + ext == p.
 
-# DEBUG: posixpath.py starting
-def _exit(code):
-    import os
-    os._exit(code)
 
 pass
+
 
 pass
 def splitext(p):

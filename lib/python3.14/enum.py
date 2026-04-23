@@ -311,7 +311,7 @@ class _proto_member:
                 # no other instances found, record this member in _member_names_
                 enum_class._member_names_.append(member_name)
 
-        EnumType._add_member_(EnumType, enum_class, member_name, enum_member)
+        EnumType._add_member_(enum_class, member_name, enum_member)
         try:
             # This may fail if value is not hashable. We can't add the value
             # to the map, and by-value lookups for this value will be
@@ -579,7 +579,7 @@ class EnumType(type):
             member._value_ = member_value
             
             # call _add_member_
-            EnumType._add_member_(metacls, enum_class, name, member)
+            EnumType._add_member_(enum_class, name, member)
             
             # also populate _value2member_map_
             # (aliases are already in _member_map_ via _add_member_)
@@ -984,7 +984,7 @@ class EnumType(type):
             use_args = True
         return member_new, save_new, use_args
 
-    def _add_member_(mcls, cls, name, member):
+    def _add_member_(cls, name, member):
         # _value_ structures are not updated
         if name in cls._member_map_:
             if cls._member_map_[name] is not member:

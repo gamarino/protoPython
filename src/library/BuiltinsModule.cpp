@@ -2706,17 +2706,104 @@ extern const proto::ProtoObject* runUserClassCall(proto::ProtoContext* ctx,
     const proto::ProtoList* args,
     const proto::ProtoSparseList* kwargs);
 
+const proto::ProtoObject* py_genericalias_new(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    if (positionalParameters->getSize(context) < 3) return PROTO_NONE;
+    const proto::ProtoObject* cls = positionalParameters->getAt(context, 0);
+    const proto::ProtoObject* origin = positionalParameters->getAt(context, 1);
+    const proto::ProtoObject* args = positionalParameters->getAt(context, 2);
+
+    const proto::ProtoObject* instance = cls->newChild(context, true);
+    if (get_env_diag()) fprintf(stderr, "DEBUG py_genericalias_new cls=%p origin=%p instance=%p\n", (void*)cls, (void*)origin, (void*)instance);
+    instance = instance->setAttribute(context, PythonEnvironment::getInternedString(context, "__origin__"), origin);
+    instance = instance->setAttribute(context, PythonEnvironment::getInternedString(context, "__args__"), args);
+    return instance;
+}
+
+const proto::ProtoObject* py_genericalias_repr(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    if (get_env_diag()) fprintf(stderr, "DEBUG py_genericalias_repr entered self=%p\n", (void*)self);
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::ProtoObject* origin = self->getAttribute(context, PythonEnvironment::getInternedString(context, "__origin__"));
+    const proto::ProtoObject* args = self->getAttribute(context, PythonEnvironment::getInternedString(context, "__args__"));
+    
+    std::string originRepr = env ? env->reprObject(context, origin) : "???";
+    std::string argsRepr = env ? env->reprObject(context, args) : "???";
+    
+    // CPython format: origin[args]
+    // If args is a tuple, repr(args) is (x, y). We want [x, y].
+    if (args && args->isTuple(context)) {
+        if (argsRepr.size() >= 2 && argsRepr.front() == '(' && argsRepr.back() == ')') {
+            argsRepr = "[" + argsRepr.substr(1, argsRepr.size() - 2) + "]";
+        }
+    } else {
+        argsRepr = "[" + argsRepr + "]";
+    }
+    
+    return context->fromUTF8String((originRepr + argsRepr).c_str());
+}
+
+const proto::ProtoObject* py_uniontype_new(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    if (positionalParameters->getSize(context) < 2) return PROTO_NONE;
+    const proto::ProtoObject* cls = positionalParameters->getAt(context, 0);
+    const proto::ProtoObject* args = positionalParameters->getAt(context, 1);
+
+    const proto::ProtoObject* instance = cls->newChild(context, true);
+    instance = instance->setAttribute(context, PythonEnvironment::getInternedString(context, "__args__"), args);
+    return instance;
+}
+
+const proto::ProtoObject* py_uniontype_repr(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::ProtoObject* args = self->getAttribute(context, PythonEnvironment::getInternedString(context, "__args__"));
+    if (!args || !args->isTuple(context)) return context->fromUTF8String("??? | ???");
+    
+    const proto::ProtoTuple* tup = args->asTuple(context);
+    std::string res;
+    for (size_t i = 0; i < tup->getSize(context); ++i) {
+        if (i > 0) res += " | ";
+        res += env ? env->reprObject(context, tup->getAt(context, i)) : "???";
+    }
+    return context->fromUTF8String(res.c_str());
+}
+
 const proto::ProtoObject* py_type_class_getitem(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
-    (void)parentLink;
-    (void)keywordParameters;
-    // For now, just return self to satisfy the requirement that types are subscriptable.
-    // In a full implementation, this would return a GenericAlias.
-    return self;
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (get_env_diag()) {
+        fprintf(stderr, "DEBUG py_type_class_getitem self=%p env=%p gaProto=%p\n", (void*)self, (void*)env, (void*)(env ? env->getGenericAliasProto() : nullptr));
+    }
+    if (!env || !env->getGenericAliasProto()) return self;
+    
+    if (positionalParameters->getSize(context) < 1) return self;
+    const proto::ProtoObject* args = positionalParameters->getAt(context, 0);
+    
+    const proto::ProtoList* gaArgs = context->newList()->appendLast(context, env->getGenericAliasProto())
+                                                      ->appendLast(context, self)
+                                                      ->appendLast(context, args);
+    return py_genericalias_new(context, nullptr, nullptr, gaArgs, nullptr);
 }
 
 const proto::ProtoObject* py_type_or(
@@ -2725,11 +2812,18 @@ const proto::ProtoObject* py_type_or(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
-    (void)parentLink;
-    (void)keywordParameters;
-    // For now, just return self to satisfy the requirement that types support |.
-    // In a full implementation, this would return a UnionType.
-    return self;
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!env || !env->getUnionTypeProto()) return self;
+    
+    if (positionalParameters->getSize(context) < 1) return self;
+    const proto::ProtoObject* other = positionalParameters->getAt(context, 0);
+    
+    // Create a tuple (self, other) for UnionType.__args__
+    const proto::ProtoTuple* args = context->newTuple({self, other});
+    
+    const proto::ProtoList* utArgs = context->newList()->appendLast(context, env->getUnionTypeProto())
+                                                      ->appendLast(context, args->asObject(context));
+    return py_uniontype_new(context, nullptr, nullptr, utArgs, nullptr);
 }
 
 namespace builtins {
@@ -3147,7 +3241,10 @@ static const proto::ProtoObject* resolveClassType(protoPython::PythonEnvironment
     const proto::ProtoObject* typeAttr = self->getAttribute(context, PythonEnvironment::getInternedString(context, "type"));
     const proto::ProtoObject* objectAttr = self->getAttribute(context, PythonEnvironment::getInternedString(context, "object"));
     const proto::ProtoObject* listAttr = self->getAttribute(context, PythonEnvironment::getInternedString(context, "list"));
-    if (get_env_diag()) fprintf(stderr, "DEBUG resolveClassType cls=%p self=%p listAttr=%p typeAttr=%p\n", (void*)cls, (void*)self, (void*)listAttr, (void*)typeAttr);
+    if (cls->isTuple(context) || cls->asList(context) || cls->isSet(context) || cls->asSparseList(context)) return cls;
+    if (cls->isInteger(context) || cls->isString(context) || cls->isFloat(context) || cls->isBoolean(context)) return cls;
+    if (cls == PROTO_NONE || cls == PROTO_TRUE || cls == PROTO_FALSE) return cls;
+
     const proto::ProtoObject* tupAttr = self->getAttribute(context, PythonEnvironment::getInternedString(context, "tuple"));
     const proto::ProtoObject* dictAttr = self->getAttribute(context, PythonEnvironment::getInternedString(context, "dict"));
     const proto::ProtoObject* strAttr = self->getAttribute(context, PythonEnvironment::getInternedString(context, "str"));
@@ -3202,11 +3299,18 @@ static bool checkInterfaceInstanceOf(proto::ProtoContext* context, const proto::
         }
         return false;
     }
+
+    protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(context);
+    if (env) {
+        const proto::ProtoObject* oldCls = cls;
+        cls = resolveClassType(env, env->getBuiltins(), context, cls);
+        if (get_env_diag() && oldCls != cls) {
+             fprintf(stderr, "DEBUG checkInterfaceInstanceOf resolved cls=%p to authoritative=%p\n", (void*)oldCls, (void*)cls);
+        }
+    }
+
     if (obj == cls) return true;
     
-    // V78: Explicit identity bridge for primitives where native prototype and Python prototype may diverge in pointer address
-    // but represent the same conceptual type.
-    protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(context);
     if (env) {
         if (obj->isString(context) && cls == env->getStrPrototype()) {
             // bytes objects store content in __data__ (a ProtoString) so isString() is true for them,
@@ -4946,6 +5050,24 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
 
     const_cast<proto::ProtoObject*>(typeProto)->setAttribute(ctx, orS, typeOr);
     const_cast<proto::ProtoObject*>(typeProto)->setAttribute(ctx, rorS, typeOr);
+
+    // Initialize GenericAlias prototype
+    const proto::ProtoObject* genericAliasProto = ctx->newObject(false);
+    if (objectProto) genericAliasProto = genericAliasProto->addParent(ctx, objectProto);
+    if (typeProto) genericAliasProto = genericAliasProto->setAttribute(ctx, py_class_local, typeProto);
+    genericAliasProto = genericAliasProto->setAttribute(ctx, py_name_local, PythonEnvironment::getInternedString(ctx, "GenericAlias")->asObject(ctx));
+    genericAliasProto = genericAliasProto->setAttribute(ctx, pEnv->getNewString(), ctx->fromMethod(nullptr, py_genericalias_new));
+    genericAliasProto = genericAliasProto->setAttribute(ctx, pEnv->getReprString(), ctx->fromMethod(nullptr, py_genericalias_repr));
+    pEnv->setGenericAliasProto(genericAliasProto);
+
+    // Initialize UnionType prototype
+    const proto::ProtoObject* unionTypeProto = ctx->newObject(false);
+    if (objectProto) unionTypeProto = unionTypeProto->addParent(ctx, objectProto);
+    if (typeProto) unionTypeProto = unionTypeProto->setAttribute(ctx, py_class_local, typeProto);
+    unionTypeProto = unionTypeProto->setAttribute(ctx, py_name_local, PythonEnvironment::getInternedString(ctx, "UnionType")->asObject(ctx));
+    unionTypeProto = unionTypeProto->setAttribute(ctx, pEnv->getNewString(), ctx->fromMethod(nullptr, py_uniontype_new));
+    unionTypeProto = unionTypeProto->setAttribute(ctx, pEnv->getReprString(), ctx->fromMethod(nullptr, py_uniontype_repr));
+    pEnv->setUnionTypeProto(unionTypeProto);
 
     return builtins;
 }

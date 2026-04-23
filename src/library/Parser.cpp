@@ -1882,7 +1882,13 @@ std::unique_ptr<ASTNode> Parser::parseMatch() {
         if (cur_.type == TokenType::Case) {
              advance(); // case
              // Match pattern can be complex, skip to colon
-             while (cur_.type != TokenType::Colon && cur_.type != TokenType::EndOfFile) advance();
+             int depth = 0;
+             while ((cur_.type != TokenType::Colon || depth > 0) && cur_.type != TokenType::EndOfFile) {
+                 if (cur_.type == TokenType::LParen || cur_.type == TokenType::LSquare || cur_.type == TokenType::LCurly) depth++;
+                 else if (cur_.type == TokenType::RParen || cur_.type == TokenType::RSquare || cur_.type == TokenType::RCurly) depth--;
+                 advance();
+             }
+
              if (!expect(TokenType::Colon)) return nullptr;
              auto s = parseSuite();
              if (!s) return nullptr;

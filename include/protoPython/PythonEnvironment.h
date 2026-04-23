@@ -245,6 +245,10 @@ public:
     const proto::ProtoString* getPathDunderS() const { return pathDunderS; }
     const proto::ProtoString* getFileDunderS() const { return fileDunderS; }
     const proto::ProtoString* getModulesS() const { return modulesS; }
+    const proto::ProtoObject* getGenericAliasProto() const { return genericAliasProto; }
+    void setGenericAliasProto(const proto::ProtoObject* p) { genericAliasProto = p; }
+    const proto::ProtoObject* getUnionTypeProto() const { return unionTypeProto; }
+    void setUnionTypeProto(const proto::ProtoObject* p) { unionTypeProto = p; }
 
     const proto::ProtoObject* getAttribute(proto::ProtoContext* ctx, const proto::ProtoObject* obj, const proto::ProtoString* name, bool raiseError = true);
     static const proto::ProtoObject* py_function_get(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs);
@@ -736,6 +740,8 @@ private:
     proto::ProtoSpace* space_;
     proto::ProtoContext* rootContext_;
     const proto::ProtoObject* rangeIteratorProto{nullptr};
+    const proto::ProtoObject* genericAliasProto{nullptr};
+    const proto::ProtoObject* unionTypeProto{nullptr};
 
     const proto::ProtoObject* objectPrototype;
     const proto::ProtoObject* typePrototype;
@@ -924,7 +930,9 @@ private:
     const proto::ProtoString* co_name{nullptr};
     const proto::ProtoString* co_names{nullptr};
     const proto::ProtoString* co_code{nullptr};
+    const proto::ProtoString* co_positions{nullptr};
     const proto::ProtoString* co_bytecode_native{nullptr};
+
     const proto::ProtoString* fn_meta_cache{nullptr};
     const proto::ProtoString* giNativeCallbackString{nullptr};
     const proto::ProtoString* sendString{nullptr};
