@@ -878,6 +878,15 @@ def _find_impl(cls, registry):
     return registry.get(match)
 
 # print("DEBUG: FUNCTOOLS _find_impl defined")
+def _is_valid_dispatch_type(cls):
+    # print(f"DEBUG: _is_valid_dispatch_type: cls={cls} type(cls)={type(cls)}")
+    if isinstance(cls, type):
+        return True
+    if isinstance(cls, UnionType):
+        return all(isinstance(arg, type) for arg in getattr(cls, '__args__', ()))
+    return False
+
+
 def singledispatch(func):
     """Single-dispatch generic function decorator.
 
@@ -919,11 +928,6 @@ def singledispatch(func):
             dispatch_cache[cls] = impl
         return impl
 
-    def _is_valid_dispatch_type(cls):
-        if isinstance(cls, type):
-            return True
-        return (isinstance(cls, UnionType) and
-                all(isinstance(arg, type) for arg in cls.__args__))
 
     def register(cls, func=None):
         """generic_func.register(cls, func) -> func
@@ -931,7 +935,7 @@ def singledispatch(func):
         Registers a new implementation for the given *cls* on a *generic_func*.
 
         """
-        nonlocal cache_token
+        nonlocal cache_token, registry, dispatch_cache
         if _is_valid_dispatch_type(cls):
             if func is None:
                 return lambda f: register(cls, f)
@@ -971,8 +975,8 @@ def singledispatch(func):
                         f"{cls!r} is not a class."
                     )
 
-        if isinstance(cls, UnionType):
-            for arg in cls.__args__:
+        if isinstance(cls, UnionType) and not isinstance(cls, type):
+            for arg in getattr(cls, '__args__', ()):
                 registry[arg] = func
         else:
             registry[cls] = func

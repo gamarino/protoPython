@@ -237,6 +237,16 @@ static const proto::ProtoObject* sys_getfilesystemencodeerrors(
     return PythonEnvironment::getInternedString(context, "surrogateescape")->asObject(context);
 }
 
+static const proto::ProtoObject* sys_is_remote_debug_enabled(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    (void)context; (void)self; (void)parentLink; (void)positionalParameters; (void)keywordParameters;
+    return PROTO_FALSE;
+}
+
 static const proto::ProtoObject* sys_get_cpu_count_config(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -322,6 +332,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "getfilesystemencoding"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_getfilesystemencoding));
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "getfilesystemencodeerrors"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_getfilesystemencodeerrors));
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_get_cpu_count_config"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_get_cpu_count_config));
+    sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "is_remote_debug_enabled"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_is_remote_debug_enabled));
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "intern"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_intern));
     const proto::ProtoObject* traceDefault = env && env->getObjectPrototype() ? env->getObjectPrototype()->newChild(ctx, false) : ctx->newObject(false);
     traceDefault = traceDefault->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__call__"),

@@ -108,7 +108,7 @@ protopyc_EXTERNAL_OBJECTS =
 src/compiler/protopyc: src/compiler/CMakeFiles/protopyc.dir/ProtopycMain.cpp.o
 src/compiler/protopyc: src/compiler/CMakeFiles/protopyc.dir/CppGenerator.cpp.o
 src/compiler/protopyc: src/compiler/CMakeFiles/protopyc.dir/build.make
-src/compiler/protopyc: src/library/libprotoPython.so.0.2.0
+src/compiler/protopyc: src/library/libprotoPython.so.1.0.0
 src/compiler/protopyc: protoCore/libprotoCore.so.1.1.0
 src/compiler/protopyc: src/compiler/CMakeFiles/protopyc.dir/link.txt
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/gamarino/Documentos/proyectos/protoPython/build-debug/CMakeFiles --progress-num=$(CMAKE_PROGRESS_3) "Linking CXX executable protopyc"

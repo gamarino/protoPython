@@ -1,1 +1,1 @@
-/usr/bin/c++ -g CMakeFiles/protopy.dir/main.cpp.o -o protopy  -Wl,-rpath,/home/gamarino/Documentos/proyectos/protoPython/build-debug/src/library:/home/gamarino/Documentos/proyectos/protoPython/build-debug/protoCore: ../library/libprotoPython.so.0.2.0 ../../protoCore/libprotoCore.so.1.1.0 
+/usr/bin/c++ -g CMakeFiles/protopy.dir/main.cpp.o -o protopy  -Wl,-rpath,/home/gamarino/Documentos/proyectos/protoPython/build-debug/src/library:/home/gamarino/Documentos/proyectos/protoPython/build-debug/protoCore: ../library/libprotoPython.so.1.0.0 ../../protoCore/libprotoCore.so.1.1.0 

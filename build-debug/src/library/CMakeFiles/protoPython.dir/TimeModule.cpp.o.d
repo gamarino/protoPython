@@ -211,13 +211,25 @@ src/library/CMakeFiles/protoPython.dir/TimeModule.cpp.o: \
  /usr/include/c++/13/thread /usr/include/c++/13/vector \
  /usr/include/c++/13/bits/stl_vector.h \
  /usr/include/c++/13/bits/stl_bvector.h \
- /usr/include/c++/13/bits/vector.tcc /usr/include/c++/13/chrono \
- /usr/include/c++/13/sstream /usr/include/c++/13/istream \
- /usr/include/c++/13/bits/istream.tcc \
- /usr/include/c++/13/bits/sstream.tcc /usr/include/c++/13/bits/stl_algo.h \
+ /usr/include/c++/13/bits/vector.tcc \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/PythonEnvironment.h \
+ /usr/include/c++/13/functional /usr/include/c++/13/bits/std_function.h \
+ /usr/include/c++/13/unordered_map \
+ /usr/include/c++/13/bits/unordered_map.h \
+ /usr/include/c++/13/bits/hashtable.h \
+ /usr/include/c++/13/bits/hashtable_policy.h \
+ /usr/include/c++/13/bits/enable_special_members.h \
+ /usr/include/c++/13/bits/node_handle.h \
+ /usr/include/c++/13/bits/erase_if.h /usr/include/c++/13/array \
+ /usr/include/c++/13/bits/stl_algo.h \
  /usr/include/c++/13/bits/algorithmfwd.h \
  /usr/include/c++/13/bits/stl_heap.h \
- /usr/include/c++/13/bits/uniform_int_dist.h \
+ /usr/include/c++/13/bits/uniform_int_dist.h /usr/include/c++/13/iostream \
+ /usr/include/c++/13/istream /usr/include/c++/13/bits/istream.tcc \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/Tokenizer.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/DiagUtils.h \
+ /usr/include/c++/13/chrono /usr/include/c++/13/sstream \
+ /usr/include/c++/13/bits/sstream.tcc \
  /usr/include/c++/13/bits/chrono_io.h /usr/include/c++/13/iomanip \
  /usr/include/c++/13/locale \
  /usr/include/c++/13/bits/locale_facets_nonio.h \
@@ -227,7 +239,5 @@ src/library/CMakeFiles/protoPython.dir/TimeModule.cpp.o: \
  /usr/include/c++/13/bits/locale_facets_nonio.tcc \
  /usr/include/c++/13/bits/locale_conv.h \
  /usr/include/c++/13/bits/quoted_string.h /usr/include/c++/13/format \
- /usr/include/c++/13/array /usr/include/c++/13/charconv \
- /usr/include/c++/13/optional \
- /usr/include/c++/13/bits/enable_special_members.h \
+ /usr/include/c++/13/charconv /usr/include/c++/13/optional \
  /usr/include/c++/13/span /usr/include/c++/13/variant

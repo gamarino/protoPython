@@ -25,6 +25,8 @@ from . import coroutines
 from . import events
 from . import exceptions
 from . import futures
+print(f"DEBUG: tasks.py: futures.Future={getattr(futures, 'Future', 'MISSING')}")
+print(f"DEBUG: tasks.py: futures._PyFuture={getattr(futures, '_PyFuture', 'MISSING')}")
 from . import queues
 from . import timeouts
 
@@ -32,6 +34,38 @@ from . import timeouts
 # This uses itertools.count() instead of a "+= 1" operation because the latter
 # is not thread safe. See bpo-11866 for a longer explanation.
 _task_name_counter = itertools.count(1).__next__
+
+
+async def sleep(delay, result=None):
+    """Coroutine that completes after a given time (in seconds)."""
+    if delay <= 0:
+        await __sleep0()
+        return result
+
+    if math.isnan(delay):
+        raise ValueError("Invalid delay: NaN (not a number)")
+
+    loop = events.get_running_loop()
+    future = loop.create_future()
+    h = loop.call_later(delay,
+                        futures._set_result_unless_cancelled,
+                        future, result)
+    try:
+        return await future
+    finally:
+        h.cancel()
+
+
+@types.coroutine
+def __sleep0():
+    """Skip one event loop run cycle.
+
+    This is a private helper for 'asyncio.sleep()', used
+    when the 'delay' is set to 0.  It uses a bare 'yield'
+    expression (which Task.__step knows how to handle)
+    instead of creating a Future object.
+    """
+    yield
 
 
 def current_task(loop=None):
@@ -672,36 +706,7 @@ def as_completed(fs, *, timeout=None):
     return _AsCompletedIterator(fs, timeout)
 
 
-@types.coroutine
-def __sleep0():
-    """Skip one event loop run cycle.
 
-    This is a private helper for 'asyncio.sleep()', used
-    when the 'delay' is set to 0.  It uses a bare 'yield'
-    expression (which Task.__step knows how to handle)
-    instead of creating a Future object.
-    """
-    yield
-
-
-async def sleep(delay, result=None):
-    """Coroutine that completes after a given time (in seconds)."""
-    if delay <= 0:
-        await __sleep0()
-        return result
-
-    if math.isnan(delay):
-        raise ValueError("Invalid delay: NaN (not a number)")
-
-    loop = events.get_running_loop()
-    future = loop.create_future()
-    h = loop.call_later(delay,
-                        futures._set_result_unless_cancelled,
-                        future, result)
-    try:
-        return await future
-    finally:
-        h.cancel()
 
 
 def ensure_future(coro_or_future, *, loop=None):

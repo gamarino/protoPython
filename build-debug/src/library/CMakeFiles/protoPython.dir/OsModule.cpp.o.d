@@ -212,6 +212,7 @@ src/library/CMakeFiles/protoPython.dir/OsModule.cpp.o: \
  /usr/include/c++/13/bits/stl_vector.h \
  /usr/include/c++/13/bits/stl_bvector.h \
  /usr/include/c++/13/bits/vector.tcc \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/DiagUtils.h \
  /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/PythonEnvironment.h \
  /usr/include/c++/13/functional /usr/include/c++/13/bits/std_function.h \
  /usr/include/c++/13/unordered_map \

@@ -299,9 +299,10 @@ class Future:
 
     __iter__ = __await__  # make compatible with 'yield from'.
 
+_PyFuture = Future
+
 
 # Needed for testing purposes.
-_PyFuture = Future
 
 
 def _get_loop(fut):

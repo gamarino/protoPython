@@ -1062,10 +1062,22 @@ static bool isEmbeddedValue(proto::ProtoContext* ctx, const proto::ProtoObject* 
     return obj->isInteger(ctx) || obj->isBoolean(ctx) || obj->isNone(ctx);
 }
 
+static const proto::ProtoObject* unwrapPrimitive(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
+    if (obj->isInteger(ctx) || obj->isDouble(ctx)) return obj;
+    protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(ctx);
+    if (env) {
+        const proto::ProtoObject* data = obj->getAttribute(ctx, env->getDataString());
+        if (data && (data->isInteger(ctx) || data->isDouble(ctx))) return data;
+    }
+    return obj;
+}
+
 static const proto::ProtoObject* binaryAdd(proto::ProtoContext* ctx,
     const proto::ProtoObject* a, const proto::ProtoObject* b) {
-    if ((a->isInteger(ctx) || a->isDouble(ctx)) && (b->isInteger(ctx) || b->isDouble(ctx))) {
-        return a->add(ctx, b);
+    const proto::ProtoObject* aa = unwrapPrimitive(ctx, a);
+    const proto::ProtoObject* bb = unwrapPrimitive(ctx, b);
+    if ((aa->isInteger(ctx) || aa->isDouble(ctx)) && (bb->isInteger(ctx) || bb->isDouble(ctx))) {
+        return aa->add(ctx, bb);
     }
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
 
@@ -1148,8 +1160,10 @@ static const proto::ProtoObject* binaryAdd(proto::ProtoContext* ctx,
 
 static const proto::ProtoObject* binarySubtract(proto::ProtoContext* ctx,
     const proto::ProtoObject* a, const proto::ProtoObject* b) {
-    if ((a->isInteger(ctx) || a->isDouble(ctx)) && (b->isInteger(ctx) || b->isDouble(ctx))) {
-        return a->subtract(ctx, b);
+    const proto::ProtoObject* aa = unwrapPrimitive(ctx, a);
+    const proto::ProtoObject* bb = unwrapPrimitive(ctx, b);
+    if ((aa->isInteger(ctx) || aa->isDouble(ctx)) && (bb->isInteger(ctx) || bb->isDouble(ctx))) {
+        return aa->subtract(ctx, bb);
     }
     const proto::ProtoObject* r = binaryOpDispatch(ctx, a, b, "__sub__", "__rsub__");
     return r ? r : PROTO_NONE;
@@ -1157,8 +1171,10 @@ static const proto::ProtoObject* binarySubtract(proto::ProtoContext* ctx,
 
 static const proto::ProtoObject* binaryMultiply(proto::ProtoContext* ctx,
     const proto::ProtoObject* a, const proto::ProtoObject* b) {
-    if ((a->isInteger(ctx) || a->isDouble(ctx)) && (b->isInteger(ctx) || b->isDouble(ctx))) {
-        return a->multiply(ctx, b);
+    const proto::ProtoObject* aa = unwrapPrimitive(ctx, a);
+    const proto::ProtoObject* bb = unwrapPrimitive(ctx, b);
+    if ((aa->isInteger(ctx) || aa->isDouble(ctx)) && (bb->isInteger(ctx) || bb->isDouble(ctx))) {
+        return aa->multiply(ctx, bb);
     }
     // String/bytes repetition: str * int or int * str (or bytes * int)
     const proto::ProtoObject* strObj = nullptr;
@@ -1242,28 +1258,32 @@ static const proto::ProtoObject* binaryUnaryNegative(proto::ProtoContext* ctx, c
 }
 static const proto::ProtoObject* binaryTrueDivide(proto::ProtoContext* ctx,
     const proto::ProtoObject* a, const proto::ProtoObject* b) {
-    if (a->isInteger(ctx) || a->isDouble(ctx)) {
-        if ((b->isInteger(ctx) && b->asLong(ctx) == 0) || (b->isDouble(ctx) && b->asDouble(ctx) == 0.0)) {
+    const proto::ProtoObject* aa = unwrapPrimitive(ctx, a);
+    const proto::ProtoObject* bb = unwrapPrimitive(ctx, b);
+    if (aa->isInteger(ctx) || aa->isDouble(ctx)) {
+        if ((bb->isInteger(ctx) && bb->asLong(ctx) == 0) || (bb->isDouble(ctx) && bb->asDouble(ctx) == 0.0)) {
             PythonEnvironment::fromContext(ctx)->raiseZeroDivisionError(ctx);
             return PROTO_NONE;
         }
     }
-    if ((a->isInteger(ctx) || a->isDouble(ctx)) && (b->isInteger(ctx) || b->isDouble(ctx))) {
-        return a->divide(ctx, b);
+    if ((aa->isInteger(ctx) || aa->isDouble(ctx)) && (bb->isInteger(ctx) || bb->isDouble(ctx))) {
+        return aa->divide(ctx, bb);
     }
     return PROTO_NONE;
 }
 
 static const proto::ProtoObject* binaryModulo(proto::ProtoContext* ctx,
     const proto::ProtoObject* a, const proto::ProtoObject* b) {
-    if (a->isInteger(ctx) || a->isDouble(ctx)) {
-        if ((b->isInteger(ctx) && b->asLong(ctx) == 0) || (b->isDouble(ctx) && b->asDouble(ctx) == 0.0)) {
+    const proto::ProtoObject* aa = unwrapPrimitive(ctx, a);
+    const proto::ProtoObject* bb = unwrapPrimitive(ctx, b);
+    if (aa->isInteger(ctx) || aa->isDouble(ctx)) {
+        if ((bb->isInteger(ctx) && bb->asLong(ctx) == 0) || (bb->isDouble(ctx) && bb->asDouble(ctx) == 0.0)) {
             PythonEnvironment::fromContext(ctx)->raiseZeroDivisionError(ctx);
             return PROTO_NONE;
         }
     }
-    if ((a->isInteger(ctx) || a->isDouble(ctx)) && (b->isInteger(ctx) || b->isDouble(ctx))) {
-        return a->modulo(ctx, b);
+    if ((aa->isInteger(ctx) || aa->isDouble(ctx)) && (bb->isInteger(ctx) || bb->isDouble(ctx))) {
+        return aa->modulo(ctx, bb);
     }
     if (a->isString(ctx)) {
         // Delegate to str.__mod__ via the Python env attribute lookup (respects strPrototype chain).
@@ -1280,10 +1300,12 @@ static const proto::ProtoObject* binaryModulo(proto::ProtoContext* ctx,
 
 static const proto::ProtoObject* binaryPower(proto::ProtoContext* ctx,
     const proto::ProtoObject* a, const proto::ProtoObject* b) {
-    if ((a->isInteger(ctx) || a->isDouble(ctx)) && (b->isInteger(ctx) || b->isDouble(ctx))) {
-        if (a->isInteger(ctx) && b->isInteger(ctx)) {
-            long long base = a->asLong(ctx);
-            long long exp = b->asLong(ctx);
+    const proto::ProtoObject* aa_p = unwrapPrimitive(ctx, a);
+    const proto::ProtoObject* bb_p = unwrapPrimitive(ctx, b);
+    if ((aa_p->isInteger(ctx) || aa_p->isDouble(ctx)) && (bb_p->isInteger(ctx) || bb_p->isDouble(ctx))) {
+        if (aa_p->isInteger(ctx) && bb_p->isInteger(ctx)) {
+            long long base = aa_p->asLong(ctx);
+            long long exp = bb_p->asLong(ctx);
             if (exp < 0) {
                 double r = std::pow(static_cast<double>(base), static_cast<double>(exp));
                 return ctx->fromDouble(r);
@@ -1292,8 +1314,8 @@ static const proto::ProtoObject* binaryPower(proto::ProtoContext* ctx,
             for (long long i = 0; i < exp; ++i) result *= base;
             return ctx->fromInteger(result);
         }
-        double aa = a->isDouble(ctx) ? a->asDouble(ctx) : static_cast<double>(a->asLong(ctx));
-        double bb = b->isDouble(ctx) ? b->asDouble(ctx) : static_cast<double>(b->asLong(ctx));
+        double aa = aa_p->isDouble(ctx) ? aa_p->asDouble(ctx) : static_cast<double>(aa_p->asLong(ctx));
+        double bb = bb_p->isDouble(ctx) ? bb_p->asDouble(ctx) : static_cast<double>(bb_p->asLong(ctx));
         return ctx->fromDouble(std::pow(aa, bb));
     }
     return PROTO_NONE;
@@ -1301,18 +1323,20 @@ static const proto::ProtoObject* binaryPower(proto::ProtoContext* ctx,
 
 static const proto::ProtoObject* binaryFloorDivide(proto::ProtoContext* ctx,
     const proto::ProtoObject* a, const proto::ProtoObject* b) {
-    if (a->isInteger(ctx) || a->isDouble(ctx)) {
-        if ((b->isInteger(ctx) && b->asLong(ctx) == 0) || (b->isDouble(ctx) && b->asDouble(ctx) == 0.0)) {
+    const proto::ProtoObject* aa_p = unwrapPrimitive(ctx, a);
+    const proto::ProtoObject* bb_p = unwrapPrimitive(ctx, b);
+    if (aa_p->isInteger(ctx) || aa_p->isDouble(ctx)) {
+        if ((bb_p->isInteger(ctx) && bb_p->asLong(ctx) == 0) || (bb_p->isDouble(ctx) && bb_p->asDouble(ctx) == 0.0)) {
             PythonEnvironment::fromContext(ctx)->raiseZeroDivisionError(ctx);
             return PROTO_NONE;
         }
     }
-    if ((a->isInteger(ctx) || a->isDouble(ctx)) && (b->isInteger(ctx) || b->isDouble(ctx))) {
-        if (a->isInteger(ctx) && b->isInteger(ctx)) {
-            return a->divide(ctx, b); // Note: Integer division natively is floor division in Python. But protoCore division matches Python's floor division semantics natively!
+    if ((aa_p->isInteger(ctx) || aa_p->isDouble(ctx)) && (bb_p->isInteger(ctx) || bb_p->isDouble(ctx))) {
+        if (aa_p->isInteger(ctx) && bb_p->isInteger(ctx)) {
+            return aa_p->divide(ctx, bb_p); 
         }
-        double aa = a->isDouble(ctx) ? a->asDouble(ctx) : static_cast<double>(a->asLong(ctx));
-        double bb = b->isDouble(ctx) ? b->asDouble(ctx) : static_cast<double>(b->asLong(ctx));
+        double aa = aa_p->isDouble(ctx) ? aa_p->asDouble(ctx) : static_cast<double>(aa_p->asLong(ctx));
+        double bb = bb_p->isDouble(ctx) ? bb_p->asDouble(ctx) : static_cast<double>(bb_p->asLong(ctx));
         return ctx->fromInteger(static_cast<long long>(std::floor(aa / bb)));
     }
     return PROTO_NONE;

@@ -212,6 +212,7 @@ src/library/CMakeFiles/protoPython.dir/ExecutionEngine.cpp.o: \
  /usr/include/c++/13/bits/stl_vector.h \
  /usr/include/c++/13/bits/stl_bvector.h \
  /usr/include/c++/13/bits/vector.tcc \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/DiagUtils.h \
  /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/Compiler.h \
  /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/Parser.h \
  /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/Tokenizer.h \
@@ -235,8 +236,6 @@ src/library/CMakeFiles/protoPython.dir/ExecutionEngine.cpp.o: \
  /usr/include/c++/13/iostream /usr/include/c++/13/istream \
  /usr/include/c++/13/bits/istream.tcc \
  /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/MemoryManager.hpp \
- /home/gamarino/Documentos/proyectos/protoCore/headers/proto_internal.h \
- /home/gamarino/Documentos/proyectos/protoCore/headers/protoCore.h \
  /usr/include/c++/13/algorithm /usr/include/c++/13/bits/ranges_algo.h \
  /usr/include/c++/13/pstl/glue_algorithm_defs.h /usr/include/c++/13/cmath \
  /usr/include/math.h /usr/include/x86_64-linux-gnu/bits/math-vector.h \

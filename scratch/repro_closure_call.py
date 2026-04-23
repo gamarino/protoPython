@@ -1,10 +1,14 @@
-def callback(*args, **kwargs):
-    print(f"callback: {args}, {kwargs}")
-
-def outer(cb, *args, **kwargs):
-    def inner(x, y, z):
-        cb(*args, **kwargs)
+def outer():
+    def inner(*args, **kwargs):
+        print(f"inner: kwargs id={id(kwargs)}, type(kwargs) id={id(type(kwargs))}")
+        def callback():
+            pass
+        return callback
     return inner
 
-f = outer(callback, 1, 2, a=3)
-f(None, None, None)
+f = outer()
+cb = f(1, 2)
+cb()
+
+print(f"main: dict id={id(dict)}")
+print(f"main: dictPrototype id={id(type({}))}")

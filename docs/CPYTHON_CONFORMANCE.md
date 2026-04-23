@@ -61,22 +61,26 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 
 | Category | Total | Tested | Passed | Notes |
 | :--- | :--- | :--- | :--- | :--- |
-| **Essential (CPython)** | 6 | 2 | 2 | `test_grammar`, `test_base64` pass; 4 unblocked |
-| **Important (CPython)** | 6 | 1 | 0 | All unblocked by `test.support`; `datetime` testing in progress |
+| **Essential (CPython)** | 6 | 2 | 2 | `test_grammar`, `test_base64` pass; `random` fixed (V106) |
+| **Important (CPython)** | 6 | 1 | 0 | `datetime` testing in progress; `random` unblocked (V106) |
 | **Necessary (custom)** | 4 | 4 | 4 | `test_decorator`, `test_abc`, `test_contextlib`, `test_dataclasses` pass |
-| **Bootstrap** | 6 | 6 | 6 | `importlib`, `inspect`, `sysconfig`, `os.environ`, `test.support`, `annotationlib` work |
+| **Bootstrap** | 7 | 7 | 7 | `importlib`, `inspect`, `sysconfig`, `os.environ`, `test.support`, `enum`, `shutil` work |
 | **Low Priority** | 4 | 0 | 0 | Out of scope for v1.0 |
 
 **Conformity Suite (internal, 2026-04-15)**: 7/9 tests pass. Failures are pre-existing: `int(float)` conversion and `set(iterable)` constructor.
 
 **Next milestone**: Implement `_datetime` C extension to enable `test_datetime.py`.
 
+### V107 Changes (2026-04-22)
+- **Native Type Subclassing Support**: Implemented proper subclassing for `int` and `float` by allowing `newChild` instantiation and `__data__` attribute storage.
+- **Arithmetic Dispatch Hardening**: Updated the execution engine to automatically unwrap primitive values from subclass instances, enabling native performance for `IntEnum` and other native-backed subclasses.
+- **Enum Bootstrap Resolved**: Fixed the critical `AttributeError` in `enum.py` initialization. `EnumType` now correctly processes subclassed instances, unblocking the entire standard library bootstrap (including `shutil`).
+
 ### V106 Changes (2026-04-22)
-- **PEP 560 (GenericAlias) & PEP 604 (UnionType) Support**: Implemented native stubs for `__class_getitem__`, `__or__`, and `__ror__` on core prototypes (`type`, `list`, `dict`, etc.). This unblocks subscripted types (e.g., `list[int]`) and union types (e.g., `int | str`) used during standard library bootstrap.
-- **`annotationlib` and `test.support` unblocked**: Resolved a series of cascading failures in `types.py`, `enum.py`, and `ast.py` that previously blocked these modules.
-- **`_ast` Module Hardening**: Fixed AST node types to be callable (classes), enabling instantiation of nodes like `ast.Add()`.
-- **Attribute Resolution Robustness**: Fixed `ExecutionEngine` to properly distinguish between missing dunder methods and successful returns of `None`, and suppressed spurious `AttributeError` when searching for `__call__` during generic dispatch.
-- **Prototype Name Integrity**: Explicitly synchronized `__name__` and `__qualname__` for all core prototypes in `PythonEnvironment.cpp` to ensure consistent type reporting (e.g., `int.__name__ == "int"`).
+- **PEP 560 (GenericAlias) & PEP 604 (UnionType) Support**: Implemented native stubs for `__class_getitem__`, `__or__`, and `__ror__` on core prototypes (`type`, `list`, `dict`, etc.).
+- **MRO Identity Resolution Fix**: Switched `areSameClasses` to use pointer identity instead of name-based comparison. This resolved a critical bug where `random.Random` was shadowed by `_random.Random` during MRO construction, fixing the `random` module.
+- **`annotationlib` and `test.support` unblocked**: Resolved cascading failures in `types.py`, `enum.py`, and `ast.py`.
+- **`test_base64.py` passes**: Verified 39/39 tests pass.
 
 ### V105 Changes (2026-04-22)
 - **Prototype Identity Resolution stabilized.** Resolved the persistent fragmentation of core Python prototypes during VM bootstrap.

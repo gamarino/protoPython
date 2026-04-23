@@ -235,6 +235,7 @@ src/library/CMakeFiles/protoPython.dir/Compiler.cpp.o: \
  /usr/include/c++/13/bits/algorithmfwd.h \
  /usr/include/c++/13/bits/stl_heap.h \
  /usr/include/c++/13/bits/uniform_int_dist.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/DiagUtils.h \
  /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/PythonEnvironment.h \
  /usr/include/c++/13/iostream /usr/include/c++/13/istream \
  /usr/include/c++/13/bits/istream.tcc

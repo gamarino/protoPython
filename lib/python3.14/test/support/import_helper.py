@@ -167,6 +167,7 @@ def import_fresh_module(name, fresh=(), blocked=(), *,
         fresh = list(fresh)
         blocked = list(blocked)
         names = {name, *fresh, *blocked}
+        print(f"DEBUG: fresh={fresh} blocked={blocked} name={name}")
         orig_modules = _save_and_remove_modules(names)
         for modname in blocked:
             sys.modules[modname] = None

@@ -226,4 +226,5 @@ src/library/CMakeFiles/protoPython.dir/ExceptionsModule.cpp.o: \
  /usr/include/c++/13/bits/uniform_int_dist.h /usr/include/c++/13/iostream \
  /usr/include/c++/13/istream /usr/include/c++/13/bits/istream.tcc \
  /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/Tokenizer.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/DiagUtils.h \
  /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/ExceptionsModule.h

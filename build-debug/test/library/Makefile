@@ -289,6 +289,20 @@ test_hpy_context/fast:
 	cd /home/gamarino/Documentos/proyectos/protoPython/build-debug && $(MAKE) $(MAKESILENT) -f test/library/CMakeFiles/test_hpy_context.dir/build.make test/library/CMakeFiles/test_hpy_context.dir/build
 .PHONY : test_hpy_context/fast
 
+# Convenience name for target.
+test/library/CMakeFiles/test_compiler.dir/rule:
+	cd /home/gamarino/Documentos/proyectos/protoPython/build-debug && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test/library/CMakeFiles/test_compiler.dir/rule
+.PHONY : test/library/CMakeFiles/test_compiler.dir/rule
+
+# Convenience name for target.
+test_compiler: test/library/CMakeFiles/test_compiler.dir/rule
+.PHONY : test_compiler
+
+# fast build rule for target.
+test_compiler/fast:
+	cd /home/gamarino/Documentos/proyectos/protoPython/build-debug && $(MAKE) $(MAKESILENT) -f test/library/CMakeFiles/test_compiler.dir/build.make test/library/CMakeFiles/test_compiler.dir/build
+.PHONY : test_compiler/fast
+
 TestBasicBlockAnalysis.o: TestBasicBlockAnalysis.cpp.o
 .PHONY : TestBasicBlockAnalysis.o
 
@@ -312,6 +326,30 @@ TestBasicBlockAnalysis.s: TestBasicBlockAnalysis.cpp.s
 TestBasicBlockAnalysis.cpp.s:
 	cd /home/gamarino/Documentos/proyectos/protoPython/build-debug && $(MAKE) $(MAKESILENT) -f test/library/CMakeFiles/test_basic_block_analysis.dir/build.make test/library/CMakeFiles/test_basic_block_analysis.dir/TestBasicBlockAnalysis.cpp.s
 .PHONY : TestBasicBlockAnalysis.cpp.s
+
+TestCompiler.o: TestCompiler.cpp.o
+.PHONY : TestCompiler.o
+
+# target to build an object file
+TestCompiler.cpp.o:
+	cd /home/gamarino/Documentos/proyectos/protoPython/build-debug && $(MAKE) $(MAKESILENT) -f test/library/CMakeFiles/test_compiler.dir/build.make test/library/CMakeFiles/test_compiler.dir/TestCompiler.cpp.o
+.PHONY : TestCompiler.cpp.o
+
+TestCompiler.i: TestCompiler.cpp.i
+.PHONY : TestCompiler.i
+
+# target to preprocess a source file
+TestCompiler.cpp.i:
+	cd /home/gamarino/Documentos/proyectos/protoPython/build-debug && $(MAKE) $(MAKESILENT) -f test/library/CMakeFiles/test_compiler.dir/build.make test/library/CMakeFiles/test_compiler.dir/TestCompiler.cpp.i
+.PHONY : TestCompiler.cpp.i
+
+TestCompiler.s: TestCompiler.cpp.s
+.PHONY : TestCompiler.s
+
+# target to generate assembly for a file
+TestCompiler.cpp.s:
+	cd /home/gamarino/Documentos/proyectos/protoPython/build-debug && $(MAKE) $(MAKESILENT) -f test/library/CMakeFiles/test_compiler.dir/build.make test/library/CMakeFiles/test_compiler.dir/TestCompiler.cpp.s
+.PHONY : TestCompiler.cpp.s
 
 TestExecutionEngine.o: TestExecutionEngine.cpp.o
 .PHONY : TestExecutionEngine.o
@@ -473,6 +511,7 @@ help:
 	@echo "... rebuild_cache"
 	@echo "... test"
 	@echo "... test_basic_block_analysis"
+	@echo "... test_compiler"
 	@echo "... test_execution_engine"
 	@echo "... test_foundation"
 	@echo "... test_hpy_context"
@@ -482,6 +521,9 @@ help:
 	@echo "... TestBasicBlockAnalysis.o"
 	@echo "... TestBasicBlockAnalysis.i"
 	@echo "... TestBasicBlockAnalysis.s"
+	@echo "... TestCompiler.o"
+	@echo "... TestCompiler.i"
+	@echo "... TestCompiler.s"
 	@echo "... TestExecutionEngine.o"
 	@echo "... TestExecutionEngine.i"
 	@echo "... TestExecutionEngine.s"

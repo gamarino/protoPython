@@ -82,6 +82,7 @@
 /home/gamarino/Documentos/proyectos/protoPython/build-debug/test/library/CMakeFiles/test_threading_strategy.dir
 /home/gamarino/Documentos/proyectos/protoPython/build-debug/test/library/CMakeFiles/test_basic_block_analysis.dir
 /home/gamarino/Documentos/proyectos/protoPython/build-debug/test/library/CMakeFiles/test_hpy_context.dir
+/home/gamarino/Documentos/proyectos/protoPython/build-debug/test/library/CMakeFiles/test_compiler.dir
 /home/gamarino/Documentos/proyectos/protoPython/build-debug/test/library/CMakeFiles/package.dir
 /home/gamarino/Documentos/proyectos/protoPython/build-debug/test/library/CMakeFiles/package_source.dir
 /home/gamarino/Documentos/proyectos/protoPython/build-debug/test/library/CMakeFiles/test.dir

@@ -14,3 +14,5 @@ add_test([=[test_basic_block_analysis]=] "/home/gamarino/Documentos/proyectos/pr
 set_tests_properties([=[test_basic_block_analysis]=] PROPERTIES  _BACKTRACE_TRIPLES "/home/gamarino/Documentos/proyectos/protoPython/test/library/CMakeLists.txt;28;add_test;/home/gamarino/Documentos/proyectos/protoPython/test/library/CMakeLists.txt;0;")
 add_test([=[test_hpy_context]=] "/home/gamarino/Documentos/proyectos/protoPython/build-debug/test/library/test_hpy_context")
 set_tests_properties([=[test_hpy_context]=] PROPERTIES  _BACKTRACE_TRIPLES "/home/gamarino/Documentos/proyectos/protoPython/test/library/CMakeLists.txt;33;add_test;/home/gamarino/Documentos/proyectos/protoPython/test/library/CMakeLists.txt;0;")
+add_test([=[test_compiler]=] "/home/gamarino/Documentos/proyectos/protoPython/build-debug/test/library/test_compiler")
+set_tests_properties([=[test_compiler]=] PROPERTIES  TIMEOUT "60" _BACKTRACE_TRIPLES "/home/gamarino/Documentos/proyectos/protoPython/test/library/CMakeLists.txt;39;add_test;/home/gamarino/Documentos/proyectos/protoPython/test/library/CMakeLists.txt;0;")

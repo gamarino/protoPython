@@ -212,6 +212,7 @@ src/library/CMakeFiles/protoPython.dir/BuiltinsModule.cpp.o: \
  /usr/include/c++/13/bits/stl_vector.h \
  /usr/include/c++/13/bits/stl_bvector.h \
  /usr/include/c++/13/bits/vector.tcc \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/DiagUtils.h \
  /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/PythonEnvironment.h \
  /usr/include/c++/13/functional /usr/include/c++/13/bits/std_function.h \
  /usr/include/c++/13/unordered_map \
@@ -234,10 +235,8 @@ src/library/CMakeFiles/protoPython.dir/BuiltinsModule.cpp.o: \
  /usr/include/c++/13/bits/stl_multimap.h \
  /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/Compiler.h \
  /usr/include/c++/13/unordered_set \
- /usr/include/c++/13/bits/unordered_set.h \
- /home/gamarino/Documentos/proyectos/protoCore/headers/proto_internal.h \
- /home/gamarino/Documentos/proyectos/protoCore/headers/protoCore.h \
- /usr/include/c++/13/algorithm /usr/include/c++/13/bits/ranges_algo.h \
+ /usr/include/c++/13/bits/unordered_set.h /usr/include/c++/13/algorithm \
+ /usr/include/c++/13/bits/ranges_algo.h \
  /usr/include/c++/13/pstl/glue_algorithm_defs.h /usr/include/c++/13/cmath \
  /usr/include/math.h /usr/include/x86_64-linux-gnu/bits/math-vector.h \
  /usr/include/x86_64-linux-gnu/bits/libm-simd-decl-stubs.h \

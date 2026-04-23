@@ -1,22 +1,16 @@
+from __future__ import annotations
 """Introspection utils for tasks call graphs."""
 
 import dataclasses
 import io
 import sys
+from typing import Any
 import types
 
 from . import events
 from . import futures
 from . import tasks
 
-import asyncio
-print(f"DEBUG: graph.py: futures={futures}")
-print(f"DEBUG: graph.py: hasattr(futures, 'Future')={hasattr(futures, 'Future')}")
-print(f"DEBUG: graph.py: asyncio={asyncio}")
-try:
-    print(f"DEBUG: graph.py: asyncio.Future={asyncio.Future}")
-except AttributeError as e:
-    print(f"DEBUG: graph.py: asyncio.Future error={e}")
 
 __all__ = (
     'capture_call_graph',
@@ -26,31 +20,24 @@ __all__ = (
     'FutureCallGraph',
 )
 
-# Sadly, we can't re-use the traceback module's datastructures as those
-# are tailored for error reporting, whereas we need to represent an
-# async call graph.
-#
-# Going with pretty verbose names as we'd like to export them to the
-# top level asyncio namespace, and want to avoid future name clashes.
 
-
-@dataclasses.dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True)
 class FrameCallGraphEntry:
     frame: types.FrameType
 
 
-@dataclasses.dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True)
 class FutureCallGraph:
-    future: futures.Future
-    call_stack: tuple["FrameCallGraphEntry", ...]
-    awaited_by: tuple["FutureCallGraph", ...]
+    future: Any
+    call_stack: tuple
+    awaited_by: tuple
 
 
 def _build_graph_for_future(
-    future: futures.Future,
+    future,
     *,
     limit: int | None = None,
-) -> FutureCallGraph:
+):
     if not isinstance(future, futures.Future):
         raise TypeError(
             f"{future!r} object does not appear to be compatible "
@@ -61,8 +48,8 @@ def _build_graph_for_future(
     if get_coro := getattr(future, 'get_coro', None):
         coro = get_coro() if limit != 0 else None
 
-    st: list[FrameCallGraphEntry] = []
-    awaited_by: list[FutureCallGraph] = []
+    st = []
+    awaited_by = []
 
     while coro is not None:
         if hasattr(coro, 'cr_await'):

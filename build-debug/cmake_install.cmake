@@ -94,7 +94,7 @@ endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
   foreach(file
-      "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/lib/libprotoPython.so.0.2.0"
+      "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/lib/libprotoPython.so.1.0.0"
       "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/lib/libprotoPython.so.0"
       )
     if(EXISTS "${file}" AND
@@ -105,11 +105,11 @@ if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT
     endif()
   endforeach()
   file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib" TYPE SHARED_LIBRARY FILES
-    "/home/gamarino/Documentos/proyectos/protoPython/build-debug/src/library/libprotoPython.so.0.2.0"
+    "/home/gamarino/Documentos/proyectos/protoPython/build-debug/src/library/libprotoPython.so.1.0.0"
     "/home/gamarino/Documentos/proyectos/protoPython/build-debug/src/library/libprotoPython.so.0"
     )
   foreach(file
-      "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/lib/libprotoPython.so.0.2.0"
+      "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/lib/libprotoPython.so.1.0.0"
       "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/lib/libprotoPython.so.0"
       )
     if(EXISTS "${file}" AND

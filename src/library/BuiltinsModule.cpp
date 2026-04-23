@@ -2573,35 +2573,7 @@ static const proto::ProtoObject* py_delattr(
 }
 
 static bool areSameClasses(proto::ProtoContext* context, const proto::ProtoObject* c1, const proto::ProtoObject* c2) {
-    if (c1 == c2) return true;
-    if (!c1 || !c2) return false;
-    
-    PythonEnvironment* env = PythonEnvironment::fromContext(context);
-    const proto::ProtoString* nS = PythonEnvironment::getInternedString(context, "__name__");
-    const proto::ProtoString* mS = PythonEnvironment::getInternedString(context, "__module__");
-    const proto::ProtoString* mroS = PythonEnvironment::getInternedString(context, "__mro__");
-
-    const proto::ProtoObject* n1O = c1->proto::ProtoObject::getAttribute(context, nS);
-    const proto::ProtoObject* n2O = c2->proto::ProtoObject::getAttribute(context, nS);
-    
-    if (n1O && n2O && n1O->isString(context) && n2O->isString(context)) {
-        std::string s1, s2;
-        n1O->asString(context)->toUTF8String(context, s1);
-        n2O->asString(context)->toUTF8String(context, s2);
-        if (s1 == s2 && !s1.empty()) {
-            const proto::ProtoObject* m1O = c1->proto::ProtoObject::getAttribute(context, mS);
-            const proto::ProtoObject* m2O = c2->proto::ProtoObject::getAttribute(context, mS);
-            if (m1O && m2O && m1O->isString(context) && m2O->isString(context)) {
-                std::string ms1, ms2;
-                m1O->asString(context)->toUTF8String(context, ms1);
-                m2O->asString(context)->toUTF8String(context, ms2);
-                if (ms1 == ms2) return true;
-            } else {
-                return true; // Match by name only if module is missing
-            }
-        }
-    }
-    return false;
+    return c1 == c2;
 }
 
 static const proto::ProtoList* computeC3MRO(proto::ProtoContext* context, const proto::ProtoObject* cls, const proto::ProtoObject* basesObj) {

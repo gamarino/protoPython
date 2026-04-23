@@ -664,24 +664,46 @@ static const proto::ProtoObject* py_object_reduce(
 }
 
 static const proto::ProtoObject* py_float_call(
-    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    if (!posArgs || posArgs->getSize(ctx) <= 1) return ctx->fromDouble(0.0);
-    const proto::ProtoObject* x = posArgs->getAt(ctx, 1);
-    if (x->isInteger(ctx)) return ctx->fromDouble(static_cast<double>(x->asLong(ctx)));
-    if (x->isDouble(ctx)) return x;
-    if (x->isString(ctx)) {
-        std::string s;
-        x->asString(ctx)->toUTF8String(ctx, s);
-        try {
-            return ctx->fromDouble(std::stod(s));
-        } catch (...) {
+    const proto::ProtoObject* targetCls = posArgs && posArgs->getSize(ctx) > 0 ? posArgs->getAt(ctx, 0) : self;
+    const proto::ProtoObject* x = nullptr;
+    if (!posArgs || posArgs->getSize(ctx) <= 1) {
+        x = ctx->fromDouble(0.0);
+    } else {
+        const proto::ProtoObject* val = posArgs->getAt(ctx, 1);
+        if (val->isInteger(ctx)) x = ctx->fromDouble(static_cast<double>(val->asLong(ctx)));
+        else if (val->isDouble(ctx)) x = val;
+        else if (val->isString(ctx)) {
+            std::string s;
+            val->asString(ctx)->toUTF8String(ctx, s);
+            try {
+                x = ctx->fromDouble(std::stod(s));
+            } catch (...) {
+                PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+                if (env) env->raiseValueError(ctx, PythonEnvironment::getInternedString(ctx, ("invalid literal for float(): " + s).c_str())->asObject(ctx));
+                return PROTO_NONE;
+            }
+        } else {
             PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-            if (env) env->raiseValueError(ctx, PythonEnvironment::getInternedString(ctx, ("invalid literal for float(): " + s).c_str())->asObject(ctx));
-            return PROTO_NONE;
+            if (env) env->raiseTypeError(ctx, "float() argument must be a string or a number");
+            return nullptr;
         }
     }
-    return PROTO_NONE;
+
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!targetCls || (env && targetCls == env->getFloatPrototype())) {
+        return x;
+    }
+
+    // Subclass instantiation
+    proto::ProtoObject* instance = const_cast<proto::ProtoObject*>(targetCls->newChild(ctx, true));
+    const proto::ProtoString* dataName = env ? env->getDataString() : PythonEnvironment::getInternalString(ctx, "__data__");
+    instance->setAttribute(ctx, dataName, x);
+    if (env) {
+        instance->setAttribute(ctx, env->getClassString(), targetCls);
+    }
+    return instance;
 }
 
 static const proto::ProtoObject* py_float_is_integer(
@@ -693,8 +715,15 @@ static const proto::ProtoObject* py_float_is_integer(
     (void)parentLink;
     (void)positionalParameters;
     (void)keywordParameters;
-    if (!self->isDouble(context)) return PROTO_FALSE;
-    double d = self->asDouble(context);
+    double d = 0.0;
+    if (self->isDouble(context)) {
+        d = self->asDouble(context);
+    } else {
+        PythonEnvironment* env = PythonEnvironment::fromContext(context);
+        const proto::ProtoObject* data = self->getAttribute(context, env ? env->getDataString() : PythonEnvironment::getInternalString(context, "__data__"));
+        if (data && data->isDouble(context)) d = data->asDouble(context);
+        else return PROTO_FALSE;
+    }
     return (d == std::floor(d) && d >= -9007199254740992.0 && d <= 9007199254740992.0) ? PROTO_TRUE : PROTO_FALSE;
 }
 
@@ -707,8 +736,15 @@ static const proto::ProtoObject* py_float_as_integer_ratio(
     (void)parentLink;
     (void)positionalParameters;
     (void)keywordParameters;
-    if (!self->isDouble(context)) return PROTO_NONE;
-    double d = self->asDouble(context);
+    double d = 0.0;
+    if (self->isDouble(context)) {
+        d = self->asDouble(context);
+    } else {
+        PythonEnvironment* env = PythonEnvironment::fromContext(context);
+        const proto::ProtoObject* data = self->getAttribute(context, env ? env->getDataString() : PythonEnvironment::getInternalString(context, "__data__"));
+        if (data && data->isDouble(context)) d = data->asDouble(context);
+        else return PROTO_NONE;
+    }
     if (d == 0.0) {
         const proto::ProtoList* pair = context->newList()->appendLast(context, context->fromInteger(0))->appendLast(context, context->fromInteger(1));
         const proto::ProtoTuple* tup = context->newTupleFromList(pair);
@@ -728,8 +764,15 @@ static const proto::ProtoObject* py_float_hex(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
-    if (!self->isDouble(context)) return PROTO_NONE;
-    double d = self->asDouble(context);
+    double d = 0.0;
+    if (self->isDouble(context)) {
+        d = self->asDouble(context);
+    } else {
+        PythonEnvironment* env = PythonEnvironment::fromContext(context);
+        const proto::ProtoObject* data = self->getAttribute(context, env ? env->getDataString() : PythonEnvironment::getInternalString(context, "__data__"));
+        if (data && data->isDouble(context)) d = data->asDouble(context);
+        else return PROTO_NONE;
+    }
     char buf[64];
     std::snprintf(buf, sizeof(buf), "%a", d);
     return PythonEnvironment::getInternedString(context, buf)->asObject(context);
@@ -748,26 +791,48 @@ static const proto::ProtoObject* py_float_fromhex(
 }
 
 static const proto::ProtoObject* py_int_call(
-    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    if (!posArgs || posArgs->getSize(ctx) <= 1) return ctx->fromInteger(0);
-    const proto::ProtoObject* x = posArgs->getAt(ctx, 1);
-    if (x->isInteger(ctx)) return x;
-    if (x->isDouble(ctx)) return ctx->fromInteger(static_cast<long long>(std::trunc(x->asDouble(ctx))));
-    if (x->isString(ctx)) {
-        std::string s;
-        x->asString(ctx)->toUTF8String(ctx, s);
-        try {
-            return ctx->fromInteger(std::stoll(s, nullptr, 0));
-        } catch (...) {
+    const proto::ProtoObject* targetCls = posArgs && posArgs->getSize(ctx) > 0 ? posArgs->getAt(ctx, 0) : self;
+    const proto::ProtoObject* x = nullptr;
+    if (!posArgs || posArgs->getSize(ctx) <= 1) {
+        x = ctx->fromInteger(0);
+    } else {
+        const proto::ProtoObject* val = posArgs->getAt(ctx, 1);
+        if (val->isInteger(ctx)) {
+            x = val;
+        } else if (val->isDouble(ctx)) {
+            x = ctx->fromInteger(static_cast<long long>(std::trunc(val->asDouble(ctx))));
+        } else if (val->isString(ctx)) {
+            std::string s;
+            val->asString(ctx)->toUTF8String(ctx, s);
+            try {
+                x = ctx->fromInteger(std::stoll(s, nullptr, 0));
+            } catch (...) {
+                PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+                if (env) env->raiseValueError(ctx, PythonEnvironment::getInternedString(ctx, ("invalid literal for int() with base 0: " + s).c_str())->asObject(ctx));
+                return nullptr;
+            }
+        } else {
             PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-            if (env) env->raiseValueError(ctx, PythonEnvironment::getInternedString(ctx, ("invalid literal for int() with base 0: " + s).c_str())->asObject(ctx));
+            if (env) env->raiseTypeError(ctx, "int() argument must be a string, a bytes-like object or a number");
             return nullptr;
         }
     }
+
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    if (env) env->raiseTypeError(ctx, "int() argument must be a string, a bytes-like object or a number");
-    return nullptr;
+    if (!targetCls || (env && targetCls == env->getIntPrototype())) {
+        return x;
+    }
+
+    // Subclass instantiation
+    proto::ProtoObject* instance = const_cast<proto::ProtoObject*>(targetCls->newChild(ctx, true));
+    const proto::ProtoString* dataName = env ? env->getDataString() : PythonEnvironment::getInternalString(ctx, "__data__");
+    instance->setAttribute(ctx, dataName, x);
+    if (env) {
+        instance->setAttribute(ctx, env->getClassString(), targetCls);
+    }
+    return instance;
 }
 
 static const proto::ProtoObject* py_none_type_call(
@@ -2458,11 +2523,53 @@ static const proto::ProtoObject* py_none_repr(
     return PythonEnvironment::getInternedString(context, "None")->asObject(context);
 }
 
+static const proto::ProtoObject* py_int_repr(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    long long val = 0;
+    if (self->isInteger(context)) {
+        val = self->asLong(context);
+    } else {
+        PythonEnvironment* env = PythonEnvironment::fromContext(context);
+        const proto::ProtoObject* data = self->getAttribute(context, env ? env->getDataString() : PythonEnvironment::getInternalString(context, "__data__"));
+        if (data && data->isInteger(context)) val = data->asLong(context);
+    }
+    char buf[64];
+    snprintf(buf, sizeof(buf), "%lld", val);
+    return PythonEnvironment::getInternedString(context, buf)->asObject(context);
+}
+
+static const proto::ProtoObject* py_float_repr(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    double val = 0.0;
+    if (self->isDouble(context)) {
+        val = self->asDouble(context);
+    } else {
+        PythonEnvironment* env = PythonEnvironment::fromContext(context);
+        const proto::ProtoObject* data = self->getAttribute(context, env ? env->getDataString() : PythonEnvironment::getInternalString(context, "__data__"));
+        if (data && data->isDouble(context)) val = data->asDouble(context);
+    }
+    char buf[64];
+    snprintf(buf, sizeof(buf), "%g", val);
+    return PythonEnvironment::getInternedString(context, buf)->asObject(context);
+}
+
 static const proto::ProtoObject* py_int_bool(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
-    return self->asLong(context) != 0 ? PROTO_TRUE : PROTO_FALSE;
+    long long val = 0;
+    if (self->isInteger(context)) {
+        val = self->asLong(context);
+    } else {
+        PythonEnvironment* env = PythonEnvironment::fromContext(context);
+        const proto::ProtoObject* data = self->getAttribute(context, env ? env->getDataString() : PythonEnvironment::getInternalString(context, "__data__"));
+        if (data && data->isInteger(context)) val = data->asLong(context);
+    }
+    return val != 0 ? PROTO_TRUE : PROTO_FALSE;
 }
 
 static const proto::ProtoObject* py_float_bool(
@@ -3613,7 +3720,15 @@ static const proto::ProtoObject* py_int_hash(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
-    return context->fromInteger(self->asLong(context));
+    long long val = 0;
+    if (self->isInteger(context)) {
+        val = self->asLong(context);
+    } else {
+        PythonEnvironment* env = PythonEnvironment::fromContext(context);
+        const proto::ProtoObject* data = self->getAttribute(context, env ? env->getDataString() : PythonEnvironment::getInternalString(context, "__data__"));
+        if (data && data->isInteger(context)) val = data->asLong(context);
+    }
+    return context->fromInteger(val);
 }
 
 static const proto::ProtoString* bytes_from_object(proto::ProtoContext* context, const proto::ProtoObject* obj) {
@@ -8575,7 +8690,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     intPrototype = intPrototype->setAttribute(rootContext_, py_class, typePrototype);
     intPrototype = intPrototype->setAttribute(rootContext_, py_name, PythonEnvironment::getInternedString(rootContext_, "int")->asObject(rootContext_));
     intPrototype = intPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__qualname__"), PythonEnvironment::getInternedString(rootContext_, "int")->asObject(rootContext_));
-    intPrototype = intPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_type_repr));
+    intPrototype = intPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_int_repr));
     intPrototype = intPrototype->setAttribute(rootContext_, py_module, builtinsVal);
     intPrototype = intPrototype->setAttribute(rootContext_, newString, rootContext_->fromMethod(nullptr, py_int_call));
     intPrototype = intPrototype->setAttribute(rootContext_, PythonEnvironment::getInternalString(rootContext_, "__init__"), rootContext_->fromMethod(nullptr, protoPython::builtins::py_python_ignore_init));
@@ -9000,6 +9115,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
         (void)ctx;
         return PythonEnvironment::getInternedString(ctx, "IEEE, little-endian")->asObject(ctx);
     };
+    floatPrototype = floatPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_float_repr));
+    floatPrototype = floatPrototype->setAttribute(rootContext_, py_str, rootContext_->fromMethod(nullptr, py_float_repr));
     floatPrototype = floatPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__getformat__"), rootContext_->fromMethod(nullptr, py_float_getformat));
 
     boolPrototype = objectPrototype->newChild(rootContext_, true);

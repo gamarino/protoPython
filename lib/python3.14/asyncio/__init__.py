@@ -1,9 +1,9 @@
 """The asyncio package, tracking PEP 3156."""
 
 # flake8: noqa
-
 import sys
 
+DEBUG = False
 # This relies on each of the submodules having an __all__ variable.
 from .base_events import *
 from .coroutines import *
@@ -22,6 +22,7 @@ from .taskgroups import *
 from .timeouts import *
 from .threads import *
 from .transports import *
+
 
 __all__ = (base_events.__all__ +
            coroutines.__all__ +

@@ -12,6 +12,7 @@ set(CMAKE_DEPENDS_DEPENDENCY_FILES
   "/home/gamarino/Documentos/proyectos/protoPython/src/library/AtexitModule.cpp" "src/library/CMakeFiles/protoPython.dir/AtexitModule.cpp.o" "gcc" "src/library/CMakeFiles/protoPython.dir/AtexitModule.cpp.o.d"
   "/home/gamarino/Documentos/proyectos/protoPython/src/library/BasicBlockAnalysis.cpp" "src/library/CMakeFiles/protoPython.dir/BasicBlockAnalysis.cpp.o" "gcc" "src/library/CMakeFiles/protoPython.dir/BasicBlockAnalysis.cpp.o.d"
   "/home/gamarino/Documentos/proyectos/protoPython/src/library/BinasciiModule.cpp" "src/library/CMakeFiles/protoPython.dir/BinasciiModule.cpp.o" "gcc" "src/library/CMakeFiles/protoPython.dir/BinasciiModule.cpp.o.d"
+  "/home/gamarino/Documentos/proyectos/protoPython/src/library/BisectModule.cpp" "src/library/CMakeFiles/protoPython.dir/BisectModule.cpp.o" "gcc" "src/library/CMakeFiles/protoPython.dir/BisectModule.cpp.o.d"
   "/home/gamarino/Documentos/proyectos/protoPython/src/library/BuiltinsModule.cpp" "src/library/CMakeFiles/protoPython.dir/BuiltinsModule.cpp.o" "gcc" "src/library/CMakeFiles/protoPython.dir/BuiltinsModule.cpp.o.d"
   "/home/gamarino/Documentos/proyectos/protoPython/src/library/BytecodeLoader.cpp" "src/library/CMakeFiles/protoPython.dir/BytecodeLoader.cpp.o" "gcc" "src/library/CMakeFiles/protoPython.dir/BytecodeLoader.cpp.o.d"
   "/home/gamarino/Documentos/proyectos/protoPython/src/library/CodecsModule.cpp" "src/library/CMakeFiles/protoPython.dir/CodecsModule.cpp.o" "gcc" "src/library/CMakeFiles/protoPython.dir/CodecsModule.cpp.o.d"
@@ -19,12 +20,15 @@ set(CMAKE_DEPENDS_DEPENDENCY_FILES
   "/home/gamarino/Documentos/proyectos/protoPython/src/library/CollectionsModule.cpp" "src/library/CMakeFiles/protoPython.dir/CollectionsModule.cpp.o" "gcc" "src/library/CMakeFiles/protoPython.dir/CollectionsModule.cpp.o.d"
   "/home/gamarino/Documentos/proyectos/protoPython/src/library/CompiledModuleProvider.cpp" "src/library/CMakeFiles/protoPython.dir/CompiledModuleProvider.cpp.o" "gcc" "src/library/CMakeFiles/protoPython.dir/CompiledModuleProvider.cpp.o.d"
   "/home/gamarino/Documentos/proyectos/protoPython/src/library/Compiler.cpp" "src/library/CMakeFiles/protoPython.dir/Compiler.cpp.o" "gcc" "src/library/CMakeFiles/protoPython.dir/Compiler.cpp.o.d"
+  "/home/gamarino/Documentos/proyectos/protoPython/src/library/DatetimeModule.cpp" "src/library/CMakeFiles/protoPython.dir/DatetimeModule.cpp.o" "gcc" "src/library/CMakeFiles/protoPython.dir/DatetimeModule.cpp.o.d"
   "/home/gamarino/Documentos/proyectos/protoPython/src/library/ErrnoModule.cpp" "src/library/CMakeFiles/protoPython.dir/ErrnoModule.cpp.o" "gcc" "src/library/CMakeFiles/protoPython.dir/ErrnoModule.cpp.o.d"
   "/home/gamarino/Documentos/proyectos/protoPython/src/library/ExceptionsModule.cpp" "src/library/CMakeFiles/protoPython.dir/ExceptionsModule.cpp.o" "gcc" "src/library/CMakeFiles/protoPython.dir/ExceptionsModule.cpp.o.d"
   "/home/gamarino/Documentos/proyectos/protoPython/src/library/ExecutionEngine.cpp" "src/library/CMakeFiles/protoPython.dir/ExecutionEngine.cpp.o" "gcc" "src/library/CMakeFiles/protoPython.dir/ExecutionEngine.cpp.o.d"
+  "/home/gamarino/Documentos/proyectos/protoPython/src/library/FaulthandlerModule.cpp" "src/library/CMakeFiles/protoPython.dir/FaulthandlerModule.cpp.o" "gcc" "src/library/CMakeFiles/protoPython.dir/FaulthandlerModule.cpp.o.d"
   "/home/gamarino/Documentos/proyectos/protoPython/src/library/FunctoolsModule.cpp" "src/library/CMakeFiles/protoPython.dir/FunctoolsModule.cpp.o" "gcc" "src/library/CMakeFiles/protoPython.dir/FunctoolsModule.cpp.o.d"
   "/home/gamarino/Documentos/proyectos/protoPython/src/library/HPyContext.cpp" "src/library/CMakeFiles/protoPython.dir/HPyContext.cpp.o" "gcc" "src/library/CMakeFiles/protoPython.dir/HPyContext.cpp.o.d"
   "/home/gamarino/Documentos/proyectos/protoPython/src/library/HPyModuleProvider.cpp" "src/library/CMakeFiles/protoPython.dir/HPyModuleProvider.cpp.o" "gcc" "src/library/CMakeFiles/protoPython.dir/HPyModuleProvider.cpp.o.d"
+  "/home/gamarino/Documentos/proyectos/protoPython/src/library/HeapqModule.cpp" "src/library/CMakeFiles/protoPython.dir/HeapqModule.cpp.o" "gcc" "src/library/CMakeFiles/protoPython.dir/HeapqModule.cpp.o.d"
   "/home/gamarino/Documentos/proyectos/protoPython/src/library/IOModule.cpp" "src/library/CMakeFiles/protoPython.dir/IOModule.cpp.o" "gcc" "src/library/CMakeFiles/protoPython.dir/IOModule.cpp.o.d"
   "/home/gamarino/Documentos/proyectos/protoPython/src/library/ImpModule.cpp" "src/library/CMakeFiles/protoPython.dir/ImpModule.cpp.o" "gcc" "src/library/CMakeFiles/protoPython.dir/ImpModule.cpp.o.d"
   "/home/gamarino/Documentos/proyectos/protoPython/src/library/ItertoolsModule.cpp" "src/library/CMakeFiles/protoPython.dir/ItertoolsModule.cpp.o" "gcc" "src/library/CMakeFiles/protoPython.dir/ItertoolsModule.cpp.o.d"
@@ -39,9 +43,11 @@ set(CMAKE_DEPENDS_DEPENDENCY_FILES
   "/home/gamarino/Documentos/proyectos/protoPython/src/library/OsPathModule.cpp" "src/library/CMakeFiles/protoPython.dir/OsPathModule.cpp.o" "gcc" "src/library/CMakeFiles/protoPython.dir/OsPathModule.cpp.o.d"
   "/home/gamarino/Documentos/proyectos/protoPython/src/library/Parser.cpp" "src/library/CMakeFiles/protoPython.dir/Parser.cpp.o" "gcc" "src/library/CMakeFiles/protoPython.dir/Parser.cpp.o.d"
   "/home/gamarino/Documentos/proyectos/protoPython/src/library/PathlibModule.cpp" "src/library/CMakeFiles/protoPython.dir/PathlibModule.cpp.o" "gcc" "src/library/CMakeFiles/protoPython.dir/PathlibModule.cpp.o.d"
+  "/home/gamarino/Documentos/proyectos/protoPython/src/library/PosixSubprocessModule.cpp" "src/library/CMakeFiles/protoPython.dir/PosixSubprocessModule.cpp.o" "gcc" "src/library/CMakeFiles/protoPython.dir/PosixSubprocessModule.cpp.o.d"
   "/home/gamarino/Documentos/proyectos/protoPython/src/library/PythonEnvironment.cpp" "src/library/CMakeFiles/protoPython.dir/PythonEnvironment.cpp.o" "gcc" "src/library/CMakeFiles/protoPython.dir/PythonEnvironment.cpp.o.d"
   "/home/gamarino/Documentos/proyectos/protoPython/src/library/PythonModuleProvider.cpp" "src/library/CMakeFiles/protoPython.dir/PythonModuleProvider.cpp.o" "gcc" "src/library/CMakeFiles/protoPython.dir/PythonModuleProvider.cpp.o.d"
   "/home/gamarino/Documentos/proyectos/protoPython/src/library/ReModule.cpp" "src/library/CMakeFiles/protoPython.dir/ReModule.cpp.o" "gcc" "src/library/CMakeFiles/protoPython.dir/ReModule.cpp.o.d"
+  "/home/gamarino/Documentos/proyectos/protoPython/src/library/SelectModule.cpp" "src/library/CMakeFiles/protoPython.dir/SelectModule.cpp.o" "gcc" "src/library/CMakeFiles/protoPython.dir/SelectModule.cpp.o.d"
   "/home/gamarino/Documentos/proyectos/protoPython/src/library/SignalModule.cpp" "src/library/CMakeFiles/protoPython.dir/SignalModule.cpp.o" "gcc" "src/library/CMakeFiles/protoPython.dir/SignalModule.cpp.o.d"
   "/home/gamarino/Documentos/proyectos/protoPython/src/library/StatModule.cpp" "src/library/CMakeFiles/protoPython.dir/StatModule.cpp.o" "gcc" "src/library/CMakeFiles/protoPython.dir/StatModule.cpp.o.d"
   "/home/gamarino/Documentos/proyectos/protoPython/src/library/StringModule.cpp" "src/library/CMakeFiles/protoPython.dir/StringModule.cpp.o" "gcc" "src/library/CMakeFiles/protoPython.dir/StringModule.cpp.o.d"
@@ -57,8 +63,8 @@ set(CMAKE_DEPENDS_DEPENDENCY_FILES
 
 # Pairs of files generated by the same build rule.
 set(CMAKE_MULTIPLE_OUTPUT_PAIRS
-  "/home/gamarino/Documentos/proyectos/protoPython/build-debug/src/library/libprotoPython.so" "/home/gamarino/Documentos/proyectos/protoPython/build-debug/src/library/libprotoPython.so.0.2.0"
-  "/home/gamarino/Documentos/proyectos/protoPython/build-debug/src/library/libprotoPython.so.0" "/home/gamarino/Documentos/proyectos/protoPython/build-debug/src/library/libprotoPython.so.0.2.0"
+  "/home/gamarino/Documentos/proyectos/protoPython/build-debug/src/library/libprotoPython.so" "/home/gamarino/Documentos/proyectos/protoPython/build-debug/src/library/libprotoPython.so.1.0.0"
+  "/home/gamarino/Documentos/proyectos/protoPython/build-debug/src/library/libprotoPython.so.0" "/home/gamarino/Documentos/proyectos/protoPython/build-debug/src/library/libprotoPython.so.1.0.0"
   )
 
 

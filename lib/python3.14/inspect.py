@@ -1664,8 +1664,14 @@ def trace(context=1):
 # ------------------------------------------------ static version of getattr
 
 _sentinel = object()
-_static_getmro = lambda klass: klass.__mro__ if hasattr(klass, '__mro__') else ()
-_get_dunder_dict_of_class = lambda klass: klass.__dict__ if hasattr(klass, '__dict__') else {}
+def _static_getmro(klass):
+    if builtins.hasattr(klass, '__mro__'):
+        return klass.__mro__
+    return ()
+def _get_dunder_dict_of_class(klass):
+    if builtins.hasattr(klass, '__dict__'):
+        return klass.__dict__
+    return {}
 
 
 def _check_instance(obj, attr):
@@ -1684,7 +1690,7 @@ def _check_class(klass, attr):
     return _sentinel
 
 
-@functools.lru_cache()
+# @functools.lru_cache()
 def _shadowed_dict_from_weakref_mro_tuple(*weakref_mro):
     for weakref_entry in weakref_mro:
         # Normally we'd have to check whether the result of weakref_entry()

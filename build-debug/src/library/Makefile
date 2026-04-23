@@ -301,6 +301,30 @@ BinasciiModule.cpp.s:
 	cd /home/gamarino/Documentos/proyectos/protoPython/build-debug && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/BinasciiModule.cpp.s
 .PHONY : BinasciiModule.cpp.s
 
+BisectModule.o: BisectModule.cpp.o
+.PHONY : BisectModule.o
+
+# target to build an object file
+BisectModule.cpp.o:
+	cd /home/gamarino/Documentos/proyectos/protoPython/build-debug && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/BisectModule.cpp.o
+.PHONY : BisectModule.cpp.o
+
+BisectModule.i: BisectModule.cpp.i
+.PHONY : BisectModule.i
+
+# target to preprocess a source file
+BisectModule.cpp.i:
+	cd /home/gamarino/Documentos/proyectos/protoPython/build-debug && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/BisectModule.cpp.i
+.PHONY : BisectModule.cpp.i
+
+BisectModule.s: BisectModule.cpp.s
+.PHONY : BisectModule.s
+
+# target to generate assembly for a file
+BisectModule.cpp.s:
+	cd /home/gamarino/Documentos/proyectos/protoPython/build-debug && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/BisectModule.cpp.s
+.PHONY : BisectModule.cpp.s
+
 BuiltinsModule.o: BuiltinsModule.cpp.o
 .PHONY : BuiltinsModule.o
 
@@ -469,6 +493,30 @@ Compiler.cpp.s:
 	cd /home/gamarino/Documentos/proyectos/protoPython/build-debug && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/Compiler.cpp.s
 .PHONY : Compiler.cpp.s
 
+DatetimeModule.o: DatetimeModule.cpp.o
+.PHONY : DatetimeModule.o
+
+# target to build an object file
+DatetimeModule.cpp.o:
+	cd /home/gamarino/Documentos/proyectos/protoPython/build-debug && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/DatetimeModule.cpp.o
+.PHONY : DatetimeModule.cpp.o
+
+DatetimeModule.i: DatetimeModule.cpp.i
+.PHONY : DatetimeModule.i
+
+# target to preprocess a source file
+DatetimeModule.cpp.i:
+	cd /home/gamarino/Documentos/proyectos/protoPython/build-debug && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/DatetimeModule.cpp.i
+.PHONY : DatetimeModule.cpp.i
+
+DatetimeModule.s: DatetimeModule.cpp.s
+.PHONY : DatetimeModule.s
+
+# target to generate assembly for a file
+DatetimeModule.cpp.s:
+	cd /home/gamarino/Documentos/proyectos/protoPython/build-debug && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/DatetimeModule.cpp.s
+.PHONY : DatetimeModule.cpp.s
+
 ErrnoModule.o: ErrnoModule.cpp.o
 .PHONY : ErrnoModule.o
 
@@ -541,6 +589,30 @@ ExecutionEngine.cpp.s:
 	cd /home/gamarino/Documentos/proyectos/protoPython/build-debug && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/ExecutionEngine.cpp.s
 .PHONY : ExecutionEngine.cpp.s
 
+FaulthandlerModule.o: FaulthandlerModule.cpp.o
+.PHONY : FaulthandlerModule.o
+
+# target to build an object file
+FaulthandlerModule.cpp.o:
+	cd /home/gamarino/Documentos/proyectos/protoPython/build-debug && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/FaulthandlerModule.cpp.o
+.PHONY : FaulthandlerModule.cpp.o
+
+FaulthandlerModule.i: FaulthandlerModule.cpp.i
+.PHONY : FaulthandlerModule.i
+
+# target to preprocess a source file
+FaulthandlerModule.cpp.i:
+	cd /home/gamarino/Documentos/proyectos/protoPython/build-debug && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/FaulthandlerModule.cpp.i
+.PHONY : FaulthandlerModule.cpp.i
+
+FaulthandlerModule.s: FaulthandlerModule.cpp.s
+.PHONY : FaulthandlerModule.s
+
+# target to generate assembly for a file
+FaulthandlerModule.cpp.s:
+	cd /home/gamarino/Documentos/proyectos/protoPython/build-debug && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/FaulthandlerModule.cpp.s
+.PHONY : FaulthandlerModule.cpp.s
+
 FunctoolsModule.o: FunctoolsModule.cpp.o
 .PHONY : FunctoolsModule.o
 
@@ -612,6 +684,30 @@ HPyModuleProvider.s: HPyModuleProvider.cpp.s
 HPyModuleProvider.cpp.s:
 	cd /home/gamarino/Documentos/proyectos/protoPython/build-debug && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/HPyModuleProvider.cpp.s
 .PHONY : HPyModuleProvider.cpp.s
+
+HeapqModule.o: HeapqModule.cpp.o
+.PHONY : HeapqModule.o
+
+# target to build an object file
+HeapqModule.cpp.o:
+	cd /home/gamarino/Documentos/proyectos/protoPython/build-debug && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/HeapqModule.cpp.o
+.PHONY : HeapqModule.cpp.o
+
+HeapqModule.i: HeapqModule.cpp.i
+.PHONY : HeapqModule.i
+
+# target to preprocess a source file
+HeapqModule.cpp.i:
+	cd /home/gamarino/Documentos/proyectos/protoPython/build-debug && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/HeapqModule.cpp.i
+.PHONY : HeapqModule.cpp.i
+
+HeapqModule.s: HeapqModule.cpp.s
+.PHONY : HeapqModule.s
+
+# target to generate assembly for a file
+HeapqModule.cpp.s:
+	cd /home/gamarino/Documentos/proyectos/protoPython/build-debug && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/HeapqModule.cpp.s
+.PHONY : HeapqModule.cpp.s
 
 IOModule.o: IOModule.cpp.o
 .PHONY : IOModule.o
@@ -949,6 +1045,30 @@ PathlibModule.cpp.s:
 	cd /home/gamarino/Documentos/proyectos/protoPython/build-debug && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/PathlibModule.cpp.s
 .PHONY : PathlibModule.cpp.s
 
+PosixSubprocessModule.o: PosixSubprocessModule.cpp.o
+.PHONY : PosixSubprocessModule.o
+
+# target to build an object file
+PosixSubprocessModule.cpp.o:
+	cd /home/gamarino/Documentos/proyectos/protoPython/build-debug && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/PosixSubprocessModule.cpp.o
+.PHONY : PosixSubprocessModule.cpp.o
+
+PosixSubprocessModule.i: PosixSubprocessModule.cpp.i
+.PHONY : PosixSubprocessModule.i
+
+# target to preprocess a source file
+PosixSubprocessModule.cpp.i:
+	cd /home/gamarino/Documentos/proyectos/protoPython/build-debug && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/PosixSubprocessModule.cpp.i
+.PHONY : PosixSubprocessModule.cpp.i
+
+PosixSubprocessModule.s: PosixSubprocessModule.cpp.s
+.PHONY : PosixSubprocessModule.s
+
+# target to generate assembly for a file
+PosixSubprocessModule.cpp.s:
+	cd /home/gamarino/Documentos/proyectos/protoPython/build-debug && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/PosixSubprocessModule.cpp.s
+.PHONY : PosixSubprocessModule.cpp.s
+
 PythonEnvironment.o: PythonEnvironment.cpp.o
 .PHONY : PythonEnvironment.o
 
@@ -1020,6 +1140,30 @@ ReModule.s: ReModule.cpp.s
 ReModule.cpp.s:
 	cd /home/gamarino/Documentos/proyectos/protoPython/build-debug && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/ReModule.cpp.s
 .PHONY : ReModule.cpp.s
+
+SelectModule.o: SelectModule.cpp.o
+.PHONY : SelectModule.o
+
+# target to build an object file
+SelectModule.cpp.o:
+	cd /home/gamarino/Documentos/proyectos/protoPython/build-debug && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/SelectModule.cpp.o
+.PHONY : SelectModule.cpp.o
+
+SelectModule.i: SelectModule.cpp.i
+.PHONY : SelectModule.i
+
+# target to preprocess a source file
+SelectModule.cpp.i:
+	cd /home/gamarino/Documentos/proyectos/protoPython/build-debug && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/SelectModule.cpp.i
+.PHONY : SelectModule.cpp.i
+
+SelectModule.s: SelectModule.cpp.s
+.PHONY : SelectModule.s
+
+# target to generate assembly for a file
+SelectModule.cpp.s:
+	cd /home/gamarino/Documentos/proyectos/protoPython/build-debug && $(MAKE) $(MAKESILENT) -f src/library/CMakeFiles/protoPython.dir/build.make src/library/CMakeFiles/protoPython.dir/SelectModule.cpp.s
+.PHONY : SelectModule.cpp.s
 
 SignalModule.o: SignalModule.cpp.o
 .PHONY : SignalModule.o
@@ -1313,6 +1457,9 @@ help:
 	@echo "... BinasciiModule.o"
 	@echo "... BinasciiModule.i"
 	@echo "... BinasciiModule.s"
+	@echo "... BisectModule.o"
+	@echo "... BisectModule.i"
+	@echo "... BisectModule.s"
 	@echo "... BuiltinsModule.o"
 	@echo "... BuiltinsModule.i"
 	@echo "... BuiltinsModule.s"
@@ -1334,6 +1481,9 @@ help:
 	@echo "... Compiler.o"
 	@echo "... Compiler.i"
 	@echo "... Compiler.s"
+	@echo "... DatetimeModule.o"
+	@echo "... DatetimeModule.i"
+	@echo "... DatetimeModule.s"
 	@echo "... ErrnoModule.o"
 	@echo "... ErrnoModule.i"
 	@echo "... ErrnoModule.s"
@@ -1343,6 +1493,9 @@ help:
 	@echo "... ExecutionEngine.o"
 	@echo "... ExecutionEngine.i"
 	@echo "... ExecutionEngine.s"
+	@echo "... FaulthandlerModule.o"
+	@echo "... FaulthandlerModule.i"
+	@echo "... FaulthandlerModule.s"
 	@echo "... FunctoolsModule.o"
 	@echo "... FunctoolsModule.i"
 	@echo "... FunctoolsModule.s"
@@ -1352,6 +1505,9 @@ help:
 	@echo "... HPyModuleProvider.o"
 	@echo "... HPyModuleProvider.i"
 	@echo "... HPyModuleProvider.s"
+	@echo "... HeapqModule.o"
+	@echo "... HeapqModule.i"
+	@echo "... HeapqModule.s"
 	@echo "... IOModule.o"
 	@echo "... IOModule.i"
 	@echo "... IOModule.s"
@@ -1394,6 +1550,9 @@ help:
 	@echo "... PathlibModule.o"
 	@echo "... PathlibModule.i"
 	@echo "... PathlibModule.s"
+	@echo "... PosixSubprocessModule.o"
+	@echo "... PosixSubprocessModule.i"
+	@echo "... PosixSubprocessModule.s"
 	@echo "... PythonEnvironment.o"
 	@echo "... PythonEnvironment.i"
 	@echo "... PythonEnvironment.s"
@@ -1403,6 +1562,9 @@ help:
 	@echo "... ReModule.o"
 	@echo "... ReModule.i"
 	@echo "... ReModule.s"
+	@echo "... SelectModule.o"
+	@echo "... SelectModule.i"
+	@echo "... SelectModule.s"
 	@echo "... SignalModule.o"
 	@echo "... SignalModule.i"
 	@echo "... SignalModule.s"

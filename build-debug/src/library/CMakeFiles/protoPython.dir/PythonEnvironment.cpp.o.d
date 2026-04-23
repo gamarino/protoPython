@@ -226,6 +226,7 @@ src/library/CMakeFiles/protoPython.dir/PythonEnvironment.cpp.o: \
  /usr/include/c++/13/bits/uniform_int_dist.h /usr/include/c++/13/iostream \
  /usr/include/c++/13/istream /usr/include/c++/13/bits/istream.tcc \
  /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/Tokenizer.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/DiagUtils.h \
  /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/SignalModule.h \
  /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/PythonModuleProvider.h \
  /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/CompiledModuleProvider.h \
@@ -248,6 +249,7 @@ src/library/CMakeFiles/protoPython.dir/PythonEnvironment.cpp.o: \
  /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/IOModule.h \
  /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/CollectionsModule.h \
  /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/ExceptionsModule.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/DatetimeModule.h \
  /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/LoggingModule.h \
  /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/MathModule.h \
  /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/OperatorModule.h \
@@ -264,14 +266,17 @@ src/library/CMakeFiles/protoPython.dir/PythonEnvironment.cpp.o: \
  /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/ImpModule.h \
  /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/WarningsModule.h \
  /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/AtexitModule.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/PosixSubprocessModule.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/SelectModule.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/BisectModule.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/HeapqModule.h \
+ /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/FaulthandlerModule.h \
  /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/ExecutionEngine.h \
  /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/Parser.h \
  /home/gamarino/Documentos/proyectos/protoPython/include/protoPython/Compiler.h \
  /usr/include/c++/13/unordered_set \
- /usr/include/c++/13/bits/unordered_set.h \
- /home/gamarino/Documentos/proyectos/protoCore/headers/proto_internal.h \
- /home/gamarino/Documentos/proyectos/protoCore/headers/protoCore.h \
- /usr/include/c++/13/algorithm /usr/include/c++/13/bits/ranges_algo.h \
+ /usr/include/c++/13/bits/unordered_set.h /usr/include/c++/13/algorithm \
+ /usr/include/c++/13/bits/ranges_algo.h \
  /usr/include/c++/13/pstl/glue_algorithm_defs.h /usr/include/c++/13/cmath \
  /usr/include/math.h /usr/include/x86_64-linux-gnu/bits/math-vector.h \
  /usr/include/x86_64-linux-gnu/bits/libm-simd-decl-stubs.h \

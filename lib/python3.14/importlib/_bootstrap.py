@@ -72,12 +72,12 @@ class _WeakValueDictionary:
             __slots__ = "key",
 
             def __new__(type, ob, key):
-                self = super().__new__(type, ob, type.remove)
+                self = _weakref.ref.__new__(type, ob, type.remove)
                 self.key = key
                 return self
 
             def __init__(self, ob, key):
-                super().__init__(ob, self.remove)
+                _weakref.ref.__init__(self, ob, self.remove)
 
             @staticmethod
             def remove(wr):

@@ -465,6 +465,19 @@ test_hpy_context/fast:
 .PHONY : test_hpy_context/fast
 
 #=============================================================================
+# Target rules for targets named test_compiler
+
+# Build rule for target.
+test_compiler: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 test_compiler
+.PHONY : test_compiler
+
+# fast build rule for target.
+test_compiler/fast:
+	$(MAKE) $(MAKESILENT) -f test/library/CMakeFiles/test_compiler.dir/build.make test/library/CMakeFiles/test_compiler.dir/build
+.PHONY : test_compiler/fast
+
+#=============================================================================
 # Target rules for targets named protopy
 
 # Build rule for target.
@@ -535,6 +548,7 @@ help:
 	@echo "... sparse_list_benchmark"
 	@echo "... string_concat_benchmark"
 	@echo "... test_basic_block_analysis"
+	@echo "... test_compiler"
 	@echo "... test_execution_engine"
 	@echo "... test_foundation"
 	@echo "... test_hpy_context"

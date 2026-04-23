@@ -1,7 +1,9 @@
 #include <protoPython/DatetimeModule.h>
 #include <protoPython/PythonEnvironment.h>
+#include <protoPython/DiagUtils.h>
 #include <protoCore.h>
 #include <string>
+
 #include <algorithm>
 #include <ctime>
 #include <cstring>
@@ -262,7 +264,48 @@ static const proto::ProtoObject* py_timedelta_mul(
     return create_timedelta_instance(ctx, self->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__class__")), 0, 0, total_us);
 }
 
+static const proto::ProtoObject* py_timedelta_abs(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    DeltaState* s = get_delta_state(ctx, self);
+    if (!s) return PROTO_NONE;
+    if (s->days >= 0) return self;
+    return create_timedelta_instance(ctx, self->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__class__")), -s->days, -s->seconds, -s->microseconds);
+}
+
+static const proto::ProtoObject* py_timedelta_neg(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    DeltaState* s = get_delta_state(ctx, self);
+    if (!s) return PROTO_NONE;
+    return create_timedelta_instance(ctx, self->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__class__")), -s->days, -s->seconds, -s->microseconds);
+}
+
+static const proto::ProtoObject* py_timedelta_pos(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    return self;
+}
+
+static const proto::ProtoObject* py_timedelta_bool(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    DeltaState* s = get_delta_state(ctx, self);
+    if (!s) return PROTO_FALSE;
+    return (s->days != 0 || s->seconds != 0 || s->microseconds != 0) ? PROTO_TRUE : PROTO_FALSE;
+}
+
+static const proto::ProtoObject* py_timedelta_hash(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    DeltaState* s = get_delta_state(ctx, self);
+    if (!s) return ctx->fromInteger(0);
+    long long h = s->days ^ s->seconds ^ s->microseconds;
+    return ctx->fromInteger(h);
+}
+
 static const proto::ProtoObject* py_timedelta_truediv(
+
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
     const proto::ProtoList* args, const proto::ProtoSparseList*) {
     if (!args || args->getSize(ctx) < 1) return PROTO_NONE;
@@ -440,7 +483,28 @@ static const proto::ProtoObject* py_date_toordinal(
     return ctx->fromInteger(date_to_ordinal(state->year, state->month, state->day));
 }
 
+static const proto::ProtoObject* py_date_hash(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    DateState* s = get_date_state(ctx, self);
+    if (!s) return ctx->fromInteger(0);
+    long long h = s->year ^ (s->month << 20) ^ (s->day << 24);
+    return ctx->fromInteger(h);
+}
+
+static const proto::ProtoObject* py_date_fromtimestamp(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList* args, const proto::ProtoSparseList* /*kwArgs*/) {
+    if (!args || args->getSize(ctx) < 1) return PROTO_NONE;
+    double ts = args->getAt(ctx, 0)->asDouble(ctx);
+    time_t t = (time_t)ts;
+    struct tm* ltm = localtime(&t);
+    return create_date_instance(ctx, self, ltm->tm_year + 1900, ltm->tm_mon + 1, ltm->tm_mday);
+}
+
 static const proto::ProtoObject* py_date_fromordinal(
+
+
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
     const proto::ProtoList* args, const proto::ProtoSparseList* /*kwArgs*/) {
     
@@ -458,6 +522,60 @@ static const proto::ProtoObject* py_date_fromordinal(
     return create_date_instance(ctx, self, y, m, d);
 }
 
+static const proto::ProtoObject* py_date_add(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    if (!args || args->getSize(ctx) < 1) return PROTO_NONE;
+    DateState* ds = get_date_state(ctx, self);
+    DeltaState* ts = get_delta_state(ctx, args->getAt(ctx, 0));
+    if (!ds || !ts) return PROTO_NONE;
+    
+    long long ord = date_to_ordinal(ds->year, ds->month, ds->day);
+    ord += ts->days;
+    
+    // fromordinal logic
+    int y = (int)(ord / 366);
+    if (y < 1) y = 1;
+    while (date_to_ordinal(y + 1, 1, 1) <= ord) y++;
+    int m = 1;
+    while (date_to_ordinal(y, m + 1, 1) <= ord) m++;
+    int d = (int)(ord - date_to_ordinal(y, m, 1) + 1);
+    
+    return create_date_instance(ctx, self->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__class__")), y, m, d);
+}
+
+static const proto::ProtoObject* py_date_sub(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    if (!args || args->getSize(ctx) < 1) return PROTO_NONE;
+    const proto::ProtoObject* other = args->getAt(ctx, 0);
+    DateState* ds1 = get_date_state(ctx, self);
+    DateState* ds2 = get_date_state(ctx, other);
+    
+    if (ds1 && ds2) {
+        long long o1 = date_to_ordinal(ds1->year, ds1->month, ds1->day);
+        long long o2 = date_to_ordinal(ds2->year, ds2->month, ds2->day);
+        return create_timedelta_instance(ctx, nullptr, o1 - o2, 0, 0);
+    }
+    
+    DeltaState* ts = get_delta_state(ctx, other);
+    if (ds1 && ts) {
+        long long ord = date_to_ordinal(ds1->year, ds1->month, ds1->day);
+        ord -= ts->days;
+        
+        int y = (int)(ord / 366);
+        if (y < 1) y = 1;
+        while (date_to_ordinal(y + 1, 1, 1) <= ord) y++;
+        int m = 1;
+        while (date_to_ordinal(y, m + 1, 1) <= ord) m++;
+        int d = (int)(ord - date_to_ordinal(y, m, 1) + 1);
+        
+        return create_date_instance(ctx, self->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__class__")), y, m, d);
+    }
+    
+    return PROTO_NONE;
+}
+
 static const proto::ProtoObject* py_date_today(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
     const proto::ProtoList*, const proto::ProtoSparseList*) {
@@ -465,6 +583,7 @@ static const proto::ProtoObject* py_date_today(
     struct tm* ltm = localtime(&t);
     return create_date_instance(ctx, self, ltm->tm_year + 1900, ltm->tm_mon + 1, ltm->tm_mday);
 }
+
 
 // datetime
 struct DateTimeState {
@@ -635,6 +754,92 @@ static const proto::ProtoObject* py_datetime_replace(
     return create_datetime_instance(ctx, self->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__class__")), y, m, d, h, min, s, ms);
 }
 
+static const proto::ProtoObject* py_datetime_add(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    if (!args || args->getSize(ctx) < 1) return PROTO_NONE;
+    DateTimeState* ds = get_datetime_state(ctx, self);
+    DeltaState* ts = get_delta_state(ctx, args->getAt(ctx, 0));
+    if (!ds || !ts) return PROTO_NONE;
+    
+    long long ord = date_to_ordinal(ds->year, ds->month, ds->day);
+    long long total_sec = (ord * 86400LL) + (ds->hour * 3600LL) + (ds->minute * 60LL) + ds->second + ts->seconds + (ts->days * 86400LL);
+    long long total_us = (long long)ds->microsecond + ts->microseconds;
+    
+    if (total_us >= 1000000LL || total_us < 0) {
+        total_sec += total_us / 1000000LL;
+        total_us %= 1000000LL;
+        if (total_us < 0) { total_us += 1000000LL; total_sec--; }
+    }
+    
+    long long new_ord = total_sec / 86400LL;
+    int remaining_sec = (int)(total_sec % 86400LL);
+    if (remaining_sec < 0) { remaining_sec += 86400; new_ord--; }
+    
+    int h = remaining_sec / 3600;
+    int m = (remaining_sec % 3600) / 60;
+    int s = remaining_sec % 60;
+    
+    int y = (int)(new_ord / 366);
+    if (y < 1) y = 1;
+    while (date_to_ordinal(y + 1, 1, 1) <= new_ord) y++;
+    int mon = 1;
+    while (date_to_ordinal(y, mon + 1, 1) <= new_ord) mon++;
+    int d = (int)(new_ord - date_to_ordinal(y, mon, 1) + 1);
+    
+    return create_datetime_instance(ctx, self->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__class__")), y, mon, d, h, m, s, (int)total_us);
+}
+
+static const proto::ProtoObject* py_datetime_sub(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    if (!args || args->getSize(ctx) < 1) return PROTO_NONE;
+    const proto::ProtoObject* other = args->getAt(ctx, 0);
+    DateTimeState* ds1 = get_datetime_state(ctx, self);
+    DateTimeState* ds2 = get_datetime_state(ctx, other);
+    
+    if (ds1 && ds2) {
+        long long o1 = date_to_ordinal(ds1->year, ds1->month, ds1->day);
+        long long o2 = date_to_ordinal(ds2->year, ds2->month, ds2->day);
+        long long d_days = o1 - o2;
+        long long d_sec = (long long)(ds1->hour - ds2->hour) * 3600LL + (ds1->minute - ds2->minute) * 60LL + (ds1->second - ds2->second);
+        long long d_us = (long long)(ds1->microsecond - ds2->microsecond);
+        return create_timedelta_instance(ctx, nullptr, d_days, d_sec, d_us);
+    }
+    
+    DeltaState* ts = get_delta_state(ctx, other);
+    if (ds1 && ts) {
+        long long ord = date_to_ordinal(ds1->year, ds1->month, ds1->day);
+        long long total_sec = (ord * 86400LL) + (ds1->hour * 3600LL) + (ds1->minute * 60LL) + ds1->second - ts->seconds - (ts->days * 86400LL);
+        long long total_us = (long long)ds1->microsecond - ts->microseconds;
+        
+        if (total_us >= 1000000LL || total_us < 0) {
+            total_sec += total_us / 1000000LL;
+            total_us %= 1000000LL;
+            if (total_us < 0) { total_us += 1000000LL; total_sec--; }
+        }
+        
+        long long new_ord = total_sec / 86400LL;
+        int remaining_sec = (int)(total_sec % 86400LL);
+        if (remaining_sec < 0) { remaining_sec += 86400; new_ord--; }
+        
+        int h = remaining_sec / 3600;
+        int m = (remaining_sec % 3600) / 60;
+        int s = remaining_sec % 60;
+        
+        int y = (int)(new_ord / 366);
+        if (y < 1) y = 1;
+        while (date_to_ordinal(y + 1, 1, 1) <= new_ord) y++;
+        int mon = 1;
+        while (date_to_ordinal(y, mon + 1, 1) <= new_ord) mon++;
+        int d = (int)(new_ord - date_to_ordinal(y, mon, 1) + 1);
+        
+        return create_datetime_instance(ctx, self->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__class__")), y, mon, d, h, m, s, (int)total_us);
+    }
+    
+    return PROTO_NONE;
+}
+
 static const proto::ProtoObject* py_datetime_now(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
     const proto::ProtoList*, const proto::ProtoSparseList*) {
@@ -643,6 +848,7 @@ static const proto::ProtoObject* py_datetime_now(
     return create_datetime_instance(ctx, self, ltm->tm_year + 1900, ltm->tm_mon + 1, ltm->tm_mday,
                                     ltm->tm_hour, ltm->tm_min, ltm->tm_sec, 0);
 }
+
 
 // time methods
 static const proto::ProtoObject* py_time_new(
@@ -750,11 +956,15 @@ static const proto::ProtoObject* py_timezone_new(
     const proto::ProtoList* posArgs, const proto::ProtoSparseList* kwArgs) {
     
     const proto::ProtoObject* offset = nullptr;
+
     const proto::ProtoObject* name = nullptr;
     
     if (posArgs) {
         size_t sz = posArgs->getSize(ctx);
-        if (sz > 1) offset = posArgs->getAt(ctx, 1);
+        if (sz > 1) {
+            offset = posArgs->getAt(ctx, 1);
+        }
+
         if (sz > 2) name = posArgs->getAt(ctx, 2);
     }
     
@@ -764,7 +974,10 @@ static const proto::ProtoObject* py_timezone_new(
         if ((o = getKwArg(ctx, kwArgs, "name")) && o != PROTO_NONE) name = o;
     }
     
-    if (!offset) return PROTO_NONE; // Should raise TypeError
+    if (!offset) {
+        return PROTO_NONE; // Should raise TypeError
+    }
+
     
     const proto::ProtoObject* instance = self->newChild(ctx, true);
     instance = instance->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__class__"), self);
@@ -774,7 +987,21 @@ static const proto::ProtoObject* py_timezone_new(
     return instance;
 }
 
+
+static const proto::ProtoObject* py_datetime_fromtimestamp(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList* args, const proto::ProtoSparseList* /*kwArgs*/) {
+    if (!args || args->getSize(ctx) < 1) return PROTO_NONE;
+    double ts = args->getAt(ctx, 0)->asDouble(ctx);
+    time_t t = (time_t)ts;
+    struct tm* ltm = localtime(&t);
+    int us = (int)((ts - (double)t) * 1000000.0);
+    return create_datetime_instance(ctx, self, ltm->tm_year + 1900, ltm->tm_mon + 1, ltm->tm_mday,
+                                    ltm->tm_hour, ltm->tm_min, ltm->tm_sec, us);
+}
+
 static const proto::ProtoObject* py_datetime_combine(
+
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
     const proto::ProtoList* args, const proto::ProtoSparseList* /*kwArgs*/) {
     
@@ -789,20 +1016,47 @@ static const proto::ProtoObject* py_datetime_combine(
     return create_datetime_instance(ctx, self, ds->year, ds->month, ds->day, ts->hour, ts->minute, ts->second, ts->microsecond);
 }
 
-static const proto::ProtoObject* py_datetime_fromtimestamp(
+static const proto::ProtoObject* py_datetime_hash(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList* args, const proto::ProtoSparseList* /*kwArgs*/) {
-    
-    if (!args || args->getSize(ctx) < 1) return PROTO_NONE;
-    time_t t = (time_t)args->getAt(ctx, 0)->asLong(ctx);
-    struct tm* ltm = localtime(&t);
-    return create_datetime_instance(ctx, self, ltm->tm_year + 1900, ltm->tm_mon + 1, ltm->tm_mday,
-                                    ltm->tm_hour, ltm->tm_min, ltm->tm_sec, 0);
+    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    DateTimeState* s = get_datetime_state(ctx, self);
+    if (!s) return ctx->fromInteger(0);
+    long long h = s->year ^ (s->month << 20) ^ (s->day << 24) ^ (s->hour << 10) ^ (s->minute << 15) ^ (s->second << 20) ^ (s->microsecond << 2);
+    return ctx->fromInteger(h);
+}
+
+static const proto::ProtoObject* py_time_lt(
+
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    if (!args || args->getSize(ctx) < 1) return PROTO_FALSE;
+    TimeState* s1 = get_time_state(ctx, self);
+    TimeState* s2 = get_time_state(ctx, args->getAt(ctx, 0));
+    if (!s1 || !s2) return PROTO_FALSE;
+    if (s1->hour < s2->hour) return PROTO_TRUE;
+    if (s1->hour > s2->hour) return PROTO_FALSE;
+    if (s1->minute < s2->minute) return PROTO_TRUE;
+    if (s1->minute > s2->minute) return PROTO_FALSE;
+    if (s1->second < s2->second) return PROTO_TRUE;
+    if (s1->second > s2->second) return PROTO_FALSE;
+    return (s1->microsecond < s2->microsecond) ? PROTO_TRUE : PROTO_FALSE;
+}
+
+static const proto::ProtoObject* py_time_eq(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    if (!args || args->getSize(ctx) < 1) return PROTO_FALSE;
+    TimeState* s1 = get_time_state(ctx, self);
+    TimeState* s2 = get_time_state(ctx, args->getAt(ctx, 0));
+    if (!s1 || !s2) return PROTO_FALSE;
+    return (s1->hour == s2->hour && s1->minute == s2->minute && s1->second == s2->second &&
+            s1->microsecond == s2->microsecond) ? PROTO_TRUE : PROTO_FALSE;
 }
 
 static const proto::ProtoObject* py_time_replace(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
     const proto::ProtoList* /*posArgs*/, const proto::ProtoSparseList* kwArgs) {
+
     
     TimeState* state = get_time_state(ctx, self);
     if (!state) return PROTO_NONE;
@@ -991,8 +1245,19 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
                                                ctx->fromMethod(nullptr, py_timedelta_mul));
     timedeltaType = timedeltaType->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__truediv__"), 
                                                ctx->fromMethod(nullptr, py_timedelta_truediv));
+    timedeltaType = timedeltaType->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__hash__"), 
+                                               ctx->fromMethod(nullptr, py_timedelta_hash));
+    timedeltaType = timedeltaType->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__abs__"), 
+                                               ctx->fromMethod(nullptr, py_timedelta_abs));
+    timedeltaType = timedeltaType->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__neg__"), 
+                                               ctx->fromMethod(nullptr, py_timedelta_neg));
+    timedeltaType = timedeltaType->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__pos__"), 
+                                               ctx->fromMethod(nullptr, py_timedelta_pos));
+    timedeltaType = timedeltaType->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__bool__"), 
+                                               ctx->fromMethod(nullptr, py_timedelta_bool));
     timedeltaType = timedeltaType->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "total_seconds"), 
-                                              ctx->fromMethod(nullptr, py_timedelta_total_seconds));
+                                               ctx->fromMethod(nullptr, py_timedelta_total_seconds));
+
     timedeltaType = timedeltaType->setAttribute(ctx, env->getReprString(), 
                                               ctx->fromMethod(nullptr, py_timedelta_repr));
     mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "timedelta"), timedeltaType);
@@ -1023,12 +1288,16 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
 
     // UTC (on module and on timezone class)
     const proto::ProtoList* utcArgs = ctx->newList();
-    utcArgs = utcArgs->appendLast(ctx, create_timedelta_instance(ctx, timedeltaType, 0, 0, 0));
-    const proto::ProtoObject* utc = timezoneType->call(ctx, nullptr, nullptr, timezoneType, utcArgs, nullptr);
+    utcArgs = utcArgs->appendLast(ctx, timezoneType); // cls
+    utcArgs = utcArgs->appendLast(ctx, create_timedelta_instance(ctx, timedeltaType, 0, 0, 0)); // offset
+    const proto::ProtoObject* utc = py_timezone_new(ctx, timezoneType, nullptr, utcArgs, nullptr);
     mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "UTC"), utc);
+
+
     // Important: set both lowercase and uppercase on the class!
     timezoneType = timezoneType->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "utc"), utc);
     timezoneType = timezoneType->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "UTC"), utc);
+
     
     // NOW add timezone to module
     mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "timezone"), timezoneType);
@@ -1046,12 +1315,23 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
                                     ctx->fromMethod(nullptr, py_date_lt));
     dateType = dateType->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__eq__"), 
                                     ctx->fromMethod(nullptr, py_date_eq));
+    dateType = dateType->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__add__"), 
+                                    ctx->fromMethod(nullptr, py_date_add));
+    dateType = dateType->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__sub__"), 
+                                    ctx->fromMethod(nullptr, py_date_sub));
+    dateType = dateType->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__hash__"), 
+                                    ctx->fromMethod(nullptr, py_date_hash));
+
+
     dateType = dateType->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "isoformat"), 
                                     ctx->fromMethod(nullptr, py_date_isoformat));
     dateType = dateType->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "toordinal"), 
                                     ctx->fromMethod(nullptr, py_date_toordinal));
     dateType = dateType->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "fromordinal"), 
                                     ctx->fromMethod(nullptr, py_date_fromordinal));
+    dateType = dateType->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "fromtimestamp"), 
+                                    ctx->fromMethod(nullptr, py_date_fromtimestamp));
+
     dateType = dateType->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "isocalendar"), 
                                     ctx->fromMethod(nullptr, py_date_isocalendar));
     dateType = dateType->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "today"), 
@@ -1083,10 +1363,21 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
                                           ctx->fromMethod(nullptr, py_datetime_lt));
     datetimeType = datetimeType->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__eq__"), 
                                           ctx->fromMethod(nullptr, py_datetime_eq));
+    datetimeType = datetimeType->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__add__"), 
+                                          ctx->fromMethod(nullptr, py_datetime_add));
+    datetimeType = datetimeType->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__sub__"), 
+                                          ctx->fromMethod(nullptr, py_datetime_sub));
+    datetimeType = datetimeType->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__hash__"), 
+                                          ctx->fromMethod(nullptr, py_datetime_hash));
+
+
     datetimeType = datetimeType->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "isoformat"), 
                                           ctx->fromMethod(nullptr, py_datetime_isoformat));
     datetimeType = datetimeType->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "now"), 
                                           ctx->fromMethod(nullptr, py_datetime_now));
+    datetimeType = datetimeType->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "fromtimestamp"), 
+                                          ctx->fromMethod(nullptr, py_datetime_fromtimestamp));
+
     datetimeType = datetimeType->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "replace"), 
                                           ctx->fromMethod(nullptr, py_datetime_replace));
     datetimeType = datetimeType->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "weekday"), 
@@ -1101,8 +1392,6 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
                                           ctx->fromMethod(nullptr, py_datetime_strftime));
     datetimeType = datetimeType->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "combine"), 
                                           ctx->fromMethod(nullptr, py_datetime_combine));
-    datetimeType = datetimeType->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "fromtimestamp"), 
-                                          ctx->fromMethod(nullptr, py_datetime_fromtimestamp));
     datetimeType = datetimeType->setAttribute(ctx, env->getReprString(), 
                                           ctx->fromMethod(nullptr, py_datetime_repr));
     mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "datetime"), datetimeType);
@@ -1116,8 +1405,13 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     timeType = timeType->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__new__"), 
                                     ctx->fromMethod(nullptr, py_time_new));
     timeType = timeType->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__call__"), callBridge);
+    timeType = timeType->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__lt__"), 
+                                    ctx->fromMethod(nullptr, py_time_lt));
+    timeType = timeType->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__eq__"), 
+                                    ctx->fromMethod(nullptr, py_time_eq));
     timeType = timeType->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "replace"), 
                                     ctx->fromMethod(nullptr, py_time_replace));
+
     timeType = timeType->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "isoformat"), 
                                     ctx->fromMethod(nullptr, py_time_isoformat));
     timeType = timeType->setAttribute(ctx, env->getReprString(), 
