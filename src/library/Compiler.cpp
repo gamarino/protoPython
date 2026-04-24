@@ -2679,6 +2679,28 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
 
     std::unordered_set<std::string> captured;
     collectCapturedNames(n->body.get(), combinedGlobals, captured);
+    // `collectCapturedNames` walks nested function/lambda/comprehension
+    // scopes and returns *their* free variables.  It does NOT include the
+    // free variables of the function we are compiling *itself* — e.g.
+    // `c` referenced directly inside `inner`'s top-level `for x in c.get(...):`
+    // with no further nesting.  Add those here: any name used in the body
+    // that is neither defined locally nor declared global must be treated
+    // as a candidate free variable.
+    {
+        std::unordered_set<std::string> bodyUsed;
+        collectUsedNames(n->body.get(), bodyUsed);
+        std::unordered_set<std::string> bodyDefined;
+        collectDefinedNames(n->body.get(), bodyDefined);
+        for (const auto& p : params) bodyDefined.insert(p);
+        for (const auto& k : n->kwonlyargs) bodyDefined.insert(k);
+        if (!n->vararg.empty()) bodyDefined.insert(n->vararg);
+        if (!n->kwarg.empty()) bodyDefined.insert(n->kwarg);
+        for (const auto& name : bodyUsed) {
+            if (bodyDefined.count(name) || combinedGlobals.count(name) || bodyNonlocals.count(name))
+                continue;
+            captured.insert(name);
+        }
+    }
     // Captured names that are NOT defined in this function are its nonlocals,
     // but ONLY if they are actually available as locals or nonlocals in the
     // enclosing scope. Names that appear only in module-level globals or builtins
