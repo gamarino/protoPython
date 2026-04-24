@@ -62,13 +62,48 @@ Token Tokenizer::scanNumber() {
                 } else break;
             }
             t.value = source_.substr(start, pos_ - start);
+            // Per CPython: a leading/trailing underscore and adjacent
+            // underscores inside a base-prefixed literal are invalid.
+            // The digit section must start and end with an actual digit
+            // and must not contain "__".
+            auto invalidUnderscore = [&](const std::string& s) -> bool {
+                // CPython allows a leading underscore after the base prefix
+                // (e.g. `0x_ff`, `0b_0`), so only reject a trailing
+                // underscore, a run of two or more underscores, or an
+                // all-underscore string with no digits.
+                if (s.empty()) return true;
+                if (s.back() == '_') return true;
+                bool anyDigit = false;
+                for (size_t i = 0; i < s.size(); ++i) {
+                    if (s[i] == '_') {
+                        if (i + 1 < s.size() && s[i + 1] == '_') return true;
+                    } else {
+                        anyDigit = true;
+                    }
+                }
+                return !anyDigit;
+            };
+            std::string afterPrefix = t.value.substr(2);
+            if (afterPrefix.empty() || invalidUnderscore(afterPrefix)) {
+                t.type = TokenType::Error;
+                t.value = std::string("invalid ") +
+                          (base == 16 ? "hexadecimal" : base == 8 ? "octal" : "binary") +
+                          " literal";
+                return t;
+            }
             std::string cleanValue = t.value;
             cleanValue.erase(std::remove(cleanValue.begin(), cleanValue.end(), '_'), cleanValue.end());
             try {
                 if (base == 10) {
                     t.intValue = std::stoll(cleanValue, nullptr, 10);
                 } else {
-                    t.intValue = static_cast<long long>(std::stoull(cleanValue, nullptr, 0));
+                    std::string digits = cleanValue.substr(2);
+                    if (digits.empty()) {
+                        t.type = TokenType::Error;
+                        t.value = "Invalid numerical literal: " + t.value;
+                        return t;
+                    }
+                    t.intValue = static_cast<long long>(std::stoull(digits, nullptr, base));
                 }
                 t.numValue = static_cast<double>(t.intValue);
                 t.isInteger = true;
@@ -117,6 +152,46 @@ Token Tokenizer::scanNumber() {
     }
     
     t.value = source_.substr(start, pos_ - start);
+    // CPython rejects decimal literals with:
+    //   - a trailing underscore (1_, 1.2_, 1e2_)
+    //   - leading zeros on non-zero decimals (012, 09_99) — historical
+    //     octal syntax that 3.x forbids
+    //   - adjacent underscores (1__0, 0.1__4)
+    //   - underscore immediately before/after '.' or 'e'/'E' or sign
+    {
+        const std::string& v = t.value;
+        auto badUnderscore = [&]() -> bool {
+            for (size_t i = 0; i < v.size(); ++i) {
+                if (v[i] != '_') continue;
+                if (i + 1 >= v.size()) return true; // trailing
+                char nxt = v[i + 1];
+                if (nxt == '_' || nxt == '.' || nxt == 'j' || nxt == 'J' ||
+                    nxt == 'e' || nxt == 'E' || nxt == '+' || nxt == '-')
+                    return true;
+                if (i == 0) return true; // leading (shouldn't happen for nums, but guard)
+                char prv = v[i - 1];
+                if (prv == '.' || prv == 'e' || prv == 'E' || prv == '+' || prv == '-')
+                    return true;
+            }
+            return false;
+        };
+        bool leadingZero = false;
+        if (!isFloat && !isComplex && v.size() >= 2 && v[0] == '0') {
+            // Allow pure zeros: 0, 00, 0_0, 0_0_0
+            bool hasNonZero = false;
+            for (char c : v) if (c != '0' && c != '_') { hasNonZero = true; break; }
+            if (hasNonZero) leadingZero = true;
+        }
+        if (badUnderscore() || leadingZero) {
+            t.type = TokenType::Error;
+            t.value = isFloat || isComplex
+                ? std::string("invalid decimal literal")
+                : (leadingZero
+                    ? std::string("leading zeros in decimal integer literals are not permitted; use an 0o prefix for octal integers")
+                    : std::string("invalid decimal literal"));
+            return t;
+        }
+    }
     std::string cleanValue = t.value;
     cleanValue.erase(std::remove(cleanValue.begin(), cleanValue.end(), '_'), cleanValue.end());
     try {
