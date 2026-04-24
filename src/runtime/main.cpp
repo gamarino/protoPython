@@ -254,6 +254,13 @@ int main(int argc, char* argv[]) {
         return EXIT_OK;
     }
 
+    // Mark the environment so Python-level code can detect it is running
+    // inside protoPython and adjust behaviour (e.g. CPython conformance
+    // tests use PROTO_PYTHONPATH as a sentinel for "skip CPython-C-API
+    // specific assertions").  `setenv(..., 0)` only sets if not already
+    // present, preserving an explicit user value.
+    setenv("PROTO_PYTHONPATH", "1", 0);
+
     // V72: Read PROTO_PYTHONPATH
     if (const char* pathEnv = std::getenv("PROTO_PYTHONPATH")) {
         std::string paths = pathEnv;
