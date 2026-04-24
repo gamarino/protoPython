@@ -1055,6 +1055,11 @@ bool Compiler::compileGlobal(GlobalNode* n) {
 }
 
 bool Compiler::compileReturn(ReturnNode* n) {
+    // `return` is only legal inside a function body.  At module / class
+    // scope it must raise SyntaxError.
+    if (!isFunctionScope_ || isClassBody_) {
+        return false;  // compileNode will surface this as SyntaxError via py_compile
+    }
     if (n->value) {
         if (!compileNode(n->value.get())) return false;
     } else {
@@ -1067,6 +1072,11 @@ bool Compiler::compileReturn(ReturnNode* n) {
 }
 
 bool Compiler::compileYield(YieldNode* n) {
+    // Same rule as `return`: `yield` / `yield from` are only legal inside
+    // a function body (which, once we see a yield, becomes a generator).
+    if (!isFunctionScope_ || isClassBody_) {
+        return false;
+    }
     isGenerator_ = true;
     if (n->value) {
         if (!compileNode(n->value.get())) return false;
