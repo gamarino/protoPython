@@ -980,6 +980,28 @@ std::unique_ptr<ASTNode> Parser::parseStatement() {
         a->value = std::move(value);
         return a;
     }
+    // After a bare expression statement, the only legal followers are
+    // newline/semicolon/EOF/dedent/closing paren.  Anything else is the
+    // Python-2-style "print foo" / "exec foo" construct (or generally a
+    // leftover identifier).  Emit a targeted SyntaxError matching
+    // CPython's wording so `assertRaisesRegex(SyntaxError, "call to
+    // 'print'")` succeeds.
+    if (cur_.type != TokenType::Newline && cur_.type != TokenType::Semicolon &&
+        cur_.type != TokenType::EndOfFile && cur_.type != TokenType::Dedent &&
+        cur_.type != TokenType::RParen && cur_.type != TokenType::RSquare &&
+        cur_.type != TokenType::RCurly && cur_.type != TokenType::Comma) {
+        if (auto* nm = dynamic_cast<NameNode*>(expr.get())) {
+            if (nm->id == "print" || nm->id == "exec") {
+                std::string msg = "Missing parentheses in call to '";
+                msg += nm->id;
+                msg += "'. Did you mean " + nm->id + "(...)?";
+                error(msg);
+                return nullptr;
+            }
+        }
+        error("invalid syntax");
+        return nullptr;
+    }
     return expr;
 }
 
