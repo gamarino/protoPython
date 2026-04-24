@@ -2,6 +2,7 @@
 #include <protoPython/DiagUtils.h>
 #include <protoPython/ExecutionEngine.h>
 #include <protoPython/PythonEnvironment.h>
+#include <protoCore.h>
 #include <iostream>
 
 namespace protoPython {
@@ -303,7 +304,15 @@ bool Compiler::compileConstant(ConstantNode* n) {
         PythonEnvironment* env = PythonEnvironment::fromContext(ctx_);
         if (env && env->getBytesPrototype()) {
             proto::ProtoObject* b = const_cast<proto::ProtoObject*>(env->getBytesPrototype()->newChild(ctx_, true));
-            b->setAttribute(ctx_, PythonEnvironment::getInternedString(ctx_, "__data__"), PythonEnvironment::getInternedString(ctx_, n->bytesVal.c_str())->asObject(ctx_));
+            // Store raw octets in a ProtoByteBuffer (preserves embedded
+            // 0x00 and bytes >= 0x80 unchanged).  bytesVal is a
+            // std::string used as a raw-bytes buffer.
+            const proto::ProtoByteBuffer* bb = ctx_->newByteBuffer(
+                n->bytesVal.data(),
+                static_cast<unsigned long>(n->bytesVal.size()));
+            b->setAttribute(ctx_,
+                PythonEnvironment::getInternedString(ctx_, "__data__"),
+                bb->asObject(ctx_));
             // Set __class__ so getType() returns bytesPrototype (not typePrototype via prototype-chain lookup).
             b->setAttribute(ctx_, PythonEnvironment::getInternedString(ctx_, "__class__"), env->getBytesPrototype());
             obj = b;

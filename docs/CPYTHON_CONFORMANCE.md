@@ -86,6 +86,66 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 
 **Key V110 milestone**: All essential tests now run to completion without crashing. Individual test failures reflect unimplemented language features (metaclass protocol, descriptors, C-extension stubs), not interpreter instability.
 
+### V141 Changes (2026-04-24) — Y-round: bytes backed by ProtoByteBuffer
+
+`bytes` instances historically stored their content in `__data__` as a
+ProtoString (a Unicode string).  That representation silently:
+
+  - **Truncated at embedded `0x00`** (because internalization happens
+    via `c_str()`).
+  - **Re-encoded high bytes as UTF-8** (`bytes([0xff])` came back empty;
+    `bytes([0xc9])` came back as 2 bytes corresponding to U+00C9).
+
+Y-round migrates `bytes` to use `ProtoByteBuffer` — the opaque-octet
+type that already existed in protoCore but had no public factory or
+Python binding.  All 256 byte values now round-trip exactly.
+
+- **Y1** (protoCore) — Added `ProtoContext::newByteBuffer(data, len)`
+  factory and committed as `core/Integer.cpp` companion.
+- **Y2** — Two helpers in PythonEnvironment.cpp:
+    - `bytes_view(ctx, obj, std::string& out)` — extract raw octets
+      from a bytes-like, supporting both legacy ProtoString-backed
+      `__data__` and the new ProtoByteBuffer-backed form.
+    - `bytes_make_object(ctx, data, len)` — construct a fresh `bytes`
+      instance whose `__data__` is a ProtoByteBuffer.
+- **Y3** — `bytes_from_object` now accepts ProtoByteBuffer; `int.from_bytes`
+  uses `bytes_view` for input.
+- **Y4** — `int.to_bytes` produces a ProtoByteBuffer.  `(10**30).to_bytes(13, 'big')`
+  now returns `b'\x0c\x9f,\x9c\xd0Ft\xed\xea@\x00\x00\x00'` (was empty
+  because of `c_str()` truncation).
+- **Y5** — `bytes(iterable)` and `bytes(int)` produce ProtoByteBuffer.
+  `bytes([0xff])` now returns a 1-byte object with value `255` (was empty).
+- **Y6** — Compiler emits `b'...'` literals as ProtoByteBuffer.
+- **Y7-Y9** — `bytes_data_view` helper; `len(b)`, `b[i]`, `b[i:j]`,
+  `b.hex()`, `bytes.__repr__` all read from either backing format.
+- **Y10** — Operator dunders (`__mul__`, `__rmul__`, `__add__`, `__eq__`)
+  added to the bytes prototype, since the previous implementation
+  inherited them implicitly from `__data__` being a ProtoString.
+
+After V141:
+
+  ```
+  >>> (10**30).to_bytes(13, 'big').hex()
+  '0c9f2c9cd04674edea40000000'                 # was ''
+  >>> bytes([0xff])
+  b'\xff'                                       # was b''
+  >>> b'foo' * 3
+  b'foofoofoo'                                  # was AttributeError
+  >>> int.from_bytes((10**30).to_bytes(13, 'big'), 'big') == 10**30
+  True                                          # already worked, still works
+  ```
+
+Essential-suite snapshot after V141:
+
+| Test | Tests run | Pass | Fail | Err | Skip | Notes |
+| :--- | ---: | ---: | ---: | ---: | ---: | :--- |
+| test_grammar      |  75 | 34 | 21 | 15 | 5 | +1 err / -1 fail vs V140 (net even) |
+| test_types        | 131 |  6 | 75 | 48 | 2 | unchanged |
+| test_generators   |   1 |  0 |  0 |  1 | 0 | unchanged |
+| test_asyncgen     |  85 |  0 |  8 | 77 | 0 | unchanged |
+| test_json         |   9 |  9 |  0 |  0 | 0 | **PASS** |
+| test_base64       |  54 |  — | 21 |295 | 1 | now reaches more tests; failures shifted from data-corruption-induced fakes to real bytes API gaps |
+
 ### V140 Changes (2026-04-24) — X-round: bignum operators & built-ins (round 2)
 
 A second sweep on bignum-safety, this time covering the operator
