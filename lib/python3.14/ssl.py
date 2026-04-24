@@ -150,6 +150,21 @@ _IntEnum._convert_(
     lambda name: name.startswith('CERT_'),
     source=_ssl)
 
+# Backstop for protoPython: `_IntEnum._convert_` relies on metaclass machinery
+# that is not fully wired up here, which leaves the module without the
+# enum member names.  Copy the underlying integer values directly from
+# _ssl so later references in ssl.py find them.
+for _copyname in ('CERT_NONE', 'CERT_OPTIONAL', 'CERT_REQUIRED',
+                  'PROTOCOL_SSLv23', 'PROTOCOL_TLS',
+                  'PROTOCOL_TLS_CLIENT', 'PROTOCOL_TLS_SERVER',
+                  'PROTOCOL_TLSv1', 'PROTOCOL_TLSv1_1', 'PROTOCOL_TLSv1_2',
+                  'VERIFY_DEFAULT', 'VERIFY_CRL_CHECK_LEAF',
+                  'VERIFY_CRL_CHECK_CHAIN', 'VERIFY_X509_STRICT',
+                  'VERIFY_X509_TRUSTED_FIRST'):
+    if hasattr(_ssl, _copyname) and _copyname not in globals():
+        globals()[_copyname] = getattr(_ssl, _copyname)
+del _copyname
+
 PROTOCOL_SSLv23 = _SSLMethod.PROTOCOL_SSLv23 = _SSLMethod.PROTOCOL_TLS
 _PROTOCOL_NAMES = {value: name for name, value in _SSLMethod.__members__.items()}
 
@@ -971,7 +986,13 @@ class SSLObject:
 
 def _sslcopydoc(func):
     """Copy docstring from SSLObject to SSLSocket"""
-    func.__doc__ = getattr(SSLObject, func.__name__).__doc__
+    try:
+        func.__doc__ = getattr(SSLObject, func.__name__).__doc__
+    except (AttributeError, TypeError):
+        # Some descriptors (property, slot_wrapper) don't expose __doc__
+        # cleanly under protoPython's descriptor protocol.  Leave the
+        # decorated function's own docstring in place.
+        pass
     return func
 
 

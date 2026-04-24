@@ -101,17 +101,12 @@ _oids = {
 _nids = {v[0]: v for v in _oids.values()}
 
 def txt2obj(txt, name=False):
-    print(f"DEBUG: _ssl.txt2obj({txt!r}, name={name!r})")
     if txt in _oids:
-        res = _oids[txt]
-        print(f"DEBUG: _ssl.txt2obj returning {res!r} type={type(res)}")
-        return res
+        return _oids[txt]
     if name:
         for oid, (nid, sn, ln, o) in _oids.items():
             if txt in (sn, ln, oid):
-                res = (nid, sn, ln, o)
-                print(f"DEBUG: _ssl.txt2obj returning {res!r}")
-                return res
+                return (nid, sn, ln, o)
     raise ValueError(f"unknown object '{txt}'")
 
 def nid2obj(nid):
