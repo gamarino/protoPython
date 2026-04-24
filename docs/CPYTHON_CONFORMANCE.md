@@ -57,7 +57,7 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 - [ ] `test_pydoc.py`
 - [ ] `test_warnings.py`
 
-## Progress Summary (v1.0.0 — 2026-04-24, V114)
+## Progress Summary (v1.0.0 — 2026-04-24, V115)
 
 | Category | Total | Tested | Passed | Notes |
 | :--- | :--- | :--- | :--- | :--- |
@@ -70,6 +70,38 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 **Conformity Suite (internal, 2026-04-15)**: 7/9 tests pass. Failures are pre-existing: `int(float)` conversion and `set(iterable)` constructor.
 
 **Key V110 milestone**: All essential tests now run to completion without crashing. Individual test failures reflect unimplemented language features (metaclass protocol, descriptors, C-extension stubs), not interpreter instability.
+
+### V115 Changes (2026-04-24) — Phase F5: `_zstd` shim covers full surface
+
+The `_zstd` module stub only declared three classes and a couple of
+helpers, so `from _zstd import ZSTD_DStreamOutSize` in
+`compression/zstd/_zstdfile.py` failed at import time.  The failure
+cascaded all the way back to `shutil.py` on any test entrypoint, emitting
+three "unhandled exception in module execution" blocks before the test
+runner even started.
+
+Expanded `_zstd.py` to cover the complete CPython surface consumed by
+`compression/zstd/`:
+
+- Classes: `ZstdError`, `ZstdDict`, `ZstdCompressor` (with `CONTINUE`,
+  `FLUSH_BLOCK`, `FLUSH_FRAME` mode constants, `last_mode`, `flush`,
+  `set_pledged_input_size`), `ZstdDecompressor` (with `eof`, `needs_input`,
+  `unused_data`).
+- Functions: `compress`, `decompress`, `get_frame_size`, `train_dict`,
+  `finalize_dict`, `set_parameter_types`.
+- Constants: `ZSTD_CLEVEL_DEFAULT`, `ZSTD_DStreamInSize/OutSize`,
+  `ZSTD_CStreamInSize/OutSize`, every `ZSTD_c_*` compression parameter ID,
+  `ZSTD_d_windowLogMax`, the strategy enum (`ZSTD_fast` through
+  `ZSTD_btultra2`), and version strings.
+
+Behaviour is **passthrough**: `compress`/`decompress` return the input
+bytes unchanged, which is not a real compression implementation but is
+consistent enough for the import path to succeed.  Consumers that actually
+need zstd compression will see bit-identical input/output — an honest
+contract compared to crashing at import.
+
+Impact: three import-time crash messages eliminated from test_grammar,
+test_types, and test_base64 startup output.  No test-count change yet.
 
 ### V114 Changes (2026-04-24) — Phase F4: `cls.__annotations__` always exists
 
