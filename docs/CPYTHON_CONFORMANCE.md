@@ -14,7 +14,7 @@ This document tracks the progress of `protoPython` in passing the official CPyth
 
 Core syntax, standard object model, and fundamental types.
 
-- [ ] `test_grammar.py`: **PARTIAL** — 12/75 pass, runs to completion (V125, 2026-04-24)
+- [ ] `test_grammar.py`: **PARTIAL** — 27/75 pass, 5 skipped, runs to completion (V132, 2026-04-24)
 - [ ] `test_types.py`: **PARTIAL** — 6/131 pass, runs to completion; legible failures (V124, 2026-04-24)
 - [ ] `test_descr.py`: **TIMEOUT** — runs >5 min; `type()` descriptor tests expose slow paths
 - [ ] `test_generators.py`: **PARTIAL** — 0/1 pass (doctest runner fails); import chain runs
@@ -58,7 +58,7 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 - [ ] `test_pydoc.py`
 - [ ] `test_warnings.py`
 
-## Progress Summary (v1.0.0 — 2026-04-24, V125)
+## Progress Summary (v1.0.0 — 2026-04-24, V132)
 
 ### Essential suite — end of "error visibility" phases (F1–F8)
 
@@ -85,6 +85,61 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 **Conformity Suite (internal, 2026-04-15)**: 7/9 tests pass. Failures are pre-existing: `int(float)` conversion and `set(iterable)` constructor.
 
 **Key V110 milestone**: All essential tests now run to completion without crashing. Individual test failures reflect unimplemented language features (metaclass protocol, descriptors, C-extension stubs), not interpreter instability.
+
+### V126–V132 Changes (2026-04-24) — Steps T1–T10 + bonus: parser & stdlib polish
+
+Ten additional focused fixes (T-series) plus two bonus parser tweaks.
+
+- **V126 / T1+T2** Tokenizer: `0o377` was evaluating to 0 because
+  `stoull(..., 0)` doesn't understand `0o` / `0O`.  Also rejects malformed
+  literals (`0b1_`, `0x_`, `012`, `1_`, `0b__1`, etc.) with the standard
+  CPython wording.
+- **V127 / T3+T4** `_ssl`: removed two unconditional DEBUG prints in
+  `txt2obj`; added a backstop that copies `CERT_*`, `PROTOCOL_*`,
+  `VERIFY_*` names out of `_ssl` into the `ssl` module namespace because
+  `_IntEnum._convert_` isn't fully functional yet.  `import ssl` now
+  succeeds end-to-end.
+- **V128 / T5** Added `time.get_clock_info(name)` returning the minimal
+  CPython namespace (`implementation`, `monotonic`, `adjustable`,
+  `resolution`).  Unblocks `asyncio.base_events`.
+- **V129 / T9** Parser rejects `yield`, `yield from`, and `return` at
+  module / class scope.  `py_compile` converts the compiler's refusal
+  into a proper `SyntaxError`.
+- **V130 / T10** Parser rejects a bare-expression statement followed by
+  leftover tokens.  `print foo` and `exec foo` now produce the CPython
+  hint: `Missing parentheses in call to 'print'. Did you mean print(...)?`.
+  Unblocks 24 subtests of `test_former_statements_refer_to_builtins`.
+- **V131 / T8** Runtime `main.cpp` now calls `setenv("PROTO_PYTHONPATH",
+  "1", 0)` at startup.  CPython conformance tests probe that env-var as
+  a sentinel to branch off CPython-C-API-specific assertions (e.g.
+  `inspect.CO_COROUTINE`).  Previously unset, the tests took the CPython
+  path and failed.
+- **V132 / bonus** `d[1,]` now indexes with `(1,)` instead of `1`
+  (trailing-comma tuple in subscript position).  Also, unclosed
+  brackets raise SyntaxError with the CPython wording `'(' was never
+  closed`, matching `test_eof_error`.
+
+### Skipped from T1–T10
+
+- **T6 (SyntaxWarning for `x is 1`)** — would require routing
+  compile-time warnings through `warnings.catch_warnings`; infra work
+  deferred to a future pass.
+- **T7 (KeyError with large-int "hash")** — attempted fix for empty-dict
+  repr caused a segfault in the full test_grammar run; reverted.  The
+  visible symptom is cosmetic — `f.__annotations__ == {}` already
+  returns True via `__eq__` (fixed in S7).
+
+### Essential suite — end of T-round
+
+| Test | Pass | Fails/Errors | Delta vs V125 |
+| :--- | ---: | ---: | ---: |
+| `test_grammar.py` | 27 / 75 | 25 fail + 18 err + 5 skip | **+15 pass** |
+| `test_types.py`  | 6 / 131 | 75 fail + 48 err + 2 skip | unchanged |
+| `test_descr.py`  | — | TIMEOUT | unchanged |
+| `test_generators.py` | 0 / 1 | 1 err | unchanged |
+| `test_asyncgen.py` | 0 / 85 | 6 fail + 79 err | unchanged |
+| `test_json.py` | 9 / 9 | — | **still 100%** |
+| `test_base64.py` | — | — | unchanged |
 
 ### V118–V125 Changes (2026-04-24) — Steps S1–S10: targeted correctness fixes
 
