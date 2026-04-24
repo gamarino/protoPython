@@ -905,6 +905,16 @@ bool Compiler::compileNamedExpr(NamedExprNode* n) {
 
 bool Compiler::compileAnnAssign(AnnAssignNode* n) {
     if (!n) return false;
+    // CPython restricts the target of an annotated assignment to a plain
+    // NAME, attribute access, or subscript.  Patterns like `[x, 0]: int`,
+    // `f(): int`, `(x,): int` must raise SyntaxError.
+    if (n->target) {
+        ASTNode* t = n->target.get();
+        bool valid = dynamic_cast<NameNode*>(t) != nullptr
+                  || dynamic_cast<AttributeNode*>(t) != nullptr
+                  || dynamic_cast<SubscriptNode*>(t) != nullptr;
+        if (!valid) return false;
+    }
     if (n->value) {
         if (!compileNode(n->value.get())) return false;
         if (!compileTarget(n->target.get(), TargetCtx::Store)) return false;

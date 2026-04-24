@@ -289,11 +289,23 @@ std::unique_ptr<ASTNode> Parser::parseAtom() {
         return n;
     }
     if (accept(TokenType::LParen)) {
+        // CPython caps expression nesting at MAXLEVEL=200 and raises
+        // SyntaxError("too many nested parentheses") beyond that.
+        // Use a simple static counter tied to the parser's lifetime —
+        // a recursive parseAtom never unwinds the counter otherwise.
+        static thread_local int parenDepth = 0;
+        const int MAXLEVEL = 200;
+        parenDepth++;
+        struct ParenGuard { int& d; ~ParenGuard(){ --d; } } _pg{parenDepth};
+        if (parenDepth > MAXLEVEL) {
+            error("too many nested parentheses");
+            return nullptr;
+        }
         skipTrash();
         if (accept(TokenType::RParen)) {
             return createNode<TupleLiteralNode>();
         }
-        
+
         if (cur_.type == TokenType::Yield) {
             auto y = parseYieldExpression();
             if (!expect(TokenType::RParen)) return nullptr;
