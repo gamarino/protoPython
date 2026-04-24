@@ -52,7 +52,9 @@ def _getline_from_code(filename, lineno):
     return ''
 
 def _make_key(code):
-    return (code.co_filename, code.co_qualname, code.co_firstlineno)
+    co_qualname = getattr(code, 'co_qualname', None) or getattr(code, 'co_name', '<unknown>')
+    co_firstlineno = getattr(code, 'co_firstlineno', 0)
+    return (code.co_filename, co_qualname, co_firstlineno)
 
 def _getlines_from_code(code):
     code_id = _make_key(code)
@@ -219,12 +221,19 @@ def lazycache(filename, module_globals):
     if not filename or (filename.startswith('<') and filename.endswith('>')):
         return False
     # Try for a __loader__, if available
+    # module_globals may be a plain object (not a dict) in non-CPython runtimes,
+    # so use getattr with fallback instead of .get().
+    _mg_get = getattr(module_globals, 'get', None)
+    def _globals_get(key, default=None):
+        if _mg_get is not None:
+            return _mg_get(key, default)
+        return getattr(module_globals, key, default)
     if module_globals and '__name__' in module_globals:
-        spec = module_globals.get('__spec__')
-        name = getattr(spec, 'name', None) or module_globals['__name__']
+        spec = _globals_get('__spec__')
+        name = getattr(spec, 'name', None) or _globals_get('__name__')
         loader = getattr(spec, 'loader', None)
         if loader is None:
-            loader = module_globals.get('__loader__')
+            loader = _globals_get('__loader__')
         get_source = getattr(loader, 'get_source', None)
 
         if name and get_source:

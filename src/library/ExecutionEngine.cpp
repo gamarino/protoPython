@@ -1720,9 +1720,11 @@ const proto::ProtoObject* py_generator_send_impl(
             if (item && item->isTuple(ctx)) {
                 const proto::ProtoTuple* t = item->asTuple(ctx);
                 if (t->getSize(ctx) >= 2) {
+                    bool isWith = (t->getSize(ctx) >= 3) && (t->getAt(ctx, 2) == PROTO_TRUE);
                     blockStack.push_back({
                         static_cast<unsigned long>(t->getAt(ctx, 0)->asLong(ctx)),
-                        static_cast<size_t>(t->getAt(ctx, 1)->asLong(ctx))
+                        static_cast<size_t>(t->getAt(ctx, 1)->asLong(ctx)),
+                        isWith
                     });
                 }
             }
@@ -1841,12 +1843,13 @@ const proto::ProtoObject* py_generator_send_impl(
         }
         self->setAttribute(calleeCtx, env->getGiStackString(), newStack->asObject(calleeCtx));
 
-        // Save blockStack back
+        // Save blockStack back (tuple: [handlerPc, stackDepth, isWithBlock])
         const proto::ProtoList* newBlocks = calleeCtx->newList();
         for (const auto& b : blockStack) {
             const proto::ProtoList* tempL = calleeCtx->newList();
             tempL = tempL->appendLast(calleeCtx, calleeCtx->fromInteger(b.handlerPc));
             tempL = tempL->appendLast(calleeCtx, calleeCtx->fromInteger(b.stackDepth));
+            tempL = tempL->appendLast(calleeCtx, b.isWithBlock ? PROTO_TRUE : PROTO_FALSE);
             const proto::ProtoObject* bTup = calleeCtx->newTupleFromList(tempL)->asObject(calleeCtx);
             newBlocks = newBlocks->appendLast(calleeCtx, bTup);
         }
@@ -1929,6 +1932,27 @@ const proto::ProtoObject* py_generator_throw(
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
     const proto::ProtoObject* exc = (posArgs && posArgs->getSize(ctx) > 0) ? posArgs->getAt(ctx, 0) : PROTO_NONE;
+    // If exc is a type (has __call__ and __name__), instantiate it to get an exception instance
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (exc && exc != PROTO_NONE && env) {
+        const proto::ProtoObject* nameAttr = exc->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__name__"));
+        if (nameAttr && nameAttr != PROTO_NONE) {
+            // exc is a type; check if value argument provided
+            const proto::ProtoObject* value = (posArgs && posArgs->getSize(ctx) > 1) ? posArgs->getAt(ctx, 1) : nullptr;
+            if (value && value != PROTO_NONE) {
+                // If value is already an instance of exc type, use value
+                exc = value;
+            } else {
+                // Instantiate the type
+                const proto::ProtoObject* instance = invokePythonCallable(ctx, exc, ctx->newList(), nullptr);
+                if (instance && instance != PROTO_NONE && !env->hasPendingException()) {
+                    exc = instance;
+                } else if (env->hasPendingException()) {
+                    env->clearPendingException();
+                }
+            }
+        }
+    }
     return py_generator_send_impl(ctx, self, PROTO_NONE, exc);
 }
 
@@ -2384,14 +2408,24 @@ const proto::ProtoObject* executeBytecodeRange(
                 }
                 while (stack.size() > b.stackDepth) stack.pop_back();
                 if (exc) {
-                    if (get_env_diag()) {
-                        fprintf(stderr, "DEBUG: Pushing exception tuple (None, exc, exc) %p back to stack\n", exc);
-                        fflush(stderr);
+                    if (b.isWithBlock) {
+                        // with-block handler: stack is [..., __exit__]; push only exc
+                        // so OP_WITH_CLEANUP sees [__exit__, exc] as expected
+                        if (get_env_diag()) {
+                            fprintf(stderr, "DEBUG: Pushing exc only for with-block handler %p\n", exc);
+                            fflush(stderr);
+                        }
+                        stack.push_back(exc);
+                    } else {
+                        if (get_env_diag()) {
+                            fprintf(stderr, "DEBUG: Pushing exception tuple (None, exc, exc) %p back to stack\n", exc);
+                            fflush(stderr);
+                        }
+                        const proto::ProtoObject* noneObj = env ? env->getNonePrototype() : PROTO_NONE;
+                        stack.push_back(noneObj); // Traceback
+                        stack.push_back(exc);     // Value
+                        stack.push_back(exc);     // Type
                     }
-                    const proto::ProtoObject* noneObj = env ? env->getNonePrototype() : PROTO_NONE;
-                    stack.push_back(noneObj); // Traceback
-                    stack.push_back(exc);     // Value
-                    stack.push_back(exc);     // Type (duplicated exc for ProtoPython's modified exception match)
                 }
 
                 if (get_env_diag()) {
@@ -2452,6 +2486,7 @@ const proto::ProtoObject* executeBytecodeRange(
             if (yielded) *yielded = true;
             if (outPc) *outPc = next_i; // Resume at NEXT instruction
             if (finalTopPtr) *finalTopPtr = stack.top;
+            if (externalBlockStack) *externalBlockStack = blockStack; // save try/except handlers
             return ret;
         } else if (op == OP_GET_YIELD_FROM_ITER) {
             if (stack.empty()) { i = next_i; continue; }
@@ -3348,7 +3383,7 @@ const proto::ProtoObject* executeBytecodeRange(
             if (!enterResult && env && env->hasPendingException()) continue;
             
             // Push block pointing to handler at arg (absolute PC)
-            blockStack.push_back({static_cast<unsigned long>(arg), stack.size()});
+            blockStack.push_back({static_cast<unsigned long>(arg), stack.size(), true});
             
             stack.push_back(enterResult);
         } else if (op == OP_WITH_CLEANUP) {
@@ -3852,9 +3887,11 @@ const proto::ProtoObject* executeBytecodeRange(
                         const proto::ProtoString* getattrS = PythonEnvironment::getInternedString(ctx, "__getattr__");
                         const proto::ProtoObject* getattr = nullptr;
 
-                        // Check instance first (e.g. for super() proxies that store __getattr__ on themselves)
+                        // Check instance first (e.g. module-level __getattr__ or super() proxies)
+                        bool getattrIsOwn = false;
                         if (obj->hasOwnAttribute(ctx, getattrS) == PROTO_TRUE) {
                             getattr = obj->getAttribute(ctx, getattrS);
+                            getattrIsOwn = true;
                         } else {
                             // Search on class MRO
                             const proto::ProtoObject* cls = obj->getAttribute(ctx, env ? env->getClassString() : PythonEnvironment::getInternedString(ctx, "__class__"));
@@ -3864,7 +3901,11 @@ const proto::ProtoObject* executeBytecodeRange(
                         }
 
                         if (getattr && getattr != PROTO_NONE) {
-                            const proto::ProtoList* posArgs = ctx->newList()->appendLast(ctx, obj)->appendLast(ctx, nameObj);
+                            // Module-level __getattr__(name) takes only the name string.
+                            // Class-level __getattr__(self, name) takes the instance and name.
+                            const proto::ProtoList* posArgs = getattrIsOwn
+                                ? ctx->newList()->appendLast(ctx, nameObj)
+                                : ctx->newList()->appendLast(ctx, obj)->appendLast(ctx, nameObj);
                             val = invokePythonCallable(ctx, getattr, posArgs, nullptr);
                             if (env && env->hasPendingException()) {
                                 stack.pop_back(); continue;

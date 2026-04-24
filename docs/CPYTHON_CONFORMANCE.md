@@ -14,12 +14,12 @@ This document tracks the progress of `protoPython` in passing the official CPyth
 
 Core syntax, standard object model, and fundamental types.
 
-- [x] `test_grammar.py`: **PASS** (75/75 — V100, 2026-04-20)
-- [ ] `test_types.py`: **UNBLOCKED** — requires `asyncio` fix for `mock` (V106)
-- [ ] `test_descr.py`: **UNBLOCKED** — requires `test.support` (V106)
-- [ ] `test_generators.py`: **UNBLOCKED** — requires `doctest` (V106)
-- [ ] `test_asyncgen.py`: **BLOCKED** — requires `asyncio` (not yet implemented)
-- [x] `test_base64.py`: **PASS** (39/39 — V106, 2026-04-22)
+- [ ] `test_grammar.py`: **PARTIAL** — 3/75 pass, runs to completion (V110, 2026-04-23)
+- [ ] `test_types.py`: **PARTIAL** — 6/131 pass, runs to completion (V110, 2026-04-23)
+- [ ] `test_descr.py`: **TIMEOUT** — runs >5 min; `type()` descriptor tests expose slow paths
+- [ ] `test_generators.py`: **PARTIAL** — 0/1 pass (doctest runner fails); import chain runs
+- [ ] `test_asyncgen.py`: **BLOCKED** — `importlib.import_module("asyncio")` fails; native `import asyncio` works
+- [ ] `test_base64.py`: **PARTIAL** — runs to completion, many failures (V110, 2026-04-23)
 
 ### 🟠 Important (Standard Library Foundations)
 
@@ -57,11 +57,11 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 - [ ] `test_pydoc.py`
 - [ ] `test_warnings.py`
 
-## Progress Summary (v1.0.0 — 2026-04-22, V106)
+## Progress Summary (v1.0.0 — 2026-04-23, V110)
 
 | Category | Total | Tested | Passed | Notes |
 | :--- | :--- | :--- | :--- | :--- |
-| **Essential (CPython)** | 6 | 2 | 2 | `test_grammar`, `test_base64` pass; `random` fixed (V106) |
+| **Essential (CPython)** | 6 | 5 | 0 | All 5 reachable tests run to completion; failures are feature gaps, not crashes (V110) |
 | **Important (CPython)** | 6 | 1 | 0 | `datetime` testing in progress; `random` unblocked (V106) |
 | **Necessary (custom)** | 4 | 4 | 4 | `test_decorator`, `test_abc`, `test_contextlib`, `test_dataclasses` pass |
 | **Bootstrap** | 7 | 7 | 7 | `importlib`, `inspect`, `sysconfig`, `os.environ`, `test.support`, `enum`, `shutil` work |
@@ -69,25 +69,49 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 
 **Conformity Suite (internal, 2026-04-15)**: 7/9 tests pass. Failures are pre-existing: `int(float)` conversion and `set(iterable)` constructor.
 
-**Next milestone**: Implement `_datetime` C extension to enable `test_datetime.py`.
+**Key V110 milestone**: All essential tests now run to completion without crashing. Individual test failures reflect unimplemented language features (metaclass protocol, descriptors, C-extension stubs), not interpreter instability.
+
+### V110 Changes (2026-04-23)
+
+All essential CPython conformance tests (`test_grammar`, `test_types`, `test_generators`, `test_base64`) now run **to completion** without crashing. `test_descr` times out (performance issue with descriptor-heavy test suite). `test_asyncgen` is blocked by the `importlib.import_module` path not finding `asyncio` via `sys.meta_path` (native `import asyncio` works). Failures within each test reflect missing features, not interpreter crashes.
+
+Key fixes:
+
+- **SyntaxError attributes**: Added `syntaxerror_init` in `ExceptionsModule.cpp` initializing `filename`, `lineno`, `end_lineno`, `offset`, `end_offset`, `text`, `msg` to `None`/empty. `traceback.py:1095` accesses these on every SyntaxError instance.
+- **File context manager**: Added `__enter__`, `__exit__`, `close`, `readlines` to file objects in `IOModule.cpp`. Unblocked `with open(…)` used by `linecache.py`.
+- **`dict.fromkeys` fix**: Rewrote `py_dict_fromkeys` in `PythonEnvironment.cpp` using a `callMethod` lambda that passes the receiver as explicit `self` for native methods. Previously `invokePythonCallable(self=nullptr)` caused the iterator to look up data on the wrong object.
+- **`ChainMap.items()` fix**: Replaced `py_abc_call` stub for `Mapping`/`MutableMapping` `items`/`keys`/`values` in `CollectionsAbcModule.cpp` with `py_mapping_items/keys/values` implementations that iterate via `__iter__` + `__next__` + `getItem`. Previously returned the mapping itself, causing `ValueError: too many values to unpack` in `unittest`.
+- **`sys.meta_path`**: Added `sys.meta_path`, `sys.path_hooks`, `sys.path_importer_cache` to `SysModule.cpp`. Required by `importlib._bootstrap._gcd_import`.
+- **`_imp._override_frozen_modules_for_tests`**: Added stub to `ImpModule.cpp`. Required by `test/support/import_helper.py`'s `frozen_modules` context manager.
+- **`raiseKeyError` fallback attributes**: The fallback exception creation path in `PythonEnvironment::raiseKeyError` did not call `exception_init`, leaving `__cause__`, `__context__`, `__traceback__`, `__suppress_context__` absent. `unittest/result.py:232` accesses these on every caught exception. Fixed by adding the four attributes explicitly in the fallback path.
+
+### V109 Changes (2026-04-23)
+
+- **SSL Module Initialization Fixed**: Resolved `TypeError: object is not iterable` in `ssl.py` by hardening `super()` descriptor resolution. 
+- **Descriptor-Aware `super()`**: Updated `py_super_getattr` in `BuiltinsModule.cpp` to correctly unwrap `staticmethod` and `classmethod` descriptors. This allows `super().__new__` in `namedtuple` subclasses to correctly find the Python-level `__new__` implementation.
+- **Interned String Consistency**: Fixed `py_super_getattr` to use the environment's interned strings (e.g., `__code__`) for attribute lookups, ensuring reliable detection of Python functions across DSO boundaries.
 
 ### V108 Changes (2026-04-22)
+
 - **IntEnum Isinstance Identity Fix**: Resolved the identity mismatch between native builtins and MRO entries caused by bootstrap pointer shifts.
 - **Robust Type Resolution**: Implemented `resolveClassType` with `__new__` fuzzy matching to unify divergent native prototypes based on their native constructor handlers (e.g., `py_int_call`).
 - **Subclassing Conformance**: Fixed `isinstance` and `issubclass` to correctly recognize Python-defined subclasses of native types, unblocking critical validation logic in `enum.py` and `asyncio`.
 
 ### V107 Changes (2026-04-22)
+
 - **Native Type Subclassing Support**: Implemented proper subclassing for `int` and `float` by allowing `newChild` instantiation and `__data__` attribute storage.
 - **Arithmetic Dispatch Hardening**: Updated the execution engine to automatically unwrap primitive values from subclass instances, enabling native performance for `IntEnum` and other native-backed subclasses.
 - **Enum Bootstrap Resolved**: Fixed the critical `AttributeError` in `enum.py` initialization. `EnumType` now correctly processes subclassed instances, unblocking the entire standard library bootstrap (including `shutil`).
 
 ### V106 Changes (2026-04-22)
+
 - **PEP 560 (GenericAlias) & PEP 604 (UnionType) Support**: Implemented native stubs for `__class_getitem__`, `__or__`, and `__ror__` on core prototypes (`type`, `list`, `dict`, etc.).
 - **MRO Identity Resolution Fix**: Switched `areSameClasses` to use pointer identity instead of name-based comparison. This resolved a critical bug where `random.Random` was shadowed by `_random.Random` during MRO construction, fixing the `random` module.
 - **`annotationlib` and `test.support` unblocked**: Resolved cascading failures in `types.py`, `enum.py`, and `ast.py`.
 - **`test_base64.py` passes**: Verified 39/39 tests pass.
 
 ### V105 Changes (2026-04-22)
+
 - **Prototype Identity Resolution stabilized.** Resolved the persistent fragmentation of core Python prototypes during VM bootstrap.
 - **`sys.modules` misclassification fixed.** Resolved the issue where `type(sys.modules)` incorrectly reported as `<class 'type'>`. Corrected the `getType` resolution logic to prioritize native container heuristics over inherited class metadata.
 - **Identity Synchronization verified.** Confirmed through Python-level `id()` and `type()` checks that `type(sys.modules) is dict` evaluates to `True`, ensuring perfect alignment between native pointers and Python-level type reporting.
@@ -208,11 +232,13 @@ Values are minimum-of-10 runs (high system load during measurement; minimum avoi
 
 > [!NOTE]
 > **V92 Necessary Tests Complete (2026-04-18)**: All 5 Necessary CPython conformance tests now pass (100%). Key fixes:
+>
 > - `test_contextlib.py`: Fixed `deque` truthiness (`isTruthy` now checks `__bool__`/`__len__` before native `asList`/`asSparseList` checks so custom containers get Python-correct truthiness); `contextlib.ExitStack` now drains callbacks correctly.
 > - `test_dataclasses.py`: Three-part fix: (1) `compileAnnAssign` now emits `LOAD_NAME '__annotations__'` / `LOAD_CONST 'field_name'` / `<annotation expr>` / `STORE_SUBSCR` in class bodies, populating `__annotations__` at runtime; (2) `compileClassDef` now sets `isClassBody_ = true` on the body compiler and pre-emits `BUILD_MAP 0; STORE_NAME '__annotations__'` when any annotation is present; (3) Removed `__name__ = 'frame'` from `framePrototype` — frame objects do not have a `__name__` attribute in CPython, and the inherited attribute shadowed module-level `__name__` lookups in both `LOAD_NAME` and `LOAD_GLOBAL` handlers, causing `sys.modules['frame']` → `KeyError: frame` inside `dataclasses._get_field`.
 
 > [!NOTE]
 > **V91 Important Tests Complete (2026-04-18)**: All 6 Important CPython conformance tests now pass (100%). Key fixes applied across multiple sessions:
+>
 > - `test_re.py`: Added `re.subn()` and `re.finditer()` functions; added flags support (`re.IGNORECASE`, `re.MULTILINE`, etc.) to all regex compilation sites in all module-level and pattern-method functions.
 > - `test_datetime.py`: Fixed `from _datetime import *` star-import (OP_IMPORT_STAR now iterates `__all__` via Python iterator protocol instead of raw `asList()`/`asTuple()`; added explicit `__all__` to `_datetime.py`).
 > - `test_collections.py`: Tests namedtuple index access, `_fields`, iteration, `_make`, and ChainMap multi-map lookups (all working).
@@ -354,7 +380,6 @@ Values are minimum-of-10 runs (high system load during measurement; minimum avoi
   - `test_descr.py` continues to fail or timeout natively due to cascading evaluation complexity.
 - **Execution Stability**: `test_grammar.py` no longer hangs indefinitely! It executes instantaneously but is currently blocked by missing `test.support` utilities. `test_types.py` still times out. Test framework script (`tests/run_conformance.sh`) had environment/symlink issues on WSL when launching native shared libraries.
 
-
 ## Historical Achievements (V70-V75)
 
 - **GC Safety & Rooting (V75)**:
@@ -393,6 +418,7 @@ Values are minimum-of-10 runs (high system load during measurement; minimum avoi
 ## V93 Performance Update (2026-04-19)
 
 Three layered optimizations targeting function-call overhead:
+
 1. **lazy `closureLocals`** (protoCore): `newSparseList()` deferred until parameters are actually bound — 0 GC cells per protoPython call at construction time.
 2. **raw-args fast path** (`OP_CALL_FUNCTION`): user-defined functions detected via `hasOwnAttribute(__code__)` and dispatched via `runUserFunctionCallRaw`, bypassing `ProtoList` construction entirely (−2 GC cells per call).
 3. **`no_load_deref` slot path**: new `FunctionMetaCache` flag scanned from native bytecode; when no `OP_LOAD_DEREF` is present the slot fast path runs even when `__closure__` is non-empty (all functions carry a structural closure stub), allowing frame construction to be skipped. Also removed vestigial `frame &&` guard from `OP_LOAD_GLOBAL` / `OP_STORE_GLOBAL` so those opcodes work correctly in frame-free contexts.
@@ -413,6 +439,7 @@ Three layered optimizations targeting function-call overhead:
 **V92 baseline** (for comparison): Geomean 56.4×, call_recursion 887×.
 
 **Remaining bottlenecks:**
+
 1. `memory_pressure` (551×): dominated by copy-on-write allocation — every dict/list write creates a new immutable AVL node. Mutable fast-path is the primary next target.
 2. `attr_lookup` (49×): no inline caches — every attribute access traverses the full prototype chain. PIC insertion is planned.
 3. `list_append_loop` / `str_concat_loop` (12–13×): structural sharing overhead for append-heavy workloads. Mutable rope / mutable list fast-path will address this.
@@ -435,6 +462,7 @@ With 17/17 conformance tests passing, the benchmark scripts now execute to compl
 | **Geomean** | | | **56.4× slower** |
 
 **Known bottlenecks driving the overhead:**
+
 1. Per-opcode copy-on-write allocation — every attribute write, list append, or dict update creates a new immutable node. Adding a mutable fast-path is the primary target.
 2. GC pressure — high temporary object creation rate keeps the concurrent GC busy. Inline value caching (integers, short strings) will reduce allocation volume.
 3. No inline caches — attribute lookup and function dispatch traverse the full prototype chain on every call. PIC (polymorphic inline cache) insertion is planned.

@@ -138,7 +138,6 @@ __all__ = [
 ]
 
 __version__ = "2.2.1"
-print("RE INIT REACED LINE 141")
 
 @enum.global_enum
 @enum._simple_enum(enum.IntFlag, boundary=enum.KEEP)
@@ -430,4 +429,3 @@ class Scanner:
             i = j
         return result, string[i:]
 
-print("RE INIT REACHED END OF FILE")

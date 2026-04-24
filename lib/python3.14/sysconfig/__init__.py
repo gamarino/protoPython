@@ -188,7 +188,7 @@ _USER_BASE = None
 def _safe_realpath(path):
     try:
         return realpath(path)
-    except OSError:
+    except (OSError, AttributeError):
         return path
 
 if sys.executable:
@@ -369,9 +369,11 @@ def _get_sysconfigdata():
 
     name = _get_sysconfigdata_name()
     path = os.environ.get('_PYTHON_SYSCONFIGDATA_PATH')
-    module = _import_from_directory(path, name) if path else importlib.import_module(name)
-
-    return module.build_time_vars
+    try:
+        module = _import_from_directory(path, name) if path else importlib.import_module(name)
+        return module.build_time_vars
+    except (ImportError, ModuleNotFoundError, AttributeError):
+        return {}
 
 
 def _installation_is_relocated():

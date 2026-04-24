@@ -5,6 +5,13 @@
 #include <protoCore.h>
 
 namespace protoPython {
+
+// Forward declaration — implemented in ExecutionEngine.cpp
+extern const proto::ProtoObject* invokePythonCallable(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* callable,
+    const proto::ProtoList* args,
+    const proto::ProtoSparseList* kwargs);
 static const proto::ProtoObject* py_check_methods(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* self,
@@ -43,6 +50,138 @@ static const proto::ProtoObject* py_check_methods(
 
 
 namespace collections_abc {
+
+// Helper: iterate a mapping (using __iter__ + __getitem__) and collect (key, value) tuples.
+// Returns a ProtoList of 2-element tuples, or nullptr on error.
+static const proto::ProtoList* collectMappingItems(proto::ProtoContext* ctx, const proto::ProtoObject* mapping) {
+    if (!mapping || mapping == PROTO_NONE) return nullptr;
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    const proto::ProtoList* emptyL = ctx->newList();
+
+    auto callMethod = [&](const proto::ProtoObject* method, const proto::ProtoObject* receiver,
+                          const proto::ProtoList* args) -> const proto::ProtoObject* {
+        if (!method || method == PROTO_NONE) return nullptr;
+        if (method->asMethod(ctx)) {
+            return method->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(receiver), nullptr, args, nullptr);
+        }
+        const proto::ProtoList* selfArgs = ctx->newList()->appendLast(ctx, receiver);
+        unsigned long n = args ? args->getSize(ctx) : 0;
+        for (unsigned long j = 0; j < n; ++j) selfArgs = selfArgs->appendLast(ctx, args->getAt(ctx, j));
+        // Use the extern helper declared in ExecutionEngine.cpp
+        return invokePythonCallable(ctx, method, selfArgs, nullptr);
+    };
+
+    const proto::ProtoString* iterS = PythonEnvironment::getInternalString(ctx, "__iter__");
+    const proto::ProtoObject* iterM = mapping->getAttribute(ctx, iterS);
+    if (!iterM || iterM == PROTO_NONE) return nullptr;
+    const proto::ProtoObject* itObj = callMethod(iterM, mapping, emptyL);
+    if (!itObj || itObj == PROTO_NONE) return nullptr;
+
+    const proto::ProtoString* nextS = PythonEnvironment::getInternalString(ctx, "__next__");
+    const proto::ProtoObject* nextM = itObj->getAttribute(ctx, nextS);
+    if (!nextM || nextM == PROTO_NONE) return nullptr;
+
+    const proto::ProtoList* result = ctx->newList();
+    for (;;) {
+        const proto::ProtoObject* key = callMethod(nextM, itObj, emptyL);
+        if (env && env->peekPendingException()) {
+            if (env->isStopIteration(ctx, env->peekPendingException()))
+                env->clearPendingException();
+            break;
+        }
+        if (!key || key == PROTO_NONE) break;
+        // Get value via __getitem__
+        const proto::ProtoList* getArgs = ctx->newList()->appendLast(ctx, key);
+        const proto::ProtoObject* val = env ? env->getItem(mapping, key, ctx) : PROTO_NONE;
+        if (env && env->peekPendingException()) { env->clearPendingException(); val = PROTO_NONE; }
+        // Yield as (key, value) tuple
+        const proto::ProtoList* pair = ctx->newList()->appendLast(ctx, key)->appendLast(ctx, val ? val : PROTO_NONE);
+        result = result->appendLast(ctx, ctx->newTupleFromList(pair)->asObject(ctx));
+    }
+    return result;
+}
+
+/** Mapping.items(): returns a list of (key, value) tuples */
+static const proto::ProtoObject* py_mapping_items(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList*) {
+    const proto::ProtoObject* mapping = self;
+    // If self is None/null, try args[0]
+    if (!mapping || mapping == PROTO_NONE) {
+        if (posArgs && posArgs->getSize(ctx) > 0) mapping = posArgs->getAt(ctx, 0);
+    }
+    const proto::ProtoList* items = collectMappingItems(ctx, mapping);
+    return items ? items->asObject(ctx) : ctx->newList()->asObject(ctx);
+}
+
+/** Mapping.keys(): returns a list of keys */
+static const proto::ProtoObject* py_mapping_keys(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList*) {
+    const proto::ProtoObject* mapping = self;
+    if (!mapping || mapping == PROTO_NONE) {
+        if (posArgs && posArgs->getSize(ctx) > 0) mapping = posArgs->getAt(ctx, 0);
+    }
+    if (!mapping || mapping == PROTO_NONE) return ctx->newList()->asObject(ctx);
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    const proto::ProtoList* emptyL = ctx->newList();
+
+    auto callM = [&](const proto::ProtoObject* method, const proto::ProtoObject* recv) -> const proto::ProtoObject* {
+        if (!method || method == PROTO_NONE) return nullptr;
+        if (method->asMethod(ctx)) return method->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(recv), nullptr, emptyL, nullptr);
+        const proto::ProtoList* sa = ctx->newList()->appendLast(ctx, recv);
+        return invokePythonCallable(ctx, method, sa, nullptr);
+    };
+
+    const proto::ProtoString* iterS = PythonEnvironment::getInternalString(ctx, "__iter__");
+    const proto::ProtoObject* iterM = mapping->getAttribute(ctx, iterS);
+    const proto::ProtoObject* itObj = iterM ? callM(iterM, mapping) : nullptr;
+    if (!itObj || itObj == PROTO_NONE) return ctx->newList()->asObject(ctx);
+
+    const proto::ProtoString* nextS = PythonEnvironment::getInternalString(ctx, "__next__");
+    const proto::ProtoObject* nextM = itObj->getAttribute(ctx, nextS);
+    if (!nextM || nextM == PROTO_NONE) return ctx->newList()->asObject(ctx);
+
+    const proto::ProtoList* result = ctx->newList();
+    for (;;) {
+        const proto::ProtoObject* key = callM(nextM, itObj);
+        if (env && env->peekPendingException()) {
+            if (env->isStopIteration(ctx, env->peekPendingException())) env->clearPendingException();
+            break;
+        }
+        if (!key || key == PROTO_NONE) break;
+        result = result->appendLast(ctx, key);
+    }
+    return result->asObject(ctx);
+}
+
+/** Mapping.values(): returns a list of values */
+static const proto::ProtoObject* py_mapping_values(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList*) {
+    const proto::ProtoObject* mapping = self;
+    if (!mapping || mapping == PROTO_NONE) {
+        if (posArgs && posArgs->getSize(ctx) > 0) mapping = posArgs->getAt(ctx, 0);
+    }
+    const proto::ProtoList* items = collectMappingItems(ctx, mapping);
+    if (!items) return ctx->newList()->asObject(ctx);
+    const proto::ProtoList* result = ctx->newList();
+    for (unsigned long i = 0; i < items->getSize(ctx); ++i) {
+        const proto::ProtoObject* pair = items->getAt(ctx, i);
+        if (pair && pair->isTuple(ctx) && pair->asTuple(ctx)->getSize(ctx) >= 2)
+            result = result->appendLast(ctx, pair->asTuple(ctx)->getAt(ctx, 1));
+    }
+    return result->asObject(ctx);
+}
 
 /** Minimal __call__ for ABC stub: return new child (for isinstance/callable use). */
 static const proto::ProtoObject* py_abc_call(
@@ -175,12 +314,14 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
             "__eq__", "__ne__", "__lt__", "__gt__", "__ge__",
             "__iter__", "__len__", "__contains__", "__hash__"
         };
+        bool isMapping = (strcmp(name, "Mapping") == 0 || strcmp(name, "MutableMapping") == 0);
         for (const char* m : methods) {
             const proto::ProtoObject* impl = ctx->fromMethod(nullptr, py_abc_call);
-            if (strcmp(m, "get") == 0 && (strcmp(name, "Mapping") == 0 || strcmp(name, "MutableMapping") == 0)) {
-                impl = ctx->fromMethod(nullptr, py_abc_get);
-            }
-            abc = const_cast<proto::ProtoObject*>(abc->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, m), impl)); 
+            if (isMapping && strcmp(m, "get") == 0) impl = ctx->fromMethod(nullptr, py_abc_get);
+            else if (isMapping && strcmp(m, "items") == 0) impl = ctx->fromMethod(nullptr, py_mapping_items);
+            else if (isMapping && strcmp(m, "keys") == 0) impl = ctx->fromMethod(nullptr, py_mapping_keys);
+            else if (isMapping && strcmp(m, "values") == 0) impl = ctx->fromMethod(nullptr, py_mapping_values);
+            abc = const_cast<proto::ProtoObject*>(abc->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, m), impl));
         }
 
         // 2. Inherit from object to have a valid MRO

@@ -3838,3 +3838,11 @@ def __getattr__(attr):
         raise AttributeError(f"module {__name__!r} has no attribute {attr!r}")
     globals()[attr] = obj
     return obj
+
+
+# Eagerly define deprecated aliases that __getattr__ would lazily create,
+# because protoPython's "from X import Y" does not call module __getattr__.
+import re as _re
+Match = _alias(_re.Match, 1)
+Pattern = _alias(_re.Pattern, 1)
+del _re

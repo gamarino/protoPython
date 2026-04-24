@@ -245,7 +245,8 @@ const proto::ProtoObject* ImpModule::createImpModule(proto::ProtoContext* ctx) {
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "source_hash"), ctx->fromMethod(mutMod, imp_source_hash));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_fix_co_filename"), ctx->fromMethod(mutMod, imp_fix_co_filename));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_override_multi_interp_extensions_check"), ctx->fromMethod(mutMod, imp_override_multi_interp_extensions_check));
-    
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_override_frozen_modules_for_tests"), ctx->fromMethod(mutMod, imp_override_multi_interp_extensions_check));
+
     return mod;
 }
 

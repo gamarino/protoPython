@@ -971,6 +971,10 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     }
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "Scanner"), scannerType);
 
+    // Expose Pattern and Match type objects (CPython compatibility)
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "Pattern"), patternProto);
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "Match"), matchProto);
+
     return mod;
 }
 

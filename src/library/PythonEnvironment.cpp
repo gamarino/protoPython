@@ -871,42 +871,33 @@ static const proto::ProtoObject* py_bool_call(
     if (obj->isInteger(ctx)) return obj->asLong(ctx) != 0 ? PROTO_TRUE : PROTO_FALSE;
     if (obj->isDouble(ctx)) return obj->asDouble(ctx) != 0.0 ? PROTO_TRUE : PROTO_FALSE;
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    const proto::ProtoObject* cls = env ? env->getType(ctx, obj) : obj->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__class__"));
-    const proto::ProtoObject* boolMethod = nullptr;
-    if (cls && cls != PROTO_NONE) {
-        boolMethod = env ? env->getAttribute(ctx, cls, PythonEnvironment::getInternedString(ctx, "__bool__")) : cls->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__bool__"));
-    }
-    
-    // Bind if it's an unbound method
+    // Use the same lookup pattern as isTruthy() in ExecutionEngine.cpp:
+    // get __bool__ from the class (not the instance) and call with obj as self.
+    const proto::ProtoObject* cls = env ? env->getType(ctx, obj)
+                                        : obj->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__class__"));
+    const proto::ProtoString* boolS = PythonEnvironment::getInternedString(ctx, "__bool__");
+    const proto::ProtoObject* boolMethod = cls ? cls->getAttribute(ctx, boolS)
+                                               : obj->getAttribute(ctx, boolS);
     if (boolMethod && boolMethod != PROTO_NONE && boolMethod->asMethod(ctx)) {
-        const proto::ProtoList* args = ctx->newList();
-        // If it's a descriptor/unbound method, pass the instance
-        if (!boolMethod->asMethodSelf(ctx)) {
-            args = args->appendLast(ctx, obj);
-        }
-        const proto::ProtoObject* res = invokePythonCallable(ctx, boolMethod, args, nullptr);
+        const proto::ProtoList* emptyL = env ? env->getEmptyList() : ctx->newList();
+        const proto::ProtoObject* res = boolMethod->asMethod(ctx)(ctx,
+            const_cast<proto::ProtoObject*>(obj), nullptr, emptyL, nullptr);
         if (res == PROTO_TRUE) return PROTO_TRUE;
         if (res == PROTO_FALSE) return PROTO_FALSE;
-        // Raise TypeError if __bool__ doesn't return bool
-        if (env) env->raiseTypeError(ctx, "__bool__ should return bool, returned non-bool");
+        if (res && res->isInteger(ctx)) return res->asLong(ctx) != 0 ? PROTO_TRUE : PROTO_FALSE;
         return PROTO_FALSE;
     }
-    
-    const proto::ProtoObject* lenMethod = nullptr;
-    if (cls && cls != PROTO_NONE) {
-        lenMethod = env ? env->getAttribute(ctx, cls, PythonEnvironment::getInternedString(ctx, "__len__")) : cls->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__len__"));
-    }
+
+    const proto::ProtoString* lenS = PythonEnvironment::getInternedString(ctx, "__len__");
+    const proto::ProtoObject* lenMethod = cls ? cls->getAttribute(ctx, lenS)
+                                              : obj->getAttribute(ctx, lenS);
     if (lenMethod && lenMethod != PROTO_NONE && lenMethod->asMethod(ctx)) {
-        const proto::ProtoList* args = ctx->newList();
-        if (!lenMethod->asMethodSelf(ctx)) {
-            args = args->appendLast(ctx, obj);
-        }
-        const proto::ProtoObject* res = invokePythonCallable(ctx, lenMethod, args, nullptr);
-        if (res && res->isInteger(ctx)) {
-            return res->asLong(ctx) != 0 ? PROTO_TRUE : PROTO_FALSE;
-        }
+        const proto::ProtoList* emptyL = env ? env->getEmptyList() : ctx->newList();
+        const proto::ProtoObject* res = lenMethod->asMethod(ctx)(ctx,
+            const_cast<proto::ProtoObject*>(obj), nullptr, emptyL, nullptr);
+        if (res && res->isInteger(ctx)) return res->asLong(ctx) != 0 ? PROTO_TRUE : PROTO_FALSE;
     }
-    
+
     return PROTO_TRUE;
 }
 
@@ -6618,6 +6609,7 @@ static const proto::ProtoObject* py_mappingproxy_keys(
     const proto::ProtoSparseList* keywordParameters) {
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     const proto::ProtoObject* data = self->getAttribute(context, env ? env->getDataString() : PythonEnvironment::getInternedString(context, "__data__"));
+    if (get_env_diag()) fprintf(stderr, "DEBUG: mappingproxy_keys self=%p data=%p\n", (void*)self, (void*)data);
     if (!data) return env ? env->getListPrototype()->newChild(context, true) : nullptr;
     
     const proto::ProtoObject* cls = data->getAttribute(context, env ? env->getClassString() : PythonEnvironment::getInternedString(context, "__class__"));
@@ -6860,18 +6852,44 @@ static const proto::ProtoObject* py_dict_fromkeys(
     const proto::ProtoObject* iterable = posArgs->getAt(context, 0);
     const proto::ProtoObject* value = posArgs->getSize(context) >= 2 ? posArgs->getAt(context, 1) : PROTO_NONE;
 
-    const proto::ProtoObject* iterM = iterable->getAttribute(context, PythonEnvironment::getInternalString(context, "__iter__"));
-    if (!iterM || !iterM->asMethod(context)) return PROTO_NONE;
-    const proto::ProtoObject* itObj = iterM->asMethod(context)(context, iterable, nullptr, context->newList(), nullptr);
-    if (!itObj) return PROTO_NONE;
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::ProtoList* emptyL = context->newList();
 
-    const proto::ProtoObject* nextM = (itObj->hasOwnAttribute(context, PythonEnvironment::getInternalString(context, "__next__")) == PROTO_TRUE) ? itObj->getAttribute(context, PythonEnvironment::getInternalString(context, "__next__")) : nullptr;
-    if (!nextM || !nextM->asMethod(context)) return PROTO_NONE;
+    // Helper: invoke a method with `receiver` as self, supporting both native and Python callables.
+    // Native methods (asMethod() != null) store self=nullptr on the prototype; we must supply receiver.
+    // Python callables (functions with __code__) are invoked via invokeCallable with receiver prepended.
+    auto callMethod = [&](const proto::ProtoObject* method, const proto::ProtoObject* receiver,
+                          const proto::ProtoList* args) -> const proto::ProtoObject* {
+        if (method->asMethod(context)) {
+            return method->asMethod(context)(context, const_cast<proto::ProtoObject*>(receiver), nullptr, args, nullptr);
+        }
+        const proto::ProtoList* selfArgs = context->newList()->appendLast(context, receiver);
+        unsigned long nargs = args ? args->getSize(context) : 0;
+        for (unsigned long j = 0; j < nargs; ++j)
+            selfArgs = selfArgs->appendLast(context, args->getAt(context, j));
+        return invokePythonCallable(context, method, selfArgs, nullptr);
+    };
+
+    const proto::ProtoString* iterS = PythonEnvironment::getInternalString(context, "__iter__");
+    const proto::ProtoObject* iterM = iterable->getAttribute(context, iterS);
+    if (!iterM || iterM == PROTO_NONE) return PROTO_NONE;
+    const proto::ProtoObject* itObj = callMethod(iterM, iterable, emptyL);
+    if (!itObj || itObj == PROTO_NONE) return PROTO_NONE;
+
+    const proto::ProtoString* nextS = PythonEnvironment::getInternalString(context, "__next__");
+    const proto::ProtoObject* nextM = itObj->getAttribute(context, nextS);
+    if (!nextM || nextM == PROTO_NONE) return PROTO_NONE;
 
     const proto::ProtoList* keysList = context->newList();
     const proto::ProtoSparseList* sparse = context->newSparseList();
     for (;;) {
-        const proto::ProtoObject* key = nextM->asMethod(context)(context, itObj, nullptr, context->newList(), nullptr);
+        const proto::ProtoObject* key = callMethod(nextM, itObj, emptyL);
+        if (env && env->peekPendingException()) {
+            if (env->isStopIteration(context, env->peekPendingException())) {
+                env->clearPendingException();
+            }
+            break;
+        }
         if (!key || key == PROTO_NONE) break;
         unsigned long hash = key->getHash(context);
         bool found = false;
@@ -7645,6 +7663,10 @@ void PythonEnvironment::raiseKeyError(proto::ProtoContext* ctx, const proto::Pro
         exc = ctx->newObject(false);
         exc = exc->addParent(ctx, keyErrorType);
         exc = exc->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "args"), args->asObject(ctx));
+        exc = exc->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__cause__"), PROTO_NONE);
+        exc = exc->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__context__"), PROTO_NONE);
+        exc = exc->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__traceback__"), PROTO_NONE);
+        exc = exc->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__suppress_context__"), PROTO_FALSE);
     }
     if (exc && exc != PROTO_NONE) {
         setPendingException(exc);
@@ -7893,12 +7915,14 @@ void PythonEnvironment::raiseAssertionError(proto::ProtoContext* ctx, const prot
     const proto::ProtoList* args = ctx->newList();
     if (msg) args = args->appendLast(ctx, msg);
     const proto::ProtoObject* exc = invokePythonCallable(ctx, assertionErrorType, args, nullptr);
+    if (exc && exc != PROTO_NONE) setPendingException(exc);
 }
 
 void PythonEnvironment::raiseZeroDivisionError(proto::ProtoContext* ctx) {
     if (!zeroDivisionErrorType) return;
     const proto::ProtoList* args = ctx->newList()->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "division by zero")->asObject(ctx));
     const proto::ProtoObject* exc = invokePythonCallable(ctx, zeroDivisionErrorType, args, nullptr);
+    if (exc && exc != PROTO_NONE) setPendingException(exc);
 }
 
 void PythonEnvironment::raiseIndexError(proto::ProtoContext* ctx, const std::string& msg) {
@@ -9625,6 +9649,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
             "UnicodeError", "UnicodeDecodeError", "UnicodeEncodeError", "UnicodeTranslateError",
             "BufferError", "MemoryError",
             "EnvironmentError", "IOError",
+            "BaseExceptionGroup", "ExceptionGroup",
         };
         for (const auto& excName : additionalExceptions) {
             const proto::ProtoObject* excType = exceptionsModule->getAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, excName.c_str()));
@@ -10166,6 +10191,8 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain,
     // Must use getInternedString so the key pointer matches what bytecode LOAD_NAME uses
     const proto::ProtoString* nameKey = PythonEnvironment::getInternedString(ctx, "__name__");
     const proto::ProtoString* pkgKey = PythonEnvironment::getInternedString(ctx, "__package__");
+    const proto::ProtoString* pathKeyEarly = PythonEnvironment::getInternedString(ctx, "__path__");
+    bool isPackageModule = (mod->hasAttribute(ctx, pathKeyEarly) == PROTO_TRUE);
     if (asMain) {
         mutableModObj->setAttribute(ctx, nameKey, PythonEnvironment::getInternedString(ctx, "__main__")->asObject(ctx));
     } else {
@@ -10173,7 +10200,10 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain,
         size_t lastDot = moduleName.find_last_of('.');
         if (lastDot != std::string::npos) {
             std::string parentPkgName = moduleName.substr(0, lastDot);
-            mutableModObj->setAttribute(ctx, pkgKey, PythonEnvironment::getInternedString(ctx, parentPkgName.c_str())->asObject(ctx));
+            // For packages (__init__.py), __package__ = own module name (CPython semantics).
+            // For regular submodules, __package__ = parent package name.
+            std::string pkgValue = isPackageModule ? moduleName : parentPkgName;
+            mutableModObj->setAttribute(ctx, pkgKey, PythonEnvironment::getInternedString(ctx, pkgValue.c_str())->asObject(ctx));
             // Ensure the parent package is loaded before the submodule runs.
             // This mirrors CPython's import behavior: loading foo.bar always loads foo first.
             // Check sys.modules first to avoid redundant loading.

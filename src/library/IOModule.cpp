@@ -39,6 +39,70 @@ static const proto::ProtoObject* py_io_read(
     return PythonEnvironment::getInternedString(context, result.c_str())->asObject(context);
 }
 
+static const proto::ProtoObject* py_io_close(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList*,
+    const proto::ProtoSparseList*) {
+    // Clear the buffer to simulate close
+    const proto::ProtoObject* bufObj = self->getAttribute(context, proto::ProtoString::createSymbol(context, "__file_buffer__"));
+    if (bufObj && bufObj->asExternalPointer(context)) {
+        std::string* buffer = static_cast<std::string*>(bufObj->asExternalPointer(context)->getPointer(context));
+        if (buffer) buffer->clear();
+    }
+    return PROTO_NONE;
+}
+
+static const proto::ProtoObject* py_io_enter(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList*,
+    const proto::ProtoSparseList*) {
+    return self;
+}
+
+static const proto::ProtoObject* py_io_exit(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList*) {
+    // Close the file and suppress no exceptions
+    py_io_close(context, self, nullptr, posArgs, nullptr);
+    return PROTO_FALSE;
+}
+
+static const proto::ProtoObject* py_io_readlines(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList*,
+    const proto::ProtoSparseList*) {
+    const proto::ProtoObject* bufObj = self->getAttribute(context, proto::ProtoString::createSymbol(context, "__file_buffer__"));
+    if (!bufObj || !bufObj->asExternalPointer(context)) return context->newList()->asObject(context);
+    std::string* buffer = static_cast<std::string*>(bufObj->asExternalPointer(context)->getPointer(context));
+    if (!buffer) return context->newList()->asObject(context);
+    const proto::ProtoList* lines = context->newList();
+    std::string content = *buffer;
+    size_t pos = 0;
+    while (pos < content.size()) {
+        size_t nl = content.find('\n', pos);
+        std::string line;
+        if (nl == std::string::npos) {
+            line = content.substr(pos);
+            pos = content.size();
+        } else {
+            line = content.substr(pos, nl - pos + 1);
+            pos = nl + 1;
+        }
+        lines = lines->appendLast(context, PythonEnvironment::getInternedString(context, line.c_str())->asObject(context));
+    }
+    buffer->clear();
+    return lines->asObject(context);
+}
+
 static const proto::ProtoObject* py_io_write(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -93,8 +157,16 @@ static const proto::ProtoObject* py_io_open(
         context->fromExternalPointer(buffer, file_buffer_finalizer));
     fileObj = fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "read"),
         context->fromMethod(const_cast<proto::ProtoObject*>(fileObj), py_io_read));
+    fileObj = fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "readlines"),
+        context->fromMethod(const_cast<proto::ProtoObject*>(fileObj), py_io_readlines));
     fileObj = fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "write"),
         context->fromMethod(const_cast<proto::ProtoObject*>(fileObj), py_io_write));
+    fileObj = fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "close"),
+        context->fromMethod(const_cast<proto::ProtoObject*>(fileObj), py_io_close));
+    fileObj = fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "__enter__"),
+        context->fromMethod(const_cast<proto::ProtoObject*>(fileObj), py_io_enter));
+    fileObj = fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "__exit__"),
+        context->fromMethod(const_cast<proto::ProtoObject*>(fileObj), py_io_exit));
     return fileObj;
 }
 

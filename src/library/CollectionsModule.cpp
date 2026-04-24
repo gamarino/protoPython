@@ -57,11 +57,7 @@ static DequeState* get_deque_state(proto::ProtoContext* ctx, const proto::ProtoO
         const proto::ProtoExternalPointer* ext = ptrObj->asExternalPointer(ctx);
         if (ext) {
             return static_cast<DequeState*>(ext->getPointer(ctx));
-        } else {
-            fprintf(stderr, "DEBUG: ptrObj FOUND but NOT an external pointer on %p\n", (void*)self);
         }
-    } else {
-        fprintf(stderr, "DEBUG: __deque_ptr__ NOT FOUND on %p\n", (void*)self);
     }
     return nullptr;
 }
@@ -365,20 +361,16 @@ static const proto::ProtoObject* py_ordereddict_new(
 static const proto::ProtoObject* py_deque_new(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink,
     const proto::ProtoList* posArgs, const proto::ProtoSparseList* kwArgs) {
-    fprintf(stderr, "DEBUG: py_deque_new entered, self=%p, posArgs size=%lu\n", (void*)self, (unsigned long)(posArgs ? posArgs->getSize(ctx) : 0));
-    
     const proto::ProtoObject* cls = self;
     if (!cls && posArgs && posArgs->getSize(ctx) > 0) {
         cls = posArgs->getAt(ctx, 0);
-        fprintf(stderr, "DEBUG: Using cls from posArgs[0]: %p\n", (void*)cls);
     }
-    
+
     if (!cls) {
         protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(ctx);
         const proto::ProtoObject* mod = env->resolve("_collections", ctx);
         if (mod) {
             cls = mod->getAttribute(ctx, PythonEnvironment::getInternalString(ctx, "deque"));
-            fprintf(stderr, "DEBUG: cls was null, resolved to %p\n", (void*)cls);
         }
     }
     if (!cls) return PROTO_NONE;
@@ -388,15 +380,8 @@ static const proto::ProtoObject* py_deque_new(
     instance = instance->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__class__"), cls);
     DequeState* state = new DequeState();
     const proto::ProtoString* key = PythonEnvironment::getInternalString(ctx, "__deque_ptr__");
-    instance = instance->setAttribute(ctx, key, 
+    instance = instance->setAttribute(ctx, key,
                                     ctx->fromExternalPointer(state, deque_finalizer));
-    
-    fprintf(stderr, "DEBUG: py_deque_new created instance %p with __deque_ptr__ key %p\n", (void*)instance, (void*)key);
-    if (instance->getAttribute(ctx, key)) {
-        fprintf(stderr, "DEBUG: Verified __deque_ptr__ FOUND on new instance %p\n", (void*)instance);
-    } else {
-        fprintf(stderr, "DEBUG: Verified __deque_ptr__ NOT FOUND on new instance %p right after set!\n", (void*)instance);
-    }
     
     if (posArgs->getSize(ctx) > 1) {
         const proto::ProtoObject* iterable = posArgs->getAt(ctx, 1);
@@ -423,7 +408,6 @@ static const proto::ProtoObject* py_deque_new(
 }
 
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx, protoPython::PythonEnvironment* env) {
-    fprintf(stderr, "DEBUG: collections::initialize called\n");
     const proto::ProtoObject* module = env && env->getObjectPrototype() ? env->getObjectPrototype()->newChild(ctx, true) : ctx->newObject(false);
     const proto::ProtoObject* dequePrototype = env && env->getObjectPrototype() ? env->getObjectPrototype()->newChild(ctx, true) : ctx->newObject(false);
     

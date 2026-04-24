@@ -3,6 +3,48 @@ tokenize: generate_tokens, tokenize, untokenize.
 Uses native _tokenize_source when available (builtins._tokenize_source).
 """
 
+import collections
+
+# Token type constants (matches Python's token module)
+ENDMARKER = 0
+NAME = 1
+NUMBER = 2
+STRING = 3
+NEWLINE = 4
+NL = 61
+COMMENT = 60
+INDENT = 5
+DEDENT = 6
+OP = 54
+
+tok_name = {
+    ENDMARKER: 'ENDMARKER',
+    NAME: 'NAME',
+    NUMBER: 'NUMBER',
+    STRING: 'STRING',
+    NEWLINE: 'NEWLINE',
+    NL: 'NL',
+    COMMENT: 'COMMENT',
+    INDENT: 'INDENT',
+    DEDENT: 'DEDENT',
+    OP: 'OP',
+}
+
+EXACT_TOKEN_TYPES = {}
+
+
+class TokenInfo(collections.namedtuple('TokenInfo', 'type string start end line')):
+    def __repr__(self):
+        annotated_type = '%d (%s)' % (self.type, tok_name.get(self.type, str(self.type)))
+        return ('TokenInfo(type=%s, string=%r, start=%r, end=%r, line=%r)' %
+                self._replace(type=annotated_type))
+
+    @property
+    def exact_type(self):
+        if self.type == OP and self.string in EXACT_TOKEN_TYPES:
+            return EXACT_TOKEN_TYPES[self.string]
+        return self.type
+
 def _get_tokenize_source():
     try:
         b = __builtins__
@@ -49,3 +91,9 @@ def untokenize(iterable):
     if not out:
         return b''
     return b''.join(out) if isinstance(out[0], bytes) else ''.join(out)
+
+
+def open(filename):
+    """Open a file in read mode using the encoding detected by detect_encoding."""
+    import builtins
+    return builtins.open(filename, encoding='utf-8', errors='replace')

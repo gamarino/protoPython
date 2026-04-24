@@ -411,21 +411,25 @@ def _walk_tb_with_full_positions(tb):
     # Internal version of walk_tb that yields full code positions including
     # end line and column information.
     while tb is not None:
-        positions = _get_code_position(tb.tb_frame.f_code, tb.tb_lasti)
+        f = tb.tb_frame
+        code = getattr(f, 'f_code', None)
+        positions = _get_code_position(code, tb.tb_lasti) if code is not None else (None, None, None, None)
         # Yield tb_lineno when co_positions does not have a line number to
         # maintain behavior with walk_tb.
         if positions[0] is None:
-            yield tb.tb_frame, (tb.tb_lineno, ) + positions[1:]
+            yield f, (tb.tb_lineno, ) + positions[1:]
         else:
-            yield tb.tb_frame, positions
+            yield f, positions
         tb = tb.tb_next
 
 
 def _get_code_position(code, instruction_index):
     if instruction_index < 0:
         return (None, None, None, None)
+    if not hasattr(code, 'co_positions'):
+        return (None, None, None, None)
     positions_gen = code.co_positions()
-    return next(itertools.islice(positions_gen, instruction_index // 2, None))
+    return next(itertools.islice(positions_gen, instruction_index // 2, None), (None, None, None, None))
 
 
 _RECURSIVE_CUTOFF = 3 # Also hardcoded in traceback.c.
@@ -480,21 +484,24 @@ class StackSummary(list):
         result = klass()
         fnames = set()
         for f, (lineno, end_lineno, colno, end_colno) in frame_gen:
-            co = f.f_code
-            filename = co.co_filename
-            name = co.co_name
+            co = getattr(f, 'f_code', None)
+            if co is None:
+                continue
+            filename = getattr(co, 'co_filename', '<unknown>')
+            name = getattr(co, 'co_name', '<unknown>')
             fnames.add(filename)
-            linecache.lazycache(filename, f.f_globals)
+            f_globals = getattr(f, 'f_globals', None)
+            linecache.lazycache(filename, f_globals)
             # Must defer line lookups until we have called checkcache.
             if capture_locals:
-                f_locals = f.f_locals
+                f_locals = getattr(f, 'f_locals', None)
             else:
                 f_locals = None
             result.append(
                 FrameSummary(filename, lineno, name,
                     lookup_line=False, locals=f_locals,
                     end_lineno=end_lineno, colno=colno, end_colno=end_colno,
-                    _code=f.f_code,
+                    _code=co,
                 )
             )
         for filename in fnames:
@@ -531,6 +538,8 @@ class StackSummary(list):
         Returns a string representing one frame involved in the stack. This
         gets called for every frame to be printed in the stack summary.
         """
+        if not hasattr(frame_summary, 'filename'):
+            return None
         colorize = kwargs.get("colorize", False)
         row = []
         filename = frame_summary.filename
@@ -1108,7 +1117,7 @@ class TracebackException:
                 self._str += f". Did you mean: '{suggestion}'?"
             if issubclass(exc_type, NameError):
                 wrong_name = getattr(exc_value, "name", None)
-                if wrong_name is not None and wrong_name in sys.stdlib_module_names:
+                if wrong_name is not None and wrong_name in getattr(sys, 'stdlib_module_names', frozenset()):
                     if suggestion:
                         self._str += f" Or did you forget to import '{wrong_name}'?"
                     else:

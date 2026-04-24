@@ -356,6 +356,14 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     const char* bo = "little";
 #endif
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "byteorder"), PythonEnvironment::getInternedString(ctx, bo)->asObject(ctx));
+
+    // sys.abiflags — empty string on non-CPython (used by sysconfig)
+    sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "abiflags"), PythonEnvironment::getInternedString(ctx, "")->asObject(ctx));
+    // sys.platlibdir — standard lib dir name (used by sysconfig)
+    sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "platlibdir"), PythonEnvironment::getInternedString(ctx, "lib")->asObject(ctx));
+    // sys.base_prefix / sys.base_exec_prefix — used by sysconfig
+    sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "base_prefix"), PythonEnvironment::getInternedString(ctx, "")->asObject(ctx));
+    sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "base_exec_prefix"), PythonEnvironment::getInternedString(ctx, "")->asObject(ctx));
     
     // sys.version
     // sys.version
@@ -393,6 +401,27 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
         modulesObj = env->initDictStorage(ctx, modulesObj);
     }
     sys = sys->setAttribute(ctx, env ? env->getModulesS() : PythonEnvironment::getInternedString(ctx, "modules"), modulesObj);
+
+    // sys.meta_path — list of import finders (empty; protoPython uses native registration)
+    {
+        const proto::ProtoObject* metaPathList = ctx->newList()->asObject(ctx);
+        if (env && env->getListPrototype()) metaPathList = metaPathList->addParent(ctx, env->getListPrototype());
+        sys = sys->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "meta_path"), metaPathList);
+    }
+
+    // sys.path_hooks — list of path hook factories (empty)
+    {
+        const proto::ProtoObject* pathHooksList = ctx->newList()->asObject(ctx);
+        if (env && env->getListPrototype()) pathHooksList = pathHooksList->addParent(ctx, env->getListPrototype());
+        sys = sys->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "path_hooks"), pathHooksList);
+    }
+
+    // sys.path_importer_cache — empty dict
+    {
+        const proto::ProtoObject* picObj = env && env->getDictPrototype() ? env->getDictPrototype()->newChild(ctx, true) : ctx->newObject(false);
+        if (env) picObj = env->initDictStorage(ctx, picObj);
+        sys = sys->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "path_importer_cache"), picObj);
+    }
 
     // sys.argv
     const proto::ProtoList* argvList = ctx->newList();
@@ -576,6 +605,48 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     jit_obj = jit_obj->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "is_enabled"),
         ctx->fromMethod(nullptr, py_jit_is_enabled));
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_jit"), jit_obj);
+
+    // sys.monitoring — PEP 669 stub (protoPython has no low-impact monitoring)
+    // Required by bdb.py → pdb.py → doctest.py
+    {
+        auto noop = [](proto::ProtoContext* c, const proto::ProtoObject*, const proto::ParentLink*,
+                       const proto::ProtoList*, const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+            return PROTO_NONE;
+        };
+        auto ret_none = [](proto::ProtoContext* c, const proto::ProtoObject*, const proto::ParentLink*,
+                           const proto::ProtoList*, const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+            return PROTO_NONE;
+        };
+
+        // events namespace — bit flag constants used by bdb.py
+        const proto::ProtoObject* events = ctx->newObject(false);
+        events = events->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "PY_START"),       ctx->fromInteger(1));
+        events = events->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "PY_RESUME"),      ctx->fromInteger(2));
+        events = events->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "PY_RETURN"),      ctx->fromInteger(4));
+        events = events->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "PY_YIELD"),       ctx->fromInteger(8));
+        events = events->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "PY_THROW"),       ctx->fromInteger(16));
+        events = events->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "PY_UNWIND"),      ctx->fromInteger(32));
+        events = events->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "LINE"),           ctx->fromInteger(64));
+        events = events->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "JUMP"),           ctx->fromInteger(128));
+        events = events->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "RAISE"),          ctx->fromInteger(256));
+        events = events->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "STOP_ITERATION"), ctx->fromInteger(512));
+        events = events->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "INSTRUCTION"),    ctx->fromInteger(1024));
+        events = events->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "NO_EVENTS"),      ctx->fromInteger(0));
+
+        const proto::ProtoObject* monitoring = ctx->newObject(false);
+        monitoring = monitoring->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "events"),      events);
+        monitoring = monitoring->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "DEBUGGER_ID"), ctx->fromInteger(0));
+        monitoring = monitoring->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "DISABLE"),     PROTO_NONE);
+        monitoring = monitoring->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "get_tool"),          ctx->fromMethod(nullptr, ret_none));
+        monitoring = monitoring->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "use_tool_id"),        ctx->fromMethod(nullptr, noop));
+        monitoring = monitoring->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "clear_tool_id"),      ctx->fromMethod(nullptr, noop));
+        monitoring = monitoring->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "free_tool_id"),       ctx->fromMethod(nullptr, noop));
+        monitoring = monitoring->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "register_callback"),  ctx->fromMethod(nullptr, noop));
+        monitoring = monitoring->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "set_events"),         ctx->fromMethod(nullptr, noop));
+        monitoring = monitoring->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "set_local_events"),   ctx->fromMethod(nullptr, noop));
+        monitoring = monitoring->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "restart_events"),     ctx->fromMethod(nullptr, noop));
+        sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "monitoring"), monitoring);
+    }
 
     return sys;
 }

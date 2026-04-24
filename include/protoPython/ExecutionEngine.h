@@ -226,6 +226,7 @@ constexpr int OP_PUSH_NULL = 207;
 struct Block {
     unsigned long handlerPc;
     size_t stackDepth;
+    bool isWithBlock = false;
 };
 
 const proto::ProtoObject* executeBytecodeRange(

@@ -13,7 +13,6 @@ try:
 except ImportError:
     from collections import deque as _deque
 
-print("THREADING: done imports at top")
 # Note regarding PEP 8 compliant names
 #  This threading model was originally inspired by Java, and inherited
 # the convention of camelCase function and method names from that
@@ -1408,7 +1407,6 @@ class _MainThread(Thread):
 # is collected. Not a part of the public API.
 
 
-print("THREADING: defining current_thread")
 
 class _DeleteDummyThreadOnDel:
     '''
@@ -1648,7 +1646,6 @@ def _after_fork():
 if hasattr(_os, "register_at_fork"):
     _os.register_at_fork(after_in_child=_after_fork)
 
-print("THREADING: doing target_local")
 target_local = None
 if 'local' in dir():
     target_local = local

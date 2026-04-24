@@ -2,6 +2,29 @@
 def colorize(source, *args, **kwargs):
     return source
 
+
+class ANSIColors:
+    """Dummy ANSI color constants — all empty strings."""
+    RESET = ""
+    BOLD = ""
+    RED = ""
+    GREEN = ""
+    YELLOW = ""
+    BLUE = ""
+    MAGENTA = ""
+    CYAN = ""
+    WHITE = ""
+    GREY = ""
+    INTENSE_RED = ""
+    INTENSE_GREEN = ""
+    INTENSE_YELLOW = ""
+    INTENSE_BLUE = ""
+    INTENSE_MAGENTA = ""
+    INTENSE_CYAN = ""
+    INTENSE_WHITE = ""
+    def __getattr__(self, name):
+        return ""
+
 class _DummySubTheme:
     """A sub-theme where every attribute is an empty string."""
     def __getattr__(self, name):
@@ -11,6 +34,7 @@ class _DummyTheme:
     def __init__(self):
         self.argparse = self
         self.unittest = _DummySubTheme()
+        self.traceback = _DummySubTheme()
         self.heading = ""
         self.reset = ""
         self.prog = ""

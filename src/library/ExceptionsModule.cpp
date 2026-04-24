@@ -36,7 +36,81 @@ static const proto::ProtoObject* exception_init(
     return PROTO_NONE;
 }
 
+static const proto::ProtoObject* syntaxerror_init(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
 
+    // Call base exception init first
+    exception_init(context, self, parentLink, positionalParameters, keywordParameters);
+
+    const proto::ProtoObject* instance = self;
+    if (!instance || instance == PROTO_NONE) {
+        if (!positionalParameters || positionalParameters->getSize(context) == 0) return PROTO_NONE;
+        instance = positionalParameters->getAt(context, 0);
+    }
+
+    // Initialize SyntaxError-specific attributes to None by default
+    instance = const_cast<proto::ProtoObject*>(instance)->setAttribute(context,
+        PythonEnvironment::getInternedString(context, "filename"), PROTO_NONE);
+    instance = const_cast<proto::ProtoObject*>(instance)->setAttribute(context,
+        PythonEnvironment::getInternedString(context, "lineno"), PROTO_NONE);
+    instance = const_cast<proto::ProtoObject*>(instance)->setAttribute(context,
+        PythonEnvironment::getInternedString(context, "end_lineno"), PROTO_NONE);
+    instance = const_cast<proto::ProtoObject*>(instance)->setAttribute(context,
+        PythonEnvironment::getInternedString(context, "offset"), PROTO_NONE);
+    instance = const_cast<proto::ProtoObject*>(instance)->setAttribute(context,
+        PythonEnvironment::getInternedString(context, "end_offset"), PROTO_NONE);
+    instance = const_cast<proto::ProtoObject*>(instance)->setAttribute(context,
+        PythonEnvironment::getInternedString(context, "text"), PROTO_NONE);
+    instance = const_cast<proto::ProtoObject*>(instance)->setAttribute(context,
+        PythonEnvironment::getInternedString(context, "msg"),
+        PythonEnvironment::getInternedString(context, "")->asObject(context));
+
+    // If args[1] is a tuple (filename, lineno, offset, text), unpack it (CPython convention)
+    const proto::ProtoObject* argsObj = instance->getAttribute(context,
+        PythonEnvironment::getInternedString(context, "args"));
+    if (argsObj && (argsObj->isTuple(context) || argsObj->asList(context))) {
+        unsigned long argsSize = argsObj->isTuple(context)
+            ? argsObj->asTuple(context)->getSize(context)
+            : argsObj->asList(context)->getSize(context);
+        auto getArg = [&](unsigned long i) -> const proto::ProtoObject* {
+            if (argsObj->isTuple(context)) return argsObj->asTuple(context)->getAt(context, i);
+            return argsObj->asList(context)->getAt(context, i);
+        };
+        if (argsSize >= 1) {
+            const proto::ProtoObject* msgArg = getArg(0);
+            if (msgArg && msgArg != PROTO_NONE && msgArg->isString(context)) {
+                instance = const_cast<proto::ProtoObject*>(instance)->setAttribute(context,
+                    PythonEnvironment::getInternedString(context, "msg"), msgArg);
+            }
+        }
+        if (argsSize >= 2) {
+            const proto::ProtoObject* info = getArg(1);
+            if (info && info != PROTO_NONE && (info->isTuple(context) || info->asList(context))) {
+                unsigned long infoSize = info->isTuple(context)
+                    ? info->asTuple(context)->getSize(context)
+                    : info->asList(context)->getSize(context);
+                auto getInfo = [&](unsigned long i) -> const proto::ProtoObject* {
+                    if (info->isTuple(context)) return info->asTuple(context)->getAt(context, i);
+                    return info->asList(context)->getAt(context, i);
+                };
+                if (infoSize >= 1) instance = const_cast<proto::ProtoObject*>(instance)->setAttribute(context,
+                    PythonEnvironment::getInternedString(context, "filename"), getInfo(0));
+                if (infoSize >= 2) instance = const_cast<proto::ProtoObject*>(instance)->setAttribute(context,
+                    PythonEnvironment::getInternedString(context, "lineno"), getInfo(1));
+                if (infoSize >= 3) instance = const_cast<proto::ProtoObject*>(instance)->setAttribute(context,
+                    PythonEnvironment::getInternedString(context, "offset"), getInfo(2));
+                if (infoSize >= 4) instance = const_cast<proto::ProtoObject*>(instance)->setAttribute(context,
+                    PythonEnvironment::getInternedString(context, "text"), getInfo(3));
+            }
+        }
+    }
+
+    return PROTO_NONE;
+}
 
 static const proto::ProtoObject* exception_str(
     proto::ProtoContext* context,
@@ -150,6 +224,20 @@ static const proto::ProtoObject* make_exception_type(proto::ProtoContext* ctx,
     exc = exc->setAttribute(ctx, py_init, ctx->fromMethod(nullptr, exception_init));
     exc = exc->setAttribute(ctx, py_repr, ctx->fromMethod(nullptr, exception_repr));
     exc = exc->setAttribute(ctx, py_str, ctx->fromMethod(nullptr, exception_str));
+
+    // with_traceback(tb): sets __traceback__ and returns self
+    static const auto exception_with_traceback = [](proto::ProtoContext* ctx,
+                                                     const proto::ProtoObject* self,
+                                                     const proto::ParentLink*,
+                                                     const proto::ProtoList* args,
+                                                     const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+        if (!self || self == PROTO_NONE) return PROTO_NONE;
+        const proto::ProtoObject* tb = (args && args->getSize(ctx) > 0) ? args->getAt(ctx, 0) : PROTO_NONE;
+        const_cast<proto::ProtoObject*>(self)->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__traceback__"), tb ? tb : PROTO_NONE);
+        return self;
+    };
+    exc = exc->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "with_traceback"),
+        ctx->fromMethod(nullptr, exception_with_traceback));
     
     // Set __mro__ for attribute lookup
     const proto::ProtoList* mroList = ctx->newList()->appendLast(ctx, exc);
@@ -240,6 +328,9 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx,
     const proto::ProtoObject* nameErrorType = make_exception_type(ctx, objectProto, typeProto, "NameError", exceptionType);
     const proto::ProtoObject* attributeErrorType = make_exception_type(ctx, objectProto, typeProto, "AttributeError", exceptionType);
     const proto::ProtoObject* syntaxErrorType = make_exception_type(ctx, objectProto, typeProto, "SyntaxError", exceptionType);
+    syntaxErrorType = const_cast<proto::ProtoObject*>(syntaxErrorType)->setAttribute(ctx,
+        PythonEnvironment::getInternedString(ctx, "__init__"),
+        ctx->fromMethod(nullptr, syntaxerror_init));
     const proto::ProtoObject* typeErrorType = make_exception_type(ctx, objectProto, typeProto, "TypeError", exceptionType);
     const proto::ProtoObject* importErrorType = make_exception_type(ctx, objectProto, typeProto, "ImportError", exceptionType);
     const proto::ProtoObject* moduleNotFoundErrorType = make_exception_type(ctx, objectProto, typeProto, "ModuleNotFoundError", importErrorType);
@@ -276,6 +367,15 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx,
     const proto::ProtoObject* unicodeEncodeErrorType = make_exception_type(ctx, objectProto, typeProto, "UnicodeEncodeError", unicodeErrorType);
     const proto::ProtoObject* unicodeDecodeErrorType = make_exception_type(ctx, objectProto, typeProto, "UnicodeDecodeError", unicodeErrorType);
     const proto::ProtoObject* unicodeTranslateErrorType = make_exception_type(ctx, objectProto, typeProto, "UnicodeTranslateError", unicodeErrorType);
+
+    const proto::ProtoObject* baseExceptionGroupType = make_exception_type(ctx, objectProto, typeProto, "BaseExceptionGroup", baseExceptionType);
+    const proto::ProtoObject* exceptionGroupType = make_exception_type(ctx, objectProto, typeProto, "ExceptionGroup", exceptionType);
+    const proto::ProtoObject* memoryErrorType = make_exception_type(ctx, objectProto, typeProto, "MemoryError", exceptionType);
+    const proto::ProtoObject* bufferErrorType = make_exception_type(ctx, objectProto, typeProto, "BufferError", exceptionType);
+    const proto::ProtoObject* overflowErrorType = make_exception_type(ctx, objectProto, typeProto, "OverflowError", arithmeticErrorType);
+    const proto::ProtoObject* floatingPointErrorType = make_exception_type(ctx, objectProto, typeProto, "FloatingPointError", arithmeticErrorType);
+    const proto::ProtoObject* environmentErrorType = osErrorType;  // alias
+    const proto::ProtoObject* ioErrorType = osErrorType;           // alias
 
     const proto::ProtoObject* warningType = make_exception_type(ctx, objectProto, typeProto, "Warning", exceptionType);
     const proto::ProtoObject* userWarningType = make_exception_type(ctx, objectProto, typeProto, "UserWarning", warningType);
@@ -340,6 +440,14 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx,
     mod = mod->setAttribute(ctx, py_unicodewarning, unicodeWarningType);
     mod = mod->setAttribute(ctx, py_byteswarning, bytesWarningType);
     mod = mod->setAttribute(ctx, py_resourcewarning, resourceWarningType);
+    mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "BaseExceptionGroup"), baseExceptionGroupType);
+    mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "ExceptionGroup"),     exceptionGroupType);
+    mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "MemoryError"),         memoryErrorType);
+    mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "BufferError"),         bufferErrorType);
+    mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "OverflowError"),       overflowErrorType);
+    mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "FloatingPointError"),  floatingPointErrorType);
+    mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "EnvironmentError"),    environmentErrorType);
+    mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "IOError"),             ioErrorType);
 
     // StopIteration custom init
     const proto::ProtoString* py_init = PythonEnvironment::getInternedString(ctx, "__init__");

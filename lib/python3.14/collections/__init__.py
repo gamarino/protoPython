@@ -1,4 +1,5 @@
 '''This module implements specialized container datatypes providing
+print("DEBUG: collections/__init__.py loading")
 alternatives to Python's general purpose built-in containers, dict,
 list, set, and tuple.
 
