@@ -50,16 +50,17 @@ Token Tokenizer::scanNumber() {
         if (nextC == 'x' || nextC == 'X' || nextC == 'o' || nextC == 'O' || nextC == 'b' || nextC == 'B') {
             pos_ += 2;
             int base = (nextC == 'x' || nextC == 'X') ? 16 : (nextC == 'o' || nextC == 'O') ? 8 : 2;
+            // Consume every alphanumeric + underscore so that the whole
+            // suspicious run (e.g. "0b12", "0o18") is one token and we
+            // can report "invalid digit '2' in binary literal" rather
+            // than silently stop at the first invalid digit and leave
+            // the rest to confuse the parser.
             while (pos_ < source_.size()) {
                 char c = source_[pos_];
-                bool valid = false;
-                if (base == 16) valid = std::isxdigit(static_cast<unsigned char>(c));
-                else if (base == 8) valid = (c >= '0' && c <= '7');
-                else if (base == 2) valid = (c == '0' || c == '1');
-                
-                if (valid || c == '_') {
-                    pos_++;
-                } else break;
+                bool consumable = std::isalnum(static_cast<unsigned char>(c)) || c == '_';
+                if (consumable) pos_++;
+                else break;
+                (void)base;
             }
             t.value = source_.substr(start, pos_ - start);
             // Per CPython: a leading/trailing underscore and adjacent
@@ -67,10 +68,6 @@ Token Tokenizer::scanNumber() {
             // The digit section must start and end with an actual digit
             // and must not contain "__".
             auto invalidUnderscore = [&](const std::string& s) -> bool {
-                // CPython allows a leading underscore after the base prefix
-                // (e.g. `0x_ff`, `0b_0`), so only reject a trailing
-                // underscore, a run of two or more underscores, or an
-                // all-underscore string with no digits.
                 if (s.empty()) return true;
                 if (s.back() == '_') return true;
                 bool anyDigit = false;
@@ -84,11 +81,25 @@ Token Tokenizer::scanNumber() {
                 return !anyDigit;
             };
             std::string afterPrefix = t.value.substr(2);
+            // Also look for digits outside the valid set for the base
+            // (e.g. `0b12` has '2', `0o18` has '8').  CPython reports
+            // these as "invalid digit 'X' in <base> literal".
+            const char* baseName = (base == 16 ? "hexadecimal" : base == 8 ? "octal" : "binary");
+            for (char c : afterPrefix) {
+                if (c == '_') continue;
+                bool ok;
+                if (base == 16) ok = (std::isxdigit(static_cast<unsigned char>(c)) != 0);
+                else if (base == 8) ok = (c >= '0' && c <= '7');
+                else ok = (c == '0' || c == '1');
+                if (!ok) {
+                    t.type = TokenType::Error;
+                    t.value = std::string("invalid digit '") + c + "' in " + baseName + " literal";
+                    return t;
+                }
+            }
             if (afterPrefix.empty() || invalidUnderscore(afterPrefix)) {
                 t.type = TokenType::Error;
-                t.value = std::string("invalid ") +
-                          (base == 16 ? "hexadecimal" : base == 8 ? "octal" : "binary") +
-                          " literal";
+                t.value = std::string("invalid ") + baseName + " literal";
                 return t;
             }
             std::string cleanValue = t.value;

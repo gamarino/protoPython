@@ -1096,8 +1096,72 @@ bool Compiler::compileYield(YieldNode* n) {
     return true;
 }
 
+// Recursively scan an AST subtree for any YieldNode.  Used to reject
+// `yield` / `yield from` inside list/set/dict comprehensions and
+// generator expressions (CPython raises SyntaxError with a kind-specific
+// message for each of these).  We deliberately stop at nested function
+// definitions since a `yield` there belongs to the inner function, not
+// the comprehension.
+static bool astContainsYield(ASTNode* node) {
+    if (!node) return false;
+    if (dynamic_cast<YieldNode*>(node)) return true;
+    if (dynamic_cast<FunctionDefNode*>(node)) return false;
+    if (dynamic_cast<LambdaNode*>(node)) return false;
+    if (auto* s = dynamic_cast<SuiteNode*>(node)) {
+        for (auto& st : s->statements) if (astContainsYield(st.get())) return true;
+        return false;
+    }
+    if (auto* c = dynamic_cast<CallNode*>(node)) {
+        if (astContainsYield(c->func.get())) return true;
+        for (auto& a : c->args) if (astContainsYield(a.get())) return true;
+        for (auto& kw : c->keywords) if (astContainsYield(kw.second.get())) return true;
+        return false;
+    }
+    if (auto* b = dynamic_cast<BinOpNode*>(node))
+        return astContainsYield(b->left.get()) || astContainsYield(b->right.get());
+    if (auto* u = dynamic_cast<UnaryOpNode*>(node))
+        return astContainsYield(u->operand.get());
+    if (auto* sub = dynamic_cast<SubscriptNode*>(node))
+        return astContainsYield(sub->value.get()) || astContainsYield(sub->index.get());
+    if (auto* att = dynamic_cast<AttributeNode*>(node))
+        return astContainsYield(att->value.get());
+    if (auto* sl = dynamic_cast<SliceNode*>(node))
+        return astContainsYield(sl->start.get()) || astContainsYield(sl->stop.get()) || astContainsYield(sl->step.get());
+    if (auto* iff = dynamic_cast<ConditionalExprNode*>(node))
+        return astContainsYield(iff->test.get()) || astContainsYield(iff->body.get()) || astContainsYield(iff->orelse.get());
+    if (auto* tup = dynamic_cast<TupleLiteralNode*>(node)) {
+        for (auto& e : tup->elements) if (astContainsYield(e.get())) return true;
+        return false;
+    }
+    if (auto* lst = dynamic_cast<ListLiteralNode*>(node)) {
+        for (auto& e : lst->elements) if (astContainsYield(e.get())) return true;
+        return false;
+    }
+    if (auto* st = dynamic_cast<StarredNode*>(node))
+        return astContainsYield(st->value.get());
+    if (auto* ne = dynamic_cast<NamedExprNode*>(node))
+        return astContainsYield(ne->value.get());
+    if (auto* ret = dynamic_cast<ReturnNode*>(node))
+        return astContainsYield(ret->value.get());
+    return false;
+}
+
+// Returns true if the comprehension body, any filter, or any iter/elt
+// references a yield.  The *first* generator's iter is evaluated in the
+// enclosing scope, so we exclude it intentionally (matches CPython).
+static bool compHasInternalYield(const std::vector<Comprehension>& gens, ASTNode* elt, ASTNode* value = nullptr) {
+    if (elt && astContainsYield(elt)) return true;
+    if (value && astContainsYield(value)) return true;
+    for (size_t i = 0; i < gens.size(); ++i) {
+        if (i > 0 && astContainsYield(gens[i].iter.get())) return true;
+        for (const auto& ifn : gens[i].ifs) if (astContainsYield(ifn.get())) return true;
+    }
+    return false;
+}
+
 bool Compiler::compileListComp(ListCompNode* n) {
     if (!n) return false;
+    if (compHasInternalYield(n->generators, n->elt.get())) return false;
 
     // Python 3: List comprehensions have their own scope.
     // Emit using the 3.11+ [NULL, callable, arg] calling convention so the inner
@@ -1203,6 +1267,7 @@ bool Compiler::compileListComp(ListCompNode* n) {
 
 bool Compiler::compileDictComp(DictCompNode* n) {
     if (!n) return false;
+    if (compHasInternalYield(n->generators, n->key.get(), n->value.get())) return false;
 
     // Emit using 3.11+ [NULL, callable, arg] calling convention — see compileListComp.
 
@@ -1303,6 +1368,7 @@ bool Compiler::compileDictComp(DictCompNode* n) {
 
 bool Compiler::compileSetComp(SetCompNode* n) {
     if (!n) return false;
+    if (compHasInternalYield(n->generators, n->elt.get())) return false;
 
     // Emit using 3.11+ [NULL, callable, arg] calling convention — see compileListComp.
 
@@ -1398,6 +1464,7 @@ bool Compiler::compileSetComp(SetCompNode* n) {
 
 bool Compiler::compileGeneratorExp(GeneratorExpNode* n) {
     if (!n) return false;
+    if (compHasInternalYield(n->generators, n->elt.get())) return false;
 
     // Emit using 3.11+ [NULL, callable, arg] calling convention — see compileListComp.
 

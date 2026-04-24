@@ -1581,9 +1581,16 @@ static const proto::ProtoObject* py_eval(
     if (!expr || !parser.atEOF()) {
         PythonEnvironment* env = PythonEnvironment::fromContext(context);
         if (env) {
-            std::string msg = parser.hasError() ? parser.getLastErrorMsg() : "invalid syntax";
-            if (!expr && !parser.hasError()) msg = "unexpected EOF while parsing";
-            else if (expr && !parser.atEOF()) msg = "invalid syntax (likely a statement where expression was expected)";
+            std::string msg;
+            if (parser.hasError() && !parser.getLastErrorMsg().empty()) {
+                msg = parser.getLastErrorMsg();
+            } else if (!expr) {
+                msg = "unexpected EOF while parsing";
+            } else if (!parser.atEOF()) {
+                msg = "invalid syntax (likely a statement where expression was expected)";
+            } else {
+                msg = "invalid syntax";
+            }
 
             std::string lineText = source;
             int line = parser.getLastErrorLine();

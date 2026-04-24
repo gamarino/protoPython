@@ -544,7 +544,10 @@ std::unique_ptr<ASTNode> Parser::parsePrimary() {
     if (!left) return nullptr;
     for (;;) {
         if (accept(TokenType::Dot)) {
-            if (cur_.type != TokenType::Name && cur_.type != TokenType::Type && cur_.type != TokenType::Match && cur_.type != TokenType::Case) return left;
+            if (cur_.type != TokenType::Name && cur_.type != TokenType::Type && cur_.type != TokenType::Match && cur_.type != TokenType::Case) {
+                error("invalid syntax");
+                return nullptr;
+            }
             auto att = createNode<AttributeNode>();
             att->value = std::move(left);
             att->attr = cur_.value;
