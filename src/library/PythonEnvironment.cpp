@@ -12593,6 +12593,83 @@ const proto::ProtoObject* PythonEnvironment::iter(const proto::ProtoObject* obj)
     if (nextMethod && nextMethod->asMethod(ctx)) {
         return obj;
     }
+
+    // Old-style sequence protocol: an object without `__iter__` but with
+    // `__getitem__` is iterable (CPython calls it with indices 0, 1, … until
+    // IndexError).  We must check this *before* the asSparseList branch
+    // below, because every user instance is backed by a sparse list and
+    // would otherwise iterate over its own attribute keys.
+    {
+        const proto::ProtoObject* getitem = obj->getAttribute(ctx, getGetItemString());
+        // Accept both native methods and Python-level callables (functions with
+        // __code__).  Reject the default inherited object __getitem__ by
+        // checking it's not on the raw object prototype.
+        bool hasUsableGetitem = false;
+        if (getitem && getitem != PROTO_NONE) {
+            if (getitem->asMethod(ctx)) hasUsableGetitem = true;
+            else if (getitem->getAttribute(ctx, getCodeString())) hasUsableGetitem = true;
+        }
+        if (hasUsableGetitem) {
+            // Build a minimal iterator with an internal index counter.
+            const proto::ProtoObject* iterProto = objectPrototype
+                ? objectPrototype->newChild(ctx, true) : ctx->newObject(true);
+            iterProto = iterProto->setAttribute(ctx,
+                PythonEnvironment::getInternedString(ctx, "__iter_target__"), obj);
+            iterProto = iterProto->setAttribute(ctx,
+                PythonEnvironment::getInternedString(ctx, "__iter_index__"), ctx->fromInteger(0));
+            iterProto = iterProto->setAttribute(ctx, getIterString(),
+                ctx->fromMethod(const_cast<proto::ProtoObject*>(iterProto),
+                    [](proto::ProtoContext* c, const proto::ProtoObject* self,
+                       const proto::ParentLink*, const proto::ProtoList*,
+                       const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+                        return self;
+                    }));
+            iterProto = iterProto->setAttribute(ctx, getNextString(),
+                ctx->fromMethod(const_cast<proto::ProtoObject*>(iterProto),
+                    [](proto::ProtoContext* c, const proto::ProtoObject* self,
+                       const proto::ParentLink*, const proto::ProtoList*,
+                       const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+                        PythonEnvironment* e = PythonEnvironment::fromContext(c);
+                        if (!e) return nullptr;
+                        const proto::ProtoString* targS =
+                            PythonEnvironment::getInternedString(c, "__iter_target__");
+                        const proto::ProtoString* idxS =
+                            PythonEnvironment::getInternedString(c, "__iter_index__");
+                        const proto::ProtoObject* target = self->getAttribute(c, targS);
+                        const proto::ProtoObject* idxObj = self->getAttribute(c, idxS);
+                        long idx = (idxObj && idxObj->isInteger(c))
+                            ? static_cast<long>(idxObj->asLong(c)) : 0;
+                        const proto::ProtoObject* gi = e->getAttribute(c, target,
+                            e->getGetItemString(), false);
+                        if (!gi || gi == PROTO_NONE) return nullptr;
+                        const proto::ProtoList* args = c->newList()->appendLast(c, c->fromInteger(idx));
+                        const proto::ProtoObject* val = nullptr;
+                        if (gi->asMethod(c)) {
+                            val = gi->asMethod(c)(c, target, nullptr, args, nullptr);
+                        } else {
+                            val = invokePythonCallable(c, gi, args, nullptr);
+                        }
+                        if (e->hasPendingException()) {
+                            // IndexError -> end of iteration; StopIteration propagates.
+                            const proto::ProtoObject* pexc = e->peekPendingException();
+                            const proto::ProtoString* clsS = e->getClassString();
+                            const proto::ProtoObject* pcls = pexc ? pexc->getAttribute(c, clsS) : nullptr;
+                            const proto::ProtoObject* pnameO = pcls
+                                ? pcls->getAttribute(c, e->getNameString()) : nullptr;
+                            std::string pname;
+                            if (pnameO && pnameO->isString(c)) pnameO->asString(c)->toUTF8String(c, pname);
+                            if (pname == "IndexError" || pname == "StopIteration") {
+                                e->clearPendingException();
+                                return nullptr;
+                            }
+                            return nullptr;
+                        }
+                        self->setAttribute(c, idxS, c->fromInteger(idx + 1));
+                        return val;
+                    }));
+            return iterProto;
+        }
+    }
     
     // Fallback for raw protoCore containers that might not have prototypes set (common in built-in returns)
     if (obj->asList(ctx)) {
