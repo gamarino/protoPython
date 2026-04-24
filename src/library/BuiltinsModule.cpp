@@ -3410,6 +3410,60 @@ static const proto::ProtoObject* py_isinstance(
     if (positionalParameters->getSize(context) < 2) return PROTO_FALSE;
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
     const proto::ProtoObject* cls = positionalParameters->getAt(context, 1);
+
+    // PEP 604: isinstance(obj, X | Y | Z) is True iff any member matches.
+    // Detect UnionType by presence of the `__args__` attribute and a
+    // `__class__` whose name is "UnionType" — this avoids relying on
+    // prototype-identity, which can vary across bootstrap phases.
+    if (env && cls) {
+        bool isUnion = false;
+        // Detect UnionType via presence of __args__; faster and more robust
+        // than climbing the prototype chain during bootstrap-sensitive paths.
+        const proto::ProtoObject* unionArgs = cls->getAttribute(context,
+            PythonEnvironment::getInternedString(context, "__args__"));
+        if (unionArgs && unionArgs != PROTO_NONE &&
+            (unionArgs->asList(context) || unionArgs->asTuple(context))) {
+            // `cls.__class__` via getAttribute can return the typePrototype
+            // shim during bootstrap-sensitive paths.  Use env->getType which
+            // resolves the same way `type(cls)` does in Python.
+            const proto::ProtoObject* clsClass = env->getType(context, cls);
+            if (clsClass && clsClass != PROTO_NONE) {
+                const proto::ProtoObject* clsName = clsClass->getAttribute(context,
+                    env->getNameString());
+                if (clsName && clsName->isString(context)) {
+                    std::string n;
+                    clsName->asString(context)->toUTF8String(context, n);
+                    if (n == "UnionType") isUnion = true;
+                }
+            }
+        }
+        if (isUnion) {
+            const proto::ProtoObject* argsObj = cls->getAttribute(context,
+                PythonEnvironment::getInternedString(context, "__args__"));
+            // `__args__` may be stored as a list or a tuple depending on
+            // how the union was built.
+            const proto::ProtoList* argsList = argsObj ? argsObj->asList(context) : nullptr;
+            const proto::ProtoTuple* argsTuple = (!argsList && argsObj) ? argsObj->asTuple(context) : nullptr;
+            unsigned long n = argsList ? argsList->getSize(context)
+                              : (argsTuple ? argsTuple->getSize(context) : 0);
+            for (unsigned long i = 0; i < n; ++i) {
+                const proto::ProtoObject* member = argsList
+                    ? argsList->getAt(context, static_cast<int>(i))
+                    : argsTuple->getAt(context, static_cast<int>(i));
+                // `int | None` in Python desugars to `int | type(None)`; tolerate
+                // a literal None on either the object or the union member.
+                if (member == PROTO_NONE && obj == PROTO_NONE) return PROTO_TRUE;
+                const proto::ProtoList* one = context->newList()
+                    ->appendLast(context, obj)
+                    ->appendLast(context, member == PROTO_NONE ? env->getNoneTypePrototype() : member);
+                const proto::ProtoObject* r = py_isinstance(context, self, parentLink, one,
+                                                            keywordParameters);
+                if (r == PROTO_TRUE) return PROTO_TRUE;
+            }
+            return PROTO_FALSE;
+        }
+    }
+
     cls = resolveClassType(env, self, context, cls);
     
     if (get_env_diag()) {

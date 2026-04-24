@@ -2531,10 +2531,13 @@ static const proto::ProtoObject* py_type_or(
     if (!unionProto) return self;
 
     const proto::ProtoObject* unionObj = unionProto->newChild(context, true);
+    // __class__ must point at UnionType so isinstance(obj, U | V) can detect
+    // the union case by `type(cls).__name__ == 'UnionType'`.
+    unionObj = unionObj->setAttribute(context, env->getClassString(), unionProto);
     // Minimal: store the types in a list attribute
     const proto::ProtoList* types = context->newList()->appendLast(context, self)->appendLast(context, other);
     unionObj = unionObj->setAttribute(context, PythonEnvironment::getInternedString(context, "__args__"), types->asObject(context));
-    
+
     return unionObj;
 }
 
