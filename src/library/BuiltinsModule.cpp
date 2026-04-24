@@ -6,6 +6,7 @@
 #include <protoPython/Compiler.h>
 #include <protoPython/Tokenizer.h>
 #include <protoCore.h>
+#include <proto_internal.h>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -597,7 +598,8 @@ static const proto::ProtoObject* py_bool(
         return obj->asString(context)->getSize(context) > 0 ? PROTO_TRUE : PROTO_FALSE;
     }
     if (obj->isInteger(context)) {
-        return obj->asLong(context) != 0 ? PROTO_TRUE : PROTO_FALSE;
+        // Integer::sign is bignum-safe.
+        return proto::Integer::sign(context, obj) != 0 ? PROTO_TRUE : PROTO_FALSE;
     }
     if (obj->isDouble(context)) {
         return obj->asDouble(context) != 0.0 ? PROTO_TRUE : PROTO_FALSE;
@@ -722,9 +724,10 @@ static const proto::ProtoObject* py_repr(
     if (obj == PROTO_TRUE) return PythonEnvironment::getInternedString(context, "True")->asObject(context);
     if (obj == PROTO_FALSE) return PythonEnvironment::getInternedString(context, "False")->asObject(context);
     if (obj->isInteger(context)) {
-        char buf[32];
-        snprintf(buf, sizeof(buf), "%lld", (long long)obj->asLong(context));
-        return PythonEnvironment::getInternedString(context, buf)->asObject(context);
+        // Integer::toString handles bignum (asLong + snprintf would
+        // overflow for LargeInteger).
+        const proto::ProtoString* s = proto::Integer::toString(context, obj, 10);
+        return s->asObject(context);
     }
     if (obj->isDouble(context)) {
         char buf[64];
@@ -3640,8 +3643,9 @@ static const proto::ProtoObject* py_abs(
         return absM->call(context, nullptr, nullptr, obj, context->newList(), nullptr);
     }
     if (obj->isInteger(context)) {
-        long long v = obj->asLong(context);
-        return context->fromInteger(v < 0 ? -v : v);
+        // Use Integer::abs which handles both SmallInteger and LargeInteger
+        // without triggering long-long overflow.
+        return proto::Integer::abs(context, obj);
     }
     if (obj->isDouble(context)) {
         return context->fromDouble(std::abs(obj->asDouble(context)));
@@ -4214,6 +4218,24 @@ static const proto::ProtoObject* py_chr(
     return PythonEnvironment::getInternedString(context, buf)->asObject(context);
 }
 
+// Format an integer (small or big) as `prefix + digit-string` in the
+// given base.  Integer::toString already handles bignum and sign; all we
+// do is splice the prefix in the right place.
+static std::string format_int_with_prefix(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* arg,
+    const char* prefix,
+    int base) {
+    const proto::ProtoString* s = proto::Integer::toString(context, arg, base);
+    std::string digits;
+    s->toUTF8String(context, digits);
+    // Integer::toString returns digits with leading '-' for negatives.
+    if (!digits.empty() && digits[0] == '-') {
+        return "-" + std::string(prefix) + digits.substr(1);
+    }
+    return std::string(prefix) + digits;
+}
+
 static const proto::ProtoObject* py_bin(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -4224,23 +4246,10 @@ static const proto::ProtoObject* py_bin(
     (void)parentLink;
     (void)keywordParameters;
     if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
-    protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(context);
     const proto::ProtoObject* arg = positionalParameters->getAt(context, 0);
     if (!arg->isInteger(context)) return PROTO_NONE;
-    long long i = arg->asLong(context);
-    if (i == 0) return PythonEnvironment::getInternedString(context, "0b0")->asObject(context);
-    std::string s = "0b";
-    unsigned long long u;
-    if (i < 0) {
-        s += "-";
-        u = static_cast<unsigned long long>(-i);
-    } else {
-        u = static_cast<unsigned long long>(i);
-    }
-    std::string bits;
-    while (u) { bits += (u & 1) ? '1' : '0'; u >>= 1; }
-    for (auto it = bits.rbegin(); it != bits.rend(); ++it) s += *it;
-    return PythonEnvironment::getInternedString(context, s.c_str())->asObject(context);
+    std::string out = format_int_with_prefix(context, arg, "0b", 2);
+    return PythonEnvironment::getInternedString(context, out.c_str())->asObject(context);
 }
 
 static const proto::ProtoObject* py_oct(
@@ -4253,17 +4262,10 @@ static const proto::ProtoObject* py_oct(
     (void)parentLink;
     (void)keywordParameters;
     if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
-    protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(context);
     const proto::ProtoObject* arg = positionalParameters->getAt(context, 0);
     if (!arg->isInteger(context)) return PROTO_NONE;
-    long long i = arg->asLong(context);
-    if (i == 0) return PythonEnvironment::getInternedString(context, "0o0")->asObject(context);
-    char buf[32];
-    if (i < 0)
-        snprintf(buf, sizeof(buf), "-0o%llo", static_cast<unsigned long long>(-i));
-    else
-        snprintf(buf, sizeof(buf), "0o%llo", static_cast<unsigned long long>(i));
-    return PythonEnvironment::getInternedString(context, buf)->asObject(context);
+    std::string out = format_int_with_prefix(context, arg, "0o", 8);
+    return PythonEnvironment::getInternedString(context, out.c_str())->asObject(context);
 }
 
 static const proto::ProtoObject* py_hex(
@@ -4276,17 +4278,10 @@ static const proto::ProtoObject* py_hex(
     (void)parentLink;
     (void)keywordParameters;
     if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
-    protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(context);
     const proto::ProtoObject* arg = positionalParameters->getAt(context, 0);
     if (!arg->isInteger(context)) return PROTO_NONE;
-    long long i = arg->asLong(context);
-    if (i == 0) return PythonEnvironment::getInternedString(context, "0x0")->asObject(context);
-    char buf[24];
-    if (i < 0)
-        snprintf(buf, sizeof(buf), "-0x%llx", static_cast<unsigned long long>(-i));
-    else
-        snprintf(buf, sizeof(buf), "0x%llx", static_cast<unsigned long long>(i));
-    return PythonEnvironment::getInternedString(context, buf)->asObject(context);
+    std::string out = format_int_with_prefix(context, arg, "0x", 16);
+    return PythonEnvironment::getInternedString(context, out.c_str())->asObject(context);
 }
 
 static const proto::ProtoObject* py_round(

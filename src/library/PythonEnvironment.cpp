@@ -671,13 +671,45 @@ static const proto::ProtoObject* py_object_reduce(
 static const proto::ProtoObject* py_float_call(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    const proto::ProtoObject* targetCls = posArgs && posArgs->getSize(ctx) > 0 ? posArgs->getAt(ctx, 0) : self;
+    // `float` is bound as `__call__` on the float prototype, so posArgs is
+    // just the user's positional args (e.g. `float(3)` → posArgs = [3]).
+    // If the first positional arg happens to be the float class itself
+    // (i.e. the caller went through `type.__call__` which prepends cls),
+    // skip it.
+    PythonEnvironment* floatEnv = PythonEnvironment::fromContext(ctx);
+    const proto::ProtoObject* floatCls = floatEnv ? floatEnv->getFloatPrototype() : nullptr;
+    size_t argStart = 0;
+    if (posArgs && posArgs->getSize(ctx) > 0 && floatCls &&
+        posArgs->getAt(ctx, 0) == floatCls) {
+        argStart = 1;
+    }
+    const proto::ProtoObject* targetCls = self ? self : floatCls;
     const proto::ProtoObject* x = nullptr;
-    if (!posArgs || posArgs->getSize(ctx) <= 1) {
+    size_t nArgs = posArgs ? posArgs->getSize(ctx) : 0;
+    if (nArgs <= argStart) {
         x = ctx->fromDouble(0.0);
     } else {
-        const proto::ProtoObject* val = posArgs->getAt(ctx, 1);
-        if (val->isInteger(ctx)) x = ctx->fromDouble(static_cast<double>(val->asLong(ctx)));
+        const proto::ProtoObject* val = posArgs->getAt(ctx, argStart);
+        if (val->isInteger(ctx)) {
+            // SmallInteger fits in long long; for bignum, convert via
+            // the decimal string (std::stod returns ±inf on overflow).
+            try {
+                x = ctx->fromDouble(static_cast<double>(val->asLong(ctx)));
+            } catch (const std::overflow_error&) {
+                const proto::ProtoString* s = proto::Integer::toString(ctx, val, 10);
+                std::string digits;
+                s->toUTF8String(ctx, digits);
+                try {
+                    x = ctx->fromDouble(std::stod(digits));
+                } catch (const std::out_of_range&) {
+                    // Match CPython's OverflowError via ValueError channel.
+                    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+                    if (env) env->raiseValueError(ctx,
+                        PythonEnvironment::getInternedString(ctx, "int too large to convert to float")->asObject(ctx));
+                    return nullptr;
+                }
+            }
+        }
         else if (val->isDouble(ctx)) x = val;
         else if (val->isString(ctx)) {
             std::string s;
@@ -890,7 +922,8 @@ static const proto::ProtoObject* py_bool_call(
     if (obj == PROTO_FALSE) return PROTO_FALSE;
     if (obj == PROTO_NONE) return PROTO_FALSE;
     if (obj->isString(ctx)) return obj->asString(ctx)->getSize(ctx) > 0 ? PROTO_TRUE : PROTO_FALSE;
-    if (obj->isInteger(ctx)) return obj->asLong(ctx) != 0 ? PROTO_TRUE : PROTO_FALSE;
+    // Integer::sign is bignum-safe (no long-long overflow).
+    if (obj->isInteger(ctx)) return proto::Integer::sign(ctx, obj) != 0 ? PROTO_TRUE : PROTO_FALSE;
     if (obj->isDouble(ctx)) return obj->asDouble(ctx) != 0.0 ? PROTO_TRUE : PROTO_FALSE;
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     // Use the same lookup pattern as isTruthy() in ExecutionEngine.cpp:
@@ -947,7 +980,11 @@ static const proto::ProtoObject* py_object_str(
         return PythonEnvironment::getInternedString(context, "None")->asObject(context);
     }
     if (self->isString(context)) return self;
-    if (self->isInteger(context)) return PythonEnvironment::getInternedString(context, std::to_string(self->asLong(context)).c_str())->asObject(context);
+    if (self->isInteger(context)) {
+        // Bignum-safe: Integer::toString handles LargeInteger.
+        const proto::ProtoString* s = proto::Integer::toString(context, self, 10);
+        return s->asObject(context);
+    }
     if (self->isDouble(context)) return PythonEnvironment::getInternedString(context, std::to_string(self->asDouble(context)).c_str())->asObject(context);
     if (self == PROTO_TRUE) return PythonEnvironment::getInternedString(context, "True")->asObject(context);
     if (self == PROTO_FALSE) return PythonEnvironment::getInternedString(context, "False")->asObject(context);
@@ -2622,15 +2659,17 @@ static const proto::ProtoObject* py_int_bool(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
-    long long val = 0;
+    const proto::ProtoObject* intObj = nullptr;
     if (self->isInteger(context)) {
-        val = self->asLong(context);
+        intObj = self;
     } else {
         PythonEnvironment* env = PythonEnvironment::fromContext(context);
         const proto::ProtoObject* data = self->getAttribute(context, env ? env->getDataString() : PythonEnvironment::getInternalString(context, "__data__"));
-        if (data && data->isInteger(context)) val = data->asLong(context);
+        if (data && data->isInteger(context)) intObj = data;
     }
-    return val != 0 ? PROTO_TRUE : PROTO_FALSE;
+    if (!intObj) return PROTO_FALSE;
+    // Integer::sign is bignum-safe (returns 0 / -1 / +1 without asLong).
+    return proto::Integer::sign(context, intObj) != 0 ? PROTO_TRUE : PROTO_FALSE;
 }
 
 static const proto::ProtoObject* py_float_bool(
@@ -3784,15 +3823,39 @@ static const proto::ProtoObject* py_int_hash(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
-    long long val = 0;
+    const proto::ProtoObject* intObj = nullptr;
     if (self->isInteger(context)) {
-        val = self->asLong(context);
+        intObj = self;
     } else {
         PythonEnvironment* env = PythonEnvironment::fromContext(context);
         const proto::ProtoObject* data = self->getAttribute(context, env ? env->getDataString() : PythonEnvironment::getInternalString(context, "__data__"));
-        if (data && data->isInteger(context)) val = data->asLong(context);
+        if (data && data->isInteger(context)) intObj = data;
     }
-    return context->fromInteger(val);
+    if (!intObj) return context->fromInteger(0);
+    // Fast path: SmallInteger fits in long long — hash is the value itself
+    // (CPython matches int's value when it fits).
+    try {
+        long long v = intObj->asLong(context);
+        // CPython: hash(-1) == -2 to keep -1 reserved as the error marker.
+        if (v == -1) return context->fromInteger(-2);
+        return context->fromInteger(v);
+    } catch (const std::overflow_error&) {
+        // Bignum: hash via its digits modulo a large prime.  This keeps
+        // `hash(n) == hash(n)` stable without overflowing long long.
+        // Use Python's PyHASH_MODULUS (2^61 - 1) equivalent simplified:
+        // fold the decimal digit string through FNV-1a.
+        const proto::ProtoString* s = proto::Integer::toString(context, intObj, 16);
+        std::string digits;
+        s->toUTF8String(context, digits);
+        unsigned long long h = 14695981039346656037ULL; // FNV-1a offset
+        for (char c : digits) {
+            h ^= static_cast<unsigned long long>(static_cast<unsigned char>(c));
+            h *= 1099511628211ULL; // FNV-1a prime
+        }
+        long long signed_h = static_cast<long long>(h);
+        if (signed_h == -1) signed_h = -2;
+        return context->fromInteger(signed_h);
+    }
 }
 
 static const proto::ProtoString* bytes_from_object(proto::ProtoContext* context, const proto::ProtoObject* obj) {
@@ -9210,6 +9273,11 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
 
     space_->doublePrototype = const_cast<proto::ProtoObject*>(floatPrototype);
     floatPrototype = floatPrototype->setAttribute(rootContext_, py_call, rootContext_->fromMethod(nullptr, py_float_call));
+    // Register py_float_call as __new__ so `float(x)` via type.__call__
+    // actually produces a float with the right value (instead of an empty
+    // float instance).  The __call__ binding above is kept so direct
+    // invocation via `floatPrototype.__call__(x)` also works.
+    floatPrototype = floatPrototype->setAttribute(rootContext_, newString, rootContext_->fromMethod(nullptr, py_float_call));
     floatPrototype = floatPrototype->setAttribute(rootContext_, PythonEnvironment::getInternalString(rootContext_, "__init__"), rootContext_->fromMethod(nullptr, protoPython::builtins::py_python_ignore_init));
     const proto::ProtoString* py_is_integer = PythonEnvironment::getInternedString(rootContext_, "is_integer");
     floatPrototype = floatPrototype->setAttribute(rootContext_, py_is_integer, rootContext_->fromMethod(nullptr, py_float_is_integer));

@@ -86,6 +86,68 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 
 **Key V110 milestone**: All essential tests now run to completion without crashing. Individual test failures reflect unimplemented language features (metaclass protocol, descriptors, C-extension stubs), not interpreter instability.
 
+### V139 Changes (2026-04-24) — W-round: bignum-safe built-ins
+
+A ten-step pass closing the most common bignum-unsafe paths that were
+raising `std::overflow_error` or returning wrong results.
+
+- **W1 / `abs(int)`** — `py_abs` now delegates to `proto::Integer::abs`,
+  which handles `LargeInteger` without calling `asLong`.  Fixes
+  `abs(-(10**30))` crash.
+- **W2 / `hash(int)`** — `py_int_hash` tries `asLong` first (so the
+  SmallInteger fast path stays correct and value-identical to CPython)
+  and, on overflow, falls back to an FNV-1a fold over the hex digits.
+  Includes CPython's `hash(-1) → -2` convention.
+- **W3 / `float(int)`** — Two fixes:
+    1. `py_float_call` converts bignum through the decimal string
+       (`std::stod` — returns ±inf on overflow, ValueError on
+       out-of-range).
+    2. Registered `py_float_call` as `__new__` on the float prototype
+       so `float(x)` via `type.__call__` actually produces a float with
+       the argument's value instead of an empty instance.  (Previously
+       `float(3)` returned `0.0`.)
+- **W4 / bitwise `&`, `|`, `^`** — Implemented full two's-complement
+  bignum bitwise in `protoCore` (`Integer::bitwiseAnd/Or/Xor`) via
+  per-word extension to the longer operand plus invert+add-1 for
+  negatives.  `ExecutionEngine::OP_BINARY_*` and `OP_INPLACE_*` for
+  AND/OR/XOR now route int/int through `Integer::bitwiseXyz` instead of
+  `asLong`.  Handles positive, negative, and mixed operands.
+- **W5 / true division `/`** — `binaryTrueDivide` now always returns a
+  float for int/int (Python 3 semantics), converting each operand to
+  double (via decimal string for bignum, returning ±inf above DBL_MAX).
+  Previously `big_int / small_int` returned an int (floor result) or
+  crashed.
+- **W6 / modulo int/float mix** — `binaryModulo` handles the cross
+  cases (`int % float`, `float % int`) introduced by W5, using
+  `std::fmod` with Python's floor-rounding correction (sign of divisor).
+- **W7 / `bin`, `oct`, `hex`** — Refactored to a common
+  `format_int_with_prefix` helper that uses `Integer::toString`, so
+  `hex(10**30)` et al. no longer crash.
+- **W8 / `bool(int)`** — `py_int_bool`, `py_bool_call`, and the
+  `py_bool` builtin all now use `Integer::sign` instead of `asLong`.
+- **W9 / `repr(int)`** — The `py_repr` builtin now uses
+  `Integer::toString` for integers (previously called
+  `snprintf("%lld", asLong)`).  `py_int_repr` was already fixed in V137.
+- **W10 / `object.__str__(int)`** — `py_object_str` now calls
+  `Integer::toString` for bignum input (previously `std::to_string(asLong)`).
+  Covers the `str(n)` path that goes via `int`'s inherited `__str__`.
+
+**Companion change** — `protoCore`'s `Integer::bitwiseAnd/Or/Xor` now
+have a real bignum implementation (previously raised `std::runtime_error`
+for any `LargeInteger` operand).  Committed as part of this round.
+
+Essential-suite snapshot after W-round (2026-04-24):
+
+| Test | Tests run | Pass | Fail | Err | Skip | Notes |
+| :--- | ---: | ---: | ---: | ---: | ---: | :--- |
+| `test_grammar.py`    |  75 | 34 | 22 | 14 | 5 | one extra fail in `test_selectors` (tuple-sort edge case) |
+| `test_types.py`      | 131 |  6 | 75 | 48 | 2 | unchanged |
+| `test_generators.py` |   1 |  0 |  0 |  1 | 0 | unchanged |
+| `test_asyncgen.py`   |  85 |  0 |  8 | 77 | 0 | unchanged |
+| `test_json.py`       |   9 |  9 |  0 |  0 | 0 | **PASS** |
+| `test_base64.py`     |  54 |  8 | 45 |266 | 1 | slight runtime increase (still passes under 120s) |
+| `test_descr.py`      |   — |  — |  — |  — | — | still timeouts (F10) |
+
 ### V138 Changes (2026-04-24) — V3 completion + ordering/dunder correctness
 
 Wraps up the V1–V3 bignum slice and hardens the general comparison path.
