@@ -14,13 +14,13 @@ This document tracks the progress of `protoPython` in passing the official CPyth
 
 Core syntax, standard object model, and fundamental types.
 
-- [ ] `test_grammar.py`: **PARTIAL** — 7/75 pass, runs to completion; AnnAssign tuple RHS accepted (V113, 2026-04-24)
-- [ ] `test_types.py`: **PARTIAL** — 6/131 pass, runs to completion; failure messages now visible (V111, 2026-04-24)
+- [ ] `test_grammar.py`: **PARTIAL** — 12/75 pass, runs to completion (V125, 2026-04-24)
+- [ ] `test_types.py`: **PARTIAL** — 6/131 pass, runs to completion; legible failures (V124, 2026-04-24)
 - [ ] `test_descr.py`: **TIMEOUT** — runs >5 min; `type()` descriptor tests expose slow paths
 - [ ] `test_generators.py`: **PARTIAL** — 0/1 pass (doctest runner fails); import chain runs
 - [ ] `test_asyncgen.py`: **PARTIAL** — 85 tests now run (0/85 pass, 80 errors, 5 failures); unblocked (V116, 2026-04-24)
 - [ ] `test_base64.py`: **PARTIAL** — runs to completion, many failures (V110, 2026-04-23)
-- [ ] `test_json.py`: **PARTIAL** — 9 tests added, 8 pass, 1 error (StringIO.write missing) (V117, 2026-04-24)
+- [x] `test_json.py`: **PASS** — 9/9 tests pass (V124, 2026-04-24)
 
 ### 🟠 Important (Standard Library Foundations)
 
@@ -58,7 +58,7 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 - [ ] `test_pydoc.py`
 - [ ] `test_warnings.py`
 
-## Progress Summary (v1.0.0 — 2026-04-24, V117)
+## Progress Summary (v1.0.0 — 2026-04-24, V125)
 
 ### Essential suite — end of "error visibility" phases (F1–F8)
 
@@ -85,6 +85,60 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 **Conformity Suite (internal, 2026-04-15)**: 7/9 tests pass. Failures are pre-existing: `int(float)` conversion and `set(iterable)` constructor.
 
 **Key V110 milestone**: All essential tests now run to completion without crashing. Individual test failures reflect unimplemented language features (metaclass protocol, descriptors, C-extension stubs), not interpreter instability.
+
+### V118–V125 Changes (2026-04-24) — Steps S1–S10: targeted correctness fixes
+
+Ten focused fixes driven by the now-legible error stream.  Each in its own
+commit (V118…V125); only the net effect is summarized here.
+
+- **V118 / S1** `io.StringIO`: stub replaced by a real implementation with
+  `write / getvalue / read / seek / tell / truncate / close / writable /
+  readable / __enter__ / __exit__ / __call__(initial)`, backed by two own
+  attributes (`__sio_buffer__` string, `__sio_pos__` int).
+- **V119 / S4** Compiler: a nested function's *own* free variables were
+  never computed; they were only harvested from functions nested inside
+  *it*.  `compileFunctionDef` now runs an additional
+  `used − defined − globals − nonlocal_decls` pass on the body, so
+  `def outer(): c = {...}; def inner(a): for x in c.get(a, []): …` resolves
+  `c` via `LOAD_DEREF` instead of `LOAD_GLOBAL`.
+- **V120 / S5** `del lst[i:j:k]`: handler rewired through
+  `get_slice_bounds` to drop the selected indices with honour for
+  positive and negative `step`.
+- **V121 / S3** Every module now gets a minimal `__spec__` object
+  (`.name / .loader / .origin / .submodule_search_locations / .has_location /
+  .parent / ._initializing`) synthesized in `ensureModuleInSysModules`.
+- **V122 / S9** `isinstance(obj, X | Y)` works.  `py_type_or` sets
+  `__class__ = UnionType` on the built instance; `py_isinstance` detects
+  UnionType via `type(cls).__name__ == "UnionType"` and iterates `__args__`.
+- **V123 / S10** `a @= b` now binds `self` via the descriptor protocol
+  and rebalances the stack so `STORE_FAST` reads the `__imatmul__` return
+  value instead of a leftover operand.
+- **V124 / S7** `a != b` always consults `__eq__` first and negates it,
+  matching Python's default `object.__ne__` semantics.  Removes the
+  pointer-comparison misreport that made `assertEqual({}, {})` crash.
+- **V125 / S8** `iter()` honours the old-style sequence protocol.  An
+  object with `__getitem__` but no `__iter__` now yields a synthetic
+  iterator (target + index), rather than being walked as a dict of
+  attributes.
+
+### Skipped from S1–S10
+
+- **S2 (zero-arg `super()` in nested classes)** — deferred; affects several
+  metaclass tests in `test_types` and will be tackled in the F9 sweep.
+- **S6 (`<function object at 0x…>` noise)** — source not located in stdlib
+  or runtime via grep; non-blocking for test pass/fail accounting.
+
+### Essential suite — end of S1–S10
+
+| Test | Pass | Fails/Errors | Delta vs V117 |
+| :--- | ---: | ---: | ---: |
+| `test_grammar.py` | 12 / 75 | 49 fail + 14 err | +5 pass, -5 err |
+| `test_types.py`  | 6 / 131 | 75 fail + 48 err + 2 skip | -6 err (legible) |
+| `test_descr.py`  | — | TIMEOUT | unchanged |
+| `test_generators.py` | 0 / 1 | 1 err | unchanged |
+| `test_asyncgen.py` | 0 / 85 | 5 fail + 80 err | unchanged |
+| `test_json.py` | 9 / 9 | — | **+1 suite fully green** |
+| `test_base64.py` | — | — | unchanged |
 
 ### V117 Changes (2026-04-24) — Phase F8: `test_json.py` added
 
