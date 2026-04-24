@@ -149,6 +149,34 @@ static const proto::ProtoObject* py_monotonic_ns(
     return ctx->fromInteger(ns);
 }
 
+// time.get_clock_info(name) -> namespace-like object with fields
+//   implementation, monotonic, adjustable, resolution
+static const proto::ProtoObject* py_get_clock_info(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    std::string name;
+    if (posArgs && posArgs->getSize(ctx) > 0) {
+        const proto::ProtoObject* a = posArgs->getAt(ctx, 0);
+        if (a && a->isString(ctx)) a->asString(ctx)->toUTF8String(ctx, name);
+    }
+    bool monotonic = (name == "monotonic" || name == "perf_counter");
+    bool adjustable = !monotonic;
+    const proto::ProtoObject* info = ctx->newObject(false);
+    info = info->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "implementation"),
+        PythonEnvironment::getInternedString(ctx,
+            monotonic ? "clock_gettime(MONOTONIC)" : "clock_gettime(REALTIME)")->asObject(ctx));
+    info = info->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "monotonic"),
+        monotonic ? PROTO_TRUE : PROTO_FALSE);
+    info = info->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "adjustable"),
+        adjustable ? PROTO_TRUE : PROTO_FALSE);
+    // CPython reports a ns-level nominal resolution; 1e-9 is the canonical value.
+    info = info->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "resolution"),
+        ctx->fromDouble(1e-9));
+    info = info->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__class__"),
+        PythonEnvironment::getInternedString(ctx, "clock_info")->asObject(ctx));
+    return info;
+}
+
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     const proto::ProtoObject* mod = ctx->newObject(false);
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "time"),
@@ -169,6 +197,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_gmtime));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "strftime"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_strftime));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "get_clock_info"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_get_clock_info));
     return mod;
 }
 
