@@ -14,7 +14,7 @@ This document tracks the progress of `protoPython` in passing the official CPyth
 
 Core syntax, standard object model, and fundamental types.
 
-- [ ] `test_grammar.py`: **PARTIAL** — 3/75 pass, runs to completion; failure messages now visible (V111, 2026-04-24)
+- [ ] `test_grammar.py`: **PARTIAL** — 6/75 pass, runs to completion; `compile()` now raises SyntaxError on rejected AST (V112, 2026-04-24)
 - [ ] `test_types.py`: **PARTIAL** — 6/131 pass, runs to completion; failure messages now visible (V111, 2026-04-24)
 - [ ] `test_descr.py`: **TIMEOUT** — runs >5 min; `type()` descriptor tests expose slow paths
 - [ ] `test_generators.py`: **PARTIAL** — 0/1 pass (doctest runner fails); import chain runs
@@ -57,7 +57,7 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 - [ ] `test_pydoc.py`
 - [ ] `test_warnings.py`
 
-## Progress Summary (v1.0.0 — 2026-04-24, V111)
+## Progress Summary (v1.0.0 — 2026-04-24, V112)
 
 | Category | Total | Tested | Passed | Notes |
 | :--- | :--- | :--- | :--- | :--- |
@@ -70,6 +70,38 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 **Conformity Suite (internal, 2026-04-15)**: 7/9 tests pass. Failures are pre-existing: `int(float)` conversion and `set(iterable)` constructor.
 
 **Key V110 milestone**: All essential tests now run to completion without crashing. Individual test failures reflect unimplemented language features (metaclass protocol, descriptors, C-extension stubs), not interpreter instability.
+
+### V112 Changes (2026-04-24) — Phase F2: compile() surfaces SyntaxError
+
+Three sources of noise and silent failure were collapsed:
+
+- **`compile(src, …, 'exec')` silently returned `None`** when the compiler
+  rejected an AST (e.g. the parser accepted `*x = 1` but `compileAssign`
+  refused it).  Every test that expected `assertRaises(SyntaxError, compile, …)`
+  falsely reported "SyntaxError not raised".  Both `py_compile` modes now
+  call `env->raiseSyntaxError` when the compiler bails, so `compile` behaves
+  like CPython at the public boundary even when the underlying failure is
+  protoPython-specific.
+- **`Compiler::compileNode FAILED` stderr spam on every rejected AST** —
+  previously unconditional `std::cerr <<`, now gated on `get_env_diag()`.
+  Test output is no longer interleaved with C++ type-mangled names.
+- **`DEBUG ITER: object … is NOT iterable` stderr spam** — an always-on
+  debug print in `PythonEnvironment::iter` bypassed its own `get_env_diag()`
+  guard.  Removed the unconditional branch; only the `TypeError` is raised.
+- **List iteration of 7+ character strings returned empty** — the fast path
+  in `py_list_call` and `py_list_iter` called `iterable->asList(ctx)`, which
+  exposes heap-string internals only for SSO-sized strings.  Added a String
+  specialization in `py_list_iter` that explodes the UTF-8 buffer into a
+  ProtoList of code-point integers (which `py_str_iter_next` then wraps into
+  single-char strings).  Also forced `py_list_call` to route strings through
+  the iterator protocol instead of the `asList` fast-path so long strings no
+  longer silently vanish.
+
+Impact:
+- `test_grammar.py`: 3 → 6 passing (net +3), 53 → 49 failures.  Remaining
+  failures are parser-accepts-invalid cases (F3) or language-feature gaps.
+- `test_types.py`: unchanged pass count; same fixes unlocked legible diagnosis
+  of metaclass-related failures (F9 territory).
 
 ### V111 Changes (2026-04-24) — Phase F1: error visibility
 

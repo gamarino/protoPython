@@ -1240,6 +1240,23 @@ static const proto::ProtoObject* py_list_iter(
         if (get_env_diag()) fprintf(stderr, "DEBUG py_list_iter: data fallback data=%p list=%p\n", (void*)data, (void*)list);
     }
     if (!list) {
+        // String fallback: strings don't expose .asList(), so explode them into
+        // a list of code-point integers here.  py_str_iter_next wraps each int
+        // back into a 1-char string.  Works uniformly for SSO and heap strings.
+        const proto::ProtoString* str = self->isString(context) ? self->asString(context) : nullptr;
+        if (!str && data && data->isString(context)) str = data->asString(context);
+        if (str) {
+            std::string utf8;
+            str->toUTF8String(context, utf8);
+            const proto::ProtoList* charList = context->newList();
+            for (unsigned char c : utf8) {
+                charList = charList->appendLast(context, context->fromInteger(static_cast<long>(c)));
+            }
+            list = charList;
+            data = charList->asObject(context);
+        }
+    }
+    if (!list) {
         if (get_env_diag()) fprintf(stderr, "DEBUG py_list_iter: return PROTO_NONE\n");
         return PROTO_NONE;
     }
@@ -2813,12 +2830,15 @@ static const proto::ProtoObject* py_list_call(
         }
         // Bytes objects store content in __data__ (a ProtoString), so asList() would
         // follow __data__ and return string internals — skip the fast-path for them.
+        // Strings likewise: SSO strings expose asList() as a tuple of tagged chars,
+        // but they need to be wrapped into 1-char strings by the iterator protocol.
         bool skipFastPath = false;
         if (env && env->getBytesPrototype()) {
             const proto::ProtoObject* cls2 = iterable->getAttribute(context, env->getClassString());
             if (cls2 == env->getBytesPrototype() || iterable->getPrototype(context) == env->getBytesPrototype())
                 skipFastPath = true;
         }
+        if (!skipFastPath && iterable->isString(context)) skipFastPath = true;
         const proto::ProtoList* otherL = skipFastPath ? nullptr : iterable->asList(context);
         if (otherL) {
             unsigned long sz = otherL->getSize(context);
@@ -12595,10 +12615,6 @@ const proto::ProtoObject* PythonEnvironment::iter(const proto::ProtoObject* obj)
         void* array[10];
         size_t size = backtrace(array, 10);
         backtrace_symbols_fd(array, size, STDERR_FILENO);
-        fflush(stderr);
-    }
-    if (true) { // Temporarily enable for all failures
-        fprintf(stderr, "DEBUG ITER: object %p is NOT iterable. type=%s repr=%s\n", (void*)obj, reprObject(ctx, getType(ctx, obj)).c_str(), reprObject(ctx, obj).c_str());
         fflush(stderr);
     }
     raiseTypeError(ctx, "object is not iterable");

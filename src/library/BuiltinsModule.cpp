@@ -1507,20 +1507,48 @@ static const proto::ProtoObject* py_compile(
         if (m->isString(context)) m->asString(context)->toUTF8String(context, mode);
     }
     Compiler compiler(context, filename);
+    PythonEnvironment* cenv = PythonEnvironment::fromContext(context);
+    auto raiseSE = [&](const std::string& msg, int line, int col) {
+        if (!cenv) return;
+        int lineno = line > 0 ? line : 1;
+        size_t start = 0;
+        for (int i = 1; i < lineno; ++i) {
+            size_t n = source.find('\n', start);
+            if (n == std::string::npos) { start = source.size(); break; }
+            start = n + 1;
+        }
+        size_t end = source.find('\n', start);
+        std::string lineText = source.substr(start, end == std::string::npos ? std::string::npos : end - start);
+        cenv->raiseSyntaxError(context, msg, lineno, col, lineText);
+    };
     if (mode == "eval") {
         Parser parser(source);
         std::unique_ptr<ASTNode> expr = parser.parseExpression();
-        if (!expr || !compiler.compileExpression(expr.get())) return PROTO_NONE;
+        if (!expr) {
+            raiseSE(parser.hasError() ? parser.getLastErrorMsg() : "invalid syntax",
+                    parser.getLastErrorLine(), parser.getLastErrorColumn());
+            return PROTO_NONE;
+        }
+        if (!compiler.compileExpression(expr.get())) {
+            raiseSE("invalid syntax", expr->line > 0 ? expr->line : 1, 0);
+            return PROTO_NONE;
+        }
     } else {
         Parser parser(source);
         std::unique_ptr<ModuleNode> mod = parser.parseModule();
         if (parser.hasError() || !mod || mod->body.empty()) {
-            if (get_env_diag() || parser.hasError()) {
+            if (get_env_diag()) {
                 fprintf(stderr, "py_compile: parser error at %d:%d: %s\n", parser.getLastErrorLine(), parser.getLastErrorColumn(), parser.getLastErrorMsg().c_str());
             }
+            raiseSE(parser.hasError() ? parser.getLastErrorMsg() : "invalid syntax",
+                    parser.getLastErrorLine(), parser.getLastErrorColumn());
             return PROTO_NONE;
         }
-        if (!compiler.compileModule(mod.get())) return PROTO_NONE;
+        if (!compiler.compileModule(mod.get())) {
+            int line = (!mod->body.empty() && mod->body[0]) ? mod->body[0]->line : 1;
+            raiseSE("invalid syntax", line > 0 ? line : 1, 0);
+            return PROTO_NONE;
+        }
     }
     return makeCodeObject(context, 
         compiler.getConstants(), 

@@ -3398,7 +3398,7 @@ bool Compiler::compileNode(ASTNode* node) {
     else if (auto* ne = dynamic_cast<NamedExprNode*>(node)) result = compileNamedExpr(ne);
     else if (auto* ta = dynamic_cast<TypeAliasNode*>(node)) result = compileTypeAlias(ta);
 
-    if (!result) {
+    if (!result && get_env_diag()) {
         std::cerr << "Compiler::compileNode FAILED for node type " << typeid(*node).name() << " at line " << node->line << "\n";
     }
     return result;
