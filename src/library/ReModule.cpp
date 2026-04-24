@@ -241,10 +241,30 @@ static const proto::ProtoObject* py_compile(
         proto::ProtoString::createSymbol(ctx, "__pattern_proto__"));
     if (!proto) return PROTO_NONE;
     const proto::ProtoObject* p = proto->newChild(ctx, true);
-    p = p->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__re_pattern__"),
-        PythonEnvironment::getInternedString(ctx, pat.c_str())->asObject(ctx));
+    const proto::ProtoObject* patObj = PythonEnvironment::getInternedString(ctx, pat.c_str())->asObject(ctx);
+    p = p->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__re_pattern__"), patObj);
     p = p->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__re_flags__"),
         ctx->fromInteger(flags));
+    // Public attributes expected by CPython: re.Pattern exposes
+    // `.pattern` (the source string), `.flags` (int), `.groups` (int).
+    p = p->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "pattern"), patObj);
+    p = p->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "flags"),
+        ctx->fromInteger(flags));
+    // Count capture groups by scanning unescaped '(' that aren't '(?...' non-capturing.
+    int groupCount = 0;
+    for (size_t i = 0; i + 0 < pat.size(); ++i) {
+        if (pat[i] == '\\' && i + 1 < pat.size()) { ++i; continue; }
+        if (pat[i] != '(') continue;
+        if (i + 2 < pat.size() && pat[i + 1] == '?' && pat[i + 2] != 'P') continue;
+        ++groupCount;
+    }
+    p = p->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "groups"),
+        ctx->fromInteger(groupCount));
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (env) {
+        // Give the instance an explicit class name for repr/type() checks.
+        p = p->setAttribute(ctx, env->getClassString(), proto);
+    }
     return p;
 }
 
