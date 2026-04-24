@@ -1384,6 +1384,15 @@ class TracebackException:
 
     def _format_syntax_error(self, stype, **kwargs):
         """Format SyntaxError exceptions (internal helper)."""
+        try:
+            yield from self._format_syntax_error_impl(stype, **kwargs)
+        except Exception:
+            # Fallback: degrade to a bare type+msg line rather than losing the
+            # whole test run to a formatting glitch.  (CPython assumes several
+            # SyntaxError invariants; protoPython does not yet enforce them all.)
+            yield _format_final_exc_line(stype, self._str, colorize=kwargs.get('colorize', False))
+
+    def _format_syntax_error_impl(self, stype, **kwargs):
         # Show exactly where the problem was found.
         colorize = kwargs.get("colorize", False)
         if colorize:
@@ -1640,17 +1649,25 @@ def _compute_suggestion_error(exc_value, tb, wrong_name):
         while tb.tb_next is not None:
             tb = tb.tb_next
         frame = tb.tb_frame
-        d = (
-            list(frame.f_locals)
-            + list(frame.f_globals)
-            + list(frame.f_builtins)
-        )
+        try:
+            f_locals = frame.f_locals
+        except AttributeError:
+            f_locals = {}
+        try:
+            f_globals = frame.f_globals
+        except AttributeError:
+            f_globals = {}
+        try:
+            f_builtins = frame.f_builtins
+        except AttributeError:
+            f_builtins = {}
+        d = list(f_locals) + list(f_globals) + list(f_builtins)
         d = [x for x in d if isinstance(x, str)]
 
         # Check first if we are in a method and the instance
         # has the wrong name as attribute
-        if 'self' in frame.f_locals:
-            self = frame.f_locals['self']
+        if 'self' in f_locals:
+            self = f_locals['self']
             try:
                 has_wrong_name = hasattr(self, wrong_name)
             except Exception:

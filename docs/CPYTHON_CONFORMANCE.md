@@ -14,8 +14,8 @@ This document tracks the progress of `protoPython` in passing the official CPyth
 
 Core syntax, standard object model, and fundamental types.
 
-- [ ] `test_grammar.py`: **PARTIAL** — 3/75 pass, runs to completion (V110, 2026-04-23)
-- [ ] `test_types.py`: **PARTIAL** — 6/131 pass, runs to completion (V110, 2026-04-23)
+- [ ] `test_grammar.py`: **PARTIAL** — 3/75 pass, runs to completion; failure messages now visible (V111, 2026-04-24)
+- [ ] `test_types.py`: **PARTIAL** — 6/131 pass, runs to completion; failure messages now visible (V111, 2026-04-24)
 - [ ] `test_descr.py`: **TIMEOUT** — runs >5 min; `type()` descriptor tests expose slow paths
 - [ ] `test_generators.py`: **PARTIAL** — 0/1 pass (doctest runner fails); import chain runs
 - [ ] `test_asyncgen.py`: **BLOCKED** — `importlib.import_module("asyncio")` fails; native `import asyncio` works
@@ -57,7 +57,7 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 - [ ] `test_pydoc.py`
 - [ ] `test_warnings.py`
 
-## Progress Summary (v1.0.0 — 2026-04-23, V110)
+## Progress Summary (v1.0.0 — 2026-04-24, V111)
 
 | Category | Total | Tested | Passed | Notes |
 | :--- | :--- | :--- | :--- | :--- |
@@ -70,6 +70,46 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 **Conformity Suite (internal, 2026-04-15)**: 7/9 tests pass. Failures are pre-existing: `int(float)` conversion and `set(iterable)` constructor.
 
 **Key V110 milestone**: All essential tests now run to completion without crashing. Individual test failures reflect unimplemented language features (metaclass protocol, descriptors, C-extension stubs), not interpreter instability.
+
+### V111 Changes (2026-04-24) — Phase F1: error visibility
+
+Phase 1 of the "zero-error essential tests" initiative.  The unittest runner
+previously printed `object: <object>` for every failure, making diagnosis
+nearly impossible.  Four compounded root causes were identified and fixed:
+
+- **`generator.throw()` passed instance through `invokePythonCallable`** —
+  `py_generator_throw` in `ExecutionEngine.cpp` detected "is-a-type" by looking up
+  `__name__`, which every instance inherits through the class.  An already-built
+  `AssertionError('1 != 2')` was therefore treated as a type and invoked as a
+  callable, producing `AssertionError(AssertionError(…))` and corrupting
+  `sys.exc_info()` inside every `@contextlib.contextmanager`.  Switched to an
+  *own-attribute* check for `__bases__`, which only classes carry.
+- **`str.splitlines(True)` ignored `True`** — `py_str_splitlines` only recognized
+  positional `int` arguments; `bool` fell through to the default `False`, so
+  `textwrap.indent` (and therefore `traceback.format()`) lost all newlines.  Added
+  `bool` and kwargs-dict (`keepends=...`) handling.
+- **String iteration produced `<class 'str'>` instead of characters** —
+  `py_str_iter_next` called the immutable `setAttribute` API but discarded the
+  returned object, so the new single-char wrapper never actually carried its
+  `__data__` / `__class__`.  Every `for c in some_str:` degenerated into five
+  copies of the `str` type.  Fixed by reassigning the results.
+- **`__qualname__` resolved to the prototype chain** — `OP_BUILD_CLASS` tested
+  only `getAttribute(__qualname__)`, which returned the inherited value from
+  `object` (`"object"`) or `dict` (`"dict"`).  Replaced with `hasOwnAttribute`
+  checks so each class records its real qualified name.  Exception prototypes
+  in `ExceptionsModule.cpp` now also set `__qualname__` explicitly.
+
+Net effect: unittest output now shows `AssertionError: 1 != 2` with a correct
+`Traceback (most recent call last):` header, file paths, line numbers, and
+exception chain.  `test_grammar.py` and `test_types.py` still fail mostly the
+same tests, but the failures are now legible, which unblocks F2–F10.
+
+Defensive fallbacks in `lib/python3.14/traceback.py`:
+- `_compute_suggestion_error` wraps `frame.f_locals / f_globals / f_builtins`
+  lookups in try/except (protoPython does not yet populate `f_builtins`).
+- `_format_syntax_error` wraps its body in try/except and falls back to the
+  plain `type: msg` line on formatting errors; the outer exception-chain
+  formatting continues.
 
 ### V110 Changes (2026-04-23)
 

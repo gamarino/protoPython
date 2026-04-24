@@ -1932,15 +1932,18 @@ const proto::ProtoObject* py_generator_throw(
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
     const proto::ProtoObject* exc = (posArgs && posArgs->getSize(ctx) > 0) ? posArgs->getAt(ctx, 0) : PROTO_NONE;
-    // If exc is a type (has __call__ and __name__), instantiate it to get an exception instance
+    // Distinguish a *type* (class) from an *instance*.  A class owns __bases__;
+    // an instance merely inherits __name__ through its class prototype chain,
+    // so checking only __name__ would misclassify instances as classes.
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (exc && exc != PROTO_NONE && env) {
-        const proto::ProtoObject* nameAttr = exc->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__name__"));
-        if (nameAttr && nameAttr != PROTO_NONE) {
+        const bool isType =
+            exc->hasOwnAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__bases__")) == PROTO_TRUE;
+        if (isType) {
             // exc is a type; check if value argument provided
             const proto::ProtoObject* value = (posArgs && posArgs->getSize(ctx) > 1) ? posArgs->getAt(ctx, 1) : nullptr;
             if (value && value != PROTO_NONE) {
-                // If value is already an instance of exc type, use value
+                // Caller supplied an already-built instance (or args tuple).
                 exc = value;
             } else {
                 // Instantiate the type
@@ -1952,6 +1955,7 @@ const proto::ProtoObject* py_generator_throw(
                 }
             }
         }
+        // else: exc is already an instance — use as-is.
     }
     return py_generator_send_impl(ctx, self, PROTO_NONE, exc);
 }
@@ -4935,12 +4939,16 @@ const proto::ProtoObject* executeBytecodeRange(
                 if (get_env_diag()) fprintf(stderr, "DEBUG OP_BUILD_CLASS: targetClass=%p\n", (void*)targetClass);
                 
                 if (targetClass && targetClass != PROTO_NONE) {
-                    // Set __qualname__ if not already present (falls back to __name__ for top-level classes).
+                    // Set __qualname__ if not set as an *own* attribute (inherited values from
+                    // object/type prototypes must not block per-class assignment).
                     const proto::ProtoString* qualnameS = PythonEnvironment::getInternedString(ctx, "__qualname__");
-                    const proto::ProtoObject* existingQN = targetClass->getAttribute(ctx, qualnameS);
-                    if (!existingQN || existingQN == PROTO_NONE) {
+                    const bool hasOwnQN = targetClass->hasOwnAttribute(ctx, qualnameS) == PROTO_TRUE;
+                    if (!hasOwnQN) {
                         // Try to get __qualname__ from the class namespace (set by the class body).
-                        const proto::ProtoObject* nsQN = ns ? ns->getAttribute(ctx, qualnameS) : nullptr;
+                        // Only use ns's value if it's an OWN attribute; otherwise it's inherited
+                        // from the dict/object prototype and would incorrectly yield "dict"/"object".
+                        const bool nsHasOwnQN = ns ? (ns->hasOwnAttribute(ctx, qualnameS) == PROTO_TRUE) : false;
+                        const proto::ProtoObject* nsQN = nsHasOwnQN ? ns->getAttribute(ctx, qualnameS) : nullptr;
                         if (nsQN && nsQN != PROTO_NONE && nsQN->isString(ctx)) {
                             targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(ctx, qualnameS, nsQN));
                         } else {

@@ -211,6 +211,8 @@ static const proto::ProtoObject* make_exception_type(proto::ProtoContext* ctx,
     }
     exc = exc->setAttribute(ctx, py_class, typeProto);
     exc = exc->setAttribute(ctx, py_name, PythonEnvironment::getInternedString(ctx, name)->asObject(ctx));
+    exc = exc->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__qualname__"),
+                            PythonEnvironment::getInternedString(ctx, name)->asObject(ctx));
     
     // Set __bases__ for issubclass()
     if (base) {

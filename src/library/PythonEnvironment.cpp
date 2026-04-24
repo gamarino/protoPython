@@ -1298,37 +1298,32 @@ static const proto::ProtoObject* py_str_iter_next(
     
     // Wrap value into a 1-char ProtoString
     if (value) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(context);
+        const proto::ProtoString* dataName = env ? env->getDataString() : PythonEnvironment::getInternalString(context, "__data__");
+        const proto::ProtoString* classStr = env ? env->getClassString() : PythonEnvironment::getInternalString(context, "__class__");
+        auto wrapChar = [&](const proto::ProtoString* charStr) -> const proto::ProtoObject* {
+            const proto::ProtoObject* resObj = context->newObject(false);
+            resObj = resObj->setAttribute(context, dataName, charStr->asObject(context));
+            if (env && env->getStrPrototype()) {
+                resObj = resObj->addParent(context, env->getStrPrototype());
+                resObj = resObj->setAttribute(context, classStr, env->getStrPrototype());
+            }
+            return resObj;
+        };
         if (((uintptr_t)value & 0x3FF) == 129) {
             char c = static_cast<char>((uintptr_t)value >> 10);
             char strBuf[2] = {c, '\0'};
-            PythonEnvironment* env = PythonEnvironment::fromContext(context);
-            const proto::ProtoString* charStr = PythonEnvironment::getInternedString(context, strBuf);
-            proto::ProtoObject* resObj = const_cast<proto::ProtoObject*>(context->newObject(false));
-            resObj->setAttribute(context, env ? env->getDataString() : PythonEnvironment::getInternalString(context, "__data__"), charStr->asObject(context));
-            if (env && env->getStrPrototype()) {
-                resObj = const_cast<proto::ProtoObject*>(resObj->addParent(context, env->getStrPrototype()));
-                resObj->setAttribute(context, env->getClassString(), env->getStrPrototype());
-            }
-            return resObj;
+            return wrapChar(PythonEnvironment::getInternedString(context, strBuf));
         } else if (value->isInteger(context)) {
             char c = static_cast<char>(value->asLong(context));
             char strBuf[2] = {c, '\0'};
-            PythonEnvironment* env = PythonEnvironment::fromContext(context);
-            const proto::ProtoString* charStr = PythonEnvironment::getInternedString(context, strBuf);
-            proto::ProtoObject* resObj = const_cast<proto::ProtoObject*>(context->newObject(false));
-            resObj->setAttribute(context, env ? env->getDataString() : PythonEnvironment::getInternalString(context, "__data__"), charStr->asObject(context));
-            if (env && env->getStrPrototype()) {
-                resObj = const_cast<proto::ProtoObject*>(resObj->addParent(context, env->getStrPrototype()));
-                resObj->setAttribute(context, env->getClassString(), env->getStrPrototype());
-            }
-            return resObj;
+            return wrapChar(PythonEnvironment::getInternedString(context, strBuf));
         } else if (value->isString(context)) {
-            PythonEnvironment* env = PythonEnvironment::fromContext(context);
-            proto::ProtoObject* resObj = const_cast<proto::ProtoObject*>(context->newObject(false));
-            resObj->setAttribute(context, env ? env->getDataString() : PythonEnvironment::getInternalString(context, "__data__"), value);
+            const proto::ProtoObject* resObj = context->newObject(false);
+            resObj = resObj->setAttribute(context, dataName, value);
             if (env && env->getStrPrototype()) {
-                resObj = const_cast<proto::ProtoObject*>(resObj->addParent(context, env->getStrPrototype()));
-                resObj->setAttribute(context, env->getClassString(), env->getStrPrototype());
+                resObj = resObj->addParent(context, env->getStrPrototype());
+                resObj = resObj->setAttribute(context, classStr, env->getStrPrototype());
             }
             return resObj;
         }
@@ -5669,14 +5664,28 @@ static const proto::ProtoObject* py_str_rsplit(
 static const proto::ProtoObject* py_str_splitlines(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList* kwArgs) {
     const proto::ProtoString* str = str_from_self(context, self);
     if (!str) return PROTO_NONE;
     std::string s;
     str->toUTF8String(context, s);
     bool keepends = false;
-    if (posArgs && posArgs->getSize(context) >= 1 && posArgs->getAt(context, 0)->isInteger(context))
-        keepends = posArgs->getAt(context, 0)->asLong(context) != 0;
+    auto coerceKeepends = [&](const proto::ProtoObject* ke) {
+        if (!ke) return;
+        if (ke->isBoolean(context)) keepends = ke->asBoolean(context);
+        else if (ke->isInteger(context)) keepends = ke->asLong(context) != 0;
+        else keepends = (ke != PROTO_NONE && ke != PROTO_FALSE);
+    };
+    if (posArgs && posArgs->getSize(context) >= 1) {
+        coerceKeepends(posArgs->getAt(context, 0));
+    }
+    if (kwArgs) {
+        const proto::ProtoString* keS = PythonEnvironment::getInternedString(context, "keepends");
+        unsigned long h = keS->getHash(context);
+        if (kwArgs->has(context, h)) {
+            coerceKeepends(kwArgs->getAt(context, h));
+        }
+    }
     const proto::ProtoList* result = context->newList();
     size_t start = 0;
     size_t i = 0;
