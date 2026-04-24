@@ -3700,16 +3700,20 @@ static const proto::ProtoObject* py_min_max(
             currentVal = keyFunc->call(context, nullptr, nullptr, keyFunc, context->newList()->appendLast(context, currentItem), nullptr);
         }
 
-        // Use sorted_compare or similar?
-        // For simplicity, let's assume integers for now or use the environment's comparison.
+        // Compare via PythonEnvironment::compareObjects so strings,
+        // tuples, etc. get proper ordering (op=2 is '<', op=4 is '>').
         bool better = false;
-        if (currentVal->isInteger(context) && bestVal->isInteger(context)) {
-            better = isMax ? (currentVal->asLong(context) > bestVal->asLong(context)) : (currentVal->asLong(context) < bestVal->asLong(context));
-        } else {
-            // Fallback to basic comparison? 
-            // Better: use the compare system if available.
+        ::protoPython::PythonEnvironment* env = ::protoPython::PythonEnvironment::fromContext(context);
+        if (env) {
+            int op = isMax ? 4 : 2;
+            const proto::ProtoObject* cmp = env->compareObjects(context, currentVal, bestVal, op);
+            better = (cmp == PROTO_TRUE);
+        } else if (currentVal->isInteger(context) && bestVal->isInteger(context)) {
+            better = isMax
+                ? (currentVal->asLong(context) > bestVal->asLong(context))
+                : (currentVal->asLong(context) < bestVal->asLong(context));
         }
-        
+
         if (better) {
             bestItem = currentItem;
             bestVal = currentVal;

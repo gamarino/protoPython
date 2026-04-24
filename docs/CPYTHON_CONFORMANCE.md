@@ -86,6 +86,49 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 
 **Key V110 milestone**: All essential tests now run to completion without crashing. Individual test failures reflect unimplemented language features (metaclass protocol, descriptors, C-extension stubs), not interpreter instability.
 
+### V138 Changes (2026-04-24) — V3 completion + ordering/dunder correctness
+
+Wraps up the V1–V3 bignum slice and hardens the general comparison path.
+
+- **V3 / `int(str)`** — `int("123456789012345678901234567890")`,
+  `int("0xff", 0)`, and `int("  42  ")` now all produce correct results.
+  `py_int_call` strips surrounding ASCII whitespace, detects `0x`/`0o`/`0b`
+  prefixes (with optional sign), and routes to `ctx->fromString(...)`,
+  which promotes to the protoCore `LargeInteger` bignum on overflow.
+  Replaces the earlier `std::stoll(s, nullptr, 0)` path that truncated and
+  threw on anything above 63 bits.
+- **`max()` / `min()` for non-integer sequences** — `py_min_max` previously
+  had a `currentVal->isInteger && bestVal->isInteger` fast path and fell
+  through to a stub comment for every other type, so `max(["banana",
+  "apple", "cherry"])` returned `"banana"` (the first element). It now
+  dispatches through `PythonEnvironment::compareObjects` (op=`<` or `>`),
+  giving correct ordering for strings, tuples, and any type with a
+  `__lt__` / `__gt__` dunder.
+- **Dunder comparison hardening** — `compareObjects` only trusts the
+  result of `__eq__`/`__ne__`/ordering dunders when it is an actual
+  `bool` (`PROTO_TRUE`, `PROTO_FALSE`, or `isBoolean()`).  Native default
+  `__eq__` stubs occasionally return an opaque NotImplemented-like
+  object that is neither `PROTO_NONE` nor the registered
+  `NotImplemented` singleton; treating that as a truthy answer made `!=`
+  return the wrong value for wrapped 1-char strings.  With the guard,
+  the raw fallback path runs instead.
+
+Essential suite state after V138 (ran on 2026-04-24):
+
+| Test | Tests run | Pass | Fail | Err | Skip | Status |
+| :--- | ---: | ---: | ---: | ---: | ---: | :--- |
+| `test_grammar.py`    |  75 | 35 | 21 | 14 | 5 | runs to completion |
+| `test_types.py`      | 131 |  6 | 75 | 48 | 2 | runs to completion |
+| `test_generators.py` |   1 |  0 |  0 |  1 | 0 | doctest-blocked |
+| `test_asyncgen.py`   |  85 |  0 |  8 | 77 | 0 | runs to completion |
+| `test_json.py`       |   9 |  9 |  0 |  0 | 0 | **PASS** |
+| `test_base64.py`     |  54 |  0 | 45 |266 | 1 | runs to completion |
+| `test_descr.py`      |   — |  — |  — |  — | — | still timeouts |
+
+One of seven essential suites passes fully (`test_json.py`); five more
+run to completion and expose legible, feature-gap failures; `test_descr`
+still times out pending descriptor perf work (F10).
+
 ### V133–V136 Changes (2026-04-24) — Steps U1–U10: language-feature polish
 
 Seven of ten U-series fixes landed; three are documented as deferred.

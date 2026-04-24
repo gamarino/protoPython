@@ -811,8 +811,25 @@ static const proto::ProtoObject* py_int_call(
         } else if (val->isString(ctx)) {
             std::string s;
             val->asString(ctx)->toUTF8String(ctx, s);
+            // Trim surrounding whitespace (CPython allows " 42 ").
+            size_t b = s.find_first_not_of(" \t\n\r\f\v");
+            size_t e = s.find_last_not_of(" \t\n\r\f\v");
+            std::string trimmed = (b == std::string::npos) ? std::string() : s.substr(b, e - b + 1);
+            // Detect and strip `0x`, `0o`, `0b` prefix (with optional sign).
+            int base = 10;
+            std::string digits = trimmed;
+            int signLen = 0;
+            if (!digits.empty() && (digits[0] == '+' || digits[0] == '-')) signLen = 1;
+            if (digits.size() >= static_cast<size_t>(signLen + 2) && digits[signLen] == '0') {
+                char p = digits[signLen + 1];
+                if (p == 'x' || p == 'X') { base = 16; digits.erase(signLen + 1, 1); digits.erase(signLen, 1); }
+                else if (p == 'o' || p == 'O') { base = 8; digits.erase(signLen + 1, 1); digits.erase(signLen, 1); }
+                else if (p == 'b' || p == 'B') { base = 2; digits.erase(signLen + 1, 1); digits.erase(signLen, 1); }
+            }
             try {
-                x = ctx->fromInteger(std::stoll(s, nullptr, 0));
+                // Integer::fromString now promotes to bignum on overflow
+                // (see protoCore Integer.cpp).
+                x = ctx->fromString(digits.c_str(), base);
             } catch (...) {
                 PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
                 if (env) env->raiseValueError(ctx, PythonEnvironment::getInternedString(ctx, ("invalid literal for int() with base 0: " + s).c_str())->asObject(ctx));
@@ -12178,7 +12195,12 @@ const proto::ProtoObject* PythonEnvironment::compareObjects(proto::ProtoContext*
                     args = args->appendLast(ctx, b);
                     const proto::ProtoObject* res = eqMethod->asMethod(ctx)(ctx, a, nullptr, args, getEmptySparseList());
                     const proto::ProtoObject* notImpl = getNotImplementedPrototype();
-                    if (res && res != PROTO_NONE && res != notImpl) {
+                    // Only trust __eq__'s result if it's an actual bool.
+                    // Some native default __eq__ stubs return an opaque
+                    // NotImplemented-like object; fall through to the
+                    // raw compare below in that case.
+                    if (res && res != PROTO_NONE && res != notImpl &&
+                        (res == PROTO_TRUE || res == PROTO_FALSE || res->isBoolean(ctx))) {
                         if (res == PROTO_TRUE) return PROTO_FALSE;
                         if (res == PROTO_FALSE) return PROTO_TRUE;
                         if (res->isBoolean(ctx)) return res->asBoolean(ctx) ? PROTO_FALSE : PROTO_TRUE;
@@ -12191,14 +12213,20 @@ const proto::ProtoObject* PythonEnvironment::compareObjects(proto::ProtoContext*
                 args = args->appendLast(ctx, b);
                 const proto::ProtoObject* res = method->asMethod(ctx)(ctx, a, nullptr, args, getEmptySparseList());
                 const proto::ProtoObject* notImpl = getNotImplementedPrototype();
-                if (res && res != PROTO_NONE && res != notImpl) return res;
+                // Only trust the dunder's result if it's a real bool.
+                // Default native-object __eq__ stubs return an opaque
+                // NotImplemented-like instance; fall through to the raw
+                // compare below on anything non-bool.
+                if (res && res != PROTO_NONE && res != notImpl &&
+                    (res == PROTO_TRUE || res == PROTO_FALSE || res->isBoolean(ctx))) {
+                    return res;
+                }
             }
         }
     }
 
     int c = 0;
     if (a->isString(ctx) && b->isString(ctx)) {
-        // Robust string comparison avoids protoCore pointer-based hash matching
         std::string s1, s2;
         a->asString(ctx)->toUTF8String(ctx, s1);
         b->asString(ctx)->toUTF8String(ctx, s2);
