@@ -1338,14 +1338,29 @@ def _find_and_load_unlocked(name, import_):
         # Build a minimal spec-like object and delegate.
         import _imp
         class _NativeSpec:
-            __slots__ = ('name',)
             def __init__(self, name):
                 self.name = name
+                self.loader = None
+                self.origin = 'built-in'
+                self.submodule_search_locations = None
+                self.parent = name.rpartition('.')[0]
+                self.has_location = False
+                self._initializing = False
+                self._uninitialized_submodules = []
+        native_spec = _NativeSpec(name)
         try:
-            native_mod = _imp.create_builtin(_NativeSpec(name))
+            native_mod = _imp.create_builtin(native_spec)
         except Exception:
             native_mod = None
         if native_mod is not None:
+            # CPython invariant: every loaded module has __spec__ set.
+            # Attach one here so downstream callers (`inspect`, `pkgutil`,
+            # `typing.get_type_hints`, etc.) never see a missing attribute.
+            try:
+                if not hasattr(native_mod, '__spec__') or native_mod.__spec__ is None:
+                    native_mod.__spec__ = native_spec
+            except Exception:
+                pass
             sys.modules[name] = native_mod
             return native_mod
         raise ModuleNotFoundError(f'{_ERR_MSG_PREFIX}{name!r}', name=name)

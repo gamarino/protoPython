@@ -11981,6 +11981,34 @@ void PythonEnvironment::registerInSysModules(proto::ProtoContext* ctx, const pro
 
 void PythonEnvironment::ensureModuleInSysModules(proto::ProtoContext* ctx, const std::string& name, const proto::ProtoObject* mod) {
     registerInSysModules(ctx, sysModule, name, mod);
+    // CPython invariant: every live module has `__spec__` (even if None) and
+    // `__name__`.  Tools like `inspect`, `pkgutil`, `typing.get_type_hints`
+    // read these unconditionally, so synthesize them here if a native module
+    // shipped without them.  A minimal object with `.name` / `.loader` / etc.
+    // is enough for the attribute-existence checks that matter in practice.
+    if (!mod || mod == PROTO_NONE) return;
+    const proto::ProtoString* specName = PythonEnvironment::getInternedString(ctx, "__spec__");
+    if (mod->hasOwnAttribute(ctx, specName) != PROTO_TRUE) {
+        const proto::ProtoObject* spec = ctx->newObject(false);
+        spec = spec->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "name"),
+                                  PythonEnvironment::getInternedString(ctx, name.c_str())->asObject(ctx));
+        spec = spec->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "loader"), PROTO_NONE);
+        spec = spec->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "origin"),
+                                  PythonEnvironment::getInternedString(ctx, "built-in")->asObject(ctx));
+        spec = spec->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "submodule_search_locations"), PROTO_NONE);
+        spec = spec->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "has_location"), PROTO_FALSE);
+        spec = spec->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "_initializing"), PROTO_FALSE);
+        size_t dot = name.rfind('.');
+        std::string parent = (dot == std::string::npos) ? std::string() : name.substr(0, dot);
+        spec = spec->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "parent"),
+                                  PythonEnvironment::getInternedString(ctx, parent.c_str())->asObject(ctx));
+        const_cast<proto::ProtoObject*>(mod)->setAttribute(ctx, specName, spec);
+    }
+    const proto::ProtoString* nameAttr = PythonEnvironment::getInternedString(ctx, "__name__");
+    if (mod->hasOwnAttribute(ctx, nameAttr) != PROTO_TRUE) {
+        const_cast<proto::ProtoObject*>(mod)->setAttribute(ctx, nameAttr,
+            PythonEnvironment::getInternedString(ctx, name.c_str())->asObject(ctx));
+    }
 }
 
 const proto::ProtoObject* PythonEnvironment::resolveModule(const std::string& nameStr, proto::ProtoContext* ctx) {
