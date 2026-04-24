@@ -12146,12 +12146,31 @@ const proto::ProtoObject* PythonEnvironment::compareObjects(proto::ProtoContext*
         else if (op == 5) dunder = py_ge_s;
 
         if (dunder) {
+            // For `!=`, Python's default object.__ne__ delegates to __eq__ and
+            // negates the result.  The protoPython default `__ne__` returns a
+            // raw pointer comparison, which disagrees with any `__eq__` the
+            // type defines (e.g. dict/list).  Always consult __eq__ first for
+            // op == 1 and only fall back to a type-specific `__ne__` (or the
+            // raw comparison below) when __eq__ declines to answer.
+            if (op == 1) {
+                const proto::ProtoObject* eqMethod = a->getAttribute(ctx, py_eq_s);
+                if (eqMethod && eqMethod->asMethod(ctx)) {
+                    const proto::ProtoList* args = ctx->newList();
+                    args = args->appendLast(ctx, b);
+                    const proto::ProtoObject* res = eqMethod->asMethod(ctx)(ctx, a, nullptr, args, getEmptySparseList());
+                    const proto::ProtoObject* notImpl = getNotImplementedPrototype();
+                    if (res && res != PROTO_NONE && res != notImpl) {
+                        if (res == PROTO_TRUE) return PROTO_FALSE;
+                        if (res == PROTO_FALSE) return PROTO_TRUE;
+                        if (res->isBoolean(ctx)) return res->asBoolean(ctx) ? PROTO_FALSE : PROTO_TRUE;
+                    }
+                }
+            }
             const proto::ProtoObject* method = a->getAttribute(ctx, dunder);
             if (method && method->asMethod(ctx)) {
                 const proto::ProtoList* args = ctx->newList();
                 args = args->appendLast(ctx, b);
                 const proto::ProtoObject* res = method->asMethod(ctx)(ctx, a, nullptr, args, getEmptySparseList());
-                // NotImplemented means this method can't handle it — fall through to C++ comparison
                 const proto::ProtoObject* notImpl = getNotImplementedPrototype();
                 if (res && res != PROTO_NONE && res != notImpl) return res;
             }
