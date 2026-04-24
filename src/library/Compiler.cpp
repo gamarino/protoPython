@@ -2332,6 +2332,16 @@ static void collectDefinedNames(ASTNode* node, std::unordered_set<std::string>& 
         for (auto& t : a->targets) collectDefinedNames(t.get(), out);
         return;
     }
+    if (auto* aa = dynamic_cast<AnnAssignNode*>(node)) {
+        // Per PEP 526 / CPython: an annotated target at function scope
+        // — even without an initial value (`x: int`) — binds the name as
+        // a local.  Accessing it before assignment must raise
+        // UnboundLocalError, not NameError.
+        if (auto* nm = dynamic_cast<NameNode*>(aa->target.get())) {
+            out.insert(nm->id);
+        }
+        return;
+    }
     if (auto* named = dynamic_cast<NamedExprNode*>(node)) {
         collectDefinedNames(named->target.get(), out);
         return;

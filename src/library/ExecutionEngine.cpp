@@ -905,7 +905,7 @@ static proto::ProtoObject* createUserFunction(proto::ProtoContext* ctx, const pr
         
         const proto::ProtoObject* emptyDict1 = env->getDictPrototype() ? env->getDictPrototype()->newChild(ctx, true) : ctx->newObject(true);
         const proto::ProtoObject* emptyDict2 = env->getDictPrototype() ? env->getDictPrototype()->newChild(ctx, true) : ctx->newObject(true);
-        
+
         fn = fn->setAttribute(ctx, dictS, emptyDict1);
         fn = fn->setAttribute(ctx, annS, emptyDict2);
         fn = fn->setAttribute(ctx, docS, PROTO_NONE);
@@ -4561,12 +4561,33 @@ const proto::ProtoObject* executeBytecodeRange(
             }
             
             bool pushed = false;
+            bool kwError = false;
             if (kwargs && env) {
                  const proto::ProtoObject* keysListObj = kwargs->getAttribute(ctx, protoPython::PythonEnvironment::getInternalString(ctx, "__keys__"));
                  if (keysListObj && keysListObj->asList(ctx)) {
-                     env->pushKwNames(ctx->newTupleFromList(keysListObj->asList(ctx)));
-                     pushed = true;
+                     // Per CPython: all keys in `**kwargs` must be strings.
+                     // e.g. `f(**{b'foo': 1})` raises TypeError.
+                     const proto::ProtoList* kl = keysListObj->asList(ctx);
+                     for (unsigned long kj = 0; kj < kl->getSize(ctx); ++kj) {
+                         const proto::ProtoObject* k = kl->getAt(ctx, kj);
+                         if (!k || !k->isString(ctx)) {
+                             env->raiseTypeError(ctx, "keywords must be strings");
+                             kwError = true;
+                             break;
+                         }
+                     }
+                     if (!kwError) {
+                         env->pushKwNames(ctx->newTupleFromList(kl));
+                         pushed = true;
+                     }
                  }
+            }
+            if (kwError) {
+                // Pop arg segments from the stack; subsequent exception
+                // handling will take over.
+                for (int k2 = 0; k2 < segmentsSlots; ++k2) stack.pop_back();
+                i = next_i;
+                continue;
             }
 
             const proto::ProtoObject* result = nullptr;
