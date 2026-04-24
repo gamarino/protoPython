@@ -3174,22 +3174,45 @@ const proto::ProtoObject* executeBytecodeRange(
             const proto::ProtoObject* b = stack.back();
             const proto::ProtoObject* a = stack[stack.top - 2];
             if (a->isInteger(ctx) && b->isInteger(ctx)) {
-                long long av = a->asLong(ctx);
-                long long bv = b->asLong(ctx);
-                if (bv < 0 || bv >= 64) av = 0;
-                else av = static_cast<long long>(static_cast<unsigned long long>(av) << bv);
-                stack.pop_back(); stack.back() = ctx->fromInteger(av);
+                // Shift amount: try asLong; bignum amounts are absurd so
+                // we cap them by routing through Integer::shiftLeft on a
+                // value of 0 (which short-circuits) rather than crashing.
+                int amount = 0;
+                try { amount = static_cast<int>(b->asLong(ctx)); }
+                catch (const std::overflow_error&) {
+                    if (env) env->raiseValueError(ctx,
+                        PythonEnvironment::getInternedString(ctx, "shift count too large")->asObject(ctx));
+                    stack.pop_back(); stack.back() = PROTO_NONE;
+                    i = next_i; continue;
+                }
+                if (amount < 0) {
+                    if (env) env->raiseValueError(ctx,
+                        PythonEnvironment::getInternedString(ctx, "negative shift count")->asObject(ctx));
+                    stack.pop_back(); stack.back() = PROTO_NONE;
+                    i = next_i; continue;
+                }
+                stack.pop_back(); stack.back() = proto::Integer::shiftLeft(ctx, a, amount);
             }
         } else if (op == OP_BINARY_RSHIFT) {
             if (stack.size() < 2) { i = next_i; continue; }
             const proto::ProtoObject* b = stack.back();
             const proto::ProtoObject* a = stack[stack.top - 2];
             if (a->isInteger(ctx) && b->isInteger(ctx)) {
-                long long av = a->asLong(ctx);
-                long long bv = b->asLong(ctx);
-                if (bv < 0 || bv >= 64) av = 0;
-                else av = av >> bv;
-                stack.pop_back(); stack.back() = ctx->fromInteger(av);
+                int amount = 0;
+                try { amount = static_cast<int>(b->asLong(ctx)); }
+                catch (const std::overflow_error&) {
+                    if (env) env->raiseValueError(ctx,
+                        PythonEnvironment::getInternedString(ctx, "shift count too large")->asObject(ctx));
+                    stack.pop_back(); stack.back() = PROTO_NONE;
+                    i = next_i; continue;
+                }
+                if (amount < 0) {
+                    if (env) env->raiseValueError(ctx,
+                        PythonEnvironment::getInternedString(ctx, "negative shift count")->asObject(ctx));
+                    stack.pop_back(); stack.back() = PROTO_NONE;
+                    i = next_i; continue;
+                }
+                stack.pop_back(); stack.back() = proto::Integer::shiftRight(ctx, a, amount);
             }
         } else if (op == OP_BINARY_AND) {
             if (stack.size() < 2) { i = next_i; continue; }
@@ -3276,8 +3299,8 @@ const proto::ProtoObject* executeBytecodeRange(
             if (stack.empty()) { i = next_i; continue; }
             const proto::ProtoObject* a = stack.back();
             if (a->isInteger(ctx)) {
-                long long n = a->asLong(ctx);
-                stack.back() = ctx->fromInteger(static_cast<long long>(~static_cast<unsigned long long>(n)));
+                // bignum-safe: ~x = -x - 1 via Integer::bitwiseNot.
+                stack.back() = proto::Integer::bitwiseNot(ctx, a);
             } else {
                 const proto::ProtoObject* inv = a->getAttribute(ctx, env ? env->getInvertString() : PythonEnvironment::getInternedString(ctx, "__invert__"));
                 if (inv && inv->asMethod(ctx)) {

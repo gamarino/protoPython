@@ -839,7 +839,35 @@ static const proto::ProtoObject* py_int_call(
         if (val->isInteger(ctx)) {
             x = val;
         } else if (val->isDouble(ctx)) {
-            x = ctx->fromInteger(static_cast<long long>(std::trunc(val->asDouble(ctx))));
+            // Floor toward zero, then promote to bignum if outside the
+            // long-long range.  static_cast<long long> on an out-of-range
+            // double is UB and was returning LLONG_MIN.
+            double d = std::trunc(val->asDouble(ctx));
+            if (std::isnan(d) || std::isinf(d)) {
+                PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+                if (env) env->raiseValueError(ctx,
+                    PythonEnvironment::getInternedString(ctx,
+                        std::isnan(d) ? "cannot convert float NaN to integer"
+                                       : "cannot convert float infinity to integer")->asObject(ctx));
+                return nullptr;
+            }
+            constexpr double LL_MIN_D = -9.223372036854776e18;
+            constexpr double LL_MAX_D =  9.223372036854775e18;
+            if (d >= LL_MIN_D && d <= LL_MAX_D) {
+                x = ctx->fromInteger(static_cast<long long>(d));
+            } else {
+                // Build the integer through its decimal string representation.
+                // %.0f on an out-of-range double prints the integer part exactly.
+                char buf[64];
+                std::snprintf(buf, sizeof(buf), "%.0f", d);
+                try { x = ctx->fromString(buf, 10); }
+                catch (...) {
+                    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+                    if (env) env->raiseValueError(ctx,
+                        PythonEnvironment::getInternedString(ctx, "invalid literal for int()")->asObject(ctx));
+                    return nullptr;
+                }
+            }
         } else if (val->isString(ctx)) {
             std::string s;
             val->asString(ctx)->toUTF8String(ctx, s);
@@ -3795,17 +3823,20 @@ static const proto::ProtoObject* py_int_bit_length(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
-    long long v = self->asLong(context);
-    if (v == 0) return context->fromInteger(0);
-    unsigned long long u;
-    if (v == LLONG_MIN)
-        u = static_cast<unsigned long long>(LLONG_MAX) + 1;
-    else if (v < 0)
-        u = static_cast<unsigned long long>(-v);
-    else
-        u = static_cast<unsigned long long>(v);
-    int bits = 0;
-    while (u) { bits++; u >>= 1; }
+    if (proto::Integer::sign(context, self) == 0) return context->fromInteger(0);
+    // Bignum-safe: count via the absolute hex digit count, then refine
+    // the most-significant nibble.
+    const proto::ProtoString* hex = proto::Integer::toString(context, self, 16);
+    std::string s;
+    hex->toUTF8String(context, s);
+    if (!s.empty() && s[0] == '-') s.erase(0, 1);
+    if (s.empty()) return context->fromInteger(0);
+    long long bits = static_cast<long long>(s.size() - 1) * 4;
+    char top = s[0];
+    int topVal = (top >= '0' && top <= '9') ? (top - '0')
+              : (top >= 'a' && top <= 'f') ? (top - 'a' + 10)
+              : (top >= 'A' && top <= 'F') ? (top - 'A' + 10) : 0;
+    while (topVal) { bits++; topVal >>= 1; }
     return context->fromInteger(bits);
 }
 
@@ -3813,9 +3844,19 @@ static const proto::ProtoObject* py_int_bit_count(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
-    unsigned long long u = static_cast<unsigned long long>(self->asLong(context));
-    int count = 0;
-    while (u) { count += static_cast<int>(u & 1); u >>= 1; }
+    // CPython treats negatives as if abs(n): bit_count(-7) == bit_count(7) == 3.
+    const proto::ProtoObject* mag = proto::Integer::abs(context, self);
+    const proto::ProtoString* hex = proto::Integer::toString(context, mag, 16);
+    std::string s;
+    hex->toUTF8String(context, s);
+    if (!s.empty() && s[0] == '-') s.erase(0, 1);
+    long long count = 0;
+    for (char c : s) {
+        int v = (c >= '0' && c <= '9') ? (c - '0')
+              : (c >= 'a' && c <= 'f') ? (c - 'a' + 10)
+              : (c >= 'A' && c <= 'F') ? (c - 'A' + 10) : 0;
+        while (v) { count += (v & 1); v >>= 1; }
+    }
     return context->fromInteger(count);
 }
 
@@ -3877,15 +3918,20 @@ static const proto::ProtoObject* py_int_from_bytes(
     std::string byteorderStr;
     posArgs->getAt(context, 1)->asString(context)->toUTF8String(context, byteorderStr);
     bool little = (byteorderStr == "little");
-    long long result = 0;
+    // Build the integer one byte at a time via Integer::shiftLeft + add,
+    // so values larger than 64 bits are handled correctly.
+    const proto::ProtoObject* result = context->fromInteger(0);
+    auto consume = [&](unsigned char c) {
+        result = proto::Integer::shiftLeft(context, result, 8);
+        result = proto::Integer::add(context, result, context->fromInteger(c));
+    };
     if (little) {
         for (size_t i = bytesStr.size(); i > 0; --i)
-            result = (result << 8) | (static_cast<unsigned char>(bytesStr[i - 1]) & 0xff);
+            consume(static_cast<unsigned char>(bytesStr[i - 1]));
     } else {
-        for (unsigned char c : bytesStr)
-            result = (result << 8) | (c & 0xff);
+        for (unsigned char c : bytesStr) consume(c);
     }
-    return context->fromInteger(result);
+    return result;
 }
 
 static const proto::ProtoObject* py_int_to_bytes(

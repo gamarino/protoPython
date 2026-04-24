@@ -86,6 +86,61 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 
 **Key V110 milestone**: All essential tests now run to completion without crashing. Individual test failures reflect unimplemented language features (metaclass protocol, descriptors, C-extension stubs), not interpreter instability.
 
+### V140 Changes (2026-04-24) — X-round: bignum operators & built-ins (round 2)
+
+A second sweep on bignum-safety, this time covering the operator
+dispatchers and several more built-ins that still routed through
+`asLong`.
+
+- **X1 / `<<`, `>>` shifts** — `Integer::shiftLeft/shiftRight` previously
+  threw for any `LargeInteger`.  Replaced with full bignum implementations
+  that shift the magnitude vector by `wholeWords + bits` and (for
+  `>>` on negatives) apply Python's floor-toward-minus-infinity correction
+  (`-1 >> 1 == -1`, not `0`).  `OP_BINARY_LSHIFT` / `OP_BINARY_RSHIFT`
+  now route ints through these and surface `ValueError` for negative or
+  overflow shift counts.
+- **X2 / `~` (UNARY_INVERT)** — Switched from `~asLong` to
+  `Integer::bitwiseNot`, which uses the identity `~x = -x - 1` and is
+  bignum-safe.
+- **X3 / `divmod(a, b)`** — Previously `asLong` everything.  Now uses
+  `Integer::divide` / `modulo` and applies the same floor-rounding
+  correction CPython does (`divmod(-a, 7)` produces `(-q-1, 7-r)` when
+  the truncated remainder has the wrong sign).
+- **X4 / `int.bit_length()` and `int.bit_count()`** — Both used
+  `asLong`; reimplemented via `Integer::toString(16)` so they work for
+  arbitrary bignum magnitudes.  `bit_count(-7) == bit_count(7) == 3`
+  (CPython treats the sign as ignored).
+- **X5 / `int(float)`** — Rejected NaN/inf with the right `ValueError`
+  messages, and for finite values outside the int64 range, builds the
+  result through `%.0f` + `Integer::fromString` instead of the UB-y
+  `static_cast<long long>` (which had been silently saturating to
+  `LLONG_MIN`).  `int(1e20)` now gives `100000000000000000000`.
+- **X6 / `pow(base, exp[, mod])`** — Replaced the two-arg `long long`
+  loop and the three-arg modular loop with bignum exponentiation by
+  squaring via `Integer::multiply` / `Integer::modulo`.  Negative
+  exponent without `mod` now returns the correct float reciprocal
+  (`pow(2, -3) == 0.125`).  `pow(2, 100)` now returns the actual
+  `1267650600228229401496703205376` (was `0`).
+- **X7 / `round(int, ndigits)`** — For negative `ndigits` the rounding
+  loop and banker's correction were all `long long`.  Re-expressed
+  entirely in `Integer::add/subtract/multiply/divide/modulo/sign/compare`
+  so `round(10**30, -3)` works.
+- **X8 / `sorted` int comparison** — `sorted_compare`'s
+  `int × int` fast path called `asLong`; replaced with
+  `Integer::compare`.  `sorted([10**30, 0, -10**30])` now works.
+- **X9 / `sum(iterable)`** — The accumulator was a `long long`,
+  silently wrapping when summing bignum values.  Now keeps a
+  `ProtoObject*` accumulator and adds via `Integer::add`.
+- **X10 / `int.from_bytes(b, byteorder)`** — Was a `long long << 8 | byte`
+  loop.  Now builds the result via `Integer::shiftLeft + Integer::add`
+  one byte at a time.  (Sister method `to_bytes` left as-is for now;
+  fixing the bignum case requires rethinking how protoPython's bytes
+  type stores arbitrary 0..255 bytes — currently it is UTF-8-shaped.)
+
+Side-effect of W-round + X-round: the `test_selectors` regression
+flagged in V139 has disappeared (it was non-deterministic on dict
+iteration order; the bignum changes did not make it worse).
+
 ### V139 Changes (2026-04-24) — W-round: bignum-safe built-ins
 
 A ten-step pass closing the most common bignum-unsafe paths that were

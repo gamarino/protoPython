@@ -1002,10 +1002,12 @@ static const proto::ProtoObject* py_sum(
     const proto::ProtoObject* nextMethod = it->getAttribute(context, nextS);
     if (!nextMethod || !nextMethod->asMethod(context)) return start;
 
-    long long acc = start->isInteger(context) ? start->asLong(context) : 0;
+    // Bignum-safe accumulator: keep the partial sum as a ProtoObject and
+    // use Integer::add so values exceeding int64 are handled correctly.
+    const proto::ProtoObject* acc = start->isInteger(context) ? start : context->fromInteger(0);
     auto nextFn = nextMethod->asMethod(context);
     const proto::ProtoObject* noneObj = env ? env->getNonePrototype() : nullptr;
-    
+
     for (;;) {
         const proto::ProtoObject* val = nextFn(context, it, nullptr, emptyL, nullptr);
         if (!val) {
@@ -1013,9 +1015,9 @@ static const proto::ProtoObject* py_sum(
              return nullptr; // Propagate other errors
         }
         if (val == noneObj) break;
-        if (val->isInteger(context)) acc += val->asLong(context);
+        if (val->isInteger(context)) acc = proto::Integer::add(context, acc, val);
     }
-    return context->fromInteger(acc);
+    return acc;
 }
 
 static const proto::ProtoObject* py_all(
@@ -2481,10 +2483,8 @@ static const proto::ProtoObject* py_vars(proto::ProtoContext* ctx, const proto::
 static int sorted_compare(proto::ProtoContext* context, const proto::ProtoObject* a, const proto::ProtoObject* b) {
     if (a == b) return 0;
     if (a->isInteger(context) && b->isInteger(context)) {
-        long long av = a->asLong(context);
-        long long bv = b->asLong(context);
-        if (av == bv) return 0;
-        return av < bv ? -1 : 1;
+        // Integer::compare is bignum-safe.
+        return proto::Integer::compare(context, a, b);
     }
     if (a->isString(context) && b->isString(context)) {
         std::string sa;
@@ -3774,29 +3774,76 @@ static const proto::ProtoObject* py_pow(
         return PROTO_NONE;
     }
 
-    long long base = baseObj->asLong(context);
-    long long exp = expObj->asLong(context);
-    long long mod = modObj ? modObj->asLong(context) : 0;
-    if (hasMod && mod == 0) return PROTO_NONE;
-    if (exp < 0) return PROTO_NONE;
-    long long result = 1;
-    long long b = base;
-    long long e = exp;
-    if (hasMod) {
-        b = ((b % mod) + mod) % mod;
-        while (e > 0) {
-            if (e & 1) result = (result * b) % mod;
-            b = (b * b) % mod;
-            e >>= 1;
+    // Bignum-safe: use Integer::multiply / modulo so the result can grow
+    // beyond 64 bits.  Exponent must still fit a positive int64 (anything
+    // larger is astronomically infeasible).
+    long long exp = 0;
+    try { exp = expObj->asLong(context); }
+    catch (const std::overflow_error&) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(context);
+        if (env) env->raiseValueError(context,
+            PythonEnvironment::getInternedString(context, "exponent too large for pow()")->asObject(context));
+        return PROTO_NONE;
+    }
+    if (exp < 0) {
+        // Negative exponent without mod: return float; with mod: error
+        if (hasMod) {
+            PythonEnvironment* env = PythonEnvironment::fromContext(context);
+            if (env) env->raiseValueError(context,
+                PythonEnvironment::getInternedString(context,
+                    "pow() 2nd argument cannot be negative when 3rd argument specified")->asObject(context));
+            return PROTO_NONE;
         }
-        return context->fromInteger(result);
+        // pow(base, -e) = 1.0 / pow(base, e) — promote to float
+        long long pe = -exp;
+        const proto::ProtoObject* res = context->fromInteger(1);
+        const proto::ProtoObject* b = baseObj;
+        while (pe > 0) {
+            if (pe & 1) res = proto::Integer::multiply(context, res, b);
+            pe >>= 1;
+            if (pe > 0) b = proto::Integer::multiply(context, b, b);
+        }
+        // Convert res to double via decimal string and divide.
+        const proto::ProtoString* s = proto::Integer::toString(context, res, 10);
+        std::string digits;
+        s->toUTF8String(context, digits);
+        try { return context->fromDouble(1.0 / std::stod(digits)); }
+        catch (...) { return context->fromDouble(0.0); }
     }
+    if (hasMod) {
+        if (proto::Integer::sign(context, modObj) == 0) {
+            PythonEnvironment* env = PythonEnvironment::fromContext(context);
+            if (env) env->raiseValueError(context,
+                PythonEnvironment::getInternedString(context, "pow() 3rd argument cannot be 0")->asObject(context));
+            return PROTO_NONE;
+        }
+        // Bignum-safe modular exponentiation.
+        const proto::ProtoObject* result = context->fromInteger(1);
+        const proto::ProtoObject* b = proto::Integer::modulo(context, baseObj, modObj);
+        long long e = exp;
+        while (e > 0) {
+            if (e & 1) {
+                result = proto::Integer::multiply(context, result, b);
+                result = proto::Integer::modulo(context, result, modObj);
+            }
+            e >>= 1;
+            if (e > 0) {
+                b = proto::Integer::multiply(context, b, b);
+                b = proto::Integer::modulo(context, b, modObj);
+            }
+        }
+        return result;
+    }
+    // Plain exponentiation by squaring with bignum accumulation.
+    const proto::ProtoObject* result = context->fromInteger(1);
+    const proto::ProtoObject* b = baseObj;
+    long long e = exp;
     while (e > 0) {
-        if (e & 1) result *= b;
-        b *= b;
+        if (e & 1) result = proto::Integer::multiply(context, result, b);
         e >>= 1;
+        if (e > 0) b = proto::Integer::multiply(context, b, b);
     }
-    return context->fromInteger(result);
+    return result;
 }
 
 static const proto::ProtoObject* py_divmod(
@@ -3839,21 +3886,26 @@ static const proto::ProtoObject* py_divmod(
         if (env) env->raiseTypeError(context, "divmod() argument must be a number");
         return PROTO_NONE;
     }
-    long long a = objA->asLong(context);
-    long long b = objB->asLong(context);
-    if (b == 0) {
+    if (proto::Integer::sign(context, objB) == 0) {
         if (env) env->raiseZeroDivisionError(context);
         return PROTO_NONE;
     }
-    long long quot = a / b;
-    long long rem = a % b;
-    if (rem != 0) {
-        if (b > 0 && rem < 0) { quot--; rem += b; }
-        else if (b < 0 && rem > 0) { quot++; rem -= b; }
+    // Python divmod uses floor-toward-minus-infinity division.  Integer::
+    // divide/modulo follow the C convention (truncate toward zero), so we
+    // adjust if the remainder has a different sign than the divisor.
+    const proto::ProtoObject* quot = proto::Integer::divide(context, objA, objB);
+    const proto::ProtoObject* rem  = proto::Integer::modulo(context, objA, objB);
+    int signRem = proto::Integer::sign(context, rem);
+    int signB   = proto::Integer::sign(context, objB);
+    if (signRem != 0 && ((signRem > 0) != (signB > 0))) {
+        // remainder has wrong sign — adjust toward floor.
+        const proto::ProtoObject* one = context->fromInteger(1);
+        quot = proto::Integer::subtract(context, quot, one);
+        rem  = proto::Integer::add(context, rem, objB);
     }
     const proto::ProtoList* pair = context->newList()
-        ->appendLast(context, context->fromInteger(quot))
-        ->appendLast(context, context->fromInteger(rem));
+        ->appendLast(context, quot)
+        ->appendLast(context, rem);
     return env ? env->newTuple(pair) : context->newTupleFromList(pair)->asObject(context);
 }
 
@@ -4303,22 +4355,25 @@ static const proto::ProtoObject* py_round(
 
     if (n->isInteger(context)) {
         // round(int) and round(int, ndigits) always return int.
-        long long iv = n->asLong(context);
         if (!hasNdigits || ndigits >= 0) return n; // return as-is
-        // Negative ndigits: round to nearest 10^|ndigits|
-        long long power = 1;
-        for (int i = 0; i < -ndigits; ++i) power *= 10;
-        long long half = power / 2;
-        long long rem = iv % power;
-        if (rem < 0) rem += power;
-        long long rounded;
-        if (rem < half) rounded = iv - rem;
-        else if (rem > half) rounded = iv - rem + power;
-        else { // banker's rounding
-            long long base = iv - rem;
-            rounded = ((base / power) % 2 == 0) ? base : base + power;
-        }
-        return context->fromInteger(static_cast<int>(rounded));
+        // Negative ndigits: round to nearest 10^|ndigits|.  Use bignum
+        // arithmetic so values larger than 64 bits work.
+        const proto::ProtoObject* power = context->fromInteger(1);
+        const proto::ProtoObject* ten = context->fromInteger(10);
+        for (int i = 0; i < -ndigits; ++i) power = proto::Integer::multiply(context, power, ten);
+        const proto::ProtoObject* two = context->fromInteger(2);
+        const proto::ProtoObject* half = proto::Integer::divide(context, power, two);
+        const proto::ProtoObject* rem = proto::Integer::modulo(context, n, power);
+        if (proto::Integer::sign(context, rem) < 0) rem = proto::Integer::add(context, rem, power);
+        int cmpHalf = proto::Integer::compare(context, rem, half);
+        const proto::ProtoObject* base = proto::Integer::subtract(context, n, rem);
+        if (cmpHalf < 0) return base;
+        if (cmpHalf > 0) return proto::Integer::add(context, base, power);
+        // banker's rounding: round half to even
+        const proto::ProtoObject* quotient = proto::Integer::divide(context, base, power);
+        const proto::ProtoObject* parity = proto::Integer::modulo(context, quotient, two);
+        if (proto::Integer::sign(context, parity) == 0) return base;
+        return proto::Integer::add(context, base, power);
     }
 
     double d = n->asDouble(context);
