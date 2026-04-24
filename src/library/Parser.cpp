@@ -941,7 +941,10 @@ std::unique_ptr<ASTNode> Parser::parseStatement() {
         a->target = std::move(expr);
         a->annotation = std::move(annotation);
         if (accept(TokenType::Assign)) {
-            a->value = parseExpression();
+            // `x: T = 1, 2` is valid and the RHS is a tuple expression,
+            // matching CPython behaviour.  parseTestList handles both the
+            // single-value and the comma-separated tuple case.
+            a->value = parseTestList();
         }
         return a;
     }

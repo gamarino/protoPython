@@ -14,7 +14,7 @@ This document tracks the progress of `protoPython` in passing the official CPyth
 
 Core syntax, standard object model, and fundamental types.
 
-- [ ] `test_grammar.py`: **PARTIAL** — 6/75 pass, runs to completion; `compile()` now raises SyntaxError on rejected AST (V112, 2026-04-24)
+- [ ] `test_grammar.py`: **PARTIAL** — 7/75 pass, runs to completion; AnnAssign tuple RHS accepted (V113, 2026-04-24)
 - [ ] `test_types.py`: **PARTIAL** — 6/131 pass, runs to completion; failure messages now visible (V111, 2026-04-24)
 - [ ] `test_descr.py`: **TIMEOUT** — runs >5 min; `type()` descriptor tests expose slow paths
 - [ ] `test_generators.py`: **PARTIAL** — 0/1 pass (doctest runner fails); import chain runs
@@ -57,7 +57,7 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 - [ ] `test_pydoc.py`
 - [ ] `test_warnings.py`
 
-## Progress Summary (v1.0.0 — 2026-04-24, V112)
+## Progress Summary (v1.0.0 — 2026-04-24, V113)
 
 | Category | Total | Tested | Passed | Notes |
 | :--- | :--- | :--- | :--- | :--- |
@@ -70,6 +70,21 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 **Conformity Suite (internal, 2026-04-15)**: 7/9 tests pass. Failures are pre-existing: `int(float)` conversion and `set(iterable)` constructor.
 
 **Key V110 milestone**: All essential tests now run to completion without crashing. Individual test failures reflect unimplemented language features (metaclass protocol, descriptors, C-extension stubs), not interpreter instability.
+
+### V113 Changes (2026-04-24) — Phase F3: parser accepts more valid syntax
+
+**AnnAssign with tuple RHS**: `x: tuple = 1, 2` was rejected with
+`SyntaxError: expected expression, but got ','` because `parseAnnAssign`
+used `parseExpression()` on the right-hand side.  CPython allows the RHS
+of an annotated assignment to be any `testlist_star_expr`, so a bare tuple
+literal is valid.  Switched to `parseTestList()` which handles both the
+single-value and the comma-separated tuple cases.  Unblocks
+`test_var_annot_rhs` and several `typing`-based patterns.
+
+Other potential parser gaps (invalid-literal rejection for `0b1_`, `0x_`,
+`1_`, trailing underscores on hex/oct/bin literals, etc.) remain for a
+future F3 iteration — they surface as `AssertionError: SyntaxError not
+raised` in `test_bad_numerical_literals` and friends.
 
 ### V112 Changes (2026-04-24) — Phase F2: compile() surfaces SyntaxError
 
