@@ -1205,13 +1205,32 @@ static const proto::ProtoObject* py_list_delitem(
     if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
     
     const proto::ProtoObject* indexObj = positionalParameters->getAt(context, 0);
-    if (!indexObj->isInteger(context)) {
-        if (env) env->raiseTypeError(context, "list indices must be integers or slices, not other types (slice deletion not supported natively yet)");
+    unsigned long size = list->getSize(context);
+
+    // del lst[i:j:k] — drop the selected indices, keep the rest.
+    SliceBounds sb = get_slice_bounds(context, indexObj, static_cast<long long>(size));
+    if (sb.isSlice) {
+        std::unordered_set<long long> drop;
+        if (sb.step > 0) {
+            for (long long i = sb.start; i < sb.stop; i += sb.step) drop.insert(i);
+        } else if (sb.step < 0) {
+            for (long long i = sb.start; i > sb.stop; i += sb.step) drop.insert(i);
+        }
+        const proto::ProtoList* newList = context->newList();
+        for (long long i = 0; i < static_cast<long long>(size); ++i) {
+            if (drop.count(i)) continue;
+            newList = newList->appendLast(context, list->getAt(context, static_cast<int>(i)));
+        }
+        self->setAttribute(context, dataName, newList->asObject(context));
         return PROTO_NONE;
     }
-    
+
+    if (!indexObj->isInteger(context)) {
+        if (env) env->raiseTypeError(context, "list indices must be integers or slices, not other types");
+        return PROTO_NONE;
+    }
+
     int index = static_cast<int>(indexObj->asLong(context));
-    unsigned long size = list->getSize(context);
     if (index < 0) index += static_cast<int>(size);
     if (index < 0 || static_cast<unsigned long>(index) >= size) return PROTO_NONE;
     const proto::ProtoList* newList = list->removeAt(context, index);
