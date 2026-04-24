@@ -57,7 +57,7 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 - [ ] `test_pydoc.py`
 - [ ] `test_warnings.py`
 
-## Progress Summary (v1.0.0 — 2026-04-24, V113)
+## Progress Summary (v1.0.0 — 2026-04-24, V114)
 
 | Category | Total | Tested | Passed | Notes |
 | :--- | :--- | :--- | :--- | :--- |
@@ -70,6 +70,29 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 **Conformity Suite (internal, 2026-04-15)**: 7/9 tests pass. Failures are pre-existing: `int(float)` conversion and `set(iterable)` constructor.
 
 **Key V110 milestone**: All essential tests now run to completion without crashing. Individual test failures reflect unimplemented language features (metaclass protocol, descriptors, C-extension stubs), not interpreter instability.
+
+### V114 Changes (2026-04-24) — Phase F4: `cls.__annotations__` always exists
+
+`type(...).__annotations__` previously raised `AttributeError` on any class
+that did not explicitly declare annotations, e.g. `class C: pass`.  CPython
+guarantees `__annotations__` is always a dict (empty if none declared), and
+`typing.no_type_check`, `inspect.get_annotations`, `dataclasses`, and
+`typing.get_type_hints` all read it unconditionally.
+
+`OP_BUILD_CLASS` in `ExecutionEngine.cpp` now, after setting `__qualname__`,
+checks whether the built class owns `__annotations__`.  If not, it either
+adopts the dict the class body set in its namespace or builds an empty dict
+(parented to `dictPrototype` with an empty sparse-list `__data__`) and
+attaches it to the class.
+
+Also removed a `print(f"DEBUG: fresh=… blocked=… name=…")` in
+`lib/python3.14/test/support/import_helper.py:170` that was emitting noise
+on every `import_fresh_module()` call during test runs.
+
+Impact: unblocks import paths that previously crashed reading
+`__annotations__` (e.g. `typing.no_type_check` no longer raises on module
+import).  No test count change yet, but eliminates one class of cascading
+"unhandled exception in module execution" messages.
 
 ### V113 Changes (2026-04-24) — Phase F3: parser accepts more valid syntax
 

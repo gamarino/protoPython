@@ -4958,6 +4958,33 @@ const proto::ProtoObject* executeBytecodeRange(
                         stack.back() = targetClass; // update rooted reference
                     }
 
+                    // Guarantee `cls.__annotations__` always exists (CPython invariant).
+                    // Propagate from the class namespace if the body declared annotations;
+                    // otherwise fall back to an empty dict instance so `inspect`, `typing`,
+                    // and dataclasses can read it unconditionally.
+                    const proto::ProtoString* annS = PythonEnvironment::getInternedString(ctx, "__annotations__");
+                    const bool hasOwnAnn = targetClass->hasOwnAttribute(ctx, annS) == PROTO_TRUE;
+                    if (!hasOwnAnn) {
+                        const bool nsHasOwnAnn = ns ? (ns->hasOwnAttribute(ctx, annS) == PROTO_TRUE) : false;
+                        const proto::ProtoObject* annVal = nsHasOwnAnn ? ns->getAttribute(ctx, annS) : nullptr;
+                        if (!annVal || annVal == PROTO_NONE) {
+                            // Build a fresh empty dict that looks like a real Python dict
+                            // (parent = dictPrototype, __data__ = empty sparse list).
+                            const proto::ProtoObject* emptyDict = nullptr;
+                            if (env && env->getDictPrototype()) {
+                                emptyDict = env->getDictPrototype()->newChild(ctx, true);
+                                emptyDict = emptyDict->setAttribute(ctx, env->getClassString(), env->getDictPrototype());
+                                emptyDict = emptyDict->setAttribute(ctx, env->getDataString(),
+                                                                    ctx->newSparseList()->asObject(ctx));
+                            } else {
+                                emptyDict = ctx->newSparseList()->asObject(ctx);
+                            }
+                            annVal = emptyDict;
+                        }
+                        targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(ctx, annS, annVal));
+                        stack.back() = targetClass;
+                    }
+
                     // Inject __class__ into the class namespace (frame) so methods can interpret it
                     // via closure (parent frame reference).
                     // Note: object.__class__ data descriptor prevents this from shadowing the type
