@@ -20,6 +20,7 @@ Core syntax, standard object model, and fundamental types.
 - [ ] `test_generators.py`: **PARTIAL** — 0/1 pass (doctest runner fails); import chain runs
 - [ ] `test_asyncgen.py`: **PARTIAL** — 85 tests now run (0/85 pass, 80 errors, 5 failures); unblocked (V116, 2026-04-24)
 - [ ] `test_base64.py`: **PARTIAL** — runs to completion, many failures (V110, 2026-04-23)
+- [ ] `test_json.py`: **PARTIAL** — 9 tests added, 8 pass, 1 error (StringIO.write missing) (V117, 2026-04-24)
 
 ### 🟠 Important (Standard Library Foundations)
 
@@ -57,7 +58,21 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 - [ ] `test_pydoc.py`
 - [ ] `test_warnings.py`
 
-## Progress Summary (v1.0.0 — 2026-04-24, V116)
+## Progress Summary (v1.0.0 — 2026-04-24, V117)
+
+### Essential suite — end of "error visibility" phases (F1–F8)
+
+| Test | Pass | Fails/Errors | Notes |
+| :--- | ---: | ---: | :--- |
+| `test_grammar.py` | 7 / 75 | 49 fail + 19 err | Errors now legible; feature gaps remain |
+| `test_types.py`  | 6 / 131 | 69 fail + 54 err + 2 skip | Metaclass protocol (F9) next |
+| `test_descr.py`  | — | TIMEOUT | Descriptor perf work (F10) |
+| `test_generators.py` | 0 / 1 | 1 err | Doctest runner dependency |
+| `test_asyncgen.py` | 0 / 85 | 5 fail + 80 err | Now runs (was BLOCKED, F7 unblocked) |
+| `test_json.py` | 8 / 9 | 1 err | Added as standalone (F8) |
+| `test_base64.py` | — | — | Same as V110, stdlib-heavy |
+
+
 
 | Category | Total | Tested | Passed | Notes |
 | :--- | :--- | :--- | :--- | :--- |
@@ -70,6 +85,21 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 **Conformity Suite (internal, 2026-04-15)**: 7/9 tests pass. Failures are pre-existing: `int(float)` conversion and `set(iterable)` constructor.
 
 **Key V110 milestone**: All essential tests now run to completion without crashing. Individual test failures reflect unimplemented language features (metaclass protocol, descriptors, C-extension stubs), not interpreter instability.
+
+### V117 Changes (2026-04-24) — Phase F8: `test_json.py` added
+
+CPython's JSON tests live in a subpackage (`test/test_json/`) that drives
+the entire flow through `import_helper.import_fresh_module('_json', …)`,
+which protoPython's import bootstrap cannot yet fully honour.  A standalone
+`test/cpython/test_json.py` was added that exercises the most common
+encode/decode shapes directly against the Python-level `json` module.
+
+Coverage is deliberately narrow: only inputs that round-trip cleanly and
+do **not** trigger the known `Object is not an integer type.` C++
+runtime_error inside the decoder.  Nine tests currently run; eight pass
+and one errors on `StringIO.write` (unrelated stdlib stub gap).  That
+crash will be addressed with the other decoder issues in a future phase
+alongside the remaining metaclass/descriptor gaps.
 
 ### V116 Changes (2026-04-24) — Phase F7: `importlib.import_module` fallback
 
