@@ -123,6 +123,19 @@ bool Parser::expect(TokenType t) {
         advance();
         return true;
     }
+    // CPython's tokenizer phrases "unclosed bracket" errors as
+    // "'(' was never closed" / "'[' was never closed" / "'{' was never
+    // closed".  Emit that phrasing when we expected a closing bracket
+    // and found EOF.
+    if (cur_.type == TokenType::EndOfFile &&
+        (t == TokenType::RParen || t == TokenType::RSquare || t == TokenType::RCurly)) {
+        const char* opener =
+            t == TokenType::RParen ? "(" :
+            t == TokenType::RSquare ? "[" : "{";
+        std::string msg = std::string("'") + opener + "' was never closed";
+        error(msg);
+        return false;
+    }
     std::string msg = "expected ";
     msg += tokenToName(t);
     msg += ", but got ";
@@ -183,16 +196,21 @@ std::unique_ptr<ASTNode> Parser::parseSubscript() {
     std::vector<std::unique_ptr<ASTNode>> parts;
     auto p = parsePart();
     if (p) parts.push_back(std::move(p));
-    
+
+    bool sawComma = false;
     while (accept(TokenType::Comma)) {
+        sawComma = true;
         if (cur_.type == TokenType::RSquare) break;
         auto p2 = parsePart();
         if (p2) parts.push_back(std::move(p2));
     }
     expect(TokenType::RSquare);
-    
-    if (parts.size() == 1) return std::move(parts[0]);
-    
+
+    // `d[x]` is a single subscript; `d[x,]` is `d[(x,)]` (a 1-tuple),
+    // matching CPython.  A trailing comma after a lone expression must
+    // therefore still produce a tuple.
+    if (parts.size() == 1 && !sawComma) return std::move(parts[0]);
+
     auto t = createNode<TupleLiteralNode>();
     t->elements = std::move(parts);
     return t;
