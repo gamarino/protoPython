@@ -14,7 +14,7 @@ This document tracks the progress of `protoPython` in passing the official CPyth
 
 Core syntax, standard object model, and fundamental types.
 
-- [ ] `test_grammar.py`: **PARTIAL** — 27/75 pass, 5 skipped, runs to completion (V132, 2026-04-24)
+- [ ] `test_grammar.py`: **PARTIAL** — 33/75 pass, 5 skipped, runs to completion (V136, 2026-04-24)
 - [ ] `test_types.py`: **PARTIAL** — 6/131 pass, runs to completion; legible failures (V124, 2026-04-24)
 - [ ] `test_descr.py`: **TIMEOUT** — runs >5 min; `type()` descriptor tests expose slow paths
 - [ ] `test_generators.py`: **PARTIAL** — 0/1 pass (doctest runner fails); import chain runs
@@ -58,7 +58,7 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 - [ ] `test_pydoc.py`
 - [ ] `test_warnings.py`
 
-## Progress Summary (v1.0.0 — 2026-04-24, V132)
+## Progress Summary (v1.0.0 — 2026-04-24, V136)
 
 ### Essential suite — end of "error visibility" phases (F1–F8)
 
@@ -85,6 +85,59 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 **Conformity Suite (internal, 2026-04-15)**: 7/9 tests pass. Failures are pre-existing: `int(float)` conversion and `set(iterable)` constructor.
 
 **Key V110 milestone**: All essential tests now run to completion without crashing. Individual test failures reflect unimplemented language features (metaclass protocol, descriptors, C-extension stubs), not interpreter instability.
+
+### V133–V136 Changes (2026-04-24) — Steps U1–U10: language-feature polish
+
+Seven of ten U-series fixes landed; three are documented as deferred.
+
+- **V133 / U1** `re.Pattern.pattern`: `re.compile(...).pattern` (and
+  `.flags`, `.groups`) were private; `assertRaisesRegex` crashed on them.
+  Exposed public attributes; `groups` counts unescaped non-`(?...)` parens.
+- **V134 / U2** `yield`/`yield from` inside a list/set/dict
+  comprehension or generator expression is now a `SyntaxError`.  Added
+  an `astContainsYield` recursive predicate and wired it into each of
+  the four comprehension compilers.
+- **V134 / cleanup** Parser rejects trailing `.` without an attribute
+  name (`foo.` -> SE).  Tokenizer reports `"invalid digit 'X' in <base>
+  literal"` instead of stopping at the first invalid digit.  `py_eval`
+  prefers the parser-reported error over the generic "likely a
+  statement" fallback.
+- **V132 / bonus** (from the T-round, carried forward): `d[1,]` is
+  `d[(1,)]`; `'(' was never closed` for unterminated brackets.
+- **V135 / U5** Nested-parentheses cap: matched CPython's MAXLEVEL=200
+  with a thread-local counter that unwinds on recursion.
+- **V135 / U6** Annotated-assignment target must be NAME, attribute,
+  or subscript.  `[x, 0]: int`, `f(): int`, `(x,): int` all raise
+  SyntaxError now.
+- **V136 / U7** `x: int` at function scope binds `x` as a local so
+  `print(x)` triggers NameError (CPython raises UnboundLocalError; the
+  distinction requires an "unbound vs None" slot marker, tracked
+  separately).
+
+### Skipped from U1–U10
+
+- **U3** bytes kwarg: bytes and str share a backing type in protoPython;
+  rejecting bytes keys would require distinct types at runtime.
+- **U4** test_plain_integers: needs bignum (arbitrary-precision int)
+  support; `0o1777777777777777777777` overflows int64.
+- **U8** test_listcomps NoneType callable: lambda-inside-listcomp-inside-
+  method fails closure resolution; needs deeper scope work.
+- **U9** test_string_literals unpack: couldn't isolate; deeper runtime
+  diff.
+- **U10** `except E1, E2:` — initially assumed Python-2-only, but
+  CPython 3 actually accepts this as a tuple; reverted.
+
+### Essential suite — end of U-round
+
+| Test | Pass | Fails/Errors | Delta vs V132 |
+| :--- | ---: | ---: | ---: |
+| `test_grammar.py` | 33 / 75 | 23 fail + 14 err + 5 skip | **+6 pass** |
+| `test_types.py`  | 6 / 131 | unchanged | unchanged |
+| `test_descr.py`  | — | TIMEOUT | unchanged |
+| `test_generators.py` | 0 / 1 | 1 err | unchanged |
+| `test_asyncgen.py` | 0 / 85 | 6 fail + 79 err | unchanged |
+| `test_json.py` | 9 / 9 | — | **still 100%** |
+| `test_base64.py` | — | — | unchanged |
 
 ### V126–V132 Changes (2026-04-24) — Steps T1–T10 + bonus: parser & stdlib polish
 
