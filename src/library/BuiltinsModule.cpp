@@ -414,7 +414,14 @@ static const proto::ProtoObject* py_print(
         if (isNone) {
             std::cout << "None";
         } else if (obj->isInteger(context)) {
-            std::cout << std::to_string(obj->asLong(context));
+            // asLong overflows for bignums; route through reprObject which
+            // falls back to Integer::toString when the value doesn't fit
+            // into long long.
+            try {
+                std::cout << std::to_string(obj->asLong(context));
+            } catch (const std::overflow_error&) {
+                std::cout << (env ? env->reprObject(context, obj) : std::string("<int>"));
+            }
         } else if (obj->isDouble(context)) {
             std::cout << std::to_string(obj->asDouble(context));
         } else if (obj->isString(context)) {

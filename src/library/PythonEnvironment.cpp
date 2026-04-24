@@ -1,5 +1,10 @@
 #include <protoPython/PythonEnvironment.h>
 #include <protoPython/DiagUtils.h>
+// proto_internal.h exposes the Integer class with bignum-aware
+// toString/add/etc.  Included here (rather than from a public
+// protoPython header) so we can route int repr through the bignum
+// path without leaking the internal symbols via a public interface.
+#include <proto_internal.h>
 #include <protoPython/Tokenizer.h>
 #include <protoPython/SignalModule.h>
 #include <protoPython/PythonModuleProvider.h>
@@ -1863,7 +1868,19 @@ std::string PythonEnvironment::reprObject(proto::ProtoContext* context, const pr
         return "None";
     }
     if (obj->isInteger(context)) {
-        return std::to_string(obj->asLong(context));
+        // Use bignum-aware Integer::toString so LargeInteger values repr
+        // correctly instead of overflowing asLong.
+        try {
+            return std::to_string(obj->asLong(context));
+        } catch (const std::overflow_error&) {
+            const proto::ProtoString* s = proto::Integer::toString(context, obj, 10);
+            if (s) {
+                std::string out;
+                s->toUTF8String(context, out);
+                return out;
+            }
+            return "<int too large>";
+        }
     }
     if (obj->isBoolean(context)) {
         return obj->asBoolean(context) ? "True" : "False";
@@ -2552,17 +2569,19 @@ static const proto::ProtoObject* py_int_repr(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
-    long long val = 0;
-    if (self->isInteger(context)) {
-        val = self->asLong(context);
-    } else {
+    // Route through protoCore's Integer::toString so bignums survive repr.
+    const proto::ProtoObject* intObj = self;
+    if (!intObj->isInteger(context)) {
         PythonEnvironment* env = PythonEnvironment::fromContext(context);
-        const proto::ProtoObject* data = self->getAttribute(context, env ? env->getDataString() : PythonEnvironment::getInternalString(context, "__data__"));
-        if (data && data->isInteger(context)) val = data->asLong(context);
+        const proto::ProtoObject* data = intObj->getAttribute(context,
+            env ? env->getDataString() : PythonEnvironment::getInternalString(context, "__data__"));
+        if (data && data->isInteger(context)) intObj = data;
     }
-    char buf[64];
-    snprintf(buf, sizeof(buf), "%lld", val);
-    return PythonEnvironment::getInternedString(context, buf)->asObject(context);
+    if (intObj && intObj->isInteger(context)) {
+        const proto::ProtoString* s = proto::Integer::toString(context, intObj, 10);
+        if (s) return s->asObject(context);
+    }
+    return PythonEnvironment::getInternedString(context, "0")->asObject(context);
 }
 
 static const proto::ProtoObject* py_float_repr(

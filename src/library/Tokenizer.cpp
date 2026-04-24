@@ -4,6 +4,7 @@
 #include <stdexcept>
 #include <iostream>
 #include <algorithm>
+#include <limits>
 
 namespace protoPython {
 
@@ -107,6 +108,8 @@ Token Tokenizer::scanNumber() {
             try {
                 if (base == 10) {
                     t.intValue = std::stoll(cleanValue, nullptr, 10);
+                    t.numValue = static_cast<double>(t.intValue);
+                    t.isInteger = true;
                 } else {
                     std::string digits = cleanValue.substr(2);
                     if (digits.empty()) {
@@ -114,24 +117,29 @@ Token Tokenizer::scanNumber() {
                         t.value = "Invalid numerical literal: " + t.value;
                         return t;
                     }
-                    t.intValue = static_cast<long long>(std::stoull(digits, nullptr, base));
+                    // Detect values that don't fit signed int64.  stoull
+                    // accepts up to 2^64-1 silently; casting to signed
+                    // would wrap into a negative.  Route those (and any
+                    // out_of_range) through the bignum path.
+                    unsigned long long uv = std::stoull(digits, nullptr, base);
+                    if (uv > static_cast<unsigned long long>(std::numeric_limits<long long>::max())) {
+                        t.bigBase = base;
+                        t.bigDigits = digits;
+                        t.intValue = 0;
+                        t.numValue = 0;
+                    } else {
+                        t.intValue = static_cast<long long>(uv);
+                        t.numValue = static_cast<double>(t.intValue);
+                    }
+                    t.isInteger = true;
                 }
-                t.numValue = static_cast<double>(t.intValue);
-                t.isInteger = true;
             } catch (const std::out_of_range&) {
-                // Manual conversion to double for huge non-decimal literals
-                double val = 0;
-                size_t i = 2; // skip 0x, 0o, 0b
-                for (; i < cleanValue.size(); ++i) {
-                    char c = cleanValue[i];
-                    int digit = 0;
-                    if (c >= '0' && c <= '9') digit = c - '0';
-                    else if (c >= 'a' && c <= 'f') digit = c - 'a' + 10;
-                    else if (c >= 'A' && c <= 'F') digit = c - 'A' + 10;
-                    val = val * base + digit;
-                }
-                t.numValue = val;
-                t.isInteger = false;
+                std::string digits = (base == 10) ? cleanValue : cleanValue.substr(2);
+                t.bigBase = base;
+                t.bigDigits = digits;
+                t.intValue = 0;
+                t.numValue = 0;
+                t.isInteger = true;
             } catch (...) {
                 t.type = TokenType::Error;
                 t.value = "Invalid numerical literal: " + t.value;
@@ -220,9 +228,14 @@ Token Tokenizer::scanNumber() {
                 t.numValue = static_cast<double>(t.intValue);
                 t.isInteger = true;
             } catch (const std::out_of_range&) {
-                // Fallback to double if it exceeds 64-bit int
-                t.numValue = std::stod(cleanValue);
-                t.isInteger = false;
+                // Literal exceeds int64 — keep `isInteger=true` and hand
+                // the raw digits to the compiler so it can emit a bignum
+                // constant via ProtoContext::fromString.
+                t.bigBase = 10;
+                t.bigDigits = cleanValue;
+                t.intValue = 0;
+                t.numValue = 0;
+                t.isInteger = true;
             }
         }
     } catch (...) {

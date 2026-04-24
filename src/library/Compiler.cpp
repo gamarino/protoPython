@@ -33,13 +33,27 @@ int Compiler::addConstant(const proto::ProtoObject* obj) {
     }
 
     if (obj->isInteger(ctx_)) {
-        long long val = obj->asLong(ctx_);
-        auto it = constIntIndex_.find(val);
-        if (it != constIntIndex_.end()) return it->second;
-        int idx = static_cast<int>(constantsVec_.size());
-        constantsVec_.push_back(obj);
-        constIntIndex_[val] = idx;
-        return idx;
+        // Use asLong for SmallInt-sized values; fall back to non-deduping
+        // push when the integer is a LargeInteger/bignum that asLong
+        // would overflow.  Bignum constants are cached by pointer
+        // identity instead via constantsVec_ scan.
+        try {
+            long long val = obj->asLong(ctx_);
+            auto it = constIntIndex_.find(val);
+            if (it != constIntIndex_.end()) return it->second;
+            int idx = static_cast<int>(constantsVec_.size());
+            constantsVec_.push_back(obj);
+            constIntIndex_[val] = idx;
+            return idx;
+        } catch (const std::overflow_error&) {
+            // Bignum — no numeric cache.
+            int n = static_cast<int>(constantsVec_.size());
+            for (int i = 0; i < n; ++i) {
+                if (constantsVec_[i] == obj) return i;
+            }
+            constantsVec_.push_back(obj);
+            return n;
+        }
     }
     if (obj->isDouble(ctx_)) {
         double val = obj->asDouble(ctx_);
@@ -271,8 +285,16 @@ const proto::ProtoTuple* Compiler::getBytecode() {
 bool Compiler::compileConstant(ConstantNode* n) {
     if (!n) return false;
     const proto::ProtoObject* obj = nullptr;
-    if (n->constType == ConstantNode::ConstType::Int)
-        obj = ctx_->fromInteger(n->intVal);
+    if (n->constType == ConstantNode::ConstType::Int) {
+        if (!n->bigIntDigits.empty()) {
+            // Integer literal overflows int64; build a bignum from the
+            // raw digits via ProtoContext::fromString(digits, base).
+            obj = ctx_->fromString(n->bigIntDigits.c_str(), n->bigBase);
+            if (!obj) obj = ctx_->fromInteger(0);
+        } else {
+            obj = ctx_->fromInteger(n->intVal);
+        }
+    }
     else if (n->constType == ConstantNode::ConstType::Float)
         obj = ctx_->fromDouble(n->floatVal);
     else if (n->constType == ConstantNode::ConstType::Str)

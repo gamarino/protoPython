@@ -116,6 +116,12 @@ struct Token {
     long long intValue = 0;
     int line = 1;
     int column = 1;
+    // Set when the integer literal overflows int64 and we want the
+    // compiler to emit a bignum constant instead.  `bigDigits` is the
+    // raw digit run (with underscores stripped, prefix stripped for
+    // 0x/0o/0b), `bigBase` is 2/8/10/16.
+    std::string bigDigits;
+    int bigBase = 10;
 };
 
 /** Minimal Python tokenizer for expressions and simple statements. */

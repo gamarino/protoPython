@@ -22,6 +22,11 @@ struct ConstantNode : ASTNode {
     double floatVal = 0.0;
     std::string strVal;
     std::string bytesVal;
+    // If non-empty for an Int constant, parse the value as a big integer
+    // with `bigBase` (2, 8, 10, or 16).  Used for literals that overflow
+    // int64, e.g. `0o1777777777777777777777`.
+    std::string bigIntDigits;
+    int bigBase = 10;
 };
 
 struct NameNode : ASTNode {

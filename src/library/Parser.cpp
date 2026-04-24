@@ -222,6 +222,11 @@ std::unique_ptr<ASTNode> Parser::parseAtom() {
         n->constType = cur_.isInteger ? ConstantNode::ConstType::Int : ConstantNode::ConstType::Float;
         n->intVal = cur_.intValue;
         n->floatVal = cur_.numValue;
+        // Propagate bignum payload for literals that overflow int64.
+        if (!cur_.bigDigits.empty()) {
+            n->bigIntDigits = cur_.bigDigits;
+            n->bigBase = cur_.bigBase;
+        }
         advance();
         return n;
     }

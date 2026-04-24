@@ -1,4 +1,5 @@
 #include <protoPython/ExecutionEngine.h>
+#include <proto_internal.h>
 #include <protoPython/DiagUtils.h>
 #include <protoPython/Compiler.h>
 #include <protoPython/PythonEnvironment.h>
@@ -1312,15 +1313,34 @@ static const proto::ProtoObject* binaryPower(proto::ProtoContext* ctx,
     const proto::ProtoObject* bb_p = unwrapPrimitive(ctx, b);
     if ((aa_p->isInteger(ctx) || aa_p->isDouble(ctx)) && (bb_p->isInteger(ctx) || bb_p->isDouble(ctx))) {
         if (aa_p->isInteger(ctx) && bb_p->isInteger(ctx)) {
-            long long base = aa_p->asLong(ctx);
-            long long exp = bb_p->asLong(ctx);
-            if (exp < 0) {
-                double r = std::pow(static_cast<double>(base), static_cast<double>(exp));
-                return ctx->fromDouble(r);
+            long long exp;
+            try { exp = bb_p->asLong(ctx); }
+            catch (const std::overflow_error&) {
+                // Exponents that don't fit int64 are astronomical; fall
+                // through to the double path (returns inf/0 as CPython
+                // does via floats).
+                double aa = static_cast<double>(aa_p->asLong(ctx));
+                double bb = bb_p->isDouble(ctx) ? bb_p->asDouble(ctx) : 0.0;
+                return ctx->fromDouble(std::pow(aa, bb));
             }
-            long long result = 1;
-            for (long long i = 0; i < exp; ++i) result *= base;
-            return ctx->fromInteger(result);
+            if (exp < 0) {
+                double base_d;
+                try { base_d = static_cast<double>(aa_p->asLong(ctx)); }
+                catch (const std::overflow_error&) { base_d = 0; }
+                return ctx->fromDouble(std::pow(base_d, static_cast<double>(exp)));
+            }
+            // Exponentiation by squaring via Integer::multiply so the
+            // result promotes to bignum automatically when it exceeds
+            // int64.  This also keeps the fast path for small results
+            // because multiply hits the SmallInt branch internally.
+            const proto::ProtoObject* result = ctx->fromInteger(1);
+            const proto::ProtoObject* base = aa_p;
+            while (exp > 0) {
+                if (exp & 1) result = proto::Integer::multiply(ctx, result, base);
+                exp >>= 1;
+                if (exp > 0) base = proto::Integer::multiply(ctx, base, base);
+            }
+            return result;
         }
         double aa = aa_p->isDouble(ctx) ? aa_p->asDouble(ctx) : static_cast<double>(aa_p->asLong(ctx));
         double bb = bb_p->isDouble(ctx) ? bb_p->asDouble(ctx) : static_cast<double>(bb_p->asLong(ctx));
@@ -3185,8 +3205,10 @@ const proto::ProtoObject* executeBytecodeRange(
             if (stack.empty()) { i = next_i; continue; }
             const proto::ProtoObject* a = stack.back();
             if (a->isInteger(ctx)) {
-                const proto::ProtoObject* res = ctx->fromInteger(-a->asLong(ctx));
-                stack.back() = res;
+                // Use Integer::negate for bignum-safe negation (asLong
+                // overflows for values outside int64 — e.g. -(2**63)
+                // itself fits but its intermediate does not).
+                stack.back() = proto::Integer::negate(ctx, a);
             } else if (a->isDouble(ctx)) {
                 const proto::ProtoObject* res = ctx->fromDouble(-a->asDouble(ctx));
                 stack.back() = res;
