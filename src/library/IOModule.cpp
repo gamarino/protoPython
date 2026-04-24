@@ -1,5 +1,6 @@
 #include <protoPython/PythonEnvironment.h>
 #include <protoPython/IOModule.h>
+#include <protoPython/DiagUtils.h>
 #include <cstdio>
 #include <sstream>
 #include <string>
@@ -177,6 +178,196 @@ static const proto::ProtoObject* py_io_register(
     return self;
 }
 
+// ----- StringIO -------------------------------------------------------------
+
+static const proto::ProtoString* k_sio_buf(proto::ProtoContext* c) {
+    return proto::ProtoString::createSymbol(c, "__sio_buffer__");
+}
+static const proto::ProtoString* k_sio_pos(proto::ProtoContext* c) {
+    return proto::ProtoString::createSymbol(c, "__sio_pos__");
+}
+
+static std::string sio_get_buf(proto::ProtoContext* ctx, const proto::ProtoObject* self) {
+    const proto::ProtoObject* bufObj = self->getAttribute(ctx, k_sio_buf(ctx));
+    if (!bufObj || !bufObj->isString(ctx)) return std::string();
+    std::string s;
+    bufObj->asString(ctx)->toUTF8String(ctx, s);
+    return s;
+}
+
+static long sio_get_pos(proto::ProtoContext* ctx, const proto::ProtoObject* self) {
+    const proto::ProtoObject* p = self->getAttribute(ctx, k_sio_pos(ctx));
+    return (p && p->isInteger(ctx)) ? static_cast<long>(p->asLong(ctx)) : 0;
+}
+
+static const proto::ProtoObject* sio_set_state(proto::ProtoContext* ctx,
+                                               const proto::ProtoObject* self,
+                                               const std::string& buf,
+                                               long pos) {
+    self = self->setAttribute(ctx, k_sio_buf(ctx),
+                              PythonEnvironment::getInternedString(ctx, buf.c_str())->asObject(ctx));
+    self = self->setAttribute(ctx, k_sio_pos(ctx), ctx->fromInteger(pos));
+    return self;
+}
+
+static const proto::ProtoObject* py_sio_write(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    if (!args || args->getSize(ctx) < 1) return ctx->fromInteger(0);
+    const proto::ProtoObject* data = args->getAt(ctx, 0);
+    std::string text;
+    if (data && data->isString(ctx)) data->asString(ctx)->toUTF8String(ctx, text);
+    else if (data) {
+        const proto::ProtoObject* d = data->getAttribute(ctx,
+            PythonEnvironment::getInternedString(ctx, "__data__"));
+        if (d && d->isString(ctx)) d->asString(ctx)->toUTF8String(ctx, text);
+    }
+    std::string buf = sio_get_buf(ctx, self);
+    long pos = sio_get_pos(ctx, self);
+    if (pos < 0) pos = 0;
+    if (static_cast<size_t>(pos) > buf.size()) buf.append(static_cast<size_t>(pos) - buf.size(), '\0');
+    // Overwrite starting at pos, extending buffer if necessary.
+    size_t end = static_cast<size_t>(pos) + text.size();
+    if (end > buf.size()) buf.resize(end, '\0');
+    for (size_t i = 0; i < text.size(); ++i) buf[pos + i] = text[i];
+    sio_set_state(ctx, self, buf, static_cast<long>(pos + text.size()));
+    return ctx->fromInteger(static_cast<long>(text.size()));
+}
+
+static const proto::ProtoObject* py_sio_getvalue(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    std::string buf = sio_get_buf(ctx, self);
+    return PythonEnvironment::getInternedString(ctx, buf.c_str())->asObject(ctx);
+}
+
+static const proto::ProtoObject* py_sio_read(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    std::string buf = sio_get_buf(ctx, self);
+    long pos = sio_get_pos(ctx, self);
+    if (pos < 0) pos = 0;
+    size_t size = buf.size();
+    long want = -1;
+    if (args && args->getSize(ctx) > 0) {
+        const proto::ProtoObject* a = args->getAt(ctx, 0);
+        if (a && a->isInteger(ctx)) want = static_cast<long>(a->asLong(ctx));
+    }
+    size_t take;
+    if (want < 0) take = (static_cast<size_t>(pos) < size) ? size - pos : 0;
+    else take = std::min<size_t>(size - std::min<size_t>(pos, size), static_cast<size_t>(want));
+    std::string out = (pos < static_cast<long>(size)) ? buf.substr(pos, take) : std::string();
+    sio_set_state(ctx, self, buf, pos + static_cast<long>(out.size()));
+    return PythonEnvironment::getInternedString(ctx, out.c_str())->asObject(ctx);
+}
+
+static const proto::ProtoObject* py_sio_seek(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    long off = 0;
+    long whence = 0;
+    if (args && args->getSize(ctx) > 0 && args->getAt(ctx, 0)->isInteger(ctx))
+        off = static_cast<long>(args->getAt(ctx, 0)->asLong(ctx));
+    if (args && args->getSize(ctx) > 1 && args->getAt(ctx, 1)->isInteger(ctx))
+        whence = static_cast<long>(args->getAt(ctx, 1)->asLong(ctx));
+    std::string buf = sio_get_buf(ctx, self);
+    long pos = sio_get_pos(ctx, self);
+    long newPos = pos;
+    if (whence == 0) newPos = off;
+    else if (whence == 1) newPos = pos + off;
+    else if (whence == 2) newPos = static_cast<long>(buf.size()) + off;
+    if (newPos < 0) newPos = 0;
+    sio_set_state(ctx, self, buf, newPos);
+    return ctx->fromInteger(newPos);
+}
+
+static const proto::ProtoObject* py_sio_tell(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    return ctx->fromInteger(sio_get_pos(ctx, self));
+}
+
+static const proto::ProtoObject* py_sio_truncate(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    std::string buf = sio_get_buf(ctx, self);
+    long pos = sio_get_pos(ctx, self);
+    long size = pos;
+    if (args && args->getSize(ctx) > 0) {
+        const proto::ProtoObject* a = args->getAt(ctx, 0);
+        if (a && a->isInteger(ctx)) size = static_cast<long>(a->asLong(ctx));
+    }
+    if (size < 0) size = 0;
+    if (static_cast<size_t>(size) < buf.size()) buf.resize(size);
+    sio_set_state(ctx, self, buf, pos);
+    return ctx->fromInteger(static_cast<long>(buf.size()));
+}
+
+static const proto::ProtoObject* py_sio_close(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    sio_set_state(ctx, self, std::string(), 0);
+    return PROTO_NONE;
+}
+
+static const proto::ProtoObject* py_sio_writable(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    return PROTO_TRUE;
+}
+
+static const proto::ProtoObject* py_sio_readable(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    return PROTO_TRUE;
+}
+
+static const proto::ProtoObject* py_sio_enter(
+    proto::ProtoContext*, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    return self;
+}
+
+static const proto::ProtoObject* py_sio_exit(
+    proto::ProtoContext*, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    return PROTO_FALSE;
+}
+
+// StringIO(initial_value='', newline='\n') — returns a fresh instance with
+// `initial_value` preloaded, position at 0.  Called when the type itself is
+// invoked as a constructor (e.g. `StringIO()`).
+static const proto::ProtoObject* py_sio_call(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    // `self` here is the class (the stub).  Create an instance that
+    // inherits from it so `type(obj) is StringIO` remains True.
+    proto::ProtoObject* inst = const_cast<proto::ProtoObject*>(self->newChild(ctx, true));
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    inst = const_cast<proto::ProtoObject*>(inst->setAttribute(ctx,
+        env ? env->getClassString() : PythonEnvironment::getInternalString(ctx, "__class__"), self));
+    std::string initial;
+    unsigned long n = args ? args->getSize(ctx) : 0;
+    for (unsigned long i = 0; i < n; ++i) {
+        const proto::ProtoObject* a = args->getAt(ctx, static_cast<int>(i));
+        if (!a || a == self) continue;
+        if (a->isString(ctx)) {
+            a->asString(ctx)->toUTF8String(ctx, initial);
+            break;
+        }
+        const proto::ProtoObject* d = a->getAttribute(ctx,
+            PythonEnvironment::getInternedString(ctx, "__data__"));
+        if (d && d->isString(ctx)) {
+            d->asString(ctx)->toUTF8String(ctx, initial);
+            break;
+        }
+    }
+    inst = const_cast<proto::ProtoObject*>(inst->setAttribute(ctx, k_sio_buf(ctx),
+        PythonEnvironment::getInternedString(ctx, initial.c_str())->asObject(ctx)));
+    inst = const_cast<proto::ProtoObject*>(inst->setAttribute(ctx, k_sio_pos(ctx), ctx->fromInteger(0)));
+    return inst;
+}
+
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     const proto::ProtoObject* ioMod = ctx->newObject(false);
     
@@ -207,7 +398,48 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     add_stub("UnsupportedOperation");
     add_stub("FileIO");
     add_stub("BytesIO");
-    add_stub("StringIO");
+    // StringIO: real implementation (not a stub) so tests can use it.
+    {
+        const proto::ProtoString* nameS = proto::ProtoString::createSymbol(ctx, "StringIO");
+        const proto::ProtoObject* sio = ctx->newObject(false);
+        sio = sio->setAttribute(ctx, py_name_s,
+            PythonEnvironment::getInternedString(ctx, "StringIO")->asObject(ctx));
+        sio = sio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__qualname__"),
+            PythonEnvironment::getInternedString(ctx, "StringIO")->asObject(ctx));
+        sio = sio->setAttribute(ctx, py_module_s, py_io_s);
+        sio = sio->setAttribute(ctx, py_doc_s, py_empty_doc);
+        // Make the class callable so StringIO(...) instantiates.
+        sio = sio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__call__"),
+            ctx->fromMethod(const_cast<proto::ProtoObject*>(sio), py_sio_call));
+        // Instance methods are installed on the prototype so instances inherit them.
+        sio = sio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "write"),
+            ctx->fromMethod(nullptr, py_sio_write));
+        sio = sio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "getvalue"),
+            ctx->fromMethod(nullptr, py_sio_getvalue));
+        sio = sio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "read"),
+            ctx->fromMethod(nullptr, py_sio_read));
+        sio = sio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "seek"),
+            ctx->fromMethod(nullptr, py_sio_seek));
+        sio = sio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "tell"),
+            ctx->fromMethod(nullptr, py_sio_tell));
+        sio = sio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "truncate"),
+            ctx->fromMethod(nullptr, py_sio_truncate));
+        sio = sio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "close"),
+            ctx->fromMethod(nullptr, py_sio_close));
+        sio = sio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "writable"),
+            ctx->fromMethod(nullptr, py_sio_writable));
+        sio = sio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "readable"),
+            ctx->fromMethod(nullptr, py_sio_readable));
+        sio = sio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__enter__"),
+            ctx->fromMethod(nullptr, py_sio_enter));
+        sio = sio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__exit__"),
+            ctx->fromMethod(nullptr, py_sio_exit));
+        // Default buffer state so hasattr returns True before first write.
+        sio = sio->setAttribute(ctx, k_sio_buf(ctx),
+            PythonEnvironment::getInternedString(ctx, "")->asObject(ctx));
+        sio = sio->setAttribute(ctx, k_sio_pos(ctx), ctx->fromInteger(0));
+        ioMod = ioMod->setAttribute(ctx, nameS, sio);
+    }
     add_stub("BufferedReader");
     add_stub("BufferedWriter");
     add_stub("BufferedRWPair");
