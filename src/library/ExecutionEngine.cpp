@@ -2869,20 +2869,37 @@ const proto::ProtoObject* executeBytecodeRange(
             if (stack.size() < 2) { i = next_i; continue; }
             const proto::ProtoObject* right = stack.back();
             const proto::ProtoObject* left = stack[stack.top - 2];
-            const proto::ProtoString* imatmulS = protoPython::PythonEnvironment::getInternalString(ctx, "__imatmul__");
-            const proto::ProtoObject* imatmul = left->getAttribute(ctx, imatmulS);
+            // 3.11+ convention: the binop leaves (res) on the stack, popping
+            // both operands.  Previous implementation pushed the result
+            // without popping, leaving [left, right, res] on the stack and
+            // desynchronising the subsequent STORE_FAST.  Fixed: pop both
+            // operands first, then push the result.
+            const proto::ProtoString* imatmulS = env
+                ? env->getIMatMulString()
+                : protoPython::PythonEnvironment::getInternalString(ctx, "__imatmul__");
+            const proto::ProtoObject* imatmul = env
+                ? env->getAttribute(ctx, left, imatmulS, false)
+                : left->getAttribute(ctx, imatmulS);
+            const proto::ProtoObject* res = nullptr;
             if (imatmul && imatmul != PROTO_NONE) {
-                stack.push_back(invokePythonCallable(ctx, imatmul, ctx->newList()->appendLast(ctx, right), nullptr));
+                res = invokePythonCallable(ctx, imatmul,
+                    ctx->newList()->appendLast(ctx, right), nullptr);
             } else {
-                // fallback to matmul
                 const proto::ProtoString* matmulS = protoPython::PythonEnvironment::getInternalString(ctx, "__matmul__");
-                const proto::ProtoObject* matmul = left->getAttribute(ctx, matmulS);
+                const proto::ProtoObject* matmul = env
+                    ? env->getAttribute(ctx, left, matmulS, false)
+                    : left->getAttribute(ctx, matmulS);
                 if (matmul && matmul != PROTO_NONE) {
-                    stack.push_back(invokePythonCallable(ctx, matmul, ctx->newList()->appendLast(ctx, right), nullptr));
-                } else {
-                    env->setPendingException(PythonEnvironment::getInternedString(ctx, "TypeError: '@=' operator not supported (stubbed)")->asObject(ctx));
+                    res = invokePythonCallable(ctx, matmul,
+                        ctx->newList()->appendLast(ctx, right), nullptr);
+                } else if (env) {
+                    env->raiseTypeError(ctx, "unsupported operand type(s) for @=");
                 }
             }
+            stack.pop_back();           // right
+            stack.pop_back();           // left
+            if (res) stack.push_back(res);
+            else stack.push_back(PROTO_NONE);
         } else if (op == OP_RERAISE) {
             // Re-raise the exception on top of block stack
             if (!env) { i = next_i; continue; }
