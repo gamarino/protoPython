@@ -1332,6 +1332,22 @@ def _find_and_load_unlocked(name, import_):
         child = name.rpartition('.')[2]
     spec = _find_spec(name, path)
     if spec is None:
+        # protoPython fallback: `sys.meta_path` is not yet populated with a
+        # filesystem finder.  Plain `import X` statements go through the
+        # native resolveModule() path, which `_imp.create_builtin` wraps.
+        # Build a minimal spec-like object and delegate.
+        import _imp
+        class _NativeSpec:
+            __slots__ = ('name',)
+            def __init__(self, name):
+                self.name = name
+        try:
+            native_mod = _imp.create_builtin(_NativeSpec(name))
+        except Exception:
+            native_mod = None
+        if native_mod is not None:
+            sys.modules[name] = native_mod
+            return native_mod
         raise ModuleNotFoundError(f'{_ERR_MSG_PREFIX}{name!r}', name=name)
     else:
         if parent_spec:

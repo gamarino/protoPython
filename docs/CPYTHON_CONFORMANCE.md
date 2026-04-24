@@ -18,7 +18,7 @@ Core syntax, standard object model, and fundamental types.
 - [ ] `test_types.py`: **PARTIAL** — 6/131 pass, runs to completion; failure messages now visible (V111, 2026-04-24)
 - [ ] `test_descr.py`: **TIMEOUT** — runs >5 min; `type()` descriptor tests expose slow paths
 - [ ] `test_generators.py`: **PARTIAL** — 0/1 pass (doctest runner fails); import chain runs
-- [ ] `test_asyncgen.py`: **BLOCKED** — `importlib.import_module("asyncio")` fails; native `import asyncio` works
+- [ ] `test_asyncgen.py`: **PARTIAL** — 85 tests now run (0/85 pass, 80 errors, 5 failures); unblocked (V116, 2026-04-24)
 - [ ] `test_base64.py`: **PARTIAL** — runs to completion, many failures (V110, 2026-04-23)
 
 ### 🟠 Important (Standard Library Foundations)
@@ -57,7 +57,7 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 - [ ] `test_pydoc.py`
 - [ ] `test_warnings.py`
 
-## Progress Summary (v1.0.0 — 2026-04-24, V115)
+## Progress Summary (v1.0.0 — 2026-04-24, V116)
 
 | Category | Total | Tested | Passed | Notes |
 | :--- | :--- | :--- | :--- | :--- |
@@ -70,6 +70,31 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 **Conformity Suite (internal, 2026-04-15)**: 7/9 tests pass. Failures are pre-existing: `int(float)` conversion and `set(iterable)` constructor.
 
 **Key V110 milestone**: All essential tests now run to completion without crashing. Individual test failures reflect unimplemented language features (metaclass protocol, descriptors, C-extension stubs), not interpreter instability.
+
+### V116 Changes (2026-04-24) — Phase F7: `importlib.import_module` fallback
+
+`importlib.import_module("asyncio")` raised `ModuleNotFoundError` even
+though `import asyncio` (native path) worked.  Root cause:
+`_find_and_load_unlocked` in `importlib/_bootstrap.py` consults
+`sys.meta_path`; protoPython creates that list empty because modules are
+served directly from the C++ `env->resolveModule()` registry rather than
+through an importer hierarchy.
+
+Added a fallback block in `_find_and_load_unlocked`: if `_find_spec()`
+returns `None`, the code builds a minimal spec-like object (just a `.name`
+attribute) and asks `_imp.create_builtin(spec)`.  `_imp.create_builtin`
+already delegates to the native `resolveModule()` via C++, so this routes
+importlib's request through the same path as a plain `import` statement.
+On success the module is stashed in `sys.modules` and returned.
+
+Impact
+------
+- `test_asyncgen.py` no longer BLOCKED: 85 tests now run (0 pass, 80
+  errors, 5 failures).  The errors reflect asyncgen-specific language
+  features that still need implementation, not a bootstrap failure.
+- `importlib.import_module(...)` behaves identically to `import ...` for
+  the entire native-module registry (os, sys, collections, asyncio,
+  functools, re, etc.).
 
 ### V115 Changes (2026-04-24) — Phase F5: `_zstd` shim covers full surface
 
