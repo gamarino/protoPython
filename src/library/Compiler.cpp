@@ -21,15 +21,16 @@ constexpr int PYTHON_STACK_BUFFER = 4096;
 
 Compiler::Compiler(proto::ProtoContext* ctx, const std::string& filename)
     : ctx_(ctx), filename_(filename) {
+    constantsVec_ = ctx_->newList();
 }
 
 int Compiler::addConstant(const proto::ProtoObject* obj) {
     if (obj == PROTO_NONE || obj == PROTO_TRUE || obj == PROTO_FALSE) {
-        int n = static_cast<int>(constantsVec_.size());
+        int n = static_cast<int>(constantsVec_->getSize(ctx_));
         for (int i = 0; i < n; ++i) {
-            if (constantsVec_[i] == obj) return i;
+            if (constantsVec_->getAt(ctx_, i) == obj) return i;
         }
-        constantsVec_.push_back(obj);
+        constantsVec_ = constantsVec_->appendLast(ctx_, obj);
         return n;
     }
 
@@ -42,17 +43,17 @@ int Compiler::addConstant(const proto::ProtoObject* obj) {
             long long val = obj->asLong(ctx_);
             auto it = constIntIndex_.find(val);
             if (it != constIntIndex_.end()) return it->second;
-            int idx = static_cast<int>(constantsVec_.size());
-            constantsVec_.push_back(obj);
+            int idx = static_cast<int>(constantsVec_->getSize(ctx_));
+            constantsVec_ = constantsVec_->appendLast(ctx_, obj);
             constIntIndex_[val] = idx;
             return idx;
         } catch (const std::overflow_error&) {
             // Bignum — no numeric cache.
-            int n = static_cast<int>(constantsVec_.size());
+            int n = static_cast<int>(constantsVec_->getSize(ctx_));
             for (int i = 0; i < n; ++i) {
-                if (constantsVec_[i] == obj) return i;
+                if (constantsVec_->getAt(ctx_, i) == obj) return i;
             }
-            constantsVec_.push_back(obj);
+            constantsVec_ = constantsVec_->appendLast(ctx_, obj);
             return n;
         }
     }
@@ -60,8 +61,8 @@ int Compiler::addConstant(const proto::ProtoObject* obj) {
         double val = obj->asDouble(ctx_);
         auto it = constFloatIndex_.find(val);
         if (it != constFloatIndex_.end()) return it->second;
-        int idx = static_cast<int>(constantsVec_.size());
-        constantsVec_.push_back(obj);
+        int idx = static_cast<int>(constantsVec_->getSize(ctx_));
+        constantsVec_ = constantsVec_->appendLast(ctx_, obj);
         constFloatIndex_[val] = idx;
         return idx;
     }
@@ -70,19 +71,19 @@ int Compiler::addConstant(const proto::ProtoObject* obj) {
         obj->asString(ctx_)->toUTF8String(ctx_, val);
         auto it = constStrIndex_.find(val);
         if (it != constStrIndex_.end()) return it->second;
-        int idx = static_cast<int>(constantsVec_.size());
-        constantsVec_.push_back(obj);
+        int idx = static_cast<int>(constantsVec_->getSize(ctx_));
+        constantsVec_ = constantsVec_->appendLast(ctx_, obj);
         constStrIndex_[val] = idx;
         return idx;
     }
 
     // Fallback for other objects (should be rare for constants)
-    int n = static_cast<int>(constantsVec_.size());
+    int n = static_cast<int>(constantsVec_->getSize(ctx_));
     for (int i = 0; i < n; ++i) {
-        if (constantsVec_[i] == obj) return i;
+        if (constantsVec_->getAt(ctx_, i) == obj) return i;
     }
     int idx = n;
-    constantsVec_.push_back(obj);
+    constantsVec_ = constantsVec_->appendLast(ctx_, obj);
     return idx;
 }
 
@@ -272,7 +273,7 @@ void Compiler::applyPatches() {
 
 const proto::ProtoTuple* Compiler::getConstants() {
     if (!constants_) {
-        constants_ = ctx_->newTuple(constantsVec_);
+        constants_ = ctx_->newTupleFromList(constantsVec_);
     }
     return constants_;
 }

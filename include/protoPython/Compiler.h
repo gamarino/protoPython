@@ -37,7 +37,7 @@ public:
 private:
     proto::ProtoContext* ctx_ = nullptr;
     std::string filename_;
-    std::vector<const proto::ProtoObject*> constantsVec_;
+    const proto::ProtoList* constantsVec_ = nullptr;
     std::vector<const proto::ProtoObject*> namesVec_;
     std::vector<const proto::ProtoObject*> bytecodeVec_;
     std::unordered_map<std::string, int> namesIndex_;
