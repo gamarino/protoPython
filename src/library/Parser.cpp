@@ -610,6 +610,21 @@ std::unique_ptr<ASTNode> Parser::parsePrimary() {
                         ge->elt = std::move(arg);
                         ge->generators = parseComprehensions();
                         call->args.push_back(std::move(ge));
+                        // CPython: a bare generator expression must be the
+                        // sole positional argument.  Once it's parsed, the
+                        // call's argument list is closed — anything other
+                        // than the matching `)` is a SyntaxError, including
+                        // `foo(x for x in y, 100)`.
+                        if (cur_.type == TokenType::Comma) {
+                            error("Generator expression must be parenthesized if not sole argument");
+                            return left;
+                        }
+                    } else if (isComp) {
+                        // `foo(100, x for x in range(10))` — the bare genexp
+                        // appears after another argument.  Same rule: must
+                        // be parenthesized.
+                        error("Generator expression must be parenthesized if not sole argument");
+                        return left;
                     } else {
                         call->args.push_back(std::move(arg));
                     }
