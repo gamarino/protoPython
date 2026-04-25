@@ -591,13 +591,13 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
         proto::ProtoObject* gen = const_cast<proto::ProtoObject*>(calleeCtx->newObject(true));
         if (env && env->getGeneratorPrototype()) {
             // PB3: select prototype based on co_flags.
-            //   0x80 + yield  → async_generator
-            //   0x80 alone    → coroutine
-            //   else (0x20)   → generator
+            //   CO_COROUTINE (0x100) + yield (0x20) → async_generator
+            //   CO_COROUTINE (0x100) alone          → coroutine
+            //   else (CO_GENERATOR 0x20)            → generator
             const proto::ProtoObject* genProto = env->getGeneratorPrototype();
             const proto::ProtoObject* coFlagsObj = codeObj->getAttribute(calleeCtx, env->getCoFlagsString());
             long long co_flags_val = (coFlagsObj && coFlagsObj->isInteger(calleeCtx)) ? coFlagsObj->asLong(calleeCtx) : 0;
-            const bool hasCoroutineFlag = (co_flags_val & 0x80) != 0;
+            const bool hasCoroutineFlag = (co_flags_val & 0x100) != 0;
             const bool hasGeneratorFlag = (co_flags_val & 0x20) != 0;
             if (hasCoroutineFlag && hasGeneratorFlag && env->getAsyncGeneratorPrototype()) {
                 genProto = env->getAsyncGeneratorPrototype();
@@ -888,12 +888,16 @@ static proto::ProtoObject* createUserFunction(proto::ProtoContext* ctx, const pr
     if (!ctx || !codeObj || !globalsFrame) return nullptr;
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     
-    // Use function prototype directly via newChild to ensure correct parentage
+    // Functions must be mutable so that decorators can attach attributes via
+    // setattr(func, '_marked', True) and similar patterns (functools.wraps,
+    // unittest.skip, dataclasses field metadata, …).  Immutable functions
+    // would cause every setAttribute to return a fresh object the Python-side
+    // variable cannot see.
     const proto::ProtoObject* fn = nullptr;
     if (env && env->getFunctionPrototype()) {
-        fn = env->getFunctionPrototype()->newChild(ctx, false);
+        fn = env->getFunctionPrototype()->newChild(ctx, true);
     } else {
-        fn = ctx->newObject(true); // Fallback
+        fn = ctx->newObject(true);
     }
     fn = fn->setAttribute(ctx, env ? env->getCodeString() : PythonEnvironment::getInternedString(ctx, "__code__"), codeObj);
     fn = fn->setAttribute(ctx, env ? env->getGlobalsString() : PythonEnvironment::getInternedString(ctx, "__globals__"), globalsFrame);

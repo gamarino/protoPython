@@ -1305,7 +1305,7 @@ bool Compiler::compileListComp(ListCompNode* n) {
     const proto::ProtoTuple* co_varnames = ctx_->newTuple(varnamesVec);
     
     int flags = CO_OPTIMIZED | CO_NEWLOCALS;
-    if (isAsync) flags |= 128; // CO_COROUTINE
+    if (isAsync) flags |= 256; // CO_COROUTINE (CPython 0x100, matches inspect.CO_COROUTINE)
 
     const proto::ProtoObject* codeObj = makeCodeObject(ctx_, 
         bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), 
@@ -1406,7 +1406,7 @@ bool Compiler::compileDictComp(DictCompNode* n) {
     const proto::ProtoTuple* co_varnames = ctx_->newTuple(varnamesVec);
     
     int flags = CO_OPTIMIZED | CO_NEWLOCALS;
-    if (isAsync) flags |= 128; // CO_COROUTINE
+    if (isAsync) flags |= 256; // CO_COROUTINE (CPython 0x100, matches inspect.CO_COROUTINE)
 
     const proto::ProtoObject* codeObj = makeCodeObject(ctx_, 
         bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), 
@@ -1502,7 +1502,7 @@ bool Compiler::compileSetComp(SetCompNode* n) {
     const proto::ProtoTuple* co_varnames = ctx_->newTuple(varnamesVec);
     
     int flags = CO_OPTIMIZED | CO_NEWLOCALS;
-    if (isAsync) flags |= 128; // CO_COROUTINE
+    if (isAsync) flags |= 256; // CO_COROUTINE (CPython 0x100, matches inspect.CO_COROUTINE)
 
     const proto::ProtoObject* codeObj = makeCodeObject(ctx_, 
         bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), 
@@ -1598,7 +1598,7 @@ bool Compiler::compileGeneratorExp(GeneratorExpNode* n) {
     const proto::ProtoTuple* co_varnames = ctx_->newTuple(varnamesVec);
     
     int flags = CO_OPTIMIZED | CO_NEWLOCALS;
-    if (isAsync) flags |= 128; // CO_COROUTINE
+    if (isAsync) flags |= 256; // CO_COROUTINE (CPython 0x100, matches inspect.CO_COROUTINE)
 
     const proto::ProtoObject* codeObj = makeCodeObject(ctx_, 
         bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), 
@@ -3352,8 +3352,8 @@ bool Compiler::compileAsyncFunctionDef(AsyncFunctionDefNode* n) {
         varnamesVec.push_back(PythonEnvironment::getInternedString(ctx_, name.c_str())->asObject(ctx_));
     const proto::ProtoTuple* co_varnames = ctx_->newTuple(varnamesVec);
     
-    // 0x80 is CO_COROUTINE
-    int co_flags = 128 | CO_NEWLOCALS; 
+    // CPython CO_COROUTINE = 0x100 (matches inspect.CO_COROUTINE)
+    int co_flags = 256 | CO_NEWLOCALS;
     if (!forceMapped) co_flags |= CO_OPTIMIZED;
     if (!captured.empty()) co_flags |= CO_NESTED;
     if (!n->vararg.empty()) co_flags |= CO_VARARGS;
@@ -3947,7 +3947,7 @@ const proto::ProtoObject* makeCodeObject(proto::ProtoContext* ctx,
     code = code->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_kwonlyargcount"), ctx->fromInteger(kwonlyargcount));
     code = code->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_automatic_count"), ctx->fromInteger(automatic_count));
     code = code->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_flags"), ctx->fromInteger(flags));
-    bool isGenOrCoro = isGenerator || (flags & 0x80);
+    bool isGenOrCoro = isGenerator || (flags & 0x100);  // 0x100 = CO_COROUTINE
     code = code->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_is_generator"), ctx->fromBoolean(isGenOrCoro));
     code = code->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_name"), co_name ? co_name->asObject(ctx) : PythonEnvironment::getInternedString(ctx, "<module>")->asObject(ctx));
     
