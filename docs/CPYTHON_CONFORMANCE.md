@@ -86,6 +86,38 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 
 **Key V110 milestone**: All essential tests now run to completion without crashing. Individual test failures reflect unimplemented language features (metaclass protocol, descriptors, C-extension stubs), not interpreter instability.
 
+### V146 Changes (2026-04-24) — PC-round: async-side surface
+
+After the PB-round closed the synthetic suite at 24/24, the suite was
+extended to 37 cases covering async-iter / async-with / asend / await
+chain.  Fresh failures landed; PC1-PC2 cleared two of them.
+
+| Step | Fix | Suite (of 37) |
+| :--- | :-- | :---: |
+| (PC-baseline) | extend suite with 13 new cases | 26 / 10 / 1 |
+| PC1 | async_generator exposes asend / athrow / aclose | 26→28 |
+| PC2 | `yield from` inside `async def` raises SyntaxError (PEP 525) | 28→29 |
+
+State after PC2:
+
+  PASS  = 29 / 37
+  FAIL  =  7 / 37   (all disabled placeholders for async-for/with hangs)
+  CRASH =  1 / 37   (test_asend_drives_one_step — needs coroutine wrapper)
+
+The 7 disabled tests were stubbed because `async for` / `async with`
+currently overflow the evaluation stack on the first .send(None) of
+the consuming coroutine.  Diagnostic at PC2:
+
+    FATAL: GCStack overflow! top=35 capacity=35 — increase
+    PYTHON_STACK_BUFFER in Compiler.cpp
+
+The bytecode emitted by `compileAsyncFor` (GET_AITER / GET_ANEXT /
+GET_AWAITABLE / YIELD_FROM in a SETUP_FINALLY block) does not match
+the protoPython coroutine's save/restore stack layout — likely the
+aiter stays on the stack across each iteration but the coroutine's
+suspend/resume serializes a *growing* save vector.  Tracked for the
+next round; the synthetic suite is the regression target.
+
 ### V145 Changes (2026-04-24) — PB-round: generators-and-async, complete
 
 Started from the V144 synthetic baseline (11 PASS / 11 FAIL / 2 CRASH
