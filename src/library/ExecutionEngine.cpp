@@ -2624,13 +2624,12 @@ const proto::ProtoObject* executeBytecodeRange(
                     continue;
                 }
             } else {
-                // Yielded. subIter is still at stack.back().
-                if (get_env_diag()) {
-                    // Yielded result diagnostic removed
-                }
+                // Yielded.  Pause at THIS opcode so the next .send()
+                // pushes a fresh sendVal and re-runs YIELD_FROM to
+                // drive subIter through another step.
                 ctx->returnValue = result;
                 if (yielded) *yielded = true;
-                if (outPc) *outPc = next_i;
+                if (outPc) *outPc = i;
                 if (finalTopPtr) *finalTopPtr = stack.top;
                 if (externalBlockStack) {
                     *externalBlockStack = blockStack;

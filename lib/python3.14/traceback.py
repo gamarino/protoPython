@@ -1004,9 +1004,13 @@ class _ExceptionPrintContext:
             indent_str += margin_char + ' '
 
         if isinstance(text_gen, str):
-            yield textwrap.indent(text_gen, indent_str, lambda line: True)
+            # Defensive guard: SyntaxError-without-source can have text=None
+            yield textwrap.indent(text_gen if text_gen is not None else '',
+                                  indent_str, lambda line: True)
         else:
             for text in text_gen:
+                if text is None:
+                    continue
                 yield textwrap.indent(text, indent_str, lambda line: True)
 
 
@@ -1314,7 +1318,7 @@ class TracebackException:
                     line, end_line, offset = 0,1,0
                 else:
                     from_filename = True
-            lines = lines if lines is not None else self.text.splitlines()
+            lines = lines if lines is not None else (self.text.splitlines() if self.text else [])
         else:
             lines = source.splitlines()
 
