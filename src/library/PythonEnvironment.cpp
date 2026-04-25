@@ -513,13 +513,6 @@ static const proto::ProtoObject* py_type_get_mro(
     
     const proto::ProtoString* mroStr = PythonEnvironment::getInternedString(context, "__mro__");
     if (self->hasOwnAttribute(context, mroStr) == PROTO_TRUE) {
-        // Use getOwnAttributeDirect rather than getAttributes()->getAt(ptr cast)
-        // — the previous form cast the interned-string pointer to unsigned
-        // long and treated it as a hash key, which doesn't match how the
-        // attribute backing store actually keys its entries (it keys by the
-        // symbol's hash).  The cast happened to return nullptr for the
-        // bool prototype's freshly-set __mro__, falling through to the
-        // computed fallback that left out int.
         const proto::ProtoObject* mro = self->getOwnAttributeDirect(context, mroStr);
         if (mro && mro != PROTO_NONE) {
             bool isTup = mro->isTuple(context);
@@ -531,8 +524,6 @@ static const proto::ProtoObject* py_type_get_mro(
         }
     }
     
-    if (get_env_diag()) {
-    }
     // Walk the parent chain so the fallback MRO reflects actual inheritance.
     // protoCore's parent list is appended in insertion order.  For builtins
     // like bool — which is created via `objectPrototype->newChild(...)` and
