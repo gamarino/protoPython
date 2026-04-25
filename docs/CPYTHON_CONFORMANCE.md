@@ -86,6 +86,70 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 
 **Key V110 milestone**: All essential tests now run to completion without crashing. Individual test failures reflect unimplemented language features (metaclass protocol, descriptors, C-extension stubs), not interpreter instability.
 
+### V150 Changes (2026-04-25) — PF: close all remaining async tests (37/0/0)
+
+The PF round closes the synthetic suite at 37/37 (zero failures, zero
+crashes).  Five distinct bugs across `compileAsyncWith`, the
+`OP_GET_AITER` runtime bridge, and the `async_generator` prototype's
+`asend` semantics were resolved.
+
+**PF-1 — `compileAsyncWith` LOAD_ATTR encoding**
+`OP_LOAD_ATTR`'s arg uses the `(idx<<1)|pushNull` encoding.  The
+previous compileAsyncWith emitted `LOAD_ATTR addName(...)` raw, so
+`nameIdx = arg >> 1` resolved to half the intended index, surfacing as
+`'X object has no attribute X'` for any class manager.
+
+**PF-2 — `compileAsyncWith` patch-slot off-by-one**
+Same off-by-one as PE-2 in compileAsyncFor: `addPatch(slot + 1, …)`
+patched the next instruction's arg slot instead of the
+SETUP_FINALLY/JUMP slot itself.
+
+**PF-3 — `compileAsyncWith` calling-convention cross-talk**
+The original lowering pre-fetched `__aexit__` as a bound method onto
+the stack and tried to keep it across the body.  Subsequent CALL
+opcodes interpreted the stale bound method as a method-call receiver
+under the 3.11+ `[NULL, callable, args]` convention, calling it with
+the wrong arguments.  The new lowering fetches `__aexit__` freshly
+at the success and handler paths; the manager is the only with-block
+state kept on the stack.
+
+**PF-4 — `compileAsyncWith` handler stack normalisation + suppression**
+The exception-unwinder pushes 3 slots at handler entry (`tb`, `value`,
+`type`).  The handler now pops the redundant `tb`/`type` to restore
+`[..., m, exc]`, builds `(type(exc), exc, None)` via `BUILD_TUPLE`,
+and dispatches `__aexit__` through `CALL_FUNCTION_EX`.  After
+awaiting the result, `POP_JUMP_IF_TRUE` either suppresses (truthy)
+or `RAISE_VARARGS 0` re-raises the original pending exception.
+
+**PF-5 — class-defined `__aiter__`/`__anext__` driven inline**
+`async def __anext__` returns a coroutine, which `FOR_ITER` cannot
+unwrap.  A new native helper `py_class_aiter_next` is installed by
+`OP_GET_AITER` as the iterator's `__next__` when only `__anext__`
+exists: it calls `__anext__()`, drives the resulting coroutine via
+`send(None)`, and converts `StopIteration(value=V)` to a returned `V`
+or `StopAsyncIteration` to `StopIteration` so FOR_ITER ends the loop.
+Async generators are unaffected — they inherit `__next__` from the
+generator prototype and bypass the bridge.
+
+**PF-6 — `async_generator.asend` returns a real awaitable wrapper**
+The PC1 design aliased `asend → send`, so `agen.asend(v)` returned
+the yielded value directly.  This broke `await agen.asend(v)` and the
+`run(agen.asend(v))` driver pattern (since the value is not a
+coroutine).  PF replaces this with `py_async_generator_asend` that
+constructs a single-shot wrapper.  The wrapper's `send(None)` /
+`__next__()` advances the underlying generator one step using the
+captured value and `StopIteration`s with the yielded value.
+`__await__` returns self so the wrapper is a valid awaitable.
+
+| State     | PASS | FAIL | CRASH | Total |
+| :---      | ---: | ---: | ---:  | ---:  |
+| Before PF |  32  |  4   |   1   |  37   |
+| After PF  |  37  |  0   |   0   |  37   |
+
+The synthetic `test_generators_synthetic.py` is now fully green —
+generators, coroutines, async iteration, async context managers, and
+async-generator step-driven iteration all pass.
+
 ### V149 Changes (2026-04-25) — PE: coroutine name resolution + async-for FOR_ITER patch slot
 
 The PD round set the foundation; the PE round closes it.  Two

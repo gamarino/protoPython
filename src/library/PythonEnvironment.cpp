@@ -9255,20 +9255,19 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
                 }
                 return result;
             }));
-    // PC1: minimal asend/athrow/aclose surface.  These are aliases to
-    // send/throw/close — the inherited generator paused-frame model
-    // is already correct for advancing the async generator, and most
-    // call sites that use these methods do so via `await agen.asend(v)`
-    // which requires them only to exist + return something awaitable.
-    // Returning the yielded value directly works for the single-step
-    // pattern; full coroutine-wrapping semantics will need a dedicated
-    // proxy object, deferred to a future round.
+    // PF: asend / athrow / aclose with proper awaitable-wrapper
+    // semantics.  asend(v) returns a single-shot awaitable whose
+    // .send(None) advances the underlying async generator one step and
+    // raises StopIteration with the yielded value (or
+    // StopAsyncIteration on exhaustion).  This replaces the PC1 alias
+    // design (asend == send) that returned the value directly and
+    // broke `await agen.asend(v)` and `run(agen.asend(v))` drivers.
     asyncGeneratorPrototype = asyncGeneratorPrototype->setAttribute(rootContext_,
         PythonEnvironment::getInternedString(rootContext_, "asend"),
-        rootContext_->fromMethod(nullptr, py_generator_send));
+        rootContext_->fromMethod(nullptr, py_async_generator_asend));
     asyncGeneratorPrototype = asyncGeneratorPrototype->setAttribute(rootContext_,
         PythonEnvironment::getInternedString(rootContext_, "athrow"),
-        rootContext_->fromMethod(nullptr, py_generator_throw));
+        rootContext_->fromMethod(nullptr, py_async_generator_athrow));
     asyncGeneratorPrototype = asyncGeneratorPrototype->setAttribute(rootContext_,
         PythonEnvironment::getInternedString(rootContext_, "aclose"),
         rootContext_->fromMethod(nullptr, py_generator_close));

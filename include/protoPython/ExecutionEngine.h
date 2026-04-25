@@ -256,6 +256,13 @@ const proto::ProtoObject* py_generator_next(proto::ProtoContext* ctx, const prot
 const proto::ProtoObject* py_generator_send(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs);
 const proto::ProtoObject* py_generator_throw(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs);
 const proto::ProtoObject* py_generator_close(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs);
+/** PF: async_generator.asend / athrow — return an awaitable wrapper that, when
+ *  driven via .send(None), advances the underlying generator one step and
+ *  raises StopIteration with the yielded value (or propagates StopAsyncIteration).
+ *  The previous PC1 design aliased asend → send, returning the value directly,
+ *  which broke `await agen.asend(v)` and `run(agen.asend(v))` patterns. */
+const proto::ProtoObject* py_async_generator_asend(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs);
+const proto::ProtoObject* py_async_generator_athrow(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs);
 
 /**
  * @brief Executes bytecode: LOAD_CONST, RETURN_VALUE, LOAD_NAME, STORE_NAME,

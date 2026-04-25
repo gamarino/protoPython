@@ -3406,76 +3406,171 @@ bool Compiler::compileAsyncWith(AsyncWithNode* n) {
     if (!n || n->items.empty()) return true;
     auto& item = n->items[0];
 
-    // 1. context_manager = context_expr
-    if (!compileNode(item.context_expr.get())) return false;
-    emit(OP_DUP_TOP);
-    
-    // 2. exit = context_manager.__aexit__
-    emit(OP_LOAD_ATTR, addName("__aexit__"));
-    emit(OP_ROT_TWO); // [..., exit, manager]
-    
-    // 3. enter_res = await context_manager.__aenter__()
-    emit(OP_LOAD_ATTR, addName("__aenter__"));
-    emit(OP_CALL_FUNCTION, 0);
-    emit(OP_GET_AWAITABLE);
-    emit(OP_LOAD_CONST, addConstant(PROTO_NONE));
-    emit(OP_YIELD_FROM);
-    
-    // [..., exit, enter_res]
-    
-    // 4. SETUP_FINALLY to catch exceptions in body
-    int setupFinallySlot = bytecodeOffset();
-    emit(OP_SETUP_FINALLY, 0);
+    // PF: rewritten compileAsyncWith.  The previous version had three
+    // bugs that fully blocked async-with:
+    //   (1) OP_LOAD_ATTR arg lacked the (idx<<1)|pushNull encoding,
+    //       so names resolved to the wrong slot.
+    //   (2) addPatch(slot + 1, ...) was off by one (mirrors the PE-2
+    //       fix for compileAsyncFor).
+    //   (3) Pre-fetching __aexit__ as a bound method onto the stack and
+    //       trying to keep it there across the body interacts badly
+    //       with the 3.11+ [NULL, callable, args] calling convention —
+    //       the stale bound method is interpreted as a method-call
+    //       receiver by CALL_FUNCTION on subsequent calls in the body.
+    //
+    // New strategy: keep only the *manager* on the stack across the
+    // body, and re-fetch __aexit__ freshly at success and handler
+    // paths.  This costs one extra method lookup per with-block but is
+    // robust under the 3.11+ calling convention and avoids the
+    // stack-juggling that produced the cross-talk.
+    //
+    // Bytecode layout for `async with mgr as v:`:
+    //   <context_expr>                            → [..., m]
+    //   DUP_TOP                                   → [..., m, m]
+    //   LOAD_ATTR __aenter__ pushNull=1           → [..., m, NULL, enter_bound]
+    //   CALL_FUNCTION 0                           → [..., m, awaitable]
+    //   GET_AWAITABLE / LOAD_CONST None / YIELD_FROM
+    //                                              → [..., m, enter_result]
+    //   SETUP_FINALLY <handler>
+    //   STORE target / POP_TOP                    → [..., m]
+    //   <body>                                    → [..., m]
+    //   POP_BLOCK
+    //   DUP_TOP                                   → [..., m, m]
+    //   LOAD_ATTR __aexit__ pushNull=1            → [..., m, NULL, exit_bound]
+    //   LOAD_CONST None x3                        → [..., m, NULL, exit_bound, None, None, None]
+    //   CALL_FUNCTION 3                           → [..., m, awaitable]
+    //   GET_AWAITABLE / LOAD_CONST None / YIELD_FROM / POP_TOP
+    //                                              → [..., m]
+    //   POP_TOP                                   → [...]
+    //   JUMP <after_handler>
+    // handler: stack is [..., m, exc]   (PB-round invariant: pushed by SETUP_FINALLY)
+    //   ROT_TWO                                   → [..., exc, m]
+    //   DUP_TOP                                   → [..., exc, m, m]
+    //   LOAD_ATTR __aexit__ pushNull=1            → [..., exc, m, NULL, exit_bound]
+    //   <load type, exc, None as args, then call>
+    //   POP_TOP / RAISE_VARARGS 0
+    // after_handler:
 
-    // 5. Store enter_res in target
+    int noneIdx = addConstant(PROTO_NONE);
+    int aenterIdx = addName("__aenter__");
+    int aexitIdx  = addName("__aexit__");
+    int classIdx  = addName("__class__");
+
+    if (!compileNode(item.context_expr.get())) return false;
+    // Stack: [..., m]
+
+    emit(OP_DUP_TOP);
+    // [..., m, m]
+
+    emit(OP_LOAD_ATTR, (aenterIdx << 1) | 1);
+    // [..., m, NULL, enter_bound]
+    emit(OP_CALL_FUNCTION, 0);
+    // [..., m, awaitable]
+    emit(OP_GET_AWAITABLE);
+    emit(OP_LOAD_CONST, noneIdx);
+    emit(OP_YIELD_FROM);
+    // [..., m, enter_result]
+
     if (item.optional_vars) {
         if (!compileTarget(item.optional_vars.get(), TargetCtx::Store)) return false;
     } else {
         emit(OP_POP_TOP);
     }
-    
-    // 6. Body
-    if (!compileNode(n->body.get())) return false;
-    
-    // 7. Success: POP_BLOCK and call exit(None, None, None)
-    emit(OP_POP_BLOCK);
-    
-    emit(OP_LOAD_CONST, addConstant(PROTO_NONE));
-    emit(OP_LOAD_CONST, addConstant(PROTO_NONE));
-    emit(OP_LOAD_CONST, addConstant(PROTO_NONE));
-    emit(OP_CALL_FUNCTION, 3);
-    emit(OP_GET_AWAITABLE);
-    emit(OP_LOAD_CONST, addConstant(PROTO_NONE));
-    emit(OP_YIELD_FROM);
-    emit(OP_POP_TOP);
-    
-    int endJumpSlot = bytecodeOffset();
-    emit(OP_JUMP_ABSOLUTE, 0);
+    // [..., m]
 
-    // 8. Handler: call exit(type, exc, None) and reraise
-    int handlerTarget = bytecodeOffset();
-    addPatch(setupFinallySlot + 1, handlerTarget);
-    
-    // [..., exit, exc]
-    emit(OP_DUP_TOP); // exc
-    emit(OP_LOAD_ATTR, addName("__class__")); // type
-    emit(OP_ROT_TWO); // [..., type, exc]
-    emit(OP_LOAD_CONST, addConstant(PROTO_NONE)); // [..., type, exc, None]
-    
-    // Stack is now [..., exit, type, exc, None]
+    // Register the cleanup handler AFTER STORE so the recorded
+    // stackDepth is 1-above-outer (just `m`), keeping the exception
+    // unwind stack predictable.  CPython's BEFORE_ASYNC_WITH /
+    // SETUP_ASYNC_WITH similarly bracket only the body, not __aenter__.
+    emit(OP_SETUP_FINALLY, 0);
+    int setupFinallyArg = bytecodeOffset() - 1;
+
+    if (!compileNode(n->body.get())) return false;
+    // [..., m]
+
+    emit(OP_POP_BLOCK);
+
+    // Success: call m.__aexit__(None, None, None) and await
+    emit(OP_DUP_TOP);
+    // [..., m, m]
+    emit(OP_LOAD_ATTR, (aexitIdx << 1) | 1);
+    // [..., m, NULL, exit_bound]
+    emit(OP_LOAD_CONST, noneIdx);
+    emit(OP_LOAD_CONST, noneIdx);
+    emit(OP_LOAD_CONST, noneIdx);
     emit(OP_CALL_FUNCTION, 3);
+    // [..., m, awaitable]
     emit(OP_GET_AWAITABLE);
-    emit(OP_LOAD_CONST, addConstant(PROTO_NONE));
+    emit(OP_LOAD_CONST, noneIdx);
     emit(OP_YIELD_FROM);
-    emit(OP_POP_TOP); // discard exit result
-    
-    // Reraise original exception (we need to have kept it)
-    // For now we just raise the last one or allow propagation if we didn't clear it.
-    // ExecutionEngine cleared it. So we need to raise it again.
-    emit(OP_RAISE_VARARGS, 1);
+    // [..., m, exit_result]
+    emit(OP_POP_TOP);
+    // [..., m]
+    emit(OP_POP_TOP);
+    // [...]
+
+    emit(OP_JUMP_ABSOLUTE, 0);
+    int endJumpArg = bytecodeOffset() - 1;
+
+    // Handler: protopy's exception unwinder pushes 3 items at handler
+    // entry (traceback, value, "type" — actually just exc again).  Our
+    // SETUP_FINALLY recorded stackDepth = 1 above outer (just `m`), so
+    // the handler entry stack is [..., m, tb, exc, exc].  Normalise
+    // down to [..., m, exc] before invoking the call sequence below.
+    int handlerTarget = bytecodeOffset();
+    addPatch(setupFinallyArg, handlerTarget);
+
+    // [..., m, tb, exc, exc]
+    emit(OP_POP_TOP);
+    // [..., m, tb, exc]
+    emit(OP_ROT_TWO);
+    // [..., m, exc, tb]
+    emit(OP_POP_TOP);
+    // [..., m, exc]
+
+    // Build args = (type(exc), exc, None) and leave it on top.
+    // Stack: [..., m, exc]
+    emit(OP_DUP_TOP);
+    // [..., m, exc, exc]
+    emit(OP_LOAD_ATTR, classIdx << 1);
+    // [..., m, exc, type]
+    emit(OP_ROT_TWO);
+    // [..., m, type, exc]
+    emit(OP_LOAD_CONST, noneIdx);
+    // [..., m, type, exc, None]
+    emit(OP_BUILD_TUPLE, 3);
+    // [..., m, args]
+
+    // Get bound exit method and assemble [NULL, exit_bound, args].
+    emit(OP_ROT_TWO);
+    // [..., args, m]
+    emit(OP_LOAD_ATTR, aexitIdx << 1);
+    // [..., args, exit_bound]
+    emit(OP_ROT_TWO);
+    // [..., exit_bound, args]
+    emit(OP_PUSH_NULL);
+    // [..., exit_bound, args, NULL]
+    emit(OP_ROT_THREE);
+    // [..., NULL, exit_bound, args]   (ROT_THREE: top NULL → bottom;
+    //  middle exit_bound rotates up; orig 2nd args ends on top)
+    emit(OP_CALL_FUNCTION_EX, 0);
+    // [..., result]
+    emit(OP_GET_AWAITABLE);
+    emit(OP_LOAD_CONST, noneIdx);
+    emit(OP_YIELD_FROM);
+    // [..., aexit_result]
+
+    // If aexit_result is truthy, suppress (jump to after_handler);
+    // otherwise re-raise the pending exception via RAISE_VARARGS 0.
+    emit(OP_POP_JUMP_IF_TRUE, 0);
+    int suppressJumpArg = bytecodeOffset() - 1;
+    emit(OP_RAISE_VARARGS, 0);
+
+    int suppressTarget = bytecodeOffset();
+    addPatch(suppressJumpArg, suppressTarget);
 
     int endTarget = bytecodeOffset();
-    addPatch(endJumpSlot + 1, endTarget);
+    addPatch(endJumpArg, endTarget);
 
     return true;
 }

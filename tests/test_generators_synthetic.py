@@ -488,12 +488,12 @@ class _SyntheticAIter:
 
 @_run
 def test_async_for_over_class_aiter():
-    # PE landed async-for over async generators.  Class-defined
-    # __aiter__/__anext__ requires the GET_AITER runtime bridge that
-    # copies __anext__ → __next__ on the iterator instance to fire
-    # correctly (PD3 bridge is in place but not yet driving FOR_ITER
-    # for class iterators).  Deferred to PF.
-    raise AssertionError("disabled: class-aiter bridge incomplete; PF fix pending")
+    async def consume():
+        total = 0
+        async for x in _SyntheticAIter(3):
+            total += x
+        return total
+    assert run(consume()) == 6
 
 
 class _SyntheticMgr:
@@ -509,10 +509,13 @@ class _SyntheticMgr:
 
 @_run
 def test_async_with_enter_exit_called():
-    # async-with lowering needs an analogous fix to PD3-PE: today the
-    # SETUP_ASYNC_WITH path drives __aenter__ via GET_AWAITABLE/YIELD_FROM
-    # and the resumption protocol hangs at max_steps.  Deferred to PF.
-    raise AssertionError("disabled: async-with lowering hangs; PF fix pending")
+    log = []
+    async def consume():
+        async with _SyntheticMgr(log) as v:
+            log.append(("body", v))
+        return log
+    result = run(consume())
+    assert result == ["enter", ("body", "value"), ("exit", None)], result
 
 
 class _SyntheticMgrPropagating:
@@ -527,7 +530,15 @@ class _SyntheticMgrPropagating:
 
 @_run
 def test_async_with_exception_seen_by_aexit():
-    raise AssertionError("disabled: async-with lowering hangs; PF fix pending")
+    log = []
+    async def consume():
+        try:
+            async with _SyntheticMgrPropagating(log):
+                raise ValueError("boom")
+        except ValueError:
+            pass
+        return log
+    assert run(consume()) == ["ValueError"]
 
 
 class _SyntheticMgrSuppressing:
@@ -539,7 +550,16 @@ class _SyntheticMgrSuppressing:
 
 @_run
 def test_async_with_suppression():
-    raise AssertionError("disabled: async-with lowering hangs; PF fix pending")
+    async def consume():
+        suppressed = False
+        try:
+            async with _SyntheticMgrSuppressing():
+                raise ValueError("inner")
+            suppressed = True  # __aexit__ returned True → exception swallowed
+        except ValueError:
+            pass
+        return suppressed
+    assert run(consume()) is True
 
 
 # --- Async generator methods: asend / athrow / aclose --------------------
