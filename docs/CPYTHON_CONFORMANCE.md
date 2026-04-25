@@ -86,6 +86,63 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 
 **Key V110 milestone**: All essential tests now run to completion without crashing. Individual test failures reflect unimplemented language features (metaclass protocol, descriptors, C-extension stubs), not interpreter instability.
 
+### V154.2 Changes (2026-04-25) — F0.5a: persistent vector<ProtoObject*> members migrated to ProtoList
+
+Phase F0.5a applies the user directive "no `std::vector` as
+members; use protoCore structures" to the four high-priority
+members across protoPython source: those that hold `proto::Proto*`
+elements directly.
+
+**F0.5a-1 — Compiler::constantsVec_** (`f7ca7a0c`)
+`std::vector<const proto::ProtoObject*>` → `const proto::ProtoList*`.
+6× `appendLast`, 3× `getAt`, 6× `getSize`, 1× `newTupleFromList`
+at end-of-compilation conversion.
+
+**F0.5a-2 — Compiler::namesVec_** (`485b5593`)
+Same pattern, smaller surface (1× `appendLast`, 1× `getSize`,
+1× `newTupleFromList`).
+
+**F0.5a-3 — Compiler::bytecodeVec_** (`78638500`)
+The hottest member: it receives every emitted bytecode instruction
+plus end-of-compile backpatching for forward jumps.  Migrates
+2× `appendLast`, 3× `getSize`, **1× `setAt` for backpatching**
+(applyPatches), 1× `newTupleFromList`.  Bytecode-stress smoke
+(if/while/for/try/break/continue/raise + bignum constants) all
+pass.
+
+**F0.5a-4 — PythonEnvironment::kwNamesStack** (`068a4941`)
+`std::vector<const proto::ProtoTuple*>` →
+`const proto::ProtoList*`.  Uses the stack pattern: `appendLast`
+(push) and `removeLast` (pop), with `getLast(ctx)->asTuple(ctx)`
+to recover the tuple element type on read.  kwarg-stack smoke
+(simple + nested keyword-argument calls) all pass.
+
+**Performance characteristic**: ProtoList is immutable;
+`appendLast`/`setAt` are O(log n).  emit() goes from amortized
+O(1) per push to O(log n) per push.  Acceptable for typical
+compile sizes (hundreds to low thousands of bytecode instructions
+per module).
+
+**Verification**:
+- protoCore tests: 100% (136/136).
+- protoPython synthetic suite: 37/0/0 (no regression after each
+  of the 4 commits).
+- Custom suites (test_decorator, test_abc, test_contextlib): all
+  pass.
+- Bytecode-stress and kwarg-stack inline smokes: all assertions
+  pass.
+
+**Out of scope (deferred to F0.5b)**: the 13 🟠 members holding
+strings/ints/bytes (Tokenizer::indentStack_, Compiler::patches_/
+loopStack_/blockEnvStack_/lnotabVec_, HPyContext::handles/freeList,
+*ModuleProvider::basePaths_, CppGenerator::orderedLocalVars_,
+PythonEnvironment::argv_/replHistory_).
+
+**AST `std::vector` members** (~30+ in Parser.h ASTNode types) are
+out of scope per user decision: they hold pure C++ data
+(`unique_ptr<ASTNode>`, `std::string`), not `proto::Proto*`, and
+migrating them would require restructuring the AST itself.
+
 ### V154.1 Changes (2026-04-25) — F0-fix-bootstrap: py_dict_update guards against missing __keys__
 
 A follow-up fix to V154.  The bootstrap segfault during `import unittest`
