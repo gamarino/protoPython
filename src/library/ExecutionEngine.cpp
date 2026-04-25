@@ -2640,15 +2640,8 @@ const proto::ProtoObject* executeBytecodeRange(
 
             if (env && env->hasPendingException()) {
                 const proto::ProtoObject* exc = env->peekPendingException();
-                if (get_env_diag()) {
-                }
                 if (env->isStopIteration(ctx, exc)) {
                     const proto::ProtoObject* stopVal = env->getStopIterationValue(ctx, exc);
-                    if (get_env_diag()) {
-                        // StopIteration diagnostic removed
-                    }
-                    if (get_env_diag()) {
-                    }
                     env->clearPendingException();
                     stack.pop_back(); // Remove subIter
                     stack.push_back(stopVal);
@@ -2656,6 +2649,15 @@ const proto::ProtoObject* executeBytecodeRange(
                 } else {
                     continue;
                 }
+            } else if (result == nullptr) {
+                // PB7: many native iterators (list_iterator, dict_keys,
+                // tuple_iterator, ...) signal exhaustion by returning
+                // nullptr instead of raising StopIteration.  Treat
+                // null-without-exception as silent end-of-iteration:
+                // pop subIter, push None as the StopIteration value,
+                // fall through to next_i.
+                stack.pop_back();
+                stack.push_back(PROTO_NONE);
             } else {
                 // Yielded.  Pause at THIS opcode so the next .send()
                 // pushes a fresh sendVal and re-runs YIELD_FROM to
