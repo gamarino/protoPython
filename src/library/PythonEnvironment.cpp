@@ -13194,6 +13194,50 @@ const proto::ProtoObject* PythonEnvironment::compareObjects(proto::ProtoContext*
         a->asString(ctx)->toUTF8String(ctx, s1);
         b->asString(ctx)->toUTF8String(ctx, s2);
         c = s1.compare(s2);
+    } else if (a->asTuple(ctx) && b->asTuple(ctx)) {
+        // Lexicographic tuple comparison.  ProtoObject::compare falls through
+        // to a pointer compare for tuples, which is inconsistent with Python
+        // semantics ((1,2) < (1,2,3) must return True regardless of allocation
+        // order).  Compare element-wise via compareObjects (recursive — bounded
+        // by tuple nesting depth, since string/number leaves take the
+        // non-tuple branches).  When one tuple is a prefix of the other, the
+        // shorter tuple is smaller.
+        const proto::ProtoTuple* ta = a->asTuple(ctx);
+        const proto::ProtoTuple* tb = b->asTuple(ctx);
+        unsigned long sa = ta->getSize(ctx);
+        unsigned long sb = tb->getSize(ctx);
+        unsigned long minlen = sa < sb ? sa : sb;
+        c = 0;
+        for (unsigned long i = 0; i < minlen; ++i) {
+            const proto::ProtoObject* ea = ta->getAt(ctx, static_cast<int>(i));
+            const proto::ProtoObject* eb = tb->getAt(ctx, static_cast<int>(i));
+            if (compareObjects(ctx, ea, eb, 0) == PROTO_TRUE) continue;
+            c = (compareObjects(ctx, ea, eb, 2) == PROTO_TRUE) ? -1 : 1;
+            break;
+        }
+        if (c == 0) {
+            c = (sa < sb) ? -1 : (sa > sb) ? 1 : 0;
+        }
+    } else if (a->asList(ctx) && b->asList(ctx)) {
+        // Same lexicographic semantics as tuples for the rare case where two
+        // raw ProtoList objects reach this path (most list compares route
+        // through __eq__/__lt__ on the list class first).
+        const proto::ProtoList* la = a->asList(ctx);
+        const proto::ProtoList* lb = b->asList(ctx);
+        unsigned long sa = la->getSize(ctx);
+        unsigned long sb = lb->getSize(ctx);
+        unsigned long minlen = sa < sb ? sa : sb;
+        c = 0;
+        for (unsigned long i = 0; i < minlen; ++i) {
+            const proto::ProtoObject* ea = la->getAt(ctx, static_cast<int>(i));
+            const proto::ProtoObject* eb = lb->getAt(ctx, static_cast<int>(i));
+            if (compareObjects(ctx, ea, eb, 0) == PROTO_TRUE) continue;
+            c = (compareObjects(ctx, ea, eb, 2) == PROTO_TRUE) ? -1 : 1;
+            break;
+        }
+        if (c == 0) {
+            c = (sa < sb) ? -1 : (sa > sb) ? 1 : 0;
+        }
     } else {
         c = a->compare(ctx, b);
     }
