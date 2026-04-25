@@ -1118,6 +1118,17 @@ bool Compiler::compileYield(YieldNode* n) {
     if (!isFunctionScope_ || isClassBody_) {
         return false;
     }
+    // PC2 (PEP 525): `yield from` is forbidden inside `async def`.
+    // (Plain `yield` IS allowed — that's what makes the function an
+    // async generator.)
+    if (n->isFrom && isAsyncFunction_) {
+        if (auto* env = PythonEnvironment::getCurrentEnvironment()) {
+            env->raiseSyntaxError(ctx_,
+                "'yield from' is not allowed in an async function",
+                n->line, 0, std::string());
+        }
+        return false;
+    }
     isGenerator_ = true;
     if (n->value) {
         if (!compileNode(n->value.get())) return false;
@@ -3184,6 +3195,7 @@ bool Compiler::compileAsyncFunctionDef(AsyncFunctionDefNode* n) {
     bodyCompiler.nonlocalNames_ = bodyNonlocals;
     bodyCompiler.localSlotMap_ = slotMap;
     bodyCompiler.isFunctionScope_ = true;
+    bodyCompiler.isAsyncFunction_ = true;  // PC2
     if (!bodyCompiler.compileNode(n->body.get())) return false;
 
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx_);

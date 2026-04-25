@@ -128,6 +128,7 @@ private:
     bool isGenerator_ = false;
     bool isClassBody_ = false;
     bool isFunctionScope_ = false;
+    bool isAsyncFunction_ = false;  // PC2: tracking for yield-from check (PEP 525)
     bool forceMapped_ = false;
     /** The name of the immediately enclosing class, propagated to method compilers
      *  so that zero-argument super() can be rewritten to super(ClassName, self). */
