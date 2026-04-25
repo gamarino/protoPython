@@ -399,6 +399,185 @@ def test_async_generator_is_distinct_from_sync():
     assert not hasattr(s, "__aiter__"), "sync generator must NOT expose __aiter__"
 
 
+# --- PC-round: async for / async with / async generator methods --------
+#
+# These exercise the full async iteration contract.  All driven by a
+# tiny synchronous "event loop" (`run`) that pumps a coroutine via
+# .send(None) until StopIteration.
+
+
+def run(coro, max_steps=10000):
+    """Drive a coroutine to completion; return its return value.
+
+    `max_steps` guards against bugs in async iteration that would
+    otherwise hang the whole suite — an individual test failing this
+    way is recorded as CRASH("max_steps exceeded") instead.
+    """
+    try:
+        for _ in range(max_steps):
+            coro.send(None)
+        raise RuntimeError("max_steps exceeded — likely infinite async loop")
+    except StopIteration as e:
+        return e.value
+
+
+# NOTE: tests below currently hang the runtime in an unbreakable C++
+# loop when `async for` drives a built-in async generator.  Body kept
+# as plain `def` skeletons (decorated to FAIL with a known message)
+# so the suite still runs to completion.  To re-enable, change `def`
+# to `async def`, restore the @_run decorator above each, and add the
+# corresponding `async for / await` body.
+
+@_run
+def test_async_for_basic():
+    raise AssertionError("disabled: async-for-over-async-gen hangs runtime; PC fix pending")
+
+
+@_run
+def test_async_for_break():
+    raise AssertionError("disabled: async-for hangs runtime; PC fix pending")
+
+
+@_run
+def test_async_for_else():
+    raise AssertionError("disabled: async-for hangs runtime; PC fix pending")
+
+
+class _SyntheticAIter:
+    def __init__(self, n):
+        self.i = 0
+        self.n = n
+    def __aiter__(self):
+        return self
+    async def __anext__(self):
+        if self.i >= self.n:
+            raise StopAsyncIteration
+        self.i += 1
+        return self.i
+
+
+@_run
+def test_async_for_over_class_aiter():
+    raise AssertionError("disabled: async-for hangs runtime; PC fix pending")
+
+
+class _SyntheticMgr:
+    def __init__(self, log):
+        self.log = log
+    async def __aenter__(self):
+        self.log.append("enter")
+        return "value"
+    async def __aexit__(self, exc_type, exc, tb):
+        self.log.append(("exit", exc_type.__name__ if exc_type else None))
+        return False
+
+
+@_run
+def test_async_with_enter_exit_called():
+    raise AssertionError("disabled: async-with hangs runtime; PC fix pending")
+
+
+class _SyntheticMgrPropagating:
+    def __init__(self, log):
+        self.log = log
+    async def __aenter__(self):
+        return None
+    async def __aexit__(self, exc_type, exc, tb):
+        self.log.append(exc_type.__name__ if exc_type else None)
+        return False
+
+
+@_run
+def test_async_with_exception_seen_by_aexit():
+    raise AssertionError("disabled: async-with hangs runtime; PC fix pending")
+
+
+class _SyntheticMgrSuppressing:
+    async def __aenter__(self):
+        return None
+    async def __aexit__(self, exc_type, exc, tb):
+        return True  # suppress
+
+
+@_run
+def test_async_with_suppression():
+    raise AssertionError("disabled: async-with hangs runtime; PC fix pending")
+
+
+# --- Async generator methods: asend / athrow / aclose --------------------
+
+
+@_run
+def test_async_generator_has_asend():
+    async def agen():
+        yield 1
+    a = agen()
+    assert hasattr(a, "asend"), "async_generator must expose asend"
+
+
+@_run
+def test_async_generator_has_athrow_aclose():
+    async def agen():
+        yield 1
+    a = agen()
+    assert hasattr(a, "athrow"), "async_generator must expose athrow"
+    assert hasattr(a, "aclose"), "async_generator must expose aclose"
+
+
+@_run
+def test_asend_drives_one_step():
+    """agen.asend(v) returns a coroutine that, when run, advances agen."""
+    async def agen():
+        x = yield 1
+        yield x + 1
+    a = agen()
+    first = run(a.asend(None))     # gets the 1
+    assert first == 1
+    second = run(a.asend(10))      # x = 10; yields 11
+    assert second == 11
+
+
+# --- await chain --------------------------------------------------------
+
+
+@_run
+def test_await_returns_value():
+    """`x = await coro()` binds the awaited coroutine's return value."""
+    async def inner():
+        return 42
+    async def outer():
+        x = await inner()
+        return x + 1
+    assert run(outer()) == 43
+
+
+@_run
+def test_await_chain_three_levels():
+    async def a():
+        return 1
+    async def b():
+        x = await a()
+        return x + 10
+    async def c():
+        y = await b()
+        return y + 100
+    assert run(c()) == 111
+
+
+# --- yield from inside async def is forbidden (PEP 525) -----------------
+
+
+@_run
+def test_yield_from_inside_async_def_is_syntax_error():
+    src = "async def f():\n    yield from [1, 2]\n"
+    raised = False
+    try:
+        compile(src, "<test>", "exec")
+    except SyntaxError:
+        raised = True
+    assert raised, "yield from inside async def must be SyntaxError"
+
+
 # --- Reporting ----------------------------------------------------------
 
 
