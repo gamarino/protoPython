@@ -86,6 +86,69 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 
 **Key V110 milestone**: All essential tests now run to completion without crashing. Individual test failures reflect unimplemented language features (metaclass protocol, descriptors, C-extension stubs), not interpreter instability.
 
+### V144 Changes (2026-04-24) — Synthetic generator/coroutine baseline
+
+A pre-flight checkpoint before tackling the generators-and-async clean-up.
+Adds `tests/test_generators_synthetic.py`, a 24-case CPython-free suite
+covering each concrete pause/resume semantic in one place, with per-test
+status (PASS/FAIL/CRASH) so any future change to the execution engine's
+generator path can be measured against a stable baseline.
+
+Why this exists: an earlier attempt to fix `OP_YIELD_FROM` (the
+`yield from` no-second-element bug) and `generator.throw(type, value)`
+landed correctly in isolation but introduced a non-obvious cascade
+through `unittest`'s exception reporting in `test_grammar.py`.  Without
+a synthetic baseline that *separates* the generator semantics from the
+unittest infrastructure, attribution is guesswork.
+
+Baseline at V144 (this commit, before any new fixes):
+
+  PASS  = 11 / 24
+  FAIL  = 11 / 24
+  CRASH =  2 / 24
+
+Passing today (baseline of correct behavior to preserve):
+
+  - test_basic_yield, test_next_call, test_send_value
+  - test_close_raises_generator_exit
+  - test_close_swallowing_exit_is_silent
+  - test_throw_caught (instance form)
+  - test_throw_propagates
+  - test_iter_after_close_raises_stopiteration
+  - test_iter_after_exhaustion_raises_stopiteration
+  - test_finally_runs_on_exhaustion
+  - test_async_def_returns_object
+
+Failing today (the explicit work-list for the next round):
+
+  - test_send_to_just_started_must_be_none — accepts non-None send
+  - test_yield_from_basic — only emits the first inner value
+  - test_yield_from_returns_value — StopIteration value not threaded
+  - test_yield_from_send_threaded — CRASH propagating sendVal
+  - test_yield_from_iterator — non-generator iterators
+  - test_yield_from_nested
+  - test_return_value_in_generator — `e.value` shape wrong
+  - test_close_yields_after_exit_is_runtime_error
+  - test_throw_inside_yield_from — CRASH
+  - test_finally_runs_on_close — `finally` skipped on close()
+  - test_async_def_send_returns_value_via_stopiteration
+  - test_async_iter_protocol
+  - test_async_generator_is_distinct_from_sync — no `__aiter__`
+
+How to use: run `./build/src/runtime/protopy tests/test_generators_synthetic.py`
+and diff the per-test status column.  Exit is 0 on full PASS, 1
+otherwise.  Each test is independent; one crash does not stop the suite
+(the runner traps BaseException per case).
+
+Note on `throw(type, value)`: the legacy 2-arg form crashes
+irrecoverably (escapes the runtime without setting a pending
+exception).  Tests using throw use only the instance form
+(`throw(ValueError("msg"))`); the 2-arg form is a known gap.
+
+This commit is *only* the baseline — no execution-engine changes.
+Future PA-round attempts must (1) keep all current PASSes passing and
+(2) move FAIL/CRASH cells to PASS, before touching the CPython suite.
+
 ### V143 Changes (2026-04-24) — AA-round: bytes API completion + str escapes
 
 Z-round migrated bytes readers; AA-round adds the missing methods,
