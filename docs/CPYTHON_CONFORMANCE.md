@@ -14,7 +14,7 @@ This document tracks the progress of `protoPython` in passing the official CPyth
 
 Core syntax, standard object model, and fundamental types.
 
-- [ ] `test_grammar.py`: **PARTIAL** — 52/75 pass, 13 fail, 10 err, 0 crash (V154.6, 2026-04-25, dict.copy + genexp + yield + print parser fixes)
+- [ ] `test_grammar.py`: **PARTIAL** — 53/75 pass, 12 fail, 10 err, 0 crash (V154.7, 2026-04-25, bool MRO partial + parent walk fallback)
 - [ ] `test_types.py`: **PARTIAL** — 6/131 pass, runs to completion; legible failures (V124, 2026-04-24)
 - [ ] `test_descr.py`: **TIMEOUT** — runs >5 min; `type()` descriptor tests expose slow paths
 - [ ] `test_generators.py`: **PARTIAL** — 0/1 pass (doctest runner fails); import chain runs
@@ -85,6 +85,64 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 **Conformity Suite (internal, 2026-04-15)**: 7/9 tests pass. Failures are pre-existing: `int(float)` conversion and `set(iterable)` constructor.
 
 **Key V110 milestone**: All essential tests now run to completion without crashing. Individual test failures reflect unimplemented language features (metaclass protocol, descriptors, C-extension stubs), not interpreter instability.
+
+### V154.7 Changes (2026-04-25) — bool MRO partial: 52 → 53 PASS
+
+A targeted attempt at fixing the bool/int hierarchy.  Three
+related changes landed; one test passed (likely an indirect
+benefit), but the central goal — making `issubclass(bool, int)`
+return True and `False == 0` evaluate to True at the Python
+level — remains blocked by an attribute-persistence quirk
+deeper in the prototype model.
+
+**F2-bool-mro (`86720659`)**:
+- `py_type_get_mro` fallback now walks the parent chain in
+  reverse insertion order to flatten the inheritance graph,
+  appending `object` last as universal root.
+- Moved `space_->booleanPrototype = ...` AFTER setting bool's
+  `__mro__` and `__bases__` (was happening before, dropping the
+  updates).
+- Switched the own-attribute lookup from
+  `getOwnAttributes()->getAt((unsigned long)mroStr)` (broken
+  pointer-as-hash cast) to `getOwnAttributeDirect`.
+
+**Status of the core question**: `bool.__mro__` at the Python
+level still returns `(bool, object)` and `issubclass(bool, int)`
+returns False, even though the bool prototype IS linked to
+intPrototype through addParent at init time.  Diagnostic
+fprintf at init confirms `boolPrototype->getOwnAttributeDirect
+(__mro__)` returns the correct 3-tuple immediately after
+setAttribute, but the same lookup at runtime returns a
+2-tuple.  This implies an attribute-persistence quirk involving
+the OP_LOAD_ATTR fast path or descriptor protocol that bypasses
+the freshly-stored own attr.  Diagnosing it fully is beyond
+the scope of this round.
+
+`isinstance(True, int)` does work correctly (it walks the
+parent chain at runtime), so half the bool/int relationship is
+sound.  The other half (issubclass and equality) needs a
+follow-up round focused on the prototype attribute lifecycle.
+
+**Verification**:
+- Synthetic suite: 37/0/0 (no regression).
+- Custom suites (test_decorator, test_abc, test_contextlib): all pass.
+- test_grammar.py: 52/75 → 53/75 PASS.
+
+**Remaining 22 failures** by category (largely unchanged from V154.6):
+- bool/int hierarchy gap (1+): `False == 0`, `[2 < x …] == [0,1,0]`.
+- kwargs unpacking (1): test_funcdef.
+- Annotations / PEP 649 (5): all `test_var_annot_*`.
+- SyntaxWarning extras (2): `test_end_of_numerical_literals`,
+  `test_warn_missed_comma`.
+- Async (2): `test_async_with`, deeper `test_async_await`.
+- Comprehensions (2): `test_comprehension_specials`,
+  `test_control_flow_in_finally`.
+- Yield in annotations / comprehensions (2): residual sub-cases
+  of `test_yield`, `test_yield_in_comprehensions`.
+- pprint diff residual (2): `test_funcdef`, `test_lambdef` —
+  underlying bool/int and kwargs bugs.
+- Misc (1): test_selectors regression (latent dict-iteration
+  + memory layout sensitivity).
 
 ### V154.6 Changes (2026-04-25) — dict.copy + genexp + yield + print parser fixes: 45 → 52 PASS
 
