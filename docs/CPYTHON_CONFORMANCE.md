@@ -86,6 +86,73 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 
 **Key V110 milestone**: All essential tests now run to completion without crashing. Individual test failures reflect unimplemented language features (metaclass protocol, descriptors, C-extension stubs), not interpreter instability.
 
+### V148 Changes (2026-04-24) — PD2/PD3/PD4: foundation for async-for, deeper bug exposed
+
+The PD-round set out to unblock the 7 disabled async-for/with tests.
+Three correct-in-isolation fixes landed (PD2/PD3/PD4) and the synthetic
+baseline (29/7/1) was preserved.  However, an underlying bug in
+coroutine resumption + function-call calling convention prevents the
+disabled tests from being re-enabled.  This bug is now isolated and
+documented for the next round (PE).
+
+**PD2 — `__anext__` on `async_generator` prototype**
+The `async_generator` prototype now exposes `__anext__` (delegating to
+the inherited `__next__` and converting `StopIteration` →
+`StopAsyncIteration`).  Without this, `hasattr(asyncgen, '__anext__')`
+returned False, breaking the canonical async-iter protocol shape.
+
+**PD3 — simplify `compileAsyncFor` to FOR_ITER protocol**
+The previous lowering of `async for` used `SETUP_FINALLY +
+GET_ANEXT + GET_AWAITABLE + YIELD_FROM` plus a `RERAISE`-based
+StopAsyncIteration handler.  The handler hit a stub `RERAISE` opcode
+and looped forever (the source of the 35→36 capacity creep observed
+in PD1).  The new lowering mirrors `compileFor`: `GET_AITER → FOR_ITER
+→ STORE → body → JUMP → afterLoop`.  Async generators inherit
+`__next__` from the generator prototype, so FOR_ITER drives them
+directly.  For class-defined async iterators (only `__anext__` is
+defined), `OP_GET_AITER` bridges by setting an instance-level
+`__next__` attribute that points at `__anext__` (using the immutable
+`setAttribute` return value).
+
+**PD4 — `AsyncForNode` participates in locals collection**
+The locals/globals/nonlocals/captured-name collection helpers in
+`Compiler.cpp` matched `dynamic_cast<ForNode*>` at 8 sites but had no
+parallel `AsyncForNode*` case.  The async-for loop target therefore
+never registered as a local, surfacing as `NameError: name 'x' is not
+defined` once PD3 stopped crashing.  All 8 sites now have parallel
+AsyncForNode handling.
+
+**The deeper bug exposed (PE-round target)**
+A minimal repro suffices:
+```python
+async def consume():
+    return print("hi")  # any function call
+def run(coro):
+    try:
+        coro.send(None)
+    except StopIteration as e:
+        return e.value
+run(consume())
+# TypeError: 'NoneType' object is not callable
+```
+Calling any function inside an `async def` body, after the coroutine
+is resumed via `coro.send(None)`, fails because something on the stack
+at resume-time is interpreted as a callable.  The same code without
+function calls (`return x + 99` only) works.  This affects the 7
+disabled tests because every one of them uses `print` / `append` /
+similar.  The bug is in coroutine-frame resumption interacting with
+the 3.11+ `[NULL, callable, arg]` calling convention — likely the
+resumed frame is missing a stack-prep step that `BUILD_FUNCTION` /
+`PUSH_NULL` would normally provide for direct calls.
+
+| State | PASS | FAIL | CRASH | Note |
+| :---  | ---: | ---: | ---:  | :--- |
+| Before PD2-4 | 29 | 7 | 1 | NameError on async-for targets, RERAISE-stub hangs |
+| After PD2-4  | 29 | 7 | 1 | Foundation correct; coroutine-resume call bug exposed for PE |
+
+The 7 placeholders remain stubbed (their assertion message is updated
+to reference PE).  No regression elsewhere.
+
 ### V147 Changes (2026-04-24) — PD1: stackEffect fix for OP_GET_ANEXT
 
 Marginal improvement on the GCStack overflow that blocks async-for

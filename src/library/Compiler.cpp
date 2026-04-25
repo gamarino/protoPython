@@ -1989,6 +1989,7 @@ bool Compiler::compileAugAssign(AugAssignNode* n) {
 bool Compiler::statementLeavesValue(ASTNode* node) {
     if (!node) return false;
     if (dynamic_cast<AssignNode*>(node) || dynamic_cast<AugAssignNode*>(node) || dynamic_cast<ForNode*>(node) ||
+        dynamic_cast<AsyncForNode*>(node) ||
         dynamic_cast<IfNode*>(node) || dynamic_cast<FunctionDefNode*>(node) ||
         dynamic_cast<ClassDefNode*>(node) || dynamic_cast<WhileNode*>(node) ||
         dynamic_cast<ImportNode*>(node) || dynamic_cast<GlobalNode*>(node) ||
@@ -2018,6 +2019,13 @@ static void collectNonlocalsFromNode(ASTNode* node, std::unordered_set<std::stri
         collectNonlocalsFromNode(f->target.get(), out);
         collectNonlocalsFromNode(f->iter.get(), out);
         collectNonlocalsFromNode(f->body.get(), out);
+        return;
+    }
+    if (auto* af = dynamic_cast<AsyncForNode*>(node)) {
+        collectNonlocalsFromNode(af->target.get(), out);
+        collectNonlocalsFromNode(af->iter.get(), out);
+        collectNonlocalsFromNode(af->body.get(), out);
+        if (af->orelse) collectNonlocalsFromNode(af->orelse.get(), out);
         return;
     }
     if (auto* iff = dynamic_cast<IfNode*>(node)) {
@@ -2063,6 +2071,13 @@ static void collectGlobalsFromNode(ASTNode* node, std::unordered_set<std::string
         collectGlobalsFromNode(f->target.get(), globalsOut);
         collectGlobalsFromNode(f->iter.get(), globalsOut);
         collectGlobalsFromNode(f->body.get(), globalsOut);
+        return;
+    }
+    if (auto* af = dynamic_cast<AsyncForNode*>(node)) {
+        collectGlobalsFromNode(af->target.get(), globalsOut);
+        collectGlobalsFromNode(af->iter.get(), globalsOut);
+        collectGlobalsFromNode(af->body.get(), globalsOut);
+        if (af->orelse) collectGlobalsFromNode(af->orelse.get(), globalsOut);
         return;
     }
     if (auto* iff = dynamic_cast<IfNode*>(node)) {
@@ -2192,6 +2207,13 @@ static void collectUsedNames(ASTNode* node, std::unordered_set<std::string>& out
         collectUsedNames(f->target.get(), out);
         collectUsedNames(f->iter.get(), out);
         collectUsedNames(f->body.get(), out);
+        return;
+    }
+    if (auto* af = dynamic_cast<AsyncForNode*>(node)) {
+        collectUsedNames(af->target.get(), out);
+        collectUsedNames(af->iter.get(), out);
+        collectUsedNames(af->body.get(), out);
+        if (af->orelse) collectUsedNames(af->orelse.get(), out);
         return;
     }
     if (auto* iff = dynamic_cast<IfNode*>(node)) {
@@ -2414,6 +2436,12 @@ static void collectDefinedNames(ASTNode* node, std::unordered_set<std::string>& 
         collectDefinedNames(f->body.get(), out);
         return;
     }
+    if (auto* af = dynamic_cast<AsyncForNode*>(node)) {
+        collectDefinedNames(af->target.get(), out);
+        collectDefinedNames(af->body.get(), out);
+        if (af->orelse) collectDefinedNames(af->orelse.get(), out);
+        return;
+    }
     if (auto* iff = dynamic_cast<IfNode*>(node)) {
         collectDefinedNames(iff->body.get(), out);
         if (iff->orelse) collectDefinedNames(iff->orelse.get(), out);
@@ -2511,6 +2539,12 @@ static std::string getDynamicLocalsReason(ASTNode* node) {
     if (auto* f = dynamic_cast<ForNode*>(node)) {
         return getDynamicLocalsReason(f->body.get());
     }
+    if (auto* af = dynamic_cast<AsyncForNode*>(node)) {
+        std::string r = getDynamicLocalsReason(af->body.get());
+        if (!r.empty()) return r;
+        if (af->orelse) return getDynamicLocalsReason(af->orelse.get());
+        return "";
+    }
     return "";
 }
 
@@ -2584,6 +2618,11 @@ static void collectCapturedNamesImpl(ASTNode* node, const std::unordered_set<std
         if (iff->orelse) collectCapturedNamesImpl(iff->orelse.get(), globalsInScope, capturedOut, depth);
     } else if (auto* f = dynamic_cast<ForNode*>(node)) {
         collectCapturedNamesImpl(f->body.get(), globalsInScope, capturedOut, depth);
+    } else if (auto* af = dynamic_cast<AsyncForNode*>(node)) {
+        collectCapturedNamesImpl(af->iter.get(), globalsInScope, capturedOut, depth);
+        collectCapturedNamesImpl(af->target.get(), globalsInScope, capturedOut, depth);
+        collectCapturedNamesImpl(af->body.get(), globalsInScope, capturedOut, depth);
+        if (af->orelse) collectCapturedNamesImpl(af->orelse.get(), globalsInScope, capturedOut, depth);
     } else if (auto* w = dynamic_cast<WhileNode*>(node)) {
         collectCapturedNamesImpl(w->body.get(), globalsInScope, capturedOut, depth);
     } else if (auto* t = dynamic_cast<TryNode*>(node)) {
@@ -2753,6 +2792,11 @@ static void collectCapturedNamesImpl(ASTNode* node, const std::unordered_set<std
         collectCapturedNamesImpl(fr->iter.get(), globalsInScope, capturedOut, depth);
         collectCapturedNamesImpl(fr->target.get(), globalsInScope, capturedOut, depth);
         collectCapturedNamesImpl(fr->body.get(), globalsInScope, capturedOut, depth);
+    } else if (auto* afr = dynamic_cast<AsyncForNode*>(node)) {
+        collectCapturedNamesImpl(afr->iter.get(), globalsInScope, capturedOut, depth);
+        collectCapturedNamesImpl(afr->target.get(), globalsInScope, capturedOut, depth);
+        collectCapturedNamesImpl(afr->body.get(), globalsInScope, capturedOut, depth);
+        if (afr->orelse) collectCapturedNamesImpl(afr->orelse.get(), globalsInScope, capturedOut, depth);
     } else if (auto* tr = dynamic_cast<TryNode*>(node)) {
         collectCapturedNamesImpl(tr->body.get(), globalsInScope, capturedOut, depth);
         for (auto& h : tr->handlers) {
@@ -3282,70 +3326,50 @@ bool Compiler::compileAwait(AwaitNode* n) {
 
 bool Compiler::compileAsyncFor(AsyncForNode* n) {
     if (!n) return false;
-    
-    // 1. iter = GET_AITER(n->iter)
+
+    // PD3: lower `async for` to the sync FOR_ITER protocol.  The
+    // async-iterator's __anext__ (PD2) returns the yielded value
+    // synchronously and converts exhaustion to StopAsyncIteration.
+    // We expose that same method as the iterator's __next__ at
+    // runtime via the GET_AITER opcode (PD3-runtime), so the
+    // existing FOR_ITER opcode just works.
+    //
+    // Bytecode emitted (mirrors compileFor):
+    //   <iter expr>
+    //   GET_AITER
+    //   loopStart:
+    //     FOR_ITER <jumpToEnd>
+    //     STORE target
+    //     <body>
+    //     JUMP loopStart
+    //   afterLoop:
+    //     <orelse>
+
     if (!compileNode(n->iter.get())) return false;
     emit(OP_GET_AITER);
 
     int loopStart = bytecodeOffset();
     loopStack_.push_back({loopStart, {}, blockEnvStack_.size(), true});
 
-    // 2. SETUP_FINALLY to catch StopAsyncIteration
-    int setupFinallySlot = bytecodeOffset();
-    emit(OP_SETUP_FINALLY, 0);
+    int forIterSlot = bytecodeOffset();
+    emit(OP_FOR_ITER, 0);   // patched to afterLoop
 
-    // 3. val = await anext(iter)
-    emit(OP_GET_ANEXT);
-    emit(OP_GET_AWAITABLE);
-    emit(OP_LOAD_CONST, addConstant(PROTO_NONE));
-    emit(OP_YIELD_FROM);
-
-    // 4. Success: pop block and store
-    emit(OP_POP_BLOCK);
     if (!compileTarget(n->target.get(), TargetCtx::Store)) return false;
 
-    // 5. Body
     if (!compileNode(n->body.get())) return false;
     emit(OP_JUMP_ABSOLUTE, loopStart * 2);
 
-    // 6. Handler (StopAsyncIteration)
-    int handlerTarget = bytecodeOffset();
-    addPatch(setupFinallySlot + 1, handlerTarget);
-
-    int idx = addName("StopAsyncIteration");
-    emit(OP_LOAD_GLOBAL, (idx << 1) | 1);
-    emit(OP_EXCEPTION_MATCH);
-    
-    int popJumpSlot = bytecodeOffset();
-    emit(OP_POP_JUMP_IF_FALSE, 0);
-
-    // If matches StopAsyncIteration:
-    emit(OP_POP_TOP); // pop exception
-    emit(OP_POP_TOP); // pop value
-    emit(OP_POP_TOP); // pop traceback
-    emit(OP_POP_EXCEPT);
-    
-    int endJumpSlot = bytecodeOffset();
-    emit(OP_JUMP_FORWARD, 0); // Skip re-raise
-    
-    // If NOT StopAsyncIteration
-    int notStopAsyncSlot = bytecodeOffset();
-    addPatch(popJumpSlot + 1, notStopAsyncSlot);
-    emit(OP_RERAISE, 0);
-
-    // After loop (normal termination branch)
     int afterLoop = bytecodeOffset();
-    addPatch(endJumpSlot + 1, afterLoop);
-    
+    addPatch(forIterSlot + 1, afterLoop);
+
     if (n->orelse) {
         if (!compileNode(n->orelse.get())) return false;
     }
-    
+
     for (int patch : loopStack_.back().breakPatches) {
         addPatch(patch, bytecodeOffset());
     }
     loopStack_.pop_back();
-
     return true;
 }
 

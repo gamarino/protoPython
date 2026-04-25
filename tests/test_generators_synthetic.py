@@ -430,17 +430,17 @@ def run(coro, max_steps=10000):
 
 @_run
 def test_async_for_basic():
-    raise AssertionError("disabled: async-for-over-async-gen hangs runtime; PC fix pending")
+    raise AssertionError("disabled: blocked by coroutine-resume + function-call bug; PE fix pending")
 
 
 @_run
 def test_async_for_break():
-    raise AssertionError("disabled: async-for hangs runtime; PC fix pending")
+    raise AssertionError("disabled: blocked by coroutine-resume + function-call bug; PE fix pending")
 
 
 @_run
 def test_async_for_else():
-    raise AssertionError("disabled: async-for hangs runtime; PC fix pending")
+    raise AssertionError("disabled: blocked by coroutine-resume + function-call bug; PE fix pending")
 
 
 class _SyntheticAIter:
@@ -458,7 +458,7 @@ class _SyntheticAIter:
 
 @_run
 def test_async_for_over_class_aiter():
-    raise AssertionError("disabled: async-for hangs runtime; PC fix pending")
+    raise AssertionError("disabled: blocked by coroutine-resume + function-call bug; PE fix pending")
 
 
 class _SyntheticMgr:
@@ -474,7 +474,7 @@ class _SyntheticMgr:
 
 @_run
 def test_async_with_enter_exit_called():
-    raise AssertionError("disabled: async-with hangs runtime; PC fix pending")
+    raise AssertionError("disabled: blocked by coroutine-resume + function-call bug; PE fix pending")
 
 
 class _SyntheticMgrPropagating:
@@ -489,7 +489,7 @@ class _SyntheticMgrPropagating:
 
 @_run
 def test_async_with_exception_seen_by_aexit():
-    raise AssertionError("disabled: async-with hangs runtime; PC fix pending")
+    raise AssertionError("disabled: blocked by coroutine-resume + function-call bug; PE fix pending")
 
 
 class _SyntheticMgrSuppressing:
@@ -501,7 +501,7 @@ class _SyntheticMgrSuppressing:
 
 @_run
 def test_async_with_suppression():
-    raise AssertionError("disabled: async-with hangs runtime; PC fix pending")
+    raise AssertionError("disabled: blocked by coroutine-resume + function-call bug; PE fix pending")
 
 
 # --- Async generator methods: asend / athrow / aclose --------------------

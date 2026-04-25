@@ -9231,6 +9231,30 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     asyncGeneratorPrototype = asyncGeneratorPrototype->setAttribute(rootContext_,
         PythonEnvironment::getInternedString(rootContext_, "__aiter__"),
         rootContext_->fromMethod(nullptr, py_self_iter));
+    // PD2: __anext__ delegates to the inherited __next__, but converts
+    // StopIteration → StopAsyncIteration so the async-for handler can
+    // catch the standard sentinel.  Returns the yielded value directly
+    // (no coroutine wrapper); compileAsyncFor's simplified bytecode
+    // (PD3) calls this synchronously.
+    asyncGeneratorPrototype = asyncGeneratorPrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "__anext__"),
+        rootContext_->fromMethod(nullptr,
+            [](proto::ProtoContext* ctx, const proto::ProtoObject* self,
+               const proto::ParentLink* pl,
+               const proto::ProtoList* posArgs,
+               const proto::ProtoSparseList* kw) -> const proto::ProtoObject* {
+                PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+                if (!env) return PROTO_NONE;
+                const proto::ProtoObject* result = py_generator_next(ctx, self, pl, posArgs, kw);
+                if (env->hasPendingException()) {
+                    const proto::ProtoObject* exc = env->peekPendingException();
+                    if (env->isStopIteration(ctx, exc)) {
+                        env->clearPendingException();
+                        env->raiseStopAsyncIteration(ctx);
+                    }
+                }
+                return result;
+            }));
     // PC1: minimal asend/athrow/aclose surface.  These are aliases to
     // send/throw/close — the inherited generator paused-frame model
     // is already correct for advancing the async generator, and most

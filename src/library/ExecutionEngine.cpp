@@ -5805,11 +5805,26 @@ const proto::ProtoObject* executeBytecodeRange(
             stack.pop_back();
             const proto::ProtoString* aiterS = env ? env->getAIterString() : PythonEnvironment::getInternedString(ctx, "__aiter__");
             const proto::ProtoObject* aiter = invokeDunder(ctx, obj, aiterS, ctx->newList());
-            if (aiter) {
-                stack.push_back(aiter);
-            } else {
-                stack.push_back(obj);
+            if (!aiter) aiter = obj;
+            // PD3: compileAsyncFor lowers `async for` to FOR_ITER, which
+            // calls aiter.__next__.  For async generators, __next__ is
+            // inherited from the generator prototype, so FOR_ITER works
+            // directly.  For other async iterators (class-defined with
+            // __aiter__/__anext__), bridge __anext__ → __next__ on the
+            // iterator instance using setAttribute (which returns a new
+            // immutable copy that we push instead of the original).
+            if (aiter && aiter != PROTO_NONE && env) {
+                const proto::ProtoString* nextS = env->getNextString();
+                const proto::ProtoObject* hasNext = aiter->getAttribute(ctx, nextS);
+                if (!hasNext || hasNext == PROTO_NONE) {
+                    const proto::ProtoString* anextS = env->getANextString();
+                    const proto::ProtoObject* hasAnext = aiter->getAttribute(ctx, anextS);
+                    if (hasAnext && hasAnext != PROTO_NONE) {
+                        aiter = aiter->setAttribute(ctx, nextS, hasAnext);
+                    }
+                }
             }
+            stack.push_back(aiter);
         } else if (op == OP_GET_ANEXT) {
             if (stack.empty()) { i = next_i; continue; }
             const proto::ProtoObject* aiter = stack.back();
