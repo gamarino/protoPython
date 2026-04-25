@@ -10324,17 +10324,31 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
             if (!p) return;
             const proto::ProtoObject* oldP = p;
             p = p->setAttribute(rootContext_, py_class, typePrototype);
+            // Only set MRO / bases if not already configured.  bool's
+            // (bool, int, object) MRO must be preserved (set earlier via
+            // its own setAttribute calls).  The default 2-tuple here
+            // would overwrite it.
+            bool hasMro = p->hasOwnAttribute(rootContext_, mroString) == PROTO_TRUE;
+            bool hasBases = p->hasOwnAttribute(rootContext_, basesString) == PROTO_TRUE;
             if (p != objectPrototype) {
                 p = p->addParent(rootContext_, objectPrototype);
-                const proto::ProtoList* mroList = rootContext_->newList()->appendLast(rootContext_, p)->appendLast(rootContext_, objectPrototype);
-                p = p->setAttribute(rootContext_, mroString, rootContext_->newTupleFromList(mroList)->asObject(rootContext_));
-                const proto::ProtoList* basesList = rootContext_->newList()->appendLast(rootContext_, objectPrototype);
-                p = p->setAttribute(rootContext_, basesString, rootContext_->newTupleFromList(basesList)->asObject(rootContext_));
+                if (!hasMro) {
+                    const proto::ProtoList* mroList = rootContext_->newList()->appendLast(rootContext_, p)->appendLast(rootContext_, objectPrototype);
+                    p = p->setAttribute(rootContext_, mroString, rootContext_->newTupleFromList(mroList)->asObject(rootContext_));
+                }
+                if (!hasBases) {
+                    const proto::ProtoList* basesList = rootContext_->newList()->appendLast(rootContext_, objectPrototype);
+                    p = p->setAttribute(rootContext_, basesString, rootContext_->newTupleFromList(basesList)->asObject(rootContext_));
+                }
             } else {
-                const proto::ProtoList* mroList = rootContext_->newList()->appendLast(rootContext_, p);
-                p = p->setAttribute(rootContext_, mroString, rootContext_->newTupleFromList(mroList)->asObject(rootContext_));
-                const proto::ProtoList* basesList = rootContext_->newList();
-                p = p->setAttribute(rootContext_, basesString, rootContext_->newTupleFromList(basesList)->asObject(rootContext_));
+                if (!hasMro) {
+                    const proto::ProtoList* mroList = rootContext_->newList()->appendLast(rootContext_, p);
+                    p = p->setAttribute(rootContext_, mroString, rootContext_->newTupleFromList(mroList)->asObject(rootContext_));
+                }
+                if (!hasBases) {
+                    const proto::ProtoList* basesList = rootContext_->newList();
+                    p = p->setAttribute(rootContext_, basesString, rootContext_->newTupleFromList(basesList)->asObject(rootContext_));
+                }
             }
             if (get_env_diag() && p != oldP) {
                 fprintf(stderr, "DEBUG: syncCorePrototypes identity CHANGE for %s: %p -> %p\n", name, (void*)oldP, (void*)p);
@@ -10606,10 +10620,29 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     typePrototype = initDictStorage(rootContext_, typePrototype);
     auto setupCoreType = [&](const proto::ProtoObject*& proto) {
         proto = initDictStorage(rootContext_, proto);
-        const proto::ProtoObject* mro = rootContext_->newTupleFromList(rootContext_->newList()->appendLast(rootContext_, proto)->appendLast(rootContext_, objectPrototype))->asObject(rootContext_);
-        proto = const_cast<proto::ProtoObject*>(proto->setAttribute(rootContext_, mroString, mro));
-        const proto::ProtoObject* bases = rootContext_->newTupleFromList(rootContext_->newList()->appendLast(rootContext_, objectPrototype))->asObject(rootContext_);
-        proto = const_cast<proto::ProtoObject*>(proto->setAttribute(rootContext_, basesString, bases));
+        // Default MRO is (proto, object).  If the caller has already
+        // installed a richer MRO (e.g. bool's (bool, int, object)),
+        // preserve it: only the FIRST element of the existing tuple may
+        // refer to a stale pre-initDictStorage handle, so rebuild the
+        // tuple with `proto` as the first element and the rest unchanged.
+        const proto::ProtoObject* existingMro = proto->hasOwnAttribute(rootContext_, mroString) == PROTO_TRUE
+            ? proto->getOwnAttributeDirect(rootContext_, mroString) : nullptr;
+        if (existingMro && existingMro->isTuple(rootContext_) && existingMro->asTuple(rootContext_)->getSize(rootContext_) >= 2) {
+            const proto::ProtoTuple* old = existingMro->asTuple(rootContext_);
+            const proto::ProtoList* rebuilt = rootContext_->newList()->appendLast(rootContext_, proto);
+            for (unsigned long i = 1; i < old->getSize(rootContext_); ++i) {
+                rebuilt = rebuilt->appendLast(rootContext_, old->getAt(rootContext_, static_cast<int>(i)));
+            }
+            proto = const_cast<proto::ProtoObject*>(proto->setAttribute(rootContext_, mroString, rootContext_->newTupleFromList(rebuilt)->asObject(rootContext_)));
+        } else {
+            const proto::ProtoObject* mro = rootContext_->newTupleFromList(rootContext_->newList()->appendLast(rootContext_, proto)->appendLast(rootContext_, objectPrototype))->asObject(rootContext_);
+            proto = const_cast<proto::ProtoObject*>(proto->setAttribute(rootContext_, mroString, mro));
+        }
+        // bases is independent of self-identity; only set if not already set.
+        if (proto->hasOwnAttribute(rootContext_, basesString) != PROTO_TRUE) {
+            const proto::ProtoObject* bases = rootContext_->newTupleFromList(rootContext_->newList()->appendLast(rootContext_, objectPrototype))->asObject(rootContext_);
+            proto = const_cast<proto::ProtoObject*>(proto->setAttribute(rootContext_, basesString, bases));
+        }
     };
 
     setupCoreType(strPrototype);
@@ -13312,7 +13345,28 @@ const proto::ProtoObject* PythonEnvironment::compareObjects(proto::ProtoContext*
     }
 
     int c = 0;
-    if (a->isString(ctx) && b->isString(ctx)) {
+    // bool is a subclass of int in Python semantics — `False == 0` and
+    // `True == 1` must hold.  protoPython tags bool and int distinctly, so
+    // ProtoObject::compare's `isInteger()` check returns false for bool
+    // operands and falls through to pointer comparison.  When at least one
+    // operand is a bool, lift it into an int (0 or 1) and let the underlying
+    // integer comparison run — the int side may be a bignum, so use the
+    // public Integer comparison via context->fromInteger to avoid asLong
+    // overflow.
+    bool aIsBool = a->isBoolean(ctx);
+    bool bIsBool = b->isBoolean(ctx);
+    bool aIsIntKind = a->isInteger(ctx) || aIsBool;
+    bool bIsIntKind = b->isInteger(ctx) || bIsBool;
+    if (aIsIntKind && bIsIntKind && (aIsBool || bIsBool)) {
+        // At least one operand is a bool — coerce to integer and compare.
+        const proto::ProtoObject* aInt = aIsBool
+            ? ctx->fromInteger(a->asBoolean(ctx) ? 1 : 0)
+            : a;
+        const proto::ProtoObject* bInt = bIsBool
+            ? ctx->fromInteger(b->asBoolean(ctx) ? 1 : 0)
+            : b;
+        c = aInt->compare(ctx, bInt);
+    } else if (a->isString(ctx) && b->isString(ctx)) {
         std::string s1, s2;
         a->asString(ctx)->toUTF8String(ctx, s1);
         b->asString(ctx)->toUTF8String(ctx, s2);
