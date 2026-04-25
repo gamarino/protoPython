@@ -1063,10 +1063,34 @@ std::unique_ptr<ASTNode> Parser::parseStatement() {
         cur_.type != TokenType::RCurly && cur_.type != TokenType::Comma) {
         if (auto* nm = dynamic_cast<NameNode*>(expr.get())) {
             if (nm->id == "print" || nm->id == "exec") {
-                std::string msg = "Missing parentheses in call to '";
-                msg += nm->id;
-                msg += "'. Did you mean " + nm->id + "(...)?";
-                error(msg);
+                // Python-2-style `print EXPR` / `exec EXPR` produces the
+                // CPython-style hint, but only when EXPR itself is a
+                // syntactically valid expression — otherwise the inner
+                // error wins ("invalid syntax").  We try to parse the
+                // remainder as a testlist; if it succeeds without error,
+                // emit the hint.  If it fails, the inner error has
+                // already been recorded and propagates.
+                int savedLine = cur_.line;
+                int savedCol = cur_.column;
+                bool savedHasError = hasError_;
+                std::string savedErrMsg = lastErrorMsg_;
+                int savedErrLine = lastErrorLine_;
+                int savedErrCol = lastErrorColumn_;
+                auto trail = parseTestList();
+                if (!hasError_ && trail) {
+                    // The remainder parsed cleanly — emit the Python-2 hint.
+                    hasError_ = savedHasError;
+                    lastErrorMsg_ = savedErrMsg;
+                    lastErrorLine_ = savedErrLine;
+                    lastErrorColumn_ = savedErrCol;
+                    (void)savedLine; (void)savedCol;
+                    std::string msg = "Missing parentheses in call to '";
+                    msg += nm->id;
+                    msg += "'. Did you mean " + nm->id + "(...)?";
+                    error(msg);
+                    return nullptr;
+                }
+                // Inner parse failed — let its error propagate.
                 return nullptr;
             }
         }
