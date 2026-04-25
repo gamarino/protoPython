@@ -86,6 +86,58 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 
 **Key V110 milestone**: All essential tests now run to completion without crashing. Individual test failures reflect unimplemented language features (metaclass protocol, descriptors, C-extension stubs), not interpreter instability.
 
+### V152 Changes (2026-04-25) — PH: super(), descriptor delete, dict/in equality
+
+The PH round closes the super zero-arg path opened by PG and tightens
+several descriptor + equality protocols.  Synthetic suite moves
+22/5/10 → 29/5/3 (+7 PASS, -7 CRASH, -1 FAIL net).
+
+**PH-1 — super() with the class name as a closure cell**
+compileClassDef now implicitly captures the class's own name as a
+free variable of the body so methods can resolve zero-arg super()
+(rewritten as `super(<ClassName>, self)`) via LOAD_DEREF.  After
+BUILD_CLASS, the runtime writes the just-built class into `ns`
+under the class's own name; methods walk closure parent → ns and
+find it.  This unblocks classes defined inside any function (the
+outer-scope STORE_FAST runs only after BUILD_CLASS finishes, so a
+naive LOAD_GLOBAL from the method would fail).
+
+**PH-2 — `in` operator uses Python equality, not pointer compare**
+`OP_COMPARE_OP` for `in/not in` walked the list and tested
+`a->compare(ctx, item) == 0`.  ProtoObject::compare is identity-style
+(returns 0 only for the same pointer), so `("init", "C") in seen`
+returned False even when `seen[0] == ("init", "C")`.  Switched to
+`env->compareObjects(ctx, a, item, 0)` so __eq__ semantics
+participate in containment.
+
+**PH-3 — `object.__init_subclass__` and `object.__set_name__` no-ops**
+Without these, `super().__init_subclass__(**kwargs)` chains in
+subclass hooks crashed at object with `AttributeError`.  Added
+classmethod-style no-op stubs on objectPrototype.  Same for
+`__set_name__`.
+
+**PH-4 — DELETE_ATTR fires Python-defined data descriptors**
+Mirrors the PG-4 STORE_ATTR fix: walk the type's MRO with raw
+attribute access, look for `__delete__` on the descriptor or its
+type, dispatch to native or Python callable.  `del c.x` now invokes
+`D.__delete__(d_instance, c)` for class-level descriptors.
+
+**PH-5 — `c.__dict__` materialises the dict**
+`__dict__` is installed on objectPrototype as a method
+(`py_object_get_dict`).  Reading the attribute returned the bound
+method, not the dict.  LOAD_ATTR now special-cases `__dict__`: when
+it resolves to a bound native method, it auto-invokes the method
+with no args to materialise the dict.  `c.__dict__.get(...)` and
+`obj.__dict__["x"] = v` now work.
+
+| State     | PASS | FAIL | CRASH | Total |
+| :---      | ---: | ---: | ---:  | ---:  |
+| Before PH |  22  |  5   |  10   |  37   |
+| After PH  |  29  |  5   |   3   |  37   |
+
+Generators-and-async synthetic suite (separate file): 37/0/0,
+unchanged.
+
 ### V151 Changes (2026-04-25) — PG: metaclass + descriptor foundation (19/4/14 → 22/5/10)
 
 The PG round opens work on the metaclass + descriptor protocol with

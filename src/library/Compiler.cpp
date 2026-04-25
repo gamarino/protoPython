@@ -3635,6 +3635,17 @@ bool Compiler::compileClassDef(ClassDefNode* n) {
     bodyCompiler.isClassBody_ = true;
     bodyCompiler.currentClassName_ = n->name;
 
+    // PH: implicitly capture the class's own name as a free variable
+    // of the class body so methods can resolve zero-arg `super()`
+    // (rewritten as `super(<ClassName>, self)`) via LOAD_DEREF.  The
+    // outer-scope STORE_FAST that binds the class runs only after
+    // BUILD_CLASS finishes, but BUILD_CLASS post-step writes the new
+    // class into `ns` under the class's own name, so the closure walk
+    // (innerCF.parent → ns) finds it.
+    if (localSlotMap_.count(n->name) || nonlocalNames_.count(n->name)) {
+        bodyCompiler.nonlocalNames_.insert(n->name);
+    }
+
     // PG: capture free variables from the enclosing function scope.
     // Without this, references to enclosing locals (e.g. `x = D()`
     // where D is a class defined in the same function) fall through to

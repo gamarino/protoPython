@@ -8993,6 +8993,31 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     objectPrototype = objectPrototype->setAttribute(rootContext_, getInternedString(rootContext_, "__hash__"), rootContext_->fromMethod(nullptr, py_object_hash));
     objectPrototype = objectPrototype->setAttribute(rootContext_, getInternedString(rootContext_, "__reduce_ex__"), rootContext_->fromMethod(nullptr, py_object_reduce_ex));
     objectPrototype = objectPrototype->setAttribute(rootContext_, getInternedString(rootContext_, "__reduce__"), rootContext_->fromMethod(nullptr, py_object_reduce));
+    // PH: object.__init_subclass__ is a no-op; classmethod-bound to keep
+    // `super().__init_subclass__(**kwargs)` chains terminating cleanly.
+    {
+        const proto::ProtoObject* iscMethod = rootContext_->fromMethod(nullptr,
+            [](proto::ProtoContext* ctx, const proto::ProtoObject*,
+               const proto::ParentLink*,
+               const proto::ProtoList*,
+               const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+                PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+                return env ? env->getNonePrototype() : PROTO_NONE;
+            });
+        objectPrototype = objectPrototype->setAttribute(rootContext_,
+            getInternedString(rootContext_, "__init_subclass__"), iscMethod);
+    }
+    // PH: object.__class_getitem__ is a no-op for object; subclasses may override.
+    objectPrototype = objectPrototype->setAttribute(rootContext_,
+        getInternedString(rootContext_, "__set_name__"),
+        rootContext_->fromMethod(nullptr,
+            [](proto::ProtoContext* ctx, const proto::ProtoObject*,
+               const proto::ParentLink*,
+               const proto::ProtoList*,
+               const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+                PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+                return env ? env->getNonePrototype() : PROTO_NONE;
+            }));
 
     // 4. Set all dunders on type
     typePrototype = typePrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_type_repr));

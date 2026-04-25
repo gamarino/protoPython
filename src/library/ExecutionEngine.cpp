@@ -1512,9 +1512,21 @@ static const proto::ProtoObject* compareOp(proto::ProtoContext* ctx,
         }
         
         if (lst) {
+            // PH: use Python-level equality (compareObjects) so tuple-in-list,
+            // dict-in-list, etc. work via __eq__/__hash__ rather than the
+            // raw ProtoObject pointer-style compare which only succeeds for
+            // identity-equal objects.
+            PythonEnvironment* env_local = PythonEnvironment::fromContext(ctx);
             size_t size = lst->getSize(ctx);
             for (size_t i = 0; i < size; ++i) {
-                if (a->compare(ctx, lst->getAt(ctx, i)) == 0) {
+                bool eq = false;
+                if (env_local) {
+                    const proto::ProtoObject* r = env_local->compareObjects(ctx, a, lst->getAt(ctx, i), 0);
+                    eq = (r == PROTO_TRUE);
+                } else {
+                    eq = (a->compare(ctx, lst->getAt(ctx, i)) == 0);
+                }
+                if (eq) {
                     found = true;
                     break;
                 }
@@ -4387,6 +4399,25 @@ const proto::ProtoObject* executeBytecodeRange(
                                 }
                                 val = (env ? env->getNonePrototype() : PROTO_NONE);
                             }
+                            // PH: special-case __dict__: it's installed
+                            // as a method on objectPrototype, but Python
+                            // treats it as a data descriptor (auto-invoked
+                            // on read).  When LOAD_ATTR resolves __dict__
+                            // to a bound native method, invoke it with no
+                            // args to materialize the dict.
+                            if (env && val && val->isMethod(ctx) && val->asMethodSelf(ctx) != nullptr) {
+                                std::string attrNameStr;
+                                attrName->toUTF8String(ctx, attrNameStr);
+                                if (attrNameStr == "__dict__") {
+                                    const proto::ProtoObject* dictResult =
+                                        val->asMethod(ctx)(ctx,
+                                            const_cast<proto::ProtoObject*>(val->asMethodSelf(ctx)),
+                                            nullptr, ctx->newList(), nullptr);
+                                    if (dictResult && !env->hasPendingException()) {
+                                        val = dictResult;
+                                    }
+                                }
+                            }
                             stack.back() = val; // Replace obj with result
                         }
                     } else {
@@ -6041,6 +6072,53 @@ const proto::ProtoObject* executeBytecodeRange(
                 const proto::ProtoObject* nameObj = names->getAt(ctx, nameIdx);
                 if (nameObj && nameObj->isString(ctx)) {
                     const proto::ProtoString* nameS = nameObj->asString(ctx);
+                    // PH: data-descriptor __delete__ on the type chain.
+                    // Mirrors STORE_ATTR's data-descriptor short-circuit:
+                    // walk the type's MRO with raw attribute access to
+                    // avoid __get__ re-entry, then dispatch to either
+                    // a native or Python-defined __delete__.
+                    if (env && obj->hasOwnAttribute(ctx, nameS) == PROTO_FALSE) {
+                        const proto::ProtoObject* type = env->getType(ctx, obj);
+                        const proto::ProtoObject* descr = nullptr;
+                        if (type && type != PROTO_NONE) {
+                            if (type->hasOwnAttribute(ctx, nameS) == PROTO_TRUE) {
+                                descr = type->getOwnAttributeDirect(ctx, nameS);
+                            } else {
+                                const proto::ProtoObject* mroObj = type->getAttribute(ctx, env->getMroString());
+                                const proto::ProtoTuple* mroT = mroObj ? mroObj->asTuple(ctx) : nullptr;
+                                if (mroT) {
+                                    for (unsigned long mi = 0; mi < mroT->getSize(ctx); ++mi) {
+                                        const proto::ProtoObject* base = mroT->getAt(ctx, mi);
+                                        if (!base || base == PROTO_NONE) continue;
+                                        if (base->hasOwnAttribute(ctx, nameS) == PROTO_TRUE) {
+                                            descr = base->getOwnAttributeDirect(ctx, nameS);
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        if (descr && descr != PROTO_NONE) {
+                            const proto::ProtoString* delS =
+                                PythonEnvironment::getInternedString(ctx, "__delete__");
+                            const proto::ProtoObject* delM = descr->getAttribute(ctx, delS);
+                            const proto::ProtoObject* descrType = env->getType(ctx, descr);
+                            if ((!delM || delM == PROTO_NONE) && descrType && descrType != PROTO_NONE) {
+                                delM = env->getAttribute(ctx, descrType, delS, false);
+                            }
+                            if (delM && delM != PROTO_NONE) {
+                                if (delM->asMethod(ctx)) {
+                                    delM->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(descr), nullptr,
+                                        ctx->newList()->appendLast(ctx, obj), nullptr);
+                                } else {
+                                    invokePythonCallable(ctx, delM,
+                                        ctx->newList()->appendLast(ctx, descr)->appendLast(ctx, obj), nullptr);
+                                }
+                                if (env->hasPendingException()) continue;
+                                continue; // descriptor handled the delete
+                            }
+                        }
+                    }
                     // Remove from __data__ sparse list if present (dict-backed instances)
                     const proto::ProtoString* dataName = env ? env->getDataString() : protoPython::PythonEnvironment::getInternalString(ctx, "__data__");
                     const proto::ProtoString* keysName = env ? env->getKeysString() : protoPython::PythonEnvironment::getInternalString(ctx, "__keys__");
