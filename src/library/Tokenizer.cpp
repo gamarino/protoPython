@@ -156,9 +156,36 @@ Token Tokenizer::scanNumber() {
             isFloat = true;
             pos_++;
         } else if (c == 'e' || c == 'E') {
-            isFloat = true;
-            pos_++;
-            if (pos_ < source_.size() && (source_[pos_] == '+' || source_[pos_] == '-')) pos_++;
+            // CPython requires a float exponent to have at least one digit
+            // after the optional sign.  Three cases (cf. test_grammar.py
+            // test_float_exponent_tokenization and test_bad_numerical_literals
+            // case "1e+"):
+            //   1. e + digit, or e + sign + digit  -> consume normally.
+            //   2. e + sign + non-digit (e.g. "1e+", "1e-x")  -> consume the
+            //      e and the sign so the post-loop validator can attribute the
+            //      error to "invalid decimal literal".
+            //   3. e + non-digit, non-sign (e.g. "1else", "1ef")  -> backtrack:
+            //      do not consume the 'e'; the literal ends here and the
+            //      remaining text is tokenized as a name/keyword.
+            size_t la = pos_ + 1;
+            bool sawSign = false;
+            if (la < source_.size() && (source_[la] == '+' || source_[la] == '-')) {
+                sawSign = true;
+                la++;
+            }
+            bool hasDigit = la < source_.size() && std::isdigit(static_cast<unsigned char>(source_[la]));
+            if (hasDigit) {
+                isFloat = true;
+                pos_++;
+                if (sawSign) pos_++;
+            } else if (sawSign) {
+                isFloat = true;
+                pos_++;
+                pos_++;
+                break;
+            } else {
+                break;
+            }
         } else if (std::isdigit(static_cast<unsigned char>(c)) || c == '_') {
             pos_++;
         } else if (c == 'j' || c == 'J') {
@@ -201,7 +228,17 @@ Token Tokenizer::scanNumber() {
             for (char c : v) if (c != '0' && c != '_') { hasNonZero = true; break; }
             if (hasNonZero) leadingZero = true;
         }
-        if (badUnderscore() || leadingZero) {
+        // Exponent ended without any digits ("1e+", "1e-", or bare "1e"
+        // produced by case 2 of the e/E lookahead above).  Catch it via
+        // the trailing character of the consumed literal.
+        bool badExponent = false;
+        if (isFloat && !v.empty()) {
+            char last = v.back();
+            if (last == 'e' || last == 'E' || last == '+' || last == '-') {
+                badExponent = true;
+            }
+        }
+        if (badUnderscore() || leadingZero || badExponent) {
             t.type = TokenType::Error;
             t.value = isFloat || isComplex
                 ? std::string("invalid decimal literal")
