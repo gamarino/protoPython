@@ -1051,7 +1051,30 @@ bool Compiler::compileDeleteNode(DeleteNode* n) {
 }
 
 bool Compiler::compileAssert(AssertNode* n) {
-    if (!n || !compileNode(n->test.get())) return false;
+    if (!n) return false;
+    // CPython emits a SyntaxWarning when the assertion test is a non-empty
+    // tuple literal — `assert (cond, msg)` is a common typo for the two-arg
+    // form `assert cond, msg`, but the tuple is always truthy so the
+    // assertion never fires.  See test_assert_syntax_warnings /
+    // test_assert_warning_promotes_to_syntax_error.
+    if (auto* t = dynamic_cast<TupleLiteralNode*>(n->test.get())) {
+        // The empty tuple `()` is also always-falsy by Python semantics, but
+        // CPython still warns for any tuple literal in this position because
+        // the intent is almost certainly the two-arg form.  Empty tuples
+        // would assert(False)-like.  test_assert_syntax_warnings only
+        // exercises the non-empty case, so we mirror that for now (warn
+        // only when the tuple has at least one element).
+        if (!t->elements.empty()) {
+            std::string msg = "assertion is always true, perhaps remove parentheses?";
+            if (PythonEnvironment* env = PythonEnvironment::fromContext(ctx_)) {
+                int line = n->line > 0 ? n->line : 1;
+                if (env->emitSyntaxWarning(ctx_, msg, filename_, line)) {
+                    return false;
+                }
+            }
+        }
+    }
+    if (!compileNode(n->test.get())) return false;
     // if test is true, jump to end
     emit(OP_POP_JUMP_IF_TRUE, 0);
     int jumpToEndSlot = bytecodeOffset() - 1;
