@@ -900,7 +900,7 @@ private:
     const proto::ProtoString* reversedString{nullptr};
     
     // Keyword Names Stack (thread-local per Environment)
-    std::vector<const proto::ProtoTuple*> kwNamesStack;
+    const proto::ProtoList* kwNamesStack = nullptr;
     const proto::ProtoString* getDunderString{nullptr};
     const proto::ProtoString* setDunderString{nullptr};
     const proto::ProtoString* delDunderString{nullptr};

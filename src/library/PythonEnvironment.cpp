@@ -8122,6 +8122,7 @@ PythonEnvironment::PythonEnvironment(const std::string& stdLibPath, const std::v
     // Multiple instances check removed for silence
     s_mainThreadId = std::this_thread::get_id();
     registerContext(rootContext_, this);
+    kwNamesStack = rootContext_->newList();
     initializeRootObjects(stdLibPath, searchPaths);
 }
 
@@ -14043,18 +14044,18 @@ void PythonEnvironment::delName(const std::string& name) {
 }
 
 void PythonEnvironment::pushKwNames(const proto::ProtoTuple* names) {
-    kwNamesStack.push_back(names);
+    kwNamesStack = kwNamesStack->appendLast(rootContext_, names->asObject(rootContext_));
 }
 
 void PythonEnvironment::popKwNames() {
-    if (!kwNamesStack.empty()) {
-        kwNamesStack.pop_back();
+    if (kwNamesStack->getSize(rootContext_) != 0) {
+        kwNamesStack = kwNamesStack->removeLast(rootContext_);
     }
 }
 
 const proto::ProtoTuple* PythonEnvironment::getCurrentKwNames() const {
-    if (kwNamesStack.empty()) return nullptr;
-    return kwNamesStack.back();
+    if (kwNamesStack->getSize(rootContext_) == 0) return nullptr;
+    return kwNamesStack->getLast(rootContext_)->asTuple(rootContext_);
 }
 
 const proto::ProtoObject* PythonEnvironment::runUntilComplete(const proto::ProtoObject* coro) {
