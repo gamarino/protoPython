@@ -1,5 +1,4 @@
 #include <protoPython/ExecutionEngine.h>
-#include <proto_internal.h>
 #include <protoPython/DiagUtils.h>
 #include <protoPython/Compiler.h>
 #include <protoPython/PythonEnvironment.h>
@@ -1284,7 +1283,7 @@ static const proto::ProtoObject* binaryTrueDivide(proto::ProtoContext* ctx,
     const proto::ProtoObject* aa = unwrapPrimitive(ctx, a);
     const proto::ProtoObject* bb = unwrapPrimitive(ctx, b);
     auto integerIsZero = [&](const proto::ProtoObject* o) -> bool {
-        return o->isInteger(ctx) && proto::Integer::sign(ctx, o) == 0;
+        return o->isInteger(ctx) && o->integerSign(ctx) == 0;
     };
     if (aa->isInteger(ctx) || aa->isDouble(ctx)) {
         if (integerIsZero(bb) || (bb->isDouble(ctx) && bb->asDouble(ctx) == 0.0)) {
@@ -1301,7 +1300,7 @@ static const proto::ProtoObject* binaryTrueDivide(proto::ProtoContext* ctx,
     auto intToDouble = [&](const proto::ProtoObject* o) -> double {
         try { return static_cast<double>(o->asLong(ctx)); }
         catch (const std::overflow_error&) {
-            const proto::ProtoString* s = proto::Integer::toString(ctx, o, 10);
+            const proto::ProtoString* s = o->asIntegerString(ctx, 10);
             std::string digits;
             s->toUTF8String(ctx, digits);
             try { return std::stod(digits); }
@@ -1328,7 +1327,7 @@ static const proto::ProtoObject* binaryModulo(proto::ProtoContext* ctx,
     const proto::ProtoObject* aa = unwrapPrimitive(ctx, a);
     const proto::ProtoObject* bb = unwrapPrimitive(ctx, b);
     auto integerIsZero = [&](const proto::ProtoObject* o) -> bool {
-        return o->isInteger(ctx) && proto::Integer::sign(ctx, o) == 0;
+        return o->isInteger(ctx) && o->integerSign(ctx) == 0;
     };
     if (aa->isInteger(ctx) || aa->isDouble(ctx)) {
         if (integerIsZero(bb) || (bb->isDouble(ctx) && bb->asDouble(ctx) == 0.0)) {
@@ -1345,7 +1344,7 @@ static const proto::ProtoObject* binaryModulo(proto::ProtoContext* ctx,
             if (o->isDouble(ctx)) return o->asDouble(ctx);
             try { return static_cast<double>(o->asLong(ctx)); }
             catch (const std::overflow_error&) {
-                const proto::ProtoString* s = proto::Integer::toString(ctx, o, 10);
+                const proto::ProtoString* s = o->asIntegerString(ctx, 10);
                 std::string digits;
                 s->toUTF8String(ctx, digits);
                 try { return std::stod(digits); }
@@ -1403,9 +1402,9 @@ static const proto::ProtoObject* binaryPower(proto::ProtoContext* ctx,
             const proto::ProtoObject* result = ctx->fromInteger(1);
             const proto::ProtoObject* base = aa_p;
             while (exp > 0) {
-                if (exp & 1) result = proto::Integer::multiply(ctx, result, base);
+                if (exp & 1) result = result->multiply(ctx, base);
                 exp >>= 1;
-                if (exp > 0) base = proto::Integer::multiply(ctx, base, base);
+                if (exp > 0) base = base->multiply(ctx, base);
             }
             return result;
         }
@@ -3438,7 +3437,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 const proto::ProtoObject* result = iand->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
                 stack.pop_back(); stack.back() = (result ? result : PROTO_NONE);
             } else if (a->isInteger(ctx) && b->isInteger(ctx)) {
-                const proto::ProtoObject* res = proto::Integer::bitwiseAnd(ctx, a, b);
+                const proto::ProtoObject* res = a->bitwiseAnd(ctx, b);
                 stack.pop_back(); stack.back() = res;
             } else {
                 const proto::ProtoObject* andM = a->getAttribute(ctx, env ? env->getAndString() : PythonEnvironment::getInternedString(ctx, "__and__"));
@@ -3465,7 +3464,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 const proto::ProtoObject* result = ior->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
                 stack.pop_back(); stack.back() = (result ? result : PROTO_NONE);
             } else if (a->isInteger(ctx) && b->isInteger(ctx)) {
-                const proto::ProtoObject* res = proto::Integer::bitwiseOr(ctx, a, b);
+                const proto::ProtoObject* res = a->bitwiseOr(ctx, b);
                 stack.pop_back(); stack.back() = res;
             } else {
                 const proto::ProtoObject* orM = a->getAttribute(ctx, env ? env->getOrString() : PythonEnvironment::getInternedString(ctx, "__or__"));
@@ -3492,7 +3491,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 const proto::ProtoObject* result = ixor->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
                 stack.pop_back(); stack.back() = (result ? result : PROTO_NONE);
             } else if (a->isInteger(ctx) && b->isInteger(ctx)) {
-                const proto::ProtoObject* res = proto::Integer::bitwiseXor(ctx, a, b);
+                const proto::ProtoObject* res = a->bitwiseXor(ctx, b);
                 stack.pop_back(); stack.back() = res;
             } else {
                 const proto::ProtoObject* xorM = a->getAttribute(ctx, env ? env->getXorString() : PythonEnvironment::getInternedString(ctx, "__xor__"));
@@ -3531,7 +3530,7 @@ const proto::ProtoObject* executeBytecodeRange(
                     stack.pop_back(); stack.back() = PROTO_NONE;
                     i = next_i; continue;
                 }
-                stack.pop_back(); stack.back() = proto::Integer::shiftLeft(ctx, a, amount);
+                stack.pop_back(); stack.back() = a->shiftLeft(ctx, amount);
             }
         } else if (op == OP_BINARY_RSHIFT) {
             if (stack.size() < 2) { i = next_i; continue; }
@@ -3552,7 +3551,7 @@ const proto::ProtoObject* executeBytecodeRange(
                     stack.pop_back(); stack.back() = PROTO_NONE;
                     i = next_i; continue;
                 }
-                stack.pop_back(); stack.back() = proto::Integer::shiftRight(ctx, a, amount);
+                stack.pop_back(); stack.back() = a->shiftRight(ctx, amount);
             }
         } else if (op == OP_BINARY_AND) {
             if (stack.size() < 2) { i = next_i; continue; }
@@ -3560,7 +3559,7 @@ const proto::ProtoObject* executeBytecodeRange(
             const proto::ProtoObject* a = stack[stack.top - 2];
             if (a->isInteger(ctx) && b->isInteger(ctx)) {
                 // Integer::bitwiseAnd handles bignum operands.
-                stack.pop_back(); stack.back() = proto::Integer::bitwiseAnd(ctx, a, b);
+                stack.pop_back(); stack.back() = a->bitwiseAnd(ctx, b);
             } else {
                 const proto::ProtoObject* andM = a->getAttribute(ctx, env ? env->getAndString() : PythonEnvironment::getInternedString(ctx, "__and__"));
                 if (andM && andM->asMethod(ctx)) {
@@ -3581,7 +3580,7 @@ const proto::ProtoObject* executeBytecodeRange(
             const proto::ProtoObject* b = stack.back();
             const proto::ProtoObject* a = stack[stack.top - 2];
             if (a->isInteger(ctx) && b->isInteger(ctx)) {
-                const proto::ProtoObject* res = proto::Integer::bitwiseOr(ctx, a, b);
+                const proto::ProtoObject* res = a->bitwiseOr(ctx, b);
                 stack.pop_back(); stack.back() = res;
             } else {
                 const proto::ProtoString* orS = env ? env->getOrString() : PythonEnvironment::getInternedString(ctx, "__or__");
@@ -3602,7 +3601,7 @@ const proto::ProtoObject* executeBytecodeRange(
             const proto::ProtoObject* b = stack.back();
             const proto::ProtoObject* a = stack[stack.top - 2];
             if (a->isInteger(ctx) && b->isInteger(ctx)) {
-                const proto::ProtoObject* res = proto::Integer::bitwiseXor(ctx, a, b);
+                const proto::ProtoObject* res = a->bitwiseXor(ctx, b);
                 stack.pop_back(); stack.back() = res;
             } else {
                 const proto::ProtoObject* xorM = a->getAttribute(ctx, env ? env->getXorString() : PythonEnvironment::getInternedString(ctx, "__xor__"));
@@ -3626,7 +3625,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 // Use Integer::negate for bignum-safe negation (asLong
                 // overflows for values outside int64 — e.g. -(2**63)
                 // itself fits but its intermediate does not).
-                stack.back() = proto::Integer::negate(ctx, a);
+                stack.back() = a->negate(ctx);
             } else if (a->isDouble(ctx)) {
                 const proto::ProtoObject* res = ctx->fromDouble(-a->asDouble(ctx));
                 stack.back() = res;
@@ -3640,7 +3639,7 @@ const proto::ProtoObject* executeBytecodeRange(
             const proto::ProtoObject* a = stack.back();
             if (a->isInteger(ctx)) {
                 // bignum-safe: ~x = -x - 1 via Integer::bitwiseNot.
-                stack.back() = proto::Integer::bitwiseNot(ctx, a);
+                stack.back() = a->bitwiseNot(ctx);
             } else {
                 const proto::ProtoObject* inv = a->getAttribute(ctx, env ? env->getInvertString() : PythonEnvironment::getInternedString(ctx, "__invert__"));
                 if (inv && inv->asMethod(ctx)) {
