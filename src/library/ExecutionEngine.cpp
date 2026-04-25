@@ -1998,6 +1998,20 @@ const proto::ProtoObject* py_generator_send(
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
     const proto::ProtoObject* val = (posArgs && posArgs->getSize(ctx) > 0) ? posArgs->getAt(ctx, 0) : PROTO_NONE;
+    // PB2: A just-started generator (pc == 0) cannot accept a sent value
+    // other than None — there is no `yield` expression yet to receive it.
+    if (val != PROTO_NONE) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+        if (env) {
+            const proto::ProtoObject* pcObj = self->getAttribute(ctx, env->getGiPCString());
+            long long pc = (pcObj && pcObj->isInteger(ctx)) ? pcObj->asLong(ctx) : 0;
+            if (pc == 0) {
+                env->raiseTypeError(ctx,
+                    "can't send non-None value to a just-started generator");
+                return nullptr;
+            }
+        }
+    }
     return py_generator_send_impl(ctx, self, val);
 }
 
