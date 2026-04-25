@@ -14,7 +14,7 @@ This document tracks the progress of `protoPython` in passing the official CPyth
 
 Core syntax, standard object model, and fundamental types.
 
-- [ ] `test_grammar.py`: **PARTIAL** — 42/75 pass, 19 fail, 14 err, 0 crash (V154.4, 2026-04-25, F2-1 + F2-fix-tuplecmp + F1-2)
+- [ ] `test_grammar.py`: **PARTIAL** — 45/75 pass, 17 fail, 13 err, 0 crash (V154.5, 2026-04-25, SyntaxWarning compile-time emission)
 - [ ] `test_types.py`: **PARTIAL** — 6/131 pass, runs to completion; legible failures (V124, 2026-04-24)
 - [ ] `test_descr.py`: **TIMEOUT** — runs >5 min; `type()` descriptor tests expose slow paths
 - [ ] `test_generators.py`: **PARTIAL** — 0/1 pass (doctest runner fails); import chain runs
@@ -85,6 +85,86 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 **Conformity Suite (internal, 2026-04-15)**: 7/9 tests pass. Failures are pre-existing: `int(float)` conversion and `set(iterable)` constructor.
 
 **Key V110 milestone**: All essential tests now run to completion without crashing. Individual test failures reflect unimplemented language features (metaclass protocol, descriptors, C-extension stubs), not interpreter instability.
+
+### V154.5 Changes (2026-04-25) — SyntaxWarning compile-time emission + eval comma-tuples: 42 → 45 PASS
+
+The user-requested SyntaxWarning machinery is now operational at
+compile time, plus a small parser fix unlocks comma-separated
+tuple expressions in `eval()`.
+
+**Architecture — SyntaxWarning emission**
+- `WarningsModule.cpp`: stop exporting `_warnings.warn` /
+  `_warnings.warn_explicit` stubs.  These returned PROTO_NONE for
+  every call, short-circuiting the real Python implementation in
+  `_py_warnings.py` and silently dropping every
+  `catch_warnings(record=True)`.  By dropping the exports, the
+  `from _warnings import warn` block in `warnings.py` raises
+  ImportError, falling back to `_py_warnings.warn` which honours
+  the filter chain.
+- `PythonEnvironment::emitSyntaxWarning(ctx, msg, filename, lineno)`:
+  resolves `_py_warnings.warn_explicit` and calls it with explicit
+  args.  warn_explicit needs no frame introspection.  When the
+  active filter is 'error', it raises the SyntaxWarning instance;
+  this helper catches it via an `__mro__` walk and converts to
+  SyntaxError matching CPython compile() semantics.  Returns true
+  if a SyntaxError was raised so the caller can short-circuit.
+
+**F2-warn-1 (`a3918fcd`) — `is`-with-literal warnings**
+Detects `is` / `is not` operands that are non-singleton literals
+(int / float / str / bytes / tuple / list / set / dict).  Excludes
+`None` / `True` / `False` / `Ellipsis` since `x is None` is the
+idiomatic identity check.  Handles both single comparisons
+(`x is 1`) and chained forms (`x is y is 1`, `x == 3 is y`).
+Closes `test_comparison_is_literal` (13 sub-checks all pass).
+
+**F2-warn-2 (`81031036`) — `assert(tuple)` warnings**
+`assert(x, "msg")` is a common typo for the two-arg form
+`assert x, "msg"` — the former is parsed as
+`assert (x, "msg")` whose tuple is always truthy, so the
+assertion never fires.  In `compileAssert`, before compiling the
+test expression, detect a non-empty `TupleLiteralNode` and emit
+`SyntaxWarning("assertion is always true, perhaps remove
+parentheses?")`.  Closes `test_assert_syntax_warnings` and
+`test_assert_warning_promotes_to_syntax_error`.
+
+**F2-eval-1 (`2e466b7e`) — eval comma-tuples**
+`eval('1, 0 or 1')` should return `(1, 1)`.  CPython's eval mode
+uses the `eval_input` grammar (`testlist NEWLINE* ENDMARKER`)
+which accepts comma-separated tuples.  protoPython's `py_eval`
+and `py_compile(mode='eval')` were calling `parseExpression()`
+which stops at the first comma.  Both switched to
+`parseTestList()` (already used elsewhere for list/tuple literal
+contents).  Closes `test_eval_input`.
+
+**Verification**:
+- protoCore tests: 100% (136/136).
+- Synthetic suite: 37/0/0 (no regression).
+- Custom suites (test_decorator, test_abc, test_contextlib): all pass.
+- test_grammar.py: 42/75 → 45/75 PASS.
+
+**Remaining 30 failures** by category:
+- *SyntaxWarning gaps* (3): `test_end_of_numerical_literals`
+  (numeric-literal-followed-by-name warning),
+  `test_warn_missed_comma` (call/subscript-of-literal patterns).
+- *Annotations / PEP 649* (5): all `test_var_annot_*`.
+- *pprint diff formatter* (2): `test_funcdef`, `test_lambdef` —
+  failures during `assertEqual` diff, not the test logic.
+- *Parser restrictions* (3): `test_yield` (4 yield-in-context
+  rejections), `test_yield_in_comprehensions`,
+  `test_eval_input` — fixed.
+- *Async* (2): `test_async_with`, plus the deeper
+  `test_async_await` second-half assertion.
+- *Comprehensions* (3): `test_genexps`,
+  `test_comprehension_specials`, `test_control_flow_in_finally`.
+- *Misc* (3): `test_former_statements_refer_to_builtins` (custom
+  error message), `test_selectors` (regression from dict
+  iteration order — same latent bug as F2-1 era), and
+  `test_eval_input` — fixed.
+
+The next high-ROI target is the latent dict-iteration bug behind
+`test_selectors` — it has flickered ON / OFF / ON across the F2
+fixes depending on memory layout.  Worth investigating once the
+SyntaxWarning lane is closed.
 
 ### V154.4 Changes (2026-04-25) — F2-1, F2-fix-tuplecmp, F1-2: 39 → 42 PASS
 
