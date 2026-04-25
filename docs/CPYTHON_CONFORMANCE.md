@@ -86,6 +86,26 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 
 **Key V110 milestone**: All essential tests now run to completion without crashing. Individual test failures reflect unimplemented language features (metaclass protocol, descriptors, C-extension stubs), not interpreter instability.
 
+### V147 Changes (2026-04-24) — PD1: stackEffect fix for OP_GET_ANEXT
+
+Marginal improvement on the GCStack overflow that blocks async-for
+tests.  `OP_GET_ANEXT` was missing from the compiler's
+`stackEffect()` table, falling through to the default 0.  The opcode
+actually pushes +1 (keeps aiter, pushes awaitable), so the loop's
+max-stack reservation was 1 short per iteration.
+
+Capacity went 35→36 with PD1.  The overflow now lands at top=36
+instead of 35, indicating the runtime growth is multi-slot per
+iteration — likely 4 slots, hinted at by the per-iteration repeating
+pattern in the trace dump.  The actual fix needs to reconcile
+`compileAsyncFor`'s emit sequence with the SETUP_FINALLY/POP_BLOCK
+balance; deferred to the next round.
+
+| State | PASS | FAIL | CRASH | Note |
+| :---  | ---: | ---: | ---:  | :--- |
+| Before PD1 | 29 | 7 | 1 | 7 disabled async-for/with placeholders |
+| After PD1  | 29 | 7 | 1 | unchanged; capacity 35→36 only |
+
 ### V146 Changes (2026-04-24) — PC-round: async-side surface
 
 After the PB-round closed the synthetic suite at 24/24, the suite was
