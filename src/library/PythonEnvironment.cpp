@@ -8453,6 +8453,17 @@ void PythonEnvironment::raiseNameError(proto::ProtoContext* ctx, const std::stri
     }
 }
 
+void PythonEnvironment::raiseUnboundLocalError(proto::ProtoContext* ctx, const std::string& msg) {
+    if (!unboundLocalErrorType) {
+        // Fallback during bootstrap before exceptions are registered.
+        raiseNameError(ctx, msg);
+        return;
+    }
+    const proto::ProtoList* args = ctx->newList()->appendLast(ctx, PythonEnvironment::getInternedString(ctx, msg.c_str())->asObject(ctx));
+    const proto::ProtoObject* exc = invokePythonCallable(ctx, unboundLocalErrorType, args, nullptr);
+    if (exc) setPendingException(exc);
+}
+
 void PythonEnvironment::raiseAttributeError(proto::ProtoContext* ctx, const proto::ProtoObject* obj, const std::string& attr) {
     if (!attributeErrorType) {
         // Fallback during bootstrap

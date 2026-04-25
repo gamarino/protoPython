@@ -659,6 +659,7 @@ public:
 
     void raiseValueError(proto::ProtoContext* context, const proto::ProtoObject* msg);
     void raiseNameError(proto::ProtoContext* context, const std::string& name);
+    void raiseUnboundLocalError(proto::ProtoContext* context, const std::string& msg);
     void raiseAttributeError(proto::ProtoContext* context, const proto::ProtoObject* obj, const std::string& attr);
     void raiseRuntimeError(proto::ProtoContext* context, const std::string& msg);
     void raiseOSError(proto::ProtoContext* context, int errnum, const std::string& strerr, const std::string& filename = "");
