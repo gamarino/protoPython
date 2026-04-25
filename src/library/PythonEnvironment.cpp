@@ -7582,7 +7582,12 @@ static const proto::ProtoObject* py_dict_copy(
 
     const proto::ProtoList* parents = self->getParents(context);
     const proto::ProtoObject* parent = parents && parents->getSize(context) > 0 ? parents->getAt(context, 0) : nullptr;
-    const proto::ProtoObject* copyObj = context->newObject(false);
+    // Dict copies must be mutable so that subsequent in-place mutations
+    // (`d[k] = v`, `del d[k]`, `d.update(other)`, …) persist on the same
+    // object handle.  Immutable copies caused pprint's `context.copy()`
+    // pattern to silently lose the recursion-cycle marker on `del`,
+    // surfacing as KeyError later in the formatter.
+    const proto::ProtoObject* copyObj = context->newObject(true);
     if (parent) copyObj = copyObj->addParent(context, parent);
     copyObj = copyObj->setAttribute(context, keysName, keys->asObject(context));
     copyObj = copyObj->setAttribute(context, dataName, dict->asObject(context));
