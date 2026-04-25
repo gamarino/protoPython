@@ -9231,6 +9231,23 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     asyncGeneratorPrototype = asyncGeneratorPrototype->setAttribute(rootContext_,
         PythonEnvironment::getInternedString(rootContext_, "__aiter__"),
         rootContext_->fromMethod(nullptr, py_self_iter));
+    // PC1: minimal asend/athrow/aclose surface.  These are aliases to
+    // send/throw/close — the inherited generator paused-frame model
+    // is already correct for advancing the async generator, and most
+    // call sites that use these methods do so via `await agen.asend(v)`
+    // which requires them only to exist + return something awaitable.
+    // Returning the yielded value directly works for the single-step
+    // pattern; full coroutine-wrapping semantics will need a dedicated
+    // proxy object, deferred to a future round.
+    asyncGeneratorPrototype = asyncGeneratorPrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "asend"),
+        rootContext_->fromMethod(nullptr, py_generator_send));
+    asyncGeneratorPrototype = asyncGeneratorPrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "athrow"),
+        rootContext_->fromMethod(nullptr, py_generator_throw));
+    asyncGeneratorPrototype = asyncGeneratorPrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "aclose"),
+        rootContext_->fromMethod(nullptr, py_generator_close));
 
     // V72: Create 'function' prototype
     functionPrototype = objectPrototype->newChild(rootContext_, true);
