@@ -1534,7 +1534,12 @@ static const proto::ProtoObject* py_compile(
     };
     if (mode == "eval") {
         Parser parser(source);
-        std::unique_ptr<ASTNode> expr = parser.parseExpression();
+        // CPython's eval mode (eval_input grammar = `testlist NEWLINE*
+        // ENDMARKER`) accepts comma-separated tuples, e.g.
+        // `eval('1, 0 or 1')` -> (1, 1).  Use parseTestList so the bare
+        // comma form is accepted; parseExpression alone treats the comma
+        // as end-of-expression and surfaces "invalid syntax".
+        std::unique_ptr<ASTNode> expr = parser.parseTestList();
         if (!expr) {
             raiseSE(parser.hasError() ? parser.getLastErrorMsg() : "invalid syntax",
                     parser.getLastErrorLine(), parser.getLastErrorColumn());
@@ -1588,7 +1593,11 @@ static const proto::ProtoObject* py_eval(
     std::string source;
     exprObj->asString(context)->toUTF8String(context, source);
     Parser parser(source);
-    std::unique_ptr<ASTNode> expr = parser.parseExpression();
+    // eval() uses the eval_input grammar (testlist NEWLINE* ENDMARKER), so
+    // bare comma-tuples like `eval('1, 0 or 1')` -> (1, 1) must parse.
+    // parseTestList accepts the comma-separated form; parseExpression alone
+    // does not.
+    std::unique_ptr<ASTNode> expr = parser.parseTestList();
     if (!expr || !parser.atEOF()) {
         PythonEnvironment* env = PythonEnvironment::fromContext(context);
         if (env) {
