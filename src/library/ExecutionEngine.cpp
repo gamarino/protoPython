@@ -2102,8 +2102,9 @@ const proto::ProtoObject* py_generator_close(
         env->clearPendingException();
     }
 
+    const proto::ProtoObject* sendResult = nullptr;
     try {
-        py_generator_send_impl(ctx, self, PROTO_NONE, genExit);
+        sendResult = py_generator_send_impl(ctx, self, PROTO_NONE, genExit);
     } catch (...) {
         // C++ exception: clear any pending protoPython exception and return.
         if (env->hasPendingException()) {
@@ -2129,6 +2130,11 @@ const proto::ProtoObject* py_generator_close(
             env->clearPendingException();
         }
         // Otherwise leave the exception pending so it propagates.
+    } else if (sendResult && sendResult != PROTO_NONE) {
+        // PB6: the generator caught GeneratorExit and *yielded* a new
+        // value rather than letting close() finish.  CPython contract:
+        // raise RuntimeError("generator ignored GeneratorExit").
+        env->raiseRuntimeError(ctx, "generator ignored GeneratorExit");
     }
     return PROTO_NONE;
 }
