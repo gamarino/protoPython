@@ -8561,6 +8561,14 @@ bool PythonEnvironment::emitSyntaxWarning(proto::ProtoContext* ctx, const std::s
     const proto::ProtoObject* syntaxWarning = resolve("SyntaxWarning", ctx);
     if (!syntaxWarning || syntaxWarning == PROTO_NONE) return false;
 
+    // Importing the user-facing `warnings` module triggers
+    // _py_warnings._set_module(sys.modules['warnings']) which populates
+    // `_wm` inside _py_warnings.  Without this, _py_warnings.warn_explicit
+    // raises AttributeError on `_wm._lock` because `_wm` is None.
+    // Calling resolveModule on `warnings` is idempotent — once it's loaded
+    // protoPython caches the module.
+    const proto::ProtoObject* warningsModUser = resolveModule("warnings", ctx);
+    (void)warningsModUser;
     const proto::ProtoObject* warningsMod = resolveModule("_py_warnings", ctx);
     if (!warningsMod || warningsMod == PROTO_NONE) return false;
 
