@@ -18,6 +18,22 @@ static const proto::ProtoObject* exception_init(
         if (!positionalParameters || positionalParameters->getSize(context) == 0) return PROTO_NONE;
         instance = positionalParameters->getAt(context, 0);
         startIdx = 1;
+    } else if (positionalParameters && positionalParameters->getSize(context) > 0) {
+        // PB4: runUserClassCall prepends `obj` (the freshly-created
+        // instance) as the first positional arg before invoking
+        // __init__, while also passing it as `self`.  Skip that
+        // duplicate.  Detect via `first.__class__ == self`: each
+        // protoPython instance has __class__ pointing to itself in
+        // the construction phase, so a duplicated self has its
+        // `__class__` attribute equal to `self`.
+        const proto::ProtoObject* first = positionalParameters->getAt(context, 0);
+        if (first) {
+            const proto::ProtoString* clsKey = PythonEnvironment::getInternedString(context, "__class__");
+            const proto::ProtoObject* firstCls = first->getAttribute(context, clsKey);
+            if (firstCls == self) {
+                startIdx = 1;
+            }
+        }
     }
 
     const proto::ProtoString* argsName = PythonEnvironment::getInternedString(context, "args");
@@ -455,14 +471,20 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx,
     const proto::ProtoString* py_init = PythonEnvironment::getInternedString(ctx, "__init__");
     proto::ProtoObject* stopIterMutable = const_cast<proto::ProtoObject*>(stopIterationType);
     stopIterMutable->setAttribute(ctx, py_init, ctx->fromMethod(stopIterMutable, [](proto::ProtoContext* context, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* positionalParameters, const proto::ProtoSparseList* keywordParameters) -> const proto::ProtoObject* {
+        // Run base init so `self.args` is populated, then read value
+        // back from `self.args` (which has the duplicate-self already
+        // stripped if applicable).  This avoids the historical bug
+        // where StopIteration.value held `(class_obj, real_value)`
+        // because the caller leaked the class as posArgs[0].
         exception_init(context, self, parentLink, positionalParameters, keywordParameters);
+        const proto::ProtoObject* args = self->getAttribute(context,
+            PythonEnvironment::getInternedString(context, "args"));
         const proto::ProtoObject* value = PROTO_NONE;
-        if (positionalParameters && positionalParameters->getSize(context) > 0) {
-            if (positionalParameters->getSize(context) == 1) {
-                value = positionalParameters->getAt(context, 0);
-            } else {
-                 value = context->newTupleFromList(positionalParameters)->asObject(context);
-            }
+        if (args && args->isTuple(context)) {
+            const proto::ProtoTuple* t = args->asTuple(context);
+            unsigned long n = t->getSize(context);
+            if (n == 1) value = t->getAt(context, 0);
+            else if (n > 1) value = args;       // tuple of values
         }
         self = self->setAttribute(context, PythonEnvironment::getInternedString(context, "value"), value);
         return PROTO_NONE;
