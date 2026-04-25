@@ -39,7 +39,7 @@ private:
     std::string filename_;
     const proto::ProtoList* constantsVec_ = nullptr;
     const proto::ProtoList* namesVec_ = nullptr;
-    std::vector<const proto::ProtoObject*> bytecodeVec_;
+    const proto::ProtoList* bytecodeVec_ = nullptr;
     std::unordered_map<std::string, int> namesIndex_;
     std::unordered_map<long long, int> constIntIndex_;
     std::unordered_map<double, int> constFloatIndex_;

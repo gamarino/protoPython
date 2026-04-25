@@ -23,6 +23,7 @@ Compiler::Compiler(proto::ProtoContext* ctx, const std::string& filename)
     : ctx_(ctx), filename_(filename) {
     constantsVec_ = ctx_->newList();
     namesVec_ = ctx_->newList();
+    bytecodeVec_ = ctx_->newList();
 }
 
 int Compiler::addConstant(const proto::ProtoObject* obj) {
@@ -245,16 +246,16 @@ static int stackEffect(int op, int arg) {
 
 void Compiler::emit(int op, int arg) {
     if (get_env_diag()) {
-        fprintf(stderr, "COMPILING [%p]: offset=%zu op=%d arg=%d\n", (void*)this, bytecodeVec_.size(), op, arg);
+        fprintf(stderr, "COMPILING [%p]: offset=%zu op=%d arg=%d\n", (void*)this, static_cast<size_t>(bytecodeVec_->getSize(ctx_)), op, arg);
     }
-    bytecodeVec_.push_back(ctx_->fromInteger(op));
-    bytecodeVec_.push_back(ctx_->fromInteger(arg));
+    bytecodeVec_ = bytecodeVec_->appendLast(ctx_, ctx_->fromInteger(op));
+    bytecodeVec_ = bytecodeVec_->appendLast(ctx_, ctx_->fromInteger(arg));
     currentStack_ += stackEffect(op, arg);
     if (currentStack_ > maxStack_) maxStack_ = currentStack_;
 }
 
 int Compiler::bytecodeOffset() const {
-    return static_cast<int>(bytecodeVec_.size()) / 2;
+    return static_cast<int>(bytecodeVec_->getSize(ctx_)) / 2;
 }
 
 void Compiler::addPatch(int argSlotIndex, int targetBytecodeIndex) {
@@ -266,8 +267,8 @@ void Compiler::applyPatches() {
         // p.first is the instruction index (bytecodeOffset() value)
         // the arg slot is at index (p.first * 2) + 1 in the bytecodeVec_
         unsigned long arrayIdx = static_cast<unsigned long>(p.first) * 2 + 1;
-        if (arrayIdx < bytecodeVec_.size())
-            bytecodeVec_[arrayIdx] = ctx_->fromInteger(p.second * 2); // ExecutionEngine jumps to array index!
+        if (arrayIdx < static_cast<unsigned long>(bytecodeVec_->getSize(ctx_)))
+            bytecodeVec_ = bytecodeVec_->setAt(ctx_, arrayIdx, ctx_->fromInteger(p.second * 2)); // ExecutionEngine jumps to array index!
     }
     patches_.clear();
 }
@@ -288,7 +289,7 @@ const proto::ProtoTuple* Compiler::getNames() {
 
 const proto::ProtoTuple* Compiler::getBytecode() {
     if (!bytecode_) {
-        bytecode_ = ctx_->newTuple(bytecodeVec_);
+        bytecode_ = ctx_->newTupleFromList(bytecodeVec_);
     }
     return bytecode_;
 }
