@@ -112,6 +112,10 @@ public:
     const proto::ProtoObject* getFramePrototype() const { return framePrototype; }
     /** @brief Gets the generator prototype. */
     const proto::ProtoObject* getGeneratorPrototype() const { return generatorPrototype; }
+    /** @brief Gets the coroutine prototype (async def, no yield). */
+    const proto::ProtoObject* getCoroutinePrototype() const { return coroutinePrototype; }
+    /** @brief Gets the async_generator prototype (async def with yield). */
+    const proto::ProtoObject* getAsyncGeneratorPrototype() const { return asyncGeneratorPrototype; }
     /** @brief Gets the function prototype. */
     const proto::ProtoObject* getFunctionPrototype() const { return functionPrototype; }
     /** @brief Gets the frozenset prototype. */
@@ -758,6 +762,8 @@ private:
     const proto::ProtoObject* noneTypeProto;
     const proto::ProtoObject* framePrototype;
     const proto::ProtoObject* generatorPrototype;
+    const proto::ProtoObject* coroutinePrototype = nullptr;
+    const proto::ProtoObject* asyncGeneratorPrototype = nullptr;
     const proto::ProtoObject* functionPrototype;
     const proto::ProtoObject* sliceType;
     const proto::ProtoObject* frozensetPrototype;

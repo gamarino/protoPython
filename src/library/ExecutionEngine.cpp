@@ -591,7 +591,20 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
     if (isGenerator) {
         proto::ProtoObject* gen = const_cast<proto::ProtoObject*>(calleeCtx->newObject(true));
         if (env && env->getGeneratorPrototype()) {
+            // PB3: select prototype based on co_flags.
+            //   0x80 + yield  → async_generator
+            //   0x80 alone    → coroutine
+            //   else (0x20)   → generator
             const proto::ProtoObject* genProto = env->getGeneratorPrototype();
+            const proto::ProtoObject* coFlagsObj = codeObj->getAttribute(calleeCtx, env->getCoFlagsString());
+            long long co_flags_val = (coFlagsObj && coFlagsObj->isInteger(calleeCtx)) ? coFlagsObj->asLong(calleeCtx) : 0;
+            const bool hasCoroutineFlag = (co_flags_val & 0x80) != 0;
+            const bool hasGeneratorFlag = (co_flags_val & 0x20) != 0;
+            if (hasCoroutineFlag && hasGeneratorFlag && env->getAsyncGeneratorPrototype()) {
+                genProto = env->getAsyncGeneratorPrototype();
+            } else if (hasCoroutineFlag && env->getCoroutinePrototype()) {
+                genProto = env->getCoroutinePrototype();
+            }
             gen = const_cast<proto::ProtoObject*>(gen->addParent(calleeCtx, genProto));
             gen->setAttribute(calleeCtx, env->getClassString(), genProto);
         }

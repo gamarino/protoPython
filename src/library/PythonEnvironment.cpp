@@ -9206,6 +9206,32 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     generatorPrototype = generatorPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "throw"), rootContext_->fromMethod(nullptr, py_generator_throw));
     generatorPrototype = generatorPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "close"), rootContext_->fromMethod(nullptr, py_generator_close));
 
+    // PB3: 'coroutine' and 'async_generator' types — distinct from
+    // generator.  Inherit send/throw/close (same paused-frame model);
+    // override __name__/__qualname__ so type(coro).__name__ reports
+    // 'coroutine' / 'async_generator'.  async_generator additionally
+    // exposes __aiter__, which sync generators must NOT expose.
+    coroutinePrototype = generatorPrototype->newChild(rootContext_, true);
+    coroutinePrototype = coroutinePrototype->setAttribute(rootContext_, py_class, typePrototype);
+    coroutinePrototype = coroutinePrototype->setAttribute(rootContext_, py_name,
+        PythonEnvironment::getInternedString(rootContext_, "coroutine")->asObject(rootContext_));
+    coroutinePrototype = coroutinePrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "__qualname__"),
+        PythonEnvironment::getInternedString(rootContext_, "coroutine")->asObject(rootContext_));
+    coroutinePrototype = coroutinePrototype->setAttribute(rootContext_, py_module, builtinsVal);
+
+    asyncGeneratorPrototype = generatorPrototype->newChild(rootContext_, true);
+    asyncGeneratorPrototype = asyncGeneratorPrototype->setAttribute(rootContext_, py_class, typePrototype);
+    asyncGeneratorPrototype = asyncGeneratorPrototype->setAttribute(rootContext_, py_name,
+        PythonEnvironment::getInternedString(rootContext_, "async_generator")->asObject(rootContext_));
+    asyncGeneratorPrototype = asyncGeneratorPrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "__qualname__"),
+        PythonEnvironment::getInternedString(rootContext_, "async_generator")->asObject(rootContext_));
+    asyncGeneratorPrototype = asyncGeneratorPrototype->setAttribute(rootContext_, py_module, builtinsVal);
+    asyncGeneratorPrototype = asyncGeneratorPrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "__aiter__"),
+        rootContext_->fromMethod(nullptr, py_self_iter));
+
     // V72: Create 'function' prototype
     functionPrototype = objectPrototype->newChild(rootContext_, true);
     functionPrototype = functionPrototype->setAttribute(rootContext_, py_class, typePrototype);
