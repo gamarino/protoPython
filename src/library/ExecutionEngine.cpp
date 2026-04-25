@@ -5186,10 +5186,18 @@ const proto::ProtoObject* executeBytecodeRange(
                                 const proto::ProtoObject* vnameObj = coVarnames->getAt(ctx, j);
                                 if (vnameObj && vnameObj->isString(ctx)) {
                                     const proto::ProtoObject* val = (j < outerNSlots) ? outerSlots[j] : nullptr;
-                                    // If not in slots, try frame attributes (for non-optimized/mapped frames)
-                                    if (!val) val = frame->getAttribute(ctx, vnameObj->asString(ctx));
-                                    
-                                    if (val && val != PROTO_NONE) {
+                                    // For CO_OPTIMIZED slots, PROTO_NONE is a legitimate bound
+                                    // value (e.g. a parameter `boundary=None` left at its default
+                                    // and captured by an inner closure).  Accept it.
+                                    // Only when the slot is truly unset (nullptr) do we fall
+                                    // through to the frame-attribute fallback, where PROTO_NONE
+                                    // means "attribute missing" and must be filtered out.
+                                    if (!val) {
+                                        val = frame->getAttribute(ctx, vnameObj->asString(ctx));
+                                        if (val == PROTO_NONE) val = nullptr;
+                                    }
+
+                                    if (val) {
                                         closureFrame = const_cast<proto::ProtoObject*>(closureFrame->setAttribute(ctx, vnameObj->asString(ctx), val));
                                         stack.back() = closureFrame; // Keep GC root updated
                                     }
