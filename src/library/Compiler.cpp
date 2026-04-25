@@ -135,6 +135,14 @@ static int stackEffect(int op, int arg) {
         case OP_GET_YIELD_FROM_ITER:
             return 0;
 
+        // PD1: GET_ANEXT keeps the aiter on the stack and pushes the
+        // awaitable on top — net +1.  Was previously falling through
+        // to the default 0, causing per-iteration stack-budget
+        // underestimation in `async for` loops, which overflowed the
+        // GC-rooted stack on the second send().
+        case OP_GET_ANEXT:
+            return 1;
+
         // LOAD_ATTR: pops object, but when loading a method replaces it with NULL and
         // pushes the method (+1 net). Accounting for the worst case (method) avoids
         // GCStack overflow from systematic underestimation of max stack depth.
