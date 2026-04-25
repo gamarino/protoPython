@@ -2472,10 +2472,22 @@ static const proto::ProtoObject* py_vars(proto::ProtoContext* ctx, const proto::
     const proto::ProtoObject* obj = args->getAt(ctx, 0);
     protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(ctx);
     const proto::ProtoString* dictS = env ? env->getDictDunderString() : PythonEnvironment::getInternedString(ctx, "__dict__");
-    
-    const proto::ProtoObject* dict = obj->getAttribute(ctx, dictS);
+
+    // PI: use env->getAttribute so the type chain (and the
+    // objectPrototype.__dict__ method) is found.  The bare
+    // obj->getAttribute only walks own attrs.
+    const proto::ProtoObject* dict = env ? env->getAttribute(ctx, obj, dictS) : obj->getAttribute(ctx, dictS);
+    // __dict__ on objectPrototype is installed as a method
+    // (py_object_get_dict) — invoke it to materialise the dict, just
+    // like LOAD_ATTR's auto-invoke special-case.
+    if (dict && dict != PROTO_NONE && dict->asMethod(ctx) && dict->asMethodSelf(ctx) != nullptr) {
+        const proto::ProtoObject* materialised = dict->asMethod(ctx)(ctx,
+            const_cast<proto::ProtoObject*>(dict->asMethodSelf(ctx)),
+            nullptr, ctx->newList(), nullptr);
+        if (materialised) dict = materialised;
+    }
     if (dict && dict != PROTO_NONE) return dict;
-    
+
     return obj;
 }
 
@@ -4045,14 +4057,19 @@ static const proto::ProtoObject* py_property_set(
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
     const proto::ProtoObject* val = positionalParameters->getAt(context, 1);
     const proto::ProtoObject* fset = self->getAttribute(context, PythonEnvironment::getInternedString(context, "fset"));
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
     if (fset && fset != PROTO_NONE) {
-        PythonEnvironment* env = PythonEnvironment::fromContext(context);
         if (env) {
             std::vector<const proto::ProtoObject*> argsVec = {obj, val};
             env->callObject(fset, argsVec);
         }
+        return PROTO_NONE;
     }
-    return PROTO_NONE;
+    // PI: Read-only property — raise AttributeError per CPython semantics.
+    if (env) {
+        env->raiseAttributeError(context, obj, "property has no setter");
+    }
+    return nullptr;
 }
 
 static const proto::ProtoObject* py_property_init(

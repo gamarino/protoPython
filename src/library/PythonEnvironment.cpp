@@ -272,6 +272,53 @@ static const proto::ProtoObject* py_type_call(
     if (get_env_diag()) {
         printf("DEBUG: py_type_call called self=%p\n", (void*)self);
     }
+    // PI: refuse to instantiate classes with abstract methods.
+    // CPython's type.__call__ checks __abstractmethods__ (a frozenset
+    // populated by ABCMeta) and raises TypeError if non-empty.
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (env && self) {
+        const proto::ProtoString* amS =
+            PythonEnvironment::getInternedString(context, "__abstractmethods__");
+        const proto::ProtoObject* am = self->getAttribute(context, amS);
+        bool nonEmpty = false;
+        if (am && am != PROTO_NONE) {
+            // Probe via Python `len()` semantics so the check works for
+            // any iterable container (frozenset/set/list/tuple/str/dict).
+            const proto::ProtoString* lenS =
+                PythonEnvironment::getInternedString(context, "__len__");
+            const proto::ProtoObject* lenM = env->getAttribute(context, am, lenS, false);
+            if (env->hasPendingException()) env->clearPendingException();
+            if (lenM && lenM != PROTO_NONE) {
+                const proto::ProtoObject* lenRes = nullptr;
+                if (lenM->asMethod(context)) {
+                    lenRes = lenM->asMethod(context)(context,
+                        const_cast<proto::ProtoObject*>(am), nullptr,
+                        context->newList(), nullptr);
+                } else {
+                    const proto::ProtoList* la = context->newList()->appendLast(context, am);
+                    lenRes = invokePythonCallable(context, lenM, la, nullptr);
+                }
+                if (env->hasPendingException()) env->clearPendingException();
+                if (lenRes && lenRes->isInteger(context)) {
+                    nonEmpty = lenRes->asLong(context) > 0;
+                }
+            } else {
+                // Fallback: native list/tuple/string size.
+                if (am->asTuple(context)) nonEmpty = am->asTuple(context)->getSize(context) > 0;
+                else if (am->asList(context)) nonEmpty = am->asList(context)->getSize(context) > 0;
+                else if (am->isString(context)) nonEmpty = am->asString(context)->getSize(context) > 0;
+            }
+        }
+        if (nonEmpty) {
+            std::string clsName;
+            const proto::ProtoObject* nm = self->getAttribute(context, env->getNameString());
+            if (nm && nm->isString(context)) nm->asString(context)->toUTF8String(context, clsName);
+            std::string msg = "Can't instantiate abstract class " + clsName +
+                              " with abstract methods";
+            env->raiseTypeError(context, msg.c_str());
+            return nullptr;
+        }
+    }
     return protoPython::runUserClassCall(context, self, parentLink, positionalParameters, keywordParameters);
 }
 
@@ -592,32 +639,123 @@ static const proto::ProtoObject* py_object_get_dict(
     }
 
     // Instances have a mutable dict.
-    // For V102, we return a DictWrapper that directly uses the instance's storage.
-    // This allows obj.__dict__[key] = value to update the instance attributes.
+    // PI: The returned dict is now a true write-through proxy.  Its
+    // __setitem__ / __delitem__ delegate to env->setAttribute /
+    // deleteAttribute on the instance, so `obj.__dict__[key] = value`
+    // mutates the instance's attributes (matches CPython semantics).
+    // Reads still go through the shared __data__/__keys__ lists.
     const proto::ProtoObject* dictProto = env->getDictPrototype();
     if (!dictProto) return PROTO_NONE;
 
     // Ensure self has dict storage (initializes __data__ and __keys__)
     const proto::ProtoObject* mutableSelf = env->initDictStorage(context, self);
-    
+
     // Create a new dict object
     proto::ProtoObject* d = const_cast<proto::ProtoObject*>(dictProto->newChild(context, true));
-    
+
     // Link the dict's storage to the instance's storage.
-    // In ProtoCore, sparse lists are objects, so they are passed by reference.
     const proto::ProtoString* dataS = env->getDataString();
     const proto::ProtoString* keysS = env->getKeysString();
-    
+
     const proto::ProtoObject* data = mutableSelf->getAttribute(context, dataS);
     const proto::ProtoObject* keys = mutableSelf->getAttribute(context, keysS);
-    
-    d->setAttribute(context, dataS, data);
-    d->setAttribute(context, keysS, keys);
-    
-    // CRITICAL: We need a way to ensure that if 'd' is modified, 'mutableSelf' is also updated.
-    // In a full implementation, we'd use a proxy. For now, since they share the same SparseList object,
-    // they are somewhat linked, but ProtoCore's setAttribute on the dict won't update the instance.
-    // We'll address this by making the DictWrapper more robust if needed.
+
+    d = const_cast<proto::ProtoObject*>(d->setAttribute(context, dataS, data));
+    d = const_cast<proto::ProtoObject*>(d->setAttribute(context, keysS, keys));
+
+    // PI: stash a back-reference on the dict so the proxy hooks below
+    // can find the instance to write through to.
+    const proto::ProtoString* proxyTargetS =
+        PythonEnvironment::getInternedString(context, "__protopy_dict_proxy_target__");
+    d = const_cast<proto::ProtoObject*>(d->setAttribute(context, proxyTargetS, mutableSelf));
+
+    // Override __setitem__ to write through to the instance.
+    auto setitem = [](proto::ProtoContext* ctx, const proto::ProtoObject* self_,
+                      const proto::ParentLink*,
+                      const proto::ProtoList* args,
+                      const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+        PythonEnvironment* env_ = PythonEnvironment::fromContext(ctx);
+        if (!env_ || !args || args->getSize(ctx) < 2) return PROTO_NONE;
+        const proto::ProtoString* targetS_ =
+            PythonEnvironment::getInternedString(ctx, "__protopy_dict_proxy_target__");
+        const proto::ProtoObject* tgt = self_->getAttribute(ctx, targetS_);
+        const proto::ProtoObject* key = args->getAt(ctx, 0);
+        const proto::ProtoObject* val = args->getAt(ctx, 1);
+        if (tgt && tgt != PROTO_NONE && key && key->isString(ctx)) {
+            // PI: write directly to the target's own attrs and to its
+            // __data__ / __keys__ storage, bypassing env->setAttribute's
+            // descriptor short-circuit (which would dispatch __set__ →
+            // back into obj.__dict__[key] and recurse).  Mirrors CPython
+            // `obj.__dict__[key] = value`: instance dict storage is
+            // updated, descriptors are not invoked.
+            const proto::ProtoString* nm = key->asString(ctx);
+            const proto::ProtoString* dS = env_->getDataString();
+            const proto::ProtoString* kS = env_->getKeysString();
+
+            // 1. Update __data__ sparse list (rebuild and store new pointer).
+            const proto::ProtoObject* dataObj = tgt->hasOwnAttribute(ctx, dS) == PROTO_TRUE
+                ? tgt->getAttribute(ctx, dS) : nullptr;
+            const proto::ProtoSparseList* dl = dataObj ? dataObj->asSparseList(ctx) : nullptr;
+            if (dl) {
+                dl = dl->setAt(ctx, nm->getHash(ctx), val);
+                const_cast<proto::ProtoObject*>(tgt)->setAttribute(ctx, dS, dl->asObject(ctx));
+            }
+            // 2. Update __keys__ list (append name if not already present).
+            const proto::ProtoObject* keysObj = tgt->hasOwnAttribute(ctx, kS) == PROTO_TRUE
+                ? tgt->getAttribute(ctx, kS) : nullptr;
+            if (keysObj && keysObj->asList(ctx) && !keysObj->asList(ctx)->has(ctx, nm->asObject(ctx))) {
+                const proto::ProtoList* nl = keysObj->asList(ctx)->appendLast(ctx, nm->asObject(ctx));
+                const_cast<proto::ProtoObject*>(tgt)->setAttribute(ctx, kS, nl->asObject(ctx));
+            }
+            // 3. Update the native attribute mirror.
+            const_cast<proto::ProtoObject*>(tgt)->setAttribute(ctx, nm, val);
+        }
+        return PROTO_NONE;
+    };
+    auto delitem = [](proto::ProtoContext* ctx, const proto::ProtoObject* self_,
+                      const proto::ParentLink*,
+                      const proto::ProtoList* args,
+                      const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+        PythonEnvironment* env_ = PythonEnvironment::fromContext(ctx);
+        if (!env_ || !args || args->getSize(ctx) < 1) return PROTO_NONE;
+        const proto::ProtoString* targetS_ =
+            PythonEnvironment::getInternedString(ctx, "__protopy_dict_proxy_target__");
+        const proto::ProtoObject* tgt = self_->getAttribute(ctx, targetS_);
+        const proto::ProtoObject* key = args->getAt(ctx, 0);
+        if (tgt && tgt != PROTO_NONE && key && key->isString(ctx)) {
+            const proto::ProtoString* nm = key->asString(ctx);
+            // Drop from __data__ / __keys__ on the target.
+            const proto::ProtoString* dS = env_->getDataString();
+            const proto::ProtoString* kS = env_->getKeysString();
+            const proto::ProtoObject* dataObj = tgt->hasOwnAttribute(ctx, dS) == PROTO_TRUE
+                ? tgt->getAttribute(ctx, dS) : nullptr;
+            if (dataObj && dataObj->asSparseList(ctx)) {
+                dataObj->asSparseList(ctx)->removeAt(ctx, nm->getHash(ctx));
+            }
+            const proto::ProtoObject* keysObj = tgt->hasOwnAttribute(ctx, kS) == PROTO_TRUE
+                ? tgt->getAttribute(ctx, kS) : nullptr;
+            if (keysObj && keysObj->asList(ctx)) {
+                const proto::ProtoList* nl = ctx->newList();
+                const proto::ProtoList* kl = keysObj->asList(ctx);
+                unsigned long h = nm->getHash(ctx);
+                for (unsigned long i = 0; i < kl->getSize(ctx); ++i) {
+                    const proto::ProtoObject* k = kl->getAt(ctx, i);
+                    if (k && k->isString(ctx) && k->getHash(ctx) == h) continue;
+                    nl = nl->appendLast(ctx, k);
+                }
+                const_cast<proto::ProtoObject*>(tgt)->setAttribute(ctx, kS, nl->asObject(ctx));
+            }
+            // Also clear the native attribute
+            const_cast<proto::ProtoObject*>(tgt)->setAttribute(ctx, nm, env_->getNonePrototype());
+        }
+        return PROTO_NONE;
+    };
+    d = const_cast<proto::ProtoObject*>(d->setAttribute(context,
+        PythonEnvironment::getInternedString(context, "__setitem__"),
+        context->fromMethod(d, +setitem)));
+    d = const_cast<proto::ProtoObject*>(d->setAttribute(context,
+        PythonEnvironment::getInternedString(context, "__delitem__"),
+        context->fromMethod(d, +delitem)));
     return d;
 }
 
@@ -12002,6 +12140,113 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
         return this->getType(ctx, obj);
     }
 
+    // PI: dispatch through user-defined __getattribute__ if present.
+    // CPython invokes type(obj).__getattribute__(obj, name) for every
+    // attribute access; fall through to the standard resolution if the
+    // class doesn't override it (object.__getattribute__ is the default
+    // and we don't recurse into it).  getAttrDepth bounds recursion.
+    if (!isClass && objClass && objClass != PROTO_NONE && getAttrDepth <= 1) {
+        const proto::ProtoString* gaS =
+            PythonEnvironment::getInternedString(ctx, "__getattribute__");
+        // Walk objClass MRO looking for a non-default __getattribute__.
+        const proto::ProtoObject* mroAttr = objClass->getAttribute(ctx, mroString);
+        const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(ctx) : nullptr;
+        if (mroT) {
+            for (unsigned long mi = 0; mi < mroT->getSize(ctx); ++mi) {
+                const proto::ProtoObject* base = mroT->getAt(ctx, mi);
+                if (!base || base == PROTO_NONE) continue;
+                if (base == objectPrototype || base == typePrototype) break;
+                if (base->hasOwnAttribute(ctx, gaS) == PROTO_TRUE) {
+                    const proto::ProtoObject* gaM = base->getOwnAttributeDirect(ctx, gaS);
+                    if (gaM && gaM != PROTO_NONE) {
+                        const proto::ProtoList* gaArgs =
+                            ctx->newList()->appendLast(ctx, obj)
+                                          ->appendLast(ctx, name->asObject(ctx));
+                        const proto::ProtoObject* gaRes = nullptr;
+                        if (gaM->asMethod(ctx)) {
+                            gaRes = gaM->asMethod(ctx)(ctx,
+                                const_cast<proto::ProtoObject*>(obj), nullptr, gaArgs, nullptr);
+                        } else {
+                            gaRes = invokePythonCallable(ctx, gaM, gaArgs, nullptr);
+                        }
+                        if (hasPendingException()) {
+                            // Let __getattr__ fallback handle AttributeError.
+                            const proto::ProtoObject* exc = peekPendingException();
+                            const proto::ProtoObject* exCls = exc ? exc->getAttribute(ctx, classString) : nullptr;
+                            const proto::ProtoObject* exName = exCls ? exCls->getAttribute(ctx, nameString) : nullptr;
+                            std::string excName;
+                            if (exName && exName->isString(ctx)) exName->asString(ctx)->toUTF8String(ctx, excName);
+                            if (excName != "AttributeError") {
+                                return nullptr;
+                            }
+                            clearPendingException();
+                            break;  // fall through to standard resolution
+                        }
+                        return gaRes;
+                    }
+                }
+            }
+        }
+    }
+
+    // PI: data descriptors take precedence over instance attributes.
+    // Walk type's MRO for a descriptor with __set__ (data descriptor);
+    // if found, invoke its __get__ regardless of what's in the instance
+    // dict.  Mirrors CPython's MRO-then-instance-dict resolution order
+    // for data descriptors.
+    if (!isClass && objClass && objClass != PROTO_NONE && getAttrDepth <= 1) {
+        const proto::ProtoObject* mroAttr2 = objClass->getAttribute(ctx, mroString);
+        const proto::ProtoTuple* mroT2 = mroAttr2 ? mroAttr2->asTuple(ctx) : nullptr;
+        if (mroT2) {
+            for (unsigned long mi = 0; mi < mroT2->getSize(ctx); ++mi) {
+                const proto::ProtoObject* base = mroT2->getAt(ctx, mi);
+                if (!base || base == PROTO_NONE) continue;
+                if (base == objectPrototype || base == typePrototype) break;
+                if (base->hasOwnAttribute(ctx, name) == PROTO_TRUE) {
+                    const proto::ProtoObject* descr = base->getOwnAttributeDirect(ctx, name);
+                    if (descr && descr != PROTO_NONE) {
+                        // Look for __set__ on the descriptor (data descriptor marker).
+                        const proto::ProtoString* setS = setDunderString
+                            ? setDunderString : PythonEnvironment::getInternedString(ctx, "__set__");
+                        const proto::ProtoObject* descrType = getType(ctx, descr);
+                        const proto::ProtoObject* setM = descr->getAttribute(ctx, setS);
+                        if ((!setM || setM == PROTO_NONE) && descrType && descrType != PROTO_NONE) {
+                            setM = getAttribute(ctx, descrType, setS, false);
+                        }
+                        if (setM && setM != PROTO_NONE) {
+                            // Data descriptor — invoke __get__ now.
+                            const proto::ProtoString* getS = getDunderString
+                                ? getDunderString : PythonEnvironment::getInternedString(ctx, "__get__");
+                            const proto::ProtoObject* getM = descr->getAttribute(ctx, getS);
+                            if ((!getM || getM == PROTO_NONE) && descrType && descrType != PROTO_NONE) {
+                                getM = getAttribute(ctx, descrType, getS, false);
+                            }
+                            if (getM && getM != PROTO_NONE) {
+                                const proto::ProtoList* getArgs =
+                                    ctx->newList()->appendLast(ctx, obj)
+                                                  ->appendLast(ctx, objClass);
+                                if (getM->asMethod(ctx)) {
+                                    return getM->asMethod(ctx)(ctx,
+                                        const_cast<proto::ProtoObject*>(descr), nullptr,
+                                        getArgs, nullptr);
+                                }
+                                const proto::ProtoList* fullArgs =
+                                    ctx->newList()->appendLast(ctx, descr)
+                                                  ->appendLast(ctx, obj)
+                                                  ->appendLast(ctx, objClass);
+                                return invokePythonCallable(ctx, getM, fullArgs, nullptr);
+                            }
+                            // Has __set__ but no __get__: still data descriptor;
+                            // return the descriptor itself.
+                            return descr;
+                        }
+                    }
+                    break;  // found in MRO, but not data descriptor — stop walk
+                }
+            }
+        }
+    }
+
     if (obj == PROTO_NONE) {
         if (noneTypeProto) return noneTypeProto->getAttribute(ctx, name);
         return nullptr;
@@ -12373,6 +12618,89 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
     // Global recursion limit integration
     RecursionScope rs(this, ctx);
     if (rs.overflowed()) return obj;
+
+    // PI: __slots__ enforcement.  If the instance's class declares
+    // __slots__ AND no inherited class declares a __dict__, only
+    // names listed in __slots__ (across the MRO) may be stored.
+    // Bypassed for class objects themselves (which may set __slots__,
+    // __module__, etc. as part of their own definition).
+    if (!isActuallyAClass(ctx, obj)) {
+        const proto::ProtoObject* type = getType(ctx, obj);
+        if (type && type != PROTO_NONE) {
+            const proto::ProtoObject* mroAttr = type->getAttribute(ctx, mroString);
+            const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(ctx) : nullptr;
+            if (mroT) {
+                bool hasSlots = false;
+                bool hasDict = false;
+                bool nameInSlots = false;
+                std::string nameStr;
+                name->toUTF8String(ctx, nameStr);
+                const proto::ProtoString* slotsS =
+                    PythonEnvironment::getInternedString(ctx, "__slots__");
+                for (unsigned long mi = 0; mi < mroT->getSize(ctx); ++mi) {
+                    const proto::ProtoObject* base = mroT->getAt(ctx, mi);
+                    if (!base || base == PROTO_NONE) continue;
+                    // The root `object` always has a __dict__ via descriptor;
+                    // skip it for the hasDict heuristic.  But any user class
+                    // that doesn't declare __slots__ is treated as having a
+                    // dict (CPython rule: "a class that does not have
+                    // __slots__ in any of its bases will store its instance
+                    // attributes in a __dict__").
+                    bool baseHasSlots = base->hasOwnAttribute(ctx, slotsS) == PROTO_TRUE;
+                    if (baseHasSlots) {
+                        hasSlots = true;
+                        const proto::ProtoObject* slotsObj = base->getOwnAttributeDirect(ctx, slotsS);
+                        if (slotsObj && slotsObj != PROTO_NONE) {
+                            // Iterate slots: tuple, list, or single string.
+                            const proto::ProtoTuple* slotsT = slotsObj->asTuple(ctx);
+                            const proto::ProtoList* slotsL = slotsT ? nullptr : slotsObj->asList(ctx);
+                            if (slotsT) {
+                                for (unsigned long si = 0; si < slotsT->getSize(ctx); ++si) {
+                                    const proto::ProtoObject* s = slotsT->getAt(ctx, si);
+                                    if (s && s->isString(ctx)) {
+                                        std::string ss; s->asString(ctx)->toUTF8String(ctx, ss);
+                                        if (ss == nameStr) { nameInSlots = true; break; }
+                                    }
+                                }
+                            } else if (slotsL) {
+                                for (unsigned long si = 0; si < slotsL->getSize(ctx); ++si) {
+                                    const proto::ProtoObject* s = slotsL->getAt(ctx, si);
+                                    if (s && s->isString(ctx)) {
+                                        std::string ss; s->asString(ctx)->toUTF8String(ctx, ss);
+                                        if (ss == nameStr) { nameInSlots = true; break; }
+                                    }
+                                }
+                            } else if (slotsObj->isString(ctx)) {
+                                std::string ss; slotsObj->asString(ctx)->toUTF8String(ctx, ss);
+                                if (ss == nameStr) nameInSlots = true;
+                            }
+                        }
+                    } else {
+                        // User base class without __slots__ → it has a dict.
+                        // (Skip object's implicit dict, which is what we
+                        //  want to disallow.)
+                        const proto::ProtoString* nm = base->getAttribute(ctx,
+                            PythonEnvironment::getInternedString(ctx, "__name__")) ?
+                            base->getAttribute(ctx,
+                                PythonEnvironment::getInternedString(ctx, "__name__"))->asString(ctx) :
+                            nullptr;
+                        std::string baseName;
+                        if (nm) nm->toUTF8String(ctx, baseName);
+                        if (baseName != "object" && baseName != "type") {
+                            hasDict = true;
+                        }
+                    }
+                    if (nameInSlots) break;
+                }
+                // PI: if any class in MRO declares __slots__ AND no other
+                // class adds a __dict__, only slotted names are accepted.
+                if (hasSlots && !hasDict && !nameInSlots) {
+                    raiseAttributeError(ctx, obj, nameStr);
+                    return nullptr;
+                }
+            }
+        }
+    }
 
     if (get_env_diag()) {
         std::string nStr;

@@ -1679,6 +1679,46 @@ static const proto::ProtoObject* invokeCallable(proto::ProtoContext* ctx,
     {
         const proto::ProtoString* isPyClsS = PythonEnvironment::getInternedString(ctx, "__is_python_class__");
         if (isPyClsS && callable->hasOwnAttribute(ctx, isPyClsS) == PROTO_TRUE) {
+            // PI: refuse to instantiate classes whose
+            // __abstractmethods__ frozenset is non-empty.  Mirrors
+            // py_type_call's check for the metaclass-dispatched path.
+            if (env) {
+                const proto::ProtoString* amS =
+                    PythonEnvironment::getInternedString(ctx, "__abstractmethods__");
+                const proto::ProtoObject* am = callable->getAttribute(ctx, amS);
+                if (am && am != PROTO_NONE) {
+                    const proto::ProtoString* lenS =
+                        PythonEnvironment::getInternedString(ctx, "__len__");
+                    const proto::ProtoObject* lenM = env->getAttribute(ctx, am, lenS, false);
+                    if (env->hasPendingException()) env->clearPendingException();
+                    bool nonEmpty = false;
+                    if (lenM && lenM != PROTO_NONE) {
+                        const proto::ProtoObject* lenRes = nullptr;
+                        if (lenM->asMethod(ctx)) {
+                            lenRes = lenM->asMethod(ctx)(ctx,
+                                const_cast<proto::ProtoObject*>(am), nullptr,
+                                ctx->newList(), nullptr);
+                        } else {
+                            const proto::ProtoList* la =
+                                ctx->newList()->appendLast(ctx, am);
+                            lenRes = invokePythonCallable(ctx, lenM, la, nullptr);
+                        }
+                        if (env->hasPendingException()) env->clearPendingException();
+                        if (lenRes && lenRes->isInteger(ctx)) {
+                            nonEmpty = lenRes->asLong(ctx) > 0;
+                        }
+                    }
+                    if (nonEmpty) {
+                        std::string clsName;
+                        const proto::ProtoObject* nm = callable->getAttribute(ctx, env->getNameString());
+                        if (nm && nm->isString(ctx)) nm->asString(ctx)->toUTF8String(ctx, clsName);
+                        std::string msg = "Can't instantiate abstract class " + clsName +
+                                          " with abstract methods";
+                        env->raiseTypeError(ctx, msg.c_str());
+                        return nullptr;
+                    }
+                }
+            }
             return runUserClassCall(ctx, callable, nullptr, args, kwargs);
         }
     }
@@ -4279,13 +4319,46 @@ const proto::ProtoObject* executeBytecodeRange(
                                 && !obj->isString(ctx) && !obj->isInteger(ctx) && !obj->isBoolean(ctx)) {
                             const proto::ProtoObject* fv = obj->getOwnAttributeDirect(ctx, attrName);
                             if (fv && fv != PROTO_NONE && !fv->isMethod(ctx)) {
-                                if (pushNull) {
-                                    stack.back() = nullptr;
-                                    stack.push_back(fv);
-                                } else {
-                                    stack.back() = fv;
+                                // PI: data descriptors on the type take
+                                // precedence over instance attrs.  Skip
+                                // the fast path if the class declares a
+                                // data descriptor (__set__) for this
+                                // name; the slow path will dispatch to
+                                // env->getAttribute which honours it.
+                                bool isDataDescr = false;
+                                const proto::ProtoObject* type = env->getType(ctx, obj);
+                                if (type && type != PROTO_NONE) {
+                                    const proto::ProtoObject* mroAttr = type->getAttribute(ctx, env->getMroString());
+                                    const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(ctx) : nullptr;
+                                    if (mroT) {
+                                        for (unsigned long mi = 0; mi < mroT->getSize(ctx); ++mi) {
+                                            const proto::ProtoObject* base = mroT->getAt(ctx, mi);
+                                            if (!base || base == PROTO_NONE) continue;
+                                            if (base->hasOwnAttribute(ctx, attrName) == PROTO_TRUE) {
+                                                const proto::ProtoObject* d = base->getOwnAttributeDirect(ctx, attrName);
+                                                if (d && d != PROTO_NONE) {
+                                                    const proto::ProtoString* setS =
+                                                        PythonEnvironment::getInternedString(ctx, "__set__");
+                                                    const proto::ProtoObject* dt = env->getType(ctx, d);
+                                                    if (d->getAttribute(ctx, setS) ||
+                                                        (dt && dt != PROTO_NONE && dt->hasOwnAttribute(ctx, setS) == PROTO_TRUE)) {
+                                                        isDataDescr = true;
+                                                    }
+                                                }
+                                                break;
+                                            }
+                                        }
+                                    }
                                 }
-                                fastPathTaken = true;
+                                if (!isDataDescr) {
+                                    if (pushNull) {
+                                        stack.back() = nullptr;
+                                        stack.push_back(fv);
+                                    } else {
+                                        stack.back() = fv;
+                                    }
+                                    fastPathTaken = true;
+                                }
                             }
                         }
                     }
@@ -5478,6 +5551,83 @@ const proto::ProtoObject* executeBytecodeRange(
                     }
                     ns->setAttribute(ctx, clsName, targetClass);
 
+                    // PI: __abstractmethods__ is populated by
+                    // ABCMeta.__new__ in lib/python3.14/abc.py; the
+                    // BUILD_CLASS opcode no longer needs to compute it
+                    // for the default-metaclass path.  Inactive block
+                    // kept for documentation parallel to PG's hooks.
+                    if (false) {
+                        const proto::ProtoString* abstractS =
+                            PythonEnvironment::getInternedString(ctx, "__isabstractmethod__");
+                        const proto::ProtoString* amS =
+                            PythonEnvironment::getInternedString(ctx, "__abstractmethods__");
+                        const proto::ProtoList* absNames = ctx->newList();
+                        // 1. Walk ns's __data__ SparseList (populated by
+                        // STORE_NAME during class body execution) for
+                        // values declaring __isabstractmethod__.
+                        // Recover names from each value's __name__ attr.
+                        {
+                            // Iterate ns.__keys__ via Python iter protocol
+                            // (handles list-CoW state correctly).  For each
+                            // name, fetch the value via env->getAttribute
+                            // (full chain) and check __isabstractmethod__.
+                            const proto::ProtoObject* nsKeys = ns->getAttribute(ctx, env->getKeysString());
+                            if (nsKeys && nsKeys != PROTO_NONE) {
+                                const proto::ProtoObject* iter = env->iter(nsKeys);
+                                int safety = 1024;
+                                while (iter && safety-- > 0) {
+                                    const proto::ProtoObject* k = env->next(iter);
+                                    if (!k) break;
+                                    if (k->isString(ctx)) {
+                                        const proto::ProtoString* nameS_ = k->asString(ctx);
+                                        const proto::ProtoObject* v = env->getAttribute(ctx, ns, nameS_, false);
+                                        if (env->hasPendingException()) env->clearPendingException();
+                                        if (v && v != PROTO_NONE) {
+                                            const proto::ProtoObject* isAbs =
+                                                env->getAttribute(ctx, v, abstractS, false);
+                                            if (env->hasPendingException()) env->clearPendingException();
+                                            if (isAbs == PROTO_TRUE) {
+                                                absNames = absNames->appendLast(ctx, k);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        // Inherit unimplemented abstract names from bases.
+                        const proto::ProtoObject* mro2 = targetClass->getAttribute(ctx,
+                            PythonEnvironment::getInternedString(ctx, "__mro__"));
+                        const proto::ProtoTuple* mro2T = mro2 ? mro2->asTuple(ctx) : nullptr;
+                        if (mro2T) {
+                            for (unsigned long mi = 1; mi < mro2T->getSize(ctx); ++mi) {
+                                const proto::ProtoObject* base = mro2T->getAt(ctx, mi);
+                                if (!base || base == PROTO_NONE) continue;
+                                const proto::ProtoObject* baseAm = base->getOwnAttributeDirect(ctx, amS);
+                                if (!baseAm || baseAm == PROTO_NONE) continue;
+                                const proto::ProtoList* bl = baseAm->asList(ctx);
+                                const proto::ProtoTuple* bt = bl ? nullptr : baseAm->asTuple(ctx);
+                                unsigned long sz = bl ? bl->getSize(ctx) : (bt ? bt->getSize(ctx) : 0);
+                                for (unsigned long bi = 0; bi < sz; ++bi) {
+                                    const proto::ProtoObject* bn = bl ? bl->getAt(ctx, bi) : bt->getAt(ctx, bi);
+                                    if (!bn || !bn->isString(ctx)) continue;
+                                    // Check if this class has a concrete override.
+                                    const proto::ProtoObject* override_ = targetClass->getOwnAttributeDirect(ctx, bn->asString(ctx));
+                                    bool overrides = override_ && override_ != PROTO_NONE;
+                                    if (overrides) {
+                                        const proto::ProtoObject* isAbs = override_->getAttribute(ctx, abstractS);
+                                        if (isAbs != PROTO_TRUE) continue;  // concrete override
+                                    }
+                                    if (!absNames->has(ctx, bn)) {
+                                        absNames = absNames->appendLast(ctx, bn);
+                                    }
+                                }
+                            }
+                        }
+                        const_cast<proto::ProtoObject*>(targetClass)->setAttribute(
+                            ctx, amS, absNames->asObject(ctx));
+                        stack.back() = targetClass;
+                    }
+
                     // PG: also write the just-built class into `ns`
                     // under its own name so methods inside the body —
                     // whose closure chains walk parent → ns — resolve
@@ -6076,8 +6226,11 @@ const proto::ProtoObject* executeBytecodeRange(
                     // Mirrors STORE_ATTR's data-descriptor short-circuit:
                     // walk the type's MRO with raw attribute access to
                     // avoid __get__ re-entry, then dispatch to either
-                    // a native or Python-defined __delete__.
-                    if (env && obj->hasOwnAttribute(ctx, nameS) == PROTO_FALSE) {
+                    // a native or Python-defined __delete__.  PI: check
+                    // even when the instance has its own attribute, since
+                    // a data descriptor (with __set__/__delete__) takes
+                    // precedence over instance dict for del.
+                    if (env) {
                         const proto::ProtoObject* type = env->getType(ctx, obj);
                         const proto::ProtoObject* descr = nullptr;
                         if (type && type != PROTO_NONE) {

@@ -133,6 +133,10 @@ private:
     /** The name of the immediately enclosing class, propagated to method compilers
      *  so that zero-argument super() can be rewritten to super(ClassName, self). */
     std::string currentClassName_;
+    /** PI: the dotted qualified-name prefix for nested definitions
+     *  ("Outer", "Outer.Inner", etc.).  compileClassDef uses this to
+     *  emit __qualname__ on class objects. */
+    std::string qualnamePrefix_;
     int bytecodeOffset() const;
     /** Record a jump arg slot to be patched later with target (bytecode list index). */
     void addPatch(int argSlotIndex, int targetBytecodeIndex);

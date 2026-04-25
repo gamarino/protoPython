@@ -86,6 +86,80 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 
 **Key V110 milestone**: All essential tests now run to completion without crashing. Individual test failures reflect unimplemented language features (metaclass protocol, descriptors, C-extension stubs), not interpreter instability.
 
+### V153 Changes (2026-04-25) — PI: close all metaclass + descriptor tests (37/0/0)
+
+Closes the metaclass + descriptor synthetic suite at 37/37 (full
+green).  Eight remaining issues from PH were resolved.
+
+**PI-1 — Decorators + bases captured for closure resolution**
+`collectUsedNames` did not visit FunctionDefNode/ClassDefNode
+decorators or bases, so `@abstractmethod` (imported in the
+enclosing function) was invisible to the class-body closure pass.
+Now decorators, defaults, kw_defaults, base classes, and class
+keywords all contribute to `bodyUsed`.
+
+**PI-2 — `vars()` materialises the dict**
+`py_vars` used `obj->getAttribute("__dict__")` which only walks own
+attrs; for instances, `__dict__` is on objectPrototype.  Switched
+to `env->getAttribute` so the type chain is searched and the
+returned method is auto-invoked (PH-5 path).
+
+**PI-3 — Read-only `property` raises AttributeError on assignment**
+`py_property_set` silently no-op'd when the property had no setter.
+Now raises `AttributeError` per CPython semantics.
+
+**PI-4 — `__slots__` enforcement**
+`PythonEnvironment::setAttribute` walks the type's MRO; if any class
+declares `__slots__` and no class adds a `__dict__`, only slotted
+names may be stored.  Bypassed for class objects themselves.
+
+**PI-5 — Nested class `__qualname__`**
+`compileClassDef` tracks a `qualnamePrefix_` field that propagates
+through nested classes.  The class body now stores
+`__qualname__ = "Outer.Inner"` at its head so BUILD_CLASS picks
+that up instead of the bare `__name__`.
+
+**PI-6 — `__getattribute__` override hooks every attribute access**
+`env->getAttribute` now walks `objClass.__mro__` for a non-default
+`__getattribute__` and invokes it with `(obj, name)`.  Recursion
+is bounded via `getAttrDepth`.  Falls through to the standard
+descriptor / instance / `__getattr__` chain on `AttributeError`.
+
+**PI-7 — write-through `__dict__` proxy**
+`py_object_get_dict` installs `__setitem__` / `__delitem__` proxy
+methods on the returned dict that write directly to the instance's
+own attributes plus the `__data__` / `__keys__` storage —
+bypassing `env->setAttribute`'s descriptor short-circuit (which
+would re-enter `__set__` → `__dict__[key]` and recurse forever).
+`obj.__dict__[k] = v` now mirrors CPython's "write to instance
+dict, no descriptor invocation".
+
+**PI-8 — Data descriptors take precedence over instance dict**
+`env->getAttribute` walks the type's MRO with raw attribute access
+(avoiding `__get__` re-entry) for descriptors with `__set__`; if
+found, dispatches `__get__` regardless of what's on the instance.
+`LOAD_ATTR`'s fast path also skips for data descriptors.
+
+**PI-9 — `del c.x` fires data-descriptor `__delete__`**
+`DELETE_ATTR`'s descriptor check no longer requires the instance to
+lack the attribute; data descriptors with `__delete__` claim the
+delete in all cases.
+
+**PI-10 — `__abstractmethods__` populated by ABCMeta**
+Updated `lib/python3.14/abc.py` so `ABCMeta.__new__` collects
+abstract method names (own + inherited - concrete overrides) into
+a frozenset, mirroring CPython.  `invokeCallable` and `py_type_call`
+both check `__abstractmethods__` via Python `__len__` and raise
+TypeError on instantiation.
+
+| State     | PASS | FAIL | CRASH | Total |
+| :---      | ---: | ---: | ---:  | ---:  |
+| Before PI |  29  |  5   |   3   |  37   |
+| After PI  |  37  |  0   |   0   |  37   |
+
+Generators-and-async synthetic suite (separate file): 37/0/0,
+unchanged.
+
 ### V152 Changes (2026-04-25) — PH: super(), descriptor delete, dict/in equality
 
 The PH round closes the super zero-arg path opened by PG and tightens

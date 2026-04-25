@@ -2226,8 +2226,39 @@ static void collectUsedNames(ASTNode* node, std::unordered_set<std::string>& out
         return;
     }
     if (auto* fn = dynamic_cast<FunctionDefNode*>(node)) {
+        // PI: include decorators and default-argument expressions in
+        // the used-names set; these are evaluated in the enclosing
+        // scope (not the function body), so closure capture must see
+        // them.  Without this, e.g. `@abstractmethod` inside a class
+        // body fails with NameError when the decorator was imported
+        // in the enclosing function.
+        for (auto& d : fn->decorator_list) collectUsedNames(d.get(), out);
+        for (auto& d : fn->defaults) collectUsedNames(d.get(), out);
+        for (auto& d : fn->kw_defaults) {
+            if (d) collectUsedNames(d.get(), out);
+        }
         for (const auto& p : fn->parameters) out.insert(p);
         collectUsedNames(fn->body.get(), out);
+        return;
+    }
+    if (auto* cd = dynamic_cast<ClassDefNode*>(node)) {
+        // PI: a class definition's bases + decorators + class-level
+        // keywords are evaluated in the enclosing scope.
+        for (auto& d : cd->decorator_list) collectUsedNames(d.get(), out);
+        for (auto& b : cd->bases) collectUsedNames(b.get(), out);
+        for (auto& kw : cd->keywords) {
+            if (kw.second) collectUsedNames(kw.second.get(), out);
+        }
+        return;
+    }
+    if (auto* afn = dynamic_cast<AsyncFunctionDefNode*>(node)) {
+        for (auto& d : afn->decorator_list) collectUsedNames(d.get(), out);
+        for (auto& d : afn->defaults) collectUsedNames(d.get(), out);
+        for (auto& d : afn->kw_defaults) {
+            if (d) collectUsedNames(d.get(), out);
+        }
+        for (const auto& p : afn->parameters) out.insert(p);
+        collectUsedNames(afn->body.get(), out);
         return;
     }
     if (auto* c = dynamic_cast<CallNode*>(node)) {
@@ -3634,6 +3665,19 @@ bool Compiler::compileClassDef(ClassDefNode* n) {
     bodyCompiler.nonlocalNames_ = nonlocalNames_;
     bodyCompiler.isClassBody_ = true;
     bodyCompiler.currentClassName_ = n->name;
+    // PI: compute and propagate __qualname__ prefix for nested classes.
+    std::string thisQualname = qualnamePrefix_.empty()
+        ? n->name
+        : qualnamePrefix_ + "." + n->name;
+    bodyCompiler.qualnamePrefix_ = thisQualname;
+    // Emit __qualname__ at the start of the class body so BUILD_CLASS
+    // can pick it up (overrides the default `__name__` qualname).
+    {
+        int qnameIdx = bodyCompiler.addConstant(
+            PythonEnvironment::getInternedString(ctx_, thisQualname.c_str())->asObject(ctx_));
+        bodyCompiler.emit(OP_LOAD_CONST, qnameIdx);
+        bodyCompiler.emitNameOp("__qualname__", TargetCtx::Store);
+    }
 
     // PH: implicitly capture the class's own name as a free variable
     // of the class body so methods can resolve zero-arg `super()`
