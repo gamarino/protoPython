@@ -1,10 +1,5 @@
 #include <protoPython/PythonEnvironment.h>
 #include <protoPython/DiagUtils.h>
-// proto_internal.h exposes the Integer class with bignum-aware
-// toString/add/etc.  Included here (rather than from a public
-// protoPython header) so we can route int repr through the bignum
-// path without leaking the internal symbols via a public interface.
-#include <proto_internal.h>
 #include <protoPython/Tokenizer.h>
 #include <protoPython/SignalModule.h>
 #include <protoPython/PythonModuleProvider.h>
@@ -834,7 +829,7 @@ static const proto::ProtoObject* py_float_call(
             try {
                 x = ctx->fromDouble(static_cast<double>(val->asLong(ctx)));
             } catch (const std::overflow_error&) {
-                const proto::ProtoString* s = proto::Integer::toString(ctx, val, 10);
+                const proto::ProtoString* s = val->asIntegerString(ctx, 10);
                 std::string digits;
                 s->toUTF8String(ctx, digits);
                 try {
@@ -1088,8 +1083,8 @@ static const proto::ProtoObject* py_bool_call(
     if (obj == PROTO_FALSE) return PROTO_FALSE;
     if (obj == PROTO_NONE) return PROTO_FALSE;
     if (obj->isString(ctx)) return obj->asString(ctx)->getSize(ctx) > 0 ? PROTO_TRUE : PROTO_FALSE;
-    // Integer::sign is bignum-safe (no long-long overflow).
-    if (obj->isInteger(ctx)) return proto::Integer::sign(ctx, obj) != 0 ? PROTO_TRUE : PROTO_FALSE;
+    // integerSign is bignum-safe (no long-long overflow).
+    if (obj->isInteger(ctx)) return obj->integerSign(ctx) != 0 ? PROTO_TRUE : PROTO_FALSE;
     if (obj->isDouble(ctx)) return obj->asDouble(ctx) != 0.0 ? PROTO_TRUE : PROTO_FALSE;
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     // Use the same lookup pattern as isTruthy() in ExecutionEngine.cpp:
@@ -1147,8 +1142,8 @@ static const proto::ProtoObject* py_object_str(
     }
     if (self->isString(context)) return self;
     if (self->isInteger(context)) {
-        // Bignum-safe: Integer::toString handles LargeInteger.
-        const proto::ProtoString* s = proto::Integer::toString(context, self, 10);
+        // Bignum-safe: asIntegerString handles LargeInteger.
+        const proto::ProtoString* s = self->asIntegerString(context, 10);
         return s->asObject(context);
     }
     if (self->isDouble(context)) return PythonEnvironment::getInternedString(context, std::to_string(self->asDouble(context)).c_str())->asObject(context);
@@ -2088,12 +2083,12 @@ std::string PythonEnvironment::reprObject(proto::ProtoContext* context, const pr
         return "None";
     }
     if (obj->isInteger(context)) {
-        // Use bignum-aware Integer::toString so LargeInteger values repr
+        // Use bignum-aware asIntegerString so LargeInteger values repr
         // correctly instead of overflowing asLong.
         try {
             return std::to_string(obj->asLong(context));
         } catch (const std::overflow_error&) {
-            const proto::ProtoString* s = proto::Integer::toString(context, obj, 10);
+            const proto::ProtoString* s = obj->asIntegerString(context, 10);
             if (s) {
                 std::string out;
                 s->toUTF8String(context, out);
@@ -2789,7 +2784,7 @@ static const proto::ProtoObject* py_int_repr(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
-    // Route through protoCore's Integer::toString so bignums survive repr.
+    // Route through protoCore's asIntegerString so bignums survive repr.
     const proto::ProtoObject* intObj = self;
     if (!intObj->isInteger(context)) {
         PythonEnvironment* env = PythonEnvironment::fromContext(context);
@@ -2798,7 +2793,7 @@ static const proto::ProtoObject* py_int_repr(
         if (data && data->isInteger(context)) intObj = data;
     }
     if (intObj && intObj->isInteger(context)) {
-        const proto::ProtoString* s = proto::Integer::toString(context, intObj, 10);
+        const proto::ProtoString* s = intObj->asIntegerString(context, 10);
         if (s) return s->asObject(context);
     }
     return PythonEnvironment::getInternedString(context, "0")->asObject(context);
@@ -2834,8 +2829,8 @@ static const proto::ProtoObject* py_int_bool(
         if (data && data->isInteger(context)) intObj = data;
     }
     if (!intObj) return PROTO_FALSE;
-    // Integer::sign is bignum-safe (returns 0 / -1 / +1 without asLong).
-    return proto::Integer::sign(context, intObj) != 0 ? PROTO_TRUE : PROTO_FALSE;
+    // integerSign is bignum-safe (returns 0 / -1 / +1 without asLong).
+    return intObj->integerSign(context) != 0 ? PROTO_TRUE : PROTO_FALSE;
 }
 
 static const proto::ProtoObject* py_float_bool(
@@ -4011,10 +4006,10 @@ static const proto::ProtoObject* py_int_bit_length(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
-    if (proto::Integer::sign(context, self) == 0) return context->fromInteger(0);
+    if (self->integerSign(context) == 0) return context->fromInteger(0);
     // Bignum-safe: count via the absolute hex digit count, then refine
     // the most-significant nibble.
-    const proto::ProtoString* hex = proto::Integer::toString(context, self, 16);
+    const proto::ProtoString* hex = self->asIntegerString(context, 16);
     std::string s;
     hex->toUTF8String(context, s);
     if (!s.empty() && s[0] == '-') s.erase(0, 1);
@@ -4033,8 +4028,8 @@ static const proto::ProtoObject* py_int_bit_count(
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
     // CPython treats negatives as if abs(n): bit_count(-7) == bit_count(7) == 3.
-    const proto::ProtoObject* mag = proto::Integer::abs(context, self);
-    const proto::ProtoString* hex = proto::Integer::toString(context, mag, 16);
+    const proto::ProtoObject* mag = self->abs(context);
+    const proto::ProtoString* hex = mag->asIntegerString(context, 16);
     std::string s;
     hex->toUTF8String(context, s);
     if (!s.empty() && s[0] == '-') s.erase(0, 1);
@@ -4073,7 +4068,7 @@ static const proto::ProtoObject* py_int_hash(
         // `hash(n) == hash(n)` stable without overflowing long long.
         // Use Python's PyHASH_MODULUS (2^61 - 1) equivalent simplified:
         // fold the decimal digit string through FNV-1a.
-        const proto::ProtoString* s = proto::Integer::toString(context, intObj, 16);
+        const proto::ProtoString* s = intObj->asIntegerString(context, 16);
         std::string digits;
         s->toUTF8String(context, digits);
         unsigned long long h = 14695981039346656037ULL; // FNV-1a offset
@@ -4199,12 +4194,12 @@ static const proto::ProtoObject* py_int_from_bytes(
     std::string byteorderStr;
     posArgs->getAt(context, 1)->asString(context)->toUTF8String(context, byteorderStr);
     bool little = (byteorderStr == "little");
-    // Build the integer one byte at a time via Integer::shiftLeft + add,
+    // Build the integer one byte at a time via shiftLeft + add,
     // so values larger than 64 bits are handled correctly.
     const proto::ProtoObject* result = context->fromInteger(0);
     auto consume = [&](unsigned char c) {
-        result = proto::Integer::shiftLeft(context, result, 8);
-        result = proto::Integer::add(context, result, context->fromInteger(c));
+        result = result->shiftLeft(context, 8);
+        result = result->add(context, context->fromInteger(c));
     };
     if (little) {
         for (size_t i = bytesStr.size(); i > 0; --i)
@@ -4227,14 +4222,14 @@ static const proto::ProtoObject* py_int_to_bytes(
     bool little = (byteorderStr == "little");
     // Bignum-safe extraction: peel one byte at a time via & 0xff and >> 8.
     const proto::ProtoObject* mask = context->fromInteger(0xff);
-    const proto::ProtoObject* cur = proto::Integer::abs(context, self);
+    const proto::ProtoObject* cur = self->abs(context);
     std::string out;
     out.reserve(static_cast<size_t>(length));
     for (int i = 0; i < length; ++i) {
-        const proto::ProtoObject* lowByte = proto::Integer::bitwiseAnd(context, cur, mask);
+        const proto::ProtoObject* lowByte = cur->bitwiseAnd(context, mask);
         unsigned char byte = static_cast<unsigned char>(lowByte->asLong(context) & 0xff);
         out += static_cast<char>(byte);
-        cur = proto::Integer::shiftRight(context, cur, 8);
+        cur = cur->shiftRight(context, 8);
     }
     if (!little) std::reverse(out.begin(), out.end());
     // Backed by ProtoByteBuffer so all 256 byte values round-trip exactly.
