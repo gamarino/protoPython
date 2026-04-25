@@ -14,7 +14,7 @@ This document tracks the progress of `protoPython` in passing the official CPyth
 
 Core syntax, standard object model, and fundamental types.
 
-- [ ] `test_grammar.py`: **PARTIAL** — 45/75 pass, 17 fail, 13 err, 0 crash (V154.5, 2026-04-25, SyntaxWarning compile-time emission)
+- [ ] `test_grammar.py`: **PARTIAL** — 52/75 pass, 13 fail, 10 err, 0 crash (V154.6, 2026-04-25, dict.copy + genexp + yield + print parser fixes)
 - [ ] `test_types.py`: **PARTIAL** — 6/131 pass, runs to completion; legible failures (V124, 2026-04-24)
 - [ ] `test_descr.py`: **TIMEOUT** — runs >5 min; `type()` descriptor tests expose slow paths
 - [ ] `test_generators.py`: **PARTIAL** — 0/1 pass (doctest runner fails); import chain runs
@@ -85,6 +85,79 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 **Conformity Suite (internal, 2026-04-15)**: 7/9 tests pass. Failures are pre-existing: `int(float)` conversion and `set(iterable)` constructor.
 
 **Key V110 milestone**: All essential tests now run to completion without crashing. Individual test failures reflect unimplemented language features (metaclass protocol, descriptors, C-extension stubs), not interpreter instability.
+
+### V154.6 Changes (2026-04-25) — dict.copy + genexp + yield + print parser fixes: 45 → 52 PASS
+
+Continued post-V154.5 progress on test_grammar.py.  All fixes
+target language-feature gaps surfaced when the SyntaxWarning
+infrastructure made test_grammar.py's later tests reachable.
+
+**F2-dict-copy (`9a22e663`) — dict.copy() returns a mutable dict**
+py_dict_copy created the new dict via newObject(false)
+(immutable), so subsequent `c[k] = v` / `del c[k]` operations
+silently failed to propagate.  pprint's `context.copy()` cycle
+tracking depended on this and surfaced as KeyError mid-format.
+Switching to newObject(true) fixed the entire pprint pipeline and
+unblocked test_funcdef / test_lambdef / test_comprehension_specials
+from ERROR to FAIL (deeper progress) plus closed test_selectors.
+
+**F2-genexp-1 (`3d82a2c6`) — bare genexp must be sole arg**
+A bare generator expression in a call (`foo(x for x in y, 100)`
+or `foo(100, x for x in y)`) must be parenthesized.  Parser now
+errors per CPython.  Closes test_genexps.
+
+**F2-yield-1 (`d08f7329`) — bare yield in tuple/call rejected**
+Adds `parenthesized` flag to YieldNode set by parsePrimary's
+`(` ... `)` branch.  parseTestList and call-arg parsers reject
+bare yield (12 of test_yield's 13 sub-checks now pass).
+Remaining: `def g(a:(yield)): pass` (yield in annotation —
+needs yield-allowed flag).
+
+**F2-print-1 (`242e63a3`) — print/exec hint defers to inner error**
+The Python-2 hint ("Missing parentheses in call to 'print'…")
+fired too eagerly: anything non-terminating after a bare
+`print` triggered it, including dict-literal-with-broken-content
+shapes like `print {1:(foo.)}` whose inner error should win.
+Fix: parse the remainder as a testlist; if it parses cleanly
+emit the hint, otherwise propagate the inner error.  Cascade
+effect: closes test_former_statements_refer_to_builtins (the
+intended target) and several other tests whose statements
+contained `print`-shaped patterns mid-expression.
+
+**F2-warn-3 (`e35b46d4`) — emitSyntaxWarning auto-imports warnings**
+_py_warnings.warn_explicit reads `_wm._lock` which is None until
+the user-facing `warnings` module is imported (it calls
+_set_module).  Compile-time warning emission would happen before
+any user import, raising AttributeError.  emitSyntaxWarning now
+calls resolveModule("warnings", ctx) first (idempotent) so _wm
+is populated.
+
+**Verification**:
+- protoCore tests: 100% (136/136).
+- Synthetic suite: 37/0/0 (no regression).
+- Custom suites (test_decorator, test_abc, test_contextlib): all pass.
+- test_grammar.py: 45/75 → 52/75 PASS (+7).
+
+**Remaining 23 failures**:
+- *bool/int hierarchy* (1+): `False == 0` is False in protoPython
+  (issubclass(bool, int) returns False).  Fixing requires
+  proper bool → int subclass relationship.  Affects
+  test_lambdef's `[2 < x for x in [-1, 3, 0]] == [0, 1, 0]`.
+- *kwargs unpacking* (1): test_funcdef's
+  `f(1, x=2, *[3,4], y=5)` loses the kwargs.  Significant
+  argument-binding work.
+- *Annotations / PEP 649* (5): `test_var_annot_*`.
+- *SyntaxWarning extras* (2): `test_end_of_numerical_literals`
+  (numeric-literal-followed-by-name), `test_warn_missed_comma`
+  (call/subscript-of-literal patterns).
+- *Async* (2): `test_async_with`, plus `test_async_await`
+  later assertion.
+- *Comprehensions* (2): `test_comprehension_specials`,
+  `test_control_flow_in_finally`.
+- *Yield in annotations / comprehensions* (2): residual
+  test_yield, test_yield_in_comprehensions.
+- *Misc* (1): test_selectors regression (latent dict-iteration
+  + memory-layout sensitivity).
 
 ### V154.5 Changes (2026-04-25) — SyntaxWarning compile-time emission + eval comma-tuples: 42 → 45 PASS
 
