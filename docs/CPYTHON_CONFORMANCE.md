@@ -86,6 +86,40 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 
 **Key V110 milestone**: All essential tests now run to completion without crashing. Individual test failures reflect unimplemented language features (metaclass protocol, descriptors, C-extension stubs), not interpreter instability.
 
+### V154.1 Changes (2026-04-25) — F0-fix-bootstrap: py_dict_update guards against missing __keys__
+
+A follow-up fix to V154.  The bootstrap segfault during `import unittest`
+that the V154 entry attributed to a future F1 round was actually a NULL
+deref in `py_dict_update` (`PythonEnvironment.cpp:7451`): the iteration
+loop required both `__keys__` (the key list) and `__data__` (the sparse
+list) but only guarded for `__data__`.  When the source object had only
+`__data__` (a partially-initialised mapping during cascading imports),
+`otherKeys` was nullptr and `getSize` crashed.
+
+ASAN trace pointed cleanly at `proto::ProtoList::getSize` →
+`py_dict_update:7451`.  The earlier gdb trace pointing at `~Tokenizer`
+was a misleading secondary symptom: the heap was already corrupted
+before `executeModule`'s locals were unwound.
+
+**Fix**: require both `__keys__` and `__data__` before iterating.
+Mirrors CPython's "update from any mapping that supports `keys()`"
+semantics — if either is missing the source isn't keys-iterable so a
+silent skip is correct.
+
+**Verification**:
+- `import unittest` no longer segfaults; cascades through legitimate
+  `ImportError`/`ModuleNotFoundError` for stdlib gaps (the F1 surface).
+- `test_grammar.py`: now fails cleanly with
+  `ModuleNotFoundError: 'test.support'` instead of bootstrap segfault.
+- Synthetic suite: 37/0/0 (no regression).
+- Custom suites (test_decorator, test_abc, test_contextlib): all pass.
+
+| State          | PASS | FAIL | CRASH | Note |
+| :---           | ---: | ---: | ---:  | :--- |
+| Before F0      | —    | —    | 1     | test_grammar.py crashes on load (BinOpNode line 1615 per V136) |
+| After F0       | —    | —    | 1     | bootstrap segfault during `import unittest` (visible after WIP stash discarded) |
+| After F0.1     | —    | —    | 0     | clean ImportError; test_grammar.py blocked on `test.support` (F1 target) |
+
 ### V154 Changes (2026-04-25) — F0: bignum API made public; proto_internal.h dropped from protoPython
 
 The F0 round of the test_grammar.py 75/75 coverage push (see
