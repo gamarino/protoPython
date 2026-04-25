@@ -22,6 +22,7 @@ constexpr int PYTHON_STACK_BUFFER = 4096;
 Compiler::Compiler(proto::ProtoContext* ctx, const std::string& filename)
     : ctx_(ctx), filename_(filename) {
     constantsVec_ = ctx_->newList();
+    namesVec_ = ctx_->newList();
 }
 
 int Compiler::addConstant(const proto::ProtoObject* obj) {
@@ -90,10 +91,10 @@ int Compiler::addConstant(const proto::ProtoObject* obj) {
 int Compiler::addName(const std::string& name) {
     auto it = namesIndex_.find(name);
     if (it != namesIndex_.end()) return it->second;
-    int idx = static_cast<int>(namesVec_.size());
+    int idx = static_cast<int>(namesVec_->getSize(ctx_));
     auto* env = protoPython::PythonEnvironment::get(ctx_);
     const proto::ProtoObject* str = env ? reinterpret_cast<const proto::ProtoObject*>(env->getInternedString(ctx_, name.c_str())) : proto::ProtoString::createSymbol(ctx_, name.c_str())->asObject(ctx_);
-    namesVec_.push_back(str);
+    namesVec_ = namesVec_->appendLast(ctx_, str);
     namesIndex_[name] = idx;
     if (get_env_diag()) {
         fprintf(stderr, "DEBUG COMPILER [%s]: addName '%s' -> idx %d (strObj=%p)\n", filename_.c_str(), name.c_str(), idx, (void*)str);
@@ -280,7 +281,7 @@ const proto::ProtoTuple* Compiler::getConstants() {
 
 const proto::ProtoTuple* Compiler::getNames() {
     if (!names_) {
-        names_ = ctx_->newTuple(namesVec_);
+        names_ = ctx_->newTupleFromList(namesVec_);
     }
     return names_;
 }
