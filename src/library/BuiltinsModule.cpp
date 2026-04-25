@@ -6,7 +6,6 @@
 #include <protoPython/Compiler.h>
 #include <protoPython/Tokenizer.h>
 #include <protoCore.h>
-#include <proto_internal.h>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -599,7 +598,7 @@ static const proto::ProtoObject* py_bool(
     }
     if (obj->isInteger(context)) {
         // Integer::sign is bignum-safe.
-        return proto::Integer::sign(context, obj) != 0 ? PROTO_TRUE : PROTO_FALSE;
+        return obj->integerSign(context) != 0 ? PROTO_TRUE : PROTO_FALSE;
     }
     if (obj->isDouble(context)) {
         return obj->asDouble(context) != 0.0 ? PROTO_TRUE : PROTO_FALSE;
@@ -726,7 +725,7 @@ static const proto::ProtoObject* py_repr(
     if (obj->isInteger(context)) {
         // Integer::toString handles bignum (asLong + snprintf would
         // overflow for LargeInteger).
-        const proto::ProtoString* s = proto::Integer::toString(context, obj, 10);
+        const proto::ProtoString* s = obj->asIntegerString(context, 10);
         return s->asObject(context);
     }
     if (obj->isDouble(context)) {
@@ -1015,7 +1014,7 @@ static const proto::ProtoObject* py_sum(
              return nullptr; // Propagate other errors
         }
         if (val == noneObj) break;
-        if (val->isInteger(context)) acc = proto::Integer::add(context, acc, val);
+        if (val->isInteger(context)) acc = acc->add(context, val);
     }
     return acc;
 }
@@ -2496,7 +2495,7 @@ static int sorted_compare(proto::ProtoContext* context, const proto::ProtoObject
     if (a == b) return 0;
     if (a->isInteger(context) && b->isInteger(context)) {
         // Integer::compare is bignum-safe.
-        return proto::Integer::compare(context, a, b);
+        return a->compare(context, b);
     }
     if (a->isString(context) && b->isString(context)) {
         std::string sa;
@@ -3689,7 +3688,7 @@ static const proto::ProtoObject* py_abs(
     if (obj->isInteger(context)) {
         // Use Integer::abs which handles both SmallInteger and LargeInteger
         // without triggering long-long overflow.
-        return proto::Integer::abs(context, obj);
+        return obj->abs(context);
     }
     if (obj->isDouble(context)) {
         return context->fromDouble(std::abs(obj->asDouble(context)));
@@ -3843,19 +3842,19 @@ static const proto::ProtoObject* py_pow(
         const proto::ProtoObject* res = context->fromInteger(1);
         const proto::ProtoObject* b = baseObj;
         while (pe > 0) {
-            if (pe & 1) res = proto::Integer::multiply(context, res, b);
+            if (pe & 1) res = res->multiply(context, b);
             pe >>= 1;
-            if (pe > 0) b = proto::Integer::multiply(context, b, b);
+            if (pe > 0) b = b->multiply(context, b);
         }
         // Convert res to double via decimal string and divide.
-        const proto::ProtoString* s = proto::Integer::toString(context, res, 10);
+        const proto::ProtoString* s = res->asIntegerString(context, 10);
         std::string digits;
         s->toUTF8String(context, digits);
         try { return context->fromDouble(1.0 / std::stod(digits)); }
         catch (...) { return context->fromDouble(0.0); }
     }
     if (hasMod) {
-        if (proto::Integer::sign(context, modObj) == 0) {
+        if (modObj->integerSign(context) == 0) {
             PythonEnvironment* env = PythonEnvironment::fromContext(context);
             if (env) env->raiseValueError(context,
                 PythonEnvironment::getInternedString(context, "pow() 3rd argument cannot be 0")->asObject(context));
@@ -3863,17 +3862,17 @@ static const proto::ProtoObject* py_pow(
         }
         // Bignum-safe modular exponentiation.
         const proto::ProtoObject* result = context->fromInteger(1);
-        const proto::ProtoObject* b = proto::Integer::modulo(context, baseObj, modObj);
+        const proto::ProtoObject* b = baseObj->modulo(context, modObj);
         long long e = exp;
         while (e > 0) {
             if (e & 1) {
-                result = proto::Integer::multiply(context, result, b);
-                result = proto::Integer::modulo(context, result, modObj);
+                result = result->multiply(context, b);
+                result = result->modulo(context, modObj);
             }
             e >>= 1;
             if (e > 0) {
-                b = proto::Integer::multiply(context, b, b);
-                b = proto::Integer::modulo(context, b, modObj);
+                b = b->multiply(context, b);
+                b = b->modulo(context, modObj);
             }
         }
         return result;
@@ -3883,9 +3882,9 @@ static const proto::ProtoObject* py_pow(
     const proto::ProtoObject* b = baseObj;
     long long e = exp;
     while (e > 0) {
-        if (e & 1) result = proto::Integer::multiply(context, result, b);
+        if (e & 1) result = result->multiply(context, b);
         e >>= 1;
-        if (e > 0) b = proto::Integer::multiply(context, b, b);
+        if (e > 0) b = b->multiply(context, b);
     }
     return result;
 }
@@ -3930,22 +3929,22 @@ static const proto::ProtoObject* py_divmod(
         if (env) env->raiseTypeError(context, "divmod() argument must be a number");
         return PROTO_NONE;
     }
-    if (proto::Integer::sign(context, objB) == 0) {
+    if (objB->integerSign(context) == 0) {
         if (env) env->raiseZeroDivisionError(context);
         return PROTO_NONE;
     }
     // Python divmod uses floor-toward-minus-infinity division.  Integer::
     // divide/modulo follow the C convention (truncate toward zero), so we
     // adjust if the remainder has a different sign than the divisor.
-    const proto::ProtoObject* quot = proto::Integer::divide(context, objA, objB);
-    const proto::ProtoObject* rem  = proto::Integer::modulo(context, objA, objB);
-    int signRem = proto::Integer::sign(context, rem);
-    int signB   = proto::Integer::sign(context, objB);
+    const proto::ProtoObject* quot = objA->divide(context, objB);
+    const proto::ProtoObject* rem  = objA->modulo(context, objB);
+    int signRem = rem->integerSign(context);
+    int signB   = objB->integerSign(context);
     if (signRem != 0 && ((signRem > 0) != (signB > 0))) {
         // remainder has wrong sign — adjust toward floor.
         const proto::ProtoObject* one = context->fromInteger(1);
-        quot = proto::Integer::subtract(context, quot, one);
-        rem  = proto::Integer::add(context, rem, objB);
+        quot = quot->subtract(context, one);
+        rem  = rem->add(context, objB);
     }
     const proto::ProtoList* pair = context->newList()
         ->appendLast(context, quot)
@@ -4327,7 +4326,7 @@ static std::string format_int_with_prefix(
     const proto::ProtoObject* arg,
     const char* prefix,
     int base) {
-    const proto::ProtoString* s = proto::Integer::toString(context, arg, base);
+    const proto::ProtoString* s = arg->asIntegerString(context, base);
     std::string digits;
     s->toUTF8String(context, digits);
     // Integer::toString returns digits with leading '-' for negatives.
@@ -4409,20 +4408,20 @@ static const proto::ProtoObject* py_round(
         // arithmetic so values larger than 64 bits work.
         const proto::ProtoObject* power = context->fromInteger(1);
         const proto::ProtoObject* ten = context->fromInteger(10);
-        for (int i = 0; i < -ndigits; ++i) power = proto::Integer::multiply(context, power, ten);
+        for (int i = 0; i < -ndigits; ++i) power = power->multiply(context, ten);
         const proto::ProtoObject* two = context->fromInteger(2);
-        const proto::ProtoObject* half = proto::Integer::divide(context, power, two);
-        const proto::ProtoObject* rem = proto::Integer::modulo(context, n, power);
-        if (proto::Integer::sign(context, rem) < 0) rem = proto::Integer::add(context, rem, power);
-        int cmpHalf = proto::Integer::compare(context, rem, half);
-        const proto::ProtoObject* base = proto::Integer::subtract(context, n, rem);
+        const proto::ProtoObject* half = power->divide(context, two);
+        const proto::ProtoObject* rem = n->modulo(context, power);
+        if (rem->integerSign(context) < 0) rem = rem->add(context, power);
+        int cmpHalf = rem->compare(context, half);
+        const proto::ProtoObject* base = n->subtract(context, rem);
         if (cmpHalf < 0) return base;
-        if (cmpHalf > 0) return proto::Integer::add(context, base, power);
+        if (cmpHalf > 0) return base->add(context, power);
         // banker's rounding: round half to even
-        const proto::ProtoObject* quotient = proto::Integer::divide(context, base, power);
-        const proto::ProtoObject* parity = proto::Integer::modulo(context, quotient, two);
-        if (proto::Integer::sign(context, parity) == 0) return base;
-        return proto::Integer::add(context, base, power);
+        const proto::ProtoObject* quotient = base->divide(context, power);
+        const proto::ProtoObject* parity = quotient->modulo(context, two);
+        if (parity->integerSign(context) == 0) return base;
+        return base->add(context, power);
     }
 
     double d = n->asDouble(context);
