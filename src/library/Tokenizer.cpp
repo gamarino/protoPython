@@ -338,6 +338,32 @@ Token Tokenizer::scanString(char quote, const std::string& prefix) {
 
         if (c == '\\' && pos_ < source_.size()) {
             if (!isRaw) {
+                // Helper: encode a Unicode codepoint into UTF-8 bytes
+                // appended to `s` (used for str literals, where each
+                // numeric escape names a codepoint, not a raw byte).
+                auto append_utf8 = [&](unsigned int cp) {
+                    if (cp < 0x80) {
+                        s += static_cast<char>(cp);
+                    } else if (cp < 0x800) {
+                        s += static_cast<char>(0xC0 | (cp >> 6));
+                        s += static_cast<char>(0x80 | (cp & 0x3F));
+                    } else if (cp < 0x10000) {
+                        s += static_cast<char>(0xE0 | (cp >> 12));
+                        s += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+                        s += static_cast<char>(0x80 | (cp & 0x3F));
+                    } else if (cp < 0x110000) {
+                        s += static_cast<char>(0xF0 | (cp >> 18));
+                        s += static_cast<char>(0x80 | ((cp >> 12) & 0x3F));
+                        s += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+                        s += static_cast<char>(0x80 | (cp & 0x3F));
+                    }
+                };
+                auto hex = [](char c) -> int {
+                    if (c >= '0' && c <= '9') return c - '0';
+                    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+                    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+                    return -1;
+                };
                 char e = source_[pos_++];
                 if (e == 'n') s += '\n';
                 else if (e == 't') s += '\t';
@@ -356,24 +382,49 @@ Token Tokenizer::scanString(char quote, const std::string& prefix) {
                         v = v * 8 + (source_[pos_++] - '0');
                         ++n;
                     }
-                    s += static_cast<char>(static_cast<unsigned char>(v & 0xff));
+                    // bytes: store as raw byte; str: emit UTF-8 codepoint
+                    if (isB) s += static_cast<char>(static_cast<unsigned char>(v & 0xff));
+                    else append_utf8(static_cast<unsigned int>(v));
                 }
                 else if (e == 'x' && pos_ + 1 < source_.size()) {
-                    // Hex escape: \xHH (exactly 2 hex digits).
-                    auto hex = [](char c) -> int {
-                        if (c >= '0' && c <= '9') return c - '0';
-                        if (c >= 'a' && c <= 'f') return c - 'a' + 10;
-                        if (c >= 'A' && c <= 'F') return c - 'A' + 10;
-                        return -1;
-                    };
                     int h1 = hex(source_[pos_]);
                     int h2 = hex(source_[pos_ + 1]);
                     if (h1 >= 0 && h2 >= 0) {
-                        s += static_cast<char>(static_cast<unsigned char>((h1 << 4) | h2));
+                        unsigned int cp = static_cast<unsigned int>((h1 << 4) | h2);
+                        if (isB) s += static_cast<char>(cp);
+                        else append_utf8(cp);
                         pos_ += 2;
                     } else {
-                        // Malformed \x — keep verbatim like CPython error
-                        // (we just preserve the source for now).
+                        s += '\\'; s += e;
+                    }
+                }
+                // \uHHHH — 4-hex-digit Unicode escape (str only).
+                else if (!isB && e == 'u' && pos_ + 3 < source_.size()) {
+                    int h1 = hex(source_[pos_]);
+                    int h2 = hex(source_[pos_ + 1]);
+                    int h3 = hex(source_[pos_ + 2]);
+                    int h4 = hex(source_[pos_ + 3]);
+                    if (h1 >= 0 && h2 >= 0 && h3 >= 0 && h4 >= 0) {
+                        unsigned int cp = (h1 << 12) | (h2 << 8) | (h3 << 4) | h4;
+                        append_utf8(cp);
+                        pos_ += 4;
+                    } else {
+                        s += '\\'; s += e;
+                    }
+                }
+                // \UHHHHHHHH — 8-hex-digit Unicode escape (str only).
+                else if (!isB && e == 'U' && pos_ + 7 < source_.size()) {
+                    unsigned int cp = 0;
+                    bool ok = true;
+                    for (int i = 0; i < 8; ++i) {
+                        int h = hex(source_[pos_ + i]);
+                        if (h < 0) { ok = false; break; }
+                        cp = (cp << 4) | static_cast<unsigned int>(h);
+                    }
+                    if (ok && cp < 0x110000) {
+                        append_utf8(cp);
+                        pos_ += 8;
+                    } else {
                         s += '\\'; s += e;
                     }
                 }
@@ -383,12 +434,9 @@ Token Tokenizer::scanString(char quote, const std::string& prefix) {
                     line_++;
                     lineStartPos_ = pos_;
                 }
-                // \u and \U are str-only and need 4/8 hex digits + UTF-8
-                // encoding; for now keep backslash for them so they don't
-                // get silently lost.
-                else if (e == 'u' || e == 'U' || e == 'N') {
-                    s += '\\'; s += e;
-                }
+                // \N{NAME} requires a Unicode name database; preserve
+                // the backslash so the literal isn't silently mangled.
+                else if (e == 'N') { s += '\\'; s += e; }
                 else s += e;
             } else {
                 // In raw strings, a backslash followed by a quote does NOT end the string.

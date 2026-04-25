@@ -86,6 +86,76 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 
 **Key V110 milestone**: All essential tests now run to completion without crashing. Individual test failures reflect unimplemented language features (metaclass protocol, descriptors, C-extension stubs), not interpreter instability.
 
+### V143 Changes (2026-04-24) — AA-round: bytes API completion + str escapes
+
+Z-round migrated bytes readers; AA-round adds the missing methods,
+finishes the migration, and fixes a tokenizer regression where
+`\xHH` in str literals now produces UTF-8 instead of a raw byte.
+
+- **AA1** — Tokenizer differentiates str vs bytes for numeric escapes.
+  In bytes literals (`b'\xff'`), `\xHH` and `\NNN` produce a single
+  raw byte (Z10 behavior).  In str literals (`'\xe9'`), the same
+  escape names a Unicode codepoint and is written to the output as
+  its UTF-8 encoding.  Also adds `\uHHHH` and `\UHHHHHHHH` escapes
+  for str (4 / 8 hex digits → codepoint → UTF-8 bytes); `\N{NAME}` is
+  preserved verbatim (needs the unicodedata name table).
+- **AA2** — `bytes.__contains__`: `b'oo' in b'foobar'` and
+  `0x66 in b'foobar'`.  Raises `ValueError("byte must be in range(0, 256)")`
+  for out-of-range int needles, matching CPython.
+- **AA3** — `bytes` iteration uses `__bytes_source__` + `__bytes_index__`
+  (replaces the old `__bytes_data__` ProtoString shim) and reads via
+  `bytes_data_view`, so iteration over a `b'\xff'`-containing bytes
+  now yields the right ints instead of nothing.
+- **AA4** — `bytes.translate` and `bytes.maketrans` migrated to
+  `bytes_view` / `bytes_data_view` / `bytes_make_object`.  `fromhex`
+  output is now a ProtoByteBuffer-backed bytes.
+- **AA5** — `bytes.upper`, `bytes.lower`, `bytes.swapcase`, `bytes.title`
+  added.  ASCII-only case mapping, matching CPython for the bytes type.
+- **AA6** — `bytes.partition` and `bytes.rpartition` added; both return
+  3-tuples of bytes.
+- **AA7** — `bytes.zfill` added; preserves a leading `+` or `-` sign
+  when padding.
+- **AA8** — `bytes.splitlines` added; supports `keepends` flag and
+  recognizes `\n`, `\r`, and `\r\n` as line terminators.
+- **AA9** — Bug fix: `bytes.split` and the new `bytes.splitlines`
+  returned a raw `ProtoList` whose `len()` reported 0.  Added
+  `wrap_list_as_pylist` helper that wraps the raw list in a Python
+  `list` instance (`__class__ = list`, `__data__ = raw_list`), so
+  `len()` and `repr()` work alongside iteration.  Same wrap applied
+  to `bytes.maketrans` (which returns the 256-element translation
+  table).
+- **AA10** — Verification (rebuild + suite).
+
+After V143:
+
+  ```
+  >>> '\xe9' == 'é'
+  True                          # str literal escape now Unicode
+  >>> len('\xe9')
+  1                             # one codepoint, not "two UTF-8 bytes"
+  >>> b'\xff'                   # bytes literal still one byte
+  b'\xff'
+  >>> b'oo' in b'foobar'
+  True                          # __contains__ now works
+  >>> [c for c in b'abc']
+  [97, 98, 99]                  # iteration via bytes_data_view
+  >>> b'a,b,c'.split(b',')
+  [b'a', b'b', b'c']            # split now returns proper list with len()
+  >>> b'Hello'.upper()
+  b'HELLO'                      # case methods added
+  ```
+
+Essential-suite snapshot after V143:
+
+| Test | Tests run | Pass | Fail | Err | Skip |
+| :--- | ---: | ---: | ---: | ---: | ---: |
+| test_grammar      |  75 | 35 | 20 | 15 | 5 | unchanged |
+| test_types        | 131 |  6 | 75 | 48 | 2 | unchanged |
+| test_generators   |   1 |  0 |  0 |  1 | 0 | unchanged |
+| test_asyncgen     |  85 |  — |  — |  — | — | unchanged |
+| test_json         |   9 |  9 |  0 |  0 | 0 | **PASS** |
+| test_base64       |  54 |  — | 58 |255 | 1 | errors → fails (more legible diffs) |
+
 ### V142 Changes (2026-04-24) — Z-round: complete bytes API + tokenizer escapes
 
 After V141 migrated the bytes backing-store to ProtoByteBuffer, several

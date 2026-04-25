@@ -2857,10 +2857,13 @@ static const proto::ProtoObject* py_bytes_iter(
     const proto::ProtoString* iterProtoName = PythonEnvironment::getInternedString(context, "__iter_prototype__");
     const proto::ProtoObject* iterProto = self->getAttribute(context, iterProtoName);
     if (!iterProto) return PROTO_NONE;
-    const proto::ProtoString* s = bytes_data(context, self);
-    if (!s) return PROTO_NONE;
+    // Y/Z-round: __data__ may now be a ProtoByteBuffer.  We stash a
+    // pointer to the ORIGINAL bytes object in the iterator and let
+    // bytes_iter_next read the current byte via bytes_data_view.
     const proto::ProtoObject* iterObj = iterProto->newChild(context, true);
-    iterObj->setAttribute(context, PythonEnvironment::getInternedString(context, "__bytes_data__"), s->asObject(context));
+    iterObj->setAttribute(context,
+        PythonEnvironment::getInternedString(context, "__bytes_source__"),
+        const_cast<proto::ProtoObject*>(self));
     iterObj->setAttribute(context, PythonEnvironment::getInternedString(context, "__bytes_index__"), context->fromInteger(0));
     return iterObj;
 }
@@ -2871,18 +2874,16 @@ static const proto::ProtoObject* py_bytes_iter_next(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
-    const proto::ProtoString* dataName = PythonEnvironment::getInternedString(context, "__bytes_data__");
-    const proto::ProtoString* indexName = PythonEnvironment::getInternedString(context, "__bytes_index__");
-    const proto::ProtoObject* dataObj = self->getAttribute(context, dataName);
-    const proto::ProtoObject* indexObj = self->getAttribute(context, indexName);
-    if (!dataObj || !dataObj->isString(context) || !indexObj || !indexObj->isInteger(context)) return nullptr;
-    const proto::ProtoString* s = dataObj->asString(context);
+    const proto::ProtoString* sourceName = PythonEnvironment::getInternedString(context, "__bytes_source__");
+    const proto::ProtoString* indexName  = PythonEnvironment::getInternedString(context, "__bytes_index__");
+    const proto::ProtoObject* sourceObj = self->getAttribute(context, sourceName);
+    const proto::ProtoObject* indexObj  = self->getAttribute(context, indexName);
+    if (!sourceObj || !indexObj || !indexObj->isInteger(context)) return nullptr;
+    std::string buf;
+    if (!bytes_data_view(context, sourceObj, buf)) return nullptr;
     int idx = static_cast<int>(indexObj->asLong(context));
-    unsigned long size = s->getSize(context);
-    if (static_cast<unsigned long>(idx) >= size) return nullptr;
-    std::string c;
-    s->toUTF8String(context, c);
-    const proto::ProtoObject* result = context->fromInteger(static_cast<unsigned char>(c[static_cast<size_t>(idx)]));
+    if (static_cast<size_t>(idx) >= buf.size()) return nullptr;
+    const proto::ProtoObject* result = context->fromInteger(static_cast<unsigned char>(buf[static_cast<size_t>(idx)]));
     self->setAttribute(context, indexName, context->fromInteger(idx + 1));
     return result;
 }
@@ -4611,6 +4612,217 @@ static const proto::ProtoObject* py_bytes_ge(
     return (a >= b) ? PROTO_TRUE : PROTO_FALSE;
 }
 
+// Wrap a raw ProtoList into a Python `list` instance with `__data__`
+// pointing at the list and `__class__` set to `list`.  Without this,
+// `len()` and `repr()` see no data and report 0/empty even though
+// iteration finds the elements via the prototype's __iter__.
+static const proto::ProtoObject* wrap_list_as_pylist(
+    proto::ProtoContext* context, const proto::ProtoList* lst) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!env || !env->getListPrototype()) return lst->asObject(context);
+    proto::ProtoObject* instance = const_cast<proto::ProtoObject*>(
+        env->getListPrototype()->newChild(context, true));
+    instance->setAttribute(context, env->getDataString(), lst->asObject(context));
+    instance->setAttribute(context, env->getClassString(), env->getListPrototype());
+    return instance;
+}
+
+// AA-round helpers — fresh bytes API surface, all routed through
+// bytes_data_view and bytes_make_object.
+static const proto::ProtoObject* py_bytes_upper(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    std::string raw;
+    if (!bytes_data_view(context, self, raw)) return PROTO_NONE;
+    for (auto& c : raw) {
+        unsigned char u = static_cast<unsigned char>(c);
+        if (u >= 'a' && u <= 'z') c = static_cast<char>(u - 32);
+    }
+    return bytes_make_object(context, raw.data(), static_cast<unsigned long>(raw.size()));
+}
+
+static const proto::ProtoObject* py_bytes_lower(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    std::string raw;
+    if (!bytes_data_view(context, self, raw)) return PROTO_NONE;
+    for (auto& c : raw) {
+        unsigned char u = static_cast<unsigned char>(c);
+        if (u >= 'A' && u <= 'Z') c = static_cast<char>(u + 32);
+    }
+    return bytes_make_object(context, raw.data(), static_cast<unsigned long>(raw.size()));
+}
+
+static const proto::ProtoObject* py_bytes_swapcase(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    std::string raw;
+    if (!bytes_data_view(context, self, raw)) return PROTO_NONE;
+    for (auto& c : raw) {
+        unsigned char u = static_cast<unsigned char>(c);
+        if (u >= 'a' && u <= 'z') c = static_cast<char>(u - 32);
+        else if (u >= 'A' && u <= 'Z') c = static_cast<char>(u + 32);
+    }
+    return bytes_make_object(context, raw.data(), static_cast<unsigned long>(raw.size()));
+}
+
+static const proto::ProtoObject* py_bytes_title(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    std::string raw;
+    if (!bytes_data_view(context, self, raw)) return PROTO_NONE;
+    bool prevAlpha = false;
+    for (auto& c : raw) {
+        unsigned char u = static_cast<unsigned char>(c);
+        bool isAlpha = (u >= 'a' && u <= 'z') || (u >= 'A' && u <= 'Z');
+        if (isAlpha) {
+            if (!prevAlpha) {
+                if (u >= 'a' && u <= 'z') c = static_cast<char>(u - 32);
+            } else {
+                if (u >= 'A' && u <= 'Z') c = static_cast<char>(u + 32);
+            }
+        }
+        prevAlpha = isAlpha;
+    }
+    return bytes_make_object(context, raw.data(), static_cast<unsigned long>(raw.size()));
+}
+
+static const proto::ProtoObject* py_bytes_partition_impl(
+    proto::ProtoContext* context, const proto::ProtoObject* self,
+    const proto::ProtoList* posArgs, bool reverse) {
+    std::string raw;
+    if (!bytes_data_view(context, self, raw) || !posArgs || posArgs->getSize(context) < 1) return PROTO_NONE;
+    std::string sep;
+    if (!bytes_view(context, posArgs->getAt(context, 0), sep) || sep.empty()) return PROTO_NONE;
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!env) return PROTO_NONE;
+    size_t pos = reverse ? raw.rfind(sep) : raw.find(sep);
+    const proto::ProtoObject* before;
+    const proto::ProtoObject* sepObj;
+    const proto::ProtoObject* after;
+    if (pos == std::string::npos) {
+        // Not found: return (self, b'', b'') for partition; (b'', b'', self) for rpartition.
+        const proto::ProtoObject* empty = bytes_make_object(context, nullptr, 0);
+        if (reverse) { before = empty; sepObj = empty; after = bytes_make_object(context, raw.data(), raw.size()); }
+        else         { before = bytes_make_object(context, raw.data(), raw.size()); sepObj = empty; after = empty; }
+    } else {
+        std::string b = raw.substr(0, pos);
+        std::string a = raw.substr(pos + sep.size());
+        before = bytes_make_object(context, b.data(), static_cast<unsigned long>(b.size()));
+        sepObj = bytes_make_object(context, sep.data(), static_cast<unsigned long>(sep.size()));
+        after  = bytes_make_object(context, a.data(), static_cast<unsigned long>(a.size()));
+    }
+    const proto::ProtoList* l = context->newList()
+        ->appendLast(context, before)
+        ->appendLast(context, sepObj)
+        ->appendLast(context, after);
+    return env->newTuple(l);
+}
+
+static const proto::ProtoObject* py_bytes_partition(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    return py_bytes_partition_impl(context, self, posArgs, false);
+}
+
+static const proto::ProtoObject* py_bytes_rpartition(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    return py_bytes_partition_impl(context, self, posArgs, true);
+}
+
+static const proto::ProtoObject* py_bytes_zfill(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    std::string raw;
+    if (!bytes_data_view(context, self, raw) || !posArgs || posArgs->getSize(context) < 1) return PROTO_NONE;
+    long long width = posArgs->getAt(context, 0)->asLong(context);
+    if (static_cast<long long>(raw.size()) >= width) {
+        return bytes_make_object(context, raw.data(), static_cast<unsigned long>(raw.size()));
+    }
+    size_t pad = static_cast<size_t>(width) - raw.size();
+    std::string out;
+    out.reserve(static_cast<size_t>(width));
+    // Preserve a leading sign byte before the zeros.
+    if (!raw.empty() && (raw[0] == '+' || raw[0] == '-')) {
+        out += raw[0];
+        out.append(pad, '0');
+        out.append(raw.begin() + 1, raw.end());
+    } else {
+        out.append(pad, '0');
+        out.append(raw);
+    }
+    return bytes_make_object(context, out.data(), static_cast<unsigned long>(out.size()));
+}
+
+static const proto::ProtoObject* py_bytes_splitlines(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    std::string raw;
+    if (!bytes_data_view(context, self, raw)) return PROTO_NONE;
+    bool keepends = false;
+    if (posArgs && posArgs->getSize(context) >= 1) {
+        const proto::ProtoObject* k = posArgs->getAt(context, 0);
+        if (k == PROTO_TRUE) keepends = true;
+        else if (k->isInteger(context)) keepends = (k->asLong(context) != 0);
+    }
+    const proto::ProtoList* result = context->newList();
+    size_t i = 0;
+    while (i < raw.size()) {
+        size_t j = i;
+        while (j < raw.size() && raw[j] != '\n' && raw[j] != '\r') ++j;
+        size_t end = j;
+        if (j < raw.size()) {
+            // CRLF or \n or \r — single line break.
+            size_t brk = 1;
+            if (raw[j] == '\r' && j + 1 < raw.size() && raw[j + 1] == '\n') brk = 2;
+            if (keepends) end = j + brk;
+            std::string line = raw.substr(i, end - i);
+            result = result->appendLast(context,
+                bytes_make_object(context, line.data(), static_cast<unsigned long>(line.size())));
+            i = j + brk;
+        } else {
+            std::string line = raw.substr(i);
+            result = result->appendLast(context,
+                bytes_make_object(context, line.data(), static_cast<unsigned long>(line.size())));
+            i = j;
+        }
+    }
+    return wrap_list_as_pylist(context, result);
+}
+
+static const proto::ProtoObject* py_bytes_contains(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (!posArgs || posArgs->getSize(context) < 1) return PROTO_FALSE;
+    std::string haystack;
+    if (!bytes_data_view(context, self, haystack)) return PROTO_FALSE;
+    const proto::ProtoObject* needleObj = posArgs->getAt(context, 0);
+    std::string needle;
+    if (needleObj->isInteger(context)) {
+        long long v = needleObj->asLong(context);
+        if (v < 0 || v > 255) {
+            PythonEnvironment* env = PythonEnvironment::fromContext(context);
+            if (env) env->raiseValueError(context,
+                PythonEnvironment::getInternedString(context, "byte must be in range(0, 256)")->asObject(context));
+            return PROTO_FALSE;
+        }
+        needle = static_cast<char>(static_cast<unsigned char>(v));
+    } else if (!bytes_view(context, needleObj, needle)) {
+        return PROTO_FALSE;
+    }
+    return haystack.find(needle) != std::string::npos ? PROTO_TRUE : PROTO_FALSE;
+}
+
 static const proto::ProtoObject* py_bytes_hash(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -4658,17 +4870,9 @@ static const proto::ProtoObject* py_bytes_maketrans(
     for (int i = 0; i < 256; ++i) table[i] = i;
 
     if (posArgs->getSize(context) >= 2) {
-        auto extract = [&](const proto::ProtoObject* obj, std::string& out) {
-            const proto::ProtoString* s = bytes_data(context, obj);
-            if (s) {
-                s->toUTF8String(context, out);
-            } else if (obj && obj->isString(context)) {
-                obj->asString(context)->toUTF8String(context, out);
-            }
-        };
         std::string frm_str, to_str;
-        extract(posArgs->getAt(context, 0), frm_str);
-        extract(posArgs->getAt(context, 1), to_str);
+        bytes_view(context, posArgs->getAt(context, 0), frm_str);
+        bytes_view(context, posArgs->getAt(context, 1), to_str);
         size_t n = std::min(frm_str.size(), to_str.size());
         for (size_t i = 0; i < n; ++i)
             table[static_cast<unsigned char>(frm_str[i])] = static_cast<unsigned char>(to_str[i]);
@@ -4677,7 +4881,7 @@ static const proto::ProtoObject* py_bytes_maketrans(
     const proto::ProtoList* result = context->newList();
     for (int i = 0; i < 256; ++i)
         result = result->appendLast(context, context->fromInteger(table[i]));
-    return result->asObject(context);
+    return wrap_list_as_pylist(context, result);
 }
 
 // bytes.translate(table, delete=b'') — applies a translation table produced by bytes.maketrans.
@@ -4688,10 +4892,8 @@ static const proto::ProtoObject* py_bytes_translate(
     const proto::ProtoList* posArgs,
     const proto::ProtoSparseList* kwargs) {
 
-    const proto::ProtoString* s = bytes_data(context, self);
-    if (!s) return self;
     std::string raw;
-    s->toUTF8String(context, raw);
+    if (!bytes_data_view(context, self, raw)) return self;
 
     // Build identity mapping; override from table arg when provided.
     std::array<int, 256> table;
@@ -4718,8 +4920,7 @@ static const proto::ProtoObject* py_bytes_translate(
     if (posArgs->getSize(context) >= 2) {
         const proto::ProtoObject* delObj = posArgs->getAt(context, 1);
         if (delObj && delObj != PROTO_NONE) {
-            const proto::ProtoString* ds = bytes_data(context, delObj);
-            if (ds) ds->toUTF8String(context, del_str);
+            bytes_view(context, delObj, del_str);
         }
     }
 
@@ -4734,15 +4935,7 @@ static const proto::ProtoObject* py_bytes_translate(
         int mapped = table[c];
         if (mapped >= 0) out += static_cast<char>(static_cast<unsigned char>(mapped));
     }
-
-    PythonEnvironment* env = PythonEnvironment::fromContext(context);
-    if (!env) return PROTO_NONE;
-    const proto::ProtoObject* bytesProto = env->getBytesPrototype();
-    if (!bytesProto) return PROTO_NONE;
-    proto::ProtoObject* b = const_cast<proto::ProtoObject*>(bytesProto->newChild(context, true));
-    b->setAttribute(context, PythonEnvironment::getInternalString(context, "__data__"),
-                    PythonEnvironment::getInternedString(context, out)->asObject(context));
-    return b;
+    return bytes_make_object(context, out.data(), static_cast<unsigned long>(out.size()));
 }
 
 static const proto::ProtoObject* py_bytes_fromhex(
@@ -4768,13 +4961,7 @@ static const proto::ProtoObject* py_bytes_fromhex(
         else continue;
         raw += static_cast<char>(hi * 16 + lo);
     }
-    PythonEnvironment* env = PythonEnvironment::fromContext(context);
-    if (!env) return PROTO_NONE;
-    const proto::ProtoObject* bytesProto = env->getBytesPrototype();
-    if (!bytesProto) return PROTO_NONE;
-    proto::ProtoObject* b = const_cast<proto::ProtoObject*>(bytesProto->newChild(context, true));
-    b->setAttribute(context, PythonEnvironment::getInternalString(context, "__data__"), PythonEnvironment::getInternedString(context, raw.c_str())->asObject(context));
-    return b;
+    return bytes_make_object(context, raw.data(), static_cast<unsigned long>(raw.size()));
 }
 
 static const proto::ProtoObject* py_bytes_find(
@@ -5111,7 +5298,7 @@ static const proto::ProtoObject* py_bytes_split(
         result = result->appendLast(context, b);
         start = pos + sep.size();
     }
-    return result->asObject(context);
+    return wrap_list_as_pylist(context, result);
 }
 
 static const proto::ProtoObject* py_bytes_join(
@@ -9425,6 +9612,33 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     bytesPrototype = bytesPrototype->setAttribute(rootContext_,
         PythonEnvironment::getInternedString(rootContext_, "__hash__"),
         rootContext_->fromMethod(nullptr, py_bytes_hash));
+    bytesPrototype = bytesPrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "__contains__"),
+        rootContext_->fromMethod(nullptr, py_bytes_contains));
+    bytesPrototype = bytesPrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "upper"),
+        rootContext_->fromMethod(nullptr, py_bytes_upper));
+    bytesPrototype = bytesPrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "lower"),
+        rootContext_->fromMethod(nullptr, py_bytes_lower));
+    bytesPrototype = bytesPrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "swapcase"),
+        rootContext_->fromMethod(nullptr, py_bytes_swapcase));
+    bytesPrototype = bytesPrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "title"),
+        rootContext_->fromMethod(nullptr, py_bytes_title));
+    bytesPrototype = bytesPrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "partition"),
+        rootContext_->fromMethod(nullptr, py_bytes_partition));
+    bytesPrototype = bytesPrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "rpartition"),
+        rootContext_->fromMethod(nullptr, py_bytes_rpartition));
+    bytesPrototype = bytesPrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "zfill"),
+        rootContext_->fromMethod(nullptr, py_bytes_zfill));
+    bytesPrototype = bytesPrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "splitlines"),
+        rootContext_->fromMethod(nullptr, py_bytes_splitlines));
 
     const proto::ProtoObject* bytesIterProto = objectPrototype->newChild(rootContext_, true);
     bytesIterProto = bytesIterProto->setAttribute(rootContext_, py_class, typePrototype);
