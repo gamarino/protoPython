@@ -86,6 +86,88 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 
 **Key V110 milestone**: All essential tests now run to completion without crashing. Individual test failures reflect unimplemented language features (metaclass protocol, descriptors, C-extension stubs), not interpreter instability.
 
+### V154 Changes (2026-04-25) — F0: bignum API made public; proto_internal.h dropped from protoPython
+
+The F0 round of the test_grammar.py 75/75 coverage push (see
+`docs/superpowers/specs/2026-04-25-test-grammar-coverage-design.md`)
+extends `protoCore.h`'s public API and removes every
+`#include <proto_internal.h>` from protoPython source.
+
+**F0-1, F0-2 — Public bignum accessors on ProtoObject**
+Adds `ProtoObject::integerSign(ctx)` and
+`ProtoObject::asIntegerString(ctx, base)` to
+`protoCore/headers/protoCore.h`, implemented in
+`protoCore/core/ProtoObject.cpp` as one-line delegators to the
+existing internal `Integer::sign` / `Integer::toString`.
+`ProtoContext::fromString(str, base)` already auto-promotes to
+bignum via `Integer::fromString`; no new factory needed.
+
+**F0-fix-abs — ProtoObject::abs made bignum-safe**
+The previous `ProtoObject::abs` round-tripped through `asLong()`,
+which throws `std::overflow_error` for any LargeInteger.  Replaced
+the integer branch with `Integer::abs` delegation, matching the
+sibling pattern used by `add`, `subtract`, `multiply`, `divide`,
+`modulo`, `compare`, etc.  Discovered while migrating
+`BuiltinsModule.cpp::py_abs`.
+
+**F0-fix-negate — ProtoObject::negate is no longer a no-op**
+The previous `ProtoObject::negate` was implemented as
+`subtract(context, context->fromInteger(0))`, which evaluates to
+`this - 0 = this` — a no-op, not a negation.  The bug was masked
+because every internal consumer routed through `Integer::negate`
+directly via `<proto_internal.h>`; only the public surface was
+broken.  Replaced with the same shape as `F0-fix-abs`: integer
+delegate to `Integer::negate`, double inline, fallback `return this`.
+Discovered while migrating `OP_UNARY_NEGATIVE` in
+`ExecutionEngine.cpp`.
+
+**F0-3, F0-4, F0-5 — Migrate the 3 protoPython consumers**
+`BuiltinsModule.cpp` (35 call sites), `ExecutionEngine.cpp` (16
+call sites), and `PythonEnvironment.cpp` (16 call sites) now call
+the public accessors exclusively.  `#include <proto_internal.h>`
+removed from each.  An obsolete leading comment in
+`PythonEnvironment.cpp` explaining the prior dependency was
+deleted; six in-body comments referencing `Integer::*` by name
+were updated to reference the public `ProtoObject::*` names.
+
+**Latent issue noted, not fixed in F0** — `ProtoObject::asDouble`
+on a LargeInteger receiver round-trips through `asLong` and
+throws `std::overflow_error`.  CPython equivalent
+(`float(2**100)`) returns a rounded double.  Tracked as a
+separate `F0-fix-asDouble` candidate; not blocking the
+test_grammar.py work which does not exercise float coercion of
+bignums in its present form.
+
+**Verification (final smoke regression sweep)**
+- protoCore tests: 100% pass (136/136).
+- protoJS rebuild: green (R1 mitigated).
+- Synthetic generators suite: 37/0/0 (matches each F0-3/4/5
+  per-commit verification).
+- Bignum smoke (`-c "n=2**200; print(repr(n)); print(len(str(n))); print(hex(n)); print((-2)**81); print(divmod(-(2**80), 3)); print(abs(-(2**100)))"`):
+  six lines of correct LargeInteger output end-to-end.
+- Custom suites: `test_decorator` PASS (output unchanged),
+  `test_contextlib` PASS (prints "test_contextlib passed"),
+  `test_abc` PASS (silent, exit 0 — same as V153 baseline).
+- Pre-existing bootstrap fragility (unchanged from pre-F0
+  state, see WIP stash "pre-F0 (V154): bootstrap-fragile
+  rollbacks of __init_subclass__ / __set_name__ / ABCMeta —
+  restore after F0 lands"): `test_dataclasses` exits 139,
+  `test_json` exits 139, both with empty output.  These are
+  not F0 regressions; the pre-F0 stash will be restored after
+  F0 lands and is expected to recover the V153 numbers.
+- test_grammar.py: still crashes during environment bootstrap
+  (same pre-existing failure mode); the BinOpNode line-1615
+  compile bug noted in the spec remains the F1 target, not F0.
+- `grep -rn "proto_internal.h" protoPython/src/` returns empty.
+
+| State     | PASS | FAIL | CRASH | Note |
+| :---      | ---: | ---: | ---:  | :--- |
+| Before F0 | —    | —    | 1     | test_grammar.py crashes on load (BinOpNode line 1615 per spec; bootstrap segfault observed) |
+| After F0  | —    | —    | 1     | unchanged; F0 is API-only — F1 will fix the crash |
+
+The F0 round is documentation-complete with this commit (F0-6).
+F1 (compilation unblock) follows.
+
 ### V153 Changes (2026-04-25) — PI: close all metaclass + descriptor tests (37/0/0)
 
 Closes the metaclass + descriptor synthetic suite at 37/37 (full
