@@ -86,6 +86,65 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 
 **Key V110 milestone**: All essential tests now run to completion without crashing. Individual test failures reflect unimplemented language features (metaclass protocol, descriptors, C-extension stubs), not interpreter instability.
 
+### V149 Changes (2026-04-25) — PE: coroutine name resolution + async-for FOR_ITER patch slot
+
+The PD round set the foundation; the PE round closes it.  Two
+narrow root-causes were diagnosed and fixed; the synthetic suite
+moved 29/7/1 → 32/4/1 (+3 PASS, 0 regressions).
+
+**PE-1 — `compileAsyncFunctionDef` treats builtins as DEREF closures**
+The async variant collected captured names from the body but did not
+filter them against the *enclosing* scope's locals/nonlocals before
+inserting them into `bodyNonlocals`.  Result: any bare name used
+inside `async def` (e.g. `print`, `len`) was emitted as `LOAD_DEREF`
+against an empty cell slot containing whatever `0x141`-style stale
+value the slot table held.  When called, the slot value was
+non-callable and surfaced as `TypeError: 'NoneType' object is not
+callable` — even for trivial bodies like `return print("hi")`.
+
+The synchronous `compileFunctionDef` already had the right filter
+(see lines 2900–2919): only adds `c` to `bodyNonlocals` when
+`localSlotMap_.count(c) || nonlocalNames_.count(c)` confirms the
+name actually lives as a cell in the enclosing scope.  Without that
+guard, builtins are mis-categorised as nonlocals.  PE-1 mirrors the
+guard in `compileAsyncFunctionDef` (and adds the matching
+self-free-vars second pass that compileFunctionDef does).
+
+**PE-2 — `compileAsyncFor` patches the wrong slot for FOR_ITER's jump-target**
+The PD3 lowering captured `forIterSlot = bytecodeOffset()` *before*
+emitting `FOR_ITER`, then did `addPatch(forIterSlot + 1, afterLoop)`.
+But `forIterSlot + 1` is the *next instruction's* index, not
+FOR_ITER's arg slot — `applyPatches` already does `idx*2 + 1` to
+land on the arg slot.  The async-for therefore left FOR_ITER's
+jump-target at 0, so on `StopAsyncIteration` it jumped back to PC=0
+(start of the enclosing coroutine) instead of `afterLoop`.  Visible
+symptom: `async for x in agen():` looped infinitely, repeatedly
+re-entering the outer coroutine.
+
+Fix: mirror compileFor exactly — `emit(OP_FOR_ITER, 0); int argSlot
+= bytecodeOffset() - 1; ... addPatch(argSlot, afterLoop)`.
+
+**Tests re-enabled and passing**
+  - test_async_for_basic       (async for over async generator)
+  - test_async_for_break       (break inside async for)
+  - test_async_for_else        (else clause runs when iter exhausts)
+
+**Tests re-stubbed for PF round**
+  - test_async_for_over_class_aiter   (class-defined `__aiter__`/`__anext__`
+    needs the GET_AITER `__anext__→__next__` instance bridge to actually
+    drive FOR_ITER; bridge is in place but not driving correctly)
+  - test_async_with_enter_exit_called
+  - test_async_with_exception_seen_by_aexit
+  - test_async_with_suppression
+    (async-with lowering still uses the SETUP_ASYNC_WITH +
+    GET_AWAITABLE/YIELD_FROM path that hits the same kind of
+    resumption issue PD/PE just resolved for async-for)
+
+| State        | PASS | FAIL | CRASH | Total |
+| :---         | ---: | ---: | ---:  | ---:  |
+| Before PE    |  29  |  7   |   1   |  37   |
+| After PE     |  32  |  4   |   1   |  37   |
+
 ### V148 Changes (2026-04-24) — PD2/PD3/PD4: foundation for async-for, deeper bug exposed
 
 The PD-round set out to unblock the 7 disabled async-for/with tests.

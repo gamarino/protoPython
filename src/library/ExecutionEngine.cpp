@@ -2435,7 +2435,7 @@ const proto::ProtoObject* executeBytecodeRange(
     for (unsigned long i = pcStart; i <= pcEnd; ) {
         int op = bc[i];
         int arg = (i + 1 < n) ? bc[i + 1] : 0;
-        unsigned long next_i = i + 2; 
+        unsigned long next_i = i + 2;
 
         if (get_env_diag()) {
             fprintf(stderr, "DEBUG HANG TRACE: [PC %lu] OP %d ARG %d\n", i, op, arg);
@@ -4579,15 +4579,15 @@ const proto::ProtoObject* executeBytecodeRange(
                  i = next_i;
                  continue;
             }
-            
+
             // In 3.11+, CALL always consumes argc + 2 slots.
             // Layout: [NULL|Self, Callable, Arg1, ... ArgN]
             // We expect at least arg + 1 + 1 (the NULL/Self marker).
             unsigned long firstArgIdx = stack.top - arg;
-            
+
             // Safety check: if the stack isn't deep enough to have a marker, it's a legacy call.
             bool isModern = (stack.top >= (size_t)(arg + 2));
-            
+
             const proto::ProtoObject* Y = stack[firstArgIdx - 1];
             const proto::ProtoObject* X = isModern ? stack[firstArgIdx - 2] : nullptr;
             

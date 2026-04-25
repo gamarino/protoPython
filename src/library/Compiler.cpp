@@ -3187,6 +3187,32 @@ bool Compiler::compileAsyncFunctionDef(AsyncFunctionDefNode* n) {
 
     std::unordered_set<std::string> captured;
     collectCapturedNames(n->body.get(), combinedGlobals, captured);
+    // Also gather free variables of THIS body (mirrors compileFunctionDef's
+    // self-free-vars pass).  Without this, names referenced directly in the
+    // async body — not via a nested function — are not seen as candidates
+    // for closure resolution.  This is benign on its own but pairs with the
+    // outer-scope filter below.
+    {
+        std::unordered_set<std::string> bodyUsed;
+        collectUsedNames(n->body.get(), bodyUsed);
+        std::unordered_set<std::string> bodyDefined;
+        collectDefinedNames(n->body.get(), bodyDefined);
+        for (const auto& p : params) bodyDefined.insert(p);
+        for (const auto& k : n->kwonlyargs) bodyDefined.insert(k);
+        if (!n->vararg.empty()) bodyDefined.insert(n->vararg);
+        if (!n->kwarg.empty()) bodyDefined.insert(n->kwarg);
+        for (const auto& name : bodyUsed) {
+            if (bodyDefined.count(name) || combinedGlobals.count(name) || bodyNonlocals.count(name))
+                continue;
+            captured.insert(name);
+        }
+    }
+    // PE fix: only treat a captured name as nonlocal (LOAD_DEREF) when the
+    // enclosing scope actually has it as a local or nonlocal — i.e. it can
+    // be closed over via a cell.  Builtins and module-level globals must
+    // resolve via LOAD_GLOBAL, not LOAD_DEREF, otherwise `print(...)` inside
+    // an `async def` resolves to the wrong slot and TypeErrors at call.
+    // This mirrors the logic in compileFunctionDef.
     for (const auto& c : captured) {
         bool isLocal = false;
         for (const auto& p : params) if (p == c) isLocal = true;
@@ -3194,9 +3220,12 @@ bool Compiler::compileAsyncFunctionDef(AsyncFunctionDefNode* n) {
         if (n->vararg == c) isLocal = true;
         if (n->kwarg == c) isLocal = true;
         for (const auto& l : localsOrdered) if (l == c) isLocal = true;
-        if (!isLocal) bodyNonlocals.insert(c);
+        if (!isLocal) {
+            bool isInOuterScope = localSlotMap_.count(c) || nonlocalNames_.count(c);
+            if (isInOuterScope) bodyNonlocals.insert(c);
+        }
     }
-    
+
     std::string dynamicReason = getDynamicLocalsReason(n->body.get());
     const bool forceMapped = !dynamicReason.empty();
 
@@ -3351,8 +3380,8 @@ bool Compiler::compileAsyncFor(AsyncForNode* n) {
     int loopStart = bytecodeOffset();
     loopStack_.push_back({loopStart, {}, blockEnvStack_.size(), true});
 
-    int forIterSlot = bytecodeOffset();
-    emit(OP_FOR_ITER, 0);   // patched to afterLoop
+    emit(OP_FOR_ITER, 0);
+    int argSlot = bytecodeOffset() - 1;
 
     if (!compileTarget(n->target.get(), TargetCtx::Store)) return false;
 
@@ -3360,7 +3389,7 @@ bool Compiler::compileAsyncFor(AsyncForNode* n) {
     emit(OP_JUMP_ABSOLUTE, loopStart * 2);
 
     int afterLoop = bytecodeOffset();
-    addPatch(forIterSlot + 1, afterLoop);
+    addPatch(argSlot, afterLoop);
 
     if (n->orelse) {
         if (!compileNode(n->orelse.get())) return false;

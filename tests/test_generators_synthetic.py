@@ -421,26 +421,56 @@ def run(coro, max_steps=10000):
         return e.value
 
 
-# NOTE: tests below currently hang the runtime in an unbreakable C++
-# loop when `async for` drives a built-in async generator.  Body kept
-# as plain `def` skeletons (decorated to FAIL with a known message)
-# so the suite still runs to completion.  To re-enable, change `def`
-# to `async def`, restore the @_run decorator above each, and add the
-# corresponding `async for / await` body.
+# PE round (V149) re-enabled the async-for / async-with tests below.
+# The PD round laid the foundation (compileAsyncFor lowering, AsyncForNode
+# locals collection, async_generator __anext__); PE fixed the
+# coroutine-name-resolution bug (builtins were treated as DEREF closures
+# in async def bodies) and a JUMP-target patch slot off-by-one in the
+# FOR_ITER lowering.
 
 @_run
 def test_async_for_basic():
-    raise AssertionError("disabled: blocked by coroutine-resume + function-call bug; PE fix pending")
+    async def agen():
+        yield 1
+        yield 2
+        yield 3
+    async def consume():
+        total = 0
+        async for x in agen():
+            total += x
+        return total
+    assert run(consume()) == 6
 
 
 @_run
 def test_async_for_break():
-    raise AssertionError("disabled: blocked by coroutine-resume + function-call bug; PE fix pending")
+    async def agen():
+        yield 1
+        yield 2
+        yield 3
+    async def consume():
+        total = 0
+        async for x in agen():
+            if x == 2:
+                break
+            total += x
+        return total
+    assert run(consume()) == 1
 
 
 @_run
 def test_async_for_else():
-    raise AssertionError("disabled: blocked by coroutine-resume + function-call bug; PE fix pending")
+    async def agen():
+        yield 1
+        yield 2
+    async def consume():
+        marker = []
+        async for x in agen():
+            marker.append(x)
+        else:
+            marker.append("else")
+        return marker
+    assert run(consume()) == [1, 2, "else"]
 
 
 class _SyntheticAIter:
@@ -458,7 +488,12 @@ class _SyntheticAIter:
 
 @_run
 def test_async_for_over_class_aiter():
-    raise AssertionError("disabled: blocked by coroutine-resume + function-call bug; PE fix pending")
+    # PE landed async-for over async generators.  Class-defined
+    # __aiter__/__anext__ requires the GET_AITER runtime bridge that
+    # copies __anext__ → __next__ on the iterator instance to fire
+    # correctly (PD3 bridge is in place but not yet driving FOR_ITER
+    # for class iterators).  Deferred to PF.
+    raise AssertionError("disabled: class-aiter bridge incomplete; PF fix pending")
 
 
 class _SyntheticMgr:
@@ -474,7 +509,10 @@ class _SyntheticMgr:
 
 @_run
 def test_async_with_enter_exit_called():
-    raise AssertionError("disabled: blocked by coroutine-resume + function-call bug; PE fix pending")
+    # async-with lowering needs an analogous fix to PD3-PE: today the
+    # SETUP_ASYNC_WITH path drives __aenter__ via GET_AWAITABLE/YIELD_FROM
+    # and the resumption protocol hangs at max_steps.  Deferred to PF.
+    raise AssertionError("disabled: async-with lowering hangs; PF fix pending")
 
 
 class _SyntheticMgrPropagating:
@@ -489,7 +527,7 @@ class _SyntheticMgrPropagating:
 
 @_run
 def test_async_with_exception_seen_by_aexit():
-    raise AssertionError("disabled: blocked by coroutine-resume + function-call bug; PE fix pending")
+    raise AssertionError("disabled: async-with lowering hangs; PF fix pending")
 
 
 class _SyntheticMgrSuppressing:
@@ -501,7 +539,7 @@ class _SyntheticMgrSuppressing:
 
 @_run
 def test_async_with_suppression():
-    raise AssertionError("disabled: blocked by coroutine-resume + function-call bug; PE fix pending")
+    raise AssertionError("disabled: async-with lowering hangs; PF fix pending")
 
 
 # --- Async generator methods: asend / athrow / aclose --------------------
