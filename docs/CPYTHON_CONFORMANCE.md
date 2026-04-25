@@ -86,6 +86,64 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 
 **Key V110 milestone**: All essential tests now run to completion without crashing. Individual test failures reflect unimplemented language features (metaclass protocol, descriptors, C-extension stubs), not interpreter instability.
 
+### V142 Changes (2026-04-24) — Z-round: complete bytes API + tokenizer escapes
+
+After V141 migrated the bytes backing-store to ProtoByteBuffer, several
+existing methods still read `__data__` as a ProtoString (legacy path)
+and produced wrong results when applied to ProtoByteBuffer-backed
+instances.  Z-round migrates all of them and adds the missing
+ordering / hash dunders.
+
+- **Z1** — `bytes_needle_from_arg` (helper used by find/count/replace/
+  startswith/endswith/etc.) now extracts bytes via `bytes_view`,
+  supporting both backing formats.
+- **Z2** — `bytes.find` / `bytes.count` migrated to `bytes_data_view`.
+- **Z3** — `bytes.startswith` / `bytes.endswith` migrated.
+- **Z4** — `bytes.rfind` / `bytes.replace` migrated.  `replace` returns
+  a new ProtoByteBuffer-backed bytes via `bytes_make_object`.
+- **Z5** — `bytes.isdigit` / `bytes.isalpha` / `bytes.isascii` migrated.
+- **Z6** — `bytes.removeprefix` / `bytes.removesuffix` /
+  `bytes.lstrip` / `bytes.rstrip` / `bytes.strip` migrated; output uses
+  `bytes_make_object`.
+- **Z7** — `bytes.split` / `bytes.join` migrated; `bytes_sep_from_arg`
+  now uses `bytes_view`.
+- **Z8** — `bytes.decode` migrated.
+- **Z9** — Added ordering dunders (`__lt__`, `__le__`, `__gt__`,
+  `__ge__`) and `__hash__` (FNV-1a 64-bit) on the bytes prototype.
+  `sorted_compare` (BuiltinsModule.cpp) now invokes `__lt__` for two
+  bytes operands so `sorted([b'cherry', b'apple', b'banana'])` produces
+  the correct lexicographic order.
+- **Z10** — Tokenizer now decodes `\xHH` (2 hex digits) and `\NNN`
+  (1-3 octal digits) escapes inside `b'...'` and `'...'` literals.
+  Also extends the named-escape set (`\a`, `\b`, `\f`, `\v`).
+  Previously `b'\xff'` was tokenized as the 3-byte sequence `b'xff'`,
+  hiding most bytes-literal correctness work in any test that touched
+  high-byte values.
+
+After V142:
+
+  ```
+  >>> b'\xff\x80\x00\x7f'.hex()
+  'ff80007f'                          # was '786666...' (literal "xff..." text)
+  >>> b'\0\7\77\377'.hex()
+  '00073fff'                          # octal escapes now work
+  >>> sorted([b'cherry', b'apple', b'banana'])
+  [b'apple', b'banana', b'cherry']    # was returning unsorted
+  >>> hash(b'foo') == hash(b'foo')
+  True
+  ```
+
+Essential-suite snapshot after V142:
+
+| Test | Tests run | Pass | Fail | Err | Skip |
+| :--- | ---: | ---: | ---: | ---: | ---: |
+| test_grammar    |  75 | 35 | 20 | 15 | 5 | one less fail vs V141 |
+| test_types      | 131 |  6 | 75 | 48 | 2 | unchanged |
+| test_generators |   1 |  0 |  0 |  1 | 0 | unchanged |
+| test_asyncgen   |  85 |  — |  — |  — | — | unchanged |
+| test_json       |   9 |  9 |  0 |  0 | 0 | **PASS** |
+| test_base64     |  54 |  — | 31 |284 | 1 | failures shifted from data-corruption-induced to real api gaps |
+
 ### V141 Changes (2026-04-24) — Y-round: bytes backed by ProtoByteBuffer
 
 `bytes` instances historically stored their content in `__data__` as a

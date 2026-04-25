@@ -342,11 +342,52 @@ Token Tokenizer::scanString(char quote, const std::string& prefix) {
                 if (e == 'n') s += '\n';
                 else if (e == 't') s += '\t';
                 else if (e == 'r') s += '\r';
+                else if (e == 'a') s += '\a';
+                else if (e == 'b') s += '\b';
+                else if (e == 'f') s += '\f';
+                else if (e == 'v') s += '\v';
+                else if (e == '0' || e == '1' || e == '2' || e == '3' ||
+                         e == '4' || e == '5' || e == '6' || e == '7') {
+                    // Octal escape: \ooo (1 to 3 octal digits)
+                    int v = e - '0';
+                    int n = 1;
+                    while (n < 3 && pos_ < source_.size()
+                           && source_[pos_] >= '0' && source_[pos_] <= '7') {
+                        v = v * 8 + (source_[pos_++] - '0');
+                        ++n;
+                    }
+                    s += static_cast<char>(static_cast<unsigned char>(v & 0xff));
+                }
+                else if (e == 'x' && pos_ + 1 < source_.size()) {
+                    // Hex escape: \xHH (exactly 2 hex digits).
+                    auto hex = [](char c) -> int {
+                        if (c >= '0' && c <= '9') return c - '0';
+                        if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+                        if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+                        return -1;
+                    };
+                    int h1 = hex(source_[pos_]);
+                    int h2 = hex(source_[pos_ + 1]);
+                    if (h1 >= 0 && h2 >= 0) {
+                        s += static_cast<char>(static_cast<unsigned char>((h1 << 4) | h2));
+                        pos_ += 2;
+                    } else {
+                        // Malformed \x — keep verbatim like CPython error
+                        // (we just preserve the source for now).
+                        s += '\\'; s += e;
+                    }
+                }
                 else if (e == quote) s += quote;
                 else if (e == '\\') s += '\\';
                 else if (e == '\n') {
                     line_++;
                     lineStartPos_ = pos_;
+                }
+                // \u and \U are str-only and need 4/8 hex digits + UTF-8
+                // encoding; for now keep backslash for them so they don't
+                // get silently lost.
+                else if (e == 'u' || e == 'U' || e == 'N') {
+                    s += '\\'; s += e;
                 }
                 else s += e;
             } else {

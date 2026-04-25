@@ -2494,6 +2494,38 @@ static int sorted_compare(proto::ProtoContext* context, const proto::ProtoObject
         if (sa == sb) return 0;
         return sa < sb ? -1 : 1;
     }
+    // bytes/bytearray: try __lt__ if defined; this lets the
+    // Y-round/Z-round py_bytes_lt run, which compares by raw octets.
+    {
+        ::protoPython::PythonEnvironment* env = ::protoPython::PythonEnvironment::fromContext(context);
+        const proto::ProtoObject* bytesProto = env ? env->getBytesPrototype() : nullptr;
+        if (bytesProto) {
+            const proto::ProtoString* dataS = ::protoPython::PythonEnvironment::getInternalString(context, "__data__");
+            const proto::ProtoObject* aData = a->getAttribute(context, dataS);
+            const proto::ProtoObject* bData = b->getAttribute(context, dataS);
+            bool aIsBytes = aData && (aData->isByteBuffer(context) || aData->isString(context));
+            bool bIsBytes = bData && (bData->isByteBuffer(context) || bData->isString(context));
+            if (aIsBytes && bIsBytes) {
+                const proto::ProtoString* ltS = ::protoPython::PythonEnvironment::getInternedString(context, "__lt__");
+                const proto::ProtoObject* ltM = a->getAttribute(context, ltS);
+                if (ltM && ltM->asMethod(context)) {
+                    const proto::ProtoList* args = context->newList()->appendLast(context, b);
+                    const proto::ProtoObject* res = ltM->asMethod(context)(context, a, nullptr, args, nullptr);
+                    if (res == PROTO_TRUE) return -1;
+                    if (res == PROTO_FALSE) {
+                        // Could be equal — invoke __eq__.
+                        const proto::ProtoString* eqS = ::protoPython::PythonEnvironment::getInternedString(context, "__eq__");
+                        const proto::ProtoObject* eqM = a->getAttribute(context, eqS);
+                        if (eqM && eqM->asMethod(context)) {
+                            const proto::ProtoObject* eqr = eqM->asMethod(context)(context, a, nullptr, args, nullptr);
+                            if (eqr == PROTO_TRUE) return 0;
+                        }
+                        return 1;
+                    }
+                }
+            }
+        }
+    }
     int cmp = a->compare(context, b);
     if (cmp != 0) return cmp;
     unsigned long ha = a->getHash(context);
