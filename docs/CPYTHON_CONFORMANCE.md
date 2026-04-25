@@ -14,7 +14,7 @@ This document tracks the progress of `protoPython` in passing the official CPyth
 
 Core syntax, standard object model, and fundamental types.
 
-- [ ] `test_grammar.py`: **PARTIAL** — 53/75 pass, 12 fail, 10 err, 0 crash (V154.7, 2026-04-25, bool MRO partial + parent walk fallback)
+- [ ] `test_grammar.py`: **PARTIAL** — 54/75 pass, 11 fail, 10 err, 0 crash (V154.8, 2026-04-25, bool/int hierarchy fixed)
 - [ ] `test_types.py`: **PARTIAL** — 6/131 pass, runs to completion; legible failures (V124, 2026-04-24)
 - [ ] `test_descr.py`: **TIMEOUT** — runs >5 min; `type()` descriptor tests expose slow paths
 - [ ] `test_generators.py`: **PARTIAL** — 0/1 pass (doctest runner fails); import chain runs
@@ -85,6 +85,47 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 **Conformity Suite (internal, 2026-04-15)**: 7/9 tests pass. Failures are pre-existing: `int(float)` conversion and `set(iterable)` constructor.
 
 **Key V110 milestone**: All essential tests now run to completion without crashing. Individual test failures reflect unimplemented language features (metaclass protocol, descriptors, C-extension stubs), not interpreter instability.
+
+### V154.8 Changes (2026-04-25) — bool/int hierarchy fixed end-to-end: 53 → 54 PASS
+
+Closes the bool/int integration that V154.7 left half-done.
+Three coordinated changes in `PythonEnvironment.cpp`:
+
+**1. `rebase()` preserves explicit __mro__ / __bases__**
+The init-time `rebase` lambda used to unconditionally overwrite
+`__mro__` / `__bases__` on every core prototype with the default
+2-tuple `(p, object)` / 1-tuple `(object,)`.  Bool had set them
+to the correct `(bool, int, object)` / `(int,)` earlier (after
+`addParent(intPrototype)`), but rebase clobbered those.  Now
+rebase only sets when not already present.
+
+**2. `setupCoreType()` preserves existing MRO with self-handle update**
+`setupCoreType` runs `initDictStorage(...)` which can return a
+new prototype handle.  When MRO is already set, the first element
+referenced the OLD handle; setupCoreType now rebuilds the tuple
+with the post-init handle as element 0 and preserves the rest.
+This ensures `dict.__mro__[0] is dict` AND bool's
+`(bool, int, object)` survive the storage init.
+
+**3. `compareObjects` coerces bool to int for equality / ordering**
+`ProtoObject::compare` uses `isInteger()` which is false for
+boolean tags, so `False == 0` fell through to pointer comparison
+(returning False).  `compareObjects` now detects when at least
+one operand is a bool and both sides are int-kind, lifts the
+bool via `ctx->fromInteger(0/1)`, and delegates to
+`a->compare(ctx, b)` which honours bignum.
+
+**Verifications**:
+- `bool.__mro__` is now `(bool, int, object)`.
+- `issubclass(bool, int) == True`.
+- `isinstance(False, int) == True`.
+- `False == 0 == True`, `True == 1 == True`.
+- `True == 2**80 == False` (no asLong overflow).
+- `[2 < x for x in [-1, 3, 0]] == [0, 1, 0] == True`.
+
+**test_grammar.py: 53/75 → 54/75 PASS** (`test_lambdef` now passes).
+
+Synthetic suite: 37/0/0 (no regression).
 
 ### V154.7 Changes (2026-04-25) — bool MRO partial: 52 → 53 PASS
 
