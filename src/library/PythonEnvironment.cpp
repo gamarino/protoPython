@@ -513,8 +513,14 @@ static const proto::ProtoObject* py_type_get_mro(
     
     const proto::ProtoString* mroStr = PythonEnvironment::getInternedString(context, "__mro__");
     if (self->hasOwnAttribute(context, mroStr) == PROTO_TRUE) {
-        const proto::ProtoSparseList* attrs = self->getOwnAttributes(context);
-        const proto::ProtoObject* mro = attrs ? (const proto::ProtoObject*)attrs->getAt(context, (unsigned long)mroStr) : nullptr;
+        // Use getOwnAttributeDirect rather than getAttributes()->getAt(ptr cast)
+        // — the previous form cast the interned-string pointer to unsigned
+        // long and treated it as a hash key, which doesn't match how the
+        // attribute backing store actually keys its entries (it keys by the
+        // symbol's hash).  The cast happened to return nullptr for the
+        // bool prototype's freshly-set __mro__, falling through to the
+        // computed fallback that left out int.
+        const proto::ProtoObject* mro = self->getOwnAttributeDirect(context, mroStr);
         if (mro && mro != PROTO_NONE) {
             bool isTup = mro->isTuple(context);
             if (!isTup) {
@@ -527,10 +533,50 @@ static const proto::ProtoObject* py_type_get_mro(
     
     if (get_env_diag()) {
     }
+    // Walk the parent chain so the fallback MRO reflects actual inheritance.
+    // protoCore's parent list is appended in insertion order.  For builtins
+    // like bool — which is created via `objectPrototype->newChild(...)` and
+    // then `addParent(intPrototype)` — the parent list reads
+    // [object, int] but the desired Python MRO is (bool, int, object):
+    // the most-recently-added parent (int) is the "real" base in CPython
+    // semantics (`class bool(int): ...`).
+    //
+    // Walk parents in REVERSE order, deduping, then append `object` last
+    // so the universal root sits at the bottom of the MRO regardless of
+    // when it was added.  Recurse into each parent's parents to flatten
+    // the chain.
     const proto::ProtoList* fallback = context->newList();
     fallback = fallback->appendLast(context, self);
-    if (self != env->getObjectPrototype()) {
-        fallback = fallback->appendLast(context, env->getObjectPrototype());
+    const proto::ProtoObject* objectProto = env->getObjectPrototype();
+
+    auto contains = [&](const proto::ProtoObject* p) -> bool {
+        for (unsigned long i = 0; i < fallback->getSize(context); ++i) {
+            if (fallback->getAt(context, static_cast<int>(i)) == p) return true;
+        }
+        return false;
+    };
+
+    std::function<void(const proto::ProtoObject*, int)> walk =
+        [&](const proto::ProtoObject* node, int depth) {
+            if (!node || node == PROTO_NONE || depth > 64) return;
+            const proto::ProtoList* parents = node->getParents(context);
+            if (!parents) return;
+            unsigned long n = parents->getSize(context);
+            // Reverse order: last-added (most specific) parent first.
+            for (long i = static_cast<long>(n) - 1; i >= 0; --i) {
+                const proto::ProtoObject* p = parents->getAt(context, static_cast<int>(i));
+                if (!p || p == PROTO_NONE || p == self) continue;
+                if (p == objectProto) continue;  // append object last unconditionally
+                if (!contains(p)) {
+                    fallback = fallback->appendLast(context, p);
+                    walk(p, depth + 1);
+                }
+            }
+        };
+    walk(self, 0);
+
+    if (objectProto && self != objectProto && !contains(objectProto)) {
+        fallback = fallback->appendLast(context, objectProto);
     }
     return env->newTuple(fallback);
 }
@@ -10087,11 +10133,16 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     // Update boolean class name and repr
     boolPrototype = boolPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_type_repr));
 
-    space_->booleanPrototype = const_cast<proto::ProtoObject*>(boolPrototype);
-
-    // Set MRO and bases for bool
+    // Set MRO and bases for bool BEFORE registering the prototype on
+    // space_, otherwise space_->booleanPrototype keeps the pre-update
+    // reference and Python-level `bool.__mro__` / `bool.__bases__` see
+    // (bool, object) / (object,) instead of (bool, int, object) /
+    // (int,).  This in turn breaks issubclass(bool, int) and the bool/int
+    // equality chain (False == 0, True == 1, etc.).
     boolPrototype = boolPrototype->setAttribute(rootContext_, mroString, rootContext_->newTupleFromList(rootContext_->newList()->appendLast(rootContext_, boolPrototype)->appendLast(rootContext_, intPrototype)->appendLast(rootContext_, objectPrototype))->asObject(rootContext_));
     boolPrototype = boolPrototype->setAttribute(rootContext_, basesString, rootContext_->newTupleFromList(rootContext_->newList()->appendLast(rootContext_, intPrototype))->asObject(rootContext_));
+
+    space_->booleanPrototype = const_cast<proto::ProtoObject*>(boolPrototype);
 
     // 4.5 Initialize modulePrototype
     modulePrototype = objectPrototype->newChild(rootContext_, true);
