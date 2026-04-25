@@ -86,41 +86,47 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 
 **Key V110 milestone**: All essential tests now run to completion without crashing. Individual test failures reflect unimplemented language features (metaclass protocol, descriptors, C-extension stubs), not interpreter instability.
 
-### V145 Changes (2026-04-24) — PB-round: generators-and-async incremental fixes
+### V145 Changes (2026-04-24) — PB-round: generators-and-async, complete
 
-After establishing the V144 baseline (11/11/2 PASS/FAIL/CRASH), each
-PB-step is a single-purpose fix measured against
-`tests/test_generators_synthetic.py`.  Commits land only if no
+Started from the V144 synthetic baseline (11 PASS / 11 FAIL / 2 CRASH
+out of 24 generator/coroutine cases).  Each PB-step is one
+single-purpose fix measured against
+`tests/test_generators_synthetic.py`; commits land only if no
 existing PASS regresses.
+
+After PB1-PB8 the suite is **fully green**:
+
+  V144 baseline:  PASS=11  FAIL=11  CRASH=2  (24 cases)
+  After  PB1-PB8: PASS=24  FAIL=0   CRASH=0
 
 | Step | Fix | Suite |
 | :--- | :-- | :---: |
-| PB1 | OP_YIELD_FROM resume PC: pause at THIS opcode (not next_i) so the next .send() drives subIter forward.  yield-from now delivers all subiter values, threads sent values, nests properly. | 11→14 |
-| PB2 | `send(non-None)` on a just-started generator raises TypeError. | 14→15 |
-| PB3 | Distinct prototypes for `coroutine` (CO_COROUTINE) and `async_generator` (CO_COROUTINE+CO_GENERATOR).  type(x).__name__ now reports correctly; async_generator exposes `__aiter__` (sync generator does not). | 15→16 |
-| PB4 | `exception_init` no longer treats duplicated `self` as a positional arg.  Major fix: `StopIteration(99).args == (99,)` instead of `(instance, 99)`; `e.value` returns the actual value.  Unlocks return-value-in-generator, yield-from-returns-value, async_def-StopIteration-value, async_iter_protocol. | 16→20 |
+| PB1 | OP_YIELD_FROM resume PC: pause at the YIELD_FROM opcode itself so the next .send() pushes a new sendVal and re-runs the opcode.  `yield from` now delivers every subiter value, threads sent values, nests. | 11→14 |
+| PB2 | `send(non-None)` on a just-started generator raises TypeError (CPython contract). | 14→15 |
+| PB3 | Distinct `coroutine` and `async_generator` prototypes.  `type(coro).__name__ == 'coroutine'`, `type(agen()).__name__ == 'async_generator'`; the latter exposes `__aiter__`. | 15→16 |
+| PB4 | `exception_init` skips the duplicated `self` that runUserClassCall prepends to `__init__` args.  Major fix: `StopIteration(99).args == (99,)` (was `(instance, 99)`); `e.value == 99` (was a tuple).  Unlocks return-value, yield-from-returns-value, async-def StopIteration value, async iter protocol. | 16→20 |
+| PB5 | `try/finally` body runs in the exception path, not just the clean-exit path.  `finally` blocks now execute when close() injects GeneratorExit. | 20→21 |
+| PB6 | `close()` raises `RuntimeError("generator ignored GeneratorExit")` when a generator catches GeneratorExit and yields a new value instead of returning. | 21→22 |
+| PB7 | `yield from <native iterator>` (list_iterator, etc.) terminates instead of looping.  Native iterators signal exhaustion by returning nullptr without raising StopIteration; YIELD_FROM now treats `result == nullptr && !pendingException` as silent end-of-iter. | 22→23 |
+| PB8 | `outer.throw(exc)` while suspended at `yield from inner()` forwards `exc` into `inner.throw(exc)`, matching CPython yield-from semantics.  Implemented in two cooperating spots: YIELD_FROM redirects on entry, the generic handler-dispatch defers to YIELD_FROM when the current opcode is YIELD_FROM. | 23→**24** |
 
-State after PB4 (this commit):
-
-  Synthetic:  PASS=20  FAIL=3  CRASH=1   (vs V144 baseline 11/11/2)
-
-Remaining work-list:
-
-  - test_yield_from_iterator                (yield from a list iter — hangs)
-  - test_close_yields_after_exit_is_runtime_error
-  - test_finally_runs_on_close              (finally skipped on close())
-  - test_throw_inside_yield_from            (CRASH — throw doesn't reach subiter)
-
-CPython suite impact:
+CPython-suite impact (no regressions; one incidental unblock):
 
   - test_json:    9/9 PASS unchanged
-  - test_types:   131/75F/48E/2s  (exit code 0 now, was 1 — completes
-                                   instead of erroring mid-suite)
-  - test_grammar: hangs mid-suite at `....FFsEE......F.E.` — inherited
-                  from PB1; the synthetic suite proves the YIELD_FROM
-                  semantics are correct, so the cascade is in
-                  unittest's exception-reporting interaction with
-                  generators, separate from the fix.
+  - test_types:   131 tests, 75F/48E/2s — exit 0 (PB4 unblocked)
+  - test_grammar: 75 tests, 21F/14E/5s — exit 0 (PB8 unhung the
+                  `....FFsEE......F.E.` mid-suite cascade that PB1
+                  introduced; same root cause as
+                  test_throw_inside_yield_from)
+
+The PB-round demonstrates the value of the synthetic-suite-as-target
+methodology: each fix had a clear, isolated test case; cascades
+through CPython's unittest were either bugs in their own right
+(traceback formatter `text=None`, fixed defensively in PB1's lib
+patch) or symptoms of the same generator bug as a synthetic case
+(test_grammar cascade ⇄ test_throw_inside_yield_from).
+
+### V144 Changes (2026-04-24) — Synthetic generator/coroutine baseline
 
 ### V144 Changes (2026-04-24) — Synthetic generator/coroutine baseline
 
