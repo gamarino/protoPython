@@ -14,7 +14,7 @@ This document tracks the progress of `protoPython` in passing the official CPyth
 
 Core syntax, standard object model, and fundamental types.
 
-- [ ] `test_grammar.py`: **PARTIAL** — 39/75 pass, 21 fail, 15 err, 0 crash (V154.3, 2026-04-25, F1 milestone — runs to completion via clean baseline)
+- [ ] `test_grammar.py`: **PARTIAL** — 42/75 pass, 19 fail, 14 err, 0 crash (V154.4, 2026-04-25, F2-1 + F2-fix-tuplecmp + F1-2)
 - [ ] `test_types.py`: **PARTIAL** — 6/131 pass, runs to completion; legible failures (V124, 2026-04-24)
 - [ ] `test_descr.py`: **TIMEOUT** — runs >5 min; `type()` descriptor tests expose slow paths
 - [ ] `test_generators.py`: **PARTIAL** — 0/1 pass (doctest runner fails); import chain runs
@@ -85,6 +85,76 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 **Conformity Suite (internal, 2026-04-15)**: 7/9 tests pass. Failures are pre-existing: `int(float)` conversion and `set(iterable)` constructor.
 
 **Key V110 milestone**: All essential tests now run to completion without crashing. Individual test failures reflect unimplemented language features (metaclass protocol, descriptors, C-extension stubs), not interpreter instability.
+
+### V154.4 Changes (2026-04-25) — F2-1, F2-fix-tuplecmp, F1-2: 39 → 42 PASS
+
+After F1-1 unblocked test_grammar.py (39/75 baseline), three small
+fixes brought the score to 42/75.  None required new Python features
+or major refactors — each was a single-file targeted bug fix.
+
+**F2-1 (`6859d32f`) — float exponent tokenization requires digits**
+- `1e+` and `1e-` (no digit) now error with "invalid decimal literal".
+- `1else` now correctly tokenizes as `1` + `else` (keyword) by
+  backtracking when `e` is not followed by a digit or sign.
+- Fixes `test_bad_numerical_literals` and
+  `test_float_exponent_tokenization`.
+
+**F2-fix-tuplecmp (`ec0dab57`) — lexicographic tuple/list compare**
+- `ProtoObject::compare` falls through to a pointer compare for
+  tuples and lists, so both `(1,2) < (1,2,3)` and `(1,2,3) < (1,2)`
+  returned True (allocation order, not content, decided the order).
+- Latent bug exposed by F2-1's tokenization fix shifting dict
+  iteration order in `test_selectors`.
+- `compareObjects` now branches to lexicographic element-wise
+  comparison for tuple/tuple and list/list pairs.
+
+**F1-2 (`28cdaef2`) — async function metadata**
+- *CO_COROUTINE bit* — protoPython used 0x80 for the CO_COROUTINE
+  flag in 7 sites (5 writers, 2 readers).  CPython's value is 0x100,
+  matching `inspect.CO_COROUTINE`.  All 7 sites updated.  This
+  unblocks `inspect.iscoroutinefunction(...)` and the
+  `co_flags & CO_COROUTINE` check in `test_async_await`.
+- *Function objects must be mutable* — `createUserFunction` used
+  `newChild(ctx, false)` (immutable), so every `setAttribute`
+  returned a fresh object that the Python-level variable could not
+  see.  `setattr(func, '_marked', True); func._marked` raised
+  `AttributeError`.  This blocks every decorator-based attribute
+  attachment idiom (functools.wraps, unittest.skip, dataclasses
+  field metadata, …).  Functions are now mutable and `setattr`
+  persists.
+
+**Verification**:
+- protoCore tests: 100% (136/136).
+- Synthetic suite: 37/0/0 (no regression).
+- Custom suites (test_decorator, test_abc, test_contextlib): all pass.
+- test_grammar.py: 42/75 PASS, 19 FAIL, 14 ERR, 0 CRASH.
+
+**Remaining 33 failures** by spec cluster:
+- F2 numeric (1): `test_end_of_numerical_literals` — needs
+  SyntaxWarning machinery during compile.
+- F4 ops (1): `test_comparison_is_literal` — needs SyntaxWarning.
+- F5 atoms (1): `test_warn_missed_comma` — needs SyntaxWarning.
+- F6 comprehensions (3): `test_genexps`, `test_comprehension_specials`.
+- F8 yield/control (3): `test_yield`, `test_yield_in_comprehensions`,
+  `test_control_flow_in_finally` — `test_yield` needs ~4 parser
+  restrictions for yield in non-yield contexts.
+- F9 funcdef/lambda (2): `test_funcdef`, `test_lambdef` — pprint
+  failures during assertEqual diff formatting.
+- F10 annotations (5): all `test_var_annot_*` — annotation
+  evaluation gaps.
+- F11 — all green this round (no test_classdef, test_with_statement,
+  test_matrix_mul, test_if_else_expr regression).
+- F12 assert (2): `test_assert_syntax_warnings`,
+  `test_assert_warning_promotes_to_syntax_error` — both need
+  SyntaxWarning.
+- F13 async/scope/eval (5): `test_async_await` (advances past 3
+  asserts but later assertion still fails), `test_async_with`,
+  `test_eval_input`, `test_former_statements_refer_to_builtins`.
+
+The largest remaining bucket (8 of 33) needs SyntaxWarning emission
+during compile.  protoPython has a `warnings` module but no
+compile-time warning hook.  Wiring that up would unlock six of
+these tests in one stroke.
 
 ### V154.3 Changes (2026-04-25) — F1-1: closure cell snapshot accepts PROTO_NONE — test_grammar.py runs
 
