@@ -2450,6 +2450,17 @@ const proto::ProtoObject* executeBytecodeRange(
             if (env) env->raiseRuntimeError(ctx, "evaluation stack overflow (maximum expression depth exceeded)");
             return nullptr;
         }
+        // PB8: when the current opcode is OP_YIELD_FROM and the frame
+        // carries a pending exception (typically from an outer .throw()),
+        // let YIELD_FROM forward the exception INTO subIter via
+        // subIter.throw(exc) rather than invoking the local
+        // exception-handler dispatch.  YIELD_FROM only handles its own
+        // case; if subIter has no `throw` method or subIter's throw
+        // re-raises, the exception falls back to the normal handler
+        // because YIELD_FROM leaves it on the env's pending slot.
+        if (op == OP_YIELD_FROM && env && env->hasPendingException()) {
+            // Skip the handler-dispatch below; YIELD_FROM owns it.
+        } else
         if (env && env->hasPendingException()) {
             const proto::ProtoObject* exc = env->peekPendingException();
             if (exc) {
@@ -2611,31 +2622,50 @@ const proto::ProtoObject* executeBytecodeRange(
             }
             stack.back() = iterator;
         } else if (op == OP_YIELD_FROM) {
+            // Stack: [..., subIter, sendVal]
+            // On yield: pause at THIS opcode so the next .send() pushes a
+            // fresh sendVal and re-executes YIELD_FROM (drives subIter).
+            // On StopIteration: pop subIter, push StopIteration.value, fall to next_i.
             if (stack.size() < 2) { i = next_i; continue; }
             const proto::ProtoObject* sendVal = stack.back();
-            const proto::ProtoObject* iterator = stack[stack.top - 2];
-            // ... YIELD_FROM logic continues, but for now we just fix the pop ...
-            // Wait, I should see more of YIELD_FROM to be safe.
-            // Let's postpone YIELD_FROM if it's complex.
-            // Actually, keep it simple for now as it's a stub or partial impl usually.
-            stack.pop_back(); // Pop sendVal
-            // (iterator remains on stack)
+            stack.pop_back();
             const proto::ProtoObject* subIter = stack.back();
-            
+
             const proto::ProtoString* sendS = env ? env->getSendString() : PythonEnvironment::getInternedString(ctx, "send");
-            const proto::ProtoObject* sendMethod = subIter->getAttribute(ctx, sendS);
             const proto::ProtoObject* result = nullptr;
-            
-            if (sendMethod && sendMethod != PROTO_NONE) {
-                const proto::ProtoList* args = ctx->newList()->appendLast(ctx, sendVal);
-                result = subIter->call(ctx, nullptr, sendS, subIter, args, nullptr);
-            } else {
-                if (sendVal != PROTO_NONE) {
-                    if (env) env->raiseTypeError(ctx, "can't send non-None value to a plain iterator");
-                    return PROTO_NONE;
+
+            // PB8: if the outer generator carries a pending exception
+            // (caller did .throw()), forward it INTO subIter via
+            // subIter.throw(exc) — that's the yield-from contract.
+            // If subIter has no `throw` method, leave the exception
+            // alone; the hasPendingException branch below will let it
+            // propagate normally.
+            bool injectedThrow = false;
+            if (env && env->hasPendingException()) {
+                const proto::ProtoString* throwS = PythonEnvironment::getInternedString(ctx, "throw");
+                const proto::ProtoObject* throwMethod = subIter->getAttribute(ctx, throwS);
+                if (throwMethod && throwMethod != PROTO_NONE && throwMethod->asMethod(ctx)) {
+                    const proto::ProtoObject* exc = env->peekPendingException();
+                    env->clearPendingException();
+                    const proto::ProtoList* args = ctx->newList()->appendLast(ctx, exc);
+                    result = throwMethod->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(subIter), nullptr, args, nullptr);
+                    injectedThrow = true;
                 }
-                const proto::ProtoString* nextS = env ? env->getNextString() : protoPython::PythonEnvironment::getInternalString(ctx, "__next__");
-                result = subIter->call(ctx, nullptr, nextS, subIter, ctx->newList(), nullptr);
+            }
+
+            if (!injectedThrow) {
+                const proto::ProtoObject* sendMethod = subIter->getAttribute(ctx, sendS);
+                if (sendMethod && sendMethod != PROTO_NONE) {
+                    const proto::ProtoList* args = ctx->newList()->appendLast(ctx, sendVal);
+                    result = subIter->call(ctx, nullptr, sendS, subIter, args, nullptr);
+                } else {
+                    if (sendVal != PROTO_NONE) {
+                        if (env) env->raiseTypeError(ctx, "can't send non-None value to a plain iterator");
+                        return PROTO_NONE;
+                    }
+                    const proto::ProtoString* nextS = env ? env->getNextString() : protoPython::PythonEnvironment::getInternalString(ctx, "__next__");
+                    result = subIter->call(ctx, nullptr, nextS, subIter, ctx->newList(), nullptr);
+                }
             }
 
             if (env && env->hasPendingException()) {
