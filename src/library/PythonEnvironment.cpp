@@ -12358,14 +12358,62 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
         }
     }
 
-    // In Python, data descriptors (with __set__) shadow instance attributes
-    if (obj->hasOwnAttribute(ctx, name) == PROTO_FALSE) {
-        const proto::ProtoObject* descr = obj->getAttribute(ctx, name);
-        if (descr && descr != PROTO_NONE && descr->isCell(ctx)) {
+    // PG: data descriptors (with __set__) shadow instance attributes.
+    // Look up the attribute on the type chain (skipping the instance's
+    // own attrs) and, if it has __set__, call __set__(descr, obj, value).
+    // The previous check only fired for native Cell descriptors;
+    // Python-class descriptors (a class with `def __set__`) were
+    // bypassed and the value was stored in the instance dict directly.
+    {
+        // Walk type's MRO to find the descriptor as a raw attribute
+        // (without invoking __get__ — that would re-trigger descriptor
+        // binding and return a value, not the descriptor itself).
+        const proto::ProtoObject* type = getType(ctx, obj);
+        const proto::ProtoObject* descr = nullptr;
+        if (type && type != PROTO_NONE) {
+            // Try the type's own attrs first.
+            if (type->hasOwnAttribute(ctx, name) == PROTO_TRUE) {
+                descr = type->getOwnAttributeDirect(ctx, name);
+            } else {
+                // Walk the type's __mro__ tuple looking for a raw attribute.
+                const proto::ProtoObject* mroObj = type->getAttribute(ctx, mroString);
+                const proto::ProtoTuple* mroT = mroObj ? mroObj->asTuple(ctx) : nullptr;
+                if (mroT) {
+                    for (unsigned long mi = 0; mi < mroT->getSize(ctx); ++mi) {
+                        const proto::ProtoObject* base = mroT->getAt(ctx, mi);
+                        if (!base || base == PROTO_NONE) continue;
+                        if (base->hasOwnAttribute(ctx, name) == PROTO_TRUE) {
+                            descr = base->getOwnAttributeDirect(ctx, name);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        if (descr && descr != PROTO_NONE) {
+            // Look up __set__ on the descriptor's type (avoid binding
+            // descr itself as `self`).  Both the descriptor instance
+            // and its type are checked so native (e.g. property) and
+            // Python-defined (class with `def __set__`) descriptors
+            // work uniformly.
             const proto::ProtoObject* setM = descr->getAttribute(ctx, setDunderString);
-            if (setM && setM != PROTO_NONE && setM->asMethod(ctx)) {
-                const proto::ProtoList* setArgs = ctx->newList()->appendLast(ctx, obj)->appendLast(ctx, value);
-                setM->asMethod(ctx)(ctx, descr, nullptr, setArgs, nullptr);
+            const proto::ProtoObject* descrType = getType(ctx, descr);
+            if ((!setM || setM == PROTO_NONE) && descrType && descrType != PROTO_NONE) {
+                setM = getAttribute(ctx, descrType, setDunderString, false);
+            }
+            if (setM && setM != PROTO_NONE) {
+                if (setM->asMethod(ctx)) {
+                    // Native method (e.g. property's __set__)
+                    setM->asMethod(ctx)(ctx, descr, nullptr,
+                        ctx->newList()->appendLast(ctx, obj)->appendLast(ctx, value), nullptr);
+                } else {
+                    // Python-defined __set__: call as a function with
+                    // (descr, obj, value) as positional args.
+                    const proto::ProtoList* setArgs =
+                        ctx->newList()->appendLast(ctx, descr)->appendLast(ctx, obj)->appendLast(ctx, value);
+                    invokePythonCallable(ctx, setM, setArgs, nullptr);
+                }
+                if (hasPendingException()) return obj;
                 return obj;
             }
         }

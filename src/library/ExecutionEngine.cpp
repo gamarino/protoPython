@@ -4081,10 +4081,10 @@ const proto::ProtoObject* executeBytecodeRange(
                         const proto::ProtoObject* curr = worklist->getAt(ctx, worklist->getSize(ctx) - 1);
                         worklist = worklist->removeAt(ctx, worklist->getSize(ctx) - 1);
                         stack[stack.top - 1] = worklist->asObject(ctx); // Update root
-                        
+
                         if (!curr || curr == PROTO_NONE || visited.count(curr)) continue;
                         visited.insert(curr);
-                        
+
                         val = curr->getAttribute(ctx, nameS);
                         // getAttribute returns nullptr when not found; PROTO_NONE is a valid Python None value
                         if (val != nullptr) { found = true; break; }
@@ -4114,9 +4114,16 @@ const proto::ProtoObject* executeBytecodeRange(
                     const proto::ProtoString* dName = env ? env->getDataString() : protoPython::PythonEnvironment::getInternalString(ctx, "__data__");
                     const proto::ProtoObject* dataObj = curr->getAttribute(ctx, dName);
                     if (dataObj && dataObj->asSparseList(ctx)) {
-                        val = dataObj->asSparseList(ctx)->getAt(ctx, h);
-                        // asSparseList->getAt returns nullptr when key not found
-                        if (val != nullptr) { found = true; break; }
+                        // PG: ProtoSparseList::getAt returns PROTO_NONE for
+                        // missing keys, not nullptr.  Without the explicit
+                        // has() check, a class namespace with a __data__
+                        // dict reports any missing closure variable as
+                        // None, masking the real value in the cell chain.
+                        const proto::ProtoSparseList* sl = dataObj->asSparseList(ctx);
+                        if (sl->has(ctx, h)) {
+                            val = sl->getAt(ctx, h);
+                            if (val != nullptr) { found = true; break; }
+                        }
                     }
 
                     const proto::ProtoList* parents = curr->getParents(ctx);
@@ -5334,6 +5341,19 @@ const proto::ProtoObject* executeBytecodeRange(
                     const proto::ProtoString* callS = env ? env->getCallString() : protoPython::PythonEnvironment::getInternalString(ctx, "__call__");
                     const proto::ProtoString* codeS = env ? env->getCodeString() : protoPython::PythonEnvironment::getInternalString(ctx, "__code__");
                     const proto::ProtoObject* codeObj = body->getAttribute(ctx, codeS);
+                    // PG: propagate the body function's __closure__ to the
+                    // class namespace so LOAD_DEREF inside the class body
+                    // can walk the enclosing-scope cells.  Without this,
+                    // `class C: y = x` (with x defined in an enclosing
+                    // function) sees x as None.
+                    if (env && body) {
+                        const proto::ProtoObject* bodyClosure = body->getAttribute(ctx, env->getClosureString());
+                        if (bodyClosure && bodyClosure != PROTO_NONE) {
+                            ns = const_cast<proto::ProtoObject*>(
+                                ns->setAttribute(ctx, env->getClosureString(), bodyClosure));
+                            stack.back() = ns;
+                        }
+                    }
                     if (codeObj && codeObj != PROTO_NONE) {
                         if (get_env_diag()) fprintf(stderr, "DEBUG OP_BUILD_CLASS: before body run ns=%p\n", (void*)ns);
                         runCodeObject(ctx, codeObj, ns);
@@ -5426,6 +5446,83 @@ const proto::ProtoObject* executeBytecodeRange(
                         fprintf(stderr, "DEBUG: OP_BUILD_CLASS injecting targetClass=%p into ns=%p\n", (void*)targetClass, (void*)ns);
                     }
                     ns->setAttribute(ctx, clsName, targetClass);
+
+                    // PG: also write the just-built class into `ns`
+                    // under its own name so methods inside the body —
+                    // whose closure chains walk parent → ns — resolve
+                    // zero-arg super() correctly.  Without this,
+                    // methods of a class defined inside another
+                    // function can't reach the class (the enclosing
+                    // STORE_FAST runs only after BUILD_CLASS finishes).
+                    if (name && name->isString(ctx)) {
+                        ns->setAttribute(ctx, name->asString(ctx), targetClass);
+                    }
+
+                    // PG: __init_subclass__ hook.  CPython calls
+                    // `super(cls, cls).__init_subclass__(**kwargs)` after
+                    // a class is built, where kwargs are the class-level
+                    // keywords (sans metaclass).  Walk MRO[1:] to find
+                    // the first __init_subclass__ implementation and
+                    // invoke it.
+                    if (env) {
+                        const proto::ProtoObject* mroAttr = targetClass->getAttribute(ctx,
+                            PythonEnvironment::getInternedString(ctx, "__mro__"));
+                        const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(ctx) : nullptr;
+                        if (mroT && mroT->getSize(ctx) >= 2) {
+                            const proto::ProtoString* iscS =
+                                PythonEnvironment::getInternedString(ctx, "__init_subclass__");
+                            for (unsigned long mi = 1; mi < mroT->getSize(ctx); ++mi) {
+                                const proto::ProtoObject* base = mroT->getAt(ctx, mi);
+                                if (!base || base == PROTO_NONE) continue;
+                                const proto::ProtoObject* hook = base->getOwnAttributeDirect(ctx, iscS);
+                                if (!hook || hook == PROTO_NONE) continue;
+                                // Found __init_subclass__ on this base.
+                                // Filter kwds to drop metaclass key.
+                                const proto::ProtoSparseList* origKw =
+                                    (kwds && kwds->asSparseList(ctx)) ? kwds->asSparseList(ctx) : nullptr;
+                                if (!origKw && kwds && kwds != PROTO_NONE) {
+                                    const proto::ProtoObject* dataAttr = kwds->getAttribute(ctx, env->getDataString());
+                                    if (dataAttr) origKw = dataAttr->asSparseList(ctx);
+                                }
+                                const proto::ProtoSparseList* filtered = origKw;
+                                // PG: __init_subclass__ is implicitly a
+                                // classmethod (CPython semantics).  Unwrap
+                                // the underlying function via __func__ so
+                                // invokeCallable invokes the actual body.
+                                const proto::ProtoString* funcS =
+                                    PythonEnvironment::getInternedString(ctx, "__func__");
+                                const proto::ProtoObject* unwrapped = hook->getAttribute(ctx, funcS);
+                                if (unwrapped && unwrapped != PROTO_NONE) hook = unwrapped;
+                                if (origKw) {
+                                    const proto::ProtoString* mcKey =
+                                        PythonEnvironment::getInternedString(ctx, "metaclass");
+                                    unsigned long mcHash = mcKey->getHash(ctx);
+                                    if (origKw->has(ctx, mcHash)) {
+                                        // Build a sparse list without metaclass.
+                                        const proto::ProtoSparseList* fnew = ctx->newSparseList();
+                                        const proto::ProtoSparseListIterator* it = origKw->getIterator(ctx);
+                                        while (it) {
+                                            unsigned long h = it->nextKey(ctx);
+                                            const proto::ProtoObject* v = it->nextValue(ctx);
+                                            if (!v) break;
+                                            if (h != mcHash) {
+                                                fnew = fnew->setAt(ctx, h, v);
+                                            }
+                                            it = const_cast<proto::ProtoSparseListIterator*>(it)->advance(ctx);
+                                        }
+                                        filtered = fnew;
+                                    }
+                                }
+                                // Pass cls as first positional arg (classmethod-style binding).
+                                const proto::ProtoList* iscArgs = ctx->newList()->appendLast(ctx, targetClass);
+                                invokeCallable(ctx, hook, iscArgs, filtered);
+                                if (env->hasPendingException()) {
+                                    return nullptr;
+                                }
+                                break;
+                            }
+                        }
+                    }
                 }
 
                 if (!targetClass) targetClass = PROTO_NONE;

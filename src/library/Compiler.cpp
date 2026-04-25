@@ -539,17 +539,20 @@ bool Compiler::compileCall(CallNode* n) {
     if (!n) return false;
 
     // Special case: super() with no args inside a class method.
-    // Rewrite to super(__class__, self) where __class__ is the enclosing class name (global lookup)
-    // and self is the first parameter (LOAD_FAST 0). This mirrors CPython's __classcell__ mechanism
-    // without requiring cell variables.
+    // Rewrite to super(<defining_class>, self) where the defining class
+    // is loaded via emitNameOp (LOAD_DEREF for closure capture, then
+    // LOAD_GLOBAL for module scope, then LOAD_NAME).  Multi-level
+    // super() across classes defined inside the same function still
+    // depends on the class name being resolvable by the inner method —
+    // which works for module-level classes but is fragile for
+    // classes-in-functions.  A fully correct __class__ cell mechanism
+    // (CPython's __classcell__) is deferred to a future round.
     if (isFunctionScope_ && !currentClassName_.empty() && n->args.empty() && n->keywords.empty()) {
         if (auto* nameN = dynamic_cast<NameNode*>(n->func.get())) {
             if (nameN->id == "super") {
-                int superIdx = addName("super");
-                emit(OP_LOAD_GLOBAL, (superIdx << 1) | 1);   // NULL marker + super
-                int classIdx = addName(currentClassName_);
-                emit(OP_LOAD_GLOBAL, classIdx << 1);          // the defining class
-                emit(OP_LOAD_FAST, 0);                        // self (first parameter)
+                if (!emitNameOp("super", TargetCtx::Load, /*pushNull=*/true)) return false;
+                if (!emitNameOp(currentClassName_, TargetCtx::Load)) return false;
+                emit(OP_LOAD_FAST, 0);
                 emit(OP_CALL_FUNCTION, 2);
                 return true;
             }
@@ -2918,11 +2921,33 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
         }
     }
 
+    // PG: zero-arg super() inside a method emits an implicit load of
+    // the enclosing class name, but that load is generated at code
+    // emission time and not visible to collectCapturedNames.  If this
+    // function is a class method (isClassBody_ outer) and the
+    // currentClassName_ is bound in an enclosing scope, explicitly add
+    // it to bodyNonlocals so emitNameOp picks LOAD_DEREF over
+    // LOAD_GLOBAL.  Module-level classes still resolve fine via
+    // LOAD_GLOBAL.
+    if (isClassBody_ && !currentClassName_.empty()) {
+        const std::string& cn = currentClassName_;
+        bool isLocal = false;
+        for (const auto& p : params) if (p == cn) isLocal = true;
+        for (const auto& kw : n->kwonlyargs) if (kw == cn) isLocal = true;
+        if (n->vararg == cn) isLocal = true;
+        if (n->kwarg == cn) isLocal = true;
+        for (const auto& l : localsOrdered) if (l == cn) isLocal = true;
+        if (!isLocal) {
+            bool isInOuterScope = localSlotMap_.count(cn) || nonlocalNames_.count(cn);
+            if (isInOuterScope) bodyNonlocals.insert(cn);
+        }
+    }
+
     std::string dynamicReason = getDynamicLocalsReason(n->body.get());
     const bool forceMapped = !dynamicReason.empty();
 
     if (get_env_diag()) {
-        fprintf(stderr, "DEBUG COMPILER: FunctionDef '%s' forceMapped=%d dynamicReason='%s' captured_size=%zu\n", 
+        fprintf(stderr, "DEBUG COMPILER: FunctionDef '%s' forceMapped=%d dynamicReason='%s' captured_size=%zu\n",
                 n->name.c_str(), (int)forceMapped, dynamicReason.c_str(), captured.size());
         for (const auto& c : captured) {
             fprintf(stderr, "  - captured: %s\n", c.c_str());
@@ -3609,6 +3634,32 @@ bool Compiler::compileClassDef(ClassDefNode* n) {
     bodyCompiler.nonlocalNames_ = nonlocalNames_;
     bodyCompiler.isClassBody_ = true;
     bodyCompiler.currentClassName_ = n->name;
+
+    // PG: capture free variables from the enclosing function scope.
+    // Without this, references to enclosing locals (e.g. `x = D()`
+    // where D is a class defined in the same function) fall through to
+    // LOAD_NAME and fail because the class namespace dict, globals,
+    // and builtins all lack the binding.  Mirrors compileFunctionDef's
+    // body-self-free-vars pass.
+    {
+        std::unordered_set<std::string> bodyUsed;
+        collectUsedNames(n->body.get(), bodyUsed);
+        std::unordered_set<std::string> bodyDefined;
+        collectDefinedNames(n->body.get(), bodyDefined);
+        for (const auto& name : bodyUsed) {
+            if (bodyDefined.count(name) || globalNames_.count(name) ||
+                bodyCompiler.nonlocalNames_.count(name)) {
+                continue;
+            }
+            // Only treat as nonlocal if the enclosing scope actually has
+            // it as a local or nonlocal — i.e. it can be closed over via
+            // a cell.  Names not in the outer scope are globals/builtins
+            // and resolve via LOAD_NAME → globals → builtins as before.
+            if (localSlotMap_.count(name) || nonlocalNames_.count(name)) {
+                bodyCompiler.nonlocalNames_.insert(name);
+            }
+        }
+    }
 
     // If the class body contains any annotations, initialise __annotations__ = {} first.
     bool hasAnnotations = false;

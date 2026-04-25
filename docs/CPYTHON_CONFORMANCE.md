@@ -86,6 +86,69 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 
 **Key V110 milestone**: All essential tests now run to completion without crashing. Individual test failures reflect unimplemented language features (metaclass protocol, descriptors, C-extension stubs), not interpreter instability.
 
+### V151 Changes (2026-04-25) — PG: metaclass + descriptor foundation (19/4/14 → 22/5/10)
+
+The PG round opens work on the metaclass + descriptor protocol with
+a new synthetic test suite (`test_metaclass_descr_synthetic.py`,
+37 cases).  Four narrow bugs were closed; super zero-arg with the
+`__class__` cell mechanism is identified as the next round (PH).
+
+**PG-1 — class-body closure capture for free variables**
+Variables referenced inside a class body that are bound in an
+enclosing function (e.g. `def outer(): x = 42; class C: y = x`) were
+not added to the class body's nonlocal set, so LOAD_NAME fell through
+to globals/builtins and surfaced as `NameError`.  compileClassDef now
+collects free variables from the class body and inserts them into
+the body compiler's `nonlocalNames_` if they are bound in the
+enclosing scope.  In addition, BUILD_CLASS propagates the body
+function's `__closure__` onto the class namespace so `LOAD_DEREF`
+inside the class body walks the enclosing-scope cells.
+
+**PG-2 — LOAD_DEREF false-positive on missing `__data__` keys**
+`ProtoSparseList::getAt(hash)` returns `PROTO_NONE` for absent keys
+(not `nullptr`).  The `LOAD_DEREF` walk treated any non-null value
+as a hit and returned `None` for missing closure variables, masking
+the real binding in the cell chain.  Added an explicit `has()` check
+before the `getAt` call.
+
+**PG-3 — `__init_subclass__` hook on class creation**
+After BUILD_CLASS produced the class, no hook was invoked.  Now we
+walk the new class's `__mro__[1:]` for an own `__init_subclass__`,
+unwrap it via `__func__` (since `__init_subclass__` is implicitly a
+classmethod), filter `metaclass=` out of the class kwargs, and call
+it with the new class as the first positional argument.  Module-level
+classes are unblocked; class-in-function cases still need PH-round
+work because the hook body uses zero-arg `super()` to chain.
+
+**PG-4 — STORE_ATTR fires Python-defined data descriptors**
+The previous data-descriptor short-circuit in `setAttribute` only
+fired for native `Cell` descriptors, so a user `class D: def
+__set__(...)` paired with `class C: x = D()` stored `x` in the
+instance dict directly instead of calling `D.__set__`.  The check now
+walks the type's `__mro__` with raw attribute access (avoiding
+`__get__` re-entry), looks for `__set__` on the descriptor or its
+type, and dispatches to either the native method or the
+Python-defined function.
+
+**PG-5 — super() rewrite picks LOAD_DEREF when class is captured**
+Zero-arg `super()` previously emitted `LOAD_GLOBAL <ClassName>`,
+which fails when the class is defined in an enclosing function (its
+binding is a closure cell, not a module global).  The rewrite now
+uses `emitNameOp` so the load picks LOAD_DEREF / LOAD_FAST /
+LOAD_GLOBAL / LOAD_NAME based on actual scope.  compileFunctionDef
+also explicitly adds `currentClassName_` to bodyNonlocals when the
+function is a method.
+
+| State     | PASS | FAIL | CRASH | Total |
+| :---      | ---: | ---: | ---:  | ---:  |
+| Baseline  |  19  |  4   |  14   |  37   |
+| After PG  |  22  |  5   |  10   |  37   |
+
+The remaining 5 super-related CRASHes need the `__class__` cell
+machinery (CPython `__classcell__`): the class object doesn't exist
+until BUILD_CLASS finishes, but methods need to capture a reference
+to it.  Deferred to PH-round.
+
 ### V150 Changes (2026-04-25) — PF: close all remaining async tests (37/0/0)
 
 The PF round closes the synthetic suite at 37/37 (zero failures, zero
