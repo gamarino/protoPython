@@ -8544,6 +8544,74 @@ void PythonEnvironment::raiseSyntaxError(proto::ProtoContext* ctx, const std::st
     }
 }
 
+bool PythonEnvironment::emitSyntaxWarning(proto::ProtoContext* ctx, const std::string& msg, const std::string& filename, int lineno) {
+    // Resolve _py_warnings.warn_explicit and call it with explicit
+    // (message, category, filename, lineno).  warn_explicit does not use
+    // sys._getframe internally, so it works regardless of the current frame
+    // state.  It honours the warnings filter chain — including
+    // catch_warnings(record=True), simplefilter('always'/'error'/'ignore'),
+    // etc.  When the active filter for SyntaxWarning is 'error', it raises
+    // the SyntaxWarning instance which we then convert to SyntaxError to
+    // match CPython compile-time semantics.
+    const proto::ProtoObject* syntaxWarning = resolve("SyntaxWarning", ctx);
+    if (!syntaxWarning || syntaxWarning == PROTO_NONE) return false;
+
+    const proto::ProtoObject* warningsMod = resolveModule("_py_warnings", ctx);
+    if (!warningsMod || warningsMod == PROTO_NONE) return false;
+
+    const proto::ProtoString* weName = PythonEnvironment::getInternedString(ctx, "warn_explicit");
+    const proto::ProtoObject* warnExplicit = warningsMod->getAttribute(ctx, weName);
+    if (!warnExplicit || warnExplicit == PROTO_NONE) return false;
+
+    const proto::ProtoList* args = ctx->newList();
+    args = args->appendLast(ctx, PythonEnvironment::getInternedString(ctx, msg.c_str())->asObject(ctx));
+    args = args->appendLast(ctx, syntaxWarning);
+    args = args->appendLast(ctx, PythonEnvironment::getInternedString(ctx, filename.c_str())->asObject(ctx));
+    args = args->appendLast(ctx, ctx->fromInteger(lineno));
+
+    invokePythonCallable(ctx, warnExplicit, args, nullptr);
+
+    // Filter='error' path: warn_explicit raised the SyntaxWarning instance.
+    // CPython's compile() converts that to a SyntaxError with location info.
+    if (hasPendingException()) {
+        const proto::ProtoObject* exc = peekPendingException();
+        // Walk exc.__class__.__mro__ to confirm it's a Warning subclass — we
+        // don't want to swallow unrelated exceptions raised inside the filter
+        // machinery itself.
+        bool isWarning = false;
+        if (exc) {
+            const proto::ProtoString* classKey = PythonEnvironment::getInternedString(ctx, "__class__");
+            const proto::ProtoObject* cls = exc->getAttribute(ctx, classKey);
+            if (cls) {
+                const proto::ProtoString* mroKey = PythonEnvironment::getInternedString(ctx, "__mro__");
+                const proto::ProtoObject* mro = cls->getAttribute(ctx, mroKey);
+                if (mro && mro->asTuple(ctx)) {
+                    const proto::ProtoTuple* mroT = mro->asTuple(ctx);
+                    for (unsigned long i = 0; i < mroT->getSize(ctx); ++i) {
+                        if (mroT->getAt(ctx, static_cast<int>(i)) == syntaxWarning) {
+                            isWarning = true;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        if (isWarning) {
+            std::string excMsg = msg;
+            const proto::ProtoString* argsKey = PythonEnvironment::getInternedString(ctx, "args");
+            const proto::ProtoObject* excArgs = exc ? exc->getAttribute(ctx, argsKey) : nullptr;
+            if (excArgs && excArgs->asTuple(ctx) && excArgs->asTuple(ctx)->getSize(ctx) > 0) {
+                const proto::ProtoObject* m = excArgs->asTuple(ctx)->getAt(ctx, 0);
+                if (m && m->isString(ctx)) m->asString(ctx)->toUTF8String(ctx, excMsg);
+            }
+            clearPendingException();
+            raiseSyntaxError(ctx, excMsg, lineno, 0, "");
+            return true;
+        }
+    }
+    return false;
+}
+
 void PythonEnvironment::raiseEOFError(proto::ProtoContext* ctx) {
     if (!eofErrorType) return;
     const proto::ProtoList* args = ctx->newList()->appendLast(ctx, PythonEnvironment::getInternedString(ctx, "EOF when reading a line")->asObject(ctx));

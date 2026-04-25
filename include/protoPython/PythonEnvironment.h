@@ -666,6 +666,15 @@ public:
     void raiseImportError(proto::ProtoContext* context, const std::string& msg);
     void raiseKeyboardInterrupt(proto::ProtoContext* context);
     void raiseSyntaxError(proto::ProtoContext* context, const std::string& msg, int lineno, int offset, const std::string& text);
+    /**
+     * Emit a SyntaxWarning via _py_warnings.warn_explicit.  Honours the
+     * active warnings filter chain (catch_warnings(record=True), simplefilter,
+     * etc.).  When the filter is 'error', the warning is converted to a
+     * SyntaxError with the same message and lineno per CPython's compile-time
+     * semantics.  Returns true if a SyntaxError was raised (caller should
+     * stop further compilation), false otherwise.
+     */
+    bool emitSyntaxWarning(proto::ProtoContext* context, const std::string& msg, const std::string& filename, int lineno);
     void raiseSystemExit(proto::ProtoContext* context, int code);
     void raiseEOFError(proto::ProtoContext* ctx);
     void raiseRecursionError(proto::ProtoContext* context);

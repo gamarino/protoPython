@@ -98,9 +98,14 @@ const proto::ProtoObject* WarningsModule::createWarningsModule(proto::ProtoConte
     const proto::ProtoString* nameS = env ? env->getNameString() : proto::ProtoString::createSymbol(context, "__name__");
     moduleObj->setAttribute(context, nameS, proto::ProtoString::createSymbol(context, "_warnings")->asObject(context));
 
-    // Expose warn function
-    const proto::ProtoString* warnS = PythonEnvironment::getInternedString(context, "warn");
-    moduleObj->setAttribute(context, warnS, context->fromMethod(moduleObj, py_warnings_warn));
+    // We deliberately do NOT export `warn`/`warn_explicit` from _warnings.
+    // Python's lib/warnings.py imports the _warnings versions when available
+    // and overrides _py_warnings'.  Our C-level py_warnings_warn was a stub
+    // that returned PROTO_NONE without invoking any showwarning hook, which
+    // broke catch_warnings(record=True).  Falling through to the
+    // _py_warnings.warn (which honours filters and showwarning correctly)
+    // is much simpler than re-implementing the warn protocol in C++.
+    (void)py_warnings_warn;
 
     // Expose _acquire_lock and _release_lock (dummy for single-threaded V78)
     auto dummyFunc = [](proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) -> const proto::ProtoObject* {
@@ -126,8 +131,9 @@ const proto::ProtoObject* WarningsModule::createWarningsModule(proto::ProtoConte
     moduleObj->setAttribute(context, PythonEnvironment::getInternedString(context, "_warnings_context"), (context->newObject(true)));
     // Expose _defaultaction
     moduleObj->setAttribute(context, PythonEnvironment::getInternedString(context, "_defaultaction"), PythonEnvironment::getInternedString(context, "default")->asObject(context));
-    // Expose warn_explicit (dummy)
-    moduleObj->setAttribute(context, PythonEnvironment::getInternedString(context, "warn_explicit"), context->fromMethod(moduleObj, dummyFunc));
+    // warn_explicit also intentionally NOT exported (see comment on `warn`
+    // above).  The Python-level _py_warnings.warn_explicit handles the full
+    // protocol — filters, registry, showwarning hook — correctly.
 
     return moduleObj;
 }

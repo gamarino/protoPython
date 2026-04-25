@@ -26,6 +26,31 @@ Compiler::Compiler(proto::ProtoContext* ctx, const std::string& filename)
     bytecodeVec_ = ctx_->newList();
 }
 
+// Returns the Python type-name (e.g. "int", "str", "tuple") if the AST node
+// is a non-singleton literal that warrants a SyntaxWarning when used as an
+// operand of `is` / `is not`.  CPython's compile() emits the warning for
+// int/float/complex/str/bytes/tuple literals, but NOT for the four
+// singletons None / True / False / Ellipsis (since `x is None` is the
+// idiomatic identity check).  Returns nullptr when no warning should fire.
+static const char* literalTypeNameForIsWarning(ASTNode* n) {
+    if (!n) return nullptr;
+    if (auto* c = dynamic_cast<ConstantNode*>(n)) {
+        switch (c->constType) {
+            case ConstantNode::ConstType::Int:    return "int";
+            case ConstantNode::ConstType::Float:  return "float";
+            case ConstantNode::ConstType::Str:    return "str";
+            case ConstantNode::ConstType::Bytes:  return "bytes";
+            // None, Bool, Ellipsis: idiomatic with `is`, no warning.
+            default: return nullptr;
+        }
+    }
+    if (dynamic_cast<TupleLiteralNode*>(n)) return "tuple";
+    if (dynamic_cast<ListLiteralNode*>(n)) return "list";
+    if (dynamic_cast<SetLiteralNode*>(n)) return "set";
+    if (dynamic_cast<DictLiteralNode*>(n)) return "dict";
+    return nullptr;
+}
+
 int Compiler::addConstant(const proto::ProtoObject* obj) {
     if (obj == PROTO_NONE || obj == PROTO_TRUE || obj == PROTO_FALSE) {
         int n = static_cast<int>(constantsVec_->getSize(ctx_));
@@ -403,6 +428,28 @@ bool Compiler::compileBinOp(BinOpNode* n) {
             }
             std::reverse(chain.begin(), chain.end());
 
+            // Emit "is/is not with literal" SyntaxWarning for any chain
+            // segment whose op is `is` or `is not` and whose LHS or RHS is
+            // a non-singleton literal.  For chain[0] the LHS is `leftmost`;
+            // for chain[k>=1] the LHS is the previous comparator (chain[k-1].right).
+            for (size_t k = 0; k < chain.size(); ++k) {
+                if (chain[k].op != TokenType::Is && chain[k].op != TokenType::IsNot) continue;
+                ASTNode* lhs = (k == 0) ? leftmost : chain[k - 1].right;
+                const char* litR = literalTypeNameForIsWarning(chain[k].right);
+                const char* litL = litR ? nullptr : literalTypeNameForIsWarning(lhs);
+                const char* litType = litR ? litR : litL;
+                if (!litType) continue;
+                const char* opStr = (chain[k].op == TokenType::Is) ? "is" : "is not";
+                std::string msg = std::string("\"") + opStr + "\" with '" + litType +
+                                  "' literal. Did you mean \"==\"?";
+                if (PythonEnvironment* env = PythonEnvironment::fromContext(ctx_)) {
+                    int line = n->line > 0 ? n->line : 1;
+                    if (env->emitSyntaxWarning(ctx_, msg, filename_, line)) {
+                        return false;
+                    }
+                }
+            }
+
             auto cmpArg = [](TokenType t) -> int {
                 switch (t) {
                     case TokenType::EqEqual:      return 0;
@@ -468,11 +515,27 @@ bool Compiler::compileBinOp(BinOpNode* n) {
     else if (n->op == TokenType::EqEqual) {
         emit(OP_COMPARE_OP, 0); // 0 is '=='
         return true;
-    } else if (n->op == TokenType::Is) {
-        emit(OP_COMPARE_OP, 8); // 8 is 'is'
-        return true;
-    } else if (n->op == TokenType::IsNot) {
-        emit(OP_COMPARE_OP, 9); // 9 is 'is not'
+    } else if (n->op == TokenType::Is || n->op == TokenType::IsNot) {
+        // CPython emits a SyntaxWarning when one operand of `is` / `is not`
+        // is a non-singleton literal — e.g. `x is 1`, `x is "thing"`,
+        // `(1, 2) is not x`.  None / True / False / Ellipsis are excluded
+        // because `x is None` is the idiomatic identity check.
+        const char* litR = literalTypeNameForIsWarning(n->right.get());
+        const char* litL = litR ? nullptr : literalTypeNameForIsWarning(n->left.get());
+        const char* litType = litR ? litR : litL;
+        if (litType) {
+            const char* opStr = (n->op == TokenType::Is) ? "is" : "is not";
+            std::string msg = std::string("\"") + opStr + "\" with '" + litType +
+                              "' literal. Did you mean \"==\"?";
+            if (PythonEnvironment* env = PythonEnvironment::fromContext(ctx_)) {
+                int line = n->line > 0 ? n->line : 1;
+                if (env->emitSyntaxWarning(ctx_, msg, filename_, line)) {
+                    // Filter='error' converted the warning to a SyntaxError.
+                    return false;
+                }
+            }
+        }
+        emit(OP_COMPARE_OP, n->op == TokenType::Is ? 8 : 9);
         return true;
     } else if (n->op == TokenType::In) {
         emit(OP_COMPARE_OP, 6); // 6 is 'in'
