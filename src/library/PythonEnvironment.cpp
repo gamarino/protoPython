@@ -7447,7 +7447,13 @@ static const proto::ProtoObject* py_dict_update(
         const proto::ProtoObject* otherDataObj = (other->hasOwnAttribute(context, dataName) == PROTO_TRUE) ? (other->hasOwnAttribute(context, dataName) == PROTO_TRUE) ? other->getAttribute(context, dataName) : nullptr : nullptr;
         const proto::ProtoSparseList* otherDict = otherDataObj && otherDataObj->asSparseList(context) ? otherDataObj->asSparseList(context) : nullptr;
 
-        if (otherDict) {
+        // Both __keys__ (key list) and __data__ (sparse list) are required:
+        // the loop iterates the keys and looks up each value by hash.  If
+        // either is missing, the dict is structurally incomplete (e.g. a
+        // module proxy or partially-initialised mapping) and there is
+        // nothing iterable here.  Silently skipping is the right behaviour
+        // to mirror Python's "update from any mapping that supports keys()".
+        if (otherDict && otherKeys) {
             for (unsigned long i = 0; i < otherKeys->getSize(context); ++i) {
                 const proto::ProtoObject* key = otherKeys->getAt(context, static_cast<int>(i));
                 const proto::ProtoObject* value = otherDict->getAt(context, key->getHash(context));
