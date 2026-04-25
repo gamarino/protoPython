@@ -14,7 +14,7 @@ This document tracks the progress of `protoPython` in passing the official CPyth
 
 Core syntax, standard object model, and fundamental types.
 
-- [ ] `test_grammar.py`: **PARTIAL** — 33/75 pass, 5 skipped, runs to completion (V136, 2026-04-24)
+- [ ] `test_grammar.py`: **PARTIAL** — 39/75 pass, 21 fail, 15 err, 0 crash (V154.3, 2026-04-25, F1 milestone — runs to completion via clean baseline)
 - [ ] `test_types.py`: **PARTIAL** — 6/131 pass, runs to completion; legible failures (V124, 2026-04-24)
 - [ ] `test_descr.py`: **TIMEOUT** — runs >5 min; `type()` descriptor tests expose slow paths
 - [ ] `test_generators.py`: **PARTIAL** — 0/1 pass (doctest runner fails); import chain runs
@@ -85,6 +85,77 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 **Conformity Suite (internal, 2026-04-15)**: 7/9 tests pass. Failures are pre-existing: `int(float)` conversion and `set(iterable)` constructor.
 
 **Key V110 milestone**: All essential tests now run to completion without crashing. Individual test failures reflect unimplemented language features (metaclass protocol, descriptors, C-extension stubs), not interpreter instability.
+
+### V154.3 Changes (2026-04-25) — F1-1: closure cell snapshot accepts PROTO_NONE — test_grammar.py runs
+
+Phase F1 (compilation unblock) completed in a single fix.  After F0
+removed `proto_internal.h` from protoPython source, F0-fix-bootstrap
+unblocked `import unittest`, and F0.5a migrated four critical
+vector members to ProtoList, the only remaining bootstrap blocker
+for `test_grammar.py` was a single closure-cell bug.
+
+**The bug** (`ExecutionEngine.cpp:5185`)
+
+`OP_BUILD_FUNCTION` snapshots outer-frame slot values into the
+closure frame so inner functions can resolve free variables via
+`LOAD_DEREF`.  The snapshot loop filtered out any value equal to
+`PROTO_NONE` on the assumption that None meant "missing
+attribute" — but for `CO_OPTIMIZED` slots, `PROTO_NONE` is a
+legitimate bound value (a parameter explicitly defaulted to
+`None` and captured by an inner closure).
+
+The bug masked itself: when a kwonly parameter `boundary=None`
+was passed explicitly the slot held the explicit value (some
+non-`None` object); when `boundary` took its default the slot
+held `PROTO_NONE` and the closure cell stayed unset.  Inner
+functions referring to `boundary` then raised
+`NameError: name 'boundary' is not defined` even though the
+outer scope had bound it correctly.
+
+This blocked `enum.py:1684`
+(`def _simple_enum(*, boundary=None, use_args=None)`) from
+working when called as `@_simple_enum(StrEnum)` at module
+top-level.  Every cascading consumer of `enum` (annotationlib,
+`test.support`, `unittest`) crashed at import time.
+
+**Fix**: distinguish slot semantics from frame-attribute
+semantics.  For slots, accept `PROTO_NONE` (it is a real bound
+value).  For the frame-attribute fallback (used by
+non-`CO_OPTIMIZED` frames), keep filtering `PROTO_NONE` since
+`getAttribute` returns it for missing keys.
+
+**`test_grammar.py` results — F1 milestone achieved**
+
+| State | Outcome |
+| :--- | :--- |
+| Before F0 | 1 CRASH (BinOpNode line 1615) |
+| After F0 | 1 CRASH (bootstrap segfault — masked by WIP stash) |
+| After F0-fix-bootstrap | 1 CRASH (closure NameError, now visible) |
+| **After F1-1** | **75/75 ran; 39 PASS / 21 FAIL / 15 ERR / 0 CRASH** |
+
+Remaining 36 failures (FAIL+ERR) are language-feature gaps —
+the F2-F13 cluster targets per the spec:
+
+- **Numeric literals & tokenization** (F2): `test_end_of_numerical_literals`, `test_bad_numerical_literals`, `test_float_exponent_tokenization`
+- **Annotations** (F10): `test_var_annot_basic_semantics`, `test_var_annot_syntax_errors`, `test_var_annot_in_module`, `test_var_annot_module_semantics`, `test_var_annot_simple_exec`
+- **Funcdef / lambda** (F9): `test_funcdef`, `test_lambdef`
+- **Async** (F13): `test_async_await`, `test_async_with`
+- **Yield** (F8): `test_yield`, `test_yield_in_comprehensions`
+- **Comprehensions** (F6): `test_genexps`, `test_comprehension_specials`
+- **Operators / atoms** (F4/F5): `test_comparison_is_literal`, `test_warn_missed_comma`
+- **Control flow** (F8): `test_control_flow_in_finally`
+- **Assert** (F12): `test_assert_syntax_warnings`, `test_assert_warning_promotes_to_syntax_error`
+- **Misc / scope / eval** (F13): `test_eval_input`, `test_former_statements_refer_to_builtins`
+
+**Verification**:
+- protoCore tests: 100% (136/136).
+- Synthetic suite: 37/0/0 (no regression).
+- Custom suites (test_decorator, test_abc, test_contextlib): all pass.
+- `import enum`, `import annotationlib`, `from test.support import check_syntax_error` all work.
+
+The `test_grammar.py` "Essential" entry in this document's table
+moves from `0/75 (CRASH)` to `**PARTIAL** — 39/75 pass, 0 crash`.
+F2 is the next phase.
 
 ### V154.2 Changes (2026-04-25) — F0.5a: persistent vector<ProtoObject*> members migrated to ProtoList
 
