@@ -1818,13 +1818,18 @@ bool Compiler::compileTry(TryNode* n) {
         emit(OP_POP_TOP, 0);
         emit(OP_RAISE_VARARGS, 0);
     } else {
-        // No handlers: re-raise whatever was caught. Stack has 3 items. Pop them.
+        // PB5: try/finally without except handlers — pop the 3
+        // exception items, run the `finally` body so its side-effects
+        // happen even when an exception is propagating, then re-raise.
         emit(OP_POP_TOP, 0);
         emit(OP_POP_TOP, 0);
         emit(OP_POP_TOP, 0);
+        if (n->finalbody) {
+            if (!compileNode(n->finalbody.get())) return false;
+        }
         emit(OP_RAISE_VARARGS, 0);
     }
-    
+
     // Successful try jumps here (to Else block)
     addPatch(jumpToPostHandlersSlot, bytecodeOffset());
 
@@ -1837,7 +1842,7 @@ bool Compiler::compileTry(TryNode* n) {
     for (int locSlot : jumpToEndLocations) {
         addPatch(locSlot, postElseLabel);
     }
-    
+
     if (n->finalbody) {
         if (!compileNode(n->finalbody.get())) return false;
     }
