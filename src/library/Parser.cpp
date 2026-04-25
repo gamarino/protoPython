@@ -314,6 +314,12 @@ std::unique_ptr<ASTNode> Parser::parseAtom() {
         if (cur_.type == TokenType::Yield) {
             auto y = parseYieldExpression();
             if (!expect(TokenType::RParen)) return nullptr;
+            // Mark the yield as parenthesized so subsequent parseTestList
+            // / call-arg parsers can detect a *bare* yield in disallowed
+            // tuple-comma contexts without flagging legal `(yield)` forms.
+            if (auto* yn = dynamic_cast<YieldNode*>(y.get())) {
+                yn->parenthesized = true;
+            }
             return y;
         }
         
@@ -603,6 +609,18 @@ std::unique_ptr<ASTNode> Parser::parsePrimary() {
                     call->keywords.push_back({kwname, parseExpression()});
                 } else {
                     auto arg = parseExpression();
+                    // Bare `yield` is only allowed in expression statements
+                    // and as the RHS of assignment.  Inside a call-argument
+                    // list, `f(yield 1)` is SyntaxError; `f((yield 1))` is
+                    // fine.  We detect by checking whether parseExpression
+                    // returned a YieldNode whose `parenthesized` flag is
+                    // false.
+                    if (auto* yn = dynamic_cast<YieldNode*>(arg.get())) {
+                        if (!yn->parenthesized) {
+                            error("yield expression must be parenthesized when used as a call argument");
+                            return left;
+                        }
+                    }
                     bool isComp = cur_.type == TokenType::For || (cur_.type == TokenType::Async && tok_.peek().type == TokenType::For);
                     if (call->args.empty() && call->keywords.empty() && isComp) {
                         // list(x for x in y)
@@ -1116,14 +1134,23 @@ std::unique_ptr<ASTNode> Parser::parseTestList() {
     }
 
     if (cur_.type == TokenType::Comma) {
+        // Bare `yield` may not mix with comma-tuple at top level —
+        // `1, yield 1` is SyntaxError in CPython.  Parenthesized
+        // `1, (yield 1)` is fine.
+        if (auto* yn = dynamic_cast<YieldNode*>(left.get())) {
+            if (!yn->parenthesized) {
+                error("yield expression must be parenthesized when used in a comma-separated expression");
+                return left;
+            }
+        }
         auto t = createNode<TupleLiteralNode>();
         t->elements.push_back(std::move(left));
         while (accept(TokenType::Comma)) {
-            if (cur_.type == TokenType::Colon || cur_.type == TokenType::Newline || 
+            if (cur_.type == TokenType::Colon || cur_.type == TokenType::Newline ||
                 cur_.type == TokenType::Dedent || cur_.type == TokenType::EndOfFile ||
                 cur_.type == TokenType::RParen || cur_.type == TokenType::RCurly || cur_.type == TokenType::RSquare ||
                 cur_.type == TokenType::Assign || cur_.type == TokenType::Semicolon) break;
-            
+
             std::unique_ptr<ASTNode> e;
             if (cur_.type == TokenType::Star) {
                 advance();
@@ -1132,6 +1159,13 @@ std::unique_ptr<ASTNode> Parser::parseTestList() {
                 e = std::move(sn);
             } else {
                 e = parseExpression();
+                // Bare `yield` as a non-first element is also disallowed.
+                if (auto* yn = dynamic_cast<YieldNode*>(e.get())) {
+                    if (!yn->parenthesized) {
+                        error("yield expression must be parenthesized when used in a comma-separated expression");
+                        return left;
+                    }
+                }
             }
             if (e) t->elements.push_back(std::move(e));
             else break;

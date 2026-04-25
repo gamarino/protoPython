@@ -257,6 +257,12 @@ struct ReturnNode : ASTNode {
 struct YieldNode : ASTNode {
     std::unique_ptr<ASTNode> value; /* optional */
     bool isFrom = false;           /* yield from */
+    /* Set to true when the yield expression was wrapped in parentheses
+       (e.g. `(yield 1)` or `f((yield 1))`).  CPython requires this in any
+       expression context that allows tuple-comma — `1, yield 1` and
+       `f(yield 1)` are SyntaxErrors, while `1, (yield 1)` and
+       `f((yield 1))` are accepted. */
+    bool parenthesized = false;
 };
 
 /** class name[(bases)]: body. */
