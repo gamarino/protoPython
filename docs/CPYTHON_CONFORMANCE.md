@@ -86,6 +86,43 @@ Tests for features that are not primary targets for `protoPython`'s performance 
 
 **Key V110 milestone**: All essential tests now run to completion without crashing. Individual test failures reflect unimplemented language features (metaclass protocol, descriptors, C-extension stubs), not interpreter instability.
 
+### V154.9 Changes (2026-04-25) — PEP 649 attempt: helper added, full wiring deferred
+
+A targeted attempt at the 5 `test_var_annot_*` failures.  PEP 649
+(deferred annotation evaluation) requires three independent
+features:
+
+1. `x: int` in a function body adds `x` to locals without
+   binding.  A subsequent `LOAD_FAST x` must raise
+   UnboundLocalError.  protoPython currently treats unbound
+   slots as PROTO_NONE and `LOAD_FAST` silently pushes None.
+2. Modules expose `__annotations__` (computed lazily via
+   `__annotate__`).
+3. Parser-level rejection of `nonlocal`/`global` declarations
+   that conflict with prior `x: int` annotations.
+
+This round attacked (1) only.  Discovered:
+
+- Slot init is in TWO places: `ProtoContext` heap-path and
+  `MemoryManager::ContextScope` SBO-path (≤64 slots, the
+  common case).  Both fill with PROTO_NONE.
+- Switching the SBO fill to nullptr and making LOAD_FAST raise
+  on null breaks `functools.update_wrapper` because the
+  iterated `value` local crosses `try/except`/`else` branches —
+  CPython treats this as legitimately bound, but the protoPython
+  bytecode layout doesn't preserve that semantic precisely.
+- A correct fix needs a separate per-slot "annotated-but-unbound"
+  marker (analogous to CPython 3.13+'s `LOAD_FAST_CHECK` opcode)
+  rather than a flat nullptr-vs-PROTO_NONE distinction.
+
+Committed `F2-pep649-attempt (6b21745f)`: just the
+`raiseUnboundLocalError(ctx, msg)` helper, not yet wired.
+Future PEP 649 rounds can call it once the per-slot marker is
+introduced.
+
+**No test_grammar.py change** (54/75 unchanged from V154.8).
+Synthetic suite: 37/0/0.
+
 ### V154.8 Changes (2026-04-25) — bool/int hierarchy fixed end-to-end: 53 → 54 PASS
 
 Closes the bool/int integration that V154.7 left half-done.
