@@ -251,6 +251,42 @@ The table below tracks progress from the V92 correctness baseline. Throughput op
 > [!NOTE]
 > V94 adds an inline fast path in `OP_LOAD_ATTR`: when an attribute is stored directly on the instance (`hasOwnAttribute` == PROTO_TRUE) and the value is not a method descriptor, the handler short-circuits without entering `PythonEnvironment::getAttribute`. This bypasses ~10 attribute lookups (RecursionScope, super-proxy check, isActuallyAClass, MRO search, descriptor protocol) and reduces to 2. Also removed the unconditional `toUTF8String` call that executed on every LOAD_ATTR. Result: `attr_lookup` 49.9× → 14.8×; geomean **9.96×** — **first time under 10× vs CPython**.
 
+**V95 — protoCore mutableRoot: 256 shards + per-thread snapshot cache**
+
+A two-part refactor in protoCore (commit `7d3674cd`, design in
+[`MUTABLE_SHARDING_AND_CACHE_REFACTOR.md`](https://github.com/numaes/protoCore/blob/master/docs/MUTABLE_SHARDING_AND_CACHE_REFACTOR.md)):
+the `mutableRoot` shard count goes from 16 to 256 (cache-line padded),
+and a new per-thread `MutableValueCacheEntry[1024]` table short-circuits
+the "atomic load + AVL `implGetAt`" sequence on the common own-thread
+mutable-read path. Validation is by pointer equality on the cached
+shard root, so any successful CAS by any thread invalidates stale
+entries on the next lookup with no broadcast or signaling.
+
+Before/after on the same machine, same flags (full report in
+[`benchmarks/reports/2026-04-25-mutable-cache.md`](benchmarks/reports/2026-04-25-mutable-cache.md);
+medians of 8 runs, minimum in parentheses):
+
+```
+┌────────────────────────┬──────────────────┬──────────────────┬──────────┐
+│ Benchmark              │ Before (ms)      │ After (ms)       │ Δ min    │
+├────────────────────────┼──────────────────┼──────────────────┼──────────┤
+│ list_append_loop       │ 2470.9 (2420.5)  │ 2245.7 (2169.5)  │ −10.4%   │
+│ range_iterate          │  966.7  (966.4)  │  916.7  (866.4)  │ −10.4%   │
+│ str_concat_loop        │ 1718.7 (1668.1)  │ 1668.7 (1619.3)  │  −2.9%   │
+│ attr_lookup            │ 1242.5 (1217.2)  │ 1268.5 (1217.4)  │   ~0.0%  │
+│ int_sum_loop           │   64.5   (64.3)  │   64.4   (64.1)  │   ~0.0%  │
+└────────────────────────┴──────────────────┴──────────────────┴──────────┘
+```
+
+The improvement lands where mutable hot reads dominate
+(`list_append_loop`, `range_iterate`). `attr_lookup` is flat because
+the pre-existing `AttributeCacheEntry` short-circuit already absorbs
+the hot path for that microbenchmark; the new cache helps when the
+attribute cache misses. `int_sum_loop` is a useful negative control:
+pure SmallInteger arithmetic never touches a mutable object, so the
+cache neither helps nor hurts — confirming zero overhead on
+non-mutable paths.
+
 ---
 
 ## �🚀 Quick Start
