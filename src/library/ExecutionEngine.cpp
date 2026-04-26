@@ -2905,7 +2905,8 @@ const proto::ProtoObject* executeBytecodeRange(
              fprintf(stderr, "\n");
         }
 
-        if (op == OP_LOAD_CONST) {
+        switch (op) {
+        case OP_LOAD_CONST: {
             // Use flat pre-fetched array when available (avoids cross-DSO AVL lookup).
             const proto::ProtoObject* val = nullptr;
             if (nativeConsts && static_cast<uint32_t>(arg) < static_cast<uint32_t>(constants->getSize(ctx))) {
@@ -2920,13 +2921,15 @@ const proto::ProtoObject* executeBytecodeRange(
                 }
                 stack.push_back(val);
             }
-        } else if (op == OP_RETURN_VALUE) {
+        } break;
+        case OP_RETURN_VALUE: {
             if (stack.empty()) return PROTO_NONE;
             const proto::ProtoObject* ret = stack.back();
             ctx->returnValue = ret;
             if (outPc) *outPc = next_i; // Mark finished
             return ret;  /* exit block immediately; destructor will promote */
-        } else if (op == OP_YIELD_VALUE) {
+        } break;
+        case OP_YIELD_VALUE: {
             if (stack.empty()) return PROTO_NONE;
             const proto::ProtoObject* ret = stack.back();
             stack.pop_back();
@@ -2936,7 +2939,8 @@ const proto::ProtoObject* executeBytecodeRange(
             if (finalTopPtr) *finalTopPtr = stack.top;
             if (externalBlockStack) *externalBlockStack = blockStack; // save try/except handlers
             return ret;
-        } else if (op == OP_GET_YIELD_FROM_ITER) {
+        } break;
+        case OP_GET_YIELD_FROM_ITER: {
             if (stack.empty()) { i = next_i; continue; }
             const proto::ProtoObject* obj = stack.back();
             const proto::ProtoObject* iterator = nullptr;
@@ -2947,7 +2951,8 @@ const proto::ProtoObject* executeBytecodeRange(
                 iterator = obj;
             }
             stack.back() = iterator;
-        } else if (op == OP_YIELD_FROM) {
+        } break;
+        case OP_YIELD_FROM: {
             // Stack: [..., subIter, sendVal]
             // On yield: pause at THIS opcode so the next .send() pushes a
             // fresh sendVal and re-executes YIELD_FROM (drives subIter).
@@ -3027,7 +3032,8 @@ const proto::ProtoObject* executeBytecodeRange(
                 }
                 return result;
             }
-        } else if (op == OP_LOAD_NAME) {
+        } break;
+        case OP_LOAD_NAME: {
             int nameIdx = arg >> 1;
             bool pushNull = (arg & 0x01);
             if (names && frame && static_cast<unsigned long>(nameIdx) < names->getSize(ctx)) {
@@ -3111,7 +3117,8 @@ const proto::ProtoObject* executeBytecodeRange(
                 if (pushNull) stack.push_back(nullptr);
                 stack.push_back(PROTO_NONE);
             }
-        } else if (op == OP_STORE_NAME) {
+        } break;
+        case OP_STORE_NAME: {
             int nameIdx = arg >> 1;
             if (names && frame && static_cast<unsigned long>(nameIdx) < names->getSize(ctx)) {
                 if (stack.empty()) {
@@ -3208,7 +3215,8 @@ const proto::ProtoObject* executeBytecodeRange(
                     }
                 }
             }
-        } else if (op == OP_LOAD_FAST) {
+        } break;
+        case OP_LOAD_FAST: {
             const unsigned int nSlots = ctx->getAutomaticLocalsCount();
             if (arg >= 0 && static_cast<unsigned long>(arg) < nSlots) {
                 const proto::ProtoObject** slots = ctx->getAutomaticLocals();
@@ -3224,7 +3232,8 @@ const proto::ProtoObject* executeBytecodeRange(
                 }
                 stack.push_back(PROTO_NONE);
             }
-        } else if (op == OP_STORE_FAST) {
+        } break;
+        case OP_STORE_FAST: {
             if (stack.empty()) { i = next_i; continue; }
             const unsigned int nSlots = ctx->getAutomaticLocalsCount();
             if (arg >= 0 && static_cast<unsigned long>(arg) < nSlots) {
@@ -3233,7 +3242,8 @@ const proto::ProtoObject* executeBytecodeRange(
                 proto::ProtoObject** slots = const_cast<proto::ProtoObject**>(ctx->getAutomaticLocals());
                 slots[arg] = const_cast<proto::ProtoObject*>(val);
             }
-        } else if (op == OP_BINARY_ADD) {
+        } break;
+        case OP_BINARY_ADD: {
             if (stack.size() < 2) { i = next_i; continue; }
             const proto::ProtoObject* b = stack.back();
             const proto::ProtoObject* a = stack[stack.top - 2];
@@ -3254,7 +3264,8 @@ const proto::ProtoObject* executeBytecodeRange(
             const proto::ProtoObject* r = binaryAdd(ctx, a, b);
             stack.pop_back(); // Pop b
             stack.back() = r; // Replace a with r
-        } else if (op == OP_INPLACE_ADD) {
+        } break;
+        case OP_INPLACE_ADD: {
             if (stack.size() < 2) { i = next_i; continue; }
             const proto::ProtoObject* b = stack.back();
             const proto::ProtoObject* a = stack[stack.top - 2];
@@ -3281,7 +3292,8 @@ const proto::ProtoObject* executeBytecodeRange(
                 stack.pop_back(); // Pop b
                 stack.back() = r;
             }
-        } else if (op == OP_BINARY_SUBTRACT) {
+        } break;
+        case OP_BINARY_SUBTRACT: {
             if (stack.size() < 2) { i = next_i; continue; }
             const proto::ProtoObject* b = stack.back();
             const proto::ProtoObject* a = stack[stack.top - 2];
@@ -3299,7 +3311,8 @@ const proto::ProtoObject* executeBytecodeRange(
             stack.pop_back(); // Pop b
             stack.back() = r;
             if (!r && env && env->hasPendingException()) continue;
-        } else if (op == OP_INPLACE_SUBTRACT) {
+        } break;
+        case OP_INPLACE_SUBTRACT: {
             if (stack.size() < 2) { i = next_i; continue; }
             const proto::ProtoObject* b = stack.back();
             const proto::ProtoObject* a = stack[stack.top - 2];
@@ -3324,14 +3337,16 @@ const proto::ProtoObject* executeBytecodeRange(
                 const proto::ProtoObject* r = binarySubtract(ctx, a, b);
                 stack.push_back(r);
             }
-        } else if (op == OP_BINARY_MULTIPLY) {
+        } break;
+        case OP_BINARY_MULTIPLY: {
             if (stack.size() < 2) { i = next_i; continue; }
             const proto::ProtoObject* b = stack.back();
             const proto::ProtoObject* a = stack[stack.top - 2];
             const proto::ProtoObject* r = binaryMultiply(ctx, a, b);
             stack.pop_back(); // Pop b
             stack.back() = r;
-        } else if (op == OP_INPLACE_MULTIPLY) {
+        } break;
+        case OP_INPLACE_MULTIPLY: {
             if (stack.size() < 2) { i = next_i; continue; }
             const proto::ProtoObject* b = stack.back();
             const proto::ProtoObject* a = stack[stack.top - 2];
@@ -3346,21 +3361,24 @@ const proto::ProtoObject* executeBytecodeRange(
                 stack.pop_back(); // Pop b
                 stack.back() = r;
             }
-        } else if (op == OP_BINARY_TRUE_DIVIDE) {
+        } break;
+        case OP_BINARY_TRUE_DIVIDE: {
             if (stack.size() < 2) { i = next_i; continue; }
             const proto::ProtoObject* b = stack.back();
             const proto::ProtoObject* a = stack[stack.top - 2];
             const proto::ProtoObject* r = binaryTrueDivide(ctx, a, b);
             stack.pop_back(); // Pop b
             stack.back() = r;
-        } else if (op == OP_BINARY_MODULO) {
+        } break;
+        case OP_BINARY_MODULO: {
             if (stack.size() < 2) { i = next_i; continue; }
             const proto::ProtoObject* right = stack.back();
             const proto::ProtoObject* left = stack[stack.top - 2];
             const proto::ProtoObject* r = binaryModulo(ctx, left, right);
             stack.pop_back();
             stack.back() = r;
-        } else if (op == OP_BINARY_MATRIX_MULTIPLY) {
+        } break;
+        case OP_BINARY_MATRIX_MULTIPLY: {
             if (stack.size() < 2) { i = next_i; continue; }
             const proto::ProtoObject* right = stack.back();
             const proto::ProtoObject* left = stack[stack.top - 2];
@@ -3374,7 +3392,8 @@ const proto::ProtoObject* executeBytecodeRange(
                 PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
                 if (env) env->setPendingException(PythonEnvironment::getInternedString(ctx, "TypeError: '@' operator not supported (stubbed)")->asObject(ctx));
             }
-        } else if (op == OP_INPLACE_MATRIX_MULTIPLY) {
+        } break;
+        case OP_INPLACE_MATRIX_MULTIPLY: {
             if (stack.size() < 2) { i = next_i; continue; }
             const proto::ProtoObject* right = stack.back();
             const proto::ProtoObject* left = stack[stack.top - 2];
@@ -3409,35 +3428,41 @@ const proto::ProtoObject* executeBytecodeRange(
             stack.pop_back();           // left
             if (res) stack.push_back(res);
             else stack.push_back(PROTO_NONE);
-        } else if (op == OP_RERAISE) {
+        } break;
+        case OP_RERAISE: {
             // Re-raise the exception on top of block stack
             if (!env) { i = next_i; continue; }
             // stub: if we have a pending exception, just continue to trigger handler search
             continue;
-        } else if (op == OP_JUMP_FORWARD) {
+        } break;
+        case OP_JUMP_FORWARD: {
             i = next_i + arg;
             continue;
-        } else if (op == OP_POP_EXCEPT) {
+        } break;
+        case OP_POP_EXCEPT: {
             if (env) {
                 env->popActiveException();
                 // popActiveException (e.g. list removeAt) can set TypeError; clear so module continues
                 if (env->hasPendingException()) env->clearPendingException();
             }
-        } else if (op == OP_BINARY_POWER) {
+        } break;
+        case OP_BINARY_POWER: {
             if (stack.size() < 2) { i = next_i; continue; }
             const proto::ProtoObject* b = stack.back();
             const proto::ProtoObject* a = stack[stack.top - 2];
             const proto::ProtoObject* r = binaryPower(ctx, a, b);
             stack.pop_back();
             stack.back() = r;
-        } else if (op == OP_BINARY_FLOOR_DIVIDE) {
+        } break;
+        case OP_BINARY_FLOOR_DIVIDE: {
             if (stack.size() < 2) { i = next_i; continue; }
             const proto::ProtoObject* b = stack.back();
             const proto::ProtoObject* a = stack[stack.top - 2];
             const proto::ProtoObject* r = binaryFloorDivide(ctx, a, b);
             stack.pop_back();
             stack.back() = r;
-        } else if (op == OP_INPLACE_TRUE_DIVIDE) {
+        } break;
+        case OP_INPLACE_TRUE_DIVIDE: {
             if (stack.size() < 2) { i = next_i; continue; }
             const proto::ProtoObject* b = stack.back();
             const proto::ProtoObject* a = stack[stack.top - 2];
@@ -3452,7 +3477,8 @@ const proto::ProtoObject* executeBytecodeRange(
                 stack.pop_back();
                 stack.back() = r;
             }
-        } else if (op == OP_INPLACE_FLOOR_DIVIDE) {
+        } break;
+        case OP_INPLACE_FLOOR_DIVIDE: {
             if (stack.size() < 2) { i = next_i; continue; }
             const proto::ProtoObject* b = stack.back();
             const proto::ProtoObject* a = stack[stack.top - 2];
@@ -3465,7 +3491,8 @@ const proto::ProtoObject* executeBytecodeRange(
                 const proto::ProtoObject* r = binaryFloorDivide(ctx, a, b);
                 stack.pop_back(); stack.back() = r;
             }
-        } else if (op == OP_INPLACE_MODULO) {
+        } break;
+        case OP_INPLACE_MODULO: {
             if (stack.size() < 2) { i = next_i; continue; }
             const proto::ProtoObject* b = stack.back();
             const proto::ProtoObject* a = stack[stack.top - 2];
@@ -3478,7 +3505,8 @@ const proto::ProtoObject* executeBytecodeRange(
                 const proto::ProtoObject* r = binaryModulo(ctx, a, b);
                 stack.pop_back(); stack.back() = r;
             }
-        } else if (op == OP_INPLACE_POWER) {
+        } break;
+        case OP_INPLACE_POWER: {
             if (stack.size() < 2) { i = next_i; continue; }
             const proto::ProtoObject* b = stack.back();
             const proto::ProtoObject* a = stack[stack.top - 2];
@@ -3491,7 +3519,8 @@ const proto::ProtoObject* executeBytecodeRange(
                 const proto::ProtoObject* r = binaryPower(ctx, a, b);
                 stack.pop_back(); stack.back() = r;
             }
-        } else if (op == OP_INPLACE_LSHIFT) {
+        } break;
+        case OP_INPLACE_LSHIFT: {
             if (stack.size() < 2) { i = next_i; continue; }
             const proto::ProtoObject* b = stack.back();
             const proto::ProtoObject* a = stack[stack.top - 2];
@@ -3507,7 +3536,8 @@ const proto::ProtoObject* executeBytecodeRange(
                 else av = static_cast<long long>(static_cast<unsigned long long>(av) << bv);
                 stack.pop_back(); stack.back() = ctx->fromInteger(av);
             }
-        } else if (op == OP_INPLACE_RSHIFT) {
+        } break;
+        case OP_INPLACE_RSHIFT: {
             if (stack.size() < 2) { i = next_i; continue; }
             const proto::ProtoObject* b = stack.back();
             const proto::ProtoObject* a = stack[stack.top - 2];
@@ -3523,7 +3553,8 @@ const proto::ProtoObject* executeBytecodeRange(
                 else av = av >> bv;
                 stack.pop_back(); stack.back() = ctx->fromInteger(av);
             }
-        } else if (op == OP_INPLACE_AND) {
+        } break;
+        case OP_INPLACE_AND: {
             if (stack.size() < 2) { i = next_i; continue; }
             const proto::ProtoObject* b = stack.back();
             const proto::ProtoObject* a = stack[stack.top - 2];
@@ -3550,7 +3581,8 @@ const proto::ProtoObject* executeBytecodeRange(
                     }
                 }
             }
-        } else if (op == OP_INPLACE_OR) {
+        } break;
+        case OP_INPLACE_OR: {
             if (stack.size() < 2) { i = next_i; continue; }
             const proto::ProtoObject* b = stack.back();
             const proto::ProtoObject* a = stack[stack.top - 2];
@@ -3577,7 +3609,8 @@ const proto::ProtoObject* executeBytecodeRange(
                     }
                 }
             }
-        } else if (op == OP_INPLACE_XOR) {
+        } break;
+        case OP_INPLACE_XOR: {
             if (stack.size() < 2) { i = next_i; continue; }
             const proto::ProtoObject* b = stack.back();
             const proto::ProtoObject* a = stack[stack.top - 2];
@@ -3604,7 +3637,8 @@ const proto::ProtoObject* executeBytecodeRange(
                     }
                 }
             }
-        } else if (op == OP_BINARY_LSHIFT) {
+        } break;
+        case OP_BINARY_LSHIFT: {
             if (stack.size() < 2) { i = next_i; continue; }
             const proto::ProtoObject* b = stack.back();
             const proto::ProtoObject* a = stack[stack.top - 2];
@@ -3628,7 +3662,8 @@ const proto::ProtoObject* executeBytecodeRange(
                 }
                 stack.pop_back(); stack.back() = a->shiftLeft(ctx, amount);
             }
-        } else if (op == OP_BINARY_RSHIFT) {
+        } break;
+        case OP_BINARY_RSHIFT: {
             if (stack.size() < 2) { i = next_i; continue; }
             const proto::ProtoObject* b = stack.back();
             const proto::ProtoObject* a = stack[stack.top - 2];
@@ -3649,7 +3684,8 @@ const proto::ProtoObject* executeBytecodeRange(
                 }
                 stack.pop_back(); stack.back() = a->shiftRight(ctx, amount);
             }
-        } else if (op == OP_BINARY_AND) {
+        } break;
+        case OP_BINARY_AND: {
             if (stack.size() < 2) { i = next_i; continue; }
             const proto::ProtoObject* b = stack.back();
             const proto::ProtoObject* a = stack[stack.top - 2];
@@ -3671,7 +3707,8 @@ const proto::ProtoObject* executeBytecodeRange(
                     }
                 }
             }
-        } else if (op == OP_BINARY_OR) {
+        } break;
+        case OP_BINARY_OR: {
             if (stack.size() < 2) { i = next_i; continue; }
             const proto::ProtoObject* b = stack.back();
             const proto::ProtoObject* a = stack[stack.top - 2];
@@ -3692,7 +3729,8 @@ const proto::ProtoObject* executeBytecodeRange(
                 stack.pop_back();
                 stack.back() = (result ? result : PROTO_NONE);
             }
-        } else if (op == OP_BINARY_XOR) {
+        } break;
+        case OP_BINARY_XOR: {
             if (stack.size() < 2) { i = next_i; continue; }
             const proto::ProtoObject* b = stack.back();
             const proto::ProtoObject* a = stack[stack.top - 2];
@@ -3714,7 +3752,8 @@ const proto::ProtoObject* executeBytecodeRange(
                     }
                 }
             }
-        } else if (op == OP_UNARY_NEGATIVE) {
+        } break;
+        case OP_UNARY_NEGATIVE: {
             if (stack.empty()) { i = next_i; continue; }
             const proto::ProtoObject* a = stack.back();
             if (a->isInteger(ctx)) {
@@ -3726,11 +3765,13 @@ const proto::ProtoObject* executeBytecodeRange(
                 const proto::ProtoObject* res = ctx->fromDouble(-a->asDouble(ctx));
                 stack.back() = res;
             }
-        } else if (op == OP_UNARY_NOT) {
+        } break;
+        case OP_UNARY_NOT: {
             if (stack.empty()) { i = next_i; continue; }
             const proto::ProtoObject* a = stack.back();
             stack.back() = isTruthy(ctx, a) ? PROTO_FALSE : PROTO_TRUE;
-        } else if (op == OP_UNARY_INVERT) {
+        } break;
+        case OP_UNARY_INVERT: {
             if (stack.empty()) { i = next_i; continue; }
             const proto::ProtoObject* a = stack.back();
             if (a->isInteger(ctx)) {
@@ -3748,7 +3789,8 @@ const proto::ProtoObject* executeBytecodeRange(
                     stack.pop_back();
                 }
             }
-        } else if (op == OP_RAISE_VARARGS) {
+        } break;
+        case OP_RAISE_VARARGS: {
             if (arg == 0) {
                  const proto::ProtoObject* activeExc = env ? env->getActiveException() : nullptr;
                  if (!activeExc && !stack.empty()) {
@@ -3781,8 +3823,8 @@ const proto::ProtoObject* executeBytecodeRange(
             }
             i = next_i;
             continue;
-        }
- else if (op == OP_IMPORT_STAR) {
+        } break;
+        case OP_IMPORT_STAR: {
             if (stack.size() < 1) { i = next_i; continue; }
             const proto::ProtoObject* mod = stack.back();
             // mod remains on stack during attribute iteration
@@ -3874,7 +3916,8 @@ const proto::ProtoObject* executeBytecodeRange(
             } else {
                 stack.pop_back();
             }
-        } else if (op == OP_IMPORT_FROM) {
+        } break;
+        case OP_IMPORT_FROM: {
             int nameIdx = arg >> 1;
             if (names && stack.size() >= 1 && static_cast<unsigned long>(nameIdx) < names->getSize(ctx)) {
                 const proto::ProtoObject* mod = stack.back();
@@ -3917,7 +3960,8 @@ const proto::ProtoObject* executeBytecodeRange(
                     }
                 }
             }
-        } else if (op == OP_SETUP_WITH) {
+        } break;
+        case OP_SETUP_WITH: {
             if (stack.size() < 1) { i = next_i; continue; }
             const proto::ProtoObject* manager = stack.back();
             stack.pop_back();
@@ -3942,7 +3986,8 @@ const proto::ProtoObject* executeBytecodeRange(
             blockStack.push_back({static_cast<unsigned long>(arg), stack.size(), true});
             
             stack.push_back(enterResult);
-        } else if (op == OP_WITH_CLEANUP) {
+        } break;
+        case OP_WITH_CLEANUP: {
             // Stack: [..., __exit__, (None or Exc)]
             if (stack.size() < 2) { i = next_i; continue; }
             const proto::ProtoObject* excOrNone = stack.back();
@@ -3967,11 +4012,13 @@ const proto::ProtoObject* executeBytecodeRange(
             }
             // Push suppression flag
             stack.push_back(res ? res : PROTO_FALSE);
-        } else if (op == OP_POP_TOP) {
+        } break;
+        case OP_POP_TOP: {
             if (!stack.empty()) {
                 stack.pop_back();
             }
-        } else if (op == OP_UNARY_POSITIVE) {
+        } break;
+        case OP_UNARY_POSITIVE: {
             if (stack.empty()) { i = next_i; continue; }
             const proto::ProtoObject* a = stack.back();
             const proto::ProtoObject* pos = isEmbeddedValue(ctx, a) ? nullptr : a->getAttribute(ctx, env ? env->getPosString() : PythonEnvironment::getInternedString(ctx, "__pos__"));
@@ -3982,8 +4029,10 @@ const proto::ProtoObject* executeBytecodeRange(
             } else {
                 // remains a on stack
             }
-        } else if (op == OP_NOP) {
-        } else if (op == OP_COMPARE_OP) {
+        } break;
+        case OP_NOP: {
+        } break;
+        case OP_COMPARE_OP: {
             if (stack.size() < 2) { i = next_i; continue; }
             const proto::ProtoObject* b = stack.back();
             const proto::ProtoObject* a = stack[stack.top - 2];
@@ -4014,7 +4063,8 @@ const proto::ProtoObject* executeBytecodeRange(
             stack.back() = (r ? r : PROTO_NONE);
             if (!r && env && env->hasPendingException()) continue;
             // (Note: if r is null, we set PROTO_NONE to avoid null on stack)
-        } else if (op == OP_POP_JUMP_IF_FALSE) {
+        } break;
+        case OP_POP_JUMP_IF_FALSE: {
             if (stack.empty()) { i = next_i; continue; }
             const proto::ProtoObject* top = stack.back();
             stack.pop_back();
@@ -4022,7 +4072,8 @@ const proto::ProtoObject* executeBytecodeRange(
                 i = static_cast<unsigned long>(arg);
                 continue;
             }
-        } else if (op == OP_POP_JUMP_IF_TRUE) {
+        } break;
+        case OP_POP_JUMP_IF_TRUE: {
             if (stack.empty()) { i = next_i; continue; }
             const proto::ProtoObject* top = stack.back();
             stack.pop_back();
@@ -4030,7 +4081,8 @@ const proto::ProtoObject* executeBytecodeRange(
                 i = static_cast<unsigned long>(arg);
                 continue;
             }
-        } else if (op == OP_LIST_APPEND) {
+        } break;
+        case OP_LIST_APPEND: {
             if (stack.size() >= static_cast<size_t>(arg)) {
                 const proto::ProtoObject* val = stack.back();
                 // val remains on stack
@@ -4047,7 +4099,8 @@ const proto::ProtoObject* executeBytecodeRange(
                 }
                 stack.pop_back(); // Pop val now
             }
-        } else if (op == OP_MAP_ADD) {
+        } break;
+        case OP_MAP_ADD: {
             if (stack.size() >= static_cast<size_t>(arg) + 1) { // key, val + mapObj must be there
                 const proto::ProtoObject* key = stack.back();
                 const proto::ProtoObject* val = stack[stack.top - 2];
@@ -4073,7 +4126,8 @@ const proto::ProtoObject* executeBytecodeRange(
                 stack.pop_back(); // Pop key
                 stack.pop_back(); // Pop val
             }
-        } else if (op == OP_SET_ADD) {
+        } break;
+        case OP_SET_ADD: {
             if (stack.size() >= static_cast<size_t>(arg + 1)) {
                 const proto::ProtoObject* val = stack.back();
                 // val remains on stack
@@ -4086,7 +4140,8 @@ const proto::ProtoObject* executeBytecodeRange(
                 stack[stack.size() - arg - 1] = const_cast<proto::ProtoObject*>(newSet);
                 stack.pop_back(); // Now safe to pop val
             }
-        } else if (op == OP_DICT_UPDATE) {
+        } break;
+        case OP_DICT_UPDATE: {
             if (stack.size() >= static_cast<size_t>(arg + 1)) {
                 const proto::ProtoObject* from = stack.back();
                 // from remains on stack
@@ -4120,7 +4175,8 @@ const proto::ProtoObject* executeBytecodeRange(
                 }
                 stack.pop_back(); // Pop from
             }
-        } else if (op == OP_LIST_EXTEND) {
+        } break;
+        case OP_LIST_EXTEND: {
             if (stack.size() >= static_cast<size_t>(arg + 1)) {
                 const proto::ProtoObject* iterable = stack.back();
                 // iterable remains on stack
@@ -4149,7 +4205,8 @@ const proto::ProtoObject* executeBytecodeRange(
                 }
                 stack.pop_back(); // Pop iterable
             }
-        } else if (op == OP_SET_UPDATE) {
+        } break;
+        case OP_SET_UPDATE: {
             if (stack.size() >= static_cast<size_t>(arg + 1)) {
                 const proto::ProtoObject* iterable = stack.back();
                 // iterable remains on stack
@@ -4169,8 +4226,8 @@ const proto::ProtoObject* executeBytecodeRange(
                 }
                 stack.pop_back(); // Pop iterable
             }
-        }
- else if (op == OP_BUILD_SET) {
+        } break;
+        case OP_BUILD_SET: {
             if (stack.size() < static_cast<size_t>(arg)) continue;
             proto::ProtoObject* setObj = const_cast<proto::ProtoObject*>(ctx->newObject(true));
             stack.push_back(setObj); // Root setObj
@@ -4202,7 +4259,8 @@ const proto::ProtoObject* executeBytecodeRange(
             }
             for (int j = 0; j < arg + 2; ++j) stack.pop_back();
             stack.push_back(finalSet);
-        } else if (op == OP_FORMAT_VALUE) {
+        } break;
+        case OP_FORMAT_VALUE: {
             if (stack.size() < 1) continue;
             const proto::ProtoObject* val = stack.back();
             stack.pop_back();
@@ -4220,16 +4278,19 @@ const proto::ProtoObject* executeBytecodeRange(
                 result = pstr ? pstr->asObject(ctx) : nullptr;
             }
             stack.push_back(result ? result : (env ? env->getNonePrototype() : PROTO_NONE));
-        } else if (op == OP_PUSH_NULL) {
+        } break;
+        case OP_PUSH_NULL: {
             stack.push_back(nullptr);
-        } else if (op == OP_BUILD_STRING) {
+        } break;
+        case OP_BUILD_STRING: {
             if (stack.size() < static_cast<size_t>(arg)) continue;
             // GC safe: elements remain on stack until buildString returns
             const proto::ProtoObject** partsPtr = (const proto::ProtoObject**)(&stack[stack.size() - arg]);
             const proto::ProtoObject* res = env->buildString(partsPtr, arg);
             for (int j = 0; j < arg; ++j) stack.pop_back();
             stack.push_back(res);
-        } else if (op == OP_LOAD_DEREF) {
+        } break;
+        case OP_LOAD_DEREF: {
             if (names && frame && static_cast<unsigned long>(arg) < names->getSize(ctx)) {
                 const proto::ProtoObject* nameObj = names->getAt(ctx, arg);
                 if (nameObj && nameObj->isString(ctx)) {
@@ -4320,7 +4381,8 @@ const proto::ProtoObject* executeBytecodeRange(
                     stack.push_back(val);
                 }
             }
-        } else if (op == OP_STORE_DEREF) {
+        } break;
+        case OP_STORE_DEREF: {
             if (names && stack.size() >= 1 && static_cast<unsigned long>(arg) < names->getSize(ctx)) {
                 const proto::ProtoObject* val = stack.back();
                 stack.pop_back();
@@ -4396,12 +4458,14 @@ const proto::ProtoObject* executeBytecodeRange(
                     }
                 }
             }
-        } else if (op == OP_JUMP_ABSOLUTE) {
+        } break;
+        case OP_JUMP_ABSOLUTE: {
             if (arg >= 0 && static_cast<unsigned long>(arg) < n) {
                 i = static_cast<unsigned long>(arg);
                 continue;
             }
-        } else if (op == OP_LOAD_ATTR) {
+        } break;
+        case OP_LOAD_ATTR: {
             bool pushNull = (arg & 1);
             int nameIdx = arg >> 1;
             if (names && stack.size() >= 1 && static_cast<unsigned long>(nameIdx) < names->getSize(ctx)) {
@@ -4635,7 +4699,8 @@ const proto::ProtoObject* executeBytecodeRange(
                     }
                 }
             }
-        } else if (op == OP_STORE_ATTR) {
+        } break;
+        case OP_STORE_ATTR: {
             int nameIdx = arg >> 1;
             if (names && stack.size() >= 2 && static_cast<unsigned long>(nameIdx) < names->getSize(ctx)) {
                 const proto::ProtoObject* obj = stack.back();
@@ -4666,7 +4731,8 @@ const proto::ProtoObject* executeBytecodeRange(
                     stack.pop_back(); // Pop val
                 }
             }
-        } else if (op == OP_BUILD_LIST) {
+        } break;
+        case OP_BUILD_LIST: {
             if (stack.size() < static_cast<size_t>(arg)) continue;
             const proto::ProtoList* lst = ctx->newList();
             stack.push_back(lst->asObject(ctx)); // Root lst
@@ -4689,7 +4755,8 @@ const proto::ProtoObject* executeBytecodeRange(
             const proto::ProtoObject* finalList = listObj;
             for (int j = 0; j < arg + 2; ++j) stack.pop_back();
             stack.push_back(finalList);
-        } else if (op == OP_BINARY_SUBSCR) {
+        } break;
+        case OP_BINARY_SUBSCR: {
             if (stack.size() < 2) { i = next_i; continue; }
             const proto::ProtoObject* key = stack.back();
             const proto::ProtoObject* container = stack[stack.top - 2];
@@ -4877,7 +4944,8 @@ const proto::ProtoObject* executeBytecodeRange(
                     continue; 
                 }
             }
-        } else if (op == OP_BUILD_MAP) {
+        } break;
+        case OP_BUILD_MAP: {
             if (stack.size() < static_cast<size_t>(arg * 2)) continue;
             const proto::ProtoSparseList* data = ctx->newSparseList();
             stack.push_back(data->asObject(ctx)); // Root data
@@ -4912,7 +4980,8 @@ const proto::ProtoObject* executeBytecodeRange(
             const proto::ProtoObject* finalDict = dictObj;
             for (int k = 0; k < 2 * arg + 3; ++k) stack.pop_back();
             stack.push_back(finalDict);
-        } else if (op == OP_STORE_SUBSCR) {
+        } break;
+        case OP_STORE_SUBSCR: {
             // i++;
             if (diag_local) {
                 fprintf(stderr, "DEBUG OP_STORE_SUBSCR stack.size()=%lu\n", (unsigned long)stack.size());
@@ -5019,7 +5088,8 @@ const proto::ProtoObject* executeBytecodeRange(
             stack.pop_back();
             stack.pop_back();
             stack.pop_back();
-        } else if (op == OP_CALL_FUNCTION_KW) {
+        } break;
+        case OP_CALL_FUNCTION_KW: {
             if (stack.size() < 2) { i = next_i; continue; } // at least names_tuple
             const proto::ProtoObject* namesTupleObj = stack.back();
             stack.pop_back();
@@ -5093,7 +5163,8 @@ const proto::ProtoObject* executeBytecodeRange(
                 continue;
             }
             stack.push_back(result ? result : (env ? env->getNonePrototype() : PROTO_NONE));
-        } else if (op == OP_CALL_FUNCTION) {
+        } break;
+        case OP_CALL_FUNCTION: {
             if (stack.size() < (unsigned long)(arg + 1)) {
                  if (diag_local) fprintf(stderr, "DEBUG: OP_CALL_FUNCTION FATAL underflow size=%lu arg=%d PC=%lu\n", (unsigned long)stack.size(), arg, i);
                  i = next_i;
@@ -5221,7 +5292,8 @@ const proto::ProtoObject* executeBytecodeRange(
                 continue;
             }
             stack.push_back(result ? result : (env ? env->getNonePrototype() : PROTO_NONE));
-        } else if (op == OP_CALL_FUNCTION_EX) {
+        } break;
+        case OP_CALL_FUNCTION_EX: {
             // Robust detection of modern vs legacy stack layout
             bool isModern = false;
             // EX stack: ...[X][Y][starargs][kwargs]
@@ -5339,7 +5411,8 @@ const proto::ProtoObject* executeBytecodeRange(
                 continue;
             }
             stack.push_back(result ? result : (env ? env->getNonePrototype() : PROTO_NONE));
-        } else if (op == OP_BUILD_TUPLE) {
+        } break;
+        case OP_BUILD_TUPLE: {
             if (stack.size() < static_cast<size_t>(arg)) {
                 i = next_i;
                 continue;
@@ -5364,7 +5437,8 @@ const proto::ProtoObject* executeBytecodeRange(
             const proto::ProtoObject* finalTup = tupObj;
             for (int j = 0; j < arg + 2; ++j) stack.pop_back();
             stack.push_back(finalTup);
-        } else if (op == OP_BUILD_FUNCTION) {
+        } break;
+        case OP_BUILD_FUNCTION: {
             const proto::ProtoObject* kwDefaults = (arg & 0x02) ? stack.back() : nullptr;
             if (arg & 0x02) stack.pop_back();
             const proto::ProtoObject* defaults = (arg & 0x01) ? stack.back() : nullptr;
@@ -5456,7 +5530,8 @@ const proto::ProtoObject* executeBytecodeRange(
                     stack.push_back(fn);
                 }
             }
-        } else if (op == OP_BUILD_CLASS) {
+        } break;
+        case OP_BUILD_CLASS: {
             if (stack.size() >= 4 && frame) {
                 // Robust detection: in modern bytecode, the function result of MAKE_FUNCTION
                 // might have been pushed with a NULL marker if it was meant to be called.
@@ -5936,8 +6011,8 @@ const proto::ProtoObject* executeBytecodeRange(
                 for (int j = 0; j < 5; ++j) stack.pop_back(); // Pop name, bases, kwds, body, ns
                 stack.push_back(targetClass);
             }
-        }
-        else if (op == OP_GET_ITER) {
+        } break;
+        case OP_GET_ITER: {
             if (stack.empty()) { i = next_i; continue; }
             const proto::ProtoObject* iterable = stack.back();
             PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
@@ -5955,7 +6030,8 @@ const proto::ProtoObject* executeBytecodeRange(
                     return nullptr;
                 }
             }
-        } else if (op == OP_FOR_ITER) {
+        } break;
+        case OP_FOR_ITER: {
             if (stack.empty()) { i = next_i; continue; }
             const proto::ProtoObject* iterator = stack.back();
 
@@ -5993,7 +6069,8 @@ const proto::ProtoObject* executeBytecodeRange(
                 }
             }
             // continue normal execution after pushing val
-        } else if (op == OP_UNPACK_SEQUENCE) {
+        } break;
+        case OP_UNPACK_SEQUENCE: {
             if (stack.empty() || arg <= 0) {
                 i = next_i;
                 continue;
@@ -6068,7 +6145,8 @@ const proto::ProtoObject* executeBytecodeRange(
                     }
                 }
             }
-        } else if (op == OP_UNPACK_EX) {
+        } break;
+        case OP_UNPACK_EX: {
             if (stack.empty()) { i = next_i; continue; }
             int num_before = arg & 0xFF;
             int num_after = (arg >> 8) & 0xFF;
@@ -6137,7 +6215,8 @@ const proto::ProtoObject* executeBytecodeRange(
             for (int idx = num_before - 1; idx >= 0; --idx) {
                 stack.push_back(all[idx]);
             }
-        } else if (op == OP_LOAD_GLOBAL) {
+        } break;
+        case OP_LOAD_GLOBAL: {
             bool pushNull = (arg & 1);
             int nameIdx = arg >> 1;
             // No `frame` guard: LOAD_GLOBAL resolves via env->resolve()/getCurrentGlobals(),
@@ -6183,7 +6262,8 @@ const proto::ProtoObject* executeBytecodeRange(
                     continue;
                 }
             }
-        } else if (op == OP_STORE_GLOBAL) {
+        } break;
+        case OP_STORE_GLOBAL: {
             int nameIdx = arg >> 1;
             if (names && static_cast<unsigned long>(nameIdx) < names->getSize(ctx)) {
                 if (stack.empty()) { i = next_i; continue; }
@@ -6203,7 +6283,8 @@ const proto::ProtoObject* executeBytecodeRange(
                     if (env) env->invalidateResolveCache();
                 }
             }
-        } else if (op == OP_BUILD_SLICE) {
+        } break;
+        case OP_BUILD_SLICE: {
             // i++;
             if ((arg != 2 && arg != 3) || stack.size() < static_cast<size_t>(arg)) continue;
             long long step = 1;
@@ -6226,7 +6307,8 @@ const proto::ProtoObject* executeBytecodeRange(
             sliceObj = const_cast<proto::ProtoObject*>(sliceObj->setAttribute(ctx, env ? env->getStepString() : PythonEnvironment::getInternedString(ctx, "step"), stepObj));
             if (env && env->getSliceType()) sliceObj->addParent(ctx, env->getSliceType());
             stack.push_back(sliceObj);
-        } else if (op == OP_ROT_TWO) {
+        } break;
+        case OP_ROT_TWO: {
             if (stack.size() >= 2) {
                 const proto::ProtoObject* a = stack.back();
                 stack.pop_back();
@@ -6235,7 +6317,8 @@ const proto::ProtoObject* executeBytecodeRange(
                 stack.push_back(a);
                 stack.push_back(b);
             }
-        } else if (op == OP_ROT_THREE) {
+        } break;
+        case OP_ROT_THREE: {
             if (stack.size() >= 3) {
                 const proto::ProtoObject* a = stack.back();
                 stack.pop_back();
@@ -6247,7 +6330,8 @@ const proto::ProtoObject* executeBytecodeRange(
                 stack.push_back(c);
                 stack.push_back(b);
             }
-        } else if (op == OP_ROT_FOUR) {
+        } break;
+        case OP_ROT_FOUR: {
             if (stack.size() >= 4) {
                 const proto::ProtoObject* a = stack.back();
                 stack.pop_back();
@@ -6262,113 +6346,8 @@ const proto::ProtoObject* executeBytecodeRange(
                 stack.push_back(c);
                 stack.push_back(b);
             }
-        } else if (op == OP_LIST_EXTEND) {
-            if (stack.size() >= static_cast<size_t>(arg + 1)) {
-                // stack[-2] is listObj, stack[-1] is iterable
-                const proto::ProtoObject* iterable = stack.back();
-                proto::ProtoObject* listObj = const_cast<proto::ProtoObject*>(stack[stack.size() - arg - 1]);
-                
-                const proto::ProtoString* dataS = env ? env->getDataString() : protoPython::PythonEnvironment::getInternalString(ctx, "__data__");
-                const proto::ProtoObject* data = listObj->getAttribute(ctx, dataS);
-                const proto::ProtoList* L = (data && data->asList(ctx)) ? data->asList(ctx) : nullptr;
-                
-                if (L && env) {
-                    stack.push_back(L->asObject(ctx)); // TEMP ROOT at index top-1
-                    if (diag_local) fprintf(stderr, "DEBUG: LIST_EXTEND calling iter(iterable)\n");
-                    const proto::ProtoObject* iter = env->iter(iterable);
-                    stack.push_back(iter); // TEMP ROOT at index top-1
-                    while (iter) {
-                        const proto::ProtoObject* item = env->next(iter);
-                        if (!item) break;
-                        L = L->appendLast(ctx, item);
-                        stack[stack.size() - 2] = const_cast<proto::ProtoObject*>(L->asObject(ctx)); // Update L root
-                    }
-                    if (env->hasPendingException()) {
-                        const proto::ProtoObject* exc = env->takePendingException();
-                        if (!env->isStopIteration(ctx, exc)) {
-                            env->setPendingException(exc);
-                            i = next_i;
-                            continue;
-                        }
-                    }
-                    listObj->setAttribute(ctx, dataS, L->asObject(ctx));
-                    stack.pop_back(); // pop iter
-                    stack.pop_back(); // pop L
-                }
-                stack.pop_back(); // pop iterable
-            }
-        } else if (op == OP_DICT_UPDATE) {
-            // GC Safe: iterable stays on stack until updated
-            if (stack.size() >= static_cast<size_t>(arg + 1)) {
-                const proto::ProtoObject* other = stack.back();
-                proto::ProtoObject* dictObj = const_cast<proto::ProtoObject*>(stack[stack.size() - arg - 1]);
-                
-                const proto::ProtoString* dataS = env ? env->getDataString() : protoPython::PythonEnvironment::getInternalString(ctx, "__data__");
-                const proto::ProtoString* keysS = env ? env->getKeysString() : protoPython::PythonEnvironment::getInternalString(ctx, "__keys__");
-                
-                const proto::ProtoObject* data = dictObj->getAttribute(ctx, dataS);
-                const proto::ProtoSparseList* sl = (data && data->asSparseList(ctx)) ? data->asSparseList(ctx) : nullptr;
-                
-                if (sl && env) {
-                    const proto::ProtoObject* otherData = other->getAttribute(ctx, dataS);
-                    const proto::ProtoSparseList* otherSl = (otherData && otherData->asSparseList(ctx)) ? otherData->asSparseList(ctx) : nullptr;
-                    if (otherSl) {
-                        const proto::ProtoObject* keysObj = other->getAttribute(ctx, keysS);
-                        const proto::ProtoList* otherKeys = (keysObj && keysObj->asList(ctx)) ? keysObj->asList(ctx) : nullptr;
-                        if (otherKeys) {
-                            for (unsigned long j = 0; j < otherKeys->getSize(ctx); ++j) {
-                                const proto::ProtoObject* k = otherKeys->getAt(ctx, static_cast<int>(j));
-                                unsigned long h = k->getHash(ctx);
-                                const proto::ProtoObject* v = otherSl->getAt(ctx, h);
-                                
-                                bool isNew = !sl->has(ctx, h);
-                                sl = sl->setAt(ctx, h, v);
-                                if (isNew) {
-                                    const proto::ProtoObject* myKeysObj = dictObj->getAttribute(ctx, keysS);
-                                    const proto::ProtoList* myKeys = (myKeysObj && myKeysObj->asList(ctx)) ? myKeysObj->asList(ctx) : ctx->newList();
-                                    myKeys = myKeys->appendLast(ctx, k);
-                                    dictObj->setAttribute(ctx, keysS, myKeys->asObject(ctx));
-                                }
-                            }
-                        }
-                    } else {
-                        // Handle generic mapping/iterable (simplified for now: expect dict-like)
-                    }
-                    dictObj->setAttribute(ctx, dataS, sl->asObject(ctx));
-                }
-                stack.pop_back();
-            }
-        } else if (op == OP_SET_UPDATE) {
-            // GC Safe: iterable stays on stack until updated
-            if (stack.size() >= static_cast<size_t>(arg + 1)) {
-                const proto::ProtoObject* iterable = stack.back();
-                proto::ProtoObject* setObj = const_cast<proto::ProtoObject*>(stack[stack.size() - arg - 1]);
-                
-                const proto::ProtoString* dataS = env ? env->getDataString() : protoPython::PythonEnvironment::getInternalString(ctx, "__data__");
-                const proto::ProtoObject* data = setObj->getAttribute(ctx, dataS);
-                const proto::ProtoSet* s = (data && data->asSet(ctx)) ? data->asSet(ctx) : nullptr;
-                
-                if (s && env) {
-                    if (diag_local) fprintf(stderr, "DEBUG: SET_UPDATE calling iter(iterable)\n");
-                    const proto::ProtoObject* iter = env->iter(iterable);
-                    while (iter) {
-                        const proto::ProtoObject* item = env->next(iter);
-                        if (!item) break;
-                        s = s->add(ctx, item);
-                    }
-                    if (env->hasPendingException()) {
-                        const proto::ProtoObject* exc = env->takePendingException();
-                        if (!env->isStopIteration(ctx, exc)) {
-                            env->setPendingException(exc);
-                            i = next_i;
-                            continue;
-                        }
-                    }
-                    setObj->setAttribute(ctx, dataS, s->asObject(ctx));
-                }
-                stack.pop_back();
-            }
-        } else if (op == OP_LIST_TO_TUPLE) {
+        } break;
+        case OP_LIST_TO_TUPLE: {
             // GC Safe: list stays on stack until tuple is ready
             if (!stack.empty()) {
                 proto::ProtoObject* listObj = const_cast<proto::ProtoObject*>(stack.back());
@@ -6395,7 +6374,8 @@ const proto::ProtoObject* executeBytecodeRange(
                     stack.push_back(PROTO_NONE);
                 }
             }
-        } else if (op == OP_DUP_TOP_TWO) {
+        } break;
+        case OP_DUP_TOP_TWO: {
             if (stack.size() >= 2) {
                 const proto::ProtoObject* b = stack.back();
                 stack.pop_back();
@@ -6406,13 +6386,13 @@ const proto::ProtoObject* executeBytecodeRange(
                 stack.push_back(a);
                 stack.push_back(b);
             }
-        } else if (op == OP_DUP_TOP) {
+        } break;
+        case OP_DUP_TOP: {
             if (!stack.empty())
                 stack.push_back(stack.back());
-        } else if (op == OP_POP_TOP) {
-            if (!stack.empty())
-                stack.pop_back();
-        } else if (op == OP_DELETE_NAME || op == OP_DELETE_GLOBAL) {
+        } break;
+        case OP_DELETE_NAME:
+        case OP_DELETE_GLOBAL: {
             int nameIdx = arg >> 1;
             // Swallow any pre-existing or subsequent exception from delete path (e.g. os.py del _create_environ_mapping)
             if (env && env->hasPendingException()) env->clearPendingException();
@@ -6434,13 +6414,15 @@ const proto::ProtoObject* executeBytecodeRange(
             if (env) env->invalidateResolveCache();
             // Swallow any exception from delete path so "del name" does not abort module (e.g. os.py del _create_environ_mapping)
             if (env && env->hasPendingException()) env->clearPendingException();
-        } else if (op == OP_DELETE_FAST) {
+        } break;
+        case OP_DELETE_FAST: {
             const unsigned int nSlots = ctx->getAutomaticLocalsCount();
             if (arg >= 0 && static_cast<unsigned long>(arg) < nSlots) {
                 proto::ProtoObject** slots = const_cast<proto::ProtoObject**>(ctx->getAutomaticLocals());
                 slots[arg] = nullptr; 
             }
-        } else if (op == OP_DELETE_ATTR) {
+        } break;
+        case OP_DELETE_ATTR: {
             if (!stack.empty()) {
                 const proto::ProtoObject* obj = stack.back();
                 stack.pop_back();
@@ -6522,7 +6504,8 @@ const proto::ProtoObject* executeBytecodeRange(
                     const_cast<proto::ProtoObject*>(obj)->proto::ProtoObject::setAttribute(ctx, nameS, nil);
                 }
             }
-        } else if (op == OP_DELETE_SUBSCR) {
+        } break;
+        case OP_DELETE_SUBSCR: {
             if (stack.size() >= 2) {
                 const proto::ProtoObject* key = stack.back();
                 const proto::ProtoObject* container = stack[stack.top - 2];
@@ -6557,14 +6540,17 @@ const proto::ProtoObject* executeBytecodeRange(
                 stack.pop_back(); // Pop key
                 stack.pop_back(); // Pop container
             }
-        } else if (op == OP_SETUP_FINALLY) {
+        } break;
+        case OP_SETUP_FINALLY: {
             if (diag_local) fprintf(stderr, "DEBUG: SETUP_FINALLY handler pc %lu, stack.top %lu\n", (unsigned long)arg, stack.size());
             fflush(stderr);
             blockStack.push_back({static_cast<unsigned long>(arg), stack.size()});
             // No continue: fall through to i = next_i
-        } else if (op == OP_POP_BLOCK) {
+        } break;
+        case OP_POP_BLOCK: {
             if (!blockStack.empty()) blockStack.pop_back();
-        } else if (op == OP_GET_AWAITABLE) {
+        } break;
+        case OP_GET_AWAITABLE: {
             if (stack.empty()) { i = next_i; continue; }
             const proto::ProtoObject* obj = stack.back();
             stack.pop_back();
@@ -6577,7 +6563,8 @@ const proto::ProtoObject* executeBytecodeRange(
             } else {
                 stack.push_back(obj);
             }
-        } else if (op == OP_GET_AITER) {
+        } break;
+        case OP_GET_AITER: {
             if (stack.empty()) { i = next_i; continue; }
             const proto::ProtoObject* obj = stack.back();
             stack.pop_back();
@@ -6606,7 +6593,8 @@ const proto::ProtoObject* executeBytecodeRange(
                 }
             }
             stack.push_back(aiter);
-        } else if (op == OP_GET_ANEXT) {
+        } break;
+        case OP_GET_ANEXT: {
             if (stack.empty()) { i = next_i; continue; }
             const proto::ProtoObject* aiter = stack.back();
             if (diag_local) {
@@ -6625,7 +6613,8 @@ const proto::ProtoObject* executeBytecodeRange(
                 }
                 continue;
             }
-        } else if (op == OP_EXCEPTION_MATCH) {
+        } break;
+        case OP_EXCEPTION_MATCH: {
              if (stack.size() < 2) { i = next_i; continue; }
              const proto::ProtoObject* type = stack.back();
              stack.pop_back();
@@ -6651,7 +6640,8 @@ const proto::ProtoObject* executeBytecodeRange(
                  // Exception match diagnostic removed
              }
              stack.push_back(match ? PROTO_TRUE : PROTO_FALSE);
-        } else if (op == OP_SETUP_ASYNC_WITH) {
+        } break;
+        case OP_SETUP_ASYNC_WITH: {
             if (stack.empty()) { i = next_i; continue; }
             const proto::ProtoObject* mgr = stack.back();
             stack.pop_back();
@@ -6667,7 +6657,10 @@ const proto::ProtoObject* executeBytecodeRange(
                 continue;
             }
             blockStack.push_back({static_cast<unsigned long>(arg), stack.size()});
-        }
+        } break;
+        default:
+            break;
+        }  // end switch (op)
         i = next_i;
     }
     return stack.empty() ? PROTO_NONE : stack.back();
