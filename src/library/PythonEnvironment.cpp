@@ -12241,6 +12241,17 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
     if (outIsUnboundFunc) *outIsUnboundFunc = false;
     if (!obj || !name) return nullptr;
 
+    // When `name` is already a canonical interned symbol
+    // (POINTER_TAG_SYMBOL), pointer-equality lookups in protoCore are
+    // authoritative — a null result truly means the attribute is absent
+    // and the __keys__ content-comparison fallbacks below would only
+    // iterate wastefully.  Profile of richards_lite attributed 13 % of
+    // total CPU to RopeCharacterIterator::next inside compareStrings,
+    // all triggered from those fallbacks during MRO walks for
+    // descriptors (__set__, __get__) on functionPrototype where the
+    // attribute genuinely doesn't exist.  Fast-path the common case.
+    const bool name_is_symbol = name->isSymbol();
+
     // nameStr is computed lazily — only when a fallback path or debug logging requires it.
     // The fast path (interned attribute names) never needs string content comparison.
     // Capture name and ctx by value so the compiler can keep them in registers in the outer body.
@@ -12458,8 +12469,10 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
         }
     }
 
-    // ROBUST FALLBACK (Initial): If pointer lookup fails, try name-based search in __keys__
-    if (!val || (!isExplicitNone && val == PROTO_NONE)) {
+    // ROBUST FALLBACK (Initial): If pointer lookup fails, try name-based search in __keys__.
+    // Skipped entirely when `name` is a canonical Symbol — protoCore's chain walk has already
+    // reported authoritatively, and the cmp_to_string loop below would only burn CPU on misses.
+    if (!name_is_symbol && (!val || (!isExplicitNone && val == PROTO_NONE))) {
          const proto::ProtoObject* kObj = keysString ? obj->proto::ProtoObject::getAttribute(ctx, keysString) : nullptr;
          if (kObj && kObj->asList(ctx)) {
              const proto::ProtoList* kl = kObj->asList(ctx);
@@ -12533,20 +12546,24 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
                             break;
                         }
                     }
-                    // ROBUST FALLBACK: Name-based search in this base class (own keys only)
-                    const proto::ProtoObject* bkObj = keysString ? baseCls->proto::ProtoObject::getAttribute(ctx, keysString) : nullptr;
-                    if (bkObj && bkObj->asList(ctx)) {
-                        const proto::ProtoList* bkl = bkObj->asList(ctx);
-                        for (size_t k = 0; k < bkl->getSize(ctx); ++k) {
-                            const proto::ProtoObject* keyO = bkl->getAt(ctx, k);
-                            if (keyO && keyO->isString(ctx)) {
-                                const proto::ProtoString* keyS = keyO->asString(ctx);
-                                bool match = (keyS == name);
-                                if (!match) { match = (keyS->cmp_to_string(ctx, name) == 0); }
-                                if (match) {
-                                    val = baseCls->proto::ProtoObject::getAttribute(ctx, keyS);
-                                    foundOnClassOrMro = true;
-                                    break;
+                    // ROBUST FALLBACK: Name-based search in this base class (own keys only).
+                    // Skipped when `name` is already a canonical Symbol — see comment at the
+                    // top of getAttribute.
+                    if (!name_is_symbol) {
+                        const proto::ProtoObject* bkObj = keysString ? baseCls->proto::ProtoObject::getAttribute(ctx, keysString) : nullptr;
+                        if (bkObj && bkObj->asList(ctx)) {
+                            const proto::ProtoList* bkl = bkObj->asList(ctx);
+                            for (size_t k = 0; k < bkl->getSize(ctx); ++k) {
+                                const proto::ProtoObject* keyO = bkl->getAt(ctx, k);
+                                if (keyO && keyO->isString(ctx)) {
+                                    const proto::ProtoString* keyS = keyO->asString(ctx);
+                                    bool match = (keyS == name);
+                                    if (!match) { match = (keyS->cmp_to_string(ctx, name) == 0); }
+                                    if (match) {
+                                        val = baseCls->proto::ProtoObject::getAttribute(ctx, keyS);
+                                        foundOnClassOrMro = true;
+                                        break;
+                                    }
                                 }
                             }
                         }
@@ -12569,20 +12586,22 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
                             foundOnClassOrMro = true;
                             break;
                         }
-                        // ROBUST FALLBACK (Parent): Name-based search
-                        const proto::ProtoObject* bkObj = keysString ? baseCls->proto::ProtoObject::getAttribute(ctx, keysString) : nullptr;
-                        if (bkObj && bkObj->asList(ctx)) {
-                            const proto::ProtoList* bkl = bkObj->asList(ctx);
-                            for (size_t k = 0; k < bkl->getSize(ctx); ++k) {
-                                const proto::ProtoObject* keyO = bkl->getAt(ctx, k);
-                                if (keyO && keyO->isString(ctx)) {
-                                    const proto::ProtoString* keyS = keyO->asString(ctx);
-                                    bool match = (keyS == name);
-                                    if (!match) { match = (keyS->cmp_to_string(ctx, name) == 0); }
-                                    if (match) {
-                                        val = baseCls->proto::ProtoObject::getAttribute(ctx, keyS);
-                                        foundOnClassOrMro = true;
-                                        break;
+                        // ROBUST FALLBACK (Parent): Name-based search. Skipped when name is a Symbol.
+                        if (!name_is_symbol) {
+                            const proto::ProtoObject* bkObj = keysString ? baseCls->proto::ProtoObject::getAttribute(ctx, keysString) : nullptr;
+                            if (bkObj && bkObj->asList(ctx)) {
+                                const proto::ProtoList* bkl = bkObj->asList(ctx);
+                                for (size_t k = 0; k < bkl->getSize(ctx); ++k) {
+                                    const proto::ProtoObject* keyO = bkl->getAt(ctx, k);
+                                    if (keyO && keyO->isString(ctx)) {
+                                        const proto::ProtoString* keyS = keyO->asString(ctx);
+                                        bool match = (keyS == name);
+                                        if (!match) { match = (keyS->cmp_to_string(ctx, name) == 0); }
+                                        if (match) {
+                                            val = baseCls->proto::ProtoObject::getAttribute(ctx, keyS);
+                                            foundOnClassOrMro = true;
+                                            break;
+                                        }
                                     }
                                 }
                             }
@@ -12626,21 +12645,23 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
                         foundOnMeta = true;
                         break;
                     }
-                    // ROBUST FALLBACK (Metaclass MRO): Name-based search
-                    const proto::ProtoObject* bkObj = keysString ? baseCls->proto::ProtoObject::getAttribute(ctx, keysString) : nullptr;
-                    if (bkObj && bkObj->asList(ctx)) {
-                        const proto::ProtoList* bkl = bkObj->asList(ctx);
-                        for (size_t k = 0; k < bkl->getSize(ctx); ++k) {
-                            const proto::ProtoObject* keyO = bkl->getAt(ctx, k);
-                            if (keyO && keyO->isString(ctx)) {
-                                const proto::ProtoString* keyS = keyO->asString(ctx);
-                                bool match = (keyS == name);
-                                if (!match) { match = (keyS->cmp_to_string(ctx, name) == 0); }
-                                if (match) {
-                                    val = baseCls->proto::ProtoObject::getAttribute(ctx, keyS);
-                                    foundOnClassOrMro = true;
-                                    foundOnMeta = true;
-                                    break;
+                    // ROBUST FALLBACK (Metaclass MRO): Name-based search. Skipped for Symbols.
+                    if (!name_is_symbol) {
+                        const proto::ProtoObject* bkObj = keysString ? baseCls->proto::ProtoObject::getAttribute(ctx, keysString) : nullptr;
+                        if (bkObj && bkObj->asList(ctx)) {
+                            const proto::ProtoList* bkl = bkObj->asList(ctx);
+                            for (size_t k = 0; k < bkl->getSize(ctx); ++k) {
+                                const proto::ProtoObject* keyO = bkl->getAt(ctx, k);
+                                if (keyO && keyO->isString(ctx)) {
+                                    const proto::ProtoString* keyS = keyO->asString(ctx);
+                                    bool match = (keyS == name);
+                                    if (!match) { match = (keyS->cmp_to_string(ctx, name) == 0); }
+                                    if (match) {
+                                        val = baseCls->proto::ProtoObject::getAttribute(ctx, keyS);
+                                        foundOnClassOrMro = true;
+                                        foundOnMeta = true;
+                                        break;
+                                    }
                                 }
                             }
                         }
@@ -12666,21 +12687,23 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
                              foundOnMeta = true;
                              break;
                          }
-                         // ROBUST FALLBACK (Metaclass Parent): Name-based search
-                         const proto::ProtoObject* bkObj = keysString ? baseCls->proto::ProtoObject::getAttribute(ctx, keysString) : nullptr;
-                         if (bkObj && bkObj->asList(ctx)) {
-                             const proto::ProtoList* bkl = bkObj->asList(ctx);
-                             for (size_t k = 0; k < bkl->getSize(ctx); ++k) {
-                                 const proto::ProtoObject* keyO = bkl->getAt(ctx, k);
-                                 if (keyO && keyO->isString(ctx)) {
-                                     const proto::ProtoString* keyS = keyO->asString(ctx);
-                                     bool match = (keyS == name);
-                                     if (!match) { match = (keyS->cmp_to_string(ctx, name) == 0); }
-                                     if (match) {
-                                         val = baseCls->proto::ProtoObject::getAttribute(ctx, keyS);
-                                         foundOnClassOrMro = true;
-                                         foundOnMeta = true;
-                                         break;
+                         // ROBUST FALLBACK (Metaclass Parent): Name-based search. Skipped for Symbols.
+                         if (!name_is_symbol) {
+                             const proto::ProtoObject* bkObj = keysString ? baseCls->proto::ProtoObject::getAttribute(ctx, keysString) : nullptr;
+                             if (bkObj && bkObj->asList(ctx)) {
+                                 const proto::ProtoList* bkl = bkObj->asList(ctx);
+                                 for (size_t k = 0; k < bkl->getSize(ctx); ++k) {
+                                     const proto::ProtoObject* keyO = bkl->getAt(ctx, k);
+                                     if (keyO && keyO->isString(ctx)) {
+                                         const proto::ProtoString* keyS = keyO->asString(ctx);
+                                         bool match = (keyS == name);
+                                         if (!match) { match = (keyS->cmp_to_string(ctx, name) == 0); }
+                                         if (match) {
+                                             val = baseCls->proto::ProtoObject::getAttribute(ctx, keyS);
+                                             foundOnClassOrMro = true;
+                                             foundOnMeta = true;
+                                             break;
+                                         }
                                      }
                                  }
                              }
