@@ -154,18 +154,42 @@ In priority order:
 | **2** | Inline SmallInteger arithmetic on the bytecode hot path | planned | 20-40 % on integer loops |
 | **2** | Lock-free per-context cell pool replenish | planned | 1-2 % single-thread, larger as cores grow |
 | **3** | Real `_thread.start_joinable_thread` + `_ThreadHandle` + STW safepoint poll | ✅ landed | multithread_cpu 18.9× → 2.55× |
-| **3** | Beat CPython on `multithread_cpu` (parallel scaling, alloc contention) | planned | currently 2.55× slower; goal <1.0× |
+| **3** | Beat CPython on `multithread_cpu` (parallel scaling) | planned | currently 2.55× slower; goal <1.0× |
 | **3** | Verify GC scaling on N=2,4,8 threads | planned | confirms #3 |
 | **4** | JIT compile hot bytecode regions via the `co_bytecode_native` path | research | crosses 1.0× threshold |
 
 `multithread_cpu` came back from being silently fake (sequential
 fallback that masqueraded as 39 ms parallel) to being a real
 4-thread benchmark.  The first round of Tier-3 work made it run
-correctly and reliably (165 ms vs CPython 64 ms).  The next round
-needs to close the remaining 2.55× gap: `globalMutex` contention in
-`getFreeCells` and per-context `new DirtySegment` mallocs are the
-dominant remaining costs.  When that lands, this is the benchmark
-where protoPython decisively beats CPython.
+correctly and reliably (165 ms vs CPython 64 ms).
+
+**Where the 2.55× gap actually is.**  An earlier iteration of this
+README speculated that `globalMutex` contention in `getFreeCells`
+plus per-context `new DirtySegment` mallocs were the dominant cost.
+A DWARF profile of the working benchmark refutes that.  Per-thread
+allocation batches in `getFreeCells` are sized
+`min(blocksPerAllocation * runningThreads * 4, 65536)` when more than
+one thread is running (i.e. **65 536 cells per refill** with 4 workers
++ GC), and the benchmark allocates well under that, so each worker
+hits `getFreeCells` exactly once.  Profile shares confirm:
+
+```
+13.47 %  executeBytecodeRange   ← interpreter dispatch loop
+ 6.48 %  ProtoObject::getAttribute
+ 3.14 %  ProtoSpace::getFreeCells   (≈ 4 calls × ~1.3 ms; well-amortised)
+ 2.81 %  __tls_get_addr             ← thread-local storage lookups
+ 2.71 %  proto::isObject
+ 1.76 %  diagEnabled                ← env check still in the hot path
+```
+
+The 2.55× gap is dominated by per-bytecode interpreter cost
+(executeBytecodeRange, getAttribute, TLS lookups, and the residual
+`diagEnabled` PLT stubs).  Tier 2 (inline SmallInteger arithmetic on
+the dispatch loop) and a follow-up to fully fold `diagEnabled` into a
+constant in release builds are the next wins; allocator contention is
+already amortised.  When parallelism actually beats CPython on this
+benchmark it will be because the per-bytecode cost in protoPython
+dropped, not because the allocator changed.
 
 ---
 

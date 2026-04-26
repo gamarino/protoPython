@@ -270,10 +270,40 @@ In priority order, with rough single-shot expected impact:
 
 6. **Fix `multithread_cpu` — round 2: beat CPython.** Round 1 made
    the benchmark real and reliable; round 2 is closing the remaining
-   2.55× gap.  Likely suspects: `globalMutex` contention in
-   `getFreeCells`, `submitYoungGeneration`'s `new DirtySegment` per
-   context teardown (242 K mallocs in fib's single thread is bad;
-   multiplied by N threads is worse).
+   2.55× gap.
+
+   An earlier draft of this report (and the previous README) said the
+   suspects were `globalMutex` contention in `getFreeCells` and
+   per-context `new DirtySegment` mallocs.  **A DWARF profile of the
+   working benchmark refutes both.**  Per-thread refill batches are
+   `min(blocksPerAllocation * runningThreads * 4, 65 536)` when more
+   than one thread is running, so with 4 workers + GC each batch is
+   capped at **65 536 cells**.  The benchmark allocates well under
+   that, so each worker hits `getFreeCells` exactly once and the
+   mutex is perfectly amortised.  Profile shares (Release, minimum-of-10
+   run, 165 ms wall):
+
+   ```
+   13.47 %  executeBytecodeRange      ← interpreter dispatch loop itself
+    6.48 %  ProtoObject::getAttribute
+    3.14 %  ProtoSpace::getFreeCells   (≈ 4 calls × ~1.3 ms each; amortised)
+    2.81 %  __tls_get_addr             ← thread-local storage lookups
+    2.71 %  proto::isObject            ← type-tag checks
+    1.76 %  diagEnabled                ← env-var check still in the loop
+    1.51 %  GCStack::push_back
+    1.19 %  __strlen_avx2
+    1.14 %  getPyThread
+    1.08 %  ProtoObject::compare
+   ```
+
+   The real targets to close the 2.55× gap are the **per-bytecode
+   interpreter costs** (the dispatch loop body, getAttribute path,
+   TLS lookups, residual diagEnabled PLT stubs in release builds),
+   plus collapsing remaining `__tls_get_addr` calls in the hot path.
+   Inline SmallInteger arithmetic (Tier 2) is the largest single
+   expected win because both arms of the inner loop —
+   `s += i` and `i += 1` — go through `ProtoObject::add`'s trampoline
+   today.
 
 7. **GC scaling under N threads.**  STW pause + per-thread free-list
    refills both contend on `globalMutex`.  When 4-8 threads all run
