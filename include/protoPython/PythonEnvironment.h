@@ -254,7 +254,17 @@ public:
     const proto::ProtoObject* getUnionTypeProto() const { return unionTypeProto; }
     void setUnionTypeProto(const proto::ProtoObject* p) { unionTypeProto = p; }
 
-    const proto::ProtoObject* getAttribute(proto::ProtoContext* ctx, const proto::ProtoObject* obj, const proto::ProtoString* name, bool raiseError = true);
+    // When `outIsUnboundFunc` is non-null, this becomes a LOAD_METHOD-style
+    // lookup: for plain Python functions found on a class (not on instance
+    // dict, not a property/classmethod/etc.), binding is deferred to the
+    // caller and `*outIsUnboundFunc` is set to true.  In that case the
+    // caller should invoke the result as `result(obj, *args)`.  In all
+    // other cases `*outIsUnboundFunc` is left/set to false and the
+    // returned value is bound (or simply the resolved attribute) ready
+    // to call as `result(*args)`.  This avoids `py_function_get`'s ~10-
+    // cell bound-method object on the LOAD_METHOD/CALL hot path, where
+    // the bound method is created and then immediately consumed.
+    const proto::ProtoObject* getAttribute(proto::ProtoContext* ctx, const proto::ProtoObject* obj, const proto::ProtoString* name, bool raiseError = true, bool* outIsUnboundFunc = nullptr);
     static const proto::ProtoObject* py_function_get(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs);
     static const proto::ProtoObject* py_method_call(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs);
     static const proto::ProtoObject* py_method_repr(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs);

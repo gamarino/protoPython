@@ -12236,7 +12236,8 @@ const proto::ProtoObject* PythonEnvironment::getType(proto::ProtoContext* ctx, c
     return res;
 }
 
-const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* ctx, const proto::ProtoObject* obj, const proto::ProtoString* name, bool raiseError) {
+const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* ctx, const proto::ProtoObject* obj, const proto::ProtoString* name, bool raiseError, bool* outIsUnboundFunc) {
+    if (outIsUnboundFunc) *outIsUnboundFunc = false;
     if (!obj || !name) return nullptr;
 
     // nameStr is computed lazily — only when a fallback path or debug logging requires it.
@@ -12736,6 +12737,28 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
             if (!codeStr) codeStr = PythonEnvironment::getInternedString(ctx, "__code__");
             getmIsPyFunc = codeStr && (getM->hasOwnAttribute(ctx, codeStr) == PROTO_TRUE ||
                                        getM->hasAttribute(ctx, codeStr) == PROTO_TRUE);
+        }
+
+        // LOAD_METHOD-style early return: when the caller can handle
+        // self-prepending (CALL with [Method, Self, Arg1...] layout) and
+        // the value is a plain Python function on a class, skip binding
+        // entirely.  Binding via py_function_get currently allocates a
+        // ~10-cell bound-method object that is immediately consumed by
+        // the caller's CALL — pure waste.  Properties, classmethod,
+        // staticmethod and other real descriptors are NOT plain Python
+        // functions (val itself has no __code__), so they fall through
+        // to the regular descriptor protocol below.
+        if (outIsUnboundFunc && getmIsNative && !isInstanceDict && !isClass && val && val != PROTO_NONE) {
+            const proto::ProtoString* codeStr = this->getCodeString();
+            if (!codeStr) codeStr = PythonEnvironment::getInternedString(ctx, "__code__");
+            if (codeStr && val->hasOwnAttribute(ctx, codeStr) == PROTO_TRUE) {
+                const proto::ProtoObject* objClassEarly = this->getType(ctx, obj);
+                if (!this->modulePrototype ||
+                    (obj != this->modulePrototype && objClassEarly != this->modulePrototype)) {
+                    *outIsUnboundFunc = true;
+                    return val;
+                }
+            }
         }
 
         if ((getmIsNative || getmIsPyFunc) && !isInstanceDict) {

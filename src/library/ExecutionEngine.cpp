@@ -4483,7 +4483,14 @@ const proto::ProtoObject* executeBytecodeRange(
 
                     // Slow path: full Python attribute protocol (descriptors, MRO, __getattr__).
                     // Use raiseError=false so we can try __getattr__ before raising AttributeError.
-                    val = env ? env->getAttribute(ctx, obj, attrName, false) : obj->getAttribute(ctx, attrName);
+                    // When pushNull is set (LOAD_METHOD), pass &isUnboundFunc so that plain
+                    // Python functions on a class are returned raw — the CALL handler will
+                    // prepend self via its [Method, Self, Arg1...] layout, avoiding the
+                    // ~10-cell bound method object that py_function_get would otherwise build.
+                    bool isUnboundFunc = false;
+                    val = env ? env->getAttribute(ctx, obj, attrName, false,
+                                                  pushNull ? &isUnboundFunc : nullptr)
+                              : obj->getAttribute(ctx, attrName);
                     if (!val && env && env->hasPendingException()) {
                         // A descriptor or __getattr__ already raised an exception — propagate it.
                         stack.pop_back();
@@ -4547,10 +4554,18 @@ const proto::ProtoObject* executeBytecodeRange(
                             bool isMethod = false;
                             const proto::ProtoObject* method = nullptr;
                             const proto::ProtoObject* selfObj = obj;
-                            
+
                             const proto::ProtoObject* actualVal = val ? val : (env ? env->getNonePrototype() : PROTO_NONE);
 
-                            if (actualVal->isMethod(ctx) && actualVal->asMethodSelf(ctx) != nullptr) {
+                            if (isUnboundFunc) {
+                                // env->getAttribute deferred binding for a plain Python
+                                // function on a class.  Push [function, instance] directly
+                                // so OP_CALL_FUNCTION's [Method, Self, Arg1...] branch
+                                // prepends self at call time — no bound-method object is
+                                // ever materialised.
+                                stack.back() = actualVal;
+                                stack.push_back(obj);
+                            } else if (actualVal->isMethod(ctx) && actualVal->asMethodSelf(ctx) != nullptr) {
                                 // It's a bound method from getAttribute/descriptor.
                                 // Push [NULL, bound_method] so invokeCallable uses
                                 // bound_method->asMethodSelf() as the correct self.
@@ -5051,11 +5066,16 @@ const proto::ProtoObject* executeBytecodeRange(
             const proto::ProtoObject* callable = nullptr;
             const proto::ProtoList* callArgs = nullptr;
 
-            // User-function fast path: [NULL, func, arg1...argN] — bypass ProtoList construction.
-            // Eliminates 2 cell allocations (newList + appendLast) per user-function call.
-            // Opt 4: detect user functions via getOwnAttributeDirect on fnMetaCacheString instead of
-            // hasOwnAttribute on codeString. Same cost, but avoids a redundant cache re-read inside
-            // runUserFunctionCallRaw since the cache pointer is already resolved here.
+            // User-function fast path: bypass ProtoList construction by passing the
+            // raw stack slice directly to runUserFunctionCallRaw.
+            //
+            // Two layouts are accepted:
+            //   [NULL, func, arg1..argN]  — plain function call, args = stack[firstArgIdx..].
+            //   [func, self, arg1..argN]  — LOAD_METHOD-decomposed call (the LOAD_METHOD/CALL
+            //                                hot path skips py_function_get's bound-method
+            //                                allocation entirely; here we pass [self, arg1..argN]
+            //                                as the raw slice, which lives contiguously on the
+            //                                stack at stack[firstArgIdx - 1 ..]).
             const proto::ProtoObject* result_fast = nullptr;
             bool usedFastPath = false;
             if ((isModern && X == nullptr) || !isModern) {
@@ -5067,6 +5087,23 @@ const proto::ProtoObject* executeBytecodeRange(
                         const proto::ProtoObject* const* rawArgSlice = stack.slots + firstArgIdx;
                         result_fast = runUserFunctionCallRaw(ctx, candidate, nullptr,
                                                               rawArgSlice, (unsigned long)arg);
+                        usedFastPath = true;
+                    }
+                }
+            } else if (isModern && X != nullptr) {
+                // [func=X, self=Y, arg1..argN] — LOAD_METHOD-decomposed.
+                const proto::ProtoObject* candidate = X;
+                if (candidate && env && env->getFnMetaCacheString()) {
+                    const proto::ProtoObject* cacheAttr =
+                        candidate->getOwnAttributeDirect(ctx, env->getFnMetaCacheString());
+                    if (cacheAttr && cacheAttr != PROTO_NONE) {
+                        // Stack contains [..., func, self, arg1, ..., argN].  The combined
+                        // slice [self, arg1, ..., argN] starts at firstArgIdx - 1 and has
+                        // length arg + 1 — pass it as the raw arg slice with self prepended
+                        // implicitly (no ProtoList allocation, no copy).
+                        const proto::ProtoObject* const* rawArgSlice = stack.slots + (firstArgIdx - 1);
+                        result_fast = runUserFunctionCallRaw(ctx, candidate, nullptr,
+                                                              rawArgSlice, (unsigned long)(arg + 1));
                         usedFastPath = true;
                     }
                 }
