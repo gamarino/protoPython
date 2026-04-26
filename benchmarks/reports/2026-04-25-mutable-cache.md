@@ -260,13 +260,66 @@ Each script reports its own min-of-5 timing using
 ┌────────────────────┬──────────────┬──────────────┬──────────┬──────────────────────────────┐
 │ Benchmark          │ protoPy (ms) │ CPython (ms) │ Ratio    │ Stresses                     │
 ├────────────────────┼──────────────┼──────────────┼──────────┼──────────────────────────────┤
-│ nqueens(8)         │       2204   │         4.9  │   449×   │ recursion + list[i] subscr   │
-│ sieve(10000)       │        933   │         1.0  │   933×   │ list mutate in tight loop    │
-│ richards_lite      │       1481   │         0.2  │  7404×   │ class instantiation, methods │
+│ nqueens(8)         │       1733   │         3.3  │   525×   │ recursion + list[i] subscr   │
+│ sieve(10000)       │        673   │         0.8  │   841×   │ list mutate in tight loop    │
+│ richards_lite      │       1083   │         0.2  │  5415×   │ class instantiation, methods │
 ├────────────────────┼──────────────┼──────────────┼──────────┼──────────────────────────────┤
-│ Geomean ratio      │              │              │ 1459×    │                              │
+│ Geomean ratio      │              │              │ 1337×    │                              │
 └────────────────────┴──────────────┴──────────────┴──────────┴──────────────────────────────┘
 ```
+
+> Update 2026-04-26: a reviewer asked why the protoCore attribute
+> cache wasn't visible in these numbers and suggested comparing
+> against protoJS, where the same protoCore reportedly delivers very
+> good performance.  Investigation revealed:
+>
+> 1. **The cache works.**  Profile of richards_lite shows
+>    `proto::ProtoObject::getAttribute` (the cached path inside
+>    protoCore) is only **1.5 %** of CPU.  The cache is doing its job.
+>
+> 2. **protoJS uses protoCore as a storage layer only** (its
+>    `ExecutionEngine.cpp` is 259 lines and contains zero
+>    `ContextScope` or `new ProtoContext` sites — execution is
+>    delegated to QuickJS).  protoPython, by contrast, implements its
+>    own bytecode dispatcher on top of protoCore (6 600 lines, 5
+>    sites of `ContextScope`) and pays a full ProtoContext lifecycle
+>    on every Python function call.  That is the architectural reason
+>    the same protoCore delivers very different performance for the
+>    two runtimes.
+>
+> 3. **The actual hot path in protoPython** turned out to be
+>    allocation pressure from `PythonEnvironment::getAttribute` — not
+>    the cache or the dispatcher itself.  Three sites were
+>    materialising fresh ProtoLists on every attribute access:
+>    - the MRO walks (sections 1.1 and 1.2 inside getAttribute)
+>      were calling `mroObj->asList(ctx)` to convert a `__mro__`
+>      tuple — fixed by iterating the tuple directly.
+>    - `getType()` was calling `obj->getParents(ctx)` and reading
+>      only `parents[0]` — fixed via a new public
+>      `proto::ProtoObject::getFirstParent(ctx)` helper that returns
+>      the first parent without allocating (and is mutable-aware,
+>      which `getPrototype()` is not).
+>    - the metaclass-MRO fallback was walking `meta->getParents(ctx)`
+>      in a loop — fixed by walking the parent chain via
+>      `getFirstParent()` directly.
+>
+> Result of the three fixes (this run vs the prior pyperformance
+> table above):
+> - nqueens(8)    2204 → **1733 ms**  (-21 %)
+> - sieve(10000)   933 →  **673 ms**  (-28 %)
+> - richards_lite 1481 → **1083 ms**  (-27 %)
+> - Geomean       1459× → **1337×**
+>
+> The largest *remaining* per-method-access cost in richards_lite is
+> the descriptor-protocol `__get__` invocation in
+> `PythonEnvironment::getAttribute` line ~12760, which allocates 2-3
+> fresh ProtoLists (`ctx->newList()->appendLast(instance)->appendLast(owner)`)
+> on every method binding.  Closing that needs either (a) a
+> bound-method cache at the protoPython level (mirroring the
+> AttributeCache pattern but caching the *post-descriptor-protocol*
+> result) or (b) a raw-args API that lets the C-level `__get__`
+> implementation receive instance/owner without going through a
+> ProtoList.
 
 Compare with the microbenchmark geomean of 5.06× — a 3-orders-of-magnitude
 divergence.  The microbenchmarks were faithfully measuring the

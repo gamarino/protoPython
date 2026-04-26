@@ -35,7 +35,7 @@
 | **Type System** | **Advanced** - Lists, Tuples, Sets, Dicts with native wrapping ✅ |
 | **C++ Interop** | **Full** - HPy and UMD support integrated ✅ |
 | **Compiler** | **Advanced** - Full C++ translation with collection support ✅ |
-| **Performance** | **Optimization in Progress** - V154 active: see Performance Benchmarks section. Microbenchmark geomean **5.06×** vs CPython 3.14 (favourable workloads — pure integer loops); pyperformance pure-Python subset geomean **1459×** (real-code workloads — list subscript, method dispatch, class instantiation). The 3-orders-of-magnitude gap between the two is the honest picture: tight integer paths are competitive after V154; the structural gap on real Python code remains and is the next focus. ⚙️ |
+| **Performance** | **Optimization in Progress** - V154 active: see Performance Benchmarks section. Microbenchmark geomean **5.18×** vs CPython 3.14 (favourable workloads — pure integer loops); pyperformance pure-Python subset geomean **1337×** (real-code workloads — list subscript, method dispatch, class instantiation). The 3-orders-of-magnitude gap between the two is the honest picture: tight integer paths are competitive after V154; the structural gap on real Python code remains and is the next focus. ⚙️ |
 | **CPython Conformance** | **100%** - 17/17 test categories passing (Essential, Important, Necessary) ✅ |
 
 - ✅ **Generator Delegation**: Full support for `yield` and `yield from` with efficient state persistence.
@@ -70,11 +70,11 @@ the actual per-bytecode cost.
 ┌────────────────────┬──────────────┬──────────────┬──────────┬──────────────────────────────┐
 │ Benchmark          │ protoPy (ms) │ CPython (ms) │ Ratio    │ Stresses                     │
 ├────────────────────┼──────────────┼──────────────┼──────────┼──────────────────────────────┤
-│ nqueens(8)         │       2204   │         4.9  │   449×   │ recursion + list[i] subscr   │
-│ sieve(10000)       │        933   │         1.0  │   933×   │ list mutate in tight loop    │
-│ richards_lite      │       1481   │         0.2  │  7404×   │ class instantiation, methods │
+│ nqueens(8)         │       1733   │         3.3  │   525×   │ recursion + list[i] subscr   │
+│ sieve(10000)       │        673   │         0.8  │   841×   │ list mutate in tight loop    │
+│ richards_lite      │       1083   │         0.2  │  5415×   │ class instantiation, methods │
 ├────────────────────┼──────────────┼──────────────┼──────────┼──────────────────────────────┤
-│ Geomean ratio      │              │              │ 1459×    │                              │
+│ Geomean ratio      │              │              │ 1337×    │                              │
 └────────────────────┴──────────────┴──────────────┴──────────┴──────────────────────────────┘
 ```
 
