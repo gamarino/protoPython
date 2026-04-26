@@ -7913,6 +7913,7 @@ static const proto::ProtoObject* py_dict_popitem(
 /** thread_local member initialization */
 thread_local PythonEnvironment* PythonEnvironment::s_threadEnv = nullptr;
 thread_local proto::ProtoContext* PythonEnvironment::s_threadContext = nullptr;
+thread_local bool PythonEnvironment::s_pendingExcFlag = false;
 thread_local int PythonEnvironment::s_recursionDepth = 0;
 thread_local bool PythonEnvironment::s_inRecursionError = false;
 thread_local const proto::ProtoObject* PythonEnvironment::s_currentFrame = nullptr;
@@ -8012,6 +8013,7 @@ void PythonEnvironment::setPendingException(const proto::ProtoObject* exc) {
     if (!s_threadContext) return;
     const proto::ProtoString* key = s_threadEnv ? s_threadEnv->pendingExcString : proto::ProtoString::fromUTF8(s_threadContext, "_pending_exc");
     s_currentPyThread = const_cast<proto::ProtoObject*>(getPyThread(s_threadContext))->setAttribute(s_threadContext, key, exc ? exc : PROTO_NONE);
+    s_pendingExcFlag = (exc != nullptr && exc != PROTO_NONE);
     if (get_env_diag()) {
     }
 }
@@ -8025,18 +8027,13 @@ const proto::ProtoObject* PythonEnvironment::takePendingException() {
         fflush(stderr);
     }
     s_currentPyThread = const_cast<proto::ProtoObject*>(getPyThread(s_threadContext))->setAttribute(s_threadContext, key, PROTO_NONE);
+    s_pendingExcFlag = false;
     return e;
 }
 
-bool PythonEnvironment::hasPendingException() const {
-    if (!s_threadContext) return false;
-    const proto::ProtoString* key = pendingExcString ? pendingExcString : proto::ProtoString::fromUTF8(s_threadContext, "_pending_exc");
-    const proto::ProtoObject* e = getPyThread(s_threadContext)->getAttribute(s_threadContext, key);
-    bool r = e && e != PROTO_NONE;
-    if (get_env_diag()) {
-    }
-    return r;
-}
+// hasPendingException() is now `inline` in the header — it does a single
+// TLS-bool read instead of a getAttribute walk.  See PythonEnvironment.h
+// for the rationale.
 
 const proto::ProtoObject* PythonEnvironment::peekPendingException() const {
     if (!s_threadContext) return nullptr;
@@ -8052,6 +8049,7 @@ void PythonEnvironment::clearPendingException() {
         fflush(stderr);
     }
     s_currentPyThread = const_cast<proto::ProtoObject*>(getPyThread(s_threadContext))->setAttribute(s_threadContext, key, PROTO_NONE);
+    s_pendingExcFlag = false;
 }
 
 void PythonEnvironment::pushActiveException(const proto::ProtoObject* exc) {

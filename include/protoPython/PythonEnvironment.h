@@ -631,11 +631,32 @@ public:
     static thread_local const proto::ProtoObject* s_currentFrame;
     static thread_local const proto::ProtoObject* s_currentGlobals;
     static thread_local const proto::ProtoObject* s_currentCodeObject;
+    /**
+     * @brief Fast-path mirror of the per-thread pending-exception slot.
+     *
+     * The authoritative storage is the `_pending_exc` attribute on the
+     * per-thread Python thread object (see `setPendingException` /
+     * `peekPendingException`).  Every call to `hasPendingException()` from
+     * the bytecode dispatcher would otherwise pay a full `getAttribute`
+     * resolution (cache check, mutable-snapshot resolution, attribute walk)
+     * on every iteration that needs an exception check — 52 such call sites
+     * inside `executeBytecodeRange`, called millions of times on
+     * call_recursion (≈ 4 % of total CPU per profile).  This bool mirrors
+     * the slot's set/clear state so the hot check collapses to a single TLS
+     * bool read; `peekPendingException` / `takePendingException` still walk
+     * the authoritative attribute path because they need the actual value.
+     */
+    static thread_local bool s_pendingExcFlag;
 
     /**
      * @brief Returns true if there is a pending exception.
+     *
+     * Inline fast path: a single TLS bool read.  Defined in the header so
+     * the hot dispatcher inlines it instead of paying a cross-DSO call.
      */
-    bool hasPendingException() const;
+    bool hasPendingException() const {
+        return s_threadContext != nullptr && s_pendingExcFlag;
+    }
 
     /**
      * @brief Returns the pending exception without clearing it.

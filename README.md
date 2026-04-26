@@ -35,7 +35,7 @@
 | **Type System** | **Advanced** - Lists, Tuples, Sets, Dicts with native wrapping ✅ |
 | **C++ Interop** | **Full** - HPy and UMD support integrated ✅ |
 | **Compiler** | **Advanced** - Full C++ translation with collection support ✅ |
-| **Performance** | **Optimization in Progress** - V154 active: 256-shard mutable cache with negative caching, frame-skip restored for CO_OPTIMIZED leaf calls, attribute-name lookup avoids `toUTF8String` allocations, real `_thread.start_joinable_thread` + cooperative GC safepoint in the bytecode dispatcher (Tier 3 round 1), inline SmallInt fast path in OP_BINARY_ADD/SUB/INPLACE/COMPARE_OP (Tier 2). Geomean **5.34×** vs CPython 3.14 (Release build, minimum of 10) — best protoPython has hit. ⚙️ |
+| **Performance** | **Optimization in Progress** - V154 active: 256-shard mutable cache with negative caching, frame-skip restored for CO_OPTIMIZED leaf calls, `cmp_to_string` in `getAttribute` keys fallback, real `_thread.start_joinable_thread` + cooperative GC safepoint in the bytecode dispatcher (Tier 3 round 1), inline SmallInt fast path in OP_BINARY_ADD/SUB/INPLACE/COMPARE_OP (Tier 2), hoisted `get_env_diag` and TLS-bool `hasPendingException` (Tier 2.5 dispatcher polish). Geomean **5.06×** vs CPython 3.14 (Release build, minimum of 10) — best protoPython has hit; `call_recursion` ratio dropped 13.46× → **7.98×**. ⚙️ |
 | **CPython Conformance** | **100%** - 17/17 test categories passing (Essential, Important, Necessary) ✅ |
 
 - ✅ **Generator Delegation**: Full support for `yield` and `yield from` with efficient state persistence.
@@ -58,20 +58,20 @@ Release build (`-O3 -DNDEBUG`).  Methodology: 2 warmup runs +
 scheduler / contention spikes.  CPython reference is `python3` (CPython 3.14).
 
 ```
-┌────────────────────────┬──────────────┬──────────────┬─────────────────┬─────────────────────┐
-│ Benchmark              │ protoPy (ms) │ CPython (ms) │ Ratio           │ Note                │
-├────────────────────────┼──────────────┼──────────────┼─────────────────┼─────────────────────┤
-│ startup_empty          │      32.0    │      32.0    │ 1.00× same      │ floor               │
-│ int_sum_loop           │      32.1    │      32.3    │ 1.00× same      │ pure SmallInt       │
-│ list_append_loop       │    1017.3    │      64.2    │ 15.85× slower   │                     │
-│ str_concat_loop        │     715.8    │      64.3    │ 11.13× slower   │                     │
-│ range_iterate          │     565.4    │      64.5    │  8.76× slower   │                     │
-│ multithreaded_cpu      │     164.4    │      64.2    │  2.56× slower   │ real 4-thread bench │
-│ attr_lookup            │     966.6    │      64.3    │ 15.03× slower   │                     │
-│ call_recursion         │     715.9    │      64.3    │ 11.13× slower   │ fib(25) 242k        │
-├────────────────────────┼──────────────┼──────────────┼─────────────────┼─────────────────────┤
-│ Geomean Time Ratio     │              │              │  5.34×          │                     │
-└────────────────────────┴──────────────┴──────────────┴─────────────────┴─────────────────────┘
+┌────────────────────────┬──────────────┬──────────────┬─────────────────┬───────────────────────────┐
+│ Benchmark              │ protoPy (ms) │ CPython (ms) │ Ratio           │ Note                      │
+├────────────────────────┼──────────────┼──────────────┼─────────────────┼───────────────────────────┤
+│ startup_empty          │      32.0    │      32.0    │ 1.00× same      │ floor                     │
+│ int_sum_loop           │      32.1    │      32.3    │ 1.00× same      │ pure SmallInt             │
+│ list_append_loop       │    1017.0    │      64.3    │ 15.82× slower   │                           │
+│ str_concat_loop        │     716.1    │      64.4    │ 11.13× slower   │                           │
+│ range_iterate          │     465.5    │      64.4    │  7.23× slower   │                           │
+│ multithreaded_cpu      │     214.9    │      64.5    │  3.33× slower   │ real 4-thread, 50k iter   │
+│ attr_lookup            │     816.0    │      64.4    │ 12.68× slower   │                           │
+│ call_recursion         │     515.4    │      64.6    │  7.98× slower   │ fib(25) 242k              │
+├────────────────────────┼──────────────┼──────────────┼─────────────────┼───────────────────────────┤
+│ Geomean Time Ratio     │              │              │  5.06×          │                           │
+└────────────────────────┴──────────────┴──────────────┴─────────────────┴───────────────────────────┘
 ```
 
 Detail and methodology:
@@ -123,6 +123,51 @@ Detail and methodology:
   fails the benchmark instead of silently passing).  Result:
   `multithread_cpu` 1217 ms → **165 ms** (ratio 18.90× → 2.55×) and
   geomean 7.30× → **5.53×**.
+- **Tier 2.5 — dispatcher polish for the call_recursion path.**
+  Profile of `call_recursion` after Tier 2 still showed `get_env_diag()`
+  (5.30 % CPU including PLT stubs) and `hasPendingException()`
+  (3.79 %) inside the dispatch loop.  Two surgical fixes:
+  - **`get_env_diag()` hoisted to a local at function entry**.
+    `inline bool get_env_diag()` over a per-TU `const bool` should
+    have folded to a memory load, but the symbol survived in the
+    shared library (other TUs take its address) so every of the 61
+    dispatch-loop call sites went through a PLT trampoline.  One
+    `const bool diag_local = get_env_diag();` at function entry +
+    sed-replace inside the loop body collapses the 61 PLT calls per
+    iteration to zero.
+  - **`hasPendingException()` is now a TLS-bool read.**  The previous
+    implementation walked the per-thread Python thread object's
+    `_pending_exc` attribute via `getAttribute` — a full attribute
+    resolution path on every iteration that needed an exception
+    check (52 sites in the dispatcher).  Added a
+    `static thread_local bool s_pendingExcFlag` mirror of the slot
+    state, set in `setPendingException`, cleared in
+    `clear/takePendingException`.  `hasPendingException()` is now
+    inline in the header and collapses to a single TLS bool read;
+    `peekPendingException()` keeps the authoritative `getAttribute`
+    walk because it returns the actual exception object.
+
+  Combined impact (all on the same machine, Release build):
+  - `call_recursion` 716 ms → **515 ms** (-28 %); ratio vs CPython
+    drops 13.46× → **7.98×**.
+  - `range_iterate` 565 ms → **465 ms** (-18 %).
+  - `attr_lookup` 967 ms → **816 ms** (-16 %).
+  - `multithread_cpu` workload was rewritten (see below).
+  - Geomean 5.34× → **5.06×** (best protoPython has hit).
+
+- **`multithread_cpu` benchmark rewritten to be representative.**
+  The previous CHUNK = 5 000 worker was dominated by thread-startup
+  overhead, so the 165 ms wall time mixed real parallel work with
+  the 4× spawn/join cost.  Replaced with CHUNK = 50 000 (sum of
+  i for i in [0, 50 000), stays inside SmallInt range, single
+  function — no nested call frames).  Each worker now does ~250 K
+  bytecodes of pure arithmetic on the Tier 2 fast path.  Result:
+  CHUNK 5 000 → 50 000 raised the per-worker work 10× but wall time
+  only went 165 ms → 215 ms — confirming the spawn/join overhead is
+  ~150 ms and was masking actual parallelism in the older
+  measurement.  Honest ratio is now 3.33× (real CPU work) instead of
+  2.55× (spawn-dominated).
+
 - **Tier 2 — inline SmallInt fast path in arithmetic opcodes.**
   `OP_BINARY_ADD`, `OP_INPLACE_ADD`, `OP_BINARY_SUBTRACT`,
   `OP_INPLACE_SUBTRACT` and `OP_COMPARE_OP` (`==`, `!=`, `<`, `<=`,

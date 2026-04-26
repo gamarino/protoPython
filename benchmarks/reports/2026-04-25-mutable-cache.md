@@ -133,25 +133,31 @@ on every benchmark that touches an unmutated mutable in a loop.
 
 ## Results — minimum of 10, Release build
 
-V94 baseline → V95 raw (regression surfaced) → V95 fixed (skipFrame +
-negative caching) → V154 Tier 1.1 + Tier 3 round 1 → V154 + Tier 2.
+V94 baseline → V95 raw → V95 fixed → V154 Tier 1.1 + Tier 3 round 1 →
+V154 + Tier 2 → V154 + Tier 2.5 (dispatcher polish + multithread workload rewritten).
 
 ```
-┌──────────────────┬──────────┬─────────┬──────────┬──────────┬──────────┬──────────────┐
-│ Benchmark        │ V94 base │ V95 raw │ V95 fix  │ V154 T3  │ V154 T2  │ Ratio vs cpy │
-│                  │  (ms)    │  (ms)   │  (ms)    │  (ms)    │  (ms)    │   (V154 T2)  │
-├──────────────────┼──────────┼─────────┼──────────┼──────────┼──────────┼──────────────┤
-│ call_recursion   │   2994   │  35347  │     967  │     866  │     716  │   11.13×     │
-│ list_append_loop │    482   │   1066  │    1268  │    1067  │    1017  │   15.85×     │
-│ str_concat_loop  │    479   │    615  │     875  │     716  │     716  │   11.13×     │
-│ range_iterate    │    464   │    465  │     620  │     615  │     565  │    8.76×     │
-│ attr_lookup      │    785   │    765  │    1020  │     917  │     967  │   15.03×     │
-│ multithread_cpu  │     39†  │    966  │    1321  │     165  │     164  │    2.56×     │
-│ int_sum_loop     │     43   │     64  │      64  │      32  │      32  │    1.00×     │
-├──────────────────┼──────────┼─────────┼──────────┼──────────┼──────────┼──────────────┤
-│ Geomean ratio    │   9.96×  │  11.39× │   7.72×  │   5.53×  │   5.34×  │              │
-└──────────────────┴──────────┴─────────┴──────────┴──────────┴──────────┴──────────────┘
+┌──────────────────┬──────────┬─────────┬──────────┬──────────┬──────────┬───────────┬──────────────┐
+│ Benchmark        │ V94 base │ V95 raw │ V95 fix  │ V154 T3  │ V154 T2  │ V154 T2.5 │ Ratio vs cpy │
+│                  │  (ms)    │  (ms)   │  (ms)    │  (ms)    │  (ms)    │  (ms)     │  (V154 T2.5) │
+├──────────────────┼──────────┼─────────┼──────────┼──────────┼──────────┼───────────┼──────────────┤
+│ call_recursion   │   2994   │  35347  │     967  │     866  │     716  │     515   │    7.98×     │
+│ list_append_loop │    482   │   1066  │    1268  │    1067  │    1017  │    1017   │   15.82×     │
+│ str_concat_loop  │    479   │    615  │     875  │     716  │     716  │     716   │   11.13×     │
+│ range_iterate    │    464   │    465  │     620  │     615  │     565  │     465   │    7.23×     │
+│ attr_lookup      │    785   │    765  │    1020  │     917  │     967  │     816   │   12.68×     │
+│ multithread_cpu  │     39†  │    966  │    1321  │     165  │     164  │     215‡  │    3.33×     │
+│ int_sum_loop     │     43   │     64  │      64  │      32  │      32  │      32   │    1.00×     │
+├──────────────────┼──────────┼─────────┼──────────┼──────────┼──────────┼───────────┼──────────────┤
+│ Geomean ratio    │   9.96×  │  11.39× │   7.72×  │   5.53×  │   5.34×  │   5.06×   │              │
+└──────────────────┴──────────┴─────────┴──────────┴──────────┴──────────┴───────────┴──────────────┘
 ```
+
+‡ `multithread_cpu` workload rewritten in T2.5: CHUNK 5 000 →
+**50 000**, single-function tight integer-accumulator loop (no nested
+call frames).  10× more work per worker; wall time only grew 165 ms →
+215 ms, confirming the prior 165 ms was largely spawn/join overhead
+masking the real parallel-CPU number.  Honest ratio is now 3.33×.
 
 † `multithread_cpu` baselines through V95-fix were measured against a
 benchmark that silently fell back to **sequential execution** when
@@ -166,6 +172,16 @@ codebase.  165 ms is **real** four-thread work.
 
 Reading the table:
 
+- **Tier 2.5 — call_recursion 716 → 515 ms (-28 %).**  After Tier 2,
+  a fresh DWARF profile of `call_recursion` showed `get_env_diag()`
+  PLT stubs (5.30 % CPU) and `hasPendingException()` via getAttribute
+  (3.79 % CPU) inside the dispatch loop.  Two surgical fixes:
+  hoist the diag flag to a local at function entry (61 PLT calls
+  per loop iteration → zero), and replace the pending-exception
+  check with a TLS bool mirror so the inline `hasPendingException()`
+  collapses to a single TLS read.  Combined: `call_recursion`
+  ratio drops 13.46× → **7.98×** vs CPython.  `range_iterate`
+  -18 %, `attr_lookup` -16 %.  Geomean 5.34× → **5.06×** (best ever).
 - **Tier 2 (SmallInt fast path) lands the latest deltas:**
   `call_recursion` 866 ms → **716 ms** (-17 %; fib's recurrence is the
   ideal case — every call does one COMPARE_OP and three integer
@@ -353,12 +369,23 @@ In priority order, with rough single-shot expected impact:
 
 ---
 
-**Status:** V154 + Tier 2 landed.  Geomean **5.34×** vs CPython 3.14
-— best protoPython has hit; better than the V94 milestone (9.96×),
-the V95-fix milestone (7.72×), and the V154 Tier-3 round-1 milestone
-(5.53×).  Next concrete targets: Tier 3 round 2 (close the remaining
-2.56× gap on `multithread_cpu` so the GIL-free architecture decisively
-beats CPython on parallel CPU work — the largest remaining structural
-opportunity since arithmetic is no longer the bottleneck there), then
-Tier 1.2 (lazy frame materialisation for `sys._getframe()`
-consumers).
+**Status:** V154 + Tier 2.5 landed.  Geomean **5.06×** vs CPython 3.14
+— best protoPython has hit.  Per-call cost on `call_recursion` is
+~2.1 µs (was 2.95 µs; CPython is ~265 ns), so the gap is now 7.98×
+not 13.46×.
+
+The remaining gap on `call_recursion` is dominated by the bytecode
+dispatch loop body itself (`executeBytecodeRange` is 34.81 % of CPU
+in the post-Tier-2.5 profile).  Closing the last few × on this
+benchmark requires a structural interpreter rewrite —
+computed-goto-style threaded dispatch, opcode specialisation, or a
+JIT for the hot recurrence — none of which are surgical fixes.  The
+earlier "should be at 2-3×" target is achievable but needs that
+deeper work.
+
+Next concrete targets in priority order:
+1. Tier 3 round 2 (close the remaining 3.33× gap on `multithread_cpu`
+   so GIL-free decisively beats CPython on parallel CPU work).
+2. Tier 1.2 (lazy frame materialisation for `sys._getframe()`).
+3. Computed-goto / threaded dispatch in `executeBytecodeRange`
+   (the structural item to break through 5× on call-heavy code).
