@@ -9150,6 +9150,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     keysString = getInternedString(rootContext_, "__keys__");
     isSuperProxyString = getInternedString(rootContext_, "__is_super_proxy__");
     getattrDunderString = getInternedString(rootContext_, "__getattr__");
+    getattributeDunderString = getInternedString(rootContext_, "__getattribute__");
     startString = getInternedString(rootContext_, "start");
     stopString = getInternedString(rootContext_, "stop");
     stepString = getInternedString(rootContext_, "step");
@@ -12323,8 +12324,14 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
     // class doesn't override it (object.__getattribute__ is the default
     // and we don't recurse into it).  getAttrDepth bounds recursion.
     if (!isClass && objClass && objClass != PROTO_NONE && getAttrDepth <= 1) {
-        const proto::ProtoString* gaS =
-            PythonEnvironment::getInternedString(ctx, "__getattribute__");
+        // Cached symbol — avoids the per-call mutex + std::map lookup that
+        // would otherwise fire on every attribute access.  Profiling
+        // attributed ~5 % of nqueens CPU to the std::map<std::string, ...>
+        // walk inside getInternedString, all triggered from this single
+        // unconditional site.
+        const proto::ProtoString* gaS = getattributeDunderString
+            ? getattributeDunderString
+            : PythonEnvironment::getInternedString(ctx, "__getattribute__");
         // Walk objClass MRO looking for a non-default __getattribute__.
         const proto::ProtoObject* mroAttr = objClass->getAttribute(ctx, mroString);
         const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(ctx) : nullptr;

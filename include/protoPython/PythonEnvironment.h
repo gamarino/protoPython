@@ -433,6 +433,7 @@ public:
     const proto::ProtoString* getKeysString() const { return keysString; }
     const proto::ProtoString* getIsSuperProxyString() const { return isSuperProxyString; }
     const proto::ProtoString* getGetattrDunderString() const { return getattrDunderString; }
+    const proto::ProtoString* getGetattributeDunderString() const { return getattributeDunderString; }
     const proto::ProtoString* getInitString() const { return initString; }
 
     const proto::ProtoString* getStartString() const { return startString; }
@@ -1034,6 +1035,7 @@ private:
     const proto::ProtoString* keysString{nullptr};
     const proto::ProtoString* isSuperProxyString{nullptr};
     const proto::ProtoString* getattrDunderString{nullptr};
+    const proto::ProtoString* getattributeDunderString{nullptr};
     const proto::ProtoString* matMulString{nullptr};
     const proto::ProtoString* imatmulString{nullptr};
     const proto::ProtoString* rmatmulString{nullptr};
