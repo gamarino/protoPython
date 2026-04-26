@@ -12432,7 +12432,7 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
     // 1. Get the raw value from the primitive object hierarchy
     const proto::ProtoObject* val = obj->getAttribute(ctx, name);
     bool isExplicitNone = (val == PROTO_NONE && obj->hasAttribute(ctx, name) == PROTO_TRUE);
-    if (std::getenv("PROTO_DICT_DIAG2") && dictString && name == dictString && !isClass) {
+    if (get_env_dict2_diag() && dictString && name == dictString && !isClass) {
         std::string objNameStr = "?";
         const proto::ProtoObject* nn = obj->proto::ProtoObject::getAttribute(ctx, nameString ? nameString : PythonEnvironment::getInternedString(ctx, "__name__"));
         if (nn && nn->isString(ctx)) nn->asString(ctx)->toUTF8String(ctx, objNameStr);
@@ -12441,7 +12441,7 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
                 (obj->hasOwnAttribute(ctx, name) == PROTO_TRUE) ? 1 : 0);
         fflush(stderr);
     }
-    if (std::getenv("PROTO_META_DIAG")) {
+    if (get_env_meta_diag()) {
         std::string ns = getNameStr();
         if (ns == "_convert_") {
             bool ownAttr = (obj->hasOwnAttribute(ctx, name) == PROTO_TRUE);
@@ -12690,7 +12690,7 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
         }
     }
 
-    if (std::getenv("PROTO_META_DIAG") && getNameStr() == "_convert_") {
+    if (get_env_meta_diag() && getNameStr() == "_convert_") {
         fprintf(stderr, "DEBUG_META_AFTER_LOOKUP: foundOnMeta=%d foundOnClassOrMro=%d val=%p\n",
                 foundOnMeta?1:0, foundOnClassOrMro?1:0, (void*)val);
         fflush(stderr);
@@ -12704,7 +12704,7 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
         const proto::ProtoObject* valType = val ? this->getType(ctx, val) : nullptr;
         // Use RAW lookup for __get__ to avoid infinite recursion
         const proto::ProtoObject* getM = (valType && dunderGet) ? valType->proto::ProtoObject::getAttribute(ctx, dunderGet) : nullptr;
-        if (std::getenv("PROTO_META_DIAG") && getNameStr() == "_convert_") {
+        if (get_env_meta_diag() && getNameStr() == "_convert_") {
             fprintf(stderr, "DEBUG_META_1.5: val=%p valType=%p getM=%p isMethod=%d foundOnMeta=%d isClass=%d isInstanceDict=%d\n",
                     (void*)val, (void*)valType, (void*)getM,
                     (getM && getM->isMethod(ctx)) ? 1 : 0,
@@ -12824,7 +12824,7 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
     }
 
     if (!val || (!isExplicitNone && val == PROTO_NONE)) {
-        if (std::getenv("PROTO_ATTR_DIAG") && dictString && name == dictString) {
+        if (get_env_attr_diag() && dictString && name == dictString) {
             std::string objNameDiag = "?";
             const proto::ProtoObject* nn2 = obj->proto::ProtoObject::getAttribute(ctx, nameString ? nameString : PythonEnvironment::getInternedString(ctx, "__name__"));
             if (nn2 && nn2->isString(ctx)) nn2->asString(ctx)->toUTF8String(ctx, objNameDiag);
