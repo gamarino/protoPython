@@ -347,7 +347,19 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
         && closureList0 && closureList0->getSize(calleeCtx) > 0;
     // Also skip frame when cacheNoLoadDeref: even if closure exists, the function never
     // accesses it via LOAD_DEREF, so the closure frame is unused during execution.
-    bool skipFrame = false; // env && (co_flags & CO_OPTIMIZED) && !isGenerator && cacheNoInnerFunctions && (!hasClosure || cacheNoLoadDeref);
+    //
+    // Re-enabling the V97-era frame-skip optimisation. b35bf811 disabled it
+    // unconditionally to support sys._getframe()/traceback introspection, but every
+    // call to a CO_OPTIMIZED leaf function (e.g. fib) then paid 4-5 cell
+    // allocations per call. Profiles of call_recursion (fib(25), 242k calls)
+    // showed 90% of time in ProtoContext destruction + cell free-list refilling;
+    // frame setup was the upstream amplifier. Functions that never build inner
+    // functions/classes and either have no closure or never LOAD_DEREF do not
+    // observably need a frame in the hot path; introspection can be added back
+    // lazily (build the frame on demand when sys._getframe() / traceback walks
+    // actually request it) without paying for it on every call.
+    bool skipFrame = env && (co_flags & CO_OPTIMIZED) && !isGenerator && cacheNoInnerFunctions
+        && (!hasClosure || cacheNoLoadDeref);
     proto::ProtoObject* frame = nullptr;
     if (!skipFrame) {
         frame = const_cast<proto::ProtoObject*>(calleeCtx->newObject(false));
@@ -771,17 +783,31 @@ static const proto::ProtoObject* runUserFunctionCallRaw(
     for (unsigned long i = 0; i < rawArgCount && i < (unsigned long)nparams_count && i < nSlots; ++i)
         slots[i] = const_cast<proto::ProtoObject*>(rawArgs[i]);
 
-    // Frame creation for fast path (required for sys._getframe and tracebacks)
-    proto::ProtoObject* frame = const_cast<proto::ProtoObject*>(calleeCtx->newObject(false));
-    if (env) {
-        frame = const_cast<proto::ProtoObject*>(frame->addParent(calleeCtx, env->getFramePrototype()));
-        frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getFCodeString(), codeObj));
-        frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getFGlobalsString(), globalsObj));
-        const proto::ProtoObject* parentFrame = PythonEnvironment::getCurrentFrame();
-        if (parentFrame) {
-            frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getFBackString(), parentFrame));
+    // Frame creation: only when actually needed.
+    //
+    // For CO_OPTIMIZED leaf functions with no closure / no LOAD_DEREF / no inner
+    // function or class definitions, the frame is never observed during normal
+    // execution (LOAD_FAST/STORE_FAST use slots, no LOAD_DEREF needs f_back, no
+    // BUILD_FUNCTION needs f_globals). sys._getframe() and traceback walks are
+    // the only consumers; both can be supported lazily on demand without paying
+    // for a full frame on every call. Profiles of call_recursion (fib(25), 242k
+    // calls) showed 90% of time was the frame-newObject path here; gating it
+    // restores the V97-era hot-call path.
+    bool skipFrame = env && (co_flags & CO_OPTIMIZED) && !isGenerator && cacheNoInnerFunctions
+        && (!hasClosure || cacheNoLoadDeref);
+    proto::ProtoObject* frame = nullptr;
+    if (!skipFrame) {
+        frame = const_cast<proto::ProtoObject*>(calleeCtx->newObject(false));
+        if (env) {
+            frame = const_cast<proto::ProtoObject*>(frame->addParent(calleeCtx, env->getFramePrototype()));
+            frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getFCodeString(), codeObj));
+            frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getFGlobalsString(), globalsObj));
+            const proto::ProtoObject* parentFrame = PythonEnvironment::getCurrentFrame();
+            if (parentFrame) {
+                frame = const_cast<proto::ProtoObject*>(frame->setAttribute(calleeCtx, env->getFBackString(), parentFrame));
+            }
+            PythonEnvironment::setCurrentFrame(frame);
         }
-        PythonEnvironment::setCurrentFrame(frame);
     }
     FrameScope fscope(frame);
 

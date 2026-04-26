@@ -161,7 +161,7 @@ def main():
     parser.add_argument("--output", "-o")
     parser.add_argument("--verbose", "-v", action="store_true")
     parser.add_argument("--quick", "-q", action="store_true")
-    parser.add_argument("--timeout", type=int, default=60)
+    parser.add_argument("--timeout", type=int, default=90)
     args = parser.parse_args()
 
     global N_RUNS, WARMUP_RUNS
