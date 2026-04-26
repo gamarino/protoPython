@@ -240,6 +240,59 @@ fast-path lookup table.  Together `toUTF8String` + `RopeCharacterIterator::next`
 benchmark — work that should not happen at all if the lookup is keyed
 on the interned symbol pointer.
 
+## Pyperformance pure-Python subset (the realistic baseline)
+
+> Added 2026-04-26 in response to the observation that the
+> microbenchmark suite above only exercises favourable workloads
+> (tight integer loops on the SmallInt fast path) and dramatically
+> understates the gap to CPython on real Python code.  This subset is
+> 3 small benchmarks ported from the official PSF
+> [pyperformance](https://github.com/python/pyperformance) suite —
+> the self-contained, no-external-deps subset — chosen because they
+> stress the operations real code spends time on: attribute access,
+> method dispatch, list subscript.
+
+Run via `python3 benchmarks/pyperf/run_pyperf_subset.py <protopy>`.
+Each script reports its own min-of-5 timing using
+`time.perf_counter()` (excludes interpreter startup):
+
+```
+┌────────────────────┬──────────────┬──────────────┬──────────┬──────────────────────────────┐
+│ Benchmark          │ protoPy (ms) │ CPython (ms) │ Ratio    │ Stresses                     │
+├────────────────────┼──────────────┼──────────────┼──────────┼──────────────────────────────┤
+│ nqueens(8)         │       2204   │         4.9  │   449×   │ recursion + list[i] subscr   │
+│ sieve(10000)       │        933   │         1.0  │   933×   │ list mutate in tight loop    │
+│ richards_lite      │       1481   │         0.2  │  7404×   │ class instantiation, methods │
+├────────────────────┼──────────────┼──────────────┼──────────┼──────────────────────────────┤
+│ Geomean ratio      │              │              │ 1459×    │                              │
+└────────────────────┴──────────────┴──────────────┴──────────┴──────────────────────────────┘
+```
+
+Compare with the microbenchmark geomean of 5.06× — a 3-orders-of-magnitude
+divergence.  The microbenchmarks were faithfully measuring the
+SmallInt arithmetic / opcode-dispatch path, but that path is **a
+small fraction of real Python execution time**.  Real code is dominated
+by:
+- **Attribute access** (`obj.attr`): every method call does at least one
+  full attribute resolution, walking the MRO and the descriptor protocol.
+- **Method dispatch**: bound-method materialisation per call.
+- **List/dict subscript**: every `lst[i]` indexes a mutable container
+  through the full attribute / `__data__` lookup path.
+- **Class instantiation**: each `Worker(i, counter)` allocates plus runs
+  `__init__` plus walks MRO for both lookups.
+
+That is what closes the gap to CPython, not faster integer arithmetic.
+
+A few earlier attempts to port other pyperformance scripts surfaced
+correctness or performance pathologies that need attention:
+
+| Bench attempted | Outcome | Diagnosis |
+|---|---|---|
+| `nqueens` with closure (`count = [0]; def solve(): count[0] += 1`) | Wrong result (0 instead of 92) | Closure-over-list-mutation issue; rewrote without nested function |
+| `fannkuch` n≥6 | Timed out (>60s) | The carry-style permutation loop with `perm1[i+1]` access hits a slow path; under investigation |
+
+These are bugs / opportunities, not closed items.
+
 ## Roadmap to approach and surpass CPython
 
 In priority order, with rough single-shot expected impact:
@@ -369,23 +422,38 @@ In priority order, with rough single-shot expected impact:
 
 ---
 
-**Status:** V154 + Tier 2.5 landed.  Geomean **5.06×** vs CPython 3.14
-— best protoPython has hit.  Per-call cost on `call_recursion` is
-~2.1 µs (was 2.95 µs; CPython is ~265 ns), so the gap is now 7.98×
-not 13.46×.
+**Status:** V154 + Tier 2.5 landed.  **Two distinct geomeans depending
+on what we measure:**
 
-The remaining gap on `call_recursion` is dominated by the bytecode
-dispatch loop body itself (`executeBytecodeRange` is 34.81 % of CPU
-in the post-Tier-2.5 profile).  Closing the last few × on this
-benchmark requires a structural interpreter rewrite —
-computed-goto-style threaded dispatch, opcode specialisation, or a
-JIT for the hot recurrence — none of which are surgical fixes.  The
-earlier "should be at 2-3×" target is achievable but needs that
-deeper work.
+  - Microbenchmarks (this file's main table): **5.06×** vs CPython —
+    best protoPython has hit on the favourable workloads (tight
+    integer loops on the SmallInt fast path).
+  - Pyperformance pure-Python subset (added today): **1459×** vs
+    CPython — real Python code dominated by attribute access, method
+    dispatch, and list subscript.
 
-Next concrete targets in priority order:
-1. Tier 3 round 2 (close the remaining 3.33× gap on `multithread_cpu`
-   so GIL-free decisively beats CPython on parallel CPU work).
-2. Tier 1.2 (lazy frame materialisation for `sys._getframe()`).
-3. Computed-goto / threaded dispatch in `executeBytecodeRange`
-   (the structural item to break through 5× on call-heavy code).
+The 3-orders-of-magnitude divergence is the honest picture.  The V92
+through V154 work successfully closed the gap on the path the
+microbenchmarks exercised (10× → 5× geomean on those), but the
+realistic gap is still where it was, because the optimisation surface
+shifted but never landed on the dominant cost in real code.
+
+Next concrete targets, re-prioritised in light of the realistic numbers:
+
+1. **Hot-path attribute access** — every `obj.attr` walks the full
+   MRO + descriptor protocol.  In richards_lite this is the entire
+   1481 ms (CPython does it in 200 µs).  Inline cache for the
+   common (instance, attribute_name) → resolved-value pair would be
+   the single largest win on real code.
+2. **List subscript fast path** — `lst[i]` for SmallInt indices on a
+   `list` instance currently goes through getAttribute(__data__) +
+   ProtoList::getAt + null-check + boxing.  An inlined fast path in
+   `OP_BINARY_SUBSCR` would close most of the nqueens / sieve gap.
+3. **Method dispatch fast path** — bound-method materialisation per
+   call; pre-resolve the descriptor once at LOAD_METHOD time.
+4. Tier 3 round 2 (close the remaining 3.33× gap on
+   `multithread_cpu`).
+5. Tier 1.2 (lazy frame materialisation for `sys._getframe()`).
+6. Computed-goto / threaded dispatch in `executeBytecodeRange`
+   (the structural item to break through 5× on call-heavy code, but
+   the realistic-bench items above are bigger now).

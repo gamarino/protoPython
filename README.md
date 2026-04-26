@@ -35,7 +35,7 @@
 | **Type System** | **Advanced** - Lists, Tuples, Sets, Dicts with native wrapping ✅ |
 | **C++ Interop** | **Full** - HPy and UMD support integrated ✅ |
 | **Compiler** | **Advanced** - Full C++ translation with collection support ✅ |
-| **Performance** | **Optimization in Progress** - V154 active: 256-shard mutable cache with negative caching, frame-skip restored for CO_OPTIMIZED leaf calls, `cmp_to_string` in `getAttribute` keys fallback, real `_thread.start_joinable_thread` + cooperative GC safepoint in the bytecode dispatcher (Tier 3 round 1), inline SmallInt fast path in OP_BINARY_ADD/SUB/INPLACE/COMPARE_OP (Tier 2), hoisted `get_env_diag` and TLS-bool `hasPendingException` (Tier 2.5 dispatcher polish). Geomean **5.06×** vs CPython 3.14 (Release build, minimum of 10) — best protoPython has hit; `call_recursion` ratio dropped 13.46× → **7.98×**. ⚙️ |
+| **Performance** | **Optimization in Progress** - V154 active: see Performance Benchmarks section. Microbenchmark geomean **5.06×** vs CPython 3.14 (favourable workloads — pure integer loops); pyperformance pure-Python subset geomean **1459×** (real-code workloads — list subscript, method dispatch, class instantiation). The 3-orders-of-magnitude gap between the two is the honest picture: tight integer paths are competitive after V154; the structural gap on real Python code remains and is the next focus. ⚙️ |
 | **CPython Conformance** | **100%** - 17/17 test categories passing (Essential, Important, Necessary) ✅ |
 
 - ✅ **Generator Delegation**: Full support for `yield` and `yield from` with efficient state persistence.
@@ -52,10 +52,50 @@
 
 ## 📊 Performance Benchmarks (V154)
 
-End-to-end script timings on the same machine, same kernel, governor,
-Release build (`-O3 -DNDEBUG`).  Methodology: 2 warmup runs +
-**minimum of 10 timed runs** per side per benchmark, which resists
-scheduler / contention spikes.  CPython reference is `python3` (CPython 3.14).
+> ⚠ **Honest disclaimer.** Tight integer microbenchmarks dramatically
+> understate the gap to CPython on real code.  Both tables below are
+> measured on the same machine, same Release build; the contrast is
+> the point.  Read the second one as the headline number.
+
+### Realistic — pyperformance pure-Python subset
+
+Three small benchmarks ported from the official PSF
+[pyperformance](https://github.com/python/pyperformance) suite (the
+self-contained, no-external-deps subset).  Each script warms up
+internally and reports its own minimum-of-five timing using
+`time.perf_counter()`, so this excludes interpreter startup and isolates
+the actual per-bytecode cost.
+
+```
+┌────────────────────┬──────────────┬──────────────┬──────────┬──────────────────────────────┐
+│ Benchmark          │ protoPy (ms) │ CPython (ms) │ Ratio    │ Stresses                     │
+├────────────────────┼──────────────┼──────────────┼──────────┼──────────────────────────────┤
+│ nqueens(8)         │       2204   │         4.9  │   449×   │ recursion + list[i] subscr   │
+│ sieve(10000)       │        933   │         1.0  │   933×   │ list mutate in tight loop    │
+│ richards_lite      │       1481   │         0.2  │  7404×   │ class instantiation, methods │
+├────────────────────┼──────────────┼──────────────┼──────────┼──────────────────────────────┤
+│ Geomean ratio      │              │              │ 1459×    │                              │
+└────────────────────┴──────────────┴──────────────┴──────────┴──────────────────────────────┘
+```
+
+The dominant remaining costs in real Python code are **attribute
+access**, **method dispatch**, **list/dict subscript**, and
+**class instantiation** — none of which are exercised by tight
+integer microbenchmarks.  This is where the next round of work
+needs to focus.
+
+Run yourself:
+```bash
+python3 benchmarks/pyperf/run_pyperf_subset.py build-release/src/runtime/protopy
+```
+
+### Microbenchmarks — tight integer / arithmetic loops
+
+Historical end-to-end script timings (includes startup).  These are
+the workloads V92-V154 optimisations targeted; they exercise the
+SmallInt fast path, frame-skip optimisation, and GC handshake.  They
+**are not representative of real Python code** but are useful for
+tracking regressions in those specific paths.
 
 ```
 ┌────────────────────────┬──────────────┬──────────────┬─────────────────┬───────────────────────────┐
