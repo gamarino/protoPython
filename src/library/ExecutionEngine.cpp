@@ -4694,17 +4694,33 @@ const proto::ProtoObject* executeBytecodeRange(
             const proto::ProtoObject* key = stack.back();
             const proto::ProtoObject* container = stack[stack.top - 2];
 
+            // Fast path: list[smallint] — by far the dominant subscript case
+            // in numeric workloads (nqueens, sieve, table-of-table walks).
+            // The slow path below allocates a 2-cell ProtoList, takes the
+            // descriptor protocol, then walks back through invokeDunder /
+            // invokeCallable just to do the same thing this branch does in
+            // two memory reads.  Bypassing it eliminates ~2 cell allocations
+            // per subscript on the hot loop.
+            if (proto::isSmallInt(key) && container) {
+                const proto::ProtoList* lst = container->asList(ctx);
+                if (lst) {
+                    long long idx = proto::asSmallInt(key);
+                    long long size = static_cast<long long>(lst->getSize(ctx));
+                    if (idx < 0) idx += size;
+                    if (idx >= 0 && idx < size) {
+                        const proto::ProtoObject* val = lst->getAt(ctx, static_cast<int>(idx));
+                        stack.pop_back();
+                        stack.back() = val ? val : (env ? env->getNonePrototype() : PROTO_NONE);
+                        i = next_i;
+                        continue;
+                    }
+                    // Out-of-range falls through to the slow path so it can
+                    // raise IndexError with the standard message.
+                }
+            }
+
             const proto::ProtoString* getItemS = env ? env->getGetItemString() : PythonEnvironment::getInternedString(ctx, "__getitem__");
             const proto::ProtoList* args = ctx->newList()->appendLast(ctx, key);
-            if (std::getenv("PROTO_SUBSCR_DIAG")) {
-                std::string ks = "?";
-                if (key && key->isString(ctx)) key->asString(ctx)->toUTF8String(ctx, ks);
-                const proto::ProtoObject* getItemMethod = env ? env->getAttribute(ctx, container, getItemS, false) : container->getAttribute(ctx, getItemS);
-                fprintf(stderr, "DEBUG_SUBSCR: key='%s' container=%p __getitem__=%p method=%p\n",
-                        ks.c_str(), (void*)container, (void*)getItemMethod,
-                        getItemMethod ? (void*)getItemMethod->asMethod(ctx) : nullptr);
-                fflush(stderr);
-            }
             const proto::ProtoObject* result = invokeDunder(ctx, container, getItemS, args);
             
             if (diag_local) {
@@ -4912,6 +4928,43 @@ const proto::ProtoObject* executeBytecodeRange(
             }
             // Delay pop
 
+            // Fast path: list[smallint] = value.  Mirrors the SUBSCR fast
+            // path; avoids allocating a 3-cell ProtoList plus the descriptor
+            // protocol round-trip for the dominant numeric-table-write case.
+            // setAt on ProtoList is the same primitive that __setitem__
+            // would dispatch into.
+            if (proto::isSmallInt(key) && container) {
+                const proto::ProtoList* lst = container->asList(ctx);
+                if (lst) {
+                    long long idx = proto::asSmallInt(key);
+                    long long size = static_cast<long long>(lst->getSize(ctx));
+                    if (idx < 0) idx += size;
+                    if (idx >= 0 && idx < size) {
+                        const proto::ProtoList* newLst = lst->setAt(ctx, static_cast<int>(idx), value);
+                        // Mutable container holds its data via __data__ usually,
+                        // but plain ProtoList values flow through asList() which
+                        // returns the underlying handle.  setAt returns a new
+                        // immutable list; we publish it back via the same
+                        // pathway the slow path would (setAttribute on __data__
+                        // for wrapped lists, direct replacement otherwise).
+                        const proto::ProtoString* dataS = env ? env->getDataString() : protoPython::PythonEnvironment::getInternalString(ctx, "__data__");
+                        if (dataS && container->hasOwnAttribute(ctx, dataS) == PROTO_TRUE) {
+                            container->setAttribute(ctx, dataS, newLst->asObject(ctx));
+                        }
+                        // else: container *is* a raw ProtoList — slow path would
+                        // raise TypeError ("'list' object does not support item
+                        // assignment" on raw lists, since the user-facing list
+                        // wraps __data__).  Fall through.
+                        if (dataS && container->hasOwnAttribute(ctx, dataS) == PROTO_TRUE) {
+                            stack.pop_back(); stack.pop_back(); stack.pop_back();
+                            i = next_i;
+                            continue;
+                        }
+                    }
+                    // Out-of-range or missing __data__ falls through to slow path.
+                }
+            }
+
             const proto::ProtoString* setItemS = env ? env->getSetItemString() : PythonEnvironment::getInternedString(ctx, "__setitem__");
             const proto::ProtoObject* setitem = container->getAttribute(ctx, setItemS);
             if (setitem && setitem != PROTO_NONE) {
@@ -5113,25 +5166,36 @@ const proto::ProtoObject* executeBytecodeRange(
             if (usedFastPath) {
                 result = result_fast;
             } else {
-            const proto::ProtoList* args = ctx->newList();
-            for (int j = 0; j < arg; ++j) {
-                args = args->appendLast(ctx, stack[firstArgIdx + j]);
-            }
-
+            // Build callArgs directly with the right layout, in one pass.  The
+            // earlier two-step variant first built `args` from the stack slice
+            // and then, in the [Method, Self, Arg1...] branch, re-walked it
+            // via getAt to build `selfArgs` with self prepended — wasting the
+            // intermediate `args` list (1 + arg cells per call).  Folding the
+            // two passes into one means the [Method, Self] branch allocates
+            // the same number of cells as the [NULL, Callable] branch
+            // (1 + arg + 1 instead of 2*(1 + arg) + 1).
             if (!isModern) {
                 callable = Y; // In legacy, Y is the callable and there is no X.
+                const proto::ProtoList* args = ctx->newList();
+                for (int j = 0; j < arg; ++j) {
+                    args = args->appendLast(ctx, stack[firstArgIdx + j]);
+                }
                 callArgs = args;
             } else if (X == nullptr) {
                 // [NULL, Callable, Arg1...]
                 callable = Y;
+                const proto::ProtoList* args = ctx->newList();
+                for (int j = 0; j < arg; ++j) {
+                    args = args->appendLast(ctx, stack[firstArgIdx + j]);
+                }
                 callArgs = args;
             } else {
-                // [Method, Self, Arg1...]
+                // [Method, Self, Arg1...]: prepend self in the same single
+                // pass over the raw stack slice — no intermediate list.
                 callable = X;
                 const proto::ProtoList* selfArgs = ctx->newList()->appendLast(ctx, Y);
-                unsigned long asize = args->getSize(ctx);
-                for (unsigned long j = 0; j < asize; ++j) {
-                    selfArgs = selfArgs->appendLast(ctx, args->getAt(ctx, j));
+                for (int j = 0; j < arg; ++j) {
+                    selfArgs = selfArgs->appendLast(ctx, stack[firstArgIdx + j]);
                 }
                 callArgs = selfArgs;
             }
