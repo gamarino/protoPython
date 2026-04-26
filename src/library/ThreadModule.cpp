@@ -380,12 +380,151 @@ static const proto::ProtoObject* py_get_main_thread_ident(
     return ctx->fromInteger(g_main_thread_id);
 }
 
-static const proto::ProtoObject* py_start_joinable_thread(
+// _ThreadHandle methods.  The handle is a mutable Python object with two
+// internal slots:
+//   _proto_thread  — ExternalPointer wrapping a proto::ProtoThread*
+//   ident          — integer (the OS-level identity of the underlying thread)
+// A handle is "done" when the underlying ProtoThread is no longer registered
+// in space->threads (which is how protoCore tracks running threads).
+
+static const proto::ProtoObject* py_handle_is_done(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    if (!self) return PROTO_TRUE;
+    const proto::ProtoString* doneAttr =
+        proto::ProtoString::createSymbol(ctx, "_done");
+    const proto::ProtoObject* doneFlag = self->getAttribute(ctx, doneAttr);
+    if (doneFlag == PROTO_TRUE) return PROTO_TRUE;
+    const proto::ProtoString* ptrAttr =
+        proto::ProtoString::createSymbol(ctx, "_proto_thread");
+    const proto::ProtoObject* handlePtr = self->getAttribute(ctx, ptrAttr);
+    if (!handlePtr || handlePtr == PROTO_NONE) return PROTO_TRUE;
+    const proto::ProtoExternalPointer* ext = handlePtr->asExternalPointer(ctx);
+    if (!ext) return PROTO_TRUE;
+    proto::ProtoThread* thread =
+        static_cast<proto::ProtoThread*>(ext->getPointer(ctx));
+    if (!thread) return PROTO_TRUE;
+    unsigned long threadId = reinterpret_cast<uintptr_t>(thread);
+    const proto::ProtoSparseList* threads = ctx->space->threads;
+    if (!threads) return PROTO_TRUE;
+    return (threads->getAt(ctx, threadId) == PROTO_NONE) ? PROTO_TRUE : PROTO_FALSE;
+}
+
+static const proto::ProtoObject* py_handle_join(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    if (!self) return PROTO_NONE;
+    const proto::ProtoString* ptrAttr =
+        proto::ProtoString::createSymbol(ctx, "_proto_thread");
+    const proto::ProtoObject* handlePtr = self->getAttribute(ctx, ptrAttr);
+    if (!handlePtr || handlePtr == PROTO_NONE) return PROTO_NONE;
+    const proto::ProtoExternalPointer* ext = handlePtr->asExternalPointer(ctx);
+    if (!ext) return PROTO_NONE;
+    proto::ProtoThread* thread =
+        static_cast<proto::ProtoThread*>(ext->getPointer(ctx));
+    if (thread) thread->join(ctx);
+    return PROTO_NONE;
+}
+
+static const proto::ProtoObject* py_handle_set_done(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    if (!self) return PROTO_NONE;
+    const proto::ProtoString* doneAttr =
+        proto::ProtoString::createSymbol(ctx, "_done");
+    self->setAttribute(ctx, doneAttr, PROTO_TRUE);
+    return PROTO_NONE;
+}
+
+// Build a fresh _ThreadHandle Python-visible object.  Optional positional
+// arg interpreted as the initial ident (0 = unstarted, set by start_joinable_thread).
+static const proto::ProtoObject* py_make_thread_handle(
     proto::ProtoContext* ctx,
     const proto::ProtoObject*, const proto::ParentLink*,
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    // For now, delegate to _make_thread_handle.
-    return ctx->fromInteger(0); // stub
+    proto::ProtoObject* handle =
+        const_cast<proto::ProtoObject*>(ctx->newObject(true));
+    long initialIdent = 0;
+    if (posArgs && posArgs->getSize(ctx) >= 1) {
+        const proto::ProtoObject* a0 = posArgs->getAt(ctx, 0);
+        if (a0 && a0->isInteger(ctx)) initialIdent = a0->asLong(ctx);
+    }
+    handle = const_cast<proto::ProtoObject*>(handle->setAttribute(
+        ctx, proto::ProtoString::createSymbol(ctx, "ident"),
+        ctx->fromInteger(initialIdent)));
+    handle = const_cast<proto::ProtoObject*>(handle->setAttribute(
+        ctx, proto::ProtoString::createSymbol(ctx, "_proto_thread"), PROTO_NONE));
+    handle = const_cast<proto::ProtoObject*>(handle->setAttribute(
+        ctx, proto::ProtoString::createSymbol(ctx, "_done"), PROTO_FALSE));
+    handle = const_cast<proto::ProtoObject*>(handle->setAttribute(
+        ctx, proto::ProtoString::createSymbol(ctx, "is_done"),
+        ctx->fromMethod(handle, py_handle_is_done)));
+    handle = const_cast<proto::ProtoObject*>(handle->setAttribute(
+        ctx, proto::ProtoString::createSymbol(ctx, "join"),
+        ctx->fromMethod(handle, py_handle_join)));
+    handle = const_cast<proto::ProtoObject*>(handle->setAttribute(
+        ctx, proto::ProtoString::createSymbol(ctx, "_set_done"),
+        ctx->fromMethod(handle, py_handle_set_done)));
+    return handle;
+}
+
+// _thread.start_joinable_thread(target, handle=<existing handle>, daemon=<bool>)
+//
+// Spawns a real OS thread (via protoCore's ProtoSpace::newThread) running
+// thread_bootstrap → target.  The provided handle (or a freshly created one
+// when the kwarg is missing) gets its `ident` and `_proto_thread` slots
+// populated so subsequent .is_done() / .join() calls observe the running
+// thread.  Returns the handle.
+static const proto::ProtoObject* py_start_joinable_thread(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList* kwargs) {
+    if (!posArgs || posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    const proto::ProtoObject* callable = posArgs->getAt(ctx, 0);
+
+    // Resolve handle (kwarg "handle"; otherwise build a fresh one).
+    const proto::ProtoObject* handle = nullptr;
+    if (kwargs) {
+        const proto::ProtoString* handleKey =
+            proto::ProtoString::createSymbol(ctx, "handle");
+        unsigned long handleHash = reinterpret_cast<uintptr_t>(handleKey);
+        if (kwargs->has(ctx, handleHash)) {
+            handle = kwargs->getAt(ctx, handleHash);
+        }
+    }
+    if (!handle || handle == PROTO_NONE) {
+        handle = py_make_thread_handle(ctx, self, nullptr, ctx->newList(), nullptr);
+    }
+
+    // Build the args list passed to thread_bootstrap: [env_ptr, callable].
+    protoPython::PythonEnvironment* env =
+        protoPython::PythonEnvironment::fromContext(ctx);
+    const proto::ProtoList* argsForThread = ctx->newList();
+    if (env)
+        argsForThread = argsForThread->appendLast(
+            ctx, ctx->fromExternalPointer(env, nullptr));
+    argsForThread = argsForThread->appendLast(ctx, callable);
+
+    // Spawn.
+    const proto::ProtoString* name = proto::ProtoString::createSymbol(ctx, "thread");
+    const proto::ProtoThread* thread = ctx->space->newThread(
+        ctx, name, thread_bootstrap, argsForThread, nullptr);
+
+    // Populate handle with the live thread reference and its ident.
+    proto::ProtoObject* mhandle = const_cast<proto::ProtoObject*>(handle);
+    mhandle->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_proto_thread"),
+                          ctx->fromExternalPointer(const_cast<proto::ProtoThread*>(thread), nullptr));
+    mhandle->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "ident"),
+                          ctx->fromInteger(reinterpret_cast<uintptr_t>(thread)));
+    return handle;
 }
 
 static const proto::ProtoObject* py_daemon_threads_allowed(
@@ -396,13 +535,6 @@ static const proto::ProtoObject* py_daemon_threads_allowed(
 }
 
 static const proto::ProtoObject* py_shutdown(
-    proto::ProtoContext* ctx,
-    const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
-    return PROTO_NONE;
-}
-
-static const proto::ProtoObject* py_make_thread_handle(
     proto::ProtoContext* ctx,
     const proto::ProtoObject*, const proto::ParentLink*,
     const proto::ProtoList*, const proto::ProtoSparseList*) {

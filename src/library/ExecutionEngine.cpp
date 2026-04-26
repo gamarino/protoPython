@@ -2737,7 +2737,17 @@ const proto::ProtoObject* executeBytecodeRange(
         blockStack = *externalBlockStack;
     }
     const bool sync_globals = (frame == PythonEnvironment::getCurrentGlobals());
+    // Cooperative GC safepoint counter.  Most Python opcodes execute without
+    // touching the cell allocator (LOAD_FAST, BINARY_ADD on SmallIntegers,
+    // tight integer loops), so the per-allocation STW poll inside allocCell
+    // never fires for CPU-bound threads.  Without an in-loop safepoint, a
+    // GC stop-the-world request will starve indefinitely against a
+    // pure-bytecode thread, deadlocking every other thread that is already
+    // parked.  Polling every 256 opcodes keeps the fast path branch-only
+    // while bounding pause-acquisition latency to a few µs.
+    unsigned int sp_ctr = 0;
     for (unsigned long i = pcStart; i <= pcEnd; ) {
+        if ((++sp_ctr & 0x3F) == 0 && ctx) ctx->safepoint();
         int op = bc[i];
         int arg = (i + 1 < n) ? bc[i + 1] : 0;
         unsigned long next_i = i + 2;

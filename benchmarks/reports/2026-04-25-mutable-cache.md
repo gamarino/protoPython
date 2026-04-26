@@ -1,6 +1,6 @@
-# V154 — mutable cache + frame-skip + attribute-name fast path
+# V154 — mutable cache + frame-skip + attribute-name fast path + multithread fix
 
-> **Status: V154.** This file consolidates three rounds of work landed
+> **Status: V154.** This file consolidates four rounds of work landed
 > in April 2026:
 >   1. **V95** — protoCore mutableRoot: 256 shards + per-thread snapshot cache.
 >   2. **V95-fix** — two regressions surfaced and fixed: build-mode
@@ -9,6 +9,13 @@
 >   3. **V154 (Tier 1.1)** — `PythonEnvironment::getAttribute` keys-fallback
 >      no longer allocates `std::string` per comparison; uses
 >      `ProtoString::cmp_to_string` directly.
+>   4. **V154 (Tier 3 round 1)** — `_thread.start_joinable_thread` +
+>      `_ThreadHandle` actually spawn real OS threads (the previous
+>      stub returned 0 and `threading.Thread.start()` hung forever);
+>      a thread-startup race in protoCore was closed and a public
+>      `ProtoContext::safepoint()` API added so the bytecode
+>      dispatcher participates in GC stop-the-world from
+>      allocation-free hot loops.
 >
 > All numbers below are Release build, minimum of 10 runs (V99
 > methodology).  The protoPython project version is **1.0.0**;
@@ -119,32 +126,52 @@ on every benchmark that touches an unmutated mutable in a loop.
 ## Results — minimum of 10, Release build
 
 V94 baseline → V95 raw (regression surfaced) → V95 fixed (skipFrame +
-negative caching) → V154 (Tier 1.1: `cmp_to_string` replaces
-`toUTF8String` in `PythonEnvironment::getAttribute` keys fallback).
+negative caching) → V154 (Tier 1.1 + Tier 3 round 1).
 
 ```
 ┌──────────────────┬──────────┬─────────┬──────────┬──────────┬──────────────┐
 │ Benchmark        │ V94 base │ V95 raw │ V95 fix  │ V154     │ Ratio vs cpy │
 │                  │  (ms)    │  (ms)   │  (ms)    │  (ms)    │   (V154)     │
 ├──────────────────┼──────────┼─────────┼──────────┼──────────┼──────────────┤
-│ call_recursion   │   2994   │  35347  │     967  │     916  │   14.22×     │
-│ list_append_loop │    482   │   1066  │    1268  │    1067  │   16.55×     │
-│ str_concat_loop  │    479   │    615  │     875  │     766  │   11.91×     │
-│ range_iterate    │    464   │    465  │     620  │     616  │    9.58×     │
-│ attr_lookup      │    785   │    765  │    1020  │    1017  │   15.81×     │
-│ multithread_cpu  │     39   │    966  │    1321  │    1217  │   18.90×     │
+│ call_recursion   │   2994   │  35347  │     967  │     866  │   13.46×     │
+│ list_append_loop │    482   │   1066  │    1268  │    1067  │   16.62×     │
+│ str_concat_loop  │    479   │    615  │     875  │     716  │   11.14×     │
+│ range_iterate    │    464   │    465  │     620  │     615  │    9.57×     │
+│ attr_lookup      │    785   │    765  │    1020  │     917  │   14.23×     │
+│ multithread_cpu  │     39†  │    966  │    1321  │     165  │    2.55×     │
 │ int_sum_loop     │     43   │     64  │      64  │      32  │    1.00×     │
 ├──────────────────┼──────────┼─────────┼──────────┼──────────┼──────────────┤
-│ Geomean ratio    │   9.96×  │  11.39× │   7.72×  │   7.30×  │              │
+│ Geomean ratio    │   9.96×  │  11.39× │   7.72×  │   5.53×  │              │
 └──────────────────┴──────────┴─────────┴──────────┴──────────┴──────────────┘
 ```
 
+† `multithread_cpu` baselines through V95-fix were measured against a
+benchmark that silently fell back to **sequential execution** when
+`threading._has_thread` evaluated false — i.e. they were not
+multi-threaded measurements at all and made protoPython look
+unrealistically good.  V154 rewrote the benchmark to use `_thread`
+directly with a strict assertion that all 4 workers actually publish
+their result, which both exposed the latent bugs (a stub
+`_thread.start_joinable_thread` and a missing GC safepoint poll) and
+yielded the first honest multi-thread number we have on this
+codebase.  165 ms is **real** four-thread work.
+
 Reading the table:
 
-- **`call_recursion` recovers fully**: V95 raw 35 347 ms → V154 916 ms,
-  a 38× speed-up.  The skipFrame fix is the single largest win.
-- **Geomean ratio at 7.30×** — best protoPython has hit; better than
-  V94's 9.96× milestone.
+- **`multithread_cpu` is the headline**: 1217 ms → **165 ms**, ratio
+  18.90× → 2.55×.  Threading was structurally broken
+  (`Thread.start()` hung; the legacy benchmark's `_has_thread = False`
+  branch hid this for V92-V99).  After the fix it really runs four OS
+  threads in parallel; the remaining 2.55× gap is `globalMutex`
+  contention in `getFreeCells` and per-context `new DirtySegment`
+  mallocs, both Tier 3 follow-ups.
+- **`call_recursion` keeps improving**: V95 raw 35 347 ms → V154 866
+  ms, a 41× cumulative speed-up.  The skipFrame fix was the single
+  largest contributor; Tier 1.1 (`cmp_to_string`) and the safepoint
+  poll added the last few percent.
+- **Geomean ratio at 5.53×** — best protoPython has hit.  V94 milestone
+  was 9.96×; V95-fix was 7.72×; this is a 24 % relative drop on top of
+  V95-fix, dominated by the multi-thread fix.
 - **Tier 1.1 (`cmp_to_string`) lands −5 to −15 % across attribute-bound
   benchmarks**: list_append_loop −15.9 %, str_concat_loop −12.4 %,
   call_recursion −5.3 %.  Negligible on benchmarks that don't trigger
@@ -152,7 +179,8 @@ Reading the table:
 - **`int_sum_loop` is the negative control**: pure SmallInteger
   arithmetic stays on the embedded-value fast path and never touches a
   mutable.  Flat result confirms zero overhead from the changes when
-  they cannot help.
+  they cannot help, including the new safepoint poll
+  (one relaxed atomic load per 64 opcodes is below the noise floor here).
 
 ## Profile after the fix — what's left to attack
 
@@ -219,15 +247,35 @@ In priority order, with rough single-shot expected impact:
 
 ### Tier 3 — multi-threading (the architectural win)
 
-5. **Fix `multithread_cpu`.**  Currently 1.3 s vs CPython's 64 ms.
-   This benchmark is supposed to be where protoPython *beats* CPython
-   — GIL-free is the whole point.  Profile and address.  Likely
-   suspects: `globalMutex` contention in `getFreeCells`,
-   `submitYoungGeneration`'s `new DirtySegment` per context teardown
-   (242 K mallocs in fib's single thread is bad; multiplied by N
-   threads is worse), thread-startup overhead.
+5. **Fix `multithread_cpu` — round 1.** ✅ Landed.  Three fixes:
+   - `_thread.start_joinable_thread` was a stub returning 0 with no OS
+     thread spawned, so `threading.Thread.start()` hung indefinitely.
+     Replaced with a real implementation backed by
+     `ProtoSpace::newThread`, plus a `_ThreadHandle` Python-visible
+     object exposing `is_done` / `join` / `_set_done`.
+   - Thread-startup race in `ProtoThreadImplementation`:
+     `runningThreads` was incremented before `std::thread` was
+     spawned, leaving GC waiting for a phantom running thread.  Now
+     incremented from `thread_main` (the moment the OS thread really
+     starts).
+   - Pure-bytecode loops never participated in stop-the-world.  Added
+     public `ProtoContext::safepoint()` to protoCore (additive, no
+     inlining, no library merge) and call it every 64 opcodes from
+     protoPython's bytecode dispatcher.
+   The benchmark itself was rewritten to use `_thread` directly with a
+   strict assertion that all 4 workers actually finish, so any future
+   regression to a fake-threading fallback fails the benchmark instead
+   of silently passing.  Result: 1217 ms → 165 ms (ratio 18.90× →
+   2.55×).
 
-6. **GC scaling under N threads.**  STW pause + per-thread free-list
+6. **Fix `multithread_cpu` — round 2: beat CPython.** Round 1 made
+   the benchmark real and reliable; round 2 is closing the remaining
+   2.55× gap.  Likely suspects: `globalMutex` contention in
+   `getFreeCells`, `submitYoungGeneration`'s `new DirtySegment` per
+   context teardown (242 K mallocs in fib's single thread is bad;
+   multiplied by N threads is worse).
+
+7. **GC scaling under N threads.**  STW pause + per-thread free-list
    refills both contend on `globalMutex`.  When 4-8 threads all run
    CPU-bound work, contention may serialise them.  Measure
    `multithread_cpu` with N=2,4,8 and verify it scales linearly until
@@ -257,9 +305,11 @@ In priority order, with rough single-shot expected impact:
 
 ---
 
-**Status:** V154 landed.  Geomean **7.30×** vs CPython 3.14 — best
-protoPython has hit; better than the V94 milestone (9.96×).  Next
-concrete targets: Tier 1.2 (lazy frame materialisation, design phase),
-then Tier 2 (inline SmallInteger arithmetic on the bytecode hot path),
-and Tier 3 (`multithread_cpu` — currently 1.21 s vs CPython 64 ms; the
-architectural win is missing in action).
+**Status:** V154 landed.  Geomean **5.53×** vs CPython 3.14 — best
+protoPython has hit; better than the V94 milestone (9.96×) and the
+V95-fix milestone (7.72×).  Next concrete targets: Tier 3 round 2
+(close the remaining 2.55× gap on `multithread_cpu` so the GIL-free
+architecture decisively beats CPython on parallel CPU work), then
+Tier 2 (inline SmallInteger arithmetic on the bytecode hot path),
+then Tier 1.2 (lazy frame materialisation for `sys._getframe()`
+consumers).

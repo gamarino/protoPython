@@ -35,7 +35,7 @@
 | **Type System** | **Advanced** - Lists, Tuples, Sets, Dicts with native wrapping ✅ |
 | **C++ Interop** | **Full** - HPy and UMD support integrated ✅ |
 | **Compiler** | **Advanced** - Full C++ translation with collection support ✅ |
-| **Performance** | **Optimization in Progress** - V154 active: 256-shard mutable cache with negative caching, frame-skip restored for CO_OPTIMIZED leaf calls, attribute-name lookup avoids `toUTF8String` allocations. Geomean **7.30×** vs CPython 3.14 (Release build, minimum of 10). ⚙️ |
+| **Performance** | **Optimization in Progress** - V154 active: 256-shard mutable cache with negative caching, frame-skip restored for CO_OPTIMIZED leaf calls, attribute-name lookup avoids `toUTF8String` allocations, real `_thread.start_joinable_thread` + cooperative GC safepoint in the bytecode dispatcher (Tier 3 round 1). Geomean **5.53×** vs CPython 3.14 (Release build, minimum of 10) — best protoPython has hit. ⚙️ |
 | **CPython Conformance** | **100%** - 17/17 test categories passing (Essential, Important, Necessary) ✅ |
 
 - ✅ **Generator Delegation**: Full support for `yield` and `yield from` with efficient state persistence.
@@ -58,20 +58,20 @@ Release build (`-O3 -DNDEBUG`).  Methodology: 2 warmup runs +
 scheduler / contention spikes.  CPython reference is `python3` (CPython 3.14).
 
 ```
-┌────────────────────────┬──────────────┬──────────────┬─────────────────┬────────────────┐
-│ Benchmark              │ protoPy (ms) │ CPython (ms) │ Ratio           │ Note           │
-├────────────────────────┼──────────────┼──────────────┼─────────────────┼────────────────┤
-│ startup_empty          │      32.0    │      32.0    │ 1.00× same      │ floor          │
-│ int_sum_loop           │      32.1    │      32.3    │ 1.00× same      │ pure SmallInt  │
-│ list_append_loop       │    1067.0    │      64.5    │ 16.55× slower   │                │
-│ str_concat_loop        │     766.3    │      64.3    │ 11.91× slower   │                │
-│ range_iterate          │     615.8    │      64.3    │  9.58× slower   │                │
-│ multithreaded_cpu      │    1217.3    │      64.4    │ 18.90× slower   │ ⚠ should win   │
-│ attr_lookup            │    1016.5    │      64.3    │ 15.81× slower   │                │
-│ call_recursion         │     916.3    │      64.4    │ 14.22× slower   │ fib(25) 242k   │
-├────────────────────────┼──────────────┼──────────────┼─────────────────┼────────────────┤
-│ Geomean Time Ratio     │              │              │  7.30×          │                │
-└────────────────────────┴──────────────┴──────────────┴─────────────────┴────────────────┘
+┌────────────────────────┬──────────────┬──────────────┬─────────────────┬─────────────────────┐
+│ Benchmark              │ protoPy (ms) │ CPython (ms) │ Ratio           │ Note                │
+├────────────────────────┼──────────────┼──────────────┼─────────────────┼─────────────────────┤
+│ startup_empty          │      32.0    │      32.0    │ 1.00× same      │ floor               │
+│ int_sum_loop           │      32.1    │      32.3    │ 1.00× same      │ pure SmallInt       │
+│ list_append_loop       │    1067.0    │      64.2    │ 16.62× slower   │                     │
+│ str_concat_loop        │     715.8    │      64.2    │ 11.14× slower   │                     │
+│ range_iterate          │     615.4    │      64.3    │  9.57× slower   │                     │
+│ multithreaded_cpu      │     164.5    │      64.4    │  2.55× slower   │ real 4-thread bench │
+│ attr_lookup            │     916.7    │      64.4    │ 14.23× slower   │                     │
+│ call_recursion         │     866.2    │      64.4    │ 13.46× slower   │ fib(25) 242k        │
+├────────────────────────┼──────────────┼──────────────┼─────────────────┼─────────────────────┤
+│ Geomean Time Ratio     │              │              │  5.53×          │                     │
+└────────────────────────┴──────────────┴──────────────┴─────────────────┴─────────────────────┘
 ```
 
 Detail and methodology:
@@ -99,6 +99,30 @@ Detail and methodology:
   zero-allocation `keyS->cmp_to_string(ctx, name)`.  Five hot sites
   fixed; ~5-15 % wall-time reduction across attribute-bound
   benchmarks.
+- **Tier 3 — multi-threading actually works now.**  `_thread.start_joinable_thread`
+  was a stub that returned 0 without spawning anything, making
+  `threading.Thread.start()` hang indefinitely; the legacy
+  `multithread_cpu` benchmark masked this by silently falling back to
+  sequential execution.  Replaced with a real implementation backed by
+  protoCore's `ProtoSpace::newThread`, plus a `_ThreadHandle` Python-visible
+  object exposing `is_done` / `join` / `_set_done`.  Two GC-handshake
+  bugs that surfaced once threads ran for real:
+  - Thread-startup race in `ProtoThreadImplementation`: `runningThreads`
+    was incremented *before* the OS thread started, leaving GC waiting
+    for a phantom thread to park.  Now incremented inside `thread_main`
+    when the OS thread actually executes.
+  - Pure-bytecode loops never participated in stop-the-world.  Added a
+    public `ProtoContext::safepoint()` to protoCore (additive API, no
+    inlining, no library merge) and call it every 64 opcodes from
+    protoPython's bytecode dispatcher.  CPU-bound threads now park
+    cooperatively when GC requests STW.
+
+  The `multithread_cpu` benchmark was rewritten to use `_thread`
+  directly with a strict assertion that all 4 workers actually publish
+  their result (any future regression to a fake-threading fallback
+  fails the benchmark instead of silently passing).  Result:
+  `multithread_cpu` 1217 ms → **165 ms** (ratio 18.90× → 2.55×) and
+  geomean 7.30× → **5.53×** (best ever).
 
 ### Where the remaining gap is
 
@@ -129,15 +153,18 @@ In priority order:
 | **1** | Lazy frame materialisation for `sys._getframe()` consumers | ⚙ deferred (design) | low single-digit |
 | **2** | Inline SmallInteger arithmetic on the bytecode hot path | planned | 20-40 % on integer loops |
 | **2** | Lock-free per-context cell pool replenish | planned | 1-2 % single-thread, larger as cores grow |
-| **3** | Fix `multithread_cpu` regression — the GIL-free architectural win | planned | should beat CPython |
+| **3** | Real `_thread.start_joinable_thread` + `_ThreadHandle` + STW safepoint poll | ✅ landed | multithread_cpu 18.9× → 2.55× |
+| **3** | Beat CPython on `multithread_cpu` (parallel scaling, alloc contention) | planned | currently 2.55× slower; goal <1.0× |
 | **3** | Verify GC scaling on N=2,4,8 threads | planned | confirms #3 |
 | **4** | JIT compile hot bytecode regions via the `co_bytecode_native` path | research | crosses 1.0× threshold |
 
-The marquee follow-up is **Tier 3**: `multithread_cpu` is *worse* than
-CPython today (1217 ms vs 64 ms), not better.  GIL-free is the whole
-point of the architecture; the benchmark currently spends its budget
-on `globalMutex` contention in `getFreeCells` and per-context
-`new DirtySegment` mallocs.  When that lands, this is the benchmark
+`multithread_cpu` came back from being silently fake (sequential
+fallback that masqueraded as 39 ms parallel) to being a real
+4-thread benchmark.  The first round of Tier-3 work made it run
+correctly and reliably (165 ms vs CPython 64 ms).  The next round
+needs to close the remaining 2.55× gap: `globalMutex` contention in
+`getFreeCells` and per-context `new DirtySegment` mallocs are the
+dominant remaining costs.  When that lands, this is the benchmark
 where protoPython decisively beats CPython.
 
 ---
