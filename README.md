@@ -35,7 +35,7 @@
 | **Type System** | **Advanced** - Lists, Tuples, Sets, Dicts with native wrapping ✅ |
 | **C++ Interop** | **Full** - HPy and UMD support integrated ✅ |
 | **Compiler** | **Advanced** - Full C++ translation with collection support ✅ |
-| **Performance** | **Optimization in Progress** - V154 active: 256-shard mutable cache with negative caching, frame-skip restored for CO_OPTIMIZED leaf calls, attribute-name lookup avoids `toUTF8String` allocations, real `_thread.start_joinable_thread` + cooperative GC safepoint in the bytecode dispatcher (Tier 3 round 1). Geomean **5.53×** vs CPython 3.14 (Release build, minimum of 10) — best protoPython has hit. ⚙️ |
+| **Performance** | **Optimization in Progress** - V154 active: 256-shard mutable cache with negative caching, frame-skip restored for CO_OPTIMIZED leaf calls, attribute-name lookup avoids `toUTF8String` allocations, real `_thread.start_joinable_thread` + cooperative GC safepoint in the bytecode dispatcher (Tier 3 round 1), inline SmallInt fast path in OP_BINARY_ADD/SUB/INPLACE/COMPARE_OP (Tier 2). Geomean **5.34×** vs CPython 3.14 (Release build, minimum of 10) — best protoPython has hit. ⚙️ |
 | **CPython Conformance** | **100%** - 17/17 test categories passing (Essential, Important, Necessary) ✅ |
 
 - ✅ **Generator Delegation**: Full support for `yield` and `yield from` with efficient state persistence.
@@ -63,14 +63,14 @@ scheduler / contention spikes.  CPython reference is `python3` (CPython 3.14).
 ├────────────────────────┼──────────────┼──────────────┼─────────────────┼─────────────────────┤
 │ startup_empty          │      32.0    │      32.0    │ 1.00× same      │ floor               │
 │ int_sum_loop           │      32.1    │      32.3    │ 1.00× same      │ pure SmallInt       │
-│ list_append_loop       │    1067.0    │      64.2    │ 16.62× slower   │                     │
-│ str_concat_loop        │     715.8    │      64.2    │ 11.14× slower   │                     │
-│ range_iterate          │     615.4    │      64.3    │  9.57× slower   │                     │
-│ multithreaded_cpu      │     164.5    │      64.4    │  2.55× slower   │ real 4-thread bench │
-│ attr_lookup            │     916.7    │      64.4    │ 14.23× slower   │                     │
-│ call_recursion         │     866.2    │      64.4    │ 13.46× slower   │ fib(25) 242k        │
+│ list_append_loop       │    1017.3    │      64.2    │ 15.85× slower   │                     │
+│ str_concat_loop        │     715.8    │      64.3    │ 11.13× slower   │                     │
+│ range_iterate          │     565.4    │      64.5    │  8.76× slower   │                     │
+│ multithreaded_cpu      │     164.4    │      64.2    │  2.56× slower   │ real 4-thread bench │
+│ attr_lookup            │     966.6    │      64.3    │ 15.03× slower   │                     │
+│ call_recursion         │     715.9    │      64.3    │ 11.13× slower   │ fib(25) 242k        │
 ├────────────────────────┼──────────────┼──────────────┼─────────────────┼─────────────────────┤
-│ Geomean Time Ratio     │              │              │  5.53×          │                     │
+│ Geomean Time Ratio     │              │              │  5.34×          │                     │
 └────────────────────────┴──────────────┴──────────────┴─────────────────┴─────────────────────┘
 ```
 
@@ -122,7 +122,24 @@ Detail and methodology:
   their result (any future regression to a fake-threading fallback
   fails the benchmark instead of silently passing).  Result:
   `multithread_cpu` 1217 ms → **165 ms** (ratio 18.90× → 2.55×) and
-  geomean 7.30× → **5.53×** (best ever).
+  geomean 7.30× → **5.53×**.
+- **Tier 2 — inline SmallInt fast path in arithmetic opcodes.**
+  `OP_BINARY_ADD`, `OP_INPLACE_ADD`, `OP_BINARY_SUBTRACT`,
+  `OP_INPLACE_SUBTRACT` and `OP_COMPARE_OP` (`==`, `!=`, `<`, `<=`,
+  `>`, `>=`) now branch directly on the operand tags using four new
+  `static inline` helpers in `protoCore.h`
+  (`proto::isSmallInt`, `proto::asSmallInt`,
+  `proto::smallIntInRange`, `proto::makeSmallInt`).  When both
+  operands are `SmallInt`-tagged pointers the handler does the
+  arithmetic inline (one branch + ALU op + range check + re-tag) and
+  skips ~10 cross-DSO function calls + 6 redundant tag checks that
+  the previous `binaryAdd` → `unwrapPrimitive` → `ProtoObject::add`
+  → `Integer::add` chain went through.  protoCore stays a separate
+  shared library — the helpers are inline only in the public header,
+  no library symbol changes.  Result: `call_recursion` 866 ms →
+  **716 ms** (-17 %; the recursive arithmetic in fib's recurrence is
+  a perfect fit), `range_iterate` 615 ms → **565 ms** (-8 %),
+  geomean 5.53× → **5.34×** (best ever).
 
 ### Where the remaining gap is
 
@@ -151,7 +168,7 @@ In priority order:
 |---|---|---|---|
 | **1** | Eliminate `toUTF8String` in `getAttribute` keys fallback | ✅ landed | -5 to -15 % |
 | **1** | Lazy frame materialisation for `sys._getframe()` consumers | ⚙ deferred (design) | low single-digit |
-| **2** | Inline SmallInteger arithmetic on the bytecode hot path | planned | 20-40 % on integer loops |
+| **2** | Inline SmallInteger arithmetic on the bytecode hot path | ✅ landed | call_recursion -17 %, range_iterate -8 % |
 | **2** | Lock-free per-context cell pool replenish | planned | 1-2 % single-thread, larger as cores grow |
 | **3** | Real `_thread.start_joinable_thread` + `_ThreadHandle` + STW safepoint poll | ✅ landed | multithread_cpu 18.9× → 2.55× |
 | **3** | Beat CPython on `multithread_cpu` (parallel scaling) | planned | currently 2.55× slower; goal <1.0× |

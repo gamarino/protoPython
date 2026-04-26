@@ -3226,6 +3226,20 @@ const proto::ProtoObject* executeBytecodeRange(
             if (stack.size() < 2) { i = next_i; continue; }
             const proto::ProtoObject* b = stack.back();
             const proto::ProtoObject* a = stack[stack.top - 2];
+            // Tier 2: SmallInt + SmallInt fast path.  Skips binaryAdd /
+            // unwrapPrimitive / ProtoObject::add / Integer::add — for the
+            // common case (≥90 % of BINARY_ADD on integer-loop benchmarks)
+            // this collapses ~10 cross-DSO function calls + 6 redundant tag
+            // checks into one branch + ALU add + range check + re-tag.
+            if (proto::isSmallInt(a) && proto::isSmallInt(b)) {
+                long long sum = proto::asSmallInt(a) + proto::asSmallInt(b);
+                if (proto::smallIntInRange(sum)) {
+                    stack.pop_back();
+                    stack.back() = proto::makeSmallInt(sum);
+                    i = next_i;
+                    continue;
+                }
+            }
             const proto::ProtoObject* r = binaryAdd(ctx, a, b);
             stack.pop_back(); // Pop b
             stack.back() = r; // Replace a with r
@@ -3233,7 +3247,18 @@ const proto::ProtoObject* executeBytecodeRange(
             if (stack.size() < 2) { i = next_i; continue; }
             const proto::ProtoObject* b = stack.back();
             const proto::ProtoObject* a = stack[stack.top - 2];
-            
+
+            // Tier 2: SmallInt + SmallInt fast path (covers `i += 1`).
+            if (proto::isSmallInt(a) && proto::isSmallInt(b)) {
+                long long sum = proto::asSmallInt(a) + proto::asSmallInt(b);
+                if (proto::smallIntInRange(sum)) {
+                    stack.pop_back();
+                    stack.back() = proto::makeSmallInt(sum);
+                    i = next_i;
+                    continue;
+                }
+            }
+
             const proto::ProtoObject* iadd = isEmbeddedValue(ctx, a) ? nullptr : a->getAttribute(ctx, env ? env->getIAddString() : PythonEnvironment::getInternedString(ctx, "__iadd__"));
             if (iadd && iadd->asMethod(ctx)) {
                 const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
@@ -3249,6 +3274,16 @@ const proto::ProtoObject* executeBytecodeRange(
             if (stack.size() < 2) { i = next_i; continue; }
             const proto::ProtoObject* b = stack.back();
             const proto::ProtoObject* a = stack[stack.top - 2];
+            // Tier 2: SmallInt - SmallInt fast path.
+            if (proto::isSmallInt(a) && proto::isSmallInt(b)) {
+                long long diff = proto::asSmallInt(a) - proto::asSmallInt(b);
+                if (proto::smallIntInRange(diff)) {
+                    stack.pop_back();
+                    stack.back() = proto::makeSmallInt(diff);
+                    i = next_i;
+                    continue;
+                }
+            }
             const proto::ProtoObject* r = binarySubtract(ctx, a, b);
             stack.pop_back(); // Pop b
             stack.back() = r;
@@ -3256,8 +3291,18 @@ const proto::ProtoObject* executeBytecodeRange(
         } else if (op == OP_INPLACE_SUBTRACT) {
             if (stack.size() < 2) { i = next_i; continue; }
             const proto::ProtoObject* b = stack.back();
+            const proto::ProtoObject* a = stack[stack.top - 2];
+            // Tier 2: SmallInt - SmallInt fast path.
+            if (proto::isSmallInt(a) && proto::isSmallInt(b)) {
+                long long diff = proto::asSmallInt(a) - proto::asSmallInt(b);
+                if (proto::smallIntInRange(diff)) {
+                    stack.pop_back();
+                    stack.back() = proto::makeSmallInt(diff);
+                    i = next_i;
+                    continue;
+                }
+            }
             stack.pop_back();
-            const proto::ProtoObject* a = stack.back();
             stack.pop_back();
             const proto::ProtoObject* isub = isEmbeddedValue(ctx, a) ? nullptr : a->getAttribute(ctx, env ? env->getISubString() : PythonEnvironment::getInternedString(ctx, "__isub__"));
             if (isub && isub->asMethod(ctx)) {
@@ -3931,6 +3976,28 @@ const proto::ProtoObject* executeBytecodeRange(
             if (stack.size() < 2) { i = next_i; continue; }
             const proto::ProtoObject* b = stack.back();
             const proto::ProtoObject* a = stack[stack.top - 2];
+            // Tier 2: SmallInt cmp SmallInt fast path.  arg encoding from
+            // Compiler.cpp: 0 ==, 1 !=, 2 <, 3 <=, 4 >, 5 >=.  6/7 (in/not in),
+            // 8/9 (is/is not), 10 (exception_match) fall through to the generic
+            // compareOp (they need full Python semantics).
+            if (arg <= 5 && proto::isSmallInt(a) && proto::isSmallInt(b)) {
+                long long la = proto::asSmallInt(a);
+                long long lb = proto::asSmallInt(b);
+                bool result;
+                switch (arg) {
+                    case 0: result = (la == lb); break;
+                    case 1: result = (la != lb); break;
+                    case 2: result = (la <  lb); break;
+                    case 3: result = (la <= lb); break;
+                    case 4: result = (la >  lb); break;
+                    case 5: result = (la >= lb); break;
+                    default: result = false;
+                }
+                stack.pop_back();
+                stack.back() = result ? PROTO_TRUE : PROTO_FALSE;
+                i = next_i;
+                continue;
+            }
             const proto::ProtoObject* r = compareOp(ctx, a, b, arg);
             stack.pop_back();
             stack.back() = (r ? r : PROTO_NONE);

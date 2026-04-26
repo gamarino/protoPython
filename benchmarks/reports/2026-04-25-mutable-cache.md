@@ -1,6 +1,6 @@
 # V154 — mutable cache + frame-skip + attribute-name fast path + multithread fix
 
-> **Status: V154.** This file consolidates four rounds of work landed
+> **Status: V154.** This file consolidates five rounds of work landed
 > in April 2026:
 >   1. **V95** — protoCore mutableRoot: 256 shards + per-thread snapshot cache.
 >   2. **V95-fix** — two regressions surfaced and fixed: build-mode
@@ -16,6 +16,14 @@
 >      `ProtoContext::safepoint()` API added so the bytecode
 >      dispatcher participates in GC stop-the-world from
 >      allocation-free hot loops.
+>   5. **V154 (Tier 2)** — inline SmallInt fast path in
+>      `OP_BINARY_ADD` / `OP_INPLACE_ADD` / `OP_BINARY_SUBTRACT` /
+>      `OP_INPLACE_SUBTRACT` / `OP_COMPARE_OP`.  Four new `static
+>      inline` helpers in `protoCore.h`
+>      (`isSmallInt`, `asSmallInt`, `smallIntInRange`, `makeSmallInt`)
+>      let the opcode handler branch on the tag and do the arithmetic
+>      inline, skipping ~10 cross-DSO function calls and 6 redundant
+>      tag checks for the >90 % SmallInt+SmallInt case.
 >
 > All numbers below are Release build, minimum of 10 runs (V99
 > methodology).  The protoPython project version is **1.0.0**;
@@ -126,23 +134,23 @@ on every benchmark that touches an unmutated mutable in a loop.
 ## Results — minimum of 10, Release build
 
 V94 baseline → V95 raw (regression surfaced) → V95 fixed (skipFrame +
-negative caching) → V154 (Tier 1.1 + Tier 3 round 1).
+negative caching) → V154 Tier 1.1 + Tier 3 round 1 → V154 + Tier 2.
 
 ```
-┌──────────────────┬──────────┬─────────┬──────────┬──────────┬──────────────┐
-│ Benchmark        │ V94 base │ V95 raw │ V95 fix  │ V154     │ Ratio vs cpy │
-│                  │  (ms)    │  (ms)   │  (ms)    │  (ms)    │   (V154)     │
-├──────────────────┼──────────┼─────────┼──────────┼──────────┼──────────────┤
-│ call_recursion   │   2994   │  35347  │     967  │     866  │   13.46×     │
-│ list_append_loop │    482   │   1066  │    1268  │    1067  │   16.62×     │
-│ str_concat_loop  │    479   │    615  │     875  │     716  │   11.14×     │
-│ range_iterate    │    464   │    465  │     620  │     615  │    9.57×     │
-│ attr_lookup      │    785   │    765  │    1020  │     917  │   14.23×     │
-│ multithread_cpu  │     39†  │    966  │    1321  │     165  │    2.55×     │
-│ int_sum_loop     │     43   │     64  │      64  │      32  │    1.00×     │
-├──────────────────┼──────────┼─────────┼──────────┼──────────┼──────────────┤
-│ Geomean ratio    │   9.96×  │  11.39× │   7.72×  │   5.53×  │              │
-└──────────────────┴──────────┴─────────┴──────────┴──────────┴──────────────┘
+┌──────────────────┬──────────┬─────────┬──────────┬──────────┬──────────┬──────────────┐
+│ Benchmark        │ V94 base │ V95 raw │ V95 fix  │ V154 T3  │ V154 T2  │ Ratio vs cpy │
+│                  │  (ms)    │  (ms)   │  (ms)    │  (ms)    │  (ms)    │   (V154 T2)  │
+├──────────────────┼──────────┼─────────┼──────────┼──────────┼──────────┼──────────────┤
+│ call_recursion   │   2994   │  35347  │     967  │     866  │     716  │   11.13×     │
+│ list_append_loop │    482   │   1066  │    1268  │    1067  │    1017  │   15.85×     │
+│ str_concat_loop  │    479   │    615  │     875  │     716  │     716  │   11.13×     │
+│ range_iterate    │    464   │    465  │     620  │     615  │     565  │    8.76×     │
+│ attr_lookup      │    785   │    765  │    1020  │     917  │     967  │   15.03×     │
+│ multithread_cpu  │     39†  │    966  │    1321  │     165  │     164  │    2.56×     │
+│ int_sum_loop     │     43   │     64  │      64  │      32  │      32  │    1.00×     │
+├──────────────────┼──────────┼─────────┼──────────┼──────────┼──────────┼──────────────┤
+│ Geomean ratio    │   9.96×  │  11.39× │   7.72×  │   5.53×  │   5.34×  │              │
+└──────────────────┴──────────┴─────────┴──────────┴──────────┴──────────┴──────────────┘
 ```
 
 † `multithread_cpu` baselines through V95-fix were measured against a
@@ -158,7 +166,17 @@ codebase.  165 ms is **real** four-thread work.
 
 Reading the table:
 
-- **`multithread_cpu` is the headline**: 1217 ms → **165 ms**, ratio
+- **Tier 2 (SmallInt fast path) lands the latest deltas:**
+  `call_recursion` 866 ms → **716 ms** (-17 %; fib's recurrence is the
+  ideal case — every call does one COMPARE_OP and three integer
+  arithmetic ops on SmallInt operands), `range_iterate` 615 ms →
+  **565 ms** (-8 %), `str_concat_loop` flat (the inner loop is
+  dominated by string concat, not SmallInt arithmetic),
+  `multithread_cpu` flat (already at the thread setup-overhead floor;
+  arithmetic is no longer the bottleneck).  **Geomean drops from
+  5.53× to 5.34× — best protoPython has hit.**
+
+- **`multithread_cpu` was the prior headline**: 1217 ms → **165 ms**, ratio
   18.90× → 2.55×.  Threading was structurally broken
   (`Thread.start()` hung; the legacy benchmark's `_has_thread = False`
   branch hid this for V92-V99).  After the fix it really runs four OS
@@ -335,11 +353,12 @@ In priority order, with rough single-shot expected impact:
 
 ---
 
-**Status:** V154 landed.  Geomean **5.53×** vs CPython 3.14 — best
-protoPython has hit; better than the V94 milestone (9.96×) and the
-V95-fix milestone (7.72×).  Next concrete targets: Tier 3 round 2
-(close the remaining 2.55× gap on `multithread_cpu` so the GIL-free
-architecture decisively beats CPython on parallel CPU work), then
-Tier 2 (inline SmallInteger arithmetic on the bytecode hot path),
-then Tier 1.2 (lazy frame materialisation for `sys._getframe()`
+**Status:** V154 + Tier 2 landed.  Geomean **5.34×** vs CPython 3.14
+— best protoPython has hit; better than the V94 milestone (9.96×),
+the V95-fix milestone (7.72×), and the V154 Tier-3 round-1 milestone
+(5.53×).  Next concrete targets: Tier 3 round 2 (close the remaining
+2.56× gap on `multithread_cpu` so the GIL-free architecture decisively
+beats CPython on parallel CPU work — the largest remaining structural
+opportunity since arithmetic is no longer the bottleneck there), then
+Tier 1.2 (lazy frame materialisation for `sys._getframe()`
 consumers).
