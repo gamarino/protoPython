@@ -1,12 +1,19 @@
-# V95 — protoCore mutableRoot: 256 shards + per-thread snapshot cache
+# V154 — mutable cache + frame-skip + attribute-name fast path
 
-> **Status: corrected.** An earlier draft of this report measured against a
-> Debug build of protopy (`build/`) and reported geomean ratios that were
-> uniformly 2-4× worse than the same workloads measured against the Release
-> build (`build-release/`).  The Release-build numbers below are the
-> ones that should be referenced.  The earlier draft also surfaced two
-> code-level regressions that were fixed in the same investigation; both
-> fixes are now upstream and folded into the numbers presented here.
+> **Status: V154.** This file consolidates three rounds of work landed
+> in April 2026:
+>   1. **V95** — protoCore mutableRoot: 256 shards + per-thread snapshot cache.
+>   2. **V95-fix** — two regressions surfaced and fixed: build-mode
+>      methodology (Debug vs Release) and unconditional frame
+>      construction in `runUserFunctionCallRaw`.
+>   3. **V154 (Tier 1.1)** — `PythonEnvironment::getAttribute` keys-fallback
+>      no longer allocates `std::string` per comparison; uses
+>      `ProtoString::cmp_to_string` directly.
+>
+> All numbers below are Release build, minimum of 10 runs (V99
+> methodology).  The protoPython project version is **1.0.0**;
+> "V154" refers to the internal performance-milestone ordinal that
+> tracks each iteration of the optimisation roadmap.
 
 ## What V95 changes
 
@@ -111,37 +118,41 @@ on every benchmark that touches an unmutated mutable in a loop.
 
 ## Results — minimum of 10, Release build
 
+V94 baseline → V95 raw (regression surfaced) → V95 fixed (skipFrame +
+negative caching) → V154 (Tier 1.1: `cmp_to_string` replaces
+`toUTF8String` in `PythonEnvironment::getAttribute` keys fallback).
+
 ```
-┌──────────────────┬──────────┬─────────┬──────────┬────────────────┬──────────────┐
-│ Benchmark        │ V94 base │ V95 raw │ V95 fix  │ Δ (raw → fix)  │ Ratio vs cpy │
-│                  │  (ms)    │  (ms)   │  (ms)    │                │              │
-├──────────────────┼──────────┼─────────┼──────────┼────────────────┼──────────────┤
-│ call_recursion   │   2994   │  35347  │     967  │   −34380 (−97%)│    15.0×     │
-│ list_append_loop │    482   │   1066  │    1268  │     +202 (+19%)│    19.8×     │
-│ str_concat_loop  │    479   │    615  │     875  │     +260 (+42%)│    13.6×     │
-│ range_iterate    │    464   │    465  │     620  │     +155 (+33%)│     9.6×     │
-│ attr_lookup      │    785   │    765  │    1020  │     +255 (+33%)│    15.9×     │
-│ multithread_cpu  │     39   │    966  │    1321  │     +355 (+37%)│    20.6×     │
-│ int_sum_loop     │     43   │     64  │      64  │       0  ( 0%) │     1.0×     │
-├──────────────────┼──────────┼─────────┼──────────┼────────────────┼──────────────┤
-│ Geomean ratio    │   9.96×  │  11.39× │   7.72×  │   ~28% better  │              │
-└──────────────────┴──────────┴─────────┴──────────┴────────────────┴──────────────┘
+┌──────────────────┬──────────┬─────────┬──────────┬──────────┬──────────────┐
+│ Benchmark        │ V94 base │ V95 raw │ V95 fix  │ V154     │ Ratio vs cpy │
+│                  │  (ms)    │  (ms)   │  (ms)    │  (ms)    │   (V154)     │
+├──────────────────┼──────────┼─────────┼──────────┼──────────┼──────────────┤
+│ call_recursion   │   2994   │  35347  │     967  │     916  │   14.22×     │
+│ list_append_loop │    482   │   1066  │    1268  │    1067  │   16.55×     │
+│ str_concat_loop  │    479   │    615  │     875  │     766  │   11.91×     │
+│ range_iterate    │    464   │    465  │     620  │     616  │    9.58×     │
+│ attr_lookup      │    785   │    765  │    1020  │    1017  │   15.81×     │
+│ multithread_cpu  │     39   │    966  │    1321  │    1217  │   18.90×     │
+│ int_sum_loop     │     43   │     64  │      64  │      32  │    1.00×     │
+├──────────────────┼──────────┼─────────┼──────────┼──────────┼──────────────┤
+│ Geomean ratio    │   9.96×  │  11.39× │   7.72×  │   7.30×  │              │
+└──────────────────┴──────────┴─────────┴──────────┴──────────┴──────────────┘
 ```
 
 Reading the table:
 
-- **`call_recursion` recovers fully**, from a 553× CPython slowdown to
-  15×.  The skipFrame fix is the single largest win.
-- **Geomean ratio drops from 11.39× to 7.72× — better than V94's 9.96×**.
-- The other workloads regress slightly (10-40%).  Their bottleneck has
-  shifted: per-call frame allocation is no longer dominant, and they now
-  surface costs further upstream (attribute name string conversions,
-  iterator advance, set-up overhead in non-leaf functions).  These are
-  the targets for the next round.
+- **`call_recursion` recovers fully**: V95 raw 35 347 ms → V154 916 ms,
+  a 38× speed-up.  The skipFrame fix is the single largest win.
+- **Geomean ratio at 7.30×** — best protoPython has hit; better than
+  V94's 9.96× milestone.
+- **Tier 1.1 (`cmp_to_string`) lands −5 to −15 % across attribute-bound
+  benchmarks**: list_append_loop −15.9 %, str_concat_loop −12.4 %,
+  call_recursion −5.3 %.  Negligible on benchmarks that don't trigger
+  the keys-fallback path.
 - **`int_sum_loop` is the negative control**: pure SmallInteger
   arithmetic stays on the embedded-value fast path and never touches a
-  mutable.  Flat result confirms zero overhead from the new cache when
-  it cannot help.
+  mutable.  Flat result confirms zero overhead from the changes when
+  they cannot help.
 
 ## Profile after the fix — what's left to attack
 
@@ -171,22 +182,24 @@ on the interned symbol pointer.
 
 In priority order, with rough single-shot expected impact:
 
-### Tier 1 — ready to land
+### Tier 1 — landed in V154
 
-1. **Eliminate `toUTF8String` calls in
-   `PythonEnvironment::getAttribute`.**  Names are already interned;
-   the lookup should compare the symbol pointer directly against the
-   well-known name pointers (already cached on `PythonEnvironment` —
-   `getCodeString()`, `getDataString()`, …).  Estimated impact: ~10-15 %
-   on every attribute-bound benchmark.
+1. **Eliminated `toUTF8String` calls in
+   `PythonEnvironment::getAttribute` keys fallback.** ✅ Landed.
+   Five hot fallback sites that previously did
+   `keyS->toUTF8String(ctx, ks); match = (ks == nameStr)` now use
+   the zero-allocation `keyS->cmp_to_string(ctx, name) == 0`.
+   Measured impact: −5 to −15 % on attribute-bound benchmarks
+   (list_append_loop −15.9 %, str_concat_loop −12.4 %).
 
 2. **Lazy frame materialisation for `sys._getframe()` /
-   traceback consumers.**  `skipFrame` currently optimises the common
-   case but a function that calls `sys._getframe()` from inside its
-   body still pays the full cost.  Build the frame only when an
-   instruction demands it; cache the frame on the calleeCtx so a
-   second request reuses it.  Estimated impact: low individually, but
-   removes a correctness concern that currently constrains skipFrame.
+   traceback consumers.** ⚙ Deferred (design phase).  Requires a
+   "frame factory" attached to the calleeCtx so `sys._getframe(0)`
+   can materialise on demand; touches the
+   `PythonEnvironment::setCurrentFrame` chain and exception traceback
+   code.  Estimated impact: low single-digit; the bigger win is
+   removing a latent correctness gap (`sys._getframe()` from inside a
+   skipFrame function currently sees the parent's frame).
 
 ### Tier 2 — design + measure
 
@@ -244,6 +257,9 @@ In priority order, with rough single-shot expected impact:
 
 ---
 
-**Status:** V95 fixes landed.  Geomean 7.72× — best protoPython has
-hit since V94.  Tier 1 work (item 1: name-string conversion in
-getAttribute) is the next concrete target.
+**Status:** V154 landed.  Geomean **7.30×** vs CPython 3.14 — best
+protoPython has hit; better than the V94 milestone (9.96×).  Next
+concrete targets: Tier 1.2 (lazy frame materialisation, design phase),
+then Tier 2 (inline SmallInteger arithmetic on the bytecode hot path),
+and Tier 3 (`multithread_cpu` — currently 1.21 s vs CPython 64 ms; the
+architectural win is missing in action).

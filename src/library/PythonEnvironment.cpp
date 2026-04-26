@@ -12454,7 +12454,7 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
                      // Fast: interned-string pointer equality. Fallback: UTF-8 content comparison.
                      const proto::ProtoString* keyS = keyO->asString(ctx);
                      bool match = (keyS == name);
-                     if (!match) { std::string ks; keyS->toUTF8String(ctx, ks); match = (ks == getNameStr()); }
+                     if (!match) { match = (keyS->cmp_to_string(ctx, name) == 0); }
                      if (match) {
                          val = obj->proto::ProtoObject::getAttribute(ctx, keyS);
                          isExplicitNone = (val == PROTO_NONE && obj->hasAttribute(ctx, keyS) == PROTO_TRUE);
@@ -12513,7 +12513,7 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
                             if (keyO && keyO->isString(ctx)) {
                                 const proto::ProtoString* keyS = keyO->asString(ctx);
                                 bool match = (keyS == name);
-                                if (!match) { std::string ks; keyS->toUTF8String(ctx, ks); match = (ks == getNameStr()); }
+                                if (!match) { match = (keyS->cmp_to_string(ctx, name) == 0); }
                                 if (match) {
                                     val = baseCls->proto::ProtoObject::getAttribute(ctx, keyS);
                                     foundOnClassOrMro = true;
@@ -12549,7 +12549,7 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
                                 if (keyO && keyO->isString(ctx)) {
                                     const proto::ProtoString* keyS = keyO->asString(ctx);
                                     bool match = (keyS == name);
-                                    if (!match) { std::string ks; keyS->toUTF8String(ctx, ks); match = (ks == getNameStr()); }
+                                    if (!match) { match = (keyS->cmp_to_string(ctx, name) == 0); }
                                     if (match) {
                                         val = baseCls->proto::ProtoObject::getAttribute(ctx, keyS);
                                         foundOnClassOrMro = true;
@@ -12591,7 +12591,7 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
                             if (keyO && keyO->isString(ctx)) {
                                 const proto::ProtoString* keyS = keyO->asString(ctx);
                                 bool match = (keyS == name);
-                                if (!match) { std::string ks; keyS->toUTF8String(ctx, ks); match = (ks == getNameStr()); }
+                                if (!match) { match = (keyS->cmp_to_string(ctx, name) == 0); }
                                 if (match) {
                                     val = baseCls->proto::ProtoObject::getAttribute(ctx, keyS);
                                     foundOnClassOrMro = true;
@@ -12626,7 +12626,7 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
                                      if (keyO && keyO->isString(ctx)) {
                                          const proto::ProtoString* keyS = keyO->asString(ctx);
                                          bool match = (keyS == name);
-                                         if (!match) { std::string ks; keyS->toUTF8String(ctx, ks); match = (ks == getNameStr()); }
+                                         if (!match) { match = (keyS->cmp_to_string(ctx, name) == 0); }
                                          if (match) {
                                              val = baseCls->proto::ProtoObject::getAttribute(ctx, keyS);
                                              foundOnClassOrMro = true;
