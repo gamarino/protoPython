@@ -952,6 +952,10 @@ private:
     
     const proto::ProtoString* mroString{nullptr};
     const proto::ProtoString* basesString{nullptr};
+    // Cached symbol for the per-class marker that lets isActuallyAClass
+    // collapse to a single hasOwnAttribute call on the hot path
+    // (Phase 4 of the protoCore-delegation design).
+    const proto::ProtoString* isPythonClassString{nullptr};
 
     const proto::ProtoString* enumProtoS{nullptr};
     const proto::ProtoString* revProtoS{nullptr};

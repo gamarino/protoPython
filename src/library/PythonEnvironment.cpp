@@ -9131,6 +9131,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     prepareString = getInternedString(rootContext_, "__prepare__");
     mroString = getInternedString(rootContext_, "__mro__");
     basesString = getInternedString(rootContext_, "__bases__");
+    isPythonClassString = getInternedString(rootContext_, "__is_python_class__");
     executedString = getInternedString(rootContext_, "__executed__");
     nameString = getInternedString(rootContext_, "__name__");
     callString = getInternedString(rootContext_, "__call__");
@@ -9278,6 +9279,9 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     typePrototype = typePrototype->setAttribute(rootContext_, py_module, builtinsVal);
 
     // 3. Set all dunders on object
+    // Phase-4 own-marker so isActuallyAClass(objectPrototype) collapses
+    // to the same single hasOwnAttribute test as user-defined classes.
+    objectPrototype = objectPrototype->setAttribute(rootContext_, getInternedString(rootContext_, "__is_python_class__"), PROTO_TRUE);
     objectPrototype = objectPrototype->setAttribute(rootContext_, py_init, rootContext_->fromMethod(nullptr, py_object_init));
     objectPrototype = objectPrototype->setAttribute(rootContext_, newString, rootContext_->fromMethod(nullptr, protoPython::builtins::py_object_new));
     objectPrototype = objectPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_object_repr));
@@ -12181,27 +12185,26 @@ bool PythonEnvironment::isCompleteBlock(const std::string& code) {
 
 bool PythonEnvironment::isActuallyAClass(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
     if (!obj || obj == PROTO_NONE || obj->isString(ctx) || obj->isInteger(ctx) || obj->isBoolean(ctx)) return false;
-    const proto::ProtoObject* tProto = getTypePrototype();
-    const proto::ProtoString* pythonClsS = PythonEnvironment::getInternedString(ctx, "__is_python_class__");
-    const proto::ProtoString* classS = getClassString();
-    const proto::ProtoString* basesS = PythonEnvironment::getInternedString(ctx, "__bases__");
-
-    bool res = false;
-    if (obj == tProto) {
-        res = true;
-    } else if (obj->hasOwnAttribute(ctx, pythonClsS) == PROTO_TRUE) {
-        res = true;
-    } else if (classS && obj->hasOwnAttribute(ctx, classS) == PROTO_TRUE) {
-        const proto::ProtoObject* cls = obj->proto::ProtoObject::getAttribute(ctx, classS);
-        if (cls == tProto) {
-            res = true;
-        }
-    } else if (obj->hasOwnAttribute(ctx, getNameString()) == PROTO_TRUE &&
-             obj->hasOwnAttribute(ctx, basesS) == PROTO_TRUE) {
-        res = true;
+    if (obj == typePrototype) return true;
+    // Phase 4: every Python class tags itself with __is_python_class__
+    // = True as an own attribute at construction time (py_type for the
+    // class statement, the bootstrap for objectPrototype/typePrototype,
+    // and the prototype builders for primitive types via the
+    // initBuiltinClassMarker helper).  Probe the marker via the cached
+    // symbol — mutable cache makes the answer O(1) amortised.
+    if (isPythonClassString && obj->hasOwnAttribute(ctx, isPythonClassString) == PROTO_TRUE) {
+        return true;
     }
-
-    return res;
+    // Fallback for primitive type prototypes that the bootstrap may
+    // not yet have been able to mark (e.g. when isActuallyAClass is
+    // queried during the initial setup of those very prototypes).
+    // Pure shape probe — no class invariants assumed.
+    if (basesString && getNameString() &&
+        obj->hasOwnAttribute(ctx, getNameString()) == PROTO_TRUE &&
+        obj->hasOwnAttribute(ctx, basesString) == PROTO_TRUE) {
+        return true;
+    }
+    return false;
 }
 
 const proto::ProtoObject* PythonEnvironment::getType(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
