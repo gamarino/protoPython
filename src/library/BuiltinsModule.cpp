@@ -2360,7 +2360,9 @@ static const proto::ProtoObject* py_super(
     proxy->setAttribute(context, PythonEnvironment::getInternedString(context, "__setattr__"), context->fromMethod(proxy, py_super_setattr));
     proxy->setAttribute(context, PythonEnvironment::getInternedString(context, "__repr__"), context->fromMethod(proxy, py_super_repr));
     proxy->setAttribute(context, PythonEnvironment::getInternedString(context, "__init__"), context->fromMethod(proxy, py_super_init));
-    proxy->setAttribute(context, PythonEnvironment::getInternedString(context, "__is_super_proxy__"), context->fromBoolean(true));
+    // Fast-path OBJ-level dispatch: hasOwnAttribute(__py_getattr_handler__) replaces
+    // the old getAttribute(__is_super_proxy__) chain walk in tryFastGetAttribute.
+    proxy->setAttribute(context, PythonEnvironment::getInternedString(context, "__py_getattr_handler__"), context->fromMethod(proxy, py_super_getattr));
 
     return proxy;
 }

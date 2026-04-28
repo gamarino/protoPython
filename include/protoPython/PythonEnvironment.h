@@ -432,6 +432,7 @@ public:
     const proto::ProtoString* getDataString() const { return dataString; }
     const proto::ProtoString* getKeysString() const { return keysString; }
     const proto::ProtoString* getIsSuperProxyString() const { return isSuperProxyString; }
+    const proto::ProtoString* getPyGetAttrHandlerString() const { return pyGetAttrHandlerString_; }
     const proto::ProtoString* getGetattrDunderString() const { return getattrDunderString; }
     const proto::ProtoString* getGetattributeDunderString() const { return getattributeDunderString; }
     const proto::ProtoString* getInitString() const { return initString; }
@@ -1038,6 +1039,7 @@ private:
     const proto::ProtoString* dataString{nullptr};
     const proto::ProtoString* keysString{nullptr};
     const proto::ProtoString* isSuperProxyString{nullptr};
+    const proto::ProtoString* pyGetAttrHandlerString_{nullptr};
     const proto::ProtoString* getattrDunderString{nullptr};
     const proto::ProtoString* getattributeDunderString{nullptr};
     const proto::ProtoString* matMulString{nullptr};

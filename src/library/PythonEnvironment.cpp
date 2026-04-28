@@ -9176,6 +9176,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     space_->literalData = const_cast<proto::ProtoString*>(dataString);
     keysString = getInternedString(rootContext_, "__keys__");
     isSuperProxyString = getInternedString(rootContext_, "__is_super_proxy__");
+    pyGetAttrHandlerString_ = getInternedString(rootContext_, "__py_getattr_handler__");
     getattrDunderString = getInternedString(rootContext_, "__getattr__");
     getattributeDunderString = getInternedString(rootContext_, "__getattribute__");
     startString = getInternedString(rootContext_, "start");
@@ -12300,6 +12301,7 @@ static const proto::ProtoObject* tryFastGetAttribute(
         bool* outIsUnboundFunc) {
     if (!obj || obj == PROTO_NONE || !name || !env) return nullptr;
 
+    // Synthesized dunders are handled by the slow path.
     if (name == env->getClassString()             ||
         name == env->getMroString()               ||
         name == env->getDictDunderString()        ||
@@ -12308,53 +12310,51 @@ static const proto::ProtoObject* tryFastGetAttribute(
         return nullptr;
     }
 
-    const proto::ProtoString* superKey = env->getIsSuperProxyString();
-    if (superKey && obj->proto::ProtoObject::getAttribute(ctx, superKey) == PROTO_TRUE) {
-        return nullptr;
+    // OBJ-level dispatch: objects with an own __py_getattr_handler__ (e.g. super proxies)
+    // implement their own attribute access semantics.  hasOwnAttribute checks only the
+    // object's own attribute map — O(1) hash lookup, no prototype chain walk.
+    const proto::ProtoString* handlerS = env->getPyGetAttrHandlerString();
+    if (handlerS) {
+        const proto::ProtoObject* handler = obj->hasOwnAttribute(ctx, handlerS);
+        if (handler && handler != PROTO_NONE && handler->isMethod(ctx)) {
+            const proto::ProtoList* args = ctx->newList()->appendLast(ctx, reinterpret_cast<const proto::ProtoObject*>(name));
+            return handler->asMethod(ctx)(ctx, obj, nullptr, args, nullptr);
+        }
     }
 
+    // Single protoCore chain walk for the attribute value (cached).
     const proto::ProtoObject* val = obj->proto::ProtoObject::getAttribute(ctx, name);
     if (!val || val == PROTO_NONE) return nullptr;
 
-    // Bail on native methods — slow path's __get__ binding produces the
-    // unbound-or-bound variant the caller needs (e.g. when looking up
-    // class.method, getM->__get__(self=method, args=[None, class])
-    // returns the function unwrapped).  Fast path can't replicate this
-    // cheaply for the general case.
+    // Native methods: O(1) pointer-tag check.
     if (val->isMethod(ctx)) return nullptr;
 
-    // Plain Python function detected via __code__: defer to slow path
-    // unless the caller is in LOAD_METHOD position (outIsUnboundFunc
-    // provided), in which case we mirror the slow-path optimisation
-    // that returns the function raw + sets the flag, letting OP_CALL
-    // prepend self via [Method, Self, Arg1...] without ever
-    // materialising a bound-method object.  Skip the optimisation for
-    // classes (cls.method needs slow-path classmethod/staticmethod
-    // unwrapping) and modules.
-    const proto::ProtoString* codeStr = env->getCodeString();
-    if (codeStr && val->hasOwnAttribute(ctx, codeStr) == PROTO_TRUE) {
-        if (!outIsUnboundFunc) return nullptr;
+    // VALUE-level dispatch: identify the value's type via its first parent — a direct
+    // struct-field access with no allocation and no hash lookup.  Different types get
+    // different treatment:
+    //   • Python function (parent == functionPrototype): LOAD_METHOD optimisation.
+    //   • Descriptor types (property, classmethod, staticmethod, …): bail to slow path.
+    //   • Everything else: return the value directly.
+    const proto::ProtoObject* valType = val->getFirstParent(ctx);
+
+    if (valType == env->getFunctionPrototype()) {
+        // Python function — LOAD_METHOD: return raw function, let the dispatcher prepend self.
+        if (!outIsUnboundFunc) return nullptr;  // LOAD_ATTR: slow path creates bound method.
         if (env->getModulePrototype() && obj == env->getModulePrototype()) return nullptr;
-        if (env->isActuallyAClass(ctx, obj)) return nullptr;
+        if (env->isActuallyAClass(ctx, obj)) return nullptr;  // cls.method: slow path for classmethod/staticmethod.
         *outIsUnboundFunc = true;
         return val;
     }
 
-    // Bail on descriptors — values whose TYPE defines __get__.  Cheap
-    // variant: peek at val's first parent (its protoCore "type") and
-    // check own/inherited __get__.  hasAttribute walks the chain but
-    // hits the per-thread cache after the first call for any given
-    // type, so amortised cost is O(1).  Plain primitives (small ints,
-    // strings, lists, user-class instances) have types without
-    // __get__ and skip out cheaply.
+    // Descriptor check: if val's type defines __get__, the slow path must invoke it.
+    // One cached getAttribute on valType covers both own-__get__ (e.g. property) and
+    // inherited __get__ (user-defined descriptor classes).
     const proto::ProtoString* getDS = env->getGetDunderString();
-    if (getDS) {
-        if (val->hasOwnAttribute(ctx, getDS) == PROTO_TRUE) return nullptr;
-        const proto::ProtoObject* valType = val->getFirstParent(ctx);
-        if (valType && valType != PROTO_NONE && valType != val) {
-            if (valType->hasAttribute(ctx, getDS) == PROTO_TRUE) return nullptr;
-        }
+    if (getDS && valType && valType != PROTO_NONE && valType != val) {
+        if (valType->getAttribute(ctx, getDS)) return nullptr;
     }
+    // Also cover descriptors that carry __get__ directly as an own attribute.
+    if (getDS && val->hasOwnAttribute(ctx, getDS) == PROTO_TRUE) return nullptr;
 
     return val;
 }
@@ -12433,13 +12433,14 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
         return obj->getAttribute(ctx, name);
     }
 
-    // super() proxy handling
-    if (isSuperProxyString && obj->proto::ProtoObject::getAttribute(ctx, isSuperProxyString) == PROTO_TRUE) {
-        const proto::ProtoString* getattrS = getattrDunderString ? getattrDunderString : PythonEnvironment::getInternedString(ctx, "__getattr__");
-        const proto::ProtoObject* getattrM = obj->getAttribute(ctx, getattrS);
-        if (getattrM && getattrM->isMethod(ctx)) {
-             const proto::ProtoList* args = ctx->newList()->appendLast(ctx, name->asObject(ctx));
-             return getattrM->asMethod(ctx)(ctx, obj, nullptr, args, nullptr);
+    // OBJ-level dispatch: super() proxies and any object with an own __py_getattr_handler__
+    // handle attribute access themselves.  hasOwnAttribute does not walk the prototype chain —
+    // it checks only the object's own attribute map (O(1) hash lookup).
+    if (pyGetAttrHandlerString_) {
+        const proto::ProtoObject* handler = obj->hasOwnAttribute(ctx, pyGetAttrHandlerString_);
+        if (handler && handler != PROTO_NONE && handler->isMethod(ctx)) {
+            const proto::ProtoList* args = ctx->newList()->appendLast(ctx, name->asObject(ctx));
+            return handler->asMethod(ctx)(ctx, obj, nullptr, args, nullptr);
         }
     }
 
