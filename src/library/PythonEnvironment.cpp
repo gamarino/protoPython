@@ -12265,9 +12265,117 @@ const proto::ProtoObject* PythonEnvironment::getType(proto::ProtoContext* ctx, c
     return res;
 }
 
+// Phase-1 fast path for PythonEnvironment::getAttribute.
+//
+// Routes the lookup through protoCore's prototype-chain walk, hitting the
+// per-thread attribute cache for both instance-direct and MRO-traversed
+// names in a single call.  Returns nullptr when the lookup is ineligible
+// for the fast path — the caller falls back to the original 645-line slow
+// path which handles the descriptor protocol, __getattribute__ overrides,
+// data-descriptor precedence, super() proxies and the synthesized dunders.
+//
+// Eligibility (must all hold to fast-path the call):
+//   * obj is a real object (not None, not null);
+//   * name is not one of the synthesized/intercepted dunders we still
+//     handle ourselves (__class__, __mro__, __dict__, __bases__,
+//     __getattribute__);
+//   * obj is not a super() proxy;
+//   * the protoCore chain walk returns a non-null, non-PROTO_NONE value;
+//   * the resolved value either has __code__ (Python function — caller
+//     handles binding via outIsUnboundFunc) or does not own __get__
+//     (so it is not an explicit descriptor needing __get__ invocation).
+//
+// Plain Python functions inherit __get__ from functionPrototype as an
+// inherited attribute (not own), so hasOwnAttribute("__get__") is false
+// for them — they pass the descriptor check and reach the LOAD_METHOD
+// branch correctly.
+static const proto::ProtoObject* tryFastGetAttribute(
+        PythonEnvironment* env,
+        proto::ProtoContext* ctx,
+        const proto::ProtoObject* obj,
+        const proto::ProtoString* name,
+        bool* outIsUnboundFunc) {
+    if (!obj || obj == PROTO_NONE || !name || !env) return nullptr;
+
+    if (name == env->getClassString()             ||
+        name == env->getMroString()               ||
+        name == env->getDictDunderString()        ||
+        name == env->getBasesString()             ||
+        name == env->getGetattributeDunderString()) {
+        return nullptr;
+    }
+
+    const proto::ProtoString* superKey = env->getIsSuperProxyString();
+    if (superKey && obj->proto::ProtoObject::getAttribute(ctx, superKey) == PROTO_TRUE) {
+        return nullptr;
+    }
+
+    const proto::ProtoObject* val = obj->proto::ProtoObject::getAttribute(ctx, name);
+    if (!val || val == PROTO_NONE) return nullptr;
+
+    // Bail on native methods — slow path's __get__ binding produces the
+    // unbound-or-bound variant the caller needs (e.g. when looking up
+    // class.method, getM->__get__(self=method, args=[None, class])
+    // returns the function unwrapped).  Fast path can't replicate this
+    // cheaply for the general case.
+    if (val->isMethod(ctx)) return nullptr;
+
+    // Plain Python function detected via __code__: defer to slow path
+    // unless the caller is in LOAD_METHOD position (outIsUnboundFunc
+    // provided), in which case we mirror the slow-path optimisation
+    // that returns the function raw + sets the flag, letting OP_CALL
+    // prepend self via [Method, Self, Arg1...] without ever
+    // materialising a bound-method object.  Skip the optimisation for
+    // classes (cls.method needs slow-path classmethod/staticmethod
+    // unwrapping) and modules.
+    const proto::ProtoString* codeStr = env->getCodeString();
+    if (codeStr && val->hasOwnAttribute(ctx, codeStr) == PROTO_TRUE) {
+        if (!outIsUnboundFunc) return nullptr;
+        if (env->getModulePrototype() && obj == env->getModulePrototype()) return nullptr;
+        if (env->isActuallyAClass(ctx, obj)) return nullptr;
+        *outIsUnboundFunc = true;
+        return val;
+    }
+
+    // Bail on descriptors — values whose TYPE defines __get__.  Cheap
+    // variant: peek at val's first parent (its protoCore "type") and
+    // check own/inherited __get__.  hasAttribute walks the chain but
+    // hits the per-thread cache after the first call for any given
+    // type, so amortised cost is O(1).  Plain primitives (small ints,
+    // strings, lists, user-class instances) have types without
+    // __get__ and skip out cheaply.
+    const proto::ProtoString* getDS = env->getGetDunderString();
+    if (getDS) {
+        if (val->hasOwnAttribute(ctx, getDS) == PROTO_TRUE) return nullptr;
+        const proto::ProtoObject* valType = val->getFirstParent(ctx);
+        if (valType && valType != PROTO_NONE && valType != val) {
+            if (valType->hasAttribute(ctx, getDS) == PROTO_TRUE) return nullptr;
+        }
+    }
+
+    return val;
+}
+
+// Cached env-var read: PROTOPY_FAST_GETATTR=1 enables the Phase-1 fast
+// path.  std::getenv is read once at first call (function-local static)
+// and then never again; avoids the ~ns-level cost on the hot path.
+static inline bool fastGetattrEnabled() {
+    static const bool enabled = []() {
+        const char* v = std::getenv("PROTOPY_FAST_GETATTR");
+        return v != nullptr && v[0] != '\0' && v[0] != '0';
+    }();
+    return enabled;
+}
+
 const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* ctx, const proto::ProtoObject* obj, const proto::ProtoString* name, bool raiseError, bool* outIsUnboundFunc) {
     if (outIsUnboundFunc) *outIsUnboundFunc = false;
     if (!obj || !name) return nullptr;
+
+    if (fastGetattrEnabled()) {
+        const proto::ProtoObject* fast = tryFastGetAttribute(this, ctx, obj, name, outIsUnboundFunc);
+        if (fast) return fast;
+        if (outIsUnboundFunc) *outIsUnboundFunc = false;  // reset before slow path
+    }
 
     // When `name` is already a canonical interned symbol
     // (POINTER_TAG_SYMBOL), pointer-equality lookups in protoCore are
