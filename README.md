@@ -35,7 +35,7 @@
 | **Type System** | **Advanced** - Lists, Tuples, Sets, Dicts with native wrapping ✅ |
 | **C++ Interop** | **Full** - HPy and UMD support integrated ✅ |
 | **Compiler** | **Advanced** - Full C++ translation with collection support ✅ |
-| **Performance** | **Optimization in Progress** - 2026-04-28 (post-cache-fix): see Performance Benchmarks section. Microbenchmark geomean **2.80×** slower than CPython 3.14 (favourable workloads, excluding `memory_pressure` outlier); pyperformance pure-Python subset geomean **77.9×** slower (real-code workloads — list subscript, method dispatch, class instantiation). Improved ~17× from V154 (1337×) thanks to two protoCore fixes: mutable-value cache routing through every read+write site (commit `af1cfbea`), and adopting the OS process's main thread so `context->thread` is non-null (which had silently disabled the per-thread attribute cache — observed 0% hit rate before the fix). The gap to CPython is now dominated by allocator pressure on per-call frame setup and AVL traversal of attribute SparseLists. ⚙️ |
+| **Performance** | **Optimization in Progress** - 2026-04-28 (post-Tier-A1): see Performance Benchmarks section. Microbenchmark geomean **2.76×** slower than CPython 3.14 (favourable workloads, excluding `memory_pressure` outlier); pyperformance pure-Python subset geomean **~65×** slower (real-code workloads, ±12% run-to-run variance). Improved ~21× from V154 (1337×) through three protoCore changes: mutable-value cache routing through every read+write site, adopting the OS process's main thread so `context->thread` is non-null (which had silently disabled the per-thread attribute cache, observed 0% hit rate before the fix), and inlining `isObject` + pointer-identity attribute-cache hashing. The gap to CPython is now dominated by per-bytecode interpreter cost (memcmp, executeBytecodeRange, getAttribute prologue) and AVL traversal of attribute SparseLists on cache miss. ⚙️ |
 | **CPython Conformance** | **100%** - 17/17 test categories passing (Essential, Important, Necessary) ✅ |
 
 - ✅ **Generator Delegation**: Full support for `yield` and `yield from` with efficient state persistence.
@@ -70,19 +70,19 @@ isolates the per-bytecode cost.
 ┌────────────────────┬──────────────┬──────────────┬──────────┬──────────────────────────────┐
 │ Benchmark          │ protoPy (ms) │ CPython (ms) │ Ratio    │ Stresses                     │
 ├────────────────────┼──────────────┼──────────────┼──────────┼──────────────────────────────┤
-│ nqueens(8)         │       151.4  │         3.1  │   48.8×  │ recursion + list[i] subscr   │
-│ sieve(10000)       │        64.5  │         0.8  │   80.6×  │ list mutate in tight loop    │
-│ richards_lite      │        22.5  │         0.2  │  112.5×  │ class instantiation, methods │
+│ nqueens(8)         │       145.4  │         3.2  │   45.4×  │ recursion + list[i] subscr   │
+│ sieve(10000)       │        61.7  │         0.7  │   88.1×  │ list mutate in tight loop    │
+│ richards_lite      │        19.4  │         0.2  │   97.0×  │ class instantiation, methods │
 ├────────────────────┼──────────────┼──────────────┼──────────┼──────────────────────────────┤
-│ Geomean ratio      │              │              │   77.9×  │                              │
+│ Geomean ratio      │              │              │   ~65×   │ ±12% run-to-run variance     │
 └────────────────────┴──────────────┴──────────────┴──────────┴──────────────────────────────┘
 ```
 
 The dominant remaining costs in real Python code are **attribute
 access**, **method dispatch**, **list/dict subscript**, and **class
 instantiation**.  Compared with the V154 baseline (1337× geomean,
-2026-04-25) the suite shrunk by **~17×** thanks to two protoCore
-fixes:
+2026-04-25) the suite shrunk by **~21×** through three protoCore
+changes:
   1. The mutable-value cache is now routed through every read+write
      site (commit `af1cfbea`).
   2. The OS process's main thread is now adopted as a
@@ -93,6 +93,11 @@ fixes:
      getAttribute walked the prototype chain + AVL traversal from
      scratch.  Instrumentation showed **0% cache hit rate** before the
      fix vs **~84%** after on richards_lite.
+  3. `isObject` is now an inline tag-bit + non-virtual cellType read
+     (commit `c5a6fb9a`).  The attribute cache also hashes the name
+     by pointer identity instead of calling `name->getHash` (rope
+     traversal), which alone freed ~5% of CPU previously spent in
+     `subtreeHash` / `StringLeafNode::fromObject`.
 
 Run yourself:
 ```bash
