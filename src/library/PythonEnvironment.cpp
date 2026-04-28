@@ -8154,7 +8154,18 @@ proto::ProtoSpace* PythonEnvironment::getProcessSpace() {
 static std::atomic<int> s_pythonEnvInstanceCount{0};
 
 PythonEnvironment::PythonEnvironment(const std::string& stdLibPath, const std::vector<std::string>& searchPaths,
-                                     const std::vector<std::string>& argv) : space_(getProcessSpace()), rootContext_(new proto::ProtoContext(space_)), argv_(argv), stdLibPath_(stdLibPath), sysModule(nullptr), builtinsModule(nullptr), exceptionsModule(nullptr) {
+                                     const std::vector<std::string>& argv) : space_(getProcessSpace()),
+                                     // Pass space_->rootContext as `previous` so the new context inherits its
+                                     // `thread` pointer.  The space's rootContext was wired to the main-thread
+                                     // ProtoThreadImplementation in ProtoSpace's constructor; without that
+                                     // inheritance, this context would have thread=nullptr and the per-thread
+                                     // attribute / mutable-value caches would be unreachable on every
+                                     // getAttribute / setAttribute call from PythonEnvironment.  The previous
+                                     // single-arg variant `new ProtoContext(space_)` was responsible for the
+                                     // 0% attribute-cache hit rate observed in the 2026-04-28 baseline (113.6×
+                                     // pyperformance geomean); routing through rootContext recovers the cache.
+                                     rootContext_(new proto::ProtoContext(space_, space_->rootContext)),
+                                     argv_(argv), stdLibPath_(stdLibPath), sysModule(nullptr), builtinsModule(nullptr), exceptionsModule(nullptr) {
     if (get_env_diag()) {
         fflush(stderr);
     }

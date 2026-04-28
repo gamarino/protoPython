@@ -35,7 +35,7 @@
 | **Type System** | **Advanced** - Lists, Tuples, Sets, Dicts with native wrapping ✅ |
 | **C++ Interop** | **Full** - HPy and UMD support integrated ✅ |
 | **Compiler** | **Advanced** - Full C++ translation with collection support ✅ |
-| **Performance** | **Optimization in Progress** - 2026-04-28 baseline: see Performance Benchmarks section. Microbenchmark geomean **2.64×** slower than CPython 3.14 (favourable workloads, excluding `memory_pressure` outlier); pyperformance pure-Python subset geomean **113.6×** slower (real-code workloads — list subscript, method dispatch, class instantiation). Both numbers improved ~12× from the V154 baseline thanks to the protoCore mutable-value cache routing fix; the order-of-magnitude gap between the two remains the honest picture: tight integer paths are now competitive, the structural gap on real Python code is the next focus. ⚙️ |
+| **Performance** | **Optimization in Progress** - 2026-04-28 (post-cache-fix): see Performance Benchmarks section. Microbenchmark geomean **2.80×** slower than CPython 3.14 (favourable workloads, excluding `memory_pressure` outlier); pyperformance pure-Python subset geomean **77.9×** slower (real-code workloads — list subscript, method dispatch, class instantiation). Improved ~17× from V154 (1337×) thanks to two protoCore fixes: mutable-value cache routing through every read+write site (commit `af1cfbea`), and adopting the OS process's main thread so `context->thread` is non-null (which had silently disabled the per-thread attribute cache — observed 0% hit rate before the fix). The gap to CPython is now dominated by allocator pressure on per-call frame setup and AVL traversal of attribute SparseLists. ⚙️ |
 | **CPython Conformance** | **100%** - 17/17 test categories passing (Essential, Important, Necessary) ✅ |
 
 - ✅ **Generator Delegation**: Full support for `yield` and `yield from` with efficient state persistence.
@@ -70,21 +70,29 @@ isolates the per-bytecode cost.
 ┌────────────────────┬──────────────┬──────────────┬──────────┬──────────────────────────────┐
 │ Benchmark          │ protoPy (ms) │ CPython (ms) │ Ratio    │ Stresses                     │
 ├────────────────────┼──────────────┼──────────────┼──────────┼──────────────────────────────┤
-│ nqueens(8)         │       389.2  │         4.5  │   86.5×  │ recursion + list[i] subscr   │
-│ sieve(10000)       │        82.9  │         1.0  │   82.9×  │ list mutate in tight loop    │
-│ richards_lite      │        40.9  │         0.2  │  204.5×  │ class instantiation, methods │
+│ nqueens(8)         │       151.4  │         3.1  │   48.8×  │ recursion + list[i] subscr   │
+│ sieve(10000)       │        64.5  │         0.8  │   80.6×  │ list mutate in tight loop    │
+│ richards_lite      │        22.5  │         0.2  │  112.5×  │ class instantiation, methods │
 ├────────────────────┼──────────────┼──────────────┼──────────┼──────────────────────────────┤
-│ Geomean ratio      │              │              │  113.6×  │                              │
+│ Geomean ratio      │              │              │   77.9×  │                              │
 └────────────────────┴──────────────┴──────────────┴──────────┴──────────────────────────────┘
 ```
 
 The dominant remaining costs in real Python code are **attribute
 access**, **method dispatch**, **list/dict subscript**, and **class
 instantiation**.  Compared with the V154 baseline (1337× geomean,
-2026-04-25) the suite shrunk by **~12×**, mostly from the
-mutable-value cache being routed through every read+write site in
-protoCore (see [`protoCore` commit `af1cfbea`](../protoCore)) and the
-flat-array slot/stack changes already shared with protoJS.
+2026-04-25) the suite shrunk by **~17×** thanks to two protoCore
+fixes:
+  1. The mutable-value cache is now routed through every read+write
+     site (commit `af1cfbea`).
+  2. The OS process's main thread is now adopted as a
+     `ProtoThreadImplementation` at `ProtoSpace` construction, so
+     `context->thread` is non-null on the main thread.  Before the fix,
+     the per-thread attribute cache was silently disabled on the main
+     thread (the `if (context->thread)` gate evaluated false), so every
+     getAttribute walked the prototype chain + AVL traversal from
+     scratch.  Instrumentation showed **0% cache hit rate** before the
+     fix vs **~84%** after on richards_lite.
 
 Run yourself:
 ```bash
@@ -103,16 +111,16 @@ tracking regressions in those specific paths.
 ┌────────────────────────┬──────────────┬──────────────┬─────────────────┬───────────────────────────┐
 │ Benchmark              │ protoPy (ms) │ CPython (ms) │ Ratio           │ Note                      │
 ├────────────────────────┼──────────────┼──────────────┼─────────────────┼───────────────────────────┤
-│ startup_empty          │      32.4    │      57.0    │  0.57× faster   │ floor                     │
-│ int_sum_loop           │      34.2    │      63.2    │  0.54× faster   │ pure SmallInt             │
-│ list_append_loop       │     419.8    │      54.1    │  7.76× slower   │                           │
-│ str_concat_loop        │     491.4    │      40.8    │ 12.06× slower   │                           │
-│ range_iterate          │     230.1    │      47.7    │  4.83× slower   │                           │
-│ multithread_cpu        │     112.1    │      72.0    │  1.56× slower   │ real 4-thread, 50k iter   │
-│ attr_lookup            │     294.1    │      68.8    │  4.28× slower   │                           │
-│ call_recursion         │     149.6    │      58.4    │  2.56× slower   │ fib(25) 242k              │
+│ startup_empty          │      22.8    │      35.4    │  0.65× faster   │ floor                     │
+│ int_sum_loop           │      23.3    │      35.2    │  0.66× faster   │ pure SmallInt             │
+│ list_append_loop       │     261.0    │      31.6    │  8.25× slower   │                           │
+│ str_concat_loop        │     376.2    │      32.1    │ 11.73× slower   │                           │
+│ range_iterate          │     156.5    │      38.5    │  4.07× slower   │                           │
+│ multithread_cpu        │     118.5    │      56.8    │  2.09× slower   │ real 4-thread, 50k iter   │
+│ attr_lookup            │     190.1    │      43.1    │  4.42× slower   │                           │
+│ call_recursion         │     109.2    │      45.1    │  2.42× slower   │ fib(25) 242k              │
 ├────────────────────────┼──────────────┼──────────────┼─────────────────┼───────────────────────────┤
-│ Geomean (all 8)        │              │              │  2.64×          │ memory_pressure excluded  │
+│ Geomean (all 8)        │              │              │  2.80×          │ memory_pressure excluded  │
 └────────────────────────┴──────────────┴──────────────┴─────────────────┴───────────────────────────┘
 ```
 
