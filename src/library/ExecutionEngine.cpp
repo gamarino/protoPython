@@ -2546,10 +2546,12 @@ const proto::ProtoObject* runUserClassCall(proto::ProtoContext* ctx,
 
     if (!obj || obj == PROTO_NONE) {
         if (get_env_diag()) {}
+        // Fallback for classes whose __new__ returns nothing usable.
+        // addParent wires `self` into obj's protoCore parent chain;
+        // getType() / env->getAttribute("__class__") synthesise the
+        // class identity from there — no parallel storage needed.
         obj = const_cast<proto::ProtoObject*>(ctx->newObject(true));
         obj = const_cast<proto::ProtoObject*>(obj->addParent(ctx, self));
-        const proto::ProtoString* classS = env ? env->getClassString() : protoPython::PythonEnvironment::getInternalString(ctx, "__class__");
-        obj = const_cast<proto::ProtoObject*>(obj->setAttribute(ctx, classS, self));
     }
     
     // Invoke __init__
@@ -4582,8 +4584,13 @@ const proto::ProtoObject* executeBytecodeRange(
                             getattr = obj->getAttribute(ctx, getattrS);
                             getattrIsOwn = true;
                         } else {
-                            // Search on class MRO
-                            const proto::ProtoObject* cls = obj->getAttribute(ctx, env ? env->getClassString() : PythonEnvironment::getInternedString(ctx, "__class__"));
+                            // Search on class MRO.  env->getType synthesises
+                            // the class identity from the protoCore parent
+                            // chain, so this works without the redundant
+                            // __class__ attribute previously stored on every
+                            // instance (Phase 3 of the delegation design).
+                            const proto::ProtoObject* cls = env ? env->getType(ctx, obj)
+                                                                : obj->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__class__"));
                             if (cls && cls != PROTO_NONE) {
                                 getattr = env ? env->getAttribute(ctx, cls, getattrS, false) : cls->getAttribute(ctx, getattrS);
                             }

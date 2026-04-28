@@ -4821,13 +4821,13 @@ const proto::ProtoObject* py_object_new(
     // First argument is cls
     const proto::ProtoObject* cls = positionalParameters->getAt(context, 0);
     
-    // Create new instance of cls natively
+    // Create new instance of cls natively.  newChild attaches `cls` as
+    // the protoCore parent — getType() / env->getAttribute("__class__")
+    // synthesise the class identity from that link, so we no longer
+    // mirror it as an explicit __class__ attribute on the instance.
     const proto::ProtoObject* obj = cls->newChild(context, true);
-    
-    // Set __class__ to cls explicitly natively
-    obj = obj->setAttribute(context, PythonEnvironment::getInternedString(context, "__class__"), cls);
-    
-    // Initialize properties tracking specifically dictionary 
+
+    // Initialize properties tracking specifically dictionary
     ::protoPython::PythonEnvironment* env = ::protoPython::PythonEnvironment::fromContext(context);
     if (env) {
         obj = env->initDictStorage(context, obj);
