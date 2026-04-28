@@ -12356,22 +12356,24 @@ static const proto::ProtoObject* tryFastGetAttribute(
     return val;
 }
 
-// Cached env-var read: PROTOPY_FAST_GETATTR=1 enables the Phase-1 fast
-// path.  std::getenv is read once at first call (function-local static)
-// and then never again; avoids the ~ns-level cost on the hot path.
-static inline bool fastGetattrEnabled() {
-    static const bool enabled = []() {
-        const char* v = std::getenv("PROTOPY_FAST_GETATTR");
+// Phase 2 — emergency rollback gate.  PROTOPY_DISABLE_FAST_GETATTR=1
+// reverts to the legacy 645-line slow path for the entire process.
+// Intended only for triaging unexpected behavioural divergence; the
+// fast path is otherwise the default.  Read once into a function-local
+// static so the hot-path branch is dead-code eliminated after warmup.
+static inline bool fastGetattrDisabled() {
+    static const bool disabled = []() {
+        const char* v = std::getenv("PROTOPY_DISABLE_FAST_GETATTR");
         return v != nullptr && v[0] != '\0' && v[0] != '0';
     }();
-    return enabled;
+    return disabled;
 }
 
 const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* ctx, const proto::ProtoObject* obj, const proto::ProtoString* name, bool raiseError, bool* outIsUnboundFunc) {
     if (outIsUnboundFunc) *outIsUnboundFunc = false;
     if (!obj || !name) return nullptr;
 
-    if (fastGetattrEnabled()) {
+    if (!fastGetattrDisabled()) {
         const proto::ProtoObject* fast = tryFastGetAttribute(this, ctx, obj, name, outIsUnboundFunc);
         if (fast) return fast;
         if (outIsUnboundFunc) *outIsUnboundFunc = false;  // reset before slow path
