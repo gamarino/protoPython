@@ -35,7 +35,7 @@
 | **Type System** | **Advanced** - Lists, Tuples, Sets, Dicts with native wrapping ✅ |
 | **C++ Interop** | **Full** - HPy and UMD support integrated ✅ |
 | **Compiler** | **Advanced** - Full C++ translation with collection support ✅ |
-| **Performance** | **Optimization in Progress** - 2026-04-28 (post-Tier-A1): see Performance Benchmarks section. Microbenchmark geomean **2.76×** slower than CPython 3.14 (favourable workloads, excluding `memory_pressure` outlier); pyperformance pure-Python subset geomean **~65×** slower (real-code workloads, ±12% run-to-run variance). Improved ~21× from V154 (1337×) through three protoCore changes: mutable-value cache routing through every read+write site, adopting the OS process's main thread so `context->thread` is non-null (which had silently disabled the per-thread attribute cache, observed 0% hit rate before the fix), and inlining `isObject` + pointer-identity attribute-cache hashing. The gap to CPython is now dominated by per-bytecode interpreter cost (memcmp, executeBytecodeRange, getAttribute prologue) and AVL traversal of attribute SparseLists on cache miss. ⚙️ |
+| **Performance** | **Optimization in Progress** - 2026-04-28 (post-delegation Phases 1-4): see Performance Benchmarks section. Microbenchmark geomean **2.76×** slower than CPython 3.14 (favourable workloads, excluding `memory_pressure` outlier); pyperformance pure-Python subset geomean **~57×** slower (real-code workloads, ±10% run-to-run variance). Improved ~23× from V154 (1337×) through six protoCore / protoPython changes: mutable-value cache routing through every read+write site, adopting the OS process's main thread so the per-thread attribute cache is enabled (was 0% hit rate before the fix), inlined `isObject` + pointer-identity attribute-cache hashing, then a four-phase delegation refactor that routes `obj.attr` through `proto::ProtoObject::getAttribute` directly (skipping a 645-line slow path for the common case), drops the redundant `__class__` mirror previously stored on every instance, and collapses `isActuallyAClass` to a single own-marker probe. The remaining gap is dominated by bytecode dispatch (`executeBytecodeRange`) and AVL traversal of attribute SparseLists on cache miss. ⚙️ |
 | **CPython Conformance** | **100%** - 17/17 test categories passing (Essential, Important, Necessary) ✅ |
 
 - ✅ **Generator Delegation**: Full support for `yield` and `yield from` with efficient state persistence.
@@ -71,18 +71,19 @@ isolates the per-bytecode cost.
 │ Benchmark          │ protoPy (ms) │ CPython (ms) │ Ratio    │ Stresses                     │
 ├────────────────────┼──────────────┼──────────────┼──────────┼──────────────────────────────┤
 │ nqueens(8)         │       145.4  │         3.2  │   45.4×  │ recursion + list[i] subscr   │
-│ sieve(10000)       │        61.7  │         0.7  │   88.1×  │ list mutate in tight loop    │
-│ richards_lite      │        19.4  │         0.2  │   97.0×  │ class instantiation, methods │
+│ sieve(10000)       │        59.0  │         0.7  │   80.0×  │ list mutate in tight loop    │
+│ richards_lite      │        11.5  │         0.2  │   58.0×  │ class instantiation, methods │
 ├────────────────────┼──────────────┼──────────────┼──────────┼──────────────────────────────┤
-│ Geomean ratio      │              │              │   ~65×   │ ±12% run-to-run variance     │
+│ Geomean ratio      │              │              │   ~57×   │ ±10% run-to-run variance     │
 └────────────────────┴──────────────┴──────────────┴──────────┴──────────────────────────────┘
 ```
 
-The dominant remaining costs in real Python code are **attribute
-access**, **method dispatch**, **list/dict subscript**, and **class
-instantiation**.  Compared with the V154 baseline (1337× geomean,
-2026-04-25) the suite shrunk by **~21×** through three protoCore
-changes:
+The dominant remaining costs in real Python code are **bytecode
+dispatch**, **list/dict subscript**, and **class instantiation**
+overhead beyond the attribute lookup itself.  Compared with the V154
+baseline (1337× geomean, 2026-04-25) the suite shrunk by **~23×**
+through three protoCore changes plus a four-phase delegation refactor
+of attribute access on the protoPython side:
   1. The mutable-value cache is now routed through every read+write
      site (commit `af1cfbea`).
   2. The OS process's main thread is now adopted as a
@@ -98,6 +99,16 @@ changes:
      by pointer identity instead of calling `name->getHash` (rope
      traversal), which alone freed ~5% of CPU previously spent in
      `subtreeHash` / `StringLeafNode::fromObject`.
+  4. `PythonEnvironment::getAttribute` no longer re-walks the
+     prototype chain in 645 lines of MRO / `__class__` /
+     `__getattribute__` traversal; the common case routes directly
+     through `proto::ProtoObject::getAttribute`, hitting the per-thread
+     attribute cache once.  See `docs/DESIGN_PROTOCORE_DELEGATION.md`
+     for the architectural rationale and the four-phase migration.
+     Phase 1 alone collapsed richards_lite from 78× to 45×.
+
+Set `PROTOPY_DISABLE_FAST_GETATTR=1` to revert to the legacy slow path
+for triage if behavioural divergence is suspected.
 
 Run yourself:
 ```bash
@@ -151,13 +162,16 @@ Raw report: [`benchmarks/reports/baseline_2026-04-28.md`](benchmarks/reports/bas
 
 ### Where the headline gap is
 
-The 113.6× pyperformance gap is dominated by per-bytecode interpreter
-cost on real Python code paths: `getAttribute`, method-dispatch
-machinery (PythonMethod resolution), and `list[i]` / `dict[k]`
-subscript.  protoCore's GIL-free per-thread allocators and concurrent
-GC do not contribute to this gap (allocator pressure dropped from 46 %
-of CPU to 2.4 % over V92-V154 — that work is done).  The remaining
-work is in the dispatcher itself.
+The remaining ~57× pyperformance gap is now dominated by **bytecode
+dispatch overhead** (`executeBytecodeRange` ~7%,
+`runUserFunctionCallRaw` ~1.5%) and the per-call cost of building
+argument lists / kwargs maps.  Attribute access itself is no longer
+the bottleneck — Phases 1-4 of the delegation refactor cut its cost
+roughly in half on richards_lite.  protoCore's GIL-free per-thread
+allocators and concurrent GC do not contribute to this gap (allocator
+pressure dropped from 46% of CPU to 2.4% over V92-V154 — that work is
+done).  The remaining work is in the dispatcher itself: see Tier B in
+the roadmap below.
 
 ### Roadmap to approach and surpass CPython
 
@@ -166,8 +180,9 @@ In priority order:
 | Tier | Item | Status | Expected impact |
 |---|---|---|---|
 | **1** | Mutable-value cache routed through every read+write site | ✅ landed (protoCore `af1cfbea`, 2026-04-28) | -2× to -12× depending on benchmark |
+| **1** | Phase 1-4 protoCore-delegation of `getAttribute` | ✅ landed (2026-04-28) | richards_lite 97× → 58×; geomean 65× → 57× |
 | **2** | Inline SmallInteger arithmetic on the bytecode hot path | ✅ landed (V154) | call_recursion -17 % |
-| **2** | Inline `getAttribute` for keyword-arg / module-name lookups | planned | high single-digit on real Python |
+| **2** | Inline-cache `LOAD_ATTR_INSTANCE_VALUE` / `LOAD_METHOD` at the bytecode site (CPython 3.11 style) | planned (Tier B) | high single-digit on real Python |
 | **3** | Real `_thread.start_joinable_thread` + STW safepoint poll | ✅ landed (V154) | multithread_cpu 18.9× → 1.56× |
 | **3** | Beat CPython on `multithread_cpu` (parallel scaling) | planned | currently 1.56× slower; goal <1.0× |
 | **4** | JIT compile hot bytecode regions via the `co_bytecode_native` path | research | crosses the 1.0× threshold on richards/nqueens |
