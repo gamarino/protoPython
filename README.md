@@ -35,7 +35,7 @@
 | **Type System** | **Advanced** - Lists, Tuples, Sets, Dicts with native wrapping ✅ |
 | **C++ Interop** | **Full** - HPy and UMD support integrated ✅ |
 | **Compiler** | **Advanced** - Full C++ translation with collection support ✅ |
-| **Performance** | **Optimization in Progress** - 2026-04-28 (post-delegation Phases 1-5): see Performance Benchmarks section. Microbenchmark geomean **2.76×** slower than CPython 3.14 (favourable workloads, excluding `memory_pressure` outlier); pyperformance pure-Python subset geomean **~59×** slower (real-code workloads, ±10% run-to-run variance). Improved ~23× from V154 (1337×) through six protoCore / protoPython changes: mutable-value cache routing through every read+write site, adopting the OS process's main thread so the per-thread attribute cache is enabled (was 0% hit rate before the fix), inlined `isObject` + pointer-identity attribute-cache hashing, a four-phase delegation refactor that routes `obj.attr` through `proto::ProtoObject::getAttribute` directly (skipping a 645-line slow path for the common case), drops the redundant `__class__` mirror previously stored on every instance, collapses `isActuallyAClass` to a single own-marker probe, and replaces the super-proxy chain-walk detection with an OBJ-level named-method dispatch (`hasOwnAttribute("__py_getattr_handler__")`). The remaining gap is dominated by bytecode dispatch (`executeBytecodeRange`) and AVL traversal of attribute SparseLists on cache miss. ⚙️ |
+| **Performance** | **Optimization in Progress** - 2026-04-28 (post-delegation Phases 1-6): see Performance Benchmarks section. Microbenchmark geomean **2.76×** slower than CPython 3.14 (favourable workloads, excluding `memory_pressure` outlier); pyperformance pure-Python subset geomean **~46×** slower (real-code workloads, ±10% run-to-run variance). Improved ~29× from V154 (1337×) through seven protoCore / protoPython changes: mutable-value cache routing through every read+write site, adopting the OS process's main thread so the per-thread attribute cache is enabled (was 0% hit rate before the fix), inlined `isObject` + pointer-identity attribute-cache hashing, a four-phase delegation refactor that routes `obj.attr` through `proto::ProtoObject::getAttribute` directly (skipping a 645-line slow path for the common case), drops the redundant `__class__` mirror previously stored on every instance, collapses `isActuallyAClass` to a single own-marker probe, replaces the super-proxy chain-walk detection with an OBJ-level named-method dispatch, and a LOAD_ATTR own-instance fast path that probes `getOwnAttributeDirect` (1 uncached AVL lookup) and returns directly for `self.field` — cutting richards_lite from 58× to 26× by eliminating the Python-level slow path for the dominant OOP access pattern. The remaining gap is dominated by bytecode dispatch (`executeBytecodeRange`) and AVL traversal of attribute SparseLists on cache miss. ⚙️ |
 | **CPython Conformance** | **100%** - 17/17 test categories passing (Essential, Important, Necessary) ✅ |
 
 - ✅ **Generator Delegation**: Full support for `yield` and `yield from` with efficient state persistence.
@@ -50,7 +50,7 @@
 
 ---
 
-## 📊 Performance Benchmarks (2026-04-28 baseline)
+## 📊 Performance Benchmarks (2026-04-28, Phase 6)
 
 > ⚠ **Honest disclaimer.** Tight integer microbenchmarks understate
 > the gap to CPython on real code by ~40×.  Both tables below are
@@ -70,20 +70,26 @@ isolates the per-bytecode cost.
 ┌────────────────────┬──────────────┬──────────────┬──────────┬──────────────────────────────┐
 │ Benchmark          │ protoPy (ms) │ CPython (ms) │ Ratio    │ Stresses                     │
 ├────────────────────┼──────────────┼──────────────┼──────────┼──────────────────────────────┤
-│ nqueens(8)         │       142.5  │         3.2  │   44.5×  │ recursion + list[i] subscr   │
-│ sieve(10000)       │        56.3  │         0.7  │   80.4×  │ list mutate in tight loop    │
-│ richards_lite      │        11.7  │         0.2  │   58.5×  │ class instantiation, methods │
+│ nqueens(8)         │       151.1  │         3.2  │   47.2×  │ recursion + list[i] subscr   │
+│ sieve(10000)       │        55.6  │         0.7  │   79.4×  │ list mutate in tight loop    │
+│ richards_lite      │         5.1  │         0.2  │   25.5×  │ class instantiation, methods │
 ├────────────────────┼──────────────┼──────────────┼──────────┼──────────────────────────────┤
-│ Geomean ratio      │              │              │   ~59×   │ ±10% run-to-run variance     │
+│ Geomean ratio      │              │              │   ~46×   │ ±10% run-to-run variance     │
 └────────────────────┴──────────────┴──────────────┴──────────┴──────────────────────────────┘
 ```
+
+Phase 6 improvement vs Phase 5 baseline (44.5× / 80.4× / 58.5×):
+nqueens and sieve are neutral (no `LOAD_ATTR` in their hot loops);
+**richards_lite dropped from 58.5× to 25.5× (−56%)** — the dominant
+cost was `self.field` access, which the Phase 6 LOAD_ATTR own-instance
+fast path now handles with a single `getOwnAttributeDirect` call instead
+of going through the Python-level `env->getAttribute` dispatcher.
 
 The dominant remaining costs in real Python code are **bytecode
 dispatch**, **list/dict subscript**, and **class instantiation**
 overhead beyond the attribute lookup itself.  Compared with the V154
-baseline (1337× geomean, 2026-04-25) the suite shrunk by **~23×**
-through three protoCore changes plus a four-phase delegation refactor
-of attribute access on the protoPython side:
+baseline (1337× geomean, 2026-04-25) the suite shrunk by **~29×**
+through seven protoCore / protoPython changes:
   1. The mutable-value cache is now routed through every read+write
      site (commit `af1cfbea`).
   2. The OS process's main thread is now adopted as a
@@ -106,8 +112,16 @@ of attribute access on the protoPython side:
      attribute cache once.  See `docs/DESIGN_PROTOCORE_DELEGATION.md`
      for the architectural rationale and the four-phase migration.
      Phase 1 alone collapsed richards_lite from 78× to 45×.
+  5. Phase 5: super-proxy chain-walk detection replaced with
+     `hasOwnAttribute("__py_getattr_handler__")`.
+  6. Phase 6: `OP_LOAD_ATTR` inline fast path probes `getOwnAttributeDirect`
+     first (1 uncached AVL lookup).  Own-instance attributes (`self.field`)
+     are returned directly using the invariant that they cannot shadow data
+     descriptors (descriptor `__set__` intercepts `setAttribute`).  Class
+     attrs and method calls fall to the existing slow path, eliminating the
+     2-guard overhead that was penalising method-heavy workloads in Phase 5.
 
-Set `PROTOPY_DISABLE_FAST_GETATTR=1` to revert to the legacy slow path
+Set `PROTOPY_DISABLE_LOADATTR_FASTPATH=1` to revert to the slow path
 for triage if behavioural divergence is suspected.
 
 Run yourself:
@@ -162,12 +176,13 @@ Raw report: [`benchmarks/reports/baseline_2026-04-28.md`](benchmarks/reports/bas
 
 ### Where the headline gap is
 
-The remaining ~59× pyperformance gap is now dominated by **bytecode
+The remaining ~46× pyperformance gap is now dominated by **bytecode
 dispatch overhead** (`executeBytecodeRange` ~7%,
 `runUserFunctionCallRaw` ~1.5%) and the per-call cost of building
-argument lists / kwargs maps.  Attribute access itself is no longer
-the bottleneck — Phases 1-4 of the delegation refactor cut its cost
-roughly in half on richards_lite.  protoCore's GIL-free per-thread
+argument lists / kwargs maps.  Attribute access for own instance attrs
+(`self.field`) is now handled by a single `getOwnAttributeDirect` call —
+the Phase 6 fast path reduced richards_lite from 58× to 26×.
+protoCore's GIL-free per-thread
 allocators and concurrent GC do not contribute to this gap (allocator
 pressure dropped from 46% of CPU to 2.4% over V92-V154 — that work is
 done).  The remaining work is in the dispatcher itself: see Tier B in
@@ -182,6 +197,7 @@ In priority order:
 | **1** | Mutable-value cache routed through every read+write site | ✅ landed (protoCore `af1cfbea`, 2026-04-28) | -2× to -12× depending on benchmark |
 | **1** | Phase 1-4 protoCore-delegation of `getAttribute` | ✅ landed (2026-04-28) | richards_lite 97× → 58×; geomean 65× → 59× |
 | **1** | Phase 5 OBJ-level dispatch — super-proxy chain-walk → `hasOwnAttribute` | ✅ landed (2026-04-28) | neutral on benchmarks; removes switch-on-type anti-pattern |
+| **1** | Phase 6 `LOAD_ATTR` own-instance fast path — `getOwnAttributeDirect` bypasses `env->getAttribute` for `self.field` | ✅ landed (2026-04-28) | richards_lite 58.5× → 25.5×; geomean 59× → 46× |
 | **2** | Inline SmallInteger arithmetic on the bytecode hot path | ✅ landed (V154) | call_recursion -17 % |
 | **2** | Inline-cache `LOAD_ATTR_INSTANCE_VALUE` / `LOAD_METHOD` at the bytecode site (CPython 3.11 style) | planned (Tier B) | high single-digit on real Python |
 | **3** | Real `_thread.start_joinable_thread` + STW safepoint poll | ✅ landed (V154) | multithread_cpu 18.9× → 1.56× |

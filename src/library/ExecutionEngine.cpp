@@ -4482,67 +4482,79 @@ const proto::ProtoObject* executeBytecodeRange(
                         fflush(stderr);
                     }
 
-                    // Fast path: plain instance own-attribute read (e.g. self.field).
-                    // Bypasses RecursionScope, isActuallyAClass, MRO walk, descriptor
-                    // protocol, and the V94 double mutable_ref resolution.
+                    // Fast path for own instance attribute access.
                     //
-                    // V95: Uses ProtoObject::getOwnAttributeDirect() — resolves mutable state
-                    // once and does a single own-attributes lookup, replacing the V94 pattern
-                    // of hasOwnAttribute (no cache, 2 traversals) + getAttribute (cache hit).
+                    // getOwnAttributeDirect (1 uncached AVL lookup) probes own attrs first.
+                    // If the attribute is own and not a descriptor, return it directly with no
+                    // guard overhead, no chain walk, and no protoCore cache call.
                     //
-                    // Invariant: co_names entries are POINTER_TAG_SYMBOL (Compiler::addName
-                    // calls getInternedString → createSymbol), so the interned pointer IS the
-                    // stable sparse-list key — no symbolTable mutex fires inside the call.
+                    // Invariant exploited: own attrs cannot shadow data descriptors because
+                    // descriptor.__set__ intercepts setAttribute, preventing direct storage on
+                    // the instance.  A result from getOwnAttributeDirect is therefore safe to
+                    // return without a full MRO descriptor scan — except for non-data descriptors
+                    // (classmethod, staticmethod, property) which have __get__ but no __set__
+                    // and CAN be stored as own attrs on a class object.  We check the type's
+                    // __get__ to handle that case (1 uncached lookup on the type prototype).
+                    //
+                    // Falls to slow path for: synthesised dunders, native methods, non-data
+                    // descriptors with __get__, Python functions when pushNull=false, and any
+                    // own-attr miss (class attrs, super() proxies, Python class objects, etc.).
+                    // Avoiding chain-walk guards in the miss branch eliminates the per-access
+                    // hasOwnAttribute overhead that was regressing method-heavy workloads.
+                    //
+                    // Set PROTOPY_DISABLE_LOADATTR_FASTPATH=1 to always use the slow path.
                     const proto::ProtoObject* val = nullptr;
                     bool fastPathTaken = false;
-                    {
-                        const proto::ProtoString* isPyClsS = env ? PythonEnvironment::getInternedString(ctx, "__is_python_class__") : nullptr;
-                        bool objIsPyClass = isPyClsS && obj->hasOwnAttribute(ctx, isPyClsS) == PROTO_TRUE;
-                        if (env && obj != PROTO_NONE && !objIsPyClass
-                                && !obj->isString(ctx) && !obj->isInteger(ctx) && !obj->isBoolean(ctx)) {
-                            const proto::ProtoObject* fv = obj->getOwnAttributeDirect(ctx, attrName);
-                            if (fv && fv != PROTO_NONE && !fv->isMethod(ctx)) {
-                                // PI: data descriptors on the type take
-                                // precedence over instance attrs.  Skip
-                                // the fast path if the class declares a
-                                // data descriptor (__set__) for this
-                                // name; the slow path will dispatch to
-                                // env->getAttribute which honours it.
-                                bool isDataDescr = false;
-                                const proto::ProtoObject* type = env->getType(ctx, obj);
-                                if (type && type != PROTO_NONE) {
-                                    const proto::ProtoObject* mroAttr = type->getAttribute(ctx, env->getMroString());
-                                    const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(ctx) : nullptr;
-                                    if (mroT) {
-                                        for (unsigned long mi = 0; mi < mroT->getSize(ctx); ++mi) {
-                                            const proto::ProtoObject* base = mroT->getAt(ctx, mi);
-                                            if (!base || base == PROTO_NONE) continue;
-                                            if (base->hasOwnAttribute(ctx, attrName) == PROTO_TRUE) {
-                                                const proto::ProtoObject* d = base->getOwnAttributeDirect(ctx, attrName);
-                                                if (d && d != PROTO_NONE) {
-                                                    const proto::ProtoString* setS =
-                                                        PythonEnvironment::getInternedString(ctx, "__set__");
-                                                    const proto::ProtoObject* dt = env->getType(ctx, d);
-                                                    if (d->getAttribute(ctx, setS) ||
-                                                        (dt && dt != PROTO_NONE && dt->hasOwnAttribute(ctx, setS) == PROTO_TRUE)) {
-                                                        isDataDescr = true;
-                                                    }
-                                                }
-                                                break;
-                                            }
+                    static const bool disableLoadattrFastpath = [](){
+                        const char* v = std::getenv("PROTOPY_DISABLE_LOADATTR_FASTPATH");
+                        return v != nullptr && v[0] != '\0' && v[0] != '0';
+                    }();
+                    if (!disableLoadattrFastpath && env && obj && obj != PROTO_NONE
+                            && !obj->isString(ctx) && !obj->isInteger(ctx)
+                            && !obj->isBoolean(ctx) && !obj->isFloat(ctx)) {
+                        // Synthesised dunders — computed on demand, not stored in protoCore.
+                        // Pointer comparisons are free (co_names are interned symbols).
+                        bool isSynthDunder =
+                            attrName == env->getClassString()        ||
+                            attrName == env->getMroString()          ||
+                            attrName == env->getDictDunderString()   ||
+                            attrName == env->getBasesString()        ||
+                            attrName == env->getGetattributeDunderString();
+                        if (!isSynthDunder) {
+                            // 1 uncached AVL lookup: hits for self.field, misses for self.method().
+                            const proto::ProtoObject* ownFv =
+                                obj->getOwnAttributeDirect(ctx, attrName);
+                            if (ownFv && ownFv != PROTO_NONE && !ownFv->isMethod(ctx)) {
+                                const proto::ProtoObject* ownType = ownFv->getFirstParent(ctx);
+                                if (ownType != env->getFunctionPrototype()) {
+                                    // Plain own value — check type for __get__ (catches
+                                    // classmethod/staticmethod/property on class objects).
+                                    // For plain instance attrs (int, str, user object) this
+                                    // almost always misses, adding just 1 cheap uncached check.
+                                    const proto::ProtoString* getDS = env->getGetDunderString();
+                                    bool isDescriptor = getDS && ownType && ownType != PROTO_NONE
+                                        && ownType->getOwnAttributeDirect(ctx, getDS) != nullptr;
+                                    if (!isDescriptor) {
+                                        if (pushNull) {
+                                            stack.back() = nullptr;
+                                            stack.push_back(ownFv);
+                                        } else {
+                                            stack.back() = ownFv;
                                         }
+                                        fastPathTaken = true;
                                     }
-                                }
-                                if (!isDataDescr) {
-                                    if (pushNull) {
-                                        stack.back() = nullptr;
-                                        stack.push_back(fv);
-                                    } else {
-                                        stack.back() = fv;
-                                    }
+                                } else if (pushNull) {
+                                    // Instance-stored function (not inherited from class) —
+                                    // push as NULL/callable pair; OP_CALL will not prepend self.
+                                    stack.back() = nullptr;
+                                    stack.push_back(ownFv);
                                     fastPathTaken = true;
                                 }
+                                // else: pushNull=false + function → slow path for __get__ binding.
                             }
+                            // Own-attr miss → fall directly to slow path.
+                            // No hasOwnAttribute guards here: they added 2 uncached lookups on
+                            // every miss (i.e., every method call), regressing OOP workloads.
                         }
                     }
                     if (fastPathTaken) { i = next_i; continue; }

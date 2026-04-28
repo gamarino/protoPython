@@ -433,6 +433,7 @@ public:
     const proto::ProtoString* getKeysString() const { return keysString; }
     const proto::ProtoString* getIsSuperProxyString() const { return isSuperProxyString; }
     const proto::ProtoString* getPyGetAttrHandlerString() const { return pyGetAttrHandlerString_; }
+    const proto::ProtoString* getIsPythonClassString() const { return isPythonClassString; }
     const proto::ProtoString* getGetattrDunderString() const { return getattrDunderString; }
     const proto::ProtoString* getGetattributeDunderString() const { return getattributeDunderString; }
     const proto::ProtoString* getInitString() const { return initString; }
