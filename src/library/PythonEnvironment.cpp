@@ -72,11 +72,26 @@ static bool get_thread_diag() {
 
 
 #include <cstring>
+#include <shared_mutex>
 
 namespace protoPython {
-    
+
+// Two-phase intern pool:
+//   Phase 1 (read, common case): take a shared_lock and call .find().
+//     std::map::find under a shared_lock is safe — readers do not
+//     mutate the tree, the tree is not rehashed (it's a balanced BST,
+//     not a hash table), and shared_lock excludes unique_lock so no
+//     writer can be in the middle of inserting.  Concurrent readers
+//     run in parallel.
+//   Phase 2 (insert, rare): release the shared_lock, take a
+//     unique_lock, double-check (another writer may have inserted
+//     between phases), then insert.
+//
+// This makes positive lookups effectively wait-free for one another
+// (atomic reader-counter increment in shared_mutex) and only contend
+// with the rare writer.
 static std::map<std::string, const proto::ProtoString*> g_internPool;
-static std::mutex g_internMutex;
+static std::shared_mutex g_internMutex;
 static std::vector<const proto::ProtoObject*> g_internRoots;
 
 const proto::ProtoString* PythonEnvironment::getInternalString(proto::ProtoContext* ctx, const char* name) {
@@ -10921,9 +10936,11 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
         if (classString) addRoot(classString->asObject(rootContext_));
         if (nameString) addRoot(nameString->asObject(rootContext_));
         
-        // Root all globally interned strings
+        // Root all globally interned strings — read-only iteration
+        // can run under shared_lock so it doesn't block concurrent
+        // getInternedString lookups on other threads.
         {
-            std::lock_guard<std::mutex> lock(g_internMutex);
+            std::shared_lock<std::shared_mutex> rlock(g_internMutex);
             for (const auto* root : g_internRoots) {
                 addRoot(root);
             }
@@ -13803,6 +13820,21 @@ static const proto::ProtoObject* buildTraceback(proto::ProtoContext* ctx, const 
 }
 
 const proto::ProtoString* PythonEnvironment::getInternedString(proto::ProtoContext* ctx, const std::string& str) {
+    // Phase 0: thread-local cache.  Truly lock-free (not even an
+    // atomic load): the same thread that interns a string sees the
+    // result directly from its own unordered_map on every subsequent
+    // call.  Once interned, the global ProtoString* is process-wide
+    // canonical, so caching the result locally is safe; different
+    // threads cache the same pointer for the same content.
+    //
+    // The thread_local map's lifetime is the thread's lifetime; on
+    // thread exit it is destroyed without affecting the global table.
+    thread_local std::unordered_map<std::string, const proto::ProtoString*> tlCache;
+    {
+        auto it = tlCache.find(str);
+        if (it != tlCache.end()) return it->second;
+    }
+
     proto::ProtoContext* originalCtx = ctx;
     if (s_threadEnv && s_threadEnv->rootContext_) {
         ctx = s_threadEnv->rootContext_;
@@ -13815,13 +13847,32 @@ const proto::ProtoString* PythonEnvironment::getInternedString(proto::ProtoConte
     // Without a PythonEnvironment, the ProtoSpace is ephemeral (unit-test scope).
     // Caching ProtoString* from an ephemeral ProtoSpace into g_internPool would
     // leave dangling pointers after that space is destroyed, corrupting subsequent tests.
+    // Also: do NOT populate tlCache in this path — the symbol's ProtoSpace is
+    // ephemeral and the cache entry would dangle on next test setup.
     if (!s_threadEnv) {
         return proto::ProtoString::createSymbol(ctx, str.c_str());
     }
 
-    std::lock_guard<std::mutex> lock(g_internMutex);
+    // Phase 1: read-only lookup under shared_lock.  Cross-thread
+    // common case: another thread has already interned the string,
+    // we just need to discover the canonical pointer.  Multiple
+    // shared_lock holders run concurrently.
+    {
+        std::shared_lock<std::shared_mutex> rlock(g_internMutex);
+        auto it = g_internPool.find(str);
+        if (it != g_internPool.end()) {
+            tlCache.emplace(str, it->second);
+            return it->second;
+        }
+    }
+
+    // Phase 2: write-side insert.  Unique_lock excludes both readers
+    // and other writers.  Double-check: another writer may have
+    // raced us between phase 1 and phase 2.
+    std::unique_lock<std::shared_mutex> wlock(g_internMutex);
     auto it = g_internPool.find(str);
     if (it != g_internPool.end()) {
+        tlCache.emplace(str, it->second);
         return it->second;
     }
 
@@ -13829,7 +13880,7 @@ const proto::ProtoString* PythonEnvironment::getInternedString(proto::ProtoConte
     const proto::ProtoObject* sObj = const_cast<proto::ProtoString*>(s)->asObject(ctx);
     g_internPool[str] = s;
     g_internRoots.push_back(sObj);
-    
+
     if (ctx->space) {
         ctx->space->moduleRoots.push_back(sObj);
     }
@@ -13837,6 +13888,7 @@ const proto::ProtoString* PythonEnvironment::getInternedString(proto::ProtoConte
     if (get_env_diag()) {
         fprintf(stderr, "DEBUG GLOBAL INTERN: '%s' -> %p\n", str.c_str(), (void*)s);
     }
+    tlCache.emplace(str, s);
     return s;
 }
 
