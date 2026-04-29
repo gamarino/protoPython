@@ -4146,8 +4146,8 @@ const proto::ProtoObject* executeBytecodeRange(
                 // val remains on stack
                 proto::ProtoObject* lstObj = const_cast<proto::ProtoObject*>(stack[stack.size() - arg - 1]);
                 const proto::ProtoObject* data = lstObj->getAttribute(ctx, env ? env->getDataString() : protoPython::PythonEnvironment::getInternalString(ctx, "__data__"));
-                if (data && data->asList(ctx)) {
-                    const proto::ProtoList* lst = data->asList(ctx);
+                const proto::ProtoList* lst = data ? data->asList(ctx) : nullptr;
+                if (lst) {
                     lst = lst->appendLast(ctx, val);
                     if (diag_local) {
                         fprintf(stderr, "DEBUG: OP_LIST_APPEND val=%p appended to list, new size=%zu\n", (void*)val, lst->getSize(ctx));
@@ -5141,18 +5141,14 @@ const proto::ProtoObject* executeBytecodeRange(
                         // pathway the slow path would (setAttribute on __data__
                         // for wrapped lists, direct replacement otherwise).
                         const proto::ProtoString* dataS = env ? env->getDataString() : protoPython::PythonEnvironment::getInternalString(ctx, "__data__");
-                        if (dataS && container->hasOwnAttribute(ctx, dataS) == PROTO_TRUE) {
+                        bool hasData = dataS && container->hasOwnAttribute(ctx, dataS) == PROTO_TRUE;
+                        if (hasData) {
                             container->setAttribute(ctx, dataS, newLst->asObject(ctx));
-                        }
-                        // else: container *is* a raw ProtoList — slow path would
-                        // raise TypeError ("'list' object does not support item
-                        // assignment" on raw lists, since the user-facing list
-                        // wraps __data__).  Fall through.
-                        if (dataS && container->hasOwnAttribute(ctx, dataS) == PROTO_TRUE) {
                             stack.pop_back(); stack.pop_back(); stack.pop_back();
                             i = next_i;
                             continue;
                         }
+                        // container is a raw ProtoList — fall through to slow path.
                     }
                     // Out-of-range or missing __data__ falls through to slow path.
                 }
