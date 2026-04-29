@@ -3210,26 +3210,30 @@ const proto::ProtoObject* executeBytecodeRange(
             }
         } break;
         case OP_LOAD_FAST: {
-            // Use allSlots/nSlots hoisted at function entry — avoids two cross-DSO
-            // calls (getAutomaticLocalsCount + getAutomaticLocals) on the most
-            // frequent opcode in Python code.
+            const unsigned int nSlots = ctx->getAutomaticLocalsCount();
             if (arg >= 0 && static_cast<unsigned long>(arg) < nSlots) {
-                const proto::ProtoObject* val = allSlots[arg];
+                const proto::ProtoObject** slots = ctx->getAutomaticLocals();
+                const proto::ProtoObject* val = slots[arg];
                 if (diag_local && arg == 0) {
                      fprintf(stderr, "DEBUG: LOAD_FAST 0 loaded: %p\n", (void*)val);
                      fflush(stderr);
                 }
                 stack.push_back(val ? val : (env ? env->getNonePrototype() : PROTO_NONE));
             } else {
+                if (diag_local) {
+                    // LOAD_FAST range diagnostic removed
+                }
                 stack.push_back(PROTO_NONE);
             }
         } break;
         case OP_STORE_FAST: {
             if (stack.empty()) { i = next_i; continue; }
+            const unsigned int nSlots = ctx->getAutomaticLocalsCount();
             if (arg >= 0 && static_cast<unsigned long>(arg) < nSlots) {
                 const proto::ProtoObject* val = stack.back();
                 stack.pop_back();
-                const_cast<proto::ProtoObject**>(allSlots)[arg] = const_cast<proto::ProtoObject*>(val);
+                proto::ProtoObject** slots = const_cast<proto::ProtoObject**>(ctx->getAutomaticLocals());
+                slots[arg] = const_cast<proto::ProtoObject*>(val);
             }
         } break;
         case OP_BINARY_ADD: {
