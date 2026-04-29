@@ -2451,12 +2451,6 @@ const proto::ProtoObject* invokePythonCallable(proto::ProtoContext* ctx,
 
 
 
-static void checkSTW(proto::ProtoContext* ctx) {
-    if (ctx && ctx->thread) {
-        ctx->thread->synchToGC();
-    }
-}
-
 namespace {
 struct GCStack {
     const proto::ProtoObject** slots;
@@ -2891,9 +2885,6 @@ const proto::ProtoObject* executeBytecodeRange(
             }
             return nullptr;
         }
-        
-        // Location updated at start of loop
-        if ((i & 0x7FF) == 0) checkSTW(ctx);
         
         bool diag_env = diag_local;
         int diag_level = diag_env ? 1 : 0;
