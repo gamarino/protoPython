@@ -31,8 +31,8 @@
 **Build / run conventions** (apply to every test-execution step):
 
 - Build: `cmake --build build` from `protoPython/` root.
-- Run a script: `PROTO_ENV_DIAG=0 ./build/protopy <script.py>` (DIAG=0 silences debug output that the probes don't expect to see).
-- Run an Essential test: `PROTO_ENV_DIAG=0 ./build/protopy lib/python3.14/test/<test_name>.py`.
+- Run a script: `PROTO_ENV_DIAG=0 ./build/src/runtime/protopy <script.py>` (DIAG=0 silences debug output that the probes don't expect to see).
+- Run an Essential test: `PROTO_ENV_DIAG=0 ./build/src/runtime/protopy lib/python3.14/test/<test_name>.py`.
 
 ---
 
@@ -135,7 +135,7 @@ expect("smoke.always_fail", lambda: 1 / 0)
 expect("smoke.validate_fail", lambda: "abc", validate=lambda r: r == "xyz")
 emit("smoke")
 EOF
-PROTO_ENV_DIAG=0 ./build/protopy /tmp/smoke_probe.py
+PROTO_ENV_DIAG=0 ./build/src/runtime/protopy /tmp/smoke_probe.py 2>/dev/null
 rm /tmp/smoke_probe.py
 ```
 
@@ -323,8 +323,8 @@ emit("test.support")
 
 ```bash
 mkdir -p tests/audits/_runs
-PROTO_ENV_DIAG=0 ./build/protopy tests/audits/probe_test_support.py \
-    > tests/audits/_runs/test_support.json
+PROTO_ENV_DIAG=0 ./build/src/runtime/protopy tests/audits/probe_test_support.py \
+    2>/dev/null > tests/audits/_runs/test_support.json
 echo "Exit: $?"
 head -20 tests/audits/_runs/test_support.json
 ```
@@ -534,8 +534,8 @@ emit("doctest")
 - [ ] **Step 1.2.2: Run the probe**
 
 ```bash
-PROTO_ENV_DIAG=0 ./build/protopy tests/audits/probe_doctest.py \
-    > tests/audits/_runs/doctest.json
+PROTO_ENV_DIAG=0 ./build/src/runtime/protopy tests/audits/probe_doctest.py \
+    2>/dev/null > tests/audits/_runs/doctest.json
 head -20 tests/audits/_runs/doctest.json
 ```
 
@@ -707,8 +707,8 @@ emit("inspect")
 - [ ] **Step 1.3.2: Run the probe**
 
 ```bash
-PROTO_ENV_DIAG=0 ./build/protopy tests/audits/probe_inspect.py \
-    > tests/audits/_runs/inspect.json
+PROTO_ENV_DIAG=0 ./build/src/runtime/protopy tests/audits/probe_inspect.py \
+    2>/dev/null > tests/audits/_runs/inspect.json
 head -20 tests/audits/_runs/inspect.json
 ```
 
@@ -818,8 +818,8 @@ emit("annotationlib")
 - [ ] **Step 1.4.2: Run the probe**
 
 ```bash
-PROTO_ENV_DIAG=0 ./build/protopy tests/audits/probe_annotationlib.py \
-    > tests/audits/_runs/annotationlib.json
+PROTO_ENV_DIAG=0 ./build/src/runtime/protopy tests/audits/probe_annotationlib.py \
+    2>/dev/null > tests/audits/_runs/annotationlib.json
 head -20 tests/audits/_runs/annotationlib.json
 ```
 
@@ -1011,8 +1011,8 @@ emit("unittest")
 - [ ] **Step 1.5.2: Run the probe**
 
 ```bash
-PROTO_ENV_DIAG=0 ./build/protopy tests/audits/probe_unittest.py \
-    > tests/audits/_runs/unittest.json
+PROTO_ENV_DIAG=0 ./build/src/runtime/protopy tests/audits/probe_unittest.py \
+    2>/dev/null > tests/audits/_runs/unittest.json
 head -20 tests/audits/_runs/unittest.json
 ```
 
@@ -1047,8 +1047,8 @@ mkdir -p tests/audits/_runs
 
 for module in test_support doctest inspect annotationlib unittest; do
     echo "=== Running probe_${module}.py ==="
-    PROTO_ENV_DIAG=0 ./build/protopy "tests/audits/probe_${module}.py" \
-        > "tests/audits/_runs/${module}.json"
+    PROTO_ENV_DIAG=0 ./build/src/runtime/protopy "tests/audits/probe_${module}.py" \
+        2>/dev/null > "tests/audits/_runs/${module}.json"
     echo "  -> tests/audits/_runs/${module}.json"
     python3 -c "
 import json, sys
@@ -1255,7 +1255,7 @@ EOF
 - [ ] **Step 3.0.3: Verify it fails**
 
 ```bash
-PROTO_ENV_DIAG=0 ./build/protopy /tmp/repro_SP1-G023.py
+PROTO_ENV_DIAG=0 ./build/src/runtime/protopy /tmp/repro_SP1-G023.py
 echo "Exit: $?"
 ```
 
@@ -1300,7 +1300,7 @@ Expected: clean build with no warnings introduced.
 First the reproducer:
 
 ```bash
-PROTO_ENV_DIAG=0 ./build/protopy /tmp/repro_SP1-G023.py
+PROTO_ENV_DIAG=0 ./build/src/runtime/protopy /tmp/repro_SP1-G023.py
 echo "Exit: $?"
 ```
 
@@ -1310,7 +1310,7 @@ Then the Essential test that this gap was supposed to unblock:
 
 ```bash
 # Whichever Essential test the backlog entry cites
-PROTO_ENV_DIAG=0 ./build/protopy lib/python3.14/test/test_generators.py 2>&1 | tail -20
+PROTO_ENV_DIAG=0 ./build/src/runtime/protopy lib/python3.14/test/test_generators.py 2>&1 | tail -20
 ```
 
 Expected: at least one previously-failing assertion now passes. If not, document why in the commit message — most common reason is a secondary blocker now exposed (which itself becomes a new backlog entry).
@@ -1319,17 +1319,17 @@ Then verify no regressions in the synthetic suite and custom suites:
 
 ```bash
 # Synthetic generators-and-async suite (37 tests, must remain 37/0/0)
-PROTO_ENV_DIAG=0 ./build/protopy tests/synthetic/generators_async.py 2>&1 | tail -3
+PROTO_ENV_DIAG=0 ./build/src/runtime/protopy tests/synthetic/generators_async.py 2>&1 | tail -3
 
 # Custom Necessary suites (must all remain green)
 for t in tests/test_decorator.py tests/test_abc.py tests/test_contextlib.py tests/test_dataclasses.py; do
     echo "=== $t ==="
-    PROTO_ENV_DIAG=0 ./build/protopy "$t" 2>&1 | tail -3
+    PROTO_ENV_DIAG=0 ./build/src/runtime/protopy "$t" 2>&1 | tail -3
 done
 
 # Re-run the probe of the affected module — the entry that triggered this gap should now PASS
-PROTO_ENV_DIAG=0 ./build/protopy tests/audits/probe_doctest.py \
-    > tests/audits/_runs/doctest.json
+PROTO_ENV_DIAG=0 ./build/src/runtime/protopy tests/audits/probe_doctest.py \
+    2>/dev/null > tests/audits/_runs/doctest.json
 python3 -c "
 import json
 d = json.load(open('tests/audits/_runs/doctest.json'))
@@ -1399,7 +1399,7 @@ After every gap close, evaluate:
 ```bash
 for t in test_grammar test_types test_descr test_generators test_asyncgen test_base64 test_json; do
     echo "=== $t ==="
-    timeout 300 env PROTO_ENV_DIAG=0 ./build/protopy "lib/python3.14/test/${t}.py" 2>&1 | tail -3
+    timeout 300 env PROTO_ENV_DIAG=0 ./build/src/runtime/protopy "lib/python3.14/test/${t}.py" 2>&1 | tail -3
 done
 ```
 
