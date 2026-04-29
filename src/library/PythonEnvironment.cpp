@@ -13027,86 +13027,78 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
     RecursionScope rs(this, ctx);
     if (rs.overflowed()) return obj;
 
+    // Compute type and MRO once — shared by both the __slots__ check and
+    // the data-descriptor check below, avoiding two getType() calls and
+    // two getAttribute(mroString) calls per setAttribute invocation.
+    const bool objIsClass = isActuallyAClass(ctx, obj);
+    const proto::ProtoObject* type = objIsClass ? nullptr : getType(ctx, obj);
+    const proto::ProtoTuple* mroT = nullptr;
+    if (type && type != PROTO_NONE) {
+        const proto::ProtoObject* mroAttr = type->getAttribute(ctx, mroString);
+        mroT = mroAttr ? mroAttr->asTuple(ctx) : nullptr;
+    }
+
     // PI: __slots__ enforcement.  If the instance's class declares
     // __slots__ AND no inherited class declares a __dict__, only
     // names listed in __slots__ (across the MRO) may be stored.
     // Bypassed for class objects themselves (which may set __slots__,
     // __module__, etc. as part of their own definition).
-    if (!isActuallyAClass(ctx, obj)) {
-        const proto::ProtoObject* type = getType(ctx, obj);
-        if (type && type != PROTO_NONE) {
-            const proto::ProtoObject* mroAttr = type->getAttribute(ctx, mroString);
-            const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(ctx) : nullptr;
-            if (mroT) {
-                bool hasSlots = false;
-                bool hasDict = false;
-                bool nameInSlots = false;
-                std::string nameStr;
-                name->toUTF8String(ctx, nameStr);
-                const proto::ProtoString* slotsS =
-                    PythonEnvironment::getInternedString(ctx, "__slots__");
-                for (unsigned long mi = 0; mi < mroT->getSize(ctx); ++mi) {
-                    const proto::ProtoObject* base = mroT->getAt(ctx, mi);
-                    if (!base || base == PROTO_NONE) continue;
-                    // The root `object` always has a __dict__ via descriptor;
-                    // skip it for the hasDict heuristic.  But any user class
-                    // that doesn't declare __slots__ is treated as having a
-                    // dict (CPython rule: "a class that does not have
-                    // __slots__ in any of its bases will store its instance
-                    // attributes in a __dict__").
-                    bool baseHasSlots = base->hasOwnAttribute(ctx, slotsS) == PROTO_TRUE;
-                    if (baseHasSlots) {
-                        hasSlots = true;
-                        const proto::ProtoObject* slotsObj = base->getOwnAttributeDirect(ctx, slotsS);
-                        if (slotsObj && slotsObj != PROTO_NONE) {
-                            // Iterate slots: tuple, list, or single string.
-                            const proto::ProtoTuple* slotsT = slotsObj->asTuple(ctx);
-                            const proto::ProtoList* slotsL = slotsT ? nullptr : slotsObj->asList(ctx);
-                            if (slotsT) {
-                                for (unsigned long si = 0; si < slotsT->getSize(ctx); ++si) {
-                                    const proto::ProtoObject* s = slotsT->getAt(ctx, si);
-                                    if (s && s->isString(ctx)) {
-                                        std::string ss; s->asString(ctx)->toUTF8String(ctx, ss);
-                                        if (ss == nameStr) { nameInSlots = true; break; }
-                                    }
-                                }
-                            } else if (slotsL) {
-                                for (unsigned long si = 0; si < slotsL->getSize(ctx); ++si) {
-                                    const proto::ProtoObject* s = slotsL->getAt(ctx, si);
-                                    if (s && s->isString(ctx)) {
-                                        std::string ss; s->asString(ctx)->toUTF8String(ctx, ss);
-                                        if (ss == nameStr) { nameInSlots = true; break; }
-                                    }
-                                }
-                            } else if (slotsObj->isString(ctx)) {
-                                std::string ss; slotsObj->asString(ctx)->toUTF8String(ctx, ss);
-                                if (ss == nameStr) nameInSlots = true;
+    if (!objIsClass && mroT) {
+        const proto::ProtoString* slotsS = slotsString;
+        bool hasSlots = false;
+        bool hasDict = false;
+        bool nameInSlots = false;
+        std::string nameStr;  // computed lazily inside the slots-hit branch
+        for (unsigned long mi = 0; mi < mroT->getSize(ctx); ++mi) {
+            const proto::ProtoObject* base = mroT->getAt(ctx, mi);
+            if (!base || base == PROTO_NONE) continue;
+            bool baseHasSlots = slotsS && base->hasOwnAttribute(ctx, slotsS) == PROTO_TRUE;
+            if (baseHasSlots) {
+                hasSlots = true;
+                // Decode attribute name only on first slots hit (rare path).
+                if (nameStr.empty()) name->toUTF8String(ctx, nameStr);
+                const proto::ProtoObject* slotsObj = base->getOwnAttributeDirect(ctx, slotsS);
+                if (slotsObj && slotsObj != PROTO_NONE) {
+                    // Iterate slots: tuple, list, or single string.
+                    const proto::ProtoTuple* slotsT = slotsObj->asTuple(ctx);
+                    const proto::ProtoList* slotsL = slotsT ? nullptr : slotsObj->asList(ctx);
+                    if (slotsT) {
+                        for (unsigned long si = 0; si < slotsT->getSize(ctx); ++si) {
+                            const proto::ProtoObject* s = slotsT->getAt(ctx, si);
+                            if (s && s->isString(ctx)) {
+                                std::string ss; s->asString(ctx)->toUTF8String(ctx, ss);
+                                if (ss == nameStr) { nameInSlots = true; break; }
                             }
                         }
-                    } else {
-                        // User base class without __slots__ → it has a dict.
-                        // (Skip object's implicit dict, which is what we
-                        //  want to disallow.)
-                        const proto::ProtoString* nm = base->getAttribute(ctx,
-                            PythonEnvironment::getInternedString(ctx, "__name__")) ?
-                            base->getAttribute(ctx,
-                                PythonEnvironment::getInternedString(ctx, "__name__"))->asString(ctx) :
-                            nullptr;
-                        std::string baseName;
-                        if (nm) nm->toUTF8String(ctx, baseName);
-                        if (baseName != "object" && baseName != "type") {
-                            hasDict = true;
+                    } else if (slotsL) {
+                        for (unsigned long si = 0; si < slotsL->getSize(ctx); ++si) {
+                            const proto::ProtoObject* s = slotsL->getAt(ctx, si);
+                            if (s && s->isString(ctx)) {
+                                std::string ss; s->asString(ctx)->toUTF8String(ctx, ss);
+                                if (ss == nameStr) { nameInSlots = true; break; }
+                            }
                         }
+                    } else if (slotsObj->isString(ctx)) {
+                        std::string ss; slotsObj->asString(ctx)->toUTF8String(ctx, ss);
+                        if (ss == nameStr) nameInSlots = true;
                     }
-                    if (nameInSlots) break;
                 }
-                // PI: if any class in MRO declares __slots__ AND no other
-                // class adds a __dict__, only slotted names are accepted.
-                if (hasSlots && !hasDict && !nameInSlots) {
-                    raiseAttributeError(ctx, obj, nameStr);
-                    return nullptr;
+            } else {
+                // User base class without __slots__ → instances have a __dict__.
+                // Skip `object` and `type` by pointer (avoids two getAttribute +
+                // toUTF8String + string-compare per MRO entry when no slots exist).
+                if (base != objectPrototype && base != typePrototype) {
+                    hasDict = true;
                 }
             }
+            if (nameInSlots) break;
+        }
+        // PI: if any class in MRO declares __slots__ AND no other
+        // class adds a __dict__, only slotted names are accepted.
+        if (hasSlots && !hasDict && !nameInSlots) {
+            if (nameStr.empty()) name->toUTF8String(ctx, nameStr);
+            raiseAttributeError(ctx, obj, nameStr);
+            return nullptr;
         }
     }
 
@@ -13122,31 +13114,29 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
     // PG: data descriptors (with __set__) shadow instance attributes.
     // Look up the attribute on the type chain (skipping the instance's
     // own attrs) and, if it has __set__, call __set__(descr, obj, value).
-    // The previous check only fired for native Cell descriptors;
-    // Python-class descriptors (a class with `def __set__`) were
-    // bypassed and the value was stored in the instance dict directly.
+    // Uses `type` and `mroT` already resolved above to avoid a second
+    // getType() + getAttribute(mroString) call.
     {
-        // Walk type's MRO to find the descriptor as a raw attribute
-        // (without invoking __get__ — that would re-trigger descriptor
-        // binding and return a value, not the descriptor itself).
-        const proto::ProtoObject* type = getType(ctx, obj);
+        // For class objects, compute type/MRO inline (skipped by the
+        // shared computation above which only runs for instances).
+        const proto::ProtoObject* effectiveType = objIsClass ? getType(ctx, obj) : type;
+        const proto::ProtoTuple* effectiveMroT = objIsClass ? nullptr : mroT;
+        if (objIsClass && effectiveType && effectiveType != PROTO_NONE) {
+            const proto::ProtoObject* m = effectiveType->getAttribute(ctx, mroString);
+            effectiveMroT = m ? m->asTuple(ctx) : nullptr;
+        }
         const proto::ProtoObject* descr = nullptr;
-        if (type && type != PROTO_NONE) {
-            // Try the type's own attrs first.
-            if (type->hasOwnAttribute(ctx, name) == PROTO_TRUE) {
-                descr = type->getOwnAttributeDirect(ctx, name);
-            } else {
-                // Walk the type's __mro__ tuple looking for a raw attribute.
-                const proto::ProtoObject* mroObj = type->getAttribute(ctx, mroString);
-                const proto::ProtoTuple* mroT = mroObj ? mroObj->asTuple(ctx) : nullptr;
-                if (mroT) {
-                    for (unsigned long mi = 0; mi < mroT->getSize(ctx); ++mi) {
-                        const proto::ProtoObject* base = mroT->getAt(ctx, mi);
-                        if (!base || base == PROTO_NONE) continue;
-                        if (base->hasOwnAttribute(ctx, name) == PROTO_TRUE) {
-                            descr = base->getOwnAttributeDirect(ctx, name);
-                            break;
-                        }
+        if (effectiveType && effectiveType != PROTO_NONE) {
+            // Try the type's own attrs first (O(1), avoids MRO walk for the common case).
+            if (effectiveType->hasOwnAttribute(ctx, name) == PROTO_TRUE) {
+                descr = effectiveType->getOwnAttributeDirect(ctx, name);
+            } else if (effectiveMroT) {
+                for (unsigned long mi = 0; mi < effectiveMroT->getSize(ctx); ++mi) {
+                    const proto::ProtoObject* base = effectiveMroT->getAt(ctx, mi);
+                    if (!base || base == PROTO_NONE) continue;
+                    if (base->hasOwnAttribute(ctx, name) == PROTO_TRUE) {
+                        descr = base->getOwnAttributeDirect(ctx, name);
+                        break;
                     }
                 }
             }
@@ -13182,13 +13172,15 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
 
     const proto::ProtoObject* res = obj->setAttribute(ctx, name, value);
 
-    // Sync to __dict__ if it exists (for built-in types and Python classes)
+    // Sync to __dict__ if it exists (for built-in types and Python classes).
+    // Short-circuit: check __data__ first; only look up __keys__ when __data__
+    // is present.  For ordinary Python instances (no __data__), this saves
+    // the second hasOwnAttribute probe on every setAttribute call.
     const proto::ProtoString* dataName = dataString;
     const proto::ProtoString* keysName = keysString;
     if (dataName && keysName && name != dataName && name != keysName) {
-        // Use hasOwnAttribute to avoid raising error if they don't exist
         const proto::ProtoObject* d = (obj->hasOwnAttribute(ctx, dataName) == PROTO_TRUE) ? obj->proto::ProtoObject::getAttribute(ctx, dataName) : nullptr;
-        const proto::ProtoObject* k = (obj->hasOwnAttribute(ctx, keysName) == PROTO_TRUE) ? obj->proto::ProtoObject::getAttribute(ctx, keysName) : nullptr;
+        const proto::ProtoObject* k = (d && d != PROTO_NONE && obj->hasOwnAttribute(ctx, keysName) == PROTO_TRUE) ? obj->proto::ProtoObject::getAttribute(ctx, keysName) : nullptr;
         if (d && d != PROTO_NONE && k && k != PROTO_NONE) {
             proto::ProtoSparseList* dataList = const_cast<proto::ProtoSparseList*>(d->asSparseList(ctx));
             proto::ProtoList* keysList = const_cast<proto::ProtoList*>(k->asList(ctx));
