@@ -12342,14 +12342,19 @@ static const proto::ProtoObject* tryFastGetAttribute(
     }
 
     // Descriptor check: if val's type defines __get__, the slow path must invoke it.
-    // One cached getAttribute on valType covers both own-__get__ (e.g. property) and
-    // inherited __get__ (user-defined descriptor classes).
+    // One cached getAttribute on valType covers both type-inherited __get__ (property,
+    // classmethod, staticmethod, user-defined descriptor classes) and descriptors whose
+    // __get__ is an own attribute of the type.
+    //
+    // The former redundant `val->hasOwnAttribute(ctx, getDS)` check (instance-level
+    // __get__) is removed: Python's descriptor protocol is type-based — type(val).__get__
+    // determines whether the value is a descriptor, not val.__get__.  An instance with
+    // __get__ as an own attribute is not a descriptor; its type's getAttribute chain
+    // (already checked above) would have returned nullptr for getDS in that case.
     const proto::ProtoString* getDS = env->getGetDunderString();
     if (getDS && valType && valType != PROTO_NONE && valType != val) {
         if (valType->getAttribute(ctx, getDS)) return nullptr;
     }
-    // Also cover descriptors that carry __get__ directly as an own attribute.
-    if (getDS && val->hasOwnAttribute(ctx, getDS) == PROTO_TRUE) return nullptr;
 
     return val;
 }
