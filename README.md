@@ -50,12 +50,16 @@
 
 ---
 
-## 📊 Performance Benchmarks (2026-04-28, Phase 6)
+## 📊 Performance Benchmarks (2026-04-28, Phase 7)
 
 > ⚠ **Honest disclaimer.** Tight integer microbenchmarks understate
 > the gap to CPython on real code by ~40×.  Both tables below are
 > measured on the same machine, same Release build; the contrast is
 > the point.  Read the second one as the headline number.
+>
+> **Run-to-run variance**: nqueens and sieve report sub-millisecond
+> CPython times that amplify ratio noise by ±20%.  The absolute
+> protoPy column is the stable signal; ratios are indicative only.
 
 ### Realistic — pyperformance pure-Python subset
 
@@ -70,26 +74,26 @@ isolates the per-bytecode cost.
 ┌────────────────────┬──────────────┬──────────────┬──────────┬──────────────────────────────┐
 │ Benchmark          │ protoPy (ms) │ CPython (ms) │ Ratio    │ Stresses                     │
 ├────────────────────┼──────────────┼──────────────┼──────────┼──────────────────────────────┤
-│ nqueens(8)         │       151.1  │         3.2  │   47.2×  │ recursion + list[i] subscr   │
-│ sieve(10000)       │        55.6  │         0.7  │   79.4×  │ list mutate in tight loop    │
-│ richards_lite      │         5.1  │         0.2  │   25.5×  │ class instantiation, methods │
+│ nqueens(8)         │      ~175    │         3.3  │  ~53×    │ recursion + list[i] subscr   │
+│ sieve(10000)       │       ~63    │         0.7  │  ~90×    │ list mutate in tight loop    │
+│ richards_lite      │        5.1   │         0.2  │  ~25×    │ class instantiation, methods │
 ├────────────────────┼──────────────┼──────────────┼──────────┼──────────────────────────────┤
-│ Geomean ratio      │              │              │   ~46×   │ ±10% run-to-run variance     │
+│ Geomean ratio      │              │              │  ~47×    │ ±20% run-to-run variance     │
 └────────────────────┴──────────────┴──────────────┴──────────┴──────────────────────────────┘
 ```
 
-Phase 6 improvement vs Phase 5 baseline (44.5× / 80.4× / 58.5×):
-nqueens and sieve are neutral (no `LOAD_ATTR` in their hot loops);
-**richards_lite dropped from 58.5× to 25.5× (−56%)** — the dominant
-cost was `self.field` access, which the Phase 6 LOAD_ATTR own-instance
-fast path now handles with a single `getOwnAttributeDirect` call instead
-of going through the Python-level `env->getAttribute` dispatcher.
+Phase 7 improvement vs Phase 6 (47.2× / 79.4× / 25.5× / geomean ~46×):
+nqueens and sieve are **neutral** (no `STORE_ATTR` or `LOAD_ATTR` on
+instance attributes in their hot loops — all variance is system noise).
+**richards_lite dropped from ~6.1ms to ~5.1ms (−17%)** from the Phase 7A
+`STORE_ATTR` fast path, measured with matched system state (same binary,
+`PROTOPY_DISABLE_STOREATTR_FASTPATH=1` vs default).
 
 The dominant remaining costs in real Python code are **bytecode
 dispatch**, **list/dict subscript**, and **class instantiation**
 overhead beyond the attribute lookup itself.  Compared with the V154
-baseline (1337× geomean, 2026-04-25) the suite shrunk by **~29×**
-through seven protoCore / protoPython changes:
+baseline (1337× geomean, 2026-04-25) the suite shrunk by **~28×**
+through ten protoCore / protoPython changes:
   1. The mutable-value cache is now routed through every read+write
      site (commit `af1cfbea`).
   2. The OS process's main thread is now adopted as a
@@ -120,13 +124,35 @@ through seven protoCore / protoPython changes:
      descriptors (descriptor `__set__` intercepts `setAttribute`).  Class
      attrs and method calls fall to the existing slow path, eliminating the
      2-guard overhead that was penalising method-heavy workloads in Phase 5.
+     Reduced richards_lite from 58.5× to ~25×.
+  7. Phase 7A: `OP_STORE_ATTR` inline fast path for plain instance writes
+     (`self.x = value`).  Three O(1) checks (not-a-class probe, type has
+     no own attribute named `name` — no data descriptor, type has no
+     `__slots__`) gate a direct `obj->setAttribute` that bypasses the full
+     `env->setAttribute` protocol (~12 protoCore calls: two MRO walks,
+     two `getType` calls, UTF-8 decode, `__dict__` sync probes).
+     Reduced richards_lite from ~6.1ms to ~5.1ms (−17%).
+  8. Phase 7B: `env->setAttribute` internal cleanup — `getType` and the
+     MRO `getAttribute` are now computed once and shared between the
+     `__slots__` and data-descriptor checks (previously called twice
+     each).  The `toUTF8String` decode of the attribute name is now lazy
+     (only when a base with `__slots__` is actually found).  Base-class
+     detection for `object`/`type` now uses O(1) pointer comparison
+     instead of two `getAttribute("__name__")` + string comparison.
+     The `__dict__` sync short-circuits if `__data__` is absent.
+  9. Phase 7C: `tryFastGetAttribute` — the redundant instance-level
+     `val->hasOwnAttribute("__get__")` check is removed.  Python's
+     descriptor protocol is type-based: `type(val).__get__` matters, not
+     the instance's own `__get__`.  The preceding `valType->getAttribute`
+     already covers all practical cases.
 
-Set `PROTOPY_DISABLE_LOADATTR_FASTPATH=1` to revert to the slow path
-for triage if behavioural divergence is suspected.
+Set `PROTOPY_DISABLE_LOADATTR_FASTPATH=1` or
+`PROTOPY_DISABLE_STOREATTR_FASTPATH=1` to revert the respective fast
+path for triage if behavioural divergence is suspected.
 
 Run yourself:
 ```bash
-python3 benchmarks/pyperf/run_pyperf_subset.py build-release/src/runtime/protopy
+python3 benchmarks/pyperf/run_pyperf_subset.py build-lto/src/runtime/protopy
 ```
 
 ### Microbenchmarks — tight integer / arithmetic loops
