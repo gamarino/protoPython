@@ -9169,6 +9169,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     dataString = getInternedString(rootContext_, "__data__");
     space_->literalData = const_cast<proto::ProtoString*>(dataString);
     keysString = getInternedString(rootContext_, "__keys__");
+    slotsString = getInternedString(rootContext_, "__slots__");
     isSuperProxyString = getInternedString(rootContext_, "__is_super_proxy__");
     pyGetAttrHandlerString_ = getInternedString(rootContext_, "__py_getattr_handler__");
     getattrDunderString = getInternedString(rootContext_, "__getattr__");

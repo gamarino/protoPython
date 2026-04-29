@@ -431,6 +431,7 @@ public:
 
     const proto::ProtoString* getDataString() const { return dataString; }
     const proto::ProtoString* getKeysString() const { return keysString; }
+    const proto::ProtoString* getSlotsString() const { return slotsString; }
     const proto::ProtoString* getIsSuperProxyString() const { return isSuperProxyString; }
     const proto::ProtoString* getPyGetAttrHandlerString() const { return pyGetAttrHandlerString_; }
     const proto::ProtoString* getIsPythonClassString() const { return isPythonClassString; }
@@ -1039,6 +1040,7 @@ private:
     const proto::ProtoString* delItemString{nullptr};
     const proto::ProtoString* dataString{nullptr};
     const proto::ProtoString* keysString{nullptr};
+    const proto::ProtoString* slotsString{nullptr};
     const proto::ProtoString* isSuperProxyString{nullptr};
     const proto::ProtoString* pyGetAttrHandlerString_{nullptr};
     const proto::ProtoString* getattrDunderString{nullptr};
