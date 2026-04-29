@@ -3335,6 +3335,17 @@ const proto::ProtoObject* executeBytecodeRange(
             if (stack.size() < 2) { i = next_i; continue; }
             const proto::ProtoObject* b = stack.back();
             const proto::ProtoObject* a = stack[stack.top - 2];
+            // SmallInt × SmallInt: product may exceed 56-bit range, use
+            // __int128 to detect overflow.  sieve hot loop is `i * j`
+            // with both operands well within SmallInt range.
+            if (proto::isSmallInt(a) && proto::isSmallInt(b)) {
+                __int128 prod = (__int128)proto::asSmallInt(a) * proto::asSmallInt(b);
+                if (proto::smallIntInRange(static_cast<long long>(prod))) {
+                    stack.pop_back();
+                    stack.back() = proto::makeSmallInt(static_cast<long long>(prod));
+                    i = next_i; continue;
+                }
+            }
             const proto::ProtoObject* r = binaryMultiply(ctx, a, b);
             stack.pop_back(); // Pop b
             stack.back() = r;
@@ -3635,6 +3646,27 @@ const proto::ProtoObject* executeBytecodeRange(
             if (stack.size() < 2) { i = next_i; continue; }
             const proto::ProtoObject* b = stack.back();
             const proto::ProtoObject* a = stack[stack.top - 2];
+            // SmallInt << SmallInt: shift into __int128 and range-check.
+            // nqueens uses `1 << col` (col ≤ n, typically ≤ 30) — fast path
+            // succeeds virtually always.
+            if (proto::isSmallInt(a) && proto::isSmallInt(b)) {
+                long long shift = proto::asSmallInt(b);
+                if (shift >= 0 && shift < 63) {
+                    __int128 result = (__int128)proto::asSmallInt(a) << shift;
+                    long long r64 = static_cast<long long>(result);
+                    if (proto::smallIntInRange(r64) && ((__int128)r64 == result)) {
+                        stack.pop_back();
+                        stack.back() = proto::makeSmallInt(r64);
+                        i = next_i; continue;
+                    }
+                } else if (shift < 0) {
+                    if (env) env->raiseValueError(ctx,
+                        PythonEnvironment::getInternedString(ctx, "negative shift count")->asObject(ctx));
+                    stack.pop_back(); stack.back() = PROTO_NONE;
+                    i = next_i; continue;
+                }
+                // Large shift or overflow: fall through to bignum handler.
+            }
             if (a->isInteger(ctx) && b->isInteger(ctx)) {
                 // Shift amount: try asLong; bignum amounts are absurd so
                 // we cap them by routing through Integer::shiftLeft on a
