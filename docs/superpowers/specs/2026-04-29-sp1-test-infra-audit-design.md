@@ -1,6 +1,8 @@
 # SP1 — Test Infrastructure Audit & Repair (Design)
 
-**Status:** Draft, pending user review
+**Status:** PAUSED on 2026-04-29. SP1 was started but Phase 1 (audit probes) revealed six base-interpreter bugs that block the audit infrastructure itself: `json.dumps(int)` returns garbage, `sys.path.insert` does not affect import resolution, local-module imports leak `DEBUG:` to stdout, `import traceback` silently aborts the script, `except Exception as e` may not catch what `BaseException` catches, and attribute access on a caught exception (`type(e).__name__`) crashes silently. The audit-driven approach assumed the interpreter base was stable; that premise is wrong. SP1 is paused pending **SP0 — interpreter base stabilization**, which will fix the prerequisites. After SP0 completes, SP1 resumes from the v2 plan.
+
+**Original status:** Draft, pending user review
 **Author:** brainstorming session, 2026-04-29
 **Project:** protoPython
 **Sub-project:** SP1 of the multi-spec push to "All Green" Essential CPython conformance
