@@ -3660,6 +3660,21 @@ const proto::ProtoObject* executeBytecodeRange(
             if (stack.size() < 2) { i = next_i; continue; }
             const proto::ProtoObject* b = stack.back();
             const proto::ProtoObject* a = stack[stack.top - 2];
+            // SmallInt >> SmallInt: right shift always produces a result with
+            // magnitude ≤ |a|, guaranteed in 56-bit signed range.
+            if (proto::isSmallInt(a) && proto::isSmallInt(b)) {
+                long long shift = proto::asSmallInt(b);
+                if (shift >= 0) {
+                    if (shift >= 63) shift = 63; // arithmetic right shift clamps
+                    stack.pop_back();
+                    stack.back() = proto::makeSmallInt(proto::asSmallInt(a) >> shift);
+                    i = next_i; continue;
+                }
+                if (env) env->raiseValueError(ctx,
+                    PythonEnvironment::getInternedString(ctx, "negative shift count")->asObject(ctx));
+                stack.pop_back(); stack.back() = PROTO_NONE;
+                i = next_i; continue;
+            }
             if (a->isInteger(ctx) && b->isInteger(ctx)) {
                 int amount = 0;
                 try { amount = static_cast<int>(b->asLong(ctx)); }
@@ -3682,6 +3697,14 @@ const proto::ProtoObject* executeBytecodeRange(
             if (stack.size() < 2) { i = next_i; continue; }
             const proto::ProtoObject* b = stack.back();
             const proto::ProtoObject* a = stack[stack.top - 2];
+            // SmallInt & SmallInt: AND of two values in 56-bit signed range
+            // always stays in range (sign extension bits are consistent).
+            // Zero protoCore calls — all tag operations are inline.
+            if (proto::isSmallInt(a) && proto::isSmallInt(b)) {
+                stack.pop_back();
+                stack.back() = proto::makeSmallInt(proto::asSmallInt(a) & proto::asSmallInt(b));
+                i = next_i; continue;
+            }
             if (a->isInteger(ctx) && b->isInteger(ctx)) {
                 // Integer::bitwiseAnd handles bignum operands.
                 stack.pop_back(); stack.back() = a->bitwiseAnd(ctx, b);
@@ -3705,6 +3728,11 @@ const proto::ProtoObject* executeBytecodeRange(
             if (stack.size() < 2) { i = next_i; continue; }
             const proto::ProtoObject* b = stack.back();
             const proto::ProtoObject* a = stack[stack.top - 2];
+            if (proto::isSmallInt(a) && proto::isSmallInt(b)) {
+                stack.pop_back();
+                stack.back() = proto::makeSmallInt(proto::asSmallInt(a) | proto::asSmallInt(b));
+                i = next_i; continue;
+            }
             if (a->isInteger(ctx) && b->isInteger(ctx)) {
                 const proto::ProtoObject* res = a->bitwiseOr(ctx, b);
                 stack.pop_back(); stack.back() = res;
@@ -3727,6 +3755,11 @@ const proto::ProtoObject* executeBytecodeRange(
             if (stack.size() < 2) { i = next_i; continue; }
             const proto::ProtoObject* b = stack.back();
             const proto::ProtoObject* a = stack[stack.top - 2];
+            if (proto::isSmallInt(a) && proto::isSmallInt(b)) {
+                stack.pop_back();
+                stack.back() = proto::makeSmallInt(proto::asSmallInt(a) ^ proto::asSmallInt(b));
+                i = next_i; continue;
+            }
             if (a->isInteger(ctx) && b->isInteger(ctx)) {
                 const proto::ProtoObject* res = a->bitwiseXor(ctx, b);
                 stack.pop_back(); stack.back() = res;
