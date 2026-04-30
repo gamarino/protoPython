@@ -1262,27 +1262,23 @@ def _update_func_cell_for__class__(f, oldcls, newcls):
 
 
 def _create_slots(defined_fields, inherited_slots, field_names, weakref_slot):
-    print(f"DEBUG: _create_slots: inherited_slots={inherited_slots} field_names={field_names}")
     # The slots for our class.  Remove slots from our base classes.  Add
     # '__weakref__' if weakref_slot was given, unless it is already present.
     seen_docs = False
     slots = {}
-    print("DEBUG: _create_slots: before filterfalse")
     ff = itertools.filterfalse(
         inherited_slots.__contains__,
         itertools.chain(
             field_names, ('__weakref__',) if weakref_slot else ()
         )
     )
-    print(f"DEBUG: _create_slots: ff={ff}")
     for slot in ff:
-        print(f"DEBUG: _create_slots: processing slot={slot}")
         doc = getattr(defined_fields.get(slot), 'doc', None)
         if doc is not None:
             seen_docs = True
         slots[slot] = doc
 
-    print(f"DEBUG: _create_slots: finished loop slots={slots}")
+
     # We only return dict if there's at least one doc member,
     # otherwise we return tuple, which is the old default format.
     if seen_docs:
@@ -1309,13 +1305,10 @@ def _add_slots(cls, is_frozen, weakref_slot, defined_fields):
     field_names = tuple(f.name for f in fields(cls))
     # Make sure slots don't overlap with those in base classes.
     mro_to_check = cls.__mro__[1:-1]
-    print(f"DEBUG: _add_slots: mro_to_check={mro_to_check}")
     slots_map = map(_get_slots, mro_to_check)
-    print(f"DEBUG: _add_slots: slots_map={slots_map}")
     inherited_slots = set(
         itertools.chain.from_iterable(slots_map)
     )
-    print(f"DEBUG: _add_slots: inherited_slots={inherited_slots}")
 
     cls_dict["__slots__"] = _create_slots(
         defined_fields, inherited_slots, field_names, weakref_slot,

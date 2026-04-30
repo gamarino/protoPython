@@ -17,10 +17,13 @@
 namespace protoPython {
 namespace builtins {
 
-static bool get_env_diag() {
-    static bool diag = std::getenv("PROTO_ENV_DIAG") != nullptr;
-    return diag;
-}
+// NOTE: a previous revision of this file declared a local
+// `static bool get_env_diag()` here, which shadowed the
+// canonical `::get_env_diag()` defined in DiagUtils.h and
+// silently kept the old "any value = enabled" semantics.
+// Removed: every site below now resolves to the unqualified
+// helper in DiagUtils.h, which honours the falsy spellings
+// ("0", "false", "off", "no").
 
 namespace {
 struct GlobalsScope {
@@ -840,7 +843,7 @@ static const proto::ProtoObject* py_enumerate(
 
     const proto::ProtoObject* it = py_iter(context, nullptr, nullptr, context->newList()->appendLast(context, iterable), nullptr);
     if (!it || it == (env ? env->getNonePrototype() : nullptr) || it == PROTO_NONE) {
-        if (get_env_diag()) printf("DEBUG: py_enumerate py_iter returned empty for iterable=%p (it=%p, envNone=%p)\n", (void*)iterable, (void*)it, (void*)(env ? env->getNonePrototype() : nullptr));
+        if (get_env_diag()) fprintf(stderr, "DEBUG: py_enumerate py_iter returned empty for iterable=%p (it=%p, envNone=%p)\n", (void*)iterable, (void*)it, (void*)(env ? env->getNonePrototype() : nullptr));
         return PROTO_NONE;
     }
 
@@ -848,7 +851,7 @@ static const proto::ProtoObject* py_enumerate(
     const proto::ProtoObject* enumObj = cls->newChild(context, true);
     enumObj = enumObj->setAttribute(context, itS, it);
     enumObj = enumObj->setAttribute(context, idxS, context->fromInteger(start));
-    if (get_env_diag()) printf("DEBUG: py_enumerate successfully created enumObj=%p\n", (void*)enumObj);
+    if (get_env_diag()) fprintf(stderr, "DEBUG: py_enumerate successfully created enumObj=%p\n", (void*)enumObj);
     return enumObj;
 }
 
@@ -864,20 +867,20 @@ static const proto::ProtoObject* py_enumerate_next(
     const proto::ProtoObject* it = self->getAttribute(context, itS);
     const proto::ProtoObject* idxObj = self->getAttribute(context, idxS);
     if (!it || !idxObj) {
-        if (get_env_diag()) printf("DEBUG: py_enumerate_next it=%p idxObj=%p\n", (void*)it, (void*)idxObj);
+        if (get_env_diag()) fprintf(stderr, "DEBUG: py_enumerate_next it=%p idxObj=%p\n", (void*)it, (void*)idxObj);
         return nullptr;
     }
 
     const proto::ProtoObject* nextMethod = it->getAttribute(context, nextS);
     if (!nextMethod || !nextMethod->asMethod(context)) {
-        if (get_env_diag()) printf("DEBUG: py_enumerate_next nextMethod missing or not a method\n");
+        if (get_env_diag()) fprintf(stderr, "DEBUG: py_enumerate_next nextMethod missing or not a method\n");
         return nullptr;
     }
     
     const proto::ProtoList* emptyL = env ? env->getEmptyList() : context->newList();
     const proto::ProtoObject* value = nextMethod->asMethod(context)(context, it, nullptr, emptyL, nullptr);
     if (!value) {
-        if (get_env_diag()) printf("DEBUG: py_enumerate_next nextMethod returned nullptr\n");
+        if (get_env_diag()) fprintf(stderr, "DEBUG: py_enumerate_next nextMethod returned nullptr\n");
         return nullptr;
     }
 
@@ -929,13 +932,13 @@ static const proto::ProtoObject* py_reversed(
         return nullptr;
     }
     
-    if (get_env_diag()) printf("DEBUG: py_reversed calling lenMethod=%p\n", (void*)lenMethod);
+    if (get_env_diag()) fprintf(stderr, "DEBUG: py_reversed calling lenMethod=%p\n", (void*)lenMethod);
     const proto::ProtoObject* lenObj = ::protoPython::invokePythonCallable(context, lenMethod, emptyL, nullptr);
     if (!lenObj) {
-        if (get_env_diag()) printf("DEBUG: py_reversed lenMethod->call returned nullptr\n");
+        if (get_env_diag()) fprintf(stderr, "DEBUG: py_reversed lenMethod->call returned nullptr\n");
         return nullptr; // Exception thrown by __len__
     }
-    if (get_env_diag()) printf("DEBUG: py_reversed lenObj=%p repr=%s\n", (void*)lenObj, PythonEnvironment::reprObject(context, lenObj).c_str());
+    if (get_env_diag()) fprintf(stderr, "DEBUG: py_reversed lenObj=%p repr=%s\n", (void*)lenObj, PythonEnvironment::reprObject(context, lenObj).c_str());
     if (!lenObj->isInteger(context)) {
         if (env) env->raiseTypeError(context, "'" + PythonEnvironment::reprObject(context, lenObj) + "' returned from __len__ cannot be interpreted as an integer");
         return nullptr;
@@ -945,7 +948,7 @@ static const proto::ProtoObject* py_reversed(
     const proto::ProtoObject* revProto = self->getAttribute(context, revProtoS);
     if (!revProto || revProto == PROTO_NONE) {
         if (get_env_diag()) {
-            printf("DEBUG: py_reversed failed: revProto is null or PROTO_NONE\n");
+            fprintf(stderr, "DEBUG: py_reversed failed: revProto is null or PROTO_NONE\n");
         }
         return PROTO_NONE;
     }
@@ -1661,7 +1664,7 @@ static const proto::ProtoObject* py_eval(
     // If globals and locals are different, we primarily use locals for the execution frame.
     const proto::ProtoObject* result = runCodeObject(context, codeObj, locals);
     if (get_env_diag()) {
-        printf("DEBUG: py_eval source='%s' result=%p\n", source.c_str(), (void*)result);
+        fprintf(stderr, "DEBUG: py_eval source='%s' result=%p\n", source.c_str(), (void*)result);
     }
     return result ? result : PROTO_NONE;
 }
@@ -3046,7 +3049,7 @@ const proto::ProtoObject* py_type(
     if (argCount == 1 || argCount == 2) {
         const proto::ProtoObject* obj = (argCount == 2) ? positionalParameters->getAt(context, 1) : positionalParameters->getAt(context, 0);
         if (get_env_diag()) {
-            printf("DEBUG: py_type(1/2) obj=%p\n", (void*)obj);
+            fprintf(stderr, "DEBUG: py_type(1/2) obj=%p\n", (void*)obj);
         }
         
         if (obj == PROTO_NONE) return env->getNoneTypePrototype();

@@ -280,7 +280,7 @@ static const proto::ProtoObject* py_type_call(
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
     if (get_env_diag()) {
-        printf("DEBUG: py_type_call called self=%p\n", (void*)self);
+        fprintf(stderr, "DEBUG: py_type_call called self=%p\n", (void*)self);
     }
     // PI: refuse to instantiate classes with abstract methods.
     // CPython's type.__call__ checks __abstractmethods__ (a frozenset
@@ -594,7 +594,7 @@ static const proto::ProtoObject* py_type_get_dict(
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     if (!self || !env) return PROTO_NONE;
     
-    if (get_env_diag()) printf("DEBUG: py_type_get_dict called for %p\n", (void*)self);
+    if (get_env_diag()) fprintf(stderr, "DEBUG: py_type_get_dict called for %p\n", (void*)self);
 
     // In ProtoCore, self IS already a dictionary-like object in many ways
     // But for CPython parity, we return a MappingProxy of 'self'
@@ -1646,7 +1646,7 @@ static const proto::ProtoObject* py_list_reversed(
     const proto::ProtoString* revProtoName = PythonEnvironment::getInternedString(context, "__reversed_prototype__");
     const proto::ProtoObject* revProto = self->getAttribute(context, revProtoName);
     if (get_env_diag()) {
-        printf("DEBUG: py_list_reversed self=%p revProto=%p\n", (void*)self, (void*)revProto);
+        fprintf(stderr, "DEBUG: py_list_reversed self=%p revProto=%p\n", (void*)self, (void*)revProto);
     }
     if (!revProto) return PROTO_NONE;
     const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "__data__");
@@ -2256,11 +2256,11 @@ static const proto::ProtoObject* py_tuple_repr(
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
     if (get_env_diag()) {
-        printf("DEBUG: py_tuple_repr called self=%p\n", (void*)self);
+        fprintf(stderr, "DEBUG: py_tuple_repr called self=%p\n", (void*)self);
     }
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     if (env && self == env->getTuplePrototype()) {
-        if (get_env_diag()) printf("DEBUG: py_tuple_repr delegating to py_type_repr because self == tuplePrototype\n");
+        if (get_env_diag()) fprintf(stderr, "DEBUG: py_tuple_repr delegating to py_type_repr because self == tuplePrototype\n");
         return py_type_repr(context, self, parentLink, positionalParameters, keywordParameters);
     }
     const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "__data__");
@@ -2268,7 +2268,7 @@ static const proto::ProtoObject* py_tuple_repr(
     const proto::ProtoTuple* tup = (data && data->asTuple(context)) ? data->asTuple(context) : self->asTuple(context);
     const proto::ProtoList* list = tup ? tup->asList(context) : (data && data->asList(context) ? data->asList(context) : nullptr);
     if (!list) {
-        if (get_env_diag()) printf("DEBUG: py_tuple_repr NO LIST FOUND -> returning ()\n");
+        if (get_env_diag()) fprintf(stderr, "DEBUG: py_tuple_repr NO LIST FOUND -> returning ()\n");
         return PythonEnvironment::getInternedString(context, "()")->asObject(context);
     }
 
@@ -11322,10 +11322,10 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain,
                                 // Set __class__ explicitly so type(mod) is <class 'module'>, not <class 'type'>
                                 mutableMod->setAttribute(ctx, getClassString(), modulePrototype);
                             }
-                            if (get_env_diag()) { printf("DEBUG: executeModule initDictStorage modulePrototype=%p\n", (void*)modulePrototype); }
+                            if (get_env_diag()) { fprintf(stderr, "DEBUG: executeModule initDictStorage modulePrototype=%p\n", (void*)modulePrototype); }
                             mutableMod = initDictStorage(ctx, mutableMod);
                             if (modulePrototype) {
-                                if (get_env_diag()) { printf("DEBUG: executeModule setting __class__\n"); }
+                                if (get_env_diag()) { fprintf(stderr, "DEBUG: executeModule setting __class__\n"); }
                                 mutableMod->setAttribute(ctx, getClassString(), modulePrototype);
                             }
                             
@@ -11345,9 +11345,9 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain,
                             // Batch 1: Set frame attributes on module object
                             // __dict__ = self: the module object IS its own namespace (CPython behavior)
                             mutableMod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__dict__"), mutableMod);
-                            if (get_env_diag()) { printf("DEBUG: executeModule setting frame attributes\n"); }
+                            if (get_env_diag()) { fprintf(stderr, "DEBUG: executeModule setting frame attributes\n"); }
                             mutableMod->setAttribute(ctx, getFBackString(), PythonEnvironment::getCurrentFrame());
-                            if (get_env_diag()) { printf("DEBUG: executeModule setting f_code\n"); }
+                            if (get_env_diag()) { fprintf(stderr, "DEBUG: executeModule setting f_code\n"); }
                             mutableMod->setAttribute(ctx, getFCodeString(), codeObj);
                             mutableMod->setAttribute(ctx, getFGlobalsString(), mutableMod);
                             mutableMod->setAttribute(ctx, getFLocalsString(), mutableMod);
