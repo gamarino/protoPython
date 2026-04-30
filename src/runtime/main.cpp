@@ -4,6 +4,7 @@
  */
 
 #include <protoPython/PythonEnvironment.h>
+#include <protoPython/DiagUtils.h>
 #include <protoCore.h>
 #include <algorithm>
 #include <filesystem>
@@ -314,7 +315,7 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    if (std::getenv("PROTO_ENV_DIAG")) {
+    if (get_env_diag()) {
         fprintf(stderr, "DEBUG MAIN: Resolved stdLibPath: %s\n", stdLibPath.c_str());
         fflush(stderr);
     }
