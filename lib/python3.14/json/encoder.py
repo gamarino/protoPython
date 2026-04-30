@@ -222,13 +222,28 @@ class JSONEncoder(object):
             _encoder = encode_basestring
 
         def floatstr(o, allow_nan=self.allow_nan,
-                # protoPython note: same caveat as ``_intstr`` in
-                # ``_make_iterencode`` — calling the unbound
-                # ``float.__repr__(value)`` does not yet route ``value``
-                # to the native ``self`` slot, so it returns the
-                # ``"<NoneType object at (nil)>"`` placeholder.  ``repr``
-                # (the builtin) goes through the C-side ``py_repr``
-                # which correctly handles boxed and tagged float values.
+                # Workaround for protopy: the canonical CPython form
+                # ``_repr=float.__repr__`` (a deliberate optimization
+                # that bypasses subclass ``__repr__`` overrides to keep
+                # JSON output canonical-decimal -- same intent as the
+                # ``_intstr=int.__repr__`` form in ``_make_iterencode``
+                # below) hits a protopy limitation where unbound methods
+                # carry ``self=nullptr`` and the runtime does not yet
+                # rebind positional args via the descriptor protocol;
+                # calling ``float.__repr__(1.5)`` therefore returns the
+                # literal string ``"<NoneType object at (nil)>"`` instead
+                # of ``"1.5"``.
+                #
+                # Routing through the ``repr`` builtin avoids the
+                # unbound-method path (``py_repr`` in BuiltinsModule.cpp
+                # handles boxed/tagged float values correctly).
+                # Acceptable divergence: float subclasses that override
+                # ``__repr__`` will now serialize via their own
+                # ``__repr__`` rather than via the canonical numeric
+                # form.  Revisit when the protopy descriptor protocol
+                # gains unbind/rebind support (future SP on descriptor
+                # protocol; NOT SP0 Phase 4, which covers exception
+                # machinery).
                 _repr=repr, _inf=INFINITY, _neginf=-INFINITY):
             # Check for specials.  Note that this type of test is processor
             # and/or platform-specific, so do tests which don't depend on the
@@ -279,18 +294,25 @@ def _make_iterencode(markers, _default, _encoder, _indent, _floatstr,
         list=list,
         str=str,
         tuple=tuple,
-        # protoPython note: CPython uses ``int.__repr__`` here as a fast,
-        # subclass-safe way to get the canonical decimal form of an int.
-        # In protoPython, calling an unbound method off the prototype
-        # (``int.__repr__(value)``) does not yet route ``value`` to the
-        # native ``self`` slot, so it returns the placeholder
-        # ``"<NoneType object at (nil)>"``.  ``repr`` (the builtin) goes
-        # through the C-side ``py_repr`` which correctly unboxes
-        # SmallInteger tagged pointers, so we use it instead.  This still
-        # yields canonical decimal output for all int subclasses that do
-        # not override ``__repr__`` (e.g. IntEnum), and falls back to the
-        # subclass repr when they do — matching CPython behaviour for
-        # JSON's purposes (numbers stay numbers).
+        # Workaround for protopy: the canonical CPython form
+        # ``_intstr=int.__repr__`` (a deliberate optimization that
+        # bypasses subclass ``__repr__`` overrides to keep JSON output
+        # canonical-decimal -- see the comment near the IntEnum
+        # fallback below) hits a protopy limitation where unbound
+        # methods carry ``self=nullptr`` and the runtime does not yet
+        # rebind positional args via the descriptor protocol; calling
+        # ``int.__repr__(5)`` therefore returns the literal string
+        # ``"<NoneType object at (nil)>"`` instead of ``"5"``.
+        #
+        # Routing through the ``repr`` builtin avoids the
+        # unbound-method path (``py_repr`` in BuiltinsModule.cpp
+        # unboxes SmallInteger correctly).  Acceptable divergence:
+        # int subclasses that override ``__repr__`` (e.g. IntEnum)
+        # will now serialize via their own ``__repr__`` rather than
+        # via the canonical numeric form.  Revisit when the protopy
+        # descriptor protocol gains unbind/rebind support (future SP
+        # on descriptor protocol; NOT SP0 Phase 4, which covers
+        # exception machinery).
         _intstr=repr,
     ):
 
