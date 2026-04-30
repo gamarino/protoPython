@@ -124,7 +124,8 @@ Same as SP0: if diagnosis of a symptom reveals close-sibling bugs in the same fi
 | B2 | `ArgumentParser.conflict_handler` missing | open | — | |
 | B3 | `Point.x` missing (dataclass) | open | — | |
 | B4 | `socket` descriptor formatting | open | — | |
-| B5 | `typing.py:20 NoneType` + `reraise outside except` | open | — | |
+| B5 (NoneType portion) | `typing.py:20 NoneType` callable | closed | 167697dd | f-string conversion (`!r`/`!s`/`!a`) inside a function emitted OP_LOAD_NAME for repr/str/ascii; in function scope LOAD_NAME could surface a stray PROTO_NONE before env->resolve fallback.  Routed through emitNameOp so the load picks LOAD_GLOBAL inside functions. |
+| B5 (reraise portion) | `reraise outside of except block` | open | — | Confirmed sibling, *not* the same root cause as the NoneType portion: reproducible without any f-string after `import base64; from test.support import …`.  Tracked separately. |
 
 The implementer updates this table on every commit.
 
