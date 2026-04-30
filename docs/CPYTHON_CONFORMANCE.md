@@ -1,5 +1,33 @@
 # CPython Conformance Tracker
 
+> **⚠️ OBSOLETE STATUS BLOCK BELOW (2026-04-30)**
+>
+> The status table and the V70-V154 changelog entries in this document
+> were measured under a binary that contained a deterministic
+> silent-halt bug (4+ consecutive module-level `json.dumps`/comparable
+> calls would silently exit 0 with no output — see commit `efcfa7f3`).
+> Pass-counts like "test_grammar 54/75" reflect *asserts that
+> succeeded before the silent halt*, not asserts that succeeded after
+> reaching `unittest.main()`. They cannot be reproduced.
+>
+> The authoritative ground-truth as of 2026-04-30 lives in:
+> **`docs/superpowers/specs/2026-04-30-protopy-ground-truth-audit.md`**
+>
+> Summary of that audit (19 tests re-run with the post-fix binary):
+> - **2** real PASS (importlib, inspect — bootstrap)
+> - **2** PASS without end-of-test marker (test_decorator, test_abc — unverifiable)
+> - **2** SILENT_HALT formerly reported as PASS (test_contextlib, test_dataclasses)
+> - **15** CRASH at import time (all 7 Essential, all 6 Important, 2 Necessary that previously SILENT_HALT)
+> - **0** TIMEOUT
+>
+> Two crash clusters identified:
+> 1. **Stdlib import completeness**: 10/15 crashes from missing/broken `typing`, `doctest`, `asyncio`, `pdb`, `unittest.mock`, `test.support.*`.
+> 2. **Attribute resolution bugs**: 5/15 crashes from real attribute-resolution gaps (e.g., `'ABCMeta' has no attribute 'gen'`, `'Point' has no attribute 'x'`, descriptor formatting issues).
+>
+> Future SPs should base their plans on the audit, not on the table below. The table is preserved for historical traceability only.
+
+---
+
 This document tracks the progress of `protoPython` in passing the official CPython Regression Test Suite (`Lib/test`). Achieving "All Green" in the Essential category is the primary goal for industrial-grade stability.
 
 ## Rules & Principles
