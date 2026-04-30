@@ -12245,9 +12245,17 @@ const proto::ProtoObject* PythonEnvironment::getType(proto::ProtoContext* ctx, c
         const proto::ProtoString* classS = getClassString() ? getClassString() : PythonEnvironment::getInternedString(ctx, "__class__");
         const proto::ProtoObject* cls = obj->proto::ProtoObject::getAttribute(ctx, classS);
         if (cls && cls != PROTO_NONE && cls != obj && !cls->isString(ctx)) {
-            // V88: Skip inherited __class__=type if it's not an own attribute
-            // This prevents instances from inheriting __class__=type from their class prototype.
-            if (obj->hasOwnAttribute(ctx, classS) == PROTO_TRUE || cls != getTypePrototype()) {
+            // SP-B/B1: Only honor `__class__` when it is an OWN attribute of obj.
+            // Inheriting `__class__` through the parent chain reaches the parent
+            // class's own `__class__` (i.e., the parent's metaclass), not the
+            // object's own class — so a `_GeneratorContextManager` instance whose
+            // class has metaclass=ABCMeta would otherwise resolve its type to
+            // ABCMeta instead of `_GeneratorContextManager`.
+            // Supersedes V88 (which skipped only inherited `__class__=type`):
+            // the same problem applies to any metaclass, not just `type` itself.
+            // The fall-through path below uses getFirstParent — which is exactly
+            // the instance's class for objects created via py_object_new.
+            if (obj->hasOwnAttribute(ctx, classS) == PROTO_TRUE) {
                 res = cls;
             }
         }
