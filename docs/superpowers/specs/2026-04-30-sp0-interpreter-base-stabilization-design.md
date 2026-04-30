@@ -1,6 +1,10 @@
 # SP0 — Interpreter Base Stabilization (Design)
 
-**Status:** Draft, pending user review
+**Status:** PAUSED on 2026-04-30 mid-Phase-2. Three of the original six bugs were fixed (Phase 1 = bug C / DEBUG-on-stdout; Phase 2 = bug A / json.dumps int unboxing; an unplanned Phase 2.5 = a 7th bug, silent-halt at 4+ consecutive module-level json.dumps). Phase 2.5's fix (commit `efcfa7f3`) **revealed that the project's "regression baseline" was a false positive**: `test_contextlib.py` and `test_dataclasses.py` had been "exit 0 with no output" via the silent-halt path — never actually passing. With the silent-halt fixed, both tests now correctly surface their real underlying failures (`'ABCMeta' object has no attribute 'gen'` and `'Point' object has no attribute 'x'`).
+
+The implication is that the CPYTHON_CONFORMANCE.md baseline numbers (e.g., V90/V92 "all Necessary suites pass") are unreliable — we cannot tell which tests truly passed and which were silent-halt false positives. SP0 is paused pending a broader replanning conversation: before committing to another plan that depends on a baseline, we need a "ground-truth map" of what actually works on protopy with the silent-halt bug fixed.
+
+**Original status:** Draft, pending user review
 **Author:** brainstorming session, 2026-04-30
 **Project:** protoPython
 **Sub-project:** SP0 — prerequisite for SP1 (test-infrastructure audit & repair)
