@@ -222,7 +222,14 @@ class JSONEncoder(object):
             _encoder = encode_basestring
 
         def floatstr(o, allow_nan=self.allow_nan,
-                _repr=float.__repr__, _inf=INFINITY, _neginf=-INFINITY):
+                # protoPython note: same caveat as ``_intstr`` in
+                # ``_make_iterencode`` — calling the unbound
+                # ``float.__repr__(value)`` does not yet route ``value``
+                # to the native ``self`` slot, so it returns the
+                # ``"<NoneType object at (nil)>"`` placeholder.  ``repr``
+                # (the builtin) goes through the C-side ``py_repr``
+                # which correctly handles boxed and tagged float values.
+                _repr=repr, _inf=INFINITY, _neginf=-INFINITY):
             # Check for specials.  Note that this type of test is processor
             # and/or platform-specific, so do tests which don't depend on the
             # internals.
@@ -272,7 +279,19 @@ def _make_iterencode(markers, _default, _encoder, _indent, _floatstr,
         list=list,
         str=str,
         tuple=tuple,
-        _intstr=int.__repr__,
+        # protoPython note: CPython uses ``int.__repr__`` here as a fast,
+        # subclass-safe way to get the canonical decimal form of an int.
+        # In protoPython, calling an unbound method off the prototype
+        # (``int.__repr__(value)``) does not yet route ``value`` to the
+        # native ``self`` slot, so it returns the placeholder
+        # ``"<NoneType object at (nil)>"``.  ``repr`` (the builtin) goes
+        # through the C-side ``py_repr`` which correctly unboxes
+        # SmallInteger tagged pointers, so we use it instead.  This still
+        # yields canonical decimal output for all int subclasses that do
+        # not override ``__repr__`` (e.g. IntEnum), and falls back to the
+        # subclass repr when they do — matching CPython behaviour for
+        # JSON's purposes (numbers stay numbers).
+        _intstr=repr,
     ):
 
     def _iterencode_list(lst, _current_indent_level):
