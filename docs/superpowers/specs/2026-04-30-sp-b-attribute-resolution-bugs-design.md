@@ -127,6 +127,7 @@ Same as SP0: if diagnosis of a symptom reveals close-sibling bugs in the same fi
 | B5 (NoneType portion) | `typing.py:20 NoneType` callable | closed | 167697dd | f-string conversion (`!r`/`!s`/`!a`) inside a function emitted OP_LOAD_NAME for repr/str/ascii; in function scope LOAD_NAME could surface a stray PROTO_NONE before env->resolve fallback.  Routed through emitNameOp so the load picks LOAD_GLOBAL inside functions. |
 | B5 (reraise portion) | `reraise outside of except block` | open | — | Confirmed sibling, *not* the same root cause as the NoneType portion: reproducible without any f-string after `import base64; from test.support import …`.  Tracked separately. |
 | B-DD1 | OP_LOAD_NAME closure-chain branch (ExecutionEngine.cpp:3054) accepts PROTO_NONE as "found" | deferred | — | Latent landmine; route around exists in compiler post-167697dd. Filter PROTO_NONE in this branch to mirror the fast-path filter at line 3047. |
+| B-DD2 | 4 sites in PythonEnvironment.cpp still walk parent chain for `__class__` (lines 2766, 11710, 11775, 12055) instead of routing through getType — same metaclass-leak shape as B1 | deferred | — | Latent for non-default metaclass exceptions; route through env->getType(obj). Audit + targeted refactor in a future iteration. |
 
 The implementer updates this table on every commit.
 
