@@ -4185,20 +4185,20 @@ bool Compiler::compileJoinedStr(JoinedStrNode* n) {
 
 bool Compiler::compileFormattedValue(FormattedValueNode* n) {
     if (!n) return false;
-    if (n->conversion == 'r') {
-        // Use 3.11+ calling convention: [NULL, callable, arg]
-        emit(OP_PUSH_NULL);
-        emit(OP_LOAD_NAME, (addName("repr") << 1));
-        if (!compileNode(n->value.get())) return false;
-        emit(OP_CALL_FUNCTION, 1);
-    } else if (n->conversion == 's') {
-        emit(OP_PUSH_NULL);
-        emit(OP_LOAD_NAME, (addName("str") << 1));
-        if (!compileNode(n->value.get())) return false;
-        emit(OP_CALL_FUNCTION, 1);
-    } else if (n->conversion == 'a') {
-        emit(OP_PUSH_NULL);
-        emit(OP_LOAD_NAME, (addName("ascii") << 1));
+    // Resolve repr/str/ascii through emitNameOp so the load picks the right
+    // opcode (LOAD_FAST / LOAD_GLOBAL / LOAD_NAME) for the current scope.
+    // Previously this site emitted OP_LOAD_NAME unconditionally, which inside
+    // a function body bypassed env->resolve fast-path and could surface a
+    // stray PROTO_NONE from the frame's prototype chain — manifesting as
+    // 'NoneType' object is not callable for f"{x!r}" / !s / !a inside a
+    // function.  emitNameOp also injects the OP_PUSH_NULL ahead of the load
+    // for the 3.11+ calling convention, so we must not emit it here.
+    const char* convName = nullptr;
+    if (n->conversion == 'r')      convName = "repr";
+    else if (n->conversion == 's') convName = "str";
+    else if (n->conversion == 'a') convName = "ascii";
+    if (convName) {
+        if (!emitNameOp(convName, TargetCtx::Load, /*pushNull=*/true)) return false;
         if (!compileNode(n->value.get())) return false;
         emit(OP_CALL_FUNCTION, 1);
     } else {
