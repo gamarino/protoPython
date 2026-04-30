@@ -663,6 +663,35 @@ public:
     static thread_local bool s_pendingExcFlag;
 
     /**
+     * @brief TLS mirror of the pending-exception object.
+     *
+     * The authoritative storage remains the `_pending_exc` attribute on
+     * the per-thread Python thread object — that is what keeps the
+     * exception alive across GC cycles (the py_thread is rooted via
+     * `s_globalThreadRootsDict`).  Reading the storage through
+     * `getAttribute`, however, is mediated by protoCore's per-thread
+     * attribute cache, which is keyed on the resolved snapshot pointer
+     * for mutable objects.  Under sustained mutable-shard contention
+     * (observed empirically at 4+ consecutive `json.dumps` calls in a
+     * module body) the cache could occasionally serve a stale entry
+     * that returned `nullptr` even though `setPendingException` had
+     * just stored a valid exception object.  The dispatcher would then
+     * see `hasPendingException()==true` (TLS bool) but
+     * `peekPendingException()==nullptr` and bail out of the frame
+     * silently — the SP0-P2.5 silent-halt bug.
+     *
+     * Mirroring the pointer in TLS makes the read path completely
+     * cache-independent: `peekPendingException()` returns the TLS
+     * pointer directly.  The TLS slot is updated in lockstep with the
+     * authoritative storage in `setPendingException`,
+     * `clearPendingException`, and `takePendingException`, so the two
+     * stay consistent by construction.  Because the storage write
+     * still happens on every set/clear, the GC reachability story is
+     * unchanged.
+     */
+    static thread_local const proto::ProtoObject* s_pendingExc;
+
+    /**
      * @brief Returns true if there is a pending exception.
      *
      * Inline fast path: a single TLS bool read.  Defined in the header so

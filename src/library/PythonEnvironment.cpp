@@ -7929,6 +7929,7 @@ static const proto::ProtoObject* py_dict_popitem(
 thread_local PythonEnvironment* PythonEnvironment::s_threadEnv = nullptr;
 thread_local proto::ProtoContext* PythonEnvironment::s_threadContext = nullptr;
 thread_local bool PythonEnvironment::s_pendingExcFlag = false;
+thread_local const proto::ProtoObject* PythonEnvironment::s_pendingExc = nullptr;
 thread_local int PythonEnvironment::s_recursionDepth = 0;
 thread_local bool PythonEnvironment::s_inRecursionError = false;
 thread_local const proto::ProtoObject* PythonEnvironment::s_currentFrame = nullptr;
@@ -8027,8 +8028,14 @@ const proto::ProtoObject* PythonEnvironment::getTraceFunction() const {
 void PythonEnvironment::setPendingException(const proto::ProtoObject* exc) {
     if (!s_threadContext) return;
     const proto::ProtoString* key = s_threadEnv ? s_threadEnv->pendingExcString : proto::ProtoString::fromUTF8(s_threadContext, "_pending_exc");
+    // Authoritative storage write — keeps the exception object reachable
+    // through the GC root chain (py_thread → s_globalThreadRootsDict).
     s_currentPyThread = const_cast<proto::ProtoObject*>(getPyThread(s_threadContext))->setAttribute(s_threadContext, key, exc ? exc : PROTO_NONE);
-    s_pendingExcFlag = (exc != nullptr && exc != PROTO_NONE);
+    // Mirror in TLS so the read path is completely cache-independent.
+    // See SP0-P2.5 fix in PythonEnvironment.h `s_pendingExc` doc.
+    bool real = (exc != nullptr && exc != PROTO_NONE);
+    s_pendingExc = real ? exc : nullptr;
+    s_pendingExcFlag = real;
     if (get_env_diag()) {
     }
 }
@@ -8036,12 +8043,21 @@ void PythonEnvironment::setPendingException(const proto::ProtoObject* exc) {
 const proto::ProtoObject* PythonEnvironment::takePendingException() {
     if (!s_threadContext) return nullptr;
     const proto::ProtoString* key = s_threadEnv ? s_threadEnv->pendingExcString : proto::ProtoString::fromUTF8(s_threadContext, "_pending_exc");
-    const proto::ProtoObject* e = getPyThread(s_threadContext)->getAttribute(s_threadContext, key);
-    if (e == PROTO_NONE) e = nullptr;
+    // Prefer the TLS mirror — it is updated in lockstep with the
+    // storage and is immune to the protoCore mutable-cache desync that
+    // caused SP0-P2.5.  Fall back to the authoritative read only if
+    // the mirror is empty (e.g. an exception set before the mirror
+    // existed in some embedding scenario).
+    const proto::ProtoObject* e = s_pendingExc;
+    if (!e) {
+        e = getPyThread(s_threadContext)->getAttribute(s_threadContext, key);
+        if (e == PROTO_NONE) e = nullptr;
+    }
     if (get_env_diag()) {
         fflush(stderr);
     }
     s_currentPyThread = const_cast<proto::ProtoObject*>(getPyThread(s_threadContext))->setAttribute(s_threadContext, key, PROTO_NONE);
+    s_pendingExc = nullptr;
     s_pendingExcFlag = false;
     return e;
 }
@@ -8052,9 +8068,13 @@ const proto::ProtoObject* PythonEnvironment::takePendingException() {
 
 const proto::ProtoObject* PythonEnvironment::peekPendingException() const {
     if (!s_threadContext) return nullptr;
-    const proto::ProtoString* key = pendingExcString ? pendingExcString : proto::ProtoString::fromUTF8(s_threadContext, "_pending_exc");
-    const proto::ProtoObject* e = getPyThread(s_threadContext)->getAttribute(s_threadContext, key);
-    return e == PROTO_NONE ? nullptr : e;
+    // Read the TLS mirror directly.  This bypasses the protoCore
+    // attribute cache entirely, eliminating the mutable-shard cache
+    // desync that surfaced as the SP0-P2.5 silent-halt bug.  The
+    // mirror is updated in lockstep with the authoritative storage in
+    // setPendingException / clearPendingException / takePendingException,
+    // so consistency is guaranteed by construction.
+    return s_pendingExc;
 }
 
 void PythonEnvironment::clearPendingException() {
@@ -8064,6 +8084,7 @@ void PythonEnvironment::clearPendingException() {
         fflush(stderr);
     }
     s_currentPyThread = const_cast<proto::ProtoObject*>(getPyThread(s_threadContext))->setAttribute(s_threadContext, key, PROTO_NONE);
+    s_pendingExc = nullptr;
     s_pendingExcFlag = false;
 }
 
