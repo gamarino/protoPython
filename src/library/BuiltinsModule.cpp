@@ -2106,7 +2106,54 @@ static const proto::ProtoObject* py_super_init(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
-    return PROTO_NONE;
+    // SP-B/B2 fix: previously a no-op stub.  super().__init__(args) was
+    // intercepted by this method and silently dropped, so the parent
+    // class's __init__ never ran.  Now: forward to the parent's __init__
+    // by routing through py_super_getattr (which performs the MRO walk
+    // and binds the result to self.obj), then invoke that bound method
+    // with the original args/kwargs.
+    (void)parentLink;
+    if (!self) return PROTO_NONE;
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!env) return PROTO_NONE;
+
+    // Build a positional list with just the attribute name "__init__" and
+    // call py_super_getattr to obtain the bound parent-method.
+    const proto::ProtoString* initName = PythonEnvironment::getInternedString(context, "__init__");
+    const proto::ProtoObject* initNameObj = initName ? initName->asObject(context) : nullptr;
+    const proto::ProtoList* getattrArgs = context->newList()->appendLast(context, initNameObj);
+    const proto::ProtoObject* bound = py_super_getattr(context, self, nullptr, getattrArgs, nullptr);
+    if (!bound || bound == PROTO_NONE) return PROTO_NONE;
+
+    // Forward original args/kwargs through callObjectEx.
+    std::vector<const proto::ProtoObject*> argsVec;
+    if (positionalParameters) {
+        long n = positionalParameters->getSize(context);
+        for (long i = 0; i < n; ++i) {
+            argsVec.push_back(positionalParameters->getAt(context, static_cast<int>(i)));
+        }
+    }
+    // Reconstruct (name, value) pairs from the hash-keyed kwargs sparse
+    // list using the kwNames tuple pushed by the calling site (see
+    // PythonEnvironment::pushKwNames / getCurrentKwNames).  Names live
+    // out-of-band; the sparse list only stores hash → value.
+    std::vector<std::pair<std::string, const proto::ProtoObject*>> kwVec;
+    if (keywordParameters) {
+        const proto::ProtoTuple* kwNames = env->getCurrentKwNames();
+        if (kwNames) {
+            long n = kwNames->getSize(context);
+            for (long i = 0; i < n; ++i) {
+                const proto::ProtoObject* k = kwNames->getAt(context, static_cast<int>(i));
+                if (!k || !k->isString(context)) continue;
+                const proto::ProtoString* ks = k->asString(context);
+                if (!keywordParameters->has(context, ks->getHash(context))) continue;
+                const proto::ProtoObject* v = keywordParameters->getAt(context, ks->getHash(context));
+                std::string s; ks->toUTF8String(context, s);
+                kwVec.emplace_back(std::move(s), v);
+            }
+        }
+    }
+    return env->callObjectEx(bound, argsVec, kwVec);
 }
 
 static const proto::ProtoObject* py_super(
