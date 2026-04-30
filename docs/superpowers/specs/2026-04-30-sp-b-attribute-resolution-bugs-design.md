@@ -120,7 +120,7 @@ Same as SP0: if diagnosis of a symptom reveals close-sibling bugs in the same fi
 
 | # | Symptom | Status | Closed by commit | Notes |
 |---|---|---|---|---|
-| B1 | `ABCMeta.gen` missing | open | — | |
+| B1 | `ABCMeta.gen` missing | closed | fe896c33 | `getType` honored an inherited `__class__` from the parent class (which is the metaclass), so an instance of a class with metaclass=ABCMeta was reported as type ABCMeta. `runUserClassCall` then saw `isInstanceOfSelf=0`, skipped `__init__`, and `self.gen` was never set. Fix: only honor `__class__` when it is an *own* attribute of `obj`. Generalizes V88 from the `type` special case to every metaclass. Closes B1; advances `test_contextlib` to PASS and `test_asyncgen` past the ABCMeta.gen error. |
 | B2 | `ArgumentParser.conflict_handler` missing | open | — | |
 | B3 | `Point.x` missing (dataclass) | open | — | |
 | B4 | `socket` descriptor formatting | open | — | |
