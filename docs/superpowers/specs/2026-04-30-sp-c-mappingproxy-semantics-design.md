@@ -223,7 +223,7 @@ In particular for Phase 2 (inspect break): if the root cause turns out to be a d
 
 | # | Phase | Status | Closed by commit | Notes |
 |---|---|---|---|---|
-| C1 | `in` MP through `__contains__` | open | — | |
+| C1 | `in` MP through `__contains__` | closed | ba1acb46 | reproducer 10/10; py_mappingproxy_contains tightened to hasOwnAttribute; inspect cascade is the known C2 follow-up |
 | C2 | `import inspect` works after C1 | open | — | |
 | C3 | 6 MP methods own-only | open | — | |
 | C4 | SP-B/B3 verified closed; audit re-run delta documented | open | — | |
