@@ -2780,8 +2780,12 @@ static const proto::ProtoObject* py_type_instancecheck(
     const proto::ProtoObject* result = instance->isInstanceOf(context, cls);
     if (result == PROTO_TRUE) return PROTO_TRUE;
     // Check __class__ MRO
-    const proto::ProtoString* classS = env->getClassString();
-    const proto::ProtoObject* objClass = instance->getAttribute(context, classS);
+    // SP-D/B-DD2: route through env->getType so we honor `__class__` only when
+    // it is OWN on the instance (same own-only check as SP-B/B1 in getType).
+    // Walking the parent chain here would resolve to the parent class's own
+    // `__class__` (i.e., the metaclass) for instances of metaclass-customized
+    // classes, walking the wrong MRO.
+    const proto::ProtoObject* objClass = env->getType(context, instance);
     if (objClass && objClass != instance) {
         const proto::ProtoObject* mro = objClass->getAttribute(context, PythonEnvironment::getInternedString(context, "__mro__"));
         if (mro) {
@@ -11835,7 +11839,10 @@ void PythonEnvironment::handleException(const proto::ProtoObject* exc, const pro
     proto::ProtoContext* context = s_threadContext ? s_threadContext : rootContext_;
     
     // Step 1335: sys.last_type, sys.last_value, sys.last_traceback
-    const proto::ProtoObject* type = exc->getAttribute(context, PythonEnvironment::getInternalString(context, "__class__"));
+    // SP-D/B-DD2: route through getType (own-only `__class__` per SP-B/B1).
+    // A direct getAttribute walk would set sys.last_type to the metaclass for
+    // exception classes whose own metaclass set its own `__class__`.
+    const proto::ProtoObject* type = getType(context, exc);
     if (sysModule) {
         sysModule->setAttribute(context, PythonEnvironment::getInternedString(context, "last_type"), type ? type : PROTO_NONE);
         sysModule->setAttribute(context, PythonEnvironment::getInternedString(context, "last_value"), const_cast<proto::ProtoObject*>(exc));
@@ -11900,7 +11907,10 @@ std::string PythonEnvironment::formatException(const proto::ProtoObject* exc, co
         }
     }
 
-    const proto::ProtoObject* py_class = exc->getAttribute(context, PythonEnvironment::getInternalString(context, "__class__"));
+    // SP-D/B-DD2: route through getType (own-only `__class__` per SP-B/B1) so
+    // the formatted error message names the actual exception class, not its
+    // metaclass when one is in use.
+    const proto::ProtoObject* py_class = getType(context, exc);
     const proto::ProtoObject* py_name = py_class ? py_class->getAttribute(context, PythonEnvironment::getInternalString(context, "__name__")) : nullptr;
     
     std::string typeName = "Exception";
@@ -12180,7 +12190,10 @@ void PythonEnvironment::runRepl(std::istream& in, std::ostream& out) {
             if (pending && pending != PROTO_NONE) {
                 // If eval failed with SyntaxError, try exec. Otherwise report and stop.
                 std::string typeName = "Exception";
-                const proto::ProtoObject* type = pending->getAttribute(context, PythonEnvironment::getInternalString(context, "__class__"));
+                // SP-D/B-DD2: route through getType (own-only `__class__` per
+                // SP-B/B1). Walking the parent chain here could misclassify a
+                // metaclass-customized exception and skip the exec retry path.
+                const proto::ProtoObject* type = getType(context, pending);
                 if (type) {
                     const proto::ProtoObject* nameObj = type->getAttribute(context, PythonEnvironment::getInternalString(context, "__name__"));
                     if (nameObj && nameObj->isString(context)) nameObj->asString(context)->toUTF8String(context, typeName);
