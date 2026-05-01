@@ -441,6 +441,10 @@ static const proto::ProtoObject* py_mappingproxy_contains(
         }
 
         if (isType) {
+             // SP-C/C1: cls.__dict__ must report own-only attributes,
+             // matching CPython semantics. Use hasOwnAttribute so we
+             // don't walk the parent chain (which would falsely report
+             // inherited members like '__init__' as present).
              const proto::ProtoString* sKey = nullptr;
              if (key->isString(context)) {
                  sKey = key->asString(context);
@@ -448,19 +452,18 @@ static const proto::ProtoObject* py_mappingproxy_contains(
                  const proto::ProtoObject* kData = key->getAttribute(context, env->getDataString());
                  if (kData && kData->isString(context)) sKey = kData->asString(context);
              }
-             
-             const proto::ProtoObject* res = sKey ? data->getAttribute(context, sKey) : nullptr;
-             if (!res && sKey && env) {
-                 res = env->getAttribute(context, data, sKey);
+
+             if (sKey && data->hasOwnAttribute(context, sKey) == PROTO_TRUE) {
+                 return PROTO_TRUE;
              }
-             if (res) return PROTO_TRUE;
-             
+
              // Fallback for types whose attributes were moved to internal dictionary
              if (env) {
                  const proto::ProtoObject* internalRes = env->getItem(data, key);
                  if (internalRes) return PROTO_TRUE;
+                 if (env->hasPendingException()) env->clearPendingException();
              }
-             
+
              return PROTO_FALSE;
         }
 

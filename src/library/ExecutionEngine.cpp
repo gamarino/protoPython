@@ -1496,6 +1496,38 @@ static const proto::ProtoObject* compareOp(proto::ProtoContext* ctx,
 
     if (op == 6 || op == 7) { // in, not in
         bool found = false;
+        // SP-C/C1: MappingProxy (e.g. cls.__dict__) defines its own
+        // __contains__ that distinguishes own vs. inherited attributes.
+        // Skip the __data__ / asSparseList fast path which would walk
+        // the class's full attribute chain and return wrong results.
+        {
+            PythonEnvironment* env_mp = PythonEnvironment::fromContext(ctx);
+            if (env_mp) {
+                const proto::ProtoObject* mpProto = env_mp->getMappingProxyPrototype();
+                if (mpProto) {
+                    const proto::ProtoString* clsS = env_mp->getClassString();
+                    const proto::ProtoObject* bCls = b->getAttribute(ctx, clsS);
+                    bool isMP = (bCls == mpProto);
+                    if (!isMP) {
+                        const proto::ProtoList* parents = b->getParents(ctx);
+                        if (parents) {
+                            for (size_t i = 0; i < parents->getSize(ctx); ++i) {
+                                if (parents->getAt(ctx, i) == mpProto) { isMP = true; break; }
+                            }
+                        }
+                    }
+                    if (isMP) {
+                        const proto::ProtoString* containsS = env_mp->getContainsString();
+                        const proto::ProtoList* args_mp = ctx->newList()->appendLast(ctx, a);
+                        const proto::ProtoObject* res = invokeDunder(ctx, b, containsS, args_mp);
+                        if (res) {
+                            found = isTruthy(ctx, res);
+                            return ((op == 6) ? found : !found) ? PROTO_TRUE : PROTO_FALSE;
+                        }
+                    }
+                }
+            }
+        }
         // Fast path: string-in-string uses native substring search
         if (b->isString(ctx) && a->isString(ctx)) {
             std::string s_sub, s_full;
