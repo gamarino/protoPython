@@ -12679,7 +12679,15 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
                         if (hasPendingException()) {
                             // Let __getattr__ fallback handle AttributeError.
                             const proto::ProtoObject* exc = peekPendingException();
-                            const proto::ProtoObject* exCls = exc ? exc->getAttribute(ctx, classString) : nullptr;
+                            // SP-D/B-DD2 (5th site): route through getType (own-only
+                            // `__class__` per SP-B/B1) so a metaclass-customized
+                            // exception class is identified by its actual class
+                            // name, not by its metaclass.
+                            // Safe to use getType here despite being inside
+                            // getAttribute — getType uses the base
+                            // ProtoObject::getAttribute, not this->getAttribute,
+                            // so re-entry into this function is bounded.
+                            const proto::ProtoObject* exCls = exc ? getType(ctx, exc) : nullptr;
                             const proto::ProtoObject* exName = exCls ? exCls->getAttribute(ctx, nameString) : nullptr;
                             std::string excName;
                             if (exName && exName->isString(ctx)) exName->asString(ctx)->toUTF8String(ctx, excName);

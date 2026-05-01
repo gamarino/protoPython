@@ -1,18 +1,40 @@
-"""SP-D / B-DD2 reproducer -- fence metaclass-leak in 4 __class__ sites.
+"""SP-D / B-DD2 reproducer -- upstream type-identity invariant fence.
 
-Exercises the 4 sites that, prior to SP-D, walked the parent chain via
-direct `getAttribute(ctx, "__class__")` instead of routing through
-`env->getType` (which post-SP-B/B1 honors `__class__` only when it is
-own on the receiver):
+This reproducer fences the upstream type-identity invariant from SP-B/B1:
+for instances of metaclass-customized classes, `type(obj)`, except-clause
+matching, and `isinstance(obj, cls)` must return the actual class, not the
+metaclass.
 
-  1. py_type_instancecheck (MRO walk via __class__)
-  2. handleException's sys.last_type
-  3. formatException's type name in error messages
-  4. eval/exec wrapper's SyntaxError detection
+The 5 sites routed through `env->getType` by SP-D (commit 1ced646b plus
+the 5th-site follow-up at PythonEnvironment.cpp:12682) are *purely
+defensive* locks against future regressions in the routing layer. They
+were unreachable from Python user code pre-fix because:
 
-The invariant: a class with a custom metaclass must nevertheless
-return the actual class (not the metaclass) when queried via these
-paths. Same shape as B1's fix to getType.
+  1. Every upstream caller (`type()` builtin, except-clause matching,
+     OP_LOAD_NAME) already enters `getType`.
+  2. Every instance allocated via `py_object_new` (and its tuple/list
+     siblings) has its own `__class__` set at construction
+     (PythonEnvironment.cpp:3160, 3253, 3272, 3338). With an OWN
+     `__class__` present, the parent-chain `getAttribute("__class__")`
+     walk used pre-fix would terminate on the OWN attribute and return
+     the correct class — never reaching the parent-class's metaclass.
+
+The pre-fix shape (parent-chain walk yielding the metaclass instead of
+the class) requires constructing an instance without an OWN `__class__`,
+which protopy's instance-creation pipeline does not produce from user
+Python. Consequently this reproducer passes both pre-fix and post-fix
+binaries; it asserts the upstream invariant holds, not that the routed
+sites are reached. SP-D locks the invariant locally so it does not
+depend on every caller staying upstream of `getType` forever.
+
+Sites routed (all via `env->getType` instead of
+`obj->getAttribute(ctx, "__class__")`):
+
+  1. py_type_instancecheck            (~2788, isinstance MRO walk)
+  2. handleException                  (~11845, sys.last_type)
+  3. formatException                  (~11913, error-message type name)
+  4. eval/exec wrapper                (~12196, SyntaxError detection)
+  5. __getattribute__ AttributeError  (~12682, exc-class name filter)
 """
 import sys
 
