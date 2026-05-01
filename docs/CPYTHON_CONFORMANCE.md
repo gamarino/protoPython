@@ -77,27 +77,7 @@ Three root causes fixed:
 SP-B/B3 is marked closed by SP-C in the SP-B tracking table.  SP-B
 remains PAUSED with B4, B5-reraise, B-DD1, B-DD2 still deferred.
 
-**Deferred bugs catalogued during SP-C audit:**
-
-- `dict(iterable_of_tuples)` returns empty when fed `mappingproxy.items()`
-  (bug discovered in Task 3 reproducer authoring; the Phase 3 reproducer
-  works around it with explicit iteration).
-- Internal slot names (`__class__`, `__mro__`, `__bases__`, etc.) leak
-  through `cls.__dict__.keys()` — out-of-scope refinement; CPython
-  hides some.
-- Synthesized-`__init__` default values not applied on dataclass
-  instances when the corresponding positional argument is omitted
-  (Task 4 reproducer authoring; reproducer uses all-positional
-  construction to side-step the issue).
-- `@dataclass(slots=True)` regression: `tests/synthetic/sp0_phase1_repro.py`
-  was passing pre-SP-C only because the broken `MP.values()` returned
-  `[None, ...]` placeholders.  After C3, `values()` yields real own
-  functions, exposing two latent gaps: (a) code objects don't expose
-  `co_freevars` / `co_cellvars`; (b) `tuple.index('missing')` on a
-  tuple retrieved through attribute access returns `None` instead of
-  raising `ValueError`, so dataclasses' `except ValueError:` in
-  `_update_func_cell_for__class__` doesn't fire.  Tracked separately
-  in the audit document; not part of SP-C/B3.
+Four deferred bugs catalogued during SP-C audit — see "Deferred bugs catalogued during SP-C" section of `docs/superpowers/specs/2026-04-30-protopy-ground-truth-audit.md`.
 
 ---
 

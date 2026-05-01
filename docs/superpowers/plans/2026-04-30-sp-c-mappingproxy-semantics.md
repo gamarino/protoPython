@@ -609,6 +609,8 @@ Same shape as Task 1 Step 1.10 but for C3.
 
 - [ ] **Step 4.1: Write the SP-C Phase 4 reproducer**
 
+> Note: the shipped reproducer omits the default-value test and uses all-positional construction (see in-file scope note); a residual default-value sub-bug is tracked as a deferred bug in the audit doc.
+
 ```python
 # tests/synthetic/sp_c_phase4_repro.py
 """SP-C / Phase 4 — SP-B/B3 closes; @dataclass __init__ assigns fields.
