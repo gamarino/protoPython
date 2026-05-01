@@ -354,7 +354,11 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         "Mapping", "MutableMapping", "Sequence", "MutableSequence",
         "Set", "MutableSet", "Callable", "Awaitable", "Coroutine",
         "AsyncIterable", "AsyncIterator", "AsyncGenerator", "Generator",
-        "KeysView", "ValuesView", "ItemsView", "MappingView", "ByteString"
+        "KeysView", "ValuesView", "ItemsView", "MappingView", "ByteString",
+        // Buffer was added to _collections_abc in Python 3.12 (PEP 688).
+        // test_collections.py imports it directly: `from _collections_abc
+        // import Buffer`. Expose the same minimal ABC stub the others use.
+        "Buffer"
     };
 
     for (const char* name : names) {
