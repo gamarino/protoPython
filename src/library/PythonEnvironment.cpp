@@ -14641,7 +14641,18 @@ void PythonEnvironment::addTraceback(const proto::ProtoObject* exc, const proto:
     if (get_env_diag()) {
         fprintf(stderr, "DEBUG: addTraceback setting attributes\n"); fflush(stderr);
     }
-    newTb = newTb->setAttribute(rootContext_, tbFrameName, frame);
+    // Coerce a missing frame to PROTO_NONE before storing. protoCore's
+    // ProtoSparseList::implSetAt treats nullptr as a delete, so a raw
+    // nullptr would skip writing tb_frame entirely and leave the slot
+    // inheriting from tracebackPrototype. The chained traceback would
+    // then look like it had no own tb_frame and consumers walking the
+    // chain (unittest.result._is_relevant_tb_level, traceback.format_*)
+    // would raise AttributeError on the second link. Module-top-level
+    // exceptions and synthesised tracebacks reach addTraceback with
+    // frame=nullptr legitimately; map them to PROTO_NONE so the chain
+    // exposes a stable own attribute everywhere.
+    const proto::ProtoObject* frameOrNone = frame ? frame : PROTO_NONE;
+    newTb = newTb->setAttribute(rootContext_, tbFrameName, frameOrNone);
     newTb = newTb->setAttribute(rootContext_, tbLastiName, rootContext_->fromInteger(lasti));
     newTb = newTb->setAttribute(rootContext_, tbLinenoName, rootContext_->fromInteger(lineno));
     

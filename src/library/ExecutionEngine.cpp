@@ -2859,7 +2859,32 @@ const proto::ProtoObject* executeBytecodeRange(
                 fprintf(stderr, "DEBUG: Calling addTraceback...\n");
                 fflush(stderr);
             }
-            env->addTraceback(exc, frame, static_cast<int>(i), ctx->currentLineNumber);
+            // runUserFunctionCall skips frame construction for CO_OPTIMIZED
+            // hot-path functions that have no closure and no inner functions
+            // (the local `frame` parameter is nullptr in that case). For
+            // traceback purposes we still need an object that exposes
+            // f_globals so unittest's `tb.tb_frame.f_globals` walk works,
+            // so synthesise a minimal frame on demand here. The synthesised
+            // frame parents off framePrototype and stores the executing
+            // code object plus the current globals — enough for the
+            // observed traceback callers, with no overhead on the
+            // exception-free hot path.
+            const proto::ProtoObject* tbFrame = frame;
+            if (!tbFrame) tbFrame = PythonEnvironment::getCurrentFrame();
+            if (!tbFrame || tbFrame == PROTO_NONE) {
+                proto::ProtoObject* synth = const_cast<proto::ProtoObject*>(ctx->newObject(false));
+                if (env && env->getFramePrototype()) {
+                    synth = const_cast<proto::ProtoObject*>(synth->addParent(ctx, env->getFramePrototype()));
+                }
+                if (env) {
+                    const proto::ProtoObject* curGlobals = PythonEnvironment::getCurrentGlobals();
+                    if (curGlobals) {
+                        synth = const_cast<proto::ProtoObject*>(synth->setAttribute(ctx, env->getFGlobalsString(), curGlobals));
+                    }
+                }
+                tbFrame = synth;
+            }
+            env->addTraceback(exc, tbFrame, static_cast<int>(i), ctx->currentLineNumber);
             if (diag_local) {
                 fprintf(stderr, "DEBUG: addTraceback returned. blockStack.empty()=%s\n", blockStack.empty() ? "true" : "false");
                 fflush(stderr);
