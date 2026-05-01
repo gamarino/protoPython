@@ -457,13 +457,15 @@ static const proto::ProtoObject* py_mappingproxy_contains(
                  return PROTO_TRUE;
              }
 
-             // Fallback for types whose attributes were moved to internal dictionary
-             if (env) {
-                 const proto::ProtoObject* internalRes = env->getItem(data, key);
-                 if (internalRes) return PROTO_TRUE;
-                 if (env->hasPendingException()) env->clearPendingException();
-             }
-
+             // SP-C/C2: do NOT fall back to env->getItem(data, key).  For native
+             // types like `str`, env->getItem invokes user-level __getitem__,
+             // which dispatches to __class_getitem__ (generic-alias machinery)
+             // and returns a non-null value (typically PROTO_NONE) for any key.
+             // That falsely reports membership for keys that aren't actually
+             // present, breaking inspect.py's '__dataclass_fields__' in
+             // base.__dict__ probes during the enum module load.  hasOwnAttribute
+             // is the authoritative own-only check; if it returns False, the
+             // key is not in cls.__dict__.
              return PROTO_FALSE;
         }
 
