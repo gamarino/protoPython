@@ -354,6 +354,35 @@ static const proto::ProtoObject* py_type_repr(
     return PythonEnvironment::getInternedString(context, out.c_str())->asObject(context);
 }
 
+// SP-C/C3 fixup (I1): single source of truth for MappingProxy own-only routing.
+//
+// All MappingProxy methods (__getitem__, __contains__, keys, values, items,
+// __len__, __iter__) must agree on whether the wrapped object is a class so
+// they uniformly use own-only semantics for class proxies and dict semantics
+// for dict-backed proxies.  Previously each site rolled its own predicate and
+// keys/values/items omitted the __is_python_class__ probe, which could
+// silently diverge for classes flagged but not yet carrying __mro__.  This
+// helper encapsulates the strict-superset predicate that __getitem__ /
+// __contains__ used pre-fix; every site now calls it.
+static bool mp_isClassObject(const proto::ProtoObject* data,
+                             proto::ProtoContext* context,
+                             PythonEnvironment* env) {
+    if (!data) return false;
+    const proto::ProtoString* clsS = env ? env->getClassString()
+                                         : PythonEnvironment::getInternedString(context, "__class__");
+    const proto::ProtoString* ipcS = env ? env->getIsPythonClassString()
+                                         : PythonEnvironment::getInternedString(context, "__is_python_class__");
+    const proto::ProtoString* mroS = env ? env->getMroString()
+                                         : PythonEnvironment::getInternedString(context, "__mro__");
+    const proto::ProtoObject* dCls = data->getAttribute(context, clsS);
+    if (env && dCls == env->getTypePrototype()) return true;
+    const proto::ProtoObject* isPyCls = data->getAttribute(context, ipcS);
+    if (isPyCls && isPyCls != PROTO_NONE) return true;
+    const proto::ProtoObject* mro = data->getAttribute(context, mroS);
+    if (mro && mro->asList(context)) return true;
+    return false;
+}
+
 static const proto::ProtoObject* py_mappingproxy_repr(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -376,20 +405,7 @@ static const proto::ProtoObject* py_mappingproxy_getitem(
     if (data) {
         // Fix for types: if the wrapped object is a Type, use attribute access (for __dict__).
         // Types in protoPython store members as attributes.
-        const proto::ProtoObject* cls = data->getAttribute(context, env ? env->getClassString() : PythonEnvironment::getInternedString(context, "__class__"));
-        bool isType = false;
-        if (env && cls == env->getTypePrototype()) {
-            isType = true;
-        } else {
-            const proto::ProtoObject* isPyCls = data->getAttribute(context, PythonEnvironment::getInternedString(context, "__is_python_class__"));
-            if (isPyCls && isPyCls != PROTO_NONE) isType = true;
-            else {
-                const proto::ProtoObject* mro = data->getAttribute(context, PythonEnvironment::getInternedString(context, "__mro__"));
-                if (mro && mro->asList(context)) isType = true;
-            }
-        }
-
-        if (isType) {
+        if (mp_isClassObject(data, context, env)) {
              // SP-C/C3: cls.__dict__[name] must use own-only semantics, matching
              // CPython's mappingproxy view of a class namespace.  Walking the
              // parent chain (e.g. via env->getAttribute) would falsely return
@@ -434,20 +450,7 @@ static const proto::ProtoObject* py_mappingproxy_contains(
     const proto::ProtoObject* key = args->getAt(context, 0);
     const proto::ProtoObject* data = self->getAttribute(context, env ? env->getDataString() : PythonEnvironment::getInternedString(context, "__data__"));
     if (data) {
-        const proto::ProtoObject* cls = data->getAttribute(context, env ? env->getClassString() : PythonEnvironment::getInternedString(context, "__class__"));
-        bool isType = false;
-        if (env && cls == env->getTypePrototype()) {
-            isType = true;
-        } else {
-            const proto::ProtoObject* isPyCls = data->getAttribute(context, PythonEnvironment::getInternedString(context, "__is_python_class__"));
-            if (isPyCls && isPyCls != PROTO_NONE) isType = true;
-            else {
-                const proto::ProtoObject* mro = data->getAttribute(context, PythonEnvironment::getInternedString(context, "__mro__"));
-                if (mro && mro->asList(context)) isType = true;
-            }
-        }
-
-        if (isType) {
+        if (mp_isClassObject(data, context, env)) {
              // SP-C/C1: cls.__dict__ must report own-only attributes,
              // matching CPython semantics. Use hasOwnAttribute so we
              // don't walk the parent chain (which would falsely report
@@ -7330,13 +7333,8 @@ static const proto::ProtoObject* py_mappingproxy_keys(
     const proto::ProtoObject* data = self->getAttribute(context, env ? env->getDataString() : PythonEnvironment::getInternedString(context, "__data__"));
     if (get_env_diag()) fprintf(stderr, "DEBUG: mappingproxy_keys self=%p data=%p\n", (void*)self, (void*)data);
     if (!data) return env ? env->getListPrototype()->newChild(context, true) : nullptr;
-    
-    const proto::ProtoObject* cls = data->getAttribute(context, env ? env->getClassString() : PythonEnvironment::getInternedString(context, "__class__"));
-    bool isType = false;
-    if (env && cls == env->getTypePrototype()) isType = true;
-    else if (data->getAttribute(context, PythonEnvironment::getInternedString(context, "__mro__"))) isType = true;
 
-    if (isType) {
+    if (mp_isClassObject(data, context, env)) {
         KeyCollector s = { context, env, context->newList() };
         const proto::ProtoSparseList* attrs = data->getOwnAttributes(context);
         if (attrs) {
@@ -7394,14 +7392,9 @@ static const proto::ProtoObject* py_mappingproxy_values(
     if (!data) return env ? env->getListPrototype()->newChild(context, true) : nullptr;
 
     // SP-C/C3: for class-wrapping mappingproxies, return own-only values
-    // matching CPython's cls.__dict__.values().  Detect a class the same way
-    // py_mappingproxy_keys does.
-    bool isType = false;
-    const proto::ProtoObject* cls = data->getAttribute(context, env ? env->getClassString() : PythonEnvironment::getInternedString(context, "__class__"));
-    if (env && cls == env->getTypePrototype()) isType = true;
-    else if (data->getAttribute(context, PythonEnvironment::getInternedString(context, "__mro__"))) isType = true;
-
-    if (isType) {
+    // matching CPython's cls.__dict__.values().  Detect a class via the
+    // shared mp_isClassObject helper (SP-C/C3 fixup I1).
+    if (mp_isClassObject(data, context, env)) {
         ValueCollector s = { context, env, data, context->newList() };
         const proto::ProtoSparseList* attrs = data->getOwnAttributes(context);
         if (attrs) attrs->processElements(context, &s, collectValue);
@@ -7464,13 +7457,9 @@ static const proto::ProtoObject* py_mappingproxy_items(
     if (!data) return env ? env->getListPrototype()->newChild(context, true) : nullptr;
 
     // For type/class objects, attributes live in the C++ own-attribute slots (not in
-    // __data__). Detect a class the same way py_mappingproxy_keys does.
-    bool isType = false;
-    const proto::ProtoObject* cls = data->getAttribute(context, env ? env->getClassString() : PythonEnvironment::getInternedString(context, "__class__"));
-    if (env && cls == env->getTypePrototype()) isType = true;
-    else if (data->getAttribute(context, PythonEnvironment::getInternedString(context, "__mro__"))) isType = true;
-
-    if (isType) {
+    // __data__). Detect a class via the shared mp_isClassObject helper
+    // (SP-C/C3 fixup I1).
+    if (mp_isClassObject(data, context, env)) {
         ItemCollector s = { context, env, data, context->newList() };
         const proto::ProtoSparseList* attrs = data->getOwnAttributes(context);
         if (attrs) attrs->processElements(context, &s, collectItem);
@@ -7520,24 +7509,45 @@ static const proto::ProtoObject* py_mappingproxy_iter(
 
 // SP-C/C3: __len__ for mappingproxy.  Returns the count of own-only keys for
 // class-wrapping proxies, matching CPython's `len(cls.__dict__)`.  For dict-
-// backed proxies, falls through to the dict's __data__ sparse list size.
+// backed proxies, returns the wrapped dict's __data__ sparse-list size.
+//
+// SP-C/C3 fixup (I2): O(1) — does NOT materialise a full keys() list.  For
+// class proxies it reads getOwnAttributes()->getSize() directly; for dict-
+// backed proxies it reads the dict's __data__ sparse-list size, mirroring
+// py_dict_len.
 static const proto::ProtoObject* py_mappingproxy_len(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
-    const proto::ParentLink* parentLink,
-    const proto::ProtoList* positionalParameters,
-    const proto::ProtoSparseList* keywordParameters) {
-    // Compute len as the size of keys(), so it stays consistent with __iter__
-    // and keys() — including any __keys__ Python-side dict storage extension.
-    const proto::ProtoObject* keysObj =
-        py_mappingproxy_keys(context, self, parentLink, positionalParameters, keywordParameters);
-    if (!keysObj) return context->fromInteger(0);
+    const proto::ParentLink*,
+    const proto::ProtoList*,
+    const proto::ProtoSparseList*) {
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
-    const proto::ProtoString* dataName = env ? env->getDataString() : PythonEnvironment::getInternedString(context, "__data__");
-    const proto::ProtoObject* listData = keysObj->getAttribute(context, dataName);
-    const proto::ProtoList* asList = listData ? listData->asList(context) : keysObj->asList(context);
-    if (!asList) return context->fromInteger(0);
-    return context->fromInteger(asList->getSize(context));
+    const proto::ProtoString* dataName = env ? env->getDataString()
+                                              : PythonEnvironment::getInternedString(context, "__data__");
+    const proto::ProtoObject* data = self->getAttribute(context, dataName);
+    if (!data) return context->fromInteger(0);
+
+    if (mp_isClassObject(data, context, env)) {
+        // Class-wrapping proxy: own attributes count.  Mirrors keys(), which
+        // also enumerates getOwnAttributes()'s elements (modulo non-string
+        // keys, which classes don't have in practice).
+        const proto::ProtoSparseList* attrs = data->getOwnAttributes(context);
+        unsigned long n = attrs ? attrs->getSize(context) : 0;
+        // Include any __keys__ Python-side dict storage extension, mirroring
+        // keys()/values()/items().
+        const proto::ProtoString* keysName = env ? env->getKeysString()
+                                                  : PythonEnvironment::getInternedString(context, "__keys__");
+        const proto::ProtoObject* kObj = data->getAttribute(context, keysName);
+        if (kObj && kObj->asList(context)) {
+            n += kObj->asList(context)->getSize(context);
+        }
+        return context->fromInteger(n);
+    }
+
+    // Dict-backed proxy: same primitive as py_dict_len.
+    const proto::ProtoSparseList* sparse = data->asSparseList(context);
+    if (!sparse) return context->fromInteger(0);
+    return context->fromInteger(sparse->getSize(context));
 }
 
 static const proto::ProtoObject* py_dict_get(
