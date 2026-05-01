@@ -1207,7 +1207,7 @@ bool Compiler::compileReturn(ReturnNode* n) {
         int idx = addConstant(PROTO_NONE);
         emit(OP_LOAD_CONST, idx);
     }
-    if (!unwindBlocks(false)) return false;
+    if (!unwindBlocks(false, /*hasValueOnStack=*/true)) return false;
     emit(OP_RETURN_VALUE);
     return true;
 }
@@ -3969,12 +3969,12 @@ bool Compiler::compileModule(ModuleNode* mod) {
     return true;
 }
 
-bool Compiler::unwindBlocks(bool isLoopExit) {
+bool Compiler::unwindBlocks(bool isLoopExit, bool hasValueOnStack) {
     size_t targetDepth = 0;
     if (isLoopExit && !loopStack_.empty()) {
         targetDepth = loopStack_.back().blockDepth;
     }
-    
+
     for (size_t i = blockEnvStack_.size(); i > targetDepth; --i) {
         const BlockEnv& env = blockEnvStack_[i - 1];
         if (env.type == BlockType::TryFinally) {
@@ -3983,6 +3983,17 @@ bool Compiler::unwindBlocks(bool isLoopExit) {
                 if (!compileNode(env.cleanupNode)) return false;
             }
         } else if (env.type == BlockType::With) {
+            // Stack at this point:
+            //   hasValueOnStack=false: [..., __exit__]
+            //   hasValueOnStack=true:  [..., __exit__, retval]
+            // OP_WITH_CLEANUP needs __exit__ on top, so swap when a return
+            // value rides above it. After ROT_TWO the stack becomes
+            // [..., retval, __exit__], and the cleanup consumes __exit__
+            // and the None we push, leaving [..., retval] for the next
+            // unwind iteration / RETURN_VALUE.
+            if (hasValueOnStack) {
+                emit(OP_ROT_TWO);
+            }
             emit(OP_POP_BLOCK);
             int noneIdx = addConstant(PROTO_NONE);
             emit(OP_LOAD_CONST, noneIdx);

@@ -149,7 +149,7 @@ private:
         ASTNode* cleanupNode; // ASTNode for finally body. Null for With.
     };
     std::vector<BlockEnv> blockEnvStack_;
-    bool unwindBlocks(bool isLoopExit);
+    bool unwindBlocks(bool isLoopExit, bool hasValueOnStack = false);
     
     struct LoopInfo {
         int start;
