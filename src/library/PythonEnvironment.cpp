@@ -390,6 +390,12 @@ static const proto::ProtoObject* py_mappingproxy_getitem(
         }
 
         if (isType) {
+             // SP-C/C3: cls.__dict__[name] must use own-only semantics, matching
+             // CPython's mappingproxy view of a class namespace.  Walking the
+             // parent chain (e.g. via env->getAttribute) would falsely return
+             // inherited members like '__init__' from object.  Use the own-only
+             // accessors and raise KeyError when the name is not present on
+             // this class itself.
              const proto::ProtoString* sKey = nullptr;
              if (key->isString(context)) {
                  sKey = key->asString(context);
@@ -397,18 +403,19 @@ static const proto::ProtoObject* py_mappingproxy_getitem(
                  const proto::ProtoObject* kData = key->getAttribute(context, env->getDataString());
                  if (kData && kData->isString(context)) sKey = kData->asString(context);
              }
-             const proto::ProtoObject* res = sKey ? data->getAttribute(context, sKey) : nullptr;
-             if (!res && sKey && env) {
-                 res = env->getAttribute(context, data, sKey);
+
+             if (sKey && data->hasOwnAttribute(context, sKey) == PROTO_TRUE) {
+                 const proto::ProtoObject* res = data->getOwnAttributeDirect(context, sKey);
+                 if (res) return res;
              }
-             if (res) return res;
-             
-             // Fallback: check internal dictionary storage if attributes were moved
-             if (env) {
-                 const proto::ProtoObject* internalRes = env->getItem(data, key);
-                 if (internalRes) return internalRes;
-             }
-             
+
+             // SP-C/C3: do NOT fall back to env->getItem(data, key).  For native
+             // types like `str`, env->getItem invokes user-level __getitem__
+             // which dispatches to __class_getitem__ (generic-alias machinery)
+             // and returns a non-null value (typically PROTO_NONE or a
+             // GenericAlias) for any key.  That falsely reports the key as
+             // present.  This is the same getItem fallback dropped from
+             // py_mappingproxy_contains in commit 015b3a82 (SP-C/C2).
              if (env) env->raiseKeyError(context, key);
              return nullptr;
         }
@@ -508,18 +515,21 @@ static const proto::ProtoObject* py_mappingproxy_get(
     }
     if (!sKey) return defaultVal;
 
-    // Only return attributes defined directly on the wrapped object (no inheritance),
-    // consistent with CPython's cls.__dict__ which is the class's own namespace.
+    // SP-C/C3: only return attributes defined directly on the wrapped object
+    // (no inheritance), consistent with CPython's cls.__dict__ which is the
+    // class's own namespace.  Use own-only APIs throughout.
     if (data->hasOwnAttribute(context, sKey) == PROTO_TRUE) {
-        const proto::ProtoObject* val = data->proto::ProtoObject::getAttribute(context, sKey);
-        if (val && val != PROTO_NONE) return val;
+        const proto::ProtoObject* val = data->getOwnAttributeDirect(context, sKey);
+        if (val) return val;
     }
 
-    // Fallback: check internal __data__ sparse list (for attrs stored via dict.__setitem__)
-    if (env) {
-        const proto::ProtoObject* internalVal = env->getItem(data, key, context);
-        if (internalVal && internalVal != PROTO_NONE) return internalVal;
-    }
+    // SP-C/C3: do NOT fall back to env->getItem(data, key).  For native types
+    // like `str`, env->getItem dispatches user-level __getitem__ →
+    // __class_getitem__ (generic-alias machinery) and returns a non-null value
+    // for any key, which would mask the missing-key case and return a bogus
+    // value instead of the requested default.  Same getItem fallback bug that
+    // was removed from py_mappingproxy_contains in 015b3a82 (SP-C/C2) and from
+    // py_mappingproxy_getitem in this commit.
 
     return defaultVal;
 }
@@ -7353,6 +7363,26 @@ static const proto::ProtoObject* py_mappingproxy_keys(
     return py_dict_keys(context, data, parentLink, positionalParameters, keywordParameters);
 }
 
+// Collector for mappingproxy values: walks own attributes and pushes each value
+// directly.  Mirrors KeyCollector but reads the value rather than the key.
+struct ValueCollector {
+    proto::ProtoContext* ctx;
+    PythonEnvironment* env;
+    const proto::ProtoObject* dataObj;  // class object to read values from
+    const proto::ProtoList* valuesList;
+};
+
+static void collectValue(proto::ProtoContext* ctx, void* self, unsigned long key, const proto::ProtoObject* val) {
+    ValueCollector* s = (ValueCollector*)self;
+    const proto::ProtoObject* kObj = reinterpret_cast<const proto::ProtoObject*>(key);
+    if (!kObj || !kObj->isString(ctx)) return;
+    // Read current value via own-only direct fetch — getAttribute would walk
+    // the parent chain.
+    const proto::ProtoObject* v = s->dataObj->getOwnAttributeDirect(ctx, kObj->asString(ctx));
+    if (!v) v = (val ? val : PROTO_NONE);
+    s->valuesList = s->valuesList->appendLast(ctx, v);
+}
+
 static const proto::ProtoObject* py_mappingproxy_values(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -7362,6 +7392,41 @@ static const proto::ProtoObject* py_mappingproxy_values(
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     const proto::ProtoObject* data = self->getAttribute(context, env ? env->getDataString() : PythonEnvironment::getInternedString(context, "__data__"));
     if (!data) return env ? env->getListPrototype()->newChild(context, true) : nullptr;
+
+    // SP-C/C3: for class-wrapping mappingproxies, return own-only values
+    // matching CPython's cls.__dict__.values().  Detect a class the same way
+    // py_mappingproxy_keys does.
+    bool isType = false;
+    const proto::ProtoObject* cls = data->getAttribute(context, env ? env->getClassString() : PythonEnvironment::getInternedString(context, "__class__"));
+    if (env && cls == env->getTypePrototype()) isType = true;
+    else if (data->getAttribute(context, PythonEnvironment::getInternedString(context, "__mro__"))) isType = true;
+
+    if (isType) {
+        ValueCollector s = { context, env, data, context->newList() };
+        const proto::ProtoSparseList* attrs = data->getOwnAttributes(context);
+        if (attrs) attrs->processElements(context, &s, collectValue);
+
+        // Also include values for keys tracked in __keys__ (Python-level dict storage),
+        // mirroring py_mappingproxy_keys / _items which also append from __keys__.
+        const proto::ProtoObject* kObj = data->getAttribute(context, env ? env->getKeysString() : PythonEnvironment::getInternedString(context, "__keys__"));
+        if (kObj && kObj->asList(context)) {
+            const proto::ProtoList* innerKeys = kObj->asList(context);
+            unsigned long iSize = innerKeys->getSize(context);
+            for (unsigned long i = 0; i < iSize; ++i) {
+                const proto::ProtoObject* k = innerKeys->getAt(context, static_cast<int>(i));
+                if (!k || !k->isString(context)) continue;
+                const proto::ProtoObject* v = data->getOwnAttributeDirect(context, k->asString(context));
+                if (!v) v = PROTO_NONE;
+                s.valuesList = s.valuesList->appendLast(context, v);
+            }
+        }
+
+        const proto::ProtoObject* listProto = env ? env->getListPrototype() : nullptr;
+        proto::ProtoObject* listObj = const_cast<proto::ProtoObject*>(listProto ? listProto->newChild(context, true) : context->newObject());
+        listObj->setAttribute(context, env ? env->getDataString() : PythonEnvironment::getInternedString(context, "__data__"), s.valuesList->asObject(context));
+        return listObj;
+    }
+
     return py_dict_values(context, data, parentLink, positionalParameters, keywordParameters);
 }
 
@@ -7377,10 +7442,12 @@ static void collectItem(proto::ProtoContext* ctx, void* self, unsigned long key,
     const proto::ProtoObject* kObj = reinterpret_cast<const proto::ProtoObject*>(key);
     if (!kObj || !kObj->isString(ctx)) return;
     if (s->env && s->env->getStrPrototype()) kObj = kObj->addParent(ctx, s->env->getStrPrototype());
-    // Read current value from the class object (not the snapshot in processElements, which
-    // may be stale for Python-set attributes).
-    const proto::ProtoObject* v = s->dataObj->getAttribute(ctx, kObj->asString(ctx));
-    if (!v) v = PROTO_NONE;
+    // SP-C/C3: read the current value via own-only direct fetch.  Using
+    // getAttribute would walk the parent chain and could return inherited
+    // attributes for keys we just enumerated as own — but for safety and
+    // CPython parity we always stay own-only in cls.__dict__ views.
+    const proto::ProtoObject* v = s->dataObj->getOwnAttributeDirect(ctx, kObj->asString(ctx));
+    if (!v) v = (val ? val : PROTO_NONE);
     const proto::ProtoList* pair = ctx->newList()->appendLast(ctx, kObj)->appendLast(ctx, v);
     const proto::ProtoObject* pairTuple = ctx->newTupleFromList(pair)->asObject(ctx);
     s->itemsList = s->itemsList->appendLast(ctx, pairTuple);
@@ -7409,13 +7476,15 @@ static const proto::ProtoObject* py_mappingproxy_items(
         if (attrs) attrs->processElements(context, &s, collectItem);
 
         // Also include attributes tracked in __keys__ (Python-level dict storage).
+        // SP-C/C3: use own-only direct fetch for the value lookup so we never
+        // accidentally return inherited attributes for these names either.
         const proto::ProtoObject* kObj = data->getAttribute(context, env ? env->getKeysString() : PythonEnvironment::getInternedString(context, "__keys__"));
         if (kObj && kObj->asList(context)) {
             const proto::ProtoList* innerKeys = kObj->asList(context);
             for (unsigned long i = 0; i < innerKeys->getSize(context); ++i) {
                 const proto::ProtoObject* k = innerKeys->getAt(context, static_cast<int>(i));
                 if (!k || !k->isString(context)) continue;
-                const proto::ProtoObject* v = data->getAttribute(context, k->asString(context));
+                const proto::ProtoObject* v = data->getOwnAttributeDirect(context, k->asString(context));
                 if (!v) v = PROTO_NONE;
                 const proto::ProtoList* pair = context->newList()->appendLast(context, k)->appendLast(context, v);
                 const proto::ProtoObject* pairTuple = context->newTupleFromList(pair)->asObject(context);
@@ -7430,6 +7499,45 @@ static const proto::ProtoObject* py_mappingproxy_items(
     }
 
     return py_dict_items(context, data, parentLink, positionalParameters, keywordParameters);
+}
+
+// SP-C/C3: __iter__ for mappingproxy.  Returns an iterator over the same set
+// of keys that .keys() returns — i.e. own-only for class-wrapping proxies.
+// Implemented by computing keys() and routing through py_list_iter, so the
+// resulting iterator integrates with `for k in d` and the comprehension
+// machinery the same way list/dict_keys iteration does.
+static const proto::ProtoObject* py_mappingproxy_iter(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    const proto::ProtoObject* keysObj =
+        py_mappingproxy_keys(context, self, parentLink, positionalParameters, keywordParameters);
+    if (!keysObj) return PROTO_NONE;
+    return py_list_iter(context, keysObj, parentLink, positionalParameters, keywordParameters);
+}
+
+// SP-C/C3: __len__ for mappingproxy.  Returns the count of own-only keys for
+// class-wrapping proxies, matching CPython's `len(cls.__dict__)`.  For dict-
+// backed proxies, falls through to the dict's __data__ sparse list size.
+static const proto::ProtoObject* py_mappingproxy_len(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    // Compute len as the size of keys(), so it stays consistent with __iter__
+    // and keys() — including any __keys__ Python-side dict storage extension.
+    const proto::ProtoObject* keysObj =
+        py_mappingproxy_keys(context, self, parentLink, positionalParameters, keywordParameters);
+    if (!keysObj) return context->fromInteger(0);
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::ProtoString* dataName = env ? env->getDataString() : PythonEnvironment::getInternedString(context, "__data__");
+    const proto::ProtoObject* listData = keysObj->getAttribute(context, dataName);
+    const proto::ProtoList* asList = listData ? listData->asList(context) : keysObj->asList(context);
+    if (!asList) return context->fromInteger(0);
+    return context->fromInteger(asList->getSize(context));
 }
 
 static const proto::ProtoObject* py_dict_get(
@@ -9487,6 +9595,11 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     mappingProxyPrototype = mappingProxyPrototype->setAttribute(rootContext_, getItemString, rootContext_->fromMethod(nullptr, py_mappingproxy_getitem));
     mappingProxyPrototype = mappingProxyPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__contains__"), rootContext_->fromMethod(nullptr, py_mappingproxy_contains));
     mappingProxyPrototype = mappingProxyPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "get"), rootContext_->fromMethod(nullptr, py_mappingproxy_get));
+    // SP-C/C3: own-only __iter__ and __len__ so iter(cls.__dict__) and
+    // len(cls.__dict__) return the class's own attribute count, matching
+    // CPython's mappingproxy semantics.
+    mappingProxyPrototype = mappingProxyPrototype->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_mappingproxy_iter));
+    mappingProxyPrototype = mappingProxyPrototype->setAttribute(rootContext_, py_len, rootContext_->fromMethod(nullptr, py_mappingproxy_len));
     mappingProxyPrototype = mappingProxyPrototype->setAttribute(rootContext_, py_module, builtinsVal);
 
     // Initialize getset_descriptor
