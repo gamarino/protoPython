@@ -13258,7 +13258,20 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
         }
     }
 
-    if (!val || (!isExplicitNone && val == PROTO_NONE)) {
+    // Final not-found gate. The condition needs to account for the
+    // MRO walk above (sections 1.1 and 1.2) having legitimately
+    // resolved the attribute to PROTO_NONE — e.g. `MyClass.__doc__`
+    // resolves to None via objectPrototype.__doc__, and
+    // `signal._wraps`/`functools.wraps` rely on that read returning
+    // None instead of raising.
+    //
+    // isExplicitNone only flags the case where `obj` itself owns
+    // PROTO_NONE; it does NOT flag the case where an MRO ancestor
+    // owns PROTO_NONE (the cache key would have to belong to the
+    // ancestor, not obj). So once foundOnClassOrMro is set the
+    // resolved val IS the answer, including when val == PROTO_NONE.
+    bool resolvedAsNone = foundOnClassOrMro && val == PROTO_NONE;
+    if (!val || (!isExplicitNone && !resolvedAsNone && val == PROTO_NONE)) {
         if (get_env_attr_diag() && dictString && name == dictString) {
             std::string objNameDiag = "?";
             const proto::ProtoObject* nn2 = obj->proto::ProtoObject::getAttribute(ctx, nameString ? nameString : PythonEnvironment::getInternedString(ctx, "__name__"));
