@@ -224,7 +224,7 @@ In particular for Phase 2 (inspect break): if the root cause turns out to be a d
 | # | Phase | Status | Closed by commit | Notes |
 |---|---|---|---|---|
 | C1 | `in` MP through `__contains__` | closed | ba1acb46 | reproducer 10/10; py_mappingproxy_contains tightened to hasOwnAttribute; inspect cascade is the known C2 follow-up |
-| C2 | `import inspect` works after C1 | open | — | |
+| C2 | `import inspect` works after C1 | closed | 015b3a82 | reproducer 10/10; py_mappingproxy_contains getItem fallback dropped — was wrongly invoking __class_getitem__ on native types and returning PROTO_NONE (truthy in the non-null check), making `'__dataclass_fields__' in str.__dict__` True, which broke enum.py's `_find_data_repr_` subscript and cascaded to inspect's annotationlib import |
 | C3 | 6 MP methods own-only | open | — | |
 | C4 | SP-B/B3 verified closed; audit re-run delta documented | open | — | |
 
