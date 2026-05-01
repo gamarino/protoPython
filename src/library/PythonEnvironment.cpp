@@ -8058,6 +8058,7 @@ thread_local proto::ProtoContext* PythonEnvironment::s_threadContext = nullptr;
 thread_local bool PythonEnvironment::s_pendingExcFlag = false;
 thread_local const proto::ProtoObject* PythonEnvironment::s_pendingExc = nullptr;
 thread_local std::vector<const proto::ProtoObject*> PythonEnvironment::s_activeExcs;
+thread_local std::vector<proto::ProtoRootSet::Handle> PythonEnvironment::s_activeExcsHandles;
 thread_local int PythonEnvironment::s_recursionDepth = 0;
 thread_local bool PythonEnvironment::s_inRecursionError = false;
 thread_local const proto::ProtoObject* PythonEnvironment::s_currentFrame = nullptr;
@@ -8164,8 +8165,6 @@ void PythonEnvironment::setPendingException(const proto::ProtoObject* exc) {
     bool real = (exc != nullptr && exc != PROTO_NONE);
     s_pendingExc = real ? exc : nullptr;
     s_pendingExcFlag = real;
-    if (get_env_diag()) {
-    }
 }
 
 const proto::ProtoObject* PythonEnvironment::takePendingException() {
@@ -8180,9 +8179,6 @@ const proto::ProtoObject* PythonEnvironment::takePendingException() {
     if (!e) {
         e = getPyThread(s_threadContext)->getAttribute(s_threadContext, key);
         if (e == PROTO_NONE) e = nullptr;
-    }
-    if (get_env_diag()) {
-        fflush(stderr);
     }
     s_currentPyThread = const_cast<proto::ProtoObject*>(getPyThread(s_threadContext))->setAttribute(s_threadContext, key, PROTO_NONE);
     s_pendingExc = nullptr;
@@ -8208,9 +8204,6 @@ const proto::ProtoObject* PythonEnvironment::peekPendingException() const {
 void PythonEnvironment::clearPendingException() {
     if (!s_threadContext) return;
     const proto::ProtoString* key = pendingExcString ? pendingExcString : proto::ProtoString::fromUTF8(s_threadContext, "_pending_exc");
-    if (get_env_diag()) {
-        fflush(stderr);
-    }
     s_currentPyThread = const_cast<proto::ProtoObject*>(getPyThread(s_threadContext))->setAttribute(s_threadContext, key, PROTO_NONE);
     s_pendingExc = nullptr;
     s_pendingExcFlag = false;
@@ -8218,33 +8211,37 @@ void PythonEnvironment::clearPendingException() {
 
 void PythonEnvironment::pushActiveException(const proto::ProtoObject* exc) {
     if (!s_threadContext) return;
-    // Update TLS mirror first — this is the authoritative read source
-    // (see `s_activeExcs` doc and `s_pendingExc` / SP0-P2.5).  Each
-    // exception is independently kept alive by the parallel write to
-    // `_active_excs` on py_thread below, so GC reachability is unchanged.
+    // Read path — authoritative TLS mirror (cache-free; see `s_activeExcs`).
     s_activeExcs.push_back(exc ? exc : PROTO_NONE);
-    const proto::ProtoString* key = s_threadEnv ? s_threadEnv->activeExcsString : proto::ProtoString::fromUTF8(s_threadContext, "_active_excs");
-    const proto::ProtoObject* listObj = getPyThread(s_threadContext)->getAttribute(s_threadContext, key);
-    const proto::ProtoList* l = (listObj && listObj != PROTO_NONE && listObj->asList(s_threadContext)) ? listObj->asList(s_threadContext) : s_threadContext->newList();
-    l = l->appendLast(s_threadContext, exc ? exc : PROTO_NONE);
-    s_currentPyThread = const_cast<proto::ProtoObject*>(getPyThread(s_threadContext))->setAttribute(s_threadContext, key, l->asObject(s_threadContext));
+    // GC anchor — pin the exception in the per-environment ProtoRootSet
+    // so the tracing GC sees it as a root for as long as the except
+    // block's bounded lifetime holds it.  Replaces the prior
+    // `_active_excs` ProtoList attribute on py_thread, whose read path
+    // (used to rebuild the list on push) was the same mutable-shard
+    // attribute cache that motivated the TLS mirror in the first place
+    // (SP-G/B5).  The handle stack `s_activeExcsHandles` is kept in
+    // lockstep with `s_activeExcs` so pop releases exactly what push
+    // pinned.
+    proto::ProtoRootSet::Handle h = proto::ProtoRootSet::kNullHandle;
+    if (s_threadEnv && s_threadEnv->activeExcsRoots_ && exc && exc != PROTO_NONE) {
+        h = s_threadEnv->activeExcsRoots_->add(exc);
+    }
+    s_activeExcsHandles.push_back(h);
 }
 
 void PythonEnvironment::popActiveException() {
     if (!s_threadContext) return;
-    // Update the TLS mirror — authoritative for reads.  Mirror the pop in
-    // the attribute storage as well (best-effort: the cache desync that
-    // motivated this mirror means the attribute read might be stale, but
-    // the WRITE keeps the GC reachability story consistent).
     if (!s_activeExcs.empty()) s_activeExcs.pop_back();
-    const proto::ProtoString* key = s_threadEnv ? s_threadEnv->activeExcsString : proto::ProtoString::fromUTF8(s_threadContext, "_active_excs");
-    const proto::ProtoObject* listObj = getPyThread(s_threadContext)->getAttribute(s_threadContext, key);
-    if (listObj && listObj != PROTO_NONE && listObj->asList(s_threadContext)) {
-        const proto::ProtoList* l = listObj->asList(s_threadContext);
-        size_t size = l->getSize(s_threadContext);
-        if (size > 0) {
-            l = l->removeAt(s_threadContext, size - 1);
-            s_currentPyThread = const_cast<proto::ProtoObject*>(getPyThread(s_threadContext))->setAttribute(s_threadContext, key, l->asObject(s_threadContext));
+    // Release the matching root-set pin.  Stacks always grow/shrink in
+    // lockstep, but guard for the underflow case (e.g. a stray pop on a
+    // freshly-attached thread whose push happened before this env was
+    // bound).  ProtoRootSet treats kNullHandle and recycled handles as
+    // silent no-ops (generation check in protoCore.h).
+    if (!s_activeExcsHandles.empty()) {
+        proto::ProtoRootSet::Handle h = s_activeExcsHandles.back();
+        s_activeExcsHandles.pop_back();
+        if (s_threadEnv && s_threadEnv->activeExcsRoots_ && h != proto::ProtoRootSet::kNullHandle) {
+            s_threadEnv->activeExcsRoots_->remove(h);
         }
     }
 }
@@ -8331,6 +8328,10 @@ PythonEnvironment::PythonEnvironment(const std::string& stdLibPath, const std::v
     s_mainThreadId = std::this_thread::get_id();
     registerContext(rootContext_, this);
     kwNamesStack = rootContext_->newList();
+    // GC anchor for active exceptions (see `activeExcsRoots_` doc and
+    // `s_activeExcsHandles`).  Replaces the prior `_active_excs` attribute
+    // anchor whose read path was vulnerable to mutable-shard cache desync.
+    activeExcsRoots_ = space_->createRootSet("protopython-active-excs");
     initializeRootObjects(stdLibPath, searchPaths);
 }
 
@@ -8512,6 +8513,15 @@ PythonEnvironment::~PythonEnvironment() {
         remove_if_match((objectS)->asObject(rootContext_));
         remove_if_match((typeS)->asObject(rootContext_));
         remove_if_match((dictString)->asObject(rootContext_));
+    }
+
+    // Tear down the active-exception root set before the ProtoSpace
+    // outlives us (see `activeExcsRoots_`).  The space's destructor
+    // cleans up orphans, but releasing eagerly keeps shutdown GC pauses
+    // tidy.
+    if (activeExcsRoots_ && space_) {
+        space_->destroyRootSet(activeExcsRoots_);
+        activeExcsRoots_ = nullptr;
     }
 
     unregisterContext(rootContext_);

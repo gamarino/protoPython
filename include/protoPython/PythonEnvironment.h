@@ -694,29 +694,43 @@ public:
     /**
      * @brief TLS mirror of the active-exception stack (per-thread).
      *
-     * Same rationale as `s_pendingExc`: the authoritative storage on
-     * `_active_excs` (a ProtoList attribute on the per-thread py_thread
-     * object) goes through protoCore's mutable-shard attribute cache,
-     * which can serve stale (null) results when a value is set in
-     * context A and read back in context B even though both share the
-     * same thread.  We observed this manifesting as the
-     * `RuntimeError: reraise outside of except block` SP-G/B5 bug:
-     * `pushActiveException` would write a list of size 1 in context B,
-     * but the very next read of the same attribute (still in context B,
-     * still on the same py_thread) would see `nullptr`, causing the
-     * `with` block's exception-rethrow path to think there was no
-     * active exception to re-raise.
+     * Read path for `getActiveException`.  Same rationale as
+     * `s_pendingExc`: the prior authoritative storage on `_active_excs`
+     * (a ProtoList attribute on the per-thread py_thread object) went
+     * through protoCore's mutable-shard attribute cache, which could
+     * serve stale (null) results when a value was set in context A and
+     * read back in context B even though both share the same OS thread.
+     * That manifested as the `RuntimeError: reraise outside of except
+     * block` SP-G/B5 bug.
      *
-     * Each ProtoObject* is independently kept alive by the parallel
-     * write to `_active_excs` on the py_thread object (which is rooted
-     * through `s_globalThreadRootsDict`), so the GC reachability story
-     * is unchanged.  The TLS vector only fixes the read path.  We use
-     * a plain `std::vector` rather than a ProtoList to avoid the
+     * GC reachability is provided by `activeExcsRoots_` (Mechanism B,
+     * `ProtoRootSet`): every push pins the exception there, every pop
+     * releases the corresponding handle (parallel-stacked in
+     * `s_activeExcsHandles`).  The plain `std::vector` of bare
+     * `ProtoObject*` is safe precisely because the root set keeps
+     * each entry reachable from the GC's mark phase — and a
+     * `std::vector` (rather than a ProtoList) sidesteps the
      * cross-context safety footguns of cached protoCore collection
      * pointers (a ProtoList allocated in context A and reused from
      * context B trips dirty-segment assertions).
      */
     static thread_local std::vector<const proto::ProtoObject*> s_activeExcs;
+
+    /**
+     * @brief TLS stack of `ProtoRootSet::Handle` pins parallel to
+     *        `s_activeExcs`.  See `activeExcsRoots_`.
+     *
+     * On `pushActiveException`: `h = activeExcsRoots_->add(exc);
+     *                            s_activeExcsHandles.push_back(h);`.
+     * On `popActiveException`:  `activeExcsRoots_->remove(s_activeExcsHandles.back());
+     *                            s_activeExcsHandles.pop_back();`.
+     *
+     * The handle is a 64-bit integer with embedded generation, so a
+     * stale `remove` is a silent no-op (see protoCore.h ProtoRootSet
+     * docs).  The two stacks (`s_activeExcs`, `s_activeExcsHandles`)
+     * grow and shrink in lockstep; their sizes must always match.
+     */
+    static thread_local std::vector<proto::ProtoRootSet::Handle> s_activeExcsHandles;
 
     /**
      * @brief Returns true if there is a pending exception.
@@ -854,6 +868,26 @@ private:
 
     proto::ProtoSpace* space_;
     proto::ProtoContext* rootContext_;
+
+    /**
+     * @brief GC root set that pins active exceptions for their
+     *        bounded lifetime (push/pop in `pushActiveException`
+     *        / `popActiveException`).
+     *
+     * Replaces the prior `_active_excs` ProtoList attribute on
+     * py_thread.  That attribute path round-tripped through the
+     * mutable-shard attribute cache — the same cache whose stale-read
+     * behaviour motivated the TLS read mirror in the first place
+     * (SP-G/B5).  Pinning each pushed exception in a `ProtoRootSet`
+     * keeps the values reachable from the tracing GC without the
+     * cache hazard, and lets the read path stay on the cache-free
+     * `s_activeExcs` TLS vector.
+     *
+     * Owned by this `PythonEnvironment`: created in the constructor,
+     * destroyed in the destructor (`space_->destroyRootSet`).
+     */
+    proto::ProtoRootSet* activeExcsRoots_{nullptr};
+
     const proto::ProtoObject* rangeIteratorProto{nullptr};
     const proto::ProtoObject* genericAliasProto{nullptr};
     const proto::ProtoObject* unionTypeProto{nullptr};
