@@ -725,6 +725,16 @@ public:
     void raiseNameError(proto::ProtoContext* context, const std::string& name);
     void raiseUnboundLocalError(proto::ProtoContext* context, const std::string& msg);
     void raiseAttributeError(proto::ProtoContext* context, const proto::ProtoObject* obj, const std::string& attr);
+    /**
+     * @brief Records an AttributeError where the human-readable message and the
+     *        machine-readable `name` slot must differ.  Used by the property
+     *        descriptor protocol where CPython emits messages like
+     *        `property 'x' of 'C' object has no setter` rather than the generic
+     *        `'C' object has no attribute 'x'` shape.  The `attr` argument is
+     *        stored verbatim in the AttributeError's `name` slot so callers
+     *        catching AttributeError can still introspect the offending name.
+     */
+    void raiseAttributeErrorWithMessage(proto::ProtoContext* context, const proto::ProtoObject* obj, const std::string& message, const std::string& attr);
     void raiseRuntimeError(proto::ProtoContext* context, const std::string& msg);
     void raiseOSError(proto::ProtoContext* context, int errnum, const std::string& strerr, const std::string& filename = "");
     void raiseTypeError(proto::ProtoContext* context, const std::string& msg);

@@ -8666,6 +8666,27 @@ void PythonEnvironment::raiseAttributeError(proto::ProtoContext* ctx, const prot
     }
 }
 
+void PythonEnvironment::raiseAttributeErrorWithMessage(proto::ProtoContext* ctx,
+                                                       const proto::ProtoObject* obj,
+                                                       const std::string& message,
+                                                       const std::string& attr) {
+    if (!attributeErrorType) {
+        // Fallback during bootstrap: surface the message as a generic marker.
+        this->setPendingException(PythonEnvironment::getInternedString(ctx, ("AttributeError: " + message).c_str())->asObject(ctx));
+        return;
+    }
+    const proto::ProtoList* args = ctx->newList()->appendLast(ctx, PythonEnvironment::getInternedString(ctx, message.c_str())->asObject(ctx));
+    const proto::ProtoObject* exc = invokePythonCallable(ctx, attributeErrorType, args, nullptr);
+    if (exc) {
+        exc = exc->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "name"),
+                                PythonEnvironment::getInternedString(ctx, attr.c_str())->asObject(ctx));
+        if (obj) {
+            exc = exc->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "obj"), obj);
+        }
+        setPendingException(exc);
+    }
+}
+
 void PythonEnvironment::raiseTypeError(proto::ProtoContext* ctx, const std::string& msg) {
     if (!typeErrorType) return;
     const proto::ProtoList* args = ctx->newList()->appendLast(ctx, PythonEnvironment::getInternedString(ctx, msg.c_str())->asObject(ctx));

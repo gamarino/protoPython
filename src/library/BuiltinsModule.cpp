@@ -4126,8 +4126,54 @@ static const proto::ProtoObject* py_property_set(
         return PROTO_NONE;
     }
     // PI: Read-only property — raise AttributeError per CPython semantics.
+    // CPython 3.13+ emits messages of the form
+    //   property '<name>' of '<TypeName>' object has no setter
+    // and stores the property name (not the human-readable sentence!) in the
+    // AttributeError's `name` slot.  Earlier protopy code passed the sentence
+    // fragment "property has no setter" as the `attr` argument to
+    // raiseAttributeError, which then emitted the malformed shape
+    //   '<TypeName>' object has no attribute 'property has no setter'
+    // and copied that fragment into the `name` slot — surfacing as cluster B4
+    // in the SP-B audit (test_sys / socket cluster-2).
     if (env) {
-        env->raiseAttributeError(context, obj, "property has no setter");
+        // Resolve the property name.  protopy stores it on the underlying
+        // fget callable; it may also have been recorded directly on the
+        // property as `__name__` by descriptor-aware metaclasses.
+        std::string propName;
+        const proto::ProtoString* nameKey = PythonEnvironment::getInternedString(context, "__name__");
+        const proto::ProtoObject* nameAttr = self->getAttribute(context, nameKey);
+        if (!nameAttr || nameAttr == PROTO_NONE || !nameAttr->isString(context)
+            || (nameAttr->isString(context) && (nameAttr->asString(context)->toUTF8String(context, propName), propName == "property"))) {
+            // The property type itself returns 'property' for __name__; fall
+            // back to fget.__name__ which is the most reliable carrier of the
+            // attribute identifier in protopy.
+            propName.clear();
+            const proto::ProtoObject* fget = self->getAttribute(context, PythonEnvironment::getInternedString(context, "fget"));
+            if (fget && fget != PROTO_NONE) {
+                const proto::ProtoObject* fgetName = fget->getAttribute(context, nameKey);
+                if (fgetName && fgetName != PROTO_NONE && fgetName->isString(context)) {
+                    fgetName->asString(context)->toUTF8String(context, propName);
+                }
+            }
+        }
+
+        // Resolve the class name of `obj` for the message body.
+        std::string typeName = "object";
+        const proto::ProtoObject* cls = env->getType(context, obj);
+        if (cls) {
+            const proto::ProtoObject* clsName = cls->getAttribute(context, nameKey);
+            if (clsName && clsName != PROTO_NONE && clsName->isString(context)) {
+                clsName->asString(context)->toUTF8String(context, typeName);
+            }
+        }
+
+        std::string message;
+        if (!propName.empty()) {
+            message = "property '" + propName + "' of '" + typeName + "' object has no setter";
+        } else {
+            message = "property of '" + typeName + "' object has no setter";
+        }
+        env->raiseAttributeErrorWithMessage(context, obj, message, propName);
     }
     return nullptr;
 }
