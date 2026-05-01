@@ -3083,9 +3083,22 @@ const proto::ProtoObject* executeBytecodeRange(
                     // Closure parent chain: free variables live in parent frames. All name strings
                     // are interned (co_names uses getInternedString), so getAttribute's symbolTable
                     // lookup succeeds and traverses the prototype chain correctly.
+                    //
+                    // SP-E/B-DD1: use hasAttribute to disambiguate present-vs-absent before
+                    // reading the value.  ProtoObject::getAttribute returns nullptr for not-
+                    // found and the stored value (which may legitimately be PROTO_NONE for
+                    // `x = None` at module or class scope) for found.  ProtoSparseList::getAt
+                    // (used in the fast path at line ~3079) instead uses PROTO_NONE as its
+                    // absent-sentinel.  The two APIs disagree, so a naive PROTO_NONE filter
+                    // here would break `class C: y = None; print(y)`.  hasAttribute makes
+                    // the present-vs-absent test explicit at the cost of one extra parent-
+                    // chain walk — defense-in-depth against a future protoCore change that
+                    // could otherwise reintroduce the catalogued ambiguity.
                     if (!found) {
-                        val = frame->getAttribute(ctx, nameS);
-                        if (val != nullptr) found = true;
+                        if (frame->hasAttribute(ctx, nameS) == PROTO_TRUE) {
+                            val = frame->getAttribute(ctx, nameS);
+                            found = true;
+                        }
                     }
 
                     // For custom class namespace dicts (e.g. EnumDict from __prepare__), call
