@@ -3211,6 +3211,16 @@ bool Compiler::compileLambda(LambdaNode* n) {
     std::unordered_set<std::string> captured;
     collectCapturedNames(n->body.get(), combinedGlobals, captured);
     
+    // Only treat a captured name as nonlocal (LOAD_DEREF) when the
+    // enclosing scope actually has it as a local or nonlocal — i.e. it
+    // can be closed over via a cell.  Builtins and module-level globals
+    // must resolve via LOAD_GLOBAL, not LOAD_DEREF.  This matters for
+    // top-level lambdas inside `eval(code, namespace)` (and exec): the
+    // outer scope is the eval-entry compiler with no locals, so a free
+    // name like `x` in `lambda y: x + y` must reach the eval namespace
+    // through globals.  Otherwise LOAD_DEREF resolves to an empty cell
+    // and the lambda silently treats `x` as None.  Mirrors the
+    // compileFunctionDef logic added later in this file.
     std::unordered_set<std::string> bodyNonlocals;
     for (const auto& c : captured) {
         bool isParam = false;
@@ -3218,7 +3228,10 @@ bool Compiler::compileLambda(LambdaNode* n) {
         for (const auto& kw : n->kwonlyargs) if (kw == c) isParam = true;
         if (n->vararg == c) isParam = true;
         if (n->kwarg == c) isParam = true;
-        if (!isParam) bodyNonlocals.insert(c);
+        if (!isParam) {
+            bool isInOuterScope = localSlotMap_.count(c) || nonlocalNames_.count(c);
+            if (isInOuterScope) bodyNonlocals.insert(c);
+        }
     }
 
     const bool forceMapped = false; // Lambdas never have dynamic locals access like locals() or exec()
