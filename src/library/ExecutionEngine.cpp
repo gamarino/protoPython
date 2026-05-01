@@ -3084,19 +3084,21 @@ const proto::ProtoObject* executeBytecodeRange(
                     // are interned (co_names uses getInternedString), so getAttribute's symbolTable
                     // lookup succeeds and traverses the prototype chain correctly.
                     //
-                    // SP-E/B-DD1: use hasAttribute to disambiguate present-vs-absent before
-                    // reading the value.  ProtoObject::getAttribute returns nullptr for not-
-                    // found and the stored value (which may legitimately be PROTO_NONE for
-                    // `x = None` at module or class scope) for found.  ProtoSparseList::getAt
-                    // (used in the fast path at line ~3079) instead uses PROTO_NONE as its
-                    // absent-sentinel.  The two APIs disagree, so a naive PROTO_NONE filter
-                    // here would break `class C: y = None; print(y)`.  hasAttribute makes
-                    // the present-vs-absent test explicit at the cost of one extra parent-
-                    // chain walk — defense-in-depth against a future protoCore change that
-                    // could otherwise reintroduce the catalogued ambiguity.
+                    // SP-E/B-DD1: ProtoObject::getAttribute returns nullptr for not-found
+                    // and the actual stored value (which may legitimately be PROTO_NONE
+                    // for `x = None` at module or class scope) for found.  ProtoSparseList::getAt
+                    // (used in the fast path above) instead uses PROTO_NONE as its absent-
+                    // sentinel.  The two APIs disagree, so a naive PROTO_NONE filter here
+                    // would break `class C: y = None; print(y)`.
+                    //
+                    // Mirror the contingent-walk idiom already used by OP_LOAD_GLOBAL
+                    // (line ~4021): pay the second parent-chain walk via hasAttribute()
+                    // only when val == PROTO_NONE — the ambiguous case.  On the common
+                    // path (val is a non-None value, or val is nullptr) we read once.
                     if (!found) {
-                        if (frame->hasAttribute(ctx, nameS) == PROTO_TRUE) {
-                            val = frame->getAttribute(ctx, nameS);
+                        val = frame->getAttribute(ctx, nameS);
+                        if (val != nullptr && (val != PROTO_NONE
+                                               || frame->hasAttribute(ctx, nameS) == PROTO_TRUE)) {
                             found = true;
                         }
                     }
