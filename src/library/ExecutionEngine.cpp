@@ -4960,7 +4960,14 @@ const proto::ProtoObject* executeBytecodeRange(
             // invokeCallable just to do the same thing this branch does in
             // two memory reads.  Bypassing it eliminates ~2 cell allocations
             // per subscript on the hot loop.
-            if (proto::isSmallInt(key) && container) {
+            //
+            // Skip strings here: ProtoString::asList builds a list of
+            // unicode-char embedded values, not a list of single-char
+            // strings, so returning that fast-path value to user code
+            // breaks `s[i].lower()` and every other Python str-method
+            // chain on indexed characters. py_str_getitem (the slow path)
+            // returns a proper one-char string.
+            if (proto::isSmallInt(key) && container && !container->isString(ctx)) {
                 const proto::ProtoList* lst = container->asList(ctx);
                 if (lst) {
                     long long idx = proto::asSmallInt(key);
