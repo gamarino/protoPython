@@ -1,6 +1,8 @@
 # SP-C — MappingProxy / cls.__dict__ Semantics (Design)
 
-**Status:** Draft, pending user review
+**Status:** CLOSED on 2026-04-30.  All 4 phases (C1, C2, C3, C4) closed; SP-B/B3 confirmed closed by SP-C.  See tracking table at the bottom and the `SP-C re-run` section of `2026-04-30-protopy-ground-truth-audit.md` for the cluster-2 delta.
+
+**Original status:** Draft, pending user review
 **Author:** brainstorming session, 2026-04-30
 **Project:** protoPython
 **Sub-project:** SP-C — fix the 3 entangled bugs that block SP-B/B3 (Point.x dataclass)
@@ -226,7 +228,7 @@ In particular for Phase 2 (inspect break): if the root cause turns out to be a d
 | C1 | `in` MP through `__contains__` | closed | ba1acb46 | reproducer 10/10; py_mappingproxy_contains tightened to hasOwnAttribute; inspect cascade is the known C2 follow-up |
 | C2 | `import inspect` works after C1 | closed | 015b3a82 | reproducer 10/10; py_mappingproxy_contains getItem fallback dropped — was wrongly invoking __class_getitem__ on native types and returning PROTO_NONE (truthy in the non-null check), making `'__dataclass_fields__' in str.__dict__` True, which broke enum.py's `_find_data_repr_` subscript and cascaded to inspect's annotationlib import |
 | C3 | 6 MP methods own-only (+ `get` as 7th by extension) | closed | f3d7f61f | reproducer 10/10; values() rewritten (was delegating to py_dict_values and yielding [None, ...] for class proxies); items()/__getitem__ switched to getOwnAttributeDirect; __iter__ and __len__ bound on the prototype (own-keys count via keys()); getItem fallback dropped from __getitem__ and get — same C2 sister bug (native classes returning PROTO_NONE/GenericAlias for any key via __class_getitem__) |
-| C4 | SP-B/B3 verified closed; audit re-run delta documented | open | — | |
+| C4 | SP-B/B3 verified closed; audit re-run delta documented | closed | 64ae88d6 | sp_c_phase4_repro.py 10/10; SP-B/B3 tracking row updated to `closed (by SP-C)` with the three fix SHAs; audit doc gains `SP-C re-run` section with cluster-2 delta; CPYTHON_CONFORMANCE.md V155.x entry added.  Four deferred bugs catalogued (mappingproxy.items() into dict(), internal-slot leakage in keys(), dataclass default values not applied, and a `@dataclass(slots=True)` regression — sp0_phase1 — caused by C3 correctness re-surfacing a pre-existing `tuple.index` gap). |
 
 Per-phase implementer updates this table on each commit.
 
