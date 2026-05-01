@@ -1,17 +1,17 @@
 # SP-B — Attribute-Resolution Bugs (Cluster 2) Design
 
-**Status:** PAUSED on 2026-04-30 mid-Task-4. Three of five symptoms closed (B5 NoneType, B1, B2); B3 (Point.x dataclass) escalated to a new sub-project SP-C — see `2026-04-30-sp-c-mappingproxy-semantics-design.md` (when written).
+**Status:** PAUSED on 2026-04-30 mid-Task-4. Four of five symptoms closed (B5 NoneType, B1, B2, B3-via-SP-C); B3 was escalated to sub-project SP-C and closed by it — see `2026-04-30-sp-c-mappingproxy-semantics-design.md` (CLOSED on 2026-04-30).
 
 **Closure summary:**
 - B5 (NoneType portion) closed: commits `167697dd` + `aaafcc50` + `a5645ddf` (f-string conversion specifier compiler emit fix).
 - B1 closed: commits `fe896c33` + `033d31a1` + `7257e7e4` (`getType` honors __class__ only when own; generalizes V88 carve-out). Bonus: metaclass synthetic suite 34/2/1 → 35/2/0.
 - B2 closed: commits `d7f144ee` + `4e1e3474` (`super().__init__(args)` was a no-op stub; now forwards via py_super_getattr + callObjectEx with kwargs reconstructed from `getCurrentKwNames()`).
+- B3 closed by SP-C: commits `ba1acb46` (C1) + `015b3a82` (C2) + `f3d7f61f` (C3, fixup `798873ab`). Three entangled root causes in MappingProxy / cls.__dict__ semantics resolved; verified by `tests/synthetic/sp_c_phase4_repro.py` 10/10.
 - B5 (reraise portion) deferred — separate from NoneType portion.
-- B3 deferred to SP-C: diagnosis revealed 3+ entangled bugs (in-operator on MappingProxy bypasses __contains__; `data->asSparseList()` of class returns wrong storage; stdlib code like `inspect.py` depends on the broken `in cls.__dict__` semantics for inherited-attribute discovery — fixing the operator broke inspect import).
 - B4 deferred — not attempted in this iteration.
 - B-DD1, B-DD2 still deferred.
 
-When SP-C closes the MappingProxy semantics, SP-B can resume from B4.
+SP-C is now closed; SP-B can resume from B4 (or B5-reraise / B-DD1 / B-DD2) when work continues.
 
 **Original status:** Draft, pending user review
 **Author:** brainstorming session, 2026-04-30
