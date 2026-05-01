@@ -565,3 +565,80 @@ Last 5 stdout lines:
 OK
 ```
 
+## SP-C re-run (2026-04-30, after MappingProxy semantics fix)
+
+After SP-C closed the MappingProxy / `cls.__dict__` semantics bugs (the
+B3 root cause), the audit was re-run against HEAD `798873ab`.  The
+five cluster-2 attribute-resolution symptoms catalogued in this
+document have all been cleared.  Three were closed by SP-B
+(B5-NoneType, B1, B2).  B3 is closed by SP-C; the rerun confirms the
+original `'Point' object has no attribute 'x'` symptom no longer
+surfaces.
+
+### Summary delta
+
+| Category | Total | Real PASS | SILENT_HALT | FAIL_UNITTEST | CRASH | TIMEOUT |
+|---|---|---|---|---|---|---|
+| Original (post-silent-halt-fix) | 19 | 2 | 2 | 0 | 15 | 0 |
+| Post-SP-C (HEAD `798873ab`)     | 19 | 3 | 2 | 0 | 14 | 0 |
+
+The +1 real PASS is `test_contextlib` (custom Necessary suite),
+unblocked end-to-end by SP-B/B1's metaclass-`__class__` carve-out.
+
+### Cluster-2 status comparison
+
+| Test | Original status | Post-SP-C status | Notes |
+|---|---|---|---|
+| test_dataclasses (Necessary) | CRASH — `'Point' object has no attribute 'x'` | CRASH — empty error message; B3 symptom cleared, residual default-value sub-bug | B3 closed by SP-C C1+C2+C3.  Synthesized `__init__` is now correctly attached (`Point(1, 2).x == 1`).  Remaining crash root cause is unrelated: synthesized-`__init__` default values are not applied when the corresponding positional argument is omitted (out-of-scope for B3). |
+| test_asyncgen (Essential)    | CRASH — `'ABCMeta' object has no attribute 'gen'` | CRASH — `'module' object has no attribute 'warn'` | B1 symptom cleared by SP-B/B1 (`fe896c33`).  New blocker is a downstream stdlib gap. |
+| test_contextlib (Necessary)  | CRASH — `'ABCMeta' object has no attribute 'gen'` | PASS_CUSTOM | B1 closed end-to-end here. |
+| test_descr (Essential)       | CRASH — `'ArgumentParser' object has no attribute 'conflict_handler'` | CRASH — `'NoneType' object has no attribute 'f_globals'` | B2 symptom cleared by SP-B/B2 (`d7f144ee`).  New blocker is frame-introspection on import. |
+| test_re (Important)          | CRASH — `'ArgumentParser' object has no attribute 'conflict_handler'` | CRASH — `'NoneType' object has no attribute 'f_globals'` | Same as test_descr; B2 symptom cleared. |
+| test_sys (Important)         | CRASH — `'socket' object has no attribute 'property has no setter'` | CRASH — `'socket' object has no attribute 'property has no setter'` | B4 still open (deferred SP-B follow-up). |
+| test_base64 (Essential)      | CRASH — `reraise outside of except block` | CRASH — `reraise outside of except block` (then `No module named 'test.support'`) | B5-reraise still open (deferred). |
+| test_functools (Important)   | CRASH — `'NoneType' object is not callable` (typing.py:20) | CRASH — `No module named 'typing'` | B5-NoneType cleared by SP-B/B5 (`167697dd`).  Now a cluster-1 stdlib gap. |
+| test_grammar (Essential)     | CRASH — `No module named 'typing'` after typing-ImportError cascade | CRASH — `No module named 'typing'` | Cluster-1; not in scope of SP-B/SP-C. |
+
+The cluster-2 attribute-resolution surface is substantially cleared.
+Remaining cluster-2 work is B4 (socket descriptor formatting,
+deferred) and B5-reraise (deferred).  No new cluster-2 symptoms
+surfaced in the SP-C re-run.
+
+### SP-C reproducers (all 10/10)
+
+- `tests/synthetic/sp_c_phase1_repro.py` — `'x' in MP` returns own-only.
+- `tests/synthetic/sp_c_phase2_repro.py` — `import inspect` regression fence.
+- `tests/synthetic/sp_c_phase3_repro.py` — six MP methods + `get` own-only (and native-class hardening for `str.__dict__['__dataclass_fields__']`).
+- `tests/synthetic/sp_c_phase4_repro.py` — `@dataclass Point.x` (B3 closure).
+
+### Deferred bugs catalogued during SP-C
+
+- `dict(iterable_of_tuples)` returns empty when fed `mappingproxy.items()`
+  (surfaced while authoring the Phase 3 reproducer; reproducer works
+  around it via explicit iteration).
+- Internal slot names (`__class__`, `__mro__`, `__bases__`, etc.) leak
+  through `cls.__dict__.keys()`.  Out-of-scope refinement; CPython
+  hides some of these.
+- Synthesized-`__init__` default values not applied on dataclass
+  instances when the corresponding positional argument is omitted
+  (surfaced while authoring the Phase 4 reproducer; the reproducer
+  uses an all-positional construction to side-step it).
+- `@dataclass(slots=True)` regression in `tests/synthetic/sp0_phase1_repro.py`:
+  was passing pre-SP-C because the broken `MP.values()` returned
+  `[None, ...]` placeholders, so dataclasses' `_add_slots`
+  closure-fixup loop iterated over Nones and exited cleanly.  After
+  SP-C/C3, `values()` correctly yields the actual own functions, so
+  `_update_func_cell_for__class__` runs and calls
+  `f.__code__.co_freevars.index("__class__")`.  Two latent gaps
+  surface together: (a) code objects do not expose `co_freevars` /
+  `co_cellvars`; (b) `tuple.index('missing')` on a tuple retrieved
+  through attribute access (`code.co_consts`, `code.co_varnames`,
+  any newly-added `code.co_freevars`) returns `None` instead of
+  raising `ValueError`, so the `except ValueError:` clause in
+  `_update_func_cell_for__class__` does not fire.  Combined effect
+  is a `'code' object has no attribute 'co_freevars'` crash on every
+  `@dataclass(slots=True)` (an SP-C correctness change re-surfacing
+  a pre-existing tuple.index gap).  Tracked as a separate deferred
+  bug, not part of SP-C/B3.
+
+

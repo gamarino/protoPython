@@ -28,6 +28,79 @@
 
 ---
 
+## Recent SP closures (post-OBSOLETE)
+
+### V155.x Changes (2026-04-30) — SP-C: MappingProxy / cls.__dict__ semantics
+
+Closes the entanglement that blocked SP-B/B3 (Point.x dataclass).
+`cls.__dict__` is now CPython-correct: a live MappingProxy that
+exposes only the own attributes of the class.
+
+Three root causes fixed:
+
+- **C1 (commit `ba1acb46`)**: the `in` operator on MappingProxy bypassed
+  `__contains__` via a `__data__`/`asSparseList` fast path that probed
+  the class's full attribute storage.  `compareOp` now detects
+  MappingProxy and dispatches through `__contains__`.
+- **C2 (commit `015b3a82`)**: `py_mappingproxy_contains` had a
+  `getItem` fallback that, on native classes, dispatched
+  `__class_getitem__` and returned non-null `PROTO_NONE` (truthy),
+  reporting any key as present.  This false-positive cascaded
+  through `enum.py`'s `_find_data_repr_`, breaking `import inspect`.
+  Fallback removed; sister fallbacks in `__getitem__` and `get`
+  removed in C3.
+- **C3 (commit `f3d7f61f`, fixup `798873ab`)**: six remaining MappingProxy
+  methods (`__iter__`, `keys`, `values`, `items`, `__getitem__`, `__len__`)
+  plus `get` updated to use `hasOwnAttribute` / `getOwnAttributeDirect`.
+  `__iter__` and `__len__` were not bound previously and are now
+  bound on `mappingProxyPrototype`.  Added single helper
+  `mp_isClassObject` to unify the routing predicate across all sites.
+
+**Verification:**
+
+- 4 SP-C reproducers (`sp_c_phase{1,2,3,4}_repro.py`): 10/10 PASS each.
+- SP-B reproducers (`sp_b_b{5,1,2}_*_repro.py`): all green.
+- SP0 reproducers (`sp0_phase{1,2,2_5}_repro.py`): all green.
+- ctest 159/159, synthetic generators 23/13/1, synthetic metaclass
+  35/2/0 (SP-B/B1's improvement preserved).
+- Custom Necessary suites: `test_decorator`, `test_abc`,
+  `test_contextlib` all PASS.  `test_dataclasses` status: **CRASH
+  (`'Point' object has no attribute 'x'`) → CRASH (empty error;
+  B3 symptom cleared, residual default-value sub-bug)**.  The
+  original B3 attribute-error symptom no longer surfaces; the
+  synthesized `__init__` is now correctly attached to the dataclass
+  (`Point(1, 2).x == 1`).  The residual crash is unrelated
+  (synthesized-`__init__` default values not applied when the
+  corresponding positional argument is omitted) and is tracked as
+  a deferred bug.
+
+SP-B/B3 is marked closed by SP-C in the SP-B tracking table.  SP-B
+remains PAUSED with B4, B5-reraise, B-DD1, B-DD2 still deferred.
+
+**Deferred bugs catalogued during SP-C audit:**
+
+- `dict(iterable_of_tuples)` returns empty when fed `mappingproxy.items()`
+  (bug discovered in Task 3 reproducer authoring; the Phase 3 reproducer
+  works around it with explicit iteration).
+- Internal slot names (`__class__`, `__mro__`, `__bases__`, etc.) leak
+  through `cls.__dict__.keys()` — out-of-scope refinement; CPython
+  hides some.
+- Synthesized-`__init__` default values not applied on dataclass
+  instances when the corresponding positional argument is omitted
+  (Task 4 reproducer authoring; reproducer uses all-positional
+  construction to side-step the issue).
+- `@dataclass(slots=True)` regression: `tests/synthetic/sp0_phase1_repro.py`
+  was passing pre-SP-C only because the broken `MP.values()` returned
+  `[None, ...]` placeholders.  After C3, `values()` yields real own
+  functions, exposing two latent gaps: (a) code objects don't expose
+  `co_freevars` / `co_cellvars`; (b) `tuple.index('missing')` on a
+  tuple retrieved through attribute access returns `None` instead of
+  raising `ValueError`, so dataclasses' `except ValueError:` in
+  `_update_func_cell_for__class__` doesn't fire.  Tracked separately
+  in the audit document; not part of SP-C/B3.
+
+---
+
 This document tracks the progress of `protoPython` in passing the official CPython Regression Test Suite (`Lib/test`). Achieving "All Green" in the Essential category is the primary goal for industrial-grade stability.
 
 ## Rules & Principles
