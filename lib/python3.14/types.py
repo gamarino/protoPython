@@ -60,8 +60,29 @@ except ImportError:
         TracebackType = type(exc.__traceback__)
         FrameType = type(exc.__traceback__.tb_frame)
 
-    GetSetDescriptorType = type(FunctionType.__code__)
-    MemberDescriptorType = type(FunctionType.__globals__)
+    # On CPython, accessing a slot/getset descriptor through the class
+    # (e.g. FunctionType.__code__) returns the descriptor object itself,
+    # whose type is `getset_descriptor` / `member_descriptor`.  protopython
+    # does not yet expose those as distinct types; the class-level access
+    # falls through to a plain `object`, which would make
+    # `isinstance(x, MemberDescriptorType)` true for *every* value and
+    # silently break code such as dataclasses._get_field that uses these
+    # types to detect slot members.  Use private sentinel classes that no
+    # ordinary value will be an instance of.  CPython-only code that wants
+    # to detect actual descriptors must check for the real types via the
+    # C extension layer; pure-Python code only needs the symbols to exist
+    # and to *not* match common values.
+    if getattr(getattr(sys, 'implementation', None), 'name', '') == 'protopython':
+        class _GetSetDescriptorPlaceholder:
+            """protopython placeholder for `getset_descriptor`."""
+        class _MemberDescriptorPlaceholder:
+            """protopython placeholder for `member_descriptor`."""
+        GetSetDescriptorType = _GetSetDescriptorPlaceholder
+        MemberDescriptorType = _MemberDescriptorPlaceholder
+        del _GetSetDescriptorPlaceholder, _MemberDescriptorPlaceholder
+    else:
+        GetSetDescriptorType = type(FunctionType.__code__)
+        MemberDescriptorType = type(FunctionType.__globals__)
 
     GenericAlias = type(list[int])
     UnionType = type(int | str)
