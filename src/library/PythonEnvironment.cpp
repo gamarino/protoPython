@@ -12546,12 +12546,16 @@ static const proto::ProtoObject* tryFastGetAttribute(
         return nullptr;
     }
 
-    // OBJ-level dispatch: objects with an own __py_getattr_handler__ (e.g. super proxies)
-    // implement their own attribute access semantics.  hasOwnAttribute checks only the
-    // object's own attribute map — O(1) hash lookup, no prototype chain walk.
+    // OBJ-level dispatch: objects with an own __py_getattr_handler__ (e.g.
+    // super proxies) implement their own attribute access semantics.
+    // Use getOwnAttributeDirect to read the handler value — calling
+    // hasOwnAttribute alone returns the boolean PROTO_TRUE/PROTO_FALSE
+    // sentinel, not the stored callable, and the subsequent
+    // `handler->isMethod()` check then fails so the proxy never gets
+    // dispatched.
     const proto::ProtoString* handlerS = env->getPyGetAttrHandlerString();
     if (handlerS) {
-        const proto::ProtoObject* handler = obj->hasOwnAttribute(ctx, handlerS);
+        const proto::ProtoObject* handler = obj->getOwnAttributeDirect(ctx, handlerS);
         if (handler && handler != PROTO_NONE && handler->isMethod(ctx)) {
             const proto::ProtoList* args = ctx->newList()->appendLast(ctx, reinterpret_cast<const proto::ProtoObject*>(name));
             return handler->asMethod(ctx)(ctx, obj, nullptr, args, nullptr);
@@ -12678,7 +12682,11 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
     // handle attribute access themselves.  hasOwnAttribute does not walk the prototype chain —
     // it checks only the object's own attribute map (O(1) hash lookup).
     if (pyGetAttrHandlerString_) {
-        const proto::ProtoObject* handler = obj->hasOwnAttribute(ctx, pyGetAttrHandlerString_);
+        // Read the handler with getOwnAttributeDirect — hasOwnAttribute
+        // returns the boolean sentinel, not the stored callable, so the
+        // subsequent isMethod() check would fail and super proxies would
+        // never get the chance to override attribute access.
+        const proto::ProtoObject* handler = obj->getOwnAttributeDirect(ctx, pyGetAttrHandlerString_);
         if (handler && handler != PROTO_NONE && handler->isMethod(ctx)) {
             const proto::ProtoList* args = ctx->newList()->appendLast(ctx, name->asObject(ctx));
             return handler->asMethod(ctx)(ctx, obj, nullptr, args, nullptr);
