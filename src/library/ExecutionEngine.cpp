@@ -3926,11 +3926,20 @@ const proto::ProtoObject* executeBytecodeRange(
                  if (!stack.empty()) {
                      const proto::ProtoObject* exc = stack.back();
                      stack.pop_back();
-                     if (env && env->getTypePrototype()) {
-                         const proto::ProtoObject* cls = exc->getAttribute(ctx, env->getClassString());
-                         if (cls == env->getTypePrototype()) {
-                             exc = invokePythonCallable(ctx, exc, ctx->newList(), nullptr);
-                         }
+                     // Decide whether the raised value is itself a class
+                     // (e.g. `raise ValueError`, no parens) and needs to
+                     // be instantiated, or already an instance. The bare
+                     // protoCore chain walk for `__class__` returns the
+                     // metaclass for any cell whose own `__class__` is
+                     // not set — that is the case for exception
+                     // instances created via py_object_new, since their
+                     // class identity is recovered via getType (SP-B/B1)
+                     // rather than an own `__class__` attribute. Use
+                     // env->isActuallyAClass instead, which returns true
+                     // only for actual class objects and never for
+                     // already-instantiated exceptions.
+                     if (env && env->isActuallyAClass(ctx, exc)) {
+                         exc = invokePythonCallable(ctx, exc, ctx->newList(), nullptr);
                      }
                      if (env && exc && exc != PROTO_NONE) env->setPendingException(exc);
                  }
