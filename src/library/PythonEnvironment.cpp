@@ -12382,6 +12382,23 @@ bool PythonEnvironment::isCompleteBlock(const std::string& code) {
 bool PythonEnvironment::isActuallyAClass(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
     if (!obj || obj == PROTO_NONE || obj->isString(ctx) || obj->isInteger(ctx) || obj->isBoolean(ctx)) return false;
     if (obj == typePrototype) return true;
+    // Modules are never classes. The executeModule clone path copies
+    // inherited attributes (including __name__, __bases__, __mro__) as
+    // OWN attributes onto the new module instance, which would
+    // otherwise let the shape probe below misclassify the module as a
+    // class. The misclassification routes `module.__dict__` through
+    // the type-level dictDescr (yielding a read-only MappingProxy view)
+    // instead of returning the module itself — breaking the CPython
+    // invariant that a module's __dict__ is its own mutable namespace,
+    // and tripping callers like `enum._convert_` that do
+    // `sys.modules[name].__dict__.update(...)`.
+    if (modulePrototype) {
+        // Walk only via getFirstParent (cheap, allocation-free, no
+        // attribute resolution) so we don't recurse through getType ->
+        // getAttribute -> isActuallyAClass.
+        const proto::ProtoObject* p = obj->getFirstParent(ctx);
+        if (p == modulePrototype) return false;
+    }
     // Phase 4: every Python class tags itself with __is_python_class__
     // = True as an own attribute at construction time (py_type for the
     // class statement, the bootstrap for objectPrototype/typePrototype,
@@ -12653,6 +12670,15 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
     }
 
     bool isClass = this->isActuallyAClass(ctx, obj);
+
+    if (getenv("PROTO_CLASS_TRACE") && dictString && name == dictString) {
+        bool isModInst = (modulePrototype && obj->isInstanceOf(ctx, modulePrototype) == PROTO_TRUE);
+        bool ownName = obj->hasOwnAttribute(ctx, getNameString()) == PROTO_TRUE;
+        bool ownBases = obj->hasOwnAttribute(ctx, basesString) == PROTO_TRUE;
+        fprintf(stderr, "[GA_DICT] obj=%p modProto=%p isModInst=%d ownName=%d ownBases=%d isClass=%d\n",
+                (void*)obj, (void*)modulePrototype, isModInst?1:0, ownName?1:0, ownBases?1:0, isClass?1:0);
+        fflush(stderr);
+    }
 
     // Special case: cls.__dict__ is always a data descriptor defined on the metaclass (type).
     // It must be invoked with instance = cls, not instance = None.  The MRO search below
