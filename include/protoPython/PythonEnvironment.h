@@ -692,6 +692,33 @@ public:
     static thread_local const proto::ProtoObject* s_pendingExc;
 
     /**
+     * @brief TLS mirror of the active-exception stack (per-thread).
+     *
+     * Same rationale as `s_pendingExc`: the authoritative storage on
+     * `_active_excs` (a ProtoList attribute on the per-thread py_thread
+     * object) goes through protoCore's mutable-shard attribute cache,
+     * which can serve stale (null) results when a value is set in
+     * context A and read back in context B even though both share the
+     * same thread.  We observed this manifesting as the
+     * `RuntimeError: reraise outside of except block` SP-G/B5 bug:
+     * `pushActiveException` would write a list of size 1 in context B,
+     * but the very next read of the same attribute (still in context B,
+     * still on the same py_thread) would see `nullptr`, causing the
+     * `with` block's exception-rethrow path to think there was no
+     * active exception to re-raise.
+     *
+     * Each ProtoObject* is independently kept alive by the parallel
+     * write to `_active_excs` on the py_thread object (which is rooted
+     * through `s_globalThreadRootsDict`), so the GC reachability story
+     * is unchanged.  The TLS vector only fixes the read path.  We use
+     * a plain `std::vector` rather than a ProtoList to avoid the
+     * cross-context safety footguns of cached protoCore collection
+     * pointers (a ProtoList allocated in context A and reused from
+     * context B trips dirty-segment assertions).
+     */
+    static thread_local std::vector<const proto::ProtoObject*> s_activeExcs;
+
+    /**
      * @brief Returns true if there is a pending exception.
      *
      * Inline fast path: a single TLS bool read.  Defined in the header so

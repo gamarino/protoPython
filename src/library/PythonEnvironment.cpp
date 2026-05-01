@@ -8057,6 +8057,7 @@ thread_local PythonEnvironment* PythonEnvironment::s_threadEnv = nullptr;
 thread_local proto::ProtoContext* PythonEnvironment::s_threadContext = nullptr;
 thread_local bool PythonEnvironment::s_pendingExcFlag = false;
 thread_local const proto::ProtoObject* PythonEnvironment::s_pendingExc = nullptr;
+thread_local std::vector<const proto::ProtoObject*> PythonEnvironment::s_activeExcs;
 thread_local int PythonEnvironment::s_recursionDepth = 0;
 thread_local bool PythonEnvironment::s_inRecursionError = false;
 thread_local const proto::ProtoObject* PythonEnvironment::s_currentFrame = nullptr;
@@ -8217,18 +8218,25 @@ void PythonEnvironment::clearPendingException() {
 
 void PythonEnvironment::pushActiveException(const proto::ProtoObject* exc) {
     if (!s_threadContext) return;
+    // Update TLS mirror first — this is the authoritative read source
+    // (see `s_activeExcs` doc and `s_pendingExc` / SP0-P2.5).  Each
+    // exception is independently kept alive by the parallel write to
+    // `_active_excs` on py_thread below, so GC reachability is unchanged.
+    s_activeExcs.push_back(exc ? exc : PROTO_NONE);
     const proto::ProtoString* key = s_threadEnv ? s_threadEnv->activeExcsString : proto::ProtoString::fromUTF8(s_threadContext, "_active_excs");
     const proto::ProtoObject* listObj = getPyThread(s_threadContext)->getAttribute(s_threadContext, key);
     const proto::ProtoList* l = (listObj && listObj != PROTO_NONE && listObj->asList(s_threadContext)) ? listObj->asList(s_threadContext) : s_threadContext->newList();
     l = l->appendLast(s_threadContext, exc ? exc : PROTO_NONE);
     s_currentPyThread = const_cast<proto::ProtoObject*>(getPyThread(s_threadContext))->setAttribute(s_threadContext, key, l->asObject(s_threadContext));
-    if (get_env_diag()) {
-        fflush(stderr);
-    }
 }
 
 void PythonEnvironment::popActiveException() {
     if (!s_threadContext) return;
+    // Update the TLS mirror — authoritative for reads.  Mirror the pop in
+    // the attribute storage as well (best-effort: the cache desync that
+    // motivated this mirror means the attribute read might be stale, but
+    // the WRITE keeps the GC reachability story consistent).
+    if (!s_activeExcs.empty()) s_activeExcs.pop_back();
     const proto::ProtoString* key = s_threadEnv ? s_threadEnv->activeExcsString : proto::ProtoString::fromUTF8(s_threadContext, "_active_excs");
     const proto::ProtoObject* listObj = getPyThread(s_threadContext)->getAttribute(s_threadContext, key);
     if (listObj && listObj != PROTO_NONE && listObj->asList(s_threadContext)) {
@@ -8243,21 +8251,13 @@ void PythonEnvironment::popActiveException() {
 
 const proto::ProtoObject* PythonEnvironment::getActiveException() {
     if (!s_threadContext) return nullptr;
-    const proto::ProtoString* key = s_threadEnv ? s_threadEnv->activeExcsString : proto::ProtoString::fromUTF8(s_threadContext, "_active_excs");
-    const proto::ProtoObject* listObj = getPyThread(s_threadContext)->getAttribute(s_threadContext, key);
-    if (listObj && listObj != PROTO_NONE && listObj->asList(s_threadContext)) {
-        const proto::ProtoList* l = listObj->asList(s_threadContext);
-        size_t size = l->getSize(s_threadContext);
-        if (size > 0) {
-            const proto::ProtoObject* e = l->getAt(s_threadContext, size - 1);
-            if (get_env_diag()) {
-                fflush(stderr);
-            }
-            return e == PROTO_NONE ? nullptr : e;
-        }
-    }
-    if (get_env_diag()) {
-        fflush(stderr);
+    // Prefer the TLS mirror — it bypasses the protoCore attribute cache
+    // entirely (see s_pendingExc / SP0-P2.5).  This is the same desync
+    // that caused the OP_RAISE_VARARGS bare-reraise to fire spuriously
+    // inside `with` blocks across nested module-import contexts.
+    if (!s_activeExcs.empty()) {
+        const proto::ProtoObject* e = s_activeExcs.back();
+        return (e == PROTO_NONE || e == nullptr) ? nullptr : e;
     }
     return nullptr;
 }
