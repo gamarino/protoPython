@@ -9467,6 +9467,15 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     objectPrototype = objectPrototype->setAttribute(rootContext_, py_init, rootContext_->fromMethod(nullptr, py_object_init));
     objectPrototype = objectPrototype->setAttribute(rootContext_, newString, rootContext_->fromMethod(nullptr, protoPython::builtins::py_object_new));
     objectPrototype = objectPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_object_repr));
+    // Default __doc__ to None on objectPrototype so every object that
+    // does not provide its own docstring still answers `obj.__doc__`
+    // with None (CPython semantics — undocumented objects expose
+    // `__doc__ = None` rather than raising AttributeError). Native
+    // methods exposed via fromMethod do not carry docstrings, and the
+    // stdlib pattern `wrapper.__doc__ = wrapped.__doc__` (used in
+    // `signal._wraps`, `functools.wraps` and elsewhere) breaks loudly
+    // without this fallback.
+    objectPrototype = objectPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__doc__"), PROTO_NONE);
     objectPrototype = objectPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__dict__"), rootContext_->fromMethod(nullptr, py_object_get_dict));
     objectPrototype = objectPrototype->setAttribute(rootContext_, py_str, rootContext_->fromMethod(nullptr, py_object_str));
     objectPrototype = objectPrototype->setAttribute(rootContext_, getInternedString(rootContext_, "__format__"), rootContext_->fromMethod(nullptr, py_object_format));
@@ -9671,6 +9680,13 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     dictDescr->setAttribute(rootContext_, py_name, dictString->asObject(rootContext_));
 
     typePrototype = typePrototype->setAttribute(rootContext_, dictString, dictDescr);
+    // Default __doc__ to None on typePrototype (classes inherit this
+    // when they do not declare a docstring of their own — CPython
+    // semantics). Without this, accessing `cls.__doc__` on a class
+    // that has no explicit docstring raises AttributeError, breaking
+    // stdlib patterns such as signal._wraps that copy docstrings:
+    // `wrapper.__doc__ = wrapped.__doc__`.
+    typePrototype = typePrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__doc__"), PROTO_NONE);
 
     // Register __annotations__ on type
     proto::ProtoObject* annDescr = const_cast<proto::ProtoObject*>(getSetDescriptorPrototype->newChild(rootContext_, true));
