@@ -53,4 +53,27 @@ except TypeError:
     # is gone.
     pass
 
+# Empty-name / lambda-fget fallback: property(getter_lambda) without a
+# named getter.  fget.__name__ is '<lambda>' under CPython, so protopy's
+# fallback message-shape `property '<name>' of '<TypeName>' object has
+# no setter` should still avoid the malformed-name shape.
+class WithLambdaProp:
+    val = property(lambda self: "lambda-result")
+
+li = WithLambdaProp()
+assert li.val == "lambda-result"
+try:
+    li.val = "fail"
+    raise AssertionError("setting a lambda-property should raise")
+except AttributeError as e:
+    msg = str(e)
+    assert "no attribute 'property has no setter'" not in msg, (
+        f"malformed AttributeError on lambda property: {msg!r}"
+    )
+    assert "setter" in msg, (
+        f"AttributeError message lacks setter context: {msg!r}"
+    )
+except TypeError:
+    pass
+
 print("SP_F_B4_OK")

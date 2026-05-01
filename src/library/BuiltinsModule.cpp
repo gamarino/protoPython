@@ -4142,8 +4142,16 @@ static const proto::ProtoObject* py_property_set(
         std::string propName;
         const proto::ProtoString* nameKey = PythonEnvironment::getInternedString(context, "__name__");
         const proto::ProtoObject* nameAttr = self->getAttribute(context, nameKey);
-        if (!nameAttr || nameAttr == PROTO_NONE || !nameAttr->isString(context)
-            || (nameAttr->isString(context) && (nameAttr->asString(context)->toUTF8String(context, propName), propName == "property"))) {
+        bool gotName = false;
+        if (nameAttr && nameAttr != PROTO_NONE && nameAttr->isString(context)) {
+            nameAttr->asString(context)->toUTF8String(context, propName);
+            // The property type's own __name__ is the literal "property"; that's
+            // not the per-instance property identifier — fall through to fget.__name__.
+            if (propName != "property") {
+                gotName = true;
+            }
+        }
+        if (!gotName) {
             // The property type itself returns 'property' for __name__; fall
             // back to fget.__name__ which is the most reliable carrier of the
             // attribute identifier in protopy.
