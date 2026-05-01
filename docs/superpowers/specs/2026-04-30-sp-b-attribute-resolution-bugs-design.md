@@ -9,9 +9,10 @@
 - B3 closed by SP-C: commits `ba1acb46` (C1) + `015b3a82` (C2) + `f3d7f61f` (C3, fixup `798873ab`). Three entangled root causes in MappingProxy / cls.__dict__ semantics resolved; verified by `tests/synthetic/sp_c_phase4_repro.py` 10/10.
 - B5 (reraise portion) deferred — separate from NoneType portion.
 - B4 deferred — not attempted in this iteration.
-- B-DD1, B-DD2 still deferred.
+- B-DD1 still deferred.
+- B-DD2 closed by SP-D: commit `1ced646b` (purely defensive — no Python-level user-visible regression observed; locks the invariant locally so it does not depend on every caller staying upstream of `getType` forever).
 
-SP-C is now closed; SP-B can resume from B4 (or B5-reraise / B-DD1 / B-DD2) when work continues.
+SP-C and SP-D are closed; SP-B can resume from B4 (or B5-reraise / B-DD1) when work continues.
 
 **Original status:** Draft, pending user review
 **Author:** brainstorming session, 2026-04-30
@@ -140,7 +141,7 @@ Same as SP0: if diagnosis of a symptom reveals close-sibling bugs in the same fi
 | B5 (NoneType portion) | `typing.py:20 NoneType` callable | closed | 167697dd | f-string conversion (`!r`/`!s`/`!a`) inside a function emitted OP_LOAD_NAME for repr/str/ascii; in function scope LOAD_NAME could surface a stray PROTO_NONE before env->resolve fallback.  Routed through emitNameOp so the load picks LOAD_GLOBAL inside functions. |
 | B5 (reraise portion) | `reraise outside of except block` | open | — | Confirmed sibling, *not* the same root cause as the NoneType portion: reproducible without any f-string after `import base64; from test.support import …`.  Tracked separately. |
 | B-DD1 | OP_LOAD_NAME closure-chain branch (ExecutionEngine.cpp:3054) accepts PROTO_NONE as "found" | deferred | — | Latent landmine; route around exists in compiler post-167697dd. Filter PROTO_NONE in this branch to mirror the fast-path filter at line 3047. |
-| B-DD2 | 4 sites in PythonEnvironment.cpp still walk parent chain for `__class__` (lines 2766, 11710, 11775, 12055) instead of routing through getType — same metaclass-leak shape as B1 | deferred | — | Latent for non-default metaclass exceptions; route through env->getType(obj). Audit + targeted refactor in a future iteration. |
+| B-DD2 | 4 sites in PythonEnvironment.cpp still walk parent chain for `__class__` (lines 2766, 11710, 11775, 12055) instead of routing through getType — same metaclass-leak shape as B1 | closed (by SP-D) | 1ced646b | All four sites now call `getType(context, obj)` instead of `obj->getAttribute(ctx, "__class__")`. Sites: `py_type_instancecheck` (~2784, MRO walk), `handleException` (~11838, sys.last_type), `formatException` (~11903, type name in error message), eval/exec wrapper (~12183, SyntaxError detection). Reproducer `tests/synthetic/sp_d_b_dd2_repro.py` passes 10/10 — and also passes against the pre-fix binary, so this landed as a *purely defensive* fix. Most upstream callers (`type()`, except-clause matching, OP_LOAD_NAME) already route through `getType`, so the leaked-metaclass values never reached these four sites in practice; the fix locks the invariant locally rather than relying on every caller staying upstream of `getType` forever. |
 
 The implementer updates this table on every commit.
 
