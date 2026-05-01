@@ -368,6 +368,13 @@ static bool mp_isClassObject(const proto::ProtoObject* data,
                              proto::ProtoContext* context,
                              PythonEnvironment* env) {
     if (!data) return false;
+    // MappingProxy's __data__ can legitimately be a non-object cell
+    // (e.g. a raw SparseList when the proxy wraps a Python dict's
+    // backing storage). protoCore's getAttribute strict-tag-checks
+    // its receiver as POINTER_TAG_OBJECT, so dispatch only when data
+    // is a proper cell object — a SparseList / Set / Tuple cannot
+    // be a class anyway.
+    if ((reinterpret_cast<uintptr_t>(data) & 0x3F) != 0) return false;
     const proto::ProtoString* clsS = env ? env->getClassString()
                                          : PythonEnvironment::getInternedString(context, "__class__");
     const proto::ProtoString* ipcS = env ? env->getIsPythonClassString()
@@ -12800,7 +12807,12 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
 
     // 1. Get the raw value from the primitive object hierarchy
     const proto::ProtoObject* val = obj->getAttribute(ctx, name);
-    bool isExplicitNone = (val == PROTO_NONE && obj->hasAttribute(ctx, name) == PROTO_TRUE);
+    // protoCore::getAttribute returns PROTO_NONE for both "absent" and
+    // "stored as None" — they are no longer distinguishable via that
+    // single call. Use hasOwnAttribute (own-only) to detect the
+    // "explicitly stored as None on this object" case; inherited None
+    // values are picked up by the MRO walk in section 1.1 below.
+    bool isExplicitNone = (val == PROTO_NONE && obj->hasOwnAttribute(ctx, name) == PROTO_TRUE);
     if (get_env_dict2_diag() && dictString && name == dictString && !isClass) {
         std::string objNameStr = "?";
         const proto::ProtoObject* nn = obj->proto::ProtoObject::getAttribute(ctx, nameString ? nameString : PythonEnvironment::getInternedString(ctx, "__name__"));
@@ -12836,7 +12848,7 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
                      if (!match) { match = (keyS->cmp_to_string(ctx, name) == 0); }
                      if (match) {
                          val = obj->proto::ProtoObject::getAttribute(ctx, keyS);
-                         isExplicitNone = (val == PROTO_NONE && obj->hasAttribute(ctx, keyS) == PROTO_TRUE);
+                         isExplicitNone = (val == PROTO_NONE && obj->hasOwnAttribute(ctx, keyS) == PROTO_TRUE);
                          break;
                      }
                  }
@@ -12890,12 +12902,12 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
                     // Use hasOwnAttribute to avoid picking up metaclass attributes that leaked
                     // into the protoCore parent chain. Each MRO entry should only contribute
                     // attributes it DIRECTLY owns (its __dict__), not inherited-via-prototype ones.
+                    // hasOwnAttribute is the authoritative existence check — the resolved value
+                    // can legitimately be PROTO_NONE if the class explicitly stores None.
                     if (baseCls->hasOwnAttribute(ctx, name) == PROTO_TRUE) {
                         val = baseCls->proto::ProtoObject::getAttribute(ctx, name);
-                        if (val && val != PROTO_NONE) {
-                            foundOnClassOrMro = true;
-                            break;
-                        }
+                        foundOnClassOrMro = true;
+                        break;
                     }
                     // ROBUST FALLBACK: Name-based search in this base class (own keys only).
                     // Skipped when `name` is already a canonical Symbol — see comment at the
@@ -13355,7 +13367,17 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
                 }
             }
         }
-        if (descr && descr != PROTO_NONE) {
+        // Tag 0 (OBJECT) = low 6 bits clear. Non-OBJECT pointers
+        // (SparseList=8, Set=16, Tuple=4, etc.) may legitimately appear
+        // as type-attribute values (e.g. a class storing __data__ as a
+        // SparseList) but cannot themselves be data descriptors:
+        // descriptor protocol requires a Python class with __set__,
+        // which only ProtoObjectCell objects can be. Skip the
+        // descriptor probe entirely for non-OBJECT descr to keep
+        // getAttribute/getType from hitting the strict-tag check.
+        bool descrIsCell = descr && descr != PROTO_NONE &&
+                           (reinterpret_cast<uintptr_t>(descr) & 0x3F) == 0;
+        if (descrIsCell) {
             // Look up __set__ on the descriptor's type (avoid binding
             // descr itself as `self`).  Both the descriptor instance
             // and its type are checked so native (e.g. property) and

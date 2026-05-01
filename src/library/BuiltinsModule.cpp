@@ -2688,17 +2688,39 @@ static const proto::ProtoObject* py_hasattr(
     const proto::ProtoObject* nameObj = positionalParameters->getAt(context, 1);
     if (!nameObj->isString(context)) return PROTO_FALSE;
     const proto::ProtoString* nameStr = nameObj->asString(context);
-    
+
     std::string nString;
     nameStr->toUTF8String(context, nString);
     if (nString == "CodeType" || nString == "MappingProxyType") {
         if (get_env_diag()) { fprintf(stderr, "DEBUG_HASATTR: obj=%p name='%s' name_ptr=%p hasAttr=%d\n", (void*)obj, nString.c_str(), (void*)nameStr, obj->hasAttribute(context, nameStr)==PROTO_TRUE); fflush(stderr); }
-        // Also dump its keys!
         const proto::ProtoObject* data = (obj->hasOwnAttribute(context, PythonEnvironment::getInternedString(context, "__data__")) == PROTO_TRUE) ? obj->getAttribute(context, PythonEnvironment::getInternedString(context, "__data__")) : nullptr;
         if (get_env_diag() && data) { fprintf(stderr, "DEBUG_HASATTR: obj has __data__=%p\n", (void*)data); fflush(stderr); }
     }
-    
-    return obj->hasAttribute(context, nameStr);
+
+    // 1. Direct chain probe via protoCore.
+    if (obj->hasAttribute(context, nameStr) == PROTO_TRUE) return PROTO_TRUE;
+
+    // 2. CPython semantics: an instance also "has" attributes defined on its
+    //    class's MRO. protoCore's chain walk follows the linearised parent
+    //    chain captured at instantiation time, which doesn't track later
+    //    additions to a class. Walk type(obj).__mro__ explicitly so attrs
+    //    set on a parent class after the instance was created remain visible.
+    protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(context);
+    if (env) {
+        const proto::ProtoObject* cls = env->getType(context, obj);
+        const proto::ProtoString* mroS = env->getMroString();
+        const proto::ProtoObject* mroObj = (cls && mroS) ? cls->getAttribute(context, mroS) : nullptr;
+        const proto::ProtoTuple* mroT = (mroObj && mroObj != PROTO_NONE) ? mroObj->asTuple(context) : nullptr;
+        if (mroT) {
+            for (unsigned long i = 0; i < mroT->getSize(context); ++i) {
+                const proto::ProtoObject* base = mroT->getAt(context, i);
+                if (base && base != PROTO_NONE && base != obj) {
+                    if (base->hasOwnAttribute(context, nameStr) == PROTO_TRUE) return PROTO_TRUE;
+                }
+            }
+        }
+    }
+    return PROTO_FALSE;
 }
 
 static const proto::ProtoObject* py_raise(

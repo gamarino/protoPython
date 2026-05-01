@@ -4621,8 +4621,9 @@ const proto::ProtoObject* executeBytecodeRange(
                                     // For plain instance attrs (int, str, user object) this
                                     // almost always misses, adding just 1 cheap uncached check.
                                     const proto::ProtoString* getDS = env->getGetDunderString();
-                                    bool isDescriptor = getDS && ownType && ownType != PROTO_NONE
-                                        && ownType->getOwnAttributeDirect(ctx, getDS) != nullptr;
+                                    const proto::ProtoObject* getDescVal = (getDS && ownType && ownType != PROTO_NONE)
+                                        ? ownType->getOwnAttributeDirect(ctx, getDS) : nullptr;
+                                    bool isDescriptor = getDescVal != nullptr && getDescVal != PROTO_NONE;
                                     if (!isDescriptor) {
                                         if (pushNull) {
                                             stack.back() = nullptr;
@@ -4753,7 +4754,7 @@ const proto::ProtoObject* executeBytecodeRange(
                                 isMethod = true;
                                 method = actualVal->getAttribute(ctx, env ? env->getFuncDunderString() : PythonEnvironment::getInternedString(ctx, "__func__"));
                                 selfObj = actualVal->getAttribute(ctx, env ? env->getSelfDunderString() : PythonEnvironment::getInternedString(ctx, "__self__"));
-                                if (!method || !selfObj) {
+                                if (!method || method == PROTO_NONE || !selfObj || selfObj == PROTO_NONE) {
                                     // No __func__/__self__ — keep whole and push as [NULL, attr]
                                     stack.back() = nullptr;
                                     stack.push_back(actualVal);
