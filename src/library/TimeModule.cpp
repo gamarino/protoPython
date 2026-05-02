@@ -44,23 +44,98 @@ static const proto::ProtoObject* py_monotonic(
     return ctx->fromDouble(sec);
 }
 
-static const proto::ProtoObject* make_struct_time(proto::ProtoContext* ctx, struct tm* tm_ptr) {
-    // For now, return a simple tuple (list) to satisfy basic attribute access if treated as sequence
+// Build a struct_time-shaped object that supports BOTH indexing
+// (st[0] == st.tm_year) and attribute access (st.tm_year).  CPython's
+// `time.struct_time` is a namedtuple-derived sequence; consumers in the
+// stdlib (_strptime, datetime, calendar) read both forms.
+// protoCore's tuple-shape pointers can't carry user-stamped attributes
+// through getType (the tuple shortcut wins), so wrap the 9-element
+// tuple in an Object that stores it in __data__ (so subscript / iter /
+// len work via tuple-protocol fallback) and attaches the named field
+// values directly as own attributes.
+static const proto::ProtoObject* build_struct_time(
+    proto::ProtoContext* ctx,
+    int year, int mon, int mday, int hour, int min_, int sec,
+    int wday, int yday, int isdst) {
     const proto::ProtoList* result = ctx->newList();
-    result = result->appendLast(ctx, ctx->fromInteger(tm_ptr->tm_year + 1900));
-    result = result->appendLast(ctx, ctx->fromInteger(tm_ptr->tm_mon + 1));
-    result = result->appendLast(ctx, ctx->fromInteger(tm_ptr->tm_mday));
-    result = result->appendLast(ctx, ctx->fromInteger(tm_ptr->tm_hour));
-    result = result->appendLast(ctx, ctx->fromInteger(tm_ptr->tm_min));
-    result = result->appendLast(ctx, ctx->fromInteger(tm_ptr->tm_sec));
-    result = result->appendLast(ctx, ctx->fromInteger(tm_ptr->tm_wday));
-    result = result->appendLast(ctx, ctx->fromInteger(tm_ptr->tm_yday + 1));
-    result = result->appendLast(ctx, ctx->fromInteger(tm_ptr->tm_isdst));
+    result = result->appendLast(ctx, ctx->fromInteger(year));
+    result = result->appendLast(ctx, ctx->fromInteger(mon));
+    result = result->appendLast(ctx, ctx->fromInteger(mday));
+    result = result->appendLast(ctx, ctx->fromInteger(hour));
+    result = result->appendLast(ctx, ctx->fromInteger(min_));
+    result = result->appendLast(ctx, ctx->fromInteger(sec));
+    result = result->appendLast(ctx, ctx->fromInteger(wday));
+    result = result->appendLast(ctx, ctx->fromInteger(yday));
+    result = result->appendLast(ctx, ctx->fromInteger(isdst));
+
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    if (env) {
-        return env->newTuple(result);
+    const proto::ProtoTuple* tup = ctx->newTupleFromList(result);
+
+    const proto::ProtoObject* obj = ctx->newObject(true);
+    if (env && env->getTuplePrototype()) {
+        obj = obj->addParent(ctx, env->getTuplePrototype());
+        obj = obj->setAttribute(ctx, env->getClassString(), env->getTuplePrototype());
     }
-    return result->asObject(ctx);
+    obj = obj->setAttribute(ctx,
+        env ? env->getDataString() : PythonEnvironment::getInternedString(ctx, "__data__"),
+        tup ? tup->asObject(ctx) : result->asObject(ctx));
+    obj = obj->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "tm_year"), ctx->fromInteger(year));
+    obj = obj->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "tm_mon"),  ctx->fromInteger(mon));
+    obj = obj->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "tm_mday"), ctx->fromInteger(mday));
+    obj = obj->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "tm_hour"), ctx->fromInteger(hour));
+    obj = obj->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "tm_min"),  ctx->fromInteger(min_));
+    obj = obj->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "tm_sec"),  ctx->fromInteger(sec));
+    obj = obj->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "tm_wday"), ctx->fromInteger(wday));
+    obj = obj->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "tm_yday"), ctx->fromInteger(yday));
+    obj = obj->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "tm_isdst"),ctx->fromInteger(isdst));
+    return obj;
+}
+
+static const proto::ProtoObject* make_struct_time(proto::ProtoContext* ctx, struct tm* tm_ptr) {
+    return build_struct_time(ctx,
+        tm_ptr->tm_year + 1900,
+        tm_ptr->tm_mon + 1,
+        tm_ptr->tm_mday,
+        tm_ptr->tm_hour,
+        tm_ptr->tm_min,
+        tm_ptr->tm_sec,
+        tm_ptr->tm_wday,
+        tm_ptr->tm_yday + 1,
+        tm_ptr->tm_isdst);
+}
+
+// time.struct_time(seq) — construct a struct_time from a 9-element sequence.
+// _strptime / calendar both call this with a tuple and then read the
+// tm_year / tm_mon / … fields off the returned object.  Without it,
+// `from time import struct_time` raised AttributeError immediately on
+// _strptime line 13 and blocked the whole datetime / strftime audit chain.
+static const proto::ProtoObject* py_struct_time(
+    proto::ProtoContext* ctx, const proto::ProtoObject* /*self*/,
+    const proto::ParentLink*, const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList*) {
+    if (!posArgs || posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    const proto::ProtoObject* seq = posArgs->getAt(ctx, 0);
+    auto getElem = [&](int i) -> long long {
+        const proto::ProtoTuple* tup = seq ? seq->asTuple(ctx) : nullptr;
+        if (!tup) {
+            const proto::ProtoObject* data = seq ? seq->getAttribute(
+                ctx, PythonEnvironment::getInternedString(ctx, "__data__")) : nullptr;
+            if (data) tup = data->asTuple(ctx);
+        }
+        const proto::ProtoList* lst = tup ? nullptr : (seq ? seq->asList(ctx) : nullptr);
+        if (tup && (size_t)i < tup->getSize(ctx)) {
+            const proto::ProtoObject* v = tup->getAt(ctx, i);
+            if (v && v->isInteger(ctx)) return v->asLong(ctx);
+        } else if (lst && (size_t)i < lst->getSize(ctx)) {
+            const proto::ProtoObject* v = lst->getAt(ctx, i);
+            if (v && v->isInteger(ctx)) return v->asLong(ctx);
+        }
+        return 0;
+    };
+    return build_struct_time(ctx,
+        (int)getElem(0), (int)getElem(1), (int)getElem(2),
+        (int)getElem(3), (int)getElem(4), (int)getElem(5),
+        (int)getElem(6), (int)getElem(7), (int)getElem(8));
 }
 
 static const proto::ProtoObject* py_localtime(
@@ -199,6 +274,45 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_strftime));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "get_clock_info"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_get_clock_info));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "struct_time"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_struct_time));
+    // _strptime reads time._STRUCT_TM_ITEMS to slice an extended tuple
+    // back to the 9-element struct_time before constructing one.  9 is
+    // CPython's value when the platform doesn't expose tm_zone /
+    // tm_gmtoff (the protoPython stub doesn't either).
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_STRUCT_TM_ITEMS"),
+        ctx->fromInteger(9));
+    // Static metadata _strptime / locale / datetime read at import time.
+    // tzname is a 2-tuple of (standard, daylight); use the system's
+    // tzname[] globals when available, fall back to ('UTC', 'UTC').
+    {
+        const char* std_name = "UTC";
+        const char* dst_name = "UTC";
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+        ::tzset();
+        if (::tzname[0]) std_name = ::tzname[0];
+        if (::tzname[1]) dst_name = ::tzname[1];
+#endif
+        const proto::ProtoList* tznameList = ctx->newList()
+            ->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, std_name)->asObject(ctx))
+            ->appendLast(ctx, proto::ProtoString::fromUTF8(ctx, dst_name)->asObject(ctx));
+        const proto::ProtoTuple* tzTup = ctx->newTupleFromList(tznameList);
+        mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "tzname"),
+            tzTup ? tzTup->asObject(ctx) : tznameList->asObject(ctx));
+    }
+    // timezone / altzone: seconds west of UTC (CPython semantics).
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "timezone"),
+        ctx->fromInteger(static_cast<long long>(::timezone)));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "altzone"),
+        ctx->fromInteger(static_cast<long long>(::timezone - 3600)));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "daylight"),
+        ctx->fromInteger(static_cast<long long>(::daylight)));
+#else
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "timezone"), ctx->fromInteger(0));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "altzone"),  ctx->fromInteger(0));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "daylight"), ctx->fromInteger(0));
+#endif
     return mod;
 }
 

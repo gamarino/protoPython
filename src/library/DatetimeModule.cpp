@@ -1080,35 +1080,55 @@ static const proto::ProtoObject* py_time_replace(
 static const proto::ProtoObject* py_date_strftime(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
     const proto::ProtoList* posArgs, const proto::ProtoSparseList* /*kwArgs*/) {
-    
-    if (!posArgs || posArgs->getSize(ctx) < 2) return PROTO_NONE;
-    const proto::ProtoObject* formatObj = posArgs->getAt(ctx, 1);
+
+    // Method dispatch may give us posArgs=[format] (self bound) or
+    // posArgs=[self, format] depending on how the call site obtained
+    // the bound method (LOAD_METHOD vs descriptor protocol).  Accept
+    // either layout.  Previously the size<2 guard rejected the
+    // bound-self case and returned None, which silently broke every
+    // datetime.date(..).strftime(fmt) call — visible at calendar
+    // module load (datetime.date(2001, i, 1).strftime list comp) and
+    // therefore at every _strptime / locale-aware datetime path that
+    // depended on calendar's _localized_month / _localized_day.
+    if (!posArgs || posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    const proto::ProtoObject* formatObj = nullptr;
+    if (posArgs->getSize(ctx) >= 2) {
+        formatObj = posArgs->getAt(ctx, 1);
+    } else {
+        formatObj = posArgs->getAt(ctx, 0);
+    }
     std::string format;
     if (formatObj && formatObj->isString(ctx)) formatObj->asString(ctx)->toUTF8String(ctx, format);
-    
+
     int y = (int)self->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "year"))->asLong(ctx);
     int m = (int)self->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "month"))->asLong(ctx);
     int d = (int)self->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "day"))->asLong(ctx);
-    
+
     struct tm t;
     memset(&t, 0, sizeof(t));
     t.tm_year = y - 1900;
     t.tm_mon = m - 1;
     t.tm_mday = d;
-    
+
     char buf[256];
     if (std::strftime(buf, sizeof(buf), format.c_str(), &t)) {
-        return ctx->fromString(buf);
+        return proto::ProtoString::fromUTF8(ctx, buf)->asObject(ctx);
     }
-    return ctx->fromString("");
+    return proto::ProtoString::fromUTF8(ctx, "")->asObject(ctx);
 }
 
 static const proto::ProtoObject* py_datetime_strftime(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
     const proto::ProtoList* posArgs, const proto::ProtoSparseList* /*kwArgs*/) {
-    
-    if (!posArgs || posArgs->getSize(ctx) < 2) return PROTO_NONE;
-    const proto::ProtoObject* formatObj = posArgs->getAt(ctx, 1);
+
+    // Same bound-self / unbound-call layout split as py_date_strftime.
+    if (!posArgs || posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    const proto::ProtoObject* formatObj = nullptr;
+    if (posArgs->getSize(ctx) >= 2) {
+        formatObj = posArgs->getAt(ctx, 1);
+    } else {
+        formatObj = posArgs->getAt(ctx, 0);
+    }
     std::string format;
     if (formatObj && formatObj->isString(ctx)) formatObj->asString(ctx)->toUTF8String(ctx, format);
     
@@ -1130,9 +1150,9 @@ static const proto::ProtoObject* py_datetime_strftime(
     
     char buf[256];
     if (std::strftime(buf, sizeof(buf), format.c_str(), &t)) {
-        return ctx->fromString(buf);
+        return proto::ProtoString::fromUTF8(ctx, buf)->asObject(ctx);
     }
-    return ctx->fromString("");
+    return proto::ProtoString::fromUTF8(ctx, "")->asObject(ctx);
 }
 
 static const proto::ProtoObject* py_date_timetuple(
