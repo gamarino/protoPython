@@ -4764,10 +4764,22 @@ const proto::ProtoObject* executeBytecodeRange(
                     }
 
                     bool isMissing = false;
-                    // Short-circuit: if val is non-null and non-PROTO_NONE, the attribute was found.
-                    // Only do the expensive hasAttribute check when val == PROTO_NONE to distinguish
-                    // "explicitly stored None" from "attribute absent".
-                    bool attrNotFound = (!val) || (val == PROTO_NONE && obj->hasAttribute(ctx, attrName) == PROTO_FALSE);
+                    // PythonEnvironment::getAttribute internally
+                    // disambiguates "absent" (returns nullptr) from
+                    // "exists with value None" (returns PROTO_NONE).
+                    // Both its fast path (tryFastGetAttribute) and the
+                    // slow body run the protoCore hasAttribute + Python
+                    // MRO walk fallback before returning PROTO_NONE,
+                    // so val is authoritative here: nullptr means
+                    // missing, anything else (including PROTO_NONE)
+                    // means present.  The previous bare hasAttribute
+                    // check at this site only consulted protoCore's
+                    // linearised parent chain and missed inherited
+                    // class-body attributes that the slow path already
+                    // resolved correctly — visible at
+                    // unittest.IsolatedAsyncioTestCase subclasses
+                    // where `loop_factory = None` lives on the base.
+                    bool attrNotFound = !val;
                     if (attrNotFound) {
                         // Try __getattr__ before raising AttributeError
                         const proto::ProtoString* getattrS = PythonEnvironment::getInternedString(ctx, "__getattr__");

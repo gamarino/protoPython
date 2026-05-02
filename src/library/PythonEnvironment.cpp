@@ -12634,6 +12634,45 @@ const proto::ProtoObject* PythonEnvironment::getType(proto::ProtoContext* ctx, c
 // inherited attribute (not own), so hasOwnAttribute("__get__") is false
 // for them — they pass the descriptor check and reach the LOAD_METHOD
 // branch correctly.
+
+// CPython-compatible attribute-existence probe.  protoCore's
+// hasAttribute walks the linearised parent chain captured at
+// instantiation time and does not track Python's class MRO surface
+// for runtime modifications of class-body attributes; the second
+// stage walks type(obj).__mro__ to compensate, mirroring the
+// fallback in py_hasattr (BuiltinsModule.cpp).  Used by
+// tryFastGetAttribute and OP_LOAD_ATTR's slow-path tail to
+// disambiguate `getAttribute() == PROTO_NONE` between
+// "attribute exists with value None" (return value) and
+// "attribute is absent" (raise / fall through to __getattr__).
+static bool attributeExistsCompat(PythonEnvironment* env,
+                                   proto::ProtoContext* ctx,
+                                   const proto::ProtoObject* obj,
+                                   const proto::ProtoString* name) {
+    if (obj->proto::ProtoObject::hasAttribute(ctx, name) == PROTO_TRUE) return true;
+    if (!env) return false;
+    const proto::ProtoObject* cls = env->getType(ctx, obj);
+    if (!cls || cls == PROTO_NONE) return false;
+    const proto::ProtoString* mroS = env->getMroString();
+    if (!mroS) return false;
+    const proto::ProtoObject* mroObj = cls->proto::ProtoObject::getAttribute(ctx, mroS);
+    if (!mroObj || mroObj == PROTO_NONE) return false;
+    const proto::ProtoTuple* mroT = mroObj->asTuple(ctx);
+    if (!mroT) {
+        const proto::ProtoObject* data = mroObj->proto::ProtoObject::getAttribute(
+            ctx, env->getDataString());
+        if (data) mroT = data->asTuple(ctx);
+    }
+    if (!mroT) return false;
+    for (unsigned long i = 0; i < mroT->getSize(ctx); ++i) {
+        const proto::ProtoObject* base = mroT->getAt(ctx, i);
+        if (base && base != PROTO_NONE && base != obj) {
+            if (base->proto::ProtoObject::hasOwnAttribute(ctx, name) == PROTO_TRUE) return true;
+        }
+    }
+    return false;
+}
+
 static const proto::ProtoObject* tryFastGetAttribute(
         PythonEnvironment* env,
         proto::ProtoContext* ctx,
@@ -12667,9 +12706,47 @@ static const proto::ProtoObject* tryFastGetAttribute(
         }
     }
 
-    // Single protoCore chain walk for the attribute value (cached).
+    // protoCore semantic: getAttribute returns PROTO_NONE for BOTH
+    // "attribute absent on the entire prototype chain" AND "attribute
+    // exists with the stored value PROTO_NONE".  hasAttribute is the
+    // authoritative discriminator (PROTO_TRUE iff present, walks the
+    // chain checking own attrs at every step).  Pay the second walk
+    // only on the ambiguous PROTO_NONE result; the dominant path
+    // (value/method lookup that hits with a non-None value) returns
+    // after just the first call.
     const proto::ProtoObject* val = obj->proto::ProtoObject::getAttribute(ctx, name);
-    if (!val || val == PROTO_NONE) return nullptr;
+    if (val == PROTO_NONE) {
+        // protoCore's getAttribute returns PROTO_NONE for both "absent
+        // on the entire chain" and "exists, value is None".  We forward
+        // PROTO_NONE only when it is genuinely an OWN attribute of obj
+        // — anything else needs the slow path's full descriptor /
+        // prototype-method resolution.  Specifically:
+        //   • Embedded-value receivers (str / int / bool / float —
+        //     tagged pointers without a real protoCore chain) get their
+        //     methods from strPrototype / intPrototype / etc., which
+        //     the chain walk can't reach.
+        //   • dict subclasses, list subclasses, and any user class
+        //     inheriting from a built-in type expose methods through
+        //     the parent prototype that the protoCore chain misses
+        //     when the instance was built via tuple.__new__ /
+        //     dict.__new__ / etc.
+        //   • Class-body attribute defaults (`x = None` on a parent
+        //     class) ARE own attributes of the class itself and
+        //     resolve correctly through the slow path's MRO walk.
+        // The hasOwnAttribute check is the discriminator — own ⇒
+        // genuinely stored on obj (forward PROTO_NONE); not-own ⇒
+        // could be an MRO method we can't dispatch here, bail.
+        if (obj->proto::ProtoObject::hasOwnAttribute(ctx, name) != PROTO_TRUE) {
+            return nullptr;
+        }
+        // Attribute exists with value None as an own attr — forward it.
+        // None is not a method, not a function, not a descriptor; the
+        // tail of this fast path can't observe anything useful from
+        // it without dereferencing the sentinel pointer (segfault), so
+        // returning here is both correct and safest.
+        return val;
+    }
+    if (!val) return nullptr;
 
     // Native methods: O(1) pointer-tag check.
     if (val->isMethod(ctx)) return nullptr;
