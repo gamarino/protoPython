@@ -2079,6 +2079,21 @@ static const proto::ProtoObject* py_super_getattr(
         }
         bool hasCode = (codeAttr && codeAttr != PROTO_NONE && (env ? codeAttr != env->getNonePrototype() : true));
         bool isNativeCallable = (val->asMethod(context) != nullptr);
+        // A descriptor (anything with __get__) owned by `target` is a legit
+        // super() result.  This covers @property, @classmethod, @staticmethod,
+        // and user-defined data descriptors.  Without this branch, super().X
+        // where X is a parent-class @property silently skipped past the
+        // descriptor and continued searching the MRO, ultimately raising
+        // AttributeError on `type`.  Visible at socket.py:527 where the
+        // child's `family` @property does `return _intenum_converter(
+        // super().family, AddressFamily)` and has been broken since the
+        // initial protoPython bring-up of socket.
+        bool isOwnedDescriptor = false;
+        if (target->proto::ProtoObject::hasOwnAttribute(context, nameObj->asString(context)) == PROTO_TRUE) {
+            const proto::ProtoString* getStrCheck = env ? env->getGetDunderString() : PythonEnvironment::getInternedString(context, "__get__");
+            const proto::ProtoObject* dg = env ? env->getAttribute(context, val, getStrCheck, false) : val->getAttribute(context, getStrCheck);
+            if (dg && dg != PROTO_NONE && dg->asMethod(context)) isOwnedDescriptor = true;
+        }
 
         bool legit = false;
         if (hasCode) {
@@ -2087,6 +2102,9 @@ static const proto::ProtoObject* py_super_getattr(
             legit = true;
         } else if (isNativeCallable && target->proto::ProtoObject::hasOwnAttribute(context, nameObj->asString(context)) == PROTO_TRUE) {
             // Native C++ method owned by a class in the MRO is always legit (e.g. object.__init__)
+            legit = true;
+        } else if (isOwnedDescriptor) {
+            // @property / classmethod / staticmethod / user descriptor in target.
             legit = true;
         } else if (!isPythonClass) {
             if (target->proto::ProtoObject::hasOwnAttribute(context, nameObj->asString(context)) == PROTO_TRUE) legit = true;

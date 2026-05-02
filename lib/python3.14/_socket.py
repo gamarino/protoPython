@@ -184,14 +184,42 @@ timeout = TimeoutError
 
 
 class socket:
-    """Minimal stub for _socket.socket."""
+    """Minimal stub for _socket.socket.
+
+    NOTE: family/type/proto are exposed as read-only @property to mirror
+    the C accelerator's slot semantics.  In CPython _socket.socket
+    defines these as C-level read-only descriptors, and socket.socket
+    (in socket.py) layers another @property on top to convert the raw
+    integer into the IntEnum member.  If we used plain attributes here,
+    `_socket.socket.__init__` would do `self.family = family` and that
+    assignment — at runtime — would resolve to the *child* class's
+    `family` property setter (which doesn't exist), raising
+    AttributeError.  See test/support/socket_helper.py import path
+    failure: it constructs a socket via socket.socket(...) which calls
+    _socket.socket.__init__, which then tried to write through the
+    property and aborted module load.
+
+    Storage is in _family / _type / _proto; the properties read those.
+    """
 
     def __init__(self, family=AF_INET, type=SOCK_STREAM, proto=0, fileno=None):
-        self.family = family
-        self.type = type
-        self.proto = proto
+        self._family = family
+        self._type = type
+        self._proto = proto
         self._fileno = fileno
         self._closed = False
+
+    @property
+    def family(self):
+        return self._family
+
+    @property
+    def type(self):
+        return self._type
+
+    @property
+    def proto(self):
+        return self._proto
 
     def fileno(self):
         return self._fileno if self._fileno is not None else -1
