@@ -2955,6 +2955,17 @@ const proto::ProtoObject* executeBytecodeRange(
              fprintf(stderr, "\n");
         }
 
+        // C++ exception boundary.  protoCore (and other native modules) routinely
+        // throw std::runtime_error / std::overflow_error from places like
+        // Integer::asLong, ProtoString::createSymbol, etc., when given an
+        // argument they consider invalid.  Without a translation point these
+        // escape the bytecode loop, hit std::terminate, and SIGABRT the
+        // process — making any test that hits a code path with weakly-typed
+        // dispatch (test_re, test_types, test_descr…) into a hard crash
+        // instead of a recoverable Python-level error.  Catch them here, set
+        // a pending RuntimeError, and let the normal hasPendingException
+        // unwinding take over so the user sees a proper Python traceback.
+        try {
         switch (op) {
         case OP_LOAD_CONST: {
             // Use flat pre-fetched array when available (avoids cross-DSO AVL lookup).
@@ -6856,6 +6867,20 @@ const proto::ProtoObject* executeBytecodeRange(
         default:
             break;
         }  // end switch (op)
+        } catch (const std::exception& e) {
+            // Translate any escaped C++ exception into a Python RuntimeError
+            // so the bytecode loop can unwind it the normal way.  Don't
+            // overwrite an exception that was already set inside the
+            // handler — that one carries more specific information.
+            if (env && !env->hasPendingException()) {
+                std::string msg = std::string("internal C++ exception: ") + e.what();
+                env->raiseRuntimeError(ctx, msg);
+            }
+        } catch (...) {
+            if (env && !env->hasPendingException()) {
+                env->raiseRuntimeError(ctx, std::string("internal C++ exception (unknown type)"));
+            }
+        }
         i = next_i;
     }
     return stack.empty() ? PROTO_NONE : stack.back();
