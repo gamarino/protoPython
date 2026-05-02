@@ -1114,8 +1114,25 @@ static bool isEmbeddedValue(proto::ProtoContext* ctx, const proto::ProtoObject* 
     return obj->isInteger(ctx) || obj->isBoolean(ctx) || obj->isNone(ctx);
 }
 
+// bool is a subclass of int in CPython; PROTO_TRUE / PROTO_FALSE are sentinel
+// pointers, so isInteger() / isSmallInt() return false for them.  Anywhere a
+// path branches on isInteger() to take an integer fast path, callers should
+// first run operands through this helper so True / False participate as 1 / 0.
+static inline const proto::ProtoObject* coerceBoolToInt(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
+    if (obj && obj->isBoolean(ctx)) return ctx->fromInteger(obj == PROTO_TRUE ? 1 : 0);
+    return obj;
+}
+
 static const proto::ProtoObject* unwrapPrimitive(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
     if (obj->isInteger(ctx) || obj->isDouble(ctx)) return obj;
+    // bool is a subclass of int in CPython.  PROTO_TRUE / PROTO_FALSE are
+    // sentinel pointers, not SmallInts, so isInteger() returns false for
+    // them; coerce here so binaryAdd / binarySubtract / binaryMultiply hit
+    // their integer fast path instead of falling through to a __add__ /
+    // __mul__ lookup that doesn't exist on the sentinel.
+    if (obj->isBoolean(ctx)) {
+        return ctx->fromInteger(obj == PROTO_TRUE ? 1 : 0);
+    }
     protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(ctx);
     if (env) {
         const proto::ProtoObject* data = obj->getAttribute(ctx, env->getDataString());
@@ -1223,6 +1240,10 @@ static const proto::ProtoObject* binarySubtract(proto::ProtoContext* ctx,
 
 static const proto::ProtoObject* binaryMultiply(proto::ProtoContext* ctx,
     const proto::ProtoObject* a, const proto::ProtoObject* b) {
+    // Coerce bool sentinels to int so list/tuple/str * bool hits the
+    // sequence-repeat fast paths below (which all check isInteger directly).
+    a = coerceBoolToInt(ctx, a);
+    b = coerceBoolToInt(ctx, b);
     const proto::ProtoObject* aa = unwrapPrimitive(ctx, a);
     const proto::ProtoObject* bb = unwrapPrimitive(ctx, b);
     if ((aa->isInteger(ctx) || aa->isDouble(ctx)) && (bb->isInteger(ctx) || bb->isDouble(ctx))) {
@@ -3713,8 +3734,8 @@ const proto::ProtoObject* executeBytecodeRange(
         } break;
         case OP_BINARY_LSHIFT: {
             if (stack.size() < 2) { i = next_i; continue; }
-            const proto::ProtoObject* b = stack.back();
-            const proto::ProtoObject* a = stack[stack.top - 2];
+            const proto::ProtoObject* b = coerceBoolToInt(ctx, stack.back());
+            const proto::ProtoObject* a = coerceBoolToInt(ctx, stack[stack.top - 2]);
             // SmallInt << SmallInt: shift into __int128 and range-check.
             // nqueens uses `1 << col` (col ≤ n, typically ≤ 30) — fast path
             // succeeds virtually always.
@@ -3759,8 +3780,8 @@ const proto::ProtoObject* executeBytecodeRange(
         } break;
         case OP_BINARY_RSHIFT: {
             if (stack.size() < 2) { i = next_i; continue; }
-            const proto::ProtoObject* b = stack.back();
-            const proto::ProtoObject* a = stack[stack.top - 2];
+            const proto::ProtoObject* b = coerceBoolToInt(ctx, stack.back());
+            const proto::ProtoObject* a = coerceBoolToInt(ctx, stack[stack.top - 2]);
             // SmallInt >> SmallInt: right shift always produces a result with
             // magnitude ≤ |a|, guaranteed in 56-bit signed range.
             if (proto::isSmallInt(a) && proto::isSmallInt(b)) {
@@ -3796,8 +3817,8 @@ const proto::ProtoObject* executeBytecodeRange(
         } break;
         case OP_BINARY_AND: {
             if (stack.size() < 2) { i = next_i; continue; }
-            const proto::ProtoObject* b = stack.back();
-            const proto::ProtoObject* a = stack[stack.top - 2];
+            const proto::ProtoObject* b = coerceBoolToInt(ctx, stack.back());
+            const proto::ProtoObject* a = coerceBoolToInt(ctx, stack[stack.top - 2]);
             // SmallInt & SmallInt: AND of two values in 56-bit signed range
             // always stays in range (sign extension bits are consistent).
             // Zero protoCore calls — all tag operations are inline.
@@ -3827,8 +3848,8 @@ const proto::ProtoObject* executeBytecodeRange(
         } break;
         case OP_BINARY_OR: {
             if (stack.size() < 2) { i = next_i; continue; }
-            const proto::ProtoObject* b = stack.back();
-            const proto::ProtoObject* a = stack[stack.top - 2];
+            const proto::ProtoObject* b = coerceBoolToInt(ctx, stack.back());
+            const proto::ProtoObject* a = coerceBoolToInt(ctx, stack[stack.top - 2]);
             if (proto::isSmallInt(a) && proto::isSmallInt(b)) {
                 stack.pop_back();
                 stack.back() = proto::makeSmallInt(proto::asSmallInt(a) | proto::asSmallInt(b));
@@ -3854,8 +3875,8 @@ const proto::ProtoObject* executeBytecodeRange(
         } break;
         case OP_BINARY_XOR: {
             if (stack.size() < 2) { i = next_i; continue; }
-            const proto::ProtoObject* b = stack.back();
-            const proto::ProtoObject* a = stack[stack.top - 2];
+            const proto::ProtoObject* b = coerceBoolToInt(ctx, stack.back());
+            const proto::ProtoObject* a = coerceBoolToInt(ctx, stack[stack.top - 2]);
             if (proto::isSmallInt(a) && proto::isSmallInt(b)) {
                 stack.pop_back();
                 stack.back() = proto::makeSmallInt(proto::asSmallInt(a) ^ proto::asSmallInt(b));
