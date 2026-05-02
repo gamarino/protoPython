@@ -945,16 +945,17 @@ static const proto::ProtoObject* py_reversed(
     }
     long long n = lenObj->asLong(context);
 
-    const proto::ProtoObject* revProto = self->getAttribute(context, revProtoS);
-    if (!revProto || revProto == PROTO_NONE) {
-        if (get_env_diag()) {
-            fprintf(stderr, "DEBUG: py_reversed failed: revProto is null or PROTO_NONE\n");
-        }
-        return PROTO_NONE;
-    }
+    // `self` IS the reversed prototype (we were registered as
+    // reversed.__new__).  An older revision tried `self->getAttribute(
+    // "__reversed_proto__")` which only exists on the builtins module, not
+    // on revProto itself, so this branch always returned PROTO_NONE; the
+    // outer runUserClassCall would then create an unparented stub instance
+    // with no __reversed_obj__/__reversed_idx__, and the first next() crash
+    // depended on the pristine attribute slot's contents.
+    const proto::ProtoObject* revProto = self;
     const proto::ProtoObject* revObj = revProto->newChild(context, true);
-    revObj->setAttribute(context, revObjS, obj);
-    revObj->setAttribute(context, revIdxS, context->fromInteger(n - 1));
+    revObj = revObj->setAttribute(context, revObjS, obj);
+    revObj = revObj->setAttribute(context, revIdxS, context->fromInteger(n - 1));
     return revObj;
 }
 
@@ -969,15 +970,66 @@ static const proto::ProtoObject* py_reversed_next(
 
     const proto::ProtoObject* obj = self->getAttribute(context, objS);
     const proto::ProtoObject* idxObj = self->getAttribute(context, idxS);
-    if (!obj || !idxObj) return nullptr;
+    // Belt-and-suspenders: even after py_reversed sets these correctly,
+    // never let asLong throw a C++ runtime_error and abort the process if
+    // a future bug leaves either slot unset/non-integer.  Treat that as
+    // exhausted iterator rather than crash.
+    if (!obj || !idxObj || idxObj == PROTO_NONE || !idxObj->isInteger(context)) {
+        if (env) env->raiseStopIteration(context);
+        return nullptr;
+    }
     long long idx = idxObj->asLong(context);
-    if (idx < 0) return nullptr;
+    if (idx < 0) {
+        if (env) env->raiseStopIteration(context);
+        return nullptr;
+    }
 
-    const proto::ProtoObject* getitemMethod = obj->getAttribute(context, getitemS);
-    if (!getitemMethod || !getitemMethod->asMethod(context)) return nullptr;
+    // env->getAttribute follows the Python attribute protocol so that a
+    // class-defined __getitem__ comes back as a callable bound method (or
+    // an unbound Python function we feed to invokePythonCallable below).
+    // The previous implementation only handled native methods (asMethod !=
+    // nullptr) and returned null for plain Python __getitem__, so
+    // `reversed(c)` on a user class returned nothing on the very first
+    // next() — the audit then crashed on a downstream non-int access.
+    const proto::ProtoObject* getitemMethod = env
+        ? env->getAttribute(context, obj, getitemS, false)
+        : obj->getAttribute(context, getitemS);
+    if (!getitemMethod || getitemMethod == PROTO_NONE) {
+        if (env) env->raiseStopIteration(context);
+        return nullptr;
+    }
     const proto::ProtoList* args = context->newList()->appendLast(context, context->fromInteger(idx));
-    const proto::ProtoObject* value = getitemMethod->asMethod(context)(context, obj, nullptr, args, nullptr);
-    self->setAttribute(context, idxS, context->fromInteger(idx - 1));
+    const proto::ProtoObject* value = nullptr;
+    if (getitemMethod->asMethod(context)) {
+        // Native bound method (e.g. dict's MappingProxy __getitem__).
+        value = getitemMethod->asMethod(context)(context, obj, nullptr, args, nullptr);
+    } else {
+        // Python-level method: invokePythonCallable already understands
+        // bound methods (asMethodSelf carries `obj`) and unbound functions.
+        value = ::protoPython::invokePythonCallable(context, getitemMethod, args, nullptr);
+    }
+    if (env && env->hasPendingException()) {
+        // CPython contract: if obj[idx] raises IndexError, reversed yields
+        // StopIteration.  Other exceptions propagate.
+        const proto::ProtoObject* exc = env->peekPendingException();
+        if (exc) {
+            const proto::ProtoObject* cls = env->getType(context, exc);
+            const proto::ProtoString* nameS = env->getNameString();
+            const proto::ProtoObject* nameAttr = cls ? cls->getAttribute(context, nameS) : nullptr;
+            if (nameAttr && nameAttr->isString(context)) {
+                std::string clsName;
+                nameAttr->asString(context)->toUTF8String(context, clsName);
+                if (clsName == "IndexError") {
+                    env->clearPendingException();
+                    env->raiseStopIteration(context);
+                }
+            }
+        }
+        return nullptr;
+    }
+    // Persist the decremented index — setAttribute returns a new
+    // immutable cell version so we have to assign the result back.
+    const_cast<proto::ProtoObject*>(self)->setAttribute(context, idxS, context->fromInteger(idx - 1));
     return value;
 }
 
