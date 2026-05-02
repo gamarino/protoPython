@@ -2470,16 +2470,29 @@ static const proto::ProtoObject* py_super(
             return PROTO_NONE;
         }
     } else {
+        // CPython super() supports three forms:
+        //   super()              — zero-arg, deduced (handled above)
+        //   super(type)          — unbound super; obj is None until bound via __get__
+        //   super(type, obj)     — bound super
+        // Reading positionalParameters[1] when only one arg was passed
+        // walked off the end of the ProtoList, returned a wild pointer,
+        // and crashed in the proxy attribute access — visible as test_descr
+        // SIGSEGV in test_supers (`super(C)` line in the test body).
         type = positionalParameters->getAt(context, 0);
-        obj = positionalParameters->getAt(context, 1);
+        if (positionalParameters->getSize(context) >= 2) {
+            obj = positionalParameters->getAt(context, 1);
+        } else {
+            obj = PROTO_NONE;
+        }
     }
-    
-    if (!type || !obj) {
+
+    if (!type) {
         if (get_env_diag()) {
              fprintf(stderr, "DEBUG: py_super returning NONE (type=%p, obj=%p)\n", (void*)type, (void*)obj);
         }
         return PROTO_NONE;
     }
+    if (!obj) obj = PROTO_NONE;
 
     if (get_env_diag()) {
         std::string tname = "Unknown";
