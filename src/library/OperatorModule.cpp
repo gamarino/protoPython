@@ -78,6 +78,42 @@ static const proto::ProtoObject* py_lt(
     return (a < b) ? PROTO_TRUE : PROTO_FALSE;
 }
 
+static const proto::ProtoObject* py_le(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
+    long long a = posArgs->getAt(ctx, 0)->asLong(ctx);
+    long long b = posArgs->getAt(ctx, 1)->asLong(ctx);
+    return (a <= b) ? PROTO_TRUE : PROTO_FALSE;
+}
+
+static const proto::ProtoObject* py_gt(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
+    long long a = posArgs->getAt(ctx, 0)->asLong(ctx);
+    long long b = posArgs->getAt(ctx, 1)->asLong(ctx);
+    return (a > b) ? PROTO_TRUE : PROTO_FALSE;
+}
+
+static const proto::ProtoObject* py_ge(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
+    long long a = posArgs->getAt(ctx, 0)->asLong(ctx);
+    long long b = posArgs->getAt(ctx, 1)->asLong(ctx);
+    return (a >= b) ? PROTO_TRUE : PROTO_FALSE;
+}
+
+static const proto::ProtoObject* py_ne(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
+    long long a = posArgs->getAt(ctx, 0)->asLong(ctx);
+    long long b = posArgs->getAt(ctx, 1)->asLong(ctx);
+    return (a != b) ? PROTO_TRUE : PROTO_FALSE;
+}
+
 static const proto::ProtoObject* py_pow(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
@@ -396,6 +432,14 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_eq));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "lt"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_lt));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "le"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_le));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "gt"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_gt));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "ge"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_ge));
+    mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "ne"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_ne));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "truediv"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_truediv));
     mod = mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "pow"),

@@ -2741,9 +2741,24 @@ static const proto::ProtoObject* py_sorted(
     if (!nextMethod || !nextMethod->asMethod(context)) return PROTO_NONE;
 
     std::vector<const proto::ProtoObject*> elems;
+    // Generator-protocol iterators raise StopIteration when exhausted —
+    // this is the dominant case for `sorted(generator_expression, ...)`
+    // (e.g. _strptime.__seqToRE which feeds a `(tz for ...)` genexp into
+    // sorted).  env->handleExhaustion clears the pending StopIteration
+    // and reports True so the caller can break out of the next() loop.
+    // Native iterators that signal exhaustion via PROTO_NONE / nullptr
+    // still work via the early-exit; we just no longer crash on the
+    // exception form.
     for (;;) {
         const proto::ProtoObject* val = nextMethod->asMethod(context)(context, it, nullptr, context->newList(), nullptr);
-        if (!val || val == PROTO_NONE) break;
+        if (!val) {
+            if (env && env->handleExhaustion(context)) break;
+            // Some other pending exception — propagate by stopping
+            // accumulation; the dispatcher's exception machinery will
+            // surface it on the next opcode.
+            break;
+        }
+        if (val == PROTO_NONE) break;
         elems.push_back(val);
     }
 
