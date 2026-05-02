@@ -26,23 +26,59 @@ static const proto::ProtoObject* py_collections_dummy(
 static const proto::ProtoObject* py_tuple_getter_get(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
     if (!posArgs || posArgs->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* instance = posArgs->getAt(ctx, 0);
+    // Class-level access (`NT.a`): Python's descriptor protocol passes
+    // None as `instance` — return self so callers can introspect the
+    // descriptor.  Previously this fell through and returned PROTO_NONE,
+    // so the namedtuple class itself looked like every field had been
+    // wiped out by the time consumer code asked.
+    if (!instance || instance == PROTO_NONE) return self;
     const proto::ProtoObject* indexObj = self->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__index__"));
-    if (instance && indexObj) {
-        const proto::ProtoTuple* tup = instance->asTuple(ctx);
-        long long index = indexObj->asLong(ctx);
-        if (tup && index >= 0 && (size_t)index < tup->getSize(ctx)) {
-            return tup->getAt(ctx, (size_t)index);
-        }
+    if (!indexObj) return PROTO_NONE;
+    long long index = indexObj->asLong(ctx);
+    // namedtuple instances may either be a raw ProtoTuple shape or a
+    // wrapped Python tuple/list object that stores the sequence in
+    // __data__.  Try both so we work for either layout.
+    const proto::ProtoTuple* tup = instance->asTuple(ctx);
+    if (!tup) {
+        const proto::ProtoObject* data = instance->getAttribute(ctx,
+            PythonEnvironment::getInternedString(ctx, "__data__"));
+        if (data) tup = data->asTuple(ctx);
+    }
+    if (tup && index >= 0 && (size_t)index < tup->getSize(ctx)) {
+        return tup->getAt(ctx, (size_t)index);
     }
     return PROTO_NONE;
 }
 
+// Module-level prototype for _tuplegetter instances.  The Python descriptor
+// protocol consults `type(descriptor).__get__`, so the descriptor's TYPE
+// must carry the __get__ binding — putting it on the instance alone (the
+// previous shape) silently bypasses descriptor invocation and `nt.field`
+// resolves to the raw descriptor object.  Visible at platform.uname()
+// where uname_result.release etc. are namedtuple fields backed by
+// _tuplegetter — accessing .release returned the descriptor and breaks
+// any downstream string operation (.split / .startswith / etc.).
+static const proto::ProtoObject* g_tuplegetter_proto = nullptr;
+
 static const proto::ProtoObject* py_tuplegetter(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
     if (!posArgs || posArgs->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* index = posArgs->getAt(ctx, 0);
-    const proto::ProtoObject* descriptor = ctx->newObject(false);
+    if (!g_tuplegetter_proto) {
+        // Lazy init: build the prototype the first time anyone calls
+        // _tuplegetter.  __get__ lives on the prototype so it is found by
+        // type(instance).__get__ during descriptor protocol resolution.
+        proto::ProtoObject* proto = const_cast<proto::ProtoObject*>(ctx->newObject(false));
+        const proto::ProtoString* nameKey = PythonEnvironment::getInternedString(ctx, "__name__");
+        const proto::ProtoString* nameVal = PythonEnvironment::getInternedString(ctx, "_tuplegetter");
+        proto = const_cast<proto::ProtoObject*>(proto->setAttribute(ctx, nameKey, nameVal->asObject(ctx)));
+        proto = const_cast<proto::ProtoObject*>(proto->setAttribute(ctx,
+            PythonEnvironment::getInternedString(ctx, "__get__"),
+            ctx->fromMethod(proto, py_tuple_getter_get)));
+        g_tuplegetter_proto = proto;
+    }
+    const proto::ProtoObject* descriptor = g_tuplegetter_proto->newChild(ctx, true);
     descriptor = descriptor->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__index__"), index);
-    descriptor = descriptor->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__get__"), ctx->fromMethod(const_cast<proto::ProtoObject*>(descriptor), py_tuple_getter_get));
+    descriptor = descriptor->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__class__"), g_tuplegetter_proto);
     return descriptor;
 }
 

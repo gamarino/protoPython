@@ -4448,27 +4448,36 @@ static const proto::ProtoObject* py_property(
     const proto::ProtoSparseList* keywordParameters) {
     if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
     const proto::ProtoObject* cls = positionalParameters->getAt(context, 0); // property class
-    
-    // Create new instance of cls natively
-    proto::ProtoObject* prop = const_cast<proto::ProtoObject*>(cls->newChild(context, true));
-    
+
+    // Create new instance of cls and persist every setAttribute return — even
+    // with newChild(ctx, true) for mutable creation, protoCore's attribute
+    // structures may hand back a new wrapper for some shapes; without the
+    // re-bind, fields silently regress to their pre-write state.  The
+    // observed failure was `type(p)` reporting `object` instead of
+    // `property`, breaking the descriptor protocol on namedtuple field
+    // accessors (their _tuplegetter is property(_itemgetter(idx))) and
+    // surfacing as `'object' object has no attribute 'split'` whenever a
+    // namedtuple field carrying a string value (e.g. uname_result.release)
+    // was accessed via `instance.field` instead of `instance[idx]`.
+    const proto::ProtoObject* prop = cls->newChild(context, true);
+
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     if (env) {
-        prop->setAttribute(context, env->getClassString(), cls);
+        prop = prop->setAttribute(context, env->getClassString(), cls);
     } else {
-        prop->setAttribute(context, PythonEnvironment::getInternedString(context, "__class__"), cls);
+        prop = prop->setAttribute(context, PythonEnvironment::getInternedString(context, "__class__"), cls);
     }
-    
+
     if (positionalParameters->getSize(context) >= 2) {
-        prop->setAttribute(context, PythonEnvironment::getInternedString(context, "fget"), positionalParameters->getAt(context, 1));
+        prop = prop->setAttribute(context, PythonEnvironment::getInternedString(context, "fget"), positionalParameters->getAt(context, 1));
     }
     if (positionalParameters->getSize(context) >= 3) {
-        prop->setAttribute(context, PythonEnvironment::getInternedString(context, "fset"), positionalParameters->getAt(context, 2));
+        prop = prop->setAttribute(context, PythonEnvironment::getInternedString(context, "fset"), positionalParameters->getAt(context, 2));
     }
     if (positionalParameters->getSize(context) >= 4) {
-        prop->setAttribute(context, PythonEnvironment::getInternedString(context, "fdel"), positionalParameters->getAt(context, 3));
+        prop = prop->setAttribute(context, PythonEnvironment::getInternedString(context, "fdel"), positionalParameters->getAt(context, 3));
     }
-    
+
     if (get_env_diag()) {
         fprintf(stderr, "DEBUG py_property (__new__): prop=%p cls=%p fget=%p\n", (void*)prop, (void*)cls, (void*)(positionalParameters->getSize(context) >= 2 ? positionalParameters->getAt(context, 1) : nullptr));
     }
