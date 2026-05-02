@@ -205,12 +205,48 @@ static long long extractFlags(proto::ProtoContext* ctx,
     return flags;
 }
 
-static std::regex makeRegex(const std::string& pat, long long pyFlags) {
+// A regex that never matches anything.  Used by makeRegex() as a safe
+// sentinel when the user-provided pattern fails to compile so the caller
+// can continue (its regex_search will return false) while the Python-level
+// re.error we set propagates back up.  Built once and cached so that the
+// fallback path itself never throws.  CPython behaviour: re.error / PatternError.
+static const std::regex& neverMatchesRegex() {
+    static const std::regex kNever(R"(\b\B)");  // word-boundary AND non-boundary -> never true
+    return kNever;
+}
+
+static std::regex makeRegex(proto::ProtoContext* ctx,
+                            const std::string& pat,
+                            long long pyFlags) {
     try {
         return std::regex(pat, pyFlagsToStdFlags(pyFlags));
+    } catch (const std::regex_error& e) {
+        // std::regex (the C++ stdlib) rejects several constructs the
+        // Python `re` module accepts — most commonly named groups
+        // `(?P<name>...)`, conditional groups `(?(...)...)`, recursive
+        // patterns, and the wider set of zero-width assertions like
+        // `(?>...)` (atomic groups).  Without translation these escape as
+        // C++ exceptions and abort the process via std::terminate.  Push
+        // them across the boundary as Python re.error so that user code
+        // (and unittest) can handle them normally.
+        protoPython::PythonEnvironment* env =
+            ctx ? protoPython::PythonEnvironment::fromContext(ctx) : nullptr;
+        if (env) {
+            std::string msg = std::string("regex compile error: ") + e.what();
+            env->raiseRuntimeError(ctx, msg);
+        }
+        return neverMatchesRegex();
     } catch (...) {
-        return std::regex(pat);
+        protoPython::PythonEnvironment* env =
+            ctx ? protoPython::PythonEnvironment::fromContext(ctx) : nullptr;
+        if (env) env->raiseRuntimeError(ctx, std::string("regex compile error"));
+        return neverMatchesRegex();
     }
+}
+
+// Backward-compatible wrapper for sites that don't have ctx handy yet.
+static std::regex makeRegex(const std::string& pat, long long pyFlags) {
+    return makeRegex(nullptr, pat, pyFlags);
 }
 
 static const proto::ProtoObject* getMatchProto(proto::ProtoContext* ctx,
@@ -279,7 +315,7 @@ static const proto::ProtoObject* py_match(
     if (!posArgs->getAt(ctx, 1)->isString(ctx)) return PROTO_NONE;
     posArgs->getAt(ctx, 1)->asString(ctx)->toUTF8String(ctx, s);
     long long flags = extractFlags(ctx, patObj, posArgs, 2);
-    std::regex re = makeRegex(pat, flags);
+    std::regex re = makeRegex(ctx, pat, flags);
     std::smatch m;
     if (!std::regex_search(s, m, re) || m.position() != 0) return PROTO_NONE;
     return makeMatchObject(ctx, getMatchProto(ctx, self), m, s);
@@ -296,7 +332,7 @@ static const proto::ProtoObject* py_search(
     if (!posArgs->getAt(ctx, 1)->isString(ctx)) return PROTO_NONE;
     posArgs->getAt(ctx, 1)->asString(ctx)->toUTF8String(ctx, s);
     long long flags = extractFlags(ctx, patObj, posArgs, 2);
-    std::regex re = makeRegex(pat, flags);
+    std::regex re = makeRegex(ctx, pat, flags);
     std::smatch m;
     if (!std::regex_search(s, m, re)) return PROTO_NONE;
     return makeMatchObject(ctx, getMatchProto(ctx, self), m, s);
@@ -355,7 +391,7 @@ static const proto::ProtoObject* py_pattern_match(
 
     std::string sub = (pos < endpos) ? s.substr(pos, endpos - pos) : std::string();
     long long flags = extractFlags(ctx, self, nullptr, -1);
-    std::regex re = makeRegex(pat, flags);
+    std::regex re = makeRegex(ctx, pat, flags);
     std::smatch m;
     if (!std::regex_search(sub, m, re) || m.position() != 0) return PROTO_NONE;
     return makeMatchObject(ctx, getMatchProto(ctx, self), m, s, pos);
@@ -371,7 +407,7 @@ static const proto::ProtoObject* py_pattern_fullmatch(
     if (!posArgs->getAt(ctx, 0)->isString(ctx)) return PROTO_NONE;
     posArgs->getAt(ctx, 0)->asString(ctx)->toUTF8String(ctx, s);
     long long flags = extractFlags(ctx, self, nullptr, -1);
-    std::regex re = makeRegex(pat, flags);
+    std::regex re = makeRegex(ctx, pat, flags);
     std::smatch m;
     if (!std::regex_match(s, m, re)) return PROTO_NONE;
     return makeMatchObject(ctx, getMatchProto(ctx, self), m, s);
@@ -409,7 +445,7 @@ static const proto::ProtoObject* py_pattern_search(
 
     std::string sub = (pos < endpos) ? s.substr(pos, endpos - pos) : std::string();
     long long flags = extractFlags(ctx, self, nullptr, -1);
-    std::regex re = makeRegex(pat, flags);
+    std::regex re = makeRegex(ctx, pat, flags);
     std::smatch m;
     if (!std::regex_search(sub, m, re)) return PROTO_NONE;
     return makeMatchObject(ctx, getMatchProto(ctx, self), m, s, pos);
@@ -434,7 +470,7 @@ static const proto::ProtoObject* py_pattern_sub(
     if (!strObj->isString(ctx)) return PROTO_NONE;
     strObj->asString(ctx)->toUTF8String(ctx, s);
     long long flags = extractFlags(ctx, self, nullptr, -1);
-    std::regex re = makeRegex(pat, flags);
+    std::regex re = makeRegex(ctx, pat, flags);
     std::string res;
     try { res = std::regex_replace(s, re, replStr); } catch (...) { return strObj; }
     return PythonEnvironment::getInternedString(ctx, res.c_str())->asObject(ctx);
@@ -450,7 +486,7 @@ static const proto::ProtoObject* py_pattern_findall(
     if (!posArgs->getAt(ctx, 0)->isString(ctx)) return ctx->newList()->asObject(ctx);
     posArgs->getAt(ctx, 0)->asString(ctx)->toUTF8String(ctx, s);
     long long flags = extractFlags(ctx, self, nullptr, -1);
-    std::regex re = makeRegex(pat, flags);
+    std::regex re = makeRegex(ctx, pat, flags);
     const proto::ProtoList* results = ctx->newList();
     auto begin = std::sregex_iterator(s.begin(), s.end(), re);
     auto end2 = std::sregex_iterator();
@@ -497,7 +533,7 @@ static const proto::ProtoObject* py_pattern_split(
     if (!posArgs->getAt(ctx, 0)->isString(ctx)) return ctx->newList()->asObject(ctx);
     posArgs->getAt(ctx, 0)->asString(ctx)->toUTF8String(ctx, s);
     long long flags = extractFlags(ctx, self, nullptr, -1);
-    std::regex re = makeRegex(pat, flags);
+    std::regex re = makeRegex(ctx, pat, flags);
     const proto::ProtoList* results = ctx->newList();
     std::sregex_token_iterator it(s.begin(), s.end(), re, -1);
     std::sregex_token_iterator end2;
@@ -528,7 +564,7 @@ static const proto::ProtoObject* py_fullmatch(
     if (!posArgs->getAt(ctx, 1)->isString(ctx)) return PROTO_NONE;
     posArgs->getAt(ctx, 1)->asString(ctx)->toUTF8String(ctx, s);
     long long flags = extractFlags(ctx, patObj, posArgs, 2);
-    std::regex re = makeRegex(pat, flags);
+    std::regex re = makeRegex(ctx, pat, flags);
     std::smatch m;
     if (!std::regex_match(s, m, re)) return PROTO_NONE;
     return makeMatchObject(ctx, getMatchProto(ctx, self), m, s);
@@ -578,7 +614,7 @@ static const proto::ProtoObject* py_subn(
     if (!strObj->isString(ctx)) return PROTO_NONE;
     strObj->asString(ctx)->toUTF8String(ctx, s);
     long long flags = extractFlags(ctx, patObj, posArgs, 3);
-    std::regex re = makeRegex(pat, flags);
+    std::regex re = makeRegex(ctx, pat, flags);
 
     int count = 0;
     std::string result;
@@ -613,7 +649,7 @@ static const proto::ProtoObject* py_finditer(
     if (!strObj->isString(ctx)) return ctx->newList()->asObject(ctx);
     strObj->asString(ctx)->toUTF8String(ctx, s);
     long long flags = extractFlags(ctx, patObj, posArgs, 2);
-    std::regex re = makeRegex(pat, flags);
+    std::regex re = makeRegex(ctx, pat, flags);
     const proto::ProtoObject* matchProto = getMatchProto(ctx, self);
     const proto::ProtoList* results = ctx->newList();
     auto begin = std::sregex_iterator(s.begin(), s.end(), re);
@@ -671,7 +707,7 @@ static const proto::ProtoObject* py_scanner_iter_match(
     if (pos >= (long long)s.size()) return PROTO_NONE;
 
     long long flags = extractFlags(ctx, self, nullptr, -1);
-    std::regex re = makeRegex(pat, flags);
+    std::regex re = makeRegex(ctx, pat, flags);
 
     std::string sub = s.substr(static_cast<size_t>(pos));
     std::smatch m;
@@ -821,7 +857,7 @@ static const proto::ProtoObject* py_scanner_scan(
     else return PROTO_NONE;
 
     long long flags = extractFlags(ctx, self, nullptr, -1);
-    std::regex re = makeRegex(pat, flags);
+    std::regex re = makeRegex(ctx, pat, flags);
 
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     const proto::ProtoList* results = ctx->newList();
