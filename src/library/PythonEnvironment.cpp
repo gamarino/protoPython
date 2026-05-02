@@ -14720,51 +14720,15 @@ const proto::ProtoObject* PythonEnvironment::iter(const proto::ProtoObject* obj)
                             val = invokePythonCallable(c, gi, args, nullptr);
                         }
                         if (e->hasPendingException()) {
-                            // IndexError → end of iteration (legacy
-                            // sequence protocol).  StopIteration also
-                            // ends iteration.  Walk type(exc).__mro__
-                            // by name so subclasses of IndexError /
-                            // StopIteration also stop the loop, not
-                            // just direct instances.  Other exceptions
-                            // propagate.
+                            // IndexError -> end of iteration; StopIteration propagates.
                             const proto::ProtoObject* pexc = e->peekPendingException();
-                            bool stopIter = false;
-                            if (pexc) {
-                                // Use env->getType: pexc.__class__ via the
-                                // protoCore chain finds the metaclass
-                                // (type) instead of the exception type
-                                // because the exception type itself sets
-                                // its own __class__ to typePrototype, and
-                                // instance creation inherits that through
-                                // newChild.  env->getType resolves the
-                                // actual exception class via getFirstParent
-                                // / __mro__ inspection.
-                                const proto::ProtoObject* pcls = e->getType(c, pexc);
-                                if (!pcls || pcls == PROTO_NONE) pcls = pexc;
-                                auto check_name = [&](const proto::ProtoObject* cls_) -> bool {
-                                    const proto::ProtoObject* nameAttr = cls_
-                                        ? cls_->getAttribute(c, e->getNameString()) : nullptr;
-                                    if (!nameAttr || !nameAttr->isString(c)) return false;
-                                    std::string n;
-                                    nameAttr->asString(c)->toUTF8String(c, n);
-                                    return n == "IndexError" || n == "StopIteration";
-                                };
-                                if (check_name(pcls)) stopIter = true;
-                                else if (pcls) {
-                                    const proto::ProtoString* mroS = e->getMroString();
-                                    const proto::ProtoObject* mro = mroS ? pcls->getAttribute(c, mroS) : nullptr;
-                                    const proto::ProtoTuple* mt = mro ? mro->asTuple(c) : nullptr;
-                                    if (mt) {
-                                        for (unsigned long k = 0; k < mt->getSize(c); ++k) {
-                                            if (check_name(mt->getAt(c, k))) {
-                                                stopIter = true;
-                                                break;
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            if (stopIter) {
+                            const proto::ProtoString* clsS = e->getClassString();
+                            const proto::ProtoObject* pcls = pexc ? pexc->getAttribute(c, clsS) : nullptr;
+                            const proto::ProtoObject* pnameO = pcls
+                                ? pcls->getAttribute(c, e->getNameString()) : nullptr;
+                            std::string pname;
+                            if (pnameO && pnameO->isString(c)) pnameO->asString(c)->toUTF8String(c, pname);
+                            if (pname == "IndexError" || pname == "StopIteration") {
                                 e->clearPendingException();
                                 return nullptr;
                             }
