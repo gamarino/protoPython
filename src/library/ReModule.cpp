@@ -29,7 +29,8 @@ static const proto::ProtoObject* makeMatchObject(
     const proto::ProtoObject* matchProto,
     const std::smatch& m,
     const std::string& subject,
-    size_t posOffset = 0)
+    size_t posOffset = 0,
+    const proto::ProtoObject* patObj = nullptr)
 {
     if (!matchProto) return PROTO_NONE;
     const proto::ProtoObject* mo = matchProto->newChild(ctx, true);
@@ -56,6 +57,17 @@ static const proto::ProtoObject* makeMatchObject(
     mo = mo->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__re_groups__"),
         groups->asObject(ctx));
 
+    // Forward the pattern's name -> index mapping so .group('name') /
+    // .groupdict() can resolve named groups.
+    if (patObj) {
+        const proto::ProtoObject* gi = patObj->getAttribute(ctx,
+            proto::ProtoString::createSymbol(ctx, "__re_groupindex__"));
+        if (gi && gi != PROTO_NONE) {
+            mo = mo->setAttribute(ctx,
+                proto::ProtoString::createSymbol(ctx, "__re_groupindex__"), gi);
+        }
+    }
+
     return mo;
 }
 
@@ -63,27 +75,105 @@ static const proto::ProtoObject* makeMatchObject(
 // Match object methods
 // ---------------------------------------------------------------------------
 
+// Resolve a group reference (int or str) on a match object to a 1-based
+// numeric index.  Returns -1 if the name is not registered or the integer
+// is out of range; -2 to mean "the user wants group 0 (whole match)".
+static long long resolveGroupRef(proto::ProtoContext* ctx,
+                                  const proto::ProtoObject* matchSelf,
+                                  const proto::ProtoObject* ref) {
+    if (!ref) return -2;
+    if (ref->isInteger(ctx)) {
+        long long v = ref->asLong(ctx);
+        return v == 0 ? -2 : v;
+    }
+    if (ref->isString(ctx)) {
+        std::string name;
+        ref->asString(ctx)->toUTF8String(ctx, name);
+        const proto::ProtoObject* gi = matchSelf->getAttribute(ctx,
+            proto::ProtoString::createSymbol(ctx, "__re_groupindex__"));
+        if (gi && gi->asList(ctx)) {
+            const proto::ProtoList* lst = gi->asList(ctx);
+            for (unsigned long k = 0; k < lst->getSize(ctx); ++k) {
+                const proto::ProtoObject* pair = lst->getAt(ctx, k);
+                if (!pair || !pair->asList(ctx)) continue;
+                const proto::ProtoList* p = pair->asList(ctx);
+                if (p->getSize(ctx) < 2) continue;
+                const proto::ProtoObject* nameObj = p->getAt(ctx, 0);
+                const proto::ProtoObject* idxObj  = p->getAt(ctx, 1);
+                if (!nameObj || !idxObj || !nameObj->isString(ctx) || !idxObj->isInteger(ctx)) continue;
+                std::string n;
+                nameObj->asString(ctx)->toUTF8String(ctx, n);
+                if (n == name) return idxObj->asLong(ctx);
+            }
+        }
+        return -1;
+    }
+    return -1;
+}
+
 // match.group([index]) — return the string for a group (default group 0 = full match)
 static const proto::ProtoObject* py_match_group(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*)
 {
-    long long idx = 0;
-    if (posArgs && posArgs->getSize(ctx) >= 1) {
-        const proto::ProtoObject* idxObj = posArgs->getAt(ctx, 0);
-        if (idxObj && idxObj->isInteger(ctx)) idx = idxObj->asLong(ctx);
-    }
-    if (idx == 0) {
+    const proto::ProtoObject* ref = nullptr;
+    if (posArgs && posArgs->getSize(ctx) >= 1) ref = posArgs->getAt(ctx, 0);
+    long long idx = resolveGroupRef(ctx, self, ref);
+    if (idx == -2 || ref == nullptr) {
         const proto::ProtoObject* s = self->getAttribute(ctx,
             proto::ProtoString::createSymbol(ctx, "__re_match_str__"));
         return s ? s : PROTO_NONE;
     }
+    if (idx < 1) return PROTO_NONE;
     const proto::ProtoObject* groupsObj = self->getAttribute(ctx,
         proto::ProtoString::createSymbol(ctx, "__re_groups__"));
     if (!groupsObj || !groupsObj->asList(ctx)) return PROTO_NONE;
     const proto::ProtoList* groups = groupsObj->asList(ctx);
-    if (idx < 1 || idx > (long long)groups->getSize(ctx)) return PROTO_NONE;
+    if (idx > (long long)groups->getSize(ctx)) return PROTO_NONE;
     return groups->getAt(ctx, static_cast<int>(idx - 1));
+}
+
+// match.groupdict([default]) — return {name: matched_string} for all named groups.
+static const proto::ProtoObject* py_match_groupdict(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*)
+{
+    const proto::ProtoObject* defaultVal = PROTO_NONE;
+    if (posArgs && posArgs->getSize(ctx) >= 1) defaultVal = posArgs->getAt(ctx, 0);
+
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    const proto::ProtoObject* dictObj = ctx->newObject(true);
+    const proto::ProtoList*       keys = ctx->newList();
+    const proto::ProtoSparseList* data = ctx->newSparseList();
+
+    const proto::ProtoObject* gi = self->getAttribute(ctx,
+        proto::ProtoString::createSymbol(ctx, "__re_groupindex__"));
+    const proto::ProtoObject* groupsObj = self->getAttribute(ctx,
+        proto::ProtoString::createSymbol(ctx, "__re_groups__"));
+    const proto::ProtoList* groups = (groupsObj && groupsObj->asList(ctx)) ? groupsObj->asList(ctx) : nullptr;
+
+    if (gi && gi->asList(ctx) && groups) {
+        const proto::ProtoList* lst = gi->asList(ctx);
+        for (unsigned long k = 0; k < lst->getSize(ctx); ++k) {
+            const proto::ProtoObject* pair = lst->getAt(ctx, k);
+            if (!pair || !pair->asList(ctx) || pair->asList(ctx)->getSize(ctx) < 2) continue;
+            const proto::ProtoObject* nameObj = pair->asList(ctx)->getAt(ctx, 0);
+            const proto::ProtoObject* idxObj  = pair->asList(ctx)->getAt(ctx, 1);
+            if (!nameObj || !idxObj || !nameObj->isString(ctx) || !idxObj->isInteger(ctx)) continue;
+            long long idx = idxObj->asLong(ctx);
+            const proto::ProtoObject* val = (idx >= 1 && idx <= (long long)groups->getSize(ctx))
+                ? groups->getAt(ctx, static_cast<int>(idx - 1)) : PROTO_NONE;
+            if (val == PROTO_NONE) val = defaultVal;
+            keys = keys->appendLast(ctx, nameObj);
+            data = data->setAt(ctx, nameObj->getHash(ctx), val);
+        }
+    }
+    if (env) {
+        dictObj = dictObj->setAttribute(ctx, env->getKeysString(),  keys->asObject(ctx));
+        dictObj = dictObj->setAttribute(ctx, env->getDataString(),  data->asObject(ctx));
+        dictObj = dictObj->setAttribute(ctx, env->getClassString(), env->getDictPrototype());
+    }
+    return dictObj;
 }
 
 // match.groups([default]) — return tuple of all captured groups
@@ -185,6 +275,120 @@ static std::regex_constants::syntax_option_type pyFlagsToStdFlags(long long pyFl
     return flags;
 }
 
+// Translate a Python re module source pattern into an ECMAScript-compatible
+// pattern that std::regex (libstdc++ ECMAScript) accepts.  Differences we
+// rewrite:
+//   - Python-style named groups `(?P<name>...)` and back-references `(?P=name)`
+//     are converted to plain numbered groups + `\<digit>` back-references.
+//     Named lookup is preserved by returning a name -> 1-based group index
+//     mapping that the runtime stamps on the compiled pattern as
+//     `__re_groupindex__`, so `m.group('name')` and `m.groupdict()` still
+//     work at the protoPython level.  We do NOT emit `(?<name>...)` because
+//     libstdc++'s std::regex rejects it as an "Invalid '(?...)' zero-width
+//     assertion" (named groups are an ECMA-262 ES2018 addition not yet in
+//     libstdc++'s implementation).
+//   - Anchors `\A` / `\Z` / `\z` -> `^` / `$`.
+//   - re.VERBOSE / re.X — comments (`#...EOL`) and unescaped whitespace are
+//     stripped (outside character classes / escapes).
+//
+// Without this translation, _pydecimal's _parser regex (the canonical
+// example) fails to compile and decimal becomes uninstantiable, which in
+// turn breaks the import chain for tests that depend on decimal directly
+// (test_decimal) or transitively (anything that imports json -> decimal).
+//
+// Limitations: this is a syntactic rewrite, not a full Python re reimpl.
+// Constructs we don't support stay unsupported (e.g. `(?(id)yes|no)`
+// conditional groups, `(?>...)` atomic groups, recursive `(?R)` /
+// `(?P>name)`, named back-references where the index doesn't fit a single
+// decimal digit).  The translator preserves character-class contents
+// verbatim and treats backslash escapes as opaque pairs.
+struct TranslatedRegex {
+    std::string pattern;                                       // ECMAScript-compatible source
+    std::vector<std::pair<std::string, int>> groupIndex;       // name -> 1-based group index
+};
+
+static TranslatedRegex translatePyRegexEx(const std::string& src, long long pyFlags) {
+    bool verbose = (pyFlags & 64) != 0;  // re.VERBOSE / re.X
+    TranslatedRegex result;
+    std::string& out = result.pattern;
+    out.reserve(src.size());
+    int groupCounter = 0;
+    bool inClass = false;
+    for (size_t i = 0; i < src.size(); ) {
+        char c = src[i];
+        if (inClass) {
+            if (c == '\\' && i + 1 < src.size()) {
+                out += c; out += src[i + 1]; i += 2; continue;
+            }
+            out += c;
+            if (c == ']') inClass = false;
+            ++i; continue;
+        }
+        if (c == '\\' && i + 1 < src.size()) {
+            char n = src[i + 1];
+            if (n == 'A') { out += '^';  i += 2; continue; }
+            if (n == 'z' || n == 'Z') { out += '$'; i += 2; continue; }
+            out += c; out += n; i += 2; continue;
+        }
+        if (verbose) {
+            if (c == '#') {
+                while (i < src.size() && src[i] != '\n') ++i;
+                continue;
+            }
+            if (c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v') {
+                ++i; continue;
+            }
+        }
+        if (c == '[') { inClass = true; out += c; ++i; continue; }
+        if (c == '(' && i + 3 < src.size() && src[i + 1] == '?' && src[i + 2] == 'P') {
+            // (?P<name>X) -> (X), capturing, recorded in groupIndex.
+            if (src[i + 3] == '<') {
+                size_t j = i + 4;
+                size_t nameStart = j;
+                while (j < src.size() && src[j] != '>') ++j;
+                std::string name(src, nameStart, j - nameStart);
+                ++groupCounter;
+                result.groupIndex.emplace_back(std::move(name), groupCounter);
+                out += '(';
+                if (j < src.size()) ++j;  // consume '>'
+                i = j; continue;
+            }
+            // (?P=name) -> \<idx> (single-digit only — multi-digit back-refs
+            // are ambiguous in ECMAScript; punt and emit nothing rather than
+            // fabricate something invalid).
+            if (src[i + 3] == '=') {
+                size_t j = i + 4;
+                size_t nameStart = j;
+                while (j < src.size() && src[j] != ')') ++j;
+                std::string name(src, nameStart, j - nameStart);
+                int idx = -1;
+                for (const auto& p : result.groupIndex) if (p.first == name) { idx = p.second; break; }
+                if (idx >= 1 && idx <= 9) {
+                    out += '\\';
+                    out += static_cast<char>('0' + idx);
+                }
+                if (j < src.size()) ++j;  // consume ')'
+                i = j; continue;
+            }
+        }
+        // Other (?...) prefixes are non-capturing — pass through, no counter bump.
+        if (c == '(' && i + 1 < src.size() && src[i + 1] == '?') {
+            out += c; ++i; continue;
+        }
+        // Plain '(' starts a capturing group.
+        if (c == '(') {
+            ++groupCounter;
+            out += c; ++i; continue;
+        }
+        out += c; ++i;
+    }
+    return result;
+}
+
+static std::string translatePyRegex(const std::string& src, long long pyFlags) {
+    return translatePyRegexEx(src, pyFlags).pattern;
+}
+
 // Read flags from posArgs[flagsArgIdx] or from object's __re_flags__ attribute
 static long long extractFlags(proto::ProtoContext* ctx,
                                const proto::ProtoObject* patObj,
@@ -219,7 +423,8 @@ static std::regex makeRegex(proto::ProtoContext* ctx,
                             const std::string& pat,
                             long long pyFlags) {
     try {
-        return std::regex(pat, pyFlagsToStdFlags(pyFlags));
+        const std::string translated = translatePyRegex(pat, pyFlags);
+        return std::regex(translated, pyFlagsToStdFlags(pyFlags));
     } catch (const std::regex_error& e) {
         // std::regex (the C++ stdlib) rejects several constructs the
         // Python `re` module accepts — most commonly named groups
@@ -286,16 +491,44 @@ static const proto::ProtoObject* py_compile(
     p = p->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "pattern"), patObj);
     p = p->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "flags"),
         ctx->fromInteger(flags));
-    // Count capture groups by scanning unescaped '(' that aren't '(?...' non-capturing.
+    // Translate now (cheap) so we can both extract the named-group map and
+    // remember the rewritten pattern for downstream matchers.  Stash the
+    // translated string on the pattern object so makeRegex callers don't
+    // re-translate on every operation.
+    TranslatedRegex tr = translatePyRegexEx(pat, flags);
     int groupCount = 0;
-    for (size_t i = 0; i + 0 < pat.size(); ++i) {
-        if (pat[i] == '\\' && i + 1 < pat.size()) { ++i; continue; }
-        if (pat[i] != '(') continue;
-        if (i + 2 < pat.size() && pat[i + 1] == '?' && pat[i + 2] != 'P') continue;
-        ++groupCount;
+    {
+        // Count capture groups in the translated source: every unescaped '(' that
+        // is not '(?'-prefixed (non-capturing / lookaround / etc.) is one group.
+        bool inClass = false;
+        for (size_t i = 0; i < tr.pattern.size(); ++i) {
+            char c = tr.pattern[i];
+            if (c == '\\' && i + 1 < tr.pattern.size()) { ++i; continue; }
+            if (inClass) { if (c == ']') inClass = false; continue; }
+            if (c == '[') { inClass = true; continue; }
+            if (c != '(') continue;
+            if (i + 1 < tr.pattern.size() && tr.pattern[i + 1] == '?') continue;
+            ++groupCount;
+        }
     }
     p = p->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "groups"),
         ctx->fromInteger(groupCount));
+    // Build name -> 1-based-index mapping as a ProtoList of [name, index]
+    // pairs.  We deliberately do not use a ProtoSparseList / dict shape:
+    // a flat list keeps the wire format simple and the lookup is O(n) on a
+    // value of n that is bounded by the number of named groups in a single
+    // regex (typically < 10).
+    if (!tr.groupIndex.empty()) {
+        const proto::ProtoList* gindex = ctx->newList();
+        for (const auto& kv : tr.groupIndex) {
+            const proto::ProtoList* pair = ctx->newList()
+                ->appendLast(ctx, PythonEnvironment::getInternedString(ctx, kv.first.c_str())->asObject(ctx))
+                ->appendLast(ctx, ctx->fromInteger(kv.second));
+            gindex = gindex->appendLast(ctx, pair->asObject(ctx));
+        }
+        p = p->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__re_groupindex__"),
+            gindex->asObject(ctx));
+    }
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (env) {
         // Give the instance an explicit class name for repr/type() checks.
@@ -318,7 +551,7 @@ static const proto::ProtoObject* py_match(
     std::regex re = makeRegex(ctx, pat, flags);
     std::smatch m;
     if (!std::regex_search(s, m, re) || m.position() != 0) return PROTO_NONE;
-    return makeMatchObject(ctx, getMatchProto(ctx, self), m, s);
+    return makeMatchObject(ctx, getMatchProto(ctx, self), m, s, 0, patObj);
 }
 
 static const proto::ProtoObject* py_search(
@@ -335,7 +568,7 @@ static const proto::ProtoObject* py_search(
     std::regex re = makeRegex(ctx, pat, flags);
     std::smatch m;
     if (!std::regex_search(s, m, re)) return PROTO_NONE;
-    return makeMatchObject(ctx, getMatchProto(ctx, self), m, s);
+    return makeMatchObject(ctx, getMatchProto(ctx, self), m, s, 0, patObj);
 }
 
 static const proto::ProtoObject* py_escape(
@@ -394,7 +627,7 @@ static const proto::ProtoObject* py_pattern_match(
     std::regex re = makeRegex(ctx, pat, flags);
     std::smatch m;
     if (!std::regex_search(sub, m, re) || m.position() != 0) return PROTO_NONE;
-    return makeMatchObject(ctx, getMatchProto(ctx, self), m, s, pos);
+    return makeMatchObject(ctx, getMatchProto(ctx, self), m, s, pos, self);
 }
 
 static const proto::ProtoObject* py_pattern_fullmatch(
@@ -410,7 +643,7 @@ static const proto::ProtoObject* py_pattern_fullmatch(
     std::regex re = makeRegex(ctx, pat, flags);
     std::smatch m;
     if (!std::regex_match(s, m, re)) return PROTO_NONE;
-    return makeMatchObject(ctx, getMatchProto(ctx, self), m, s);
+    return makeMatchObject(ctx, getMatchProto(ctx, self), m, s, 0, self);
 }
 
 static const proto::ProtoObject* py_pattern_search(
@@ -448,7 +681,7 @@ static const proto::ProtoObject* py_pattern_search(
     std::regex re = makeRegex(ctx, pat, flags);
     std::smatch m;
     if (!std::regex_search(sub, m, re)) return PROTO_NONE;
-    return makeMatchObject(ctx, getMatchProto(ctx, self), m, s, pos);
+    return makeMatchObject(ctx, getMatchProto(ctx, self), m, s, pos, self);
 }
 
 static const proto::ProtoObject* py_pattern_sub(
@@ -567,7 +800,7 @@ static const proto::ProtoObject* py_fullmatch(
     std::regex re = makeRegex(ctx, pat, flags);
     std::smatch m;
     if (!std::regex_match(s, m, re)) return PROTO_NONE;
-    return makeMatchObject(ctx, getMatchProto(ctx, self), m, s);
+    return makeMatchObject(ctx, getMatchProto(ctx, self), m, s, 0, patObj);
 }
 
 static const proto::ProtoObject* py_findall(
@@ -655,7 +888,7 @@ static const proto::ProtoObject* py_finditer(
     auto begin = std::sregex_iterator(s.begin(), s.end(), re);
     auto end2 = std::sregex_iterator();
     for (auto it = begin; it != end2; ++it) {
-        results = results->appendLast(ctx, makeMatchObject(ctx, matchProto, *it, s));
+        results = results->appendLast(ctx, makeMatchObject(ctx, matchProto, *it, s, 0, patObj));
     }
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     const proto::ProtoObject* listProto = env ? env->getListPrototype() : nullptr;
@@ -932,6 +1165,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(const_cast<proto::ProtoObject*>(matchProto), py_match_group));
     matchProto = matchProto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "groups"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(matchProto), py_match_groups));
+    matchProto = matchProto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "groupdict"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(matchProto), py_match_groupdict));
     matchProto = matchProto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "start"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(matchProto), py_match_start));
     matchProto = matchProto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "end"),
