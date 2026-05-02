@@ -1095,16 +1095,42 @@ static const proto::ProtoObject* py_int_call(
             size_t b = s.find_first_not_of(" \t\n\r\f\v");
             size_t e = s.find_last_not_of(" \t\n\r\f\v");
             std::string trimmed = (b == std::string::npos) ? std::string() : s.substr(b, e - b + 1);
-            // Detect and strip `0x`, `0o`, `0b` prefix (with optional sign).
-            int base = 10;
+            // Honor an explicit base argument: posArgs[2] when present is
+            // CPython's `int(s, base)`.  base=0 means auto-detect from the
+            // 0x / 0o / 0b prefix (the historical protopy default); any
+            // non-zero base bypasses prefix detection — prefixes are only
+            // permitted in base 0 / 16 / 8 / 2 in CPython, and tolerating
+            // them in other bases is harmless for the common case.
+            // Examples this fixes:
+            //   int('ff', 16)             -> 255  (uuid.py UUID parsing)
+            //   int('ffffffff...', 16)    -> 2^128-1 (uuid.MAX literal)
+            //   int('1010', 2)            -> 10
+            int explicitBase = -1;  // sentinel: not provided
+            if (posArgs->getSize(ctx) >= 3) {
+                const proto::ProtoObject* baseArg = posArgs->getAt(ctx, 2);
+                if (baseArg && baseArg->isInteger(ctx)) {
+                    explicitBase = static_cast<int>(baseArg->asLong(ctx));
+                } else if (baseArg && baseArg->isBoolean(ctx)) {
+                    explicitBase = (baseArg == PROTO_TRUE) ? 1 : 0;  // pathological but consistent
+                }
+            }
+            int base = (explicitBase < 0 || explicitBase == 0) ? 10 : explicitBase;
             std::string digits = trimmed;
             int signLen = 0;
             if (!digits.empty() && (digits[0] == '+' || digits[0] == '-')) signLen = 1;
+            // Strip 0x / 0o / 0b prefix only in base-0 (auto-detect) mode or
+            // when the prefix matches the explicit base.  Stripping in other
+            // bases would silently change semantics.
             if (digits.size() >= static_cast<size_t>(signLen + 2) && digits[signLen] == '0') {
                 char p = digits[signLen + 1];
-                if (p == 'x' || p == 'X') { base = 16; digits.erase(signLen + 1, 1); digits.erase(signLen, 1); }
-                else if (p == 'o' || p == 'O') { base = 8; digits.erase(signLen + 1, 1); digits.erase(signLen, 1); }
-                else if (p == 'b' || p == 'B') { base = 2; digits.erase(signLen + 1, 1); digits.erase(signLen, 1); }
+                bool autoDetect = (explicitBase < 0 || explicitBase == 0);
+                if ((p == 'x' || p == 'X') && (autoDetect || explicitBase == 16)) {
+                    base = 16; digits.erase(signLen + 1, 1); digits.erase(signLen, 1);
+                } else if ((p == 'o' || p == 'O') && (autoDetect || explicitBase == 8)) {
+                    base = 8;  digits.erase(signLen + 1, 1); digits.erase(signLen, 1);
+                } else if ((p == 'b' || p == 'B') && (autoDetect || explicitBase == 2)) {
+                    base = 2;  digits.erase(signLen + 1, 1); digits.erase(signLen, 1);
+                }
             }
             try {
                 // Integer::fromString now promotes to bignum on overflow
@@ -1112,7 +1138,13 @@ static const proto::ProtoObject* py_int_call(
                 x = ctx->fromString(digits.c_str(), base);
             } catch (...) {
                 PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-                if (env) env->raiseValueError(ctx, PythonEnvironment::getInternedString(ctx, ("invalid literal for int() with base 0: " + s).c_str())->asObject(ctx));
+                if (env) {
+                    char msg[256];
+                    std::snprintf(msg, sizeof(msg),
+                                  "invalid literal for int() with base %d: %s",
+                                  (explicitBase < 0 ? 10 : explicitBase), s.c_str());
+                    env->raiseValueError(ctx, PythonEnvironment::getInternedString(ctx, msg)->asObject(ctx));
+                }
                 return nullptr;
             }
         } else {
