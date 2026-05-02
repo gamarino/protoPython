@@ -3316,16 +3316,9 @@ static const proto::ProtoObject* py_tuple_call(
     if (!cls) return PROTO_NONE;
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     if (get_env_diag()) fprintf(stderr, "DEBUG: py_tuple_call entry cls=%p repr=%s\n", (void*)cls, PythonEnvironment::reprObject(context, cls).c_str());
-    const proto::ProtoObject* instance = cls->newChild(context, true);
+    proto::ProtoObject* instance = const_cast<proto::ProtoObject*>(cls->newChild(context, true));
     if (get_env_diag()) fprintf(stderr, "DEBUG: py_tuple_call created instance=%p\n", (void*)instance);
-    // Persist the setAttribute return: even though instance is created
-    // mutable, immutable attribute structures inside protoCore may still
-    // return a new wrapper for the change.  Without re-binding, the
-    // mutation is lost and `type(inst)` falls back through the prototype
-    // chain to `tuple` instead of the requested subclass — the bug that
-    // breaks namedtuple subclasses constructed via type(name, (tuple,), …)
-    // (collections.namedtuple, platform.uname_result, etc.).
-    instance = instance->setAttribute(context, env ? env->getClassString() : PythonEnvironment::getInternalString(context, "__class__"), cls);
+    instance->setAttribute(context, env ? env->getClassString() : PythonEnvironment::getInternalString(context, "__class__"), cls);
     const proto::ProtoString* dataName = env ? env->getDataString() : PythonEnvironment::getInternalString(context, "__data__");
     proto::ProtoList* l = const_cast<proto::ProtoList*>(context->newList());
 
@@ -3374,7 +3367,7 @@ static const proto::ProtoObject* py_tuple_call(
     }
 
     const proto::ProtoTuple* t = context->newTupleFromList(l);
-    instance = instance->setAttribute(context, dataName, t->asObject(context));
+    instance->setAttribute(context, dataName, t->asObject(context));
     if (get_env_diag()) fprintf(stderr, "DEBUG: py_tuple_call returning instance=%p repr=%s\n", (void*)instance, PythonEnvironment::reprObject(context, instance).c_str());
     return instance;
 }
@@ -12539,24 +12532,7 @@ const proto::ProtoObject* PythonEnvironment::getType(proto::ProtoContext* ctx, c
     else if (obj->isInteger(ctx)) res = intPrototype;
     else if (obj->isFloat(ctx)) res = floatPrototype;
     else if (obj->isBoolean(ctx)) res = boolPrototype;
-    else if (obj->isTuple(ctx) && !this->isActuallyAClass(ctx, obj)) {
-        // A tuple-shaped instance is normally just `tuple`, but namedtuple
-        // and other tuple subclasses are constructed via
-        // `type(name, (tuple,), {...})` and instances carry their actual
-        // class as an OWN __class__ attribute.  Without this branch every
-        // namedtuple instance reports type() == tuple, breaking field
-        // access (the descriptors live on the subclass dict, not on
-        // tuple) and isinstance / type identity checks.  Visible at
-        // platform.uname_result -> uname().release downstream.
-        const proto::ProtoString* classS = getClassString();
-        if (classS && obj->hasOwnAttribute(ctx, classS) == PROTO_TRUE) {
-            const proto::ProtoObject* cls = obj->proto::ProtoObject::getAttribute(ctx, classS);
-            if (cls && cls != PROTO_NONE && cls != obj && !cls->isString(ctx)) {
-                return cls;
-            }
-        }
-        res = tuplePrototype;
-    }
+    else if (obj->isTuple(ctx) && !this->isActuallyAClass(ctx, obj)) res = tuplePrototype;
     else {
         // 2. Python-level __class__ (Explicit Identity)
         const proto::ProtoString* classS = getClassString() ? getClassString() : PythonEnvironment::getInternedString(ctx, "__class__");
