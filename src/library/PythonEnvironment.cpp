@@ -9142,6 +9142,83 @@ static const proto::ProtoObject* py_module_keys(
     return listObj;
 }
 
+// module.copy() — return a Python-dict snapshot of the module's attributes.
+// CPython convention: `module.__dict__` IS a dict, and `.copy()` is a dict
+// method.  protoPython's modules use protoCore-level attribute storage and
+// alias `module.__dict__` to the module itself (so `module.__dict__ is
+// module` — see the executeModule preamble).  As a result, naive code like
+//   globs = module.__dict__.copy()
+// (used by doctest, inspect, traceback, json, …) hits this object's
+// attribute table for `.copy`, finds nothing, and raises AttributeError.
+// Synthesise a dict of the (non-internal) module globals here so the
+// `.copy()` call returns something usable downstream.
+static const proto::ProtoObject* py_module_copy(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList*,
+    const proto::ProtoSparseList*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!self || self == PROTO_NONE) {
+        return env ? env->getNonePrototype() : PROTO_NONE;
+    }
+
+    const proto::ProtoString* keysName = PythonEnvironment::getInternalString(context, "__keys__");
+    const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "__data__");
+
+    const proto::ProtoList*       outKeys = context->newList();
+    const proto::ProtoSparseList* outData = context->newSparseList();
+
+    auto append_pair = [&](const proto::ProtoObject* keyObj,
+                           const proto::ProtoObject* val) {
+        if (!keyObj || !keyObj->isString(context)) return;
+        std::string nameStr;
+        keyObj->asString(context)->toUTF8String(context, nameStr);
+        if (isModuleInternalAttr(nameStr)) return;
+        if (!val) return;
+        outKeys = outKeys->appendLast(context, keyObj);
+        outData = outData->setAt(context, keyObj->asString(context)->getHash(context), val);
+    };
+
+    const proto::ProtoObject* keysObj = self->getAttribute(context, keysName);
+    const proto::ProtoList* keysList = (keysObj && keysObj->asList(context)) ? keysObj->asList(context) : nullptr;
+    if (keysList) {
+        unsigned long size = keysList->getSize(context);
+        for (unsigned long i = 0; i < size; ++i) {
+            const proto::ProtoObject* keyObj = keysList->getAt(context, static_cast<int>(i));
+            if (!keyObj || !keyObj->isString(context)) continue;
+            const proto::ProtoObject* val = self->getAttribute(context, keyObj->asString(context));
+            append_pair(keyObj, val);
+        }
+    } else {
+        // Native-module fallback: iterate protoCore own attributes.
+        const proto::ProtoSparseList* attrs = self->getOwnAttributes(context);
+        if (attrs) {
+            auto* it = const_cast<proto::ProtoSparseListIterator*>(attrs->getIterator(context));
+            while (it && it->hasNext(context)) {
+                unsigned long key = it->nextKey(context);
+                const proto::ProtoObject* keyObj = reinterpret_cast<const proto::ProtoObject*>(key);
+                if (keyObj && keyObj->isString(context)) {
+                    const proto::ProtoObject* val = self->getAttribute(context, keyObj->asString(context));
+                    append_pair(keyObj, val);
+                }
+                it = const_cast<proto::ProtoSparseListIterator*>(it->advance(context));
+            }
+        }
+    }
+
+    const proto::ProtoObject* dictObj = context->newObject(true);
+    if (env) {
+        dictObj = dictObj->setAttribute(context, env->getKeysString(),  outKeys->asObject(context));
+        dictObj = dictObj->setAttribute(context, env->getDataString(),  outData->asObject(context));
+        dictObj = dictObj->setAttribute(context, env->getClassString(), env->getDictPrototype());
+    } else {
+        dictObj = dictObj->setAttribute(context, keysName, outKeys->asObject(context));
+        dictObj = dictObj->setAttribute(context, dataName, outData->asObject(context));
+    }
+    return dictObj;
+}
+
 // module.update(other) — set attributes on the module from a dict or other mapping
 static const proto::ProtoObject* py_module_update(
     proto::ProtoContext* context,
@@ -10440,6 +10517,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
         rootContext_->fromMethod(nullptr, py_module_keys));
     modulePrototype = modulePrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "update"),
         rootContext_->fromMethod(nullptr, py_module_update));
+    modulePrototype = modulePrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "copy"),
+        rootContext_->fromMethod(nullptr, py_module_copy));
     if (get_env_diag()) {
         fprintf(stderr, "DEBUG_INIT: modulePrototype=%p\n", (void*)modulePrototype);
     }
@@ -11593,6 +11672,8 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain,
                                 ctx->fromMethod(const_cast<proto::ProtoObject*>(mutableMod), py_module_keys));
                             mutableMod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "update"),
                                 ctx->fromMethod(const_cast<proto::ProtoObject*>(mutableMod), py_module_update));
+                            mutableMod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "copy"),
+                                ctx->fromMethod(const_cast<proto::ProtoObject*>(mutableMod), py_module_copy));
 
                             // CRITICAL: Update modWrapper and sys.modules IMMEDIATELY after cloning/init
                             const_cast<proto::ProtoObject*>(modWrapper)->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "val"), mutableMod);
