@@ -28,6 +28,124 @@
 
 ---
 
+## Current Status (2026-05-02) — post-cluster-fix session
+
+Re-run of the 19-test ground-truth audit catalog after a 28-commit
+cluster-fix session.  Methodology, per-test detail and reproducer
+commands live in `tests/synthetic/sp_audit_truth.py` and the
+auto-generated `/tmp/audit_full.md` (re-run on demand).
+
+### Audit summary
+
+| Category   | Total | PASS | SILENT_HALT | CRASH | TIMEOUT |  Δ vs 2026-04-30 |
+| :---       |  ---: | ---: |        ---: |  ---: |    ---: |             :--- |
+| Essential  |     7 |    0 |           0 |     7 |       0 |       —          |
+| Important  |     6 |    0 |           0 |     3 |       3 | −3 CRASH → TIMEOUT |
+| Necessary  |     4 |    2 |           2 |     0 |       0 | +2 PASS recovered  |
+| Bootstrap  |     2 |    2 |           0 |     0 |       0 |       —          |
+| **Total**  |  **19** | **4** | **2** | **10** | **3** | **+2 PASS / −5 CRASH** |
+
+### What "CRASH" means now
+
+The audit's `CRASH` label means `exit_code != 0`.  After this session,
+most CRASH entries actually run hundreds of unittest tests (with real
+pass/fail/skip/error counts) and return exit 1 because the suite
+**reports unittest failures** — not because the module fails to
+import.  Direct re-run shows:
+
+| Test                  |    Tests run |  fail |   err |  skip | Notes |
+| :---                  |         ---: |  ---: |  ---: |  ---: | :--- |
+| `test_grammar.py`     |          75  |     6 |    20 |     — | runs to completion |
+| `test_types.py`       |         128  |    91 |    29 |     2 | runs to completion |
+| `test_descr.py`       |         159  |   130 |    46 |    11 | runs to completion |
+| `test_asyncgen.py`    |          85  |     9 |    76 |     — | runs to completion |
+| `test_base64.py`      |         292  |    37 |   254 |     1 | runs to completion |
+| `test_os.py`          |         365  |    43 |   114 |   201 | runs to completion |
+| `test_collections.py` | (many, >30s) |     — |     — |     — | progresses past `load_tests`/doctest |
+| `test_generators.py`  | (many, >30s) |     — |     — |     — | progresses past `load_tests`/doctest |
+| `test_datetime.py`    |            — |     — |     — |     — | still `_FailedTest` at `load_tests` (separate cluster) |
+
+For comparison, on 2026-04-30 every Essential / Important test died
+at module-import time with **zero** unittest assertions ever
+attempted.
+
+### Fix clusters closed in this session (28 commits)
+
+Each line below is the title of one commit.  Order is rough
+dependency-ordered (later fixes depended on earlier ones to even
+surface their own blocker).
+
+1.  `runtime: preserve exception identity through raise/except`
+2.  `runtime: synthesise tb_frame for skipFrame'd hot-path callers`
+3.  `runtime: read __py_getattr_handler__ as value, not via hasOwnAttribute`
+4.  `runtime: skip OP_BINARY_SUBSCR fast-path for strings`
+5.  `compiler: only mark lambda free names as nonlocal when actually enclosed`
+6.  `compiler: emit OP_ROT_TWO before OP_WITH_CLEANUP when unwinding with a return value`
+7.  `warnings: expose _warnings.warn as a stub that proxies to py_warnings_warn`
+8.  `types: define MemberDescriptorType as a private sentinel under protopython`
+9.  `collections_abc: expose Buffer ABC (PEP 688)`
+10. `builtins: getattr/hasattr must invoke __getattr__ fallback`
+11. `builtins: fix reversed() for sequence-protocol objects (was SIGABRT)`
+12. `re: translate std::regex_error to a Python exception, never std::terminate`
+13. `exec: translate escaping C++ exceptions to Python RuntimeError`
+14. `builtins: super(type) (one-arg) must not OOB-read positionalParameters[1]`
+15. `builtins: int() must accept bool (subclass of int in CPython)`
+16. `exec: bool participates in arithmetic / bitwise / sequence-repeat ops as int`
+17. `re: translate Python-only regex syntax + support named groups`
+18. `import: honor sys.modules[__name__] = X swap from a module body`
+19. `builtins: int(s, base) honors the explicit base argument`
+20. `super: invoke parent-class @property descriptors via super().attr`
+21. `os: add utime() and isatty() bindings`
+22. `type: tuple-shape subclass instances report their actual class`
+23. `collections: namedtuple field access invokes _tuplegetter descriptor`
+24. `exec: OP_LIST_EXTEND exhausts arbitrary iterables, not just list/tuple`
+25. `threading: replace per-thread local() with single-thread fallback`
+26. `attr: forward inherited None values via getAttribute / hasAttribute split`
+27. `module: add module.copy() to satisfy module.__dict__.copy()`
+28. `datetime/time: strftime returns string; struct_time supports both indexing and named field access; expose timezone metadata`
+29. `sorted+operator: handle StopIteration cleanly; add le/gt/ge/ne`
+30. `sys: _getframe synthesises a frame at module top-level; clamp depth`
+31. `exceptions: default __cause__ / __context__ / __traceback__ on classes`
+32. `sys: synthesised _getframe frame carries a stub f_code`
+
+### Conformity baseline (`tests/conformity/`)
+
+Held at **8 / 9 PASS** (fail: `test_dict_conformity.py` — pre-existing,
+unrelated assertion failure inside the conformity test itself) for
+every commit in the session.  No regressions.
+
+### Open clusters (next-session candidates)
+
+- **`test_datetime.py` `load_tests` _FailedTest**: `import_fresh_module`
+  + `module.__dict__.items()` walk in the wrapper-class binding code
+  fails before any TestCase is collected.  Different from the doctest
+  blocker that was fixed for `test_collections` / `test_generators`.
+
+- **`co_filename` on real frames during unittest dispatch**: real
+  function frames in the unittest call chain expose an `f_code` whose
+  `co_filename` is missing.  The compiler stamps `co_filename` on
+  every code object it builds — so the offending object is most likely
+  one of the synthesised dispatch closures (LOAD_BUILD_CLASS body
+  frames, decorator wrappers, `functools.wraps`-built wrappers).
+  Surfaces as `'object' object has no attribute 'co_filename'`
+  during traceback formatting in `unittest.result._exc_info_to_string`.
+
+- **`test_re.py`, `test_functools.py`, `test_sys.py`** — all TIMEOUT at
+  120s after this session's fixes.  Module load completes; the
+  suites themselves run, just slowly enough to exceed the audit's
+  per-test budget.  Performance work, not correctness.
+
+- **Filter `None`-as-bool sentinel**: `filter(None, iterable)` doesn't
+  honour the CPython convention of treating `None` as the truthiness
+  filter.  Surfaces when the audit walks `filter(None, …)` star-unpacks
+  — see `OP_LIST_EXTEND` commit message for the boundary.
+
+- **`sorted` `key=` / `reverse=` kwargs**: `py_sorted` accepts but
+  ignores both kwargs after this session's StopIteration fix.  Any
+  code that *relies* on the sort order observes natural-order output.
+
+---
+
 ## Recent SP closures (post-OBSOLETE)
 
 ### V155.x Changes (2026-04-30) — SP-C: MappingProxy / cls.__dict__ semantics
