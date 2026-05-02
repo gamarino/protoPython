@@ -1307,21 +1307,53 @@ static const proto::ProtoObject* py_getattr(
     }
     bool attrFound = val && (val != PROTO_NONE || obj->hasAttribute(context, key) == PROTO_TRUE);
 
-    if (!attrFound && env && !env->hasPendingException()) {
-        // Try __getattr__ fallback, mirroring OP_LOAD_ATTR behavior
-        const proto::ProtoString* getattrKey = PythonEnvironment::getInternedString(context, "__getattr__");
-        const proto::ProtoObject* getattrFn = nullptr;
-        if (obj->hasOwnAttribute(context, getattrKey) == PROTO_TRUE) {
-            getattrFn = obj->getAttribute(context, getattrKey);
-        } else {
-            const proto::ProtoObject* cls = obj->getAttribute(context, env->getClassString());
-            if (cls && cls != PROTO_NONE) {
-                getattrFn = env->getAttribute(context, cls, getattrKey, false);
+    if (!attrFound && env) {
+        // Mirror OP_LOAD_ATTR: try __getattr__ before raising AttributeError.
+        // raiseError=false above means env->getAttribute should not raise on a
+        // missing attribute, but a *descriptor* called during the lookup may
+        // have raised — those should propagate, not be masked.  We treat a
+        // pending AttributeError on `obj.<key>` as the "attribute is missing"
+        // signal and clear it before consulting __getattr__; any other pending
+        // exception we leave alone so the original error wins.
+        bool wasMissing = !env->hasPendingException();
+        if (!wasMissing) {
+            const proto::ProtoObject* exc = env->peekPendingException();
+            if (exc) {
+                const proto::ProtoObject* cls = env->getType(context, exc);
+                const proto::ProtoString* nameS = env->getNameString();
+                const proto::ProtoObject* nameAttr = cls ? cls->getAttribute(context, nameS) : nullptr;
+                if (nameAttr && nameAttr->isString(context)) {
+                    std::string clsName;
+                    nameAttr->asString(context)->toUTF8String(context, clsName);
+                    if (clsName == "AttributeError") {
+                        env->clearPendingException();
+                        wasMissing = true;
+                    }
+                }
             }
         }
-        if (getattrFn && getattrFn != PROTO_NONE) {
-            val = env->callObject(getattrFn, {obj, nameObj});
-            attrFound = val && !env->hasPendingException();
+        if (wasMissing) {
+            const proto::ProtoString* getattrKey = PythonEnvironment::getInternedString(context, "__getattr__");
+            const proto::ProtoObject* getattrFn = nullptr;
+            bool getattrIsOwn = false;
+            if (obj->hasOwnAttribute(context, getattrKey) == PROTO_TRUE) {
+                getattrFn = obj->getAttribute(context, getattrKey);
+                getattrIsOwn = true;
+            } else {
+                const proto::ProtoObject* cls = env->getType(context, obj);
+                if (cls && cls != PROTO_NONE) {
+                    getattrFn = env->getAttribute(context, cls, getattrKey, false);
+                }
+            }
+            if (getattrFn && getattrFn != PROTO_NONE) {
+                // Module-level __getattr__(name) takes only the name.
+                // Class-level __getattr__(self, name) takes both.
+                std::vector<const proto::ProtoObject*> args = getattrIsOwn
+                    ? std::vector<const proto::ProtoObject*>{nameObj}
+                    : std::vector<const proto::ProtoObject*>{obj, nameObj};
+                val = env->callObject(getattrFn, args);
+                attrFound = val && !env->hasPendingException();
+            }
         }
     }
 
@@ -2718,6 +2750,52 @@ static const proto::ProtoObject* py_hasattr(
                     if (base->hasOwnAttribute(context, nameStr) == PROTO_TRUE) return PROTO_TRUE;
                 }
             }
+        }
+
+        // 3. CPython semantics again: `hasattr(obj, name)` should be true if
+        //    `getattr(obj, name)` succeeds, which includes the __getattr__
+        //    fallback.  The chain probe above only sees attributes that are
+        //    already materialised; objects that synthesise attributes on
+        //    demand via __getattr__ (e.g. unittest's _FailedTest, super()
+        //    proxies, lazy modules) would wrongly report False.
+        const proto::ProtoString* getattrKey = PythonEnvironment::getInternedString(context, "__getattr__");
+        const proto::ProtoObject* getattrFn = nullptr;
+        bool getattrIsOwn = false;
+        if (obj->hasOwnAttribute(context, getattrKey) == PROTO_TRUE) {
+            getattrFn = obj->getAttribute(context, getattrKey);
+            getattrIsOwn = true;
+        } else {
+            const proto::ProtoObject* cls = env->getType(context, obj);
+            if (cls && cls != PROTO_NONE) {
+                getattrFn = env->getAttribute(context, cls, getattrKey, false);
+            }
+        }
+        if (getattrFn && getattrFn != PROTO_NONE) {
+            std::vector<const proto::ProtoObject*> args = getattrIsOwn
+                ? std::vector<const proto::ProtoObject*>{nameObj}
+                : std::vector<const proto::ProtoObject*>{obj, nameObj};
+            const proto::ProtoObject* probe = env->callObject(getattrFn, args);
+            if (env->hasPendingException()) {
+                // __getattr__ itself raised — by CPython contract, hasattr
+                // suppresses AttributeError but lets others propagate.  We
+                // still want hasattr() to return False for AttributeError.
+                const proto::ProtoObject* exc = env->peekPendingException();
+                if (exc) {
+                    const proto::ProtoObject* cls2 = env->getType(context, exc);
+                    const proto::ProtoString* nameS = env->getNameString();
+                    const proto::ProtoObject* nameAttr = cls2 ? cls2->getAttribute(context, nameS) : nullptr;
+                    if (nameAttr && nameAttr->isString(context)) {
+                        std::string clsName;
+                        nameAttr->asString(context)->toUTF8String(context, clsName);
+                        if (clsName == "AttributeError") {
+                            env->clearPendingException();
+                            return PROTO_FALSE;
+                        }
+                    }
+                }
+                return nullptr; // propagate non-AttributeError
+            }
+            if (probe) return PROTO_TRUE;
         }
     }
     return PROTO_FALSE;
