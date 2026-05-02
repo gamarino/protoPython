@@ -4357,6 +4357,33 @@ const proto::ProtoObject* executeBytecodeRange(
                                 lst = lst->appendLast(ctx, fromTuple->getAt(ctx, j));
                             }
                             lstObj->setAttribute(ctx, dataString, lst->asObject(ctx));
+                        } else if (env) {
+                            // Generic iterator path: drive __iter__ + __next__ to
+                            // completion.  Required for map(), filter(), zip(),
+                            // iter(), generators, and any user-defined iterator
+                            // — bytecode `f(*it)` lowers to LIST_EXTEND then
+                            // LIST_TO_TUPLE then CALL_FUNCTION_EX, and without
+                            // this branch the unpacked argument list silently
+                            // came out empty.  Visible at platform.uname() ->
+                            //   uname_result(*map(_unknown_as_blank, vals))
+                            // which constructed a uname_result with all None
+                            // fields, breaking every consumer of platform.*.
+                            const proto::ProtoObject* iterator = env->iter(iterable);
+                            if (iterator) {
+                                for (;;) {
+                                    const proto::ProtoObject* item = env->next(iterator);
+                                    if (!item) {
+                                        if (env->handleExhaustion(ctx)) break;
+                                        // Non-StopIteration exception: stop
+                                        // accumulating; the dispatcher's
+                                        // exception machinery will surface it
+                                        // on the next opcode dispatch.
+                                        break;
+                                    }
+                                    lst = lst->appendLast(ctx, item);
+                                }
+                                lstObj->setAttribute(ctx, dataString, lst->asObject(ctx));
+                            }
                         }
                     }
                 }
