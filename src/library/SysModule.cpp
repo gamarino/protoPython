@@ -135,6 +135,41 @@ static const proto::ProtoObject* sys_getframe(
             synth = synth->setAttribute(context, fGlobalsKey, globals);
             synth = synth->setAttribute(context, fLocalsKey,  globals);
             synth = synth->setAttribute(context, f_back_s, PROTO_NONE);
+            // Synthesize a minimal f_code so that traceback formatters
+            // (which read frame.f_code.co_filename / co_name / etc.)
+            // can compute SOMETHING off our synthesised frame.  Without
+            // this, traceback.TracebackException.format() walks an
+            // empty `co` value and AttributeErrors out trying to read
+            // co_filename — visible at unittest.result's exc-info-to-
+            // string call when reporting any test that hit the
+            // synthesised-frame path.
+            const proto::ProtoObject* synthCode = context->newObject(true);
+            const char* moduleName = "<unknown>";
+            const proto::ProtoString* nameKey = PythonEnvironment::getInternedString(context, "__name__");
+            const proto::ProtoObject* modNameAttr = globals->getAttribute(context, nameKey);
+            std::string nameStr;
+            if (modNameAttr && modNameAttr != PROTO_NONE && modNameAttr->isString(context)) {
+                modNameAttr->asString(context)->toUTF8String(context, nameStr);
+                if (!nameStr.empty()) moduleName = nameStr.c_str();
+            }
+            synthCode = synthCode->setAttribute(context,
+                PythonEnvironment::getInternedString(context, "co_filename"),
+                proto::ProtoString::fromUTF8(context, moduleName)->asObject(context));
+            synthCode = synthCode->setAttribute(context,
+                PythonEnvironment::getInternedString(context, "co_name"),
+                proto::ProtoString::fromUTF8(context, "<module>")->asObject(context));
+            synthCode = synthCode->setAttribute(context,
+                PythonEnvironment::getInternedString(context, "co_firstlineno"),
+                context->fromInteger(0));
+            synthCode = synthCode->setAttribute(context,
+                PythonEnvironment::getInternedString(context, "co_qualname"),
+                proto::ProtoString::fromUTF8(context, "<module>")->asObject(context));
+            synth = synth->setAttribute(context,
+                env ? env->getFCodeString() : PythonEnvironment::getInternedString(context, "f_code"),
+                synthCode);
+            synth = synth->setAttribute(context,
+                PythonEnvironment::getInternedString(context, "f_lineno"),
+                context->fromInteger(0));
             frame = synth;
         }
     }
