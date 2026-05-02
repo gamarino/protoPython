@@ -1046,7 +1046,17 @@ static const proto::ProtoObject* py_int_call(
         x = ctx->fromInteger(0);
     } else {
         const proto::ProtoObject* val = posArgs->getAt(ctx, 1);
-        if (val->isInteger(ctx)) {
+        if (val->isBoolean(ctx)) {
+            // bool is a subclass of int in CPython.  PROTO_TRUE/PROTO_FALSE
+            // are sentinel pointers, not SmallInts, so isInteger() returns
+            // false for them — without this guard `int(True)` fell through
+            // to the unhandled-type branch and raised TypeError.  Visible
+            // as a hard ImportError in _pydecimal.py at
+            //     dict((s, int(s in traps)) for s in _signals + traps)
+            // which blocked `import decimal` and the whole test_os /
+            // test_datetime audit chain.
+            x = ctx->fromInteger(val == PROTO_TRUE ? 1 : 0);
+        } else if (val->isInteger(ctx)) {
             x = val;
         } else if (val->isDouble(ctx)) {
             // Floor toward zero, then promote to bignum if outside the
