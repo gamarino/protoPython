@@ -11670,12 +11670,51 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain,
                             }
 
                             setCurrentGlobals(oldGlobals);
-                            mod = mutableMod;
-                            ensureModuleInSysModules(ctx, moduleName, mutableMod);
-                            const_cast<proto::ProtoObject*>(modWrapper)->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "val"), mutableMod);
+                            // Honor `sys.modules[__name__] = OTHER` rebinding done
+                            // inside the module body.  Notable user: decimal.py,
+                            // which replaces itself with _pydecimal when the C
+                            // accelerator (_decimal) is missing — a CPython idiom
+                            // that several stdlib modules rely on.  Without this
+                            // detection the post-execution registerInSysModules
+                            // call below would clobber the user's swap and leave
+                            // sys.modules['decimal'] pointing at the now-empty
+                            // shim module that ran the try/except.  Detect the
+                            // swap by comparing what is currently in sys.modules
+                            // against mutableMod and, when they differ, treat the
+                            // user-installed module as the real one.
+                            const proto::ProtoObject* swappedMod = nullptr;
+                            if (sysModule) {
+                                const proto::ProtoObject* mods = sysModule->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "modules"));
+                                if (mods && mods != PROTO_NONE) {
+                                    const proto::ProtoString* modNameS = PythonEnvironment::getInternedString(ctx, moduleName.c_str());
+                                    const proto::ProtoObject* dataAttr = mods->getAttribute(ctx, getDataString());
+                                    const proto::ProtoSparseList* dict = (dataAttr && dataAttr != PROTO_NONE) ? dataAttr->asSparseList(ctx) : nullptr;
+                                    if (dict && dict->has(ctx, modNameS->getHash(ctx))) {
+                                        const proto::ProtoObject* current = dict->getAt(ctx, modNameS->getHash(ctx));
+                                        if (current && current != PROTO_NONE && current != mutableMod) {
+                                            swappedMod = current;
+                                        }
+                                    }
+                                }
+                            }
+                            if (swappedMod) {
+                                // The user installed a different module under our
+                                // own name; do NOT call ensureModuleInSysModules
+                                // (it would overwrite the swap).  Propagate the
+                                // swapped module to the import wrapper / caches.
+                                mod = swappedMod;
+                                if (get_env_diag()) {
+                                    fprintf(stderr, "DEBUG: executeModule honoring sys.modules['%s'] swap: %p -> %p\n",
+                                            moduleName.c_str(), (void*)mutableMod, (void*)swappedMod);
+                                }
+                            } else {
+                                mod = mutableMod;
+                                ensureModuleInSysModules(ctx, moduleName, mutableMod);
+                            }
+                            const_cast<proto::ProtoObject*>(modWrapper)->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "val"), mod);
                             // Re-cache if it changed
-                            if (oldMod != mutableMod) {
-                                s_threadResolveCache[moduleName] = mutableMod;
+                            if (oldMod != mod) {
+                                s_threadResolveCache[moduleName] = mod;
                             }
                             const proto::ProtoObject* excAfterExec = peekPendingException();
                             if (excAfterExec && excAfterExec != PROTO_NONE) {
