@@ -115,21 +115,55 @@ static const proto::ProtoObject* sys_getframe(
 
     const proto::ProtoObject* frame = PythonEnvironment::getCurrentFrame();
     const proto::ProtoString* f_back_s = env ? env->getFBackString() : proto::ProtoString::createSymbol(context, "f_back");
-    
-    for (int i = 0; i < depth; ++i) {
-        if (!frame || frame == PROTO_NONE) {
-            if (env) env->raiseValueError(context, PythonEnvironment::getInternedString(context, "call stack is not deep enough")->asObject(context));
-            return PROTO_NONE;
-        }
-        frame = frame->getAttribute(context, f_back_s);
-    }
-    
+
+    // Fallback for module-top-level execution paths that haven't pushed
+    // a frame (executeModule's runCodeObject calls don't always go
+    // through invokeCallable's FrameScope).  Synthesise a minimal frame
+    // wrapper around the current globals so that depth-0 callers can
+    // still read `f_globals['__name__']` — the dominant pattern is
+    // doctest.DocTestSuite() (no module argument), which uses
+    // sys._getframe(2).f_globals['__name__'] to discover its caller.
+    // f_back stays None: we don't have a real call chain to expose.
     if (!frame || frame == PROTO_NONE) {
+        const proto::ProtoObject* globals = PythonEnvironment::getCurrentGlobals();
+        if (globals && globals != PROTO_NONE) {
+            const proto::ProtoObject* synth = context->newObject(true);
+            const proto::ProtoString* fGlobalsKey = env ? env->getFGlobalsString()
+                                                        : PythonEnvironment::getInternedString(context, "f_globals");
+            const proto::ProtoString* fLocalsKey  = env ? env->getFLocalsString()
+                                                        : PythonEnvironment::getInternedString(context, "f_locals");
+            synth = synth->setAttribute(context, fGlobalsKey, globals);
+            synth = synth->setAttribute(context, fLocalsKey,  globals);
+            synth = synth->setAttribute(context, f_back_s, PROTO_NONE);
+            frame = synth;
+        }
+    }
+
+    // Walk f_back depth times.  If we run out of frames before reaching
+    // the requested depth, return the deepest frame we have rather than
+    // raising — protoPython's frame stack is not always populated to
+    // arbitrary depth (the executeModule path doesn't push a frame for
+    // module-top-level code, and many native call sites don't bridge
+    // f_back through), and consumers like doctest just want SOME frame
+    // whose f_globals['__name__'] reveals the caller's module.  CPython
+    // would raise here, but in protoPython lenience unblocks
+    // doctest.DocTestSuite() (no module argument), traceback formatting
+    // and warnings._is_internal_frame.
+    const proto::ProtoObject* deepest = frame;
+    for (int i = 0; i < depth; ++i) {
+        if (!frame || frame == PROTO_NONE) break;
+        const proto::ProtoObject* nxt = frame->getAttribute(context, f_back_s);
+        if (!nxt || nxt == PROTO_NONE) break;
+        frame = nxt;
+        deepest = frame;
+    }
+
+    if (!deepest || deepest == PROTO_NONE) {
         if (env) env->raiseValueError(context, PythonEnvironment::getInternedString(context, "call stack is not deep enough")->asObject(context));
         return PROTO_NONE;
     }
-    
-    return frame;
+
+    return deepest;
 }
 
 static const proto::ProtoObject* sys_setrecursionlimit(
