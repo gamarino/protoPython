@@ -242,6 +242,17 @@ static const proto::ProtoObject* make_exception_type(proto::ProtoContext* ctx,
     exc = exc->setAttribute(ctx, py_init, ctx->fromMethod(nullptr, exception_init));
     exc = exc->setAttribute(ctx, py_repr, ctx->fromMethod(nullptr, exception_repr));
     exc = exc->setAttribute(ctx, py_str, ctx->fromMethod(nullptr, exception_str));
+    // Default __cause__ / __context__ / __traceback__ to None at the class
+    // level so that even unraised exception classes (used as values in
+    // unittest's traceback formatter and other introspection paths) read
+    // None for these attributes instead of AttributeError.  Instances
+    // override these defaults when raised through an `except ... as e`
+    // chain or via raise/yield-style chaining.  __suppress_context__ also
+    // defaults to False (CPython's `raise X from Y` toggles it).
+    exc = exc->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__cause__"),    PROTO_NONE);
+    exc = exc->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__context__"),  PROTO_NONE);
+    exc = exc->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__traceback__"),PROTO_NONE);
+    exc = exc->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__suppress_context__"), PROTO_FALSE);
 
     // with_traceback(tb): sets __traceback__ and returns self
     static const auto exception_with_traceback = [](proto::ProtoContext* ctx,
