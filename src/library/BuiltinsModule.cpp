@@ -2728,7 +2728,6 @@ static const proto::ProtoObject* py_sorted(
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
     (void)parentLink;
-    (void)keywordParameters;
     (void)self;
     protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(context);
     if (!positionalParameters || positionalParameters->getSize(context) < 1) return PROTO_NONE;
@@ -2739,6 +2738,31 @@ static const proto::ProtoObject* py_sorted(
     if (!it) return PROTO_NONE;
     const proto::ProtoObject* nextMethod = it->getAttribute(context, env ? env->getNextString() : PythonEnvironment::getInternedString(context, "__next__"));
     if (!nextMethod || !nextMethod->asMethod(context)) return PROTO_NONE;
+
+    // Resolve key / reverse from kwargs.  CPython accepts both as
+    // keyword-only (no positional fallback after iterable).  Without
+    // this, `sorted(it, key=len, reverse=True)` silently produced the
+    // natural-order list — surfaces in _strptime.__seqToRE which
+    // explicitly relies on `key=len, reverse=True` to put the longest
+    // candidate strings first in its alternation regex.
+    const proto::ProtoObject* keyFn = nullptr;
+    bool reverse = false;
+    if (keywordParameters) {
+        unsigned long keyH = PythonEnvironment::getInternedString(context, "key")->getHash(context);
+        if (keywordParameters->has(context, keyH)) {
+            const proto::ProtoObject* v = keywordParameters->getAt(context, keyH);
+            if (v && v != PROTO_NONE) keyFn = v;
+        }
+        unsigned long revH = PythonEnvironment::getInternedString(context, "reverse")->getHash(context);
+        if (keywordParameters->has(context, revH)) {
+            const proto::ProtoObject* v = keywordParameters->getAt(context, revH);
+            if (v) {
+                if (v == PROTO_TRUE) reverse = true;
+                else if (v->isBoolean(context)) reverse = (v == PROTO_TRUE);
+                else if (v->isInteger(context)) reverse = (v->asLong(context) != 0);
+            }
+        }
+    }
 
     std::vector<const proto::ProtoObject*> elems;
     // Generator-protocol iterators raise StopIteration when exhausted —
@@ -2762,9 +2786,39 @@ static const proto::ProtoObject* py_sorted(
         elems.push_back(val);
     }
 
-    std::sort(elems.begin(), elems.end(), [context](const proto::ProtoObject* a, const proto::ProtoObject* b) {
-        return sorted_compare(context, a, b) < 0;
-    });
+    // Decorate-sort-undecorate when key= is provided.  Compute keys up
+    // front (CPython does the same: each value's key is computed once
+    // and stored alongside its index, then the indices drive the sort).
+    if (keyFn) {
+        std::vector<const proto::ProtoObject*> keys;
+        keys.reserve(elems.size());
+        for (const proto::ProtoObject* el : elems) {
+            const proto::ProtoList* args = context->newList()->appendLast(context, el);
+            const proto::ProtoObject* k = ::protoPython::invokePythonCallable(context, keyFn, args, nullptr);
+            if (!k) {
+                // Caller's exception is pending; stop and propagate.
+                return env ? env->getNonePrototype() : PROTO_NONE;
+            }
+            keys.push_back(k);
+        }
+        std::vector<size_t> idx(elems.size());
+        for (size_t i = 0; i < idx.size(); ++i) idx[i] = i;
+        std::stable_sort(idx.begin(), idx.end(),
+            [context, &keys, reverse](size_t a, size_t b) {
+                int c = sorted_compare(context, keys[a], keys[b]);
+                return reverse ? c > 0 : c < 0;
+            });
+        std::vector<const proto::ProtoObject*> sorted;
+        sorted.reserve(elems.size());
+        for (size_t i : idx) sorted.push_back(elems[i]);
+        elems.swap(sorted);
+    } else {
+        std::stable_sort(elems.begin(), elems.end(),
+            [context, reverse](const proto::ProtoObject* a, const proto::ProtoObject* b) {
+                int c = sorted_compare(context, a, b);
+                return reverse ? c > 0 : c < 0;
+            });
+    }
 
     const proto::ProtoList* resultList = context->newList();
     for (const proto::ProtoObject* obj : elems)
@@ -4984,6 +5038,28 @@ static bool filter_is_truthy(proto::ProtoContext* context, const proto::ProtoObj
     if (obj == PROTO_TRUE) return true;
     if (obj->isInteger(context)) return obj->asLong(context) != 0;
     if (obj->isDouble(context)) return obj->asDouble(context) != 0.0;
+    // Strings: empty is falsy, non-empty is truthy (CPython __bool__).
+    if (obj->isString(context)) {
+        const proto::ProtoString* s = obj->asString(context);
+        return s && s->getSize(context) > 0;
+    }
+    // Sequences / mappings: walk __data__ if present and check size.
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (env) {
+        const proto::ProtoObject* data = obj->getAttribute(context, env->getDataString());
+        if (data) {
+            const proto::ProtoList* lst = data->asList(context);
+            if (lst) return lst->getSize(context) > 0;
+            const proto::ProtoTuple* tup = data->asTuple(context);
+            if (tup) return tup->getSize(context) > 0;
+            const proto::ProtoSparseList* sp = data->asSparseList(context);
+            if (sp) return sp->getSize(context) > 0;
+            if (data->isString(context)) {
+                const proto::ProtoString* s = data->asString(context);
+                return s && s->getSize(context) > 0;
+            }
+        }
+    }
     return true;
 }
 
@@ -5017,10 +5093,25 @@ static const proto::ProtoObject* py_filter_next(
 
     const proto::ProtoList* emptyL = env ? env->getEmptyList() : context->newList();
 
+    // CPython convention: filter(None, iterable) treats `None` as the
+    // truthiness predicate (i.e. yields val whenever bool(val) is True).
+    // protoPython previously routed unconditionally through callObject,
+    // which raised "'NoneType' object is not callable" for the None
+    // form.  Detect None up front and skip the call.
+    bool noneFunc = (!func || func == PROTO_NONE);
+
     for (;;) {
         const proto::ProtoObject* val = nextM->asMethod(context)(context, it, nullptr, emptyL, nullptr);
         if (!val) return nullptr;
-        
+
+        if (noneFunc) {
+            // None as filter function = bool(val) test.  Use the local
+            // helper directly — env->isTrue had the same string-empty
+            // gap and only short-circuited on tagged sentinels.
+            if (filter_is_truthy(context, val)) return val;
+            continue;
+        }
+
         const proto::ProtoObject* result = env ? env->callObject(func, {val}) : nullptr;
         if (result && env && env->isTrue(result)) return val;
     }
