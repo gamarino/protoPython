@@ -1137,7 +1137,28 @@ bool Compiler::compileAnnAssign(AnnAssignNode* n) {
         if (nm) {
             if (!compileNode(n->annotation.get())) return false;  // value
             emitNameOp("__annotations__", TargetCtx::Load);       // container
-            int keyIdx = addConstant(PythonEnvironment::getInternedString(ctx_, nm->id.c_str())->asObject(ctx_));
+            // CPython name mangling: in a class body, a name starting
+            // with `__` but not ending with `__` is rewritten to
+            // `_<ClassName>__<name>` (with leading underscores of
+            // ClassName stripped).  Apply the same mangling to the
+            // dictionary key so `class C: __foo: int` ends up at
+            // `C.__annotations__['_C__foo']` matching CPython.
+            std::string keyName = nm->id;
+            if (!currentClassName_.empty()
+                && keyName.size() >= 2
+                && keyName[0] == '_' && keyName[1] == '_'
+                && !(keyName.size() >= 4
+                     && keyName[keyName.size() - 1] == '_'
+                     && keyName[keyName.size() - 2] == '_')) {
+                std::string cls = currentClassName_;
+                size_t i = 0;
+                while (i < cls.size() && cls[i] == '_') ++i;
+                cls = cls.substr(i);
+                if (!cls.empty()) {
+                    keyName = "_" + cls + keyName;
+                }
+            }
+            int keyIdx = addConstant(PythonEnvironment::getInternedString(ctx_, keyName.c_str())->asObject(ctx_));
             emit(OP_LOAD_CONST, keyIdx);                           // key (TOS)
             emit(OP_STORE_SUBSCR);
         }
