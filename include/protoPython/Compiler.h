@@ -147,6 +147,12 @@ private:
     struct BlockEnv {
         BlockType type;
         ASTNode* cleanupNode; // ASTNode for finally body. Null for With.
+        // Set true while unwindBlocks is mid-compile for this entry's
+        // cleanup. A break/continue/return inside that cleanup body must
+        // not re-enter the same finally — that would recurse forever in
+        // the compiler. unwindBlocks consults this flag and skips entries
+        // that are already being unwound.
+        bool unwinding = false;
     };
     std::vector<BlockEnv> blockEnvStack_;
     bool unwindBlocks(bool isLoopExit, bool hasValueOnStack = false);

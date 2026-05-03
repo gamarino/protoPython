@@ -4019,11 +4019,22 @@ bool Compiler::unwindBlocks(bool isLoopExit, bool hasValueOnStack) {
     }
 
     for (size_t i = blockEnvStack_.size(); i > targetDepth; --i) {
-        const BlockEnv& env = blockEnvStack_[i - 1];
+        BlockEnv& env = blockEnvStack_[i - 1];
+        if (env.unwinding) {
+            // We are already inlining this finally for an outer
+            // break/continue/return. A nested transfer inside that
+            // finally must NOT re-emit the same finally — silently
+            // skip this entry (the outer pass will continue and
+            // unwind the remaining outer entries).
+            continue;
+        }
         if (env.type == BlockType::TryFinally) {
             emit(OP_POP_BLOCK);
             if (env.cleanupNode) {
-                if (!compileNode(env.cleanupNode)) return false;
+                env.unwinding = true;
+                bool ok = compileNode(env.cleanupNode);
+                env.unwinding = false;
+                if (!ok) return false;
             }
         } else if (env.type == BlockType::With) {
             // Stack at this point:

@@ -1671,36 +1671,26 @@ static const proto::ProtoObject* py_str_iter_next(
     const proto::ProtoListIterator* nextIt = it->advance(context);
     self = self->setAttribute(context, iterItName, nextIt->asObject(context));
     
-    // Wrap value into a 1-char ProtoString
+    // Return the value as a real ProtoString.  Earlier this site wrapped
+    // the char into a fresh ProtoObject with the strPrototype as a parent
+    // and the actual character on a `__data__` attribute, but the wrapper
+    // is not POINTER_TAG_STRING, so the COMPARE_OP path's
+    // `a->isString(ctx) && b->isString(ctx)` branch was skipped and the
+    // raw object compare returned inconsistent answers — `c == s[0]` and
+    // `c != s[0]` could both come back True.  Returning the canonical
+    // string directly lets the string fast-path handle equality and
+    // ordering uniformly with `s[0]`, which is the same representation.
     if (value) {
-        PythonEnvironment* env = PythonEnvironment::fromContext(context);
-        const proto::ProtoString* dataName = env ? env->getDataString() : PythonEnvironment::getInternalString(context, "__data__");
-        const proto::ProtoString* classStr = env ? env->getClassString() : PythonEnvironment::getInternalString(context, "__class__");
-        auto wrapChar = [&](const proto::ProtoString* charStr) -> const proto::ProtoObject* {
-            const proto::ProtoObject* resObj = context->newObject(false);
-            resObj = resObj->setAttribute(context, dataName, charStr->asObject(context));
-            if (env && env->getStrPrototype()) {
-                resObj = resObj->addParent(context, env->getStrPrototype());
-                resObj = resObj->setAttribute(context, classStr, env->getStrPrototype());
-            }
-            return resObj;
-        };
         if (((uintptr_t)value & 0x3FF) == 129) {
             char c = static_cast<char>((uintptr_t)value >> 10);
             char strBuf[2] = {c, '\0'};
-            return wrapChar(PythonEnvironment::getInternedString(context, strBuf));
+            return PythonEnvironment::getInternedString(context, strBuf)->asObject(context);
         } else if (value->isInteger(context)) {
             char c = static_cast<char>(value->asLong(context));
             char strBuf[2] = {c, '\0'};
-            return wrapChar(PythonEnvironment::getInternedString(context, strBuf));
+            return PythonEnvironment::getInternedString(context, strBuf)->asObject(context);
         } else if (value->isString(context)) {
-            const proto::ProtoObject* resObj = context->newObject(false);
-            resObj = resObj->setAttribute(context, dataName, value);
-            if (env && env->getStrPrototype()) {
-                resObj = resObj->addParent(context, env->getStrPrototype());
-                resObj = resObj->setAttribute(context, classStr, env->getStrPrototype());
-            }
-            return resObj;
+            return value;
         }
     }
     return PROTO_NONE; // Should not happen for strings
