@@ -1754,6 +1754,12 @@ static const proto::ProtoObject* py_list_eq(
     const proto::ProtoSparseList* keywordParameters) {
     if (positionalParameters->getSize(context) < 1) return PROTO_FALSE;
     const proto::ProtoObject* other = positionalParameters->getAt(context, 0);
+    // Identity check: covers `cls == cls` when this method is reached via
+    // the prototype chain on the class object itself (e.g. dict equality
+    // walks values like `list == list`).  Without this, the data extraction
+    // below returns null because the class object has no list payload, and
+    // we'd return False — incorrect for `list == list`.
+    if (self == other) return PROTO_TRUE;
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     const proto::ProtoString* dataName = env ? env->getDataString() : PythonEnvironment::getInternalString(context, "__data__");
     const proto::ProtoObject* data = self->getAttribute(context, dataName);
@@ -2123,6 +2129,10 @@ static const proto::ProtoObject* py_dict_eq(
     const proto::ProtoSparseList* keywordParameters) {
     if (positionalParameters->getSize(context) < 1) return PROTO_FALSE;
     const proto::ProtoObject* other = positionalParameters->getAt(context, 0);
+    // Identity check: short-circuits both `cls == cls` (when this method
+    // is reached via the type's __eq__ slot) and the trivial same-dict
+    // case without traversing keys.
+    if (self == other) return PROTO_TRUE;
     const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "__data__");
     const proto::ProtoObject* data = self->getAttribute(context, dataName);
     const proto::ProtoObject* otherData = (other->hasOwnAttribute(context, dataName) == PROTO_TRUE) ? other->getAttribute(context, dataName) : nullptr;
@@ -14082,6 +14092,15 @@ bool PythonEnvironment::isResolved(const std::string& name, proto::ProtoContext*
 
 const proto::ProtoObject* PythonEnvironment::compareObjects(proto::ProtoContext* ctx, const proto::ProtoObject* a, const proto::ProtoObject* b, int op) {
     if (!a || !b) return PROTO_FALSE;
+
+    // Identity short-circuit for == / !=: per Python semantics, an object
+    // is always equal to itself.  This guarantees `cls == cls` returns True
+    // even when the type-instance __eq__ slot inherited from listPrototype/
+    // dictPrototype mishandles the class-as-self case.
+    if (a == b) {
+        if (op == 0) return PROTO_TRUE;
+        if (op == 1) return PROTO_FALSE;
+    }
 
     // Check for dunder comparison methods
     if (op >= 0 && op <= 5) {

@@ -3870,8 +3870,66 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
             make_fn_flags |= 0x02;
         }
     }
+
+    // Function annotations: build {param_name: type, ..., 'return': ret_type}
+    // wrapped in a SETUP_FINALLY so that any annotation expression that
+    // raises (typically a forward reference like `def f() -> IO[X]:` where
+    // IO is defined later in the same module) is silently skipped.  PEP 649
+    // makes annotations lazy in CPython 3.14; protoPython evaluates eagerly
+    // but absorbs failures so module imports proceed even when individual
+    // annotations can't be resolved at function-def time.  Bit 0x04 of
+    // make_fn_flags tells OP_BUILD_FUNCTION to pop the dict and attach it
+    // as `__annotations__` on the resulting function object.
+    int ann_total = static_cast<int>(n->parameter_annotations.size()) + (n->returns ? 1 : 0);
+    if (ann_total > 0) {
+        // try { build map } except { make empty dict }
+        emit(OP_SETUP_FINALLY, 0);
+        int handlerSlot = bytecodeOffset() - 1;
+        // Helper: name-mangle `__name` style parameter names when this
+        // function is defined inside a class body, matching CPython's
+        // PEP 8 mangling rule.  Mirrors the same code path used by
+        // compileAnnAssign for class-level annotations.
+        auto mangle = [&](const std::string& raw) -> std::string {
+            if (currentClassName_.empty()) return raw;
+            if (raw.size() < 2 || raw[0] != '_' || raw[1] != '_') return raw;
+            // Names ending in __ are dunders — never mangled.
+            if (raw.size() >= 4 && raw[raw.size()-1] == '_' && raw[raw.size()-2] == '_') return raw;
+            std::string cls = currentClassName_;
+            size_t i = 0;
+            while (i < cls.size() && cls[i] == '_') ++i;
+            cls = cls.substr(i);
+            if (cls.empty()) return raw;
+            return "_" + cls + raw;
+        };
+        for (auto& kv : n->parameter_annotations) {
+            std::string keyName = mangle(kv.first);
+            int nameIdx = addConstant(PythonEnvironment::getInternedString(ctx_, keyName.c_str())->asObject(ctx_));
+            emit(OP_LOAD_CONST, nameIdx);
+            if (!compileNode(kv.second.get())) return false;
+        }
+        if (n->returns) {
+            int nameIdx = addConstant(PythonEnvironment::getInternedString(ctx_, "return")->asObject(ctx_));
+            emit(OP_LOAD_CONST, nameIdx);
+            if (!compileNode(n->returns.get())) return false;
+        }
+        emit(OP_BUILD_MAP, ann_total);
+        emit(OP_POP_BLOCK);
+        emit(OP_JUMP_ABSOLUTE, 0);
+        int doneSlot = bytecodeOffset() - 1;
+        // Handler: exception arrived as 3 stack items (type, value, tb).
+        // Drop them and produce an empty dict so the function still has
+        // `__annotations__ == {}` rather than no attribute at all.
+        addPatch(handlerSlot, bytecodeOffset());
+        emit(OP_POP_TOP);
+        emit(OP_POP_TOP);
+        emit(OP_POP_TOP);
+        emit(OP_BUILD_MAP, 0);
+        addPatch(doneSlot, bytecodeOffset());
+        make_fn_flags |= 0x04;
+    }
+
     emit(OP_BUILD_FUNCTION, make_fn_flags);
-    
+
     // Apply decorators Bottom-to-Top
     if (!n->decorator_list.empty()) {
         for (auto it = n->decorator_list.rbegin(); it != n->decorator_list.rend(); ++it) {

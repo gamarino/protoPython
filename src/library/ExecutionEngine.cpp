@@ -5757,6 +5757,11 @@ const proto::ProtoObject* executeBytecodeRange(
             stack.push_back(finalTup);
         } break;
         case OP_BUILD_FUNCTION: {
+            // Pop annotation dict (0x04), kw_defaults (0x02), defaults (0x01)
+            // in that order — they were pushed in the reverse order by the
+            // compiler immediately before this opcode.
+            const proto::ProtoObject* annotations = (arg & 0x04) ? stack.back() : nullptr;
+            if (arg & 0x04) stack.pop_back();
             const proto::ProtoObject* kwDefaults = (arg & 0x02) ? stack.back() : nullptr;
             if (arg & 0x02) stack.pop_back();
             const proto::ProtoObject* defaults = (arg & 0x01) ? stack.back() : nullptr;
@@ -5856,6 +5861,19 @@ const proto::ProtoObject* executeBytecodeRange(
                 if (diag_local) {
                     fprintf(stderr, "DEBUG: OP_BUILD_FUNCTION finished createUserFunction fn=%p\n", (void*)fn);
                     fflush(stderr);
+                }
+                if (fn && annotations) {
+                    // Attach the annotations dict produced by the compile-time
+                    // try/except annotation block (CPython exposes it as
+                    // `f.__annotations__`).  When all annotations evaluate
+                    // cleanly the dict has the expected entries; if any
+                    // annotation expression raised (forward reference, etc.)
+                    // the compiler's handler produced an empty dict so the
+                    // attribute still exists with the right type.
+                    const proto::ProtoString* annKey =
+                        PythonEnvironment::getInternedString(ctx, "__annotations__");
+                    fn = const_cast<proto::ProtoObject*>(
+                        fn->setAttribute(ctx, annKey, annotations));
                 }
                 if (fn) {
                     stack.push_back(fn);
