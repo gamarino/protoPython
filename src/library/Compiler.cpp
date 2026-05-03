@@ -2660,8 +2660,11 @@ static void collectDefinedNames(ASTNode* node, std::unordered_set<std::string>& 
         // — even without an initial value (`x: int`) — binds the name as
         // a local.  Accessing it before assignment must raise
         // UnboundLocalError, not NameError.
+        // Exception: `(name): T` (parenthesized target) does NOT declare
+        // a local; the annotation expression is evaluated for side
+        // effects but the name behaves as if no annotation existed.
         if (auto* nm = dynamic_cast<NameNode*>(aa->target.get())) {
-            out.insert(nm->id);
+            if (!nm->parenthesized) out.insert(nm->id);
         }
         return;
     }
@@ -3120,6 +3123,160 @@ bool Compiler::compileSuite(SuiteNode* n) {
 }
 
 // Walk a function body collecting names that appear as AnnAssignNode
+// targets WITHOUT an initial value (`x: int` with no `= ...`).  These
+// locals are declared bindable but not actually bound, so accessing
+// them before any assignment must raise UnboundLocalError per
+// PEP 526.  compileFunctionDef stores the env's unbound sentinel into
+// each such slot at function entry; LOAD_FAST detects the sentinel
+// and raises.
+static void collectAnnotationOnlyLocals(ASTNode* node, std::unordered_set<std::string>& out) {
+    if (!node) return;
+    if (auto* a = dynamic_cast<AnnAssignNode*>(node)) {
+        if (!a->value) {
+            if (auto* nm = dynamic_cast<NameNode*>(a->target.get())) {
+                // `(name): T` does not declare a local in CPython, only
+                // `name: T` does.  Skip the parenthesized form.
+                if (!nm->parenthesized) out.insert(nm->id);
+            }
+        }
+        return;
+    }
+    if (auto* s = dynamic_cast<SuiteNode*>(node)) {
+        for (auto& st : s->statements) collectAnnotationOnlyLocals(st.get(), out);
+        return;
+    }
+    if (auto* iff = dynamic_cast<IfNode*>(node)) {
+        collectAnnotationOnlyLocals(iff->body.get(), out);
+        if (iff->orelse) collectAnnotationOnlyLocals(iff->orelse.get(), out);
+        return;
+    }
+    if (auto* w = dynamic_cast<WhileNode*>(node)) {
+        collectAnnotationOnlyLocals(w->body.get(), out);
+        if (w->orelse) collectAnnotationOnlyLocals(w->orelse.get(), out);
+        return;
+    }
+    if (auto* f = dynamic_cast<ForNode*>(node)) {
+        collectAnnotationOnlyLocals(f->body.get(), out);
+        if (f->orelse) collectAnnotationOnlyLocals(f->orelse.get(), out);
+        return;
+    }
+    if (auto* af = dynamic_cast<AsyncForNode*>(node)) {
+        collectAnnotationOnlyLocals(af->body.get(), out);
+        if (af->orelse) collectAnnotationOnlyLocals(af->orelse.get(), out);
+        return;
+    }
+    if (auto* tr = dynamic_cast<TryNode*>(node)) {
+        collectAnnotationOnlyLocals(tr->body.get(), out);
+        for (auto& h : tr->handlers) collectAnnotationOnlyLocals(h.body.get(), out);
+        if (tr->orelse) collectAnnotationOnlyLocals(tr->orelse.get(), out);
+        if (tr->finalbody) collectAnnotationOnlyLocals(tr->finalbody.get(), out);
+        return;
+    }
+    if (auto* wn = dynamic_cast<WithNode*>(node)) {
+        collectAnnotationOnlyLocals(wn->body.get(), out);
+        return;
+    }
+    if (auto* awn = dynamic_cast<AsyncWithNode*>(node)) {
+        collectAnnotationOnlyLocals(awn->body.get(), out);
+        return;
+    }
+    // Don't descend into nested functions/classes — they have their own scope.
+}
+
+// Names assigned in a body via plain Assign / for-target / etc.  Used to
+// distinguish "annotated AND assigned" from "annotated only" — the
+// former should NOT receive the unbound sentinel since a real STORE
+// will run later in the body.
+static void collectStoreAssignedNames(ASTNode* node, std::unordered_set<std::string>& out) {
+    if (!node) return;
+    if (auto* a = dynamic_cast<AssignNode*>(node)) {
+        for (auto& t : a->targets) {
+            if (auto* nm = dynamic_cast<NameNode*>(t.get())) out.insert(nm->id);
+        }
+        return;
+    }
+    if (auto* aug = dynamic_cast<AugAssignNode*>(node)) {
+        if (auto* nm = dynamic_cast<NameNode*>(aug->target.get())) out.insert(nm->id);
+        return;
+    }
+    if (auto* aa = dynamic_cast<AnnAssignNode*>(node)) {
+        if (aa->value) {
+            if (auto* nm = dynamic_cast<NameNode*>(aa->target.get())) out.insert(nm->id);
+        }
+        return;
+    }
+    if (auto* s = dynamic_cast<SuiteNode*>(node)) {
+        for (auto& st : s->statements) collectStoreAssignedNames(st.get(), out);
+        return;
+    }
+    if (auto* iff = dynamic_cast<IfNode*>(node)) {
+        collectStoreAssignedNames(iff->body.get(), out);
+        if (iff->orelse) collectStoreAssignedNames(iff->orelse.get(), out);
+        return;
+    }
+    if (auto* w = dynamic_cast<WhileNode*>(node)) {
+        collectStoreAssignedNames(w->body.get(), out);
+        if (w->orelse) collectStoreAssignedNames(w->orelse.get(), out);
+        return;
+    }
+    if (auto* f = dynamic_cast<ForNode*>(node)) {
+        if (auto* nm = dynamic_cast<NameNode*>(f->target.get())) out.insert(nm->id);
+        collectStoreAssignedNames(f->body.get(), out);
+        if (f->orelse) collectStoreAssignedNames(f->orelse.get(), out);
+        return;
+    }
+    if (auto* af = dynamic_cast<AsyncForNode*>(node)) {
+        if (auto* nm = dynamic_cast<NameNode*>(af->target.get())) out.insert(nm->id);
+        collectStoreAssignedNames(af->body.get(), out);
+        if (af->orelse) collectStoreAssignedNames(af->orelse.get(), out);
+        return;
+    }
+    if (auto* tr = dynamic_cast<TryNode*>(node)) {
+        collectStoreAssignedNames(tr->body.get(), out);
+        for (auto& h : tr->handlers) {
+            if (!h.name.empty()) out.insert(h.name);
+            collectStoreAssignedNames(h.body.get(), out);
+        }
+        if (tr->orelse) collectStoreAssignedNames(tr->orelse.get(), out);
+        if (tr->finalbody) collectStoreAssignedNames(tr->finalbody.get(), out);
+        return;
+    }
+    if (auto* wn = dynamic_cast<WithNode*>(node)) {
+        for (auto& item : wn->items) {
+            if (item.optional_vars) {
+                if (auto* nm = dynamic_cast<NameNode*>(item.optional_vars.get())) out.insert(nm->id);
+            }
+        }
+        collectStoreAssignedNames(wn->body.get(), out);
+        return;
+    }
+    if (auto* awn = dynamic_cast<AsyncWithNode*>(node)) {
+        for (auto& item : awn->items) {
+            if (item.optional_vars) {
+                if (auto* nm = dynamic_cast<NameNode*>(item.optional_vars.get())) out.insert(nm->id);
+            }
+        }
+        collectStoreAssignedNames(awn->body.get(), out);
+        return;
+    }
+    // Nested defs/classes bind their own name in this scope.
+    if (auto* fd = dynamic_cast<FunctionDefNode*>(node)) { out.insert(fd->name); return; }
+    if (auto* afd = dynamic_cast<AsyncFunctionDefNode*>(node)) { out.insert(afd->name); return; }
+    if (auto* cd = dynamic_cast<ClassDefNode*>(node)) { out.insert(cd->name); return; }
+    if (auto* imp = dynamic_cast<ImportNode*>(node)) {
+        if (!imp->alias.empty()) out.insert(imp->alias);
+        return;
+    }
+    if (auto* impf = dynamic_cast<ImportFromNode*>(node)) {
+        for (auto& nm : impf->names) {
+            const std::string& bound = nm.second.empty() ? nm.first : nm.second;
+            out.insert(bound);
+        }
+        return;
+    }
+}
+
+// Walk a function body collecting names that appear as AnnAssignNode
 // targets (i.e. `x: int [= ...]`).  Used to enforce CPython's rule that
 // a name cannot be both annotated and declared global/nonlocal in the
 // same function — `def f(): x: int; global x` is SyntaxError.
@@ -3340,6 +3497,39 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
     // (i.e., defined inside a class body). Nested functions inside methods do not
     // inherit the class name to avoid false super() rewrites.
     if (isClassBody_) bodyCompiler.currentClassName_ = currentClassName_;
+
+    // Pre-bind annotation-only locals (`x: int` with no value) to the
+    // env's "<unbound>" sentinel.  CO_OPTIMIZED slots are otherwise
+    // initialised to PROTO_NONE, which is indistinguishable from an
+    // explicit `x = None` — but CPython requires that reading an
+    // annotated-but-never-assigned local raises UnboundLocalError, not
+    // returns None.  LOAD_FAST detects this sentinel and raises.
+    if (!forceMapped) {
+        std::unordered_set<std::string> annOnly;
+        collectAnnotationOnlyLocals(n->body.get(), annOnly);
+        if (!annOnly.empty()) {
+            std::unordered_set<std::string> assigned;
+            collectStoreAssignedNames(n->body.get(), assigned);
+            // Parameters are always bound at function entry — never sentinel.
+            for (const auto& p : params) assigned.insert(p);
+            for (const auto& kw : n->kwonlyargs) assigned.insert(kw);
+            if (!n->vararg.empty()) assigned.insert(n->vararg);
+            if (!n->kwarg.empty()) assigned.insert(n->kwarg);
+            PythonEnvironment* env = PythonEnvironment::fromContext(ctx_);
+            const proto::ProtoObject* sentinel = env ? env->getUnboundSentinel() : nullptr;
+            if (sentinel) {
+                int sentIdx = bodyCompiler.addConstant(sentinel);
+                for (const auto& name : annOnly) {
+                    if (assigned.count(name)) continue;  // some path will store a real value
+                    auto it = bodyCompiler.localSlotMap_.find(name);
+                    if (it == bodyCompiler.localSlotMap_.end()) continue;
+                    bodyCompiler.emit(OP_LOAD_CONST, sentIdx);
+                    bodyCompiler.emit(OP_STORE_FAST, it->second);
+                }
+            }
+        }
+    }
+
     if (!bodyCompiler.compileNode(n->body.get())) return false;
     if (!forceMapped) automatic_count += bodyCompiler.getMaxStack() + 32;
 

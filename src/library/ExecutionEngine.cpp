@@ -3324,6 +3324,28 @@ const proto::ProtoObject* executeBytecodeRange(
                  fprintf(stderr, "DEBUG: LOAD_FAST 0 loaded: %p\n", (void*)val);
                  fflush(stderr);
             }
+            // Detect the env-wide "<unbound>" sentinel installed by the
+            // compiler at function entry for annotation-only locals.
+            // Reading them raises UnboundLocalError per PEP 526.
+            if (env && val && val == env->getUnboundSentinel()) {
+                std::string nStr = "?";
+                const proto::ProtoObject* codeObj = PythonEnvironment::getCurrentCodeObject();
+                if (codeObj) {
+                    const proto::ProtoObject* varnamesObj = codeObj->getAttribute(ctx, env->getCoVarnamesString());
+                    const proto::ProtoTuple* vt = varnamesObj ? varnamesObj->asTuple(ctx) : nullptr;
+                    if (vt && static_cast<unsigned long>(arg) < vt->getSize(ctx)) {
+                        const proto::ProtoObject* nameObj = vt->getAt(ctx, arg);
+                        if (nameObj && nameObj->isString(ctx)) {
+                            nameObj->asString(ctx)->toUTF8String(ctx, nStr);
+                        }
+                    }
+                }
+                std::string msg = "cannot access local variable '" + nStr +
+                    "' where it is not associated with a value";
+                env->raiseUnboundLocalError(ctx, msg);
+                i = next_i;
+                continue;
+            }
             stack.push_back(val ? val : (env ? env->getNonePrototype() : PROTO_NONE));
         } break;
         case OP_STORE_FAST: {

@@ -10843,6 +10843,17 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     if (get_env_diag()) {
     }
     stopAsyncIterationType = exceptionsModule->getAttribute(rootContext_, stopAsyncIterationS);
+    // Process-singleton "unbound local" sentinel.  An ordinary mutable
+    // ProtoObject — pointer-equality alone is the identity check used
+    // by LOAD_FAST, the attached __name__ is just for diagnostics.
+    {
+        const proto::ProtoObject* sent = objectPrototype->newChild(rootContext_, true);
+        sent = sent->setAttribute(rootContext_,
+            PythonEnvironment::getInternedString(rootContext_, "__name__"),
+            PythonEnvironment::getInternedString(rootContext_, "<unbound>")->asObject(rootContext_));
+        unboundSentinel_ = sent;
+        space_->moduleRoots.push_back(sent);
+    }
     eofErrorType = exceptionsModule->getAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "EOFError"));
     assertionErrorType = exceptionsModule->getAttribute(rootContext_, assertionErrorS);
     generatorExitType = exceptionsModule->getAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "GeneratorExit"));

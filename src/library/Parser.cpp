@@ -478,6 +478,12 @@ std::unique_ptr<ASTNode> Parser::parseAtom() {
         if (auto* bin = dynamic_cast<BinOpNode*>(e.get())) {
             bin->parenthesized = true;
         }
+        // Mark a parenthesized name so AnnAssign targets like `(x): int`
+        // can be detected — CPython treats those as no-ops for local
+        // binding, while `x: int` declares x as a local.
+        if (auto* nm = dynamic_cast<NameNode*>(e.get())) {
+            nm->parenthesized = true;
+        }
         return e;
     }
     if (accept(TokenType::LSquare)) {

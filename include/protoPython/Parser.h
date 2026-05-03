@@ -31,6 +31,12 @@ struct ConstantNode : ASTNode {
 
 struct NameNode : ASTNode {
     std::string id;
+    /* True when this name was parsed as `(name)` — parentheses around an
+       annotation target prevent the name from being declared a local
+       (CPython treats `(x): int` as a no-op for binding, unlike `x: int`).
+       Only set/honoured by the AnnAssign target path; everywhere else it
+       behaves like a plain Name. */
+    bool parenthesized = false;
 };
 
 struct BinOpNode : ASTNode {

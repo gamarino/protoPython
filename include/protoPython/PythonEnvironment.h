@@ -927,6 +927,11 @@ private:
 public:
     const proto::ProtoObject* getUnionTypePrototype() const { return unionTypePrototype; }
     const proto::ProtoObject* getStopAsyncIterationType() const { return stopAsyncIterationType; }
+    /** Process-singleton "unbound local" sentinel.  Compiler stores this
+        into CO_OPTIMIZED slots that correspond to annotation-only locals
+        (`x: int` with no initial value).  LOAD_FAST detects it and raises
+        UnboundLocalError, matching CPython's PEP 526 semantics. */
+    const proto::ProtoObject* getUnboundSentinel() const { return unboundSentinel_; }
 private:
     const proto::ProtoObject* sysModule;
     const proto::ProtoObject* builtinsModule;
@@ -964,6 +969,7 @@ private:
     const proto::ProtoObject* indexErrorType{nullptr};
     const proto::ProtoObject* systemErrorType{nullptr};
     const proto::ProtoObject* stopAsyncIterationType{nullptr};
+    const proto::ProtoObject* unboundSentinel_{nullptr};
     const proto::ProtoObject* osErrorType{nullptr};
     const proto::ProtoObject* blockingIOErrorType{nullptr};
     const proto::ProtoObject* warningType{nullptr};
