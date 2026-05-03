@@ -2598,8 +2598,95 @@ static const proto::ProtoObject* py_exec(
     if (!globals) globals = const_cast<proto::ProtoObject*>(context->newObject(false));
     if (!locals) locals = globals;
 
+    // exec(code, globals, locals) is documented to expose `locals` as the
+    // local namespace of the executed code.  protoPython treats the
+    // execution frame as a ProtoObject and looks names up via attribute
+    // access, but a dict literal stores entries on its __data__ sparse list
+    // — they are NOT own attributes of the dict object.  Build a fresh
+    // frame object whose own attributes mirror the user's locals dict, so
+    // LOAD_NAME / STORE_NAME / etc. interact with it as a normal frame.
+    // Mutations to the frame are mirrored back to the user dict at the end.
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    proto::ProtoObject* frame = locals;
+    bool wrappedLocals = false;
+    if (env && locals != globals) {
+        const proto::ProtoObject* dataObj = locals->getAttribute(context, env->getDataString());
+        const proto::ProtoSparseList* localsData = dataObj ? dataObj->asSparseList(context) : nullptr;
+        if (localsData) {
+            const proto::ProtoString* keysS = PythonEnvironment::getInternedString(context, "__keys__");
+            const proto::ProtoObject* keysObj = locals->getAttribute(context, keysS);
+            const proto::ProtoList* keys = keysObj ? keysObj->asList(context) : nullptr;
+            proto::ProtoObject* mirror = const_cast<proto::ProtoObject*>(context->newObject(true));
+            // Attach the frame prototype so f_globals / f_back / etc.
+            // attribute lookups work transparently — without this, nested
+            // function calls inside the exec'd code crash with "object
+            // has no attribute f_globals".
+            if (env->getFramePrototype()) {
+                mirror = const_cast<proto::ProtoObject*>(mirror->addParent(context, env->getFramePrototype()));
+            }
+            mirror = const_cast<proto::ProtoObject*>(mirror->setAttribute(context, env->getFGlobalsString(), globals));
+            if (keys) {
+                unsigned long n = keys->getSize(context);
+                for (unsigned long i = 0; i < n; ++i) {
+                    const proto::ProtoObject* k = keys->getAt(context, static_cast<int>(i));
+                    if (!k || !k->isString(context)) continue;
+                    const proto::ProtoString* ks = k->asString(context);
+                    unsigned long h = ks->getHash(context);
+                    if (!localsData->has(context, h)) continue;
+                    const proto::ProtoObject* v = localsData->getAt(context, h);
+                    if (v && v != PROTO_NONE) {
+                        mirror = const_cast<proto::ProtoObject*>(mirror->setAttribute(context, ks, v));
+                    }
+                }
+            }
+            frame = mirror;
+            wrappedLocals = true;
+        }
+    }
+
     GlobalsScope gscope(globals);
-    return runCodeObject(context, codeObj, locals);
+    const proto::ProtoObject* result = runCodeObject(context, codeObj, frame);
+
+    // Mirror any new bindings the executed code created back into the
+    // user-supplied locals dict.
+    if (wrappedLocals && env) {
+        const proto::ProtoSparseList* mirrorOwn = frame->proto::ProtoObject::getOwnAttributes(context);
+        if (mirrorOwn) {
+            const proto::ProtoString* keysS = PythonEnvironment::getInternedString(context, "__keys__");
+            const proto::ProtoObject* dataObj = locals->getAttribute(context, env->getDataString());
+            const proto::ProtoSparseList* localsData = dataObj ? dataObj->asSparseList(context) : context->newSparseList();
+            const proto::ProtoObject* keysObj = locals->getAttribute(context, keysS);
+            const proto::ProtoList* keysList = (keysObj && keysObj->asList(context))
+                ? keysObj->asList(context) : context->newList();
+            // We can't iterate the SparseList by key directly; instead,
+            // walk the frame's getOwnAttributes via the same name set the
+            // bytecode uses. Compiler stored varnames in co_varnames; the
+            // simpler-and-correct path here: enumerate names known to the
+            // code object's co_names tuple and merge any found own
+            // attribute back into the user dict.
+            const proto::ProtoObject* coNames = codeObj->getAttribute(context, PythonEnvironment::getInternedString(context, "co_names"));
+            const proto::ProtoTuple* coNamesT = coNames ? coNames->asTuple(context) : nullptr;
+            if (coNamesT) {
+                unsigned long sz = coNamesT->getSize(context);
+                for (unsigned long i = 0; i < sz; ++i) {
+                    const proto::ProtoObject* nm = coNamesT->getAt(context, static_cast<int>(i));
+                    if (!nm || !nm->isString(context)) continue;
+                    const proto::ProtoString* nmS = nm->asString(context);
+                    if (frame->hasOwnAttribute(context, nmS) != PROTO_TRUE) continue;
+                    const proto::ProtoObject* v = frame->proto::ProtoObject::getOwnAttributeDirect(context, nmS);
+                    if (!v) continue;
+                    unsigned long h = nmS->getHash(context);
+                    if (!localsData->has(context, h)) {
+                        keysList = keysList->appendLast(context, nm);
+                    }
+                    localsData = localsData->setAt(context, h, v);
+                }
+                locals->setAttribute(context, env->getDataString(), localsData->asObject(context));
+                locals->setAttribute(context, keysS, keysList->asObject(context));
+            }
+        }
+    }
+    return result;
 }
 
 /** breakpoint(): no-op stub; real breakpoint requires debugger integration. */

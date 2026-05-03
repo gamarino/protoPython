@@ -5058,8 +5058,26 @@ const proto::ProtoObject* executeBytecodeRange(
 
             const proto::ProtoString* getItemS = env ? env->getGetItemString() : PythonEnvironment::getInternedString(ctx, "__getitem__");
             const proto::ProtoList* args = ctx->newList()->appendLast(ctx, key);
-            const proto::ProtoObject* result = invokeDunder(ctx, container, getItemS, args);
-            
+            const proto::ProtoObject* result = nullptr;
+
+            // When the container is a class (a type), prefer
+            // __class_getitem__ over __getitem__.  CPython's
+            // BINARY_SUBSCR for `cls[X]` dispatches via the metaclass
+            // (`type.__class_getitem__`), which runs the generic-alias
+            // machinery and yields e.g. `dict[str, object]`.  protoPython
+            // previously found the instance-side `__getitem__` first
+            // (every dict has it), and treating the class as a dict
+            // instance produced a spurious KeyError on every generic-alias
+            // expression like `dict[str, object]`.
+            if (env && env->isActuallyAClass(ctx, container)) {
+                const proto::ProtoString* classGetItemS = PythonEnvironment::getInternedString(ctx, "__class_getitem__");
+                result = invokeDunder(ctx, container, classGetItemS, args);
+                if (env->hasPendingException()) result = nullptr;
+            }
+            if (!result) {
+                result = invokeDunder(ctx, container, getItemS, args);
+            }
+
             if (diag_local) {
                 fprintf(stderr, "DEBUG: OP_BINARY_SUBSCR container=%p repr=%s key=%p repr=%s\n", (void*)container, PythonEnvironment::reprObject(ctx, container).c_str(), (void*)key, PythonEnvironment::reprObject(ctx, key).c_str());
                 fflush(stderr);
