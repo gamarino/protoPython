@@ -127,8 +127,17 @@ private:
     static bool hasDynamicLocalsAccess(ASTNode* node);
     std::unordered_set<std::string> globalNames_;
     std::unordered_set<std::string> nonlocalNames_;
-    /** Optional: name -> slot index for LOAD_FAST/STORE_FAST. Set when compiling a function body. */
+    /** Optional: name -> slot index for LOAD_FAST/STORE_FAST. Set when compiling a function body.
+     *  Empty when forceMapped_ is true — in that mode every local lives on the frame as an
+     *  attribute and is accessed via LOAD_NAME/STORE_NAME instead. */
     std::unordered_map<std::string, int> localSlotMap_;
+    /** Names that the enclosing function defines as locals/parameters, *regardless* of
+     *  whether they live in CO_OPTIMIZED slots or on the frame.  Nested-scope compilers
+     *  consult this set (in addition to localSlotMap_) when deciding whether a name should
+     *  be emitted as LOAD_DEREF / STORE_DEREF — needed when the outer is forceMapped (its
+     *  localSlotMap_ is empty) but the inner still needs to walk the outer's frame via
+     *  the closure-frame parent chain to read/update the live value. */
+    std::unordered_set<std::string> definedLocals_;
     bool isGenerator_ = false;
     bool isClassBody_ = false;
     bool isFunctionScope_ = false;

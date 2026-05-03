@@ -1471,7 +1471,10 @@ bool Compiler::compileListComp(ListCompNode* n) {
             // local or nonlocal in the directly enclosing function scope.
             // Names not found in the enclosing locals/nonlocals resolve via
             // LOAD_GLOBAL (module-level globals, builtins, etc.).
-            if (localSlotMap_.count(name) || nonlocalNames_.count(name)) {
+            // definedLocals_ covers the case where the enclosing function is
+            // forceMapped (its localSlotMap_ is empty) but still defines the
+            // name as a local on the frame.
+            if (localSlotMap_.count(name) || definedLocals_.count(name) || nonlocalNames_.count(name)) {
                 bodyCompiler.nonlocalNames_.insert(name);
             }
         }
@@ -1485,6 +1488,7 @@ bool Compiler::compileListComp(ListCompNode* n) {
             orderedLocals.push_back(name);
         }
     }
+    for (const auto& name : orderedLocals) bodyCompiler.definedLocals_.insert(name);
 
     // Create the list inside the function
     bodyCompiler.emit(OP_BUILD_LIST, 0);
@@ -1570,7 +1574,7 @@ bool Compiler::compileDictComp(DictCompNode* n) {
     
     for (const auto& name : compUsed) {
         if (!compLocals.count(name) && !bodyCompiler.globalNames_.count(name)) {
-            if (localSlotMap_.count(name) || nonlocalNames_.count(name)) {
+            if (localSlotMap_.count(name) || definedLocals_.count(name) || nonlocalNames_.count(name)) {
                 bodyCompiler.nonlocalNames_.insert(name);
             }
         }
@@ -1584,6 +1588,7 @@ bool Compiler::compileDictComp(DictCompNode* n) {
             orderedLocals.push_back(name);
         }
     }
+    for (const auto& name : orderedLocals) bodyCompiler.definedLocals_.insert(name);
 
     bodyCompiler.emit(OP_BUILD_MAP, 0);
     
@@ -1670,7 +1675,7 @@ bool Compiler::compileSetComp(SetCompNode* n) {
     
     for (const auto& name : compUsed) {
         if (!compLocals.count(name) && !bodyCompiler.globalNames_.count(name)) {
-            if (localSlotMap_.count(name) || nonlocalNames_.count(name)) {
+            if (localSlotMap_.count(name) || definedLocals_.count(name) || nonlocalNames_.count(name)) {
                 bodyCompiler.nonlocalNames_.insert(name);
             }
         }
@@ -1684,6 +1689,7 @@ bool Compiler::compileSetComp(SetCompNode* n) {
             orderedLocals.push_back(name);
         }
     }
+    for (const auto& name : orderedLocals) bodyCompiler.definedLocals_.insert(name);
 
     bodyCompiler.emit(OP_BUILD_SET, 0);
     
@@ -1767,7 +1773,7 @@ bool Compiler::compileGeneratorExp(GeneratorExpNode* n) {
     
     for (const auto& name : compUsed) {
         if (!compLocals.count(name) && !bodyCompiler.globalNames_.count(name)) {
-            if (localSlotMap_.count(name) || nonlocalNames_.count(name)) {
+            if (localSlotMap_.count(name) || definedLocals_.count(name) || nonlocalNames_.count(name)) {
                 bodyCompiler.nonlocalNames_.insert(name);
             }
         }
@@ -1781,6 +1787,7 @@ bool Compiler::compileGeneratorExp(GeneratorExpNode* n) {
             orderedLocals.push_back(name);
         }
     }
+    for (const auto& name : orderedLocals) bodyCompiler.definedLocals_.insert(name);
 
     auto oldIter = std::move(n->generators[0].iter);
     auto itNode = std::make_unique<NameNode>();
@@ -2785,6 +2792,236 @@ static void collectDefinedNames(ASTNode* node, std::unordered_set<std::string>& 
     }
 }
 
+// Walk a function body and collect the set of free variables of every
+// nested function-like scope (def, async def, lambda, list/set/dict
+// comprehension, generator expression).  These are names that the
+// nested scope reads but does not itself define; if any of them match
+// the outer's own locals or parameters, the outer must store its
+// locals on the frame (forceMapped) so the nested scope's
+// closure-frame parent walk reads the live value rather than a stale
+// snapshot taken at BUILD_FUNCTION time.
+//
+// This walker is deliberately strict — it only descends into nested
+// scope-creating nodes, never into bare references — so the result is
+// exactly "names captured by nested scopes from somewhere outside
+// themselves".  Globals are excluded by checking that the name is not
+// already in `globalsHere`; intrinsic names (parameters of the nested
+// scope, names assigned within it) are excluded by the inner
+// defined/used scan.
+static void collectNestedScopeFreeVarsImpl(ASTNode* node, std::unordered_set<std::string>& out);
+
+static void scopeFreeVars(ASTNode* body,
+                          const std::unordered_set<std::string>& defined,
+                          std::unordered_set<std::string>& out) {
+    if (!body) return;
+    std::unordered_set<std::string> used;
+    collectUsedNames(body, used);
+    for (const auto& name : used) {
+        if (defined.count(name)) continue;
+        out.insert(name);
+    }
+    // Recurse into nested scopes inside `body` so deeper levels also
+    // contribute their free variables (they bubble up through this
+    // outer scope if not bound here).
+    collectNestedScopeFreeVarsImpl(body, out);
+}
+
+static void collectNestedScopeFreeVarsImpl(ASTNode* node, std::unordered_set<std::string>& out) {
+    if (!node) return;
+    if (auto* fn = dynamic_cast<FunctionDefNode*>(node)) {
+        std::unordered_set<std::string> def;
+        collectDefinedNames(fn->body.get(), def);
+        for (const auto& p : fn->parameters) def.insert(p);
+        for (const auto& kw : fn->kwonlyargs) def.insert(kw);
+        if (!fn->vararg.empty()) def.insert(fn->vararg);
+        if (!fn->kwarg.empty())  def.insert(fn->kwarg);
+        scopeFreeVars(fn->body.get(), def, out);
+        return;
+    }
+    if (auto* afn = dynamic_cast<AsyncFunctionDefNode*>(node)) {
+        std::unordered_set<std::string> def;
+        collectDefinedNames(afn->body.get(), def);
+        for (const auto& p : afn->parameters) def.insert(p);
+        for (const auto& kw : afn->kwonlyargs) def.insert(kw);
+        if (!afn->vararg.empty()) def.insert(afn->vararg);
+        if (!afn->kwarg.empty())  def.insert(afn->kwarg);
+        scopeFreeVars(afn->body.get(), def, out);
+        return;
+    }
+    if (auto* lam = dynamic_cast<LambdaNode*>(node)) {
+        std::unordered_set<std::string> def;
+        for (const auto& p : lam->parameters) def.insert(p);
+        for (const auto& kw : lam->kwonlyargs) def.insert(kw);
+        if (!lam->vararg.empty()) def.insert(lam->vararg);
+        if (!lam->kwarg.empty())  def.insert(lam->kwarg);
+        scopeFreeVars(lam->body.get(), def, out);
+        return;
+    }
+    auto compHelper = [&](const std::vector<Comprehension>& gens, ASTNode* a, ASTNode* b) {
+        std::unordered_set<std::string> def;
+        for (const auto& g : gens) collectDefinedNames(g.target.get(), def);
+        // Outermost iter is evaluated in the enclosing scope, but every
+        // other position lives in the comp scope.  All non-defined
+        // names in those positions are free vars of the comp scope.
+        for (size_t i = 0; i < gens.size(); ++i) {
+            std::unordered_set<std::string> used;
+            // Treat the OUTERMOST iter as not-belonging to this comp scope
+            // (the compiler evaluates it in the enclosing scope).  Its
+            // free vars are picked up by the *outer* scope's analysis,
+            // not ours.
+            if (i > 0) collectUsedNames(gens[i].iter.get(), used);
+            for (const auto& cond : gens[i].ifs) collectUsedNames(cond.get(), used);
+            for (const auto& nm : used) if (!def.count(nm)) out.insert(nm);
+        }
+        if (a) {
+            std::unordered_set<std::string> used;
+            collectUsedNames(a, used);
+            for (const auto& nm : used) if (!def.count(nm)) out.insert(nm);
+        }
+        if (b) {
+            std::unordered_set<std::string> used;
+            collectUsedNames(b, used);
+            for (const auto& nm : used) if (!def.count(nm)) out.insert(nm);
+        }
+    };
+    if (auto* lc = dynamic_cast<ListCompNode*>(node))      { compHelper(lc->generators, lc->elt.get(), nullptr); return; }
+    if (auto* sc = dynamic_cast<SetCompNode*>(node))       { compHelper(sc->generators, sc->elt.get(), nullptr); return; }
+    if (auto* dc = dynamic_cast<DictCompNode*>(node))      { compHelper(dc->generators, dc->key.get(), dc->value.get()); return; }
+    if (auto* ge = dynamic_cast<GeneratorExpNode*>(node))  { compHelper(ge->generators, ge->elt.get(), nullptr); return; }
+
+    // Generic recursive descent into compound statements.  We skip
+    // class bodies — their locals are bound to the namespace dict, not
+    // closed over by their own methods.
+    if (auto* s = dynamic_cast<SuiteNode*>(node)) {
+        for (auto& st : s->statements) collectNestedScopeFreeVarsImpl(st.get(), out);
+        return;
+    }
+    if (auto* iff = dynamic_cast<IfNode*>(node)) {
+        collectNestedScopeFreeVarsImpl(iff->test.get(), out);
+        collectNestedScopeFreeVarsImpl(iff->body.get(), out);
+        if (iff->orelse) collectNestedScopeFreeVarsImpl(iff->orelse.get(), out);
+        return;
+    }
+    if (auto* w = dynamic_cast<WhileNode*>(node)) {
+        collectNestedScopeFreeVarsImpl(w->test.get(), out);
+        collectNestedScopeFreeVarsImpl(w->body.get(), out);
+        if (w->orelse) collectNestedScopeFreeVarsImpl(w->orelse.get(), out);
+        return;
+    }
+    if (auto* f = dynamic_cast<ForNode*>(node)) {
+        collectNestedScopeFreeVarsImpl(f->iter.get(), out);
+        collectNestedScopeFreeVarsImpl(f->body.get(), out);
+        if (f->orelse) collectNestedScopeFreeVarsImpl(f->orelse.get(), out);
+        return;
+    }
+    if (auto* af = dynamic_cast<AsyncForNode*>(node)) {
+        collectNestedScopeFreeVarsImpl(af->iter.get(), out);
+        collectNestedScopeFreeVarsImpl(af->body.get(), out);
+        if (af->orelse) collectNestedScopeFreeVarsImpl(af->orelse.get(), out);
+        return;
+    }
+    if (auto* tr = dynamic_cast<TryNode*>(node)) {
+        collectNestedScopeFreeVarsImpl(tr->body.get(), out);
+        for (auto& h : tr->handlers) collectNestedScopeFreeVarsImpl(h.body.get(), out);
+        if (tr->orelse) collectNestedScopeFreeVarsImpl(tr->orelse.get(), out);
+        if (tr->finalbody) collectNestedScopeFreeVarsImpl(tr->finalbody.get(), out);
+        return;
+    }
+    if (auto* wn = dynamic_cast<WithNode*>(node)) {
+        for (auto& it : wn->items) collectNestedScopeFreeVarsImpl(it.context_expr.get(), out);
+        collectNestedScopeFreeVarsImpl(wn->body.get(), out);
+        return;
+    }
+    if (auto* awn = dynamic_cast<AsyncWithNode*>(node)) {
+        for (auto& it : awn->items) collectNestedScopeFreeVarsImpl(it.context_expr.get(), out);
+        collectNestedScopeFreeVarsImpl(awn->body.get(), out);
+        return;
+    }
+    if (auto* a = dynamic_cast<AssignNode*>(node)) {
+        for (auto& t : a->targets) collectNestedScopeFreeVarsImpl(t.get(), out);
+        collectNestedScopeFreeVarsImpl(a->value.get(), out);
+        return;
+    }
+    if (auto* aa = dynamic_cast<AnnAssignNode*>(node)) {
+        collectNestedScopeFreeVarsImpl(aa->target.get(), out);
+        collectNestedScopeFreeVarsImpl(aa->annotation.get(), out);
+        if (aa->value) collectNestedScopeFreeVarsImpl(aa->value.get(), out);
+        return;
+    }
+    if (auto* aug = dynamic_cast<AugAssignNode*>(node)) {
+        collectNestedScopeFreeVarsImpl(aug->target.get(), out);
+        collectNestedScopeFreeVarsImpl(aug->value.get(), out);
+        return;
+    }
+    if (auto* call = dynamic_cast<CallNode*>(node)) {
+        collectNestedScopeFreeVarsImpl(call->func.get(), out);
+        for (auto& arg : call->args) collectNestedScopeFreeVarsImpl(arg.get(), out);
+        for (auto& kw : call->keywords) if (kw.second) collectNestedScopeFreeVarsImpl(kw.second.get(), out);
+        return;
+    }
+    if (auto* ret = dynamic_cast<ReturnNode*>(node)) {
+        if (ret->value) collectNestedScopeFreeVarsImpl(ret->value.get(), out);
+        return;
+    }
+    if (auto* binop = dynamic_cast<BinOpNode*>(node)) {
+        collectNestedScopeFreeVarsImpl(binop->left.get(), out);
+        collectNestedScopeFreeVarsImpl(binop->right.get(), out);
+        return;
+    }
+    if (auto* unop = dynamic_cast<UnaryOpNode*>(node)) {
+        collectNestedScopeFreeVarsImpl(unop->operand.get(), out);
+        return;
+    }
+    if (auto* ce = dynamic_cast<CondExprNode*>(node)) {
+        collectNestedScopeFreeVarsImpl(ce->body.get(), out);
+        collectNestedScopeFreeVarsImpl(ce->cond.get(), out);
+        collectNestedScopeFreeVarsImpl(ce->orelse.get(), out);
+        return;
+    }
+    if (auto* ce2 = dynamic_cast<ConditionalExprNode*>(node)) {
+        collectNestedScopeFreeVarsImpl(ce2->body.get(), out);
+        collectNestedScopeFreeVarsImpl(ce2->test.get(), out);
+        collectNestedScopeFreeVarsImpl(ce2->orelse.get(), out);
+        return;
+    }
+    if (auto* lst = dynamic_cast<ListLiteralNode*>(node)) {
+        for (auto& e : lst->elements) collectNestedScopeFreeVarsImpl(e.get(), out);
+        return;
+    }
+    if (auto* tup = dynamic_cast<TupleLiteralNode*>(node)) {
+        for (auto& e : tup->elements) collectNestedScopeFreeVarsImpl(e.get(), out);
+        return;
+    }
+    if (auto* st = dynamic_cast<SetLiteralNode*>(node)) {
+        for (auto& e : st->elements) collectNestedScopeFreeVarsImpl(e.get(), out);
+        return;
+    }
+    if (auto* d = dynamic_cast<DictLiteralNode*>(node)) {
+        for (auto& k : d->keys)   if (k) collectNestedScopeFreeVarsImpl(k.get(), out);
+        for (auto& v : d->values) collectNestedScopeFreeVarsImpl(v.get(), out);
+        return;
+    }
+    if (auto* sub = dynamic_cast<SubscriptNode*>(node)) {
+        collectNestedScopeFreeVarsImpl(sub->value.get(), out);
+        collectNestedScopeFreeVarsImpl(sub->index.get(), out);
+        return;
+    }
+    if (auto* att = dynamic_cast<AttributeNode*>(node)) {
+        collectNestedScopeFreeVarsImpl(att->value.get(), out);
+        return;
+    }
+    if (auto* sn = dynamic_cast<StarredNode*>(node)) {
+        collectNestedScopeFreeVarsImpl(sn->value.get(), out);
+        return;
+    }
+    if (auto* ne = dynamic_cast<NamedExprNode*>(node)) {
+        collectNestedScopeFreeVarsImpl(ne->target.get(), out);
+        collectNestedScopeFreeVarsImpl(ne->value.get(), out);
+        return;
+    }
+    // NameNode, ConstantNode, etc.: nothing to recurse.
+}
+
 /** Returns non-empty string if body has dynamic locals access; reason for slot fallback. */
 static std::string getDynamicLocalsReason(ASTNode* node) {
     if (!node) return "";
@@ -3422,7 +3659,7 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
             // local or nonlocal (i.e. it can be closed over via a cell).
             // If the outer scope has no such binding, the name is a global/builtin
             // and must be resolved via LOAD_GLOBAL/LOAD_NAME, not LOAD_DEREF.
-            bool isInOuterScope = localSlotMap_.count(c) || nonlocalNames_.count(c);
+            bool isInOuterScope = localSlotMap_.count(c) || definedLocals_.count(c) || nonlocalNames_.count(c);
             if (isInOuterScope) bodyNonlocals.insert(c);
         }
     }
@@ -3444,13 +3681,41 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
         if (n->kwarg == cn) isLocal = true;
         for (const auto& l : localsOrdered) if (l == cn) isLocal = true;
         if (!isLocal) {
-            bool isInOuterScope = localSlotMap_.count(cn) || nonlocalNames_.count(cn);
+            bool isInOuterScope = localSlotMap_.count(cn) || definedLocals_.count(cn) || nonlocalNames_.count(cn);
             if (isInOuterScope) bodyNonlocals.insert(cn);
         }
     }
 
     std::string dynamicReason = getDynamicLocalsReason(n->body.get());
-    const bool forceMapped = !dynamicReason.empty();
+    bool forceMapped = !dynamicReason.empty();
+
+    // Cell semantics for closures: if any nested scope (def, lambda,
+    // comprehension, generator-exp) reads a name that this function
+    // defines as a local/parameter, route this function's locals to
+    // the frame's attribute table.  The inner closure's frame chains
+    // to this frame as a parent, so its LOAD_DEREF walks up and
+    // observes mutations live — which is the cell semantics CPython
+    // gives via explicit cell objects.
+    if (!forceMapped) {
+        std::unordered_set<std::string> innerFrees;
+        collectNestedScopeFreeVarsImpl(n->body.get(), innerFrees);
+        bool capturesOwnLocal = false;
+        for (const auto& name : innerFrees) {
+            if (combinedGlobals.count(name)) continue;
+            for (const auto& l : localsOrdered) if (l == name) { capturesOwnLocal = true; break; }
+            if (capturesOwnLocal) break;
+            for (const auto& p : params) if (p == name) { capturesOwnLocal = true; break; }
+            if (capturesOwnLocal) break;
+            for (const auto& kw : n->kwonlyargs) if (kw == name) { capturesOwnLocal = true; break; }
+            if (capturesOwnLocal) break;
+            if (!n->vararg.empty() && name == n->vararg) { capturesOwnLocal = true; break; }
+            if (!n->kwarg.empty()  && name == n->kwarg)  { capturesOwnLocal = true; break; }
+        }
+        if (capturesOwnLocal) {
+            dynamicReason = "captured-by-inner-closure";
+            forceMapped = true;
+        }
+    }
 
     if (get_env_diag()) {
         fprintf(stderr, "DEBUG COMPILER: FunctionDef '%s' forceMapped=%d dynamicReason='%s' captured_size=%zu\n",
@@ -3512,6 +3777,8 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
     for (const auto& g : bodyGlobals) bodyCompiler.globalNames_.insert(g);
     bodyCompiler.nonlocalNames_ = bodyNonlocals;
     bodyCompiler.localSlotMap_ = slotMap;
+    // Track defined locals independent of physical storage (slot vs frame).
+    for (const auto& v : varnamesOrdered) bodyCompiler.definedLocals_.insert(v);
     bodyCompiler.isFunctionScope_ = true;
     bodyCompiler.forceMapped_ = forceMapped;
     // Only propagate currentClassName_ when this function is a direct class method
@@ -3648,7 +3915,7 @@ bool Compiler::compileLambda(LambdaNode* n) {
         if (n->vararg == c) isParam = true;
         if (n->kwarg == c) isParam = true;
         if (!isParam) {
-            bool isInOuterScope = localSlotMap_.count(c) || nonlocalNames_.count(c);
+            bool isInOuterScope = localSlotMap_.count(c) || definedLocals_.count(c) || nonlocalNames_.count(c);
             if (isInOuterScope) bodyNonlocals.insert(c);
         }
     }
@@ -3694,6 +3961,7 @@ bool Compiler::compileLambda(LambdaNode* n) {
     for (const auto& g : bodyGlobals) bodyCompiler.globalNames_.insert(g);
     bodyCompiler.nonlocalNames_ = bodyNonlocals;
     bodyCompiler.localSlotMap_ = slotMap;
+    for (const auto& v : varnamesOrdered) bodyCompiler.definedLocals_.insert(v);
     bodyCompiler.isFunctionScope_ = true;
     if (isClassBody_) bodyCompiler.currentClassName_ = currentClassName_;
 
@@ -3798,7 +4066,7 @@ bool Compiler::compileAsyncFunctionDef(AsyncFunctionDefNode* n) {
         if (n->kwarg == c) isLocal = true;
         for (const auto& l : localsOrdered) if (l == c) isLocal = true;
         if (!isLocal) {
-            bool isInOuterScope = localSlotMap_.count(c) || nonlocalNames_.count(c);
+            bool isInOuterScope = localSlotMap_.count(c) || definedLocals_.count(c) || nonlocalNames_.count(c);
             if (isInOuterScope) bodyNonlocals.insert(c);
         }
     }
@@ -4207,7 +4475,7 @@ bool Compiler::compileClassDef(ClassDefNode* n) {
     // BUILD_CLASS finishes, but BUILD_CLASS post-step writes the new
     // class into `ns` under the class's own name, so the closure walk
     // (innerCF.parent → ns) finds it.
-    if (localSlotMap_.count(n->name) || nonlocalNames_.count(n->name)) {
+    if (localSlotMap_.count(n->name) || definedLocals_.count(n->name) || nonlocalNames_.count(n->name)) {
         bodyCompiler.nonlocalNames_.insert(n->name);
     }
 
@@ -4231,7 +4499,7 @@ bool Compiler::compileClassDef(ClassDefNode* n) {
             // it as a local or nonlocal — i.e. it can be closed over via
             // a cell.  Names not in the outer scope are globals/builtins
             // and resolve via LOAD_NAME → globals → builtins as before.
-            if (localSlotMap_.count(name) || nonlocalNames_.count(name)) {
+            if (localSlotMap_.count(name) || definedLocals_.count(name) || nonlocalNames_.count(name)) {
                 bodyCompiler.nonlocalNames_.insert(name);
             }
         }

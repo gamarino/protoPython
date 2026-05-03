@@ -362,7 +362,14 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
         && (!hasClosure || cacheNoLoadDeref);
     proto::ProtoObject* frame = nullptr;
     if (!skipFrame) {
-        frame = const_cast<proto::ProtoObject*>(calleeCtx->newObject(false));
+        // For forceMapped (non-CO_OPTIMIZED) functions the frame holds the
+        // locals as own attributes; nested closures take this frame as a
+        // parent and rely on subsequent STORE_NAMEs being visible
+        // through the parent walk.  An immutable frame would force every
+        // STORE_NAME into a copy-on-write that breaks the parent linkage,
+        // so build the frame mutable in that case.
+        bool framMutable = !(co_flags & CO_OPTIMIZED);
+        frame = const_cast<proto::ProtoObject*>(calleeCtx->newObject(framMutable));
         if (env) {
             if (hasClosure) {
                 // closureList0 is already validated non-null and non-empty above.
@@ -5789,6 +5796,19 @@ const proto::ProtoObject* executeBytecodeRange(
                             for (unsigned int j = 0; j < coVarnames->getSize(ctx); ++j) {
                                 const proto::ProtoObject* vnameObj = coVarnames->getAt(ctx, j);
                                 if (vnameObj && vnameObj->isString(ctx)) {
+                                    const proto::ProtoString* vname = vnameObj->asString(ctx);
+                                    // Cell semantics: when the outer stores its locals on
+                                    // `frame` as own attributes (forceMapped path), do NOT
+                                    // snapshot them into closureFrame.  The parent chain
+                                    // closureFrame -> frame already exposes the live value,
+                                    // and a snapshot here would shadow later mutations the
+                                    // outer makes via STORE_NAME.  We detect this by
+                                    // checking whether frame already has the name as an
+                                    // OWN attribute — that's the marker for "lives on the
+                                    // frame, do not snapshot".
+                                    if (frame->hasOwnAttribute(ctx, vname) == PROTO_TRUE) {
+                                        continue;
+                                    }
                                     const proto::ProtoObject* val = (j < outerNSlots) ? outerSlots[j] : nullptr;
                                     // For CO_OPTIMIZED slots, PROTO_NONE is a legitimate bound
                                     // value (e.g. a parameter `boundary=None` left at its default
@@ -5797,12 +5817,12 @@ const proto::ProtoObject* executeBytecodeRange(
                                     // through to the frame-attribute fallback, where PROTO_NONE
                                     // means "attribute missing" and must be filtered out.
                                     if (!val) {
-                                        val = frame->getAttribute(ctx, vnameObj->asString(ctx));
+                                        val = frame->getAttribute(ctx, vname);
                                         if (val == PROTO_NONE) val = nullptr;
                                     }
 
                                     if (val) {
-                                        closureFrame = const_cast<proto::ProtoObject*>(closureFrame->setAttribute(ctx, vnameObj->asString(ctx), val));
+                                        closureFrame = const_cast<proto::ProtoObject*>(closureFrame->setAttribute(ctx, vname, val));
                                         stack.back() = closureFrame; // Keep GC root updated
                                     }
                                 }
