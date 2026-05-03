@@ -1653,14 +1653,18 @@ static const proto::ProtoObject* py_compile(
             return PROTO_NONE;
         }
     }
-    return makeCodeObject(context, 
-        compiler.getConstants(), 
-        compiler.getNames(), 
-        compiler.getBytecode(), 
-        PythonEnvironment::getInternedString(context, filename.c_str()), 
-        nullptr, 0, 0, 0, 0, false, 
-        PythonEnvironment::getInternedString(context, "<module>"), 
-        compiler.getFirstLine(), 
+    // automatic_count = compile-time max value-stack depth + safety margin so
+    // the operand stack lives inside GC-visible automaticLocals.  See
+    // PythonEnvironment.cpp where the same pattern is applied to imports.
+    const int moduleAutomaticCount = compiler.getMaxStack() + 32;
+    return makeCodeObject(context,
+        compiler.getConstants(),
+        compiler.getNames(),
+        compiler.getBytecode(),
+        PythonEnvironment::getInternedString(context, filename.c_str()),
+        nullptr, 0, 0, moduleAutomaticCount, 0, false,
+        PythonEnvironment::getInternedString(context, "<module>"),
+        compiler.getFirstLine(),
         compiler.getLnotab());
 }
 
@@ -1724,7 +1728,10 @@ static const proto::ProtoObject* py_eval(
         }
         fflush(stderr);
     }
-    const proto::ProtoObject* codeObj = makeCodeObject(context, cos, compiler.getNames(), compiler.getBytecode(), nullptr, nullptr, 0, 0, 0, false, false, nullptr, 1, compiler.getLnotab());
+    // py_eval: expression compile.  Size automatic_count to the operand-stack
+    // max so the GC sees every value pushed during evaluation.
+    const int evalAutomaticCount = compiler.getMaxStack() + 32;
+    const proto::ProtoObject* codeObj = makeCodeObject(context, cos, compiler.getNames(), compiler.getBytecode(), nullptr, nullptr, 0, 0, evalAutomaticCount, false, false, nullptr, 1, compiler.getLnotab());
     if (!codeObj) return PROTO_NONE;
     proto::ProtoObject* globals = nullptr;
     proto::ProtoObject* locals = nullptr;
@@ -2577,7 +2584,11 @@ static const proto::ProtoObject* py_exec(
     if (!compiler.compileModule(mod.get())) {
         return PROTO_NONE;
     }
-    const proto::ProtoObject* codeObj = makeCodeObject(context, compiler.getConstants(), compiler.getNames(), compiler.getBytecode(), nullptr, nullptr, 0, 0, 0, 0, false, nullptr, 1, compiler.getLnotab());
+    // See py_compile / executeModule: route the operand stack through
+    // GC-visible automaticLocals by sizing automatic_count to the
+    // compile-time max stack depth plus a safety margin.
+    const int moduleAutomaticCount = compiler.getMaxStack() + 32;
+    const proto::ProtoObject* codeObj = makeCodeObject(context, compiler.getConstants(), compiler.getNames(), compiler.getBytecode(), nullptr, nullptr, 0, 0, moduleAutomaticCount, 0, false, nullptr, 1, compiler.getLnotab());
     if (!codeObj) {
         return PROTO_NONE;
     }

@@ -11729,7 +11729,20 @@ int PythonEnvironment::executeModule(const std::string& moduleName, bool asMain,
                     if (compileOk) {
                         if (diagnostics) {
                         }
-                        const proto::ProtoObject* codeObj = makeCodeObject(ctx, compiler.getConstants(), compiler.getNames(), compiler.getBytecode(), PythonEnvironment::getInternedString(ctx, path.c_str()), nullptr, 0, 0, 0, 0, false, PythonEnvironment::getInternedString(ctx, "<module>"), compiler.getFirstLine(), compiler.getLnotab());
+                        // automatic_count = compile-time max value-stack depth
+                        // plus a small safety margin, so the module's
+                        // ProtoContext gets enough automaticLocals slots for
+                        // its operand stack to live inside the GC's root scan.
+                        // Without this, runCodeObject sized the context to 0
+                        // slots and executeBytecodeRange fell back to a
+                        // std::vector the GC cannot see — any cell pushed onto
+                        // it was pinned only by being in lastAllocatedCell, so
+                        // the per-context allocation-threshold trigger could
+                        // free live values mid-execution (manifested as
+                        // NameError: name 'fsencode' is not defined while
+                        // importing os).
+                        const int moduleAutomaticCount = compiler.getMaxStack() + 32;
+                        const proto::ProtoObject* codeObj = makeCodeObject(ctx, compiler.getConstants(), compiler.getNames(), compiler.getBytecode(), PythonEnvironment::getInternedString(ctx, path.c_str()), nullptr, 0, 0, moduleAutomaticCount, 0, false, PythonEnvironment::getInternedString(ctx, "<module>"), compiler.getFirstLine(), compiler.getLnotab());
                         if (codeObj) {
                             const proto::ProtoObject* mutableMod = mutableModObj;
                             // Modules no longer inherit from dictPrototype (CPython modules are not dicts)
