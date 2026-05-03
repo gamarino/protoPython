@@ -3026,12 +3026,84 @@ bool Compiler::compileSuite(SuiteNode* n) {
     return true;
 }
 
+// Walk a function body collecting names that appear as AnnAssignNode
+// targets (i.e. `x: int [= ...]`).  Used to enforce CPython's rule that
+// a name cannot be both annotated and declared global/nonlocal in the
+// same function — `def f(): x: int; global x` is SyntaxError.
+static void collectAnnotatedNames(ASTNode* node, std::unordered_set<std::string>& out) {
+    if (!node) return;
+    if (auto* a = dynamic_cast<AnnAssignNode*>(node)) {
+        if (auto* nm = dynamic_cast<NameNode*>(a->target.get())) {
+            out.insert(nm->id);
+        }
+        return;
+    }
+    if (auto* s = dynamic_cast<SuiteNode*>(node)) {
+        for (auto& st : s->statements) collectAnnotatedNames(st.get(), out);
+        return;
+    }
+    if (auto* iff = dynamic_cast<IfNode*>(node)) {
+        collectAnnotatedNames(iff->body.get(), out);
+        if (iff->orelse) collectAnnotatedNames(iff->orelse.get(), out);
+        return;
+    }
+    if (auto* w = dynamic_cast<WhileNode*>(node)) {
+        collectAnnotatedNames(w->body.get(), out);
+        if (w->orelse) collectAnnotatedNames(w->orelse.get(), out);
+        return;
+    }
+    if (auto* f = dynamic_cast<ForNode*>(node)) {
+        collectAnnotatedNames(f->body.get(), out);
+        if (f->orelse) collectAnnotatedNames(f->orelse.get(), out);
+        return;
+    }
+    if (auto* af = dynamic_cast<AsyncForNode*>(node)) {
+        collectAnnotatedNames(af->body.get(), out);
+        if (af->orelse) collectAnnotatedNames(af->orelse.get(), out);
+        return;
+    }
+    if (auto* tr = dynamic_cast<TryNode*>(node)) {
+        collectAnnotatedNames(tr->body.get(), out);
+        for (auto& h : tr->handlers) collectAnnotatedNames(h.body.get(), out);
+        if (tr->orelse) collectAnnotatedNames(tr->orelse.get(), out);
+        if (tr->finalbody) collectAnnotatedNames(tr->finalbody.get(), out);
+        return;
+    }
+    if (auto* wn = dynamic_cast<WithNode*>(node)) {
+        collectAnnotatedNames(wn->body.get(), out);
+        return;
+    }
+    if (auto* awn = dynamic_cast<AsyncWithNode*>(node)) {
+        collectAnnotatedNames(awn->body.get(), out);
+        return;
+    }
+    // Don't descend into nested function/class bodies — they have their
+    // own scope and their annotations don't conflict with outer
+    // global/nonlocal decls of the same name.
+}
+
 bool Compiler::compileFunctionDef(FunctionDefNode* n) {
     if (!n) return false;
     std::unordered_set<std::string> bodyGlobals;
     std::unordered_set<std::string> bodyNonlocals;
     std::vector<std::string> localsOrdered;
     collectLocalsFromBody(n->body.get(), bodyGlobals, bodyNonlocals, localsOrdered);
+
+    // CPython: a name annotated in the function body cannot also be
+    // declared `global` or `nonlocal` in the same function — that combo
+    // is a SyntaxError.  Detect it before bytecode emission.  Function
+    // parameters that have parameter_annotations are NOT included here
+    // (parameters are always locals to the function — the symtable rule
+    // only applies to body-level `name: T` statements).
+    {
+        std::unordered_set<std::string> annotated;
+        collectAnnotatedNames(n->body.get(), annotated);
+        for (const auto& name : annotated) {
+            if (bodyGlobals.count(name) || bodyNonlocals.count(name)) {
+                return false;  // surfaced as SyntaxError by py_compile
+            }
+        }
+    }
     std::vector<std::string> params;
     if (!n->parameters.empty()) {
         for (const auto& p : n->parameters) params.push_back(p);

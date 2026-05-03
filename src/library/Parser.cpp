@@ -118,6 +118,98 @@ bool Parser::acceptName() {
     return false;
 }
 
+// Recursively walk an expression AST looking for a YieldNode.  Used to
+// implement CPython's "'yield' inside list comprehension" SyntaxError —
+// a yield is illegal anywhere inside a comp body (elt, predicate, inner
+// iter), even though it is allowed in the OUTERMOST iterable (which
+// runs in the enclosing scope).  We don't need to recurse through
+// nested comprehensions or lambdas here: if a nested comp has its own
+// yield, the inner parsePrimary call already validated it; if it's
+// inside a lambda, the lambda body is its own scope and the yield
+// would have been rejected when the lambda was parsed.
+static bool containsYield(const ASTNode* n) {
+    if (!n) return false;
+    if (dynamic_cast<const YieldNode*>(n)) return true;
+    if (auto* b = dynamic_cast<const BinOpNode*>(n)) {
+        return containsYield(b->left.get()) || containsYield(b->right.get());
+    }
+    if (auto* u = dynamic_cast<const UnaryOpNode*>(n)) {
+        return containsYield(u->operand.get());
+    }
+    if (auto* c = dynamic_cast<const CondExprNode*>(n)) {
+        return containsYield(c->body.get()) || containsYield(c->cond.get())
+            || containsYield(c->orelse.get());
+    }
+    if (auto* c = dynamic_cast<const ConditionalExprNode*>(n)) {
+        return containsYield(c->body.get()) || containsYield(c->test.get())
+            || containsYield(c->orelse.get());
+    }
+    if (auto* s = dynamic_cast<const StarredNode*>(n)) {
+        return containsYield(s->value.get());
+    }
+    if (auto* call = dynamic_cast<const CallNode*>(n)) {
+        if (containsYield(call->func.get())) return true;
+        for (auto& a : call->args) if (containsYield(a.get())) return true;
+        for (auto& kv : call->keywords) if (containsYield(kv.second.get())) return true;
+        return false;
+    }
+    if (auto* a = dynamic_cast<const AttributeNode*>(n)) {
+        return containsYield(a->value.get());
+    }
+    if (auto* sub = dynamic_cast<const SubscriptNode*>(n)) {
+        return containsYield(sub->value.get()) || containsYield(sub->index.get());
+    }
+    if (auto* sl = dynamic_cast<const SliceNode*>(n)) {
+        return containsYield(sl->start.get()) || containsYield(sl->stop.get())
+            || containsYield(sl->step.get());
+    }
+    if (auto* lst = dynamic_cast<const ListLiteralNode*>(n)) {
+        for (auto& e : lst->elements) if (containsYield(e.get())) return true;
+        return false;
+    }
+    if (auto* d = dynamic_cast<const DictLiteralNode*>(n)) {
+        for (auto& k : d->keys) if (containsYield(k.get())) return true;
+        for (auto& v : d->values) if (containsYield(v.get())) return true;
+        return false;
+    }
+    if (auto* s = dynamic_cast<const SetLiteralNode*>(n)) {
+        for (auto& e : s->elements) if (containsYield(e.get())) return true;
+        return false;
+    }
+    if (auto* t = dynamic_cast<const TupleLiteralNode*>(n)) {
+        for (auto& e : t->elements) if (containsYield(e.get())) return true;
+        return false;
+    }
+    if (auto* j = dynamic_cast<const JoinedStrNode*>(n)) {
+        for (auto& v : j->values) if (containsYield(v.get())) return true;
+        return false;
+    }
+    if (auto* f = dynamic_cast<const FormattedValueNode*>(n)) {
+        return containsYield(f->value.get());
+    }
+    if (auto* ne = dynamic_cast<const NamedExprNode*>(n)) {
+        return containsYield(ne->target.get()) || containsYield(ne->value.get());
+    }
+    return false;
+}
+
+// True if any expression in the comp body contains a yield.  Outermost
+// iterable (generators[0].iter) is intentionally excluded — that is
+// evaluated in the enclosing scope and yield there is legal.
+static bool comprehensionBodyContainsYield(const ASTNode* elt,
+                                            const ASTNode* secondElt,
+                                            const std::vector<Comprehension>& gens) {
+    if (containsYield(elt)) return true;
+    if (containsYield(secondElt)) return true;
+    for (size_t i = 0; i < gens.size(); ++i) {
+        // Skip outermost iterable (i == 0 for the first generator's iter
+        // is evaluated in the enclosing scope).
+        if (i > 0 && containsYield(gens[i].iter.get())) return true;
+        for (auto& cond : gens[i].ifs) if (containsYield(cond.get())) return true;
+    }
+    return false;
+}
+
 bool Parser::expect(TokenType t) {
     if (cur_.type == t) {
         advance();
@@ -341,6 +433,10 @@ std::unique_ptr<ASTNode> Parser::parseAtom() {
             ge->elt = std::move(e);
             ge->generators = parseComprehensions();
             expect(TokenType::RParen);
+            if (comprehensionBodyContainsYield(ge->elt.get(), nullptr, ge->generators)) {
+                error("'yield' inside generator expression");
+                return ge;
+            }
             return ge;
         }
         if (isStarred || accept(TokenType::Comma)) {
@@ -408,6 +504,10 @@ std::unique_ptr<ASTNode> Parser::parseAtom() {
             lc->elt = std::move(first);
             lc->generators = parseComprehensions();
             expect(TokenType::RSquare);
+            if (comprehensionBodyContainsYield(lc->elt.get(), nullptr, lc->generators)) {
+                error("'yield' inside list comprehension");
+                return lc;
+            }
             return lc;
         }
         auto lst = createNode<ListLiteralNode>();
@@ -463,6 +563,10 @@ std::unique_ptr<ASTNode> Parser::parseAtom() {
             sc->elt = std::move(firstKey);
             sc->generators = parseComprehensions();
             expect(TokenType::RCurly);
+            if (comprehensionBodyContainsYield(sc->elt.get(), nullptr, sc->generators)) {
+                error("'yield' inside set comprehension");
+                return sc;
+            }
             return sc;
         }
         
@@ -481,6 +585,10 @@ std::unique_ptr<ASTNode> Parser::parseAtom() {
                     dc->value = std::move(val);
                     dc->generators = parseComprehensions();
                     expect(TokenType::RCurly);
+                    if (comprehensionBodyContainsYield(dc->key.get(), dc->value.get(), dc->generators)) {
+                        error("'yield' inside dict comprehension");
+                        return dc;
+                    }
                     return dc;
                 }
                 d->keys.push_back(std::move(firstKey));
@@ -606,6 +714,18 @@ std::unique_ptr<ASTNode> Parser::parsePrimary() {
                     std::string kwname = cur_.value;
                     advance(); // name
                     advance(); // =
+                    // Reject duplicate keyword arguments at parse time —
+                    // `f(x=1, x=2)` and `f(x=1, *(2,3), x=5)` are both
+                    // SyntaxError in CPython.  Catching this here means
+                    // we don't need to detect it at call time, and it
+                    // matches the message test.support.check_syntax_error
+                    // looks for via test_grammar.test_funcdef.
+                    for (const auto& kw : call->keywords) {
+                        if (!kw.first.empty() && kw.first == kwname) {
+                            error("keyword argument repeated: " + kwname);
+                            return left;
+                        }
+                    }
                     call->keywords.push_back({kwname, parseExpression()});
                 } else {
                     auto arg = parseExpression();
@@ -627,6 +747,10 @@ std::unique_ptr<ASTNode> Parser::parsePrimary() {
                         auto ge = createNode<GeneratorExpNode>();
                         ge->elt = std::move(arg);
                         ge->generators = parseComprehensions();
+                        if (comprehensionBodyContainsYield(ge->elt.get(), nullptr, ge->generators)) {
+                            error("'yield' inside generator expression");
+                            return left;
+                        }
                         call->args.push_back(std::move(ge));
                         // CPython: a bare generator expression must be the
                         // sole positional argument.  Once it's parsed, the
@@ -896,7 +1020,12 @@ bool Parser::parseParameters(FunctionDefNode* fn) {
                 std::string varName = fn->vararg;
                 advance();
                 if (accept(TokenType::Colon)) {
-                    fn->parameter_annotations[varName] = parseExpression();
+                    auto ann = parseExpression();
+                    if (containsYield(ann.get())) {
+                        error("'yield' outside function");
+                        return false;
+                    }
+                    fn->parameter_annotations[varName] = std::move(ann);
                 }
                 isKwOnly = true;
             } else {
@@ -912,13 +1041,23 @@ bool Parser::parseParameters(FunctionDefNode* fn) {
             std::string kwName = fn->kwarg;
             advance();
             if (accept(TokenType::Colon)) {
-                fn->parameter_annotations[kwName] = parseExpression();
+                auto ann = parseExpression();
+                if (containsYield(ann.get())) {
+                    error("'yield' outside function");
+                    return false;
+                }
+                fn->parameter_annotations[kwName] = std::move(ann);
             }
         } else if (cur_.type == TokenType::Name || cur_.type == TokenType::Type || cur_.type == TokenType::Match || cur_.type == TokenType::Case) {
             std::string paramName = cur_.value;
             advance();
             if (accept(TokenType::Colon)) {
-                fn->parameter_annotations[paramName] = parseExpression();
+                auto ann = parseExpression();
+                if (containsYield(ann.get())) {
+                    error("'yield' outside function");
+                    return false;
+                }
+                fn->parameter_annotations[paramName] = std::move(ann);
             }
             if (isKwOnly) {
                 fn->kwonlyargs.push_back(paramName);
@@ -1813,7 +1952,12 @@ std::unique_ptr<ASTNode> Parser::parseFunctionDef() {
     fn->type_params = parseTypeParams();
     if (!parseParameters(fn.get())) return nullptr;
     if (accept(TokenType::Arrow)) {
-        fn->returns = parseExpression();
+        auto ret = parseExpression();
+        if (containsYield(ret.get())) {
+            error("'yield' outside function");
+            return nullptr;
+        }
+        fn->returns = std::move(ret);
     }
     if (cur_.type != TokenType::Colon) return nullptr;
     advance();

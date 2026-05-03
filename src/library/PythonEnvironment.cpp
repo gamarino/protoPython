@@ -8879,35 +8879,23 @@ bool PythonEnvironment::emitSyntaxWarning(proto::ProtoContext* ctx, const std::s
     // CPython's compile() converts that to a SyntaxError with location info.
     if (hasPendingException()) {
         const proto::ProtoObject* exc = peekPendingException();
-        // Walk exc.__class__.__mro__ to confirm it's a Warning subclass — we
-        // don't want to swallow unrelated exceptions raised inside the filter
-        // machinery itself.
+        // Use isInstanceOf — the most reliable way to detect a Warning
+        // subclass instance.  It walks the prototype chain and the
+        // protoCore-level type relationship so it is robust to the
+        // various ways an exception class can be exposed (raw type,
+        // copy of class via class-cell rebind, etc.).
         bool isWarning = false;
-        if (exc) {
-            const proto::ProtoString* classKey = PythonEnvironment::getInternedString(ctx, "__class__");
-            const proto::ProtoObject* cls = exc->getAttribute(ctx, classKey);
-            if (cls) {
-                const proto::ProtoString* mroKey = PythonEnvironment::getInternedString(ctx, "__mro__");
-                const proto::ProtoObject* mro = cls->getAttribute(ctx, mroKey);
-                if (mro && mro->asTuple(ctx)) {
-                    const proto::ProtoTuple* mroT = mro->asTuple(ctx);
-                    for (unsigned long i = 0; i < mroT->getSize(ctx); ++i) {
-                        if (mroT->getAt(ctx, static_cast<int>(i)) == syntaxWarning) {
-                            isWarning = true;
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-        if (isWarning) {
-            std::string excMsg = msg;
+        std::string excMsg = msg;
+        if (exc && syntaxWarning) {
+            isWarning = (exc->isInstanceOf(ctx, syntaxWarning) == PROTO_TRUE);
             const proto::ProtoString* argsKey = PythonEnvironment::getInternedString(ctx, "args");
-            const proto::ProtoObject* excArgs = exc ? exc->getAttribute(ctx, argsKey) : nullptr;
+            const proto::ProtoObject* excArgs = exc->getAttribute(ctx, argsKey);
             if (excArgs && excArgs->asTuple(ctx) && excArgs->asTuple(ctx)->getSize(ctx) > 0) {
                 const proto::ProtoObject* m = excArgs->asTuple(ctx)->getAt(ctx, 0);
                 if (m && m->isString(ctx)) m->asString(ctx)->toUTF8String(ctx, excMsg);
             }
+        }
+        if (isWarning) {
             clearPendingException();
             raiseSyntaxError(ctx, excMsg, lineno, 0, "");
             return true;

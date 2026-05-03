@@ -421,6 +421,11 @@ private:
     std::string lastErrorMsg_;
     int lastErrorLine_ = 0;
     int lastErrorColumn_ = 0;
+    // Stack of comprehension kinds we're currently inside ("list comprehension",
+    // "set comprehension", etc).  Empty means "not inside one".  Used by
+    // parseYieldExpression to reject `yield` that lives inside the body of a
+    // comprehension — CPython raises SyntaxError with this exact wording.
+    std::vector<std::string> comprehensionContextStack_;
 
     void error(const std::string& msg);
     void advance();
