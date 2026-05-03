@@ -66,6 +66,10 @@ private:
     bool compileDictLiteral(DictLiteralNode* n);
     bool compileTupleLiteral(TupleLiteralNode* n);
     bool compileSetLiteral(SetLiteralNode* n);
+    /** Detect "perhaps you missed a comma?" patterns in a sequence
+        element and emit a SyntaxWarning.  Returns true if the warning
+        was promoted to a SyntaxError (filter='error'). */
+    bool warnIfMissedComma(ASTNode* elem);
     bool compileAssign(AssignNode* n);
     bool compileAnnAssign(AnnAssignNode* n);
     bool compileNamedExpr(NamedExprNode* n);

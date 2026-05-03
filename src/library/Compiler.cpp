@@ -748,8 +748,101 @@ bool Compiler::compileSlice(SliceNode* n) {
     return true;
 }
 
+// Best-effort name of a non-callable / non-subscriptable expression for the
+// "perhaps you missed a comma?" SyntaxWarning.  Returns the empty string
+// if the node is not one of the literal/comp/lambda/constant kinds we
+// recognise.  Only used to format the warning message; the *decision* to
+// warn is made by the call sites below.
+static std::string missedCommaTypeName(const ASTNode* n) {
+    if (!n) return "";
+    if (dynamic_cast<const TupleLiteralNode*>(n)) return "tuple";
+    if (dynamic_cast<const ListLiteralNode*>(n)) return "list";
+    if (dynamic_cast<const ListCompNode*>(n)) return "list";
+    if (dynamic_cast<const SetLiteralNode*>(n)) return "set";
+    if (dynamic_cast<const SetCompNode*>(n)) return "set";
+    if (dynamic_cast<const DictLiteralNode*>(n)) return "dict";
+    if (dynamic_cast<const DictCompNode*>(n)) return "dict";
+    if (dynamic_cast<const GeneratorExpNode*>(n)) return "generator";
+    if (dynamic_cast<const JoinedStrNode*>(n)) return "str";
+    if (dynamic_cast<const LambdaNode*>(n)) return "function";
+    if (auto* c = dynamic_cast<const ConstantNode*>(n)) {
+        switch (c->constType) {
+            case ConstantNode::ConstType::Int:      return "int";
+            case ConstantNode::ConstType::Float:    return "float";
+            case ConstantNode::ConstType::Str:      return "str";
+            case ConstantNode::ConstType::Bytes:    return "bytes";
+            case ConstantNode::ConstType::None:     return "NoneType";
+            case ConstantNode::ConstType::Bool:     return "bool";
+            case ConstantNode::ConstType::Ellipsis: return "ellipsis";
+        }
+    }
+    return "";
+}
+
+// Check a single sequence-literal element for the "missed comma" pattern
+// and emit a SyntaxWarning if it matches.  Returns true if compilation
+// should abort (the warning was promoted to a SyntaxError under
+// filter='error').  CPython produces three flavours of message; we mirror
+// them so test_warn_missed_comma's assertRegex matches:
+//
+//   1. `[<literal>(args)]`             → "<type> is not callable;
+//                                          perhaps you missed a comma?"
+//   2. `[<unsubscriptable>[i, j]]`     → "<type> is not subscriptable;
+//                                          perhaps you missed a comma?"
+//   3. `[<sequence>[(i, j)]]`          → "<type> indices must be integers
+//                                          or slices, not tuple;
+//                                          perhaps you missed a comma?"
+bool Compiler::warnIfMissedComma(ASTNode* elem) {
+    if (!elem) return false;
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx_);
+    if (!env) return false;
+
+    if (auto* call = dynamic_cast<CallNode*>(elem)) {
+        std::string ty = missedCommaTypeName(call->func.get());
+        if (!ty.empty()) {
+            std::string msg = "'" + ty + "' object is not callable; perhaps you missed a comma?";
+            int line = call->line > 0 ? call->line : 1;
+            return env->emitSyntaxWarning(ctx_, msg, filename_, line);
+        }
+    }
+    if (auto* sub = dynamic_cast<SubscriptNode*>(elem)) {
+        const ASTNode* base = sub->value.get();
+        std::string ty = missedCommaTypeName(base);
+        // Categorise base: sequence-like (tuple/list/listcomp/str/bytes)
+        // gives the "indices must be integers or slices, not tuple"
+        // wording when the index is itself a tuple; everything else
+        // gives the "is not subscriptable" wording.
+        bool isSequenceLike = dynamic_cast<const TupleLiteralNode*>(base)
+                           || dynamic_cast<const ListLiteralNode*>(base)
+                           || dynamic_cast<const ListCompNode*>(base)
+                           || dynamic_cast<const JoinedStrNode*>(base)
+                           || (dynamic_cast<const ConstantNode*>(base)
+                               && (static_cast<const ConstantNode*>(base)->constType == ConstantNode::ConstType::Str
+                                || static_cast<const ConstantNode*>(base)->constType == ConstantNode::ConstType::Bytes));
+        bool indexIsTuple = dynamic_cast<TupleLiteralNode*>(sub->index.get()) != nullptr;
+        if (!ty.empty()) {
+            std::string msg;
+            if (isSequenceLike && indexIsTuple) {
+                msg = "'" + ty + "' indices must be integers or slices, not tuple; perhaps you missed a comma?";
+            } else {
+                msg = "'" + ty + "' object is not subscriptable; perhaps you missed a comma?";
+            }
+            int line = sub->line > 0 ? sub->line : 1;
+            return env->emitSyntaxWarning(ctx_, msg, filename_, line);
+        }
+    }
+    return false;
+}
+
 bool Compiler::compileListLiteral(ListLiteralNode* n) {
     if (!n) return false;
+    // Best-effort missed-comma SyntaxWarning detection (CPython's
+    // compile-time warning).  Walk each element for the patterns
+    // described in warnIfMissedComma and bail if a warning was
+    // promoted to SyntaxError under filter='error'.
+    for (auto& e : n->elements) {
+        if (warnIfMissedComma(e.get())) return false;
+    }
     bool hasStarred = false;
     for (auto& e : n->elements) {
         if (dynamic_cast<StarredNode*>(e.get())) { hasStarred = true; break; }
