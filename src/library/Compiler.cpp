@@ -668,10 +668,15 @@ bool Compiler::compileCall(CallNode* n) {
                     if (!compileNode(kw.second.get())) return false;
                     emit(OP_DICT_UPDATE, 1);
                 } else {
+                    // OP_MAP_ADD impl reads `key` from TOS and `val` from TOS-1,
+                    // and resolves `mapObj` at stack[size - arg - 1]. The dict
+                    // is at TOS-2 here (we have [map, val, key] above it after
+                    // the loads), so we push value FIRST and key SECOND, then
+                    // emit arg=2 so mapObj resolves to `map`.
+                    if (!compileNode(kw.second.get())) return false;
                     int nameIdx = addConstant(PythonEnvironment::getInternedString(ctx_, kw.first.c_str())->asObject(ctx_));
                     emit(OP_LOAD_CONST, nameIdx);
-                    if (!compileNode(kw.second.get())) return false;
-                    emit(OP_MAP_ADD, 1);
+                    emit(OP_MAP_ADD, 2);
                 }
             }
             hasKw = true;
@@ -796,8 +801,13 @@ bool Compiler::compileDictLiteral(DictLiteralNode* n) {
                      emit(OP_DICT_UPDATE, 1);
                 }
             } else {
-                if (!compileNode(n->keys[i].get()) || !compileNode(n->values[i].get())) return false;
-                emit(OP_MAP_ADD, 1);
+                // OP_MAP_ADD impl reads `key` from TOS and `val` from TOS-1,
+                // and resolves the dict at stack[size - arg - 1]. Push value
+                // first then key, so TOS = key matches what the impl expects;
+                // arg = 2 puts the dict three slots below the top, where it
+                // actually lives (BUILD_MAP pushed it before this loop).
+                if (!compileNode(n->values[i].get()) || !compileNode(n->keys[i].get())) return false;
+                emit(OP_MAP_ADD, 2);
             }
         }
     }
@@ -2136,6 +2146,10 @@ static void collectNonlocalsFromNode(ASTNode* node, std::unordered_set<std::stri
         collectNonlocalsFromNode(w->body.get(), out);
         return;
     }
+    if (auto* aw = dynamic_cast<AsyncWithNode*>(node)) {
+        collectNonlocalsFromNode(aw->body.get(), out);
+        return;
+    }
     if (auto* wh = dynamic_cast<WhileNode*>(node)) {
         collectNonlocalsFromNode(wh->test.get(), out);
         collectNonlocalsFromNode(wh->body.get(), out);
@@ -2199,6 +2213,14 @@ static void collectGlobalsFromNode(ASTNode* node, std::unordered_set<std::string
             if (item.optional_vars) collectGlobalsFromNode(item.optional_vars.get(), globalsOut);
         }
         collectGlobalsFromNode(w->body.get(), globalsOut);
+        return;
+    }
+    if (auto* aw = dynamic_cast<AsyncWithNode*>(node)) {
+        for (auto& item : aw->items) {
+            collectGlobalsFromNode(item.context_expr.get(), globalsOut);
+            if (item.optional_vars) collectGlobalsFromNode(item.optional_vars.get(), globalsOut);
+        }
+        collectGlobalsFromNode(aw->body.get(), globalsOut);
         return;
     }
     if (auto* c = dynamic_cast<CallNode*>(node)) {
@@ -2494,6 +2516,14 @@ static void collectUsedNames(ASTNode* node, std::unordered_set<std::string>& out
         collectUsedNames(w->body.get(), out);
         return;
     }
+    if (auto* aw = dynamic_cast<AsyncWithNode*>(node)) {
+        for (auto& item : aw->items) {
+            collectUsedNames(item.context_expr.get(), out);
+            if (item.optional_vars) collectUsedNames(item.optional_vars.get(), out);
+        }
+        collectUsedNames(aw->body.get(), out);
+        return;
+    }
     if (auto* d = dynamic_cast<DeleteNode*>(node)) {
         for (auto& target : d->targets) collectUsedNames(target.get(), out);
         return;
@@ -2614,6 +2644,13 @@ static void collectDefinedNames(ASTNode* node, std::unordered_set<std::string>& 
             if (item.optional_vars) collectDefinedNames(item.optional_vars.get(), out);
         }
         collectDefinedNames(w->body.get(), out);
+        return;
+    }
+    if (auto* aw = dynamic_cast<AsyncWithNode*>(node)) {
+        for (auto& item : aw->items) {
+            if (item.optional_vars) collectDefinedNames(item.optional_vars.get(), out);
+        }
+        collectDefinedNames(aw->body.get(), out);
         return;
     }
     if (auto* nm = dynamic_cast<NameNode*>(node)) {
@@ -2934,6 +2971,12 @@ static void collectCapturedNamesImpl(ASTNode* node, const std::unordered_set<std
             if (item.optional_vars) collectCapturedNamesImpl(item.optional_vars.get(), globalsInScope, capturedOut, depth);
         }
         collectCapturedNamesImpl(wn->body.get(), globalsInScope, capturedOut, depth);
+    } else if (auto* awn = dynamic_cast<AsyncWithNode*>(node)) {
+        for (auto& item : awn->items) {
+            collectCapturedNamesImpl(item.context_expr.get(), globalsInScope, capturedOut, depth);
+            if (item.optional_vars) collectCapturedNamesImpl(item.optional_vars.get(), globalsInScope, capturedOut, depth);
+        }
+        collectCapturedNamesImpl(awn->body.get(), globalsInScope, capturedOut, depth);
     } else if (auto* as = dynamic_cast<AssertNode*>(node)) {
         collectCapturedNamesImpl(as->test.get(), globalsInScope, capturedOut, depth);
         if (as->msg) collectCapturedNamesImpl(as->msg.get(), globalsInScope, capturedOut, depth);
