@@ -5757,19 +5757,32 @@ const proto::ProtoObject* executeBytecodeRange(
             stack.push_back(finalTup);
         } break;
         case OP_BUILD_FUNCTION: {
-            // Pop annotation dict (0x04), kw_defaults (0x02), defaults (0x01)
-            // in that order — they were pushed in the reverse order by the
-            // compiler immediately before this opcode.
-            const proto::ProtoObject* annotations = (arg & 0x04) ? stack.back() : nullptr;
-            if (arg & 0x04) stack.pop_back();
-            const proto::ProtoObject* kwDefaults = (arg & 0x02) ? stack.back() : nullptr;
-            if (arg & 0x02) stack.pop_back();
-            const proto::ProtoObject* defaults = (arg & 0x01) ? stack.back() : nullptr;
-            if (arg & 0x01) stack.pop_back();
+            // GC discipline: every ProtoObject* we hold across an allocation
+            // (newObject, addParent, setAttribute, …) must be reachable from
+            // a GC root.  The operand stack lives inside automaticLocals, so
+            // anything sitting in a stack slot is rooted; values held only
+            // in C++ locals are NOT.  We therefore read codeObj/defaults/
+            // kwDefaults/annotations *without* popping — pop_back only
+            // decrements top, so the slots still hold the values and the
+            // root scan still sees them.  Pushing closureFrame later goes
+            // ON TOP of these slots, not over them.  Pops happen at the
+            // very end, after every allocation has completed.
+            int extras = 0;
+            if (arg & 0x04) extras++;
+            if (arg & 0x02) extras++;
+            if (arg & 0x01) extras++;
+            const proto::ProtoObject* annotations = nullptr;
+            const proto::ProtoObject* kwDefaults = nullptr;
+            const proto::ProtoObject* defaults = nullptr;
+            int peekIdx = 0;
+            if (arg & 0x04) { annotations = stack[stack.top - 1 - peekIdx++]; }
+            if (arg & 0x02) { kwDefaults = stack[stack.top - 1 - peekIdx++]; }
+            if (arg & 0x01) { defaults = stack[stack.top - 1 - peekIdx++]; }
 
-            if (!stack.empty() && frame) {
-                const proto::ProtoObject* codeObj = stack.back();
-                stack.pop_back();
+            if (stack.size() > static_cast<size_t>(extras) && frame) {
+                const proto::ProtoObject* codeObj = stack[stack.top - 1 - extras];
+                // codeObj stays in its stack slot for the entire op; no pop
+                // here.  See the GC discipline comment above.
                 if (diag_local) {
                     int line = -1;
                     const proto::ProtoObject* lineObj = codeObj->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "co_firstlineno"));
@@ -5778,14 +5791,16 @@ const proto::ProtoObject* executeBytecodeRange(
                     fflush(stderr);
                 }
 
-                // Snapshot current CO_OPTIMIZED slot values into a mutable closure frame.
-                // We use a mutable object as the closure so that after the function is built,
-                // we can store the function under its own co_name — enabling self-referential
-                // and forward-referencing closures without CPython-style cell objects.
-                // All inner functions that capture this frame see the same mutable object,
-                // so a later assignment (e.g. STORE_FAST inner) is reflected via the parent.
+                // Build the closure frame.  Push it onto the stack as a GC
+                // guard *before* the next allocation so that the protoCore
+                // threshold trigger cannot lose it via a chain submission.
+                // closureFrame must stay rooted across addParent, getAttribute,
+                // and the snapshot loop.  Updates to the C++ local and the
+                // stack slot are kept in sync via stack.back() = closureFrame.
                 proto::ProtoObject* closureFrame = const_cast<proto::ProtoObject*>(ctx->newObject(true));
+                stack.push_back(closureFrame);
                 closureFrame = const_cast<proto::ProtoObject*>(closureFrame->addParent(ctx, frame));
+                stack.back() = closureFrame;
                 // The frame stores the code object as f_code (not __code__)
                 const proto::ProtoString* codeKey = env ? env->getFCodeString() : PythonEnvironment::getInternedString(ctx, "f_code");
                 const proto::ProtoObject* outerCodeAttr = frame->getAttribute(ctx, codeKey);
@@ -5794,8 +5809,6 @@ const proto::ProtoObject* executeBytecodeRange(
                     if (coVarnamesObj && coVarnamesObj != PROTO_NONE) {
                         const proto::ProtoTuple* coVarnames = coVarnamesObj->asTuple(ctx);
                         if (coVarnames) {
-                            // Push closureFrame onto stack to keep it GC-rooted during setAttribute calls.
-                            stack.push_back(closureFrame);
                             const proto::ProtoObject** outerSlots = ctx->getAutomaticLocals();
                             unsigned int outerNSlots = ctx->getAutomaticLocalsCount();
                             for (unsigned int j = 0; j < coVarnames->getSize(ctx); ++j) {
@@ -5832,16 +5845,26 @@ const proto::ProtoObject* executeBytecodeRange(
                                     }
                                 }
                             }
-                            stack.pop_back(); // Remove GC root
                         }
                     }
                 }
+                // Pop closureFrame.  pop_back only decrements top — slot[top]
+                // still holds closureFrame, so the GC root scan continues to
+                // reach it through the entire createUserFunction call below
+                // (which performs many allocations).
+                stack.pop_back();
 
                 proto::ProtoObject* fn = createUserFunction(ctx, codeObj, const_cast<proto::ProtoObject*>(PythonEnvironment::getCurrentGlobals()), closureFrame, defaults, kwDefaults);
-                // Store fn under its own co_name in the closure frame to enable self-referential
-                // and forward-referencing inner functions. If closureFrame is truly mutable and
-                // setAttribute is in-place, fn.__closure__[0] already sees this update.
-                // If setAttribute returns a new object, we update the closure tuple in fn.
+                // Push fn as a GC guard immediately.  Subsequent setAttribute
+                // calls allocate (potentially crossing the per-context
+                // threshold and submitting the young chain) and may return a
+                // new fn pointer; we keep stack.back() in sync.  Without this
+                // guard the C++-local fn is unrooted and a chain submission
+                // can leave its underlying cell in dirtySegments where the
+                // next sweep would free it.
+                if (fn) {
+                    stack.push_back(fn);
+                }
                 if (fn && env) {
                     const proto::ProtoObject* nameAttr = codeObj->getAttribute(ctx,
                         PythonEnvironment::getInternedString(ctx, "co_name"));
@@ -5855,6 +5878,7 @@ const proto::ProtoObject* executeBytecodeRange(
                                 ctx->newList()->appendLast(ctx, updatedFrame);
                             fn = const_cast<proto::ProtoObject*>(fn->setAttribute(
                                 ctx, env->getClosureString(), newClosure->asObject(ctx)));
+                            stack.back() = fn;
                         }
                     }
                 }
@@ -5874,6 +5898,24 @@ const proto::ProtoObject* executeBytecodeRange(
                         PythonEnvironment::getInternedString(ctx, "__annotations__");
                     fn = const_cast<proto::ProtoObject*>(
                         fn->setAttribute(ctx, annKey, annotations));
+                    stack.back() = fn;
+                }
+                // Stack right now (top to bottom):
+                //   fn (guard)
+                //   annotations? kwDefaults? defaults? codeObj   (the original
+                //                                                 operands we
+                //                                                 deliberately
+                //                                                 did not pop)
+                //
+                // Result of OP_BUILD_FUNCTION must leave fn at the top of the
+                // operand stack, with the original operands removed.  Pop fn,
+                // then pop the originals, then push fn back.  No allocations
+                // happen in this sequence so fn-in-C++-local is safe.
+                if (fn) {
+                    stack.pop_back();  // pop fn guard
+                }
+                for (int i = 0; i < extras + 1; ++i) {
+                    if (stack.top > 0) stack.pop_back();
                 }
                 if (fn) {
                     stack.push_back(fn);

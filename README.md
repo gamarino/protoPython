@@ -191,6 +191,45 @@ wall-time blows up while RSS reports the true cost of the design
 choice.  See `feedback_memory_pressure_benchmark.md` for the full
 rationale.
 
+#### With `PROTOCORE_GC_REINCLUDE_SURVIVORS=ON` (May 2026)
+
+protoCore's new survivor re-chain + per-context allocation-threshold
+submission (see [`protoCore/docs/superpowers/specs/2026-05-03-gc-survivor-rechain.md`](../protoCore/docs/superpowers/specs/2026-05-03-gc-survivor-rechain.md))
+is opt-in via CMake flag.  Both `protoCore` and `protoPython` must be
+built with `-DPROTOCORE_GC_REINCLUDE_SURVIVORS=ON -DCMAKE_BUILD_TYPE=Release`.
+
+Same workloads, 5-run median:
+
+```
+┌────────────────────────┬──────────────┬──────────────┬─────────────────┬───────────────────────────┐
+│ Benchmark              │ protoPy (ms) │ CPython (ms) │ Ratio           │ Δ vs OFF                  │
+├────────────────────────┼──────────────┼──────────────┼─────────────────┼───────────────────────────┤
+│ startup_empty          │      22.0    │      35.6    │  0.62× faster   │  better                   │
+│ int_sum_loop           │      25.9    │      37.3    │  0.69× faster   │  flat                     │
+│ list_append_loop       │     251.3    │      35.0    │  7.17× slower   │  better                   │
+│ str_concat_loop        │     430.4    │      38.3    │ 11.24× slower   │  −33%                     │
+│ range_iterate          │     167.2    │      40.9    │  4.09× slower   │  better                   │
+│ multithread_cpu        │      72.5    │      65.9    │  1.10× slower   │  better                   │
+│ attr_lookup            │      71.7    │      49.0    │  1.46× slower   │  better                   │
+│ call_recursion         │     113.8    │      49.2    │  2.32× slower   │  −12%                     │
+│ memory_pressure        │    3182.0    │      64.2    │ 49.59× slower   │ 1347 → 358 MB RSS, 3.7×↓  │
+├────────────────────────┼──────────────┼──────────────┼─────────────────┼───────────────────────────┤
+│ Geomean (all 9)        │              │              │  3.10×          │  3.81 → 3.10× (−18%)      │
+└────────────────────────┴──────────────┴──────────────┴─────────────────┴───────────────────────────┘
+```
+
+`memory_pressure` is now in-suite: the unbounded growth of
+`lastAllocatedCell` during a long-running interpreter that forced its
+exclusion above is exactly what the per-context threshold submission
+addresses.  RSS bound moves from 1347 MB → 358 MB and wall time from
+182× → 49.59× vs CPython 3.14.  Five other workloads also improve;
+`str_concat_loop` and `call_recursion` regress slightly because they
+allocate aggressively into discardable structures and pay the
+re-chain's mark-traversal cost on every cycle.  Both regressions are
+addressable by staggering the re-chain (every Nth cycle instead of
+every cycle) — kept on the follow-up list because correctness is
+already in place.
+
 Compared to V154 (5.06× geomean, 2026-04-25):
 - `list_append_loop` 1017 → **420 ms** (2.4× faster)
 - `attr_lookup` 816 → **294 ms** (2.8× faster)
