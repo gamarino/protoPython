@@ -2606,6 +2606,44 @@ static const proto::ProtoObject* py_list_reverse(
     return PROTO_NONE;
 }
 
+// Forward decl — py_list_sort uses sorted_compare-equivalent semantics
+// but py_list_sort lives in PythonEnvironment.cpp; replicate the helper
+// here so we don't have to expose the static from BuiltinsModule.cpp.
+static int py_sort_cmp(proto::ProtoContext* ctx,
+                        const proto::ProtoObject* a,
+                        const proto::ProtoObject* b);
+
+static int py_sort_cmp(proto::ProtoContext* ctx,
+                        const proto::ProtoObject* a,
+                        const proto::ProtoObject* b) {
+    if (a == b) return 0;
+    if (a->isInteger(ctx) && b->isInteger(ctx)) return a->compare(ctx, b);
+    if (a->isString(ctx) && b->isString(ctx)) {
+        std::string sa, sb;
+        a->asString(ctx)->toUTF8String(ctx, sa);
+        b->asString(ctx)->toUTF8String(ctx, sb);
+        if (sa == sb) return 0;
+        return sa < sb ? -1 : 1;
+    }
+    if (a->asTuple(ctx) && b->asTuple(ctx)) {
+        const proto::ProtoTuple* ta = a->asTuple(ctx);
+        const proto::ProtoTuple* tb = b->asTuple(ctx);
+        unsigned long sa = ta->getSize(ctx);
+        unsigned long sb = tb->getSize(ctx);
+        unsigned long minlen = sa < sb ? sa : sb;
+        for (unsigned long i = 0; i < minlen; ++i) {
+            int c = py_sort_cmp(ctx,
+                                ta->getAt(ctx, static_cast<int>(i)),
+                                tb->getAt(ctx, static_cast<int>(i)));
+            if (c != 0) return c;
+        }
+        if (sa < sb) return -1;
+        if (sa > sb) return 1;
+        return 0;
+    }
+    return a->compare(ctx, b);
+}
+
 static const proto::ProtoObject* py_list_sort(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -2614,7 +2652,6 @@ static const proto::ProtoObject* py_list_sort(
     const proto::ProtoSparseList* keywordParameters) {
     (void)parentLink;
     (void)positionalParameters;
-    (void)keywordParameters;
     const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "__data__");
     const proto::ProtoObject* data = self->getAttribute(context, dataName);
     const proto::ProtoList* list = data && data->asList(context) ? data->asList(context) : nullptr;
@@ -2623,9 +2660,54 @@ static const proto::ProtoObject* py_list_sort(
     std::vector<const proto::ProtoObject*> elems(size);
     for (unsigned long i = 0; i < size; ++i)
         elems[i] = list->getAt(context, static_cast<int>(i));
-    std::sort(elems.begin(), elems.end(), [context](const proto::ProtoObject* a, const proto::ProtoObject* b) {
-        return a->compare(context, b) < 0;
-    });
+
+    // Honour `key` and `reverse` keyword arguments.
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::ProtoObject* keyFn = nullptr;
+    bool reverse = false;
+    if (env && keywordParameters) {
+        unsigned long keyH = PythonEnvironment::getInternedString(context, "key")->getHash(context);
+        if (keywordParameters->has(context, keyH)) {
+            const proto::ProtoObject* v = keywordParameters->getAt(context, keyH);
+            if (v && v != PROTO_NONE) keyFn = v;
+        }
+        unsigned long revH = PythonEnvironment::getInternedString(context, "reverse")->getHash(context);
+        if (keywordParameters->has(context, revH)) {
+            const proto::ProtoObject* v = keywordParameters->getAt(context, revH);
+            if (v && v->isBoolean(context)) reverse = v->asBoolean(context);
+        }
+    }
+
+    if (keyFn) {
+        // Decorate-sort-undecorate: compute keys once, sort indices stably
+        // by the keys, then permute elements.  Mirrors py_sorted's keyed path.
+        std::vector<const proto::ProtoObject*> keys;
+        keys.reserve(elems.size());
+        for (const proto::ProtoObject* el : elems) {
+            const proto::ProtoList* args = context->newList()->appendLast(context, el);
+            const proto::ProtoObject* k = ::protoPython::invokePythonCallable(context, keyFn, args, nullptr);
+            if (!k) return PROTO_NONE;  // pending exception will be propagated by caller
+            keys.push_back(k);
+        }
+        std::vector<size_t> idx(elems.size());
+        for (size_t i = 0; i < idx.size(); ++i) idx[i] = i;
+        std::stable_sort(idx.begin(), idx.end(),
+            [context, &keys, reverse](size_t a, size_t b) {
+                int c = py_sort_cmp(context, keys[a], keys[b]);
+                return reverse ? c > 0 : c < 0;
+            });
+        std::vector<const proto::ProtoObject*> sorted;
+        sorted.reserve(elems.size());
+        for (size_t i : idx) sorted.push_back(elems[i]);
+        elems.swap(sorted);
+    } else {
+        std::stable_sort(elems.begin(), elems.end(),
+            [context, reverse](const proto::ProtoObject* a, const proto::ProtoObject* b) {
+                int c = py_sort_cmp(context, a, b);
+                return reverse ? c > 0 : c < 0;
+            });
+    }
+
     const proto::ProtoList* newList = context->newList();
     for (const proto::ProtoObject* obj : elems)
         newList = newList->appendLast(context, obj);

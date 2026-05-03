@@ -1162,6 +1162,32 @@ bool Compiler::compileAnnAssign(AnnAssignNode* n) {
             emit(OP_LOAD_CONST, keyIdx);                           // key (TOS)
             emit(OP_STORE_SUBSCR);
         }
+    } else if (!isFunctionScope_) {
+        // Module-level annotation: `x: int = 5` at the top of a module
+        // populates the module's __annotations__ dict.  Wrap each
+        // expression evaluation in SETUP_FINALLY so a forward reference
+        // doesn't abort module load.  Parenthesized targets `(x): T`
+        // do NOT contribute to __annotations__ (consistent with the
+        // local-binding rule in collectAnnotationOnlyLocals).
+        auto* nm = dynamic_cast<NameNode*>(n->target.get());
+        if (nm && !nm->parenthesized) {
+            emit(OP_SETUP_FINALLY, 0);
+            int handlerSlot = bytecodeOffset() - 1;
+            if (!compileNode(n->annotation.get())) return false;        // value
+            emitNameOp("__annotations__", TargetCtx::Load);             // container
+            int keyIdx = addConstant(PythonEnvironment::getInternedString(ctx_, nm->id.c_str())->asObject(ctx_));
+            emit(OP_LOAD_CONST, keyIdx);                                 // key (TOS)
+            emit(OP_STORE_SUBSCR);
+            emit(OP_POP_BLOCK);
+            emit(OP_JUMP_ABSOLUTE, 0);
+            int doneSlot = bytecodeOffset() - 1;
+            // Handler: drop the 3 exception items from the stack.
+            addPatch(handlerSlot, bytecodeOffset());
+            emit(OP_POP_TOP);
+            emit(OP_POP_TOP);
+            emit(OP_POP_TOP);
+            addPatch(doneSlot, bytecodeOffset());
+        }
     }
     return true;
 }
@@ -4699,7 +4725,32 @@ const proto::ProtoTuple* Compiler::getLnotab() {
 bool Compiler::compileModule(ModuleNode* mod) {
     if (!mod) return false;
     globalNames_.clear();
-    
+
+    // Only initialise __annotations__ at module load when the module
+    // body actually contains a top-level annotated assignment.  CPython
+    // pre-3.14 created the module __annotations__ on demand for the
+    // first such statement; without that pre-existence the module
+    // simply has no `__annotations__` attribute and a function reading
+    // `__annotations__[k] = v` raises NameError (test_var_annot_in_module
+    // covers exactly this).  Parenthesized targets `(x): T` do not count.
+    auto hasTopLevelAnn = [](ASTNode* node) {
+        if (auto* aa = dynamic_cast<AnnAssignNode*>(node)) {
+            if (auto* nm = dynamic_cast<NameNode*>(aa->target.get())) {
+                if (!nm->parenthesized) return true;
+            }
+        }
+        return false;
+    };
+    bool anyAnn = false;
+    for (auto& st : mod->body) {
+        if (hasTopLevelAnn(st.get())) { anyAnn = true; break; }
+    }
+    if (anyAnn) {
+        emit(OP_BUILD_MAP, 0);
+        int idx = addName("__annotations__");
+        emit(OP_STORE_NAME, (idx << 1));
+    }
+
     for (size_t i = 0; i < mod->body.size(); ++i) {
         if (!compileNode(mod->body[i].get())) return false;
         if (statementLeavesValue(mod->body[i].get()))

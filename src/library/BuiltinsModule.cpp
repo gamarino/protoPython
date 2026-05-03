@@ -2768,6 +2768,28 @@ static int sorted_compare(proto::ProtoContext* context, const proto::ProtoObject
         if (sa == sb) return 0;
         return sa < sb ? -1 : 1;
     }
+    // Lexicographic tuple comparison.  protoCore's tuple `compare` falls
+    // through to a pointer compare (non-deterministic), so a sort key
+    // like `(type(x).__name__, x)` produces the right *primary* key but
+    // the *secondary* tuple key compares wrong.  Compare element-wise,
+    // recursing through sorted_compare itself for each element; when
+    // one tuple is a prefix of the other, the shorter is smaller.
+    if (a->asTuple(context) && b->asTuple(context)) {
+        const proto::ProtoTuple* ta = a->asTuple(context);
+        const proto::ProtoTuple* tb = b->asTuple(context);
+        unsigned long sa = ta->getSize(context);
+        unsigned long sb = tb->getSize(context);
+        unsigned long minlen = sa < sb ? sa : sb;
+        for (unsigned long i = 0; i < minlen; ++i) {
+            int c = sorted_compare(context,
+                                   ta->getAt(context, static_cast<int>(i)),
+                                   tb->getAt(context, static_cast<int>(i)));
+            if (c != 0) return c;
+        }
+        if (sa < sb) return -1;
+        if (sa > sb) return 1;
+        return 0;
+    }
     // bytes/bytearray: try __lt__ if defined; this lets the
     // Y-round/Z-round py_bytes_lt run, which compares by raw octets.
     {
