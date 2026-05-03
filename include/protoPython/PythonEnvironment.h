@@ -926,6 +926,7 @@ private:
     
 public:
     const proto::ProtoObject* getUnionTypePrototype() const { return unionTypePrototype; }
+    const proto::ProtoObject* getStopAsyncIterationType() const { return stopAsyncIterationType; }
 private:
     const proto::ProtoObject* sysModule;
     const proto::ProtoObject* builtinsModule;

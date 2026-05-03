@@ -2186,16 +2186,19 @@ const proto::ProtoObject* py_class_aiter_next(
     }
     if (env->hasPendingException()) {
         const proto::ProtoObject* exc = env->peekPendingException();
-        const proto::ProtoString* sasS = env->getStopAsyncIterationSString();
-        if (exc && sasS) {
-            const proto::ProtoObject* cls = exc->getAttribute(ctx, env->getClassString());
-            const proto::ProtoObject* nm  = cls ? cls->getAttribute(ctx, env->getNameString()) : nullptr;
-            std::string nmStr;
-            if (nm && nm->isString(ctx)) nm->asString(ctx)->toUTF8String(ctx, nmStr);
-            if (nmStr == "StopAsyncIteration") {
-                env->clearPendingException();
-                env->raiseStopIteration(ctx, PROTO_NONE);
-            }
+        // Resolve StopAsyncIteration via the env's cached type and
+        // delegate to isInstanceOf — exc->__class__ can resolve through
+        // the metaclass and return `type` instead of the actual
+        // exception class for some allocation paths, so a string-name
+        // compare against "StopAsyncIteration" is unreliable.
+        const proto::ProtoObject* sasType = env->getStopAsyncIterationType();
+        bool isSAS = false;
+        if (exc && sasType) {
+            isSAS = (exc->isInstanceOf(ctx, sasType) == PROTO_TRUE);
+        }
+        if (isSAS) {
+            env->clearPendingException();
+            env->raiseStopIteration(ctx, PROTO_NONE);
         }
         return nullptr;
     }
@@ -2231,13 +2234,15 @@ const proto::ProtoObject* py_class_aiter_next(
             env->clearPendingException();
             return val ? val : PROTO_NONE;
         }
-        // Detect StopAsyncIteration by class name and convert to
-        // StopIteration so FOR_ITER ends the loop cleanly.
-        const proto::ProtoObject* cls = exc->getAttribute(ctx, env->getClassString());
-        const proto::ProtoObject* nm  = cls ? cls->getAttribute(ctx, env->getNameString()) : nullptr;
-        std::string nmStr;
-        if (nm && nm->isString(ctx)) nm->asString(ctx)->toUTF8String(ctx, nmStr);
-        if (nmStr == "StopAsyncIteration") {
+        // StopAsyncIteration → StopIteration so FOR_ITER ends cleanly.
+        // Use isInstanceOf; class name resolution can disagree with
+        // the metaclass-walked __class__ attribute.
+        const proto::ProtoObject* sasType = env->getStopAsyncIterationType();
+        bool isSAS = false;
+        if (exc && sasType) {
+            isSAS = (exc->isInstanceOf(ctx, sasType) == PROTO_TRUE);
+        }
+        if (isSAS) {
             env->clearPendingException();
             env->raiseStopIteration(ctx, PROTO_NONE);
             return nullptr;
