@@ -6007,7 +6007,13 @@ const proto::ProtoObject* executeBytecodeRange(
                         fprintf(stderr, "TRACE_PREPARE: invokeCallable returned nsObj=%p\n", (void*)nsObj); fflush(stderr);
                     }
                     if (!nsObj) {
-                        return nullptr;
+                        // __prepare__ raised — let the dispatch loop see
+                        // the pending exception and unwind through the
+                        // enclosing SETUP_FINALLY rather than bailing out
+                        // of the whole executeBytecodeRange (which would
+                        // bypass any try/except wrapping the class def).
+                        i = next_i;
+                        continue;
                     }
                     stack.push_back(nsObj); 
                 } else {
@@ -6073,7 +6079,14 @@ const proto::ProtoObject* executeBytecodeRange(
                     if (codeObj && codeObj != PROTO_NONE) {
                         if (diag_local) fprintf(stderr, "DEBUG OP_BUILD_CLASS: before body run ns=%p\n", (void*)ns);
                         runCodeObject(ctx, codeObj, ns);
-                        if (env && env->hasPendingException()) return nullptr;
+                        if (env && env->hasPendingException()) {
+                            // Class body raised — let the dispatch loop
+                            // unwind through the enclosing SETUP_FINALLY
+                            // (e.g. `with assertRaises(NameError): class
+                            // CBad: nonexistent.attr: int = 0`).
+                            i = next_i;
+                            continue;
+                        }
                         if (diag_local) {
                             const proto::ProtoObject* keysObj = ns->getAttribute(ctx, env ? env->getKeysString() : protoPython::PythonEnvironment::getInternalString(ctx, "__keys__"));
                             const proto::ProtoList* keysList = keysObj ? keysObj->asList(ctx) : nullptr;
@@ -6084,7 +6097,7 @@ const proto::ProtoObject* executeBytecodeRange(
                         const proto::ProtoObject* callM = body->getAttribute(ctx, callS);
                         if (callM && callM->asMethod(ctx)) {
                             callM->asMethod(ctx)(ctx, body, nullptr, ctx->newList(), nullptr);
-                            if (env && env->hasPendingException()) return nullptr;
+                            if (env && env->hasPendingException()) { i = next_i; continue; }
                         }
                     }
                 }
