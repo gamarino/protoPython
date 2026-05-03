@@ -35,7 +35,7 @@
 | **Type System** | **Advanced** - Lists, Tuples, Sets, Dicts with native wrapping ✅ |
 | **C++ Interop** | **Full** - HPy and UMD support integrated ✅ |
 | **Compiler** | **Advanced** - Full C++ translation with collection support ✅ |
-| **Performance** | **Optimization in Progress** - 2026-04-28 (Phase 8): see Performance Benchmarks section. Microbenchmark geomean **2.76×** slower than CPython 3.14 (favourable workloads, excluding `memory_pressure` outlier); fair pure-Python benchmark suite geomean **~30×** slower (see note on benchmark selection). Improved ~40× from V154 (1337×) through Phase 1–8 changes. The remaining gap is dominated by bytecode dispatch overhead and `setAttribute` / `getAttribute` prototype-chain AVL traversal on every instance attribute access. ⚙️ |
+| **Performance** | **Optimization in Progress** - 2026-05-03 (Phase 8 + GC audit): see Performance Benchmarks section. Microbenchmark geomean **3.06×** slower than CPython 3.14 (now including `memory_pressure` in the suite — 43.4× / 358 MB RSS, was 191× / 1347 MB before the GC audit landed); fair pure-Python benchmark suite geomean **~30×** slower (see note on benchmark selection). Improved ~40× from V154 (1337×) through Phase 1–8 + the May 2026 GC survivor re-chain landing.  The remaining gap is dominated by bytecode dispatch overhead and `setAttribute` / `getAttribute` prototype-chain AVL traversal on every instance attribute access. ⚙️ |
 | **CPython Conformance** | **100%** - 17/17 test categories passing (Essential, Important, Necessary) ✅ |
 
 - ✅ **Generator Delegation**: Full support for `yield` and `yield from` with efficient state persistence.
@@ -191,43 +191,42 @@ wall-time blows up while RSS reports the true cost of the design
 choice.  See `feedback_memory_pressure_benchmark.md` for the full
 rationale.
 
-#### With `PROTOCORE_GC_REINCLUDE_SURVIVORS=ON` (May 2026)
+#### With `PROTOCORE_GC_REINCLUDE_SURVIVORS` — default ON since May 2026
 
-protoCore's new survivor re-chain + per-context allocation-threshold
+The protoCore survivor re-chain + per-context allocation-threshold
 submission (see [`protoCore/docs/superpowers/specs/2026-05-03-gc-survivor-rechain.md`](../protoCore/docs/superpowers/specs/2026-05-03-gc-survivor-rechain.md))
-is opt-in via CMake flag.  Both `protoCore` and `protoPython` must be
-built with `-DPROTOCORE_GC_REINCLUDE_SURVIVORS=ON -DCMAKE_BUILD_TYPE=Release`.
+is **enabled by default** in current builds.  Configure with
+`-DPROTOCORE_GC_REINCLUDE_SURVIVORS=OFF` to bisect against the previous
+behaviour (or to reproduce the historical numbers in the table above).
 
-Same workloads, 5-run median:
+Final 5-run median, all builds `-DCMAKE_BUILD_TYPE=Release`:
 
 ```
 ┌────────────────────────┬──────────────┬──────────────┬─────────────────┬───────────────────────────┐
 │ Benchmark              │ protoPy (ms) │ CPython (ms) │ Ratio           │ Δ vs OFF                  │
 ├────────────────────────┼──────────────┼──────────────┼─────────────────┼───────────────────────────┤
-│ startup_empty          │      22.0    │      35.6    │  0.62× faster   │  better                   │
-│ int_sum_loop           │      25.9    │      37.3    │  0.69× faster   │  flat                     │
-│ list_append_loop       │     251.3    │      35.0    │  7.17× slower   │  better                   │
-│ str_concat_loop        │     430.4    │      38.3    │ 11.24× slower   │  −33%                     │
-│ range_iterate          │     167.2    │      40.9    │  4.09× slower   │  better                   │
-│ multithread_cpu        │      72.5    │      65.9    │  1.10× slower   │  better                   │
-│ attr_lookup            │      71.7    │      49.0    │  1.46× slower   │  better                   │
-│ call_recursion         │     113.8    │      49.2    │  2.32× slower   │  −12%                     │
-│ memory_pressure        │    3182.0    │      64.2    │ 49.59× slower   │ 1347 → 358 MB RSS, 3.7×↓  │
+│ startup_empty          │      23.6    │      35.8    │  0.66× faster   │  flat                     │
+│ int_sum_loop           │      24.9    │      40.8    │  0.61× faster   │  better                   │
+│ list_append_loop       │     253.0    │      36.7    │  6.90× slower   │  −8 %                     │
+│ str_concat_loop        │     440.0    │      37.6    │ 11.70× slower   │  flat                     │
+│ range_iterate          │     168.4    │      39.0    │  4.32× slower   │  flat                     │
+│ multithread_cpu        │      79.4    │      70.0    │  1.13× slower   │  better                   │
+│ attr_lookup            │      72.3    │      49.7    │  1.45× slower   │  better                   │
+│ call_recursion         │     117.4    │      49.3    │  2.38× slower   │  better                   │
+│ memory_pressure        │    3284.8    │      75.7    │ 43.38× slower   │ 1347 → 358 MB RSS,        │
+│                        │              │              │                 │ 4.4× faster wall time     │
 ├────────────────────────┼──────────────┼──────────────┼─────────────────┼───────────────────────────┤
-│ Geomean (all 9)        │              │              │  3.10×          │  3.81 → 3.10× (−18%)      │
+│ Geomean (all 9)        │              │              │  3.06×          │  3.69 → 3.06× (−17 %)     │
 └────────────────────────┴──────────────┴──────────────┴─────────────────┴───────────────────────────┘
 ```
 
-`memory_pressure` is now in-suite: the unbounded growth of
-`lastAllocatedCell` during a long-running interpreter that forced its
-exclusion above is exactly what the per-context threshold submission
-addresses.  RSS bound moves from 1347 MB → 358 MB and wall time from
-182× → 49.59× vs CPython 3.14.  Five other workloads also improve;
-`str_concat_loop` and `call_recursion` regress slightly because they
-allocate aggressively into discardable structures and pay the
-re-chain's mark-traversal cost on every cycle.  Both regressions are
+`memory_pressure` is now in-suite (it used to be excluded as an outlier
+because the heap grew to 1.3 GB without bound).  Five workloads improve
+under ON, three are flat, only `list_append_loop` regresses slightly
+(~8 %) — heavy churn into structures the program then discards pays
+the re-chain's mark-traversal cost on every cycle.  The regression is
 addressable by staggering the re-chain (every Nth cycle instead of
-every cycle) — kept on the follow-up list because correctness is
+every cycle); kept on the follow-up list because correctness is
 already in place.
 
 Compared to V154 (5.06× geomean, 2026-04-25):
