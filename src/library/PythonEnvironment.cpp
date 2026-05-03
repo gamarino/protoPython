@@ -14720,15 +14720,21 @@ const proto::ProtoObject* PythonEnvironment::iter(const proto::ProtoObject* obj)
                             val = invokePythonCallable(c, gi, args, nullptr);
                         }
                         if (e->hasPendingException()) {
-                            // IndexError -> end of iteration; StopIteration propagates.
+                            // IndexError or StopIteration both signal end of iteration in
+                            // the legacy __getitem__ protocol. Detect via isInstanceOf so
+                            // user-defined IndexError subclasses also terminate cleanly.
                             const proto::ProtoObject* pexc = e->peekPendingException();
-                            const proto::ProtoString* clsS = e->getClassString();
-                            const proto::ProtoObject* pcls = pexc ? pexc->getAttribute(c, clsS) : nullptr;
-                            const proto::ProtoObject* pnameO = pcls
-                                ? pcls->getAttribute(c, e->getNameString()) : nullptr;
-                            std::string pname;
-                            if (pnameO && pnameO->isString(c)) pnameO->asString(c)->toUTF8String(c, pname);
-                            if (pname == "IndexError" || pname == "StopIteration") {
+                            bool stopIter = false;
+                            if (pexc) {
+                                if (e->isStopIteration(c, pexc)) stopIter = true;
+                                else if (e->indexErrorType &&
+                                         (pexc == e->indexErrorType ||
+                                          pexc->getPrototype(c) == e->indexErrorType ||
+                                          pexc->isInstanceOf(c, e->indexErrorType) == PROTO_TRUE)) {
+                                    stopIter = true;
+                                }
+                            }
+                            if (stopIter) {
                                 e->clearPendingException();
                                 return nullptr;
                             }
