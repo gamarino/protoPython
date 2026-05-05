@@ -94,11 +94,61 @@ agreed below.
    intermediate).  If the code does CAS-protected reads, that is
    wasted atomicity work and should be fixed.
 5. **Path #5 — `getFreeCells` (7.18 %)** — allocator slow path.
-6. **Path #4 — `ProtoSparseListImplementation` family (~12 %
-   combined: ctor 3.39 %, implGetAt 3.37 %, processReferences 2.80 %,
-   implSetAt 1.29 %, rebalance 1.21 %)** — tiny-attr inline storage
-   for objects with ≤ 4 attributes.  This is the biggest payoff but
-   needs more design work.
+6. **Path #4 — small `ProtoList` for argsList / call frames**
+   (originally drafted as "tiny-attr SparseList inline storage", but
+   that idea was rejected — small SparseList ≤ 4 entries does not
+   pay back the design cost because attribute storage is dominated
+   by classes with many attributes, not few).
+
+   **Better target**: a fixed-size inline ProtoList Cell that holds
+   up to **5 `ProtoObject*` slots plus an inline count field**, with a
+   variadic constructor on `ProtoContext` so a 3-arg call site can
+   build its `argsList` in a SINGLE allocation from ProtoContext —
+   no `appendLast` chain, no AVL spine, no per-element tree rebalance.
+
+   Rationale (from user feedback 2026-05-05):
+   - Method invocation `argsList` is the dominant ProtoList consumer.
+     `OP_call` / `OP_call_method` / `OP_call_constructor` each build
+     an argsList by `appendLast` per argument; an N-arg call costs
+     O(N) appendLast × O(log N) per append = O(N log N) cell
+     allocations plus per-tree rebalances.
+   - Real-world arg counts cluster at 0–3.  Most calls would never
+     need the AVL path — the inline 5-slot cell covers them
+     completely.
+   - This affects `ProtoListImpl ctor 3.39 %`,
+     `processReferences 1.42 %`, `appendLast` (folded into the
+     ctor cost), plus the indirect cost on the GC walk and on
+     allocator pressure (one cell per call vs ≤ N cells per call).
+   - Possible bonus: the small list could share the existing
+     ProtoList's `getSize` / `getAt` interface so callers (the
+     interpreter dispatch, native methods, builtins) need no
+     branch on representation — same virtual call surface,
+     different concrete impl.
+
+   Concrete API sketch:
+   ```cpp
+   // In ProtoContext.h:
+   const ProtoList* newSmallList(
+       const ProtoObject* a0,
+       const ProtoObject* a1 = nullptr,
+       const ProtoObject* a2 = nullptr,
+       const ProtoObject* a3 = nullptr,
+       const ProtoObject* a4 = nullptr);
+   // Or variadic:
+   const ProtoList* newSmallListN(unsigned n, const ProtoObject* const* items);
+   ```
+
+   The cell carries 5 `ProtoObject*` + count + the standard Cell
+   header.  Total = 16 + 5*8 + 8 = 64 bytes — fits exactly one
+   64-byte cell.  No external storage.  When `appendLast` would
+   push past 5 elements, transparently promote to the existing
+   AVL representation (single conversion, amortised away).
+
+   Original "tiny-attr SparseList" idea preserved for context but
+   deferred — the SparseList path's ~12 % cost is real but spread
+   across many small wins, while the small-ProtoList path is a
+   single large win with a clean inline-vs-promoted structural
+   boundary.
 
 ## Findings carried forward
 
