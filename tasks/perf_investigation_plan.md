@@ -35,7 +35,61 @@ agreed below.
           name (catches "value-substituted" cache hits that pass
           the dir() check).
 
-   **Next session — design the new cache:**
+   **Session 2 (2026-05-05) progress:**
+   - Confirmed that the reverted chain only touched two files
+     (`core/ProtoObject.cpp` + `headers/proto_internal.h`) — no
+     SymbolTable or ProtoString changes.
+   - Diff'd HEAD against the pre-revert tip (`f0bfbcaa`) and
+     identified that current code already has the cache STRUCTURE
+     and per-step OWN caching design (re-introduced incrementally
+     after the revert by 0dd7c24c, 36db54d3, etc.).  The two
+     optimisations actually missing were:
+       a. **Negative caching**: cache misses (own-attribute not
+          present) were not stored.  A 10-level inheritance walk
+          paid 10 × AVL probe per call.
+       b. **Direct-field parent-chain navigation**: a `validLink`
+          helper did a virtual `getType() == ParentLink` check plus
+          PLT calls through `getParent(context)` / `getObject(context)`.
+          ~2 virtual calls per chain step, ~20 ns × 10 steps per
+          inherited lookup.
+   - Both landed in `protoCore:8bbfafe7`.
+
+   **Microbench impact (Release `-O3 -DNDEBUG`):**
+
+   | Scenario                      | Pre-fix | After  | Pre-revert target |
+   | :---                          |    ---: |   ---: |              ---: |
+   | getAttribute Hot Cache        |   11.71 |  ~13.2 |              8.19 |
+   | hasAttribute Hot Cache        |    9.83 |  ~10.7 |              9.13 |
+   | getOwnAttributeDirect         |    6.78 |   ~7.5 |             11.10 |
+   | **10-level inheritance**      |   88.98 | **~62**|             36.73 |
+
+   The 10-level inheritance recovered **~30 %** toward the pre-revert
+   target.  Hot-cache cases are essentially flat (within noise).
+   `binary_trees(10)`: 3.04 s → 2.87 s (−5 %).  Two thirds of the
+   gap to the 2026-05-01 baseline (2.18 s) closed.
+
+   **Session 3+ — remaining gap to pre-revert:**
+
+   The 10-level case is still 62 ns vs the 36.73 ns target.  Two
+   reverted-chain optimisations not yet re-applied:
+   1. **Hot-cache fast-path entry**: the reverted code had a
+      separate "first-iteration cache probe" that returned the
+      cached value WITHOUT entering the chain-walk loop at all
+      when the cache hit on the original `this`.  Saves the
+      isObjectFast / mutable-snapshot resolve / loop overhead on
+      the hot path.  This is the missing 4-5 ns on
+      `getAttribute Hot Cache` (8.19 → 13.2).
+   2. **`(ptr & 0x3F) == OBJECT` instead of `isObjectFast`**:
+      isObjectFast does the tag check AND a `getCellTypeRaw()` call
+      (which is a virtual on first cell touch, then cached in the
+      cell's flags).  The reverted code dropped the cell-type check
+      because the chain navigation already invariantly visits
+      ProtoObjectCell pointers.  ~1-2 ns per chain step.
+
+   These are smaller, safer changes — the regression test will
+   still gate them.  Scope for a 30-min session.
+
+   **Sessions 4+ — the original pre-revert design:**
 
    The reverted design's failure mode (per commit `11d89fa8`
    message — the 3 bugs ALREADY fixed before the cross-module bug):
