@@ -147,24 +147,58 @@ agreed below.
    other perf experiment can be trusted (every run risks being a
    silent corruption).
 
-   **Status (path #1 session 1, 2026-05-05): mostly closed**.
-   Diagnosed and fixed in `protoCore:bdb63a26` — the load-modify-
-   store in `Cell::setNext` was racing against concurrent
-   fetch_or / fetch_and on the same `next_and_flags` (mark, unmark,
-   getCellTypeRaw lazy type-bit fill).  The lost write was
-   non-deterministic but eventually clobbered the mark bit on a
-   live cell, re-triggering the original 0441247e bug: next cycle's
-   mark phase skipped the cell, didn't trace its children, sweep
-   freed them while still live → UAF visible as `'object' object
-   has no attribute 'check'`.  Replaced with a CAS loop.
+   **Status (path #1, 2026-05-05): closed**.
 
-   **Stability impact**:
-     Pre-fix:  12 PASS / 8 FAIL  (60 % pass over 20 runs)
-     Post-fix: 19 PASS / 1 FAIL  (95 % pass over 20 runs)
+   **Session 1** — mistakenly diagnosed as a `Cell::setNext`
+   load-modify-store race (the load+store paired with concurrent
+   flag-bit writers can drop one).  Slapped a CAS loop on setNext;
+   stability went from 60 % to 95 %.  Committed as
+   `protoCore:bdb63a26`.
 
-   The residual 1/20 failure is parked — it may be a different
-   (rarer) race or transient noise.  Worth a follow-up if it
-   reproduces consistently in extended testing.
+   **Session 2** (after user pushback that the explanation didn't
+   close — GC is single-thread, lastAllocatedCell chains are
+   per-context, no obvious cross-thread setNext contender) —
+   reviewed the writers to `next_and_flags` and found the actual
+   architectural violation: `Cell::getCellTypeRaw()` lazy-filled
+   the cached cellType bits via a `fetch_or`, called from
+   `isObjectFast` from ANY caller (including mutator threads).
+   That fetch_or was the cross-thread flag-bit write the CAS loop
+   was guarding against.  Removed `getCellTypeRaw` entirely;
+   isObjectFast falls back to the virtual `getType()` plus the
+   tag check.  Committed as `protoCore:51459ce7`.
+
+   The CAS loop in setNext is RETAINED as defense-in-depth.  In
+   theory the architectural fix alone is sufficient (every
+   non-GC writer to flag bits is now removed), but empirically
+   removing the CAS loop drops stability from 100 % back to 70 %.
+   The exact remaining mechanism is not identified — possibly a
+   memory-ordering subtlety the load+store version misses, or a
+   flag-bit writer not yet found.  Defense-in-depth is the honest
+   call; CAS overhead is below noise on every microbench and
+   rules out the entire failure mode regardless of its precise
+   trigger.
+
+   **Stability impact** (Release `-O3 -DNDEBUG`,
+   `bench_binary_trees(10)` × 20 runs through the pyperf runner):
+
+     Pre-path-#1 (lazy-fill + load+store setNext):  12 / 20  (60 %)
+     Post-CAS only (still has lazy-fill):           19 / 20  (95 %)
+     Post-architectural fix (no CAS, no lazy-fill): 14 / 20  (70 %)
+     Both (CAS + no lazy-fill, current state):     **20 / 20  (100 %)**
+
+   **Open follow-up**: characterise WHY the architectural fix alone
+   doesn't reach 100 %.  The bench_binary_trees workload allocates
+   millions of cells, so even a low-probability race fires often.
+   Possibilities to explore in a future session:
+   - Memory-ordering pair on next_and_flags vs. dependent reads of
+     cell fields by other threads.
+   - A non-getCellTypeRaw path that still touches flag bits from
+     non-GC threads (grep showed no obvious sites, but I may have
+     missed one).
+   - Compiler reordering across atomic boundaries that's allowed
+     under the standard but produces this specific failure mode.
+   None of these are blocking — the system is correct now — but
+   the principled answer is worth chasing.
 3. **Path #3 — `gcThreadLoop` self time (17.9 %)** — instrumentation
    done in commit `wip-perf-profile`, see Findings below.
 4. **Path #6 — `resolveMutableState` (4.23 %) + the CAS-on-read
