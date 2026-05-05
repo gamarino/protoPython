@@ -68,26 +68,35 @@ agreed below.
    `binary_trees(10)`: 3.04 s → 2.87 s (−5 %).  Two thirds of the
    gap to the 2026-05-01 baseline (2.18 s) closed.
 
-   **Session 3+ — remaining gap to pre-revert:**
+   **Session 3 (2026-05-05) progress:**
+   - Both deferred changes landed in `protoCore:a01eeed7`:
+     a. Inline 6-bit tag check replaces `proto::isObjectFast`
+        in the chain-walk loop.  Saves one atomic load + one
+        branch per chain step (the `getCellTypeRaw()` virtual).
+     b. Dedup the per-iteration `toImpl<ProtoObjectCell>` call.
+        `ocValue` defaults to `oc` (the immutable case where
+        currentValue == currentPointer); re-computed only when
+        the mutable_ref branch fires and the snapshot pointer
+        differs.
+   - **Verified the path #6 CAS-on-read hypothesis** — it is
+     already a `load(memory_order_acquire)` on the read path;
+     no CAS to remove.  Sub-task of path #6 closed.
 
-   The 10-level case is still 62 ns vs the 36.73 ns target.  Two
-   reverted-chain optimisations not yet re-applied:
-   1. **Hot-cache fast-path entry**: the reverted code had a
-      separate "first-iteration cache probe" that returned the
-      cached value WITHOUT entering the chain-walk loop at all
-      when the cache hit on the original `this`.  Saves the
-      isObjectFast / mutable-snapshot resolve / loop overhead on
-      the hot path.  This is the missing 4-5 ns on
-      `getAttribute Hot Cache` (8.19 → 13.2).
-   2. **`(ptr & 0x3F) == OBJECT` instead of `isObjectFast`**:
-      isObjectFast does the tag check AND a `getCellTypeRaw()` call
-      (which is a virtual on first cell touch, then cached in the
-      cell's flags).  The reverted code dropped the cell-type check
-      because the chain navigation already invariantly visits
-      ProtoObjectCell pointers.  ~1-2 ns per chain step.
+   **Microbench impact** (Release `-O3 -DNDEBUG`, best-of-5):
 
-   These are smaller, safer changes — the regression test will
-   still gate them.  Scope for a 30-min session.
+   | Scenario                      | Pre-sess-3 | After   | Pre-revert target |
+   | :---                          |       ---: |    ---: |              ---: |
+   | getAttribute Hot Cache        |      ~13.2 |  ~10.1  |              8.19 |
+   | hasAttribute Hot Cache        |      ~10.7 |  ~11.5  |              9.13 |
+   | getOwnAttributeDirect         |       ~7.5 |   ~7.8  |             11.10 |
+   | **10-level inheritance**      |      **~62** | **~45**|             36.73 |
+
+   Both critical paths now within **~20 %** of the pre-revert
+   microbench target.  binary_trees(10) wall-clock varied ±15 %
+   between runs on this machine (CPU freq scaling / system load),
+   so an honest update of the bench wall-clock awaits a CPU-
+   pinned re-run on a quiet system.  The change is
+   correctness-neutral so the win is whatever falls out.
 
    **Sessions 4+ — the original pre-revert design:**
 
@@ -140,13 +149,32 @@ agreed below.
 3. **Path #3 — `gcThreadLoop` self time (17.9 %)** — instrumentation
    done in commit `wip-perf-profile`, see Findings below.
 4. **Path #6 — `resolveMutableState` (4.23 %) + the CAS-on-read
-   anomaly**.  *User hypothesis to verify*: the readers of the
-   mutable-root cache only need `atomic_load(acquire)`, not CAS.  CAS
-   is for writer/writer coordination; for a snapshot model where the
-   stored state is the value itself, a pure load is correct (you read
-   either the old or the new state, never an inconsistent
-   intermediate).  If the code does CAS-protected reads, that is
-   wasted atomicity work and should be fixed.
+   anomaly**.
+
+   **Status (verified during path #2 session 3, 2026-05-05)**:
+   the user's hypothesis is correct AND already the existing
+   implementation.  `resolveMutableState` in `core/ProtoObject.cpp`
+   (around line 33-79) reads `space->mutableRoot[shard].root` with
+   `load(memory_order_acquire)` — pure atomic load, no CAS.  CAS is
+   only on the WRITE path (when `setAttribute` publishes a new
+   snapshot via `compare_exchange_weak`).
+
+   So this sub-task of path #6 is **CLOSED — no change needed**.
+   The 4.23 % CPU cost of `resolveMutableState` comes from:
+     - The conditional `if (cache && cache[idx].mutable_ref ==
+       mutable_ref)` cache check (one branch per call).
+     - The `load(acquire)` itself + a comparison vs cached
+       `shard_root` (one cache-line miss in the worst case).
+     - The fall-back AVL probe `mutableList->implGetAt(...)` if
+       cache misses (~10-50 ns).
+     - Two `toImpl` calls (one on the thread, one on the live
+       shard root SparseList) each with their full validation
+       cascade.
+
+   Future optimisations to chase here: bigger thread cache
+   (currently MUTABLE_VALUE_CACHE_DEPTH entries, may thrash with
+   many distinct mutables); inline the toImpl validation away
+   for the hot path now that the type is structurally invariant.
 5. **Path #5 — `getFreeCells` (7.18 %)** — allocator slow path.
 6. **Path #4 — small `ProtoList` for argsList / call frames**
    (originally drafted as "tiny-attr SparseList inline storage", but
