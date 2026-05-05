@@ -201,15 +201,42 @@ agreed below.
    `setNext` is back to a plain load+store with the comment in
    `headers/proto_internal.h` documenting the empirical re-measurement.
 
-   **NEW finding (task #34)**: a *separate* survivor-pen UAF
-   reproduces 100 % at `bench_binary_trees(11)` (eight times more
-   allocations, more GC cycles).  Symptom is identical
-   (`'Node' object has no attribute 'left'`).  CAS does NOT fix it.
-   Disappears entirely with `PROTOCORE_GC_REINCLUDE_SURVIVORS=OFF`.
-   ASAN does not catch it (timing-dependent).  Tracked as task #34
-   for a dedicated investigation (likely missing GC trace in the
-   pen fold path, or a survivor cell whose attributes get freed
-   despite reachability).
+   **NEW finding (task #34) — RESOLVED in `protoCore:e0bed93d`**:
+
+   A separate UAF reproducing 100 % at `bench_binary_trees(11)` was
+   tracked down to a destructor ordering issue, NOT the survivor pen
+   per se (the pen mechanism just amplified the window enough to
+   surface the bug consistently at depth ≥ 11).
+
+   Root cause: `ProtoContext::~ProtoContext()` did
+     1. pop currentContext on the thread,
+     2. submitYoungGeneration(lastAllocatedCell),
+     3. allocate a ReturnReference in `previous` to anchor the
+        returnValue in the parent's young chain.
+
+   Step 2 publishes the inner context's chain to `dirtySegments` BEFORE
+   step 3 anchors the returnValue in `previous`'s young chain.  Step 3's
+   `new(previous) ReturnReference(...)` triggers an `allocCell` on
+   `previous`, which parks at a STW poll.  If a GC fires here, Phase 4's
+   root set is the parent's chain + globals + shard.root — and a fresh
+   `Node()` returnValue with no `setAttribute` calls (i.e. no shard.root
+   entry) is reachable ONLY through `this->returnValue`, which is no
+   longer scanned because step 1 popped this context.  Phase 5 frees it.
+   The ReturnReference allocation that finishes after the GC wakes ends
+   up holding a freed cell pointer; the next time the recycled cell is
+   dereferenced as a Node it has no `left` attribute (or any random
+   attribute mismatch, depending on the type the slot was reused as).
+
+   Fix: swap steps 2 and 3.  Anchor the returnValue first, THEN submit.
+   One-line reorder; same allocations, same per-Node submit, no
+   correctness side-effect on any other path.
+
+   Verification (post-fix):
+     bench_binary_trees(11): 0 / 30 → **100 / 100 PASS**
+     bench_binary_trees(12): added — **10 / 10 PASS**
+     bench_binary_trees(10): no regression (2.44–2.58 s)
+     ctest: protoCore 165/165 + protoPython 163/163, conformity 9/10
+     (unchanged).
 3. **Path #3 — `gcThreadLoop` self time (17.9 %)** — partial close.
 
    **Session 1 (2026-05-05) progress:**
