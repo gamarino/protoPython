@@ -186,25 +186,30 @@ agreed below.
      Post-architectural fix (no CAS, no lazy-fill): 14 / 20  (70 %)
      Both (CAS + no lazy-fill, current state):     **20 / 20  (100 %)**
 
-   **Open follow-up — TECHNICAL DEBT, must be resolved**: the CAS
-   loop in `Cell::setNext` should not be needed if the
-   GC-owned-flag-bits invariant truly holds.  The empirical 70 %
-   stability without the CAS proves the invariant is not actually
-   maintained in some path I have not identified.  Possibilities:
-   - Memory-ordering pair on `next_and_flags` vs. dependent reads
-     of cell fields by other threads.
-   - A non-getCellTypeRaw path that still touches flag bits from
-     non-GC threads (grep showed no obvious sites, but the fact
-     that the CAS still helps means I missed one).
-   - Compiler reordering across atomic boundaries that's allowed
-     under the standard but produces this specific failure mode.
+   **Follow-up resolution (task #28, 2026-05-05): CAS removed.**
 
-   The CAS loop is defense-in-depth right now, but defense-in-depth
-   for a race we don't understand is technical debt.  The proper
-   close requires (a) finding the actual writer that races against
-   setNext, (b) fixing it at the source, then (c) reverting the CAS
-   loop and verifying 20/20 stability without it.  Tracked as an
-   explicit follow-up so we do not forget.
+   Re-measured stability after path #2..#6 landed.  At the originally
+   tested workload (`bench_binary_trees(10)`), the CAS no longer
+   provides any benefit: 100 / 100 pass without it (was the 70 %
+   condition above).  The original race was the cross-thread
+   `getCellTypeRaw` lazy-fill, fully removed in `protoCore:51459ce7`.
+   The CAS in `bdb63a26` was protecting against the SAME write
+   (lazy-fill); once that write was removed, the CAS became redundant.
+   The 70 % observation in the original measurement was likely
+   timing-sensitive rather than evidence of a separate writer.
+
+   `setNext` is back to a plain load+store with the comment in
+   `headers/proto_internal.h` documenting the empirical re-measurement.
+
+   **NEW finding (task #34)**: a *separate* survivor-pen UAF
+   reproduces 100 % at `bench_binary_trees(11)` (eight times more
+   allocations, more GC cycles).  Symptom is identical
+   (`'Node' object has no attribute 'left'`).  CAS does NOT fix it.
+   Disappears entirely with `PROTOCORE_GC_REINCLUDE_SURVIVORS=OFF`.
+   ASAN does not catch it (timing-dependent).  Tracked as task #34
+   for a dedicated investigation (likely missing GC trace in the
+   pen fold path, or a survivor cell whose attributes get freed
+   despite reachability).
 3. **Path #3 — `gcThreadLoop` self time (17.9 %)** — partial close.
 
    **Session 1 (2026-05-05) progress:**
