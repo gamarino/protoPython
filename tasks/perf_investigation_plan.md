@@ -146,6 +146,25 @@ agreed below.
    `bench_binary_trees(10)`).  Pre-requisite: must clear before any
    other perf experiment can be trusted (every run risks being a
    silent corruption).
+
+   **Status (path #1 session 1, 2026-05-05): mostly closed**.
+   Diagnosed and fixed in `protoCore:bdb63a26` — the load-modify-
+   store in `Cell::setNext` was racing against concurrent
+   fetch_or / fetch_and on the same `next_and_flags` (mark, unmark,
+   getCellTypeRaw lazy type-bit fill).  The lost write was
+   non-deterministic but eventually clobbered the mark bit on a
+   live cell, re-triggering the original 0441247e bug: next cycle's
+   mark phase skipped the cell, didn't trace its children, sweep
+   freed them while still live → UAF visible as `'object' object
+   has no attribute 'check'`.  Replaced with a CAS loop.
+
+   **Stability impact**:
+     Pre-fix:  12 PASS / 8 FAIL  (60 % pass over 20 runs)
+     Post-fix: 19 PASS / 1 FAIL  (95 % pass over 20 runs)
+
+   The residual 1/20 failure is parked — it may be a different
+   (rarer) race or transient noise.  Worth a follow-up if it
+   reproduces consistently in extended testing.
 3. **Path #3 — `gcThreadLoop` self time (17.9 %)** — instrumentation
    done in commit `wip-perf-profile`, see Findings below.
 4. **Path #6 — `resolveMutableState` (4.23 %) + the CAS-on-read
