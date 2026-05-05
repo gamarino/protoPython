@@ -186,19 +186,25 @@ agreed below.
      Post-architectural fix (no CAS, no lazy-fill): 14 / 20  (70 %)
      Both (CAS + no lazy-fill, current state):     **20 / 20  (100 %)**
 
-   **Open follow-up**: characterise WHY the architectural fix alone
-   doesn't reach 100 %.  The bench_binary_trees workload allocates
-   millions of cells, so even a low-probability race fires often.
-   Possibilities to explore in a future session:
-   - Memory-ordering pair on next_and_flags vs. dependent reads of
-     cell fields by other threads.
+   **Open follow-up — TECHNICAL DEBT, must be resolved**: the CAS
+   loop in `Cell::setNext` should not be needed if the
+   GC-owned-flag-bits invariant truly holds.  The empirical 70 %
+   stability without the CAS proves the invariant is not actually
+   maintained in some path I have not identified.  Possibilities:
+   - Memory-ordering pair on `next_and_flags` vs. dependent reads
+     of cell fields by other threads.
    - A non-getCellTypeRaw path that still touches flag bits from
-     non-GC threads (grep showed no obvious sites, but I may have
-     missed one).
+     non-GC threads (grep showed no obvious sites, but the fact
+     that the CAS still helps means I missed one).
    - Compiler reordering across atomic boundaries that's allowed
      under the standard but produces this specific failure mode.
-   None of these are blocking — the system is correct now — but
-   the principled answer is worth chasing.
+
+   The CAS loop is defense-in-depth right now, but defense-in-depth
+   for a race we don't understand is technical debt.  The proper
+   close requires (a) finding the actual writer that races against
+   setNext, (b) fixing it at the source, then (c) reverting the CAS
+   loop and verifying 20/20 stability without it.  Tracked as an
+   explicit follow-up so we do not forget.
 3. **Path #3 — `gcThreadLoop` self time (17.9 %)** — instrumentation
    done in commit `wip-perf-profile`, see Findings below.
 4. **Path #6 — `resolveMutableState` (4.23 %) + the CAS-on-read
