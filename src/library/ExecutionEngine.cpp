@@ -5555,38 +5555,28 @@ const proto::ProtoObject* executeBytecodeRange(
             if (usedFastPath) {
                 result = result_fast;
             } else {
-            // Build callArgs directly with the right layout, in one pass.  The
-            // earlier two-step variant first built `args` from the stack slice
-            // and then, in the [Method, Self, Arg1...] branch, re-walked it
-            // via getAt to build `selfArgs` with self prepended — wasting the
-            // intermediate `args` list (1 + arg cells per call).  Folding the
-            // two passes into one means the [Method, Self] branch allocates
-            // the same number of cells as the [NULL, Callable] branch
-            // (1 + arg + 1 instead of 2*(1 + arg) + 1).
+            // Build callArgs in a SINGLE allocation when arg ≤ 5 via
+            // ctx->newList(n, items) — the inline-list builder hands out one
+            // cell for the entire ProtoList instead of 1 + N cells.  The
+            // [Method, Self, Arg1...] branch passes the raw stack slice
+            // starting one slot earlier (covering self), so the same
+            // single-cell builder applies for arg+1 ≤ 5 — no intermediate
+            // list, no walk, no per-element rebalance.
             if (!isModern) {
                 callable = Y; // In legacy, Y is the callable and there is no X.
-                const proto::ProtoList* args = ctx->newList();
-                for (int j = 0; j < arg; ++j) {
-                    args = args->appendLast(ctx, stack[firstArgIdx + j]);
-                }
-                callArgs = args;
+                callArgs = ctx->newList((unsigned)arg, stack.slots + firstArgIdx);
             } else if (X == nullptr) {
                 // [NULL, Callable, Arg1...]
                 callable = Y;
-                const proto::ProtoList* args = ctx->newList();
-                for (int j = 0; j < arg; ++j) {
-                    args = args->appendLast(ctx, stack[firstArgIdx + j]);
-                }
-                callArgs = args;
+                callArgs = ctx->newList((unsigned)arg, stack.slots + firstArgIdx);
             } else {
-                // [Method, Self, Arg1...]: prepend self in the same single
-                // pass over the raw stack slice — no intermediate list.
+                // [Method, Self, Arg1...]: stack contains [..., func, self,
+                // arg1, ..., argN].  The combined slice [self, arg1, ...,
+                // argN] starts at firstArgIdx - 1 and has length arg + 1 —
+                // pass it directly as the source array.
                 callable = X;
-                const proto::ProtoList* selfArgs = ctx->newList()->appendLast(ctx, Y);
-                for (int j = 0; j < arg; ++j) {
-                    selfArgs = selfArgs->appendLast(ctx, stack[firstArgIdx + j]);
-                }
-                callArgs = selfArgs;
+                callArgs = ctx->newList((unsigned)(arg + 1),
+                                        stack.slots + firstArgIdx - 1);
             }
 
             if (!callable) {

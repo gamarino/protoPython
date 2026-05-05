@@ -302,8 +302,71 @@ agreed below.
    (currently MUTABLE_VALUE_CACHE_DEPTH entries, may thrash with
    many distinct mutables); inline the toImpl validation away
    for the hot path now that the type is structurally invariant.
+
+   **Session 1 (2026-05-04) progress:**
+
+   Stashed the per-thread `MutableValueCacheEntry*` array pointer
+   directly in `ProtoContext::mutableValueCache_`, populated at
+   context construction (both spawning constructor in `Thread.cpp`
+   and `AdoptMainThreadTag` constructor for the root context).
+   Eliminates the three-step indirection on every `resolveMutableState`
+   call (`toImpl<ProtoThreadImplementation>(context->thread)
+   → threadImpl->extension → mutableValueCache`) — replaced by one
+   load (`context->mutableValueCache_`).  `refreshMutableCache`
+   updated symmetrically.
+
+   **Wall-clock impact** (Release `-O3 -DNDEBUG`,
+   `bench_binary_trees(10)`, best-of-5):
+
+     Pre-stash:  2.97 s
+     Post-stash: 2.81 s ~ 2.86 s (~6 % faster)
+
+   ctest: 150/150 (protoCore) + 163/163 (protoPython).
+   Microbench unchanged (within noise) — `resolveMutableState`
+   doesn't show up in the attribute-cache microbench, which is
+   bound by the chain walk, not snapshot resolution.  The win is
+   wall-clock-only because the savings amortise over every mutable
+   attribute access on the bench's recursive `Node` tree
+   construction.
 5. **Path #5 — `getFreeCells` (7.18 %)** — allocator slow path.
-6. **Path #4 — small `ProtoList` for argsList / call frames**
+6. **Path #4 — small `ProtoList` for argsList / call frames** ← in progress, session 1 done
+
+   **Session 1 (2026-05-05) progress: protoCore plumbing landed.**
+   - Added `ProtoListSmallImplementation` Cell (5 inline `ProtoObject*`
+     slots + size, 56 B, fits one 64-byte Cell).  New tag
+     `POINTER_TAG_LIST_SMALL = 25`, new `CellType::ListSmall`.
+   - Added `ProtoContext::newSmallListN(n, items)` — single-allocation
+     builder that produces a SmallList for `n ≤ 5` and falls back to
+     the AVL builder otherwise.
+   - Rewrote every `ProtoList::*` trampoline in `core/ProtoList.cpp`
+     with one tag-dispatch at entry. Read-only ops read from
+     `slots[]` directly; mutator ops produce a fresh output whose
+     form is selected by the resulting size (≤5 → SmallList,
+     >5 → AVL via a new bottom-up `buildBalancedFromArray` helper).
+     Only `appendLast` overflowing past size 5 forces AVL output.
+   - Iterator unified: `ProtoListIteratorImplementation::base` is
+     now a tagged `const ProtoObject*`; `implNext` / `implAdvance`
+     dispatch on the tag with no virtual call.
+   - Tag fanout in `core/ProtoObject.cpp` (prototype lookup +
+     `asList` cast), `core/LargeInteger.cpp` (`isCell`), and
+     `core/ProtoContext.cpp` (`newTupleFromList` reads slots
+     directly into a vector for SmallList input).
+   - 15 new unit tests in `test/test_smalllist.cpp` covering form
+     selection across every mutator, iterator round-trip on both
+     forms, asObject/asList round-trip, tupleFromList over
+     SmallList, and a `ProtoRootSet`-pinned GC stress that
+     exercises `processReferences`.
+   - All ctest green: protoCore **165/165** (150 prior + 15 new),
+     protoPython **163/163**.  bench_binary_trees(10) unchanged
+     (~2.8 s) — expected, since no frontend integrates SmallList
+     yet.  Commit: `protoCore:<TBD>`.
+
+   **Session 2 (planned):** integrate the new builder into
+   protoPython OP_CALL_FUNCTION (and protoJS interpreter call
+   paths) for the n ≤ 5 case.  That's where the actual
+   wall-clock win materialises.
+
+   **Session 1 design notes (preserved):**
    (originally drafted as "tiny-attr SparseList inline storage", but
    that idea was rejected — small SparseList ≤ 4 entries does not
    pay back the design cost because attribute storage is dominated
