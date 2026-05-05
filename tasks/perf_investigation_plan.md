@@ -12,7 +12,73 @@ agreed below.
 
 ## Order of work (agreed)
 
-1. **Path #2 — `getAttribute` (11.49 % of CPU)**  ← in progress
+1. **Path #2 — `getAttribute` (11.49 % of CPU)**  ← in progress, session 1 done
+
+   **Session 1 (2026-05-05) progress:**
+   - Read the revert commit (`84974040`) and the seven reverted
+     attr-cache commits (`861cfe43..f0bfbcaa`).  Captured the bug
+     mechanism in `tasks/perf_investigation_plan.md` (this file).
+   - Verified the post-revert binary does NOT exhibit the
+     `_weakref` after `importlib.machinery` corruption.
+   - Added a permanent regression test:
+     `tests/conformity/import/test_attr_cache_cross_module.py`,
+     wired into `tests/conformity/bootstrap/cpython_bootstrap.txt`.
+     The test covers four invariants that any future cache MUST
+     keep green:
+       1. No empty-string attribute names.
+       2. Canonical `_weakref` attributes (ReferenceType,
+          CallableProxyType, ProxyType, ref, proxy, getweakrefs,
+          getweakrefcount) all present.
+       3. No `importlib.machinery` internals (`_check_name`,
+          `_classify_pyc`, `_compile_source_to_code`) leak in.
+       4. `getattr(_weakref, name)` round-trips for each advertised
+          name (catches "value-substituted" cache hits that pass
+          the dir() check).
+
+   **Next session — design the new cache:**
+
+   The reverted design's failure mode (per commit `11d89fa8`
+   message — the 3 bugs ALREADY fixed before the cross-module bug):
+
+     a. CACHE_FLAG_OWN at bit 3 (0x8) aliased POINTER_TAG_SPARSE_LIST
+        and the 8..15 tag range.  Stripping the flag at read silently
+        re-tagged values as POINTER_TAG_OBJECT → SIGSEGV.  Moving
+        the flag to bit 5 fixed the collision but kept the ambiguity.
+     b. `hasAttribute` populated the cache without the OWN flag,
+        but `hasOwnAttribute` / `getOwnAttributeDirect` checked the
+        flag and reported "not own" on what should have been a hit.
+     c. Mutation of an intermediate parent class did not invalidate
+        the descendant's cache slot under start-object caching.
+
+   The `11d89fa8` "own-only redesign" addressed (a)-(c) but
+   introduced the cross-module key corruption that triggered the
+   final revert.  The exact mechanism of the cross-module corruption
+   is NOT yet diagnosed — the user's reproducer (`import
+   importlib.machinery; import _weakref; print(dir(_weakref))`)
+   shows 3 empty strings and a leaked `_check_name`, which suggests
+   the canonical-symbol lookup at the START of getAttribute /
+   setAttribute returned the wrong canonical symbol pointer for
+   some keys.  That points at `SymbolTable::lookupByContent`, NOT
+   the cache itself.  Future work should:
+     1. Re-apply only `861cfe43` (Optimize attribute resolution
+        engine).  Run the regression test.  Pass → continue;
+        fail → bisect within that commit.
+     2. Re-apply `c9ec9862` (Implement non-lossy attribute cache
+        and O(1) chain resolution) on top.  Run the regression test.
+     3. Re-apply `11d89fa8` (Redesign as own-only).  Run the
+        regression test.
+     4. Re-apply `f0bfbcaa` (Widen tag check from 3 to 6 bits).
+        Run the regression test.
+     5. The first commit that breaks the regression test isolates
+        the layer where the cross-module corruption was introduced.
+     6. Read the diff of THAT commit only, find the broken
+        canonicalization, and fix it.
+
+   Microbenchmark target on success:
+     - getAttribute hot cache: 11.71 ns → 8.19 ns (~30 % faster)
+     - inherited 10-level: 88.98 ns → 36.73 ns (~2.4× faster)
+     - binary_trees(10): expect ~30-50 % wall-time drop on the
+       OOP-dispatch-heavy bench.
 2. **Path #1 — flake / UAF in survivor-pen** (correctness; 40 % crash on
    `bench_binary_trees(10)`).  Pre-requisite: must clear before any
    other perf experiment can be trusted (every run risks being a

@@ -9,9 +9,10 @@ tests/conformity/builtins/test_list_conformity.py  # list structural sharing
 tests/conformity/builtins/test_dict_conformity.py  # dict get/set/delete and iteration
 
 # Import and namespaces
-tests/conformity/import/test_module_identity.py   # module identity after M.x = v
-tests/conformity/import/test_wrapper_content.py    # wrapper points to current module root
-tests/conformity/import/test_reimport.py           # no dangling refs on re-import
+tests/conformity/import/test_module_identity.py            # module identity after M.x = v
+tests/conformity/import/test_wrapper_content.py            # wrapper points to current module root
+tests/conformity/import/test_reimport.py                   # no dangling refs on re-import
+tests/conformity/import/test_attr_cache_cross_module.py    # cross-module attr-cache key collision regression (84974040)
 
 # Basic control flow (existing tests that exercise minimal object model)
 tests/test_str.py                                  # isinstance(str)
