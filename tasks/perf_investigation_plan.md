@@ -205,8 +205,76 @@ agreed below.
    setNext, (b) fixing it at the source, then (c) reverting the CAS
    loop and verifying 20/20 stability without it.  Tracked as an
    explicit follow-up so we do not forget.
-3. **Path #3 — `gcThreadLoop` self time (17.9 %)** — instrumentation
-   done in commit `wip-perf-profile`, see Findings below.
+3. **Path #3 — `gcThreadLoop` self time (17.9 %)** — partial close.
+
+   **Session 1 (2026-05-05) progress:**
+
+   Tried three approaches:
+
+   a. **Merge child young chains into parent on destructor** to
+      collapse the 95 700 segments/cycle (5.86 cells avg) into ~140
+      segments/cycle (4 200 cells avg).  IMPLEMENTED, then REVERTED.
+      The optimisation worked at the segment level (95 K → 140), but
+      the trade-off didn't pay: cells live longer in young chains
+      (parent's chain accumulates from all descendants until the
+      outermost frame returns), Phase 2 root scan walks them every
+      cycle (2 ms → 10 ms), and the live set per cycle GREW
+      (5.6 M → 6.3 M cells marked) because dead cells stay reachable
+      via the parent's young chain longer.  Net wall-clock got
+      WORSE (~3 s → ~3.7 s).  Reverted.  Lesson: per-segment
+      overhead is small (~50 ns/segment) compared to per-cell
+      overhead (~93 ns/cell, dominated by cache miss); reducing
+      segment count alone doesn't help.
+
+   b. **Threshold sweep**: tried setting `PROTOCORE_GC_CONTEXT_THRESHOLD`
+      to 100 K and 1 M to reduce GC cycle count.  Cycle count was
+      UNCHANGED (10 cycles per bench at every threshold), because
+      most submissions come from `ProtoContext` destructors (function
+      returns), not the threshold.  The threshold tunable doesn't
+      affect deeply-recursive workloads.
+
+   c. **Prefetch in mark loop** (`__builtin_prefetch(nextPop, 1, 1)`):
+      ~9 % improvement in Phase 4 mark (446 ms → 406 ms total over
+      10 cycles), saving ~6 ns/cell.  Sweep prefetch tried and
+      reverted — sweep already loads `getNext` on the current
+      iteration, so the would-be prefetched load is already in
+      flight.  Committed as `protoCore:e7650249`.
+
+   **GC time breakdown after path-#1 + this session's mark prefetch**
+   (Release `-O3 -DNDEBUG`, bench_binary_trees(10), 10-cycle profile):
+
+   | Phase | Per-cycle | % of GC |
+   |---|---:|---:|
+   | P1 STW handshake | 11.8 ms | 10 % |
+   | P2 root scan     |  2.3 ms |  2 % |
+   | P4 mark          | 40.6 ms | 35 % |
+   | P5 sweep         | 54.1 ms | 46 % |
+   | P6 my unmark     |  8.5 ms |  7 % |
+   | **Total**        | 117 ms  | 100 % |
+
+   - Total bench: ~3.0 s, of which ~1.17 s is GC (39 %).
+   - 562 K cells marked per cycle (avg ~5.58 M / 10).
+   - 95 K segments swept per cycle (avg ~5.86 cells/segment).
+   - Mark: 72 ns/cell (was 77 pre-prefetch); ~one L1 / L2 cache miss.
+   - Sweep: 96 ns/cell; ~one L2 / L3 cache miss per cell.
+
+   **Open follow-up — bump-pointer / per-arena cell allocation**:
+
+   The remaining 39 % of bench wall-clock spent in GC is dominated
+   by cache-miss-bound mark and sweep loops.  Cells are currently
+   scattered across the per-context arena because the freelist /
+   per-thread-pool allocator hands out whatever cell happens to
+   be at the head of the free pool.  A bump-pointer allocator that
+   places sequentially-allocated cells in adjacent 64-byte slots
+   would let mark+sweep iteration walk linearly through cache lines
+   instead of pointer-chasing into random heap.  Estimated impact:
+   ~50 % reduction in mark+sweep cost (from ~93 ns/cell to ~30-40
+   ns/cell), translating to ~15-20 % bench-wall-clock improvement.
+
+   This is a non-trivial allocator rewrite — touches `getFreeCells`,
+   the per-thread cell cache, the segment / survivor-pen handling,
+   and possibly the cell layout itself.  Not in this session's
+   scope; logged for a future dedicated session.
 4. **Path #6 — `resolveMutableState` (4.23 %) + the CAS-on-read
    anomaly**.
 
