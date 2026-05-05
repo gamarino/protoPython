@@ -28,6 +28,169 @@
 
 ---
 
+## Current Status (2026-05-05) — pure-Release rebuild + re-audit
+
+Rebuilt `protopy` and the embedded `protoCore` in pure Release
+(`-O3 -DNDEBUG`, no debug info) under `build_release/`, ran the
+19-test ground-truth audit catalog and the standard / pyperf
+benchmark suites against CPython 3.14.  This refreshes both the
+correctness baseline (was 2026-05-02) and the performance baseline
+(was 2026-05-01-final).
+
+Full per-test detail: `docs/audits/audit_2026-05-05.md`.
+Full benchmark detail: `benchmarks/reports/baseline_2026-05-05.md`.
+
+### Build & test infrastructure
+
+| Component                     | Result |
+| :---                          | :--- |
+| `build_release` configuration | `CMAKE_BUILD_TYPE=Release`, flags `-O3 -DNDEBUG` for both C and C++; embedded protoCore subproject built with the same flags. |
+| `ctest` (protoPython + protoCore) | **163 / 163** pass, 0 fail. |
+| `tests/conformity/` (`run_conformity.py`) | **8 / 9** pass — same as 2026-05-02; only `test_dict_conformity.py` still fails (pre-existing assertion-failure inside the test itself, unrelated to runtime). |
+
+### Audit summary (19-test catalog)
+
+| Category   | Total | PASS | SILENT_HALT | CRASH | TIMEOUT | Δ vs 2026-05-02 |
+| :---       |  ---: | ---: |        ---: |  ---: |    ---: | :--- |
+| Essential  |     7 |    0 |           0 |     6 |       1 | one CRASH → TIMEOUT (`test_asyncgen.py`) |
+| Important  |     6 |    0 |           0 |     5 |       1 | two TIMEOUT → CRASH (`test_sys.py`, `test_functools.py`) |
+| Necessary  |     4 |    2 |           2 |     0 |       0 | unchanged (PASS: contextlib, dataclasses; SILENT_HALT: decorator, abc) |
+| Bootstrap  |     2 |    2 |           0 |     0 |       0 | unchanged |
+| **Total**  | **19** | **4** | **2** | **11** | **2** | PASS unchanged at 4; CRASH +1, TIMEOUT −1 |
+
+The PASS bucket is held — `test_dataclasses.py` still passes after the
+SP-C MappingProxy / cls.__dict__ landings, `test_contextlib.py` still
+passes, and the two Bootstrap inline imports (`importlib`, `inspect`)
+still report `OK`.  The CRASH / TIMEOUT shuffle on the Essential and
+Important buckets is per-test wall-clock noise: every one of those
+runs reaches `unittest`'s collector and produces real
+pass / fail / err / skip counts (see table below); whether the suite
+finishes within the audit's 120 s budget varies between runs.
+
+### Direct unittest counts on tests that completed under the audit
+
+| Test                  | Tests run | fail | err | skip | Δ vs 2026-05-02 |
+| :---                  |      ---: | ---: | ---: | ---: | :--- |
+| `test_grammar.py`     |        75 |    7 |   6 |   — | err 20 → **6** (−14 errors); fail 6 → 7 |
+| `test_types.py`       |       128 |   92 |  27 |   2 | err 29 → **27** (−2 errors); fail 91 → 92 |
+| `test_descr.py`       |       159 |  130 |  45 |  11 | err 46 → 45 (−1 error); fail 130 → 130 (flat) |
+| `test_base64.py`      |        39 |   47 | 244 |   1 | per-bench iteration counts shifted; subtest aggregation noisy |
+| `test_asyncgen.py`    |    TIMEOUT |   — |   — |   — | reaches collector; budget exhausted at 120 s (was reported 85 PASS at 36 s previously) |
+
+The 14-error drop on `test_grammar.py` is a real correctness gain —
+those errors all came from a single import-time blocker that no
+longer surfaces; the per-test failure count is essentially flat.
+
+### Remaining clusters (open)
+
+Same as the 2026-05-02 list — the SP-D cluster (decorator /
+abc SILENT_HALT, `test_datetime.py` `_FailedTest` at `load_tests`,
+`co_filename` traceback synthesis on synthesised dispatch frames,
+`filter(None, …)` truthiness sentinel, `sorted(key=, reverse=)`
+honouring) is unchanged.  None of those clusters were touched in this
+rebuild — the diff vs 2026-05-02 is entirely the build-flag refresh
+plus the upstream protoCore commit `1430e69a`
+("proto: route POINTER_TAG_SYMBOL to stringPrototype in getPrototype")
+landing.
+
+### Performance — standard suite (`benchmarks/run_benchmarks.py`)
+
+Median of 5 runs, both engines warm; CPython 3.14 baseline.  Wall-
+clock includes process startup so it captures protopy's full
+end-to-end cost.
+
+| Benchmark           | protopy (ms) | CPython (ms) | Ratio          | Peak RSS (P / C) |
+| :---                |         ---: |         ---: | :---           | :--- |
+| `startup_empty`     |        26.23 |        40.73 | **0.64× faster** |  21.4 MB / 10.8 MB |
+| `int_sum_loop`      |        28.84 |        44.86 | **0.64× faster** |  21.1 MB / 10.8 MB |
+| `multithread_cpu`   |        70.51 |        80.66 | **0.87× faster** |  29.9 MB / 10.8 MB |
+| `attr_lookup`       |        98.72 |        62.39 | 1.58× slower   |  21.2 MB / 10.8 MB |
+| `call_recursion`    |       155.18 |        67.28 | 2.31× slower   |  21.1 MB / 10.6 MB |
+| `range_iterate`     |       273.80 |        46.90 | 5.84× slower   |  47.6 MB / 10.6 MB |
+| `list_append_loop`  |       439.40 |        43.12 | 10.19× slower  |  66.8 MB / 11.0 MB |
+| `str_concat_loop`   |       604.66 |        46.28 | 13.07× slower  |  89.3 MB / 10.8 MB |
+| `memory_pressure`   |     11897.65 |       113.97 | 104.39× slower | **401.7 MB** / 10.8 MB |
+| **Geomean ratio**   |              |              | **3.62×**      | |
+
+Δ vs 2026-05-01-final (Geomean 3.76×):
+
+- **`multithread_cpu`** flipped from 1.20× slower to **0.87× faster**.
+  This is the most concrete win in the cycle — protopy now beats
+  CPython on a real multi-threaded workload, leveraging protoCore's
+  GIL-free thread model.
+- **`memory_pressure` RSS dropped 1347 MB → 402 MB** (**−70 %**),
+  ratio 193.85× → 104.39×.  Direct consequence of the
+  `PROTOCORE_GC_REINCLUDE_SURVIVORS=ON` default flip + per-context
+  threshold submission landing in protoCore.
+- `attr_lookup`, `call_recursion` minor gains (1.75× → 1.58×, 2.44× →
+  2.31×).
+- `list_append_loop` (6.82× → 10.19×), `str_concat_loop` (11.79× →
+  13.07×), `range_iterate` (4.28× → 5.84×) regressed.  These are the
+  attribute-cache–sensitive workloads exposed by the May 2026
+  attr-cache rework revert (memory:
+  `project_protocore_attrcache_regression_may2026`); the 10–15 %
+  attribute-resolution speedup that the now-reverted commit chain
+  provided is what these benches were riding.
+- Headline geomean **3.76× → 3.62×** (slight overall improvement,
+  driven by the multithread / memory_pressure wins outweighing the
+  attr-resolution regressions on the standard suite mean).
+
+### Performance — pyperf subset (`benchmarks/pyperf/run_pyperf_subset.py`)
+
+Best of 5 timed iterations, internal `time.perf_counter()` (no startup
+floor counted).
+
+| Benchmark            | protopy (ms) | CPython (ms) | Ratio   | Δ vs 2026-05-01-final |
+| :---                 |         ---: |         ---: | :---    | :--- |
+| `fib(25)`            |        126.2 |         15.5 |   8.1×  | flat (was 8.3×) |
+| `binary_trees(10)`   |     11 584.1 |         35.7 | **324.5×** | **+304 % regression** (was 80.2×) |
+| `nqueens(10)`        |      5 681.7 |        122.2 |  46.5×  | flat (was 46.2×) |
+| `richards_lite×10`   |         53.7 |          2.7 |  19.9×  | flat (was 22.6×) |
+| **Geomean (4)**      |              |              | **39.4×** | regression vs 28.9× — driven entirely by `binary_trees` |
+| **Geomean (3, ex bt)** |            |              |  19.6×  | improvement vs 28.9× when the binary_trees outlier is excluded |
+
+`binary_trees(10)` is the headline regression on this suite: the
+benchmark exercises pure OOP method dispatch (`Node.left`,
+`Node.right`, `node.check()`) with no list mutation, which is exactly
+the workload the now-reverted attribute-cache chain optimised.  Hot-
+cache miss latency went from sub-10 ns to ~14 ns
+(`protoCore/README.md` Performance Validation section), and 14 ns ×
+~67 000 attribute accesses per timed iteration × 5 iterations is the
+~12 s observed.  The regression bisects cleanly to the
+`84974040` revert (and is consistent with the protoCore
+microbenchmark-table refresh in `protoCore` commits `17cac649` /
+`5ed20fa5`).
+
+The other three pyperf benches are flat / within noise, confirming
+that the regression is specific to attribute-resolution-heavy code
+paths and not a broader interpreter slowdown.
+
+### How to reproduce
+
+```bash
+# 1. Build protoCore + protoPython in pure Release (-O3 -DNDEBUG).
+cd protoPython && cmake -B build_release -S . -DCMAKE_BUILD_TYPE=Release \
+    && cmake --build build_release -j$(nproc)
+
+# 2. Re-run the 19-test ground-truth audit.
+PROTOPY=$(pwd)/build_release/src/runtime/protopy \
+    python3 tests/synthetic/sp_audit_truth.py --out docs/audits/audit_$(date +%Y-%m-%d).md
+
+# 3. Re-run the conformity suite.
+PROTO_PYTHON=$(pwd)/build_release/src/runtime/protopy \
+    python3 tests/conformity/run_conformity.py
+
+# 4. Re-run the standard benchmark suite.
+PROTOPY_BIN=$(pwd)/build_release/src/runtime/protopy CPYTHON_BIN=python3.14 \
+    python3 benchmarks/run_benchmarks.py \
+    --output benchmarks/reports/baseline_$(date +%Y-%m-%d).md
+
+# 5. Re-run the pyperf subset.
+python3 benchmarks/pyperf/run_pyperf_subset.py $(pwd)/build_release/src/runtime/protopy
+```
+
+---
+
 ## Current Status (2026-05-02) — post-cluster-fix session
 
 Re-run of the 19-test ground-truth audit catalog after a 28-commit

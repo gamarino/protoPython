@@ -28,6 +28,7 @@ import os
 import subprocess
 import sys
 import time
+from datetime import datetime
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
 
@@ -391,13 +392,13 @@ def render_findings(results: List[TestResult]) -> str:
 
 
 def render_report(results: List[TestResult], head_sha: str) -> str:
+    today = datetime.now().strftime("%Y-%m-%d")
     lines: List[str] = []
-    lines.append("# protopy Ground-Truth Audit (2026-04-30)")
+    lines.append(f"# protopy Ground-Truth Audit ({today})")
     lines.append("")
-    lines.append(f"**Binary:** post-silent-halt-fix (HEAD `{head_sha}`; "
-                 f"silent-halt fix landed in commit `efcfa7f3`).")
+    lines.append(f"**Binary:** HEAD `{head_sha}`.")
     lines.append("")
-    lines.append("**Audit run date:** 2026-04-30")
+    lines.append(f"**Audit run date:** {today}")
     lines.append("**Audit script:** `tests/synthetic/sp_audit_truth.py` (committed alongside this report).")
     lines.append("")
     lines.append("## Summary")
