@@ -290,23 +290,35 @@ agreed below.
    - Mark: 72 ns/cell (was 77 pre-prefetch); ~one L1 / L2 cache miss.
    - Sweep: 96 ns/cell; ~one L2 / L3 cache miss per cell.
 
-   **Open follow-up — bump-pointer / per-arena cell allocation**:
+   **Closed follow-up — bump-pointer cell allocation NOT VIABLE
+   (task #30, 2026-05-05).**
 
-   The remaining 39 % of bench wall-clock spent in GC is dominated
-   by cache-miss-bound mark and sweep loops.  Cells are currently
-   scattered across the per-context arena because the freelist /
-   per-thread-pool allocator hands out whatever cell happens to
-   be at the head of the free pool.  A bump-pointer allocator that
-   places sequentially-allocated cells in adjacent 64-byte slots
-   would let mark+sweep iteration walk linearly through cache lines
-   instead of pointer-chasing into random heap.  Estimated impact:
-   ~50 % reduction in mark+sweep cost (from ~93 ns/cell to ~30-40
-   ns/cell), translating to ~15-20 % bench-wall-clock improvement.
+   The original idea was to make sequentially-allocated cells live in
+   adjacent 64-byte slots so mark+sweep iteration walks linearly
+   through cache lines instead of pointer-chasing.  Investigated and
+   rejected: the protoCore GC is non-moving by design, and every
+   Cell address is a permanent identity referenced from many fields
+   (`attributes`, `parent`, `value`, `previous`, `next`, mutable-shard
+   roots, embedder root sets, per-thread caches, ...).  A
+   bump-pointer arena would either:
 
-   This is a non-trivial allocator rewrite — touches `getFreeCells`,
-   the per-thread cell cache, the segment / survivor-pen handling,
-   and possibly the cell layout itself.  Not in this session's
-   scope; logged for a future dedicated session.
+     - Need a moving / compacting collector — requires forwarding
+       pointers OR a read barrier on every Cell* dereference OR a
+       full pointer rewrite at compaction.  All three break
+       fundamental invariants throughout protoCore, protoPython, and
+       protoJS — every getAttribute, every implGetAt, every cached
+       prototype, every interned symbol assumes Cell* identity is
+       stable for the cell's lifetime.
+
+     - Or skip compaction and grow memory unboundedly until OS
+       pressure forces a fall-back to the linked-list freelist, at
+       which point we lose the locality benefit anyway.
+
+   Decision: do not implement.  The ~93 ns/cell cache-miss cost in
+   mark+sweep is the price of a non-moving collector with scattered
+   live cells; the cleaner remaining wins are at the mutator level
+   (paths #2/#4/#6 already landed) and via correctness fixes
+   (task #34).  The 39 % GC-time figure stays.
 4. **Path #6 — `resolveMutableState` (4.23 %) + the CAS-on-read
    anomaly**.
 
