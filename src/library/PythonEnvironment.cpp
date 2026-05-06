@@ -13029,19 +13029,21 @@ static const proto::ProtoObject* tryFastGetAttribute(
         return val;
     }
 
-    // Descriptor check: if val's type defines __get__, the slow path must invoke it.
-    // One cached getAttribute on valType covers both type-inherited __get__ (property,
-    // classmethod, staticmethod, user-defined descriptor classes) and descriptors whose
-    // __get__ is an own attribute of the type.
-    //
-    // The former redundant `val->hasOwnAttribute(ctx, getDS)` check (instance-level
-    // __get__) is removed: Python's descriptor protocol is type-based — type(val).__get__
-    // determines whether the value is a descriptor, not val.__get__.  An instance with
-    // __get__ as an own attribute is not a descriptor; its type's getAttribute chain
-    // (already checked above) would have returned nullptr for getDS in that case.
-    const proto::ProtoString* getDS = env->getGetDunderString();
-    if (getDS && valType && valType != PROTO_NONE && valType != val) {
-        if (valType->getAttribute(ctx, getDS)) return nullptr;
+    // P5 — descriptor check via cached type flags.  When valType's
+    // PYFLAG_HAS_GET_DESCR is unset we KNOW no MRO entry of valType
+    // defines __get__, so val cannot be a descriptor and we return it
+    // directly.  Replaces the legacy `valType->getAttribute(__get__)`
+    // probe with a single getOwnAttributeDirect on `__pyflags__` —
+    // hot-cache friendly, covers the common case where val's type is
+    // a primitive (int / str / list) or a user class with no
+    // descriptors.
+    if (valType && valType != PROTO_NONE && valType != val) {
+        uint32_t valTypeFlags = const_cast<PythonEnvironment*>(env)->ensureClassFlags(ctx, valType);
+        if (valTypeFlags & PythonEnvironment::PYFLAG_HAS_GET_DESCR) {
+            // Descriptor-rich type — fall back to slow path, which
+            // invokes __get__ properly.
+            return nullptr;
+        }
     }
 
     return val;
