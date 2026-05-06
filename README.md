@@ -252,7 +252,7 @@ Two benchmarks beat CPython 3.14 (`startup_empty` 0.64× faster,
 geomean from 3.21× → 2.85× (~11 % faster) and contracted variance
 across the suite.
 
-#### SmallSparseList (May 2026, downstream of protoCore)
+#### SmallSparseList + protoJS embedder cycle (May 2026, downstream of protoCore)
 
 A new `ProtoSparseListSmallImplementation` cell type landed in protoCore
 late May 2026: sparse lists with ≤ 3 (key, value) pairs now fit in a
@@ -264,12 +264,18 @@ freshly created class instances with one or two attributes set, the
 `__class__` / `__dict__` slots before any user attribute is written,
 and short-lived helper objects).  The 178 protoPython tests stay
 green against the new protoCore (no API changes; the trampoline
-dispatches by pointer tag transparently).  A full benchmark refresh
-under the new protoCore is pending; the expected magnitude mirrors
-the protoJS function_calls win (~15 % on the closure-cell-heavy
-canary), most visible on `attr_lookup` and `call_recursion`, and
-neutral on the bandwidth-bound benches (`list_append_loop`,
-`str_concat_loop`).  Update will land with task #44 measurement.
+dispatches by pointer tag transparently).
+
+The companion protoJS embedder cycle (P-JS-{0..7}) — primarily
+client-side but exercising the same protoCore primitives heavily —
+ran for two weeks in May 2026 and validated a ~62 % end-to-end
+improvement on the JS suite (Node-vs-protoJS geomean 75.13× → 28.94×).
+The biggest single win was P-JS-7 (hoisting the bytecode dispatch
+table out of the per-call hot path), which uncovered an L1-cache
+pressure issue that flat profiles had been silently attributing to
+"runBytecode self-time".  protoPython's bytecode interpreter has the
+same dispatch-table pattern; a parallel investigation is queued
+(task #44) but unverified pending profile work.
 
 Highlights vs prior baseline (pre-May-2026 cycle):
 
