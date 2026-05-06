@@ -4743,14 +4743,22 @@ const proto::ProtoObject* executeBytecodeRange(
                             if (ownFv && ownFv != PROTO_NONE && !ownFv->isMethod(ctx)) {
                                 const proto::ProtoObject* ownType = ownFv->getFirstParent(ctx);
                                 if (ownType != env->getFunctionPrototype()) {
-                                    // Plain own value — check type for __get__ (catches
-                                    // classmethod/staticmethod/property on class objects).
-                                    // For plain instance attrs (int, str, user object) this
-                                    // almost always misses, adding just 1 cheap uncached check.
-                                    const proto::ProtoString* getDS = env->getGetDunderString();
-                                    const proto::ProtoObject* getDescVal = (getDS && ownType && ownType != PROTO_NONE)
-                                        ? ownType->getOwnAttributeDirect(ctx, getDS) : nullptr;
-                                    bool isDescriptor = getDescVal != nullptr && getDescVal != PROTO_NONE;
+                                    // Plain own value — descriptor check via the
+                                    // P2 cached type flags.  When the value's type
+                                    // has HAS_GET_DESCR=0 we KNOW none of its
+                                    // attributes define __get__, so the value is
+                                    // guaranteed not to be a descriptor.  This
+                                    // replaces the previous one-off
+                                    // getOwnAttributeDirect(__get__) probe with a
+                                    // cached read whose per-class result amortises
+                                    // across every instance read of every field.
+                                    bool isDescriptor;
+                                    if (ownType && ownType != PROTO_NONE) {
+                                        uint32_t flags = env->ensureClassFlags(ctx, ownType);
+                                        isDescriptor = (flags & protoPython::PythonEnvironment::PYFLAG_HAS_GET_DESCR) != 0;
+                                    } else {
+                                        isDescriptor = false;
+                                    }
                                     if (!isDescriptor) {
                                         if (pushNull) {
                                             stack.back() = nullptr;
