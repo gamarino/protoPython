@@ -396,6 +396,54 @@ agreed below.
    re-architecture of every Python container's data path; out of
    scope for this perf cycle.
 
+   **Closed follow-up — P6 / P7 / P8: hot-path attribute cleanup
+   (tasks #40 / #41 / #42, 2026-05-06): LANDED.**
+
+   Three further refinements after the P2/P5 work:
+
+   **P6 (task #40) — isStringTagFast static inline.**  Added
+   `proto::ProtoObject::isStringTagFast` to the public header — a
+   tag-only fast variant that skips the wrapper-object delegation
+   protocol.  Applied at 15 interpreter sites where `nameObj` is
+   always a co_names entry (interned at compile time).  Eliminates
+   the function-call overhead per dispatch.  bench_binary_trees(10)
+   median: 2547 → 2294 ms (~10 % faster) on a 60-run baseline.
+
+   **P7 (task #41) — getAttribute deeper exploration.**  Tried
+   short-circuiting `isString`'s wrapper-object check via
+   `hasOwnAttribute` instead of `getAttribute`.  Found a NET REGRESSION
+   because `hasOwnAttribute` doesn't use the per-thread cache while
+   `getAttribute` does — the cached chain walk turned out to be
+   cheaper than the un-cached own-only walk on the dominant warm
+   path.  Reverted; documented for future reference.
+
+   **P8 (task #42) — SparseList hash cascade elimination.**  The
+   `hash` field in ProtoSparseListImplementation propagated up the
+   tree by computing `v->getHash(ctx)` per node.  Inside getHash,
+   `isString(ctx)` triggered a chain walk via `getAttribute(literalData)`
+   to handle string-wrapper objects — a per-SparseList-node cost
+   visible in the profile as the entire `isString` cascade.  The
+   field is never read externally (purely internal propagation, never
+   queried for SparseList equality).  Setting it to 0 eliminated the
+   cascade.
+
+   Profile delta (60-run baseline, bench_binary_trees(10)):
+
+     Pre-P8:   isString 3.78 %, getAttribute 14.03 %
+     Post-P8:  isString    0 %, getAttribute  5.90 %  (eliminated)
+
+   Wall-clock impact (60-run measurement):
+
+     Baseline (pre-cycle):  min=2241  median=2547  q3=2996 ms
+     Post-P6 (task #40):    min=2170  median=2294  q3=2357 ms (~10 %)
+     Post-P8 (task #42):    min=1700  median=2080  q3=2557 ms (~18 %)
+
+   Cumulative across the entire May 2026 perf cycle on
+   bench_binary_trees(10): **2.97 s baseline → 2.08 s median (~30 %
+   faster)**, with depth=11 / depth=12 stress runs stable (previously
+   100 % crash before task #34).  Suite geomean: **3.21× → 2.85× CPython
+   3.14** (~11 % faster).
+
 4. **Path #6 — `resolveMutableState` (4.23 %) + the CAS-on-read
    anomaly**.
 

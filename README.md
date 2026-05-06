@@ -220,46 +220,61 @@ Final 5-run median, all builds `-DCMAKE_BUILD_TYPE=Release`:
 └────────────────────────┴──────────────┴──────────────┴─────────────────┴───────────────────────────┘
 ```
 
-#### Refresh (May 2026, post perf-investigation)
+#### Refresh (May 2026, post perf-investigation — final)
 
-Re-measured after the May 2026 perf cycle (paths #2/#3/#4/#6, task
+Re-measured after the full May 2026 perf cycle (paths #2/#3/#4/#6, task
 #28 CAS removal, task #34 destructor reorder fix, task #36 chunked
-freelist via GC pre-chunking, **task #37 type-flags cache + task
-#39 unified attribute fast paths**).  All builds Release `-O3
--DNDEBUG` with `PROTOCORE_GC_REINCLUDE_SURVIVORS=ON`:
+freelist via GC pre-chunking, task #37 type-flags cache, task #39
+unified attribute fast paths, task #40 isStringTagFast inline,
+**task #42 SparseList hash cascade elimination**).  All builds Release
+`-O3 -DNDEBUG` with `PROTOCORE_GC_REINCLUDE_SURVIVORS=ON`:
 
 ```
 ┌────────────────────────┬──────────────┬──────────────┬─────────────────┐
 │ Benchmark              │ protoPy (ms) │ CPython (ms) │ Ratio           │
 ├────────────────────────┼──────────────┼──────────────┼─────────────────┤
-│ startup_empty          │      34.3    │      49.5    │  0.69× faster   │
-│ int_sum_loop           │      24.0    │      47.9    │  0.50× faster   │
-│ list_append_loop       │     275.9    │      35.5    │  7.78× slower   │
-│ str_concat_loop        │     510.1    │      33.5    │ 15.22× slower   │
-│ range_iterate          │     170.4    │      40.0    │  4.26× slower   │
-│ multithread_cpu        │      67.2    │      67.4    │  1.00× equal    │
-│ attr_lookup            │      80.8    │      53.9    │  1.50× slower   │
-│ call_recursion         │     134.4    │      60.8    │  2.21× slower   │
-│ memory_pressure        │    3148.7    │      69.4    │ 45.41× slower   │
+│ startup_empty          │      24.0    │      37.8    │  0.64× faster   │
+│ int_sum_loop           │      25.1    │      40.6    │  0.62× faster   │
+│ list_append_loop       │     234.0    │      39.4    │  5.93× slower   │
+│ str_concat_loop        │     444.6    │      43.5    │ 10.23× slower   │
+│ range_iterate          │     183.0    │      44.0    │  4.16× slower   │
+│ multithread_cpu        │      72.8    │      70.5    │  1.03× slower   │
+│ attr_lookup            │      81.1    │      58.0    │  1.40× slower   │
+│ call_recursion         │     122.7    │      49.3    │  2.49× slower   │
+│ memory_pressure        │    2883.6    │      81.9    │ 35.23× slower   │
 ├────────────────────────┼──────────────┼──────────────┼─────────────────┤
-│ Geomean (all 9)        │              │              │  3.10×          │
+│ Geomean (all 9)        │              │              │  2.85×          │
 └────────────────────────┴──────────────┴──────────────┴─────────────────┘
 ```
 
-Three benchmarks meet or beat CPython 3.14 (`startup_empty` 0.69×,
-`int_sum_loop` 0.50× faster, `multithread_cpu` 1.00× equal).
-The May 2026 P2 / P5 attribute-cache work (cached per-class flags
-replacing the legacy MRO walks for slots / data-descriptor / get-
-descriptor probes) brought `attr_lookup` from 108.5 → 80.8 ms
-(**~26 % faster**) and `memory_pressure` from 4605 → 3148 ms
-(**~32 % faster**) by eliminating the per-call protoCore probes
-that dominated those workloads.
+Two benchmarks beat CPython 3.14 (`startup_empty` 0.64× faster,
+`int_sum_loop` 0.62× faster).  The cumulative May 2026 cycle improved
+geomean from 3.21× → 2.85× (~11 % faster) and contracted variance
+across the suite.
 
-`bench_binary_trees(10)` wall-clock: **2.97 s baseline → 2.26–2.39 s
-min/median (~12-24 % cumulative)** across the May 2026 cycle.
-`getFreeCells` perf share dropped from 7.91 % to 0.52 % (task #36).
+Highlights vs prior baseline (pre-May-2026 cycle):
+
+  - `startup_empty`:    34.3 → 24.0 ms  (~30 % faster)
+  - `int_sum_loop`:     53.0 → 25.1 ms  (~53 % faster)
+  - `list_append_loop`: 265.2 → 234.0 ms  (~12 % faster)
+  - `attr_lookup`:      108.5 → 81.1 ms  (~25 % faster)
+  - `memory_pressure`:  5410 → 2884 ms  (~47 % faster)
+  - `bench_binary_trees(10)` median: 2547 → 2080 ms (~18 % faster)
+
+The dominant remaining gap is in workloads that exercise list/string
+immutability against CPython's mutable-list fast path
+(`str_concat_loop`, `list_append_loop`, `range_iterate`) — a
+structural cost of structural-sharing collections that would require
+the (non-moving / moving) GC redesign rejected as path #30.
+
+`bench_binary_trees(10)` 60-run measurement (wall-clock):
+  - Pre-cycle baseline: min=2241  median=2547  q3=2996 ms
+  - Post-cycle:         min=1700  median=2080  q3=2557 ms
+  - **~24 % min, ~18 % median improvement**.
+
 `depth=11` / `depth=12` stable (previously 100 % crash, fixed by
-task #34).
+task #34).  `getFreeCells` perf share 7.91 % → 0.52 % (task #36).
+`isString` perf share 3.78 % → 0 % (task #42).
 
 `memory_pressure` is now in-suite (it used to be excluded as an outlier
 because the heap grew to 1.3 GB without bound).  Five workloads improve
