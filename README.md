@@ -220,6 +220,39 @@ Final 5-run median, all builds `-DCMAKE_BUILD_TYPE=Release`:
 └────────────────────────┴──────────────┴──────────────┴─────────────────┴───────────────────────────┘
 ```
 
+#### Refresh (May 2026, post perf-investigation)
+
+Re-measured after the May 2026 perf cycle (paths #2/#3/#4/#6 + task
+#34 destructor reorder fix).  All builds Release `-O3 -DNDEBUG` with
+`PROTOCORE_GC_REINCLUDE_SURVIVORS=ON`:
+
+```
+┌────────────────────────┬──────────────┬──────────────┬─────────────────┐
+│ Benchmark              │ protoPy (ms) │ CPython (ms) │ Ratio           │
+├────────────────────────┼──────────────┼──────────────┼─────────────────┤
+│ startup_empty          │      21.4    │      30.3    │  0.71× faster   │
+│ int_sum_loop           │      53.0    │     100.8    │  0.53× faster   │
+│ list_append_loop       │     265.2    │      33.2    │  8.00× slower   │
+│ str_concat_loop        │     419.1    │      31.2    │ 13.44× slower   │
+│ range_iterate          │     161.1    │      39.5    │  4.08× slower   │
+│ multithread_cpu        │      54.2    │      57.0    │  0.95× faster   │
+│ attr_lookup            │      64.5    │      41.1    │  1.57× slower   │
+│ call_recursion         │     103.1    │      42.0    │  2.45× slower   │
+│ memory_pressure        │    5410.6    │     114.6    │ 47.20× slower   │
+├────────────────────────┼──────────────┼──────────────┼─────────────────┤
+│ Geomean (all 9)        │              │              │  3.12×          │
+│ Geomean (excl. mem.)   │              │              │  ~2.0×          │
+└────────────────────────┴──────────────┴──────────────┴─────────────────┘
+```
+
+Three benchmarks now beat CPython 3.14 (`startup_empty`,
+`int_sum_loop`, `multithread_cpu`); the dominant gap is in workloads
+that exercise list/string immutability against CPython's mutable-list
+fast path.  `bench_binary_trees` (high-recursion, OOP-dispatch heavy):
+was 2.97 s → **2.4–2.5 s (~17 % faster)** after the path #4
+SmallList + frontend integration and the task #34 fix unblocked
+`depth=11` and `depth=12` (previously 100 % crash, now stable).
+
 `memory_pressure` is now in-suite (it used to be excluded as an outlier
 because the heap grew to 1.3 GB without bound).  Five workloads improve
 under ON, three are flat, only `list_append_loop` regresses slightly
