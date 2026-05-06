@@ -128,6 +128,13 @@ struct Token {
     // is immediately followed by a Python keyword (e.g. "9and x") — see
     // CPython test_end_of_numerical_literals.  Empty for all other tokens.
     std::string pendingWarning;
+    // True when this is an FString token whose source prefix included
+    // 't' (a PEP 750 template string).  Distinguishes t"..." from f"..."
+    // for code paths that need to report the runtime type — most
+    // visibly the missed-comma SyntaxWarning analyzer, which formats
+    // t-strings as "string.templatelib.Template".  Set only when
+    // type == FString.
+    bool isTString = false;
 };
 
 /** Minimal Python tokenizer for expressions and simple statements. */

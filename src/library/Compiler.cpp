@@ -775,7 +775,12 @@ static std::string missedCommaTypeName(const ASTNode* n) {
     if (dynamic_cast<const DictLiteralNode*>(n)) return "dict";
     if (dynamic_cast<const DictCompNode*>(n)) return "dict";
     if (dynamic_cast<const GeneratorExpNode*>(n)) return "generator";
-    if (dynamic_cast<const JoinedStrNode*>(n)) return "str";
+    if (auto* j = dynamic_cast<const JoinedStrNode*>(n)) {
+        // PEP 750 distinguishes t"..." (string.templatelib.Template,
+        // not subscriptable / not sequence-like) from f"..." (str,
+        // sequence-like, indexable).  Report the right runtime type.
+        return j->isTString ? "string.templatelib.Template" : "str";
+    }
     if (dynamic_cast<const LambdaNode*>(n)) return "function";
     if (auto* c = dynamic_cast<const ConstantNode*>(n)) {
         switch (c->constType) {
@@ -837,10 +842,16 @@ bool Compiler::warnIfMissedComma(ASTNode* elem) {
         // is correct whenever the index is a recognisable non-integer
         // node.  Everything else (sets, dicts, generators, ...) gets
         // the simpler "is not subscriptable" wording.
+        // Sequence-like = supports integer/slice indexing.  f-strings
+        // (JoinedStrNode with isTString=false) are str at runtime;
+        // t-strings (isTString=true) are string.templatelib.Template
+        // and do NOT support subscription, so they fall through to the
+        // "is not subscriptable" branch.
+        const JoinedStrNode* baseJoined = dynamic_cast<const JoinedStrNode*>(base);
         bool isSequenceLike = dynamic_cast<const TupleLiteralNode*>(base)
                            || dynamic_cast<const ListLiteralNode*>(base)
                            || dynamic_cast<const ListCompNode*>(base)
-                           || dynamic_cast<const JoinedStrNode*>(base)
+                           || (baseJoined && !baseJoined->isTString)
                            || (dynamic_cast<const ConstantNode*>(base)
                                && (static_cast<const ConstantNode*>(base)->constType == ConstantNode::ConstType::Str
                                 || static_cast<const ConstantNode*>(base)->constType == ConstantNode::ConstType::Bytes));

@@ -124,6 +124,11 @@ struct FormattedValueNode : ASTNode {
 /** An f-string containing constant parts and FormattedValueNodes. */
 struct JoinedStrNode : ASTNode {
     std::vector<std::unique_ptr<ASTNode>> values;
+    // True for t"..." (PEP 750 template strings); false for f"..."
+    // (PEP 498).  Both share the same interpolation syntax and AST,
+    // but consumers like the missed-comma analyzer need to report
+    // distinct runtime types ("string.templatelib.Template" vs "str").
+    bool isTString = false;
 };
 
 /** target := value (PEP 572). */

@@ -415,13 +415,20 @@ Token Tokenizer::scanString(char quote, const std::string& prefix) {
     bool isRaw = false;
     bool isF = false;
     bool isB = false;
+    bool isT = false;
     for (char c : prefix) {
         char lc = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
         if (lc == 'r') isRaw = true;
         if (lc == 'f') isF = true;
         if (lc == 'b') isB = true;
-        if (lc == 't') { /* Handle Template String prefix if needed, for now just allow it */ }
+        if (lc == 't') isT = true;
     }
+    // PEP 750 t-strings are tokenised through the same scanner as
+    // f-strings (same `{expr}` interpolation grammar) but flagged so
+    // downstream stages can emit a different type name.  Treat t-prefix
+    // as f-prefix for the body scan and rely on `t.isTString` to
+    // distinguish at the compiler / missed-comma level.
+    if (isT) { isF = true; t.isTString = true; }
     if (isF) t.type = TokenType::FString;
     else if (isB) t.type = TokenType::Bytes;
     
@@ -440,6 +447,21 @@ Token Tokenizer::scanString(char quote, const std::string& prefix) {
         } else if (!triple && source_[pos_] == quote) {
             pos_++;
             break;
+        }
+        // CPython normalises CRLF / lone CR to LF when reading source.
+        // Inside a string literal that means a triple-quoted body or a
+        // single-line literal sees `\n` regardless of the source file's
+        // line-ending convention.  test_grammar.test_string_literals
+        // depends on this — its triple-quoted bodies and `\<newline>`
+        // continuations are compared against hand-built `'\n...\n'`
+        // strings.  Without this normalisation, a CRLF source emits
+        // `\r\n` in the literal and the assertEqual fails.
+        if (source_[pos_] == '\r') {
+            pos_++;
+            // Collapse \r\n into a single \n; treat lone \r as \n too.
+            if (pos_ < source_.size() && source_[pos_] == '\n') pos_++;
+            s += '\n';
+            continue;
         }
         char c = source_[pos_++];
 
@@ -596,6 +618,18 @@ Token Tokenizer::scanString(char quote, const std::string& prefix) {
                 else if (e == quote) s += quote;
                 else if (e == '\\') s += '\\';
                 else if (e == '\n') {
+                    line_++;
+                    lineStartPos_ = pos_;
+                }
+                // CRLF / lone CR line continuations.  When the source
+                // file uses Windows line endings, `\<CR><LF>` reaches
+                // here with e=='\r'; consume the optional following LF
+                // so the entire line ending is elided (CPython's string
+                // tokenizer normalises the same way).  Required by
+                // test_grammar.test_string_literals's "\\\n..." chains
+                // when read from a CRLF-terminated source.
+                else if (e == '\r') {
+                    if (pos_ < source_.size() && source_[pos_] == '\n') pos_++;
                     line_++;
                     lineStartPos_ = pos_;
                 }

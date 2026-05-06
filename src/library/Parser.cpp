@@ -336,8 +336,9 @@ std::unique_ptr<ASTNode> Parser::parseAtom() {
     if (cur_.type == TokenType::String || cur_.type == TokenType::FString || cur_.type == TokenType::Bytes) {
         std::vector<std::unique_ptr<ASTNode>> allValues;
         bool anyF = false;
+        bool anyT = false;     // PEP 750 t-string anywhere in the concat
         bool anyB = cur_.type == TokenType::Bytes;
-        
+
         while (cur_.type == TokenType::String || cur_.type == TokenType::FString || cur_.type == TokenType::Bytes) {
             if (cur_.type == TokenType::String || cur_.type == TokenType::Bytes) {
                 auto n = createNode<ConstantNode>();
@@ -348,9 +349,11 @@ std::unique_ptr<ASTNode> Parser::parseAtom() {
                 advance();
             } else {
                 anyF = true;
+                if (cur_.isTString) anyT = true;
                 auto fs = parseFString();
                 if (!fs) return nullptr;
                 if (auto* jsn = dynamic_cast<JoinedStrNode*>(fs.get())) {
+                    if (jsn->isTString) anyT = true;
                     for (auto& v : jsn->values) {
                         allValues.push_back(std::move(v));
                     }
@@ -359,7 +362,7 @@ std::unique_ptr<ASTNode> Parser::parseAtom() {
                 }
             }
         }
-        
+
         if (!anyF) {
             std::string finalStr;
             std::string finalBytes;
@@ -381,6 +384,7 @@ std::unique_ptr<ASTNode> Parser::parseAtom() {
         } else {
             auto res = createNode<JoinedStrNode>();
             res->values = std::move(allValues);
+            res->isTString = anyT;   // propagate PEP 750 flag
             return res;
         }
     }
@@ -1514,6 +1518,11 @@ std::unique_ptr<ASTNode> Parser::parseLambda() {
 std::unique_ptr<ASTNode> Parser::parseFString() {
     std::string raw = cur_.value;
     auto joined = createNode<JoinedStrNode>();
+    // Propagate the lexer's t-prefix flag so downstream stages
+    // (missed-comma analyzer, runtime type reporting) can distinguish
+    // PEP 750 t-strings from PEP 498 f-strings.  Both share the same
+    // interpolation AST but are reported as distinct runtime types.
+    joined->isTString = cur_.isTString;
     advance(); // FString token
     
     size_t i = 0;
