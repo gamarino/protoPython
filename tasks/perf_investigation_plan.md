@@ -290,6 +290,34 @@ agreed below.
    - Mark: 72 ns/cell (was 77 pre-prefetch); ~one L1 / L2 cache miss.
    - Sweep: 96 ns/cell; ~one L2 / L3 cache miss per cell.
 
+   **Closed follow-up — chunked freelist via GC pre-chunking
+   (task #36, 2026-05-06): LANDED.**
+
+   Sweep now accumulates dead cells into chunks of CELL_CHUNK_SIZE
+   (8192 cells) while walking segments — negligible extra cost since
+   the walk is already paid per cell.  `getFreeCells` pops one chunk
+   in O(1) instead of walking N cells to find a cut point.  OS
+   allocation also partitions the fresh block into chunks so the
+   first refill after a posix_memalign hits the chunked fast path.
+
+   Implementation: 4 commits (`c3dac9de` struct + helpers,
+   `21fa2289` sweep accumulator, `b4d5752b` getFreeCells consumer,
+   `11e287a1` OS-alloc chunk split).  Each step independently
+   buildable; ctest 165/165 + 178/178 throughout.
+
+   Wall-clock: bench_binary_trees(10) **2.6 s → 2.29 s median
+   (~12 % faster)**.  Profile share of `ProtoSpace::getFreeCells`
+   dropped from **7.91 % → 0.52 %** (eliminated as a hotspot).
+   No regression on stress depth=11/12 (30/30 + 5/5 PASS).
+   Conformity 9/10 unchanged.
+
+   This is the cheapest path-#5 win available without touching the
+   non-moving GC invariants (path #30 bump-pointer was rejected).
+   The chunked structure is just bookkeeping over the existing
+   freelist — cells stay at their addresses, identity is preserved,
+   the only change is "outer" structure (chunks) vs "inner"
+   structure (cell linked-list inside each chunk).
+
    **Closed follow-up — bump-pointer cell allocation NOT VIABLE
    (task #30, 2026-05-05).**
 
