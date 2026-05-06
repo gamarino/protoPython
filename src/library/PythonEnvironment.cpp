@@ -13766,6 +13766,25 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
     // two getAttribute(mroString) calls per setAttribute invocation.
     const bool objIsClass = isActuallyAClass(ctx, obj);
     const proto::ProtoObject* type = objIsClass ? nullptr : getType(ctx, obj);
+
+    // P5 — type-flags fast bail.  When obj is an instance (not a class)
+    // and its type has neither slots nor data descriptors cached, skip
+    // both the __slots__ enforcement walk AND the per-name MRO descriptor
+    // probe — the cached flag is sufficient.  Falls through to the
+    // existing slow body when descriptors / slots are present, so
+    // semantics are identical for every non-trivial class.
+    if (!objIsClass && type && type != PROTO_NONE) {
+        uint32_t typeFlags = ensureClassFlags(ctx, type);
+        if ((typeFlags & PYFLAG_HAS_SLOTS) == 0
+                && (typeFlags & PYFLAG_HAS_DATA_DESCR) == 0) {
+            // No slots, no data descriptors anywhere in the MRO — direct
+            // setAttribute is the correct semantic.  Skip the legacy
+            // double-MRO-walk entirely.
+            return const_cast<proto::ProtoObject*>(obj)->proto::ProtoObject::setAttribute(
+                ctx, name, value);
+        }
+    }
+
     const proto::ProtoTuple* mroT = nullptr;
     if (type && type != PROTO_NONE) {
         const proto::ProtoObject* mroAttr = type->getAttribute(ctx, mroString);
