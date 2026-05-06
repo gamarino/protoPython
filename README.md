@@ -266,6 +266,17 @@ and short-lived helper objects).  The 178 protoPython tests stay
 green against the new protoCore (no API changes; the trampoline
 dispatches by pointer tag transparently).
 
+**Measured impact** (full suite, before vs after, both runs same machine):
+geomean **2.80× → 2.64× slower than CPython** (−6 %).  The win is
+smaller than protoJS's 62 % because Python instances typically carry
+more than 3 attributes and overflow the inline form.  Two benches
+move meaningfully: `multithread_cpu` ratio 1.63× slower → **0.94×
+faster than CPython** (multi-thread workloads see less GC contention
+on small attribute snapshots), and `int_sum_loop` 0.63× → 0.46× faster.
+`attr_lookup` (3-attr instance, the design sweet-spot) was within
+noise — the 1-attr case probably needs a more targeted bench to
+isolate.
+
 The companion protoJS embedder cycle (P-JS-{0..7}) — primarily
 client-side but exercising the same protoCore primitives heavily —
 ran for two weeks in May 2026 and validated a ~62 % end-to-end
@@ -275,7 +286,15 @@ table out of the per-call hot path), which uncovered an L1-cache
 pressure issue that flat profiles had been silently attributing to
 "runBytecode self-time".  protoPython's bytecode interpreter has the
 same dispatch-table pattern; a parallel investigation is queued
-(task #44) but unverified pending profile work.
+(task #44) and likely will recoup more than the SmallSparseList alone.
+
+> **⚠ Use `build_release/` for benchmarks.**  protoPython's bench
+> runner was tripped up in May 2026 by the `build/` and `build_release/`
+> directories holding different `libprotoCore.so` snapshots — `build/`
+> was stale (May 4) while `build_release/` had the SmallSparseList
+> change (May 6).  The runner now warns when `PROTOPY_BIN` points at a
+> `build/` that's older than the sibling `build_release/`.  All recipes
+> in this repo now use `build_release/` consistently.
 
 Highlights vs prior baseline (pre-May-2026 cycle):
 

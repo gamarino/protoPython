@@ -4,8 +4,11 @@ Diagnostic benchmark for multithread_cpu: variable CHUNK and N_THREADS
 to determine whether execution is serialized and where time is spent.
 
 Usage:
-  PROTOPY_BIN=./build/src/runtime/protopy python3 multithread_cpu_diagnostic.py
+  PROTOPY_BIN=./build_release/src/runtime/protopy python3 multithread_cpu_diagnostic.py
   CHUNK=200000 N_THREADS=4 PROTOPY_BIN=... python3 multithread_cpu_diagnostic.py
+
+(Always point at build_release/ — see README; build/ may be stale relative to
+the protoCore shared library it links against, masking real perf changes.)
 
 Expectations (no hacks):
 - Worst case (fully serialized): wall_time ≈ N_THREADS × single_chunk_time.

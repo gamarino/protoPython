@@ -48,7 +48,7 @@ Proposed wheel contents:
 
 ## Drop-in replacement (v57)
 
-- **PROTOPY_BIN**: Recommended for scripts and CI. Set `PROTOPY_BIN=./build/src/runtime/protopy` (or installed path) and invoke `$PROTOPY_BIN --script ...` or `$PROTOPY_BIN --module ...`.
+- **PROTOPY_BIN**: Recommended for scripts and CI. Set `PROTOPY_BIN=./build_release/src/runtime/protopy` (or installed path) and invoke `$PROTOPY_BIN --script ...` or `$PROTOPY_BIN --module ...`.  For benchmarks always use `build_release/` — `build/` may be stale relative to the protoCore shared library it links against.
 - **Limitations**: protoPython does not implement the full CPython C-API; extensions and tools expecting `python` to be CPython may fail. Use `PROTOPY_BIN` explicitly where protoPython is intended.
 - **Aliasing**: `alias python=protopy` or symlinking is possible but not recommended until compatibility is higher; prefer `PROTOPY_BIN` for controlled invocation.
 

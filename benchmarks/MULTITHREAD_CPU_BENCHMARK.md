@@ -22,7 +22,7 @@ This benchmark compares **wall-clock time** for a fixed amount of CPU-bound work
 From the project root:
 
 ```bash
-export PROTOPY_BIN=./build/src/runtime/protopy   # or your protopy path
+export PROTOPY_BIN=./build_release/src/runtime/protopy   # ALWAYS use build_release for benchmarks
 export CPYTHON_BIN=python3.14                     # optional; default python3
 python3 benchmarks/run_benchmarks.py --output reports/multithread_cpu_report.md
 ```

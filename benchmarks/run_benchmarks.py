@@ -172,6 +172,31 @@ def main():
         print("Set PROTOPY_BIN environment variable.")
         return 1
     cpython_bin = os.environ.get("CPYTHON_BIN", "python3")
+
+    # Stale-binary guard: protopy links to libprotoCore.so from a sibling
+    # protoCore build directory.  If a release-mode build_release/ exists
+    # next to the build/ the user pointed at, warn — the protoCore code
+    # probably moved underneath and the user is measuring an outdated
+    # snapshot.  Caught us out in May 2026 when the protoJS bench runner
+    # silently used build/ for an entire optimisation cycle while
+    # build_release/ tracked the actual fixes.  Honour PROTOPY_NOWARN to
+    # silence in CI configs that pin specific build dirs intentionally.
+    if not os.environ.get("PROTOPY_NOWARN"):
+        bin_dir = os.path.dirname(os.path.dirname(os.path.dirname(protopy_bin)))
+        bin_basename = os.path.basename(bin_dir)
+        if bin_basename == "build":
+            sibling_release = os.path.join(os.path.dirname(bin_dir), "build_release",
+                                            "src", "runtime", "protopy")
+            if os.path.isfile(sibling_release):
+                bin_mtime = os.path.getmtime(protopy_bin)
+                rel_mtime = os.path.getmtime(sibling_release)
+                if rel_mtime > bin_mtime + 60:   # >1 min newer
+                    age_h = (rel_mtime - bin_mtime) / 3600
+                    print(f"⚠ Warning: PROTOPY_BIN points at build/ which is "
+                          f"{age_h:.1f} h older than the available build_release/. "
+                          f"You are likely measuring stale code.  Set "
+                          f"PROTOPY_BIN={sibling_release} or "
+                          f"PROTOPY_NOWARN=1 to silence.", flush=True)
     
     benchmarks = [
         ("startup_empty", "abc", True), # specialized
