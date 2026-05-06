@@ -122,6 +122,12 @@ struct Token {
     // 0x/0o/0b), `bigBase` is 2/8/10/16.
     std::string bigDigits;
     int bigBase = 10;
+    // Non-empty when the lexer wants the compiler to emit a SyntaxWarning
+    // *as if* it were attached to this token's source position.  Used for
+    // the "invalid <kind> literal" warning emitted when a numeric literal
+    // is immediately followed by a Python keyword (e.g. "9and x") — see
+    // CPython test_end_of_numerical_literals.  Empty for all other tokens.
+    std::string pendingWarning;
 };
 
 /** Minimal Python tokenizer for expressions and simple statements. */
@@ -152,6 +158,13 @@ private:
     Token scanString(char quote, const std::string& prefix = "");
     Token scanNameOrKeyword();
     Token makeToken(TokenType type);
+    // Defined in Tokenizer.cpp.  Inspects the character at pos_ after
+    // scanNumber consumed a numeric literal: if it is an identifier-start
+    // char or non-ASCII, sets t.pendingWarning (keyword follow-on) or
+    // t.type=Error (non-keyword identifier or non-ASCII).  Returns true
+    // when the caller should bail with the Error token.  See definition
+    // for the full message-format contract.
+    bool diagnoseNumberFollowOn(Token& t, const char* kindName);
 };
 
 } // namespace protoPython

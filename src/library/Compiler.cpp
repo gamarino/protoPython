@@ -321,6 +321,18 @@ const proto::ProtoTuple* Compiler::getBytecode() {
 
 bool Compiler::compileConstant(ConstantNode* n) {
     if (!n) return false;
+    // Emit the lexer-attached SyntaxWarning, if any, before producing
+    // bytecode for this constant.  Used for "invalid <kind> literal"
+    // when a numeric token is immediately followed by a Python keyword
+    // (e.g. `9and x` → "invalid decimal literal").  When `simplefilter
+    // ('error', SyntaxWarning)` is active the warn becomes a SyntaxError
+    // and emitSyntaxWarning returns true to halt compilation.
+    if (!n->pendingWarning.empty()) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(ctx_);
+        if (env && env->emitSyntaxWarning(ctx_, n->pendingWarning, filename_, n->line)) {
+            return false;
+        }
+    }
     const proto::ProtoObject* obj = nullptr;
     if (n->constType == ConstantNode::ConstType::Int) {
         if (!n->bigIntDigits.empty()) {

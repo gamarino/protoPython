@@ -1627,6 +1627,18 @@ static const proto::ProtoObject* py_compile(
         // comma form is accepted; parseExpression alone treats the comma
         // as end-of-expression and surfaces "invalid syntax".
         std::unique_ptr<ASTNode> expr = parser.parseTestList();
+        // The parser's error state takes precedence over a partial AST.
+        // `x if 0xfelse y` parses Name(x) before hitting the lexer Error
+        // token "invalid hexadecimal literal"; without this check we'd
+        // compile Name(x) successfully and either return it or, if the
+        // remaining tokens drive a compile-time guard, surface a generic
+        // "invalid syntax".  test_grammar.test_end_of_numerical_literals
+        // expects the lexer's specific message to propagate.
+        if (parser.hasError() && !parser.getLastErrorMsg().empty()) {
+            raiseSE(parser.getLastErrorMsg(),
+                    parser.getLastErrorLine(), parser.getLastErrorColumn());
+            return PROTO_NONE;
+        }
         if (!expr) {
             raiseSE(parser.hasError() ? parser.getLastErrorMsg() : "invalid syntax",
                     parser.getLastErrorLine(), parser.getLastErrorColumn());

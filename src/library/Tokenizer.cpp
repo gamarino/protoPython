@@ -1,10 +1,12 @@
 #include <protoPython/Tokenizer.h>
 #include <protoPython/DiagUtils.h>
 #include <cctype>
+#include <cstdio>
 #include <stdexcept>
 #include <iostream>
 #include <algorithm>
 #include <limits>
+#include <unordered_set>
 
 namespace protoPython {
 
@@ -39,31 +41,145 @@ void Tokenizer::skipComment() {
         pos_++;
 }
 
+// CPython keyword check (Python 3.14 grammar).  Used by scanNumber to
+// distinguish "number followed by keyword" (warning, e.g. `9and x`) from
+// "number followed by non-keyword identifier" (error, e.g. `9spam`).
+// Mirrors `keyword.kwlist` plus soft-keywords match/case/_ in 3.14.
+static bool isPyKeyword(const std::string& s) {
+    static const std::unordered_set<std::string> kw = {
+        "False", "None", "True", "and", "as", "assert", "async", "await",
+        "break", "class", "continue", "def", "del", "elif", "else", "except",
+        "finally", "for", "from", "global", "if", "import", "in", "is",
+        "lambda", "nonlocal", "not", "or", "pass", "raise", "return", "try",
+        "while", "with", "yield",
+    };
+    return kw.count(s) != 0;
+}
+
+// Decode the next UTF-8 character starting at source_[off] as a 32-bit
+// codepoint.  Used to format the "invalid character '<x>' (U+XXXX)"
+// message that CPython emits when a non-ASCII char immediately follows a
+// numeric literal — e.g. test_end_of_numerical_literals's `9⁄7` case
+// (U+2044 FRACTION SLASH).  Returns the codepoint and writes the byte
+// length consumed into *bytesOut.  On invalid UTF-8 returns the raw byte
+// and bytesOut=1 so the caller still produces a sensible message.
+static unsigned decodeUtf8Codepoint(const std::string& s, size_t off, int* bytesOut) {
+    unsigned char c0 = static_cast<unsigned char>(s[off]);
+    if (c0 < 0x80) { *bytesOut = 1; return c0; }
+    auto cont = [&](size_t i) -> int {
+        if (i >= s.size()) return -1;
+        unsigned char c = static_cast<unsigned char>(s[i]);
+        if ((c & 0xC0) != 0x80) return -1;
+        return c & 0x3F;
+    };
+    if ((c0 & 0xE0) == 0xC0) {
+        int c1 = cont(off + 1);
+        if (c1 < 0) { *bytesOut = 1; return c0; }
+        *bytesOut = 2;
+        return ((c0 & 0x1F) << 6) | c1;
+    }
+    if ((c0 & 0xF0) == 0xE0) {
+        int c1 = cont(off + 1), c2 = cont(off + 2);
+        if (c1 < 0 || c2 < 0) { *bytesOut = 1; return c0; }
+        *bytesOut = 3;
+        return ((c0 & 0x0F) << 12) | (c1 << 6) | c2;
+    }
+    if ((c0 & 0xF8) == 0xF0) {
+        int c1 = cont(off + 1), c2 = cont(off + 2), c3 = cont(off + 3);
+        if (c1 < 0 || c2 < 0 || c3 < 0) { *bytesOut = 1; return c0; }
+        *bytesOut = 4;
+        return ((c0 & 0x07) << 18) | (c1 << 12) | (c2 << 6) | c3;
+    }
+    *bytesOut = 1;
+    return c0;
+}
+
+// After successfully scanning a numeric literal at [start, pos_), classify
+// what follows.  CPython rules (Python 3.14 PEP 3131 + PEP 8 spirit):
+//   - Whitespace, EOF, operator, punctuation: clean exit, no diagnostic.
+//   - ASCII identifier-start (alpha or '_'): the user wrote
+//     `<num><ident>` with no separator.  Read the identifier, decide:
+//       * keyword (and/or/in/not/if/else/for/is/...) → SyntaxWarning
+//         "invalid <kind> literal" — parser will tokenise the keyword
+//         normally, so the program may still be valid (just suspicious).
+//       * non-keyword                           → SyntaxError, same text.
+//   - Non-ASCII (>= U+0080): SyntaxError "invalid character '<c>' (U+XXXX)".
+// `kindName` is "decimal" / "hexadecimal" / "octal" / "binary" — selected
+// by the caller from the parsing path that matched.
+//
+// Mutates `t` in place, sets t.type=Error or t.pendingWarning as needed.
+// Does NOT advance pos_ for warnings (so the keyword tokenises normally on
+// the next scan).  Returns true if t.type was set to Error (caller should
+// return immediately from scanNumber).
+bool Tokenizer::diagnoseNumberFollowOn(Token& t, const char* kindName) {
+    if (pos_ >= source_.size()) return false;
+    unsigned char nx = static_cast<unsigned char>(source_[pos_]);
+    if (std::isalpha(nx) || nx == '_') {
+        std::string ident;
+        size_t look = pos_;
+        while (look < source_.size()) {
+            unsigned char c = static_cast<unsigned char>(source_[look]);
+            if (std::isalnum(c) || c == '_') { ident.push_back(static_cast<char>(c)); look++; }
+            else break;
+        }
+        std::string msg = std::string("invalid ") + kindName + " literal";
+        if (isPyKeyword(ident)) {
+            t.pendingWarning = msg;
+            return false;
+        }
+        t.type = TokenType::Error;
+        t.value = msg;
+        return true;
+    }
+    if (nx >= 0x80) {
+        int nbytes = 1;
+        unsigned cp = decodeUtf8Codepoint(source_, pos_, &nbytes);
+        // Emit raw UTF-8 of the offending character for the '<x>' field
+        // and the formal U+XXXX form afterwards — matches the CPython
+        // message "invalid character '⁄' (U+2044)".
+        std::string raw(source_.c_str() + pos_, nbytes);
+        char hexbuf[16];
+        std::snprintf(hexbuf, sizeof(hexbuf), "%04X", cp);
+        t.type = TokenType::Error;
+        t.value = std::string("invalid character '") + raw + "' (U+" + hexbuf + ")";
+        return true;
+    }
+    return false;
+}
+
 Token Tokenizer::scanNumber() {
     Token t = makeToken(TokenType::Number);
     size_t start = pos_;
     bool isFloat = false;
     bool isComplex = false;
-    
+
     // Check for base prefixes: 0x, 0o, 0b
     if (pos_ + 1 < source_.size() && source_[pos_] == '0') {
         char nextC = source_[pos_ + 1];
         if (nextC == 'x' || nextC == 'X' || nextC == 'o' || nextC == 'O' || nextC == 'b' || nextC == 'B') {
             pos_ += 2;
             int base = (nextC == 'x' || nextC == 'X') ? 16 : (nextC == 'o' || nextC == 'O') ? 8 : 2;
-            // Consume every alphanumeric + underscore so that the whole
-            // suspicious run (e.g. "0b12", "0o18") is one token and we
-            // can report "invalid digit '2' in binary literal" rather
-            // than silently stop at the first invalid digit and leave
-            // the rest to confuse the parser.
+            const char* baseName = (base == 16 ? "hexadecimal" : base == 8 ? "octal" : "binary");
+
+            // Consume only valid digits + underscore for this base.  Stop
+            // at the first non-digit character — we'll classify it via
+            // diagnoseNumberFollowOn below.  Previously we greedily ate
+            // everything alphanumeric so we could emit "invalid digit 'X'
+            // in <base> literal", but that message format does not match
+            // CPython's `r'invalid \w+ literal'` regex contract used by
+            // test_end_of_numerical_literals.
+            auto isBaseDigit = [&](unsigned char c) -> bool {
+                if (base == 16) return std::isxdigit(c) != 0;
+                if (base == 8)  return c >= '0' && c <= '7';
+                return c == '0' || c == '1';
+            };
             while (pos_ < source_.size()) {
-                char c = source_[pos_];
-                bool consumable = std::isalnum(static_cast<unsigned char>(c)) || c == '_';
-                if (consumable) pos_++;
+                unsigned char c = static_cast<unsigned char>(source_[pos_]);
+                if (isBaseDigit(c) || c == '_') pos_++;
                 else break;
-                (void)base;
             }
             t.value = source_.substr(start, pos_ - start);
+
             // Per CPython: a leading/trailing underscore and adjacent
             // underscores inside a base-prefixed literal are invalid.
             // The digit section must start and end with an actual digit
@@ -81,26 +197,31 @@ Token Tokenizer::scanNumber() {
                 }
                 return !anyDigit;
             };
-            std::string afterPrefix = t.value.substr(2);
-            // Also look for digits outside the valid set for the base
-            // (e.g. `0b12` has '2', `0o18` has '8').  CPython reports
-            // these as "invalid digit 'X' in <base> literal".
-            const char* baseName = (base == 16 ? "hexadecimal" : base == 8 ? "octal" : "binary");
-            for (char c : afterPrefix) {
-                if (c == '_') continue;
-                bool ok;
-                if (base == 16) ok = (std::isxdigit(static_cast<unsigned char>(c)) != 0);
-                else if (base == 8) ok = (c >= '0' && c <= '7');
-                else ok = (c == '0' || c == '1');
-                if (!ok) {
+            // If the loop stopped at a *decimal digit* that's invalid for
+            // this base (e.g. `0b12`, `0o18`, `0o1_8`), CPython's
+            // test_bad_numerical_literals expects the more specific
+            // "invalid digit 'X' in <base> literal" message.  This branch
+            // must run BEFORE the trailing-underscore / empty-digits
+            // checks below — `0b1_2` reaches `2` after a trailing `_`, and
+            // the underscore check would otherwise hijack the message.
+            if (pos_ < source_.size()) {
+                unsigned char nx = static_cast<unsigned char>(source_[pos_]);
+                if (std::isdigit(nx)) {
                     t.type = TokenType::Error;
-                    t.value = std::string("invalid digit '") + c + "' in " + baseName + " literal";
+                    t.value = std::string("invalid digit '") + static_cast<char>(nx)
+                            + "' in " + baseName + " literal";
                     return t;
                 }
             }
+            std::string afterPrefix = t.value.substr(2);
             if (afterPrefix.empty() || invalidUnderscore(afterPrefix)) {
                 t.type = TokenType::Error;
                 t.value = std::string("invalid ") + baseName + " literal";
+                return t;
+            }
+            // Diagnose what follows: keyword → warning, identifier → error,
+            // non-ASCII → error.  Returns true on Error (so we bail).
+            if (diagnoseNumberFollowOn(t, baseName)) {
                 return t;
             }
             std::string cleanValue = t.value;
@@ -247,6 +368,13 @@ Token Tokenizer::scanNumber() {
                     : std::string("invalid decimal literal"));
             return t;
         }
+    }
+    // Diagnose what follows for decimal/float/complex literals — same
+    // contract as the base-prefixed branch above.  `9and x` → warning,
+    // `9spam` → error, `9⁄7` → error.  Skipped silently when the next
+    // char is whitespace / operator / EOF.
+    if (diagnoseNumberFollowOn(t, "decimal")) {
+        return t;
     }
     std::string cleanValue = t.value;
     cleanValue.erase(std::remove(cleanValue.begin(), cleanValue.end(), '_'), cleanValue.end());

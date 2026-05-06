@@ -319,6 +319,11 @@ std::unique_ptr<ASTNode> Parser::parseAtom() {
             n->bigIntDigits = cur_.bigDigits;
             n->bigBase = cur_.bigBase;
         }
+        // Propagate the lexer's "invalid <kind> literal" SyntaxWarning
+        // hint so the compiler can emit it at this node's source line.
+        if (!cur_.pendingWarning.empty()) {
+            n->pendingWarning = cur_.pendingWarning;
+        }
         advance();
         return n;
     }

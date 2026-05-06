@@ -27,6 +27,13 @@ struct ConstantNode : ASTNode {
     // int64, e.g. `0o1777777777777777777777`.
     std::string bigIntDigits;
     int bigBase = 10;
+    // SyntaxWarning text the lexer attached to this numeric literal —
+    // emitted by the compiler at this constant's source line.  Non-empty
+    // when the user wrote a number adjacent to a Python keyword without
+    // a separator (e.g. "9and x" → "invalid decimal literal"; the
+    // program may still be valid — `and` tokenises normally — but the
+    // lexer flags it).  See test_grammar.test_end_of_numerical_literals.
+    std::string pendingWarning;
 };
 
 struct NameNode : ASTNode {
