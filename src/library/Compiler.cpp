@@ -810,7 +810,11 @@ bool Compiler::warnIfMissedComma(ASTNode* elem) {
     if (!env) return false;
 
     if (auto* call = dynamic_cast<CallNode*>(elem)) {
-        std::string ty = missedCommaTypeName(call->func.get());
+        const ASTNode* func = call->func.get();
+        // Lambdas are callable.  Calling them in a list literal is the
+        // intended use case (`[(lambda x, y: x) (3, 4)]`) — no warning.
+        if (dynamic_cast<const LambdaNode*>(func)) return false;
+        std::string ty = missedCommaTypeName(func);
         if (!ty.empty()) {
             std::string msg = "'" + ty + "' object is not callable; perhaps you missed a comma?";
             int line = call->line > 0 ? call->line : 1;
@@ -819,11 +823,20 @@ bool Compiler::warnIfMissedComma(ASTNode* elem) {
     }
     if (auto* sub = dynamic_cast<SubscriptNode*>(elem)) {
         const ASTNode* base = sub->value.get();
+        const ASTNode* index = sub->index.get();
         std::string ty = missedCommaTypeName(base);
-        // Categorise base: sequence-like (tuple/list/listcomp/str/bytes)
-        // gives the "indices must be integers or slices, not tuple"
-        // wording when the index is itself a tuple; everything else
-        // gives the "is not subscriptable" wording.
+        if (ty.empty()) return false;     // base not a recognised literal kind
+        // Dict literals accept arbitrary hashable keys including tuples,
+        // so `[{(1, 2): 3} [i, j]]` is valid subscription, not a missed
+        // comma.  Same for dict comprehensions.
+        if (ty == "dict") return false;
+
+        // Categorise base: sequence-like containers (tuple/list/listcomp/
+        // str/bytes) accept only integer / slice indices, so an
+        // "indices must be integers or slices, not <indexType>" message
+        // is correct whenever the index is a recognisable non-integer
+        // node.  Everything else (sets, dicts, generators, ...) gets
+        // the simpler "is not subscriptable" wording.
         bool isSequenceLike = dynamic_cast<const TupleLiteralNode*>(base)
                            || dynamic_cast<const ListLiteralNode*>(base)
                            || dynamic_cast<const ListCompNode*>(base)
@@ -831,17 +844,34 @@ bool Compiler::warnIfMissedComma(ASTNode* elem) {
                            || (dynamic_cast<const ConstantNode*>(base)
                                && (static_cast<const ConstantNode*>(base)->constType == ConstantNode::ConstType::Str
                                 || static_cast<const ConstantNode*>(base)->constType == ConstantNode::ConstType::Bytes));
-        bool indexIsTuple = dynamic_cast<TupleLiteralNode*>(sub->index.get()) != nullptr;
-        if (!ty.empty()) {
-            std::string msg;
-            if (isSequenceLike && indexIsTuple) {
-                msg = "'" + ty + "' indices must be integers or slices, not tuple; perhaps you missed a comma?";
-            } else {
-                msg = "'" + ty + "' object is not subscriptable; perhaps you missed a comma?";
-            }
-            int line = sub->line > 0 ? sub->line : 1;
-            return env->emitSyntaxWarning(ctx_, msg, filename_, line);
+        // Index classification — only flag types that are unambiguously
+        // wrong for a sequence subscript.  Skip:
+        //   - Name (identifier): runtime value unknown, may be int.
+        //   - Slice: valid.
+        //   - Integer / bool literal: valid.
+        // Everything else recognised by missedCommaTypeName is wrong.
+        if (dynamic_cast<const NameNode*>(index)) return false;
+        if (dynamic_cast<const SliceNode*>(index)) return false;
+        std::string idxTy = missedCommaTypeName(index);
+        if (idxTy == "int" || idxTy == "bool") idxTy.clear();
+
+        std::string msg;
+        if (isSequenceLike && !idxTy.empty()) {
+            msg = "'" + ty + "' indices must be integers or slices, not "
+                + idxTy + "; perhaps you missed a comma?";
+        } else if (!isSequenceLike) {
+            // Non-sequence base: only warn when index looks tuple-shaped
+            // (e.g. `[{1, 2} [i, j]]` — index is a tuple of two names).
+            // A bare Name or single literal index could be a legitimate
+            // hashable lookup the user is just expressing oddly.
+            if (!dynamic_cast<const TupleLiteralNode*>(index)) return false;
+            msg = "'" + ty + "' object is not subscriptable; perhaps you missed a comma?";
+        } else {
+            // Sequence base + index is Tuple/Slice/Name → already handled.
+            return false;
         }
+        int line = sub->line > 0 ? sub->line : 1;
+        return env->emitSyntaxWarning(ctx_, msg, filename_, line);
     }
     return false;
 }
