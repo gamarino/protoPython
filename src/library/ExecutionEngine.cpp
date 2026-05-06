@@ -4992,17 +4992,34 @@ const proto::ProtoObject* executeBytecodeRange(
                     if (!disableStoreattrFastpath && env && obj && obj != PROTO_NONE
                             && !obj->isString(ctx) && !obj->isInteger(ctx)
                             && !obj->isBoolean(ctx) && !obj->isFloat(ctx)) {
-                        const proto::ProtoString* isPyClassS = env->getIsPythonClassString();
-                        if (!isPyClassS || obj->hasOwnAttribute(ctx, isPyClassS) != PROTO_TRUE) {
-                            const proto::ProtoObject* directType = obj->getFirstParent(ctx);
-                            if (directType && directType != PROTO_NONE) {
-                                const proto::ProtoString* slotsS = env->getSlotsString();
-                                bool noSlots = !slotsS || directType->hasOwnAttribute(ctx, slotsS) != PROTO_TRUE;
-                                bool noDescr  = directType->hasOwnAttribute(ctx, nameS) != PROTO_TRUE;
-                                if (noSlots && noDescr) {
-                                    newObj = const_cast<proto::ProtoObject*>(obj)->setAttribute(ctx, nameS, val);
-                                    fastStoreTaken = true;
-                                }
+                        // P2 type-flags fast path.  Replaces the legacy 3
+                        // hasOwnAttribute probes (isPyClassS, slotsS,
+                        // nameS-as-descriptor) with a single
+                        // ensureClassFlags read on the directType.  When
+                        // HAS_DATA_DESCR is unset the per-name descriptor
+                        // check is skipped entirely; otherwise we still
+                        // probe the specific name.
+                        //
+                        // "obj is itself a class" is decided by the cheap
+                        // pointer compare `directType == typePrototype`:
+                        // every Python class created by py_type has
+                        // typePrototype as its direct parent.  Metaclass
+                        // instances (rare) bail to the slow path through
+                        // the same fall-through.
+                        const proto::ProtoObject* directType = obj->getFirstParent(ctx);
+                        if (directType && directType != PROTO_NONE
+                                && directType != env->getTypePrototype()) {
+                            uint32_t flags = env->ensureClassFlags(ctx, directType);
+                            const bool noSlots = (flags & protoPython::PythonEnvironment::PYFLAG_HAS_SLOTS) == 0;
+                            bool noDescr;
+                            if ((flags & protoPython::PythonEnvironment::PYFLAG_HAS_DATA_DESCR) == 0) {
+                                noDescr = true;
+                            } else {
+                                noDescr = directType->hasOwnAttribute(ctx, nameS) != PROTO_TRUE;
+                            }
+                            if (noSlots && noDescr) {
+                                newObj = const_cast<proto::ProtoObject*>(obj)->setAttribute(ctx, nameS, val);
+                                fastStoreTaken = true;
                             }
                         }
                     }

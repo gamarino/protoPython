@@ -435,6 +435,38 @@ public:
     const proto::ProtoString* getIsSuperProxyString() const { return isSuperProxyString; }
     const proto::ProtoString* getPyGetAttrHandlerString() const { return pyGetAttrHandlerString_; }
     const proto::ProtoString* getIsPythonClassString() const { return isPythonClassString; }
+
+    /**
+     * P2 type flags cache (May 2026).
+     *
+     * Per-class precomputed bitset answering the four most common protoCore
+     * walks every LOAD_ATTR / STORE_ATTR fast path needs:
+     *
+     *   bit 0  IS_PYTHON_CLASS    obj is itself a class object
+     *   bit 1  HAS_SLOTS          class declares __slots__
+     *   bit 2  HAS_DATA_DESCR     any attr in MRO defines __set__ or __delete__
+     *   bit 3  HAS_GET_DESCR      any attr in MRO defines __get__
+     *   bit 31 COMPUTED           sentinel — distinguishes "all flags zero,
+     *                             already computed" from "never computed"
+     *
+     * The flags are stored as a SmallInt own-attribute keyed by
+     * `__pyflags__` on each class.  First read computes; subsequent reads
+     * are a single getOwnAttributeDirect (cached) — same cost as today's
+     * isPythonClass / slots / descriptor probes, but covering all four
+     * answers in one shot.  See ensureClassFlags / fastClassFlags below.
+     */
+    static constexpr uint32_t PYFLAG_IS_CLASS       = 1u << 0;
+    static constexpr uint32_t PYFLAG_HAS_SLOTS      = 1u << 1;
+    static constexpr uint32_t PYFLAG_HAS_DATA_DESCR = 1u << 2;
+    static constexpr uint32_t PYFLAG_HAS_GET_DESCR  = 1u << 3;
+    static constexpr uint32_t PYFLAG_COMPUTED       = 1u << 31;
+
+    /** Fast read of cached flags; returns 0 when not yet computed. */
+    uint32_t fastClassFlags(proto::ProtoContext* ctx, const proto::ProtoObject* cls) const;
+
+    /** Compute (if absent) and return cached flags for `cls`. */
+    uint32_t ensureClassFlags(proto::ProtoContext* ctx, const proto::ProtoObject* cls);
+
     const proto::ProtoString* getGetattrDunderString() const { return getattrDunderString; }
     const proto::ProtoString* getGetattributeDunderString() const { return getattributeDunderString; }
     const proto::ProtoString* getInitString() const { return initString; }
@@ -1066,6 +1098,7 @@ private:
     // collapse to a single hasOwnAttribute call on the hot path
     // (Phase 4 of the protoCore-delegation design).
     const proto::ProtoString* isPythonClassString{nullptr};
+    const proto::ProtoString* pyFlagsString_{nullptr};  // P2: type flags cache key
 
     const proto::ProtoString* enumProtoS{nullptr};
     const proto::ProtoString* revProtoS{nullptr};
