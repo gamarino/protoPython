@@ -1357,6 +1357,13 @@ bool Compiler::compileFor(ForNode* n) {
 
 bool Compiler::compileBreak(BreakNode* n) {
     if (loopStack_.empty()) return false;
+    // When this break is being compiled INSIDE a finally body that the
+    // compiler is replaying for a pending `return`, the return value
+    // is sitting on the operand stack.  Discard it before redirecting
+    // — break suppresses the return per CPython semantics, and leaving
+    // the value behind would corrupt the surrounding loop's iterator
+    // (FOR_ITER pops what it thinks is the iter on the next iteration).
+    for (int i = 0; i < returnUnwindDepth_; ++i) emit(OP_POP_TOP, 0);
     if (!unwindBlocks(true)) return false;
     if (loopStack_.back().hasIterator) {
         emit(OP_POP_TOP, 0);
@@ -1368,6 +1375,9 @@ bool Compiler::compileBreak(BreakNode* n) {
 
 bool Compiler::compileContinue(ContinueNode* n) {
     if (loopStack_.empty()) return false;
+    // Same rationale as compileBreak: discard any pending return value
+    // when continuing out of a finally compiled for `return`.
+    for (int i = 0; i < returnUnwindDepth_; ++i) emit(OP_POP_TOP, 0);
     if (!unwindBlocks(true)) return false;
     emit(OP_JUMP_ABSOLUTE, loopStack_.back().start * 2);
     return true;
@@ -1899,7 +1909,7 @@ bool Compiler::compileGeneratorExp(GeneratorExpNode* n) {
     const proto::ProtoObject* codeObj = makeCodeObject(ctx_, 
         bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), 
         PythonEnvironment::getInternedString(ctx_, filename_.c_str()), 
-        co_varnames, 1, 0, static_cast<int>(orderedLocals.size()) + bodyCompiler.getMaxStack() + 32,
+        co_varnames, 1, 0, static_cast<int>(orderedLocals.size()) + bodyCompiler.getMaxStack() + 128,
         flags, true,
         PythonEnvironment::getInternedString(ctx_, "<genexpr>"),
         bodyCompiler.getFirstLine(), bodyCompiler.getLnotab());
@@ -3898,7 +3908,7 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
     }
 
     if (!bodyCompiler.compileNode(n->body.get())) return false;
-    if (!forceMapped) automatic_count += bodyCompiler.getMaxStack() + 32;
+    if (!forceMapped) automatic_count += bodyCompiler.getMaxStack() + 128;
 
     int noneIdx = bodyCompiler.addConstant(PROTO_NONE);
     bodyCompiler.emit(OP_LOAD_CONST, noneIdx);
@@ -4105,7 +4115,7 @@ bool Compiler::compileLambda(LambdaNode* n) {
     if (!bodyCompiler.compileNode(n->body.get())) return false;
     bodyCompiler.emit(OP_RETURN_VALUE);
     bodyCompiler.applyPatches();
-    if (!forceMapped) automatic_count += bodyCompiler.getMaxStack() + 32;
+    if (!forceMapped) automatic_count += bodyCompiler.getMaxStack() + 128;
 
     std::vector<const proto::ProtoObject*> varnamesVec;
     varnamesVec.reserve(varnamesOrdered.size());
@@ -4267,7 +4277,7 @@ bool Compiler::compileAsyncFunctionDef(AsyncFunctionDefNode* n) {
     bodyCompiler.emit(OP_RETURN_VALUE);
 
     bodyCompiler.applyPatches();
-    if (!forceMapped) automatic_count += bodyCompiler.getMaxStack() + 32;
+    if (!forceMapped) automatic_count += bodyCompiler.getMaxStack() + 128;
 
     std::vector<const proto::ProtoObject*> varnamesVec;
     varnamesVec.reserve(varnamesOrdered.size());
@@ -4838,7 +4848,14 @@ bool Compiler::unwindBlocks(bool isLoopExit, bool hasValueOnStack) {
             emit(OP_POP_BLOCK);
             if (env.cleanupNode) {
                 env.unwinding = true;
+                // hasValueOnStack=true ⇒ we're unwinding for `return`,
+                // and the pending return value sits beneath whatever
+                // the finally body builds.  Track the nesting depth so
+                // any break/continue inside the recursively compiled
+                // finally pops the pending value before redirecting.
+                if (hasValueOnStack) returnUnwindDepth_++;
                 bool ok = compileNode(env.cleanupNode);
+                if (hasValueOnStack) returnUnwindDepth_--;
                 env.unwinding = false;
                 if (!ok) return false;
             }

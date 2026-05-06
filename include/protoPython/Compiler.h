@@ -169,6 +169,17 @@ private:
     };
     std::vector<BlockEnv> blockEnvStack_;
     bool unwindBlocks(bool isLoopExit, bool hasValueOnStack = false);
+
+    // Counter incremented while unwindBlocks is recursively compiling a
+    // finally body for a `return` (i.e. with the pending return value
+    // sitting on the operand stack).  If a break/continue inside that
+    // finally redirects control to a loop, the pending value must be
+    // discarded before the JUMP — otherwise FOR_ITER on the next loop
+    // iteration sees the return value instead of the loop iterator.
+    // This tracks the nesting so nested return-unwinds (try/finally
+    // inside another try/finally) compose correctly.  See
+    // test_grammar.test_control_flow_in_finally Hard1/Hard4 cases.
+    int returnUnwindDepth_ = 0;
     
     struct LoopInfo {
         int start;
