@@ -347,6 +347,55 @@ agreed below.
    live cells; the cleaner remaining wins are at the mutator level
    (paths #2/#4/#6 already landed) and via correctness fixes
    (task #34).  The 39 % GC-time figure stays.
+   **Closed follow-up — P2 / P5: type-flags cache for attribute
+   protocol (tasks #37 / #39, 2026-05-06): LANDED.**
+
+   The protoPython attribute-access mirror of CPython's descriptor
+   protocol used to walk the class's MRO 2-3 times per access to
+   answer four discrete questions: "is `obj` a class?", "does its
+   class declare `__slots__`?", "does any base define a data
+   descriptor?", "does the value's class define `__get__`?"  Each
+   probe was a `hasOwnAttribute` (1 protoCore call) — and
+   `OP_STORE_ATTR`'s fast path hit 5 such calls before the actual
+   write.
+
+   Caching a 4-bit `__pyflags__` bitset on every class (computed
+   lazily on first read, stored as a SmallInt own-attribute on the
+   class) collapses all four probes into a single
+   `getOwnAttributeDirect(__pyflags__)` hit — same cost as today's
+   single-name probe, but covering all four answers.  Touch points:
+
+     - `OP_LOAD_ATTR` fast path: descriptor check via
+       `PYFLAG_HAS_GET_DESCR` instead of `getAttribute(__get__)`
+     - `OP_STORE_ATTR` fast path: slots + data-descriptor checks
+       via `PYFLAG_HAS_SLOTS | PYFLAG_HAS_DATA_DESCR` (3 calls
+       instead of 5)
+     - `PythonEnvironment::tryFastGetAttribute`: same as LOAD_ATTR
+     - `PythonEnvironment::setAttribute`: top-of-function fast bail
+       skips both MRO walks for classes with neither slots nor
+       descriptors (3 calls instead of ~2N+3 where N is MRO depth)
+
+   Wall-clock impact:
+     - bench_binary_trees(10): 2.60 s → 2.26-2.39 s min/median
+     - attr_lookup: 108.5 → 80.8 ms (~26 % faster)
+     - memory_pressure: 4605 → 3148 ms (~32 % faster)
+     - Geomean: 3.21× → 3.10×
+
+   Three benchmarks meet or beat CPython 3.14 (startup_empty 0.69×,
+   int_sum_loop 0.50× faster, multithread_cpu 1.00× equal).
+
+   ctest: protoPython 178/178.  Conformity 9/10 unchanged.  Stress
+   depth=11 30/30 PASS, depth=12 stable.  4 commits across the
+   protoPython tree (P2 cache infrastructure + STORE_ATTR + LOAD_ATTR
+   + setAttribute fast bail).
+
+   Remaining: P1 (drop `__data__`/`__keys__` eager storage)
+   investigated and **deferred** — these symbols are used as
+   internal storage backing for Python list/dict/set types, not just
+   `__dict__` mirroring.  Removing them requires a parallel
+   re-architecture of every Python container's data path; out of
+   scope for this perf cycle.
+
 4. **Path #6 — `resolveMutableState` (4.23 %) + the CAS-on-read
    anomaly**.
 

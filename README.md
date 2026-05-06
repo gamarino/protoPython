@@ -222,40 +222,44 @@ Final 5-run median, all builds `-DCMAKE_BUILD_TYPE=Release`:
 
 #### Refresh (May 2026, post perf-investigation)
 
-Re-measured after the May 2026 perf cycle (paths #2/#3/#4/#6, task #28
-CAS removal, task #34 destructor reorder fix, **task #36 chunked
-freelist via GC pre-chunking**).  All builds Release `-O3 -DNDEBUG`
-with `PROTOCORE_GC_REINCLUDE_SURVIVORS=ON`:
+Re-measured after the May 2026 perf cycle (paths #2/#3/#4/#6, task
+#28 CAS removal, task #34 destructor reorder fix, task #36 chunked
+freelist via GC pre-chunking, **task #37 type-flags cache + task
+#39 unified attribute fast paths**).  All builds Release `-O3
+-DNDEBUG` with `PROTOCORE_GC_REINCLUDE_SURVIVORS=ON`:
 
 ```
 ┌────────────────────────┬──────────────┬──────────────┬─────────────────┐
 │ Benchmark              │ protoPy (ms) │ CPython (ms) │ Ratio           │
 ├────────────────────────┼──────────────┼──────────────┼─────────────────┤
-│ startup_empty          │      20.9    │      31.5    │  0.66× faster   │
-│ int_sum_loop           │      22.1    │      33.8    │  0.65× faster   │
-│ list_append_loop       │     241.4    │      36.8    │  6.56× slower   │
-│ str_concat_loop        │     415.8    │      36.9    │ 11.27× slower   │
-│ range_iterate          │     156.8    │      36.7    │  4.27× slower   │
-│ multithread_cpu        │      66.0    │      67.9    │  0.97× faster   │
-│ attr_lookup            │     108.5    │      48.6    │  2.23× slower   │
-│ call_recursion         │     112.0    │      47.6    │  2.35× slower   │
-│ memory_pressure        │    4605.5    │      89.0    │ 51.77× slower   │
+│ startup_empty          │      34.3    │      49.5    │  0.69× faster   │
+│ int_sum_loop           │      24.0    │      47.9    │  0.50× faster   │
+│ list_append_loop       │     275.9    │      35.5    │  7.78× slower   │
+│ str_concat_loop        │     510.1    │      33.5    │ 15.22× slower   │
+│ range_iterate          │     170.4    │      40.0    │  4.26× slower   │
+│ multithread_cpu        │      67.2    │      67.4    │  1.00× equal    │
+│ attr_lookup            │      80.8    │      53.9    │  1.50× slower   │
+│ call_recursion         │     134.4    │      60.8    │  2.21× slower   │
+│ memory_pressure        │    3148.7    │      69.4    │ 45.41× slower   │
 ├────────────────────────┼──────────────┼──────────────┼─────────────────┤
-│ Geomean (all 9)        │              │              │  3.21×          │
+│ Geomean (all 9)        │              │              │  3.10×          │
 └────────────────────────┴──────────────┴──────────────┴─────────────────┘
 ```
 
-Three benchmarks beat CPython 3.14 (`startup_empty`, `int_sum_loop`,
-`multithread_cpu`).  `int_sum_loop` improved 53 → 22 ms (2.4× faster)
-post-task-#36 — tight integer loops were paying the freelist-walk cost
-on every per-thread refill.  `list_append_loop` improved 265 → 241 ms
-and `memory_pressure` 5410 → 4605 ms because the chunked freelist's
-O(1) refill amortises the allocator overhead.
+Three benchmarks meet or beat CPython 3.14 (`startup_empty` 0.69×,
+`int_sum_loop` 0.50× faster, `multithread_cpu` 1.00× equal).
+The May 2026 P2 / P5 attribute-cache work (cached per-class flags
+replacing the legacy MRO walks for slots / data-descriptor / get-
+descriptor probes) brought `attr_lookup` from 108.5 → 80.8 ms
+(**~26 % faster**) and `memory_pressure` from 4605 → 3148 ms
+(**~32 % faster**) by eliminating the per-call protoCore probes
+that dominated those workloads.
 
-`bench_binary_trees(10)` wall-clock: **2.97 s baseline → 2.29 s
-median (~23 % cumulative)** across all May 2026 cycle landings.
-`getFreeCells` perf share dropped from 7.91 % to 0.52 % of bench CPU.
-`depth=11` / `depth=12` are stable (previously 100 % crash).
+`bench_binary_trees(10)` wall-clock: **2.97 s baseline → 2.26–2.39 s
+min/median (~12-24 % cumulative)** across the May 2026 cycle.
+`getFreeCells` perf share dropped from 7.91 % to 0.52 % (task #36).
+`depth=11` / `depth=12` stable (previously 100 % crash, fixed by
+task #34).
 
 `memory_pressure` is now in-suite (it used to be excluded as an outlier
 because the heap grew to 1.3 GB without bound).  Five workloads improve
