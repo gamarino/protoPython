@@ -3132,7 +3132,7 @@ const proto::ProtoObject* executeBytecodeRange(
             bool pushNull = (arg & 0x01);
             if (names && frame && static_cast<unsigned long>(nameIdx) < names->getSize(ctx)) {
                 const proto::ProtoObject* nameObj = names->getAt(ctx, nameIdx);
-                if (nameObj->isString(ctx)) {
+                if (proto::ProtoObject::isStringTagFast(nameObj)) {
                     const proto::ProtoString* nameS = nameObj->asString(ctx);
 
                     const proto::ProtoObject* val = nullptr;
@@ -3237,7 +3237,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 const proto::ProtoObject* nameObj = names->getAt(ctx, nameIdx);
                 const proto::ProtoObject* val = stack.back();
                 // Delay pop until done
-                if (nameObj->isString(ctx)) {
+                if (proto::ProtoObject::isStringTagFast(nameObj)) {
                     bool handledBySetitem = false;
                     const proto::ProtoString* nS = nameObj->asString(ctx);
                     if (env) {
@@ -3342,7 +3342,7 @@ const proto::ProtoObject* executeBytecodeRange(
                     const proto::ProtoTuple* vt = varnamesObj ? varnamesObj->asTuple(ctx) : nullptr;
                     if (vt && static_cast<unsigned long>(arg) < vt->getSize(ctx)) {
                         const proto::ProtoObject* nameObj = vt->getAt(ctx, arg);
-                        if (nameObj && nameObj->isString(ctx)) {
+                        if (nameObj && proto::ProtoObject::isStringTagFast(nameObj)) {
                             nameObj->asString(ctx)->toUTF8String(ctx, nStr);
                         }
                     }
@@ -4036,7 +4036,7 @@ const proto::ProtoObject* executeBytecodeRange(
                                     env->clearPendingException();
                                 break;
                             }
-                            if (nameObj->isString(ctx)) {
+                            if (proto::ProtoObject::isStringTagFast(nameObj)) {
                                 const proto::ProtoString* nameS = nameObj->asString(ctx);
                                 const proto::ProtoObject* val = mod->getAttribute(ctx, nameS);
                                 if (val) {
@@ -4054,7 +4054,7 @@ const proto::ProtoObject* executeBytecodeRange(
                         const proto::ProtoListIterator* it = keysList->getIterator(ctx);
                         while (it && it->hasNext(ctx)) {
                             const proto::ProtoObject* nameObj = it->next(ctx);
-                            if (nameObj && nameObj->isString(ctx)) {
+                            if (nameObj && proto::ProtoObject::isStringTagFast(nameObj)) {
                                 std::string n;
                                 nameObj->asString(ctx)->toUTF8String(ctx, n);
                                 if (n.empty() || n[0] == '_') {
@@ -4114,7 +4114,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 const proto::ProtoObject* mod = stack.back();
                 const proto::ProtoObject* nameObj = names->getAt(ctx, nameIdx);
                 
-                if (nameObj->isString(ctx)) {
+                if (proto::ProtoObject::isStringTagFast(nameObj)) {
                     const proto::ProtoString* nameS = nameObj->asString(ctx);
                     const proto::ProtoObject* val = (env) 
                         ? env->getAttribute(ctx, mod, nameS) 
@@ -4511,7 +4511,7 @@ const proto::ProtoObject* executeBytecodeRange(
         case OP_LOAD_DEREF: {
             if (names && frame && static_cast<unsigned long>(arg) < names->getSize(ctx)) {
                 const proto::ProtoObject* nameObj = names->getAt(ctx, arg);
-                if (nameObj && nameObj->isString(ctx)) {
+                if (nameObj && proto::ProtoObject::isStringTagFast(nameObj)) {
                     const proto::ProtoString* nameS = nameObj->asString(ctx);
                     unsigned long h = nameObj->getHash(ctx);
                     if (diag_local) {
@@ -4605,7 +4605,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 const proto::ProtoObject* val = stack.back();
                 stack.pop_back();
                 const proto::ProtoObject* nameObj = names->getAt(ctx, arg);
-                if (nameObj && nameObj->isString(ctx)) {
+                if (nameObj && proto::ProtoObject::isStringTagFast(nameObj)) {
                     const proto::ProtoString* nameS = nameObj->asString(ctx);
                     unsigned long h = nameObj->getHash(ctx);
                     
@@ -4689,7 +4689,7 @@ const proto::ProtoObject* executeBytecodeRange(
             if (names && stack.size() >= 1 && static_cast<unsigned long>(nameIdx) < names->getSize(ctx)) {
                 const proto::ProtoObject* obj = stack.back();
                 const proto::ProtoObject* nameObj = names->getAt(ctx, nameIdx);
-                if (nameObj->isString(ctx)) {
+                if (proto::ProtoObject::isStringTagFast(nameObj)) {
                     const proto::ProtoString* attrName = nameObj->asString(ctx);
                     if (diag_local) {
                         std::string attrNameStr;
@@ -4963,7 +4963,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 const proto::ProtoObject* val = stack[stack.top - 2];
                 // Delay pop
                 const proto::ProtoObject* nameObj = names->getAt(ctx, nameIdx);
-                if (nameObj->isString(ctx)) {
+                if (proto::ProtoObject::isStringTagFast(nameObj)) {
                     const proto::ProtoString* nameS = nameObj->asString(ctx);
                     proto::ProtoObject* oldObj = const_cast<proto::ProtoObject*>(obj);
                     const proto::ProtoObject* newObj = nullptr;
@@ -5828,7 +5828,7 @@ const proto::ProtoObject* executeBytecodeRange(
                             unsigned int outerNSlots = ctx->getAutomaticLocalsCount();
                             for (unsigned int j = 0; j < coVarnames->getSize(ctx); ++j) {
                                 const proto::ProtoObject* vnameObj = coVarnames->getAt(ctx, j);
-                                if (vnameObj && vnameObj->isString(ctx)) {
+                                if (proto::ProtoObject::isStringTagFast(vnameObj)) {
                                     const proto::ProtoString* vname = vnameObj->asString(ctx);
                                     // Cell semantics: when the outer stores its locals on
                                     // `frame` as own attributes (forceMapped path), do NOT
@@ -6649,7 +6649,7 @@ const proto::ProtoObject* executeBytecodeRange(
                     nameS = n ? n->asString(ctx) : nullptr;
                 } else if (names && static_cast<unsigned long>(nameIdx) < names->getSize(ctx)) {
                     const proto::ProtoObject* nameObj = names->getAt(ctx, nameIdx);
-                    if (nameObj && nameObj->isString(ctx))
+                    if (nameObj && proto::ProtoObject::isStringTagFast(nameObj))
                         nameS = nameObj->asString(ctx);
                 }
                 if (nameS && env) {
@@ -6689,7 +6689,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 const proto::ProtoObject* nameObj = names->getAt(ctx, nameIdx);
                 const proto::ProtoObject* val = stack.back();
                 stack.pop_back();
-                if (nameObj->isString(ctx)) {
+                if (proto::ProtoObject::isStringTagFast(nameObj)) {
                     const proto::ProtoObject* globalsObj = PythonEnvironment::getCurrentGlobals();
                     if (!globalsObj) globalsObj = frame;
                     const proto::ProtoObject* newGlobals = globalsObj->setAttribute(ctx, nameObj->asString(ctx), val);
@@ -6818,7 +6818,7 @@ const proto::ProtoObject* executeBytecodeRange(
             // i++;
             if (frame) {
                 const proto::ProtoObject* nameObj = names->getAt(ctx, nameIdx);
-                if (nameObj && nameObj->isString(ctx)) {
+                if (nameObj && proto::ProtoObject::isStringTagFast(nameObj)) {
                     const proto::ProtoString* data_name = env ? env->getDataString() : protoPython::PythonEnvironment::getInternalString(ctx, "__data__");
                     const proto::ProtoObject* data = frame->getAttribute(ctx, data_name);
                     if (data && data->asSparseList(ctx)) {
@@ -6847,7 +6847,7 @@ const proto::ProtoObject* executeBytecodeRange(
                 stack.pop_back();
                 int nameIdx = arg >> 1;
                 const proto::ProtoObject* nameObj = names->getAt(ctx, nameIdx);
-                if (nameObj && nameObj->isString(ctx)) {
+                if (nameObj && proto::ProtoObject::isStringTagFast(nameObj)) {
                     const proto::ProtoString* nameS = nameObj->asString(ctx);
                     // PH: data-descriptor __delete__ on the type chain.
                     // Mirrors STORE_ATTR's data-descriptor short-circuit:
