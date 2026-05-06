@@ -252,6 +252,25 @@ Two benchmarks beat CPython 3.14 (`startup_empty` 0.64× faster,
 geomean from 3.21× → 2.85× (~11 % faster) and contracted variance
 across the suite.
 
+#### SmallSparseList (May 2026, downstream of protoCore)
+
+A new `ProtoSparseListSmallImplementation` cell type landed in protoCore
+late May 2026: sparse lists with ≤ 3 (key, value) pairs now fit in a
+single 64-byte Cell instead of allocating an AVL tree of nodes.  See
+`protoCore/README.md` for the design.
+
+For protoPython this auto-applies to every small instance dict (e.g.
+freshly created class instances with one or two attributes set, the
+`__class__` / `__dict__` slots before any user attribute is written,
+and short-lived helper objects).  The 178 protoPython tests stay
+green against the new protoCore (no API changes; the trampoline
+dispatches by pointer tag transparently).  A full benchmark refresh
+under the new protoCore is pending; the expected magnitude mirrors
+the protoJS function_calls win (~15 % on the closure-cell-heavy
+canary), most visible on `attr_lookup` and `call_recursion`, and
+neutral on the bandwidth-bound benches (`list_append_loop`,
+`str_concat_loop`).  Update will land with task #44 measurement.
+
 Highlights vs prior baseline (pre-May-2026 cycle):
 
   - `startup_empty`:    34.3 → 24.0 ms  (~30 % faster)
