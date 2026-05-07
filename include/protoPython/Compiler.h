@@ -143,6 +143,11 @@ private:
     bool isFunctionScope_ = false;
     bool isAsyncFunction_ = false;  // PC2: tracking for yield-from check (PEP 525)
     bool forceMapped_ = false;
+    /** Captured docstring of the function body, if its first statement is a
+     *  bare string literal. compileFunctionDef reads this after compiling
+     *  the body to stamp `co_doc` on the resulting code object so
+     *  `fn.__doc__` resolves correctly. Empty string ⇒ no docstring. */
+    std::string capturedDocstring_;
     /** The name of the immediately enclosing class, propagated to method compilers
      *  so that zero-argument super() can be rewritten to super(ClassName, self). */
     std::string currentClassName_;

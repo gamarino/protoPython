@@ -3453,6 +3453,16 @@ bool Compiler::compileSuite(SuiteNode* n) {
     if (!n) return false;
     if (n->statements.empty()) return true;
     for (size_t i = 0; i < n->statements.size(); ++i) {
+        // CPython: the first bare string literal of a function body is the
+        // docstring. Capture it BEFORE compileNode emits the LOAD_CONST so
+        // we can also stamp it onto the resulting code object as `co_doc`
+        // (read by ExecutionEngine when binding `fn.__doc__`).
+        if (isFunctionScope_ && !isClassBody_ && i == 0 && capturedDocstring_.empty()) {
+            auto* c = dynamic_cast<ConstantNode*>(n->statements[i].get());
+            if (c && c->constType == ConstantNode::ConstType::Str) {
+                capturedDocstring_ = c->strVal;
+            }
+        }
         if (!compileNode(n->statements[i].get())) return false;
         if (statementLeavesValue(n->statements[i].get())) {
             // In a class body, the first string literal expression becomes the docstring.
@@ -3932,6 +3942,13 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
 
     const proto::ProtoObject* codeObj = makeCodeObject(ctx_, bodyCompiler.getConstants(), bodyCompiler.getNames(), bodyCompiler.getBytecode(), PythonEnvironment::getInternedString(ctx_, filename_.c_str()), co_varnames_list, nparams, kwonlyargcount, automatic_count, co_flags, bodyCompiler.isGenerator_, PythonEnvironment::getInternedString(ctx_, n->name.c_str()), bodyCompiler.firstLine_, co_lnotab);
     if (!codeObj) return false;
+    // Stamp `co_doc` on the code object when the body's first statement was
+    // a string literal; ExecutionEngine reads it to populate `fn.__doc__`.
+    if (!bodyCompiler.capturedDocstring_.empty()) {
+        codeObj = codeObj->setAttribute(ctx_,
+            PythonEnvironment::getInternedString(ctx_, "co_doc"),
+            PythonEnvironment::getInternedString(ctx_, bodyCompiler.capturedDocstring_.c_str())->asObject(ctx_));
+    }
     int idx = addConstant(codeObj);
     emit(OP_LOAD_CONST, idx);
 

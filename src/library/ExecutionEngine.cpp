@@ -985,7 +985,21 @@ static proto::ProtoObject* createUserFunction(proto::ProtoContext* ctx, const pr
 
         fn = fn->setAttribute(ctx, dictS, emptyDict1);
         fn = fn->setAttribute(ctx, annS, emptyDict2);
-        fn = fn->setAttribute(ctx, docS, PROTO_NONE);
+        // Surface the function's docstring (the compiler stores it on the
+        // code object as `co_doc` when the body's first statement is a
+        // string literal). Default to None for non-docstring functions —
+        // we deliberately do NOT crawl co_consts here because protoPython
+        // shares constants across the body, so `def g(): return "abc"`
+        // would incorrectly inherit "abc" as its docstring.
+        const proto::ProtoObject* docVal = PROTO_NONE;
+        if (codeObj) {
+            const proto::ProtoString* coDocS = PythonEnvironment::getInternedString(ctx, "co_doc");
+            const proto::ProtoObject* docAttr = codeObj->getAttribute(ctx, coDocS);
+            if (docAttr && docAttr != PROTO_NONE && docAttr->isString(ctx)) {
+                docVal = docAttr;
+            }
+        }
+        fn = fn->setAttribute(ctx, docS, docVal);
         
         const proto::ProtoObject* modName = globalsFrame->getAttribute(ctx, env->getNameString());
         if (modName && modName != PROTO_NONE) {
