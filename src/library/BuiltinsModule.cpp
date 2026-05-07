@@ -3507,8 +3507,18 @@ static const proto::ProtoList* computeC3MRO(proto::ProtoContext* context, const 
                 }
             }
         } else {
-            // C3 failure (inconsistent MRO), just break or fallback
-            break; 
+            // C3 failure: no head can be linearised. CPython raises
+            // TypeError("Cannot create a consistent method resolution
+            // order (MRO) for bases ..."). Surface the same error so
+            // tests that intentionally construct a conflicting diamond
+            // (e.g. test_descr.test_diamond_inheritance's `class F(D,E)`)
+            // see the rejection.
+            PythonEnvironment* env = PythonEnvironment::fromContext(context);
+            if (env) {
+                std::string msg = "Cannot create a consistent method resolution order (MRO) for bases";
+                env->raiseTypeError(context, msg.c_str());
+            }
+            return nullptr;
         }
     }
     return result;
@@ -4210,10 +4220,14 @@ const proto::ProtoObject* py_type(
                 fflush(stderr);
             }
             mroList = computeC3MRO(context, targetClass, tupleBases->asObject(context));
+            // computeC3MRO returns null + raises TypeError when bases
+            // can't be linearised (conflicting diamond). Surface to caller.
+            if (!mroList) return nullptr;
             targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, PythonEnvironment::getInternedString(context, "__bases__"), basesArg));
         } else if (listBases) {
             const proto::ProtoObject* convTup = env ? env->newTuple(listBases) : context->newTupleFromList(listBases)->asObject(context);
             mroList = computeC3MRO(context, targetClass, convTup);
+            if (!mroList) return nullptr;
             targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, PythonEnvironment::getInternedString(context, "__bases__"), basesArg));
         } else {
             const proto::ProtoList* defaultBasesList = context->newList();
