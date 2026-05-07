@@ -3825,6 +3825,18 @@ const proto::ProtoObject* py_type(
             fflush(stderr);
         }
 
+        // CPython: `type(name, (), ns)` is equivalent to declaring an empty
+        // base list — the resulting class still inherits from `object`. If
+        // basesArg is an empty tuple/list, fall through to the default-bases
+        // branch so `__bases__` becomes `(object,)`. Without this,
+        // `types.new_class("C")` (which passes `bases=()`) produced a class
+        // with `__bases__ == ()`, breaking the loader for any code that
+        // walks the inheritance chain (test_types.test_new_class_*).
+        bool basesIsEmpty = false;
+        if (tupleBases && tupleBases->getSize(context) == 0) basesIsEmpty = true;
+        else if (listBases && listBases->getSize(context) == 0) basesIsEmpty = true;
+        if (basesIsEmpty) { tupleBases = nullptr; listBases = nullptr; }
+
         if (tupleBases) {
             if (get_env_diag()) {
                 fprintf(stderr, "DEBUG py_type: tupleBases size=%lu\n", tupleBases->getSize(context));
@@ -3850,8 +3862,11 @@ const proto::ProtoObject* py_type(
             const proto::ProtoObject* defaultBases = env ? env->newTuple(defaultBasesList) : context->newTupleFromList(defaultBasesList)->asObject(context);
 
             mroList = computeC3MRO(context, targetClass, defaultBases);
-            if (!basesArg || basesArg == PROTO_NONE) {
-            targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, PythonEnvironment::getInternedString(context, "__bases__"), defaultBases));
+            // Set __bases__ when unspecified OR when caller passed an empty
+            // tuple/list (basesIsEmpty path above). Both shapes mean
+            // "inherit from object" in CPython semantics.
+            if (!basesArg || basesArg == PROTO_NONE || basesIsEmpty) {
+                targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, PythonEnvironment::getInternedString(context, "__bases__"), defaultBases));
             }
         }
 
