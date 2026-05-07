@@ -24,6 +24,20 @@ static const proto::ProtoObject* sys_exit(
     return PROTO_NONE;
 }
 
+// PEP 217: sys.displayhook(value).  Interactive REPL hook that prints
+// `repr(value)` and rebinds `builtins._`.  protoPython runs scripts
+// non-interactively, so a no-op suffices for stdlib code that swaps
+// the hook in and out (doctest, IDLE, traceback).
+static const proto::ProtoObject* sys_displayhook(
+    proto::ProtoContext* context,
+    const proto::ProtoObject*,
+    const proto::ParentLink*,
+    const proto::ProtoList*,
+    const proto::ProtoSparseList*) {
+    (void)context;
+    return PROTO_NONE;
+}
+
 static const proto::ProtoObject* sys_settrace(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -423,6 +437,11 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "exit"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_exit));
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "settrace"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_settrace));
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "gettrace"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_gettrace));
+    {
+        const proto::ProtoObject* dh = ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_displayhook);
+        sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "displayhook"), dh);
+        sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__displayhook__"), dh);
+    }
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "getsizeof"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_getsizeof));
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_getframe"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_getframe));
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "setrecursionlimit"), ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_setrecursionlimit));
@@ -599,11 +618,27 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     sys = sys->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "last_traceback"), PROTO_NONE);
 
     // V75: Add stdin, stdout, stderr dummy objects
+    // Surface a TextIOWrapper-shaped attribute set so stdlib modules
+    // (doctest, logging, traceback) that probe `.encoding`, `.errors`,
+    // `.mode` etc. don't trip an AttributeError before reaching the
+    // simpler write/flush path.
     auto create_dummy_file = [&](int type) {
         const proto::ProtoObject* f = env && env->getObjectPrototype() ? env->getObjectPrototype()->newChild(ctx, true) : ctx->newObject(false);
         f = f->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "write"), ctx->fromMethod(const_cast<proto::ProtoObject*>(f), sys_file_write));
         f = f->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "flush"), ctx->fromMethod(const_cast<proto::ProtoObject*>(f), sys_file_flush));
         f = f->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_stream_type"), ctx->fromInteger(type));
+        f = f->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "encoding"),
+            PythonEnvironment::getInternedString(ctx, "utf-8")->asObject(ctx));
+        f = f->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "errors"),
+            PythonEnvironment::getInternedString(ctx, "strict")->asObject(ctx));
+        f = f->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "mode"),
+            PythonEnvironment::getInternedString(ctx, type == 0 ? "r" : "w")->asObject(ctx));
+        f = f->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "name"),
+            PythonEnvironment::getInternedString(ctx,
+                type == 0 ? "<stdin>" : (type == 1 ? "<stdout>" : "<stderr>"))->asObject(ctx));
+        f = f->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "closed"), PROTO_FALSE);
+        f = f->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "newlines"), PROTO_NONE);
+        f = f->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "buffer"), PROTO_NONE);
         return f;
     };
 

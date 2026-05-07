@@ -3433,6 +3433,59 @@ const proto::ProtoObject* py_uniontype_ror(
     return result ? result : PROTO_NONE;
 }
 
+// UnionType.__eq__: two UnionTypes are equal iff their __args__ are equal as
+// multisets (order-independent). Mirrors CPython's union_richcompare which
+// compares frozenset(self.__args__) == frozenset(other.__args__).
+const proto::ProtoObject* py_uniontype_eq(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList*) {
+    if (!positionalParameters || positionalParameters->getSize(context) < 1) return PROTO_FALSE;
+    const proto::ProtoObject* other = positionalParameters->getAt(context, 0);
+    if (self == other) return PROTO_TRUE;
+
+    std::vector<const proto::ProtoObject*> aArgs;
+    std::vector<const proto::ProtoObject*> bArgs;
+    if (!unionFlattenInto(context, self, aArgs)) return PROTO_FALSE;
+    if (!unionFlattenInto(context, other, bArgs)) return PROTO_FALSE;
+    if (aArgs.size() != bArgs.size()) return PROTO_FALSE;
+
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    std::vector<bool> matched(bArgs.size(), false);
+    for (auto* a : aArgs) {
+        bool found = false;
+        for (size_t i = 0; i < bArgs.size(); ++i) {
+            if (matched[i]) continue;
+            const proto::ProtoObject* eq = env
+                ? env->compareObjects(context, a, bArgs[i], 0 /* Py_EQ */)
+                : (a == bArgs[i] ? PROTO_TRUE : PROTO_FALSE);
+            if (eq == PROTO_TRUE) { matched[i] = true; found = true; break; }
+        }
+        if (!found) return PROTO_FALSE;
+    }
+    return PROTO_TRUE;
+}
+
+// UnionType.__hash__: XOR of element hashes — commutative, so order does not
+// affect the result. Matches CPython's union_hash which hashes frozenset(args).
+const proto::ProtoObject* py_uniontype_hash(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList*,
+    const proto::ProtoSparseList*) {
+    std::vector<const proto::ProtoObject*> args;
+    if (!unionFlattenInto(context, self, args)) return context->fromLong(0);
+    long h = 0;
+    for (auto* a : args) {
+        if (!a) continue;
+        h ^= static_cast<long>(a->getHash(context));
+    }
+    return context->fromLong(h);
+}
+
 const proto::ProtoObject* py_uniontype_repr(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -6074,6 +6127,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     unionTypeProto = unionTypeProto->setAttribute(ctx, pEnv->getReprString(), ctx->fromMethod(nullptr, py_uniontype_repr));
     unionTypeProto = unionTypeProto->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__or__"), ctx->fromMethod(nullptr, py_uniontype_or));
     unionTypeProto = unionTypeProto->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__ror__"), ctx->fromMethod(nullptr, py_uniontype_ror));
+    unionTypeProto = unionTypeProto->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__eq__"), ctx->fromMethod(nullptr, py_uniontype_eq));
+    unionTypeProto = unionTypeProto->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__hash__"), ctx->fromMethod(nullptr, py_uniontype_hash));
     pEnv->setUnionTypeProto(unionTypeProto);
 
     return builtins;
