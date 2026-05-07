@@ -6163,7 +6163,52 @@ const proto::ProtoObject* executeBytecodeRange(
                         i = next_i;
                         continue;
                     }
-                    stack.push_back(nsObj); 
+                    // CPython: __prepare__ must return a mapping. Detect
+                    // None / non-mapping returns and raise TypeError with
+                    // CPython's exact message format. The duck-typed mapping
+                    // check is callable `keys` attr; same predicate as
+                    // dict()/MappingProxyType() use elsewhere.
+                    bool isMapping = (nsObj && nsObj != PROTO_NONE);
+                    if (isMapping) {
+                        // Reject obvious non-mappings.
+                        if (nsObj->asList(ctx) || nsObj->asTuple(ctx) ||
+                            nsObj->isString(ctx) || nsObj->isInteger(ctx) ||
+                            nsObj->isDouble(ctx) || nsObj->isBoolean(ctx)) {
+                            isMapping = false;
+                        } else if (env) {
+                            const proto::ProtoString* keysS = PythonEnvironment::getInternedString(ctx, "keys");
+                            const proto::ProtoObject* keysM = env->getAttribute(ctx, nsObj, keysS, false);
+                            if (!keysM || keysM == PROTO_NONE) isMapping = false;
+                        }
+                    }
+                    if (!isMapping) {
+                        std::string mcName = "<metaclass>";
+                        if (env && metaclass) {
+                            // Only use the metaclass __name__ when metaclass is
+                            // a real type (carries __mro__ as OWN). An instance
+                            // used as a metaclass inherits __mro__ from its
+                            // class via the prototype chain, so an OWN check is
+                            // required to distinguish.
+                            bool isType = (metaclass->hasOwnAttribute(ctx, env->getMroString()) == PROTO_TRUE);
+                            if (isType) {
+                                const proto::ProtoObject* mcN = metaclass->getAttribute(ctx, env->getNameString());
+                                if (mcN && mcN->isString(ctx)) mcN->asString(ctx)->toUTF8String(ctx, mcName);
+                            }
+                        }
+                        std::string returnedTypeName = "NoneType";
+                        if (env && nsObj && nsObj != PROTO_NONE) {
+                            const proto::ProtoObject* cls = env->getType(ctx, nsObj);
+                            if (cls) {
+                                const proto::ProtoObject* nm = cls->getAttribute(ctx, env->getNameString());
+                                if (nm && nm->isString(ctx)) nm->asString(ctx)->toUTF8String(ctx, returnedTypeName);
+                            }
+                        }
+                        std::string msg = mcName + ".__prepare__() must return a mapping, not " + returnedTypeName;
+                        if (env) env->raiseTypeError(ctx, msg.c_str());
+                        i = next_i;
+                        continue;
+                    }
+                    stack.push_back(nsObj);
                 } else {
                     stack.push_back(ctx->newObject(true));
                 }
