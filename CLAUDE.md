@@ -82,3 +82,58 @@ When you add code that captures a `ProtoObject*` into a C++ lambda registered wi
 1. Identify every `ProtoObject*` in the lambda's capture list.
 2. For each, point at where it was either pinned via `rootSet->add(...)` or proven to be perpetual.
 3. If neither, the lambda has a latent use-after-free — fix it.
+
+## Synchronous GC root discipline for native trampolines
+
+Native C functions implemented under `src/library/` (any `py_*` callable registered as a method on a prototype, plus the bytecode opcode handlers in `ExecutionEngine.cpp`) hold `ProtoObject*` values in C++ stack locals. The protoCore GC traces operand stacks, ContextScope automatic locals, ProtoRootSet entries — but **not** raw C++ stack memory. Any `ProtoObject*` you keep in a local across an operation that may trigger GC is a candidate UAF.
+
+Operations that may trigger GC:
+
+- `env->iter(x)`, `env->next(it)`, `env->callObject(fn, args)` — they run user code (`__iter__`/`__next__`/the user function) that may allocate freely.
+- `invokePythonCallable(...)` and any user-method dispatch via `asMethod(...)`.
+- `env->getAttribute(obj, name)` when the attribute is a property (it runs the descriptor `__get__`).
+- `obj->setAttribute(ctx, name, value)` when the object is mutable (it allocates a new SparseList tree).
+- Building cells: `ctx->newList()`, `ctx->newSparseList()`, `ctx->newTuple*`, `new(ctx) Whatever`, etc.
+
+The standard helper is `protoPython::PythonEnvironment::TransientPin` (defined in `include/protoPython/PythonEnvironment.h`). RAII, panic-safe, one-line use:
+
+```cpp
+const proto::ProtoObject* it = env->iter(iterable);
+PythonEnvironment::TransientPin pinIt(env, it);
+for (;;) {
+    const proto::ProtoObject* item = env->next(it);
+    if (!item) break;
+    // also pin item if you hold it across another callback:
+    PythonEnvironment::TransientPin pinItem(env, item);
+    const proto::ProtoObject* result = env->callObject(func, {item});
+    // process result...
+}
+// pinIt destructor releases the pin here (also on early return / exception)
+```
+
+### Code-review checklist
+
+For every native function you write or modify, answer:
+
+| Question | If "yes" |
+|---|---|
+| Does it call `env->iter` / `env->next`? | Pin the iterator across the loop. |
+| Does it call `env->callObject` or `invokePythonCallable`? | Pin every `ProtoObject*` argument and the running result. |
+| Does it loop calling user code, holding an accumulator? | Pin the accumulator each iteration. |
+| Does it call user `__getitem__` / `__contains__` / etc.? | Pin the receiver if it's only on the C++ stack. |
+| Is the value reachable via the args list (which `invokeCallable` already pins)? | No additional pin needed. |
+| Is the value reachable via the operand stack (peek-only opcode like `OP_FOR_ITER`)? | No additional pin needed. |
+
+### Anti-patterns specific to native functions
+
+- **Retaining a ProtoObject* across a C++ lambda or std::function callback** without an explicit pin. Same as the async patterns above; treat lambdas as escape boundaries.
+- **`env->iter(x)` on a non-pinned x** — for built-in containers `iter()` returns a NEW iterator distinct from `x`, so even if x is pinned by the args list, the iterator is separate and needs its own pin. (Generators are an exception: `iter(gen) == gen`, so pinning the args list is enough — but uniformly applying TransientPin doesn't hurt.)
+- **Building an iterator inside one branch and using it in another** without lifting the pin to cover both branches.
+
+### Where the discipline already lives
+
+- `invokeCallable` (`ExecutionEngine.cpp`): pins `args` for the duration of every native asMethod call.
+- `py_str_join`, `py_reduce` (functools), `py_filter_next`, `py_map_next`, `py_mutable_mapping_update`, `py_mapping_keys`/`items`, deque init: pin their derived iterators.
+- `OP_LIST_EXTEND`, `OP_UNPACK_SEQUENCE`, `OP_UNPACK_EX`: pin their internal iterators.
+
+When adding a new native trampoline that iterates or callbacks, follow the same pattern. Audit `tasks/audit/03-gc-roots.md` lists every site we know about; add yours there if you discover a new one.

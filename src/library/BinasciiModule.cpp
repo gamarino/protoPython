@@ -273,6 +273,20 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     mod = const_cast<proto::ProtoObject*>(mod->setAttribute(ctx,
         proto::ProtoString::createSymbol(ctx, "crc32"),
         ctx->fromMethod(mod, py_crc32)));
+    // binascii.Error — CPython makes this a subclass of ValueError. We
+    // alias it directly to ValueError so `except binascii.Error` and
+    // `raise binascii.Error('...')` from base64.py both work without
+    // pulling in a separate exception class. ValueError is resolved via
+    // the environment's exception registry.
+    if (auto* env = PythonEnvironment::fromContext(ctx)) {
+        const proto::ProtoObject* valueErr = env->resolve("ValueError");
+        if (valueErr && valueErr != PROTO_NONE) {
+            mod = const_cast<proto::ProtoObject*>(mod->setAttribute(ctx,
+                proto::ProtoString::createSymbol(ctx, "Error"), valueErr));
+            mod = const_cast<proto::ProtoObject*>(mod->setAttribute(ctx,
+                proto::ProtoString::createSymbol(ctx, "Incomplete"), valueErr));
+        }
+    }
     return mod;
 }
 

@@ -425,6 +425,10 @@ static const proto::ProtoObject* py_deque_new(
         if (env && iterable && iterable != PROTO_NONE) {
             const proto::ProtoObject* it = env->iter(iterable);
             if (it && !env->hasPendingException()) {
+                // Pin the derived iterator across user __next__ callbacks.
+                // Without this, deep recursion through user generators
+                // can free `it` mid-loop. See audit/03-gc-roots.md F3.1.
+                protoPython::PythonEnvironment::TransientPin pinIt(env, it);
                 while (true) {
                     const proto::ProtoObject* item = env->next(it);
                     if (env->hasPendingException()) {

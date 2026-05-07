@@ -104,3 +104,61 @@ Patterns and rules derived from implementation and corrections. Update after app
 - **CRITICAL TAGGED POINTER 2**: In `protoCore`, many pointers held by objects (like `TupleDictionary` keys, list nodes, etc.) can potentially be purely embedded values such as small integers. These embedded values encode their type into the lower bits of the pointer handle (e.g., `0x1c081`).
 - **Safe GC Notification**: Submitting a raw handle directly to the GC via the `method(...)` callback inside a class's `processReferences` override is strictly unsafe. The GC will attempt to dereference the tagged pointer, causing a hard segmentation fault.
 - **Validation Protocol**: You must *never* pass an object directly to `method(...)`. You must first enforce validation using `ProtoObject::isCellPointer(ptr)` to filter out non-cells, and then aggressively strip the tag discriminators by wrapping the invocation argument with `ProtoObject::asCellPointer(ptr)`. (e.g., `if (node && ProtoObject::isCellPointer(reinterpret_cast<const ProtoObject*>(node))) method(ctx, self, ProtoObject::asCellPointer(reinterpret_cast<const ProtoObject*>(node)));`).
+
+## Architectural rules from the May 2026 conceptual audit
+
+The audit (see `tasks/audit/00-summary.md`) identified three recurring root causes for the bug clusters seen in early-mid 2026. Adopting these as durable rules prevents the same patterns from recurring.
+
+### Rule A — Layer discipline (API tagged vs IMPL raw)
+
+Every `*Implementation` class in protoCore is internal. Its struct fields hold raw C++ pointers to other `*Implementation` classes (tag-0 aligned, low-bits-zero). The public-API `Proto*` classes are tagged-pointer phantom types reachable only via `asObject()`/`asXyz()` conversion methods. Trampolines on the public class do `toImpl<>` at the entry, dispatch internally with raw pointers, and `asObject()` at the exit.
+
+- **Never** declare a private struct field as the public API tagged type. (It looks like an optimisation but breaks layering.) Use `const FooImplementation*` for an internal carrier.
+- **Never** call `toImpl<X>(p)` inside a method that already has a raw `XImplementation*`. Direct C++ method calls are correct.
+- **Defensive alignment guards** (`(uintptr_t)p & 0x3F != 0`) inside inner methods are a smell — they cover for ABI inconsistency upstream. Mark them as TODO and remove them when the producer is fixed.
+
+Concrete violations fixed: `ProtoObjectCell::attributes` (was `ProtoSparseList*`, retyped to `ProtoSparseListImplementation*` in #92's fix). Concrete violations still pending: `ProtoSetImplementation::list`, `ProtoMultisetImplementation::list`, `ProtoThreadImplementation::{args,kwargs,name}`.
+
+### Rule B — Fast-path discipline (subclass-aware)
+
+Every fast path that gates on a built-in type check (`isInteger`, `isString`, `isList`, ...) must verify **`type(x) == primitivePrototype` exactly**, not "is x of an integer kind". Otherwise Python subclasses with overridden dunder operators silently fall into the C primitive path.
+
+Standard guard:
+```cpp
+const proto::ProtoObject* aCls = env->getType(ctx, a);
+bool aPrim = (aCls == env->getIntPrototype()
+              || aCls == env->getBoolPrototype()
+              || aCls == env->getFloatPrototype());
+if (aPrim && bPrim) return aa->primitiveOp(ctx, bb);
+// else fall through to dunder dispatch
+```
+
+CPython's reflected-operator subclass priority must also be honoured: when `type(b)` is a proper subclass of `type(a)` and overrides `__rop__`, try `b.__rop__(a)` *before* `a.__op__(b)`.
+
+Concrete sites fixed: `binaryAdd`. Concrete sites pending: `binarySubtract`, `binaryMultiply`, `binaryUnaryNegative`, `binaryTrueDivide`, `binaryModulo`, `binaryPower`, `binaryFloorDivide`, plus `OP_BINARY_SUBSCR`/`OP_STORE_SUBSCR` list fast paths.
+
+### Rule C — GC root discipline for native C functions
+
+Any `ProtoObject*` (or `Proto*` API) value held in a C++ local across a callback that may trigger GC (bytecode execution, dunder dispatch, attribute lookup, allocation) **must** be GC-rooted by one of:
+
+- **Operand stack**: lives on a `ProtoContext` operand stack for the duration of the callback (this is what bytecode `OP_FOR_ITER` does — the iterator stays peek-only on the stack).
+- **Cell-reachable**: is a member of a Cell that's already reachable from a GC root.
+- **`ProtoRootSet` pin**: explicit pin via `transientArgsRoots_` (or `activeExcsRoots_` for exceptions). The `TransientPin` RAII helper from `protoPython/include/...` makes this a one-liner and panic-safe.
+
+Native function checklist when reading code review:
+
+> Q: does this function call `env->iter` / `env->next` / `env->callObject` / `invokeCallable` / any allocation?
+> If yes: are all `ProtoObject*` C++ locals held across that call rooted?
+
+Concrete fixes already applied: `invokeCallable` asMethod path pins args via `transientArgsRoots_`; `py_str_join` pins its iterator. Concrete sites pending: `functools.reduce`, `py_collections_*`, `py_mapping_*`, `py_*_repr`, several Builtins iterators, opcode handlers `OP_LIST_EXTEND` / `OP_UNPACK_SEQUENCE` / `OP_BUILD_MAP` / etc.
+
+### Rule D — Native module stubs must be marked
+
+When a native module method is intentionally a stub (returns `PROTO_NONE` or `self->newChild()` without doing the real work), the source must:
+
+1. Have a comment line `// STUB: returns PROTO_NONE; CPython spec is <link>; real impl tracked under <ticket>`.
+2. Either raise `NotImplementedError` at runtime or be removed from the module exports (so user code fails at lookup time, not silently).
+
+Silent-success stubs are the worst kind: they pass tests, ship to users, and cause downstream bugs that are hard to trace back to the missing implementation.
+
+This rule is forward-looking; many existing stubs do not yet conform. Treat it as the standard for new code and progressively retrofit the audited stubs (`tasks/audit/04-native-stubs.md` lists the priority order).

@@ -3,6 +3,7 @@
 #include <protoPython/Compiler.h>
 #include <protoPython/PythonEnvironment.h>
 #include <protoPython/MemoryManager.hpp>
+#include <protoPython/SignalModule.h>
 #include <protoCore.h>
 #include <cmath>
 #include <cstdint>
@@ -1182,15 +1183,119 @@ static proto::ProtoObject* createUserFunction(proto::ProtoContext* ctx, const pr
 
 
 
+// Returns true iff `bCls` is a strict subclass of `aCls` (i.e. aCls
+// appears in bCls.__mro__ but bCls != aCls). Used to implement
+// CPython's reflected-operator subclass priority rule.
+static bool isStrictSubclassOf(proto::ProtoContext* ctx,
+                                PythonEnvironment* env,
+                                const proto::ProtoObject* bCls,
+                                const proto::ProtoObject* aCls) {
+    if (!env || !bCls || !aCls || bCls == aCls) return false;
+    const proto::ProtoString* mroS = env->getMroString();
+    if (!mroS) return false;
+    const proto::ProtoObject* mroObj = bCls->getAttribute(ctx, mroS);
+    const proto::ProtoTuple* mroTup = mroObj ? mroObj->asTuple(ctx) : nullptr;
+    if (!mroTup) return false;
+    unsigned long n = mroTup->getSize(ctx);
+    for (unsigned long i = 0; i < n; ++i) {
+        if (mroTup->getAt(ctx, static_cast<int>(i)) == aCls) return true;
+    }
+    return false;
+}
+
+// Returns true iff `bCls` defines `name` as an own attribute (i.e.
+// not inherited). Used to detect "subclass overrides reflected op".
+static bool typeOwnsAttribute(proto::ProtoContext* ctx,
+                              const proto::ProtoObject* bCls,
+                              const proto::ProtoString* name) {
+    if (!bCls || !name) return false;
+    return bCls->hasOwnAttribute(ctx, name) == PROTO_TRUE;
+}
+
 static const proto::ProtoObject* binaryOpDispatch(proto::ProtoContext* ctx, const proto::ProtoObject* a, const proto::ProtoObject* b, const char* dunder, const char* rdunder) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     const proto::ProtoString* dunderS = PythonEnvironment::getInternedString(ctx, dunder);
+    const proto::ProtoString* rdunderS = PythonEnvironment::getInternedString(ctx, rdunder);
+
+    // CPython subclass priority rule: when type(b) is a strict subclass
+    // of type(a) AND type(b) owns `__rop__` directly (i.e. defines its
+    // own override, not just inherits one), `b.__rop__(a)` is tried
+    // *before* `a.__op__(b)`. e.g. `class Frac(int): def __radd__(...)`
+    // gets the chance to handle `1 + Frac(2)` instead of int.__add__.
+    // The `typeOwnsAttribute(bCls, rdunder)` guard prevents the priority
+    // from firing when bCls inherits __rop__ from aCls (in which case
+    // it's the SAME implementation and order doesn't matter — but
+    // calling __rop__ first would re-enter the same code, costing a
+    // dispatch round-trip).
+    if (env && a && b) {
+        const proto::ProtoObject* aCls = env->getType(ctx, a);
+        const proto::ProtoObject* bCls = env->getType(ctx, b);
+        if (isStrictSubclassOf(ctx, env, bCls, aCls)
+            && typeOwnsAttribute(ctx, bCls, rdunderS)) {
+            const proto::ProtoList* argsA = ctx->newList()->appendLast(ctx, a);
+            const proto::ProtoObject* res = invokeDunder(ctx, b, rdunderS, argsA);
+            if (res && (!env || res != env->getNotImplementedPrototype())) {
+                return res;
+            }
+            // Fall through to the normal forward-then-reflected order
+            // when b.__rop__ returned NotImplemented or nullptr.
+            if (env && env->hasPendingException()) env->clearPendingException();
+        }
+    }
+
+    // Track whether either path explicitly returned NotImplemented.
+    // CPython distinguishes "method exists and returned NotImplemented"
+    // from "method absent" — only the former should produce a TypeError
+    // at the operator level. (Module init paths in stdlib often probe
+    // for capabilities by trying ops and accepting nullptr/None as
+    // "not supported, move on"; raising unconditionally breaks them.)
+    bool sawNotImplemented = false;
     const proto::ProtoList* argsB = ctx->newList()->appendLast(ctx, b);
     const proto::ProtoObject* res = invokeDunder(ctx, a, dunderS, argsB);
+    if (env && res == env->getNotImplementedPrototype()) sawNotImplemented = true;
     if (!res || (env && res == env->getNotImplementedPrototype())) {
-        const proto::ProtoString* rdunderS = PythonEnvironment::getInternedString(ctx, rdunder);
         const proto::ProtoList* argsA = ctx->newList()->appendLast(ctx, a);
         res = invokeDunder(ctx, b, rdunderS, argsA);
+        if (env && res == env->getNotImplementedPrototype()) sawNotImplemented = true;
+    }
+    // CPython: when at least one method returned NotImplemented (a
+    // present-but-refused signal), raise TypeError. If both methods
+    // were simply absent (nullptr from invokeDunder), preserve the
+    // previous lenient behaviour and return PROTO_NONE upstream — many
+    // module-init paths in stdlib probe for ops opportunistically.
+    if (sawNotImplemented
+        && (!res || (env && res == env->getNotImplementedPrototype()))
+        && env && !env->hasPendingException()) {
+        std::string aName = "?", bName = "?";
+        const proto::ProtoString* nameS = env->getNameString();
+        const proto::ProtoObject* aCls2 = env->getType(ctx, a);
+        const proto::ProtoObject* bCls2 = env->getType(ctx, b);
+        if (aCls2) {
+            const proto::ProtoObject* n = aCls2->getAttribute(ctx, nameS);
+            if (n && n->isString(ctx)) n->asString(ctx)->toUTF8String(ctx, aName);
+        }
+        if (bCls2) {
+            const proto::ProtoObject* n = bCls2->getAttribute(ctx, nameS);
+            if (n && n->isString(ctx)) n->asString(ctx)->toUTF8String(ctx, bName);
+        }
+        const char* opSym = dunder;
+        struct { const char* d; const char* sym; } map[] = {
+            {"__add__", "+"}, {"__sub__", "-"}, {"__mul__", "*"},
+            {"__truediv__", "/"}, {"__floordiv__", "//"}, {"__mod__", "%"},
+            {"__pow__", "** or pow()"}, {"__lshift__", "<<"}, {"__rshift__", ">>"},
+            {"__and__", "&"}, {"__or__", "|"}, {"__xor__", "^"},
+            {"__matmul__", "@"},
+        };
+        for (auto& e : map) if (std::strcmp(dunder, e.d) == 0) { opSym = e.sym; break; }
+        std::string msg = "unsupported operand type(s) for ";
+        msg += opSym;
+        msg += ": '";
+        msg += aName;
+        msg += "' and '";
+        msg += bName;
+        msg += "'";
+        env->raiseTypeError(ctx, msg.c_str());
+        return nullptr;
     }
     return res;
 }
@@ -1227,14 +1332,44 @@ static const proto::ProtoObject* unwrapPrimitive(proto::ProtoContext* ctx, const
     return obj;
 }
 
+// Returns true iff BOTH `a` and `b` are exactly the literal numeric
+// built-in types (int / bool / float — never a subclass). Use this as
+// the gate for any C-level primitive numeric fast path so that a
+// Python subclass with an overridden __op__ / __rop__ correctly routes
+// through the dunder dispatcher instead of being silently bypassed.
+//
+// The env-less fallback (legacy / pre-typed callers) preserves the
+// original "both are numeric primitives" semantics, since without an
+// environment we cannot consult the prototype map.
+static inline bool bothExactNumericPrim(
+    proto::ProtoContext* ctx,
+    PythonEnvironment* env,
+    const proto::ProtoObject* a, const proto::ProtoObject* b,
+    const proto::ProtoObject* aa, const proto::ProtoObject* bb)
+{
+    if (!env) {
+        // No env context: fall back to the unwrapped primitive check.
+        return (aa->isInteger(ctx) || aa->isDouble(ctx))
+            && (bb->isInteger(ctx) || bb->isDouble(ctx));
+    }
+    const proto::ProtoObject* aCls = env->getType(ctx, a);
+    if (aCls != env->getIntPrototype()
+        && aCls != env->getBoolPrototype()
+        && aCls != env->getFloatPrototype()) return false;
+    const proto::ProtoObject* bCls = env->getType(ctx, b);
+    return (bCls == env->getIntPrototype()
+            || bCls == env->getBoolPrototype()
+            || bCls == env->getFloatPrototype());
+}
+
 static const proto::ProtoObject* binaryAdd(proto::ProtoContext* ctx,
     const proto::ProtoObject* a, const proto::ProtoObject* b) {
     const proto::ProtoObject* aa = unwrapPrimitive(ctx, a);
     const proto::ProtoObject* bb = unwrapPrimitive(ctx, b);
-    if ((aa->isInteger(ctx) || aa->isDouble(ctx)) && (bb->isInteger(ctx) || bb->isDouble(ctx))) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (bothExactNumericPrim(ctx, env, a, b, aa, bb)) {
         return aa->add(ctx, bb);
     }
-    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
 
     // Detect bytes objects before the isString fast-path: bytes stores content
     // in __data__ (a ProtoString) so isString() returns true for them, but
@@ -1317,7 +1452,8 @@ static const proto::ProtoObject* binarySubtract(proto::ProtoContext* ctx,
     const proto::ProtoObject* a, const proto::ProtoObject* b) {
     const proto::ProtoObject* aa = unwrapPrimitive(ctx, a);
     const proto::ProtoObject* bb = unwrapPrimitive(ctx, b);
-    if ((aa->isInteger(ctx) || aa->isDouble(ctx)) && (bb->isInteger(ctx) || bb->isDouble(ctx))) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (bothExactNumericPrim(ctx, env, a, b, aa, bb)) {
         return aa->subtract(ctx, bb);
     }
     const proto::ProtoObject* r = binaryOpDispatch(ctx, a, b, "__sub__", "__rsub__");
@@ -1332,7 +1468,8 @@ static const proto::ProtoObject* binaryMultiply(proto::ProtoContext* ctx,
     b = coerceBoolToInt(ctx, b);
     const proto::ProtoObject* aa = unwrapPrimitive(ctx, a);
     const proto::ProtoObject* bb = unwrapPrimitive(ctx, b);
-    if ((aa->isInteger(ctx) || aa->isDouble(ctx)) && (bb->isInteger(ctx) || bb->isDouble(ctx))) {
+    PythonEnvironment* env_local = PythonEnvironment::fromContext(ctx);
+    if (bothExactNumericPrim(ctx, env_local, a, b, aa, bb)) {
         return aa->multiply(ctx, bb);
     }
     // String/bytes repetition: str * int or int * str (or bytes * int)
@@ -1395,20 +1532,46 @@ static const proto::ProtoObject* binaryMultiply(proto::ProtoContext* ctx,
 }
 
 static const proto::ProtoObject* binaryUnaryNegative(proto::ProtoContext* ctx, const proto::ProtoObject* a) {
-    if (a->isInteger(ctx)) {
-        return a->multiply(ctx, ctx->fromInteger(-1));
+    // Exact-type gate: a subclass with __neg__ override must win.
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    bool aPrim = false;
+    if (env) {
+        const proto::ProtoObject* aCls = env->getType(ctx, a);
+        aPrim = (aCls == env->getIntPrototype()
+                 || aCls == env->getBoolPrototype()
+                 || aCls == env->getFloatPrototype());
+    } else {
+        aPrim = a->isInteger(ctx) || a->isDouble(ctx);
     }
-    if (a->isDouble(ctx)) return ctx->fromDouble(-a->asDouble(ctx));
+    if (aPrim) {
+        if (a->isInteger(ctx)) return a->multiply(ctx, ctx->fromInteger(-1));
+        if (a->isDouble(ctx)) return ctx->fromDouble(-a->asDouble(ctx));
+    }
+    // Subclass or non-numeric: route through __neg__.
+    if (env) {
+        const proto::ProtoString* negS = PythonEnvironment::getInternedString(ctx, "__neg__");
+        const proto::ProtoObject* method = env->getAttribute(ctx, a, negS, false);
+        if (method && method != PROTO_NONE) {
+            const proto::ProtoList* emptyL = ctx->newList();
+            if (method->asMethod(ctx)) {
+                return method->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(a), nullptr, emptyL, nullptr);
+            }
+        }
+    }
     return PROTO_NONE;
 }
 static const proto::ProtoObject* binaryTrueDivide(proto::ProtoContext* ctx,
     const proto::ProtoObject* a, const proto::ProtoObject* b) {
     const proto::ProtoObject* aa = unwrapPrimitive(ctx, a);
     const proto::ProtoObject* bb = unwrapPrimitive(ctx, b);
+    PythonEnvironment* env_div = PythonEnvironment::fromContext(ctx);
     auto integerIsZero = [&](const proto::ProtoObject* o) -> bool {
         return o->isInteger(ctx) && o->integerSign(ctx) == 0;
     };
-    if (aa->isInteger(ctx) || aa->isDouble(ctx)) {
+    // Zero-division check fires only on exact-numeric operands; subclass
+    // with overridden __truediv__ takes the dunder path below where the
+    // override decides what to do with zero.
+    if (bothExactNumericPrim(ctx, env_div, a, b, aa, bb)) {
         if (integerIsZero(bb) || (bb->isDouble(ctx) && bb->asDouble(ctx) == 0.0)) {
             PythonEnvironment::fromContext(ctx)->raiseZeroDivisionError(ctx);
             return PROTO_NONE;
@@ -1434,10 +1597,13 @@ static const proto::ProtoObject* binaryTrueDivide(proto::ProtoContext* ctx,
             }
         }
     };
-    if (aa->isInteger(ctx) && bb->isInteger(ctx)) {
-        return ctx->fromDouble(intToDouble(aa) / intToDouble(bb));
-    }
-    if ((aa->isInteger(ctx) || aa->isDouble(ctx)) && (bb->isInteger(ctx) || bb->isDouble(ctx))) {
+    // Numeric primitive path only taken when both operands are exactly the
+    // built-in numeric types — subclasses with overridden __truediv__
+    // route through binaryOpDispatch below.
+    if (bothExactNumericPrim(ctx, env_div, a, b, aa, bb)) {
+        if (aa->isInteger(ctx) && bb->isInteger(ctx)) {
+            return ctx->fromDouble(intToDouble(aa) / intToDouble(bb));
+        }
         double da = aa->isDouble(ctx) ? aa->asDouble(ctx) : intToDouble(aa);
         double db = bb->isDouble(ctx) ? bb->asDouble(ctx) : intToDouble(bb);
         return ctx->fromDouble(da / db);
@@ -1451,38 +1617,35 @@ static const proto::ProtoObject* binaryModulo(proto::ProtoContext* ctx,
     const proto::ProtoObject* a, const proto::ProtoObject* b) {
     const proto::ProtoObject* aa = unwrapPrimitive(ctx, a);
     const proto::ProtoObject* bb = unwrapPrimitive(ctx, b);
+    PythonEnvironment* env_mod = PythonEnvironment::fromContext(ctx);
     auto integerIsZero = [&](const proto::ProtoObject* o) -> bool {
         return o->isInteger(ctx) && o->integerSign(ctx) == 0;
     };
-    if (aa->isInteger(ctx) || aa->isDouble(ctx)) {
+    if (bothExactNumericPrim(ctx, env_mod, a, b, aa, bb)) {
         if (integerIsZero(bb) || (bb->isDouble(ctx) && bb->asDouble(ctx) == 0.0)) {
             PythonEnvironment::fromContext(ctx)->raiseZeroDivisionError(ctx);
             return PROTO_NONE;
         }
-    }
-    // Mixed int/float: promote to double and use std::fmod with Python's
-    // floor-rounding convention (unlike C fmod, Python's % has the sign
-    // of the divisor).
-    if ((aa->isDouble(ctx) && bb->isInteger(ctx)) ||
-        (aa->isInteger(ctx) && bb->isDouble(ctx))) {
-        auto toDouble = [&](const proto::ProtoObject* o) -> double {
-            if (o->isDouble(ctx)) return o->asDouble(ctx);
-            try { return static_cast<double>(o->asLong(ctx)); }
-            catch (const std::overflow_error&) {
-                const proto::ProtoString* s = o->asIntegerString(ctx, 10);
-                std::string digits;
-                s->toUTF8String(ctx, digits);
-                try { return std::stod(digits); }
-                catch (...) { return 0.0; }
-            }
-        };
-        double da = toDouble(aa);
-        double db = toDouble(bb);
-        double r = std::fmod(da, db);
-        if ((r != 0.0) && ((r < 0) != (db < 0))) r += db;
-        return ctx->fromDouble(r);
-    }
-    if ((aa->isInteger(ctx) || aa->isDouble(ctx)) && (bb->isInteger(ctx) || bb->isDouble(ctx))) {
+        // Mixed int/float: promote to double with Python's floor-rounding.
+        if ((aa->isDouble(ctx) && bb->isInteger(ctx)) ||
+            (aa->isInteger(ctx) && bb->isDouble(ctx))) {
+            auto toDouble = [&](const proto::ProtoObject* o) -> double {
+                if (o->isDouble(ctx)) return o->asDouble(ctx);
+                try { return static_cast<double>(o->asLong(ctx)); }
+                catch (const std::overflow_error&) {
+                    const proto::ProtoString* s = o->asIntegerString(ctx, 10);
+                    std::string digits;
+                    s->toUTF8String(ctx, digits);
+                    try { return std::stod(digits); }
+                    catch (...) { return 0.0; }
+                }
+            };
+            double da = toDouble(aa);
+            double db = toDouble(bb);
+            double r = std::fmod(da, db);
+            if ((r != 0.0) && ((r < 0) != (db < 0))) r += db;
+            return ctx->fromDouble(r);
+        }
         return aa->modulo(ctx, bb);
     }
     if (a->isString(ctx)) {
@@ -1504,7 +1667,8 @@ static const proto::ProtoObject* binaryPower(proto::ProtoContext* ctx,
     const proto::ProtoObject* a, const proto::ProtoObject* b) {
     const proto::ProtoObject* aa_p = unwrapPrimitive(ctx, a);
     const proto::ProtoObject* bb_p = unwrapPrimitive(ctx, b);
-    if ((aa_p->isInteger(ctx) || aa_p->isDouble(ctx)) && (bb_p->isInteger(ctx) || bb_p->isDouble(ctx))) {
+    PythonEnvironment* env_pow = PythonEnvironment::fromContext(ctx);
+    if (bothExactNumericPrim(ctx, env_pow, a, b, aa_p, bb_p)) {
         if (aa_p->isInteger(ctx) && bb_p->isInteger(ctx)) {
             long long exp;
             try { exp = bb_p->asLong(ctx); }
@@ -1548,15 +1712,14 @@ static const proto::ProtoObject* binaryFloorDivide(proto::ProtoContext* ctx,
     const proto::ProtoObject* a, const proto::ProtoObject* b) {
     const proto::ProtoObject* aa_p = unwrapPrimitive(ctx, a);
     const proto::ProtoObject* bb_p = unwrapPrimitive(ctx, b);
-    if (aa_p->isInteger(ctx) || aa_p->isDouble(ctx)) {
+    PythonEnvironment* env_fd = PythonEnvironment::fromContext(ctx);
+    if (bothExactNumericPrim(ctx, env_fd, a, b, aa_p, bb_p)) {
         if ((bb_p->isInteger(ctx) && bb_p->asLong(ctx) == 0) || (bb_p->isDouble(ctx) && bb_p->asDouble(ctx) == 0.0)) {
             PythonEnvironment::fromContext(ctx)->raiseZeroDivisionError(ctx);
             return PROTO_NONE;
         }
-    }
-    if ((aa_p->isInteger(ctx) || aa_p->isDouble(ctx)) && (bb_p->isInteger(ctx) || bb_p->isDouble(ctx))) {
         if (aa_p->isInteger(ctx) && bb_p->isInteger(ctx)) {
-            return aa_p->divide(ctx, bb_p); 
+            return aa_p->divide(ctx, bb_p);
         }
         double aa = aa_p->isDouble(ctx) ? aa_p->asDouble(ctx) : static_cast<double>(aa_p->asLong(ctx));
         double bb = bb_p->isDouble(ctx) ? bb_p->asDouble(ctx) : static_cast<double>(bb_p->asLong(ctx));
@@ -1597,6 +1760,67 @@ static const proto::ProtoObject* compareOp(proto::ProtoContext* ctx,
 
     if (op == 6 || op == 7) { // in, not in
         bool found = false;
+        // Priority dispatch: when b is a user-class instance whose own
+        // class defines __contains__ (in OWN attrs), AND its class is
+        // NOT one of the protoCore built-in containers (whose own
+        // __contains__ is a no-op stub or known-broken under the
+        // generic dispatch), honour it before the fast paths.
+        // UserDict, ChainMap, os._Environ rely on this; built-in
+        // containers (dict, list, tuple, set, str, bytes) and anything
+        // inheriting __contains__ from a generic prototype skip the
+        // branch.
+        {
+            PythonEnvironment* env_dunder = PythonEnvironment::fromContext(ctx);
+            if (env_dunder && b) {
+                const proto::ProtoObject* bCls = env_dunder->getType(ctx, b);
+                bool isBuiltinContainer = false;
+                if (bCls) {
+                    isBuiltinContainer = (bCls == env_dunder->getDictPrototype()
+                                          || bCls == env_dunder->getListPrototype()
+                                          || bCls == env_dunder->getTuplePrototype()
+                                          || bCls == env_dunder->getSetPrototype()
+                                          || bCls == env_dunder->getFrozensetPrototype()
+                                          || bCls == env_dunder->getStrPrototype()
+                                          || bCls == env_dunder->getBytesPrototype());
+                }
+                if (bCls && !isBuiltinContainer) {
+                    const proto::ProtoString* containsS = env_dunder->getContainsString();
+                    // Walk bCls.__mro__ looking for ANY class that owns
+                    // __contains__. This catches inherited overrides
+                    // (e.g. _Environ inherits Mapping.__contains__) while
+                    // staying off the protoCore prototype chain (which
+                    // would attach a __contains__ to internal carriers
+                    // like generators / frames and crash the SparseList
+                    // fast path further down).
+                    bool dispatchHere = false;
+                    const proto::ProtoString* mroS = env_dunder->getMroString();
+                    const proto::ProtoObject* mroObj = mroS ? bCls->getAttribute(ctx, mroS) : nullptr;
+                    const proto::ProtoTuple* mroTup = mroObj ? mroObj->asTuple(ctx) : nullptr;
+                    if (mroTup) {
+                        unsigned long mn = mroTup->getSize(ctx);
+                        for (unsigned long mi = 0; mi < mn; ++mi) {
+                            const proto::ProtoObject* base = mroTup->getAt(ctx, static_cast<int>(mi));
+                            if (!base || base == PROTO_NONE) continue;
+                            if (base->hasOwnAttribute(ctx, containsS) == PROTO_TRUE) {
+                                dispatchHere = true;
+                                break;
+                            }
+                        }
+                    } else if (bCls->hasOwnAttribute(ctx, containsS) == PROTO_TRUE) {
+                        dispatchHere = true;
+                    }
+                    if (dispatchHere) {
+                        const proto::ProtoList* args = ctx->newList()->appendLast(ctx, a);
+                        const proto::ProtoObject* res = invokeDunder(ctx, b, containsS, args);
+                        if (res) {
+                            found = isTruthy(ctx, res);
+                            return ((op == 6) ? found : !found) ? PROTO_TRUE : PROTO_FALSE;
+                        }
+                        if (env_dunder->hasPendingException()) env_dunder->clearPendingException();
+                    }
+                }
+            }
+        }
         // SP-C/C1: MappingProxy (e.g. cls.__dict__) defines its own
         // __contains__ that distinguishes own vs. inherited attributes.
         // Skip the __data__ / asSparseList fast path which would walk
@@ -1832,7 +2056,17 @@ static const proto::ProtoObject* invokeCallable(proto::ProtoContext* ctx,
     }
 
     if (callable->asMethod(ctx)) {
-        return callable->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(callable->asMethodSelf(ctx)), nullptr, args, kwargs);
+        // Pin the args list (and everything reachable through it) for
+        // the duration of the native call. Native C methods receive
+        // args only via C++ stack locals — invisible to the GC. If the
+        // native method then calls back into Python (e.g. py_str_join
+        // → env->next on a generator), and that callback allocates
+        // enough to trigger GC, the args list and any iterables it
+        // contains would be reclaimed under the running mutator.
+        PythonEnvironment::TransientPin pinArgs(env, args ? args->asObject(ctx) : nullptr);
+        return callable->asMethod(ctx)(
+            ctx, const_cast<proto::ProtoObject*>(callable->asMethodSelf(ctx)),
+            nullptr, args, kwargs);
     }
 
     // Fast path for user-defined Python functions: they always have __code__ as an own attribute
@@ -1957,6 +2191,17 @@ static const proto::ProtoObject* invokeDunder(proto::ProtoContext* ctx, const pr
         return method->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(container), nullptr, args, kwargs);
     }
 
+    // Python user-defined dunder (regular function with __code__): prepend
+    // `self` so the call lands as method(self, *args). invokeCallable does
+    // not bind for us, so without this every inherited Python __contains__,
+    // __setitem__, __getitem__ etc. ran with self=arg0 (silently broken).
+    const proto::ProtoString* codeS = env ? env->getCodeString() : PythonEnvironment::getInternedString(ctx, "__code__");
+    if (codeS && method->hasOwnAttribute(ctx, codeS) == PROTO_TRUE) {
+        const proto::ProtoList* selfArgs = ctx->newList()->appendLast(ctx, container);
+        unsigned long n = args ? args->getSize(ctx) : 0;
+        for (unsigned long j = 0; j < n; ++j) selfArgs = selfArgs->appendLast(ctx, args->getAt(ctx, j));
+        return invokeCallable(ctx, method, selfArgs, kwargs);
+    }
     return invokeCallable(ctx, method, args, kwargs);
 }
 
@@ -2899,7 +3144,25 @@ const proto::ProtoObject* executeBytecodeRange(
     // while bounding pause-acquisition latency to a few µs.
     unsigned int sp_ctr = 0;
     for (unsigned long i = pcStart; i <= pcEnd; ) {
-        if ((++sp_ctr & 0x3F) == 0 && ctx) ctx->safepoint();
+        if ((++sp_ctr & 0x3F) == 0 && ctx) {
+            ctx->safepoint();
+            // Cooperative signal delivery: when a Python signal handler
+            // is registered, the OS-level handler only flips a
+            // sig_atomic_t flag (async-signal-safe). The actual Python
+            // callback is dispatched here, at the same cadence as the
+            // GC safepoint, where the operand stack and frame are in
+            // a known-good state. The branch is a single volatile
+            // load when nothing is pending — measured cost is < 0.1%
+            // on bench_pidigits.
+            if (signal_module::hasPendingSignal()) {
+                signal_module::checkAndDeliverPendingSignals(ctx, env);
+                if (env && env->hasPendingException()) {
+                    // The handler raised (e.g. KeyboardInterrupt). Let
+                    // the standard exception-unwinding path pick it up
+                    // by falling through; do NOT clear it here.
+                }
+            }
+        }
         int op = bc[i];
         int arg = (i + 1 < n) ? bc[i + 1] : 0;
         unsigned long next_i = i + 2;
@@ -4473,6 +4736,15 @@ const proto::ProtoObject* executeBytecodeRange(
                             // fields, breaking every consumer of platform.*.
                             const proto::ProtoObject* iterator = env->iter(iterable);
                             if (iterator) {
+                                // Pin the derived iterator across user
+                                // __next__ calls. While `iterable` is on
+                                // the operand stack (GC-rooted), the
+                                // iterator returned by env->iter is a
+                                // separate cell only held in this C++
+                                // local. Without the pin, deep recursion
+                                // through user-defined __next__ can free
+                                // the iterator's backing cells.
+                                PythonEnvironment::TransientPin pinIt(env, iterator);
                                 for (;;) {
                                     const proto::ProtoObject* item = env->next(iterator);
                                     if (!item) {
@@ -5191,13 +5463,19 @@ const proto::ProtoObject* executeBytecodeRange(
             // two memory reads.  Bypassing it eliminates ~2 cell allocations
             // per subscript on the hot loop.
             //
+            // Subclass-aware gate: only fire the fast path when type(container)
+            // is *exactly* listPrototype (no subclass). A subclass with an
+            // overridden __getitem__ must route through the dunder dispatch
+            // below — see audit/02-fast-paths.md F2.2.
+            //
             // Skip strings here: ProtoString::asList builds a list of
             // unicode-char embedded values, not a list of single-char
             // strings, so returning that fast-path value to user code
             // breaks `s[i].lower()` and every other Python str-method
             // chain on indexed characters. py_str_getitem (the slow path)
             // returns a proper one-char string.
-            if (proto::isSmallInt(key) && container && !container->isString(ctx)) {
+            if (proto::isSmallInt(key) && container && !container->isString(ctx)
+                && env && env->getType(ctx, container) == env->getListPrototype()) {
                 const proto::ProtoList* lst = container->asList(ctx);
                 if (lst) {
                     long long idx = proto::asSmallInt(key);
@@ -5449,7 +5727,13 @@ const proto::ProtoObject* executeBytecodeRange(
             // protocol round-trip for the dominant numeric-table-write case.
             // setAt on ProtoList is the same primitive that __setitem__
             // would dispatch into.
-            if (proto::isSmallInt(key) && container) {
+            //
+            // Subclass-aware gate: only fire when type(container) is exactly
+            // listPrototype. A user list subclass with __setitem__ override
+            // (or one that invalidates its `__data__` differently) must
+            // route through the dunder path below — see audit/02-fast-paths.md F2.2.
+            if (proto::isSmallInt(key) && container
+                && env && env->getType(ctx, container) == env->getListPrototype()) {
                 const proto::ProtoList* lst = container->asList(ctx);
                 if (lst) {
                     long long idx = proto::asSmallInt(key);
@@ -6650,6 +6934,10 @@ const proto::ProtoObject* executeBytecodeRange(
                     if (!env->hasPendingException()) env->raiseTypeError(ctx, "cannot unpack non-iterable object");
                     i = next_i; continue;
                 }
+                // Pin iterObj across user __next__ callbacks. The seq
+                // was popped from the operand stack just above, so its
+                // GC reachability now depends on iterObj surviving.
+                PythonEnvironment::TransientPin pinIt(env, iterObj);
                 std::vector<const proto::ProtoObject*> items;
                 for (int j = 0; j < arg; ++j) {
                     const proto::ProtoObject* val = env->next(iterObj);
@@ -6724,6 +7012,8 @@ const proto::ProtoObject* executeBytecodeRange(
                     if (!env->hasPendingException()) env->raiseTypeError(ctx, "cannot unpack non-iterable object");
                     i = next_i; continue;
                 }
+                // Pin iterObj across user __next__ callbacks (seq was popped).
+                PythonEnvironment::TransientPin pinIt(env, iterObj);
                 while (true) {
                     const proto::ProtoObject* val = env->next(iterObj);
                     if (!val) {

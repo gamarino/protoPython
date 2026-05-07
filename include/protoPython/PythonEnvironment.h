@@ -920,6 +920,74 @@ private:
      */
     proto::ProtoRootSet* activeExcsRoots_{nullptr};
 
+    /**
+     * @brief Per-environment root set for transient pins of native-call
+     *        arguments.
+     *
+     * When the bytecode dispatcher invokes a native C method (e.g.
+     * py_str_join), the args ProtoList is built from the operand stack
+     * and the stack slots are popped before the call. The args list
+     * therefore lives only as a C++ local for the duration of the
+     * native call — invisible to the GC. If the native method calls
+     * back into Python (e.g. env->next on a generator) and that
+     * callback allocates enough cells to trigger GC, the args list and
+     * everything reachable through it (the iterable, the iterator's
+     * own backing cells) become unreachable and are freed under the
+     * running mutator.
+     *
+     * `invokeCallable` pins the args list in this root set across each
+     * native call via the `TransientArgsPin` RAII guard below; the
+     * GC traces every entry as a root, keeping the iterable alive.
+     */
+    proto::ProtoRootSet* transientArgsRoots_{nullptr};
+
+public:
+    proto::ProtoRootSet* getTransientArgsRoots() const { return transientArgsRoots_; }
+
+    /**
+     * @brief RAII pin for a `ProtoObject*` held in a C++ local across a
+     *        callback that may trigger GC.
+     *
+     * Construct: takes the env and the cell handle to pin.
+     * Lifetime:  the pointer is registered as a GC root via
+     *            `transientArgsRoots_`.
+     * Destruct:  the pointer is unpinned automatically (panic-safe).
+     *
+     * Usage:
+     * ```cpp
+     * const proto::ProtoObject* it = env->iter(iterable);
+     * PythonEnvironment::TransientPin pinIt(env, it);
+     * for (;;) {
+     *     auto item = env->next(it);   // GC-safe across this call
+     *     if (!item) break;
+     *     // ...use item...
+     * }
+     * // pinIt destructor releases the pin here
+     * ```
+     *
+     * Non-copyable, non-movable so that the pin is bound to a single
+     * stack lifetime. Pinning a null pointer is a silent no-op (kept
+     * cheap for code paths that may receive nullptr without branching).
+     */
+    class TransientPin {
+    public:
+        TransientPin(PythonEnvironment* env, const proto::ProtoObject* obj)
+            : roots_(env ? env->getTransientArgsRoots() : nullptr),
+              h_(roots_ && obj ? roots_->add(obj) : proto::ProtoRootSet::kNullHandle) {}
+        ~TransientPin() {
+            if (roots_ && h_ != proto::ProtoRootSet::kNullHandle) roots_->remove(h_);
+        }
+        TransientPin(const TransientPin&) = delete;
+        TransientPin& operator=(const TransientPin&) = delete;
+        TransientPin(TransientPin&&) = delete;
+        TransientPin& operator=(TransientPin&&) = delete;
+    private:
+        proto::ProtoRootSet* roots_;
+        proto::ProtoRootSet::Handle h_;
+    };
+
+private:
+
     const proto::ProtoObject* rangeIteratorProto{nullptr};
     const proto::ProtoObject* genericAliasProto{nullptr};
     const proto::ProtoObject* unionTypeProto{nullptr};

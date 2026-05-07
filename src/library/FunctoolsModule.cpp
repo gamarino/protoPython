@@ -68,18 +68,28 @@ static const proto::ProtoObject* py_reduce(
     if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
     const proto::ProtoObject* func = posArgs->getAt(ctx, 0);
     const proto::ProtoObject* iterable = posArgs->getAt(ctx, 1);
-    
+
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     const proto::ProtoObject* it = env ? env->iter(iterable) : nullptr;
     if (!it) return PROTO_NONE;
-    
+
+    // Pin iterator and accumulator across the loop: env->next runs user
+    // __next__ which can trigger GC; env->callObject runs user reducer
+    // which can also trigger GC. Both `it` and `res` live only on the
+    // C++ stack of this function — invisible to the GC unless pinned.
+    PythonEnvironment::TransientPin pinIt(env, it);
+
     const proto::ProtoObject* res = (posArgs->getSize(ctx) > 2) ? posArgs->getAt(ctx, 2) : nullptr;
     if (!res) {
         res = env->next(it);
         if (!res) return PROTO_NONE;
     }
-    
+
     while (const proto::ProtoObject* item = env->next(it)) {
+        // Pin the running accumulator while we call the user reducer.
+        // res may have been computed by a previous callObject and lives
+        // only in this local across the next callObject's allocations.
+        PythonEnvironment::TransientPin pinRes(env, res);
         res = env->callObject(func, {res, item});
         if (env->hasPendingException()) return nullptr;
     }

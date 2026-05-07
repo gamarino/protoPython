@@ -896,6 +896,27 @@ static const proto::ProtoObject* py_object_repr(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
+    // Bound: self is the receiver, no args. Unbound (e.g.
+    // object.__repr__(c) or invokePythonCallable on the unbound C trampoline
+    // via py_method_call's prepended-self path): self is null or a class,
+    // args[0] is the actual receiver. Detect and shift.
+    PythonEnvironment* env_pre = PythonEnvironment::fromContext(context);
+    if (positionalParameters && positionalParameters->getSize(context) >= 1) {
+        bool selfIsReceiver = false;
+        if (self && env_pre) {
+            const proto::ProtoString* mroS = env_pre->getMroString();
+            // If self has __mro__ as own, it's a class — treat call as unbound.
+            // Otherwise self is the receiver and any positional args are extra.
+            if (!mroS || self->hasOwnAttribute(context, mroS) != PROTO_TRUE) {
+                selfIsReceiver = true;
+            }
+        }
+        if (!selfIsReceiver) {
+            const proto::ProtoObject* recv = positionalParameters->getAt(context, 0);
+            if (recv && recv != PROTO_NONE) self = recv;
+        }
+    }
+    if (!self) return PROTO_NONE;
     if (self->isInteger(context)) {
         return PythonEnvironment::getInternedString(context, std::to_string(self->asLong(context)).c_str())->asObject(context);
     }
@@ -2605,7 +2626,30 @@ std::string PythonEnvironment::reprObject(proto::ProtoContext* context, const pr
     const proto::ProtoObject* cls = env ? env->getType(context, obj) : obj->getAttribute(context, PythonEnvironment::getInternalString(context, "__class__"));
     const proto::ProtoObject* reprMethod = nullptr;
     if (cls) {
-        const proto::ProtoObject* rawAttr = cls->getAttribute(context, reprS);
+        // Walk __mro__ first (Python semantics: looking up a method on a
+        // class consults its MRO, not the protoCore parent chain — which
+        // for a class points at the metaclass and would resolve type.__repr__
+        // before object.__repr__). Falls back to the parent-chain
+        // getAttribute when __mro__ is missing or empty.
+        const proto::ProtoObject* rawAttr = nullptr;
+        const proto::ProtoString* mroS = env ? env->getMroString()
+                                             : PythonEnvironment::getInternalString(context, "__mro__");
+        const proto::ProtoObject* mroObj = cls->getAttribute(context, mroS);
+        const proto::ProtoTuple* mroTup = mroObj ? mroObj->asTuple(context) : nullptr;
+        if (mroTup) {
+            unsigned long mroLen = mroTup->getSize(context);
+            for (unsigned long i = 0; i < mroLen; ++i) {
+                const proto::ProtoObject* base = mroTup->getAt(context, static_cast<int>(i));
+                if (!base || base == PROTO_NONE) continue;
+                if (base->hasOwnAttribute(context, reprS) == PROTO_TRUE) {
+                    rawAttr = base->getAttribute(context, reprS);
+                    break;
+                }
+            }
+        }
+        if (!rawAttr || rawAttr == PROTO_NONE) {
+            rawAttr = cls->getAttribute(context, reprS);
+        }
         if (rawAttr && rawAttr != PROTO_NONE) {
             // If it's a python descriptor or regular method, bind it to `obj`
             const proto::ProtoObject* getM = env ? env->getAttribute(context, env->getType(context, rawAttr), PythonEnvironment::getInternalString(context, "__get__"), false) : nullptr;
@@ -4815,14 +4859,47 @@ static const proto::ProtoObject* py_int_arith(
         b = posArgs->getAt(ctx, 0);
     }
     if (!a || !b) return PROTO_NONE;
+    // Coerce booleans to int sentinels so the primitive ops below see
+    // numeric values; True → 1, False → 0.
+    auto coerce = [&](const proto::ProtoObject* x) -> const proto::ProtoObject* {
+        if (x == PROTO_TRUE) return ctx->fromInteger(1);
+        if (x == PROTO_FALSE) return ctx->fromInteger(0);
+        return x;
+    };
+    a = coerce(a);
+    b = coerce(b);
     bool rhsNumeric = b->isInteger(ctx) || b->isBoolean(ctx) || b->isFloat(ctx);
     if (!rhsNumeric) {
-        long long tmp;
-        if (!int_value(ctx, b, &tmp) && !b->isFloat(ctx)) {
+        // Try unwrapping a numeric subclass instance via __data__-style
+        // primitive carrier, then via __int__ — last resort, NotImplemented.
+        const proto::ProtoString* dataS = env ? env->getDataString() : PythonEnvironment::getInternalString(ctx, "__data__");
+        const proto::ProtoObject* d = b->getAttribute(ctx, dataS);
+        if (d && (d->isInteger(ctx) || d->isFloat(ctx))) {
+            b = d;
+        } else {
             return env ? env->getNotImplementedPrototype() : PROTO_NONE;
         }
     }
-    return env ? env->binaryOp(a, op, b) : PROTO_NONE;
+    // Compute directly using primitive arithmetic — calling back into
+    // env->binaryOp would re-enter binaryAdd → binaryOpDispatch and loop
+    // forever for "1 + E(int_subclass)".
+    switch (op) {
+        case TokenType::Plus:   return a->add(ctx, b);
+        case TokenType::Minus:  return a->subtract(ctx, b);
+        case TokenType::Star:   return a->multiply(ctx, b);
+        case TokenType::Slash: {
+            // True division: coerce to float.
+            double lhs = a->isInteger(ctx) ? (double)a->asLong(ctx) : a->asDouble(ctx);
+            double rhs = b->isInteger(ctx) ? (double)b->asLong(ctx) : b->asDouble(ctx);
+            if (rhs == 0.0) {
+                if (env) env->raiseZeroDivisionError(ctx);
+                return nullptr;
+            }
+            return ctx->fromDouble(lhs / rhs);
+        }
+        case TokenType::Modulo: return a->modulo(ctx, b);
+        default: return env ? env->getNotImplementedPrototype() : PROTO_NONE;
+    }
 }
 
 static const proto::ProtoObject* py_int_add(
@@ -4916,19 +4993,46 @@ static const proto::ProtoObject* py_int_pow(
 // invoked when other.__add__(self) returned NotImplemented.  CPython's
 // nb_add / nb_radd slots — protoPython's binaryOp already handles
 // commutativity for ints, so the reflected impl just swaps operands.
+// Reflected operator dispatch — must NOT re-enter env->binaryOp because
+// that re-runs the dispatcher (binaryAdd → binaryOpDispatch → ...) and
+// the result of `1.__radd__(SubclassInstance)` is itself dispatched via
+// __radd__ when the forward path returned NotImplemented, producing an
+// infinite recursion. Same pattern as #89's py_int_arith fix.
+//
+// Compute the result with primitive arithmetic: this method is called
+// only via int.__radd__ / int.__rmul__, so `self` is always an exact
+// int (or bool); `other` is the LHS that the reflected op handles
+// (commonly an int subclass with __data__ holding the underlying int).
 static const proto::ProtoObject* py_int_radd(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) {
     if (!args || args->getSize(ctx) < 1) return PROTO_NONE;
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    return env ? env->binaryOp(args->getAt(ctx, 0), TokenType::Plus, self) : PROTO_NONE;
+    const proto::ProtoObject* other = args->getAt(ctx, 0);
+    // Unwrap a numeric subclass: read its __data__ if present.
+    if (other && !other->isInteger(ctx) && !other->isFloat(ctx) && env) {
+        const proto::ProtoObject* d = other->getAttribute(ctx, env->getDataString());
+        if (d && (d->isInteger(ctx) || d->isFloat(ctx))) other = d;
+    }
+    if (!other || (!other->isInteger(ctx) && !other->isFloat(ctx))) {
+        return env ? env->getNotImplementedPrototype() : PROTO_NONE;
+    }
+    return other->add(ctx, self);
 }
 static const proto::ProtoObject* py_int_rmul(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) {
     if (!args || args->getSize(ctx) < 1) return PROTO_NONE;
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    return env ? env->binaryOp(args->getAt(ctx, 0), TokenType::Star, self) : PROTO_NONE;
+    const proto::ProtoObject* other = args->getAt(ctx, 0);
+    if (other && !other->isInteger(ctx) && !other->isFloat(ctx) && env) {
+        const proto::ProtoObject* d = other->getAttribute(ctx, env->getDataString());
+        if (d && (d->isInteger(ctx) || d->isFloat(ctx))) other = d;
+    }
+    if (!other || (!other->isInteger(ctx) && !other->isFloat(ctx))) {
+        return env ? env->getNotImplementedPrototype() : PROTO_NONE;
+    }
+    return other->multiply(ctx, self);
 }
 
 // Resolve (selfStr, otherIdx) for both bound (str(...).__add__(other)) and
@@ -5137,13 +5241,25 @@ static const proto::ProtoString* bytes_from_object(proto::ProtoContext* context,
 static const proto::ProtoObject* py_int_from_bytes(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList* kw) {
     (void)self;
-    if (posArgs->getSize(context) < 2) return PROTO_NONE;
+    if (posArgs->getSize(context) < 1) return PROTO_NONE;
     std::string bytesStr;
     if (!bytes_view(context, posArgs->getAt(context, 0), bytesStr)) return PROTO_NONE;
-    std::string byteorderStr;
-    posArgs->getAt(context, 1)->asString(context)->toUTF8String(context, byteorderStr);
+    // byteorder defaults to 'big' (Python 3.11+); accept either positional
+    // arg #1 or kwarg "byteorder". Falling back to 'big' silently is
+    // critical because the std-lib base64._b32encode passes no byteorder.
+    std::string byteorderStr = "big";
+    if (posArgs->getSize(context) >= 2) {
+        const proto::ProtoObject* bo = posArgs->getAt(context, 1);
+        if (bo && bo->isString(context)) bo->asString(context)->toUTF8String(context, byteorderStr);
+    } else if (kw) {
+        const proto::ProtoString* bs = PythonEnvironment::getInternalString(context, "byteorder");
+        if (bs && kw->has(context, bs->getHash(context))) {
+            const proto::ProtoObject* bo = kw->getAt(context, bs->getHash(context));
+            if (bo && bo->isString(context)) bo->asString(context)->toUTF8String(context, byteorderStr);
+        }
+    }
     bool little = (byteorderStr == "little");
     // Build the integer one byte at a time via shiftLeft + add,
     // so values larger than 64 bits are handled correctly.
@@ -5164,12 +5280,22 @@ static const proto::ProtoObject* py_int_from_bytes(
 static const proto::ProtoObject* py_int_to_bytes(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    if (posArgs->getSize(context) < 2) return PROTO_NONE;
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList* kw) {
+    if (posArgs->getSize(context) < 1) return PROTO_NONE;
     int length = static_cast<int>(posArgs->getAt(context, 0)->asLong(context));
     if (length < 0) length = 0;
-    std::string byteorderStr;
-    posArgs->getAt(context, 1)->asString(context)->toUTF8String(context, byteorderStr);
+    // byteorder defaults to 'big' (Python 3.11+); accept positional or kwarg.
+    std::string byteorderStr = "big";
+    if (posArgs->getSize(context) >= 2) {
+        const proto::ProtoObject* bo = posArgs->getAt(context, 1);
+        if (bo && bo->isString(context)) bo->asString(context)->toUTF8String(context, byteorderStr);
+    } else if (kw) {
+        const proto::ProtoString* bs = PythonEnvironment::getInternalString(context, "byteorder");
+        if (bs && kw->has(context, bs->getHash(context))) {
+            const proto::ProtoObject* bo = kw->getAt(context, bs->getHash(context));
+            if (bo && bo->isString(context)) bo->asString(context)->toUTF8String(context, byteorderStr);
+        }
+    }
     bool little = (byteorderStr == "little");
     // Bignum-safe extraction: peel one byte at a time via & 0xff and >> 8.
     const proto::ProtoObject* mask = context->fromInteger(0xff);
@@ -8006,6 +8132,15 @@ static const proto::ProtoObject* py_str_join(
         return nullptr;
     }
 
+    // Pin the iterator across the loop: env->next runs Python code
+    // (generator body, __next__ method) that may trigger GC. `it`
+    // lives only in this C++ frame; without a root anchor the GC
+    // cannot see it and would reclaim its backing cells. The
+    // TransientPin RAII guard handles the pin/unpin pair through
+    // every exit path (early return, exception propagation, normal
+    // completion).
+    PythonEnvironment::TransientPin pinIt(env, it);
+
     std::string out;
     bool first = true;
     for (int i = 0; ; i++) {
@@ -8026,8 +8161,8 @@ static const proto::ProtoObject* py_str_join(
             if (get_env_diag()) {
                 fflush(stderr);
             }
-            PythonEnvironment* env = PythonEnvironment::fromContext(context);
-            if (env) env->raiseTypeError(context, "sequence item: expected str instance");
+            PythonEnvironment* env_local = PythonEnvironment::fromContext(context);
+            if (env_local) env_local->raiseTypeError(context, "sequence item: expected str instance");
             if (get_env_diag()) fprintf(stderr, "DEBUG: py_str_join not string instance\n");
             return nullptr;
         }
@@ -9254,6 +9389,12 @@ PythonEnvironment::PythonEnvironment(const std::string& stdLibPath, const std::v
     // `s_activeExcsHandles`).  Replaces the prior `_active_excs` attribute
     // anchor whose read path was vulnerable to mutable-shard cache desync.
     activeExcsRoots_ = space_->createRootSet("protopython-active-excs");
+    // GC anchor for native-call argument lists. See the field docs in
+    // PythonEnvironment.h: native C methods receive args only via C++
+    // stack locals; without this pin the args ProtoList and everything
+    // reachable through it (iterables, iterators) get freed if the
+    // native method allocates enough to trigger GC.
+    transientArgsRoots_ = space_->createRootSet("protopython-transient-args");
     initializeRootObjects(stdLibPath, searchPaths);
 }
 
@@ -9444,6 +9585,10 @@ PythonEnvironment::~PythonEnvironment() {
     if (activeExcsRoots_ && space_) {
         space_->destroyRootSet(activeExcsRoots_);
         activeExcsRoots_ = nullptr;
+    }
+    if (transientArgsRoots_ && space_) {
+        space_->destroyRootSet(transientArgsRoots_);
+        transientArgsRoots_ = nullptr;
     }
 
     unregisterContext(rootContext_);
@@ -11769,8 +11914,22 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     registerNativeModule(nativeProviderPtr, "_datetime", [](proto::ProtoContext* c) { return datetime::initialize(c); });
     registerNativeModule(nativeProviderPtr, "_posixsubprocess", [this](proto::ProtoContext* c) { return posixsubprocess_module::initialize(c, this); });
     registerNativeModule(nativeProviderPtr, "select", [this](proto::ProtoContext* c) { return select_module::initialize(c, this); });
-    registerNativeModule(nativeProviderPtr, "_bisect", [](proto::ProtoContext* c) { return bisect::initialize(c); });
-    registerNativeModule(nativeProviderPtr, "_heapq", [](proto::ProtoContext* c) { return heapq::initialize(c); });
+    // _bisect native module disabled: only bisect/bisect_left/bisect_right
+    // are exposed natively, missing insort variants and the `key=` kwarg.
+    // The Python lib/python3.14/bisect.py has the full implementation
+    // including all four insort/bisect functions plus key= support, gated
+    // by `try: from _bisect import * except ImportError: pass`. Without
+    // this registration the import fails and the Python impls win.
+    // See audit/04-native-stubs.md F4.2.
+    // registerNativeModule(nativeProviderPtr, "_bisect", [](proto::ProtoContext* c) { return bisect::initialize(c); });
+    // _heapq native module disabled: HeapqModule's heappush/heappop are
+    // broken (don't actually mutate the user's list — see audit
+    // 04-native-stubs.md F4.2) and 6 of 8 functions are missing.
+    // lib/python3.14/heapq.py has the full pure-Python implementation
+    // and protects the C delegation behind `try: from _heapq import *
+    // except ImportError: pass`. Without this registration the import
+    // fails and the Python implementations win, matching CPython spec.
+    // registerNativeModule(nativeProviderPtr, "_heapq", [](proto::ProtoContext* c) { return heapq::initialize(c); });
     registerNativeModule(nativeProviderPtr, "faulthandler", [](proto::ProtoContext* c) { return faulthandler::initialize(c); });
 
     exceptionType = exceptionsModule->getAttribute(rootContext_, exceptionS);

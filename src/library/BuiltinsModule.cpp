@@ -441,7 +441,29 @@ static const proto::ProtoObject* py_print(
                 std::cout << (env ? env->reprObject(context, obj) : std::string("<int>"));
             }
         } else if (obj->isDouble(context)) {
-            std::cout << std::to_string(obj->asDouble(context));
+            // Shortest round-trip representation matching CPython's str/repr
+            // for floats. std::to_string would emit "3.500000" for 3.5.
+            double val = obj->asDouble(context);
+            if (std::isnan(val)) {
+                std::cout << "nan";
+            } else if (std::isinf(val)) {
+                std::cout << (val < 0 ? "-inf" : "inf");
+            } else {
+                char buf[64];
+                for (int prec = 1; prec <= 17; ++prec) {
+                    std::snprintf(buf, sizeof(buf), "%.*g", prec, val);
+                    char* end = nullptr;
+                    double parsed = std::strtod(buf, &end);
+                    if (parsed == val) break;
+                }
+                std::string s(buf);
+                bool hasDecimal = false;
+                for (char c : s) {
+                    if (c == '.' || c == 'e' || c == 'E') { hasDecimal = true; break; }
+                }
+                if (!hasDecimal) s += ".0";
+                std::cout << s;
+            }
         } else if (obj->isString(context)) {
             std::string s;
             obj->asString(context)->toUTF8String(context, s);
@@ -2374,8 +2396,12 @@ static const proto::ProtoObject* py_super_getattr(
         } else if (isOwnedDescriptor) {
             // @property / classmethod / staticmethod / user descriptor in target.
             legit = true;
-        } else if (!isPythonClass) {
-            if (target->proto::ProtoObject::hasOwnAttribute(context, nameObj->asString(context)) == PROTO_TRUE) legit = true;
+        } else if (target->proto::ProtoObject::hasOwnAttribute(context, nameObj->asString(context)) == PROTO_TRUE) {
+            // Plain data attribute owned by target — covers `class B: x = 1`
+            // accessed via super().x. The earlier code only honoured non-
+            // python-class targets here, so super().class_attribute was
+            // silently skipped on every Python class except `object`.
+            legit = true;
         }
 
         if (get_env_diag()) {
@@ -3548,6 +3574,51 @@ const proto::ProtoObject* py_genericalias_new(
     instance = instance->setAttribute(context, PythonEnvironment::getInternedString(context, "__origin__"), origin);
     instance = instance->setAttribute(context, PythonEnvironment::getInternedString(context, "__args__"), args);
     return instance;
+}
+
+static const proto::ProtoObject* py_genericalias_eq(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!self || !posArgs || posArgs->getSize(context) < 1) return PROTO_FALSE;
+    const proto::ProtoObject* other = posArgs->getAt(context, 0);
+    if (!other || other == PROTO_NONE) return PROTO_FALSE;
+    // Only compare against another GenericAlias.
+    const proto::ProtoString* originS = PythonEnvironment::getInternedString(context, "__origin__");
+    const proto::ProtoString* argsS   = PythonEnvironment::getInternedString(context, "__args__");
+    const proto::ProtoObject* sOrigin = self->getAttribute(context, originS);
+    const proto::ProtoObject* oOrigin = other->getAttribute(context, originS);
+    if (!oOrigin || oOrigin == PROTO_NONE) {
+        if (env) return env->getNotImplementedPrototype();
+        return PROTO_FALSE;
+    }
+    const proto::ProtoObject* sArgs = self->getAttribute(context, argsS);
+    const proto::ProtoObject* oArgs = other->getAttribute(context, argsS);
+    if (!env) return PROTO_FALSE;
+    bool originEq = (sOrigin == oOrigin) || (env->compareObjects(context, sOrigin, oOrigin, 0) == PROTO_TRUE);
+    bool argsEq   = (sArgs == oArgs)     || (env->compareObjects(context, sArgs, oArgs, 0) == PROTO_TRUE);
+    return (originEq && argsEq) ? PROTO_TRUE : PROTO_FALSE;
+}
+
+static const proto::ProtoObject* py_genericalias_hash(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList*,
+    const proto::ProtoSparseList*) {
+    if (!self) return context->fromInteger(0);
+    const proto::ProtoString* originS = PythonEnvironment::getInternedString(context, "__origin__");
+    const proto::ProtoString* argsS   = PythonEnvironment::getInternedString(context, "__args__");
+    const proto::ProtoObject* origin = self->getAttribute(context, originS);
+    const proto::ProtoObject* args   = self->getAttribute(context, argsS);
+    unsigned long h1 = origin ? origin->getHash(context) : 0;
+    unsigned long h2 = args ? args->getHash(context) : 0;
+    // Mix two hashes — same combiner as Python's tuple hash.
+    unsigned long h = h1 ^ (h2 + 0x9e3779b9UL + (h1 << 6) + (h1 >> 2));
+    return context->fromInteger(static_cast<long long>(h));
 }
 
 const proto::ProtoObject* py_genericalias_repr(
@@ -5883,6 +5954,8 @@ static const proto::ProtoObject* py_filter_next(
             continue;
         }
 
+        // Pin val while the user predicate runs (callObject may GC).
+        protoPython::PythonEnvironment::TransientPin pinVal(env, val);
         const proto::ProtoObject* result = env ? env->callObject(func, {val}) : nullptr;
         if (result && env && env->isTrue(result)) return val;
     }
@@ -5967,7 +6040,12 @@ static const proto::ProtoObject* py_map_next(
         }
         return nullptr;
     }
-    
+
+    // Pin val across the user-function call: callObject runs Python
+    // bytecode that may trigger GC, and `val` lives only in this C++
+    // local. Without the pin, a GC firing inside the user mapper frees
+    // val's backing cells under the running mutator.
+    protoPython::PythonEnvironment::TransientPin pinVal(env, val);
     const proto::ProtoObject* res = env ? env->callObject(func, {val}) : nullptr;
     if (!res && env && env->hasPendingException()) {
         return nullptr;
@@ -6011,23 +6089,382 @@ const proto::ProtoObject* py_object_new(
     return obj;
 }
 
+// Forward decls (defined after this block; needed by py_bytearray_fallback
+// which assigns __setitem__ on each bytearray instance). Module-init time
+// builds these once and stores them on bytesPrototype as a fallback
+// dispatch target — but instances flagged as bytearray (via the
+// __is_bytearray__ marker the fallback sets) will route OP_STORE_SUBSCR
+// through them and get slice assignment that re-publishes a fresh
+// __data__ string.
+static const proto::ProtoObject* py_bytearray_setitem(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList*);
+static const proto::ProtoObject* py_bytearray_iadd(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList*);
+static const proto::ProtoObject* py_bytearray_extend(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList*);
+
 const proto::ProtoObject* py_bytearray_fallback(proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* link, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
     if (get_env_diag()) fprintf(stderr, "DEBUG: py_bytearray_fallback called\n");
-    // If called with a bytes/string argument, return it directly (protoPython simplification:
-    // bytearray is treated as immutable bytes since mutation is not widely used in stdlib).
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    const proto::ProtoString* dataS = PythonEnvironment::getInternedString(ctx, "__data__");
+    const proto::ProtoString* tagS = PythonEnvironment::getInternedString(ctx, "__is_bytearray__");
+    const proto::ProtoString* siS = PythonEnvironment::getInternedString(ctx, "__setitem__");
+
+    // Initial buffer content: empty unless an arg was provided.
+    // Reads any bytes-like object (ProtoString, ProtoByteBuffer, or a
+    // wrapper whose __data__ is one of those) into a std::string for
+    // raw-byte fidelity. Mirrors the bytes_view helper in
+    // PythonEnvironment.cpp.
+    std::string initial;
     if (args && args->getSize(ctx) >= 1) {
         const proto::ProtoObject* initArg = args->getAt(ctx, 0);
-        if (initArg && initArg != PROTO_NONE && initArg->isString(ctx)) {
-            return initArg;
+        if (initArg && initArg != PROTO_NONE) {
+            bool gotBytes = false;
+            if (initArg->isString(ctx)) {
+                initArg->asString(ctx)->toUTF8String(ctx, initial);
+                gotBytes = true;
+            } else if (initArg->isByteBuffer(ctx)) {
+                const proto::ProtoByteBuffer* bb = initArg->asByteBuffer(ctx);
+                unsigned long n = bb->getSize(ctx);
+                initial.assign(bb->getBuffer(ctx), n);
+                gotBytes = true;
+            } else {
+                const proto::ProtoObject* d = initArg->getAttribute(ctx, dataS);
+                if (d && d->isString(ctx)) {
+                    d->asString(ctx)->toUTF8String(ctx, initial);
+                    gotBytes = true;
+                } else if (d && d->isByteBuffer(ctx)) {
+                    const proto::ProtoByteBuffer* bb = d->asByteBuffer(ctx);
+                    unsigned long n = bb->getSize(ctx);
+                    initial.assign(bb->getBuffer(ctx), n);
+                    gotBytes = true;
+                }
+            }
+            if (!gotBytes && initArg->isInteger(ctx)) {
+                // bytearray(n) makes a zero-filled buffer of length n.
+                long long n = initArg->asLong(ctx);
+                if (n < 0) n = 0;
+                initial.assign(static_cast<size_t>(n), '\0');
+            }
         }
     }
-    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+
+    // Always produce a fresh mutable instance — the fast path of
+    // returning the input bytes object made bytearray(bytes_obj) alias
+    // the source, so any subsequent mutation would either silently fail
+    // (immutable bytes) or corrupt the caller's value.
+    // __data__ is stored as ProtoByteBuffer so all 256 byte values
+    // round-trip exactly (UTF-8 reinterpretation in ProtoString would
+    // mangle non-ASCII bytes).
     if (env && env->getBytesPrototype()) {
         proto::ProtoObject* b = const_cast<proto::ProtoObject*>(env->getBytesPrototype()->newChild(ctx, true));
-        b->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__data__"), PythonEnvironment::getInternedString(ctx, "")->asObject(ctx));
+        const proto::ProtoByteBuffer* bb = ctx->newByteBuffer(initial.data(), static_cast<unsigned long>(initial.size()));
+        b->setAttribute(ctx, dataS, bb->asObject(ctx));
+        b->setAttribute(ctx, tagS, PROTO_TRUE);
+        // Per-instance __setitem__ wins over the immutable bytes
+        // prototype's lookup chain; bytearray-only behaviour without
+        // teaching bytesPrototype to mutate.
+        b->setAttribute(ctx, siS, ctx->fromMethod(b, py_bytearray_setitem));
+        // __iadd__ for `ba += b'...'` — without this, += routes through
+        // __add__ which returns immutable bytes, dropping the
+        // bytearray-ness of the LHS. extend() is the named alias.
+        const proto::ProtoString* iaddS = PythonEnvironment::getInternedString(ctx, "__iadd__");
+        const proto::ProtoString* extS  = PythonEnvironment::getInternedString(ctx, "extend");
+        b->setAttribute(ctx, iaddS, ctx->fromMethod(b, py_bytearray_iadd));
+        b->setAttribute(ctx, extS,  ctx->fromMethod(b, py_bytearray_extend));
         return b;
     }
     return PythonEnvironment::getInternedString(ctx, "")->asObject(ctx);
+}
+
+// Helper: read the bytes-like view of any object (str, ProtoByteBuffer,
+// or wrapper with __data__ pointing to either). Returns false if the
+// object isn't bytes-like.
+static bool ba_bytes_view(proto::ProtoContext* ctx, const proto::ProtoObject* obj, std::string& out) {
+    if (!obj || obj == PROTO_NONE) return false;
+    if (obj->isString(ctx)) {
+        obj->asString(ctx)->toUTF8String(ctx, out);
+        return true;
+    }
+    if (obj->isByteBuffer(ctx)) {
+        const proto::ProtoByteBuffer* bb = obj->asByteBuffer(ctx);
+        out.assign(bb->getBuffer(ctx), bb->getSize(ctx));
+        return true;
+    }
+    const proto::ProtoString* dataS = PythonEnvironment::getInternedString(ctx, "__data__");
+    const proto::ProtoObject* d = obj->getAttribute(ctx, dataS);
+    if (d && d->isString(ctx)) { d->asString(ctx)->toUTF8String(ctx, out); return true; }
+    if (d && d->isByteBuffer(ctx)) {
+        const proto::ProtoByteBuffer* bb = d->asByteBuffer(ctx);
+        out.assign(bb->getBuffer(ctx), bb->getSize(ctx));
+        return true;
+    }
+    return false;
+}
+
+// Append-or-extend semantics for `ba += other` and `ba.extend(other)`.
+// Mutates self in place and returns self so that `ba += x` keeps the
+// bytearray identity.
+static const proto::ProtoObject* py_bytearray_iadd(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!self || !posArgs || posArgs->getSize(ctx) < 1) return const_cast<proto::ProtoObject*>(self);
+    const proto::ProtoObject* other = posArgs->getAt(ctx, 0);
+
+    const proto::ProtoString* dataS = PythonEnvironment::getInternedString(ctx, "__data__");
+    std::string buf;
+    const proto::ProtoObject* dataObj = self->getAttribute(ctx, dataS);
+    if (dataObj && dataObj != PROTO_NONE) {
+        if (dataObj->isByteBuffer(ctx)) {
+            const proto::ProtoByteBuffer* bb = dataObj->asByteBuffer(ctx);
+            buf.assign(bb->getBuffer(ctx), bb->getSize(ctx));
+        } else if (dataObj->isString(ctx)) {
+            dataObj->asString(ctx)->toUTF8String(ctx, buf);
+        }
+    }
+
+    std::string add;
+    if (!ba_bytes_view(ctx, other, add)) {
+        // Fall back: iterate other and require ints 0..255 (bytearray
+        // accepts iterables of ints in CPython).
+        const proto::ProtoString* iterS = PythonEnvironment::getInternedString(ctx, "__iter__");
+        const proto::ProtoString* nextS = PythonEnvironment::getInternedString(ctx, "__next__");
+        const proto::ProtoObject* iterM = other->getAttribute(ctx, iterS);
+        if (iterM && iterM != PROTO_NONE && iterM->asMethod(ctx)) {
+            const proto::ProtoObject* it = iterM->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(other), nullptr, ctx->newList(), nullptr);
+            if (it && it != PROTO_NONE) {
+                const proto::ProtoObject* nextM = it->getAttribute(ctx, nextS);
+                if (nextM && nextM->asMethod(ctx)) {
+                    for (;;) {
+                        const proto::ProtoObject* v = nextM->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(it), nullptr, ctx->newList(), nullptr);
+                        if (env && env->peekPendingException()) {
+                            if (env->isStopIteration(ctx, env->peekPendingException()))
+                                env->clearPendingException();
+                            break;
+                        }
+                        if (!v || v == PROTO_NONE) break;
+                        if (!v->isInteger(ctx)) {
+                            if (env) env->raiseTypeError(ctx, "an integer is required");
+                            return nullptr;
+                        }
+                        long long bv = v->asLong(ctx);
+                        if (bv < 0 || bv > 255) {
+                            if (env) env->raiseValueError(ctx, PythonEnvironment::getInternedString(ctx, "byte must be in range(0, 256)")->asObject(ctx));
+                            return nullptr;
+                        }
+                        add.push_back(static_cast<char>(bv));
+                    }
+                }
+            }
+        } else {
+            if (env) env->raiseTypeError(ctx, "can't concat non-bytes-like to bytearray");
+            return nullptr;
+        }
+    }
+    buf.append(add);
+    self->setAttribute(ctx, dataS,
+        ctx->newByteBuffer(buf.data(), static_cast<unsigned long>(buf.size()))->asObject(ctx));
+    return const_cast<proto::ProtoObject*>(self);
+}
+
+static const proto::ProtoObject* py_bytearray_extend(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* pl,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList* kw) {
+    py_bytearray_iadd(ctx, self, pl, posArgs, kw);
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    return env ? env->getNonePrototype() : PROTO_NONE;
+}
+
+// Slice-aware __setitem__ for bytearray instances. Handles:
+//   ba[i]    = int         (single byte assignment)
+//   ba[i:j]  = bytes/str   (slice replacement, supports differing length)
+//   ba[i:j:k] not supported beyond step==1 (CPython requires step==1 for
+//                          assignment with a non-equal-length sequence)
+static const proto::ProtoObject* py_bytearray_setitem(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!self || !posArgs || posArgs->getSize(ctx) < 2) return PROTO_NONE;
+    const proto::ProtoObject* key = posArgs->getAt(ctx, 0);
+    const proto::ProtoObject* value = posArgs->getAt(ctx, 1);
+
+    const proto::ProtoString* dataS = PythonEnvironment::getInternedString(ctx, "__data__");
+    const proto::ProtoObject* dataObj = self->getAttribute(ctx, dataS);
+    if (!dataObj || dataObj == PROTO_NONE) {
+        if (env) env->raiseTypeError(ctx, "bytearray setitem: missing __data__ buffer");
+        return nullptr;
+    }
+    // __data__ may be either a ProtoByteBuffer (preferred — preserves
+    // bytes 0x80..0xFF) or a ProtoString (legacy carrier).
+    std::string buf;
+    if (dataObj->isByteBuffer(ctx)) {
+        const proto::ProtoByteBuffer* bb = dataObj->asByteBuffer(ctx);
+        unsigned long n = bb->getSize(ctx);
+        buf.assign(bb->getBuffer(ctx), n);
+    } else if (dataObj->isString(ctx)) {
+        dataObj->asString(ctx)->toUTF8String(ctx, buf);
+    } else {
+        if (env) env->raiseTypeError(ctx, "bytearray setitem: __data__ has unexpected shape");
+        return nullptr;
+    }
+    const long long n = static_cast<long long>(buf.size());
+
+    // Detect slice via 'start'/'stop'/'step' attributes; falls back to
+    // integer key otherwise. Mirrors get_slice_bounds() but inlined to
+    // keep this file self-contained and avoid pulling in a private
+    // header.
+    const proto::ProtoString* startS = PythonEnvironment::getInternedString(ctx, "start");
+    const proto::ProtoString* stopS  = PythonEnvironment::getInternedString(ctx, "stop");
+    const proto::ProtoString* stepS  = PythonEnvironment::getInternedString(ctx, "step");
+    bool isSlice = (key->hasOwnAttribute(ctx, startS) == PROTO_TRUE
+                    || key->hasOwnAttribute(ctx, stopS) == PROTO_TRUE
+                    || key->hasOwnAttribute(ctx, stepS) == PROTO_TRUE);
+    if (env && env->getSliceType() && key->isInstanceOf(ctx, env->getSliceType()) == PROTO_TRUE) isSlice = true;
+
+    if (!isSlice) {
+        // Single-index assignment: value must be int 0..255.
+        if (!key->isInteger(ctx)) {
+            if (env) env->raiseTypeError(ctx, "bytearray indices must be integers or slices");
+            return nullptr;
+        }
+        long long idx = key->asLong(ctx);
+        if (idx < 0) idx += n;
+        if (idx < 0 || idx >= n) {
+            if (env) env->raiseValueError(ctx, PythonEnvironment::getInternedString(ctx, "bytearray assignment index out of range")->asObject(ctx));
+            return nullptr;
+        }
+        if (!value || !value->isInteger(ctx)) {
+            if (env) env->raiseTypeError(ctx, "an integer is required");
+            return nullptr;
+        }
+        long long b = value->asLong(ctx);
+        if (b < 0 || b > 255) {
+            if (env) env->raiseValueError(ctx, PythonEnvironment::getInternedString(ctx, "byte must be in range(0, 256)")->asObject(ctx));
+            return nullptr;
+        }
+        buf[static_cast<size_t>(idx)] = static_cast<char>(b);
+        self->setAttribute(ctx, dataS,
+            ctx->newByteBuffer(buf.data(), static_cast<unsigned long>(buf.size()))->asObject(ctx));
+        return env ? env->getNonePrototype() : PROTO_NONE;
+    }
+
+    // Slice assignment.
+    long long step = 1;
+    bool startProvided = false, stopProvided = false;
+    long long start = 0, stop = n;
+    {
+        const proto::ProtoObject* sObj = key->getAttribute(ctx, stepS);
+        if (sObj && sObj != PROTO_NONE && sObj->isInteger(ctx)) step = sObj->asLong(ctx);
+        if (step == 0) step = 1;
+        const proto::ProtoObject* a0 = key->getAttribute(ctx, startS);
+        const proto::ProtoObject* a1 = key->getAttribute(ctx, stopS);
+        if (a0 && a0 != PROTO_NONE && a0->isInteger(ctx)) { start = a0->asLong(ctx); startProvided = true; }
+        else { start = (step > 0) ? 0 : n - 1; }
+        if (a1 && a1 != PROTO_NONE && a1->isInteger(ctx)) { stop = a1->asLong(ctx); stopProvided = true; }
+        else { stop = (step > 0) ? n : -1; }
+    }
+    // PySlice_AdjustIndices clamping.
+    if (step > 0) {
+        if (start < 0) { start += n; if (start < 0) start = 0; }
+        if (start > n) start = n;
+        if (stop < 0) { stop += n; if (stop < 0) stop = 0; }
+        if (stop > n) stop = n;
+        if (start > stop) start = stop;
+    } else {
+        if (startProvided) {
+            if (start < 0) { start += n; if (start < 0) start = -1; }
+            if (start >= n) start = n - 1;
+        }
+        if (stopProvided) {
+            if (stop < 0) { stop += n; if (stop < 0) stop = -1; }
+            if (stop >= n) stop = n - 1;
+        }
+        if (start < stop) start = stop;
+    }
+
+    // Extract the replacement bytes — accept ProtoString, ProtoByteBuffer,
+    // or any wrapper whose __data__ is one of those.
+    std::string repl;
+    bool gotRepl = false;
+    if (value && value != PROTO_NONE) {
+        if (value->isString(ctx)) {
+            value->asString(ctx)->toUTF8String(ctx, repl);
+            gotRepl = true;
+        } else if (value->isByteBuffer(ctx)) {
+            const proto::ProtoByteBuffer* bb = value->asByteBuffer(ctx);
+            unsigned long m = bb->getSize(ctx);
+            repl.assign(bb->getBuffer(ctx), m);
+            gotRepl = true;
+        } else {
+            const proto::ProtoObject* d = value->getAttribute(ctx, dataS);
+            if (d && d->isString(ctx)) {
+                d->asString(ctx)->toUTF8String(ctx, repl);
+                gotRepl = true;
+            } else if (d && d->isByteBuffer(ctx)) {
+                const proto::ProtoByteBuffer* bb = d->asByteBuffer(ctx);
+                unsigned long m = bb->getSize(ctx);
+                repl.assign(bb->getBuffer(ctx), m);
+                gotRepl = true;
+            }
+        }
+    } else {
+        gotRepl = true; // empty replacement (deletion)
+    }
+    if (!gotRepl) {
+        if (env) env->raiseTypeError(ctx, "can only assign bytes-like to bytearray slice");
+        return nullptr;
+    }
+
+    if (step == 1) {
+        // Length-changing replacement allowed.
+        std::string newBuf;
+        newBuf.reserve(buf.size() - (stop - start) + repl.size());
+        newBuf.append(buf, 0, static_cast<size_t>(start));
+        newBuf.append(repl);
+        newBuf.append(buf, static_cast<size_t>(stop), buf.size() - static_cast<size_t>(stop));
+        self->setAttribute(ctx, dataS,
+            ctx->newByteBuffer(newBuf.data(), static_cast<unsigned long>(newBuf.size()))->asObject(ctx));
+        return env ? env->getNonePrototype() : PROTO_NONE;
+    }
+
+    // step != 1: extended slice assignment requires equal length.
+    long long count = (step > 0) ? ((stop - start + step - 1) / step)
+                                 : ((stop - start + step + 1) / step);
+    if (count < 0) count = 0;
+    if (static_cast<long long>(repl.size()) != count) {
+        if (env) env->raiseValueError(ctx, PythonEnvironment::getInternedString(ctx, "attempt to assign bytes of differing length to extended slice")->asObject(ctx));
+        return nullptr;
+    }
+    std::string newBuf = buf;
+    long long ri = 0;
+    for (long long i = start; (step > 0 ? i < stop : i > stop) && ri < static_cast<long long>(repl.size()); i += step) {
+        newBuf[static_cast<size_t>(i)] = repl[static_cast<size_t>(ri++)];
+    }
+    self->setAttribute(ctx, dataS,
+        ctx->newByteBuffer(newBuf.data(), static_cast<unsigned long>(newBuf.size()))->asObject(ctx));
+    return env ? env->getNonePrototype() : PROTO_NONE;
 }
 
 
@@ -6450,6 +6887,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     genericAliasProto = genericAliasProto->setAttribute(ctx, py_name_local, PythonEnvironment::getInternedString(ctx, "GenericAlias")->asObject(ctx));
     genericAliasProto = genericAliasProto->setAttribute(ctx, pEnv->getNewString(), ctx->fromMethod(nullptr, py_genericalias_new));
     genericAliasProto = genericAliasProto->setAttribute(ctx, pEnv->getReprString(), ctx->fromMethod(nullptr, py_genericalias_repr));
+    genericAliasProto = genericAliasProto->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__eq__"), ctx->fromMethod(nullptr, py_genericalias_eq));
+    genericAliasProto = genericAliasProto->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__hash__"), ctx->fromMethod(nullptr, py_genericalias_hash));
     // PEP 604: GenericAlias | X and X | GenericAlias collapse into a UnionType.
     // Reuse the same flatten/dedupe builder so chained ops stay flat.
     genericAliasProto = genericAliasProto->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__or__"), ctx->fromMethod(nullptr, py_uniontype_or));

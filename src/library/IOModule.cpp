@@ -75,6 +75,77 @@ static const proto::ProtoObject* py_io_exit(
     return PROTO_FALSE;
 }
 
+// Reads up to and including the next '\n' from `__file_buffer__`,
+// erases the consumed prefix in place, and returns the line. Returns
+// the empty string when the buffer is exhausted (caller distinguishes
+// EOF from a true empty line by emptiness AND prior consumption).
+static std::string io_consume_line(const proto::ProtoObject* self,
+                                   proto::ProtoContext* context) {
+    const proto::ProtoObject* bufObj = self->getAttribute(context, proto::ProtoString::createSymbol(context, "__file_buffer__"));
+    if (!bufObj || !bufObj->asExternalPointer(context)) return std::string();
+    std::string* buffer = static_cast<std::string*>(bufObj->asExternalPointer(context)->getPointer(context));
+    if (!buffer || buffer->empty()) return std::string();
+    size_t nl = buffer->find('\n');
+    std::string line;
+    if (nl == std::string::npos) {
+        line = *buffer;
+        buffer->clear();
+    } else {
+        line = buffer->substr(0, nl + 1);
+        buffer->erase(0, nl + 1);
+    }
+    return line;
+}
+
+static const proto::ProtoObject* py_io_readline(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList*,
+    const proto::ProtoSparseList*) {
+    std::string line = io_consume_line(self, context);
+    return PythonEnvironment::getInternedString(context, line.c_str())->asObject(context);
+}
+
+static const proto::ProtoObject* py_io_iter(
+    proto::ProtoContext*,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList*,
+    const proto::ProtoSparseList*) {
+    // File objects are their own iterator: `for line in f` reuses the
+    // same object across __next__ calls. Returning self preserves the
+    // CPython contract.
+    return self;
+}
+
+static const proto::ProtoObject* py_io_next(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList*,
+    const proto::ProtoSparseList*) {
+    std::string line = io_consume_line(self, context);
+    if (line.empty()) {
+        // EOF — raise StopIteration so the caller terminates the loop.
+        PythonEnvironment* env = PythonEnvironment::fromContext(context);
+        if (env) env->raiseStopIteration(context);
+        return nullptr;
+    }
+    return PythonEnvironment::getInternedString(context, line.c_str())->asObject(context);
+}
+
+static const proto::ProtoObject* py_io_flush(
+    proto::ProtoContext*,
+    const proto::ProtoObject*,
+    const proto::ParentLink*,
+    const proto::ProtoList*,
+    const proto::ProtoSparseList*) {
+    // No-op for our buffer-backed file: writes already go to the
+    // backing buffer immediately. Return None.
+    return PROTO_NONE;
+}
+
 static const proto::ProtoObject* py_io_readlines(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -141,6 +212,27 @@ static const proto::ProtoObject* py_io_open(
         positionalParameters->getAt(context, 1)->asString(context)->toUTF8String(context, mode);
     }
 
+    // Pre-flight: when opening for read, fail with FileNotFoundError if
+    // the file is missing. Previously a missing file silently produced
+    // an empty fake handle, so callers like pdb's `with open(rcfile)`
+    // never reached their `except OSError` branch and instead crashed
+    // later when they tried to iterate the (un-iterable) handle.
+    bool isRead = (mode.find('r') != std::string::npos)
+                  && (mode.find('w') == std::string::npos)
+                  && (mode.find('a') == std::string::npos)
+                  && (mode.find('x') == std::string::npos);
+    if (isRead) {
+        std::ifstream probe(filename);
+        if (!probe.is_open()) {
+            PythonEnvironment* env = PythonEnvironment::fromContext(context);
+            if (env) {
+                env->raiseOSError(context, 2, "No such file or directory", filename);
+                return nullptr;
+            }
+            return PROTO_NONE;
+        }
+    }
+
     const proto::ProtoObject* fileObj = context->newObject(false);
     fileObj = fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "name"), fileArg);
     fileObj = fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "mode"), PythonEnvironment::getInternedString(context, mode.c_str())->asObject(context));
@@ -168,6 +260,14 @@ static const proto::ProtoObject* py_io_open(
         context->fromMethod(const_cast<proto::ProtoObject*>(fileObj), py_io_enter));
     fileObj = fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "__exit__"),
         context->fromMethod(const_cast<proto::ProtoObject*>(fileObj), py_io_exit));
+    fileObj = fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "readline"),
+        context->fromMethod(const_cast<proto::ProtoObject*>(fileObj), py_io_readline));
+    fileObj = fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "__iter__"),
+        context->fromMethod(const_cast<proto::ProtoObject*>(fileObj), py_io_iter));
+    fileObj = fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "__next__"),
+        context->fromMethod(const_cast<proto::ProtoObject*>(fileObj), py_io_next));
+    fileObj = fileObj->setAttribute(context, proto::ProtoString::createSymbol(context, "flush"),
+        context->fromMethod(const_cast<proto::ProtoObject*>(fileObj), py_io_flush));
     return fileObj;
 }
 
