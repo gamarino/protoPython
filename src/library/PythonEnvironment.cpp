@@ -1688,37 +1688,82 @@ static SliceBounds get_slice_bounds(proto::ProtoContext* context, const proto::P
     const proto::ProtoString* startName = env ? env->getStartString() : PythonEnvironment::getInternedString(context, "start");
     const proto::ProtoString* stopName = env ? env->getStopString() : PythonEnvironment::getInternedString(context, "stop");
     const proto::ProtoString* stepName = env ? env->getStepString() : PythonEnvironment::getInternedString(context, "step");
-    
+
     // Check if it's a slice object by looking for these attributes if sliceType is not available or not used as parent
     bool isSliceInstance = env && env->getSliceType() && indexObj->isInstanceOf(context, env->getSliceType()) == PROTO_TRUE;
-    
+
     const proto::ProtoObject* startObj = indexObj->getAttribute(context, startName);
     const proto::ProtoObject* stopObj = indexObj->getAttribute(context, stopName);
     const proto::ProtoObject* stepObj = indexObj->getAttribute(context, stepName);
-    
+
     // An object is a slice if it's strictly a slice instance, or if it explicitly has one of the attributes natively.
     // getAttribute on primitive types like int returns PROTO_NONE, so we must be careful not to mistake it for "attribute exists and = None".
-    bool hasSliceAttrs = indexObj->hasOwnAttribute(context, startName) == PROTO_TRUE || 
-                         indexObj->hasOwnAttribute(context, stopName) == PROTO_TRUE || 
+    bool hasSliceAttrs = indexObj->hasOwnAttribute(context, startName) == PROTO_TRUE ||
+                         indexObj->hasOwnAttribute(context, stopName) == PROTO_TRUE ||
                          indexObj->hasOwnAttribute(context, stepName) == PROTO_TRUE;
 
     if (!isSliceInstance && !hasSliceAttrs) return sb;
 
     sb.isSlice = true;
-    sb.start = (startObj && startObj != PROTO_NONE && startObj->isInteger(context)) ? startObj->asLong(context) : 0;
-    sb.stop = (stopObj && stopObj != PROTO_NONE && stopObj->isInteger(context)) ? stopObj->asLong(context) : size;
     sb.step = (stepObj && stepObj != PROTO_NONE && stepObj->isInteger(context)) ? stepObj->asLong(context) : 1;
-    
-    if (sb.start < 0) sb.start += size;
-    if (sb.stop < 0) sb.stop += size;
-    if (sb.start < 0) sb.start = 0;
-    if (sb.stop > size) sb.stop = size;
-    
-    // For positive step, start > stop means empty slice
-    // For negative step, start < stop means empty slice
-    if (sb.step > 0 && sb.start > sb.stop) sb.start = sb.stop;
-    else if (sb.step < 0 && sb.start < sb.stop) sb.start = sb.stop;
-    
+    if (sb.step == 0) sb.step = 1;  // Defensive; CPython raises ValueError but our caller is more permissive.
+
+    bool startProvided = startObj && startObj != PROTO_NONE && startObj->isInteger(context);
+    bool stopProvided = stopObj && stopObj != PROTO_NONE && stopObj->isInteger(context);
+
+    // Defaults follow CPython's PySlice_Unpack: when start/stop are None,
+    // their meaning depends on the step sign. step > 0 walks forward from
+    // 0 to size; step < 0 walks backward from size-1 to -1 (the position
+    // *before* the beginning, signalling exhaustion).
+    if (startProvided) {
+        sb.start = startObj->asLong(context);
+    } else {
+        sb.start = (sb.step > 0) ? 0 : size - 1;
+    }
+    if (stopProvided) {
+        sb.stop = stopObj->asLong(context);
+    } else {
+        sb.stop = (sb.step > 0) ? size : -1;
+    }
+
+    // PySlice_AdjustIndices clamping rules — different bounds for forward
+    // and reverse iteration so an out-of-range start doesn't index past
+    // the buffer.
+    if (sb.step > 0) {
+        if (sb.start < 0) {
+            sb.start += size;
+            if (sb.start < 0) sb.start = 0;
+        }
+        if (sb.start > size) sb.start = size;
+        if (sb.stop < 0) {
+            sb.stop += size;
+            if (sb.stop < 0) sb.stop = 0;
+        }
+        if (sb.stop > size) sb.stop = size;
+        if (sb.start > sb.stop) sb.start = sb.stop;  // empty slice
+    } else {
+        // step < 0
+        // The default stop=-1 (when user supplied None) is the "past-the-
+        // beginning" sentinel and must NOT be folded by adding size — that
+        // would turn -1 into size-1 and collapse `[::-1]` to an empty
+        // range. Only adjust user-supplied negatives.
+        if (startProvided) {
+            if (sb.start < 0) {
+                sb.start += size;
+                if (sb.start < 0) sb.start = -1;
+            }
+            if (sb.start >= size) sb.start = size - 1;
+        }
+        if (stopProvided) {
+            if (sb.stop < 0) {
+                sb.stop += size;
+                if (sb.stop < 0) sb.stop = -1;
+            }
+            if (sb.stop >= size) sb.stop = size - 1;
+        }
+        if (sb.start < sb.stop) sb.start = sb.stop;  // empty slice
+    }
+
     return sb;
 }
 
