@@ -49,6 +49,26 @@ except ImportError:
                 return vars(self) == vars(other)
             return NotImplemented
 
+        def __replace__(self, /, **changes):
+            # PEP 759 protocol used by `copy.replace`. Build a fresh instance
+            # of the same class with the merged attribute set.
+            cls = type(self)
+            result = cls.__new__(cls)
+            for k in vars(self):
+                setattr(result, k, getattr(self, k))
+            for k, v in changes.items():
+                setattr(result, k, v)
+            return result
+
+        def __reduce__(self):
+            # Pickle support: rebuild via the class + saved kwargs dict.
+            d = {k: getattr(self, k) for k in vars(self)}
+            return (type(self), (), d)
+
+        def __setstate__(self, state):
+            for k, v in state.items():
+                setattr(self, k, v)
+
     def _cell_factory():
         a = 1
         def f():
