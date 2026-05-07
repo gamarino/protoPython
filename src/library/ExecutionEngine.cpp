@@ -657,6 +657,21 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
             gen->setAttribute(calleeCtx, PythonEnvironment::getInternedString(calleeCtx, table[2]), PROTO_FALSE);
         }
         
+        // Generator/coroutine introspection: `gen.__name__` is the wrapped
+        // function's name (from co_name) and `gen.__qualname__` is the
+        // function's qualname. Both must be writable per CPython
+        // (`gen.__name__ = "x"` is a documented use case in test_generators).
+        if (env && codeObj) {
+            const proto::ProtoObject* coName = codeObj->getAttribute(calleeCtx, env->getCoNameString());
+            if (coName && coName != PROTO_NONE) {
+                gen->setAttribute(calleeCtx, env->getNameString(), coName);
+            }
+            const proto::ProtoString* qnS = PythonEnvironment::getInternedString(calleeCtx, "__qualname__");
+            const proto::ProtoObject* qn = self ? self->getAttribute(calleeCtx, qnS) : nullptr;
+            if (!qn || qn == PROTO_NONE) qn = coName;
+            if (qn && qn != PROTO_NONE) gen->setAttribute(calleeCtx, qnS, qn);
+        }
+
         const proto::ProtoList* emptyStack = calleeCtx->newList();
         gen->setAttribute(calleeCtx, env ? env->getGiStackString() : PythonEnvironment::getInternedString(calleeCtx, "gi_stack"), emptyStack->asObject(calleeCtx));
         
