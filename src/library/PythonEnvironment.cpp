@@ -564,6 +564,100 @@ static const proto::ProtoObject* py_mappingproxy_contains(
     return PROTO_FALSE;
 }
 
+// MappingProxy.copy(): return a shallow dict copy of the wrapped mapping,
+// matching CPython's `dict(self)` shortcut. The result is detached from
+// the proxy so subsequent mutations of the underlying mapping don't leak.
+static const proto::ProtoObject* py_mappingproxy_copy(
+    proto::ProtoContext* context, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!env) return PROTO_NONE;
+    const proto::ProtoObject* data = self->getAttribute(context, env->getDataString());
+    if (!data || data == PROTO_NONE) return env->getDictPrototype()->newChild(context, true);
+    // dict(data) reuses py_dict_call's iterable-of-pairs / mapping logic.
+    // Look up __new__ rather than __call__ — type.__call__ on the metaclass
+    // is the user-visible entrypoint, but the underlying iterable-of-pairs
+    // builder lives on dict.__new__ and accepts the same (cls, source) shape.
+    const proto::ProtoObject* dictCls = env->getDictPrototype();
+    const proto::ProtoList* args = context->newList()->appendLast(context, dictCls)->appendLast(context, data);
+    const proto::ProtoString* newS = env->getNewString();
+    const proto::ProtoObject* dictNew = dictCls->getAttribute(context, newS);
+    if (dictNew && dictNew->asMethod(context)) {
+        return dictNew->asMethod(context)(context, dictCls, nullptr, args, nullptr);
+    }
+    return PROTO_NONE;
+}
+
+// True iff `obj` quacks like a mapping (has a `keys` attribute that's a
+// callable, and is not a list/tuple/string/number). Mirrors CPython's
+// PyMapping_Check guard used by dict.__or__ / mappingproxy.__or__.
+static bool mp_isMappingLike(proto::ProtoContext* context,
+                             PythonEnvironment* env,
+                             const proto::ProtoObject* obj) {
+    if (!obj || obj == PROTO_NONE || !env) return false;
+    if (obj->asList(context) || obj->asTuple(context) ||
+        obj->isString(context) || obj->isInteger(context) ||
+        obj->isDouble(context) || obj->isBoolean(context)) return false;
+    const proto::ProtoString* keysS = PythonEnvironment::getInternedString(context, "keys");
+    const proto::ProtoObject* keysM = env->getAttribute(context, obj, keysS, false);
+    return keysM && keysM != PROTO_NONE;
+}
+
+// MappingProxy.__or__: dict(self) | other.  Mirrors CPython 3.9+ which
+// added union support to mappingproxy by lifting it through dict.__or__.
+// Rejects non-mapping operands with TypeError so `view | [pairs]` raises.
+static const proto::ProtoObject* py_mappingproxy_or(
+    proto::ProtoContext* context, const proto::ProtoObject* self,
+    const proto::ParentLink* parent, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!env || !args || args->getSize(context) < 1) return PROTO_NONE;
+    const proto::ProtoObject* other = args->getAt(context, 0);
+    if (!mp_isMappingLike(context, env, other)) {
+        env->raiseTypeError(context, "unsupported operand type(s) for |: 'mappingproxy' and non-mapping");
+        return nullptr;
+    }
+    const proto::ProtoObject* lhs = py_mappingproxy_copy(context, self, parent, nullptr, kwargs);
+    if (!lhs) return PROTO_NONE;
+    const proto::ProtoString* orS = PythonEnvironment::getInternedString(context, "__or__");
+    const proto::ProtoObject* orM = lhs->getAttribute(context, orS);
+    if (orM && orM->asMethod(context)) {
+        const proto::ProtoList* a2 = context->newList()->appendLast(context, other);
+        return orM->asMethod(context)(context, lhs, nullptr, a2, nullptr);
+    }
+    return PROTO_NONE;
+}
+
+static const proto::ProtoObject* py_mappingproxy_ror(
+    proto::ProtoContext* context, const proto::ProtoObject* self,
+    const proto::ParentLink* parent, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!env || !args || args->getSize(context) < 1) return PROTO_NONE;
+    const proto::ProtoObject* other = args->getAt(context, 0);
+    if (!mp_isMappingLike(context, env, other)) {
+        env->raiseTypeError(context, "unsupported operand type(s) for |: non-mapping and 'mappingproxy'");
+        return nullptr;
+    }
+    const proto::ProtoObject* rhs = py_mappingproxy_copy(context, self, parent, nullptr, kwargs);
+    if (!rhs) return PROTO_NONE;
+    const proto::ProtoString* orS = PythonEnvironment::getInternedString(context, "__or__");
+    const proto::ProtoObject* orM = other->getAttribute(context, orS);
+    if (orM && orM->asMethod(context)) {
+        const proto::ProtoList* a2 = context->newList()->appendLast(context, rhs);
+        return orM->asMethod(context)(context, other, nullptr, a2, nullptr);
+    }
+    return PROTO_NONE;
+}
+
+// MappingProxy.__ior__: read-only proxies cannot be mutated in place;
+// CPython raises TypeError. Surface that behaviour explicitly.
+static const proto::ProtoObject* py_mappingproxy_ior(
+    proto::ProtoContext* context, const proto::ProtoObject*,
+    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (env) env->raiseTypeError(context, "'mappingproxy' object does not support item assignment");
+    return nullptr;
+}
+
 // MappingProxy.__eq__: defer to the underlying mapping. Class proxies
 // retain identity semantics (cls.__dict__ == cls.__dict__ only when same
 // class); dict proxies compare against the wrapped dict's __eq__, so
@@ -10065,6 +10159,10 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     mappingProxyPrototype = mappingProxyPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_mappingproxy_repr));
     mappingProxyPrototype = mappingProxyPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__eq__"), rootContext_->fromMethod(nullptr, py_mappingproxy_eq));
     mappingProxyPrototype = mappingProxyPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__ne__"), rootContext_->fromMethod(nullptr, py_mappingproxy_ne));
+    mappingProxyPrototype = mappingProxyPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "copy"), rootContext_->fromMethod(nullptr, py_mappingproxy_copy));
+    mappingProxyPrototype = mappingProxyPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__or__"), rootContext_->fromMethod(nullptr, py_mappingproxy_or));
+    mappingProxyPrototype = mappingProxyPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__ror__"), rootContext_->fromMethod(nullptr, py_mappingproxy_ror));
+    mappingProxyPrototype = mappingProxyPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__ior__"), rootContext_->fromMethod(nullptr, py_mappingproxy_ior));
     mappingProxyPrototype = mappingProxyPrototype->setAttribute(rootContext_, keysS, rootContext_->fromMethod(nullptr, py_mappingproxy_keys));
     mappingProxyPrototype = mappingProxyPrototype->setAttribute(rootContext_, valuesS, rootContext_->fromMethod(nullptr, py_mappingproxy_values));
     mappingProxyPrototype = mappingProxyPrototype->setAttribute(rootContext_, itemsS, rootContext_->fromMethod(nullptr, py_mappingproxy_items));
