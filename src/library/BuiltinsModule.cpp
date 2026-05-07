@@ -4935,6 +4935,21 @@ static const proto::ProtoObject* py_classmethod(
         const proto::ProtoObject* func = positionalParameters->getAt(context, 1);
         cm->setAttribute(context, PythonEnvironment::getInternedString(context, "func"), func);
         cm->setAttribute(context, PythonEnvironment::getInternedString(context, "__func__"), func);
+        // Forward introspection attributes from the wrapped function
+        // (CPython parity — see py_staticmethod for rationale).
+        static const char* const fwd[] = {
+            "__name__", "__qualname__", "__doc__", "__module__",
+            "__annotations__", "__dict__", "__wrapped__", nullptr
+        };
+        for (int i = 0; fwd[i]; ++i) {
+            const proto::ProtoString* k = PythonEnvironment::getInternedString(context, fwd[i]);
+            const proto::ProtoObject* v = func->getAttribute(context, k);
+            if (v) cm->setAttribute(context, k, v);
+        }
+        const proto::ProtoString* wrapS = PythonEnvironment::getInternedString(context, "__wrapped__");
+        if (cm->hasOwnAttribute(context, wrapS) != PROTO_TRUE) {
+            cm->setAttribute(context, wrapS, func);
+        }
     }
     return cm;
 }
@@ -4956,7 +4971,7 @@ static const proto::ProtoObject* py_staticmethod(
     const proto::ProtoSparseList* keywordParameters) {
     if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
     const proto::ProtoObject* cls = positionalParameters->getAt(context, 0);
-    
+
     proto::ProtoObject* sm = const_cast<proto::ProtoObject*>(cls->newChild(context, true));
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     if (env) {
@@ -4964,11 +4979,39 @@ static const proto::ProtoObject* py_staticmethod(
     } else {
         sm->setAttribute(context, PythonEnvironment::getInternedString(context, "__class__"), cls);
     }
-    
+
     if (positionalParameters->getSize(context) >= 2) {
         const proto::ProtoObject* func = positionalParameters->getAt(context, 1);
         sm->setAttribute(context, PythonEnvironment::getInternedString(context, "func"), func);
         sm->setAttribute(context, PythonEnvironment::getInternedString(context, "__func__"), func);
+        // CPython forwards introspection attributes from the wrapped function
+        // so `staticmethod(fn).__name__` etc. mirror `fn.__name__`. Tests use
+        // `__annotations__` (assertHasattr-style) and decorator chains rely on
+        // `__wrapped__`. Copy over what's available — missing source attrs
+        // become `None` which matches CPython for absent annotations/doc.
+        static const char* const fwd[] = {
+            "__name__", "__qualname__", "__doc__", "__module__",
+            "__annotations__", "__dict__", "__wrapped__", nullptr
+        };
+        for (int i = 0; fwd[i]; ++i) {
+            const proto::ProtoString* k = PythonEnvironment::getInternedString(context, fwd[i]);
+            // Only forward attributes the wrapped function genuinely *has*.
+            // hasOwnAttribute is too restrictive (it'd miss `__name__` from
+            // the function prototype's defaults), but a plain `getAttribute`
+            // returning PROTO_NONE means "absent in chain or set-to-None"
+            // — propagating it would clobber the staticmethod prototype's
+            // own `__wrapped__ = None` placeholder check downstream and
+            // make hasattr(sm, "__wrapped__") report a None slot. Skip
+            // PROTO_NONE so we honor "the wrapped function didn't define
+            // this either".
+            const proto::ProtoObject* v = func->getAttribute(context, k);
+            if (v && v != PROTO_NONE) sm->setAttribute(context, k, v);
+        }
+        // __wrapped__ defaults to the function itself when not already set.
+        const proto::ProtoString* wrapS = PythonEnvironment::getInternedString(context, "__wrapped__");
+        if (sm->hasOwnAttribute(context, wrapS) != PROTO_TRUE) {
+            sm->setAttribute(context, wrapS, func);
+        }
     }
     return sm;
 }
