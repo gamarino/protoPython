@@ -414,13 +414,42 @@ static const proto::ProtoObject* py_mappingproxy_new(
         ? positionalParameters->getAt(context, 0) : self;
     if (!cls) return PROTO_NONE;
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
-    proto::ProtoObject* instance = const_cast<proto::ProtoObject*>(cls->newChild(context, true));
-    if (env) instance->setAttribute(context, env->getClassString(), cls);
     if (positionalParameters && positionalParameters->getSize(context) >= 2) {
         const proto::ProtoObject* mapping = positionalParameters->getAt(context, 1);
+        // Reject obvious non-mapping shapes upfront — CPython rejects
+        // numbers, strings, byte sequences, and ordered sequence containers
+        // (tuple/list) at construction time. The rule is duck-typed:
+        // require a callable `keys` method on the supplied object. dict,
+        // ChainMap, defaultdict, OrderedDict, MappingProxyType all satisfy
+        // this; int/tuple/list/str do not. Direct cast checks first to
+        // avoid a chain-walk surfacing an inherited `keys` from a sibling
+        // prototype.
+        bool isMapping = false;
+        if (mapping) {
+            if (mapping->asList(context) || mapping->asTuple(context) ||
+                mapping->isString(context) || mapping->isInteger(context) ||
+                mapping->isDouble(context) || mapping->isBoolean(context)) {
+                isMapping = false;
+            } else if (env) {
+                const proto::ProtoString* keysS = PythonEnvironment::getInternedString(context, "keys");
+                const proto::ProtoObject* keysM = env->getAttribute(context, mapping, keysS, false);
+                if (keysM && keysM != PROTO_NONE) isMapping = true;
+            }
+        }
+        if (!isMapping) {
+            if (env) {
+                env->raiseTypeError(context, "mappingproxy() argument must be a mapping, not non-mapping type");
+            }
+            return nullptr;
+        }
+        proto::ProtoObject* instance = const_cast<proto::ProtoObject*>(cls->newChild(context, true));
+        if (env) instance->setAttribute(context, env->getClassString(), cls);
         const proto::ProtoString* dataS = env ? env->getDataString() : PythonEnvironment::getInternedString(context, "__data__");
         instance->setAttribute(context, dataS, mapping);
+        return instance;
     }
+    proto::ProtoObject* instance = const_cast<proto::ProtoObject*>(cls->newChild(context, true));
+    if (env) instance->setAttribute(context, env->getClassString(), cls);
     return instance;
 }
 
@@ -533,6 +562,45 @@ static const proto::ProtoObject* py_mappingproxy_contains(
         }
     }
     return PROTO_FALSE;
+}
+
+// MappingProxy.__eq__: defer to the underlying mapping. Class proxies
+// retain identity semantics (cls.__dict__ == cls.__dict__ only when same
+// class); dict proxies compare against the wrapped dict's __eq__, so
+// `MappingProxyType(d) == d` is True. Returns NotImplemented when neither
+// side is a recognised mapping shape so Python falls back to identity.
+static const proto::ProtoObject* py_mappingproxy_eq(
+    proto::ProtoContext* context, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!args || args->getSize(context) < 1) return PROTO_FALSE;
+    const proto::ProtoObject* other = args->getAt(context, 0);
+    if (self == other) return PROTO_TRUE;
+
+    const proto::ProtoObject* data = self->getAttribute(context,
+        env ? env->getDataString() : PythonEnvironment::getInternedString(context, "__data__"));
+    if (!data || data == PROTO_NONE) return PROTO_NONE;
+
+    // If `other` is itself a mapping proxy, peek its __data__ and compare
+    // the wrapped objects directly; otherwise compare data to other.
+    const proto::ProtoObject* otherData = other;
+    if (env && other) {
+        const proto::ProtoObject* otherCls = env->getType(context, other);
+        if (otherCls == env->getMappingProxyPrototype()) {
+            const proto::ProtoObject* od = other->getAttribute(context, env->getDataString());
+            if (od && od != PROTO_NONE) otherData = od;
+        }
+    }
+    if (env) return env->compareObjects(context, data, otherData, 0 /* Py_EQ */);
+    return PROTO_NONE;
+}
+
+static const proto::ProtoObject* py_mappingproxy_ne(
+    proto::ProtoContext* context, const proto::ProtoObject* self,
+    const proto::ParentLink* parent, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+    const proto::ProtoObject* eq = py_mappingproxy_eq(context, self, parent, args, kwargs);
+    if (eq == PROTO_NONE) return PROTO_NONE;
+    return (eq == PROTO_TRUE) ? PROTO_FALSE : PROTO_TRUE;
 }
 
 // MappingProxy.get(key, default=None) — dict-style lookup with a default fallback.
@@ -9995,6 +10063,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     mappingProxyPrototype = mappingProxyPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__qualname__"), PythonEnvironment::getInternedString(rootContext_, "mappingproxy")->asObject(rootContext_));
     mappingProxyPrototype = mappingProxyPrototype->setAttribute(rootContext_, newString, rootContext_->fromMethod(nullptr, py_mappingproxy_new));
     mappingProxyPrototype = mappingProxyPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_mappingproxy_repr));
+    mappingProxyPrototype = mappingProxyPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__eq__"), rootContext_->fromMethod(nullptr, py_mappingproxy_eq));
+    mappingProxyPrototype = mappingProxyPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__ne__"), rootContext_->fromMethod(nullptr, py_mappingproxy_ne));
     mappingProxyPrototype = mappingProxyPrototype->setAttribute(rootContext_, keysS, rootContext_->fromMethod(nullptr, py_mappingproxy_keys));
     mappingProxyPrototype = mappingProxyPrototype->setAttribute(rootContext_, valuesS, rootContext_->fromMethod(nullptr, py_mappingproxy_values));
     mappingProxyPrototype = mappingProxyPrototype->setAttribute(rootContext_, itemsS, rootContext_->fromMethod(nullptr, py_mappingproxy_items));
