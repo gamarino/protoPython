@@ -2989,8 +2989,17 @@ static const proto::ProtoObject* py_hash(
     if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
     const proto::ProtoObject* hashMethod = obj->getAttribute(context, env ? env->getHashString() : PythonEnvironment::getInternedString(context, "__hash__"));
-    if (!hashMethod || !hashMethod->asMethod(context)) return PROTO_NONE;
-    return hashMethod->asMethod(context)(context, obj, nullptr, context->newList(), nullptr);
+    if (!hashMethod || hashMethod == PROTO_NONE) return PROTO_NONE;
+    if (hashMethod->asMethod(context)) {
+        return hashMethod->asMethod(context)(context, const_cast<proto::ProtoObject*>(obj), nullptr, context->newList(), nullptr);
+    }
+    // Python user `def __hash__(self)`: prepend self via invokePythonCallable.
+    const proto::ProtoString* codeS = env ? env->getCodeString() : PythonEnvironment::getInternedString(context, "__code__");
+    if (codeS && hashMethod->hasOwnAttribute(context, codeS) == PROTO_TRUE) {
+        const proto::ProtoList* selfPrepended = context->newList()->appendLast(context, obj);
+        return ::protoPython::invokePythonCallable(context, hashMethod, selfPrepended, nullptr);
+    }
+    return ::protoPython::invokePythonCallable(context, hashMethod, context->newList(), nullptr);
 }
 
 static const proto::ProtoObject* py_hasattr(
@@ -4242,19 +4251,28 @@ static const proto::ProtoObject* py_abs(
     const proto::ProtoSparseList* keywordParameters) {
     if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
-    const proto::ProtoObject* absM = obj->getAttribute(context, PythonEnvironment::getInternedString(context, "__abs__"));
-    if (absM && absM->asMethod(context)) {
-        return absM->call(context, nullptr, nullptr, obj, context->newList(), nullptr);
-    }
     if (obj->isInteger(context)) {
-        // Use Integer::abs which handles both SmallInteger and LargeInteger
-        // without triggering long-long overflow.
+        // Native fast path: Integer::abs handles both SmallInteger and LargeInteger.
         return obj->abs(context);
     }
     if (obj->isDouble(context)) {
         return context->fromDouble(std::abs(obj->asDouble(context)));
     }
-    return PROTO_NONE;
+    // Generic dunder dispatch: looks up __abs__ on the type and invokes it,
+    // routing Python-defined `def __abs__(self)` through invokePythonCallable
+    // (the previous `asMethod` gate dropped them silently → returned None).
+    const proto::ProtoObject* absM = obj->getAttribute(context, PythonEnvironment::getInternedString(context, "__abs__"));
+    if (!absM || absM == PROTO_NONE) return PROTO_NONE;
+    if (absM->asMethod(context)) {
+        return absM->asMethod(context)(context, const_cast<proto::ProtoObject*>(obj), nullptr, context->newList(), nullptr);
+    }
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::ProtoString* codeS = env ? env->getCodeString() : PythonEnvironment::getInternedString(context, "__code__");
+    if (codeS && absM->hasOwnAttribute(context, codeS) == PROTO_TRUE) {
+        const proto::ProtoList* selfPrepended = context->newList()->appendLast(context, obj);
+        return ::protoPython::invokePythonCallable(context, absM, selfPrepended, nullptr);
+    }
+    return ::protoPython::invokePythonCallable(context, absM, context->newList(), nullptr);
 }
 
 static const proto::ProtoObject* py_min_max(

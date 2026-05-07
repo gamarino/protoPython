@@ -3963,6 +3963,12 @@ const proto::ProtoObject* executeBytecodeRange(
             } else if (a->isDouble(ctx)) {
                 const proto::ProtoObject* res = ctx->fromDouble(-a->asDouble(ctx));
                 stack.back() = res;
+            } else {
+                // User-class __neg__ via the dunder dispatcher (handles
+                // Python-defined functions which `asMethod` does not).
+                const proto::ProtoString* negS = PythonEnvironment::getInternedString(ctx, "__neg__");
+                const proto::ProtoObject* result = invokeDunder(ctx, a, negS, ctx->newList());
+                stack.back() = result ? result : PROTO_NONE;
             }
         } break;
         case OP_UNARY_NOT: {
@@ -3977,16 +3983,9 @@ const proto::ProtoObject* executeBytecodeRange(
                 // bignum-safe: ~x = -x - 1 via Integer::bitwiseNot.
                 stack.back() = a->bitwiseNot(ctx);
             } else {
-                const proto::ProtoObject* inv = a->getAttribute(ctx, env ? env->getInvertString() : PythonEnvironment::getInternedString(ctx, "__invert__"));
-                if (inv && inv->asMethod(ctx)) {
-                    const proto::ProtoList* noArgs = ctx->newList();
-                    const proto::ProtoObject* result = inv->asMethod(ctx)(ctx, a, nullptr, noArgs, nullptr);
-                    if (diag_local) {
-                    }
-                    stack.back() = (result ? result : PROTO_NONE);
-                } else {
-                    stack.pop_back();
-                }
+                const proto::ProtoString* invS = env ? env->getInvertString() : PythonEnvironment::getInternedString(ctx, "__invert__");
+                const proto::ProtoObject* result = invokeDunder(ctx, a, invS, ctx->newList());
+                stack.back() = result ? result : PROTO_NONE;
             }
         } break;
         case OP_RAISE_VARARGS: {
@@ -4229,13 +4228,13 @@ const proto::ProtoObject* executeBytecodeRange(
         case OP_UNARY_POSITIVE: {
             if (stack.empty()) { i = next_i; continue; }
             const proto::ProtoObject* a = stack.back();
-            const proto::ProtoObject* pos = isEmbeddedValue(ctx, a) ? nullptr : a->getAttribute(ctx, env ? env->getPosString() : PythonEnvironment::getInternedString(ctx, "__pos__"));
-            if (pos && pos->asMethod(ctx)) {
-                const proto::ProtoList* noArgs = ctx->newList();
-                const proto::ProtoObject* result = pos->asMethod(ctx)(ctx, a, nullptr, noArgs, nullptr);
-                stack.back() = (result ? result : PROTO_NONE);
+            if (isEmbeddedValue(ctx, a)) {
+                // Numeric literal / bool / None — `+x` is identity.
             } else {
-                // remains a on stack
+                const proto::ProtoString* posS = env ? env->getPosString() : PythonEnvironment::getInternedString(ctx, "__pos__");
+                const proto::ProtoObject* result = invokeDunder(ctx, a, posS, ctx->newList());
+                if (result) stack.back() = result;
+                // result == nullptr → no __pos__; leave a on stack as identity.
             }
         } break;
         case OP_NOP: {
