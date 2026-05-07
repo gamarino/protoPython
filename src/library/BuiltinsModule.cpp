@@ -1340,8 +1340,22 @@ static const proto::ProtoObject* py_object_ne(
     }
     const proto::ProtoObject* b = (posArgs && (int)posArgs->getSize(context) > offset) ? posArgs->getAt(context, offset) : nullptr;
     if (!a || !b) return env ? env->getNotImplementedPrototype() : PROTO_NONE;
-    if (a != b) return PROTO_TRUE;
-    return env ? env->getNotImplementedPrototype() : PROTO_FALSE;
+    // CPython's default object.__ne__: defer to __eq__ and negate. The
+    // earlier pointer-equality variant disagreed with __eq__'s value-based
+    // comparison for any type whose __eq__ wasn't strictly identity (every
+    // float, every str, every container) — `(12.0+24.0) != 36.0` then
+    // returned True even though the two values compared equal via the
+    // identity-then-value fallback in compareObjects.
+    if (env) {
+        const proto::ProtoObject* eqResult = env->compareObjects(context, a, b, 0 /* Py_EQ */);
+        const proto::ProtoObject* notImpl = env->getNotImplementedPrototype();
+        if (!eqResult || eqResult == notImpl) return notImpl;
+        if (eqResult == PROTO_TRUE) return PROTO_FALSE;
+        if (eqResult == PROTO_FALSE) return PROTO_TRUE;
+        if (eqResult->isBoolean(context)) return eqResult->asBoolean(context) ? PROTO_FALSE : PROTO_TRUE;
+        return notImpl;
+    }
+    return (a != b) ? PROTO_TRUE : PROTO_FALSE;
 }
 
 /** getattr(obj, name[, default]): return obj.name, or default if given and attribute missing. */
