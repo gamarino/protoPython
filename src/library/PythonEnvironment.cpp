@@ -381,13 +381,47 @@ static bool mp_isClassObject(const proto::ProtoObject* data,
                                          : PythonEnvironment::getInternedString(context, "__is_python_class__");
     const proto::ProtoString* mroS = env ? env->getMroString()
                                          : PythonEnvironment::getInternedString(context, "__mro__");
-    const proto::ProtoObject* dCls = data->getAttribute(context, clsS);
+    // Use OWN-attribute checks: a regular dict instance inherits __mro__ /
+    // __class__ from its prototype chain (dict → object), so a chain-walk
+    // would mis-classify any user dict as a class. A real class carries
+    // __mro__ on itself; a dict instance does not.
+    const proto::ProtoObject* dCls = (data->hasOwnAttribute(context, clsS) == PROTO_TRUE) ? data->getAttribute(context, clsS) : nullptr;
     if (env && dCls == env->getTypePrototype()) return true;
-    const proto::ProtoObject* isPyCls = data->getAttribute(context, ipcS);
-    if (isPyCls && isPyCls != PROTO_NONE) return true;
-    const proto::ProtoObject* mro = data->getAttribute(context, mroS);
-    if (mro && mro->asList(context)) return true;
+    if (data->hasOwnAttribute(context, ipcS) == PROTO_TRUE) {
+        const proto::ProtoObject* isPyCls = data->getAttribute(context, ipcS);
+        if (isPyCls && isPyCls != PROTO_NONE) return true;
+    }
+    if (data->hasOwnAttribute(context, mroS) == PROTO_TRUE) {
+        const proto::ProtoObject* mro = data->getAttribute(context, mroS);
+        if (mro && mro->asList(context)) return true;
+    }
     return false;
+}
+
+// types.MappingProxyType(d) — wrap a mapping behind a read-only view.
+// CPython exposes this through type.__dict__, and `types.MappingProxyType`
+// is `type(type.__dict__)`.  When user code calls it directly (commonly
+// via `types.MappingProxyType({'k': 'v'})`), produce an instance whose
+// __data__ slot holds the supplied mapping; the existing __getitem__ /
+// __contains__ / keys / values / items helpers all read through __data__.
+static const proto::ProtoObject* py_mappingproxy_new(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink*,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList*) {
+    const proto::ProtoObject* cls = (positionalParameters && positionalParameters->getSize(context) > 0)
+        ? positionalParameters->getAt(context, 0) : self;
+    if (!cls) return PROTO_NONE;
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    proto::ProtoObject* instance = const_cast<proto::ProtoObject*>(cls->newChild(context, true));
+    if (env) instance->setAttribute(context, env->getClassString(), cls);
+    if (positionalParameters && positionalParameters->getSize(context) >= 2) {
+        const proto::ProtoObject* mapping = positionalParameters->getAt(context, 1);
+        const proto::ProtoString* dataS = env ? env->getDataString() : PythonEnvironment::getInternedString(context, "__data__");
+        instance->setAttribute(context, dataS, mapping);
+    }
+    return instance;
 }
 
 static const proto::ProtoObject* py_mappingproxy_repr(
@@ -9901,6 +9935,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     mappingProxyPrototype = mappingProxyPrototype->setAttribute(rootContext_, py_class, typePrototype);
     mappingProxyPrototype = mappingProxyPrototype->setAttribute(rootContext_, py_name, PythonEnvironment::getInternedString(rootContext_, "mappingproxy")->asObject(rootContext_));
     mappingProxyPrototype = mappingProxyPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__qualname__"), PythonEnvironment::getInternedString(rootContext_, "mappingproxy")->asObject(rootContext_));
+    mappingProxyPrototype = mappingProxyPrototype->setAttribute(rootContext_, newString, rootContext_->fromMethod(nullptr, py_mappingproxy_new));
     mappingProxyPrototype = mappingProxyPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_mappingproxy_repr));
     mappingProxyPrototype = mappingProxyPrototype->setAttribute(rootContext_, keysS, rootContext_->fromMethod(nullptr, py_mappingproxy_keys));
     mappingProxyPrototype = mappingProxyPrototype->setAttribute(rootContext_, valuesS, rootContext_->fromMethod(nullptr, py_mappingproxy_values));
