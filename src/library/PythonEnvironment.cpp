@@ -1381,12 +1381,48 @@ static const proto::ProtoObject* py_int_call(
                 return nullptr;
             }
         } else {
+            // CPython: int(obj) for non-numeric, non-string objects calls
+            // type(obj).__int__(obj) and validates the result is an int.
+            // Falls back to __index__ when __int__ is missing (PEP 357).
             PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-            if (env) env->raiseTypeError(ctx, "int() argument must be a string, a bytes-like object or a number");
+            if (env) {
+                const proto::ProtoString* intS = PythonEnvironment::getInternedString(ctx, "__int__");
+                const proto::ProtoString* indexS = PythonEnvironment::getInternedString(ctx, "__index__");
+                const proto::ProtoObject* cls = env->getType(ctx, val);
+                const proto::ProtoObject* method = nullptr;
+                for (const proto::ProtoString* dunder : {intS, indexS}) {
+                    if (cls) method = env->getAttribute(ctx, cls, dunder, false);
+                    if (method && method != PROTO_NONE) break;
+                    method = nullptr;
+                }
+                if (method && method != PROTO_NONE) {
+                    const proto::ProtoObject* result = nullptr;
+                    if (method->asMethod(ctx)) {
+                        result = method->asMethod(ctx)(ctx, val, nullptr, ctx->newList(), nullptr);
+                    } else {
+                        const proto::ProtoString* codeS = env->getCodeString();
+                        if (codeS && method->hasOwnAttribute(ctx, codeS) == PROTO_TRUE) {
+                            const proto::ProtoList* selfArgs = ctx->newList()->appendLast(ctx, val);
+                            result = ::protoPython::invokePythonCallable(ctx, method, selfArgs, nullptr);
+                        }
+                    }
+                    if (result && (result->isInteger(ctx) || result->isBoolean(ctx))) {
+                        x = result->isBoolean(ctx)
+                            ? ctx->fromInteger(result == PROTO_TRUE ? 1 : 0)
+                            : result;
+                        goto haveX;
+                    }
+                    if (result) {
+                        env->raiseTypeError(ctx, "__int__ returned non-int");
+                        return nullptr;
+                    }
+                }
+                env->raiseTypeError(ctx, "int() argument must be a string, a bytes-like object or a number");
+            }
             return nullptr;
         }
     }
-
+haveX:
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (!targetCls || (env && targetCls == env->getIntPrototype())) {
         return x;
