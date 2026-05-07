@@ -536,8 +536,12 @@ static const proto::ProtoObject* py_mappingproxy_contains(
 }
 
 // MappingProxy.get(key, default=None) — dict-style lookup with a default fallback.
-// For class-wrapping proxies only returns attributes defined *directly* on the class,
-// matching CPython's cls.__dict__ semantics (no inherited attributes).
+// Class proxies (cls.__dict__): own-only attribute lookup, no inheritance,
+//   matching CPython's cls.__dict__ semantics.
+// Dict proxies (MappingProxyType({...})): delegate to the wrapped dict's
+//   __getitem__, falling back to default when KeyError. Without this branch
+//   `mp.get('a')` always returned None because the own-attribute probe could
+//   only see entries stored as cells, not dict items in __data__.
 static const proto::ProtoObject* py_mappingproxy_get(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -550,31 +554,31 @@ static const proto::ProtoObject* py_mappingproxy_get(
     const proto::ProtoObject* data = self->getAttribute(context, env ? env->getDataString() : PythonEnvironment::getInternedString(context, "__data__"));
     if (!data || data == PROTO_NONE) return defaultVal;
 
-    const proto::ProtoString* sKey = nullptr;
-    if (key && key->isString(context)) {
-        sKey = key->asString(context);
-    } else if (key && env) {
-        const proto::ProtoObject* kData = key->getAttribute(context, env->getDataString());
-        if (kData && kData->isString(context)) sKey = kData->asString(context);
+    if (mp_isClassObject(data, context, env)) {
+        const proto::ProtoString* sKey = nullptr;
+        if (key && key->isString(context)) {
+            sKey = key->asString(context);
+        } else if (key && env) {
+            const proto::ProtoObject* kData = key->getAttribute(context, env->getDataString());
+            if (kData && kData->isString(context)) sKey = kData->asString(context);
+        }
+        if (!sKey) return defaultVal;
+        if (data->hasOwnAttribute(context, sKey) == PROTO_TRUE) {
+            const proto::ProtoObject* val = data->getOwnAttributeDirect(context, sKey);
+            if (val) return val;
+        }
+        return defaultVal;
     }
-    if (!sKey) return defaultVal;
 
-    // SP-C/C3: only return attributes defined directly on the wrapped object
-    // (no inheritance), consistent with CPython's cls.__dict__ which is the
-    // class's own namespace.  Use own-only APIs throughout.
-    if (data->hasOwnAttribute(context, sKey) == PROTO_TRUE) {
-        const proto::ProtoObject* val = data->getOwnAttributeDirect(context, sKey);
-        if (val) return val;
+    // Dict-wrapping proxy: route through the wrapped dict's __getitem__.
+    // env->getItem raises KeyError on miss; clear any pending exception
+    // and return the default. Matches dict.get(k, d) semantics.
+    if (env) {
+        const proto::ProtoObject* result = env->getItem(data, key, context);
+        if (result) return result;
+        if (env->peekPendingException()) env->clearPendingException();
+        return defaultVal;
     }
-
-    // SP-C/C3: do NOT fall back to env->getItem(data, key).  For native types
-    // like `str`, env->getItem dispatches user-level __getitem__ →
-    // __class_getitem__ (generic-alias machinery) and returns a non-null value
-    // for any key, which would mask the missing-key case and return a bogus
-    // value instead of the requested default.  Same getItem fallback bug that
-    // was removed from py_mappingproxy_contains in 015b3a82 (SP-C/C2) and from
-    // py_mappingproxy_getitem in this commit.
-
     return defaultVal;
 }
 
@@ -3635,12 +3639,24 @@ static const proto::ProtoObject* py_dict_call(
                                 break; // Normal exhaustion (StopIteration already cleared).
                             }
 
-                            // Unpack pair as (key, value). Python tuples from BUILD_TUPLE
-                            // are ProtoObjects with __data__ = ProtoTuple, so check that
-                            // first before falling back to native list/tuple.
-                            const proto::ProtoObject* pairData = pairObj->getAttribute(context, dataNm);
-                            const proto::ProtoTuple* pairT = pairData ? pairData->asTuple(context) : pairObj->asTuple(context);
-                            const proto::ProtoList* pairL = (!pairT && pairData) ? pairData->asList(context) : (!pairT ? pairObj->asList(context) : nullptr);
+                            // Unpack pair as (key, value).  Tuples reach here in two
+                            // shapes: BUILD_TUPLE produces wrappers whose __data__
+                            // attribute is the underlying ProtoTuple, while
+                            // env->newTuple (used by zip/enumerate/etc.) layers the
+                            // tuplePrototype on top of the ProtoTuple cell directly
+                            // and does NOT add an own __data__ attribute.  Try the
+                            // direct cast first so the second shape doesn't fall
+                            // through to a chain-walked __data__ that resolves to a
+                            // sibling prototype's namespace.
+                            const proto::ProtoTuple* pairT = pairObj->asTuple(context);
+                            const proto::ProtoList* pairL = pairT ? nullptr : pairObj->asList(context);
+                            if (!pairT && !pairL) {
+                                const proto::ProtoObject* pairData = pairObj->getAttribute(context, dataNm);
+                                if (pairData) {
+                                    pairT = pairData->asTuple(context);
+                                    if (!pairT) pairL = pairData->asList(context);
+                                }
+                            }
 
                             const proto::ProtoObject* k = nullptr;
                             const proto::ProtoObject* v = nullptr;
