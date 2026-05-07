@@ -54,7 +54,12 @@ def _getline_from_code(filename, lineno):
 def _make_key(code):
     co_qualname = getattr(code, 'co_qualname', None) or getattr(code, 'co_name', '<unknown>')
     co_firstlineno = getattr(code, 'co_firstlineno', 0)
-    return (code.co_filename, co_qualname, co_firstlineno)
+    # protoPython sometimes synthesises stub code objects (e.g. for
+    # decorator wrappers, LOAD_BUILD_CLASS bodies, exec'd snippets) that
+    # lack `co_filename`; fall back to "<unknown>" so traceback rendering
+    # cannot raise AttributeError mid-format.
+    co_filename = getattr(code, 'co_filename', '<unknown>')
+    return (co_filename, co_qualname, co_firstlineno)
 
 def _getlines_from_code(code):
     code_id = _make_key(code)

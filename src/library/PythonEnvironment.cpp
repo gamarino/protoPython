@@ -9387,7 +9387,20 @@ static const proto::ProtoObject* py_getset_get(
 
 void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, const std::vector<std::string>& searchPaths) {
     s_threadEnv = this;
-    s_globalThreadRootsDict = rootContext_->newObject(false);
+    // Mutable: every getPyThread() call does
+    //   s_globalThreadRootsDict->setAttribute(ctx, threadIdKey, s_currentPyThread)
+    // and discards the return value.  An immutable object would silently
+    // throw away each binding (setAttribute on immutable is copy-on-write
+    // and we don't assign the result back).  With mutable=true the
+    // setAttribute mutates the snapshot through the protoCore shard CAS
+    // so the binding survives — and so the per-thread PyThread object is
+    // reachable from this single GC root in moduleRoots.  Without this
+    // the PyThread cells were collected as garbage between thread events
+    // and `s_currentPyThread` (a thread_local raw pointer) became a stale
+    // pointer into reused memory: any later getAttribute() on it crashed
+    // with `Type mismatch in toImpl conversion ... found tag 4 (TUPLE)`
+    // when its old slot had been recycled for a tuple.  See C1.
+    s_globalThreadRootsDict = rootContext_->newObject(true);
     space_->moduleRoots.push_back(s_globalThreadRootsDict);
     __code__ = PythonEnvironment::getInternedString(rootContext_, "__code__");
     __globals__ = PythonEnvironment::getInternedString(rootContext_, "__globals__");

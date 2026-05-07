@@ -425,14 +425,19 @@ def _is_filename_to_skip(filename, skip_file_prefixes):
 
 def _is_internal_frame(frame):
     """Signal whether the frame is an internal CPython implementation detail."""
-    return _is_internal_filename(frame.f_code.co_filename)
+    # protoPython sometimes synthesises frames whose `f_code` is a stub
+    # missing the `co_filename` attribute (LOAD_BUILD_CLASS body frames,
+    # decorator/wraps wrappers, exec'd code with no filename).  Treat
+    # those as non-internal so the walker keeps moving up — matches
+    # CPython's behaviour where getattr falls back to the empty string.
+    return _is_internal_filename(getattr(frame.f_code, 'co_filename', ''))
 
 
 def _next_external_frame(frame, skip_file_prefixes):
     """Find the next frame that doesn't involve Python or user internals."""
     frame = frame.f_back
     while frame is not None and (
-            _is_internal_filename(filename := frame.f_code.co_filename) or
+            _is_internal_filename(filename := getattr(frame.f_code, 'co_filename', '')) or
             _is_filename_to_skip(filename, skip_file_prefixes)):
         frame = frame.f_back
     return frame
@@ -475,7 +480,10 @@ def warn(message, category=None, stacklevel=1, source=None,
         lineno = 0
     else:
         globals = frame.f_globals
-        filename = frame.f_code.co_filename
+        # Defensive read for synthesised frames (decorator wrappers,
+        # LOAD_BUILD_CLASS body, exec'd no-name code) — same rationale
+        # as _is_internal_frame above.
+        filename = getattr(frame.f_code, 'co_filename', '<unknown>')
         lineno = frame.f_lineno
     if '__name__' in globals:
         module = globals['__name__']
