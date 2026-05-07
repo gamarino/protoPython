@@ -3301,8 +3301,12 @@ static const proto::ProtoObject* py_set_call(
             const proto::ProtoList* emptyL = env ? env->getEmptyList() : context->newList();
             const proto::ProtoObject* it = iterM->asMethod(context)(context, iterable, nullptr, emptyL, nullptr);
             if (it && it != PROTO_NONE) {
+                // `__next__` lives on the iterator's prototype (list_iterator,
+                // tuple_iterator, ...), not OWN on the iterator instance —
+                // walk the chain via getAttribute. The previous hasOwnAttribute
+                // gate dropped every list/tuple iterable silently.
                 const proto::ProtoString* nextS = env ? env->getNextString() : PythonEnvironment::getInternalString(context, "__next__");
-                const proto::ProtoObject* nextM = (it->hasOwnAttribute(context, nextS) == PROTO_TRUE) ? it->getAttribute(context, nextS) : nullptr;
+                const proto::ProtoObject* nextM = it->getAttribute(context, nextS);
                 if (nextM && nextM->asMethod(context)) {
                     for (;;) {
                         const proto::ProtoObject* item = nextM->asMethod(context)(context, it, nullptr, emptyL, nullptr);
@@ -3959,6 +3963,52 @@ static const proto::ProtoObject* py_set_xor(
     const proto::ParentLink* parent, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
     if (args->getSize(context) != 1) return PROTO_NONE;
     return py_set_symmetric_difference(context, self, parent, args, kwargs);
+}
+
+// Resolve `self`'s underlying ProtoSet, honouring set instances that store
+// the data in the `__data__` attribute (the standard layout produced by
+// py_set_call). Returns nullptr if the object isn't set-like.
+static const proto::ProtoSet* set_underlying(proto::ProtoContext* context, const proto::ProtoObject* self) {
+    if (!self) return nullptr;
+    const proto::ProtoSet* s = self->asSet(context);
+    if (s) return s;
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::ProtoObject* data = self->getAttribute(context,
+        env ? env->getDataString() : PythonEnvironment::getInternalString(context, "__data__"));
+    return data ? data->asSet(context) : nullptr;
+}
+
+// set / frozenset __eq__: equal iff sizes match and each element of `self`
+// is also a member of `other`. Symmetric (size match suffices for one-sided
+// containment to imply equality). Returns NotImplemented (PROTO_NONE) when
+// `other` isn't set-like so Python falls through to identity comparison.
+static const proto::ProtoObject* py_set_eq(
+    proto::ProtoContext* context, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    if (!args || args->getSize(context) < 1) return PROTO_FALSE;
+    const proto::ProtoObject* other = args->getAt(context, 0);
+    if (self == other) return PROTO_TRUE;
+    const proto::ProtoSet* a = set_underlying(context, self);
+    const proto::ProtoSet* b = set_underlying(context, other);
+    if (!a || !b) return PROTO_NONE;
+    if (a->getSize(context) != b->getSize(context)) return PROTO_FALSE;
+    const proto::ProtoSetIterator* it = a->getIterator(context);
+    while (it && it->hasNext(context)) {
+        const proto::ProtoObject* v = it->next(context);
+        if (b->has(context, v) != PROTO_TRUE) return PROTO_FALSE;
+        it = it->advance(context);
+    }
+    return PROTO_TRUE;
+}
+
+// set / frozenset __ne__: negation of __eq__, returning NotImplemented for
+// non-set RHS so the standard fallback can take over.
+static const proto::ProtoObject* py_set_ne(
+    proto::ProtoContext* context, const proto::ProtoObject* self,
+    const proto::ParentLink* parent, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+    const proto::ProtoObject* eq = py_set_eq(context, self, parent, args, kwargs);
+    if (eq == PROTO_NONE) return PROTO_NONE;
+    return (eq == PROTO_TRUE) ? PROTO_FALSE : PROTO_TRUE;
 }
 
 static bool set_contains_all(proto::ProtoContext* context, const proto::ProtoObject* container, const proto::ProtoSet* elements) {
@@ -10346,6 +10396,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     setPrototype = setPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__and__"), rootContext_->fromMethod(nullptr, py_set_and));
     setPrototype = setPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__sub__"), rootContext_->fromMethod(nullptr, py_set_sub));
     setPrototype = setPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__xor__"), rootContext_->fromMethod(nullptr, py_set_xor));
+    setPrototype = setPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__eq__"), rootContext_->fromMethod(nullptr, py_set_eq));
+    setPrototype = setPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__ne__"), rootContext_->fromMethod(nullptr, py_set_ne));
     setPrototype = setPrototype->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_set_iter));
 
     // Set MRO and bases for set
@@ -10373,6 +10425,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, py_bool, rootContext_->fromMethod(nullptr, py_frozenset_bool));
     frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_frozenset_iter));
     frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, py_hash, rootContext_->fromMethod(nullptr, py_frozenset_hash));
+    frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__eq__"), rootContext_->fromMethod(nullptr, py_set_eq));
+    frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__ne__"), rootContext_->fromMethod(nullptr, py_set_ne));
     frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, py_iter_proto, setIterProto);
 
     bytesPrototype = objectPrototype->newChild(rootContext_, true);
