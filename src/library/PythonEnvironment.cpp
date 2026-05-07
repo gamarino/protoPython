@@ -14379,8 +14379,31 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
             // No slots, no data descriptors anywhere in the MRO — direct
             // setAttribute is the correct semantic.  Skip the legacy
             // double-MRO-walk entirely.
-            return const_cast<proto::ProtoObject*>(obj)->proto::ProtoObject::setAttribute(
+            const proto::ProtoObject* result = const_cast<proto::ProtoObject*>(obj)->proto::ProtoObject::setAttribute(
                 ctx, name, value);
+            // PEP 468: track attribute insertion order in __keys__ so
+            // vars(obj)/__dict__ surface attrs in setattr order rather
+            // than the cell-storage SparseList's hash order. Re-assigning
+            // an existing name keeps its slot, matching dict semantics.
+            const proto::ProtoString* keysName = keysString;
+            const proto::ProtoObject* keysObj = (result->hasOwnAttribute(ctx, keysName) == PROTO_TRUE)
+                ? result->proto::ProtoObject::getAttribute(ctx, keysName) : nullptr;
+            const proto::ProtoList* keysList = (keysObj && keysObj != PROTO_NONE) ? keysObj->asList(ctx) : nullptr;
+            bool present = false;
+            if (keysList) {
+                unsigned long h = name->getHash(ctx);
+                for (unsigned long i = 0; i < keysList->getSize(ctx); ++i) {
+                    const proto::ProtoObject* k = keysList->getAt(ctx, i);
+                    if (k && k->isString(ctx) && k->getHash(ctx) == h) { present = true; break; }
+                }
+            } else {
+                keysList = ctx->newList();
+            }
+            if (!present) {
+                keysList = keysList->appendLast(ctx, name->asObject(ctx));
+                const_cast<proto::ProtoObject*>(result)->proto::ProtoObject::setAttribute(ctx, keysName, keysList->asObject(ctx));
+            }
+            return result;
         }
     }
 

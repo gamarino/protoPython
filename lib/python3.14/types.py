@@ -67,13 +67,12 @@ except ImportError:
                 return "namespace(...)"
             _SN_REPR_RUNNING.add(key)
             try:
-                d = vars(self)
-                keys = sorted(d)
-                # Use getattr instead of `d[k]`: protoPython's `vars()` returns
-                # a MappingProxy-flavored view that may not support __getitem__
-                # for every key shape, but the underlying instance's getattr
-                # always does.
-                items = ("{}={!r}".format(k, getattr(self, k)) for k in keys)
+                # Iterate vars(self) in insertion order — PEP 468.  STORE_ATTR
+                # tracks attribute order in __keys__ at the cell level, so
+                # vars()/__dict__ now surface attributes in the order they
+                # were set rather than hash order. The earlier sorted(d)
+                # workaround is no longer needed.
+                items = ("{}={!r}".format(k, getattr(self, k)) for k in vars(self))
                 return "namespace({})".format(", ".join(items))
             finally:
                 _SN_REPR_RUNNING.discard(key)

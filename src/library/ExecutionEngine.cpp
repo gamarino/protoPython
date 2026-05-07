@@ -5097,6 +5097,37 @@ const proto::ProtoObject* executeBytecodeRange(
                             if (noSlots && noDescr) {
                                 newObj = const_cast<proto::ProtoObject*>(obj)->setAttribute(ctx, nameS, val);
                                 fastStoreTaken = true;
+                                // PEP 468 / dict insertion-order preservation.
+                                // Track the assignment in obj.__keys__ so
+                                // vars(obj) and obj.__dict__ surface attrs in
+                                // call/setattr order, not the SparseList's
+                                // hash order.  Only append if the name isn't
+                                // already tracked (re-assigning an existing
+                                // attribute keeps its original slot, matching
+                                // CPython's dict.__setitem__ semantics).
+                                if (env) {
+                                    const proto::ProtoString* keysName = env->getKeysString();
+                                    const proto::ProtoObject* keysObj = (newObj->hasOwnAttribute(ctx, keysName) == PROTO_TRUE)
+                                        ? newObj->proto::ProtoObject::getAttribute(ctx, keysName) : nullptr;
+                                    const proto::ProtoList* keysList = (keysObj && keysObj != PROTO_NONE) ? keysObj->asList(ctx) : nullptr;
+                                    bool present = false;
+                                    if (keysList) {
+                                        unsigned long h = nameS->getHash(ctx);
+                                        for (unsigned long i = 0; i < keysList->getSize(ctx); ++i) {
+                                            const proto::ProtoObject* k = keysList->getAt(ctx, i);
+                                            if (k && k->isString(ctx) && k->getHash(ctx) == h) {
+                                                present = true;
+                                                break;
+                                            }
+                                        }
+                                    } else {
+                                        keysList = ctx->newList();
+                                    }
+                                    if (!present) {
+                                        keysList = keysList->appendLast(ctx, nameS->asObject(ctx));
+                                        const_cast<proto::ProtoObject*>(newObj)->proto::ProtoObject::setAttribute(ctx, keysName, keysList->asObject(ctx));
+                                    }
+                                }
                             }
                         }
                     }
