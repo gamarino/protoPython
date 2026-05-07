@@ -4792,24 +4792,37 @@ static bool int_value(proto::ProtoContext* ctx, const proto::ProtoObject* obj, l
 // promotion / float fallback / dunder dispatch all match what
 // OP_BINARY_* uses; returns NotImplemented for non-numeric RHS so the
 // reflected dunder gets a chance.
+//
+// Supports both bound (self=int_value, args=[other]) and unbound
+// (self=intPrototype/null, args=[int_value, other]) calling conventions
+// — the latter is what `int.__add__(a, b)` produces.
 static const proto::ProtoObject* py_int_arith(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
     const proto::ProtoList* posArgs, TokenType op) {
-    if (!posArgs || posArgs->getSize(ctx) < 1) return PROTO_NONE;
-    const proto::ProtoObject* rhs = posArgs->getAt(ctx, 0);
-    if (!self || !rhs) return PROTO_NONE;
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    // Reject non-numeric RHS via NotImplemented sentinel — Python's
-    // binary op machinery then tries the reflected dunder.
-    bool rhsNumeric = rhs->isInteger(ctx) || rhs->isBoolean(ctx) || rhs->isFloat(ctx);
+    if (!posArgs) return PROTO_NONE;
+    const proto::ProtoObject* a = self;
+    const proto::ProtoObject* b = nullptr;
+    bool selfIsIntInstance = self && (self->isInteger(ctx) || self->isBoolean(ctx));
+    if (!selfIsIntInstance) {
+        // Unbound dispatch: self is the class (intPrototype) or null;
+        // the actual int receiver is args[0].
+        if (posArgs->getSize(ctx) < 2) return env ? env->getNotImplementedPrototype() : PROTO_NONE;
+        a = posArgs->getAt(ctx, 0);
+        b = posArgs->getAt(ctx, 1);
+    } else {
+        if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
+        b = posArgs->getAt(ctx, 0);
+    }
+    if (!a || !b) return PROTO_NONE;
+    bool rhsNumeric = b->isInteger(ctx) || b->isBoolean(ctx) || b->isFloat(ctx);
     if (!rhsNumeric) {
-        // Subclass instances that wrap a number in __data__ also count.
         long long tmp;
-        if (!int_value(ctx, rhs, &tmp) && !rhs->isFloat(ctx)) {
+        if (!int_value(ctx, b, &tmp) && !b->isFloat(ctx)) {
             return env ? env->getNotImplementedPrototype() : PROTO_NONE;
         }
     }
-    return env ? env->binaryOp(self, op, rhs) : PROTO_NONE;
+    return env ? env->binaryOp(a, op, b) : PROTO_NONE;
 }
 
 static const proto::ProtoObject* py_int_add(
@@ -4843,16 +4856,34 @@ static const proto::ProtoObject* py_int_mod(
 static const proto::ProtoObject* py_int_pow(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) {
-    if (!args || args->getSize(ctx) < 1) return PROTO_NONE;
+    if (!args) return PROTO_NONE;
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     long long base, exp, mod = 0;
-    bool hasMod = (args->getSize(ctx) >= 2 && args->getAt(ctx, 1) != PROTO_NONE);
-    if (!int_value(ctx, self, &base) ||
-        !int_value(ctx, args->getAt(ctx, 0), &exp)) {
+    // Bound form: self is the base, args=[exp[, mod]].
+    // Unbound form: self is intPrototype/null, args=[base, exp[, mod]].
+    bool selfIsIntInstance = self && (self->isInteger(ctx) || self->isBoolean(ctx));
+    int expIdx, modIdx;
+    if (selfIsIntInstance) {
+        if (args->getSize(ctx) < 1) return PROTO_NONE;
+        if (!int_value(ctx, self, &base)) {
+            return env ? env->getNotImplementedPrototype() : PROTO_NONE;
+        }
+        expIdx = 0;
+        modIdx = 1;
+    } else {
+        if (args->getSize(ctx) < 2) return env ? env->getNotImplementedPrototype() : PROTO_NONE;
+        if (!int_value(ctx, args->getAt(ctx, 0), &base)) {
+            return env ? env->getNotImplementedPrototype() : PROTO_NONE;
+        }
+        expIdx = 1;
+        modIdx = 2;
+    }
+    bool hasMod = (args->getSize(ctx) > (unsigned long)modIdx && args->getAt(ctx, modIdx) != PROTO_NONE);
+    if (!int_value(ctx, args->getAt(ctx, expIdx), &exp)) {
         return env ? env->getNotImplementedPrototype() : PROTO_NONE;
     }
     if (hasMod) {
-        if (!int_value(ctx, args->getAt(ctx, 1), &mod) || mod == 0) {
+        if (!int_value(ctx, args->getAt(ctx, modIdx), &mod) || mod == 0) {
             return env ? env->getNotImplementedPrototype() : PROTO_NONE;
         }
     }
@@ -4900,44 +4931,62 @@ static const proto::ProtoObject* py_int_rmul(
     return env ? env->binaryOp(args->getAt(ctx, 0), TokenType::Star, self) : PROTO_NONE;
 }
 
+// Resolve (selfStr, otherIdx) for both bound (str(...).__add__(other)) and
+// unbound (str.__add__(s, other)) calling conventions on string dunders.
+static const proto::ProtoObject* str_method_self(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self,
+    const proto::ProtoList* args, int* otherIdx) {
+    bool selfIsStr = self && self->isString(ctx);
+    if (selfIsStr) { *otherIdx = 0; return self; }
+    if (args && args->getSize(ctx) >= 1) {
+        const proto::ProtoObject* a0 = args->getAt(ctx, 0);
+        if (a0 && a0->isString(ctx)) { *otherIdx = 1; return a0; }
+    }
+    return nullptr;
+}
+
 // String concatenation: str.__add__(self, other). CPython requires both
 // sides to be str — non-string operand returns NotImplemented so the
-// reflected dunder gets a chance.
+// reflected dunder gets a chance. Accepts both bound and unbound dispatch.
 static const proto::ProtoObject* py_str_add(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) {
-    if (!args || args->getSize(ctx) < 1) return PROTO_NONE;
-    const proto::ProtoObject* other = args->getAt(ctx, 0);
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    if (!self || !other) return env ? env->getNotImplementedPrototype() : PROTO_NONE;
-    if (!self->isString(ctx) || !other->isString(ctx)) {
+    int otherIdx;
+    const proto::ProtoObject* a = str_method_self(ctx, self, args, &otherIdx);
+    if (!a) return env ? env->getNotImplementedPrototype() : PROTO_NONE;
+    if (!args || args->getSize(ctx) <= (unsigned long)otherIdx) return PROTO_NONE;
+    const proto::ProtoObject* other = args->getAt(ctx, otherIdx);
+    if (!other || !other->isString(ctx)) {
         return env ? env->getNotImplementedPrototype() : PROTO_NONE;
     }
-    std::string a, b;
-    self->asString(ctx)->toUTF8String(ctx, a);
-    other->asString(ctx)->toUTF8String(ctx, b);
-    return PythonEnvironment::getInternedString(ctx, (a + b).c_str())->asObject(ctx);
+    std::string sa, sb;
+    a->asString(ctx)->toUTF8String(ctx, sa);
+    other->asString(ctx)->toUTF8String(ctx, sb);
+    return PythonEnvironment::getInternedString(ctx, (sa + sb).c_str())->asObject(ctx);
 }
 
-// String repetition: str.__mul__(self, count). count must be int (or
-// __index__-able). Negative or zero returns the empty string.
+// String repetition: str.__mul__(self, count). count must be int (or bool).
+// Accepts both bound and unbound dispatch.
 static const proto::ProtoObject* py_str_mul(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) {
-    if (!args || args->getSize(ctx) < 1) return PROTO_NONE;
-    const proto::ProtoObject* other = args->getAt(ctx, 0);
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    if (!self || !other) return env ? env->getNotImplementedPrototype() : PROTO_NONE;
+    int otherIdx;
+    const proto::ProtoObject* a = str_method_self(ctx, self, args, &otherIdx);
+    if (!a) return env ? env->getNotImplementedPrototype() : PROTO_NONE;
+    if (!args || args->getSize(ctx) <= (unsigned long)otherIdx) return PROTO_NONE;
+    const proto::ProtoObject* other = args->getAt(ctx, otherIdx);
     long long n = 0;
-    if (other->isInteger(ctx)) {
+    if (other && other->isInteger(ctx)) {
         try { n = other->asLong(ctx); } catch (...) { n = 0; }
-    } else if (other->isBoolean(ctx)) {
+    } else if (other && other->isBoolean(ctx)) {
         n = (other == PROTO_TRUE) ? 1 : 0;
     } else {
         return env ? env->getNotImplementedPrototype() : PROTO_NONE;
     }
     std::string s;
-    self->asString(ctx)->toUTF8String(ctx, s);
+    a->asString(ctx)->toUTF8String(ctx, s);
     if (n <= 0) return PythonEnvironment::getInternedString(ctx, "")->asObject(ctx);
     std::string out;
     out.reserve(s.size() * static_cast<size_t>(n));
