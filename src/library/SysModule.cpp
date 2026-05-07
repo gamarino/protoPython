@@ -249,6 +249,35 @@ static const proto::ProtoObject* sys_exception(
     return exc ? exc : PROTO_NONE;
 }
 
+// PEP 578: sys.audit("event", *args) — used by stdlib for security
+// events (glob.glob, tempfile.mkstemp, pickle, …). protoPython has no
+// audit hook subsystem so the call is a documented no-op; CPython
+// guarantees `sys.audit(...)` returns None when no hook is registered.
+// Without this stub, importing modules that emit audit events (which
+// includes pickle → exposed by doctest) raises AttributeError on
+// every call.
+static const proto::ProtoObject* sys_audit(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    (void)context; (void)self; (void)parentLink;
+    (void)positionalParameters; (void)keywordParameters;
+    return PROTO_NONE;
+}
+
+static const proto::ProtoObject* sys_addaudithook(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    (void)context; (void)self; (void)parentLink;
+    (void)positionalParameters; (void)keywordParameters;
+    return PROTO_NONE;
+}
+
 static const proto::ProtoObject* sys_exc_info(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -551,6 +580,15 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, PythonEnvironment
     // sys.executable
     const char* exe_path = (argv && !argv->empty()) ? (*argv)[0].c_str() : "/usr/bin/protopy";
     sys = sys->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "executable"), PythonEnvironment::getInternedString(ctx, exe_path)->asObject(ctx));
+
+    // PEP 578 audit hook stubs: required by stdlib paths (pickle, glob,
+    // tempfile, ...) that emit audit events. We don't run a hook subsystem,
+    // so both calls are no-ops returning None — same as CPython when no
+    // hook is registered.
+    sys = sys->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "audit"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_audit));
+    sys = sys->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "addaudithook"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(sys), sys_addaudithook));
 
     // sys.excepthook (AttributeError prevention)
     sys = sys->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "excepthook"), PROTO_NONE);
