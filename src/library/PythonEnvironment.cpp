@@ -14354,19 +14354,48 @@ const proto::ProtoObject* PythonEnvironment::compareObjects(proto::ProtoContext*
                 }
             }
             const proto::ProtoObject* method = a->getAttribute(ctx, dunder);
+            const proto::ProtoObject* notImpl = getNotImplementedPrototype();
+            const proto::ProtoObject* res = nullptr;
             if (method && method->asMethod(ctx)) {
                 const proto::ProtoList* args = ctx->newList();
                 args = args->appendLast(ctx, b);
-                const proto::ProtoObject* res = method->asMethod(ctx)(ctx, a, nullptr, args, getEmptySparseList());
-                const proto::ProtoObject* notImpl = getNotImplementedPrototype();
-                // Only trust the dunder's result if it's a real bool.
-                // Default native-object __eq__ stubs return an opaque
-                // NotImplemented-like instance; fall through to the raw
-                // compare below on anything non-bool.
-                if (res && res != PROTO_NONE && res != notImpl &&
-                    (res == PROTO_TRUE || res == PROTO_FALSE || res->isBoolean(ctx))) {
+                res = method->asMethod(ctx)(ctx, a, nullptr, args, getEmptySparseList());
+            } else if (method && method != PROTO_NONE && !isActuallyAClass(ctx, a)) {
+                // Python user dunder (POINTER_TAG_OBJECT with own __code__):
+                // asMethod is null, the inline path used to drop it. Route
+                // through invokePythonCallable with `self` prepended so
+                // `def __eq__(self, o)` binds correctly. Strict guards:
+                //   - `a` must NOT be a class — when `cls == cls2`, the
+                //     class-level dunder lookup can resolve to the metaclass'
+                //     `__eq__` shim and we'd dispatch with the *class* as
+                //     self, breaking unittest.main's loader (`'type' object
+                //     has no attribute '_testMethodName'`).
+                //   - method must have OWN `__code__` — otherwise it's an
+                //     opaque ProtoObject placeholder (`object.__eq__` is the
+                //     classic example) that isn't actually callable.
+                const proto::ProtoString* codeS = getCodeString();
+                if (codeS && method->hasOwnAttribute(ctx, codeS) == PROTO_TRUE) {
+                    const proto::ProtoList* selfPrepended =
+                        ctx->newList()->appendLast(ctx, a)->appendLast(ctx, b);
+                    res = invokePythonCallable(ctx, method, selfPrepended, nullptr);
+                }
+            }
+            if (res && res != PROTO_NONE && res != notImpl) {
+                if (res == PROTO_TRUE || res == PROTO_FALSE || res->isBoolean(ctx)) {
                     return res;
                 }
+                // Non-bool result from a user dunder: bool-coerce via the
+                // standard truthiness contract. CPython's `if a == b` does
+                // exactly this, so callers expecting a strict True/False
+                // (sort, isinstance, dict lookup) get a meaningful answer
+                // instead of falling through to identity comparison.
+                bool truthy = false;
+                if (res == PROTO_NONE) truthy = false;
+                else if (res->isBoolean(ctx)) truthy = res->asBoolean(ctx);
+                else if (res->isInteger(ctx)) truthy = (res->asLong(ctx) != 0);
+                else if (res->isString(ctx)) truthy = (res->asString(ctx)->getSize(ctx) > 0);
+                else truthy = true;  // any other non-empty object is truthy
+                return truthy ? PROTO_TRUE : PROTO_FALSE;
             }
         }
     }
