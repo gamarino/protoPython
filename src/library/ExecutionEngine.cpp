@@ -7010,8 +7010,14 @@ const proto::ProtoObject* executeBytecodeRange(
                     const proto::ProtoObject* k = (keysName && obj->hasOwnAttribute(ctx, keysName) == PROTO_TRUE) ? obj->proto::ProtoObject::getAttribute(ctx, keysName) : nullptr;
                     if (d && d != PROTO_NONE && d->asSparseList(ctx)) {
                         unsigned long h = nameS->getHash(ctx);
-                        if (d->asSparseList(ctx)->has(ctx, h)) {
-                            d->asSparseList(ctx)->removeAt(ctx, h);
+                        const proto::ProtoSparseList* sl = d->asSparseList(ctx);
+                        if (sl->has(ctx, h)) {
+                            // SparseList::removeAt returns a NEW immutable list;
+                            // capture it and rebind __data__ so subsequent reads
+                            // (vars/keys/items) see the entry as gone instead
+                            // of just losing the structural-sharing slot.
+                            const proto::ProtoSparseList* newSl = sl->removeAt(ctx, h);
+                            const_cast<proto::ProtoObject*>(obj)->proto::ProtoObject::setAttribute(ctx, dataName, newSl->asObject(ctx));
                             removed = true;
                         }
                         if (env && env->hasPendingException()) env->clearPendingException();
@@ -7034,13 +7040,16 @@ const proto::ProtoObject* executeBytecodeRange(
                             removed = true;
                         }
                     }
-                    // Cell-storage attribute path: only "remove" if the name is
-                    // OWN on the instance. Setting to None for a missing name
-                    // would silently absorb the request and break test code
-                    // that asserts AttributeError on `del ns.spam`.
+                    // Cell-storage attribute path: protoCore exposes a proper
+                    // removeAttribute that erases the entry from the OWN
+                    // attribute table (mirrors setAttribute's mutable-vs-
+                    // immutable contract). Use it instead of overwriting with
+                    // PROTO_NONE, which would (a) leave the attribute visible
+                    // through hasattr/vars and (b) lose the user's ability to
+                    // explicitly assign None as a sentinel value that shadows
+                    // a parent binding.
                     if (obj->hasOwnAttribute(ctx, nameS) == PROTO_TRUE) {
-                        const proto::ProtoObject* nil = env ? env->getNonePrototype() : PROTO_NONE;
-                        const_cast<proto::ProtoObject*>(obj)->proto::ProtoObject::setAttribute(ctx, nameS, nil);
+                        const_cast<proto::ProtoObject*>(obj)->proto::ProtoObject::removeAttribute(ctx, nameS);
                         removed = true;
                     }
                     if (!removed && env) {
