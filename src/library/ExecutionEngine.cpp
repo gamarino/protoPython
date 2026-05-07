@@ -607,19 +607,33 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
     }
 
     if (isGenerator) {
+        // CPython: a freshly-created (not yet started) generator/coroutine
+        // has `gi_frame.f_back is None`. f_back is wired up to the caller
+        // only while the generator is running. Reset what frame setup
+        // earlier wrote so introspection during pre-start matches CPython.
+        // For an immutable (CO_OPTIMIZED) frame `setAttribute` is
+        // copy-on-write — must reassign the local to capture the snapshot.
+        if (frame && env) {
+            frame = const_cast<proto::ProtoObject*>(
+                frame->setAttribute(calleeCtx, env->getFBackString(), PROTO_NONE));
+        }
         proto::ProtoObject* gen = const_cast<proto::ProtoObject*>(calleeCtx->newObject(true));
+        // PB3: select prototype based on co_flags.
+        //   CO_COROUTINE (0x100) + yield (0x20) → async_generator
+        //   CO_COROUTINE (0x100) alone          → coroutine
+        //   else (CO_GENERATOR 0x20)            → generator
+        bool hasCoroutineFlag = false;
+        bool hasGeneratorFlag = false;
+        bool isAsyncGenerator = false;
         if (env && env->getGeneratorPrototype()) {
-            // PB3: select prototype based on co_flags.
-            //   CO_COROUTINE (0x100) + yield (0x20) → async_generator
-            //   CO_COROUTINE (0x100) alone          → coroutine
-            //   else (CO_GENERATOR 0x20)            → generator
             const proto::ProtoObject* genProto = env->getGeneratorPrototype();
             const proto::ProtoObject* coFlagsObj = codeObj->getAttribute(calleeCtx, env->getCoFlagsString());
             long long co_flags_val = (coFlagsObj && coFlagsObj->isInteger(calleeCtx)) ? coFlagsObj->asLong(calleeCtx) : 0;
-            const bool hasCoroutineFlag = (co_flags_val & 0x100) != 0;
-            const bool hasGeneratorFlag = (co_flags_val & 0x20) != 0;
+            hasCoroutineFlag = (co_flags_val & 0x100) != 0;
+            hasGeneratorFlag = (co_flags_val & 0x20) != 0;
             if (hasCoroutineFlag && hasGeneratorFlag && env->getAsyncGeneratorPrototype()) {
                 genProto = env->getAsyncGeneratorPrototype();
+                isAsyncGenerator = true;
             } else if (hasCoroutineFlag && env->getCoroutinePrototype()) {
                 genProto = env->getCoroutinePrototype();
             }
@@ -630,6 +644,18 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
         gen->setAttribute(calleeCtx, env ? env->getGiFrameString() : PythonEnvironment::getInternedString(calleeCtx, "gi_frame"), frame);
         gen->setAttribute(calleeCtx, env ? env->getGiRunningString() : PythonEnvironment::getInternedString(calleeCtx, "gi_running"), PROTO_FALSE);
         gen->setAttribute(calleeCtx, env ? env->getGiPCString() : PythonEnvironment::getInternedString(calleeCtx, "gi_pc"), calleeCtx->fromInteger(0));
+        // PEP 492 / 525 aliases: coroutines expose the gi_* state under cr_*
+        // and async generators under ag_*. CPython implements these as
+        // descriptors on the type; we mirror the data attributes directly so
+        // the simple read paths (`coro.cr_frame`, `agen.ag_code`) work.
+        if (hasCoroutineFlag) {
+            static const char* cr_table[] = {"cr_code","cr_frame","cr_running"};
+            static const char* ag_table[] = {"ag_code","ag_frame","ag_running"};
+            const char* const* table = isAsyncGenerator ? ag_table : cr_table;
+            gen->setAttribute(calleeCtx, PythonEnvironment::getInternedString(calleeCtx, table[0]), codeObj);
+            gen->setAttribute(calleeCtx, PythonEnvironment::getInternedString(calleeCtx, table[1]), frame);
+            gen->setAttribute(calleeCtx, PythonEnvironment::getInternedString(calleeCtx, table[2]), PROTO_FALSE);
+        }
         
         const proto::ProtoList* emptyStack = calleeCtx->newList();
         gen->setAttribute(calleeCtx, env ? env->getGiStackString() : PythonEnvironment::getInternedString(calleeCtx, "gi_stack"), emptyStack->asObject(calleeCtx));
