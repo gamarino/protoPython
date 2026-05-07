@@ -3372,6 +3372,34 @@ static const proto::ProtoObject* py_int_repr(
     return PythonEnvironment::getInternedString(context, "0")->asObject(context);
 }
 
+// CPython float repr: shortest decimal that round-trips back to the same
+// double, with ".0" appended for whole-number values so they don't look
+// like ints. Iterate precision 1..17 looking for the smallest that
+// strtod-back to bit-equality. Mirrors PyOS_double_to_string('r', 0).
+static std::string py_float_format_short(double val) {
+    if (std::isnan(val)) return "nan";
+    if (std::isinf(val)) return val < 0 ? "-inf" : "inf";
+    char buf[64];
+    for (int prec = 1; prec <= 17; ++prec) {
+        std::snprintf(buf, sizeof(buf), "%.*g", prec, val);
+        char* end = nullptr;
+        double parsed = std::strtod(buf, &end);
+        if (parsed == val) break;
+    }
+    std::string s(buf);
+    // Whole-number floats need an explicit ".0" suffix so `repr(1.0) ==
+    // "1.0"` and the eval round-trip preserves the type.  Skip when the
+    // result already carries a decimal mark or scientific exponent.
+    bool hasDecimal = false;
+    for (char c : s) {
+        if (c == '.' || c == 'e' || c == 'E' || c == 'n' /*nan*/ || c == 'i' /*inf*/) {
+            hasDecimal = true; break;
+        }
+    }
+    if (!hasDecimal) s += ".0";
+    return s;
+}
+
 static const proto::ProtoObject* py_float_repr(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -3384,9 +3412,8 @@ static const proto::ProtoObject* py_float_repr(
         const proto::ProtoObject* data = self->getAttribute(context, env ? env->getDataString() : PythonEnvironment::getInternalString(context, "__data__"));
         if (data && data->isDouble(context)) val = data->asDouble(context);
     }
-    char buf[64];
-    snprintf(buf, sizeof(buf), "%g", val);
-    return PythonEnvironment::getInternedString(context, buf)->asObject(context);
+    std::string s = py_float_format_short(val);
+    return PythonEnvironment::getInternedString(context, s.c_str())->asObject(context);
 }
 
 static const proto::ProtoObject* py_int_bool(

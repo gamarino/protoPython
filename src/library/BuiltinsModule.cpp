@@ -747,9 +747,33 @@ static const proto::ProtoObject* py_repr(
         return s->asObject(context);
     }
     if (obj->isDouble(context)) {
+        // Shortest round-trip representation matching CPython's repr/str.
+        // Iterate %.*g precision 1..17 looking for the smallest precision
+        // whose strtod result bit-equals the original double. Whole-number
+        // floats receive an explicit ".0" suffix so repr(1.0) == "1.0" and
+        // eval round-trip preserves the float type. Mirrors
+        // PyOS_double_to_string('r', 0).
+        double val = obj->asDouble(context);
+        if (std::isnan(val)) {
+            return PythonEnvironment::getInternedString(context, "nan")->asObject(context);
+        }
+        if (std::isinf(val)) {
+            return PythonEnvironment::getInternedString(context, val < 0 ? "-inf" : "inf")->asObject(context);
+        }
         char buf[64];
-        snprintf(buf, sizeof(buf), "%.15g", obj->asDouble(context));
-        return PythonEnvironment::getInternedString(context, buf)->asObject(context);
+        for (int prec = 1; prec <= 17; ++prec) {
+            std::snprintf(buf, sizeof(buf), "%.*g", prec, val);
+            char* end = nullptr;
+            double parsed = std::strtod(buf, &end);
+            if (parsed == val) break;
+        }
+        std::string s(buf);
+        bool hasDecimal = false;
+        for (char c : s) {
+            if (c == '.' || c == 'e' || c == 'E') { hasDecimal = true; break; }
+        }
+        if (!hasDecimal) s += ".0";
+        return PythonEnvironment::getInternedString(context, s.c_str())->asObject(context);
     }
     if (obj->isString(context)) {
         std::string s;
@@ -790,9 +814,33 @@ static const proto::ProtoObject* py_format(
     if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
     if (obj->isDouble(context)) {
+        // Shortest round-trip representation matching CPython's repr/str.
+        // Iterate %.*g precision 1..17 looking for the smallest precision
+        // whose strtod result bit-equals the original double. Whole-number
+        // floats receive an explicit ".0" suffix so repr(1.0) == "1.0" and
+        // eval round-trip preserves the float type. Mirrors
+        // PyOS_double_to_string('r', 0).
+        double val = obj->asDouble(context);
+        if (std::isnan(val)) {
+            return PythonEnvironment::getInternedString(context, "nan")->asObject(context);
+        }
+        if (std::isinf(val)) {
+            return PythonEnvironment::getInternedString(context, val < 0 ? "-inf" : "inf")->asObject(context);
+        }
         char buf[64];
-        snprintf(buf, sizeof(buf), "%.15g", obj->asDouble(context));
-        return PythonEnvironment::getInternedString(context, buf)->asObject(context);
+        for (int prec = 1; prec <= 17; ++prec) {
+            std::snprintf(buf, sizeof(buf), "%.*g", prec, val);
+            char* end = nullptr;
+            double parsed = std::strtod(buf, &end);
+            if (parsed == val) break;
+        }
+        std::string s(buf);
+        bool hasDecimal = false;
+        for (char c : s) {
+            if (c == '.' || c == 'e' || c == 'E') { hasDecimal = true; break; }
+        }
+        if (!hasDecimal) s += ".0";
+        return PythonEnvironment::getInternedString(context, s.c_str())->asObject(context);
     }
     if (obj->isInteger(context)) {
         char buf[32];
