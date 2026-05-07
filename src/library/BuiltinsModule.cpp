@@ -805,6 +805,162 @@ static const proto::ProtoObject* py_repr(
     return PythonEnvironment::getInternedString(context, result.c_str())->asObject(context);
 }
 
+// Helper used by both repr() and the empty-spec format() of floats: shortest
+// round-trip representation with ".0" appended for whole-number values.
+static std::string py_format_float_short(double val) {
+    if (std::isnan(val)) return "nan";
+    if (std::isinf(val)) return val < 0 ? "-inf" : "inf";
+    char buf[64];
+    for (int prec = 1; prec <= 17; ++prec) {
+        std::snprintf(buf, sizeof(buf), "%.*g", prec, val);
+        char* end = nullptr;
+        double parsed = std::strtod(buf, &end);
+        if (parsed == val) break;
+    }
+    std::string s(buf);
+    bool hasDecimal = false;
+    for (char c : s) {
+        if (c == '.' || c == 'e' || c == 'E') { hasDecimal = true; break; }
+    }
+    if (!hasDecimal) s += ".0";
+    return s;
+}
+
+// Apply a PEP 3101 format spec to a double. Supports the subset CPython
+// exercises in test_float__format__: type f/F/g/G/e/E/%, precision, width,
+// align (< > ^ =), fill, sign, alt-form (#), zero-pad. Returns the
+// formatted string; an empty spec yields the shortest-repr form.
+static std::string py_format_float_spec(double val, const std::string& spec) {
+    if (spec.empty()) return py_format_float_short(val);
+
+    // Parse [[fill]align][sign][#][0][width][,][.precision][type]
+    char fill = ' ';
+    char align = '\0';   // 0 = unspecified
+    char sign = '-';
+    bool altForm = false;
+    bool zeroPad = false;
+    int width = 0;
+    bool useThousandsSep = false;
+    int precision = -1;
+    char type = '\0';
+
+    size_t i = 0;
+    // Detect [fill]align: align is one of < > ^ =, fill is the preceding char.
+    if (spec.size() >= 2) {
+        char c1 = spec[1];
+        if (c1 == '<' || c1 == '>' || c1 == '^' || c1 == '=') {
+            fill = spec[0];
+            align = c1;
+            i = 2;
+        }
+    }
+    if (align == '\0' && i < spec.size()) {
+        char c = spec[i];
+        if (c == '<' || c == '>' || c == '^' || c == '=') {
+            align = c;
+            i++;
+        }
+    }
+    if (i < spec.size() && (spec[i] == '+' || spec[i] == '-' || spec[i] == ' ')) {
+        sign = spec[i++];
+    }
+    if (i < spec.size() && spec[i] == '#') { altForm = true; i++; }
+    if (i < spec.size() && spec[i] == '0') {
+        zeroPad = true;
+        if (align == '\0') align = '=';
+        if (fill == ' ') fill = '0';
+        i++;
+    }
+    while (i < spec.size() && std::isdigit(static_cast<unsigned char>(spec[i]))) {
+        width = width * 10 + (spec[i] - '0');
+        i++;
+    }
+    if (i < spec.size() && spec[i] == ',') { useThousandsSep = true; i++; }
+    if (i < spec.size() && spec[i] == '.') {
+        i++;
+        precision = 0;
+        while (i < spec.size() && std::isdigit(static_cast<unsigned char>(spec[i]))) {
+            precision = precision * 10 + (spec[i] - '0');
+            i++;
+        }
+    }
+    if (i < spec.size()) type = spec[i++];
+
+    // Build the numeric body (without sign, padding).
+    std::string body;
+    bool isNegative = std::signbit(val) && !std::isnan(val);
+    double absVal = std::fabs(val);
+    bool isSpecial = std::isnan(val) || std::isinf(val);
+    if (isSpecial) {
+        if (std::isnan(val)) body = (type == 'F' || type == 'G' || type == 'E') ? "NAN" : "nan";
+        else body = (type == 'F' || type == 'G' || type == 'E') ? "INF" : "inf";
+        // Special values ignore precision / alt / zero-pad.
+        zeroPad = false;
+        altForm = false;
+    } else {
+        char buf[128];
+        char ftype = type;
+        int p = (precision < 0) ? 6 : precision;
+        if (ftype == '\0') {
+            // Default: same as 'g' but with shortest-repr if no precision.
+            if (precision < 0) {
+                body = py_format_float_short(absVal);
+            } else {
+                std::snprintf(buf, sizeof(buf), "%.*g", p, absVal);
+                body = buf;
+            }
+        } else if (ftype == 'f' || ftype == 'F') {
+            std::snprintf(buf, sizeof(buf), "%.*f", p, absVal);
+            body = buf;
+        } else if (ftype == 'e' || ftype == 'E') {
+            std::snprintf(buf, sizeof(buf), ftype == 'E' ? "%.*E" : "%.*e", p, absVal);
+            body = buf;
+        } else if (ftype == 'g' || ftype == 'G') {
+            int gp = (p == 0) ? 1 : p;
+            std::snprintf(buf, sizeof(buf), ftype == 'G' ? "%.*G" : "%.*g", gp, absVal);
+            body = buf;
+            // 'g' with alt-form keeps trailing zeros / decimal point.
+        } else if (ftype == '%') {
+            std::snprintf(buf, sizeof(buf), "%.*f%%", p, absVal * 100.0);
+            body = buf;
+        } else if (ftype == 'n') {
+            // Locale-aware 'g'; degrade to plain g for protopython.
+            int gp = (p == 0) ? 1 : p;
+            std::snprintf(buf, sizeof(buf), "%.*g", gp, absVal);
+            body = buf;
+        } else {
+            // Unsupported type: fall back to repr-style.
+            body = py_format_float_short(absVal);
+        }
+    }
+
+    // Sign-handling.
+    std::string signStr;
+    if (isNegative) signStr = "-";
+    else if (sign == '+') signStr = "+";
+    else if (sign == ' ') signStr = " ";
+
+    // Width / padding.
+    std::string out = signStr + body;
+    if (static_cast<int>(out.size()) < width) {
+        int pad = width - static_cast<int>(out.size());
+        char effectiveAlign = align;
+        if (effectiveAlign == '\0') effectiveAlign = '>';  // numbers right-align by default
+        if (effectiveAlign == '<') {
+            out += std::string(pad, fill);
+        } else if (effectiveAlign == '>') {
+            out = std::string(pad, fill) + out;
+        } else if (effectiveAlign == '^') {
+            int left = pad / 2;
+            out = std::string(left, fill) + out + std::string(pad - left, fill);
+        } else if (effectiveAlign == '=') {
+            // Sign-aware fill: pad goes between sign and digits.
+            out = signStr + std::string(pad, fill) + body;
+        }
+    }
+    return out;
+}
+
 static const proto::ProtoObject* py_format(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -813,39 +969,27 @@ static const proto::ProtoObject* py_format(
     const proto::ProtoSparseList* keywordParameters) {
     if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
+    // Read the format spec from positional[1] when present; default empty.
+    std::string spec;
+    if (positionalParameters->getSize(context) >= 2) {
+        const proto::ProtoObject* specObj = positionalParameters->getAt(context, 1);
+        if (specObj && specObj->isString(context)) {
+            specObj->asString(context)->toUTF8String(context, spec);
+        }
+    }
     if (obj->isDouble(context)) {
-        // Shortest round-trip representation matching CPython's repr/str.
-        // Iterate %.*g precision 1..17 looking for the smallest precision
-        // whose strtod result bit-equals the original double. Whole-number
-        // floats receive an explicit ".0" suffix so repr(1.0) == "1.0" and
-        // eval round-trip preserves the float type. Mirrors
-        // PyOS_double_to_string('r', 0).
-        double val = obj->asDouble(context);
-        if (std::isnan(val)) {
-            return PythonEnvironment::getInternedString(context, "nan")->asObject(context);
-        }
-        if (std::isinf(val)) {
-            return PythonEnvironment::getInternedString(context, val < 0 ? "-inf" : "inf")->asObject(context);
-        }
-        char buf[64];
-        for (int prec = 1; prec <= 17; ++prec) {
-            std::snprintf(buf, sizeof(buf), "%.*g", prec, val);
-            char* end = nullptr;
-            double parsed = std::strtod(buf, &end);
-            if (parsed == val) break;
-        }
-        std::string s(buf);
-        bool hasDecimal = false;
-        for (char c : s) {
-            if (c == '.' || c == 'e' || c == 'E') { hasDecimal = true; break; }
-        }
-        if (!hasDecimal) s += ".0";
+        std::string s = py_format_float_spec(obj->asDouble(context), spec);
         return PythonEnvironment::getInternedString(context, s.c_str())->asObject(context);
     }
     if (obj->isInteger(context)) {
-        char buf[32];
-        snprintf(buf, sizeof(buf), "%lld", (long long)obj->asLong(context));
-        return PythonEnvironment::getInternedString(context, buf)->asObject(context);
+        // Empty spec / no spec → bare decimal. Otherwise route through
+        // __format__ on int (already implemented as py_int_format).
+        if (spec.empty()) {
+            char buf[32];
+            std::snprintf(buf, sizeof(buf), "%lld", (long long)obj->asLong(context));
+            return PythonEnvironment::getInternedString(context, buf)->asObject(context);
+        }
+        // Fall through to dunder dispatch below.
     }
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     const proto::ProtoString* formatS = env ? env->getFormatString() : PythonEnvironment::getInternedString(context, "__format__");
