@@ -2169,6 +2169,28 @@ static const proto::ProtoObject* py_dict_getitem(
         if (dict->has(context, hash)) {
             return dict->getAt(context, hash);
         }
+        // CPython: if this is a dict subclass that overrides __missing__,
+        // dispatch to it before raising KeyError. Detect via OWN-attribute
+        // lookup on the *instance type* — `self.__missing__` walked via
+        // chain would resolve to dict's prototype (no __missing__ there)
+        // but `type(self).__missing__` finds the subclass override.
+        if (env) {
+            const proto::ProtoObject* cls = env->getType(context, realSelf);
+            const proto::ProtoString* missS = PythonEnvironment::getInternedString(context, "__missing__");
+            const proto::ProtoObject* missM = cls ? env->getAttribute(context, cls, missS, false) : nullptr;
+            if (missM && missM != PROTO_NONE) {
+                const proto::ProtoList* a = context->newList()->appendLast(context, key);
+                if (missM->asMethod(context)) {
+                    return missM->asMethod(context)(context, realSelf, nullptr, a, nullptr);
+                }
+                const proto::ProtoString* codeS = env->getCodeString();
+                if (codeS && missM->hasOwnAttribute(context, codeS) == PROTO_TRUE) {
+                    const proto::ProtoList* selfArgs = context->newList()->appendLast(context, realSelf)->appendLast(context, key);
+                    return ::protoPython::invokePythonCallable(context, missM, selfArgs, nullptr);
+                }
+                return ::protoPython::invokePythonCallable(context, missM, a, nullptr);
+            }
+        }
         env->raiseKeyError(context, key);
     }
     return PROTO_NONE;
