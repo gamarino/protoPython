@@ -1165,12 +1165,47 @@ static const proto::ProtoObject* py_float_call(
                 return PROTO_NONE;
             }
         } else {
+            // CPython: float(obj) for non-numeric, non-string objects calls
+            // type(obj).__float__(obj) and validates int return; falls back
+            // to __index__ when __float__ is missing.
             PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-            if (env) env->raiseTypeError(ctx, "float() argument must be a string or a number");
+            if (env) {
+                const proto::ProtoString* fS = PythonEnvironment::getInternedString(ctx, "__float__");
+                const proto::ProtoString* idxS = PythonEnvironment::getInternedString(ctx, "__index__");
+                const proto::ProtoObject* cls = env->getType(ctx, val);
+                const proto::ProtoObject* method = nullptr;
+                for (const proto::ProtoString* dunder : {fS, idxS}) {
+                    if (cls) method = env->getAttribute(ctx, cls, dunder, false);
+                    if (method && method != PROTO_NONE) break;
+                    method = nullptr;
+                }
+                if (method && method != PROTO_NONE) {
+                    const proto::ProtoObject* result = nullptr;
+                    if (method->asMethod(ctx)) {
+                        result = method->asMethod(ctx)(ctx, val, nullptr, ctx->newList(), nullptr);
+                    } else {
+                        const proto::ProtoString* codeS = env->getCodeString();
+                        if (codeS && method->hasOwnAttribute(ctx, codeS) == PROTO_TRUE) {
+                            const proto::ProtoList* selfArgs = ctx->newList()->appendLast(ctx, val);
+                            result = ::protoPython::invokePythonCallable(ctx, method, selfArgs, nullptr);
+                        }
+                    }
+                    if (result) {
+                        if (result->isDouble(ctx)) { x = result; goto haveFloat; }
+                        if (result->isInteger(ctx)) {
+                            try { x = ctx->fromDouble(static_cast<double>(result->asLong(ctx))); goto haveFloat; }
+                            catch (...) {}
+                        }
+                        env->raiseTypeError(ctx, "__float__ returned non-float");
+                        return nullptr;
+                    }
+                }
+                env->raiseTypeError(ctx, "float() argument must be a string or a number");
+            }
             return nullptr;
         }
     }
-
+haveFloat:
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (!targetCls || (env && targetCls == env->getFloatPrototype())) {
         return x;
