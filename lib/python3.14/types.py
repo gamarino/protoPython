@@ -25,6 +25,13 @@ except ImportError:
     # raises). Provide a small Python-level fallback that matches the
     # documented contract: dict-style attribute access, repr listing
     # alphabetised key=value pairs, equality compares __dict__.
+    # Track SimpleNamespace instances currently inside a __repr__ call so
+    # we can break recursion (e.g. ns.x = ns) the same way CPython's
+    # reprlib.recursive_repr decorator does. A WeakSet would be more
+    # idiomatic but the protopython weakref module is partial; an int-id
+    # set is enough for the duration of a repr() call.
+    _SN_REPR_RUNNING = set()
+
     class SimpleNamespace:
         """A simple attribute-based namespace.
 
@@ -51,14 +58,25 @@ except ImportError:
                 setattr(self, k, v)
 
         def __repr__(self):
-            d = vars(self)
-            keys = sorted(d)
-            # Use getattr instead of `d[k]`: protoPython's `vars()` returns a
-            # MappingProxy-flavored view that may not support __getitem__ for
-            # every key shape, but the underlying instance's getattr always
-            # does.
-            items = ("{}={!r}".format(k, getattr(self, k)) for k in keys)
-            return "namespace({})".format(", ".join(items))
+            # Recursion guard: if this very instance is already being
+            # repr'd higher in the call stack, render an ellipsis sentinel
+            # ("namespace(...)") instead of recursing into infinity.
+            # Mirrors CPython's reprlib.recursive_repr behaviour.
+            key = id(self)
+            if key in _SN_REPR_RUNNING:
+                return "namespace(...)"
+            _SN_REPR_RUNNING.add(key)
+            try:
+                d = vars(self)
+                keys = sorted(d)
+                # Use getattr instead of `d[k]`: protoPython's `vars()` returns
+                # a MappingProxy-flavored view that may not support __getitem__
+                # for every key shape, but the underlying instance's getattr
+                # always does.
+                items = ("{}={!r}".format(k, getattr(self, k)) for k in keys)
+                return "namespace({})".format(", ".join(items))
+            finally:
+                _SN_REPR_RUNNING.discard(key)
 
         def __eq__(self, other):
             if isinstance(self, SimpleNamespace) and isinstance(other, SimpleNamespace):
