@@ -4857,6 +4857,51 @@ static const proto::ProtoObject* py_int_rmul(
     return env ? env->binaryOp(args->getAt(ctx, 0), TokenType::Star, self) : PROTO_NONE;
 }
 
+// String concatenation: str.__add__(self, other). CPython requires both
+// sides to be str — non-string operand returns NotImplemented so the
+// reflected dunder gets a chance.
+static const proto::ProtoObject* py_str_add(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    if (!args || args->getSize(ctx) < 1) return PROTO_NONE;
+    const proto::ProtoObject* other = args->getAt(ctx, 0);
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!self || !other) return env ? env->getNotImplementedPrototype() : PROTO_NONE;
+    if (!self->isString(ctx) || !other->isString(ctx)) {
+        return env ? env->getNotImplementedPrototype() : PROTO_NONE;
+    }
+    std::string a, b;
+    self->asString(ctx)->toUTF8String(ctx, a);
+    other->asString(ctx)->toUTF8String(ctx, b);
+    return PythonEnvironment::getInternedString(ctx, (a + b).c_str())->asObject(ctx);
+}
+
+// String repetition: str.__mul__(self, count). count must be int (or
+// __index__-able). Negative or zero returns the empty string.
+static const proto::ProtoObject* py_str_mul(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    if (!args || args->getSize(ctx) < 1) return PROTO_NONE;
+    const proto::ProtoObject* other = args->getAt(ctx, 0);
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!self || !other) return env ? env->getNotImplementedPrototype() : PROTO_NONE;
+    long long n = 0;
+    if (other->isInteger(ctx)) {
+        try { n = other->asLong(ctx); } catch (...) { n = 0; }
+    } else if (other->isBoolean(ctx)) {
+        n = (other == PROTO_TRUE) ? 1 : 0;
+    } else {
+        return env ? env->getNotImplementedPrototype() : PROTO_NONE;
+    }
+    std::string s;
+    self->asString(ctx)->toUTF8String(ctx, s);
+    if (n <= 0) return PythonEnvironment::getInternedString(ctx, "")->asObject(ctx);
+    std::string out;
+    out.reserve(s.size() * static_cast<size_t>(n));
+    for (long long i = 0; i < n; ++i) out += s;
+    return PythonEnvironment::getInternedString(ctx, out.c_str())->asObject(ctx);
+}
+
 static const proto::ProtoObject* py_int_hash(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -10805,6 +10850,12 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     strPrototype = strPrototype->setAttribute(rootContext_, py_format, rootContext_->fromMethod(nullptr, py_str_format));
     strPrototype = strPrototype->setAttribute(rootContext_, py_format_dunder, rootContext_->fromMethod(nullptr, py_str_format_dunder));
     strPrototype = strPrototype->setAttribute(rootContext_, py_hash, rootContext_->fromMethod(nullptr, py_str_hash));
+    // Concatenation / repetition dunders so user code can call
+    // str.__add__(self, other) / str.__mul__(self, n) — same pattern as
+    // int's arithmetic dunders for subclass overrides.
+    strPrototype = strPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__add__"), rootContext_->fromMethod(nullptr, py_str_add));
+    strPrototype = strPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__mul__"), rootContext_->fromMethod(nullptr, py_str_mul));
+    strPrototype = strPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__rmul__"), rootContext_->fromMethod(nullptr, py_str_mul));
     strPrototype = strPrototype->setAttribute(rootContext_, py_split, rootContext_->fromMethod(nullptr, py_str_split));
     strPrototype = strPrototype->setAttribute(rootContext_, py_join, rootContext_->fromMethod(nullptr, py_str_join));
     strPrototype = strPrototype->setAttribute(rootContext_, py_strip, rootContext_->fromMethod(nullptr, py_str_strip));
