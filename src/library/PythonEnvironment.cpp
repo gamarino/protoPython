@@ -2632,7 +2632,17 @@ std::string PythonEnvironment::reprObject(proto::ProtoContext* context, const pr
         if (reprMethod->asMethod(context)) {
             out = reprMethod->asMethod(context)(context, obj, nullptr, context->newList(), nullptr);
         } else {
-            out = invokePythonCallable(context, reprMethod, context->newList(), nullptr);
+            // Python user dunder (function with __code__) — needs `self`
+            // prepended explicitly because invokePythonCallable doesn't
+            // bind for us. Without this, `def __repr__(self):` got called
+            // with zero positional args and silently returned None →
+            // reprObject fell through to "<object>".
+            const proto::ProtoString* codeS = env ? env->getCodeString() : PythonEnvironment::getInternalString(context, "__code__");
+            const proto::ProtoList* args = context->newList();
+            if (codeS && reprMethod->hasOwnAttribute(context, codeS) == PROTO_TRUE) {
+                args = args->appendLast(context, obj);
+            }
+            out = invokePythonCallable(context, reprMethod, args, nullptr);
         }
         if (out && out->isString(context)) {
             std::string s;
@@ -4755,6 +4765,96 @@ static const proto::ProtoObject* py_int_bit_count(
         while (v) { count += (v & 1); v >>= 1; }
     }
     return context->fromInteger(count);
+}
+
+// Helper: pull a long long from `obj`, walking __data__ for int subclass
+// instances that wrap a SmallInteger.  Returns nullptr-equivalent (sets
+// *out=0 and returns false) when obj isn't int-like.
+static bool int_value(proto::ProtoContext* ctx, const proto::ProtoObject* obj, long long* out) {
+    if (!obj) return false;
+    const proto::ProtoObject* iv = nullptr;
+    if (obj->isInteger(ctx)) iv = obj;
+    else if (obj->isBoolean(ctx)) {
+        *out = (obj == PROTO_TRUE) ? 1 : 0;
+        return true;
+    } else {
+        PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+        const proto::ProtoObject* data = obj->getAttribute(ctx,
+            env ? env->getDataString() : PythonEnvironment::getInternalString(ctx, "__data__"));
+        if (data && data->isInteger(ctx)) iv = data;
+    }
+    if (!iv) return false;
+    try { *out = iv->asLong(ctx); return true; }
+    catch (...) { return false; }
+}
+
+// Generic int arithmetic dunder.  Routes through env->binaryOp so big-num
+// promotion / float fallback / dunder dispatch all match what
+// OP_BINARY_* uses; returns NotImplemented for non-numeric RHS so the
+// reflected dunder gets a chance.
+static const proto::ProtoObject* py_int_arith(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self,
+    const proto::ProtoList* posArgs, TokenType op) {
+    if (!posArgs || posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    const proto::ProtoObject* rhs = posArgs->getAt(ctx, 0);
+    if (!self || !rhs) return PROTO_NONE;
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    // Reject non-numeric RHS via NotImplemented sentinel — Python's
+    // binary op machinery then tries the reflected dunder.
+    bool rhsNumeric = rhs->isInteger(ctx) || rhs->isBoolean(ctx) || rhs->isFloat(ctx);
+    if (!rhsNumeric) {
+        // Subclass instances that wrap a number in __data__ also count.
+        long long tmp;
+        if (!int_value(ctx, rhs, &tmp) && !rhs->isFloat(ctx)) {
+            return env ? env->getNotImplementedPrototype() : PROTO_NONE;
+        }
+    }
+    return env ? env->binaryOp(self, op, rhs) : PROTO_NONE;
+}
+
+static const proto::ProtoObject* py_int_add(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    return py_int_arith(ctx, self, args, TokenType::Plus);
+}
+static const proto::ProtoObject* py_int_sub(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    return py_int_arith(ctx, self, args, TokenType::Minus);
+}
+static const proto::ProtoObject* py_int_mul(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    return py_int_arith(ctx, self, args, TokenType::Star);
+}
+static const proto::ProtoObject* py_int_truediv(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    return py_int_arith(ctx, self, args, TokenType::Slash);
+}
+static const proto::ProtoObject* py_int_mod(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    return py_int_arith(ctx, self, args, TokenType::Modulo);
+}
+
+// Reflected versions: int.__radd__(self, other) is equivalent to other + self,
+// invoked when other.__add__(self) returned NotImplemented.  CPython's
+// nb_add / nb_radd slots — protoPython's binaryOp already handles
+// commutativity for ints, so the reflected impl just swaps operands.
+static const proto::ProtoObject* py_int_radd(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    if (!args || args->getSize(ctx) < 1) return PROTO_NONE;
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    return env ? env->binaryOp(args->getAt(ctx, 0), TokenType::Plus, self) : PROTO_NONE;
+}
+static const proto::ProtoObject* py_int_rmul(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    if (!args || args->getSize(ctx) < 1) return PROTO_NONE;
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    return env ? env->binaryOp(args->getAt(ctx, 0), TokenType::Star, self) : PROTO_NONE;
 }
 
 static const proto::ProtoObject* py_int_hash(
@@ -10672,6 +10772,20 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
         intPrototype = intPrototype->setAttribute(rootContext_, py_bit_count_s,   rootContext_->fromMethod(nullptr, py_int_bit_count));
         intPrototype = intPrototype->setAttribute(rootContext_, py_from_bytes_s,  rootContext_->fromMethod(nullptr, py_int_from_bytes));
         intPrototype = intPrototype->setAttribute(rootContext_, py_to_bytes_s,    rootContext_->fromMethod(nullptr, py_int_to_bytes));
+        // Arithmetic dunders so int subclasses (e.g. enum.IntEnum, hexint
+        // in test_descr.test_basic_inheritance) can call int.__add__(self,
+        // other) directly. Without these, `int.__add__` is missing and the
+        // bytecode-level OP_BINARY_ADD path is the only way to reach the
+        // numeric op — fine for `a + b` but useless for the explicit
+        // `int.__add__(self, other)` form that subclasses use when they
+        // want to short-circuit operand coercion.
+        intPrototype = intPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__add__"), rootContext_->fromMethod(nullptr, py_int_add));
+        intPrototype = intPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__sub__"), rootContext_->fromMethod(nullptr, py_int_sub));
+        intPrototype = intPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__mul__"), rootContext_->fromMethod(nullptr, py_int_mul));
+        intPrototype = intPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__truediv__"), rootContext_->fromMethod(nullptr, py_int_truediv));
+        intPrototype = intPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__mod__"), rootContext_->fromMethod(nullptr, py_int_mod));
+        intPrototype = intPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__radd__"), rootContext_->fromMethod(nullptr, py_int_radd));
+        intPrototype = intPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__rmul__"), rootContext_->fromMethod(nullptr, py_int_rmul));
         space_->smallIntegerPrototype = const_cast<proto::ProtoObject*>(intPrototype);
     }
 

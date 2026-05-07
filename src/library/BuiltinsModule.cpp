@@ -741,6 +741,34 @@ static const proto::ProtoObject* py_repr(
     if (obj == PROTO_TRUE) return PythonEnvironment::getInternedString(context, "True")->asObject(context);
     if (obj == PROTO_FALSE) return PythonEnvironment::getInternedString(context, "False")->asObject(context);
     if (obj->isInteger(context)) {
+        // Subclasses of int may define their own __repr__ (e.g. hexint
+        // returning "0x10"). Honour the user dunder when type(obj) is
+        // not the literal intPrototype — the fast path must remain for
+        // plain int literals to keep repr(5) == "5" without dispatching
+        // through the dunder lookup machinery on every call.
+        protoPython::PythonEnvironment* env_pe = protoPython::PythonEnvironment::fromContext(context);
+        if (env_pe && env_pe->getIntPrototype()) {
+            const proto::ProtoObject* cls = env_pe->getType(context, obj);
+            if (cls && cls != env_pe->getIntPrototype() && cls != env_pe->getBoolPrototype()) {
+                // Subclass — route through the user-defined __repr__.
+                const proto::ProtoString* reprS = env_pe->getReprString();
+                const proto::ProtoObject* reprM = cls->getAttribute(context, reprS);
+                if (reprM && reprM != PROTO_NONE) {
+                    if (reprM->asMethod(context)) {
+                        const proto::ProtoObject* res = reprM->asMethod(context)(context,
+                            const_cast<proto::ProtoObject*>(obj), nullptr, context->newList(), nullptr);
+                        if (res && res->isString(context)) return res;
+                    } else {
+                        const proto::ProtoString* codeS = env_pe->getCodeString();
+                        if (codeS && reprM->hasOwnAttribute(context, codeS) == PROTO_TRUE) {
+                            const proto::ProtoList* selfArgs = context->newList()->appendLast(context, obj);
+                            const proto::ProtoObject* res = ::protoPython::invokePythonCallable(context, reprM, selfArgs, nullptr);
+                            if (res && res->isString(context)) return res;
+                        }
+                    }
+                }
+            }
+        }
         // Integer::toString handles bignum (asLong + snprintf would
         // overflow for LargeInteger).
         const proto::ProtoString* s = obj->asIntegerString(context, 10);
