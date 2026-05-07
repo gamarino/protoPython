@@ -10621,16 +10621,33 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     complexPrototype = complexPrototype->setAttribute(rootContext_, py_module, builtinsVal);
     complexPrototype = complexPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__call__"), rootContext_->fromMethod(nullptr, protoPython::builtins::py_complex));
 
-    // 1. Retrieve authoritative prototypes from ProtoSpace
-    intPrototype = space_->smallIntegerPrototype;
-    strPrototype = space_->stringPrototype;
-    listPrototype = space_->listPrototype;
-    dictPrototype = space_->sparseListPrototype;
-    tuplePrototype = space_->tuplePrototype;
-    bytesPrototype = space_->bytePrototype;
-    boolPrototype = space_->booleanPrototype;
-    floatPrototype = space_->floatPrototype;
-    nonePrototype = space_->nonePrototype;
+    // 1. Retrieve authoritative prototypes from ProtoSpace.
+    // protoCore initialises each space_->Xprototype to objectPrototype
+    // (an IMMUTABLE cell), so every setAttribute below would otherwise
+    // return a fresh immutable cell and the C++ pointer would drift.
+    // Drift breaks self-referential __mro__ tuples: the tuple's [0]
+    // entry captures the pre-setAttribute pointer, so after all setup
+    // calls `int.__mro__[0] is int` is False, and `class D(int): pass`
+    // followed by `issubclass(D, int)` returns False because D's
+    // computeC3MRO walks int.__mro__ and finds the stale handle.
+    //
+    // Promote each primitive prototype to a fresh mutable child of
+    // objectPrototype before any setAttribute touches it.  Mutable
+    // setAttribute mutates in place and returns the same pointer, so
+    // intPrototype/strPrototype/etc. stay stable through the entire
+    // setup, and self-referential MRO tuples remain consistent.
+    auto makeMutablePrototype = [&]() -> const proto::ProtoObject* {
+        return objectPrototype->newChild(rootContext_, /*isMutable=*/true);
+    };
+    intPrototype       = makeMutablePrototype(); space_->smallIntegerPrototype = const_cast<proto::ProtoObject*>(intPrototype);
+    strPrototype       = makeMutablePrototype(); space_->stringPrototype        = const_cast<proto::ProtoObject*>(strPrototype);
+    listPrototype      = makeMutablePrototype(); space_->listPrototype          = const_cast<proto::ProtoObject*>(listPrototype);
+    dictPrototype      = makeMutablePrototype(); space_->sparseListPrototype    = const_cast<proto::ProtoObject*>(dictPrototype);
+    tuplePrototype     = makeMutablePrototype(); space_->tuplePrototype         = const_cast<proto::ProtoObject*>(tuplePrototype);
+    bytesPrototype     = makeMutablePrototype(); space_->bytePrototype          = const_cast<proto::ProtoObject*>(bytesPrototype);
+    boolPrototype      = makeMutablePrototype(); space_->booleanPrototype       = const_cast<proto::ProtoObject*>(boolPrototype);
+    floatPrototype     = makeMutablePrototype(); space_->floatPrototype         = const_cast<proto::ProtoObject*>(floatPrototype);
+    nonePrototype      = space_->nonePrototype;  // PROTO_NONE sentinel — keep as-is.
 
     if (get_env_diag()) {
         fprintf(stderr, "DEBUG PROTOSPACE SYNC: int=%p str=%p list=%p dict=%p tuple=%p\n",
