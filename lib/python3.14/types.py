@@ -28,9 +28,25 @@ except ImportError:
     class SimpleNamespace:
         """A simple attribute-based namespace.
 
-        SimpleNamespace(**kwargs)
+        SimpleNamespace([mapping_or_iterable], **kwargs)
+
+        Positional argument provides initial attributes (dict-like or
+        iterable of (key, value) pairs); kwargs override.
         """
-        def __init__(self, /, **kwargs):
+        def __init__(self, *args, **kwargs):
+            if len(args) > 1:
+                raise TypeError(
+                    "SimpleNamespace expected at most 1 positional argument, "
+                    f"got {len(args)}")
+            if args:
+                source = args[0]
+                if hasattr(source, 'keys'):
+                    for k in source.keys():
+                        setattr(self, k, source[k])
+                else:
+                    for pair in source:
+                        k, v = pair
+                        setattr(self, k, v)
             for k, v in kwargs.items():
                 setattr(self, k, v)
 

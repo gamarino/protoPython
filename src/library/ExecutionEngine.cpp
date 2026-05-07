@@ -6952,28 +6952,57 @@ const proto::ProtoObject* executeBytecodeRange(
                             }
                         }
                     }
-                    // Remove from __data__ sparse list if present (dict-backed instances)
+                    // No descriptor — fall through to instance attribute deletion.
+                    // CPython raises AttributeError when the attribute is not
+                    // OWN on the receiver: delete reports a missing attribute
+                    // even if the type chain has one (because deletion only
+                    // affects instance state). Track whether anything actually
+                    // got removed so we can raise on missing names.
+                    bool removed = false;
                     const proto::ProtoString* dataName = env ? env->getDataString() : protoPython::PythonEnvironment::getInternalString(ctx, "__data__");
                     const proto::ProtoString* keysName = env ? env->getKeysString() : protoPython::PythonEnvironment::getInternalString(ctx, "__keys__");
                     const proto::ProtoObject* d = (obj->hasOwnAttribute(ctx, dataName) == PROTO_TRUE) ? obj->proto::ProtoObject::getAttribute(ctx, dataName) : nullptr;
                     const proto::ProtoObject* k = (keysName && obj->hasOwnAttribute(ctx, keysName) == PROTO_TRUE) ? obj->proto::ProtoObject::getAttribute(ctx, keysName) : nullptr;
                     if (d && d != PROTO_NONE && d->asSparseList(ctx)) {
-                        d->asSparseList(ctx)->removeAt(ctx, nameS->getHash(ctx));
+                        unsigned long h = nameS->getHash(ctx);
+                        if (d->asSparseList(ctx)->has(ctx, h)) {
+                            d->asSparseList(ctx)->removeAt(ctx, h);
+                            removed = true;
+                        }
                         if (env && env->hasPendingException()) env->clearPendingException();
                     }
                     if (k && k != PROTO_NONE && k->asList(ctx)) {
                         unsigned long targetHash = nameS->getHash(ctx);
+                        const proto::ProtoList* listIn = k->asList(ctx);
                         const proto::ProtoList* newKeys = ctx->newList();
-                        for (unsigned long ki = 0; ki < k->asList(ctx)->getSize(ctx); ++ki) {
-                            const proto::ProtoObject* key = k->asList(ctx)->getAt(ctx, ki);
-                            if (key && key->isString(ctx) && key->getHash(ctx) == targetHash) continue;
+                        bool anyDropped = false;
+                        for (unsigned long ki = 0; ki < listIn->getSize(ctx); ++ki) {
+                            const proto::ProtoObject* key = listIn->getAt(ctx, ki);
+                            if (key && key->isString(ctx) && key->getHash(ctx) == targetHash) {
+                                anyDropped = true;
+                                continue;
+                            }
                             newKeys = newKeys->appendLast(ctx, key);
                         }
-                        const_cast<proto::ProtoObject*>(obj)->proto::ProtoObject::setAttribute(ctx, keysName, newKeys->asObject(ctx));
+                        if (anyDropped) {
+                            const_cast<proto::ProtoObject*>(obj)->proto::ProtoObject::setAttribute(ctx, keysName, newKeys->asObject(ctx));
+                            removed = true;
+                        }
                     }
-                    // Mark native attribute as deleted (None) so subsequent LOAD_ATTR fails gracefully
-                    const proto::ProtoObject* nil = env ? env->getNonePrototype() : PROTO_NONE;
-                    const_cast<proto::ProtoObject*>(obj)->proto::ProtoObject::setAttribute(ctx, nameS, nil);
+                    // Cell-storage attribute path: only "remove" if the name is
+                    // OWN on the instance. Setting to None for a missing name
+                    // would silently absorb the request and break test code
+                    // that asserts AttributeError on `del ns.spam`.
+                    if (obj->hasOwnAttribute(ctx, nameS) == PROTO_TRUE) {
+                        const proto::ProtoObject* nil = env ? env->getNonePrototype() : PROTO_NONE;
+                        const_cast<proto::ProtoObject*>(obj)->proto::ProtoObject::setAttribute(ctx, nameS, nil);
+                        removed = true;
+                    }
+                    if (!removed && env) {
+                        std::string nm;
+                        nameS->toUTF8String(ctx, nm);
+                        env->raiseAttributeError(ctx, obj, nm.c_str());
+                    }
                 }
             }
         } break;
