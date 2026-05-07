@@ -3740,18 +3740,36 @@ const proto::ProtoObject* py_type(
     }
     
     if (argCount == 1 || argCount == 2) {
+        // CPython: the 1-arg form `type(x)` is reserved for the literal
+        // `type`. Subclasses (M(type), N(type, metaclass=...)) must use
+        // the 3-arg form M(name, bases, dict). Bug #27157 / 28838: a
+        // metaclass that accepted M(5) silently produced an
+        // attribute-less object that crashed under repr / instance use.
+        // Two argCount shapes reach here:
+        //   - argCount==1, positionalParameters=[x] (bound: type(x))
+        //   - argCount==2, positionalParameters=[cls, x] (unbound: type.__new__(cls, x))
+        // For the unbound shape, cls is positionalParameters[0]; the rule
+        // applies when cls is NOT typeProto. For the bound shape, the
+        // receiver is `self` — same check applies.
+        const proto::ProtoObject* clsCheck = (argCount == 2)
+            ? positionalParameters->getAt(context, 0)
+            : self;
+        if (env && clsCheck && clsCheck != typeProto) {
+            env->raiseTypeError(context,
+                "type.__new__() takes exactly 3 arguments (1 given)");
+            return nullptr;
+        }
         const proto::ProtoObject* obj = (argCount == 2) ? positionalParameters->getAt(context, 1) : positionalParameters->getAt(context, 0);
         if (get_env_diag()) {
             fprintf(stderr, "DEBUG: py_type(1/2) obj=%p\n", (void*)obj);
         }
-        
+
         if (obj == PROTO_NONE) return env->getNoneTypePrototype();
-        
+
         if (get_env_diag()) {
             std::string oRepr = env ? env->reprObject(context, obj) : "???";
             fprintf(stderr, "DEBUG: py_type(obj=%p repr='%s')\n", (void*)obj, oRepr.c_str());
         }
-        const proto::ProtoObject* res = env ? env->getType(context, obj) : obj->getAttribute(context, PythonEnvironment::getInternedString(context, "__class__"));
         return env ? env->getType(context, obj) : obj->getAttribute(context, PythonEnvironment::getInternedString(context, "__class__"));
     }
     
