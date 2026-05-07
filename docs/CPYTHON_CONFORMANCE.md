@@ -28,6 +28,112 @@
 
 ---
 
+## Current Status (2026-05-07) — post-Sprint-1-4 audit-driven sweep
+
+Re-ran the 19-test ground-truth audit and the conformity suite against
+HEAD `ba1cd111` (protoPython "Sprint 1-4 architectural cleanup +
+native stub fixes") against protoCore `ec7476d1`
+(`ProtoObjectCell::attributes` tag-0 IMPL retype). Both built in
+`build_release/` (`-O3 -DNDEBUG`).
+
+Full per-test detail: `docs/audits/audit_2026-05-07.md`.
+
+### Build & test infrastructure
+
+| Component                                 | Result |
+| :---                                      | :--- |
+| `ctest` (protoPython + protoCore)         | **183 / 183** pass, 0 fail (was 163/163 on 2026-05-05; new 20 are protoCore SparseList retype unit tests). |
+| `tests/conformity/` (`run_conformity.py`) | **10 / 10** pass (was 8 / 9 on 2026-05-05; `test_dict_conformity.py` now passes; two new conformity tests `test_str.py` and `test_list_iter.py` added and pass). |
+
+### Audit summary (19-test catalog) — vs 2026-05-05 baseline
+
+| Category   | Total | PASS | SILENT_HALT | CRASH | TIMEOUT | Δ vs 2026-05-05 |
+| :---       |  ---: | ---: |        ---: |  ---: |    ---: | :--- |
+| Essential  |     7 |    0 |           0 |     6 |       1 | unchanged bucket distribution |
+| Important  |     6 |    0 |           0 |     4 |       2 | one CRASH → TIMEOUT (`test_collections.py`) |
+| Necessary  |     4 |    2 |           2 |     0 |       0 | unchanged |
+| Bootstrap  |     2 |    2 |           0 |     0 |       0 | unchanged |
+| **Total**  | **19** | **4** | **2** | **10** | **3** | CRASH 11 → 10, TIMEOUT 2 → 3 |
+
+The bucket distribution is largely flat, but the *content* of the
+CRASH bucket has changed dramatically — the runtime now reaches
+`unittest`'s collector and runs hundreds more sub-tests before the
+suite-level FAILED verdict. The "CRASH" classification just means
+unittest reported `FAILED (...)` and exited non-zero; the per-test
+fail/error counts have plummeted.
+
+### Direct unittest counts — Sprint 1-4 closes the gap
+
+| Test                  | 2026-05-05 (run / fail / err) | 2026-05-07 (run / fail / err) | Δ fail | Δ err |
+| :---                  |          ---:                  |          ---:                  | ---:   | ---:  |
+| `test_grammar.py`     | 75 /  7 /  6                  | 75 /  0 /  1                  | **−7** | **−5** |
+| `test_types.py`       | 128 / 92 / 27                 | 128 / 57 / 19                 | **−35**| **−8** |
+| `test_descr.py`       | 159 / 130 / 45                | 159 / 93 / 34                 | **−37**| **−11**|
+| `test_generators.py`  | reached collector, no count   | 60 / 60 / 22                  | (newly visible) | (newly visible) |
+| `test_base64.py`      | 39 / 47 / 244                 | 39 / 17 / 17                  | **−30**| **−227**|
+
+The base64 collapse from 244 errors to 17 traces directly to
+two Sprint 4 fixes: `IOModule` file objects gained `__iter__` /
+`__next__` / `readline` (so `for line in f:` works), and
+`HeapqModule` / `BisectModule` were swapped for the shadowed
+pure-Python implementations under `lib/python3.14/`.
+
+The `test_descr.py` improvement (130F→93F) reflects the ABC mixin
+wiring (`MutableMapping.pop` / `popitem` / `clear` / `setdefault`,
+`MutableSequence.append` / `extend` now go through real
+implementations rather than the silent `self.newChild()` no-op),
+plus the binary-arith fast-path / GC-discipline pinning landed in
+Sprints 1-3.
+
+### Performance — pyperf subset
+
+Re-measured 2026-05-07 with the same harness as the 2026-05-05
+baseline. Geomean 30.7× vs CPython 3.14 (was ~46× at Phase 6
+baseline — improvement reflects the cumulative architectural fixes
+plus the SignalModule cooperative-delivery hook that adds no
+measurable cost at the 64-op safepoint cadence).
+
+### Open clusters (next-session candidates)
+
+The Essential bucket is now bottlenecked on a smaller, more focused
+set of issues:
+
+1. **`test_grammar.py:417 KeyError __annotate__`** — single remaining
+   error. PEP 649 deferred-annotation evaluation has a wiring gap
+   when `__annotate__` is missing from a function's namespace.
+2. **`test_types.py` UnionType substitution** (57F + 19E) — `int | str`
+   parameter substitution semantics, mostly covered by the
+   `_GenericAlias` machinery now in BuiltinsModule but the union form
+   diverges.
+3. **`test_descr.py` PicklingTests / `__reduce_ex__`** (93F + 34E) —
+   descriptor protocol corner cases around `__getattribute__` /
+   `object.__reduce__` interplay.
+4. **`test_generators.py:test_modify_f_locals`** (60F + 22E) — frame
+   locals-write semantics during generator iteration.
+5. **`test_base64.py`** (17F + 17E) — residual encode/decode edge
+   cases now that the import-time blockers are gone.
+
+The 5 clusters are now well-bounded and individually tractable.
+None depend on missing stdlib infra (test.support, doctest, etc.) —
+those barriers fell with the Sprint 4 module-stub work.
+
+### How to reproduce
+
+```bash
+# Build (idempotent if already built):
+cmake --build /home/gamarino/Documentos/proyectos/protoPython/build_release -j$(nproc)
+
+# Re-run audit:
+PROTOPY=$(pwd)/build_release/src/runtime/protopy \
+    python3 tests/synthetic/sp_audit_truth.py --out docs/audits/audit_2026-05-07.md
+
+# Re-run conformity:
+PROTO_PYTHON=$(pwd)/build_release/src/runtime/protopy \
+    python3 tests/conformity/run_conformity.py
+```
+
+---
+
 ## Current Status (2026-05-05) — pure-Release rebuild + re-audit
 
 Rebuilt `protopy` and the embedded `protoCore` in pure Release
