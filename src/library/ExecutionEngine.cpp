@@ -1332,27 +1332,13 @@ static const proto::ProtoObject* binaryMultiply(proto::ProtoContext* ctx,
         }
         return ctx->newTupleFromList(resultList)->asObject(ctx);
     }
-    // Try __mul__ on the left operand, then __rmul__ on the right
-    protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(ctx);
-    const proto::ProtoString* mulS = protoPython::PythonEnvironment::getInternalString(ctx, "__mul__");
-    if (!a->isInteger(ctx) && !a->isDouble(ctx)) {
-        const proto::ProtoObject* mul = env ? env->getAttribute(ctx, a, mulS) : a->getAttribute(ctx, mulS);
-        if (mul && mul != PROTO_NONE && mul->asMethod(ctx)) {
-            const proto::ProtoList* args = ctx->newList()->appendLast(ctx, b);
-            const proto::ProtoObject* r = mul->asMethod(ctx)(ctx, a, nullptr, args, nullptr);
-            if (r && r != PROTO_NONE) return r;
-        }
-    }
-    const proto::ProtoString* rmulS = protoPython::PythonEnvironment::getInternalString(ctx, "__rmul__");
-    if (!b->isInteger(ctx) && !b->isDouble(ctx)) {
-        const proto::ProtoObject* rmul = env ? env->getAttribute(ctx, b, rmulS) : b->getAttribute(ctx, rmulS);
-        if (rmul && rmul != PROTO_NONE && rmul->asMethod(ctx)) {
-            const proto::ProtoList* args = ctx->newList()->appendLast(ctx, a);
-            const proto::ProtoObject* r = rmul->asMethod(ctx)(ctx, b, nullptr, args, nullptr);
-            if (r && r != PROTO_NONE) return r;
-        }
-    }
-    return PROTO_NONE;
+    // Fall through to __mul__/__rmul__ via the shared dunder dispatch so
+    // Python-level user functions (which `asMethod` does NOT recognise —
+    // it only matches POINTER_TAG_METHOD C++ trampolines) actually run.
+    // The previous inline lookup gated on `mul->asMethod(ctx)`, so any
+    // user class with `def __mul__(self, ...)` silently produced None.
+    const proto::ProtoObject* r = binaryOpDispatch(ctx, a, b, "__mul__", "__rmul__");
+    return r ? r : PROTO_NONE;
 }
 
 static const proto::ProtoObject* binaryUnaryNegative(proto::ProtoContext* ctx, const proto::ProtoObject* a) {
@@ -1403,7 +1389,9 @@ static const proto::ProtoObject* binaryTrueDivide(proto::ProtoContext* ctx,
         double db = bb->isDouble(ctx) ? bb->asDouble(ctx) : intToDouble(bb);
         return ctx->fromDouble(da / db);
     }
-    return PROTO_NONE;
+    // User-class fallback: __truediv__ / __rtruediv__ via invokePythonCallable.
+    const proto::ProtoObject* r = binaryOpDispatch(ctx, a, b, "__truediv__", "__rtruediv__");
+    return r ? r : PROTO_NONE;
 }
 
 static const proto::ProtoObject* binaryModulo(proto::ProtoContext* ctx,
@@ -1454,7 +1442,9 @@ static const proto::ProtoObject* binaryModulo(proto::ProtoContext* ctx,
             return method->asMethod(ctx)(ctx, a, nullptr, args, nullptr);
         }
     }
-    return PROTO_NONE;
+    // User-class fallback: __mod__ / __rmod__.
+    const proto::ProtoObject* r = binaryOpDispatch(ctx, a, b, "__mod__", "__rmod__");
+    return r ? r : PROTO_NONE;
 }
 
 static const proto::ProtoObject* binaryPower(proto::ProtoContext* ctx,
@@ -1496,7 +1486,9 @@ static const proto::ProtoObject* binaryPower(proto::ProtoContext* ctx,
         double bb = bb_p->isDouble(ctx) ? bb_p->asDouble(ctx) : static_cast<double>(bb_p->asLong(ctx));
         return ctx->fromDouble(std::pow(aa, bb));
     }
-    return PROTO_NONE;
+    // User-class fallback: __pow__ / __rpow__.
+    const proto::ProtoObject* r = binaryOpDispatch(ctx, a, b, "__pow__", "__rpow__");
+    return r ? r : PROTO_NONE;
 }
 
 static const proto::ProtoObject* binaryFloorDivide(proto::ProtoContext* ctx,
@@ -1517,7 +1509,9 @@ static const proto::ProtoObject* binaryFloorDivide(proto::ProtoContext* ctx,
         double bb = bb_p->isDouble(ctx) ? bb_p->asDouble(ctx) : static_cast<double>(bb_p->asLong(ctx));
         return ctx->fromInteger(static_cast<long long>(std::floor(aa / bb)));
     }
-    return PROTO_NONE;
+    // User-class fallback: __floordiv__ / __rfloordiv__.
+    const proto::ProtoObject* r = binaryOpDispatch(ctx, a, b, "__floordiv__", "__rfloordiv__");
+    return r ? r : PROTO_NONE;
 }
 
 static const proto::ProtoObject* compareOp(proto::ProtoContext* ctx,
@@ -3843,6 +3837,10 @@ const proto::ProtoObject* executeBytecodeRange(
                     i = next_i; continue;
                 }
                 stack.pop_back(); stack.back() = a->shiftLeft(ctx, amount);
+            } else {
+                // User-class fallback: __lshift__ / __rlshift__.
+                const proto::ProtoObject* r = binaryOpDispatch(ctx, a, b, "__lshift__", "__rlshift__");
+                stack.pop_back(); stack.back() = r ? r : PROTO_NONE;
             }
         } break;
         case OP_BINARY_RSHIFT: {
@@ -3880,6 +3878,10 @@ const proto::ProtoObject* executeBytecodeRange(
                     i = next_i; continue;
                 }
                 stack.pop_back(); stack.back() = a->shiftRight(ctx, amount);
+            } else {
+                // User-class fallback: __rshift__ / __rrshift__.
+                const proto::ProtoObject* r = binaryOpDispatch(ctx, a, b, "__rshift__", "__rrshift__");
+                stack.pop_back(); stack.back() = r ? r : PROTO_NONE;
             }
         } break;
         case OP_BINARY_AND: {
@@ -3898,19 +3900,12 @@ const proto::ProtoObject* executeBytecodeRange(
                 // Integer::bitwiseAnd handles bignum operands.
                 stack.pop_back(); stack.back() = a->bitwiseAnd(ctx, b);
             } else {
-                const proto::ProtoObject* andM = a->getAttribute(ctx, env ? env->getAndString() : PythonEnvironment::getInternedString(ctx, "__and__"));
-                if (andM && andM->asMethod(ctx)) {
-                    const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
-                    const proto::ProtoObject* result = andM->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
-                    stack.pop_back(); stack.back() = (result ? result : PROTO_NONE);
-                } else {
-                    const proto::ProtoObject* randM = b->getAttribute(ctx, env ? env->getRAndString() : PythonEnvironment::getInternedString(ctx, "__rand__"));
-                    if (randM && randM->asMethod(ctx)) {
-                        const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, a);
-                        const proto::ProtoObject* result = randM->asMethod(ctx)(ctx, b, nullptr, oneArg, nullptr);
-                        stack.pop_back(); stack.back() = (result ? result : PROTO_NONE);
-                    }
-                }
+                // Use the shared dispatch so user-defined `__and__` /
+                // `__rand__` (which are Python callables, not C methods)
+                // get invoked through invokePythonCallable rather than
+                // dropped silently.
+                const proto::ProtoObject* result = binaryOpDispatch(ctx, a, b, "__and__", "__rand__");
+                stack.pop_back(); stack.back() = (result ? result : PROTO_NONE);
             }
         } break;
         case OP_BINARY_OR: {
@@ -3953,19 +3948,8 @@ const proto::ProtoObject* executeBytecodeRange(
                 const proto::ProtoObject* res = a->bitwiseXor(ctx, b);
                 stack.pop_back(); stack.back() = res;
             } else {
-                const proto::ProtoObject* xorM = a->getAttribute(ctx, env ? env->getXorString() : PythonEnvironment::getInternedString(ctx, "__xor__"));
-                if (xorM && xorM->asMethod(ctx)) {
-                    const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
-                    const proto::ProtoObject* result = xorM->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
-                    stack.pop_back(); stack.back() = (result ? result : PROTO_NONE);
-                } else {
-                    const proto::ProtoObject* rxorM = b->getAttribute(ctx, env ? env->getRXorString() : PythonEnvironment::getInternedString(ctx, "__rxor__"));
-                    if (rxorM && rxorM->asMethod(ctx)) {
-                        const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, a);
-                        const proto::ProtoObject* result = rxorM->asMethod(ctx)(ctx, b, nullptr, oneArg, nullptr);
-                        stack.pop_back(); stack.back() = (result ? result : PROTO_NONE);
-                    }
-                }
+                const proto::ProtoObject* result = binaryOpDispatch(ctx, a, b, "__xor__", "__rxor__");
+                stack.pop_back(); stack.back() = (result ? result : PROTO_NONE);
             }
         } break;
         case OP_UNARY_NEGATIVE: {
