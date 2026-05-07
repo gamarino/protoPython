@@ -564,6 +564,39 @@ static const proto::ProtoObject* py_mappingproxy_contains(
     return PROTO_FALSE;
 }
 
+// MappingProxy.__hash__: delegate to the wrapped object's __hash__, so a
+// view of a regular dict raises TypeError ("unhashable type: 'dict'") and a
+// view of a HashableDict subclass returns its custom hash. CPython has the
+// same forwarding shape so dict views and dict subclasses agree.
+static const proto::ProtoObject* py_mappingproxy_hash(
+    proto::ProtoContext* context, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (!env) return PROTO_NONE;
+    const proto::ProtoObject* data = self->getAttribute(context, env->getDataString());
+    if (!data || data == PROTO_NONE) {
+        env->raiseTypeError(context, "unhashable type: 'mappingproxy'");
+        return nullptr;
+    }
+    const proto::ProtoString* hashS = env->getHashString();
+    const proto::ProtoObject* hashM = data->getAttribute(context, hashS);
+    if (!hashM || hashM == PROTO_NONE) {
+        // dict-style: bare object lacking __hash__ → TypeError
+        env->raiseTypeError(context, "unhashable type");
+        return nullptr;
+    }
+    if (hashM->asMethod(context)) {
+        return hashM->asMethod(context)(context, data, nullptr, context->newList(), nullptr);
+    }
+    // Python user dunder
+    const proto::ProtoString* codeS = env->getCodeString();
+    if (codeS && hashM->hasOwnAttribute(context, codeS) == PROTO_TRUE) {
+        const proto::ProtoList* selfArgs = context->newList()->appendLast(context, data);
+        return ::protoPython::invokePythonCallable(context, hashM, selfArgs, nullptr);
+    }
+    return ::protoPython::invokePythonCallable(context, hashM, context->newList(), nullptr);
+}
+
 // MappingProxy.copy(): return a shallow dict copy of the wrapped mapping,
 // matching CPython's `dict(self)` shortcut. The result is detached from
 // the proxy so subsequent mutations of the underlying mapping don't leak.
@@ -10210,6 +10243,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     mappingProxyPrototype = mappingProxyPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__ior__"), rootContext_->fromMethod(nullptr, py_mappingproxy_ior));
     mappingProxyPrototype = mappingProxyPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__reversed__"), rootContext_->fromMethod(nullptr, py_mappingproxy_reversed));
     mappingProxyPrototype = mappingProxyPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__class_getitem__"), rootContext_->fromMethod(nullptr, py_mappingproxy_class_getitem));
+    mappingProxyPrototype = mappingProxyPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__hash__"), rootContext_->fromMethod(nullptr, py_mappingproxy_hash));
     mappingProxyPrototype = mappingProxyPrototype->setAttribute(rootContext_, keysS, rootContext_->fromMethod(nullptr, py_mappingproxy_keys));
     mappingProxyPrototype = mappingProxyPrototype->setAttribute(rootContext_, valuesS, rootContext_->fromMethod(nullptr, py_mappingproxy_values));
     mappingProxyPrototype = mappingProxyPrototype->setAttribute(rootContext_, itemsS, rootContext_->fromMethod(nullptr, py_mappingproxy_items));
@@ -10621,6 +10655,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     listReverseIterProto = listReverseIterProto->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_self_iter));
     listPrototype = listPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__reversed_prototype__"), listReverseIterProto);
     listPrototype = listPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__reversed__"), rootContext_->fromMethod(nullptr, py_list_reversed));
+    // list instances are unhashable in CPython. Mark __hash__ as None.
+    listPrototype = listPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__hash__"), PROTO_NONE);
 
     // dictPrototype already created at start
 
@@ -10706,6 +10742,8 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     setPrototype = setPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__xor__"), rootContext_->fromMethod(nullptr, py_set_xor));
     setPrototype = setPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__eq__"), rootContext_->fromMethod(nullptr, py_set_eq));
     setPrototype = setPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__ne__"), rootContext_->fromMethod(nullptr, py_set_ne));
+    // set instances are unhashable in CPython (frozenset is the hashable variant).
+    setPrototype = setPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__hash__"), PROTO_NONE);
     setPrototype = setPrototype->setAttribute(rootContext_, py_iter, rootContext_->fromMethod(nullptr, py_set_iter));
 
     // Set MRO and bases for set
@@ -11133,6 +11171,10 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     dictPrototype = dictPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__ror__"), rootContext_->fromMethod(nullptr, py_dict_ror));
     dictPrototype = dictPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__ior__"), rootContext_->fromMethod(nullptr, py_dict_ior));
     dictPrototype = dictPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__iror__"), rootContext_->fromMethod(nullptr, py_dict_iror));
+    // dict instances are unhashable in CPython (mutable contents). Set
+    // __hash__ = None on the prototype so py_hash raises TypeError; matches
+    // the same convention used for list and set.
+    dictPrototype = dictPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__hash__"), PROTO_NONE);
     
     // V87: Final bootstrap synchronization. Ensure ALL core prototypes point to the
     // FINAL, fully-populated versions of objectPrototype and typePrototype.

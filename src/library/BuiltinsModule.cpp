@@ -3018,7 +3018,24 @@ static const proto::ProtoObject* py_hash(
     if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
     const proto::ProtoObject* hashMethod = obj->getAttribute(context, env ? env->getHashString() : PythonEnvironment::getInternedString(context, "__hash__"));
-    if (!hashMethod || hashMethod == PROTO_NONE) return PROTO_NONE;
+    // CPython convention: __hash__ explicitly set to None means the type is
+    // unhashable (dict/list/set/bytearray etc.). Raise TypeError instead of
+    // silently returning None — callers like set construction and dict key
+    // lookup rely on this.
+    if (hashMethod == PROTO_NONE) {
+        std::string typeName = "object";
+        if (env) {
+            const proto::ProtoObject* cls = env->getType(context, obj);
+            if (cls) {
+                const proto::ProtoObject* nm = cls->getAttribute(context, env->getNameString());
+                if (nm && nm->isString(context)) nm->asString(context)->toUTF8String(context, typeName);
+            }
+        }
+        std::string msg = "unhashable type: '" + typeName + "'";
+        if (env) env->raiseTypeError(context, msg.c_str());
+        return nullptr;
+    }
+    if (!hashMethod) return PROTO_NONE;
     if (hashMethod->asMethod(context)) {
         return hashMethod->asMethod(context)(context, const_cast<proto::ProtoObject*>(obj), nullptr, context->newList(), nullptr);
     }
