@@ -17,6 +17,13 @@ namespace binascii {
 // Helpers
 // ---------------------------------------------------------------------------
 
+// Bytes/bytearray literals in protoPython are stored as a
+// ProtoByteBuffer attached to the bytes-shaped object via the
+// `__data__` attribute (see Compiler::compileConstant for ConstType::
+// Bytes).  Pull octets out of either form: ProtoByteBuffer (the real
+// path for `b"…"` literals and any `bytes(...)` instance) or a
+// ProtoString fallback (legacy / shim paths that serialised the bytes
+// as a UTF-8 string before ProtoByteBuffer landed).
 static std::string obj_to_bytes(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
     if (!obj || obj == PROTO_NONE) return "";
     if (obj->isString(ctx)) {
@@ -24,28 +31,56 @@ static std::string obj_to_bytes(proto::ProtoContext* ctx, const proto::ProtoObje
         obj->asString(ctx)->toUTF8String(ctx, s);
         return s;
     }
-    // bytes/bytearray stored as string __data__
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (env) {
         const proto::ProtoObject* data = obj->getAttribute(ctx, env->getDataString());
-        if (data && data != PROTO_NONE && data->isString(ctx)) {
-            std::string s;
-            data->asString(ctx)->toUTF8String(ctx, s);
-            return s;
+        if (data && data != PROTO_NONE) {
+            // Preferred form: ProtoByteBuffer with raw octets (preserves
+            // bytes >= 0x80 and embedded \0 unchanged).
+            const proto::ProtoByteBuffer* bb = data->asByteBuffer(ctx);
+            if (bb) {
+                unsigned long n = bb->getSize(ctx);
+                std::string out;
+                out.resize(n);
+                for (unsigned long i = 0; i < n; ++i) {
+                    out[i] = static_cast<char>(static_cast<unsigned char>(bb->getAt(ctx, i)));
+                }
+                return out;
+            }
+            // Fallback: stringly-stored bytes (UTF-8 reinterpretation).
+            if (data->isString(ctx)) {
+                std::string s;
+                data->asString(ctx)->toUTF8String(ctx, s);
+                return s;
+            }
         }
     }
     return "";
 }
 
+// Produce a Python bytes-shaped object whose `__data__` is a
+// ProtoByteBuffer (NOT a ProtoString) so that downstream consumers
+// (obj_to_bytes above, the base64.py round-trip, repr) see real bytes.
+// Previously this stored the data via PythonEnvironment::getInternedString,
+// which (a) silently truncated non-ASCII octets at the first 0-byte and
+// (b) made the runtime type appear as `str` to introspection.
 static const proto::ProtoObject* make_bytes(proto::ProtoContext* ctx, const std::string& data) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     proto::ProtoObject* obj = const_cast<proto::ProtoObject*>(ctx->newObject(false));
     if (env && env->getBytesPrototype()) {
         obj = const_cast<proto::ProtoObject*>(obj->addParent(ctx, env->getBytesPrototype()));
+        // Set __class__ so getType()/type() reports `bytes`, not the
+        // underlying ProtoObject — same convention as
+        // Compiler::compileConstant for ConstType::Bytes.
+        obj = const_cast<proto::ProtoObject*>(obj->setAttribute(ctx,
+            PythonEnvironment::getInternedString(ctx, "__class__"),
+            env->getBytesPrototype()));
     }
+    const proto::ProtoByteBuffer* bb = ctx->newByteBuffer(
+        data.data(), static_cast<unsigned long>(data.size()));
     obj = const_cast<proto::ProtoObject*>(obj->setAttribute(ctx,
         env ? env->getDataString() : PythonEnvironment::getInternalString(ctx, "__data__"),
-        PythonEnvironment::getInternedString(ctx, data.c_str())->asObject(ctx)));
+        bb->asObject(ctx)));
     return obj;
 }
 

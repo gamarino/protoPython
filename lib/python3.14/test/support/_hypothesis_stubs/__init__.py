@@ -24,8 +24,18 @@ def given(*_args, **_kwargs):
             @functools.wraps(f)
             def test_function(self):
                 for example_args, example_kwargs in examples:
-                    with self.subTest(*example_args, **example_kwargs):
-                        f(self, *example_args, **example_kwargs)
+                    # unittest.TestCase.subTest takes (msg=None, **params).
+                    # @hypothesis.example often passes positional args
+                    # (e.g. `@example(b"abc", b"_-", False)`) which would
+                    # blow up subTest with "too many positional arguments".
+                    # Render positionals into the msg string and let the
+                    # keyword args flow through as params.
+                    if example_args:
+                        with self.subTest(msg=repr(example_args), **example_kwargs):
+                            f(self, *example_args, **example_kwargs)
+                    else:
+                        with self.subTest(**example_kwargs):
+                            f(self, *example_args, **example_kwargs)
 
         else:
             # If we have found no examples, we must skip the test. If @example
