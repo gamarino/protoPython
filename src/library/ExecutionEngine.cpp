@@ -548,38 +548,54 @@ static const proto::ProtoObject* runUserFunctionCall(proto::ProtoContext* ctx,
         const proto::ProtoTuple* kwNamesTuple = env ? env->getCurrentKwNames() : nullptr;
 
         if (kwargs) {
-            auto it = kwargs->getIterator(calleeCtx);
-            while (it && it->hasNext(calleeCtx)) {
-                unsigned long key = it->nextKey(calleeCtx);
-                const proto::ProtoObject* val = it->nextValue(calleeCtx);
+            // Iterate the caller's kwNames tuple (CALL ORDER), looking up
+            // each key's value in the SparseList. Iterating the SparseList
+            // directly would surface keys in hash order, which collapses
+            // CPython's "**kwargs preserves insertion order" guarantee
+            // (PEP 468). When kwNames is unavailable (defensive fallback),
+            // fall back to SparseList iteration; the result is still
+            // populated, just possibly out of insertion order.
+            if (kwNamesTuple) {
+                unsigned long n = kwNamesTuple->getSize(calleeCtx);
+                for (unsigned long ni = 0; ni < n; ++ni) {
+                    const proto::ProtoObject* nm = kwNamesTuple->getAt(calleeCtx, ni);
+                    if (!nm) continue;
+                    unsigned long key = nm->getHash(calleeCtx);
+                    if (!kwargs->has(calleeCtx, key)) continue;
+                    const proto::ProtoObject* val = kwargs->getAt(calleeCtx, key);
 
-                // Only add if not already bound to a positional or kwonly param
-                bool alreadyBound = false;
-                for (unsigned long i = 0; i < (unsigned long)(nparams_count + kwonly_count); ++i) {
-                     const proto::ProtoObject* paramName = co_varnames->getAt(calleeCtx, i);
-                     if (paramName && paramName->getHash(calleeCtx) == key) {
-                         alreadyBound = true;
-                         break;
-                     }
-                }
-                if (!alreadyBound) {
-                    data = data->setAt(calleeCtx, key, val);
-                    // Find the actual key name object to populate __keys__.
-                    const proto::ProtoObject* keyNameObj = nullptr;
-                    if (kwNamesTuple) {
-                        for (int ni = 0; ni < kwNamesTuple->getSize(calleeCtx); ++ni) {
-                            const proto::ProtoObject* nm = kwNamesTuple->getAt(calleeCtx, ni);
-                            if (nm && nm->getHash(calleeCtx) == key) {
-                                keyNameObj = nm;
-                                break;
-                            }
+                    bool alreadyBound = false;
+                    for (unsigned long i = 0; i < (unsigned long)(nparams_count + kwonly_count); ++i) {
+                        const proto::ProtoObject* paramName = co_varnames->getAt(calleeCtx, i);
+                        if (paramName && paramName->getHash(calleeCtx) == key) {
+                            alreadyBound = true;
+                            break;
                         }
                     }
-                    if (keyNameObj) {
-                        keysList = keysList->appendLast(calleeCtx, keyNameObj);
+                    if (!alreadyBound) {
+                        data = data->setAt(calleeCtx, key, val);
+                        keysList = keysList->appendLast(calleeCtx, nm);
                     }
                 }
-                it = const_cast<proto::ProtoSparseListIterator*>(it)->advance(calleeCtx);
+            } else {
+                auto it = kwargs->getIterator(calleeCtx);
+                while (it && it->hasNext(calleeCtx)) {
+                    unsigned long key = it->nextKey(calleeCtx);
+                    const proto::ProtoObject* val = it->nextValue(calleeCtx);
+
+                    bool alreadyBound = false;
+                    for (unsigned long i = 0; i < (unsigned long)(nparams_count + kwonly_count); ++i) {
+                        const proto::ProtoObject* paramName = co_varnames->getAt(calleeCtx, i);
+                        if (paramName && paramName->getHash(calleeCtx) == key) {
+                            alreadyBound = true;
+                            break;
+                        }
+                    }
+                    if (!alreadyBound) {
+                        data = data->setAt(calleeCtx, key, val);
+                    }
+                    it = const_cast<proto::ProtoSparseListIterator*>(it)->advance(calleeCtx);
+                }
             }
         }
         kwDict->setAttribute(calleeCtx, dataName, data->asObject(calleeCtx));
