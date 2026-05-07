@@ -17,7 +17,37 @@ except ImportError:
     LambdaType = type(lambda: None)  # Same as FunctionType
     CodeType = type(_f.__code__)
     MappingProxyType = type(type.__dict__)
-    SimpleNamespace = type(sys.implementation)
+
+    # CPython exposes types.SimpleNamespace as the type of sys.implementation,
+    # but protoPython's `sys.implementation` is a bare `object` in some
+    # bootstrap configurations, which would alias SimpleNamespace to `object`
+    # and break `SimpleNamespace(x=1).x` (kwargs vanish, attribute lookup
+    # raises). Provide a small Python-level fallback that matches the
+    # documented contract: dict-style attribute access, repr listing
+    # alphabetised key=value pairs, equality compares __dict__.
+    class SimpleNamespace:
+        """A simple attribute-based namespace.
+
+        SimpleNamespace(**kwargs)
+        """
+        def __init__(self, /, **kwargs):
+            for k, v in kwargs.items():
+                setattr(self, k, v)
+
+        def __repr__(self):
+            d = vars(self)
+            keys = sorted(d)
+            # Use getattr instead of `d[k]`: protoPython's `vars()` returns a
+            # MappingProxy-flavored view that may not support __getitem__ for
+            # every key shape, but the underlying instance's getattr always
+            # does.
+            items = ("{}={!r}".format(k, getattr(self, k)) for k in keys)
+            return "namespace({})".format(", ".join(items))
+
+        def __eq__(self, other):
+            if isinstance(self, SimpleNamespace) and isinstance(other, SimpleNamespace):
+                return vars(self) == vars(other)
+            return NotImplemented
 
     def _cell_factory():
         a = 1
