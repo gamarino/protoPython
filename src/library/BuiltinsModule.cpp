@@ -3307,6 +3307,108 @@ const proto::ProtoObject* py_uniontype_new(
     return instance;
 }
 
+// True iff `obj` is a PEP-604 UnionType instance or a typing._UnionGenericAlias.
+// On a hit, appends each element of `obj.__args__` to `out`. Detection is by the
+// type's `__name__` so we don't depend on prototype identity (typing's
+// _UnionGenericAlias is created Python-side and never resolves to unionTypeProto).
+static bool unionFlattenInto(proto::ProtoContext* ctx,
+                             const proto::ProtoObject* obj,
+                             std::vector<const proto::ProtoObject*>& out) {
+    if (!obj || obj == PROTO_NONE) return false;
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!env) return false;
+
+    const proto::ProtoObject* clsClass = env->getType(ctx, obj);
+    if (!clsClass || clsClass == PROTO_NONE) return false;
+    const proto::ProtoObject* clsName = clsClass->getAttribute(ctx, env->getNameString());
+    if (!clsName || !clsName->isString(ctx)) return false;
+    std::string n;
+    clsName->asString(ctx)->toUTF8String(ctx, n);
+    if (n != "UnionType" && n != "_UnionGenericAlias") return false;
+
+    const proto::ProtoObject* argsObj = obj->getAttribute(ctx,
+        PythonEnvironment::getInternedString(ctx, "__args__"));
+    if (!argsObj || argsObj == PROTO_NONE) return false;
+    if (argsObj->isTuple(ctx)) {
+        const proto::ProtoTuple* tup = argsObj->asTuple(ctx);
+        for (unsigned long i = 0; i < tup->getSize(ctx); ++i) out.push_back(tup->getAt(ctx, i));
+        return true;
+    }
+    if (argsObj->asList(ctx)) {
+        const proto::ProtoList* lst = argsObj->asList(ctx);
+        for (unsigned long i = 0; i < lst->getSize(ctx); ++i) out.push_back(lst->getAt(ctx, i));
+        return true;
+    }
+    return false;
+}
+
+// CPython normalises the literal `None` to `type(None)` inside a Union.
+static const proto::ProtoObject* unionNormalizeNone(proto::ProtoContext* ctx,
+                                                    const proto::ProtoObject* op) {
+    if (op != PROTO_NONE) return op;
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!env) return op;
+    const proto::ProtoObject* nt = env->getNoneTypePrototype();
+    return nt ? nt : op;
+}
+
+// Build a PEP-604 UnionType instance whose __args__ tuple is `(lhs ⊕ rhs)`
+// flattened (unions splice their members in) and identity-deduped (preserves
+// order of first occurrence). Returns nullptr if no UnionType prototype is
+// available — caller should fall through.
+static const proto::ProtoObject* buildUnionFlatDedup(proto::ProtoContext* ctx,
+                                                     const proto::ProtoObject* lhs,
+                                                     const proto::ProtoObject* rhs) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!env || !env->getUnionTypeProto()) return nullptr;
+
+    lhs = unionNormalizeNone(ctx, lhs);
+    rhs = unionNormalizeNone(ctx, rhs);
+
+    std::vector<const proto::ProtoObject*> all;
+    if (!unionFlattenInto(ctx, lhs, all)) all.push_back(lhs);
+    if (!unionFlattenInto(ctx, rhs, all)) all.push_back(rhs);
+
+    std::vector<const proto::ProtoObject*> deduped;
+    deduped.reserve(all.size());
+    for (auto* a : all) {
+        bool seen = false;
+        for (auto* b : deduped) { if (a == b) { seen = true; break; } }
+        if (!seen) deduped.push_back(a);
+    }
+
+    const proto::ProtoTuple* args = ctx->newTuple(deduped);
+    const proto::ProtoList* utArgs = ctx->newList()->appendLast(ctx, env->getUnionTypeProto())
+                                                   ->appendLast(ctx, args->asObject(ctx));
+    return py_uniontype_new(ctx, nullptr, nullptr, utArgs, nullptr);
+}
+
+// UnionType.__or__: `(int|str) | list` → flatten LHS, dedupe.
+const proto::ProtoObject* py_uniontype_or(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    const proto::ProtoObject* other = positionalParameters->getAt(context, 0);
+    const proto::ProtoObject* result = buildUnionFlatDedup(context, self, other);
+    return result ? result : PROTO_NONE;
+}
+
+// UnionType.__ror__: `int | (str|list)` reaches here when LHS is plain.
+const proto::ProtoObject* py_uniontype_ror(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    const proto::ProtoObject* other = positionalParameters->getAt(context, 0);
+    const proto::ProtoObject* result = buildUnionFlatDedup(context, other, self);
+    return result ? result : PROTO_NONE;
+}
+
 const proto::ProtoObject* py_uniontype_repr(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -3353,18 +3455,32 @@ const proto::ProtoObject* py_type_or(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
-    PythonEnvironment* env = PythonEnvironment::fromContext(context);
-    if (!env || !env->getUnionTypeProto()) return self;
-    
     if (positionalParameters->getSize(context) < 1) return self;
     const proto::ProtoObject* other = positionalParameters->getAt(context, 0);
-    
-    // Create a tuple (self, other) for UnionType.__args__
-    const proto::ProtoTuple* args = context->newTuple({self, other});
-    
-    const proto::ProtoList* utArgs = context->newList()->appendLast(context, env->getUnionTypeProto())
-                                                      ->appendLast(context, args->asObject(context));
-    return py_uniontype_new(context, nullptr, nullptr, utArgs, nullptr);
+
+    // PEP 604: `cls | other`. Flatten any union operand so
+    // `(int|str) | list` becomes `(int, str, list)` rather than
+    // `(int|str, list)`, and dedupe by identity (CPython matches by
+    // equality but for type objects equality reduces to identity).
+    const proto::ProtoObject* result = buildUnionFlatDedup(context, self, other);
+    return result ? result : self;
+}
+
+// `__ror__`: this is invoked as `RHS.__ror__(LHS)` after Python's reflected
+// operator dispatch — so `self` is the RHS of the original `LHS | RHS`
+// expression. Swap operand order before flattening to preserve `LHS | RHS`
+// semantics (otherwise `typing.Union[int, str] | list` would be built as
+// `(list, int, str)` instead of `(int, str, list)`).
+const proto::ProtoObject* py_type_ror(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    if (positionalParameters->getSize(context) < 1) return self;
+    const proto::ProtoObject* other = positionalParameters->getAt(context, 0);
+    const proto::ProtoObject* result = buildUnionFlatDedup(context, other, self);
+    return result ? result : self;
 }
 
 namespace builtins {
@@ -5783,6 +5899,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     }
     const proto::ProtoObject* classGetItem = ctx->fromMethod(nullptr, py_type_class_getitem);
     const proto::ProtoObject* typeOr = ctx->fromMethod(nullptr, py_type_or);
+    const proto::ProtoObject* typeRor = ctx->fromMethod(nullptr, py_type_ror);
     const proto::ProtoString* classGetItemS = PythonEnvironment::getInternedString(ctx, "__class_getitem__");
     const proto::ProtoString* orS = PythonEnvironment::getInternedString(ctx, "__or__");
     const proto::ProtoString* rorS = PythonEnvironment::getInternedString(ctx, "__ror__");
@@ -5800,7 +5917,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     registerGenericSupport(frozensetProto);
 
     const_cast<proto::ProtoObject*>(typeProto)->setAttribute(ctx, orS, typeOr);
-    const_cast<proto::ProtoObject*>(typeProto)->setAttribute(ctx, rorS, typeOr);
+    const_cast<proto::ProtoObject*>(typeProto)->setAttribute(ctx, rorS, typeRor);
 
     // Initialize GenericAlias prototype
     const proto::ProtoObject* genericAliasProto = ctx->newObject(false);
@@ -5818,6 +5935,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     unionTypeProto = unionTypeProto->setAttribute(ctx, py_name_local, PythonEnvironment::getInternedString(ctx, "UnionType")->asObject(ctx));
     unionTypeProto = unionTypeProto->setAttribute(ctx, pEnv->getNewString(), ctx->fromMethod(nullptr, py_uniontype_new));
     unionTypeProto = unionTypeProto->setAttribute(ctx, pEnv->getReprString(), ctx->fromMethod(nullptr, py_uniontype_repr));
+    unionTypeProto = unionTypeProto->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__or__"), ctx->fromMethod(nullptr, py_uniontype_or));
+    unionTypeProto = unionTypeProto->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__ror__"), ctx->fromMethod(nullptr, py_uniontype_ror));
     pEnv->setUnionTypeProto(unionTypeProto);
 
     return builtins;

@@ -37,10 +37,37 @@ class _SpecialForm:
         return _UnionGenericAlias(self, (other, self))
 
 
+def _normalize_union_args(args):
+    """Flatten nested unions and dedupe (CPython semantics for PEP 604).
+
+    `None` literal is rewritten to `type(None)` so `T | None == T | type(None)`.
+    """
+    result = []
+    for a in args:
+        if a is None:
+            a = type(None)
+        # Flatten nested PEP 604 / typing union args.
+        nested = getattr(a, '__args__', None)
+        is_union = (
+            isinstance(a, _UnionGenericAlias)
+            or type(a).__name__ == 'UnionType'
+        )
+        if is_union and nested is not None:
+            for sub in nested:
+                if sub is None:
+                    sub = type(None)
+                if sub not in result:
+                    result.append(sub)
+        else:
+            if a not in result:
+                result.append(a)
+    return tuple(result)
+
+
 class _UnionGenericAlias:
     def __init__(self, origin, args):
         self.__origin__ = origin
-        self.__args__ = tuple(args)
+        self.__args__ = _normalize_union_args(args)
 
     def __repr__(self):
         args = ' | '.join(repr(a) for a in self.__args__)
@@ -48,6 +75,23 @@ class _UnionGenericAlias:
 
     def __getitem__(self, params):
         return _UnionGenericAlias(self.__origin__, self.__args__ + (params,))
+
+    def __or__(self, other):
+        return _UnionGenericAlias(self.__origin__, self.__args__ + (other,))
+
+    def __ror__(self, other):
+        return _UnionGenericAlias(self.__origin__, (other,) + self.__args__)
+
+    def __eq__(self, other):
+        if not isinstance(other, _UnionGenericAlias):
+            # Compare against PEP 604 UnionType by __args__ as well.
+            if type(other).__name__ == 'UnionType':
+                return set(self.__args__) == set(getattr(other, '__args__', ()))
+            return NotImplemented
+        return set(self.__args__) == set(other.__args__)
+
+    def __hash__(self):
+        return hash(frozenset(self.__args__))
 
 
 # NoDefault sentinel
