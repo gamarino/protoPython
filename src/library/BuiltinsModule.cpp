@@ -3486,6 +3486,44 @@ const proto::ProtoObject* py_uniontype_hash(
     return context->fromLong(h);
 }
 
+// CPython's union_repr uses _Py_typing_repr_helper which prints classes
+// as `module.qualname` (or just `qualname` for builtins) — not `<class
+// 'X'>`. Mirrors PEP 604 docs: `repr(int | str) == "int | str"`.
+static std::string py_typing_repr_arg(proto::ProtoContext* context,
+                                      PythonEnvironment* env,
+                                      const proto::ProtoObject* obj) {
+    if (!obj) return "None";
+    if (obj == PROTO_NONE && env && env->getNoneTypePrototype()) {
+        // None inside a union normalises to type(None); display as "None".
+        return "None";
+    }
+    // type(None) inside a union renders as "None" too — CPython's
+    // _Py_typing_repr_helper has the same special-case.
+    if (env && obj == env->getNoneTypePrototype()) return "None";
+    if (env) {
+        const proto::ProtoObject* mroAttr = obj->getAttribute(context, env->getMroString());
+        // __mro__ is a tuple in CPython; older protoPython paths may use a list.
+        bool isClass = mroAttr && (mroAttr->asList(context) || mroAttr->asTuple(context));
+        if (isClass) {
+            const proto::ProtoObject* qn = obj->getAttribute(context,
+                PythonEnvironment::getInternedString(context, "__qualname__"));
+            if (!qn || qn == PROTO_NONE || !qn->isString(context)) {
+                qn = obj->getAttribute(context, env->getNameString());
+            }
+            const proto::ProtoObject* modAttr = obj->getAttribute(context,
+                PythonEnvironment::getInternedString(context, "__module__"));
+            std::string qns;
+            if (qn && qn->isString(context)) qn->asString(context)->toUTF8String(context, qns);
+            if (qns.empty()) qns = "<unknown>";
+            std::string mods;
+            if (modAttr && modAttr->isString(context)) modAttr->asString(context)->toUTF8String(context, mods);
+            if (mods.empty() || mods == "builtins") return qns;
+            return mods + "." + qns;
+        }
+    }
+    return env ? env->reprObject(context, obj) : "???";
+}
+
 const proto::ProtoObject* py_uniontype_repr(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -3495,12 +3533,12 @@ const proto::ProtoObject* py_uniontype_repr(
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     const proto::ProtoObject* args = self->getAttribute(context, PythonEnvironment::getInternedString(context, "__args__"));
     if (!args || !args->isTuple(context)) return context->fromUTF8String("??? | ???");
-    
+
     const proto::ProtoTuple* tup = args->asTuple(context);
     std::string res;
     for (size_t i = 0; i < tup->getSize(context); ++i) {
         if (i > 0) res += " | ";
-        res += env ? env->reprObject(context, tup->getAt(context, i)) : "???";
+        res += py_typing_repr_arg(context, env, tup->getAt(context, i));
     }
     return context->fromUTF8String(res.c_str());
 }

@@ -2916,18 +2916,60 @@ static const proto::ProtoObject* py_type_class_getitem(
     return self;
 }
 
+// Render a single union arg for repr: a class is printed as `module.qualname`
+// (or just `qualname` for builtins) — matching CPython's _Py_typing_repr_helper.
+// Falls back to repr() for non-class typing forms (e.g. `Tuple[int,int]`).
+static std::string py_union_repr_arg(proto::ProtoContext* context,
+                                     PythonEnvironment* env,
+                                     const proto::ProtoObject* obj) {
+    if (!obj) return "None";
+    // PEP 604: `T | None` keeps the literal `None` spelling in repr even
+    // though the union normalises None → type(None) for storage.
+    if (env && obj == env->getNoneTypePrototype()) return "None";
+    if (env) {
+        const proto::ProtoObject* mroAttr = obj->getAttribute(context, env->getMroString());
+        // CPython stores __mro__ as a tuple; older protoPython paths may
+        // surface a list. Accept either.
+        bool isClass = mroAttr && (mroAttr->asList(context) || mroAttr->asTuple(context));
+        if (isClass) {
+            const proto::ProtoObject* qn = obj->getAttribute(context,
+                PythonEnvironment::getInternedString(context, "__qualname__"));
+            if (!qn || qn == PROTO_NONE || !qn->isString(context)) {
+                qn = obj->getAttribute(context, env->getNameString());
+            }
+            std::string qns;
+            if (qn && qn->isString(context)) qn->asString(context)->toUTF8String(context, qns);
+            if (qns.empty()) return PythonEnvironment::reprObject(context, obj);
+            const proto::ProtoObject* modAttr = obj->getAttribute(context,
+                PythonEnvironment::getInternedString(context, "__module__"));
+            std::string mods;
+            if (modAttr && modAttr->isString(context)) modAttr->asString(context)->toUTF8String(context, mods);
+            if (mods.empty() || mods == "builtins") return qns;
+            return mods + "." + qns;
+        }
+    }
+    return PythonEnvironment::reprObject(context, obj);
+}
+
 static const proto::ProtoObject* py_union_type_repr(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
     PythonEnvironment* env = PythonEnvironment::get(context);
     const proto::ProtoObject* argsObj = self->getAttribute(context, PythonEnvironment::getInternedString(context, "__args__"));
+    // __args__ may be a ProtoList or a ProtoTuple wrapping a ProtoList; cover both.
     const proto::ProtoList* args = argsObj ? argsObj->asList(context) : nullptr;
+    if (!args && argsObj && argsObj->asTuple(context)) {
+        args = argsObj->asTuple(context)->asList(context);
+    }
     if (!args || args->getSize(context) < 2) return PythonEnvironment::getInternedString(context, "UnionType")->asObject(context);
-    
-    std::string s1 = PythonEnvironment::reprObject(context, args->getAt(context, 0));
-    std::string s2 = PythonEnvironment::reprObject(context, args->getAt(context, 1));
-    return PythonEnvironment::getInternedString(context, (s1 + " | " + s2).c_str())->asObject(context);
+
+    std::string out;
+    for (unsigned long i = 0; i < args->getSize(context); ++i) {
+        if (i > 0) out += " | ";
+        out += py_union_repr_arg(context, env, args->getAt(context, i));
+    }
+    return PythonEnvironment::getInternedString(context, out.c_str())->asObject(context);
 }
 
 static const proto::ProtoObject* py_type_instancecheck(
