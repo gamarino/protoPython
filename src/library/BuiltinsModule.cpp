@@ -4327,6 +4327,19 @@ static const proto::ProtoObject* py_issubclass(
     cls = resolveClassType(env, self, context, cls);
     base = resolveClassType(env, self, context, base);
     
+    // PEP 604: `issubclass(C, A | B)` is `issubclass(C, (A, B))`. Detect
+    // UnionType via the same name-based check unionFlattenInto uses, then
+    // recurse into each member.
+    if (base) {
+        std::vector<const proto::ProtoObject*> unionArgs;
+        if (unionFlattenInto(context, base, unionArgs)) {
+            for (auto* arg : unionArgs) {
+                if (py_issubclass_check_single(context, cls, arg)) return PROTO_TRUE;
+            }
+            return PROTO_FALSE;
+        }
+    }
+
     // In Python, if base is a tuple, we must check if cls is a subclass of ANY element in the tuple
     if (base) {
          const proto::ProtoList* baseList = base->asList(context);
@@ -4340,7 +4353,7 @@ static const proto::ProtoObject* py_issubclass(
              return PROTO_FALSE;
          }
     }
-    
+
     return py_issubclass_check_single(context, cls, base) ? PROTO_TRUE : PROTO_FALSE;
 }
 
@@ -6116,6 +6129,10 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     genericAliasProto = genericAliasProto->setAttribute(ctx, py_name_local, PythonEnvironment::getInternedString(ctx, "GenericAlias")->asObject(ctx));
     genericAliasProto = genericAliasProto->setAttribute(ctx, pEnv->getNewString(), ctx->fromMethod(nullptr, py_genericalias_new));
     genericAliasProto = genericAliasProto->setAttribute(ctx, pEnv->getReprString(), ctx->fromMethod(nullptr, py_genericalias_repr));
+    // PEP 604: GenericAlias | X and X | GenericAlias collapse into a UnionType.
+    // Reuse the same flatten/dedupe builder so chained ops stay flat.
+    genericAliasProto = genericAliasProto->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__or__"), ctx->fromMethod(nullptr, py_uniontype_or));
+    genericAliasProto = genericAliasProto->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__ror__"), ctx->fromMethod(nullptr, py_uniontype_ror));
     pEnv->setGenericAliasProto(genericAliasProto);
 
     // Initialize UnionType prototype
