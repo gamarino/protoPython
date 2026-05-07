@@ -366,19 +366,34 @@ static const proto::ProtoObject* py_len(
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     const proto::ProtoString* lenStr = env ? env->getLenString() : PythonEnvironment::getInternedString(context, "__len__");
     const proto::ProtoObject* lenMethod = env ? env->getAttribute(context, obj, lenStr, false) : (obj->hasOwnAttribute(context, lenStr) == PROTO_TRUE ? obj->getAttribute(context, lenStr) : nullptr);
-    if (lenMethod && lenMethod->asMethod(context)) {
-        const proto::ProtoList* emptyArgs = env ? env->getEmptyList() : context->newList();
-        const proto::ProtoObject* res = lenMethod->asMethod(context)(context, obj, nullptr, emptyArgs, nullptr);
-        if (res && res != PROTO_NONE && res->isInteger(context)) {
-            return res;
+    if (lenMethod && lenMethod != PROTO_NONE) {
+        if (lenMethod->asMethod(context)) {
+            const proto::ProtoList* emptyArgs = env ? env->getEmptyList() : context->newList();
+            const proto::ProtoObject* res = lenMethod->asMethod(context)(context, const_cast<proto::ProtoObject*>(obj), nullptr, emptyArgs, nullptr);
+            if (res && res != PROTO_NONE && res->isInteger(context)) {
+                return res;
+            }
+        } else {
+            // Python user `def __len__(self)`: prepend self for invokeCallable.
+            const proto::ProtoString* codeS = env ? env->getCodeString() : PythonEnvironment::getInternedString(context, "__code__");
+            if (codeS && lenMethod->hasOwnAttribute(context, codeS) == PROTO_TRUE) {
+                const proto::ProtoList* args = context->newList()->appendLast(context, obj);
+                const proto::ProtoObject* res = ::protoPython::invokePythonCallable(context, lenMethod, args, nullptr);
+                if (res && res != PROTO_NONE && res->isInteger(context)) {
+                    return res;
+                }
+            }
         }
     }
-    
-    // Otherwise fallback to native types
+
+    // Otherwise fallback to native containers — strict tag checks only.
+    // NOTE: `asSparseList` follows the `__data__` chain and reports a
+    // user-class instance as a size-0 sparseList (same footgun fixed in
+    // isTruthy at 1defba97). Dict-backed objects expose len() through the
+    // bound `__len__` above; do not reintroduce that fallback here.
     if (obj->asList(context)) return context->fromInteger(obj->asList(context)->getSize(context));
     if (obj->asTuple(context)) return context->fromInteger(obj->asTuple(context)->getSize(context));
     if (obj->asSet(context)) return context->fromInteger(obj->asSet(context)->getSize(context));
-    if (obj->asSparseList(context)) return context->fromInteger(obj->asSparseList(context)->getSize(context));
     if (obj->isString(context)) return context->fromInteger(obj->asString(context)->getSize(context));
 
     if (env) env->raiseTypeError(context, "'" + PythonEnvironment::reprObject(context, obj) + "' has no len()");
@@ -3833,10 +3848,28 @@ const proto::ProtoObject* py_type(
             const proto::ProtoObject* objectProto = env ? env->getObjectPrototype() : nullptr;
             if (objectProto) defaultBasesList = defaultBasesList->appendLast(context, objectProto);
             const proto::ProtoObject* defaultBases = env ? env->newTuple(defaultBasesList) : context->newTupleFromList(defaultBasesList)->asObject(context);
-            
+
             mroList = computeC3MRO(context, targetClass, defaultBases);
             if (!basesArg || basesArg == PROTO_NONE) {
             targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, PythonEnvironment::getInternedString(context, "__bases__"), defaultBases));
+            }
+        }
+
+        // CPython exposes `cls.__base__` (singular) as the "primary" base —
+        // the first entry of __bases__, or `object` for object itself. Some
+        // tests (test_descr, test_types, abc machinery) read it directly.
+        {
+            const proto::ProtoString* baseS = PythonEnvironment::getInternedString(context, "__base__");
+            const proto::ProtoObject* basesObj = targetClass->getAttribute(context,
+                PythonEnvironment::getInternedString(context, "__bases__"));
+            const proto::ProtoObject* primary = nullptr;
+            if (basesObj && basesObj->isTuple(context) && basesObj->asTuple(context)->getSize(context) > 0) {
+                primary = basesObj->asTuple(context)->getAt(context, 0);
+            } else if (basesObj && basesObj->asList(context) && basesObj->asList(context)->getSize(context) > 0) {
+                primary = basesObj->asList(context)->getAt(context, 0);
+            }
+            if (primary && primary != PROTO_NONE) {
+                targetClass = const_cast<proto::ProtoObject*>(targetClass->setAttribute(context, baseS, primary));
             }
         }
 
@@ -5127,6 +5160,33 @@ static const proto::ProtoObject* py_range_next(
     return context->fromInteger(cur);
 }
 
+static const proto::ProtoObject* py_range_len(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters) {
+    ::protoPython::PythonEnvironment* env = ::protoPython::PythonEnvironment::fromContext(context);
+    const proto::ProtoString* curS = env ? env->getRangeCurString() : PythonEnvironment::getInternedString(context, "__range_cur__");
+    const proto::ProtoString* stopS = env ? env->getRangeStopString() : PythonEnvironment::getInternedString(context, "__range_stop__");
+    const proto::ProtoString* stepS = env ? env->getRangeStepString() : PythonEnvironment::getInternedString(context, "__range_step__");
+    const proto::ProtoObject* curObj = self->getAttribute(context, curS);
+    const proto::ProtoObject* stopObj = self->getAttribute(context, stopS);
+    const proto::ProtoObject* stepObj = self->getAttribute(context, stepS);
+    if (!curObj || !stopObj || !stepObj) return context->fromInteger(0);
+    long long start = curObj->asLong(context);
+    long long stop = stopObj->asLong(context);
+    long long step = stepObj->asLong(context);
+    if (step == 0) return context->fromInteger(0);
+    long long count;
+    if (step > 0) {
+        count = (start >= stop) ? 0 : ((stop - start) + (step - 1)) / step;
+    } else {
+        count = (start <= stop) ? 0 : ((start - stop) + ((-step) - 1)) / (-step);
+    }
+    return context->fromInteger(count);
+}
+
 static const proto::ProtoObject* py_range_iter(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -5720,6 +5780,7 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     rangeClass = rangeClass->setAttribute(ctx, py_name_local, PythonEnvironment::getInternedString(ctx, "range")->asObject(ctx));
     rangeClass = rangeClass->setAttribute(ctx, pEnv->getNewString(), ctx->fromMethod(nullptr, py_range_new));
     rangeClass = rangeClass->setAttribute(ctx, pEnv ? pEnv->getIterString() : PythonEnvironment::getInternedString(ctx, "__iter__"), ctx->fromMethod(nullptr, py_range_iter));
+    rangeClass = rangeClass->setAttribute(ctx, pEnv ? pEnv->getLenString() : PythonEnvironment::getInternedString(ctx, "__len__"), ctx->fromMethod(nullptr, py_range_len));
     rangeClass = rangeClass->setAttribute(ctx, pEnv ? pEnv->getInitString() : PythonEnvironment::getInternedString(ctx, "__init__"), ctx->fromMethod(nullptr, py_python_ignore_init));
     builtins = builtins->setAttribute(ctx, pEnv ? pEnv->getRangeString() : PythonEnvironment::getInternedString(ctx, "range"), rangeClass);
 
