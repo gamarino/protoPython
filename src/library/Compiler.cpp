@@ -3885,6 +3885,18 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
     // inherit the class name to avoid false super() rewrites.
     if (isClassBody_) bodyCompiler.currentClassName_ = currentClassName_;
 
+    // CPython qualname rules for nested defs:
+    //   class C:        prefix=""        → method qualname "C.method"
+    //     def method:   prefix="C"
+    //       def inner:  prefix="C.method.<locals>" → "C.method.<locals>.inner"
+    // Build *this* function's qualname from the current prefix, then push
+    // "<thisQualname>.<locals>" as the prefix the body sees so any nested
+    // defs inside compose correctly.
+    std::string fnQualname = qualnamePrefix_.empty()
+        ? n->name
+        : qualnamePrefix_ + "." + n->name;
+    bodyCompiler.qualnamePrefix_ = fnQualname + ".<locals>";
+
     // Pre-bind annotation-only locals (`x: int` with no value) to the
     // env's "<unbound>" sentinel.  CO_OPTIMIZED slots are otherwise
     // initialised to PROTO_NONE, which is indistinguishable from an
@@ -3949,6 +3961,15 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
             PythonEnvironment::getInternedString(ctx_, "co_doc"),
             PythonEnvironment::getInternedString(ctx_, bodyCompiler.capturedDocstring_.c_str())->asObject(ctx_));
     }
+    // Stamp `co_qualname` so the function builder can populate
+    // `fn.__qualname__` to the dotted, nested-aware form CPython produces
+    // (e.g. `C.method.<locals>.inner`). Module-level defs and class methods
+    // pick up a meaningful prefix from `qualnamePrefix_`; nested function
+    // defs get the `<parent>.<locals>.` chain via the bodyCompiler's
+    // forwarded prefix above.
+    codeObj = codeObj->setAttribute(ctx_,
+        PythonEnvironment::getInternedString(ctx_, "co_qualname"),
+        PythonEnvironment::getInternedString(ctx_, fnQualname.c_str())->asObject(ctx_));
     int idx = addConstant(codeObj);
     emit(OP_LOAD_CONST, idx);
 

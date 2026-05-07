@@ -984,7 +984,15 @@ static proto::ProtoObject* createUserFunction(proto::ProtoContext* ctx, const pr
         const proto::ProtoObject* codeName = codeObj->getAttribute(ctx, co_name_s);
         if (codeName && codeName != PROTO_NONE) {
             fn = fn->setAttribute(ctx, env ? env->getNameString() : PythonEnvironment::getInternedString(ctx, "__name__"), codeName);
-            fn = fn->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__qualname__"), codeName);
+            // Prefer `co_qualname` (the compiler stamps the dotted nested-aware
+            // form, e.g. `C.method.<locals>.inner`); fall back to `co_name`
+            // when absent so module-level defs still get a meaningful value.
+            const proto::ProtoString* coQualS = PythonEnvironment::getInternedString(ctx, "co_qualname");
+            const proto::ProtoObject* coQualName = codeObj->getAttribute(ctx, coQualS);
+            if (!coQualName || coQualName == PROTO_NONE || !coQualName->isString(ctx)) {
+                coQualName = codeName;
+            }
+            fn = fn->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__qualname__"), coQualName);
         }
     }
     
