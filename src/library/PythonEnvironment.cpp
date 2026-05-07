@@ -15449,7 +15449,17 @@ static void syncAttr(proto::ProtoContext* ctx, void* self, unsigned long key, co
             std::string kstr;
             ks->toUTF8String(ctx, kstr);
             if (kstr != "__data__" && kstr != "__keys__") {
-                sCtx->dataList = const_cast<proto::ProtoSparseList*>(sCtx->dataList->setAt(ctx, key, val));
+                // protoCore's attribute SparseList is keyed by the
+                // `ProtoString*` pointer cast to ulong, but a Python `dict`
+                // keys by `key->getHash(ctx)` (string content hash). The
+                // two are NOT the same — pointer-keyed storage made
+                // `obj.__dict__[name]` lookups miss, so `vars(obj)`
+                // appeared to have the right keys with `None` values.
+                // Re-key with the content hash so the dict-proxy hot path
+                // (`py_dict_getitem` → `dictKeyHash` → `dataList->getAt(hash)`)
+                // resolves to the actual value.
+                unsigned long contentHash = ks->getHash(ctx);
+                sCtx->dataList = const_cast<proto::ProtoSparseList*>(sCtx->dataList->setAt(ctx, contentHash, val));
                 if (!sCtx->keysList->has(ctx, keyObj)) {
                     sCtx->keysList = const_cast<proto::ProtoList*>(sCtx->keysList->appendLast(ctx, keyObj));
                     sCtx->count++;

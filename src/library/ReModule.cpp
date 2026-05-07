@@ -756,6 +756,40 @@ static const proto::ProtoObject* py_pattern_findall(
     return results->asObject(ctx);
 }
 
+// pattern.finditer(string[, pos[, endpos]]) → list of match objects.
+// Mirrors py_pattern_findall but yields match objects instead of group strings,
+// matching CPython's `re.Pattern.finditer` contract.  doctest's `_EXAMPLE_RE`
+// drives the use case (its `parse` calls `self._EXAMPLE_RE.finditer(string)`).
+static const proto::ProtoObject* py_pattern_finditer(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*)
+{
+    if (posArgs->getSize(ctx) < 1) return ctx->newList()->asObject(ctx);
+    std::string pat, s;
+    if (!getPattern(ctx, self, pat)) return ctx->newList()->asObject(ctx);
+    if (!posArgs->getAt(ctx, 0)->isString(ctx)) return ctx->newList()->asObject(ctx);
+    posArgs->getAt(ctx, 0)->asString(ctx)->toUTF8String(ctx, s);
+    long long flags = extractFlags(ctx, self, nullptr, -1);
+    std::regex re = makeRegex(ctx, pat, flags);
+    const proto::ProtoObject* matchProto = self->getAttribute(ctx,
+        proto::ProtoString::createSymbol(ctx, "__match_proto__"));
+    const proto::ProtoList* results = ctx->newList();
+    auto begin = std::sregex_iterator(s.begin(), s.end(), re);
+    auto end2 = std::sregex_iterator();
+    for (auto it = begin; it != end2; ++it) {
+        results = results->appendLast(ctx, makeMatchObject(ctx, matchProto, *it, s, 0, self));
+    }
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    const proto::ProtoObject* listProto = env ? env->getListPrototype() : nullptr;
+    if (listProto) {
+        proto::ProtoObject* listObj = const_cast<proto::ProtoObject*>(listProto->newChild(ctx, true));
+        listObj = const_cast<proto::ProtoObject*>(listObj->setAttribute(ctx,
+            PythonEnvironment::getInternedString(ctx, "__data__"), results->asObject(ctx)));
+        return listObj;
+    }
+    return results->asObject(ctx);
+}
+
 static const proto::ProtoObject* py_pattern_split(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*)
@@ -1191,6 +1225,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(const_cast<proto::ProtoObject*>(patternProto), py_pattern_sub));
     patternProto = patternProto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "findall"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(patternProto), py_pattern_findall));
+    patternProto = patternProto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "finditer"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(patternProto), py_pattern_finditer));
     patternProto = patternProto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "split"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(patternProto), py_pattern_split));
     patternProto = patternProto->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "scanner"),
