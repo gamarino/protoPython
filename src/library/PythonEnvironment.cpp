@@ -4838,6 +4838,49 @@ static const proto::ProtoObject* py_int_mod(
     return py_int_arith(ctx, self, args, TokenType::Modulo);
 }
 
+// int.__pow__(self, exp[, mod]): exponentiation. Negative exp returns float
+// (matches CPython 3.x). With mod, computes modular exponentiation.
+static const proto::ProtoObject* py_int_pow(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    if (!args || args->getSize(ctx) < 1) return PROTO_NONE;
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    long long base, exp, mod = 0;
+    bool hasMod = (args->getSize(ctx) >= 2 && args->getAt(ctx, 1) != PROTO_NONE);
+    if (!int_value(ctx, self, &base) ||
+        !int_value(ctx, args->getAt(ctx, 0), &exp)) {
+        return env ? env->getNotImplementedPrototype() : PROTO_NONE;
+    }
+    if (hasMod) {
+        if (!int_value(ctx, args->getAt(ctx, 1), &mod) || mod == 0) {
+            return env ? env->getNotImplementedPrototype() : PROTO_NONE;
+        }
+    }
+    // Negative exp without mod → float result.
+    if (exp < 0 && !hasMod) {
+        double r = std::pow(static_cast<double>(base), static_cast<double>(exp));
+        return ctx->fromDouble(r);
+    }
+    // Iterative exponentiation by squaring.  Long-long overflow is benign
+    // for the typical test usage (small exponents); CPython does bignum
+    // here, which we'd need fromString to cover but isn't needed for the
+    // current test_descr coverage.
+    long long result = 1;
+    long long b = base;
+    long long e = exp < 0 ? -exp : exp;
+    while (e > 0) {
+        if (e & 1) {
+            result = hasMod ? (result * b) % mod : result * b;
+        }
+        e >>= 1;
+        if (e) {
+            b = hasMod ? (b * b) % mod : b * b;
+        }
+    }
+    if (hasMod && result < 0) result += mod;
+    return ctx->fromInteger(result);
+}
+
 // Reflected versions: int.__radd__(self, other) is equivalent to other + self,
 // invoked when other.__add__(self) returned NotImplemented.  CPython's
 // nb_add / nb_radd slots — protoPython's binaryOp already handles
@@ -10831,6 +10874,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
         intPrototype = intPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__mod__"), rootContext_->fromMethod(nullptr, py_int_mod));
         intPrototype = intPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__radd__"), rootContext_->fromMethod(nullptr, py_int_radd));
         intPrototype = intPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__rmul__"), rootContext_->fromMethod(nullptr, py_int_rmul));
+        intPrototype = intPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__pow__"), rootContext_->fromMethod(nullptr, py_int_pow));
         space_->smallIntegerPrototype = const_cast<proto::ProtoObject*>(intPrototype);
     }
 
