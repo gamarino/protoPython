@@ -1674,14 +1674,17 @@ static bool isTruthy(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (env && obj == env->getNonePrototype()) return false;
 
-    // Python semantics: __bool__ takes priority over all native checks.
-    // Check the class (not the instance) to avoid descriptor confusion.
+    // Python semantics: __bool__ takes priority, then __len__, default True.
+    // Look up on the class (not the instance) so descriptors don't fire.
+    // Skip the lookup if the resolved method is PROTO_NONE — that's how
+    // protoCore reports "name found in chain but bound to None" (e.g. a
+    // dunder slot inherited from a prototype that doesn't override it).
     const proto::ProtoString* boolS = env ? env->getBoolString() : PythonEnvironment::getInternedString(ctx, "__bool__");
     const proto::ProtoObject* cls = env ? env->getType(ctx, obj) : nullptr;
     if (!cls) cls = obj->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__class__"));
 
     const proto::ProtoObject* boolMethod = cls ? cls->getAttribute(ctx, boolS) : obj->getAttribute(ctx, boolS);
-    if (boolMethod && boolMethod->asMethod(ctx)) {
+    if (boolMethod && boolMethod != PROTO_NONE && boolMethod->asMethod(ctx)) {
         const proto::ProtoList* emptyL = env ? env->getEmptyList() : ctx->newList();
         const proto::ProtoObject* result = boolMethod->asMethod(ctx)(ctx, obj, nullptr, emptyL, nullptr);
         if (result == PROTO_FALSE) return false;
@@ -1692,7 +1695,7 @@ static bool isTruthy(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
     // __len__ fallback (before native checks so custom containers win).
     const proto::ProtoString* lenS = env ? env->getLenString() : PythonEnvironment::getInternedString(ctx, "__len__");
     const proto::ProtoObject* lenMethod = cls ? cls->getAttribute(ctx, lenS) : obj->getAttribute(ctx, lenS);
-    if (lenMethod && lenMethod->asMethod(ctx)) {
+    if (lenMethod && lenMethod != PROTO_NONE && lenMethod->asMethod(ctx)) {
         const proto::ProtoList* emptyL = env ? env->getEmptyList() : ctx->newList();
         const proto::ProtoObject* result = lenMethod->asMethod(ctx)(ctx, obj, nullptr, emptyL, nullptr);
         if (result && result->isInteger(ctx)) {
@@ -1700,10 +1703,14 @@ static bool isTruthy(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
         }
     }
 
-    // Native container checks for raw Proto objects that have no Python class wrapper.
+    // Native container fallbacks: only when `obj` *is* a raw container of
+    // that tag — never via asSparseList, which silently follows the
+    // `__data__` chain and reports a *generic* user-class instance as a
+    // size-0 sparseList (every `if some_user_object:` then evaluates
+    // false). For dict-backed objects, the user-visible `dict.__bool__`
+    // binding handles truthiness above.
     if (obj->asTuple(ctx)) return (obj->asTuple(ctx)->getSize(ctx) > 0);
     if (obj->asList(ctx)) return (obj->asList(ctx)->getSize(ctx) > 0);
-    if (obj->asSparseList(ctx)) return (obj->asSparseList(ctx)->getSize(ctx) > 0);
 
     return true;
 }
