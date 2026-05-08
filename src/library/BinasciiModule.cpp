@@ -188,9 +188,17 @@ static const proto::ProtoObject* py_a2b_base64(
     if (!posArgs || posArgs->getSize(ctx) < 1) return make_bytes(ctx, "");
     std::string src = obj_to_bytes(ctx, posArgs->getAt(ctx, 0));
 
+    // CPython's a2b_base64 (non-validate mode) silently skips
+    // anything outside [A-Za-z0-9+/=] — not just whitespace, but
+    // any garbage byte. The test_b64decode_invalid_chars test feeds
+    // `b'%3d=='` expecting the `%` to be ignored and `3d==` to
+    // decode to `\xdd`. Previously we only filtered whitespace, so
+    // the invalid char broke the alignment and the decode loop
+    // bailed at the first negative b64_decode_char return.
     std::string filtered;
+    filtered.reserve(src.size());
     for (char c : src) {
-        if (c != '\n' && c != '\r' && c != ' ' && c != '\t') filtered += c;
+        if (b64_decode_char(c) >= 0 || c == '=') filtered += c;
     }
 
     std::string out;
