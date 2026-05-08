@@ -27,7 +27,16 @@ struct LockData {
 struct RLockData {
     std::recursive_mutex m;
     std::atomic<int> count{0};
+    // Owner thread id at the moment of acquisition. CPython's RLock
+    // raises RuntimeError on release-from-non-owner; protoPython
+    // previously had no ownership tracking so a misused RLock was
+    // silent UB. 0 means "not currently held by anyone".
+    std::atomic<long long> owner{0};
 };
+
+/** Return current OS thread id. Forward-declared so RLock owner
+ *  tracking in acquire/release can call it before the definition. */
+static long long current_thread_id();
 
 static void mutex_finalizer(void* ptr) {
     delete static_cast<LockData*>(ptr);
@@ -111,10 +120,12 @@ static const proto::ProtoObject* py_rlock_acquire(
     if (blocking) {
         ld->m.lock();
         ld->count++;
+        ld->owner.store(current_thread_id(), std::memory_order_release);
         return PROTO_TRUE;
     }
     if (ld->m.try_lock()) {
         ld->count++;
+        ld->owner.store(current_thread_id(), std::memory_order_release);
         return PROTO_TRUE;
     }
     return PROTO_FALSE;
@@ -134,10 +145,25 @@ static const proto::ProtoObject* py_rlock_release(
     const proto::ProtoExternalPointer* ext = handle->asExternalPointer(ctx);
     if (!ext) return PROTO_NONE;
     RLockData* ld = static_cast<RLockData*>(ext->getPointer(ctx));
-    if (ld) {
-        ld->count--;
-        ld->m.unlock();
+    if (!ld) return PROTO_NONE;
+
+    // CPython: releasing an RLock from a thread other than the
+    // current owner raises RuntimeError("cannot release un-acquired
+    // lock"). The previous code blindly decrement-and-unlocked, so a
+    // cross-thread release was silent UB (the recursive_mutex would
+    // throw or assert under -O0, but produced nothing under -O3).
+    long long me = current_thread_id();
+    long long current_owner = ld->owner.load(std::memory_order_acquire);
+    if (current_owner == 0 || current_owner != me) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+        if (env) env->raiseRuntimeError(ctx, "cannot release un-acquired lock");
+        return nullptr;
     }
+    int new_count = --ld->count;
+    if (new_count == 0) {
+        ld->owner.store(0, std::memory_order_release);
+    }
+    ld->m.unlock();
     return PROTO_NONE;
 }
 
@@ -282,13 +308,23 @@ static const proto::ProtoObject* py_start_new_thread(
     return ctx->fromInteger(reinterpret_cast<uintptr_t>(thread));
 }
 
+// _thread._log_thread_ident — diagnostic hook used by threading.py to
+// log the spawning thread's identity. Previous body was a literal
+// `return PROTO_NONE; return PROTO_NONE;` (dead second statement).
+// We now log to stderr only when PROTO_THREAD_DIAG is set so tests
+// stay quiet by default but operators have a hook to trace
+// spawn-time identity when debugging.
 static const proto::ProtoObject* py_log_thread_ident(
     proto::ProtoContext* ctx,
     const proto::ProtoObject* /*self*/,
     const proto::ParentLink* /*parentLink*/,
-    const proto::ProtoList* posArgs,
+    const proto::ProtoList* /*posArgs*/,
     const proto::ProtoSparseList* /*kwargs*/) {
-    return PROTO_NONE;
+    if (std::getenv("PROTO_THREAD_DIAG")) {
+        fprintf(stderr, "[thread] ident=%lld\n",
+            static_cast<long long>(current_thread_id()));
+        fflush(stderr);
+    }
     return PROTO_NONE;
 }
 
@@ -534,10 +570,38 @@ static const proto::ProtoObject* py_daemon_threads_allowed(
     return PROTO_TRUE;
 }
 
+// _thread._shutdown — invoked by threading.py at interpreter exit.
+// CPython joins every non-daemon thread so they finish their work
+// (e.g. flushing buffered output) before main returns. Previously
+// this was a no-op, so background workers spawned via
+// `threading.Thread(target=…)` without explicit `.join()` would
+// be killed mid-write at process exit and silently lose data.
+//
+// We don't track daemon-vs-non-daemon yet (CPython exposes it via
+// the .daemon Python attribute, but protoPython's
+// _thread.start_new_thread predates that gate); for now we join
+// every live thread we can see in `space->threads`. The known cost
+// is that a daemon-style worker that wants to be killed on exit
+// will block shutdown — but that mirrors the conservative choice
+// CPython makes when daemon flags aren't set (default is
+// non-daemon).
 static const proto::ProtoObject* py_shutdown(
     proto::ProtoContext* ctx,
     const proto::ProtoObject*, const proto::ParentLink*,
     const proto::ProtoList*, const proto::ProtoSparseList*) {
+    if (!ctx || !ctx->space || !ctx->space->threads) return PROTO_NONE;
+    const proto::ProtoSparseListIterator* it = ctx->space->threads->getIterator(ctx);
+    while (it && it->hasNext(ctx)) {
+        const proto::ProtoObject* val = it->nextValue(ctx);
+        it = const_cast<proto::ProtoSparseListIterator*>(it)->advance(ctx);
+        if (!val || val == PROTO_NONE) continue;
+        const proto::ProtoExternalPointer* ext = val->asExternalPointer(ctx);
+        proto::ProtoThread* t = nullptr;
+        if (ext) {
+            t = static_cast<proto::ProtoThread*>(ext->getPointer(ctx));
+        }
+        if (t) t->join(ctx);
+    }
     return PROTO_NONE;
 }
 
