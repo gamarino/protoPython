@@ -31,8 +31,26 @@ static std::string obj_to_bytes(proto::ProtoContext* ctx, const proto::ProtoObje
         obj->asString(ctx)->toUTF8String(ctx, s);
         return s;
     }
+    // Direct ByteBuffer cell — read its octets directly.
+    if (const proto::ProtoByteBuffer* bb = obj->asByteBuffer(ctx)) {
+        unsigned long n = bb->getSize(ctx);
+        std::string out(n, '\0');
+        for (unsigned long i = 0; i < n; ++i) {
+            out[i] = static_cast<char>(static_cast<unsigned char>(bb->getAt(ctx, i)));
+        }
+        return out;
+    }
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (env) {
+        // memoryview wrapper: __mv_data__ holds the underlying bytes /
+        // bytearray / ByteBuffer. Recurse to extract the raw octets so
+        // base64.b64encode(memoryview(b'…')) and friends round-trip.
+        const proto::ProtoObject* mv = obj->getAttribute(ctx,
+            PythonEnvironment::getInternedString(ctx, "__mv_data__"));
+        if (mv && mv != PROTO_NONE && mv != obj) {
+            return obj_to_bytes(ctx, mv);
+        }
+
         const proto::ProtoObject* data = obj->getAttribute(ctx, env->getDataString());
         if (data && data != PROTO_NONE) {
             // Preferred form: ProtoByteBuffer with raw octets (preserves

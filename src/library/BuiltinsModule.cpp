@@ -2212,6 +2212,44 @@ static const proto::ProtoObject* py_memoryview(
         ndim = 1;
     }
 
+    // Case 2b: input is a `bytes` / `bytearray` instance — protoPython
+    // stores those as object handles whose `__data__` attribute holds
+    // the underlying ProtoString. Without this branch every `bytes`
+    // passed to `memoryview()` falls through to the "bytes-like
+    // required" raise (the literal type the user sent in!), which
+    // breaks every base64 / binascii / struct test that round-trips
+    // its input through a memoryview view.
+    if (!bytesData && env) {
+        const proto::ProtoString* dataS = env->getDataString();
+        const proto::ProtoObject* dataAttr = obj->getAttribute(context, dataS);
+        // protoPython stores `bytes` payloads either as a ProtoString
+        // (legacy / interned literals) or as a POINTER_TAG_BYTE_BUFFER
+        // cell (typical heap-allocated bytes). Without this branch
+        // every modern bytes object falls through to the "bytes-like
+        // required" raise.
+        //
+        // We store the *outer wrapper* (`obj` itself) on __mv_data__
+        // rather than the inner ByteBuffer cell. Storing the raw
+        // ByteBuffer would surface as `<object>` to callers like
+        // base64.b64encode that expect a real `bytes` value when they
+        // pull __mv_data__ back out — losing the type identity that
+        // makes downstream `bytes(...)` / repr / iteration work.
+        if (dataAttr && (dataAttr->isString(context) || dataAttr->isByteBuffer(context))) {
+            bytesData = obj;
+            format = "B";
+            ndim = 1;
+        }
+    }
+    // Direct bytes/bytearray case: the input *itself* is a raw byte
+    // buffer cell (no wrapping object — some construction paths in
+    // stdlib reach memoryview() this way). Wrap it as a bytes
+    // instance so __mv_data__ carries a Python-visible bytes value.
+    if (!bytesData && obj->isByteBuffer(context)) {
+        bytesData = obj;
+        format = "B";
+        ndim = 1;
+    }
+
     // Case 3: input has _data attribute (our array stub stores bytes there)
     if (!bytesData) {
         const proto::ProtoObject* arrData = obj->getAttribute(context, PythonEnvironment::getInternedString(context, "_data"));
@@ -2243,7 +2281,21 @@ static const proto::ProtoObject* py_memoryview(
         return PROTO_NONE;
     }
 
-    int64_t totalBytes = bytesData->isString(context) ? (int64_t)bytesData->asString(context)->getSize(context) : 0;
+    int64_t totalBytes = 0;
+    if (bytesData->isString(context)) {
+        totalBytes = (int64_t)bytesData->asString(context)->getSize(context);
+    } else if (bytesData->isByteBuffer(context)) {
+        totalBytes = (int64_t)bytesData->asByteBuffer(context)->getSize(context);
+    } else if (env) {
+        // Wrapper case: bytesData is a bytes/bytearray instance —
+        // walk into __data__ to read the actual byte count.
+        const proto::ProtoObject* inner = bytesData->getAttribute(context, env->getDataString());
+        if (inner && inner->isString(context)) {
+            totalBytes = (int64_t)inner->asString(context)->getSize(context);
+        } else if (inner && inner->isByteBuffer(context)) {
+            totalBytes = (int64_t)inner->asByteBuffer(context)->getSize(context);
+        }
+    }
 
     // Create the memoryview instance as a child of the class
     proto::ProtoObject* instance = const_cast<proto::ProtoObject*>(cls->newChild(context, true));
@@ -6858,6 +6910,27 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
     memoryviewClass = memoryviewClass->setAttribute(ctx, pEnv ? pEnv->getInitString() : PythonEnvironment::getInternedString(ctx, "__init__"), ctx->fromMethod(nullptr, py_python_ignore_init));
     memoryviewClass = memoryviewClass->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "tobytes"), ctx->fromMethod(nullptr, py_memoryview_tobytes));
     memoryviewClass = memoryviewClass->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "cast"), ctx->fromMethod(nullptr, py_memoryview_cast_method));
+    // PEP 3118 essentials: stdlib code routinely calls `len(mv)` and
+    // `bytes(mv)` on memoryview, both of which previously raised because
+    // memoryview only had tobytes() and cast(). __len__ returns nbytes
+    // (we always store format "B" with itemsize 1, so byte count IS
+    // the length). __bytes__ returns the wrapped bytes payload.
+    memoryviewClass = memoryviewClass->setAttribute(ctx,
+        PythonEnvironment::getInternedString(ctx, "__len__"),
+        ctx->fromMethod(nullptr,
+            [](proto::ProtoContext* c,
+               const proto::ProtoObject* self,
+               const proto::ParentLink*,
+               const proto::ProtoList*,
+               const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+                const proto::ProtoObject* nb = self->getAttribute(c,
+                    PythonEnvironment::getInternedString(c, "nbytes"));
+                if (nb && nb->isInteger(c)) return nb;
+                return c->fromInteger(0);
+            }));
+    memoryviewClass = memoryviewClass->setAttribute(ctx,
+        PythonEnvironment::getInternedString(ctx, "__bytes__"),
+        ctx->fromMethod(nullptr, py_memoryview_tobytes));
     builtins = builtins->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "memoryview"), memoryviewClass);
     builtins = builtins->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "super"), ctx->fromMethod(const_cast<proto::ProtoObject*>(builtins), py_super));
     const proto::ProtoObject* propertyProto = ctx->newObject(false);
