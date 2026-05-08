@@ -5090,6 +5090,64 @@ static const proto::ProtoObject* py_int_xor(
     return py_int_arith(ctx, self, args, TokenType::BitXor);
 }
 
+// int.__lt__/__le__/__gt__/__ge__/__eq__/__ne__: comparison dunders
+// missing from intPrototype.  Returns NotImplemented when the other
+// operand isn't numeric (CPython parity), otherwise the boolean
+// result of the requested comparison.
+enum class IntCmp { Lt, Le, Gt, Ge, Eq, Ne };
+static const proto::ProtoObject* py_int_cmp(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self,
+    const proto::ProtoList* args, IntCmp op) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!args) return PROTO_NONE;
+    const proto::ProtoObject* a = self;
+    const proto::ProtoObject* b = nullptr;
+    bool selfIsIntInstance = self && (self->isInteger(ctx) || self->isBoolean(ctx));
+    if (!selfIsIntInstance) {
+        if (args->getSize(ctx) < 2) return env ? env->getNotImplementedPrototype() : PROTO_NONE;
+        a = args->getAt(ctx, 0);
+        b = args->getAt(ctx, 1);
+    } else {
+        if (args->getSize(ctx) < 1) return PROTO_NONE;
+        b = args->getAt(ctx, 0);
+    }
+    if (!a || !b) return PROTO_NONE;
+    auto coerce = [&](const proto::ProtoObject* x) -> const proto::ProtoObject* {
+        if (x == PROTO_TRUE) return ctx->fromInteger(1);
+        if (x == PROTO_FALSE) return ctx->fromInteger(0);
+        return x;
+    };
+    a = coerce(a);
+    b = coerce(b);
+    bool rhsNumeric = b->isInteger(ctx) || b->isBoolean(ctx) || b->isFloat(ctx);
+    if (!rhsNumeric) {
+        const proto::ProtoString* dataS = env ? env->getDataString() : PythonEnvironment::getInternalString(ctx, "__data__");
+        const proto::ProtoObject* d = b->getAttribute(ctx, dataS);
+        if (d && (d->isInteger(ctx) || d->isFloat(ctx))) {
+            b = d;
+        } else {
+            return env ? env->getNotImplementedPrototype() : PROTO_NONE;
+        }
+    }
+    int cmp = a->compare(ctx, b);  // -1, 0, 1
+    bool result = false;
+    switch (op) {
+        case IntCmp::Lt: result = cmp <  0; break;
+        case IntCmp::Le: result = cmp <= 0; break;
+        case IntCmp::Gt: result = cmp >  0; break;
+        case IntCmp::Ge: result = cmp >= 0; break;
+        case IntCmp::Eq: result = cmp == 0; break;
+        case IntCmp::Ne: result = cmp != 0; break;
+    }
+    return result ? PROTO_TRUE : PROTO_FALSE;
+}
+static const proto::ProtoObject* py_int_lt(proto::ProtoContext* c, const proto::ProtoObject* s, const proto::ParentLink*, const proto::ProtoList* a, const proto::ProtoSparseList*) { return py_int_cmp(c, s, a, IntCmp::Lt); }
+static const proto::ProtoObject* py_int_le(proto::ProtoContext* c, const proto::ProtoObject* s, const proto::ParentLink*, const proto::ProtoList* a, const proto::ProtoSparseList*) { return py_int_cmp(c, s, a, IntCmp::Le); }
+static const proto::ProtoObject* py_int_gt(proto::ProtoContext* c, const proto::ProtoObject* s, const proto::ParentLink*, const proto::ProtoList* a, const proto::ProtoSparseList*) { return py_int_cmp(c, s, a, IntCmp::Gt); }
+static const proto::ProtoObject* py_int_ge(proto::ProtoContext* c, const proto::ProtoObject* s, const proto::ParentLink*, const proto::ProtoList* a, const proto::ProtoSparseList*) { return py_int_cmp(c, s, a, IntCmp::Ge); }
+static const proto::ProtoObject* py_int_eq(proto::ProtoContext* c, const proto::ProtoObject* s, const proto::ParentLink*, const proto::ProtoList* a, const proto::ProtoSparseList*) { return py_int_cmp(c, s, a, IntCmp::Eq); }
+static const proto::ProtoObject* py_int_ne(proto::ProtoContext* c, const proto::ProtoObject* s, const proto::ParentLink*, const proto::ProtoList* a, const proto::ProtoSparseList*) { return py_int_cmp(c, s, a, IntCmp::Ne); }
+
 // int.__pow__(self, exp[, mod]): exponentiation. Negative exp returns float
 // (matches CPython 3.x). With mod, computes modular exponentiation.
 static const proto::ProtoObject* py_int_pow(
@@ -11395,6 +11453,12 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
         intPrototype = intPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__and__"), rootContext_->fromMethod(nullptr, py_int_and));
         intPrototype = intPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__or__"), rootContext_->fromMethod(nullptr, py_int_or));
         intPrototype = intPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__xor__"), rootContext_->fromMethod(nullptr, py_int_xor));
+        intPrototype = intPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__lt__"), rootContext_->fromMethod(nullptr, py_int_lt));
+        intPrototype = intPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__le__"), rootContext_->fromMethod(nullptr, py_int_le));
+        intPrototype = intPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__gt__"), rootContext_->fromMethod(nullptr, py_int_gt));
+        intPrototype = intPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__ge__"), rootContext_->fromMethod(nullptr, py_int_ge));
+        intPrototype = intPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__eq__"), rootContext_->fromMethod(nullptr, py_int_eq));
+        intPrototype = intPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__ne__"), rootContext_->fromMethod(nullptr, py_int_ne));
         space_->smallIntegerPrototype = const_cast<proto::ProtoObject*>(intPrototype);
     }
 
