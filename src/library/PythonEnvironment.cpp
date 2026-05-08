@@ -6151,13 +6151,23 @@ static const proto::ProtoObject* py_bytes_translate(
         }
     }
 
-    // Collect delete set
+    // Collect delete set. CPython accepts `delete` either as the
+    // second positional or as a keyword. base64.b16decode passes it
+    // by keyword (`s.translate(None, delete=b'0123…')`); the
+    // previous positional-only check missed that and the function
+    // returned the input unchanged, breaking b16decode's validity
+    // gate.
     std::string del_str;
+    const proto::ProtoObject* delObj = nullptr;
     if (posArgs->getSize(context) >= 2) {
-        const proto::ProtoObject* delObj = posArgs->getAt(context, 1);
-        if (delObj && delObj != PROTO_NONE) {
-            bytes_view(context, delObj, del_str);
-        }
+        delObj = posArgs->getAt(context, 1);
+    } else if (kwargs) {
+        const proto::ProtoString* delS =
+            PythonEnvironment::getInternedString(context, "delete");
+        delObj = kwargs->getAt(context, delS->getHash(context));
+    }
+    if (delObj && delObj != PROTO_NONE) {
+        bytes_view(context, delObj, del_str);
     }
 
     std::string out;
