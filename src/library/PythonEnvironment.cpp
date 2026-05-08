@@ -11633,10 +11633,15 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     complexPrototype = complexPrototype->setAttribute(rootContext_, py_class, typePrototype);
     complexPrototype = complexPrototype->setAttribute(rootContext_, py_name, PythonEnvironment::getInternedString(rootContext_, "complex")->asObject(rootContext_));
     complexPrototype = complexPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__qualname__"), PythonEnvironment::getInternedString(rootContext_, "complex")->asObject(rootContext_));
-    complexPrototype = complexPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_type_repr));
-    complexPrototype = complexPrototype->setAttribute(rootContext_, py_str, rootContext_->fromMethod(nullptr, py_type_repr));
+    complexPrototype = complexPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, protoPython::builtins::py_complex_repr));
+    complexPrototype = complexPrototype->setAttribute(rootContext_, py_str, rootContext_->fromMethod(nullptr, protoPython::builtins::py_complex_repr));
     complexPrototype = complexPrototype->setAttribute(rootContext_, py_module, builtinsVal);
-    complexPrototype = complexPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__call__"), rootContext_->fromMethod(nullptr, protoPython::builtins::py_complex));
+    // Construction goes through type.__call__ → cls.__new__, so register
+    // py_complex as __new__ (not __call__).  Previously this slot held
+    // __call__, which is invoked when an *instance* of the class is
+    // called — never on construction — so `complex(1, 2)` returned a
+    // bare wrapper without .real/.imag.
+    complexPrototype = complexPrototype->setAttribute(rootContext_, newString, rootContext_->fromMethod(nullptr, protoPython::builtins::py_complex));
 
     // 1. Retrieve authoritative prototypes from ProtoSpace.
     // protoCore initialises each space_->Xprototype to objectPrototype

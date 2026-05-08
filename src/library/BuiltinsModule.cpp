@@ -677,9 +677,21 @@ const proto::ProtoObject* py_complex(
     
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     size_t argCount = positionalParameters ? positionalParameters->getSize(context) : 0;
-    
+    // py_complex runs as cls.__new__(cls, real, imag); skip the cls
+    // slot at positionalParameters[0].  Earlier this was registered as
+    // __call__ so [0] was real; under __new__ it shifts by one.
+    // Detect cls by negative: a non-numeric first positional is the
+    // class object (covers complex itself and any user subclass).
+    size_t base = 0;
     if (argCount >= 1) {
-        const proto::ProtoObject* rObj = positionalParameters->getAt(context, 0);
+        const proto::ProtoObject* first = positionalParameters->getAt(context, 0);
+        bool isNumeric = first && (first->isDouble(context)
+            || first->isInteger(context) || first->isString(context));
+        if (!isNumeric) base = 1;
+    }
+
+    if (argCount >= base + 1) {
+        const proto::ProtoObject* rObj = positionalParameters->getAt(context, base);
         if (rObj->isDouble(context)) real = rObj->asDouble(context);
         else if (rObj->isInteger(context)) real = (double)rObj->asLong(context);
         else if (rObj->isString(context)) {
@@ -689,8 +701,8 @@ const proto::ProtoObject* py_complex(
             try { real = std::stod(s); } catch(...) {}
         }
     }
-    if (argCount >= 2) {
-        const proto::ProtoObject* iObj = positionalParameters->getAt(context, 1);
+    if (argCount >= base + 2) {
+        const proto::ProtoObject* iObj = positionalParameters->getAt(context, base + 1);
         if (iObj->isDouble(context)) imag = iObj->asDouble(context);
         else if (iObj->isInteger(context)) imag = (double)iObj->asLong(context);
     }
