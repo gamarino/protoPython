@@ -982,23 +982,66 @@ static const proto::ProtoObject* py_object_get_dict(
     // Create a new dict object
     proto::ProtoObject* d = const_cast<proto::ProtoObject*>(dictProto->newChild(context, true));
 
-    // Decide which storage slots to mirror.  If __data__ exists but is not
-    // a SparseList (built-in subclass case), use __pydict_data__/__pydict_keys__.
+    // Decide which storage slots to mirror.  If __data__ exists but is
+    // not a SparseList (built-in subclass case), build a fresh snapshot
+    // from the instance's own attributes — that way native setattr
+    // (`a.foo = 42`, OP_STORE_ATTR) is reflected in `a.__dict__`.
     const proto::ProtoString* canonicalDataS = env->getDataString();
     const proto::ProtoString* canonicalKeysS = env->getKeysString();
     const proto::ProtoString* dataS = canonicalDataS;
     const proto::ProtoString* keysS = canonicalKeysS;
+    bool isBuiltinSubclass = false;
     {
         const proto::ProtoObject* probeData = mutableSelf->hasOwnAttribute(context, canonicalDataS) == PROTO_TRUE
             ? mutableSelf->getAttribute(context, canonicalDataS) : nullptr;
         if (probeData && probeData != PROTO_NONE && !probeData->asSparseList(context)) {
-            dataS = PythonEnvironment::getInternedString(context, "__pydict_data__");
-            keysS = PythonEnvironment::getInternedString(context, "__pydict_keys__");
+            isBuiltinSubclass = true;
         }
     }
 
-    const proto::ProtoObject* data = mutableSelf->getAttribute(context, dataS);
-    const proto::ProtoObject* keys = mutableSelf->getAttribute(context, keysS);
+    const proto::ProtoObject* data = nullptr;
+    const proto::ProtoObject* keys = nullptr;
+    if (isBuiltinSubclass) {
+        // Snapshot: walk the own-attribute SparseList, skip the
+        // built-in's internal slots and our own __pydict_* book-keeping,
+        // and build fresh __data__/__keys__ for the proxy.
+        const proto::ProtoSparseList* attrs = mutableSelf->getOwnAttributes(context);
+        const proto::ProtoSparseList* dl = context->newSparseList();
+        const proto::ProtoList* kl = context->newList();
+        if (attrs) {
+            struct Snapshot {
+                proto::ProtoContext* ctx;
+                const proto::ProtoSparseList* dl;
+                const proto::ProtoList* kl;
+            } sn{context, dl, kl};
+            attrs->processElements(context, &sn,
+                +[](proto::ProtoContext* ctx, void* userData,
+                    unsigned long key, const proto::ProtoObject* val) {
+                    Snapshot* s = static_cast<Snapshot*>(userData);
+                    const proto::ProtoObject* keyObj = reinterpret_cast<const proto::ProtoObject*>(key);
+                    if (!keyObj || !keyObj->isString(ctx)) return;
+                    const proto::ProtoString* ks = keyObj->asString(ctx);
+                    std::string nm; ks->toUTF8String(ctx, nm);
+                    // Skip the built-in storage and class hooks.
+                    if (nm == "__data__" || nm == "__keys__"
+                        || nm == "__pydict_data__" || nm == "__pydict_keys__"
+                        || nm == "__class__" || nm == "__is_python_class__"
+                        || nm == "__name__" || nm == "__bases__"
+                        || nm == "__mro__") return;
+                    s->dl = s->dl->setAt(ctx, ks->getHash(ctx), val);
+                    if (!s->kl->has(ctx, keyObj)) {
+                        s->kl = s->kl->appendLast(ctx, keyObj);
+                    }
+                });
+            dl = sn.dl;
+            kl = sn.kl;
+        }
+        data = dl->asObject(context);
+        keys = kl->asObject(context);
+    } else {
+        data = mutableSelf->getAttribute(context, dataS);
+        keys = mutableSelf->getAttribute(context, keysS);
+    }
 
     // The proxy itself is a regular Python dict, so its own storage MUST
     // live under __data__/__keys__ regardless of which slots back the
