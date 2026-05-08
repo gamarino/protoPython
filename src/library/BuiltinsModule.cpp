@@ -374,14 +374,23 @@ static const proto::ProtoObject* py_len(
                 return res;
             }
         } else {
-            // Python user `def __len__(self)`: prepend self for invokeCallable.
-            const proto::ProtoString* codeS = env ? env->getCodeString() : PythonEnvironment::getInternedString(context, "__code__");
-            if (codeS && lenMethod->hasOwnAttribute(context, codeS) == PROTO_TRUE) {
-                const proto::ProtoList* args = context->newList()->appendLast(context, obj);
-                const proto::ProtoObject* res = ::protoPython::invokePythonCallable(context, lenMethod, args, nullptr);
-                if (res && res != PROTO_NONE && res->isInteger(context)) {
-                    return res;
-                }
+            // Python-level callable: covers user `def __len__(self)`
+            // (a function object with __code__) AND any callable
+            // surrogate that implements __call__ at the type level
+            // — including the bound-method form delivered by some
+            // protoPython lookup paths. Previously this branch only
+            // accepted `lenMethod->hasOwnAttribute(__code__)` as the
+            // gate, which missed bound methods (the bound wrapper
+            // doesn't have __code__ as own attr — the underlying
+            // function does). For a user class `class A: def
+            // __len__(self): return 42`, the missed gate left
+            // `len(A())` falling through to the "no len()" raise.
+            // invokeCallable handles both forms uniformly via its
+            // own asMethod / __code__ probe; trust it.
+            const proto::ProtoList* args = context->newList()->appendLast(context, obj);
+            const proto::ProtoObject* res = ::protoPython::invokePythonCallable(context, lenMethod, args, nullptr);
+            if (res && res != PROTO_NONE && res->isInteger(context)) {
+                return res;
             }
         }
     }

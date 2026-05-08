@@ -5167,19 +5167,45 @@ static bool bytes_view(proto::ProtoContext* context,
         out.assign(bb->getBuffer(context), n);
         return true;
     }
+    // memoryview: __mv_data__ holds the underlying bytes / bytearray
+    // / ByteBuffer. Recurse so callers (bytes.maketrans / translate
+    // / etc.) accept memoryview altchars correctly.
+    const proto::ProtoObject* mv = obj->getAttribute(context,
+        PythonEnvironment::getInternalString(context, "__mv_data__"));
+    if (mv && mv != PROTO_NONE && mv != obj) {
+        return bytes_view(context, mv, out);
+    }
     const proto::ProtoObject* data = obj->getAttribute(context,
         PythonEnvironment::getInternalString(context, "__data__"));
-    if (!data) return false;
-    if (data->isByteBuffer(context)) {
-        const proto::ProtoByteBuffer* bb = data->asByteBuffer(context);
-        unsigned long n = bb->getSize(context);
-        out.assign(bb->getBuffer(context), n);
-        return true;
+    if (data && data != PROTO_NONE) {
+        if (data->isByteBuffer(context)) {
+            const proto::ProtoByteBuffer* bb = data->asByteBuffer(context);
+            unsigned long n = bb->getSize(context);
+            out.assign(bb->getBuffer(context), n);
+            return true;
+        }
+        if (data->isString(context)) {
+            out.clear();
+            data->asString(context)->toUTF8String(context, out);
+            return true;
+        }
     }
-    if (data->isString(context)) {
-        out.clear();
-        data->asString(context)->toUTF8String(context, out);
-        return true;
+    // array.array exposes raw octets via `_data` (the lib's own
+    // attribute) and via `tobytes()` (the public buffer-protocol
+    // bridge). Both are recursive — the inner value is a bytes
+    // wrapper or ProtoString that the cases above will accept.
+    const proto::ProtoObject* underData = obj->getAttribute(context,
+        PythonEnvironment::getInternalString(context, "_data"));
+    if (underData && underData != PROTO_NONE && underData != obj) {
+        return bytes_view(context, underData, out);
+    }
+    const proto::ProtoObject* tobytesM = obj->getAttribute(context,
+        PythonEnvironment::getInternedString(context, "tobytes"));
+    if (tobytesM && tobytesM != PROTO_NONE && tobytesM->asMethod(context)) {
+        const proto::ProtoObject* res = tobytesM->asMethod(context)(context,
+            const_cast<proto::ProtoObject*>(obj),
+            nullptr, context->newList(), nullptr);
+        if (res && res != obj) return bytes_view(context, res, out);
     }
     return false;
 }
