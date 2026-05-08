@@ -4285,6 +4285,33 @@ const proto::ProtoObject* py_type(
         const proto::ProtoObject* basesArg = positionalParameters->getAt(context, baseIdx + 1);
         const proto::ProtoObject* dict = positionalParameters->getAt(context, baseIdx + 2);
 
+        // CPython marks certain primitive prototypes as "final" (cannot
+        // be subclassed): NoneType, bool, NotImplementedType, etc.
+        // Reject those bases here, before any allocation happens.
+        if (env && basesArg) {
+            const proto::ProtoList* basesL = basesArg->asList(context);
+            const proto::ProtoTuple* basesT = basesArg->asTuple(context);
+            unsigned long n = basesL ? basesL->getSize(context) : (basesT ? basesT->getSize(context) : 0UL);
+            for (unsigned long i = 0; i < n; ++i) {
+                const proto::ProtoObject* base = basesL ? basesL->getAt(context, i)
+                                                        : basesT->getAt(context, i);
+                bool isFinal = false;
+                std::string baseName;
+                if (base == env->getNoneTypePrototype())
+                    { isFinal = true; baseName = "NoneType"; }
+                else if (base == env->getBoolPrototype())
+                    { isFinal = true; baseName = "bool"; }
+                else if (env->getNotImplementedPrototype()
+                         && base == env->getType(context, env->getNotImplementedPrototype()))
+                    { isFinal = true; baseName = "NotImplementedType"; }
+                if (isFinal) {
+                    env->raiseTypeError(context,
+                        "type '" + baseName + "' is not an acceptable base type");
+                    return nullptr;
+                }
+            }
+        }
+
         const proto::ProtoObject* targetClass = context->newObject(true);
         
         // Add metaclass first so that its attributes are searched after the class MRO bases 
