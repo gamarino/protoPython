@@ -54,7 +54,19 @@ static const proto::ProtoObject* py_warnings_warn(
         }
     }
 
-    
+    // Actually emit the warning. Previously this function computed
+    // msgStr and catStr and then immediately returned PROTO_NONE
+    // without writing anywhere — the strings were dead local state.
+    // CPython's `_warnings.warn` prints "<file>:<line>: <Category>:
+    // <message>" to stderr by default; we keep the format simple
+    // (no source-location data is reliably available at this layer
+    // yet) but at least the warning is now visible. Suppression
+    // honours PYTHONDONTWRITEWARNINGS to match the canonical env
+    // var, plus PROTOPY_QUIET_WARNINGS for tests that want noise-
+    // free output.
+    if (!std::getenv("PYTHONDONTWRITEWARNINGS") && !std::getenv("PROTOPY_QUIET_WARNINGS")) {
+        std::cerr << catStr << ": " << msgStr << std::endl;
+    }
 
     return PROTO_NONE;
 }
