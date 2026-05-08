@@ -1,9 +1,22 @@
 #include <protoPython/MathModule.h>
+#include <protoPython/PythonEnvironment.h>
 #include <cmath>
 #include <limits>
 
 namespace protoPython {
 namespace math {
+
+// Raise math.ValueError(msg). The audit's #1 MathModule finding is
+// that domain-error guards (sqrt(-1), log(0), acos(2), …) silently
+// returned PROTO_NONE — the canonical "where did this NoneType come
+// from" pattern. This helper packages the standard math-domain
+// signal so each guard becomes a one-liner.
+static const proto::ProtoObject* raise_math_domain(proto::ProtoContext* ctx, const char* msg) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (env) env->raiseValueError(ctx,
+        PythonEnvironment::getInternedString(ctx, msg)->asObject(ctx));
+    return nullptr;
+}
 
 static long long getLongSafe(proto::ProtoContext* ctx, const proto::ProtoObject* obj);
 
@@ -37,7 +50,7 @@ static const proto::ProtoObject* py_sqrt(
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     double x = toDouble(ctx, posArgs->getAt(ctx, 0));
-    if (x < 0.0) return PROTO_NONE;
+    if (x < 0.0) return raise_math_domain(ctx, "math domain error");
     return ctx->fromDouble(std::sqrt(x));
 }
 
@@ -70,6 +83,7 @@ static const proto::ProtoObject* py_asin(
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     double x = toDouble(ctx, posArgs->getAt(ctx, 0));
+    if (x < -1.0 || x > 1.0) return raise_math_domain(ctx, "math domain error");
     return ctx->fromDouble(std::asin(x));
 }
 
@@ -78,6 +92,7 @@ static const proto::ProtoObject* py_acos(
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     double x = toDouble(ctx, posArgs->getAt(ctx, 0));
+    if (x < -1.0 || x > 1.0) return raise_math_domain(ctx, "math domain error");
     return ctx->fromDouble(std::acos(x));
 }
 
@@ -201,10 +216,10 @@ static const proto::ProtoObject* py_log(
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     double x = toDouble(ctx, posArgs->getAt(ctx, 0));
-    if (x <= 0.0) return PROTO_NONE;
+    if (x <= 0.0) return raise_math_domain(ctx, "math domain error");
     if (posArgs->getSize(ctx) >= 2) {
         double base = toDouble(ctx, posArgs->getAt(ctx, 1));
-        if (base <= 0.0 || base == 1.0) return PROTO_NONE;
+        if (base <= 0.0 || base == 1.0) return raise_math_domain(ctx, "math domain error");
         return ctx->fromDouble(std::log(x) / std::log(base));
     }
     return ctx->fromDouble(std::log(x));
@@ -225,7 +240,7 @@ static const proto::ProtoObject* py_log10(
             if (n > 0) x = static_cast<double>(n);
         }
     }
-    if (x <= 0.0) return PROTO_NONE;
+    if (x <= 0.0) return raise_math_domain(ctx, "math domain error");
     return ctx->fromDouble(std::log10(x));
 }
 
@@ -234,7 +249,7 @@ static const proto::ProtoObject* py_log2(
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     double x = toDouble(ctx, posArgs->getAt(ctx, 0));
-    if (x <= 0.0) return PROTO_NONE;
+    if (x <= 0.0) return raise_math_domain(ctx, "math domain error");
     return ctx->fromDouble(std::log2(x));
 }
 
@@ -243,7 +258,7 @@ static const proto::ProtoObject* py_log1p(
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     double x = toDouble(ctx, posArgs->getAt(ctx, 0));
-    if (x <= -1.0) return PROTO_NONE;
+    if (x <= -1.0) return raise_math_domain(ctx, "math domain error");
     return ctx->fromDouble(std::log1p(x));
 }
 
@@ -395,10 +410,26 @@ static const proto::ProtoObject* py_factorial(
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     long long n = posArgs->getAt(ctx, 0)->asLong(ctx);
-    if (n < 0) return PROTO_NONE;
+    if (n < 0) {
+        return raise_math_domain(ctx,
+            "factorial() not defined for negative values");
+    }
     if (n == 0) return ctx->fromInteger(1);
     long long r = 1;
-    for (long long i = 2; i <= n; ++i) r *= i;
+    for (long long i = 2; i <= n; ++i) {
+        // Detect overflow: 64-bit factorial overflows at n=21. CPython
+        // promotes to arbitrary-precision int; protoPython's primitive
+        // long long carrier wraps silently, so raise OverflowError as
+        // the explicit signal for now.
+        if (r > std::numeric_limits<long long>::max() / i) {
+            PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+            if (env) env->raiseValueError(ctx,
+                PythonEnvironment::getInternedString(ctx,
+                    "factorial result exceeds 64-bit range")->asObject(ctx));
+            return nullptr;
+        }
+        r *= i;
+    }
     return ctx->fromInteger(r);
 }
 
@@ -444,8 +475,19 @@ static const proto::ProtoObject* py_isqrt(
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     long long n = posArgs->getAt(ctx, 0)->asLong(ctx);
-    if (n < 0) return PROTO_NONE;
+    if (n < 0) {
+        return raise_math_domain(ctx,
+            "isqrt() argument must be nonnegative");
+    }
+    // Newton iteration: more accurate than sqrt(double) round-down for
+    // n > 2^53 where double mantissa precision runs out. Same algorithm
+    // CPython uses (PyLong_isqrt path).
+    if (n < 2) return ctx->fromInteger(n);
     long long r = static_cast<long long>(std::sqrt(static_cast<double>(n)));
+    while (r > 0 && r > n / r) {
+        r = (r + n / r) / 2;
+    }
+    while ((r + 1) <= n / (r + 1)) ++r;
     if (r * r > n) --r;
     return ctx->fromInteger(r);
 }
@@ -455,7 +497,7 @@ static const proto::ProtoObject* py_acosh(
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     double x = toDouble(ctx, posArgs->getAt(ctx, 0));
-    if (x < 1.0) return PROTO_NONE;
+    if (x < 1.0) return raise_math_domain(ctx, "math domain error");
     return ctx->fromDouble(std::acosh(x));
 }
 
@@ -472,7 +514,7 @@ static const proto::ProtoObject* py_atanh(
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     double x = toDouble(ctx, posArgs->getAt(ctx, 0));
-    if (x <= -1.0 || x >= 1.0) return PROTO_NONE;
+    if (x <= -1.0 || x >= 1.0) return raise_math_domain(ctx, "math domain error");
     return ctx->fromDouble(std::atanh(x));
 }
 
