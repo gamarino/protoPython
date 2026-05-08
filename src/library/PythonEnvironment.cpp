@@ -969,25 +969,42 @@ static const proto::ProtoObject* py_object_get_dict(
     // __setitem__ / __delitem__ delegate to env->setAttribute /
     // deleteAttribute on the instance, so `obj.__dict__[key] = value`
     // mutates the instance's attributes (matches CPython semantics).
-    // Reads still go through the shared __data__/__keys__ lists.
+    // Reads still go through the shared __data__/__keys__ lists, except
+    // for built-in subclasses where __data__ already holds the built-in's
+    // internal storage — those use __pydict_data__/__pydict_keys__ instead.
     const proto::ProtoObject* dictProto = env->getDictPrototype();
     if (!dictProto) return PROTO_NONE;
 
-    // Ensure self has dict storage (initializes __data__ and __keys__)
+    // Ensure self has dict storage (initializes __data__/__keys__ or, for
+    // built-in subclasses, __pydict_data__/__pydict_keys__).
     const proto::ProtoObject* mutableSelf = env->initDictStorage(context, self);
 
     // Create a new dict object
     proto::ProtoObject* d = const_cast<proto::ProtoObject*>(dictProto->newChild(context, true));
 
-    // Link the dict's storage to the instance's storage.
-    const proto::ProtoString* dataS = env->getDataString();
-    const proto::ProtoString* keysS = env->getKeysString();
+    // Decide which storage slots to mirror.  If __data__ exists but is not
+    // a SparseList (built-in subclass case), use __pydict_data__/__pydict_keys__.
+    const proto::ProtoString* canonicalDataS = env->getDataString();
+    const proto::ProtoString* canonicalKeysS = env->getKeysString();
+    const proto::ProtoString* dataS = canonicalDataS;
+    const proto::ProtoString* keysS = canonicalKeysS;
+    {
+        const proto::ProtoObject* probeData = mutableSelf->hasOwnAttribute(context, canonicalDataS) == PROTO_TRUE
+            ? mutableSelf->getAttribute(context, canonicalDataS) : nullptr;
+        if (probeData && probeData != PROTO_NONE && !probeData->asSparseList(context)) {
+            dataS = PythonEnvironment::getInternedString(context, "__pydict_data__");
+            keysS = PythonEnvironment::getInternedString(context, "__pydict_keys__");
+        }
+    }
 
     const proto::ProtoObject* data = mutableSelf->getAttribute(context, dataS);
     const proto::ProtoObject* keys = mutableSelf->getAttribute(context, keysS);
 
-    d = const_cast<proto::ProtoObject*>(d->setAttribute(context, dataS, data));
-    d = const_cast<proto::ProtoObject*>(d->setAttribute(context, keysS, keys));
+    // The proxy itself is a regular Python dict, so its own storage MUST
+    // live under __data__/__keys__ regardless of which slots back the
+    // mirrored target.  Always link via the canonical names.
+    d = const_cast<proto::ProtoObject*>(d->setAttribute(context, canonicalDataS, data));
+    d = const_cast<proto::ProtoObject*>(d->setAttribute(context, canonicalKeysS, keys));
 
     // PI: stash a back-reference on the dict so the proxy hooks below
     // can find the instance to write through to.
@@ -1013,10 +1030,20 @@ static const proto::ProtoObject* py_object_get_dict(
             // descriptor short-circuit (which would dispatch __set__ →
             // back into obj.__dict__[key] and recurse).  Mirrors CPython
             // `obj.__dict__[key] = value`: instance dict storage is
-            // updated, descriptors are not invoked.
+            // updated, descriptors are not invoked.  For built-in
+            // subclasses where __data__ holds the built-in's storage,
+            // we route to __pydict_data__/__pydict_keys__ instead.
             const proto::ProtoString* nm = key->asString(ctx);
             const proto::ProtoString* dS = env_->getDataString();
             const proto::ProtoString* kS = env_->getKeysString();
+            {
+                const proto::ProtoObject* probe = tgt->hasOwnAttribute(ctx, dS) == PROTO_TRUE
+                    ? tgt->getAttribute(ctx, dS) : nullptr;
+                if (probe && probe != PROTO_NONE && !probe->asSparseList(ctx)) {
+                    dS = PythonEnvironment::getInternedString(ctx, "__pydict_data__");
+                    kS = PythonEnvironment::getInternedString(ctx, "__pydict_keys__");
+                }
+            }
 
             // 1. Update __data__ sparse list (rebuild and store new pointer).
             const proto::ProtoObject* dataObj = tgt->hasOwnAttribute(ctx, dS) == PROTO_TRUE
@@ -1050,9 +1077,18 @@ static const proto::ProtoObject* py_object_get_dict(
         const proto::ProtoObject* key = args->getAt(ctx, 0);
         if (tgt && tgt != PROTO_NONE && key && key->isString(ctx)) {
             const proto::ProtoString* nm = key->asString(ctx);
-            // Drop from __data__ / __keys__ on the target.
+            // Drop from __data__ / __keys__ on the target (or the
+            // __pydict_* slots for built-in subclasses).
             const proto::ProtoString* dS = env_->getDataString();
             const proto::ProtoString* kS = env_->getKeysString();
+            {
+                const proto::ProtoObject* probe = tgt->hasOwnAttribute(ctx, dS) == PROTO_TRUE
+                    ? tgt->getAttribute(ctx, dS) : nullptr;
+                if (probe && probe != PROTO_NONE && !probe->asSparseList(ctx)) {
+                    dS = PythonEnvironment::getInternedString(ctx, "__pydict_data__");
+                    kS = PythonEnvironment::getInternedString(ctx, "__pydict_keys__");
+                }
+            }
             const proto::ProtoObject* dataObj = tgt->hasOwnAttribute(ctx, dS) == PROTO_TRUE
                 ? tgt->getAttribute(ctx, dS) : nullptr;
             if (dataObj && dataObj->asSparseList(ctx)) {
@@ -16618,6 +16654,30 @@ const proto::ProtoObject* PythonEnvironment::initDictStorage(proto::ProtoContext
     const proto::ProtoObject* d = (currentObj->hasOwnAttribute(ctx, dataName) == PROTO_TRUE) ? currentObj->proto::ProtoObject::getAttribute(ctx, dataName) : nullptr;
     const proto::ProtoObject* k = (currentObj->hasOwnAttribute(ctx, keysName) == PROTO_TRUE) ? currentObj->proto::ProtoObject::getAttribute(ctx, keysName) : nullptr;
 
+    // Built-in subclass case: an instance of e.g. tuple/list/bytes/int subclass
+    // already uses self.__data__ for the built-in's internal storage (a
+    // ProtoTuple, ProtoList, ProtoByteBuffer, etc.) — NOT a SparseList of
+    // attributes.  In that case we keep __data__/__keys__ untouched and use
+    // separate __pydict_data__ / __pydict_keys__ slots for the Python
+    // instance dict storage.  See py_object_get_dict and the proxy
+    // setitem/delitem handlers for the read/write paths.
+    bool dataIsSparse = (d && d != PROTO_NONE && d->asSparseList(ctx) != nullptr);
+    if (d && d != PROTO_NONE && !dataIsSparse) {
+        const proto::ProtoString* pdData =
+            PythonEnvironment::getInternedString(ctx, "__pydict_data__");
+        const proto::ProtoString* pdKeys =
+            PythonEnvironment::getInternedString(ctx, "__pydict_keys__");
+        if (currentObj->hasOwnAttribute(ctx, pdData) == PROTO_FALSE) {
+            currentObj = const_cast<proto::ProtoObject*>(currentObj)
+                ->proto::ProtoObject::setAttribute(ctx, pdData, ctx->newSparseList()->asObject(ctx));
+        }
+        if (currentObj->hasOwnAttribute(ctx, pdKeys) == PROTO_FALSE) {
+            currentObj = const_cast<proto::ProtoObject*>(currentObj)
+                ->proto::ProtoObject::setAttribute(ctx, pdKeys, ctx->newList()->asObject(ctx));
+        }
+        return currentObj;
+    }
+
     if (!d || d == PROTO_NONE) {
         currentObj = const_cast<proto::ProtoObject*>(currentObj)->proto::ProtoObject::setAttribute(ctx, dataName, ctx->newSparseList()->asObject(ctx));
         d = currentObj->proto::ProtoObject::getAttribute(ctx, dataName, false);
@@ -16628,10 +16688,12 @@ const proto::ProtoObject* PythonEnvironment::initDictStorage(proto::ProtoContext
     }
     if (d && d != PROTO_NONE && k && k != PROTO_NONE) {
         const proto::ProtoSparseList* attrs = currentObj->getOwnAttributes(ctx);
-        if (attrs) {
-            SyncContext sCtx = { ctx, 
-                                 const_cast<proto::ProtoSparseList*>(d->asSparseList(ctx)),
-                                 const_cast<proto::ProtoList*>(k->asList(ctx)),
+        const proto::ProtoSparseList* dl = d->asSparseList(ctx);
+        const proto::ProtoList* kl = k->asList(ctx);
+        if (attrs && dl && kl) {
+            SyncContext sCtx = { ctx,
+                                 const_cast<proto::ProtoSparseList*>(dl),
+                                 const_cast<proto::ProtoList*>(kl),
                                  dataName, keysName, 0 };
             attrs->processElements(ctx, &sCtx, syncAttr);
             currentObj = const_cast<proto::ProtoObject*>(currentObj)->proto::ProtoObject::setAttribute(ctx, dataName, sCtx.dataList->asObject(ctx));
