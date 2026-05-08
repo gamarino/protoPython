@@ -4841,6 +4841,35 @@ const proto::ProtoObject* executeBytecodeRange(
         case OP_PUSH_NULL: {
             stack.push_back(nullptr);
         } break;
+        case OP_BUILD_ANNOTATE: {
+            // PEP 649 / 695: synthesise an `__annotate__(format)` callable
+            // closing over the `__annotations__` dict on top of the stack.
+            // Calling it ignores `format` and returns the captured dict
+            // by reference. Sufficient for VALUE format, which is what
+            // test_grammar.py:test_var_annot_simple_exec exercises;
+            // FORWARDREF and STRING formats would require keeping the
+            // unevaluated annotation expressions, which protoPython does
+            // not currently retain — eager evaluation has already happened.
+            //
+            // Implementation note: we make the method cell itself the
+            // callable, with `self` = the annotations dict. invokeCallable
+            // dispatches asMethod natively, so this avoids the
+            // "look up __call__ on type(obj)" path that would require
+            // an entire synthetic class.
+            if (stack.size() < 1) continue;
+            const proto::ProtoObject* annotationsDict = stack.back();
+            stack.pop_back();
+            const proto::ProtoObject* callable = ctx->fromMethod(
+                const_cast<proto::ProtoObject*>(annotationsDict),
+                [](proto::ProtoContext*,
+                   const proto::ProtoObject* self,
+                   const proto::ParentLink*,
+                   const proto::ProtoList*,
+                   const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+                    return self;
+                });
+            stack.push_back(callable);
+        } break;
         case OP_BUILD_STRING: {
             if (stack.size() < static_cast<size_t>(arg)) continue;
             // GC safe: elements remain on stack until buildString returns

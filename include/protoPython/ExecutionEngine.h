@@ -217,6 +217,14 @@ constexpr int OP_IMPORT_STAR = 203;
 constexpr int OP_IMPORT_FROM = 206;
 /** PUSH_NULL: push a nullptr (NULL marker for 3.11+ CALL_FUNCTION). */
 constexpr int OP_PUSH_NULL = 207;
+/** BUILD_ANNOTATE: pop an `__annotations__` dict, push a PEP 649
+ *  callable that returns it for any `format` argument. The compiler
+ *  emits this at the end of a module/class/function body whose source
+ *  contained at least one annotation, so `__annotate__` becomes part
+ *  of the namespace alongside `__annotations__`. The callable closes
+ *  over the dict by reference, so subsequent mutations to
+ *  `__annotations__` are visible — matching CPython 3.14 semantics. */
+constexpr int OP_BUILD_ANNOTATE = 208;
 
 /**
  * @brief Executes a range of bytecode (one basic block). No per-instruction

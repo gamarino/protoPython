@@ -4857,7 +4857,21 @@ bool Compiler::compileModule(ModuleNode* mod) {
         if (statementLeavesValue(mod->body[i].get()))
             emit(OP_POP_TOP, 0);
     }
-    
+
+    // PEP 649 / 695: when the module body contained at least one
+    // top-level annotated assignment, also expose `__annotate__` —
+    // a callable that returns the populated `__annotations__` dict.
+    // Test_var_annot_simple_exec asserts `lns["__annotate__"]` is
+    // present after exec. Emitted at body-end so __annotations__ is
+    // fully populated before being captured.
+    if (anyAnn) {
+        int annIdx = addName("__annotations__");
+        int annotateIdx = addName("__annotate__");
+        emit(OP_LOAD_NAME, (annIdx << 1));
+        emit(OP_BUILD_ANNOTATE, 0);
+        emit(OP_STORE_NAME, (annotateIdx << 1));
+    }
+
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx_);
     int noneIdx = addConstant(env ? env->getNonePrototype() : PROTO_NONE);
     emit(OP_LOAD_CONST, noneIdx);

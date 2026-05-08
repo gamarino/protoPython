@@ -124,7 +124,8 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         {"GEN_START", OP_GEN_START}, {"GET_LEN", OP_GET_LEN},
         {"MATCH_MAPPING", OP_MATCH_MAPPING}, {"MATCH_SEQUENCE", OP_MATCH_SEQUENCE},
         {"EXTENDED_ARG", OP_EXTENDED_ARG}, {"POP_EXCEPT", OP_POP_EXCEPT},
-        {"IMPORT_STAR", OP_IMPORT_STAR}, {"IMPORT_FROM", OP_IMPORT_FROM}
+        {"IMPORT_STAR", OP_IMPORT_STAR}, {"IMPORT_FROM", OP_IMPORT_FROM},
+        {"BUILD_ANNOTATE", OP_BUILD_ANNOTATE}
     };
 
     const proto::ProtoObject* opmap = nullptr;
