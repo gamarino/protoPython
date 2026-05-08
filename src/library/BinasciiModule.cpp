@@ -24,6 +24,21 @@ namespace binascii {
 // path for `b"…"` literals and any `bytes(...)` instance) or a
 // ProtoString fallback (legacy / shim paths that serialised the bytes
 // as a UTF-8 string before ProtoByteBuffer landed).
+// `is_str_instance` distinguishes Python str from bytes/bytearray.
+// protoPython stores both as ProtoString-backed wrappers, plus
+// raw tagged ProtoString values for literals — they inherit
+// __class__ from the str prototype rather than carrying it on
+// the instance, so `getAttribute("__class__")` returns nullptr
+// for a literal even though type() correctly reports `str`.
+// `env->getType(obj)` walks the canonical chain and returns the
+// right prototype for both literals and wrapped strings.
+static bool is_str_instance(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
+    if (!obj) return false;
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!env || !env->getStrPrototype()) return false;
+    return env->getType(ctx, obj) == env->getStrPrototype();
+}
+
 static std::string obj_to_bytes(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
     if (!obj || obj == PROTO_NONE) return "";
     if (obj->isString(ctx)) {
@@ -147,7 +162,14 @@ static const proto::ProtoObject* py_b2a_base64(
     const proto::ProtoSparseList* kwargs) {
 
     if (!posArgs || posArgs->getSize(ctx) < 1) return make_bytes(ctx, "\n");
-    std::string src = obj_to_bytes(ctx, posArgs->getAt(ctx, 0));
+    const proto::ProtoObject* arg0 = posArgs->getAt(ctx, 0);
+    if (is_str_instance(ctx, arg0)) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+        if (env) env->raiseTypeError(ctx,
+            "a bytes-like object is required, not 'str'");
+        return nullptr;
+    }
+    std::string src = obj_to_bytes(ctx, arg0);
 
     bool newline = true;
     if (kwargs) {

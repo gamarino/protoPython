@@ -397,7 +397,21 @@ static const proto::ProtoObject* py_bio_write(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
     const proto::ProtoList* args, const proto::ProtoSparseList*) {
     if (!args || args->getSize(ctx) < 1) return ctx->fromInteger(0);
-    std::string text = bio_obj_to_bytes(ctx, args->getAt(ctx, 0));
+    const proto::ProtoObject* data = args->getAt(ctx, 0);
+    // Symmetric to StringIO.write: BytesIO.write requires bytes-like
+    // and rejects str (CPython: TypeError("a bytes-like object is
+    // required, not 'str'")). Base64.encode(StringIO, BytesIO) tests
+    // this contract.
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (env && env->getStrPrototype() && data) {
+        const proto::ProtoObject* cls = env->getType(ctx, data);
+        if (cls == env->getStrPrototype()) {
+            env->raiseTypeError(ctx,
+                "a bytes-like object is required, not 'str'");
+            return nullptr;
+        }
+    }
+    std::string text = bio_obj_to_bytes(ctx, data);
     std::string buf = bio_get_buf(ctx, self);
     long pos = bio_get_pos(ctx, self);
     if (pos < 0) pos = 0;
@@ -644,6 +658,22 @@ static const proto::ProtoObject* py_sio_write(
     const proto::ProtoList* args, const proto::ProtoSparseList*) {
     if (!args || args->getSize(ctx) < 1) return ctx->fromInteger(0);
     const proto::ProtoObject* data = args->getAt(ctx, 0);
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    // CPython's StringIO.write requires str — passing bytes raises
+    // TypeError("string argument expected, got 'bytes'"). Previously
+    // we silently accepted bytes (the wrapper's __data__ is a
+    // ProtoString, so the isString fallback below extracted text
+    // and wrote it as UTF-8). Reject explicit bytes / bytearray
+    // instances at the entry to surface the same error CPython
+    // does — base64.encode(BytesIO, StringIO) depends on it.
+    if (env && env->getBytesPrototype() && data) {
+        const proto::ProtoObject* cls = env->getType(ctx, data);
+        if (cls == env->getBytesPrototype()) {
+            env->raiseTypeError(ctx,
+                "string argument expected, got 'bytes'");
+            return nullptr;
+        }
+    }
     std::string text;
     if (data && data->isString(ctx)) data->asString(ctx)->toUTF8String(ctx, text);
     else if (data) {
