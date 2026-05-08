@@ -438,13 +438,46 @@ static const proto::ProtoObject* py_prod(
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     const proto::ProtoObject* iterable = posArgs->getAt(ctx, 0);
-    double result = 1.0;
     const proto::ProtoObject* da = iterable->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__data__"));
     if (!da || !da->asList(ctx)) return PROTO_NONE;
     const proto::ProtoList* list = da->asList(ctx);
-    for (int i = 0, sz = list->getSize(ctx); i < sz; ++i)
-        result *= toDouble(ctx, list->getAt(ctx, i));
-    return ctx->fromDouble(result);
+    int sz = static_cast<int>(list->getSize(ctx));
+
+    // Integer fast path: as long as every element is an int (no
+    // floats), accumulate as long long and return an integer. This
+    // matches CPython's `math.prod` which promotes naturally — the
+    // previous implementation accumulated as double, so
+    // `math.prod([10**18, 10**18])` lost precision via 1e36 → double.
+    long long iacc = 1;
+    bool allInt = true;
+    for (int i = 0; i < sz; ++i) {
+        const proto::ProtoObject* el = list->getAt(ctx, i);
+        if (!el || !el->isInteger(ctx)) { allInt = false; break; }
+        long long v = el->asLong(ctx);
+        // Overflow guard: detect before the multiply wraps. CPython
+        // promotes to PyLong; we still raise so the caller sees an
+        // explicit error rather than a silently wrong answer.
+        if (v != 0 && std::abs(iacc) > std::numeric_limits<long long>::max() / std::abs(v)) {
+            PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+            if (env) env->raiseValueError(ctx,
+                PythonEnvironment::getInternedString(ctx,
+                    "prod() integer result exceeds 64-bit range")->asObject(ctx));
+            return nullptr;
+        }
+        iacc *= v;
+    }
+    if (allInt) {
+        // Honour optional `start` kwarg via second positional (rare in
+        // user code; CPython reads the kwarg too — left for a follow-up).
+        return ctx->fromInteger(iacc);
+    }
+
+    // Fallback: float accumulation when any element isn't an int.
+    double dacc = 1.0;
+    for (int i = 0; i < sz; ++i) {
+        dacc *= toDouble(ctx, list->getAt(ctx, i));
+    }
+    return ctx->fromDouble(dacc);
 }
 
 static const proto::ProtoObject* py_sumprod(
@@ -641,26 +674,53 @@ static long long gcd_impl(long long a, long long b) {
     return a;
 }
 
+// Python 3.9+: math.gcd / math.lcm accept any number of integer
+// arguments (zero, one, or many), returning gcd(0, ...) = 0 and
+// lcm(0, ...) = 0 / lcm() = 1. The previous implementation hard-
+// coded `< 2`, so user code relying on the variadic form (e.g.
+// gcd(a, b, c) or `gcd()`) silently returned PROTO_NONE → downstream
+// "'NoneType' has no attribute X" — a pattern this audit specifically
+// targets.
 static const proto::ProtoObject* py_gcd(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
-    long long a = posArgs->getAt(ctx, 0)->asLong(ctx);
-    long long b = posArgs->getAt(ctx, 1)->asLong(ctx);
-    return ctx->fromInteger(gcd_impl(a, b));
+    unsigned long n = posArgs ? posArgs->getSize(ctx) : 0;
+    if (n == 0) return ctx->fromInteger(0);
+    long long acc = posArgs->getAt(ctx, 0)->asLong(ctx);
+    if (acc < 0) acc = -acc;
+    for (unsigned long i = 1; i < n; ++i) {
+        long long x = posArgs->getAt(ctx, static_cast<int>(i))->asLong(ctx);
+        if (x < 0) x = -x;
+        acc = gcd_impl(acc, x);
+        if (acc == 1) break;  // terminate early — gcd can only stay 1
+    }
+    return ctx->fromInteger(acc);
 }
 
 static const proto::ProtoObject* py_lcm(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
-    long long a = posArgs->getAt(ctx, 0)->asLong(ctx);
-    long long b = posArgs->getAt(ctx, 1)->asLong(ctx);
-    long long g = gcd_impl(a, b);
-    if (g == 0) return ctx->fromInteger(0);
-    long long ax = a < 0 ? -a : a;
-    long long bx = b < 0 ? -b : b;
-    return ctx->fromInteger(ax / g * bx);
+    unsigned long n = posArgs ? posArgs->getSize(ctx) : 0;
+    if (n == 0) return ctx->fromInteger(1);
+    long long acc = posArgs->getAt(ctx, 0)->asLong(ctx);
+    if (acc < 0) acc = -acc;
+    for (unsigned long i = 1; i < n; ++i) {
+        long long x = posArgs->getAt(ctx, static_cast<int>(i))->asLong(ctx);
+        if (x < 0) x = -x;
+        if (acc == 0 || x == 0) { acc = 0; break; }
+        long long g = gcd_impl(acc, x);
+        // Overflow guard: acc/g * x can overflow long long for large
+        // operands. Detect and report rather than wrap silently.
+        if (acc / g > std::numeric_limits<long long>::max() / x) {
+            PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+            if (env) env->raiseValueError(ctx,
+                PythonEnvironment::getInternedString(ctx,
+                    "lcm result exceeds 64-bit range")->asObject(ctx));
+            return nullptr;
+        }
+        acc = (acc / g) * x;
+    }
+    return ctx->fromInteger(acc);
 }
 
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
