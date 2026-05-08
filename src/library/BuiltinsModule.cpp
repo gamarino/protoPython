@@ -1515,10 +1515,32 @@ static const proto::ProtoObject* py_object_getattribute(
     } else if (positionalParameters && positionalParameters->getSize(context) == 1) {
         nameObj = positionalParameters->getAt(context, 0);
     }
-    if (!nameObj || !nameObj->isString(context)) return PROTO_NONE;
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    // CPython: `object.__getattribute__(self, name)` requires `name` to be
+    // a string and raises TypeError otherwise.  Earlier this returned
+    // None silently, hiding misuse like
+    // `type.__getattribute__(list, type)` (where `type` is the class
+    // object, not a string).
+    if (!nameObj) {
+        if (env) env->raiseTypeError(context,
+            "attribute name must be string");
+        return nullptr;
+    }
+    if (!nameObj->isString(context)) {
+        if (env) {
+            std::string typeName = "?";
+            const proto::ProtoObject* nameType = env->getType(context, nameObj);
+            if (nameType) {
+                const proto::ProtoObject* tn = nameType->getAttribute(context, env->getNameString());
+                if (tn && tn->isString(context)) tn->asString(context)->toUTF8String(context, typeName);
+            }
+            env->raiseTypeError(context,
+                "attribute name must be string, not '" + typeName + "'");
+        }
+        return nullptr;
+    }
     std::string nameStr;
     nameObj->asString(context)->toUTF8String(context, nameStr);
-    PythonEnvironment* env = PythonEnvironment::fromContext(context);
     const proto::ProtoString* key = PythonEnvironment::getInternedString(context, nameStr.c_str());
     const proto::ProtoObject* val = env ? env->getAttribute(context, target, key) : target->getAttribute(context, key);
     return val ? val : PROTO_NONE;
