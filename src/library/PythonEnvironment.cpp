@@ -5020,7 +5020,18 @@ static const proto::ProtoObject* py_int_pow(
     bool selfIsIntInstance = self && (self->isInteger(ctx) || self->isBoolean(ctx));
     int expIdx, modIdx;
     if (selfIsIntInstance) {
-        if (args->getSize(ctx) < 1) return PROTO_NONE;
+        // CPython: int.__pow__ accepts 1 or 2 arguments (exp[, mod]).
+        // Earlier this returned PROTO_NONE silently when the count was
+        // wrong, hiding the misuse from `assertRaisesRegex(TypeError,
+        // 'expected 1 or 2 arguments, got 0', int().__pow__)`.
+        unsigned long n = args->getSize(ctx);
+        if (n < 1 || n > 2) {
+            if (env) {
+                env->raiseTypeError(ctx,
+                    "expected 1 or 2 arguments, got " + std::to_string(n));
+            }
+            return nullptr;
+        }
         if (!int_value(ctx, self, &base)) {
             return env ? env->getNotImplementedPrototype() : PROTO_NONE;
         }
@@ -5066,6 +5077,44 @@ static const proto::ProtoObject* py_int_pow(
     }
     if (hasMod && result < 0) result += mod;
     return ctx->fromInteger(result);
+}
+
+// int.__rpow__(self, other[, mod]): equivalent to other ** self with the
+// same arity validation that __pow__ has.  test_pow_wrapper_error_messages
+// asserts identical error messages.
+static const proto::ProtoObject* py_int_rpow(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self,
+    const proto::ParentLink* link, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    bool selfIsIntInstance = self && (self->isInteger(ctx) || self->isBoolean(ctx));
+    if (selfIsIntInstance) {
+        unsigned long n = args ? args->getSize(ctx) : 0UL;
+        if (n < 1 || n > 2) {
+            if (env) {
+                env->raiseTypeError(ctx,
+                    "expected 1 or 2 arguments, got " + std::to_string(n));
+            }
+            return nullptr;
+        }
+        // Reflected: other ** self.  Re-route as py_int_pow with a
+        // synthetic call site where `self` becomes args[0] (the LHS we're
+        // reflecting from) and exp becomes the original self.
+        const proto::ProtoObject* other = args->getAt(ctx, 0);
+        const proto::ProtoList* newArgs = ctx->newList()->appendLast(ctx, self);
+        if (n == 2) newArgs = newArgs->appendLast(ctx, args->getAt(ctx, 1));
+        return py_int_pow(ctx, other, link, newArgs, kwargs);
+    }
+    // Unbound int.__rpow__(other, self[, mod])
+    if (!args || args->getSize(ctx) < 2) {
+        return env ? env->getNotImplementedPrototype() : PROTO_NONE;
+    }
+    return py_int_pow(ctx, args->getAt(ctx, 1), link,
+        ([&]() {
+            const proto::ProtoList* newArgs = ctx->newList()->appendLast(ctx, args->getAt(ctx, 0));
+            if (args->getSize(ctx) >= 3) newArgs = newArgs->appendLast(ctx, args->getAt(ctx, 2));
+            return newArgs;
+        })(),
+        kwargs);
 }
 
 // Reflected versions: int.__radd__(self, other) is equivalent to other + self,
@@ -11256,6 +11305,7 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
         intPrototype = intPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__radd__"), rootContext_->fromMethod(nullptr, py_int_radd));
         intPrototype = intPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__rmul__"), rootContext_->fromMethod(nullptr, py_int_rmul));
         intPrototype = intPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__pow__"), rootContext_->fromMethod(nullptr, py_int_pow));
+        intPrototype = intPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__rpow__"), rootContext_->fromMethod(nullptr, py_int_rpow));
         space_->smallIntegerPrototype = const_cast<proto::ProtoObject*>(intPrototype);
     }
 
