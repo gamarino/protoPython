@@ -496,7 +496,11 @@ static const proto::ProtoObject* py_rmdir(
     std::string path;
     pathObj->asString(ctx)->toUTF8String(ctx, path);
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
-    (void)rmdir(path.c_str());
+    if (rmdir(path.c_str()) != 0) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+        if (env) env->raiseOSError(ctx, errno, std::strerror(errno), path);
+        return nullptr;
+    }
 #endif
     return PROTO_NONE;
 }
@@ -629,7 +633,14 @@ static const proto::ProtoObject* py_kill(
     int pid = static_cast<int>(posArgs->getAt(ctx, 0)->asLong(ctx));
     int sig = static_cast<int>(posArgs->getAt(ctx, 1)->asLong(ctx));
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
-    kill(pid, sig);
+    if (kill(pid, sig) != 0) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+        // EPERM → PermissionError, ESRCH → ProcessLookupError; both
+        // surface as OSError(errno=…) which Python's exception
+        // machinery routes to the right subclass.
+        if (env) env->raiseOSError(ctx, errno, std::strerror(errno), "");
+        return nullptr;
+    }
 #endif
     return PROTO_NONE;
 }
@@ -810,7 +821,11 @@ static const proto::ProtoObject* py_close(
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
     int fd = static_cast<int>(posArgs->getAt(ctx, 0)->asLong(ctx));
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
-    close(fd);
+    if (close(fd) != 0) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+        if (env) env->raiseOSError(ctx, errno, std::strerror(errno), "");
+        return nullptr;
+    }
 #endif
     return PROTO_NONE;
 }

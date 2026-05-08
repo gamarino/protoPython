@@ -4,16 +4,6 @@
     "failed": 1,
     "total": 1,
     "compatibility_pct": 0.0,
-    "timestamp": "2026-05-07T11:59:50.865606+00:00",
-    "failed_tests": [
-      "/home/gamarino/Documentos/proyectos/protoPython/build_release/src/runtime/protopy"
-    ]
-  },
-  {
-    "passed": 0,
-    "failed": 1,
-    "total": 1,
-    "compatibility_pct": 0.0,
     "timestamp": "2026-05-07T12:14:00.534970+00:00",
     "failed_tests": [
       "/home/gamarino/Documentos/proyectos/protoPython/build_release/src/runtime/protopy"
@@ -995,6 +985,16 @@
     "total": 1,
     "compatibility_pct": 0.0,
     "timestamp": "2026-05-08T01:44:52.819513+00:00",
+    "failed_tests": [
+      "/home/gamarino/Documentos/proyectos/protoPython/build_release/src/runtime/protopy"
+    ]
+  },
+  {
+    "passed": 0,
+    "failed": 1,
+    "total": 1,
+    "compatibility_pct": 0.0,
+    "timestamp": "2026-05-08T01:47:04.549893+00:00",
     "failed_tests": [
       "/home/gamarino/Documentos/proyectos/protoPython/build_release/src/runtime/protopy"
     ]
