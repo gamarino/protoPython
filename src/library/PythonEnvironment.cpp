@@ -1232,7 +1232,12 @@ static const proto::ProtoObject* py_object_reduce(
 
 static const proto::ProtoObject* py_float_call(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList* kwargs) {
+    if (kwargs && kwargs->getSize(ctx) > 0) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+        if (env) env->raiseTypeError(ctx, "float() takes no keyword argument");
+        return nullptr;
+    }
     // `float` is bound as `__call__` on the float prototype, so posArgs is
     // just the user's positional args (e.g. `float(3)` → posArgs = [3]).
     // If the first positional arg happens to be the float class itself
@@ -1426,7 +1431,17 @@ static const proto::ProtoObject* py_float_fromhex(
 
 static const proto::ProtoObject* py_int_call(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList* kwargs) {
+    // CPython: int() accepts only `x` and `base` positionally; any
+    // arbitrary keyword argument should raise TypeError.  The runtime
+    // does not yet honour the `base` keyword either, so we simply
+    // reject any kwargs here — `int(x=1)` / `int(bogus=1)` both fail.
+    if (kwargs && kwargs->getSize(ctx) > 0) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+        if (env) env->raiseTypeError(ctx,
+            "int() takes no keyword argument");
+        return nullptr;
+    }
     const proto::ProtoObject* targetCls = posArgs && posArgs->getSize(ctx) > 0 ? posArgs->getAt(ctx, 0) : self;
     const proto::ProtoObject* x = nullptr;
     if (!posArgs || posArgs->getSize(ctx) <= 1) {
@@ -1618,7 +1633,12 @@ static const proto::ProtoObject* py_notimplemented_type_call(
 
 static const proto::ProtoObject* py_bool_call(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList* kwargs) {
+    if (kwargs && kwargs->getSize(ctx) > 0) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+        if (env) env->raiseTypeError(ctx, "bool() takes no keyword argument");
+        return nullptr;
+    }
     if (!posArgs || posArgs->getSize(ctx) <= 1) return PROTO_FALSE;
     const proto::ProtoObject* obj = posArgs->getAt(ctx, 1);
     if (obj == PROTO_TRUE) return PROTO_TRUE;
@@ -3924,7 +3944,11 @@ static const proto::ProtoObject* py_list_call(
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
     (void)parentLink;
-    (void)keywordParameters;
+    if (keywordParameters && keywordParameters->getSize(context) > 0) {
+        PythonEnvironment* envEarly = PythonEnvironment::fromContext(context);
+        if (envEarly) envEarly->raiseTypeError(context, "list() takes no keyword arguments");
+        return nullptr;
+    }
 
     const proto::ProtoObject* cls = positionalParameters && positionalParameters->getSize(context) > 0 ? positionalParameters->getAt(context, 0) : self;
     if (!cls) return PROTO_NONE;
@@ -3989,7 +4013,11 @@ static const proto::ProtoObject* py_tuple_call(
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
     (void)parentLink;
-    (void)keywordParameters;
+    if (keywordParameters && keywordParameters->getSize(context) > 0) {
+        PythonEnvironment* envEarly = PythonEnvironment::fromContext(context);
+        if (envEarly) envEarly->raiseTypeError(context, "tuple() takes no keyword arguments");
+        return nullptr;
+    }
     const proto::ProtoObject* cls = positionalParameters && positionalParameters->getSize(context) > 0 ? positionalParameters->getAt(context, 0) : self;
     if (!cls) return PROTO_NONE;
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
