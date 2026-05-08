@@ -58,13 +58,29 @@ _new_type = type(int.__new__)
 # Python code for object.__reduce_ex__ for protocols 0 and 1
 
 def _reduce_ex(self, proto):
-    assert proto < 2
+    # CPython routes protocol >= 2 through a dedicated C-level path on
+    # object.__reduce_ex__; protoPython's py_object_reduce_ex delegates
+    # everything here.  The proto<2 layout (cls/base/state tuple) is a
+    # compatible (if slower) fallback for the higher protocols, so drop
+    # the original `assert proto < 2` rather than raising.
     cls = self.__class__
     for base in cls.__mro__:
         if hasattr(base, '__flags__') and not base.__flags__ & _HEAPTYPE:
             break
         new = base.__new__
-        if isinstance(new, _new_type) and new.__self__ is base:
+        # `new.__self__` doesn't exist for protoPython native methods
+        # (CPython's builtin_function_or_method exposes it; ours don't),
+        # which made the original `new.__self__ is base` probe blow up
+        # with AttributeError.  Skip the bound-method check in that
+        # case — falling through to the loop's `else` correctly lands
+        # on `base = object`, which is what CPython would have produced
+        # for any class without a custom __new__.
+        try:
+            is_bound_to_base = (isinstance(new, _new_type)
+                                and new.__self__ is base)
+        except AttributeError:
+            is_bound_to_base = False
+        if is_bound_to_base:
             break
     else:
         base = object # not really reachable

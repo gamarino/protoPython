@@ -1170,23 +1170,42 @@ static const proto::ProtoObject* py_object_reduce_ex(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
-    if (!self) return PROTO_NONE;
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
-    
-    const proto::ProtoObject* protoObj = (positionalParameters && positionalParameters->getSize(context) > 0) 
-                                         ? positionalParameters->getAt(context, 0) 
-                                         : context->fromInteger(0);
+
+    // CPython convention: `obj.__reduce_ex__(proto)` is called with the
+    // descriptor automatically bound to `obj`.  protoPython's fromMethod
+    // wrapper instead captures the prototype where the method was
+    // registered (objectPrototype), so when user code calls
+    // `c.__reduce_ex__(4)` we get self=objectPrototype, args=[4] and
+    // copyreg._reduce_ex would otherwise reduce objectPrototype itself.
+    // Detect the unbound shape and pull the real instance off args[0].
+    const proto::ProtoObject* obj = self;
+    const proto::ProtoObject* protoObj = nullptr;
+    unsigned long argc = positionalParameters ? positionalParameters->getSize(context) : 0UL;
+    if ((!obj || (env && obj == env->getObjectPrototype())) && argc >= 2) {
+        // Unbound form: args = [instance, protocol]
+        obj = positionalParameters->getAt(context, 0);
+        protoObj = positionalParameters->getAt(context, 1);
+    } else if (argc >= 1) {
+        protoObj = positionalParameters->getAt(context, 0);
+    }
+    if (!protoObj) protoObj = context->fromInteger(0);
+    if (!obj) return PROTO_NONE;
 
     const proto::ProtoObject* copyregMod = env ? env->importModule("copyreg") : nullptr;
     if (copyregMod && copyregMod != PROTO_NONE) {
         const proto::ProtoString* reduceExName = PythonEnvironment::getInternedString(context, "_reduce_ex");
         const proto::ProtoObject* reduceExFunc = copyregMod->getAttribute(context, reduceExName);
         if (reduceExFunc && reduceExFunc != PROTO_NONE) {
-            const proto::ProtoList* args = context->newList()->appendLast(context, self)->appendLast(context, protoObj);
-            return reduceExFunc->call(context, nullptr, reduceExName, reduceExFunc, args, keywordParameters);
+            // env->callObject runs through invokePythonCallable, which
+            // (unlike the raw ProtoObject::call path used previously)
+            // properly evaluates the Python-level frame for copyreg's
+            // _reduce_ex function — that path returned PROTO_NONE
+            // unconditionally for our wrapped fromMethod target.
+            return env->callObject(reduceExFunc, {obj, protoObj});
         }
     }
-    
+
     if (env) env->raiseTypeError(context, "cannot pickle object");
     return nullptr;
 }
