@@ -562,7 +562,21 @@ static const proto::ProtoObject* py_waitpid(
     int options = static_cast<int>(posArgs->getAt(ctx, 1)->asLong(ctx));
     int status = 0;
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+    errno = 0;
     int res = waitpid(pid, &status, options);
+    if (res < 0) {
+        // CPython convention: raise OSError on system error.  Without
+        // this, callers that loop on `waitpid(-1, WNOHANG)` (e.g.
+        // test.support.reap_children) never break out — the wrapper
+        // returned (-1, 0) silently and the loop spun forever.
+        protoPython::PythonEnvironment* env =
+            protoPython::PythonEnvironment::fromContext(ctx);
+        if (env) {
+            int e = errno ? errno : ECHILD;
+            env->raiseOSError(ctx, e, std::strerror(e));
+        }
+        return nullptr;
+    }
     const proto::ProtoList* tuple = ctx->newList();
     tuple = tuple->appendLast(ctx, ctx->fromInteger(res));
     tuple = tuple->appendLast(ctx, ctx->fromInteger(status));
