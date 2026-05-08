@@ -11502,6 +11502,16 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, py_hash, rootContext_->fromMethod(nullptr, py_frozenset_hash));
     frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__eq__"), rootContext_->fromMethod(nullptr, py_set_eq));
     frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__ne__"), rootContext_->fromMethod(nullptr, py_set_ne));
+    // Set operator dunders — these are used by typing.py's
+    // `EXCLUDED_ATTRIBUTES = _TYPING_INTERNALS | _SPECIAL_NAMES | {...}`
+    // and by any other code that relies on `frozenset | frozenset` etc.
+    frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__or__"),  rootContext_->fromMethod(nullptr, py_set_or));
+    frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__ror__"), rootContext_->fromMethod(nullptr, py_set_or));
+    frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__and__"), rootContext_->fromMethod(nullptr, py_set_and));
+    frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__rand__"),rootContext_->fromMethod(nullptr, py_set_and));
+    frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__sub__"), rootContext_->fromMethod(nullptr, py_set_sub));
+    frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__xor__"), rootContext_->fromMethod(nullptr, py_set_xor));
+    frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__rxor__"),rootContext_->fromMethod(nullptr, py_set_xor));
     frozensetPrototype = frozensetPrototype->setAttribute(rootContext_, py_iter_proto, setIterProto);
 
     bytesPrototype = objectPrototype->newChild(rootContext_, true);

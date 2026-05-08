@@ -4045,118 +4045,113 @@ const proto::ProtoObject* executeBytecodeRange(
             const proto::ProtoObject* b = stack.back();
             const proto::ProtoObject* a = stack[stack.top - 2];
             const proto::ProtoObject* ilshift = isEmbeddedValue(ctx, a) ? nullptr : a->getAttribute(ctx, env ? env->getILShiftString() : PythonEnvironment::getInternedString(ctx, "__ilshift__"));
+            const proto::ProtoObject* result = nullptr;
             if (ilshift && ilshift->asMethod(ctx)) {
                 const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
-                const proto::ProtoObject* result = ilshift->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
-                stack.pop_back(); stack.back() = (result ? result : PROTO_NONE);
-            } else if (a->isInteger(ctx) && b->isInteger(ctx)) {
+                result = ilshift->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
+                if (env && result == env->getNotImplementedPrototype()) result = nullptr;
+            }
+            if (!result && a->isInteger(ctx) && b->isInteger(ctx)) {
                 long long av = a->asLong(ctx);
                 long long bv = b->asLong(ctx);
                 if (bv < 0 || bv >= 64) av = 0;
                 else av = static_cast<long long>(static_cast<unsigned long long>(av) << bv);
-                stack.pop_back(); stack.back() = ctx->fromInteger(av);
+                result = ctx->fromInteger(av);
             }
+            if (!result && (!env || !env->hasPendingException())) {
+                result = binaryOpDispatch(ctx, a, b, "__lshift__", "__rlshift__");
+            }
+            stack.pop_back();
+            stack.back() = result ? result : PROTO_NONE;
+            if (!result && env && env->hasPendingException()) continue;
         } break;
         case OP_INPLACE_RSHIFT: {
             if (stack.size() < 2) { i = next_i; continue; }
             const proto::ProtoObject* b = stack.back();
             const proto::ProtoObject* a = stack[stack.top - 2];
             const proto::ProtoObject* irshift = isEmbeddedValue(ctx, a) ? nullptr : a->getAttribute(ctx, env ? env->getIRShiftString() : PythonEnvironment::getInternedString(ctx, "__irshift__"));
+            const proto::ProtoObject* result = nullptr;
             if (irshift && irshift->asMethod(ctx)) {
                 const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
-                const proto::ProtoObject* result = irshift->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
-                stack.pop_back(); stack.back() = (result ? result : PROTO_NONE);
-            } else if (a->isInteger(ctx) && b->isInteger(ctx)) {
+                result = irshift->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
+                if (env && result == env->getNotImplementedPrototype()) result = nullptr;
+            }
+            if (!result && a->isInteger(ctx) && b->isInteger(ctx)) {
                 long long av = a->asLong(ctx);
                 long long bv = b->asLong(ctx);
                 if (bv < 0 || bv >= 64) av = 0;
                 else av = av >> bv;
-                stack.pop_back(); stack.back() = ctx->fromInteger(av);
+                result = ctx->fromInteger(av);
             }
+            if (!result && (!env || !env->hasPendingException())) {
+                result = binaryOpDispatch(ctx, a, b, "__rshift__", "__rrshift__");
+            }
+            stack.pop_back();
+            stack.back() = result ? result : PROTO_NONE;
+            if (!result && env && env->hasPendingException()) continue;
         } break;
         case OP_INPLACE_AND: {
             if (stack.size() < 2) { i = next_i; continue; }
             const proto::ProtoObject* b = stack.back();
             const proto::ProtoObject* a = stack[stack.top - 2];
             const proto::ProtoObject* iand = isEmbeddedValue(ctx, a) ? nullptr : a->getAttribute(ctx, env ? env->getIAndString() : PythonEnvironment::getInternedString(ctx, "__iand__"));
+            const proto::ProtoObject* result = nullptr;
             if (iand && iand->asMethod(ctx)) {
                 const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
-                const proto::ProtoObject* result = iand->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
-                stack.pop_back(); stack.back() = (result ? result : PROTO_NONE);
-            } else if (a->isInteger(ctx) && b->isInteger(ctx)) {
-                const proto::ProtoObject* res = a->bitwiseAnd(ctx, b);
-                stack.pop_back(); stack.back() = res;
-            } else {
-                const proto::ProtoObject* andM = a->getAttribute(ctx, env ? env->getAndString() : PythonEnvironment::getInternedString(ctx, "__and__"));
-                if (andM && andM->asMethod(ctx)) {
-                    const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
-                    const proto::ProtoObject* result = andM->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
-                    stack.pop_back(); stack.back() = (result ? result : PROTO_NONE);
-                } else {
-                    const proto::ProtoObject* randM = b->getAttribute(ctx, env ? env->getRAndString() : PythonEnvironment::getInternedString(ctx, "__rand__"));
-                    if (randM && randM->asMethod(ctx)) {
-                        const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, a);
-                        const proto::ProtoObject* result = randM->asMethod(ctx)(ctx, b, nullptr, oneArg, nullptr);
-                        stack.pop_back(); stack.back() = (result ? result : PROTO_NONE);
-                    }
-                }
+                result = iand->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
+                if (env && result == env->getNotImplementedPrototype()) result = nullptr;
             }
+            if (!result && a->isInteger(ctx) && b->isInteger(ctx)) {
+                result = a->bitwiseAnd(ctx, b);
+            }
+            if (!result && (!env || !env->hasPendingException())) {
+                result = binaryOpDispatch(ctx, a, b, "__and__", "__rand__");
+            }
+            stack.pop_back();
+            stack.back() = result ? result : PROTO_NONE;
+            if (!result && env && env->hasPendingException()) continue;
         } break;
         case OP_INPLACE_OR: {
             if (stack.size() < 2) { i = next_i; continue; }
             const proto::ProtoObject* b = stack.back();
             const proto::ProtoObject* a = stack[stack.top - 2];
             const proto::ProtoObject* ior = isEmbeddedValue(ctx, a) ? nullptr : a->getAttribute(ctx, env ? env->getIOrString() : PythonEnvironment::getInternedString(ctx, "__ior__"));
+            const proto::ProtoObject* result = nullptr;
             if (ior && ior->asMethod(ctx)) {
                 const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
-                const proto::ProtoObject* result = ior->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
-                stack.pop_back(); stack.back() = (result ? result : PROTO_NONE);
-            } else if (a->isInteger(ctx) && b->isInteger(ctx)) {
-                const proto::ProtoObject* res = a->bitwiseOr(ctx, b);
-                stack.pop_back(); stack.back() = res;
-            } else {
-                const proto::ProtoObject* orM = a->getAttribute(ctx, env ? env->getOrString() : PythonEnvironment::getInternedString(ctx, "__or__"));
-                if (orM && orM->asMethod(ctx)) {
-                    const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
-                    const proto::ProtoObject* result = orM->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
-                    stack.pop_back(); stack.back() = (result ? result : PROTO_NONE);
-                } else {
-                    const proto::ProtoObject* rorM = b->getAttribute(ctx, env ? env->getROrString() : PythonEnvironment::getInternedString(ctx, "__ror__"));
-                    if (rorM && rorM->asMethod(ctx)) {
-                        const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, a);
-                        const proto::ProtoObject* result = rorM->asMethod(ctx)(ctx, b, nullptr, oneArg, nullptr);
-                        stack.pop_back(); stack.back() = (result ? result : PROTO_NONE);
-                    }
-                }
+                result = ior->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
+                if (env && result == env->getNotImplementedPrototype()) result = nullptr;
             }
+            if (!result && a->isInteger(ctx) && b->isInteger(ctx)) {
+                result = a->bitwiseOr(ctx, b);
+            }
+            if (!result && (!env || !env->hasPendingException())) {
+                result = binaryOpDispatch(ctx, a, b, "__or__", "__ror__");
+            }
+            stack.pop_back();
+            stack.back() = result ? result : PROTO_NONE;
+            if (!result && env && env->hasPendingException()) continue;
         } break;
         case OP_INPLACE_XOR: {
             if (stack.size() < 2) { i = next_i; continue; }
             const proto::ProtoObject* b = stack.back();
             const proto::ProtoObject* a = stack[stack.top - 2];
             const proto::ProtoObject* ixor = isEmbeddedValue(ctx, a) ? nullptr : a->getAttribute(ctx, env ? env->getIXorString() : PythonEnvironment::getInternedString(ctx, "__ixor__"));
+            const proto::ProtoObject* result = nullptr;
             if (ixor && ixor->asMethod(ctx)) {
                 const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
-                const proto::ProtoObject* result = ixor->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
-                stack.pop_back(); stack.back() = (result ? result : PROTO_NONE);
-            } else if (a->isInteger(ctx) && b->isInteger(ctx)) {
-                const proto::ProtoObject* res = a->bitwiseXor(ctx, b);
-                stack.pop_back(); stack.back() = res;
-            } else {
-                const proto::ProtoObject* xorM = a->getAttribute(ctx, env ? env->getXorString() : PythonEnvironment::getInternedString(ctx, "__xor__"));
-                if (xorM && xorM->asMethod(ctx)) {
-                    const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
-                    const proto::ProtoObject* result = xorM->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
-                    stack.pop_back(); stack.back() = (result ? result : PROTO_NONE);
-                } else {
-                    const proto::ProtoObject* rxorM = b->getAttribute(ctx, env ? env->getRXorString() : PythonEnvironment::getInternedString(ctx, "__rxor__"));
-                    if (rxorM && rxorM->asMethod(ctx)) {
-                        const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, a);
-                        const proto::ProtoObject* result = rxorM->asMethod(ctx)(ctx, b, nullptr, oneArg, nullptr);
-                        stack.pop_back(); stack.back() = (result ? result : PROTO_NONE);
-                    }
-                }
+                result = ixor->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
+                if (env && result == env->getNotImplementedPrototype()) result = nullptr;
             }
+            if (!result && a->isInteger(ctx) && b->isInteger(ctx)) {
+                result = a->bitwiseXor(ctx, b);
+            }
+            if (!result && (!env || !env->hasPendingException())) {
+                result = binaryOpDispatch(ctx, a, b, "__xor__", "__rxor__");
+            }
+            stack.pop_back();
+            stack.back() = result ? result : PROTO_NONE;
+            if (!result && env && env->hasPendingException()) continue;
         } break;
         case OP_BINARY_LSHIFT: {
             if (stack.size() < 2) { i = next_i; continue; }
@@ -4329,48 +4324,17 @@ const proto::ProtoObject* executeBytecodeRange(
                     }
                 }
 
-                if (!result) {
-                    const proto::ProtoList* argsB = ctx->newList()->appendLast(ctx, b);
-                    result = invokeDunder(ctx, a, orS, argsB);
-                    // NotImplemented from a Python-level dunder is
-                    // semantically equivalent to "method declined" — we
-                    // must fall through to the reflected operand. CPython
-                    // does this in `binary_op1`; protoPython previously
-                    // forwarded NotImplemented as a real value, so e.g.
-                    // `int | 3` (where type.__or__ returns NotImplemented
-                    // because 3 isn't a type) silently produced
-                    // NotImplemented instead of raising TypeError.
-                    if (env && result == env->getNotImplementedPrototype()) {
-                        result = nullptr;
-                        sawNotImplemented = true;
-                    }
+                if (!result && (!env || !env->hasPendingException())) {
+                    // Non-PEP 604 path: delegate to the shared dispatcher
+                    // which handles forward + reflected dunder, NotImplemented
+                    // propagation and TypeError raising in strict mode.
+                    result = binaryOpDispatch(ctx, a, b, "__or__", "__ror__");
                 }
-
-                if (!result) {
-                    const proto::ProtoString* rorS = env ? env->getROrString() : PythonEnvironment::getInternedString(ctx, "__ror__");
-                    const proto::ProtoList* argsA = ctx->newList()->appendLast(ctx, a);
-                    result = invokeDunder(ctx, b, rorS, argsA);
-                    if (env && result == env->getNotImplementedPrototype()) {
-                        result = nullptr;
-                        sawNotImplemented = true;
-                    }
-                }
-
-                if (!result && sawNotImplemented && env && !env->hasPendingException()) {
-                    // At least one side EXPLICITLY returned NotImplemented
-                    // and no path produced a real value. CPython raises
-                    // TypeError here — e.g. `int | 3` where type.__or__
-                    // declined because 3 isn't a type. We do NOT raise
-                    // when result is null only because the dunder was
-                    // absent (returns nullptr from invokeDunder), since
-                    // that would regress callers like `frozenset | frozenset`
-                    // when stdlib hasn't wired the method yet.
-                    env->raiseTypeError(ctx,
-                        "unsupported operand type(s) for |");
-                }
+                (void)sawNotImplemented;
 
                 stack.pop_back();
                 stack.back() = (result ? result : PROTO_NONE);
+                if (!result && env && env->hasPendingException()) continue;
             }
         } break;
         case OP_BINARY_XOR: {
