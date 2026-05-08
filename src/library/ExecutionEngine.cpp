@@ -1258,11 +1258,6 @@ static const proto::ProtoObject* binaryOpDispatch(proto::ProtoContext* ctx, cons
         res = invokeDunder(ctx, b, rdunderS, argsA);
         if (env && res == env->getNotImplementedPrototype()) sawNotImplemented = true;
     }
-    // CPython: when at least one method returned NotImplemented (a
-    // present-but-refused signal), raise TypeError. If both methods
-    // were simply absent (nullptr from invokeDunder), preserve the
-    // previous lenient behaviour and return PROTO_NONE upstream — many
-    // module-init paths in stdlib probe for ops opportunistically.
     if (sawNotImplemented
         && (!res || (env && res == env->getNotImplementedPrototype()))
         && env && !env->hasPendingException()) {
@@ -2338,25 +2333,37 @@ const proto::ProtoObject* py_generator_send_impl(
         const proto::ProtoObject* localsObj = self->getAttribute(ctx, env->getGiLocalsString());
         const proto::ProtoList* savedLocals = localsObj ? localsObj->asList(ctx) : nullptr;
 
-        if (savedLocals) {
-            proto::ProtoObject** slots = const_cast<proto::ProtoObject**>(calleeCtx->getAutomaticLocals());
-            for (unsigned int i = 0; i < calleeCtx->getAutomaticLocalsCount() && i < savedLocals->getSize(ctx); ++i) {
-                slots[i] = const_cast<proto::ProtoObject*>(savedLocals->getAt(ctx, i));
+        unsigned int nSlots = calleeCtx->getAutomaticLocalsCount();
+        proto::ProtoObject** allSlots = const_cast<proto::ProtoObject**>(calleeCtx->getAutomaticLocals());
+
+        if (savedLocals && allSlots) {
+            for (unsigned int i = 0; i < nSlots && i < savedLocals->getSize(ctx); ++i) {
+                allSlots[i] = const_cast<proto::ProtoObject*>(savedLocals->getAt(ctx, i));
             }
         }
-        
-        // Restore stack after slots are ready
-        proto::ProtoObject** stackBase = const_cast<proto::ProtoObject**>(calleeCtx->getAutomaticLocals()) + stackOffset;
-        unsigned int maxStack = calleeCtx->getAutomaticLocalsCount() - stackOffset;
-        
-        if (slist) {
+
+        // Restore stack after slots are ready.  Guard against the case
+        // where the ContextScope did not allocate enough automatic
+        // locals for both varnames and the operand stack: when
+        // executeBytecodeRange detects that, it falls back to its own
+        // local std::vector for the stack (see ExecutionEngine.cpp:3120).
+        // In that mode any bytes the caller would push into
+        // `slots[stackOffset..]` are invisible to executeBytecodeRange,
+        // and any persisted stack the function returns via finalTop
+        // does NOT live in `slots`.  Detecting this here lets us route
+        // the prelude / save loop accordingly so we never deref past
+        // the slot array.
+        proto::ProtoObject** stackBase = (allSlots && nSlots > stackOffset) ? allSlots + stackOffset : nullptr;
+        unsigned int maxStack = (allSlots && nSlots > stackOffset) ? (nSlots - stackOffset) : 0;
+
+        if (slist && stackBase) {
             unsigned long sSize = slist->getSize(calleeCtx);
             for (unsigned long i = 0; i < sSize && i < maxStack; ++i) {
                 stackBase[initialTop++] = const_cast<proto::ProtoObject*>(slist->getAt(calleeCtx, static_cast<int>(i)));
             }
         }
-        
-        if (pc > 0) {
+
+        if (pc > 0 && stackBase) {
             if (initialTop < maxStack) stackBase[initialTop++] = const_cast<proto::ProtoObject*>(sendVal);
         }
 
@@ -2383,16 +2390,26 @@ const proto::ProtoObject* py_generator_send_impl(
             
         const proto::ProtoList* newLocals = calleeCtx->newList();
         const proto::ProtoObject** updatedSlots = calleeCtx->getAutomaticLocals();
-        for (unsigned int i = 0; i < calleeCtx->getAutomaticLocalsCount(); ++i) {
-            newLocals = newLocals->appendLast(calleeCtx, updatedSlots[i]);
+        unsigned int updatedSlotsN = calleeCtx->getAutomaticLocalsCount();
+        if (updatedSlots) {
+            for (unsigned int i = 0; i < updatedSlotsN; ++i) {
+                newLocals = newLocals->appendLast(calleeCtx, updatedSlots[i]);
+            }
         }
         self->setAttribute(calleeCtx, env->getGiLocalsString(), newLocals->asObject(calleeCtx));
 
-        // Save stack back while calleeCtx is still alive
+        // Save stack back while calleeCtx is still alive.  Same caveat
+        // as above: only read from `slots[stackOffset..]` when those
+        // indices are actually within the slot array.
         const proto::ProtoList* newStack = calleeCtx->newList();
         const proto::ProtoObject** slots = calleeCtx->getAutomaticLocals();
-        for (unsigned long j = 0; j < finalTop; ++j) {
-            newStack = newStack->appendLast(calleeCtx, slots[stackOffset + j]);
+        if (slots && updatedSlotsN > stackOffset) {
+            unsigned long stackBound = (updatedSlotsN > stackOffset)
+                ? static_cast<unsigned long>(updatedSlotsN - stackOffset) : 0UL;
+            unsigned long count = (finalTop < stackBound) ? finalTop : stackBound;
+            for (unsigned long j = 0; j < count; ++j) {
+                newStack = newStack->appendLast(calleeCtx, slots[stackOffset + j]);
+            }
         }
         self->setAttribute(calleeCtx, env->getGiStackString(), newStack->asObject(calleeCtx));
 
@@ -3851,28 +3868,43 @@ const proto::ProtoObject* executeBytecodeRange(
         } break;
         case OP_BINARY_MATRIX_MULTIPLY: {
             if (stack.size() < 2) { i = next_i; continue; }
-            const proto::ProtoObject* right = stack.back();
-            const proto::ProtoObject* left = stack[stack.top - 2];
-            const proto::ProtoString* matmulS = protoPython::PythonEnvironment::getInternalString(ctx, "__matmul__");
-            const proto::ProtoObject* matmul = left->getAttribute(ctx, matmulS);
-            if (matmul && matmul != PROTO_NONE) {
-                const proto::ProtoObject* res = invokePythonCallable(ctx, matmul, ctx->newList()->appendLast(ctx, right), nullptr);
-                stack.pop_back();
-                stack.back() = res;
-            } else {
-                PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-                if (env) env->setPendingException(PythonEnvironment::getInternedString(ctx, "TypeError: '@' operator not supported (stubbed)")->asObject(ctx));
+            const proto::ProtoObject* a = stack[stack.top - 2];
+            const proto::ProtoObject* b = stack.back();
+            // CPython @-operator dispatch: try a.__matmul__(b); if it
+            // returns NotImplemented, fall back to b.__rmatmul__(a);
+            // raise TypeError when neither produces a value.  We share
+            // the same `binaryOpDispatch` helper that +/-/* use, then
+            // promote a silent null (the lenient "method absent" path)
+            // to a TypeError because matmul has no legacy stdlib
+            // contract that relies on the silent behaviour.
+            const proto::ProtoObject* r = binaryOpDispatch(ctx, a, b, "__matmul__", "__rmatmul__");
+            if (!r && env && !env->hasPendingException()) {
+                std::string aName = "?", bName = "?";
+                const proto::ProtoString* nameS = env->getNameString();
+                const proto::ProtoObject* aCls = env->getType(ctx, a);
+                const proto::ProtoObject* bCls = env->getType(ctx, b);
+                auto extractName = [&](const proto::ProtoObject* cls, std::string& out) {
+                    if (!cls) return;
+                    const proto::ProtoObject* n = cls->getAttribute(ctx, nameS);
+                    if (n && n->isString(ctx)) n->asString(ctx)->toUTF8String(ctx, out);
+                };
+                extractName(aCls, aName);
+                extractName(bCls, bName);
+                env->raiseTypeError(ctx,
+                    "unsupported operand type(s) for @: '" + aName + "' and '" + bName + "'");
             }
+            stack.pop_back();
+            stack.back() = r ? r : PROTO_NONE;
+            if (!r && env && env->hasPendingException()) continue;
         } break;
         case OP_INPLACE_MATRIX_MULTIPLY: {
             if (stack.size() < 2) { i = next_i; continue; }
             const proto::ProtoObject* right = stack.back();
             const proto::ProtoObject* left = stack[stack.top - 2];
-            // 3.11+ convention: the binop leaves (res) on the stack, popping
-            // both operands.  Previous implementation pushed the result
-            // without popping, leaving [left, right, res] on the stack and
-            // desynchronising the subsequent STORE_FAST.  Fixed: pop both
-            // operands first, then push the result.
+            // CPython convention for `@=`:
+            //   1) try left.__imatmul__(right); if it returns NotImplemented,
+            //      fall through to forward + reflected matmul on (left, right);
+            //   2) raise TypeError if nothing succeeds.
             const proto::ProtoString* imatmulS = env
                 ? env->getIMatMulString()
                 : protoPython::PythonEnvironment::getInternalString(ctx, "__imatmul__");
@@ -3883,22 +3915,30 @@ const proto::ProtoObject* executeBytecodeRange(
             if (imatmul && imatmul != PROTO_NONE) {
                 res = invokePythonCallable(ctx, imatmul,
                     ctx->newList()->appendLast(ctx, right), nullptr);
-            } else {
-                const proto::ProtoString* matmulS = protoPython::PythonEnvironment::getInternalString(ctx, "__matmul__");
-                const proto::ProtoObject* matmul = env
-                    ? env->getAttribute(ctx, left, matmulS, false)
-                    : left->getAttribute(ctx, matmulS);
-                if (matmul && matmul != PROTO_NONE) {
-                    res = invokePythonCallable(ctx, matmul,
-                        ctx->newList()->appendLast(ctx, right), nullptr);
-                } else if (env) {
-                    env->raiseTypeError(ctx, "unsupported operand type(s) for @=");
+                if (env && res == env->getNotImplementedPrototype()) res = nullptr;
+            }
+            if (!res && (!env || !env->hasPendingException())) {
+                res = binaryOpDispatch(ctx, left, right, "__matmul__", "__rmatmul__");
+                if (!res && env && !env->hasPendingException()) {
+                    std::string aName = "?", bName = "?";
+                    const proto::ProtoString* nameS = env->getNameString();
+                    const proto::ProtoObject* aCls = env->getType(ctx, left);
+                    const proto::ProtoObject* bCls = env->getType(ctx, right);
+                    auto extractName = [&](const proto::ProtoObject* cls, std::string& out) {
+                        if (!cls) return;
+                        const proto::ProtoObject* n = cls->getAttribute(ctx, nameS);
+                        if (n && n->isString(ctx)) n->asString(ctx)->toUTF8String(ctx, out);
+                    };
+                    extractName(aCls, aName);
+                    extractName(bCls, bName);
+                    env->raiseTypeError(ctx,
+                        "unsupported operand type(s) for @=: '" + aName + "' and '" + bName + "'");
                 }
             }
             stack.pop_back();           // right
             stack.pop_back();           // left
-            if (res) stack.push_back(res);
-            else stack.push_back(PROTO_NONE);
+            stack.push_back(res ? res : PROTO_NONE);
+            if (!res && env && env->hasPendingException()) continue;
         } break;
         case OP_RERAISE: {
             // Re-raise the exception on top of block stack
@@ -4250,16 +4290,20 @@ const proto::ProtoObject* executeBytecodeRange(
                 // construction with flatten / dedup / single-unwrap.
                 bool sawNotImplemented = false;
                 if (env) {
-                    // Class detection: type(obj) must itself be `type`.
-                    // hasOwnAttribute("__mro__") would return true for
-                    // instances too because protoCore's tagged-value path
-                    // resolves attribute lookups through the type
-                    // prototype, mis-classifying frozenset / set / dict
-                    // instances as classes and routing them through the
-                    // metaclass-level union builder.
+                    // Class detection: a class object owns __mro__ on
+                    // itself, while a plain instance never does.  This
+                    // covers classes whose metaclass is `type` (e.g.
+                    // `int`, `frozenset`) and classes with a custom
+                    // metaclass alike, while correctly rejecting
+                    // instances of those types.  isInstanceOf(typeProto)
+                    // is unreliable here because the runtime currently
+                    // reports True even for instances whose prototype
+                    // chain reaches type via descriptor inheritance
+                    // (e.g. `isinstance(frozenset([1]), type) → True`).
                     const proto::ProtoObject* typeProto = env->getTypePrototype();
-                    bool aIsClass = (a && env->getType(ctx, a) == typeProto);
-                    bool bIsClass = (b && env->getType(ctx, b) == typeProto);
+                    const proto::ProtoString* mroS = PythonEnvironment::getInternedString(ctx, "__mro__");
+                    bool aIsClass = (a && a->hasOwnAttribute(ctx, mroS) == PROTO_TRUE);
+                    bool bIsClass = (b && b->hasOwnAttribute(ctx, mroS) == PROTO_TRUE);
                     if (aIsClass || bIsClass) {
                         const proto::ProtoObject* typeOr = typeProto
                             ? typeProto->getAttribute(ctx, orS) : nullptr;
@@ -4675,22 +4719,68 @@ const proto::ProtoObject* executeBytecodeRange(
             }
         } break;
         case OP_LIST_APPEND: {
-            if (stack.size() >= static_cast<size_t>(arg)) {
+            if (stack.size() >= static_cast<size_t>(arg) + 1) {
                 const proto::ProtoObject* val = stack.back();
-                // val remains on stack
-                proto::ProtoObject* lstObj = const_cast<proto::ProtoObject*>(stack[stack.size() - arg - 1]);
-                const proto::ProtoObject* data = lstObj->getAttribute(ctx, env ? env->getDataString() : protoPython::PythonEnvironment::getInternalString(ctx, "__data__"));
-                const proto::ProtoList* lst = data ? data->asList(ctx) : nullptr;
+                proto::ProtoObject* lstObj =
+                    const_cast<proto::ProtoObject*>(stack[stack.size() - arg - 1]);
+
+                // asList() (protoCore.h) unifies raw ProtoList tags and
+                // wrapped Python list instances: a wrapped instance is
+                // followed via __data__ to its underlying ProtoList. We
+                // only use the public API here; no representation bits
+                // are inspected.
+                const proto::ProtoList* lst = lstObj->asList(ctx);
                 if (lst) {
                     lst = lst->appendLast(ctx, val);
-                    if (diag_local) {
-                        fprintf(stderr, "DEBUG: OP_LIST_APPEND val=%p appended to list, new size=%zu\n", (void*)val, lst->getSize(ctx));
+                    // Decide write-back via public API: a wrapped Python
+                    // list exposes __data__ as a list attribute, while a
+                    // raw ProtoList does not (its prototype chain has no
+                    // __data__). Discriminate accordingly.
+                    const proto::ProtoString* dataS = env
+                        ? env->getDataString()
+                        : protoPython::PythonEnvironment::getInternalString(ctx, "__data__");
+                    const proto::ProtoObject* curData = lstObj->getAttribute(ctx, dataS);
+                    if (curData && curData->asList(ctx)) {
+                        // Wrapped: rebind __data__ to the new ProtoList.
+                        stack[stack.size() - arg - 1] = const_cast<proto::ProtoObject*>(
+                            lstObj->setAttribute(ctx, dataS, lst->asObject(ctx)));
+                    } else {
+                        // Raw: replace TOS with the new ProtoList object.
+                        stack[stack.size() - arg - 1] =
+                            const_cast<proto::ProtoObject*>(lst->asObject(ctx));
                     }
-                    const proto::ProtoObject* newLst = lstObj->setAttribute(ctx, env ? env->getDataString() : protoPython::PythonEnvironment::getInternalString(ctx, "__data__"), lst->asObject(ctx));
-                    stack[stack.size() - arg - 1] = const_cast<proto::ProtoObject*>(newLst);
                 }
-                stack.pop_back(); // Pop val now
+                stack.pop_back();
             }
+        } break;
+        case OP_BUILD_RAW_LIST: {
+            // Push a raw empty ProtoList. See header comment.
+            const proto::ProtoList* raw = ctx->newList();
+            stack.push_back(raw->asObject(ctx));
+        } break;
+        case OP_WRAP_RAW_LIST: {
+            // Pop the raw ProtoList accumulator from TOS and push a
+            // wrapped `list` instance. See header comment for why
+            // listcomp uses raw ProtoList directly during its body.
+            if (stack.empty()) break;
+            const proto::ProtoObject* rawObj = stack.back();
+            stack.pop_back();
+            const proto::ProtoList* raw = rawObj ? rawObj->asList(ctx) : nullptr;
+            if (!raw) {
+                // Already wrapped, or unexpected non-list. Push back
+                // unchanged — defensive; compiler should only emit
+                // this on raw-list paths.
+                stack.push_back(rawObj);
+                break;
+            }
+            proto::ProtoObject* wrapped = const_cast<proto::ProtoObject*>(ctx->newObject(true));
+            const proto::ProtoString* dataS = env ? env->getDataString() : protoPython::PythonEnvironment::getInternalString(ctx, "__data__");
+            wrapped = const_cast<proto::ProtoObject*>(wrapped->setAttribute(ctx, dataS, raw->asObject(ctx)));
+            if (env && env->getListPrototype()) {
+                wrapped = const_cast<proto::ProtoObject*>(wrapped->addParent(ctx, env->getListPrototype()));
+                wrapped = const_cast<proto::ProtoObject*>(wrapped->setAttribute(ctx, env->getClassString(), env->getListPrototype()));
+            }
+            stack.push_back(wrapped);
         } break;
         case OP_MAP_ADD: {
             if (stack.size() >= static_cast<size_t>(arg) + 1) { // key, val + mapObj must be there

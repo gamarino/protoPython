@@ -226,6 +226,31 @@ constexpr int OP_PUSH_NULL = 207;
  *  `__annotations__` are visible — matching CPython 3.14 semantics. */
 constexpr int OP_BUILD_ANNOTATE = 208;
 
+/** WRAP_RAW_LIST: pop a raw ProtoList, push a wrapped Python `list`
+ *  instance (with __data__ = the list, __class__ = list prototype).
+ *
+ *  Used as the bridge between the listcomp's raw accumulator (a bare
+ *  ProtoList held directly on the operand stack) and the wrapped
+ *  list value the caller expects to receive. The raw-accumulator
+ *  pattern is a workaround for a protoCore bug: under heavy nested
+ *  listcomp pressure (≥80×80 with bytes operands), the mutable
+ *  attribute store of a wrapped list-instance gets its shard root
+ *  reclaimed by GC, dropping `__data__` to PROTO_NONE and
+ *  permanently corrupting subsequent OP_LIST_APPEND. Keeping the
+ *  accumulator as a bare ProtoList — held only on the operand stack
+ *  (a real GC root) — sidesteps the mutable-shard machinery
+ *  entirely. The accumulator is wrapped exactly once at body-end via
+ *  this opcode, so callers continue to see a proper `list`. */
+constexpr int OP_WRAP_RAW_LIST = 209;
+
+/** BUILD_RAW_LIST: push a fresh empty raw ProtoList directly on the
+ *  operand stack — no Python wrapper, no `__data__` indirection.
+ *  Companion to OP_WRAP_RAW_LIST. The listcomp body uses this in
+ *  place of OP_BUILD_LIST(0) so OP_LIST_APPEND's raw fast-path runs
+ *  for every iteration; the wrapped-list variant is reserved for
+ *  user-visible `[…]` literals. */
+constexpr int OP_BUILD_RAW_LIST = 210;
+
 /**
  * @brief Executes a range of bytecode (one basic block). No per-instruction
  *        scheduler dispatch; runs until pc exits [pcStart, pcEnd] or RETURN_VALUE.
