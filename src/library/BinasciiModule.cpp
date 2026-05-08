@@ -201,6 +201,32 @@ static const proto::ProtoObject* py_a2b_base64(
         if (b64_decode_char(c) >= 0 || c == '=') filtered += c;
     }
 
+    // Strip trailing `=` padding for length validation. CPython
+    // accepts both b'YWJj' and b'YWJj==' (any padding length); the
+    // requirement is that data-character count (excluding `=`) be
+    // ≡ 0 mod 4, OR padded so the total is ≡ 0 mod 4. A 1-char
+    // residual is impossible because each base64 char encodes 6
+    // bits, and 6 bits cannot start a byte.
+    size_t data_len = filtered.size();
+    while (data_len > 0 && filtered[data_len - 1] == '=') --data_len;
+    size_t mod = data_len % 4;
+    if (mod == 1) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+        if (env) env->raiseValueError(ctx,
+            PythonEnvironment::getInternedString(ctx,
+                "Invalid base64-encoded string")->asObject(ctx));
+        return nullptr;
+    }
+    if (mod != 0 && filtered.size() % 4 != 0) {
+        // Residual data chars without enough padding — CPython
+        // raises "Incorrect padding".
+        PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+        if (env) env->raiseValueError(ctx,
+            PythonEnvironment::getInternedString(ctx,
+                "Incorrect padding")->asObject(ctx));
+        return nullptr;
+    }
+
     std::string out;
     for (size_t i = 0; i + 3 < filtered.size(); i += 4) {
         int v0 = b64_decode_char(filtered[i]);
