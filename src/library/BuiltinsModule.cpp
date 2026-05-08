@@ -1455,7 +1455,13 @@ static const proto::ProtoObject* py_object_init(
         if (env && positionalParameters->getSize(context) > 0) {
             const proto::ProtoObject* inst = positionalParameters->getAt(context, 0);
             if (inst) {
-                const proto::ProtoObject* cls = inst->getAttribute(context, env->getClassString());
+                // Use env->getType which resolves the class via the
+                // protoCore parent link AND any explicit __class__ own
+                // attribute.  The raw `inst->getAttribute(__class__)`
+                // walks the prototype chain past the class onto the
+                // metaclass (typePrototype), incorrectly classifying
+                // every Python-class instance as a type.
+                const proto::ProtoObject* cls = env->getType(context, inst);
                 if (cls) {
                     if (get_env_diag()) {
                         std::string cn = "???";
@@ -1464,11 +1470,16 @@ static const proto::ProtoObject* py_object_init(
                         fprintf(stderr, "DEBUG py_object_init: inst=%p cls=%p ('%s') objProto=%p typeProto=%p\n", (void*)inst, (void*)cls, cn.c_str(), (void*)objProto, (void*)env->getTypePrototype());
                     }
                     if (cls != objProto) {
-                        const proto::ProtoObject* initAttr = cls->getAttribute(context, initS);
+                        // Use env->getAttribute (Python MRO-aware) so that
+                        // a class which inherits the default object.__init__
+                        // doesn't appear "overridden" just because the raw
+                        // protoCore parent chain happens to surface
+                        // typePrototype's distinct __init__ first.
+                        const proto::ProtoObject* initAttr = env->getAttribute(context, cls, initS, false);
                         if (initAttr && initAttr->asMethod(context) != objInitAttr->asMethod(context)) {
                              isInitOverridden = true;
                         }
-                        const proto::ProtoObject* newAttr = cls->getAttribute(context, newS);
+                        const proto::ProtoObject* newAttr = env->getAttribute(context, cls, newS, false);
                         if (newAttr && newAttr->asMethod(context) != objNewAttr->asMethod(context)) {
                              isNewOverridden = true;
                         }
@@ -1488,8 +1499,20 @@ static const proto::ProtoObject* py_object_init(
 
         if (!isNewOverridden && !isInitOverridden) {
             if (positionalParameters && positionalParameters->getSize(context) > 1) {
-                // During bootstrap we are permissive to avoid hangs
-                return PROTO_NONE; 
+                // CPython: object.__init__(self, *extras) raises TypeError
+                // when neither __new__ nor __init__ is overridden but
+                // extra args were passed.  Now that env->getType resolves
+                // the instance's class correctly (the previous raw lookup
+                // walked past it onto the metaclass), this path no longer
+                // fires for bootstrap users — the typePrototype branch
+                // above handles them.
+                if (env) {
+                    std::string msg = clsName.empty()
+                        ? std::string("object.__init__() takes exactly one argument")
+                        : (clsName + ".__init__() takes exactly one argument (the instance to initialize)");
+                    env->raiseTypeError(context, msg);
+                }
+                return nullptr;
             }
         } else {
             if (get_env_diag()) {
