@@ -206,7 +206,16 @@ static const proto::ProtoObject* py_hexlify(
     return make_bytes(ctx, out);
 }
 
-// unhexlify(hexstr) → bytes
+// unhexlify(hexstr) → bytes. CPython's binascii.unhexlify raises
+// `binascii.Error` (a ValueError subclass — protoPython aliases it
+// directly) on:
+//   - odd-length input
+//   - any character outside [0-9a-fA-F]
+// Previously, both error cases silently produced garbage bytes
+// (invalid digits parsed as 0; trailing odd byte dropped) — which
+// is what produced test_base64.test_b16decode's "Non-base16 digit
+// found" failure: the test feeds invalid input expecting the
+// proper exception, and instead got a bytes-of-zeros result.
 static const proto::ProtoObject* py_unhexlify(
     proto::ProtoContext* ctx, const proto::ProtoObject*,
     const proto::ParentLink*,
@@ -215,16 +224,31 @@ static const proto::ProtoObject* py_unhexlify(
 
     if (!posArgs || posArgs->getSize(ctx) < 1) return make_bytes(ctx, "");
     std::string src = obj_to_bytes(ctx, posArgs->getAt(ctx, 0));
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (src.size() % 2 != 0) {
+        if (env) env->raiseValueError(ctx,
+            PythonEnvironment::getInternedString(ctx,
+                "Odd-length string")->asObject(ctx));
+        return nullptr;
+    }
+    auto hex_digit = [](char c) -> int {
+        if (c >= '0' && c <= '9') return c - '0';
+        if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+        if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+        return -1;
+    };
     std::string out;
+    out.reserve(src.size() / 2);
     for (size_t i = 0; i + 1 < src.size(); i += 2) {
-        char hi = src[i], lo = src[i+1];
-        int h = (hi >= '0' && hi <= '9') ? hi - '0' :
-                (hi >= 'a' && hi <= 'f') ? hi - 'a' + 10 :
-                (hi >= 'A' && hi <= 'F') ? hi - 'A' + 10 : 0;
-        int l = (lo >= '0' && lo <= '9') ? lo - '0' :
-                (lo >= 'a' && lo <= 'f') ? lo - 'a' + 10 :
-                (lo >= 'A' && lo <= 'F') ? lo - 'A' + 10 : 0;
-        out += (char)((h << 4) | l);
+        int h = hex_digit(src[i]);
+        int l = hex_digit(src[i + 1]);
+        if (h < 0 || l < 0) {
+            if (env) env->raiseValueError(ctx,
+                PythonEnvironment::getInternedString(ctx,
+                    "Non-hexadecimal digit found")->asObject(ctx));
+            return nullptr;
+        }
+        out += static_cast<char>((h << 4) | l);
     }
     return make_bytes(ctx, out);
 }
