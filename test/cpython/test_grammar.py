@@ -2,69 +2,34 @@
 # This just tests whether the parser accepts them all.
 
 print("STARTING TEST_GRAMMAR")
-# import annotationlib
-import os
-try:
-    _PROTO = bool(os.environ.get('PROTO_PYTHONPATH'))
-except Exception:
-    _PROTO = True  # proto runtime: avoid encode/decode path in os.environ
-if not _PROTO:
-    import inspect
+import inspect
 import unittest
 import sys
 import textwrap
 import warnings
-# testing import * (skip under proto to avoid slow module loading)
-if not _PROTO:
-    from sys import *
+from sys import *
 
-# Use lightweight support under protoPython to avoid slow test.support import chain.
-if _PROTO:
-    from test.cpython import _grammar_support
-    from test.cpython._grammar_support import (
-        check_syntax_error,
-        check_syntax_warning,
-        check_no_warnings,
-        import_helper,
-        skip_emscripten_stack_overflow,
-        skip_wasi_stack_overflow,
-        VALID_UNDERSCORE_LITERALS,
-        INVALID_UNDERSCORE_LITERALS,
-    )
-    # Minimal dummies so unittest discovery and module introspection do not fail.
-    class _DummyMod:
-        __annotations__ = {}
-    test = _DummyMod()
-    ann_module = _DummyMod()
-    ann_module.M = type('M', (), {'__annotations__': {'o': type}})()
-    ann_module2 = _DummyMod()
-    typing = None  # only used in skipped tests
-else:
-    # different import patterns to check that __annotations__ does not interfere
-    # with import machinery
-    import test.typinganndata.ann_module as ann_module
-    import typing
-    from test.typinganndata import ann_module2
-    import test
-    from test.support import (
-        check_syntax_error,
-        import_helper,
-        skip_emscripten_stack_overflow,
-        skip_wasi_stack_overflow,
-    )
-    from test.support.numbers import (
-        VALID_UNDERSCORE_LITERALS,
-        INVALID_UNDERSCORE_LITERALS,
-    )
+# different import patterns to check that __annotations__ does not interfere
+# with import machinery
+import test.typinganndata.ann_module as ann_module
+import typing
+from test.typinganndata import ann_module2
+import test
+from test.support import (
+    check_syntax_error,
+    import_helper,
+    skip_emscripten_stack_overflow,
+    skip_wasi_stack_overflow,
+)
+from test.support.numbers import (
+    VALID_UNDERSCORE_LITERALS,
+    INVALID_UNDERSCORE_LITERALS,
+)
 
 class TokenTests(unittest.TestCase):
 
-    if _PROTO:
-        check_syntax_error = check_syntax_error
-        check_syntax_warning = check_syntax_warning
-    else:
-        from test.support import check_syntax_error
-        from test.support.warnings_helper import check_syntax_warning
+    from test.support import check_syntax_error
+    from test.support.warnings_helper import check_syntax_warning
 
     def test_backslash(self):
         # Backslash means line continuation:
@@ -305,14 +270,9 @@ var_annot_global: int # a global annotated is necessary for test_var_annot
 
 class GrammarTests(unittest.TestCase):
 
-    if _PROTO:
-        check_syntax_error = check_syntax_error
-        check_syntax_warning = check_syntax_warning
-        check_no_warnings = check_no_warnings
-    else:
-        from test.support import check_syntax_error
-        from test.support.warnings_helper import check_syntax_warning
-        from test.support.warnings_helper import check_no_warnings
+    from test.support import check_syntax_error
+    from test.support.warnings_helper import check_syntax_warning
+    from test.support.warnings_helper import check_no_warnings
 
     # single_input: NEWLINE | simple_stmt | compound_stmt NEWLINE
     # XXX can't test in a script -- this rule is only used when interactive
@@ -437,7 +397,6 @@ class GrammarTests(unittest.TestCase):
         self.assertEqual(E.__annotations__, {})
         self.assertEqual(F.__annotations__, {})
 
-    @unittest.skipIf(_PROTO, "skip under proto: avoids heavy typing/annotation imports")
     def test_var_annot_module_semantics(self):
         self.assertEqual(test.__annotations__, {})
         self.assertEqual(ann_module.__annotations__,
@@ -446,7 +405,6 @@ class GrammarTests(unittest.TestCase):
                          {'o': type})
         self.assertEqual(ann_module2.__annotations__, {})
 
-    @unittest.skipIf(_PROTO, "skip under proto: avoids heavy typing/annotation imports")
     def test_var_annot_in_module(self):
         # check that functions fail the same way when executed
         # outside of module where they were defined
@@ -458,7 +416,6 @@ class GrammarTests(unittest.TestCase):
         with self.assertRaises(NameError):
             ann_module3.D_bad_ann(5)
 
-    @unittest.skipIf(_PROTO, "skip under proto: avoids annotationlib import")
     def test_var_annot_simple_exec(self):
         gns = {}; lns = {}
         exec("'docstring'\n"
@@ -468,7 +425,6 @@ class GrammarTests(unittest.TestCase):
         gns.update(lns)  # __annotate__ looks at globals
         self.assertEqual(lns["__annotate__"](annotationlib.Format.VALUE), {'x': int})
 
-    @unittest.skipIf(_PROTO, "skip under proto: avoids typing import")
     def test_var_annot_rhs(self):
         ns = {}
         exec('x: tuple = 1, 2', ns)
@@ -2023,7 +1979,6 @@ class GrammarTests(unittest.TestCase):
         m @= 42
         self.assertEqual(m.other, 42)
 
-    @unittest.skipIf(_PROTO, "skip under proto: avoids inspect import")
     def test_async_await(self):
         async def test():
             def sum():
