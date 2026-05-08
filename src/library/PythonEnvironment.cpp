@@ -11167,6 +11167,73 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
         }
     ));
     methodPrototype = methodPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__doc__"), PROTO_NONE);
+    // Bound-method equality: two bound methods are equal iff they share
+    // the same `__self__` (by identity) and the same underlying
+    // function/native pointer.  Without this, every fresh `obj.method`
+    // lookup yielded a distinct wrapper and `obj.method == obj.method`
+    // was always False.  Native bound methods don't always carry
+    // __self__/__func__ as Python attributes, so the helper falls back
+    // to the C-level asMethodSelf / asMethod pointers.
+    methodPrototype = methodPrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "__eq__"),
+        rootContext_->fromMethod(nullptr,
+        [](proto::ProtoContext* ctx, const proto::ProtoObject* self,
+           const proto::ParentLink*, const proto::ProtoList* args,
+           const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+            if (!args || args->getSize(ctx) < 1) return PROTO_FALSE;
+            const proto::ProtoObject* a = self;
+            const proto::ProtoObject* b = args->getAt(ctx, 0);
+            if (!a || !b) return PROTO_FALSE;
+            if (a == b) return PROTO_TRUE;
+            PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+            if (!env) return PROTO_FALSE;
+            const proto::ProtoString* selfS = env->getSelfDunderString();
+            const proto::ProtoString* funcS = env->getFuncDunderString();
+            // Pull __self__: prefer the C-level method-self for native
+            // methods (always present); fall back to the Python attribute.
+            const proto::ProtoObject* aSelf = a->isMethod(ctx) ? a->asMethodSelf(ctx) : nullptr;
+            const proto::ProtoObject* bSelf = b->isMethod(ctx) ? b->asMethodSelf(ctx) : nullptr;
+            if (!aSelf) aSelf = a->hasOwnAttribute(ctx, selfS) == PROTO_TRUE ? a->getAttribute(ctx, selfS) : nullptr;
+            if (!bSelf) bSelf = b->hasOwnAttribute(ctx, selfS) == PROTO_TRUE ? b->getAttribute(ctx, selfS) : nullptr;
+            if (!aSelf || !bSelf) return env->getNotImplementedPrototype();
+            if (aSelf != bSelf) return PROTO_FALSE;
+            if (a->isMethod(ctx) && b->isMethod(ctx)) {
+                return a->asMethod(ctx) == b->asMethod(ctx) ? PROTO_TRUE : PROTO_FALSE;
+            }
+            const proto::ProtoObject* aFunc = a->hasOwnAttribute(ctx, funcS) == PROTO_TRUE ? a->getAttribute(ctx, funcS) : nullptr;
+            const proto::ProtoObject* bFunc = b->hasOwnAttribute(ctx, funcS) == PROTO_TRUE ? b->getAttribute(ctx, funcS) : nullptr;
+            if (!aFunc || !bFunc) return env->getNotImplementedPrototype();
+            return aFunc == bFunc ? PROTO_TRUE : PROTO_FALSE;
+        }));
+    methodPrototype = methodPrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "__ne__"),
+        rootContext_->fromMethod(nullptr,
+        [](proto::ProtoContext* ctx, const proto::ProtoObject* self,
+           const proto::ParentLink*, const proto::ProtoList* args,
+           const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+            if (!args || args->getSize(ctx) < 1) return PROTO_TRUE;
+            const proto::ProtoObject* a = self;
+            const proto::ProtoObject* b = args->getAt(ctx, 0);
+            if (!a || !b) return PROTO_TRUE;
+            if (a == b) return PROTO_FALSE;
+            PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+            if (!env) return PROTO_TRUE;
+            const proto::ProtoString* selfS = env->getSelfDunderString();
+            const proto::ProtoString* funcS = env->getFuncDunderString();
+            const proto::ProtoObject* aSelf = a->isMethod(ctx) ? a->asMethodSelf(ctx) : nullptr;
+            const proto::ProtoObject* bSelf = b->isMethod(ctx) ? b->asMethodSelf(ctx) : nullptr;
+            if (!aSelf) aSelf = a->hasOwnAttribute(ctx, selfS) == PROTO_TRUE ? a->getAttribute(ctx, selfS) : nullptr;
+            if (!bSelf) bSelf = b->hasOwnAttribute(ctx, selfS) == PROTO_TRUE ? b->getAttribute(ctx, selfS) : nullptr;
+            if (!aSelf || !bSelf) return env->getNotImplementedPrototype();
+            if (aSelf != bSelf) return PROTO_TRUE;
+            if (a->isMethod(ctx) && b->isMethod(ctx)) {
+                return a->asMethod(ctx) == b->asMethod(ctx) ? PROTO_FALSE : PROTO_TRUE;
+            }
+            const proto::ProtoObject* aFunc = a->hasOwnAttribute(ctx, funcS) == PROTO_TRUE ? a->getAttribute(ctx, funcS) : nullptr;
+            const proto::ProtoObject* bFunc = b->hasOwnAttribute(ctx, funcS) == PROTO_TRUE ? b->getAttribute(ctx, funcS) : nullptr;
+            if (!aFunc || !bFunc) return env->getNotImplementedPrototype();
+            return aFunc == bFunc ? PROTO_FALSE : PROTO_TRUE;
+        }));
     // Register this as the prototype for all native POINTER_TAG_METHOD objects so they
     // inherit __doc__, __get__, __call__ and other standard function attributes.
     rootContext_->space->methodPrototype = const_cast<proto::ProtoObject*>(methodPrototype);
