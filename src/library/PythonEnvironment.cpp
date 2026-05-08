@@ -11879,7 +11879,13 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     // Other native modules
     registerNativeModule(nativeProviderPtr, "_collections", [this](proto::ProtoContext* ctx) { return collections::initialize(ctx, this); });
     registerNativeModule(nativeProviderPtr, "_collections_abc", [](proto::ProtoContext* ctx) { return collections_abc::initialize(ctx); });
-    registerNativeModule(nativeProviderPtr, "logging", [](proto::ProtoContext* ctx) { return logging::initialize(ctx); });
+    // Native `logging` module is disabled — it was a stub whose
+    // getLogger returned an object missing warning/error/critical/
+    // debug, breaking any user code that tried more than .info().
+    // The stdlib `lib/python3.14/logging/__init__.py` is the proper
+    // implementation and now wins the import lookup. Same approach
+    // taken for heapq and bisect.
+    // registerNativeModule(nativeProviderPtr, "logging", [](proto::ProtoContext* ctx) { return logging::initialize(ctx); });
     registerNativeModule(nativeProviderPtr, "operator", [](proto::ProtoContext* ctx) { return operator_::initialize(ctx); });
     registerNativeModule(nativeProviderPtr, "_operator", [](proto::ProtoContext* ctx) { return operator_::initialize(ctx); });
     registerNativeModule(nativeProviderPtr, "math", [](proto::ProtoContext* ctx) { return math::initialize(ctx); });
