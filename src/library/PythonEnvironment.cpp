@@ -1581,6 +1581,33 @@ static const proto::ProtoObject* py_int_call(
             // type(obj).__int__(obj) and validates the result is an int.
             // Falls back to __index__ when __int__ is missing (PEP 357).
             PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+            // First: if val is a wrapped subclass-of-int instance, the
+            // integer payload lives in __data__ (see the subclass
+            // instantiation branch below at "Subclass instantiation").
+            // Read it directly so int(MyInt(7)) returns 7 without
+            // dispatching through __int__/__index__ — the inherited
+            // dunders eventually call back into this same py_int_call
+            // and would loop on an instance whose isInteger is false.
+            if (env) {
+                const proto::ProtoObject* cls0 = env->getType(ctx, val);
+                const proto::ProtoObject* mroAttr0 = cls0 ? cls0->getAttribute(ctx, env->getMroString()) : nullptr;
+                const proto::ProtoTuple* mro0 = mroAttr0 ? mroAttr0->asTuple(ctx) : nullptr;
+                bool subOfInt = false;
+                if (mro0 && env->getIntPrototype()) {
+                    for (size_t i = 0; i < mro0->getSize(ctx); ++i) {
+                        if (mro0->getAt(ctx, (int)i) == env->getIntPrototype()) { subOfInt = true; break; }
+                    }
+                }
+                if (subOfInt) {
+                    const proto::ProtoObject* d = val->getAttribute(ctx, env->getDataString());
+                    if (d && (d->isInteger(ctx) || d->isBoolean(ctx))) {
+                        x = d->isBoolean(ctx)
+                            ? ctx->fromInteger(d == PROTO_TRUE ? 1 : 0)
+                            : d;
+                        goto haveX;
+                    }
+                }
+            }
             if (env) {
                 const proto::ProtoString* intS = PythonEnvironment::getInternedString(ctx, "__int__");
                 const proto::ProtoString* indexS = PythonEnvironment::getInternedString(ctx, "__index__");
