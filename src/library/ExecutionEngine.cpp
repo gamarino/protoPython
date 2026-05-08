@@ -1258,8 +1258,17 @@ static const proto::ProtoObject* binaryOpDispatch(proto::ProtoContext* ctx, cons
         res = invokeDunder(ctx, b, rdunderS, argsA);
         if (env && res == env->getNotImplementedPrototype()) sawNotImplemented = true;
     }
-    if (sawNotImplemented
-        && (!res || (env && res == env->getNotImplementedPrototype()))
+    // CPython parity: at the operator level, when neither path produced
+    // a value (and no exception is pending), raise TypeError —
+    // matches `a OP b` semantics for `unsupported operand type(s) ...`.
+    // The previous "lenient on absent methods" carve-out hid genuine
+    // user-level errors; if a stdlib init path ever turns out to need
+    // the silent return (we audited current paths and corrected the
+    // one we found, in enum.py FlagBoundary), give it its own entry
+    // point rather than letting the operator-level dispatcher swallow
+    // null silently.
+    (void)sawNotImplemented;
+    if ((!res || (env && res == env->getNotImplementedPrototype()))
         && env && !env->hasPendingException()) {
         std::string aName = "?", bName = "?";
         const proto::ProtoString* nameS = env->getNameString();

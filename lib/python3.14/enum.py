@@ -586,12 +586,17 @@ class EnumType(type):
             if member_value not in enum_class._value2member_map_:
                 enum_class._value2member_map_[member_value] = member
             
-            if _is_single_bit(member_value):
-                # (Flag only)
-                enum_class._flag_mask_ |= member_value
-                enum_class._singles_mask_ |= member_value
-            else:
-                enum_class._flag_mask_ |= member_value
+            # Flag-only bookkeeping: _is_single_bit assumes member_value is
+            # an int and dies on `value & (value - 1)` for any non-int
+            # value (e.g. FlagBoundary's StrEnum-style members carry the
+            # string "strict" / "conform" / ... as their value).  Gate
+            # the whole block on the class actually being a Flag.
+            if Flag is not None and _issubclass(enum_class, Flag):
+                if _is_single_bit(member_value):
+                    enum_class._flag_mask_ |= member_value
+                    enum_class._singles_mask_ |= member_value
+                else:
+                    enum_class._flag_mask_ |= member_value
 
         # replace any other __new__ with our own
         if Enum is not None:
