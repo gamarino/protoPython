@@ -3379,7 +3379,17 @@ static const proto::ProtoObject* py_hash(
     protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(context);
     if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
-    const proto::ProtoObject* hashMethod = obj->getAttribute(context, env ? env->getHashString() : PythonEnvironment::getInternedString(context, "__hash__"));
+    const proto::ProtoString* hashS = env ? env->getHashString() : PythonEnvironment::getInternedString(context, "__hash__");
+    // CPython hashes via the type's tp_hash slot, not the instance's
+    // attribute dict directly.  protoPython's instance attribute lookup
+    // does not walk the Python-level MRO when only the prototype chain
+    // points back to a class — for plain Python classes (`class A: pass;
+    // a = A()`) `obj->getAttribute(__hash__)` returned PROTO_NONE even
+    // though the inherited `object.__hash__` was reachable.  Going
+    // through env->getAttribute gives the full descriptor + MRO walk.
+    const proto::ProtoObject* hashMethod = env
+        ? env->getAttribute(context, obj, hashS, /*raiseError=*/false)
+        : obj->getAttribute(context, hashS);
     // CPython convention: __hash__ explicitly set to None means the type is
     // unhashable (dict/list/set/bytearray etc.). Raise TypeError instead of
     // silently returning None — callers like set construction and dict key
