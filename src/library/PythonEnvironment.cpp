@@ -1189,8 +1189,20 @@ static const proto::ProtoObject* py_object_reduce_ex(
     } else if (argc >= 1) {
         protoObj = positionalParameters->getAt(context, 0);
     }
-    if (!protoObj) protoObj = context->fromInteger(0);
     if (!obj) return PROTO_NONE;
+    // CPython: __reduce_ex__(protocol) requires a single integer protocol.
+    // Earlier we silently substituted 0 when missing — that hid bugs in
+    // user code (test_object_reduce explicitly checks both forms).
+    if (!protoObj) {
+        if (env) env->raiseTypeError(context,
+            "__reduce_ex__() missing required argument: 'protocol'");
+        return nullptr;
+    }
+    if (!protoObj->isInteger(context) && !protoObj->isBoolean(context)) {
+        if (env) env->raiseTypeError(context,
+            "an integer is required");
+        return nullptr;
+    }
 
     const proto::ProtoObject* copyregMod = env ? env->importModule("copyreg") : nullptr;
     if (copyregMod && copyregMod != PROTO_NONE) {
@@ -1216,16 +1228,31 @@ static const proto::ProtoObject* py_object_reduce(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
-    if (!self) return PROTO_NONE;
-    
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    // CPython: __reduce__() takes no arguments; the descriptor is bound
+    // to self.  Detect and reject any extras.  The protoPython binding
+    // is unbound so the receiver may come in via args[0] (when the
+    // wrapper is invoked as `obj.__reduce__()`, args=[]) or via `self`.
+    const proto::ProtoObject* obj = self;
+    unsigned long argc = positionalParameters ? positionalParameters->getSize(context) : 0UL;
+    if ((!obj || (env && obj == env->getObjectPrototype())) && argc >= 1) {
+        // Unbound: args = [instance, …extras]
+        obj = positionalParameters->getAt(context, 0);
+        argc -= 1;
+    }
+    if (argc != 0) {
+        if (env) env->raiseTypeError(context,
+            "__reduce__() takes no arguments (got " + std::to_string(argc) + ")");
+        return nullptr;
+    }
+    if (!obj) return PROTO_NONE;
+
     const proto::ProtoString* reduceExName = PythonEnvironment::getInternedString(context, "__reduce_ex__");
-    const proto::ProtoObject* reduceExMethod = self->getAttribute(context, reduceExName);
+    const proto::ProtoObject* reduceExMethod = obj->getAttribute(context, reduceExName);
     if (reduceExMethod && reduceExMethod != PROTO_NONE) {
         const proto::ProtoList* args = context->newList()->appendLast(context, context->fromInteger(0));
         return reduceExMethod->call(context, nullptr, reduceExName, reduceExMethod, args, keywordParameters);
     }
-    
-    PythonEnvironment* env = PythonEnvironment::fromContext(context);
     if (env) env->raiseTypeError(context, "cannot pickle object");
     return nullptr;
 }
