@@ -3712,11 +3712,53 @@ static const proto::ProtoObject* unionNormalizeNone(proto::ProtoContext* ctx,
 // flattened (unions splice their members in) and identity-deduped (preserves
 // order of first occurrence). Returns nullptr if no UnionType prototype is
 // available — caller should fall through.
+// PEP 604 acceptable-operand check. CPython's `type_or` returns
+// NotImplemented for anything that isn't a class object, a typing
+// GenericAlias, an existing UnionType, None, or NoneType — letting the
+// reflected operator try and ultimately raising TypeError. Without
+// this, `int | 3` silently produced a malformed UnionType.
+static bool unionIsAcceptableOperand(proto::ProtoContext* ctx,
+                                     const proto::ProtoObject* obj) {
+    if (!obj) return false;
+    if (obj == PROTO_NONE) return true;
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!env) return false;
+    if (obj == env->getNoneTypePrototype()) return true;
+    // Class detection: type(obj) must itself be `type` (or a metaclass
+    // derived from type). A SmallInt or similar value would have
+    // type(obj) == int — that's an instance, not a class. Using
+    // hasOwnAttribute("__mro__") isn't reliable here because protoCore's
+    // tagged-value path resolves attribute lookups through the type
+    // prototype, so even a SmallInt reports __mro__ as "own".
+    const proto::ProtoObject* objType = env->getType(ctx, obj);
+    if (objType == env->getTypePrototype()) return true;
+    // typing GenericAlias / UnionType / typing._SpecialForm: detect by
+    // class name or by carrying __args__/__origin__ as own attributes.
+    if (objType) {
+        const proto::ProtoObject* tname = objType->getAttribute(ctx, env->getNameString());
+        if (tname && tname->isString(ctx)) {
+            std::string n;
+            tname->asString(ctx)->toUTF8String(ctx, n);
+            if (n == "UnionType" || n == "GenericAlias" ||
+                n == "_UnionGenericAlias" || n == "_GenericAlias" ||
+                n == "_SpecialForm") return true;
+        }
+    }
+    // Fallback: typing surrogates carry __args__ on the instance itself.
+    const proto::ProtoString* argsS = PythonEnvironment::getInternedString(ctx, "__args__");
+    if (obj->hasOwnAttribute(ctx, argsS) == PROTO_TRUE) return true;
+    return false;
+}
+
 static const proto::ProtoObject* buildUnionFlatDedup(proto::ProtoContext* ctx,
                                                      const proto::ProtoObject* lhs,
                                                      const proto::ProtoObject* rhs) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (!env || !env->getUnionTypeProto()) return nullptr;
+
+    if (!unionIsAcceptableOperand(ctx, lhs) || !unionIsAcceptableOperand(ctx, rhs)) {
+        return nullptr;  // caller should map to NotImplemented
+    }
 
     lhs = unionNormalizeNone(ctx, lhs);
     rhs = unionNormalizeNone(ctx, rhs);
@@ -3733,6 +3775,12 @@ static const proto::ProtoObject* buildUnionFlatDedup(proto::ProtoContext* ctx,
         if (!seen) deduped.push_back(a);
     }
 
+    // PEP 604 single-element collapse: `int | int` IS int. After
+    // flatten + dedup, a one-element residual must NOT be wrapped in
+    // a UnionType — it's the original type. test_or_types_operator
+    // asserts `assertIs(int | int, int)`.
+    if (deduped.size() == 1) return deduped[0];
+
     const proto::ProtoTuple* args = ctx->newTuple(deduped);
     const proto::ProtoList* utArgs = ctx->newList()->appendLast(ctx, env->getUnionTypeProto())
                                                    ->appendLast(ctx, args->asObject(ctx));
@@ -3740,16 +3788,24 @@ static const proto::ProtoObject* buildUnionFlatDedup(proto::ProtoContext* ctx,
 }
 
 // UnionType.__or__: `(int|str) | list` → flatten LHS, dedupe.
+// Returns NotImplemented (not PROTO_NONE) when buildUnionFlatDedup
+// rejects an operand, so the binary-op dispatcher correctly tries
+// the reflected operand and ultimately raises TypeError.
 const proto::ProtoObject* py_uniontype_or(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
-    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    if (positionalParameters->getSize(context) < 1) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(context);
+        return env ? env->getNotImplementedPrototype() : PROTO_NONE;
+    }
     const proto::ProtoObject* other = positionalParameters->getAt(context, 0);
     const proto::ProtoObject* result = buildUnionFlatDedup(context, self, other);
-    return result ? result : PROTO_NONE;
+    if (result) return result;
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    return env ? env->getNotImplementedPrototype() : PROTO_NONE;
 }
 
 // UnionType.__ror__: `int | (str|list)` reaches here when LHS is plain.
@@ -3759,10 +3815,15 @@ const proto::ProtoObject* py_uniontype_ror(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
-    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    if (positionalParameters->getSize(context) < 1) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(context);
+        return env ? env->getNotImplementedPrototype() : PROTO_NONE;
+    }
     const proto::ProtoObject* other = positionalParameters->getAt(context, 0);
     const proto::ProtoObject* result = buildUnionFlatDedup(context, other, self);
-    return result ? result : PROTO_NONE;
+    if (result) return result;
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    return env ? env->getNotImplementedPrototype() : PROTO_NONE;
 }
 
 // UnionType.__eq__: two UnionTypes are equal iff their __args__ are equal as
@@ -3909,8 +3970,13 @@ const proto::ProtoObject* py_type_or(
     // `(int|str) | list` becomes `(int, str, list)` rather than
     // `(int|str, list)`, and dedupe by identity (CPython matches by
     // equality but for type objects equality reduces to identity).
+    // Returns NotImplemented (not self) when the operand is invalid
+    // (e.g. `int | 3`), so the binary-op dispatcher escalates to
+    // TypeError per CPython semantics.
     const proto::ProtoObject* result = buildUnionFlatDedup(context, self, other);
-    return result ? result : self;
+    if (result) return result;
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    return env ? env->getNotImplementedPrototype() : self;
 }
 
 // `__ror__`: this is invoked as `RHS.__ror__(LHS)` after Python's reflected
@@ -3927,7 +3993,9 @@ const proto::ProtoObject* py_type_ror(
     if (positionalParameters->getSize(context) < 1) return self;
     const proto::ProtoObject* other = positionalParameters->getAt(context, 0);
     const proto::ProtoObject* result = buildUnionFlatDedup(context, other, self);
-    return result ? result : self;
+    if (result) return result;
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    return env ? env->getNotImplementedPrototype() : self;
 }
 
 namespace builtins {

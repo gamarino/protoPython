@@ -4238,13 +4238,82 @@ const proto::ProtoObject* executeBytecodeRange(
                 stack.pop_back(); stack.back() = res;
             } else {
                 const proto::ProtoString* orS = env ? env->getOrString() : PythonEnvironment::getInternedString(ctx, "__or__");
-                const proto::ProtoList* argsB = ctx->newList()->appendLast(ctx, b);
-                const proto::ProtoObject* result = invokeDunder(ctx, a, orS, argsB);
+                const proto::ProtoObject* result = nullptr;
+
+                // PEP 604 dispatch: when at least one operand is a class
+                // object (has `__mro__` as an own attribute), the binary
+                // `|` resolves on the metaclass — `type(a).__or__(a, b)` —
+                // not on the class's own `__or__` (which for e.g. `int` is
+                // the per-instance bitwise op and would silently no-op on
+                // `int | int`). Routing through the type prototype's
+                // `__or__` reaches `py_type_or`, which performs the union
+                // construction with flatten / dedup / single-unwrap.
+                bool sawNotImplemented = false;
+                if (env) {
+                    // Class detection: type(obj) must itself be `type`.
+                    // hasOwnAttribute("__mro__") would return true for
+                    // instances too because protoCore's tagged-value path
+                    // resolves attribute lookups through the type
+                    // prototype, mis-classifying frozenset / set / dict
+                    // instances as classes and routing them through the
+                    // metaclass-level union builder.
+                    const proto::ProtoObject* typeProto = env->getTypePrototype();
+                    bool aIsClass = (a && env->getType(ctx, a) == typeProto);
+                    bool bIsClass = (b && env->getType(ctx, b) == typeProto);
+                    if (aIsClass || bIsClass) {
+                        const proto::ProtoObject* typeOr = typeProto
+                            ? typeProto->getAttribute(ctx, orS) : nullptr;
+                        if (typeOr && typeOr->asMethod(ctx)) {
+                            const proto::ProtoList* argsB = ctx->newList()->appendLast(ctx, b);
+                            result = typeOr->asMethod(ctx)(ctx,
+                                const_cast<proto::ProtoObject*>(a),
+                                nullptr, argsB, nullptr);
+                            if (result == env->getNotImplementedPrototype()) {
+                                result = nullptr;
+                                sawNotImplemented = true;
+                            }
+                        }
+                    }
+                }
+
+                if (!result) {
+                    const proto::ProtoList* argsB = ctx->newList()->appendLast(ctx, b);
+                    result = invokeDunder(ctx, a, orS, argsB);
+                    // NotImplemented from a Python-level dunder is
+                    // semantically equivalent to "method declined" — we
+                    // must fall through to the reflected operand. CPython
+                    // does this in `binary_op1`; protoPython previously
+                    // forwarded NotImplemented as a real value, so e.g.
+                    // `int | 3` (where type.__or__ returns NotImplemented
+                    // because 3 isn't a type) silently produced
+                    // NotImplemented instead of raising TypeError.
+                    if (env && result == env->getNotImplementedPrototype()) {
+                        result = nullptr;
+                        sawNotImplemented = true;
+                    }
+                }
 
                 if (!result) {
                     const proto::ProtoString* rorS = env ? env->getROrString() : PythonEnvironment::getInternedString(ctx, "__ror__");
                     const proto::ProtoList* argsA = ctx->newList()->appendLast(ctx, a);
                     result = invokeDunder(ctx, b, rorS, argsA);
+                    if (env && result == env->getNotImplementedPrototype()) {
+                        result = nullptr;
+                        sawNotImplemented = true;
+                    }
+                }
+
+                if (!result && sawNotImplemented && env && !env->hasPendingException()) {
+                    // At least one side EXPLICITLY returned NotImplemented
+                    // and no path produced a real value. CPython raises
+                    // TypeError here — e.g. `int | 3` where type.__or__
+                    // declined because 3 isn't a type. We do NOT raise
+                    // when result is null only because the dunder was
+                    // absent (returns nullptr from invokeDunder), since
+                    // that would regress callers like `frozenset | frozenset`
+                    // when stdlib hasn't wired the method yet.
+                    env->raiseTypeError(ctx,
+                        "unsupported operand type(s) for |");
                 }
 
                 stack.pop_back();
