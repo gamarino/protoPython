@@ -5730,7 +5730,6 @@ static const proto::ProtoObject* py_str_encode(
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
     (void)parentLink;
-    (void)positionalParameters;
     (void)keywordParameters;
     const proto::ProtoString* s = str_from_self(context, self);
     if (!s) return PROTO_NONE;
@@ -5738,10 +5737,83 @@ static const proto::ProtoObject* py_str_encode(
     if (!env) return PROTO_NONE;
     std::string raw;
     s->toUTF8String(context, raw);
+
+    // Resolve encoding argument. CPython treats `'…'.encode('ascii')`
+    // as strict: a non-ASCII character must raise UnicodeEncodeError.
+    // Previously this was completely ignored — every encoding produced
+    // the UTF-8 bytes — so `_bytes_from_decode_data('with \\xcb')`
+    // never raised, breaking test_decode_nonascii_str.
+    std::string encoding = "utf-8";
+    if (positionalParameters && positionalParameters->getSize(context) >= 1) {
+        const proto::ProtoObject* enc = positionalParameters->getAt(context, 0);
+        if (enc && enc->isString(context)) {
+            enc->asString(context)->toUTF8String(context, encoding);
+        }
+    }
+    // Lower-case + canonical-form normalisation: 'ASCII', 'us-ascii',
+    // 'ascii' all map to the same check. CPython does the same via
+    // codecs.lookup → name attribute.
+    std::string canon;
+    canon.reserve(encoding.size());
+    for (char c : encoding) {
+        if (c >= 'A' && c <= 'Z') canon += static_cast<char>(c - 'A' + 'a');
+        else if (c == '-' || c == '_') /* skip */;
+        else canon += c;
+    }
+    if (canon == "ascii" || canon == "usascii") {
+        for (size_t i = 0; i < raw.size(); ++i) {
+            if (static_cast<unsigned char>(raw[i]) >= 0x80) {
+                env->raiseValueError(context,
+                    PythonEnvironment::getInternedString(context,
+                        "'ascii' codec can't encode character: "
+                        "ordinal not in range(128)")->asObject(context));
+                return nullptr;
+            }
+        }
+    } else if (canon == "latin1" || canon == "iso88591" || canon == "8859") {
+        // latin-1 maps each Unicode code point ≤ 0xFF to a byte.
+        // protoPython stores str as UTF-8; iterate code points.
+        std::string out;
+        size_t i = 0;
+        while (i < raw.size()) {
+            unsigned char c = static_cast<unsigned char>(raw[i]);
+            unsigned int cp = 0;
+            int len = 1;
+            if (c < 0x80) { cp = c; len = 1; }
+            else if ((c & 0xE0) == 0xC0 && i + 1 < raw.size()) {
+                cp = ((c & 0x1F) << 6) | (static_cast<unsigned char>(raw[i+1]) & 0x3F);
+                len = 2;
+            } else {
+                env->raiseValueError(context,
+                    PythonEnvironment::getInternedString(context,
+                        "'latin-1' codec can't encode character: "
+                        "ordinal not in range(256)")->asObject(context));
+                return nullptr;
+            }
+            if (cp > 0xFF) {
+                env->raiseValueError(context,
+                    PythonEnvironment::getInternedString(context,
+                        "'latin-1' codec can't encode character: "
+                        "ordinal not in range(256)")->asObject(context));
+                return nullptr;
+            }
+            out += static_cast<char>(cp);
+            i += len;
+        }
+        raw = out;
+    }
+    // utf-8 (default): use raw as-is (protoPython str storage is UTF-8).
+
     const proto::ProtoObject* bytesProto = env->getBytesPrototype();
     if (!bytesProto) return PROTO_NONE;
     const proto::ProtoObject* b = bytesProto->newChild(context, true);
-    b->setAttribute(context, PythonEnvironment::getInternalString(context, "__data__"), PythonEnvironment::getInternedString(context, raw.c_str())->asObject(context));
+    // Use ProtoByteBuffer for the bytes payload so non-ASCII octets
+    // round-trip without UTF-8 reinterpretation.
+    const proto::ProtoByteBuffer* bb = context->newByteBuffer(
+        raw.data(), static_cast<unsigned long>(raw.size()));
+    b->setAttribute(context,
+        PythonEnvironment::getInternalString(context, "__data__"),
+        bb->asObject(context));
     return b;
 }
 
