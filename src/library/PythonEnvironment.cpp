@@ -4977,6 +4977,59 @@ static const proto::ProtoObject* py_int_arith(
             return ctx->fromDouble(lhs / rhs);
         }
         case TokenType::Modulo: return a->modulo(ctx, b);
+        case TokenType::DoubleSlash: {
+            // Floor division.  Both operands int: integer floor; either
+            // is float: floor of the true division.
+            if (a->isInteger(ctx) && b->isInteger(ctx)) {
+                long long lhs = a->asLong(ctx);
+                long long rhs = b->asLong(ctx);
+                if (rhs == 0) {
+                    if (env) env->raiseZeroDivisionError(ctx);
+                    return nullptr;
+                }
+                long long q = lhs / rhs;
+                if ((lhs ^ rhs) < 0 && q * rhs != lhs) --q; // round toward -inf
+                return ctx->fromInteger(q);
+            }
+            double lhs = a->isInteger(ctx) ? (double)a->asLong(ctx) : a->asDouble(ctx);
+            double rhs = b->isInteger(ctx) ? (double)b->asLong(ctx) : b->asDouble(ctx);
+            if (rhs == 0.0) {
+                if (env) env->raiseZeroDivisionError(ctx);
+                return nullptr;
+            }
+            return ctx->fromDouble(std::floor(lhs / rhs));
+        }
+        case TokenType::LShift: {
+            if (!a->isInteger(ctx) || !b->isInteger(ctx)) {
+                return env ? env->getNotImplementedPrototype() : PROTO_NONE;
+            }
+            long long lhs = a->asLong(ctx);
+            long long rhs = b->asLong(ctx);
+            if (rhs < 0) {
+                if (env) env->raiseValueError(ctx,
+                    PythonEnvironment::getInternedString(ctx, "negative shift count")->asObject(ctx));
+                return nullptr;
+            }
+            long long out = (rhs >= 64) ? 0 : static_cast<long long>(static_cast<unsigned long long>(lhs) << rhs);
+            return ctx->fromInteger(out);
+        }
+        case TokenType::RShift: {
+            if (!a->isInteger(ctx) || !b->isInteger(ctx)) {
+                return env ? env->getNotImplementedPrototype() : PROTO_NONE;
+            }
+            long long lhs = a->asLong(ctx);
+            long long rhs = b->asLong(ctx);
+            if (rhs < 0) {
+                if (env) env->raiseValueError(ctx,
+                    PythonEnvironment::getInternedString(ctx, "negative shift count")->asObject(ctx));
+                return nullptr;
+            }
+            long long out = (rhs >= 64) ? (lhs < 0 ? -1 : 0) : (lhs >> rhs);
+            return ctx->fromInteger(out);
+        }
+        case TokenType::BitAnd: return a->bitwiseAnd(ctx, b);
+        case TokenType::BitOr:  return a->bitwiseOr(ctx, b);
+        case TokenType::BitXor: return a->bitwiseXor(ctx, b);
         default: return env ? env->getNotImplementedPrototype() : PROTO_NONE;
     }
 }
@@ -5005,6 +5058,36 @@ static const proto::ProtoObject* py_int_mod(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) {
     return py_int_arith(ctx, self, args, TokenType::Modulo);
+}
+static const proto::ProtoObject* py_int_floordiv(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    return py_int_arith(ctx, self, args, TokenType::DoubleSlash);
+}
+static const proto::ProtoObject* py_int_lshift(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    return py_int_arith(ctx, self, args, TokenType::LShift);
+}
+static const proto::ProtoObject* py_int_rshift(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    return py_int_arith(ctx, self, args, TokenType::RShift);
+}
+static const proto::ProtoObject* py_int_and(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    return py_int_arith(ctx, self, args, TokenType::BitAnd);
+}
+static const proto::ProtoObject* py_int_or(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    return py_int_arith(ctx, self, args, TokenType::BitOr);
+}
+static const proto::ProtoObject* py_int_xor(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    return py_int_arith(ctx, self, args, TokenType::BitXor);
 }
 
 // int.__pow__(self, exp[, mod]): exponentiation. Negative exp returns float
@@ -11306,6 +11389,12 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
         intPrototype = intPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__rmul__"), rootContext_->fromMethod(nullptr, py_int_rmul));
         intPrototype = intPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__pow__"), rootContext_->fromMethod(nullptr, py_int_pow));
         intPrototype = intPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__rpow__"), rootContext_->fromMethod(nullptr, py_int_rpow));
+        intPrototype = intPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__floordiv__"), rootContext_->fromMethod(nullptr, py_int_floordiv));
+        intPrototype = intPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__lshift__"), rootContext_->fromMethod(nullptr, py_int_lshift));
+        intPrototype = intPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__rshift__"), rootContext_->fromMethod(nullptr, py_int_rshift));
+        intPrototype = intPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__and__"), rootContext_->fromMethod(nullptr, py_int_and));
+        intPrototype = intPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__or__"), rootContext_->fromMethod(nullptr, py_int_or));
+        intPrototype = intPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__xor__"), rootContext_->fromMethod(nullptr, py_int_xor));
         space_->smallIntegerPrototype = const_cast<proto::ProtoObject*>(intPrototype);
     }
 
