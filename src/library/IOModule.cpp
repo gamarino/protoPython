@@ -278,6 +278,335 @@ static const proto::ProtoObject* py_io_register(
     return self;
 }
 
+// ----- BytesIO --------------------------------------------------------------
+//
+// In-memory byte stream. Storage layout mirrors StringIO: a ProtoString
+// holding the raw octets in `__bio_buffer__` (we use ProtoString rather
+// than ProtoByteBuffer because protoPython's interned-string path
+// preserves embedded nulls when constructed with explicit length, and
+// every read/write helper treats the string as raw octets via
+// `getSize`/`toUTF8String`). Position lives in `__bio_pos__`.
+//
+// Inputs (write, ctor) are coerced to a std::string via bio_obj_to_bytes,
+// which accepts:
+//   - `bytes` wrappers (whose `__data__` is ProtoString or ByteBuffer);
+//   - raw ByteBuffer cells;
+//   - `memoryview` (recurses into __mv_data__);
+//   - ProtoString (interpreted as raw octets);
+//   - bytearray (stored as a wrapper with mutable __data__).
+//
+// Outputs (read, getvalue) return real `bytes` instances built via
+// bio_make_bytes — never ProtoString — so callers see `type(b) is bytes`
+// and avoid the same UTF-8 truncation hazards binascii's make_bytes
+// already documents.
+
+static const proto::ProtoString* k_bio_buf(proto::ProtoContext* c) {
+    return proto::ProtoString::createSymbol(c, "__bio_buffer__");
+}
+static const proto::ProtoString* k_bio_pos(proto::ProtoContext* c) {
+    return proto::ProtoString::createSymbol(c, "__bio_pos__");
+}
+
+// Build a `bytes` instance whose __data__ is a ProtoByteBuffer holding
+// the given raw octets — same pattern as binascii::make_bytes so
+// downstream code sees a real bytes value.
+static const proto::ProtoObject* bio_make_bytes(proto::ProtoContext* ctx,
+                                                const std::string& data) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    proto::ProtoObject* obj = const_cast<proto::ProtoObject*>(ctx->newObject(false));
+    if (env && env->getBytesPrototype()) {
+        obj = const_cast<proto::ProtoObject*>(obj->addParent(ctx, env->getBytesPrototype()));
+        obj = const_cast<proto::ProtoObject*>(obj->setAttribute(ctx,
+            PythonEnvironment::getInternedString(ctx, "__class__"),
+            env->getBytesPrototype()));
+    }
+    const proto::ProtoByteBuffer* bb = ctx->newByteBuffer(
+        data.data(), static_cast<unsigned long>(data.size()));
+    obj = const_cast<proto::ProtoObject*>(obj->setAttribute(ctx,
+        env ? env->getDataString() : PythonEnvironment::getInternalString(ctx, "__data__"),
+        bb->asObject(ctx)));
+    return obj;
+}
+
+// Coerce a Python bytes-like value to a std::string of raw octets.
+// Returns "" when the input cannot be interpreted as bytes — matches
+// binascii::obj_to_bytes for consistency across modules.
+static std::string bio_obj_to_bytes(proto::ProtoContext* ctx, const proto::ProtoObject* obj) {
+    if (!obj || obj == PROTO_NONE) return std::string();
+    if (obj->isString(ctx)) {
+        std::string s;
+        obj->asString(ctx)->toUTF8String(ctx, s);
+        return s;
+    }
+    if (const proto::ProtoByteBuffer* bb = obj->asByteBuffer(ctx)) {
+        unsigned long n = bb->getSize(ctx);
+        std::string out(n, '\0');
+        for (unsigned long i = 0; i < n; ++i) {
+            out[i] = static_cast<char>(static_cast<unsigned char>(bb->getAt(ctx, i)));
+        }
+        return out;
+    }
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (env) {
+        // memoryview wrapper.
+        const proto::ProtoObject* mv = obj->getAttribute(ctx,
+            PythonEnvironment::getInternedString(ctx, "__mv_data__"));
+        if (mv && mv != PROTO_NONE && mv != obj) return bio_obj_to_bytes(ctx, mv);
+        // bytes / bytearray wrapper: __data__ is ProtoString or ByteBuffer.
+        const proto::ProtoObject* data = obj->getAttribute(ctx, env->getDataString());
+        if (data && data != PROTO_NONE && data != obj) {
+            if (const proto::ProtoByteBuffer* bb = data->asByteBuffer(ctx)) {
+                unsigned long n = bb->getSize(ctx);
+                std::string out(n, '\0');
+                for (unsigned long i = 0; i < n; ++i) {
+                    out[i] = static_cast<char>(static_cast<unsigned char>(bb->getAt(ctx, i)));
+                }
+                return out;
+            }
+            if (data->isString(ctx)) {
+                std::string s;
+                data->asString(ctx)->toUTF8String(ctx, s);
+                return s;
+            }
+        }
+    }
+    return std::string();
+}
+
+static std::string bio_get_buf(proto::ProtoContext* ctx, const proto::ProtoObject* self) {
+    const proto::ProtoObject* bufObj = self->getAttribute(ctx, k_bio_buf(ctx));
+    if (!bufObj) return std::string();
+    return bio_obj_to_bytes(ctx, bufObj);
+}
+
+static long bio_get_pos(proto::ProtoContext* ctx, const proto::ProtoObject* self) {
+    const proto::ProtoObject* p = self->getAttribute(ctx, k_bio_pos(ctx));
+    return (p && p->isInteger(ctx)) ? static_cast<long>(p->asLong(ctx)) : 0;
+}
+
+static const proto::ProtoObject* bio_set_state(proto::ProtoContext* ctx,
+                                               const proto::ProtoObject* self,
+                                               const std::string& buf,
+                                               long pos) {
+    self = self->setAttribute(ctx, k_bio_buf(ctx), bio_make_bytes(ctx, buf));
+    self = self->setAttribute(ctx, k_bio_pos(ctx), ctx->fromInteger(pos));
+    return self;
+}
+
+static const proto::ProtoObject* py_bio_write(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    if (!args || args->getSize(ctx) < 1) return ctx->fromInteger(0);
+    std::string text = bio_obj_to_bytes(ctx, args->getAt(ctx, 0));
+    std::string buf = bio_get_buf(ctx, self);
+    long pos = bio_get_pos(ctx, self);
+    if (pos < 0) pos = 0;
+    if (static_cast<size_t>(pos) > buf.size()) buf.append(static_cast<size_t>(pos) - buf.size(), '\0');
+    size_t end = static_cast<size_t>(pos) + text.size();
+    if (end > buf.size()) buf.resize(end, '\0');
+    for (size_t i = 0; i < text.size(); ++i) buf[pos + i] = text[i];
+    bio_set_state(ctx, self, buf, static_cast<long>(pos + text.size()));
+    return ctx->fromInteger(static_cast<long>(text.size()));
+}
+
+static const proto::ProtoObject* py_bio_getvalue(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    return bio_make_bytes(ctx, bio_get_buf(ctx, self));
+}
+
+static const proto::ProtoObject* py_bio_read(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    std::string buf = bio_get_buf(ctx, self);
+    long pos = bio_get_pos(ctx, self);
+    if (pos < 0) pos = 0;
+    size_t size = buf.size();
+    long want = -1;
+    if (args && args->getSize(ctx) > 0) {
+        const proto::ProtoObject* a = args->getAt(ctx, 0);
+        if (a && a->isInteger(ctx)) want = static_cast<long>(a->asLong(ctx));
+    }
+    size_t take;
+    if (want < 0) take = (static_cast<size_t>(pos) < size) ? size - pos : 0;
+    else take = std::min<size_t>(size - std::min<size_t>(pos, size), static_cast<size_t>(want));
+    std::string out = (pos < static_cast<long>(size)) ? buf.substr(pos, take) : std::string();
+    bio_set_state(ctx, self, buf, pos + static_cast<long>(out.size()));
+    return bio_make_bytes(ctx, out);
+}
+
+static const proto::ProtoObject* py_bio_readline(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    std::string buf = bio_get_buf(ctx, self);
+    long pos = bio_get_pos(ctx, self);
+    if (pos < 0) pos = 0;
+    long limit = -1;
+    if (args && args->getSize(ctx) > 0) {
+        const proto::ProtoObject* a = args->getAt(ctx, 0);
+        if (a && a->isInteger(ctx)) limit = static_cast<long>(a->asLong(ctx));
+    }
+    if (static_cast<size_t>(pos) >= buf.size()) {
+        return bio_make_bytes(ctx, std::string());
+    }
+    size_t end = buf.find('\n', pos);
+    if (end == std::string::npos) end = buf.size();
+    else end += 1;  // include the '\n'
+    size_t take = end - pos;
+    if (limit >= 0 && take > static_cast<size_t>(limit)) take = static_cast<size_t>(limit);
+    std::string out = buf.substr(pos, take);
+    bio_set_state(ctx, self, buf, pos + static_cast<long>(take));
+    return bio_make_bytes(ctx, out);
+}
+
+static const proto::ProtoObject* py_bio_readlines(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoList* lines = ctx->newList();
+    for (;;) {
+        const proto::ProtoObject* line = py_bio_readline(ctx, self, nullptr, ctx->newList(), nullptr);
+        // EOF: bio_make_bytes("") produces a bytes instance with empty
+        // __data__ — peek into it to detect end of stream.
+        std::string raw = bio_obj_to_bytes(ctx, line);
+        if (raw.empty()) break;
+        lines = lines->appendLast(ctx, line);
+    }
+    return lines->asObject(ctx);
+}
+
+static const proto::ProtoObject* py_bio_iter(
+    proto::ProtoContext*, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    return self;
+}
+
+static const proto::ProtoObject* py_bio_next(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ProtoObject* line = py_bio_readline(ctx, self, nullptr, ctx->newList(), nullptr);
+    std::string raw = bio_obj_to_bytes(ctx, line);
+    if (raw.empty()) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+        if (env) env->raiseStopIteration(ctx);
+        return nullptr;
+    }
+    return line;
+}
+
+static const proto::ProtoObject* py_bio_seek(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    long off = 0;
+    long whence = 0;
+    if (args && args->getSize(ctx) > 0 && args->getAt(ctx, 0)->isInteger(ctx))
+        off = static_cast<long>(args->getAt(ctx, 0)->asLong(ctx));
+    if (args && args->getSize(ctx) > 1 && args->getAt(ctx, 1)->isInteger(ctx))
+        whence = static_cast<long>(args->getAt(ctx, 1)->asLong(ctx));
+    std::string buf = bio_get_buf(ctx, self);
+    long pos = bio_get_pos(ctx, self);
+    long newPos = pos;
+    if (whence == 0) newPos = off;
+    else if (whence == 1) newPos = pos + off;
+    else if (whence == 2) newPos = static_cast<long>(buf.size()) + off;
+    if (newPos < 0) newPos = 0;
+    bio_set_state(ctx, self, buf, newPos);
+    return ctx->fromInteger(newPos);
+}
+
+static const proto::ProtoObject* py_bio_tell(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    return ctx->fromInteger(bio_get_pos(ctx, self));
+}
+
+static const proto::ProtoObject* py_bio_truncate(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    std::string buf = bio_get_buf(ctx, self);
+    long pos = bio_get_pos(ctx, self);
+    long size = pos;
+    if (args && args->getSize(ctx) > 0) {
+        const proto::ProtoObject* a = args->getAt(ctx, 0);
+        if (a && a->isInteger(ctx)) size = static_cast<long>(a->asLong(ctx));
+    }
+    if (size < 0) size = 0;
+    if (static_cast<size_t>(size) < buf.size()) buf.resize(size);
+    bio_set_state(ctx, self, buf, pos);
+    return ctx->fromInteger(static_cast<long>(buf.size()));
+}
+
+static const proto::ProtoObject* py_bio_close(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    bio_set_state(ctx, self, std::string(), 0);
+    return PROTO_NONE;
+}
+
+static const proto::ProtoObject* py_bio_flush(
+    proto::ProtoContext*, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    return PROTO_NONE;
+}
+
+static const proto::ProtoObject* py_bio_writable(
+    proto::ProtoContext*, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    return PROTO_TRUE;
+}
+
+static const proto::ProtoObject* py_bio_readable(
+    proto::ProtoContext*, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    return PROTO_TRUE;
+}
+
+static const proto::ProtoObject* py_bio_seekable(
+    proto::ProtoContext*, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    return PROTO_TRUE;
+}
+
+static const proto::ProtoObject* py_bio_enter(
+    proto::ProtoContext*, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    return self;
+}
+
+static const proto::ProtoObject* py_bio_exit(
+    proto::ProtoContext*, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList*, const proto::ProtoSparseList*) {
+    return PROTO_FALSE;
+}
+
+// BytesIO.__new__(cls, initial_bytes=b'') — fresh instance.
+// CPython's class instantiation routes `BytesIO(b)` through
+// type.__call__ which calls cls.__new__(cls, *args) and then
+// __init__(instance, *args). protoPython invokes __new__ with
+// positionalParameters[0] = cls, [1..] = the user's args (mirroring
+// py_uniontype_new). Setting __call__ on the class did NOT work in
+// practice — class instantiation bypassed it for stdlib-style
+// classes — so we register __new__ on both StringIO and BytesIO
+// and absorb the construction work there.
+static const proto::ProtoObject* py_bio_new(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
+    const proto::ProtoList* args, const proto::ProtoSparseList*) {
+    if (!args || args->getSize(ctx) < 1) return PROTO_NONE;
+    const proto::ProtoObject* cls = args->getAt(ctx, 0);
+    proto::ProtoObject* inst = const_cast<proto::ProtoObject*>(cls->newChild(ctx, true));
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    inst = const_cast<proto::ProtoObject*>(inst->setAttribute(ctx,
+        env ? env->getClassString() : PythonEnvironment::getInternalString(ctx, "__class__"), cls));
+    std::string initial;
+    if (args->getSize(ctx) >= 2) {
+        const proto::ProtoObject* a = args->getAt(ctx, 1);
+        if (a && a != PROTO_NONE) initial = bio_obj_to_bytes(ctx, a);
+    }
+    inst = const_cast<proto::ProtoObject*>(inst->setAttribute(ctx, k_bio_buf(ctx), bio_make_bytes(ctx, initial)));
+    inst = const_cast<proto::ProtoObject*>(inst->setAttribute(ctx, k_bio_pos(ctx), ctx->fromInteger(0)));
+    (void)env;
+    return inst;
+}
+
 // ----- StringIO -------------------------------------------------------------
 
 static const proto::ProtoString* k_sio_buf(proto::ProtoContext* c) {
@@ -434,32 +763,33 @@ static const proto::ProtoObject* py_sio_exit(
     return PROTO_FALSE;
 }
 
-// StringIO(initial_value='', newline='\n') — returns a fresh instance with
-// `initial_value` preloaded, position at 0.  Called when the type itself is
-// invoked as a constructor (e.g. `StringIO()`).
-static const proto::ProtoObject* py_sio_call(
-    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+// StringIO.__new__(cls, initial_value='', newline='\n') — fresh instance
+// with `initial_value` preloaded. Routed through __new__ rather than
+// __call__ because protoPython's class-instantiation path bypasses
+// __call__ for stdlib-style classes (it goes type.__call__ →
+// cls.__new__ → cls.__init__, none of which previously did anything
+// for StringIO, so `StringIO('hello').getvalue()` returned ''
+// regardless of input).
+static const proto::ProtoObject* py_sio_new(
+    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
     const proto::ProtoList* args, const proto::ProtoSparseList*) {
-    // `self` here is the class (the stub).  Create an instance that
-    // inherits from it so `type(obj) is StringIO` remains True.
-    proto::ProtoObject* inst = const_cast<proto::ProtoObject*>(self->newChild(ctx, true));
+    if (!args || args->getSize(ctx) < 1) return PROTO_NONE;
+    const proto::ProtoObject* cls = args->getAt(ctx, 0);
+    proto::ProtoObject* inst = const_cast<proto::ProtoObject*>(cls->newChild(ctx, true));
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     inst = const_cast<proto::ProtoObject*>(inst->setAttribute(ctx,
-        env ? env->getClassString() : PythonEnvironment::getInternalString(ctx, "__class__"), self));
+        env ? env->getClassString() : PythonEnvironment::getInternalString(ctx, "__class__"), cls));
     std::string initial;
-    unsigned long n = args ? args->getSize(ctx) : 0;
-    for (unsigned long i = 0; i < n; ++i) {
-        const proto::ProtoObject* a = args->getAt(ctx, static_cast<int>(i));
-        if (!a || a == self) continue;
-        if (a->isString(ctx)) {
-            a->asString(ctx)->toUTF8String(ctx, initial);
-            break;
-        }
-        const proto::ProtoObject* d = a->getAttribute(ctx,
-            PythonEnvironment::getInternedString(ctx, "__data__"));
-        if (d && d->isString(ctx)) {
-            d->asString(ctx)->toUTF8String(ctx, initial);
-            break;
+    if (args->getSize(ctx) >= 2) {
+        const proto::ProtoObject* a = args->getAt(ctx, 1);
+        if (a && a != PROTO_NONE) {
+            if (a->isString(ctx)) {
+                a->asString(ctx)->toUTF8String(ctx, initial);
+            } else {
+                const proto::ProtoObject* d = a->getAttribute(ctx,
+                    PythonEnvironment::getInternedString(ctx, "__data__"));
+                if (d && d->isString(ctx)) d->asString(ctx)->toUTF8String(ctx, initial);
+            }
         }
     }
     inst = const_cast<proto::ProtoObject*>(inst->setAttribute(ctx, k_sio_buf(ctx),
@@ -497,7 +827,62 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
     add_stub("BlockingIOError");
     add_stub("UnsupportedOperation");
     add_stub("FileIO");
-    add_stub("BytesIO");
+    // BytesIO: real implementation (mirrors StringIO). Tests in
+    // test_base64 / test_struct / test_pickle rely on read, readline,
+    // write, seek, tell, getvalue, iteration, and the context-manager
+    // protocol; everything below maps to the corresponding py_bio_*.
+    {
+        const proto::ProtoString* nameS = proto::ProtoString::createSymbol(ctx, "BytesIO");
+        const proto::ProtoObject* bio = ctx->newObject(false);
+        bio = bio->setAttribute(ctx, py_name_s,
+            PythonEnvironment::getInternedString(ctx, "BytesIO")->asObject(ctx));
+        bio = bio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__qualname__"),
+            PythonEnvironment::getInternedString(ctx, "BytesIO")->asObject(ctx));
+        bio = bio->setAttribute(ctx, py_module_s, py_io_s);
+        bio = bio->setAttribute(ctx, py_doc_s, py_empty_doc);
+        bio = bio->setAttribute(ctx,
+            PythonEnvironment::getInternedString(ctx, "__new__"),
+            ctx->fromMethod(nullptr, py_bio_new));
+        bio = bio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "write"),
+            ctx->fromMethod(nullptr, py_bio_write));
+        bio = bio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "getvalue"),
+            ctx->fromMethod(nullptr, py_bio_getvalue));
+        bio = bio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "read"),
+            ctx->fromMethod(nullptr, py_bio_read));
+        bio = bio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "readline"),
+            ctx->fromMethod(nullptr, py_bio_readline));
+        bio = bio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "readlines"),
+            ctx->fromMethod(nullptr, py_bio_readlines));
+        bio = bio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__iter__"),
+            ctx->fromMethod(nullptr, py_bio_iter));
+        bio = bio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__next__"),
+            ctx->fromMethod(nullptr, py_bio_next));
+        bio = bio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "seek"),
+            ctx->fromMethod(nullptr, py_bio_seek));
+        bio = bio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "tell"),
+            ctx->fromMethod(nullptr, py_bio_tell));
+        bio = bio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "truncate"),
+            ctx->fromMethod(nullptr, py_bio_truncate));
+        bio = bio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "close"),
+            ctx->fromMethod(nullptr, py_bio_close));
+        bio = bio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "flush"),
+            ctx->fromMethod(nullptr, py_bio_flush));
+        bio = bio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "writable"),
+            ctx->fromMethod(nullptr, py_bio_writable));
+        bio = bio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "readable"),
+            ctx->fromMethod(nullptr, py_bio_readable));
+        bio = bio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "seekable"),
+            ctx->fromMethod(nullptr, py_bio_seekable));
+        bio = bio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__enter__"),
+            ctx->fromMethod(nullptr, py_bio_enter));
+        bio = bio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__exit__"),
+            ctx->fromMethod(nullptr, py_bio_exit));
+        // Empty initial state so `hasattr` reports True before the
+        // first write — matches StringIO's startup contract.
+        bio = bio->setAttribute(ctx, k_bio_buf(ctx), bio_make_bytes(ctx, std::string()));
+        bio = bio->setAttribute(ctx, k_bio_pos(ctx), ctx->fromInteger(0));
+        ioMod = ioMod->setAttribute(ctx, nameS, bio);
+    }
     // StringIO: real implementation (not a stub) so tests can use it.
     {
         const proto::ProtoString* nameS = proto::ProtoString::createSymbol(ctx, "StringIO");
@@ -508,9 +893,12 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
             PythonEnvironment::getInternedString(ctx, "StringIO")->asObject(ctx));
         sio = sio->setAttribute(ctx, py_module_s, py_io_s);
         sio = sio->setAttribute(ctx, py_doc_s, py_empty_doc);
-        // Make the class callable so StringIO(...) instantiates.
-        sio = sio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__call__"),
-            ctx->fromMethod(const_cast<proto::ProtoObject*>(sio), py_sio_call));
+        // Class instantiation: __new__ creates a fresh instance with the
+        // user-provided initial state. (Setting __call__ does not work
+        // for stdlib-shaped classes; see py_sio_new comment.)
+        sio = sio->setAttribute(ctx,
+            PythonEnvironment::getInternedString(ctx, "__new__"),
+            ctx->fromMethod(nullptr, py_sio_new));
         // Instance methods are installed on the prototype so instances inherit them.
         sio = sio->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "write"),
             ctx->fromMethod(nullptr, py_sio_write));
