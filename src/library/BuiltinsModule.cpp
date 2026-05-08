@@ -2259,28 +2259,61 @@ static const proto::ProtoObject* py_memoryview(
         ndim = 1;
     }
 
-    // Case 3: input has _data attribute (our array stub stores bytes there)
+    // Case 3: input has _data attribute (array.array stores bytes
+    // there; older array stubs stored a string). The _data may be
+    // either a ProtoString OR a `bytes` wrapper whose own __data__
+    // is a ByteBuffer. Accept both — store the input obj itself on
+    // __mv_data__ so the round-trip preserves type identity, and
+    // remember the typecode for `cast`/`format`/etc.
     if (!bytesData) {
         const proto::ProtoObject* arrData = obj->getAttribute(context, PythonEnvironment::getInternedString(context, "_data"));
-        if (arrData && arrData != PROTO_NONE && arrData->isString(context)) {
-            bytesData = arrData;
-            const proto::ProtoObject* tcObj = obj->getAttribute(context, PythonEnvironment::getInternedString(context, "typecode"));
-            if (tcObj && tcObj != PROTO_NONE && tcObj->isString(context)) {
-                tcObj->asString(context)->toUTF8String(context, format);
+        if (arrData && arrData != PROTO_NONE) {
+            bool useable = arrData->isString(context) || arrData->isByteBuffer(context);
+            if (!useable && env) {
+                // bytes wrapper: walk into its __data__.
+                const proto::ProtoObject* inner = arrData->getAttribute(context, env->getDataString());
+                if (inner && (inner->isString(context) || inner->isByteBuffer(context))) {
+                    useable = true;
+                }
             }
-            ndim = 1;
+            if (useable) {
+                bytesData = obj;
+                const proto::ProtoObject* tcObj = obj->getAttribute(context, PythonEnvironment::getInternedString(context, "typecode"));
+                if (tcObj && tcObj != PROTO_NONE && tcObj->isString(context)) {
+                    tcObj->asString(context)->toUTF8String(context, format);
+                }
+                ndim = 1;
+            }
         }
     }
 
-    // Case 4: input has tobytes() method (array or similar)
+    // Case 4: input has tobytes() method. The method's return is a
+    // bytes instance — accept whether it's str-backed or
+    // ByteBuffer-backed.
     if (!bytesData && env) {
         const proto::ProtoObject* tobytesMeth = obj->getAttribute(context, PythonEnvironment::getInternedString(context, "tobytes"));
         if (tobytesMeth && tobytesMeth != PROTO_NONE) {
             const proto::ProtoList* emptyArgs = context->newList();
-            const proto::ProtoObject* result = ::protoPython::invokePythonCallable(context, tobytesMeth, emptyArgs, nullptr);
-            if (result && result != PROTO_NONE && result->isString(context)) {
-                bytesData = result;
-                ndim = 1;
+            const proto::ProtoObject* result = nullptr;
+            if (tobytesMeth->asMethod(context)) {
+                result = tobytesMeth->asMethod(context)(context,
+                    const_cast<proto::ProtoObject*>(obj),
+                    nullptr, emptyArgs, nullptr);
+            } else {
+                result = ::protoPython::invokePythonCallable(context, tobytesMeth, emptyArgs, nullptr);
+            }
+            if (result && result != PROTO_NONE) {
+                bool useable = result->isString(context) || result->isByteBuffer(context);
+                if (!useable) {
+                    const proto::ProtoObject* inner = result->getAttribute(context, env->getDataString());
+                    if (inner && (inner->isString(context) || inner->isByteBuffer(context))) {
+                        useable = true;
+                    }
+                }
+                if (useable) {
+                    bytesData = result;
+                    ndim = 1;
+                }
             }
         }
     }
@@ -3785,14 +3818,16 @@ static bool unionIsAcceptableOperand(proto::ProtoContext* ctx,
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (!env) return false;
     if (obj == env->getNoneTypePrototype()) return true;
-    // Class detection: type(obj) must itself be `type` (or a metaclass
-    // derived from type). A SmallInt or similar value would have
-    // type(obj) == int — that's an instance, not a class. Using
-    // hasOwnAttribute("__mro__") isn't reliable here because protoCore's
-    // tagged-value path resolves attribute lookups through the type
-    // prototype, so even a SmallInt reports __mro__ as "own".
+    // Class detection: a class object owns __mro__; instances do not.
+    // Covers classes built with a custom metaclass while rejecting
+    // instances (e.g. frozenset(), 5, "x"), unlike isInstanceOf(type)
+    // which currently misreports for some instances of primitive
+    // types.
+    {
+        const proto::ProtoString* mroS = PythonEnvironment::getInternedString(ctx, "__mro__");
+        if (obj->hasOwnAttribute(ctx, mroS) == PROTO_TRUE) return true;
+    }
     const proto::ProtoObject* objType = env->getType(ctx, obj);
-    if (objType == env->getTypePrototype()) return true;
     // typing GenericAlias / UnionType / typing._SpecialForm: detect by
     // class name or by carrying __args__/__origin__ as own attributes.
     if (objType) {
@@ -4151,7 +4186,7 @@ const proto::ProtoObject* py_type(
     if (get_env_diag()) {
         fprintf(stderr, "DEBUG: py_type executing early unconditional: size=%zu\n", positionalParameters ? positionalParameters->getSize(context) : 0);
     }
-    
+
     protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(context);
     const proto::ProtoObject* typeProto = env ? env->getTypePrototype() : nullptr;
     
@@ -5468,8 +5503,20 @@ static const proto::ProtoObject* py_classmethod_get(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
-    if (positionalParameters->getSize(context) < 2) return PROTO_NONE;
-    const proto::ProtoObject* type = positionalParameters->getAt(context, 1);
+    unsigned long n = positionalParameters->getSize(context);
+    if (n < 1) return PROTO_NONE;
+    PythonEnvironment* envEarly = PythonEnvironment::fromContext(context);
+    // CPython convention: classmethod.__get__(instance, owner=None) infers
+    // owner as type(instance) when omitted.  Without this, `cm.__get__(0)`
+    // returned None and broke any caller that followed the single-argument
+    // descriptor protocol form (e.g. test_classmethods at line 1653).
+    const proto::ProtoObject* type = (n >= 2) ? positionalParameters->getAt(context, 1) : nullptr;
+    if ((!type || type == PROTO_NONE) && envEarly) {
+        const proto::ProtoObject* inst = positionalParameters->getAt(context, 0);
+        if (inst && inst != PROTO_NONE) {
+            type = envEarly->getType(context, inst);
+        }
+    }
     
     if (get_env_diag()) {
         std::string tr = "unknown";
