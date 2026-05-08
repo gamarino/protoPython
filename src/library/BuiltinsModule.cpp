@@ -1492,6 +1492,30 @@ static const proto::ProtoObject* py_object_init(
                             // mirroring CPython where type overrides object.__init__
                             return PROTO_NONE;
                         }
+                        // Built-in primitive prototypes (complex, int,
+                        // float, bool, str, bytes, list, dict, set,
+                        // frozenset, tuple) construct via tp_new written
+                        // in C++ and exposed through the type's __call__.
+                        // Their __new__/__init__ in Python attribute view
+                        // appear inherited from object, so the
+                        // override-detection above can't see them.
+                        // Don't raise TypeError here for those — let the
+                        // native construction path handle the args
+                        // (mirroring CPython, which never enters
+                        // object.__init__ with extra args for these types).
+                        if (cls == env->getComplexPrototype()
+                            || cls == env->getIntPrototype()
+                            || cls == env->getFloatPrototype()
+                            || cls == env->getBoolPrototype()
+                            || cls == env->getStrPrototype()
+                            || cls == env->getBytesPrototype()
+                            || cls == env->getListPrototype()
+                            || cls == env->getDictPrototype()
+                            || cls == env->getSetPrototype()
+                            || cls == env->getFrozensetPrototype()
+                            || cls == env->getTuplePrototype()) {
+                            return PROTO_NONE;
+                        }
                     }
                 }
             }
