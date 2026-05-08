@@ -133,9 +133,37 @@ static const proto::ProtoObject* py_weakref_ref(
     const proto::ProtoObject* refType = (mod && mod != PROTO_NONE)
         ? mod->getAttribute(ctx, sym(ctx, "ReferenceType")) : nullptr;
 
-    // Detect cls-prepended call (refType at posArgs[0]).
+    // Detect cls-prepended call. CPython's type.__call__ passes the
+    // class as the first positional arg to __new__. The class might
+    // be ReferenceType itself OR a user-defined subclass — e.g.
+    // importlib's `_WeakValueDictionary._KeyedRef(_weakref.ref)`
+    // subclasses our type and calls `_weakref.ref.__new__(type, …)`,
+    // which delivers `type=KeyedRef` (a SUBCLASS, not refType
+    // directly). Direct equality misses that case and treated the
+    // KeyedRef class itself as the target — registering KeyedRef in
+    // the active set, then returning it from setdefault, then
+    // exploding on `.append` because a class isn't a list. The
+    // canonical detector is "first arg is a class" (has __mro__ as
+    // an own attribute), not pointer-equal to refType.
+    // "First arg is a class" detector. Two cases must both classify
+    // as class-prepended-call:
+    //   1. refType itself — built in C++, with pyType as parent and
+    //      `__new__`/`__call__` set, but NO `__mro__` as an own attr
+    //      (protoCore's addParent doesn't synthesise it). hasOwnAttr
+    //      misses this.
+    //   2. KeyedRef — built in Python via `class KeyedRef(ref)`, has
+    //      `__mro__` as an own attr (the protoPython compiler emits it).
+    // Both share `type(arg) == type` (the metaclass). That's the
+    // canonical check.
     unsigned long base = 0;
-    if (n >= 2 && posArgs->getAt(ctx, 0) == refType) base = 1;
+    if (n >= 2 && env) {
+        const proto::ProtoObject* a0 = posArgs->getAt(ctx, 0);
+        if (a0 && a0 != PROTO_NONE) {
+            const proto::ProtoObject* a0Type = env->getType(ctx, a0);
+            const proto::ProtoObject* typeProto = env->getTypePrototype();
+            if (a0Type == typeProto) base = 1;
+        }
+    }
     if (n <= base) return PROTO_NONE;
 
     const proto::ProtoObject* target = posArgs->getAt(ctx, static_cast<int>(base));
