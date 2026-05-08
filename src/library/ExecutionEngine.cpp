@@ -5499,7 +5499,14 @@ const proto::ProtoObject* executeBytecodeRange(
                         return v != nullptr && v[0] != '\0' && v[0] != '0';
                     }();
                     bool fastStoreTaken = false;
-                    if (!disableStoreattrFastpath && env && obj && obj != PROTO_NONE
+                    // __class__ assignment must always traverse the slow
+                    // path (env->setAttribute) so the immutable-primitive
+                    // and metaclass-compatibility validation runs.  The
+                    // fast path bypasses those checks.
+                    const proto::ProtoString* classS = env ? env->getClassString() : nullptr;
+                    bool isClassAssign = classS && (nameS == classS
+                        || nameS->getHash(ctx) == classS->getHash(ctx));
+                    if (!isClassAssign && !disableStoreattrFastpath && env && obj && obj != PROTO_NONE
                             && !obj->isString(ctx) && !obj->isInteger(ctx)
                             && !obj->isBoolean(ctx) && !obj->isFloat(ctx)) {
                         // P2 type-flags fast path.  Replaces the legacy 3

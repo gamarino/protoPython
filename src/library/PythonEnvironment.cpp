@@ -15318,7 +15318,47 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
 }
 
 const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* ctx, const proto::ProtoObject* obj, const proto::ProtoString* name, const proto::ProtoObject* value) {
-    if (!obj || isEmbeddedValue(obj) || !name || !value) return obj;
+    if (!obj || !name || !value) return obj;
+
+    // CPython: instances of immutable built-in types (int, float, complex,
+    // bool, str, bytes, tuple, frozenset) cannot have their __class__
+    // reassigned — instances may be interned and the layout is fixed.
+    // This check runs before the isEmbeddedValue early-return below,
+    // because embedded primitives (int/float/bool tagged pointers) used
+    // to silently no-op on any setAttribute, which hid the missing
+    // TypeError for `(1).__class__ = MyInt` style breakage.
+    if (name == classString || (name && classString && name->getHash(ctx) == classString->getHash(ctx))) {
+        bool isImmutablePrim = false;
+        const char* primName = nullptr;
+        if (obj->isInteger(ctx)) { isImmutablePrim = true; primName = "int"; }
+        else if (obj->isBoolean(ctx)) { isImmutablePrim = true; primName = "bool"; }
+        else if (obj->isFloat(ctx)) { isImmutablePrim = true; primName = "float"; }
+        else {
+            // Wrapped Python objects (bytes/tuple/frozenset) have their
+            // immutable type identity exposed via getType, not via the raw
+            // ProtoObject tag.  Check by prototype identity.
+            const proto::ProtoObject* tp = getType(ctx, obj);
+            if (bytesPrototype && tp == bytesPrototype) {
+                isImmutablePrim = true; primName = "bytes";
+            } else if (tuplePrototype && tp == tuplePrototype) {
+                isImmutablePrim = true; primName = "tuple";
+            } else if (frozensetPrototype && tp == frozensetPrototype) {
+                isImmutablePrim = true; primName = "frozenset";
+            } else if (obj->isString(ctx)) {
+                isImmutablePrim = true; primName = "str";
+            } else if (obj->isTuple(ctx)) {
+                isImmutablePrim = true; primName = "tuple";
+            }
+        }
+        if (isImmutablePrim) {
+            std::string msg = std::string("__class__ assignment only supported for mutable types or ModuleType subclasses; cannot reassign on '")
+                + (primName ? primName : "?") + "' instance";
+            raiseTypeError(ctx, msg);
+            return nullptr;
+        }
+    }
+
+    if (isEmbeddedValue(obj)) return obj;
 
     // Global recursion limit integration
     RecursionScope rs(this, ctx);
