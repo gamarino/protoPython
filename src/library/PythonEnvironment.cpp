@@ -11244,20 +11244,22 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
             if (!env) return PROTO_FALSE;
             const proto::ProtoString* selfS = env->getSelfDunderString();
             const proto::ProtoString* funcS = env->getFuncDunderString();
-            // Pull __self__: prefer the C-level method-self for native
-            // methods (always present); fall back to the Python attribute.
+            // Use getAttribute (not hasOwnAttribute) so wrapped Python
+            // bound methods (where __self__/__func__ are own attrs of
+            // the bound object) and native bound methods (where the
+            // C-level pointers are the source of truth) both resolve.
             const proto::ProtoObject* aSelf = a->isMethod(ctx) ? a->asMethodSelf(ctx) : nullptr;
             const proto::ProtoObject* bSelf = b->isMethod(ctx) ? b->asMethodSelf(ctx) : nullptr;
-            if (!aSelf) aSelf = a->hasOwnAttribute(ctx, selfS) == PROTO_TRUE ? a->getAttribute(ctx, selfS) : nullptr;
-            if (!bSelf) bSelf = b->hasOwnAttribute(ctx, selfS) == PROTO_TRUE ? b->getAttribute(ctx, selfS) : nullptr;
-            if (!aSelf || !bSelf) return env->getNotImplementedPrototype();
+            if (!aSelf) aSelf = a->getAttribute(ctx, selfS);
+            if (!bSelf) bSelf = b->getAttribute(ctx, selfS);
+            if (!aSelf || aSelf == PROTO_NONE || !bSelf || bSelf == PROTO_NONE) return env->getNotImplementedPrototype();
             if (aSelf != bSelf) return PROTO_FALSE;
             if (a->isMethod(ctx) && b->isMethod(ctx)) {
                 return a->asMethod(ctx) == b->asMethod(ctx) ? PROTO_TRUE : PROTO_FALSE;
             }
-            const proto::ProtoObject* aFunc = a->hasOwnAttribute(ctx, funcS) == PROTO_TRUE ? a->getAttribute(ctx, funcS) : nullptr;
-            const proto::ProtoObject* bFunc = b->hasOwnAttribute(ctx, funcS) == PROTO_TRUE ? b->getAttribute(ctx, funcS) : nullptr;
-            if (!aFunc || !bFunc) return env->getNotImplementedPrototype();
+            const proto::ProtoObject* aFunc = a->getAttribute(ctx, funcS);
+            const proto::ProtoObject* bFunc = b->getAttribute(ctx, funcS);
+            if (!aFunc || aFunc == PROTO_NONE || !bFunc || bFunc == PROTO_NONE) return env->getNotImplementedPrototype();
             return aFunc == bFunc ? PROTO_TRUE : PROTO_FALSE;
         }));
     methodPrototype = methodPrototype->setAttribute(rootContext_,
@@ -11277,17 +11279,46 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
             const proto::ProtoString* funcS = env->getFuncDunderString();
             const proto::ProtoObject* aSelf = a->isMethod(ctx) ? a->asMethodSelf(ctx) : nullptr;
             const proto::ProtoObject* bSelf = b->isMethod(ctx) ? b->asMethodSelf(ctx) : nullptr;
-            if (!aSelf) aSelf = a->hasOwnAttribute(ctx, selfS) == PROTO_TRUE ? a->getAttribute(ctx, selfS) : nullptr;
-            if (!bSelf) bSelf = b->hasOwnAttribute(ctx, selfS) == PROTO_TRUE ? b->getAttribute(ctx, selfS) : nullptr;
-            if (!aSelf || !bSelf) return env->getNotImplementedPrototype();
+            if (!aSelf) aSelf = a->getAttribute(ctx, selfS);
+            if (!bSelf) bSelf = b->getAttribute(ctx, selfS);
+            if (!aSelf || aSelf == PROTO_NONE || !bSelf || bSelf == PROTO_NONE) return env->getNotImplementedPrototype();
             if (aSelf != bSelf) return PROTO_TRUE;
             if (a->isMethod(ctx) && b->isMethod(ctx)) {
                 return a->asMethod(ctx) == b->asMethod(ctx) ? PROTO_FALSE : PROTO_TRUE;
             }
-            const proto::ProtoObject* aFunc = a->hasOwnAttribute(ctx, funcS) == PROTO_TRUE ? a->getAttribute(ctx, funcS) : nullptr;
-            const proto::ProtoObject* bFunc = b->hasOwnAttribute(ctx, funcS) == PROTO_TRUE ? b->getAttribute(ctx, funcS) : nullptr;
-            if (!aFunc || !bFunc) return env->getNotImplementedPrototype();
+            const proto::ProtoObject* aFunc = a->getAttribute(ctx, funcS);
+            const proto::ProtoObject* bFunc = b->getAttribute(ctx, funcS);
+            if (!aFunc || aFunc == PROTO_NONE || !bFunc || bFunc == PROTO_NONE) return env->getNotImplementedPrototype();
             return aFunc == bFunc ? PROTO_FALSE : PROTO_TRUE;
+        }));
+    // Bound-method __hash__: combine __self__ identity and __func__
+    // identity so `hash(a.m) == hash(a.m)` (CPython invariant).  Without
+    // this, hash falls through to ProtoObject's address-based hash and
+    // each fresh `a.m` lookup hashes to a different value.
+    methodPrototype = methodPrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "__hash__"),
+        rootContext_->fromMethod(nullptr,
+        [](proto::ProtoContext* ctx, const proto::ProtoObject* self,
+           const proto::ParentLink*, const proto::ProtoList*,
+           const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+            PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+            if (!env || !self) return PROTO_NONE;
+            const proto::ProtoObject* sf = self->isMethod(ctx) ? self->asMethodSelf(ctx) : nullptr;
+            if (!sf) sf = self->getAttribute(ctx, env->getSelfDunderString());
+            const proto::ProtoObject* fn = nullptr;
+            if (self->isMethod(ctx)) {
+                // Hash native method by its function pointer identity:
+                // shift to 56-bit small-int range.
+                uintptr_t fp = reinterpret_cast<uintptr_t>(self->asMethod(ctx));
+                long long combined = static_cast<long long>(fp) ^
+                    static_cast<long long>(reinterpret_cast<uintptr_t>(sf));
+                return proto::makeSmallInt(combined & 0x00FFFFFFFFFFFFFFLL);
+            }
+            fn = self->getAttribute(ctx, env->getFuncDunderString());
+            uintptr_t sp = reinterpret_cast<uintptr_t>(sf);
+            uintptr_t fp = reinterpret_cast<uintptr_t>(fn);
+            long long combined = static_cast<long long>(sp ^ fp);
+            return proto::makeSmallInt(combined & 0x00FFFFFFFFFFFFFFLL);
         }));
     // Register this as the prototype for all native POINTER_TAG_METHOD objects so they
     // inherit __doc__, __get__, __call__ and other standard function attributes.
@@ -11484,6 +11515,92 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     methodPrototype = methodPrototype->setAttribute(rootContext_, py_call, rootContext_->fromMethod(nullptr, PythonEnvironment::py_method_call));
     methodPrototype = methodPrototype->setAttribute(rootContext_, getDunderString, rootContext_->fromMethod(nullptr, PythonEnvironment::py_function_get));
     methodPrototype = methodPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__doc__"), PROTO_NONE);
+    // Bound-method __eq__/__ne__/__hash__: this is the env-owned
+    // methodPrototype (env->getMethodPrototype()) — distinct from
+    // space->methodPrototype set up earlier — and is the parent of every
+    // Python-class bound method created by py_function_get.  Without
+    // these dunders, `a.m == a.m` fell through to address comparison and
+    // returned False on every fresh attribute lookup.
+    methodPrototype = methodPrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "__eq__"),
+        rootContext_->fromMethod(nullptr,
+        [](proto::ProtoContext* ctx, const proto::ProtoObject* self,
+           const proto::ParentLink*, const proto::ProtoList* args,
+           const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+            if (!args || args->getSize(ctx) < 1) return PROTO_FALSE;
+            const proto::ProtoObject* a = self;
+            const proto::ProtoObject* b = args->getAt(ctx, 0);
+            if (!a || !b) return PROTO_FALSE;
+            if (a == b) return PROTO_TRUE;
+            PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+            if (!env) return PROTO_FALSE;
+            const proto::ProtoString* selfS = env->getSelfDunderString();
+            const proto::ProtoString* funcS = env->getFuncDunderString();
+            const proto::ProtoObject* aSelf = a->isMethod(ctx) ? a->asMethodSelf(ctx) : nullptr;
+            const proto::ProtoObject* bSelf = b->isMethod(ctx) ? b->asMethodSelf(ctx) : nullptr;
+            if (!aSelf) aSelf = a->getAttribute(ctx, selfS);
+            if (!bSelf) bSelf = b->getAttribute(ctx, selfS);
+            if (!aSelf || aSelf == PROTO_NONE || !bSelf || bSelf == PROTO_NONE) return env->getNotImplementedPrototype();
+            if (aSelf != bSelf) return PROTO_FALSE;
+            if (a->isMethod(ctx) && b->isMethod(ctx)) {
+                return a->asMethod(ctx) == b->asMethod(ctx) ? PROTO_TRUE : PROTO_FALSE;
+            }
+            const proto::ProtoObject* aFunc = a->getAttribute(ctx, funcS);
+            const proto::ProtoObject* bFunc = b->getAttribute(ctx, funcS);
+            if (!aFunc || aFunc == PROTO_NONE || !bFunc || bFunc == PROTO_NONE) return env->getNotImplementedPrototype();
+            return aFunc == bFunc ? PROTO_TRUE : PROTO_FALSE;
+        }));
+    methodPrototype = methodPrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "__ne__"),
+        rootContext_->fromMethod(nullptr,
+        [](proto::ProtoContext* ctx, const proto::ProtoObject* self,
+           const proto::ParentLink*, const proto::ProtoList* args,
+           const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+            if (!args || args->getSize(ctx) < 1) return PROTO_TRUE;
+            const proto::ProtoObject* a = self;
+            const proto::ProtoObject* b = args->getAt(ctx, 0);
+            if (!a || !b) return PROTO_TRUE;
+            if (a == b) return PROTO_FALSE;
+            PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+            if (!env) return PROTO_TRUE;
+            const proto::ProtoString* selfS = env->getSelfDunderString();
+            const proto::ProtoString* funcS = env->getFuncDunderString();
+            const proto::ProtoObject* aSelf = a->isMethod(ctx) ? a->asMethodSelf(ctx) : nullptr;
+            const proto::ProtoObject* bSelf = b->isMethod(ctx) ? b->asMethodSelf(ctx) : nullptr;
+            if (!aSelf) aSelf = a->getAttribute(ctx, selfS);
+            if (!bSelf) bSelf = b->getAttribute(ctx, selfS);
+            if (!aSelf || aSelf == PROTO_NONE || !bSelf || bSelf == PROTO_NONE) return env->getNotImplementedPrototype();
+            if (aSelf != bSelf) return PROTO_TRUE;
+            if (a->isMethod(ctx) && b->isMethod(ctx)) {
+                return a->asMethod(ctx) == b->asMethod(ctx) ? PROTO_FALSE : PROTO_TRUE;
+            }
+            const proto::ProtoObject* aFunc = a->getAttribute(ctx, funcS);
+            const proto::ProtoObject* bFunc = b->getAttribute(ctx, funcS);
+            if (!aFunc || aFunc == PROTO_NONE || !bFunc || bFunc == PROTO_NONE) return env->getNotImplementedPrototype();
+            return aFunc == bFunc ? PROTO_FALSE : PROTO_TRUE;
+        }));
+    methodPrototype = methodPrototype->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "__hash__"),
+        rootContext_->fromMethod(nullptr,
+        [](proto::ProtoContext* ctx, const proto::ProtoObject* self,
+           const proto::ParentLink*, const proto::ProtoList*,
+           const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+            PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+            if (!env || !self) return PROTO_NONE;
+            const proto::ProtoObject* sf = self->isMethod(ctx) ? self->asMethodSelf(ctx) : nullptr;
+            if (!sf) sf = self->getAttribute(ctx, env->getSelfDunderString());
+            if (self->isMethod(ctx)) {
+                uintptr_t fp = reinterpret_cast<uintptr_t>(self->asMethod(ctx));
+                long long combined = static_cast<long long>(fp) ^
+                    static_cast<long long>(reinterpret_cast<uintptr_t>(sf));
+                return proto::makeSmallInt(combined & 0x00FFFFFFFFFFFFFFLL);
+            }
+            const proto::ProtoObject* fn = self->getAttribute(ctx, env->getFuncDunderString());
+            uintptr_t sp = reinterpret_cast<uintptr_t>(sf);
+            uintptr_t fp = reinterpret_cast<uintptr_t>(fn);
+            long long combined = static_cast<long long>(sp ^ fp);
+            return proto::makeSmallInt(combined & 0x00FFFFFFFFFFFFFFLL);
+        }));
 
 
     // 6. Basic types
