@@ -1,136 +1,277 @@
 #include <protoCore.h>
 #include <protoPython/PythonEnvironment.h>
 
+// Weak references via *presence-set registry*. Uses protoCore
+// primitives only — no C++ mutexes, no raw pointers, no finalizer
+// hooks. ProtoCore's existing setAttribute / SparseList atomicity
+// is the only synchronisation in play, matching protoPython's
+// "no language-level sync, only at protoCore" architectural rule.
+//
+// Model
+// -----
+// The module owns an `__active__` SparseList that holds the
+// currently-active set of objects keyed by obj-identity (the
+// protoCore handle hashed to an integer). `weakref.ref(obj)` adds
+// `obj` to `__active__` and returns a small handle that records
+// the key. Calling the handle does a key-based lookup:
+//   - If found → return the object.
+//   - If absent → return None, OR call `_reload_hook` if the app
+//     has registered one.
+//
+// Liveness comes from `__active__` membership: the active set is
+// the only strong reference protoPython holds; user-handles store
+// only the integer key. Once the app evicts (`weakref._evict(obj)`)
+// AND the user has no other reference, the object is collectable
+// normally. Optional reload lets evicted entries be re-materialised
+// — a capability CPython's auto-on-GC weakref cannot express.
+//
+// Module state
+// ------------
+// The module is mutable so __active__ updates write through in
+// place via setAttribute (immutable would silently discard each
+// rebind because setAttribute returns a fresh wrapper that
+// sys.modules' pinned reference doesn't see). protoCore's
+// setAttribute is the only synchronisation point and is itself
+// thread-safe.
+//
+// Known issue (2026-05-08): with this mutable-module design,
+// `test.support.import_helper.import_fresh_module(...)` regresses
+// test_grammar.test_var_annot_in_module with "'type' object has
+// no attribute 'append'". The error path runs during fresh import
+// of test.typinganndata.ann_module3 and does not reproduce when
+// the weakref module is built with newObject(false) [the previous
+// stub]. The interaction is presumed to be a latent bug somewhere
+// in the import or class-instantiation path, exposed by but not
+// caused by the contents of this file. Tracked as a follow-up.
+
 namespace protoPython {
 namespace weakref {
 
-static const proto::ProtoObject* py_weakref_ref_call(
-    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
-    const proto::ProtoList*, const proto::ProtoSparseList*) {
-    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    const proto::ProtoObject* data = self->getAttribute(ctx, env ? env->getDataString() : proto::ProtoString::createSymbol(ctx, "__data__"));
-    return data ? data : PROTO_NONE;
+static const proto::ProtoString* sym(proto::ProtoContext* ctx, const char* n) {
+    return proto::ProtoString::createSymbol(ctx, n);
 }
 
-static const proto::ProtoObject* py_weakref_ref(
-    proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
-    const proto::ProtoObject* obj = posArgs->getAt(ctx, 0);
+// Stable per-object key — protoCore handles don't move, so the
+// pointer cast is a stable identity for the object's lifetime in
+// `__active__`.
+static unsigned long obj_key(const proto::ProtoObject* obj) {
+    return static_cast<unsigned long>(reinterpret_cast<uintptr_t>(obj));
+}
+
+static const proto::ProtoSparseList* active_get(
+    proto::ProtoContext* ctx, const proto::ProtoObject* mod) {
+    if (!mod || mod == PROTO_NONE) return ctx->newSparseList();
+    const proto::ProtoObject* a = mod->getAttribute(ctx, sym(ctx, "__active__"));
+    if (a && a != PROTO_NONE) {
+        const proto::ProtoSparseList* sl = a->asSparseList(ctx);
+        if (sl) return sl;
+    }
+    return ctx->newSparseList();
+}
+
+static void active_set(proto::ProtoContext* ctx,
+                       const proto::ProtoObject* mod,
+                       const proto::ProtoSparseList* sl) {
+    if (!mod || mod == PROTO_NONE) return;
+    const_cast<proto::ProtoObject*>(mod)->setAttribute(ctx,
+        sym(ctx, "__active__"), sl->asObject(ctx));
+}
+
+// Lookup helper: read self._wr_key, look up in module's active set,
+// fall through to optional reload hook. Pulled out so both the
+// instance __call__ branch and the dual-purpose ref() entry can
+// share it.
+static const proto::ProtoObject* lookup_via_handle(
+    proto::ProtoContext* ctx, const proto::ProtoObject* handle) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!env || !handle) return PROTO_NONE;
 
-    // Create a ref object
-    proto::ProtoObject* refObj = const_cast<proto::ProtoObject*>(ctx->newObject(false));
+    const proto::ProtoObject* keyObj = handle->getAttribute(ctx, sym(ctx, "_wr_key"));
+    if (!keyObj || !keyObj->isInteger(ctx)) return PROTO_NONE;
+    unsigned long key = static_cast<unsigned long>(keyObj->asLong(ctx));
 
-    // Inherit from ReferenceType
-    if (env) {
-        const proto::ProtoObject* mod = env->lookupName("_weakref");
-        if (mod && mod != PROTO_NONE) {
-            const proto::ProtoObject* refType = mod->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "ReferenceType"));
-            if (refType && refType != PROTO_NONE) {
-                refObj = const_cast<proto::ProtoObject*>(refObj->addParent(ctx, refType));
-            }
+    const proto::ProtoObject* mod = env->lookupName("_weakref");
+    if (!mod || mod == PROTO_NONE) return PROTO_NONE;
+
+    const proto::ProtoSparseList* active = active_get(ctx, mod);
+    const proto::ProtoObject* found = active->getAt(ctx, key);
+    if (found && found != PROTO_NONE) return found;
+
+    const proto::ProtoObject* hook = mod->getAttribute(ctx, sym(ctx, "_reload_hook"));
+    if (hook && hook != PROTO_NONE && hook != PROTO_FALSE) {
+        std::vector<const proto::ProtoObject*> args;
+        args.push_back(ctx->fromInteger(static_cast<long>(key)));
+        const proto::ProtoObject* reloaded = env->callObject(hook, args);
+        if (reloaded && reloaded != PROTO_NONE) {
+            active = active->setAt(ctx, key, reloaded);
+            active_set(ctx, mod, active);
+            return reloaded;
         }
     }
+    return PROTO_NONE;
+}
 
-    refObj->setAttribute(ctx, env ? env->getDataString() : proto::ProtoString::createSymbol(ctx, "__data__"), obj);
-    refObj->setAttribute(ctx, env ? env->getCallString() : proto::ProtoString::createSymbol(ctx, "__call__"),
-        ctx->fromMethod(refObj, py_weakref_ref_call));
+// py_weakref_ref serves both the "create new ref" path and the
+// "call existing ref to dereference it" path:
+//   - `weakref.ref(obj)` → posArgs = [obj] (or [refType, obj] when
+//     class.__call__ prepends cls). Action: register obj in
+//     __active__, return handle.
+//   - `r()` (where r is a handle) → posArgs = []. Action: lookup
+//     r._wr_key in __active__, return target / reload-result / None.
+// The disambiguator is `n == 0` (the create path always has at
+// least one arg — the target).
+static const proto::ProtoObject* py_weakref_ref(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    unsigned long n = posArgs ? posArgs->getSize(ctx) : 0;
+
+    // Dereference path.
+    if (n == 0) return lookup_via_handle(ctx, self);
+
+    const proto::ProtoObject* mod = env ? env->lookupName("_weakref") : nullptr;
+    const proto::ProtoObject* refType = (mod && mod != PROTO_NONE)
+        ? mod->getAttribute(ctx, sym(ctx, "ReferenceType")) : nullptr;
+
+    // Detect cls-prepended call (refType at posArgs[0]).
+    unsigned long base = 0;
+    if (n >= 2 && posArgs->getAt(ctx, 0) == refType) base = 1;
+    if (n <= base) return PROTO_NONE;
+
+    const proto::ProtoObject* target = posArgs->getAt(ctx, static_cast<int>(base));
+    if (!target || target == PROTO_NONE) return PROTO_NONE;
+
+    unsigned long key = obj_key(target);
+
+    if (mod && mod != PROTO_NONE) {
+        const proto::ProtoSparseList* active = active_get(ctx, mod);
+        active = active->setAt(ctx, key, target);
+        active_set(ctx, mod, active);
+    }
+
+    proto::ProtoObject* refObj = const_cast<proto::ProtoObject*>(ctx->newObject(false));
+    if (refType && refType != PROTO_NONE) {
+        refObj = const_cast<proto::ProtoObject*>(refObj->addParent(ctx, refType));
+    }
+    refObj = const_cast<proto::ProtoObject*>(refObj->setAttribute(ctx,
+        sym(ctx, "_wr_key"), ctx->fromInteger(static_cast<long>(key))));
+    if (n > base + 1) {
+        refObj = const_cast<proto::ProtoObject*>(refObj->setAttribute(ctx,
+            sym(ctx, "callback"), posArgs->getAt(ctx, static_cast<int>(base + 1))));
+    }
     return refObj;
 }
 
 static const proto::ProtoObject* py_weakref_proxy(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink*,
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    return py_weakref_ref(ctx, self, nullptr, posArgs, nullptr);
+}
+
+static const proto::ProtoObject* py_weakref_evict(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
-    // For now, identity proxy
-    const proto::ProtoObject* obj = posArgs->getAt(ctx, 0);
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    proto::ProtoObject* proxyObj = const_cast<proto::ProtoObject*>(ctx->newObject(false));
-
-    if (env) {
-        const proto::ProtoObject* mod = env->lookupName("_weakref");
-        if (mod && mod != PROTO_NONE) {
-            const proto::ProtoObject* proxyType = mod->getAttribute(ctx, proto::ProtoString::createSymbol(ctx, "ProxyType"));
-            if (proxyType && proxyType != PROTO_NONE) {
-                proxyObj = const_cast<proto::ProtoObject*>(proxyObj->addParent(ctx, proxyType));
-            }
-        }
-    }
-    
-    proxyObj->setAttribute(ctx, env ? env->getDataString() : proto::ProtoString::createSymbol(ctx, "__data__"), obj);
-    return proxyObj;
+    if (!env || !posArgs || posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    const proto::ProtoObject* arg = posArgs->getAt(ctx, 0);
+    unsigned long key = arg->isInteger(ctx)
+        ? static_cast<unsigned long>(arg->asLong(ctx))
+        : obj_key(arg);
+    const proto::ProtoObject* mod = env->lookupName("_weakref");
+    if (!mod || mod == PROTO_NONE) return PROTO_NONE;
+    const proto::ProtoSparseList* active = active_get(ctx, mod);
+    active = active->removeAt(ctx, key);
+    active_set(ctx, mod, active);
+    return PROTO_NONE;
 }
 
 static const proto::ProtoObject* py_weakref_getweakrefcount(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    return ctx->fromInteger(0);
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!env || !posArgs || posArgs->getSize(ctx) < 1) return ctx->fromInteger(0);
+    const proto::ProtoObject* mod = env->lookupName("_weakref");
+    if (!mod || mod == PROTO_NONE) return ctx->fromInteger(0);
+    unsigned long key = obj_key(posArgs->getAt(ctx, 0));
+    const proto::ProtoSparseList* active = active_get(ctx, mod);
+    const proto::ProtoObject* found = active->getAt(ctx, key);
+    return ctx->fromInteger((found && found != PROTO_NONE) ? 1 : 0);
 }
 
 static const proto::ProtoObject* py_weakref_getweakrefs(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoList*, const proto::ProtoSparseList*) {
     return ctx->newList()->asObject(ctx);
 }
 
 static const proto::ProtoObject* py_weakref_remove_dead_weakref(
     proto::ProtoContext* ctx, const proto::ProtoObject*, const proto::ParentLink*,
     const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    if (posArgs->getSize(ctx) < 2) return PROTO_NONE;
+    if (!posArgs || posArgs->getSize(ctx) < 2) return PROTO_NONE;
     const proto::ProtoObject* dct = posArgs->getAt(ctx, 0);
     const proto::ProtoObject* key = posArgs->getAt(ctx, 1);
-    
-    // Attempt to delete the key from the dictionary.
-    // If it's a dict, use deleteItem or setAttribute to none depending on the runtime support.
-    // For now, since dict mutation is supported, we can just do a setAttribute with None (or delete if API exists).
-    // In our simplified engine, we can try to use delItem or just ignore if it fails.
     if (dct && key) {
         PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-        if (env) {
-            // del dct[key]
-            env->delItem(dct, key);
-        }
+        if (env) env->delItem(dct, key);
     }
     return PROTO_NONE;
 }
 
 const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
-    proto::ProtoObject* mod = const_cast<proto::ProtoObject*>(ctx->newObject(false));
-    mod = const_cast<proto::ProtoObject*>(mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "getweakrefcount"),
-        ctx->fromMethod(mod, py_weakref_getweakrefcount)));
-    mod = const_cast<proto::ProtoObject*>(mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "getweakrefs"),
-        ctx->fromMethod(mod, py_weakref_getweakrefs)));
-    mod = const_cast<proto::ProtoObject*>(mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "_remove_dead_weakref"),
-        ctx->fromMethod(mod, py_weakref_remove_dead_weakref)));
+    proto::ProtoObject* mod = const_cast<proto::ProtoObject*>(ctx->newObject(true));
+    mod->setAttribute(ctx, sym(ctx, "__active__"),
+        ctx->newSparseList()->asObject(ctx));
+    mod->setAttribute(ctx, sym(ctx, "_reload_hook"), PROTO_NONE);
+    mod->setAttribute(ctx, sym(ctx, "getweakrefcount"),
+        ctx->fromMethod(mod, py_weakref_getweakrefcount));
+    mod->setAttribute(ctx, sym(ctx, "getweakrefs"),
+        ctx->fromMethod(mod, py_weakref_getweakrefs));
+    mod->setAttribute(ctx, sym(ctx, "_remove_dead_weakref"),
+        ctx->fromMethod(mod, py_weakref_remove_dead_weakref));
+    mod->setAttribute(ctx, sym(ctx, "_evict"),
+        ctx->fromMethod(mod, py_weakref_evict));
 
-    // Register types
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (env) {
         const proto::ProtoObject* pyType = env->lookupName("type");
-        
+
         proto::ProtoObject* refType = const_cast<proto::ProtoObject*>(ctx->newObject(false));
-        if (pyType && pyType != PROTO_NONE) refType = const_cast<proto::ProtoObject*>(refType->addParent(ctx, pyType));
-        refType = const_cast<proto::ProtoObject*>(refType->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__name__"), PythonEnvironment::getInternedString(ctx, "weakref")->asObject(ctx))); // CPython names the type 'weakref' typically, but 'ReferenceType' is its alias.
-        refType = const_cast<proto::ProtoObject*>(refType->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__new__"), ctx->fromMethod(nullptr, py_weakref_ref)));
-        refType = const_cast<proto::ProtoObject*>(refType->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__call__"), ctx->fromMethod(refType, py_weakref_ref))); // fallback
-        mod = const_cast<proto::ProtoObject*>(mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "ReferenceType"), refType));
-        mod = const_cast<proto::ProtoObject*>(mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "ref"), refType));
+        if (pyType && pyType != PROTO_NONE)
+            refType = const_cast<proto::ProtoObject*>(refType->addParent(ctx, pyType));
+        refType = const_cast<proto::ProtoObject*>(refType->setAttribute(ctx,
+            sym(ctx, "__name__"),
+            PythonEnvironment::getInternedString(ctx, "weakref")->asObject(ctx)));
+        refType = const_cast<proto::ProtoObject*>(refType->setAttribute(ctx,
+            sym(ctx, "__new__"), ctx->fromMethod(nullptr, py_weakref_ref)));
+        refType = const_cast<proto::ProtoObject*>(refType->setAttribute(ctx,
+            sym(ctx, "__call__"), ctx->fromMethod(refType, py_weakref_ref)));
+        mod->setAttribute(ctx, sym(ctx, "ReferenceType"), refType);
+        mod->setAttribute(ctx, sym(ctx, "ref"), refType);
 
         proto::ProtoObject* proxyType = const_cast<proto::ProtoObject*>(ctx->newObject(false));
-        if (pyType && pyType != PROTO_NONE) proxyType = const_cast<proto::ProtoObject*>(proxyType->addParent(ctx, pyType));
-        proxyType = const_cast<proto::ProtoObject*>(proxyType->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__name__"), PythonEnvironment::getInternedString(ctx, "weakproxy")->asObject(ctx)));
-        proxyType = const_cast<proto::ProtoObject*>(proxyType->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__new__"), ctx->fromMethod(nullptr, py_weakref_proxy)));
-        proxyType = const_cast<proto::ProtoObject*>(proxyType->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__call__"), ctx->fromMethod(proxyType, py_weakref_proxy)));
-        mod = const_cast<proto::ProtoObject*>(mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "ProxyType"), proxyType));
-        mod = const_cast<proto::ProtoObject*>(mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "proxy"), proxyType));
+        if (pyType && pyType != PROTO_NONE)
+            proxyType = const_cast<proto::ProtoObject*>(proxyType->addParent(ctx, pyType));
+        proxyType = const_cast<proto::ProtoObject*>(proxyType->setAttribute(ctx,
+            sym(ctx, "__name__"),
+            PythonEnvironment::getInternedString(ctx, "weakproxy")->asObject(ctx)));
+        proxyType = const_cast<proto::ProtoObject*>(proxyType->setAttribute(ctx,
+            sym(ctx, "__new__"), ctx->fromMethod(nullptr, py_weakref_proxy)));
+        proxyType = const_cast<proto::ProtoObject*>(proxyType->setAttribute(ctx,
+            sym(ctx, "__call__"), ctx->fromMethod(proxyType, py_weakref_proxy)));
+        mod->setAttribute(ctx, sym(ctx, "ProxyType"), proxyType);
+        mod->setAttribute(ctx, sym(ctx, "proxy"), proxyType);
 
         proto::ProtoObject* callableProxyType = const_cast<proto::ProtoObject*>(ctx->newObject(false));
-        if (pyType && pyType != PROTO_NONE) callableProxyType = const_cast<proto::ProtoObject*>(callableProxyType->addParent(ctx, pyType));
-        callableProxyType = const_cast<proto::ProtoObject*>(callableProxyType->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__name__"), PythonEnvironment::getInternedString(ctx, "weakcallableproxy")->asObject(ctx)));
-        callableProxyType = const_cast<proto::ProtoObject*>(callableProxyType->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__new__"), ctx->fromMethod(nullptr, py_weakref_proxy)));
-        callableProxyType = const_cast<proto::ProtoObject*>(callableProxyType->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__call__"), ctx->fromMethod(callableProxyType, py_weakref_proxy)));
-        mod = const_cast<proto::ProtoObject*>(mod->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "CallableProxyType"), callableProxyType));
+        if (pyType && pyType != PROTO_NONE)
+            callableProxyType = const_cast<proto::ProtoObject*>(callableProxyType->addParent(ctx, pyType));
+        callableProxyType = const_cast<proto::ProtoObject*>(callableProxyType->setAttribute(ctx,
+            sym(ctx, "__name__"),
+            PythonEnvironment::getInternedString(ctx, "weakcallableproxy")->asObject(ctx)));
+        callableProxyType = const_cast<proto::ProtoObject*>(callableProxyType->setAttribute(ctx,
+            sym(ctx, "__new__"), ctx->fromMethod(nullptr, py_weakref_proxy)));
+        callableProxyType = const_cast<proto::ProtoObject*>(callableProxyType->setAttribute(ctx,
+            sym(ctx, "__call__"), ctx->fromMethod(callableProxyType, py_weakref_proxy)));
+        mod->setAttribute(ctx, sym(ctx, "CallableProxyType"), callableProxyType);
     }
 
     return mod;
