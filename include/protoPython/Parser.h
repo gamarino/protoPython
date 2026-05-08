@@ -396,6 +396,77 @@ struct ContinueNode : ASTNode {};
 /** pass (no-op). */
 struct PassNode : ASTNode {};
 
+/* ---- match/case patterns (PEP 634) ---- */
+
+/** Abstract base for all pattern nodes. */
+struct MatchPatternNode : ASTNode {};
+
+/** Value pattern: literal or dotted-attribute. e.g. `case 1:`, `case "x":`,
+ *  `case Color.RED:`. The value expression must reduce to an immutable
+ *  literal or an attribute access; the matcher uses `==` semantics. */
+struct MatchValuePatternNode : MatchPatternNode {
+    std::unique_ptr<ASTNode> value;
+};
+
+/** Singleton pattern: `case None:`, `case True:`, `case False:`. Uses
+ *  `is` comparison. */
+struct MatchSingletonPatternNode : MatchPatternNode {
+    enum class Kind { None_, True_, False_ };
+    Kind kind = Kind::None_;
+};
+
+/** Sequence pattern: `case [a, b, *rest]:`. Each element is a sub-pattern;
+ *  at most one MatchStarPatternNode may appear. */
+struct MatchStarPatternNode : MatchPatternNode {
+    std::string name; // "" for "*_"
+};
+
+struct MatchSequencePatternNode : MatchPatternNode {
+    std::vector<std::unique_ptr<MatchPatternNode>> patterns;
+};
+
+/** Mapping pattern: `case {"k": v, **rest}:`. */
+struct MatchMappingPatternNode : MatchPatternNode {
+    std::vector<std::unique_ptr<ASTNode>> keys;       // expressions (literals or dotted)
+    std::vector<std::unique_ptr<MatchPatternNode>> patterns;
+    std::string rest;                                 // "" if no **rest
+};
+
+/** Class pattern: `case Cls(arg, kw=pat):`. */
+struct MatchClassPatternNode : MatchPatternNode {
+    std::unique_ptr<ASTNode> cls;                     // class expression
+    std::vector<std::unique_ptr<MatchPatternNode>> args;
+    std::vector<std::pair<std::string, std::unique_ptr<MatchPatternNode>>> kwargs;
+};
+
+/** As / capture / wildcard pattern.
+ *  - bare wildcard `_`:           pattern == nullptr, name == "_"
+ *  - bare capture `name`:         pattern == nullptr, name == "name"
+ *  - `<pat> as name`:             pattern != nullptr, name == "name"
+ */
+struct MatchAsPatternNode : MatchPatternNode {
+    std::unique_ptr<MatchPatternNode> pattern; // optional
+    std::string name;                          // "" or "_" for wildcard, else binding name
+};
+
+/** Or pattern: `case A | B | C:`. */
+struct MatchOrPatternNode : MatchPatternNode {
+    std::vector<std::unique_ptr<MatchPatternNode>> alternatives;
+};
+
+/** A single case of a match statement. */
+struct MatchCaseNode : ASTNode {
+    std::unique_ptr<MatchPatternNode> pattern;
+    std::unique_ptr<ASTNode> guard;  // optional
+    std::unique_ptr<ASTNode> body;
+};
+
+/** match subject: ... case-blocks ...  (PEP 634). */
+struct MatchNode : ASTNode {
+    std::unique_ptr<ASTNode> subject;
+    std::vector<std::unique_ptr<MatchCaseNode>> cases;
+};
+
 /** Suite: ordered list of statements (block body). */
 struct SuiteNode : ASTNode {
     std::vector<std::unique_ptr<ASTNode>> statements;
@@ -473,6 +544,20 @@ private:
     std::unique_ptr<ASTNode> parseAsync();
     std::unique_ptr<ASTNode> parseTypeAlias();
     std::unique_ptr<ASTNode> parseMatch();
+    /** Top-level pattern parser: handles `|` alternation and `as` binding. */
+    std::unique_ptr<MatchPatternNode> parsePattern();
+    /** Single closed pattern: literal, capture, wildcard, sequence, mapping,
+     *  class, group `(...)`. Does NOT consume `|` or `as`. */
+    std::unique_ptr<MatchPatternNode> parseClosedPattern();
+    /** `[...]` or `(...,...)` sequence pattern interior. */
+    std::unique_ptr<MatchPatternNode> parseSequencePatternBody(TokenType closer);
+    /** `{...}` mapping pattern interior. */
+    std::unique_ptr<MatchPatternNode> parseMappingPatternBody();
+    /** Class-pattern arg list inside parens (after the class expression). */
+    bool parseClassPatternArgs(MatchClassPatternNode* dst);
+    /** Parse a "literal-like" expression for value patterns (numbers,
+     *  strings, ±number, dotted attribute). Returns nullptr if no match. */
+    std::unique_ptr<ASTNode> parsePatternValueExpr();
     std::vector<std::unique_ptr<TypeParamNode>> parseTypeParams();
     std::unique_ptr<ASTNode> parseLambda();
     std::unique_ptr<ASTNode> parseFString();

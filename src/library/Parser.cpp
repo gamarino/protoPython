@@ -2171,37 +2171,395 @@ std::unique_ptr<ASTNode> Parser::parseTypeAlias() {
     return n;
 }
 
+// ----- match/case (PEP 634) parser ---------------------------------------
+//
+// Subject:    parseTestList() — supports the `match a, b:` tuple shorthand.
+// Pattern:    closed-pattern with optional `|` alternation and `as` binding.
+// Sub-forms supported: literal, signed-literal, string, bytes, None/True/False,
+//                      dotted-attribute value pattern, capture, wildcard `_`,
+//                      sequence `[...]`/`(...)`, mapping `{...}`, class pattern
+//                      `Cls(args, kw=pat)`, group `(pat)`, or-pattern, as-pattern.
+
+static bool isPatternLiteralStart(TokenType t) {
+    return t == TokenType::Number
+        || t == TokenType::String
+        || t == TokenType::Bytes
+        || t == TokenType::FString
+        || t == TokenType::True
+        || t == TokenType::False
+        || t == TokenType::None
+        || t == TokenType::Minus
+        || t == TokenType::Plus;
+}
+
+std::unique_ptr<ASTNode> Parser::parsePatternValueExpr() {
+    // Numeric literal (optionally signed), string/bytes/fstring, or dotted name.
+    if (cur_.type == TokenType::Minus || cur_.type == TokenType::Plus) {
+        TokenType sign = cur_.type;
+        advance();
+        if (cur_.type != TokenType::Number) {
+            error("expected number after sign in pattern literal");
+            return nullptr;
+        }
+        auto inner = parseAtom();
+        if (!inner) return nullptr;
+        if (sign == TokenType::Minus) {
+            auto u = createNode<UnaryOpNode>();
+            u->op = TokenType::Minus;
+            u->operand = std::move(inner);
+            return u;
+        }
+        return inner;
+    }
+    if (cur_.type == TokenType::Number || cur_.type == TokenType::String
+        || cur_.type == TokenType::Bytes || cur_.type == TokenType::FString) {
+        return parseAtom();
+    }
+    if (isName(cur_.type)) {
+        // Dotted attribute chain: name(.name)+ — at least one dot is required
+        // for a value pattern. A bare name is a capture, handled by the caller.
+        auto first = createNode<NameNode>();
+        first->id = cur_.value;
+        advance();
+        if (cur_.type != TokenType::Dot) {
+            // Caller must distinguish capture vs class-pattern; signal by
+            // returning the bare NameNode.
+            return first;
+        }
+        std::unique_ptr<ASTNode> node = std::move(first);
+        while (cur_.type == TokenType::Dot) {
+            advance();
+            if (!isName(cur_.type)) {
+                error("expected attribute name after '.' in pattern");
+                return nullptr;
+            }
+            auto attr = createNode<AttributeNode>();
+            attr->value = std::move(node);
+            attr->attr = cur_.value;
+            advance();
+            node = std::move(attr);
+        }
+        return node;
+    }
+    return nullptr;
+}
+
+std::unique_ptr<MatchPatternNode> Parser::parseClosedPattern() {
+    // Singletons: None / True / False
+    if (cur_.type == TokenType::None) {
+        advance();
+        auto n = createNode<MatchSingletonPatternNode>();
+        n->kind = MatchSingletonPatternNode::Kind::None_;
+        return n;
+    }
+    if (cur_.type == TokenType::True) {
+        advance();
+        auto n = createNode<MatchSingletonPatternNode>();
+        n->kind = MatchSingletonPatternNode::Kind::True_;
+        return n;
+    }
+    if (cur_.type == TokenType::False) {
+        advance();
+        auto n = createNode<MatchSingletonPatternNode>();
+        n->kind = MatchSingletonPatternNode::Kind::False_;
+        return n;
+    }
+
+    // Sequence pattern: [...]
+    if (cur_.type == TokenType::LSquare) {
+        advance();
+        return parseSequencePatternBody(TokenType::RSquare);
+    }
+
+    // Mapping pattern: {...}
+    if (cur_.type == TokenType::LCurly) {
+        advance();
+        return parseMappingPatternBody();
+    }
+
+    // Group or tuple-sequence pattern: (...)
+    if (cur_.type == TokenType::LParen) {
+        advance();
+        // Empty parens → empty sequence
+        if (cur_.type == TokenType::RParen) {
+            advance();
+            return createNode<MatchSequencePatternNode>();
+        }
+        auto first = parsePattern();
+        if (!first) return nullptr;
+        if (cur_.type == TokenType::Comma) {
+            // Tuple-style sequence pattern
+            auto seq = createNode<MatchSequencePatternNode>();
+            seq->patterns.push_back(std::move(first));
+            while (cur_.type == TokenType::Comma) {
+                advance();
+                if (cur_.type == TokenType::RParen) break;
+                auto p = parsePattern();
+                if (!p) return nullptr;
+                seq->patterns.push_back(std::move(p));
+            }
+            if (!expect(TokenType::RParen)) return nullptr;
+            return seq;
+        }
+        if (!expect(TokenType::RParen)) return nullptr;
+        return first; // group
+    }
+
+    // Numeric / signed-numeric / string / bytes / fstring literal
+    if (cur_.type == TokenType::Number || cur_.type == TokenType::String
+        || cur_.type == TokenType::Bytes || cur_.type == TokenType::FString
+        || cur_.type == TokenType::Minus || cur_.type == TokenType::Plus) {
+        auto v = parsePatternValueExpr();
+        if (!v) return nullptr;
+        auto n = createNode<MatchValuePatternNode>();
+        n->value = std::move(v);
+        return n;
+    }
+
+    // Name-led: dotted-value pattern, class pattern, capture, or wildcard
+    if (isName(cur_.type)) {
+        std::string firstName = cur_.value;
+        // Wildcard
+        if (firstName == "_") {
+            advance();
+            auto w = createNode<MatchAsPatternNode>();
+            w->name = "_";
+            return w;
+        }
+        // Read as dotted-or-bare; parsePatternValueExpr returns NameNode for
+        // a bare name and AttributeNode for dotted.
+        auto expr = parsePatternValueExpr();
+        if (!expr) return nullptr;
+        // Class pattern: <expr>(...)
+        if (cur_.type == TokenType::LParen) {
+            auto cls = createNode<MatchClassPatternNode>();
+            cls->cls = std::move(expr);
+            advance();
+            if (!parseClassPatternArgs(cls.get())) return nullptr;
+            return cls;
+        }
+        // Bare name → capture
+        if (auto* nm = dynamic_cast<NameNode*>(expr.get())) {
+            auto cap = createNode<MatchAsPatternNode>();
+            cap->name = nm->id;
+            return cap;
+        }
+        // Dotted attribute → value pattern
+        auto v = createNode<MatchValuePatternNode>();
+        v->value = std::move(expr);
+        return v;
+    }
+
+    error(std::string("expected pattern, got ") + tokenToName(cur_.type));
+    return nullptr;
+}
+
+std::unique_ptr<MatchPatternNode> Parser::parseSequencePatternBody(TokenType closer) {
+    auto seq = createNode<MatchSequencePatternNode>();
+    if (cur_.type == closer) {
+        advance();
+        return seq;
+    }
+    while (true) {
+        if (cur_.type == TokenType::Star) {
+            advance();
+            auto star = createNode<MatchStarPatternNode>();
+            if (isName(cur_.type)) {
+                star->name = (cur_.value == "_") ? "" : cur_.value;
+                advance();
+            } else {
+                error("expected name or '_' after '*' in sequence pattern");
+                return nullptr;
+            }
+            seq->patterns.push_back(std::move(star));
+        } else {
+            auto p = parsePattern();
+            if (!p) return nullptr;
+            seq->patterns.push_back(std::move(p));
+        }
+        if (cur_.type == TokenType::Comma) {
+            advance();
+            if (cur_.type == closer) break;
+            continue;
+        }
+        break;
+    }
+    if (!expect(closer)) return nullptr;
+    return seq;
+}
+
+std::unique_ptr<MatchPatternNode> Parser::parseMappingPatternBody() {
+    auto m = createNode<MatchMappingPatternNode>();
+    if (cur_.type == TokenType::RCurly) {
+        advance();
+        return m;
+    }
+    while (true) {
+        if (cur_.type == TokenType::DoubleStar) {
+            advance();
+            if (!isName(cur_.type)) {
+                error("expected name after '**' in mapping pattern");
+                return nullptr;
+            }
+            m->rest = cur_.value;
+            advance();
+            // **rest must be the last entry
+            if (cur_.type == TokenType::Comma) advance();
+            break;
+        }
+        // Key: literal or dotted name
+        std::unique_ptr<ASTNode> key;
+        if (cur_.type == TokenType::Number || cur_.type == TokenType::String
+            || cur_.type == TokenType::Bytes || cur_.type == TokenType::FString
+            || cur_.type == TokenType::Minus || cur_.type == TokenType::Plus
+            || cur_.type == TokenType::True || cur_.type == TokenType::False
+            || cur_.type == TokenType::None) {
+            // For singletons, use the literal token directly via parseAtom
+            if (cur_.type == TokenType::True || cur_.type == TokenType::False
+                || cur_.type == TokenType::None) {
+                key = parseAtom();
+            } else {
+                key = parsePatternValueExpr();
+            }
+        } else if (isName(cur_.type)) {
+            // Must be dotted (mapping key pattern restriction)
+            key = parsePatternValueExpr();
+            if (key && dynamic_cast<NameNode*>(key.get())) {
+                error("mapping pattern key must be literal or attribute");
+                return nullptr;
+            }
+        } else {
+            error("expected key in mapping pattern");
+            return nullptr;
+        }
+        if (!key) return nullptr;
+        if (!expect(TokenType::Colon)) return nullptr;
+        auto v = parsePattern();
+        if (!v) return nullptr;
+        m->keys.push_back(std::move(key));
+        m->patterns.push_back(std::move(v));
+        if (cur_.type == TokenType::Comma) {
+            advance();
+            if (cur_.type == TokenType::RCurly) break;
+            continue;
+        }
+        break;
+    }
+    if (!expect(TokenType::RCurly)) return nullptr;
+    return m;
+}
+
+bool Parser::parseClassPatternArgs(MatchClassPatternNode* dst) {
+    if (cur_.type == TokenType::RParen) {
+        advance();
+        return true;
+    }
+    bool sawKw = false;
+    while (true) {
+        // Distinguish keyword (Name '=' pattern) vs positional pattern.
+        if (isName(cur_.type) && tok_.peek().type == TokenType::Assign) {
+            std::string name = cur_.value;
+            advance(); // name
+            advance(); // =
+            auto p = parsePattern();
+            if (!p) return false;
+            dst->kwargs.emplace_back(std::move(name), std::move(p));
+            sawKw = true;
+        } else {
+            if (sawKw) {
+                error("positional pattern follows keyword pattern");
+                return false;
+            }
+            auto p = parsePattern();
+            if (!p) return false;
+            dst->args.push_back(std::move(p));
+        }
+        if (cur_.type == TokenType::Comma) {
+            advance();
+            if (cur_.type == TokenType::RParen) break;
+            continue;
+        }
+        break;
+    }
+    if (!expect(TokenType::RParen)) return false;
+    return true;
+}
+
+std::unique_ptr<MatchPatternNode> Parser::parsePattern() {
+    auto first = parseClosedPattern();
+    if (!first) return nullptr;
+    // OR-pattern: a | b | c
+    if (cur_.type == TokenType::BitOr) {
+        auto orp = createNode<MatchOrPatternNode>();
+        orp->alternatives.push_back(std::move(first));
+        while (cur_.type == TokenType::BitOr) {
+            advance();
+            auto nxt = parseClosedPattern();
+            if (!nxt) return nullptr;
+            orp->alternatives.push_back(std::move(nxt));
+        }
+        first = std::move(orp);
+    }
+    // AS-pattern: <pat> as name
+    if (cur_.type == TokenType::As) {
+        advance();
+        if (!isName(cur_.type)) {
+            error("expected name after 'as' in pattern");
+            return nullptr;
+        }
+        if (cur_.value == "_") {
+            error("cannot use '_' as binding name in 'as' pattern");
+            return nullptr;
+        }
+        auto asp = createNode<MatchAsPatternNode>();
+        asp->pattern = std::move(first);
+        asp->name = cur_.value;
+        advance();
+        return asp;
+    }
+    return first;
+}
+
 std::unique_ptr<ASTNode> Parser::parseMatch() {
     advance(); // match
-    auto subject = parseExpression();
+    auto subject = parseTestList();
+    if (!subject) return nullptr;
     if (!expect(TokenType::Colon)) return nullptr;
     skipNewlines();
     if (!expect(TokenType::Indent)) return nullptr;
+
+    auto m = createNode<MatchNode>();
+    m->subject = std::move(subject);
+
     while (cur_.type != TokenType::Dedent && cur_.type != TokenType::EndOfFile) {
         skipTrash();
-        if (cur_.type == TokenType::Case) {
-             advance(); // case
-             // Match pattern can be complex, skip to colon
-             int depth = 0;
-             while ((cur_.type != TokenType::Colon || depth > 0) && cur_.type != TokenType::EndOfFile) {
-                 if (cur_.type == TokenType::LParen || cur_.type == TokenType::LSquare || cur_.type == TokenType::LCurly) depth++;
-                 else if (cur_.type == TokenType::RParen || cur_.type == TokenType::RSquare || cur_.type == TokenType::RCurly) depth--;
-                 advance();
-             }
-
-             if (!expect(TokenType::Colon)) return nullptr;
-             auto s = parseSuite();
-             if (!s) return nullptr;
-        } else if (cur_.type == TokenType::Newline || cur_.type == TokenType::Indent) {
-            advance();
-        } else {
+        if (cur_.type == TokenType::Dedent || cur_.type == TokenType::EndOfFile) break;
+        if (cur_.type != TokenType::Case) {
             error(std::string("expected 'case' in match block, got ") + tokenToName(cur_.type));
-            break;
+            return nullptr;
         }
+        advance(); // case
+        auto pat = parsePattern();
+        if (!pat) return nullptr;
+        std::unique_ptr<ASTNode> guard;
+        if (cur_.type == TokenType::If) {
+            advance();
+            guard = parseExpression();
+            if (!guard) return nullptr;
+        }
+        if (!expect(TokenType::Colon)) return nullptr;
+        auto body = parseSuite();
+        if (!body) return nullptr;
+
+        auto mc = createNode<MatchCaseNode>();
+        mc->pattern = std::move(pat);
+        mc->guard = std::move(guard);
+        mc->body = std::move(body);
+        m->cases.push_back(std::move(mc));
         skipNewlines();
     }
     expect(TokenType::Dedent);
-    return createNode<PassNode>(); 
+    return m;
 }
 
 } // namespace protoPython

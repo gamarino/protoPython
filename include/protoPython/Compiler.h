@@ -106,6 +106,34 @@ private:
     bool compileAsyncWith(AsyncWithNode* n);
     bool compileCondExpr(ConditionalExprNode* n);
     bool compileTypeAlias(TypeAliasNode* n);
+    /** match/case (PEP 634). compileMatch handles the outer match/case
+     *  scaffolding; compilePattern emits per-pattern test code.
+     *
+     *  compilePattern contract:
+     *    Pre:  TOS = candidate value to be tested.
+     *    Post-success: stack returns to its pre-state (TOS consumed),
+     *                  any captured names are bound.
+     *    Post-fail:    JUMP to failLabelSlot is taken with the stack
+     *                  restored to its pre-state (TOS consumed).
+     *    The candidate is consumed in BOTH branches — the caller does
+     *    NOT need to clean up. To achieve this uniformly, compilePattern
+     *    stashes the candidate into a fresh `__match_tmp_<n>` local at
+     *    entry and accesses it via LOAD_NAME from then on. Captures
+     *    bound by sub-patterns are visible after success. */
+    bool compileMatch(MatchNode* n);
+    /** Emit code that pops the candidate off TOS, tests it against pat,
+     *  and either falls through (success) or jumps to failLabelSlot
+     *  (the bytecode-arg slot of an OP_JUMP_ABSOLUTE that needs patching).
+     *  collectedNames accumulates all binding names this pattern would
+     *  introduce on success — used by Or-patterns to enforce that all
+     *  alternatives bind the same set of names. */
+    bool compilePattern(MatchPatternNode* pat, int failLabelSlot,
+        std::vector<std::string>* collectedNames);
+    /** Internal helper: collect binding names a pattern would introduce. */
+    static void collectPatternNames(const MatchPatternNode* pat,
+        std::vector<std::string>& out);
+    /** Counter for `__match_tmp_<n>` temp names. Reset per match stmt. */
+    int matchTmpCounter_ = 0;
     bool compileComprehension(const std::vector<Comprehension>& generators, size_t index, std::function<bool()> innerBody);
     bool compileWithItems(const std::vector<WithItem>& items, size_t index, ASTNode* body);
     bool compileSuite(SuiteNode* n);

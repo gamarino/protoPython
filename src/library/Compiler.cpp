@@ -138,7 +138,14 @@ static int stackEffect(int op, int arg) {
         case OP_LOAD_CONST: case OP_LOAD_NAME: case OP_LOAD_GLOBAL:
         case OP_LOAD_FAST:  case OP_LOAD_DEREF:
         case OP_DUP_TOP:    case OP_PUSH_NULL:
+        case OP_BUILD_RAW_LIST:
             return 1;
+
+        // OP_WRAP_RAW_LIST: pop raw, push wrapped → 0 net.
+        // OP_BUILD_ANNOTATE: same shape (replaces TOS).
+        case OP_WRAP_RAW_LIST:
+        case OP_BUILD_ANNOTATE:
+            return 0;
         case OP_DUP_TOP_TWO:
             return 2;
 
@@ -1579,24 +1586,35 @@ bool Compiler::compileListComp(ListCompNode* n) {
     }
     for (const auto& name : orderedLocals) bodyCompiler.definedLocals_.insert(name);
 
-    // Create the list inside the function
-    bodyCompiler.emit(OP_BUILD_LIST, 0);
-    
+    // Listcomp accumulator: use a raw ProtoList (not a wrapped
+    // `list` instance) for the duration of the body. The wrapped
+    // variant goes through `__data__` setAttribute on a mutable
+    // object every LIST_APPEND, which under heavy load (≥80×80
+    // nested with bytes operands) hits a protoCore mutable-shard GC
+    // corruption that drops the accumulator's __data__ to PROTO_NONE
+    // and produces a ZERO-length result list. The raw form skips
+    // that round-trip entirely; OP_LIST_APPEND's raw fast-path
+    // accepts a bare ProtoList on the stack. We wrap once at body-
+    // end via OP_WRAP_RAW_LIST so callers continue to receive a
+    // proper Python list.
+    bodyCompiler.emit(OP_BUILD_RAW_LIST, 0);
+
     auto oldIter = std::move(n->generators[0].iter);
     auto itNode = std::make_unique<NameNode>();
     itNode->id = ".0";
     n->generators[0].iter = std::move(itNode);
-    
+
     int nGen = static_cast<int>(n->generators.size());
     auto innerOk = bodyCompiler.compileComprehension(n->generators, 0, [&]() {
         if (!bodyCompiler.compileNode(n->elt.get())) return false;
         bodyCompiler.emit(OP_LIST_APPEND, nGen + 1);
         return true;
     });
-    
+
     n->generators[0].iter = std::move(oldIter);
     if (!innerOk) return false;
-    
+
+    bodyCompiler.emit(OP_WRAP_RAW_LIST, 0);
     bodyCompiler.emit(OP_RETURN_VALUE);
     bodyCompiler.applyPatches();
     
@@ -4800,6 +4818,7 @@ bool Compiler::compileNode(ASTNode* node) {
     else if (auto* s = dynamic_cast<SuiteNode*>(node)) result = compileSuite(s);
     else if (auto* ne = dynamic_cast<NamedExprNode*>(node)) result = compileNamedExpr(ne);
     else if (auto* ta = dynamic_cast<TypeAliasNode*>(node)) result = compileTypeAlias(ta);
+    else if (auto* mn = dynamic_cast<MatchNode*>(node)) result = compileMatch(mn);
 
     if (!result && get_env_diag()) {
         std::cerr << "Compiler::compileNode FAILED for node type " << typeid(*node).name() << " at line " << node->line << "\n";
@@ -4887,8 +4906,11 @@ bool Compiler::unwindBlocks(bool isLoopExit, bool hasValueOnStack) {
     }
 
     for (size_t i = blockEnvStack_.size(); i > targetDepth; --i) {
-        BlockEnv& env = blockEnvStack_[i - 1];
-        if (env.unwinding) {
+        // Access via index, NOT a stored reference: compileNode below may
+        // recursively grow blockEnvStack_ and trigger a vector realloc
+        // (which would invalidate any reference held across the call).
+        size_t idx = i - 1;
+        if (blockEnvStack_[idx].unwinding) {
             // We are already inlining this finally for an outer
             // break/continue/return. A nested transfer inside that
             // finally must NOT re-emit the same finally — silently
@@ -4896,22 +4918,26 @@ bool Compiler::unwindBlocks(bool isLoopExit, bool hasValueOnStack) {
             // unwind the remaining outer entries).
             continue;
         }
-        if (env.type == BlockType::TryFinally) {
+        BlockType type = blockEnvStack_[idx].type;
+        if (type == BlockType::TryFinally) {
             emit(OP_POP_BLOCK);
-            if (env.cleanupNode) {
-                env.unwinding = true;
+            ASTNode* cleanupNode = blockEnvStack_[idx].cleanupNode;
+            if (cleanupNode) {
+                blockEnvStack_[idx].unwinding = true;
                 // hasValueOnStack=true ⇒ we're unwinding for `return`,
                 // and the pending return value sits beneath whatever
                 // the finally body builds.  Track the nesting depth so
                 // any break/continue inside the recursively compiled
                 // finally pops the pending value before redirecting.
                 if (hasValueOnStack) returnUnwindDepth_++;
-                bool ok = compileNode(env.cleanupNode);
+                bool ok = compileNode(cleanupNode);
                 if (hasValueOnStack) returnUnwindDepth_--;
-                env.unwinding = false;
+                // Re-index: vector may have been re-allocated, but the
+                // entry at `idx` is still the same logical slot.
+                blockEnvStack_[idx].unwinding = false;
                 if (!ok) return false;
             }
-        } else if (env.type == BlockType::With) {
+        } else if (type == BlockType::With) {
             // Stack at this point:
             //   hasValueOnStack=false: [..., __exit__]
             //   hasValueOnStack=true:  [..., __exit__, retval]
@@ -5171,6 +5197,435 @@ bool Compiler::compileTypeAlias(TypeAliasNode* n) {
     // For now, we compile the value and store it to the name.
     if (!compileNode(n->value.get())) return false;
     return emitNameOp(n->name, TargetCtx::Store);
+}
+
+// =========================================================================
+// match/case (PEP 634)
+// =========================================================================
+//
+// All pattern-test code uses the same convention:
+//
+//   compilePattern(pat, failLabelSlot, collectedNames):
+//       Pre:  TOS = candidate value to be matched.
+//       Post (success): stack returns to its pre-state (TOS consumed);
+//                       binding names introduced by the pattern are
+//                       stored.
+//       Post (fail):    a JUMP_ABSOLUTE to failLabelSlot is taken with
+//                       the stack restored to its pre-state.
+//
+// The implementation stashes the candidate into a fresh `__match_tmp_<n>`
+// local at entry and accesses it via LOAD_NAME from then on. This avoids
+// the stack-juggling that would otherwise be needed to keep the candidate
+// reachable for sub-pattern tests, isinstance checks, and capture binding.
+
+void Compiler::collectPatternNames(const MatchPatternNode* pat,
+    std::vector<std::string>& out) {
+    if (!pat) return;
+    if (auto* a = dynamic_cast<const MatchAsPatternNode*>(pat)) {
+        if (!a->name.empty() && a->name != "_") out.push_back(a->name);
+        if (a->pattern) collectPatternNames(a->pattern.get(), out);
+        return;
+    }
+    if (auto* o = dynamic_cast<const MatchOrPatternNode*>(pat)) {
+        // PEP 634 requires every alt to bind the same names.  Collect
+        // from the first alt; the validity check is enforced at compile.
+        if (!o->alternatives.empty()) {
+            collectPatternNames(o->alternatives.front().get(), out);
+        }
+        return;
+    }
+    if (auto* s = dynamic_cast<const MatchSequencePatternNode*>(pat)) {
+        for (auto& p : s->patterns) collectPatternNames(p.get(), out);
+        return;
+    }
+    if (auto* st = dynamic_cast<const MatchStarPatternNode*>(pat)) {
+        if (!st->name.empty()) out.push_back(st->name);
+        return;
+    }
+    if (auto* m = dynamic_cast<const MatchMappingPatternNode*>(pat)) {
+        for (auto& p : m->patterns) collectPatternNames(p.get(), out);
+        if (!m->rest.empty()) out.push_back(m->rest);
+        return;
+    }
+    if (auto* c = dynamic_cast<const MatchClassPatternNode*>(pat)) {
+        for (auto& p : c->args) collectPatternNames(p.get(), out);
+        for (auto& kv : c->kwargs) collectPatternNames(kv.second.get(), out);
+        return;
+    }
+    // MatchValue, MatchSingleton: no bindings.
+}
+
+bool Compiler::compilePattern(MatchPatternNode* pat, int failLabelSlot,
+    std::vector<std::string>* collectedNames) {
+    if (!pat) return false;
+
+    // ---- MatchSingleton: None / True / False -----------------------------
+    if (auto* s = dynamic_cast<MatchSingletonPatternNode*>(pat)) {
+        // TOS = candidate.  Compare with `is`.
+        const proto::ProtoObject* obj =
+            (s->kind == MatchSingletonPatternNode::Kind::None_) ? PROTO_NONE :
+            (s->kind == MatchSingletonPatternNode::Kind::True_) ? PROTO_TRUE :
+                                                                  PROTO_FALSE;
+        int idx = addConstant(obj);
+        emit(OP_LOAD_CONST, idx);
+        emit(OP_COMPARE_OP, 8); // 'is'
+        emit(OP_POP_JUMP_IF_FALSE, 0);
+        addPatch(bytecodeOffset() - 1, failLabelSlot);
+        return true;
+    }
+
+    // ---- MatchValue: literal or dotted attribute -------------------------
+    if (auto* v = dynamic_cast<MatchValuePatternNode*>(pat)) {
+        // TOS = candidate.  Push value, COMPARE_OP ==, jump if false.
+        if (!compileNode(v->value.get())) return false;
+        emit(OP_COMPARE_OP, 0); // '=='
+        emit(OP_POP_JUMP_IF_FALSE, 0);
+        addPatch(bytecodeOffset() - 1, failLabelSlot);
+        return true;
+    }
+
+    // ---- MatchAs / Capture / Wildcard ------------------------------------
+    if (auto* a = dynamic_cast<MatchAsPatternNode*>(pat)) {
+        if (!a->pattern) {
+            // Bare capture or wildcard.
+            if (a->name == "_" || a->name.empty()) {
+                emit(OP_POP_TOP);
+            } else {
+                emitNameOp(a->name, TargetCtx::Store);
+            }
+            return true;
+        }
+        // <pat> as name: stash, run sub-pattern on a copy, then bind.
+        std::string tmp = "__match_tmp_" + std::to_string(matchTmpCounter_++);
+        emitNameOp(tmp, TargetCtx::Store); // consume candidate, save in tmp
+        emitNameOp(tmp, TargetCtx::Load);  // push for sub-pattern
+        if (!compilePattern(a->pattern.get(), failLabelSlot, collectedNames)) return false;
+        // Sub-pattern matched — bind name from the saved tmp.
+        if (!a->name.empty() && a->name != "_") {
+            emitNameOp(tmp, TargetCtx::Load);
+            emitNameOp(a->name, TargetCtx::Store);
+        }
+        return true;
+    }
+
+    // ---- MatchOr ---------------------------------------------------------
+    if (auto* o = dynamic_cast<MatchOrPatternNode*>(pat)) {
+        // Stash candidate in tmp; for each alt, reload and try; on success
+        // jump to the shared success label. Failure of alt i (i < last)
+        // falls through to alt i+1; failure of the last alt jumps to the
+        // outer failLabelSlot.
+        size_t n = o->alternatives.size();
+        if (n == 0) {
+            emit(OP_POP_TOP);
+            emit(OP_JUMP_ABSOLUTE, 0);
+            addPatch(bytecodeOffset() - 1, failLabelSlot);
+            return true;
+        }
+        std::string tmp = "__match_tmp_" + std::to_string(matchTmpCounter_++);
+        emitNameOp(tmp, TargetCtx::Store);
+        std::vector<int> successJumps;
+        // For each alt we use a per-alt fail trampoline (an
+        // OP_JUMP_ABSOLUTE placed at alt-start, jumped over by an
+        // OP_JUMP_ABSOLUTE that targets the alt body). The trampoline's
+        // target gets patched to either the next-alt entry or the outer
+        // fail label.
+        for (size_t i = 0; i < n; ++i) {
+            // Skip-trampoline.
+            emit(OP_JUMP_ABSOLUTE, 0);
+            int skipSlot = bytecodeOffset() - 1;
+            // Trampoline (target patched at end of iteration).
+            emit(OP_JUMP_ABSOLUTE, 0);
+            int trampolineSlot = bytecodeOffset() - 1;
+            // Skip-target = right after trampoline.
+            addPatch(skipSlot, bytecodeOffset());
+            // Body of this alt: reload candidate from tmp, then compile alt.
+            emitNameOp(tmp, TargetCtx::Load);
+            std::vector<std::string> altNames;
+            if (!compilePattern(o->alternatives[i].get(), trampolineSlot, &altNames)) return false;
+            // Success — jump to the shared success label (patched at end).
+            emit(OP_JUMP_ABSOLUTE, 0);
+            successJumps.push_back(bytecodeOffset() - 1);
+            // Patch the trampoline. Last alt → outer fail; otherwise → next iter.
+            if (i + 1 == n) {
+                addPatch(trampolineSlot, failLabelSlot);
+            } else {
+                addPatch(trampolineSlot, bytecodeOffset()); // start of next alt's skip-trampoline
+            }
+        }
+        // success label = current bytecode offset; patch all successJumps.
+        int succEntry = bytecodeOffset();
+        for (int slot : successJumps) addPatch(slot, succEntry);
+        return true;
+    }
+
+    // ---- MatchClass ------------------------------------------------------
+    if (auto* c = dynamic_cast<MatchClassPatternNode*>(pat)) {
+        // Stash candidate into tmp.
+        std::string tmp = "__match_tmp_" + std::to_string(matchTmpCounter_++);
+        emitNameOp(tmp, TargetCtx::Store);
+        // Test isinstance(tmp, cls)
+        emitNameOp(std::string("isinstance"), TargetCtx::Load);
+        emitNameOp(tmp, TargetCtx::Load);
+        if (!compileNode(c->cls.get())) return false;
+        emit(OP_CALL_FUNCTION, 2);
+        emit(OP_POP_JUMP_IF_FALSE, 0);
+        addPatch(bytecodeOffset() - 1, failLabelSlot);
+        // Positional arg patterns: use cls.__match_args__[i] for the attr name.
+        if (!c->args.empty()) {
+            // For each positional, fetch attr by name from __match_args__.
+            // Stash the cls expression result in a tmp so we evaluate once.
+            std::string clsTmp = "__match_cls_" + std::to_string(matchTmpCounter_++);
+            if (!compileNode(c->cls.get())) return false;
+            emitNameOp(clsTmp, TargetCtx::Store);
+            for (size_t i = 0; i < c->args.size(); ++i) {
+                // getattr(tmp, clsTmp.__match_args__[i])
+                emitNameOp(std::string("getattr"), TargetCtx::Load);
+                emitNameOp(tmp, TargetCtx::Load);
+                emitNameOp(clsTmp, TargetCtx::Load);
+                {
+                    int n = addName(std::string("__match_args__"));
+                    emit(OP_LOAD_ATTR, n << 1);
+                }
+                emit(OP_LOAD_CONST, addConstant(ctx_->fromInteger(static_cast<long long>(i))));
+                emit(OP_BINARY_SUBSCR);
+                emit(OP_CALL_FUNCTION, 2);
+                if (!compilePattern(c->args[i].get(), failLabelSlot, collectedNames)) return false;
+            }
+        }
+        // Keyword arg patterns: cls.kw == ... resolved via attr access.
+        for (auto& kv : c->kwargs) {
+            emitNameOp(tmp, TargetCtx::Load);
+            int n = addName(kv.first);
+            emit(OP_LOAD_ATTR, n << 1);
+            if (!compilePattern(kv.second.get(), failLabelSlot, collectedNames)) return false;
+        }
+        return true;
+    }
+
+    // ---- MatchSequence ---------------------------------------------------
+    if (auto* sq = dynamic_cast<MatchSequencePatternNode*>(pat)) {
+        std::string tmp = "__match_tmp_" + std::to_string(matchTmpCounter_++);
+        emitNameOp(tmp, TargetCtx::Store);
+        // PEP 634: strings, bytes, and bytearrays are NOT considered
+        // sequences for matching purposes.  Reject them explicitly first.
+        emitNameOp(std::string("isinstance"), TargetCtx::Load);
+        emitNameOp(tmp, TargetCtx::Load);
+        emitNameOp(std::string("str"), TargetCtx::Load);
+        emitNameOp(std::string("bytes"), TargetCtx::Load);
+        emitNameOp(std::string("bytearray"), TargetCtx::Load);
+        emit(OP_BUILD_TUPLE, 3);
+        emit(OP_CALL_FUNCTION, 2);
+        emit(OP_POP_JUMP_IF_TRUE, 0);
+        addPatch(bytecodeOffset() - 1, failLabelSlot);
+        // Then accept list/tuple.  PEP 634 prescribes "Sequence" via
+        // collections.abc; the concrete builtins cover the common cases
+        // (custom Sequence subclasses can be matched with MatchClass).
+        emitNameOp(std::string("isinstance"), TargetCtx::Load);
+        emitNameOp(tmp, TargetCtx::Load);
+        emitNameOp(std::string("list"), TargetCtx::Load);
+        emitNameOp(std::string("tuple"), TargetCtx::Load);
+        emit(OP_BUILD_TUPLE, 2);
+        emit(OP_CALL_FUNCTION, 2);
+        emit(OP_POP_JUMP_IF_FALSE, 0);
+        addPatch(bytecodeOffset() - 1, failLabelSlot);
+        // Find a star pattern (at most one).
+        int starIdx = -1;
+        for (size_t i = 0; i < sq->patterns.size(); ++i) {
+            if (dynamic_cast<MatchStarPatternNode*>(sq->patterns[i].get())) {
+                if (starIdx >= 0) {
+                    return false; // multiple stars — invalid
+                }
+                starIdx = static_cast<int>(i);
+            }
+        }
+        int totalFixed = static_cast<int>(sq->patterns.size()) - (starIdx >= 0 ? 1 : 0);
+        // len(tmp) == totalFixed (no star)  or  len(tmp) >= totalFixed (with star)
+        emitNameOp(std::string("len"), TargetCtx::Load);
+        emitNameOp(tmp, TargetCtx::Load);
+        emit(OP_CALL_FUNCTION, 1);
+        emit(OP_LOAD_CONST, addConstant(ctx_->fromInteger(totalFixed)));
+        emit(OP_COMPARE_OP, starIdx >= 0 ? 5 /* >= */ : 0 /* == */);
+        emit(OP_POP_JUMP_IF_FALSE, 0);
+        addPatch(bytecodeOffset() - 1, failLabelSlot);
+        // Fixed prefix patterns [0..starIdx) (or [0..N) if no star).
+        int prefixEnd = (starIdx >= 0) ? starIdx : static_cast<int>(sq->patterns.size());
+        for (int i = 0; i < prefixEnd; ++i) {
+            emitNameOp(tmp, TargetCtx::Load);
+            emit(OP_LOAD_CONST, addConstant(ctx_->fromInteger(i)));
+            emit(OP_BINARY_SUBSCR);
+            if (!compilePattern(sq->patterns[i].get(), failLabelSlot, collectedNames)) return false;
+        }
+        // Star binding (and capture if named).
+        if (starIdx >= 0) {
+            auto* star = dynamic_cast<MatchStarPatternNode*>(sq->patterns[starIdx].get());
+            int suffixCount = static_cast<int>(sq->patterns.size()) - starIdx - 1;
+            // tmp[starIdx : len(tmp) - suffixCount]  via slice.
+            emitNameOp(tmp, TargetCtx::Load);
+            emit(OP_LOAD_CONST, addConstant(ctx_->fromInteger(starIdx)));
+            // stop = -suffixCount, or len(tmp) if suffixCount == 0
+            if (suffixCount == 0) {
+                int idxNone = addConstant(PROTO_NONE);
+                emit(OP_LOAD_CONST, idxNone);
+            } else {
+                emit(OP_LOAD_CONST, addConstant(ctx_->fromInteger(-suffixCount)));
+            }
+            emit(OP_BUILD_SLICE, 2);
+            emit(OP_BINARY_SUBSCR);
+            // Make the star binding a list (PEP 634 says so).
+            emitNameOp(std::string("list"), TargetCtx::Load);
+            emit(OP_ROT_TWO);
+            emit(OP_CALL_FUNCTION, 1);
+            if (!star->name.empty()) {
+                emitNameOp(star->name, TargetCtx::Store);
+            } else {
+                emit(OP_POP_TOP);
+            }
+            // Suffix patterns (negative indices from end).
+            for (int i = starIdx + 1; i < static_cast<int>(sq->patterns.size()); ++i) {
+                int negIdx = -(static_cast<int>(sq->patterns.size()) - i);
+                emitNameOp(tmp, TargetCtx::Load);
+                emit(OP_LOAD_CONST, addConstant(ctx_->fromInteger(negIdx)));
+                emit(OP_BINARY_SUBSCR);
+                if (!compilePattern(sq->patterns[i].get(), failLabelSlot, collectedNames)) return false;
+            }
+        }
+        return true;
+    }
+
+    // ---- MatchMapping ----------------------------------------------------
+    if (auto* mp = dynamic_cast<MatchMappingPatternNode*>(pat)) {
+        std::string tmp = "__match_tmp_" + std::to_string(matchTmpCounter_++);
+        emitNameOp(tmp, TargetCtx::Store);
+        // isinstance(tmp, dict)
+        emitNameOp(std::string("isinstance"), TargetCtx::Load);
+        emitNameOp(tmp, TargetCtx::Load);
+        emitNameOp(std::string("dict"), TargetCtx::Load);
+        emit(OP_CALL_FUNCTION, 2);
+        emit(OP_POP_JUMP_IF_FALSE, 0);
+        addPatch(bytecodeOffset() - 1, failLabelSlot);
+        // For each (key, sub-pattern): test `key in tmp`, then load and recurse.
+        for (size_t i = 0; i < mp->keys.size(); ++i) {
+            // key in tmp
+            if (!compileNode(mp->keys[i].get())) return false;
+            emitNameOp(tmp, TargetCtx::Load);
+            emit(OP_COMPARE_OP, 6); // 'in'
+            emit(OP_POP_JUMP_IF_FALSE, 0);
+            addPatch(bytecodeOffset() - 1, failLabelSlot);
+            // tmp[key]
+            emitNameOp(tmp, TargetCtx::Load);
+            if (!compileNode(mp->keys[i].get())) return false;
+            emit(OP_BINARY_SUBSCR);
+            if (!compilePattern(mp->patterns[i].get(), failLabelSlot, collectedNames)) return false;
+        }
+        // **rest binding: build a dict copy minus the matched keys.
+        if (!mp->rest.empty()) {
+            emitNameOp(std::string("dict"), TargetCtx::Load);
+            emitNameOp(tmp, TargetCtx::Load);
+            emit(OP_CALL_FUNCTION, 1);
+            // Stash so we can DELETE_SUBSCR in a loop.
+            std::string restTmp = "__match_rest_" + std::to_string(matchTmpCounter_++);
+            emitNameOp(restTmp, TargetCtx::Store);
+            for (auto& k : mp->keys) {
+                // del restTmp[k]
+                emitNameOp(restTmp, TargetCtx::Load);
+                if (!compileNode(k.get())) return false;
+                emit(OP_DELETE_SUBSCR);
+            }
+            emitNameOp(restTmp, TargetCtx::Load);
+            emitNameOp(mp->rest, TargetCtx::Store);
+        }
+        return true;
+    }
+
+    // ---- MatchStarPatternNode (only valid inside MatchSequence) ---------
+    if (dynamic_cast<MatchStarPatternNode*>(pat)) {
+        // Reaching here is a parser/compiler error — handled inside
+        // compileSequencePattern.
+        return false;
+    }
+
+    return false;
+}
+
+bool Compiler::compileMatch(MatchNode* n) {
+    if (!n || !n->subject) return false;
+    matchTmpCounter_ = 0;
+
+    // Stash subject in a top-level tmp once; each case loads it via tmp.
+    if (!compileNode(n->subject.get())) return false;
+    std::string subjTmp = "__match_subj";
+    emitNameOp(subjTmp, TargetCtx::Store);
+
+    std::vector<int> endJumps; // success jumps from each case body to the end
+
+    for (auto& mc : n->cases) {
+        // Per-case fail label: we'll patch all pattern failures here.
+        // The pattern emits OP_JUMP_ABSOLUTE arg=0 with addPatch(slot, X);
+        // we need a single slot index for failLabelSlot. Allocate via
+        // a trampoline: emit a placeholder JUMP_ABSOLUTE here that we patch
+        // to point to the body, and have pattern failures patch to after
+        // the body.  Cleanest: make the pattern's "fail target" a TRAMPOLINE
+        // emitted just before the next case, then patch the trampoline
+        // forward to the next case's start.
+        //
+        // Implementation: emit a "skip-trampoline" that jumps over the
+        // trampoline so the success path doesn't fall into it.  Pattern
+        // failures jump to the trampoline; the trampoline's arg gets
+        // patched to the next case's start (or to the post-match end).
+        //
+        // Layout:
+        //
+        //   <load subject from subjTmp>                ←─ caseStart
+        //   <pattern bytecode>
+        //   <if guard: compile guard, POP_JUMP_IF_FALSE to caseFailJump>
+        //   <body>
+        //   JUMP_ABSOLUTE end                              (recorded)
+        // caseFailJump:
+        //   JUMP_ABSOLUTE next_case_or_end                 (single trampoline)
+        //
+        // Pattern failures and guard failure both target caseFailJump's slot.
+
+        // Load subject for this case.
+        emitNameOp(subjTmp, TargetCtx::Load);
+
+        // Reserve a forward slot: emit a trampoline-jump that we'll patch
+        // to next-case-start.  Place it AFTER the case body — so we need
+        // forward references.  Trick: emit a "skip" jump first, then the
+        // trampoline, then the body.  Pattern fails jump backward to the
+        // trampoline.
+        emit(OP_JUMP_ABSOLUTE, 0); // skip-over-trampoline
+        int skipSlot = bytecodeOffset() - 1;
+        emit(OP_JUMP_ABSOLUTE, 0); // trampoline (target = next case)
+        int trampolineSlot = bytecodeOffset() - 1;
+        // Patch skip to land RIGHT AFTER the trampoline.
+        addPatch(skipSlot, bytecodeOffset());
+
+        // Compile pattern with failLabel = trampolineSlot.
+        std::vector<std::string> caseNames;
+        if (!compilePattern(mc->pattern.get(), trampolineSlot, &caseNames)) return false;
+
+        // Optional guard.
+        if (mc->guard) {
+            if (!compileNode(mc->guard.get())) return false;
+            emit(OP_POP_JUMP_IF_FALSE, 0);
+            addPatch(bytecodeOffset() - 1, trampolineSlot);
+        }
+
+        // Body.
+        if (!compileNode(mc->body.get())) return false;
+
+        // Jump to the end.
+        emit(OP_JUMP_ABSOLUTE, 0);
+        endJumps.push_back(bytecodeOffset() - 1);
+
+        // The trampoline now points to here (next-case-start).
+        addPatch(trampolineSlot, bytecodeOffset());
+    }
+
+    // No case matched — fall through to end (silently).
+    int endHere = bytecodeOffset();
+    for (int slot : endJumps) addPatch(slot, endHere);
+    return true;
 }
 
 } // namespace protoPython
