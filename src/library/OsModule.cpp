@@ -266,10 +266,13 @@ static const proto::ProtoObject* py_chdir(
     std::string path;
     pathObj->asString(ctx)->toUTF8String(ctx, path);
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
-    if (chdir(path.c_str()) == 0)
-        return PROTO_NONE;
-#endif
+    if (chdir(path.c_str()) == 0) return PROTO_NONE;
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (env) env->raiseOSError(ctx, errno, std::strerror(errno), path);
+    return nullptr;
+#else
     return PROTO_NONE;
+#endif
 }
 
 static const proto::ProtoObject* py_listdir(
@@ -395,7 +398,9 @@ static const proto::ProtoObject* py_remove(
     pathObj->asString(ctx)->toUTF8String(ctx, path);
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
     if (unlink(path.c_str()) != 0) {
-        // Handle error?
+        PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+        if (env) env->raiseOSError(ctx, errno, std::strerror(errno), path);
+        return nullptr;
     }
 #endif
     return PROTO_NONE;
@@ -424,7 +429,11 @@ static const proto::ProtoObject* py_mkdir(
     int mode = 0777;
     if (posArgs->getSize(ctx) >= 2) mode = static_cast<int>(posArgs->getAt(ctx, 1)->asLong(ctx));
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
-    (void)mkdir(path.c_str(), mode);
+    if (mkdir(path.c_str(), mode) != 0) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+        if (env) env->raiseOSError(ctx, errno, std::strerror(errno), path);
+        return nullptr;
+    }
 #endif
     return PROTO_NONE;
 }
@@ -440,7 +449,11 @@ static const proto::ProtoObject* py_rename(
     posArgs->getAt(ctx, 0)->asString(ctx)->toUTF8String(ctx, oldPath);
     posArgs->getAt(ctx, 1)->asString(ctx)->toUTF8String(ctx, newPath);
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
-    (void)rename(oldPath.c_str(), newPath.c_str());
+    if (rename(oldPath.c_str(), newPath.c_str()) != 0) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+        if (env) env->raiseOSError(ctx, errno, std::strerror(errno), oldPath);
+        return nullptr;
+    }
 #endif
     return PROTO_NONE;
 }
@@ -777,7 +790,11 @@ static const proto::ProtoObject* py_open(
     
 #if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
     int fd = open(path.c_str(), flags, mode);
-    if (fd < 0) return PROTO_NONE; // Ideally throw OSError
+    if (fd < 0) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+        if (env) env->raiseOSError(ctx, errno, std::strerror(errno), path);
+        return nullptr;
+    }
     return ctx->fromInteger(fd);
 #else
     return PROTO_NONE;
@@ -987,34 +1004,50 @@ static const proto::ProtoObject* py_urandom(
     const proto::ProtoList* posArgs,
     const proto::ProtoSparseList* /*kwargs*/) {
     if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
-    int n = static_cast<int>(posArgs->getAt(ctx, 0)->asLong(ctx));
-    if (n < 0) return PROTO_NONE;
-    
-    std::string buf;
-    buf.resize(n);
-#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
-    std::ifstream urandom("/dev/urandom", std::ios::in | std::ios::binary);
-    if (urandom) {
-        urandom.read(&buf[0], n);
-        urandom.close();
-    }
-#endif
-    
-    // Fallback if not readable or read failed
-    for (int i = 0; i < n; ++i) {
-        if (buf[i] == '\0') {
-            buf[i] = static_cast<char>((rand() % 255) + 1); // Avoid nulls to prevent ProtoString truncation for now
-        }
+    long long n = posArgs->getAt(ctx, 0)->asLong(ctx);
+    if (n < 0) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+        if (env) env->raiseValueError(ctx,
+            PythonEnvironment::getInternedString(ctx, "negative argument not allowed")->asObject(ctx));
+        return nullptr;
     }
 
-    PythonEnvironment* env = PythonEnvironment::get(ctx);
-    if (!env || !env->getBytesPrototype()) {
-        return PythonEnvironment::getInternedString(ctx, buf.c_str())->asObject(ctx);
+    std::string buf;
+    buf.resize(static_cast<size_t>(n));
+#if defined(__linux__) || defined(__unix__) || defined(__APPLE__)
+    std::ifstream urandom("/dev/urandom", std::ios::in | std::ios::binary);
+    if (!urandom) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+        if (env) env->raiseOSError(ctx, errno, std::strerror(errno), "/dev/urandom");
+        return nullptr;
     }
-    
-    const proto::ProtoObject* b = env->getBytesPrototype()->newChild(ctx, true);
-    b->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__class__"), env->getBytesPrototype());
-    b->setAttribute(ctx, proto::ProtoString::createSymbol(ctx, "__data__"), PythonEnvironment::getInternedString(ctx, buf.c_str())->asObject(ctx));
+    urandom.read(&buf[0], static_cast<std::streamsize>(n));
+    if (urandom.gcount() != static_cast<std::streamsize>(n)) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+        if (env) env->raiseOSError(ctx, EIO,
+            "/dev/urandom returned fewer bytes than requested", "/dev/urandom");
+        return nullptr;
+    }
+#endif
+
+    // Build a real `bytes` instance whose __data__ is a ProtoByteBuffer
+    // — preserves NUL octets cleanly (the previous implementation
+    // rewrote NULs with rand() to dodge ProtoString truncation, which
+    // biased the output and was not cryptographically random; the
+    // ProtoByteBuffer carrier is the right answer because it stores
+    // raw octets and never reinterprets them as a UTF-8 string).
+    PythonEnvironment* env = PythonEnvironment::get(ctx);
+    proto::ProtoObject* b = const_cast<proto::ProtoObject*>(ctx->newObject(false));
+    if (env && env->getBytesPrototype()) {
+        b = const_cast<proto::ProtoObject*>(b->addParent(ctx, env->getBytesPrototype()));
+        b = const_cast<proto::ProtoObject*>(b->setAttribute(ctx,
+            PythonEnvironment::getInternedString(ctx, "__class__"), env->getBytesPrototype()));
+    }
+    const proto::ProtoByteBuffer* bb = ctx->newByteBuffer(
+        buf.data(), static_cast<unsigned long>(buf.size()));
+    b = const_cast<proto::ProtoObject*>(b->setAttribute(ctx,
+        env ? env->getDataString() : PythonEnvironment::getInternedString(ctx, "__data__"),
+        bb->asObject(ctx)));
     return b;
 }
 
