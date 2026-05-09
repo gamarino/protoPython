@@ -1247,11 +1247,20 @@ static const proto::ProtoObject* py_object_reduce(
     }
     if (!obj) return PROTO_NONE;
 
-    const proto::ProtoString* reduceExName = PythonEnvironment::getInternedString(context, "__reduce_ex__");
-    const proto::ProtoObject* reduceExMethod = obj->getAttribute(context, reduceExName);
-    if (reduceExMethod && reduceExMethod != PROTO_NONE) {
-        const proto::ProtoList* args = context->newList()->appendLast(context, context->fromInteger(0));
-        return reduceExMethod->call(context, nullptr, reduceExName, reduceExMethod, args, keywordParameters);
+    // Forward to copyreg._reduce_ex(obj, 2) — same handler that
+    // py_object_reduce_ex uses for proto<2 fallback.  Avoids any
+    // sensitivity to whether `__reduce_ex__` retrieved off the class
+    // chain is bound vs unbound vs already a method-wrapper: we just
+    // call copyreg directly with the receiver and the protocol.
+    if (env) {
+        const proto::ProtoObject* copyregMod = env->importModule("copyreg");
+        if (copyregMod && copyregMod != PROTO_NONE) {
+            const proto::ProtoString* reduceExName = PythonEnvironment::getInternedString(context, "_reduce_ex");
+            const proto::ProtoObject* reduceExFunc = copyregMod->getAttribute(context, reduceExName);
+            if (reduceExFunc && reduceExFunc != PROTO_NONE) {
+                return env->callObject(reduceExFunc, {obj, context->fromInteger(2)});
+            }
+        }
     }
     if (env) env->raiseTypeError(context, "cannot pickle object");
     return nullptr;
