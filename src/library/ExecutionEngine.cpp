@@ -1366,12 +1366,43 @@ static inline bool bothExactNumericPrim(
             || bCls == env->getFloatPrototype());
 }
 
+// True when at least one operand is a wrapped numeric subclass (so
+// `bothExactNumericPrim` declined the fast path), the unwrapped values
+// are still both numeric, AND neither operand's class owns the
+// operation dunder.  Owning means defining `__op__` / `__rop__` in the
+// class body — in that case CPython routes through the override and
+// we must respect that.  When no override exists, the inherited
+// behaviour IS the primitive op, so doing it directly is both correct
+// and avoids the missing-dunder cliff that would otherwise raise
+// "unsupported operand type(s) for ...".
+static inline bool numericSubclassFastPathOK(
+    proto::ProtoContext* ctx,
+    PythonEnvironment* env,
+    const proto::ProtoObject* a, const proto::ProtoObject* b,
+    const proto::ProtoObject* aa, const proto::ProtoObject* bb,
+    const char* dunder, const char* rdunder)
+{
+    if (!env || !aa || !bb) return false;
+    bool aaNum = aa->isInteger(ctx) || aa->isDouble(ctx);
+    bool bbNum = bb->isInteger(ctx) || bb->isDouble(ctx);
+    if (!aaNum || !bbNum) return false;
+    if (a == aa && b == bb) return false;  // both already primitive — handled above
+    const proto::ProtoString* dS = PythonEnvironment::getInternedString(ctx, dunder);
+    const proto::ProtoString* rdS = PythonEnvironment::getInternedString(ctx, rdunder);
+    const proto::ProtoObject* aCls = env->getType(ctx, a);
+    const proto::ProtoObject* bCls = env->getType(ctx, b);
+    bool aOwnsOp = aCls && aCls->hasOwnAttribute(ctx, dS) == PROTO_TRUE;
+    bool bOwnsROp = bCls && bCls->hasOwnAttribute(ctx, rdS) == PROTO_TRUE;
+    return !aOwnsOp && !bOwnsROp;
+}
+
 static const proto::ProtoObject* binaryAdd(proto::ProtoContext* ctx,
     const proto::ProtoObject* a, const proto::ProtoObject* b) {
     const proto::ProtoObject* aa = unwrapPrimitive(ctx, a);
     const proto::ProtoObject* bb = unwrapPrimitive(ctx, b);
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    if (bothExactNumericPrim(ctx, env, a, b, aa, bb)) {
+    if (bothExactNumericPrim(ctx, env, a, b, aa, bb)
+        || numericSubclassFastPathOK(ctx, env, a, b, aa, bb, "__add__", "__radd__")) {
         return aa->add(ctx, bb);
     }
 
@@ -1457,7 +1488,8 @@ static const proto::ProtoObject* binarySubtract(proto::ProtoContext* ctx,
     const proto::ProtoObject* aa = unwrapPrimitive(ctx, a);
     const proto::ProtoObject* bb = unwrapPrimitive(ctx, b);
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    if (bothExactNumericPrim(ctx, env, a, b, aa, bb)) {
+    if (bothExactNumericPrim(ctx, env, a, b, aa, bb)
+        || numericSubclassFastPathOK(ctx, env, a, b, aa, bb, "__sub__", "__rsub__")) {
         return aa->subtract(ctx, bb);
     }
     const proto::ProtoObject* r = binaryOpDispatch(ctx, a, b, "__sub__", "__rsub__");
@@ -1473,7 +1505,8 @@ static const proto::ProtoObject* binaryMultiply(proto::ProtoContext* ctx,
     const proto::ProtoObject* aa = unwrapPrimitive(ctx, a);
     const proto::ProtoObject* bb = unwrapPrimitive(ctx, b);
     PythonEnvironment* env_local = PythonEnvironment::fromContext(ctx);
-    if (bothExactNumericPrim(ctx, env_local, a, b, aa, bb)) {
+    if (bothExactNumericPrim(ctx, env_local, a, b, aa, bb)
+        || numericSubclassFastPathOK(ctx, env_local, a, b, aa, bb, "__mul__", "__rmul__")) {
         return aa->multiply(ctx, bb);
     }
     // String/bytes repetition: str * int or int * str (or bytes * int)
@@ -1551,7 +1584,23 @@ static const proto::ProtoObject* binaryUnaryNegative(proto::ProtoContext* ctx, c
         if (a->isInteger(ctx)) return a->multiply(ctx, ctx->fromInteger(-1));
         if (a->isDouble(ctx)) return ctx->fromDouble(-a->asDouble(ctx));
     }
-    // Subclass or non-numeric: route through __neg__.
+    // Subclass-of-int/float without an own __neg__: unwrap __data__ and
+    // negate the primitive directly.  intPrototype doesn't ship a
+    // __neg__ dunder, so the env->getAttribute walk below would miss
+    // and the path would silently return None.
+    if (env && !aPrim) {
+        const proto::ProtoString* negS = PythonEnvironment::getInternedString(ctx, "__neg__");
+        const proto::ProtoObject* aCls = env->getType(ctx, a);
+        bool aOwnsNeg = aCls && aCls->hasOwnAttribute(ctx, negS) == PROTO_TRUE;
+        if (!aOwnsNeg) {
+            const proto::ProtoObject* d = a->getAttribute(ctx, env->getDataString());
+            if (d && d->isInteger(ctx)) return d->multiply(ctx, ctx->fromInteger(-1));
+            if (d && d->isDouble(ctx)) return ctx->fromDouble(-d->asDouble(ctx));
+            if (d == PROTO_TRUE) return ctx->fromInteger(-1);
+            if (d == PROTO_FALSE) return ctx->fromInteger(0);
+        }
+    }
+    // Subclass with __neg__ override or non-numeric: route through dunder.
     if (env) {
         const proto::ProtoString* negS = PythonEnvironment::getInternedString(ctx, "__neg__");
         const proto::ProtoObject* method = env->getAttribute(ctx, a, negS, false);
@@ -1604,7 +1653,12 @@ static const proto::ProtoObject* binaryTrueDivide(proto::ProtoContext* ctx,
     // Numeric primitive path only taken when both operands are exactly the
     // built-in numeric types — subclasses with overridden __truediv__
     // route through binaryOpDispatch below.
-    if (bothExactNumericPrim(ctx, env_div, a, b, aa, bb)) {
+    if (bothExactNumericPrim(ctx, env_div, a, b, aa, bb)
+        || numericSubclassFastPathOK(ctx, env_div, a, b, aa, bb, "__truediv__", "__rtruediv__")) {
+        if (integerIsZero(bb) || (bb->isDouble(ctx) && bb->asDouble(ctx) == 0.0)) {
+            PythonEnvironment::fromContext(ctx)->raiseZeroDivisionError(ctx);
+            return PROTO_NONE;
+        }
         if (aa->isInteger(ctx) && bb->isInteger(ctx)) {
             return ctx->fromDouble(intToDouble(aa) / intToDouble(bb));
         }
@@ -1625,7 +1679,8 @@ static const proto::ProtoObject* binaryModulo(proto::ProtoContext* ctx,
     auto integerIsZero = [&](const proto::ProtoObject* o) -> bool {
         return o->isInteger(ctx) && o->integerSign(ctx) == 0;
     };
-    if (bothExactNumericPrim(ctx, env_mod, a, b, aa, bb)) {
+    if (bothExactNumericPrim(ctx, env_mod, a, b, aa, bb)
+        || numericSubclassFastPathOK(ctx, env_mod, a, b, aa, bb, "__mod__", "__rmod__")) {
         if (integerIsZero(bb) || (bb->isDouble(ctx) && bb->asDouble(ctx) == 0.0)) {
             PythonEnvironment::fromContext(ctx)->raiseZeroDivisionError(ctx);
             return PROTO_NONE;
@@ -1672,7 +1727,8 @@ static const proto::ProtoObject* binaryPower(proto::ProtoContext* ctx,
     const proto::ProtoObject* aa_p = unwrapPrimitive(ctx, a);
     const proto::ProtoObject* bb_p = unwrapPrimitive(ctx, b);
     PythonEnvironment* env_pow = PythonEnvironment::fromContext(ctx);
-    if (bothExactNumericPrim(ctx, env_pow, a, b, aa_p, bb_p)) {
+    if (bothExactNumericPrim(ctx, env_pow, a, b, aa_p, bb_p)
+        || numericSubclassFastPathOK(ctx, env_pow, a, b, aa_p, bb_p, "__pow__", "__rpow__")) {
         if (aa_p->isInteger(ctx) && bb_p->isInteger(ctx)) {
             long long exp;
             try { exp = bb_p->asLong(ctx); }
@@ -1717,7 +1773,8 @@ static const proto::ProtoObject* binaryFloorDivide(proto::ProtoContext* ctx,
     const proto::ProtoObject* aa_p = unwrapPrimitive(ctx, a);
     const proto::ProtoObject* bb_p = unwrapPrimitive(ctx, b);
     PythonEnvironment* env_fd = PythonEnvironment::fromContext(ctx);
-    if (bothExactNumericPrim(ctx, env_fd, a, b, aa_p, bb_p)) {
+    if (bothExactNumericPrim(ctx, env_fd, a, b, aa_p, bb_p)
+        || numericSubclassFastPathOK(ctx, env_fd, a, b, aa_p, bb_p, "__floordiv__", "__rfloordiv__")) {
         if ((bb_p->isInteger(ctx) && bb_p->asLong(ctx) == 0) || (bb_p->isDouble(ctx) && bb_p->asDouble(ctx) == 0.0)) {
             PythonEnvironment::fromContext(ctx)->raiseZeroDivisionError(ctx);
             return PROTO_NONE;
@@ -4365,12 +4422,42 @@ const proto::ProtoObject* executeBytecodeRange(
             } else if (a->isDouble(ctx)) {
                 const proto::ProtoObject* res = ctx->fromDouble(-a->asDouble(ctx));
                 stack.back() = res;
+            } else if (a == PROTO_TRUE) {
+                stack.back() = ctx->fromInteger(-1);
+            } else if (a == PROTO_FALSE) {
+                stack.back() = ctx->fromInteger(0);
             } else {
-                // User-class __neg__ via the dunder dispatcher (handles
-                // Python-defined functions which `asMethod` does not).
+                // Subclass-of-int / subclass-of-float without a __neg__
+                // override: read the integer/float payload from __data__
+                // and negate primitively.  intPrototype/floatPrototype
+                // ship no __neg__ dunder, so the dunder dispatch below
+                // would otherwise miss and silently return None.
                 const proto::ProtoString* negS = PythonEnvironment::getInternedString(ctx, "__neg__");
-                const proto::ProtoObject* result = invokeDunder(ctx, a, negS, ctx->newList());
-                stack.back() = result ? result : PROTO_NONE;
+                bool handled = false;
+                if (env) {
+                    const proto::ProtoObject* aCls = env->getType(ctx, a);
+                    bool aOwnsNeg = aCls && aCls->hasOwnAttribute(ctx, negS) == PROTO_TRUE;
+                    if (!aOwnsNeg) {
+                        const proto::ProtoObject* d = a->getAttribute(ctx, env->getDataString());
+                        if (d && d->isInteger(ctx)) {
+                            stack.back() = d->negate(ctx);
+                            handled = true;
+                        } else if (d && d->isDouble(ctx)) {
+                            stack.back() = ctx->fromDouble(-d->asDouble(ctx));
+                            handled = true;
+                        } else if (d == PROTO_TRUE) {
+                            stack.back() = ctx->fromInteger(-1);
+                            handled = true;
+                        } else if (d == PROTO_FALSE) {
+                            stack.back() = ctx->fromInteger(0);
+                            handled = true;
+                        }
+                    }
+                }
+                if (!handled) {
+                    const proto::ProtoObject* result = invokeDunder(ctx, a, negS, ctx->newList());
+                    stack.back() = result ? result : PROTO_NONE;
+                }
             }
         } break;
         case OP_UNARY_NOT: {
@@ -4381,13 +4468,30 @@ const proto::ProtoObject* executeBytecodeRange(
         case OP_UNARY_INVERT: {
             if (stack.empty()) { i = next_i; continue; }
             const proto::ProtoObject* a = stack.back();
+            const proto::ProtoString* invS = env ? env->getInvertString() : PythonEnvironment::getInternedString(ctx, "__invert__");
             if (a->isInteger(ctx)) {
-                // bignum-safe: ~x = -x - 1 via Integer::bitwiseNot.
                 stack.back() = a->bitwiseNot(ctx);
+            } else if (a == PROTO_TRUE) {
+                stack.back() = ctx->fromInteger(-2);
+            } else if (a == PROTO_FALSE) {
+                stack.back() = ctx->fromInteger(-1);
             } else {
-                const proto::ProtoString* invS = env ? env->getInvertString() : PythonEnvironment::getInternedString(ctx, "__invert__");
-                const proto::ProtoObject* result = invokeDunder(ctx, a, invS, ctx->newList());
-                stack.back() = result ? result : PROTO_NONE;
+                bool handled = false;
+                if (env) {
+                    const proto::ProtoObject* aCls = env->getType(ctx, a);
+                    bool aOwnsInv = aCls && aCls->hasOwnAttribute(ctx, invS) == PROTO_TRUE;
+                    if (!aOwnsInv) {
+                        const proto::ProtoObject* d = a->getAttribute(ctx, env->getDataString());
+                        if (d && d->isInteger(ctx)) {
+                            stack.back() = d->bitwiseNot(ctx);
+                            handled = true;
+                        }
+                    }
+                }
+                if (!handled) {
+                    const proto::ProtoObject* result = invokeDunder(ctx, a, invS, ctx->newList());
+                    stack.back() = result ? result : PROTO_NONE;
+                }
             }
         } break;
         case OP_RAISE_VARARGS: {

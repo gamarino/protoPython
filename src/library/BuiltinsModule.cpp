@@ -5040,11 +5040,31 @@ static const proto::ProtoObject* py_abs(
     if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
     if (obj->isInteger(context)) {
-        // Native fast path: Integer::abs handles both SmallInteger and LargeInteger.
         return obj->abs(context);
     }
     if (obj->isDouble(context)) {
         return context->fromDouble(std::abs(obj->asDouble(context)));
+    }
+    if (obj == PROTO_TRUE) return context->fromInteger(1);
+    if (obj == PROTO_FALSE) return context->fromInteger(0);
+    // Subclass-of-int / float without an own __abs__: read __data__
+    // and apply abs primitively.  intPrototype/floatPrototype don't
+    // ship __abs__ as a dunder, so the lookup below would miss for
+    // any wrapped subclass instance.
+    {
+        PythonEnvironment* envEarly = PythonEnvironment::fromContext(context);
+        if (envEarly) {
+            const proto::ProtoString* absS = PythonEnvironment::getInternedString(context, "__abs__");
+            const proto::ProtoObject* objCls = envEarly->getType(context, obj);
+            bool ownsAbs = objCls && objCls->hasOwnAttribute(context, absS) == PROTO_TRUE;
+            if (!ownsAbs) {
+                const proto::ProtoObject* d = obj->getAttribute(context, envEarly->getDataString());
+                if (d && d->isInteger(context)) return d->abs(context);
+                if (d && d->isDouble(context)) return context->fromDouble(std::abs(d->asDouble(context)));
+                if (d == PROTO_TRUE) return context->fromInteger(1);
+                if (d == PROTO_FALSE) return context->fromInteger(0);
+            }
+        }
     }
     // Generic dunder dispatch: looks up __abs__ on the type and invokes it,
     // routing Python-defined `def __abs__(self)` through invokePythonCallable
@@ -5832,7 +5852,20 @@ static const proto::ProtoObject* py_bin(
     (void)keywordParameters;
     if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
     const proto::ProtoObject* arg = positionalParameters->getAt(context, 0);
-    if (!arg->isInteger(context)) return PROTO_NONE;
+    if (!arg->isInteger(context)) {
+        if (arg == PROTO_TRUE) arg = context->fromInteger(1);
+        else if (arg == PROTO_FALSE) arg = context->fromInteger(0);
+        else {
+            PythonEnvironment* env = PythonEnvironment::fromContext(context);
+            if (env) {
+                const proto::ProtoObject* d = arg->getAttribute(context, env->getDataString());
+                if (d && d->isInteger(context)) arg = d;
+                else if (d == PROTO_TRUE) arg = context->fromInteger(1);
+                else if (d == PROTO_FALSE) arg = context->fromInteger(0);
+            }
+        }
+    }
+    if (!arg || !arg->isInteger(context)) return PROTO_NONE;
     std::string out = format_int_with_prefix(context, arg, "0b", 2);
     return PythonEnvironment::getInternedString(context, out.c_str())->asObject(context);
 }
@@ -5848,7 +5881,20 @@ static const proto::ProtoObject* py_oct(
     (void)keywordParameters;
     if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
     const proto::ProtoObject* arg = positionalParameters->getAt(context, 0);
-    if (!arg->isInteger(context)) return PROTO_NONE;
+    if (!arg->isInteger(context)) {
+        if (arg == PROTO_TRUE) arg = context->fromInteger(1);
+        else if (arg == PROTO_FALSE) arg = context->fromInteger(0);
+        else {
+            PythonEnvironment* env = PythonEnvironment::fromContext(context);
+            if (env) {
+                const proto::ProtoObject* d = arg->getAttribute(context, env->getDataString());
+                if (d && d->isInteger(context)) arg = d;
+                else if (d == PROTO_TRUE) arg = context->fromInteger(1);
+                else if (d == PROTO_FALSE) arg = context->fromInteger(0);
+            }
+        }
+    }
+    if (!arg || !arg->isInteger(context)) return PROTO_NONE;
     std::string out = format_int_with_prefix(context, arg, "0o", 8);
     return PythonEnvironment::getInternedString(context, out.c_str())->asObject(context);
 }
@@ -5864,7 +5910,28 @@ static const proto::ProtoObject* py_hex(
     (void)keywordParameters;
     if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
     const proto::ProtoObject* arg = positionalParameters->getAt(context, 0);
-    if (!arg->isInteger(context)) return PROTO_NONE;
+    // Unwrap a wrapped subclass-of-int instance via __data__, and
+    // promote bool sentinels to 0/1, so hex(MyInt(7)) and hex(True)
+    // work like CPython.
+    if (!arg->isInteger(context)) {
+        if (arg == PROTO_TRUE) arg = context->fromInteger(1);
+        else if (arg == PROTO_FALSE) arg = context->fromInteger(0);
+        else {
+            PythonEnvironment* env = PythonEnvironment::fromContext(context);
+            if (env) {
+                const proto::ProtoObject* d = arg->getAttribute(context, env->getDataString());
+                if (d && d->isInteger(context)) arg = d;
+                else if (d == PROTO_TRUE) arg = context->fromInteger(1);
+                else if (d == PROTO_FALSE) arg = context->fromInteger(0);
+            }
+        }
+    }
+    if (!arg || !arg->isInteger(context)) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(context);
+        if (env) env->raiseTypeError(context,
+            "hex() argument must be an integer or have an __index__ method");
+        return nullptr;
+    }
     std::string out = format_int_with_prefix(context, arg, "0x", 16);
     return PythonEnvironment::getInternedString(context, out.c_str())->asObject(context);
 }

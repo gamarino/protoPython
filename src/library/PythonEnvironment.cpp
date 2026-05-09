@@ -1272,12 +1272,21 @@ static const proto::ProtoObject* py_float_call(
     // skip it.
     PythonEnvironment* floatEnv = PythonEnvironment::fromContext(ctx);
     const proto::ProtoObject* floatCls = floatEnv ? floatEnv->getFloatPrototype() : nullptr;
+    // Detect cls passed as the first positional (when invoked through
+    // type.__call__ / cls.__new__): non-numeric, non-string first arg
+    // is the class object.  Covers float itself and any user subclass.
     size_t argStart = 0;
-    if (posArgs && posArgs->getSize(ctx) > 0 && floatCls &&
-        posArgs->getAt(ctx, 0) == floatCls) {
-        argStart = 1;
-    }
     const proto::ProtoObject* targetCls = self ? self : floatCls;
+    if (posArgs && posArgs->getSize(ctx) > 0) {
+        const proto::ProtoObject* first = posArgs->getAt(ctx, 0);
+        bool firstIsNumericLiteral = first && (first->isInteger(ctx)
+            || first->isFloat(ctx) || first->isString(ctx)
+            || first->isBoolean(ctx));
+        if (!firstIsNumericLiteral) {
+            argStart = 1;
+            targetCls = first;
+        }
+    }
     const proto::ProtoObject* x = nullptr;
     size_t nArgs = posArgs ? posArgs->getSize(ctx) : 0;
     if (nArgs <= argStart) {
@@ -1305,6 +1314,9 @@ static const proto::ProtoObject* py_float_call(
             }
         }
         else if (val->isDouble(ctx)) x = val;
+        else if (val->isBoolean(ctx)) {
+            x = ctx->fromDouble(val == PROTO_TRUE ? 1.0 : 0.0);
+        }
         else if (val->isString(ctx)) {
             std::string s;
             val->asString(ctx)->toUTF8String(ctx, s);
@@ -1320,6 +1332,21 @@ static const proto::ProtoObject* py_float_call(
             // type(obj).__float__(obj) and validates int return; falls back
             // to __index__ when __float__ is missing.
             PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+            // Wrapped subclass-of-float / subclass-of-int instance: read
+            // __data__ directly instead of dispatching through
+            // __float__/__index__ which may loop back through here.
+            if (env) {
+                const proto::ProtoObject* d = val->getAttribute(ctx, env->getDataString());
+                if (d) {
+                    if (d->isDouble(ctx)) { x = d; goto haveFloat; }
+                    if (d->isInteger(ctx)) {
+                        try { x = ctx->fromDouble(static_cast<double>(d->asLong(ctx))); goto haveFloat; }
+                        catch (...) {}
+                    }
+                    if (d == PROTO_TRUE) { x = ctx->fromDouble(1.0); goto haveFloat; }
+                    if (d == PROTO_FALSE) { x = ctx->fromDouble(0.0); goto haveFloat; }
+                }
+            }
             if (env) {
                 const proto::ProtoString* fS = PythonEnvironment::getInternedString(ctx, "__float__");
                 const proto::ProtoString* idxS = PythonEnvironment::getInternedString(ctx, "__index__");
@@ -5025,40 +5052,47 @@ static const proto::ProtoObject* py_int_arith(
     const proto::ProtoList* posArgs, TokenType op) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (!posArgs) return PROTO_NONE;
-    const proto::ProtoObject* a = self;
+    // Unwrap helper: takes any numeric carrier and returns its raw
+    // SmallInt / Float / 0|1 (for bool).  Recognises wrapped
+    // subclass-of-int / subclass-of-float instances by reading
+    // __data__.  Returns the input unchanged if no numeric payload is
+    // available — the caller decides how to handle non-numerics.
+    auto unwrap = [&](const proto::ProtoObject* x) -> const proto::ProtoObject* {
+        if (!x) return x;
+        if (x == PROTO_TRUE) return ctx->fromInteger(1);
+        if (x == PROTO_FALSE) return ctx->fromInteger(0);
+        if (x->isInteger(ctx) || x->isFloat(ctx)) return x;
+        if (env) {
+            const proto::ProtoObject* d = x->getAttribute(ctx, env->getDataString());
+            if (d) {
+                if (d == PROTO_TRUE) return ctx->fromInteger(1);
+                if (d == PROTO_FALSE) return ctx->fromInteger(0);
+                if (d->isInteger(ctx) || d->isFloat(ctx)) return d;
+            }
+        }
+        return x;
+    };
+    const proto::ProtoObject* unwrappedSelf = unwrap(self);
+    bool selfIsIntInstance = unwrappedSelf
+        && (unwrappedSelf->isInteger(ctx) || unwrappedSelf->isFloat(ctx));
+    const proto::ProtoObject* a = nullptr;
     const proto::ProtoObject* b = nullptr;
-    bool selfIsIntInstance = self && (self->isInteger(ctx) || self->isBoolean(ctx));
     if (!selfIsIntInstance) {
         // Unbound dispatch: self is the class (intPrototype) or null;
         // the actual int receiver is args[0].
         if (posArgs->getSize(ctx) < 2) return env ? env->getNotImplementedPrototype() : PROTO_NONE;
-        a = posArgs->getAt(ctx, 0);
-        b = posArgs->getAt(ctx, 1);
+        a = unwrap(posArgs->getAt(ctx, 0));
+        b = unwrap(posArgs->getAt(ctx, 1));
     } else {
         if (posArgs->getSize(ctx) < 1) return PROTO_NONE;
-        b = posArgs->getAt(ctx, 0);
+        a = unwrappedSelf;
+        b = unwrap(posArgs->getAt(ctx, 0));
     }
     if (!a || !b) return PROTO_NONE;
-    // Coerce booleans to int sentinels so the primitive ops below see
-    // numeric values; True → 1, False → 0.
-    auto coerce = [&](const proto::ProtoObject* x) -> const proto::ProtoObject* {
-        if (x == PROTO_TRUE) return ctx->fromInteger(1);
-        if (x == PROTO_FALSE) return ctx->fromInteger(0);
-        return x;
-    };
-    a = coerce(a);
-    b = coerce(b);
-    bool rhsNumeric = b->isInteger(ctx) || b->isBoolean(ctx) || b->isFloat(ctx);
-    if (!rhsNumeric) {
-        // Try unwrapping a numeric subclass instance via __data__-style
-        // primitive carrier, then via __int__ — last resort, NotImplemented.
-        const proto::ProtoString* dataS = env ? env->getDataString() : PythonEnvironment::getInternalString(ctx, "__data__");
-        const proto::ProtoObject* d = b->getAttribute(ctx, dataS);
-        if (d && (d->isInteger(ctx) || d->isFloat(ctx))) {
-            b = d;
-        } else {
-            return env ? env->getNotImplementedPrototype() : PROTO_NONE;
-        }
+    bool lhsNumeric = a->isInteger(ctx) || a->isFloat(ctx);
+    bool rhsNumeric = b->isInteger(ctx) || b->isFloat(ctx);
+    if (!lhsNumeric || !rhsNumeric) {
+        return env ? env->getNotImplementedPrototype() : PROTO_NONE;
     }
     // Compute directly using primitive arithmetic — calling back into
     // env->binaryOp would re-enter binaryAdd → binaryOpDispatch and loop
@@ -5201,34 +5235,40 @@ static const proto::ProtoObject* py_int_cmp(
     const proto::ProtoList* args, IntCmp op) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
     if (!args) return PROTO_NONE;
-    const proto::ProtoObject* a = self;
-    const proto::ProtoObject* b = nullptr;
-    bool selfIsIntInstance = self && (self->isInteger(ctx) || self->isBoolean(ctx));
-    if (!selfIsIntInstance) {
-        if (args->getSize(ctx) < 2) return env ? env->getNotImplementedPrototype() : PROTO_NONE;
-        a = args->getAt(ctx, 0);
-        b = args->getAt(ctx, 1);
-    } else {
-        if (args->getSize(ctx) < 1) return PROTO_NONE;
-        b = args->getAt(ctx, 0);
-    }
-    if (!a || !b) return PROTO_NONE;
-    auto coerce = [&](const proto::ProtoObject* x) -> const proto::ProtoObject* {
+    auto unwrap = [&](const proto::ProtoObject* x) -> const proto::ProtoObject* {
+        if (!x) return x;
         if (x == PROTO_TRUE) return ctx->fromInteger(1);
         if (x == PROTO_FALSE) return ctx->fromInteger(0);
+        if (x->isInteger(ctx) || x->isFloat(ctx)) return x;
+        if (env) {
+            const proto::ProtoObject* d = x->getAttribute(ctx, env->getDataString());
+            if (d) {
+                if (d == PROTO_TRUE) return ctx->fromInteger(1);
+                if (d == PROTO_FALSE) return ctx->fromInteger(0);
+                if (d->isInteger(ctx) || d->isFloat(ctx)) return d;
+            }
+        }
         return x;
     };
-    a = coerce(a);
-    b = coerce(b);
-    bool rhsNumeric = b->isInteger(ctx) || b->isBoolean(ctx) || b->isFloat(ctx);
-    if (!rhsNumeric) {
-        const proto::ProtoString* dataS = env ? env->getDataString() : PythonEnvironment::getInternalString(ctx, "__data__");
-        const proto::ProtoObject* d = b->getAttribute(ctx, dataS);
-        if (d && (d->isInteger(ctx) || d->isFloat(ctx))) {
-            b = d;
-        } else {
-            return env ? env->getNotImplementedPrototype() : PROTO_NONE;
-        }
+    const proto::ProtoObject* unwrappedSelf = unwrap(self);
+    bool selfIsIntInstance = unwrappedSelf
+        && (unwrappedSelf->isInteger(ctx) || unwrappedSelf->isFloat(ctx));
+    const proto::ProtoObject* a = nullptr;
+    const proto::ProtoObject* b = nullptr;
+    if (!selfIsIntInstance) {
+        if (args->getSize(ctx) < 2) return env ? env->getNotImplementedPrototype() : PROTO_NONE;
+        a = unwrap(args->getAt(ctx, 0));
+        b = unwrap(args->getAt(ctx, 1));
+    } else {
+        if (args->getSize(ctx) < 1) return PROTO_NONE;
+        a = unwrappedSelf;
+        b = unwrap(args->getAt(ctx, 0));
+    }
+    if (!a || !b) return PROTO_NONE;
+    bool lhsNumeric = a->isInteger(ctx) || a->isFloat(ctx);
+    bool rhsNumeric = b->isInteger(ctx) || b->isFloat(ctx);
+    if (!lhsNumeric || !rhsNumeric) {
+        return env ? env->getNotImplementedPrototype() : PROTO_NONE;
     }
     int cmp = a->compare(ctx, b);  // -1, 0, 1
     bool result = false;
@@ -5259,7 +5299,14 @@ static const proto::ProtoObject* py_int_pow(
     long long base, exp, mod = 0;
     // Bound form: self is the base, args=[exp[, mod]].
     // Unbound form: self is intPrototype/null, args=[base, exp[, mod]].
-    bool selfIsIntInstance = self && (self->isInteger(ctx) || self->isBoolean(ctx));
+    // Wrapped subclass-of-int instance also counts as a bound receiver:
+    // its integer payload lives in __data__; int_value() unwraps both
+    // SmallInt and __data__ so we just need to check whether self can
+    // be coerced to int.
+    long long selfIntProbe;
+    bool selfIsIntInstance = self
+        && (self->isInteger(ctx) || self->isBoolean(ctx)
+            || int_value(ctx, self, &selfIntProbe));
     int expIdx, modIdx;
     if (selfIsIntInstance) {
         // CPython: int.__pow__ accepts 1 or 2 arguments (exp[, mod]).
@@ -5328,7 +5375,10 @@ static const proto::ProtoObject* py_int_rpow(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
     const proto::ParentLink* link, const proto::ProtoList* args, const proto::ProtoSparseList* kwargs) {
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    bool selfIsIntInstance = self && (self->isInteger(ctx) || self->isBoolean(ctx));
+    long long rpowProbe;
+    bool selfIsIntInstance = self
+        && (self->isInteger(ctx) || self->isBoolean(ctx)
+            || int_value(ctx, self, &rpowProbe));
     if (selfIsIntInstance) {
         unsigned long n = args ? args->getSize(ctx) : 0UL;
         if (n < 1 || n > 2) {
@@ -5378,31 +5428,56 @@ static const proto::ProtoObject* py_int_radd(
     const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) {
     if (!args || args->getSize(ctx) < 1) return PROTO_NONE;
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    const proto::ProtoObject* other = args->getAt(ctx, 0);
-    // Unwrap a numeric subclass: read its __data__ if present.
-    if (other && !other->isInteger(ctx) && !other->isFloat(ctx) && env) {
-        const proto::ProtoObject* d = other->getAttribute(ctx, env->getDataString());
-        if (d && (d->isInteger(ctx) || d->isFloat(ctx))) other = d;
-    }
-    if (!other || (!other->isInteger(ctx) && !other->isFloat(ctx))) {
+    auto unwrap = [&](const proto::ProtoObject* x) -> const proto::ProtoObject* {
+        if (!x) return x;
+        if (x == PROTO_TRUE) return ctx->fromInteger(1);
+        if (x == PROTO_FALSE) return ctx->fromInteger(0);
+        if (x->isInteger(ctx) || x->isFloat(ctx)) return x;
+        if (env) {
+            const proto::ProtoObject* d = x->getAttribute(ctx, env->getDataString());
+            if (d) {
+                if (d == PROTO_TRUE) return ctx->fromInteger(1);
+                if (d == PROTO_FALSE) return ctx->fromInteger(0);
+                if (d->isInteger(ctx) || d->isFloat(ctx)) return d;
+            }
+        }
+        return x;
+    };
+    const proto::ProtoObject* other = unwrap(args->getAt(ctx, 0));
+    const proto::ProtoObject* selfNum = unwrap(self);
+    if (!other || (!other->isInteger(ctx) && !other->isFloat(ctx))
+        || !selfNum || (!selfNum->isInteger(ctx) && !selfNum->isFloat(ctx))) {
         return env ? env->getNotImplementedPrototype() : PROTO_NONE;
     }
-    return other->add(ctx, self);
+    return other->add(ctx, selfNum);
 }
 static const proto::ProtoObject* py_int_rmul(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
     const proto::ParentLink*, const proto::ProtoList* args, const proto::ProtoSparseList*) {
     if (!args || args->getSize(ctx) < 1) return PROTO_NONE;
     PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-    const proto::ProtoObject* other = args->getAt(ctx, 0);
-    if (other && !other->isInteger(ctx) && !other->isFloat(ctx) && env) {
-        const proto::ProtoObject* d = other->getAttribute(ctx, env->getDataString());
-        if (d && (d->isInteger(ctx) || d->isFloat(ctx))) other = d;
-    }
-    if (!other || (!other->isInteger(ctx) && !other->isFloat(ctx))) {
+    auto unwrap = [&](const proto::ProtoObject* x) -> const proto::ProtoObject* {
+        if (!x) return x;
+        if (x == PROTO_TRUE) return ctx->fromInteger(1);
+        if (x == PROTO_FALSE) return ctx->fromInteger(0);
+        if (x->isInteger(ctx) || x->isFloat(ctx)) return x;
+        if (env) {
+            const proto::ProtoObject* d = x->getAttribute(ctx, env->getDataString());
+            if (d) {
+                if (d == PROTO_TRUE) return ctx->fromInteger(1);
+                if (d == PROTO_FALSE) return ctx->fromInteger(0);
+                if (d->isInteger(ctx) || d->isFloat(ctx)) return d;
+            }
+        }
+        return x;
+    };
+    const proto::ProtoObject* other = unwrap(args->getAt(ctx, 0));
+    const proto::ProtoObject* selfNum = unwrap(self);
+    if (!other || (!other->isInteger(ctx) && !other->isFloat(ctx))
+        || !selfNum || (!selfNum->isInteger(ctx) && !selfNum->isFloat(ctx))) {
         return env ? env->getNotImplementedPrototype() : PROTO_NONE;
     }
-    return other->multiply(ctx, self);
+    return other->multiply(ctx, selfNum);
 }
 
 // Resolve (selfStr, otherIdx) for both bound (str(...).__add__(other)) and
@@ -16163,6 +16238,22 @@ const proto::ProtoObject* PythonEnvironment::compareObjects(proto::ProtoContext*
     }
 
     int c = 0;
+    // Unwrap subclass-of-int / subclass-of-float instances via __data__
+    // before the kind-based dispatch below.  Wrapped instances carry
+    // their numeric payload as an attribute, not a tagged primitive
+    // pointer, so isInteger / isFloat report false on them and the
+    // path that matters (h == 7 for `class h(int)`) would otherwise
+    // fall through to pointer comparison and lie about equality.
+    auto unwrapNumeric = [&](const proto::ProtoObject* x) -> const proto::ProtoObject* {
+        if (!x) return x;
+        if (x->isInteger(ctx) || x->isFloat(ctx) || x->isBoolean(ctx)) return x;
+        if (x->isString(ctx)) return x;
+        const proto::ProtoObject* d = x->getAttribute(ctx, getDataString());
+        if (d && (d->isInteger(ctx) || d->isFloat(ctx) || d->isBoolean(ctx))) return d;
+        return x;
+    };
+    a = unwrapNumeric(a);
+    b = unwrapNumeric(b);
     // bool is a subclass of int in Python semantics — `False == 0` and
     // `True == 1` must hold.  protoPython tags bool and int distinctly, so
     // ProtoObject::compare's `isInteger()` check returns false for bool
@@ -16175,6 +16266,16 @@ const proto::ProtoObject* PythonEnvironment::compareObjects(proto::ProtoContext*
     bool bIsBool = b->isBoolean(ctx);
     bool aIsIntKind = a->isInteger(ctx) || aIsBool;
     bool bIsIntKind = b->isInteger(ctx) || bIsBool;
+    // Both numeric (after unwrap): compare as numbers.
+    if (a->isInteger(ctx) && b->isInteger(ctx)) {
+        c = a->compare(ctx, b);
+    } else if ((a->isInteger(ctx) || a->isFloat(ctx))
+               && (b->isInteger(ctx) || b->isFloat(ctx))) {
+        // Promote to float for mixed int/float comparison.
+        double av = a->isFloat(ctx) ? a->asDouble(ctx) : (double)a->asLong(ctx);
+        double bv = b->isFloat(ctx) ? b->asDouble(ctx) : (double)b->asLong(ctx);
+        c = (av < bv) ? -1 : (av > bv) ? 1 : 0;
+    } else
     if (aIsIntKind && bIsIntKind && (aIsBool || bIsBool)) {
         // At least one operand is a bool — coerce to integer and compare.
         const proto::ProtoObject* aInt = aIsBool
