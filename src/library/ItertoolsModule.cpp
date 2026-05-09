@@ -475,11 +475,130 @@ static const proto::ProtoObject* py_groupby_stub(
     return empty_iterator(ctx, self);
 }
 
-static const proto::ProtoObject* py_product_stub(
+// itertools.product(*iterables, repeat=1)
+// Cartesian product as an iterator yielding tuples.  Each input is
+// drained ONCE into a list (CPython behaviour) so subsequent iterables
+// can be re-walked digit-counter style.
+static const proto::ProtoObject* py_product_next(
     proto::ProtoContext* ctx, const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
-    (void)posArgs;
-    return empty_iterator(ctx, self);
+    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    const proto::ProtoObject* doneObj = self->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__product_done__"));
+    if (doneObj == PROTO_TRUE) {
+        if (env) env->raiseStopIteration(ctx, PROTO_NONE);
+        return nullptr;
+    }
+    const proto::ProtoObject* poolsObj = self->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__product_pools__"));
+    const proto::ProtoObject* idxObj = self->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__product_indices__"));
+    const proto::ProtoList* pools = poolsObj ? poolsObj->asList(ctx) : nullptr;
+    const proto::ProtoList* indices = idxObj ? idxObj->asList(ctx) : nullptr;
+    if (!pools || !indices || pools->getSize(ctx) != indices->getSize(ctx)) {
+        if (env) env->raiseStopIteration(ctx, PROTO_NONE);
+        return nullptr;
+    }
+    unsigned long n = pools->getSize(ctx);
+    // Build current tuple (use the indices as offsets into each pool).
+    const proto::ProtoList* tupList = ctx->newList();
+    for (unsigned long i = 0; i < n; ++i) {
+        const proto::ProtoList* pool = pools->getAt(ctx, static_cast<int>(i))->asList(ctx);
+        long long idx = indices->getAt(ctx, static_cast<int>(i))->asLong(ctx);
+        if (!pool || pool->getSize(ctx) == 0) {
+            // Any empty pool ⇒ no products at all.
+            const_cast<proto::ProtoObject*>(self)->setAttribute(ctx,
+                PythonEnvironment::getInternedString(ctx, "__product_done__"), PROTO_TRUE);
+            if (env) env->raiseStopIteration(ctx, PROTO_NONE);
+            return nullptr;
+        }
+        tupList = tupList->appendLast(ctx, pool->getAt(ctx, static_cast<int>(idx)));
+    }
+    const proto::ProtoObject* result = ctx->newTupleFromList(tupList)->asObject(ctx);
+    if (env && env->getTuplePrototype()) {
+        result = const_cast<proto::ProtoObject*>(result->addParent(ctx, env->getTuplePrototype()));
+        result = const_cast<proto::ProtoObject*>(result->setAttribute(ctx, env->getClassString(), env->getTuplePrototype()));
+    }
+    // Increment indices, right-most digit first, like an odometer.
+    bool overflow = true;
+    const proto::ProtoList* newIndices = indices;
+    for (long long i = static_cast<long long>(n) - 1; i >= 0; --i) {
+        long long cur = newIndices->getAt(ctx, static_cast<int>(i))->asLong(ctx);
+        const proto::ProtoList* pool = pools->getAt(ctx, static_cast<int>(i))->asList(ctx);
+        long long size = pool ? static_cast<long long>(pool->getSize(ctx)) : 0;
+        if (cur + 1 < size) {
+            newIndices = newIndices->setAt(ctx, static_cast<int>(i), ctx->fromInteger(cur + 1));
+            overflow = false;
+            break;
+        }
+        newIndices = newIndices->setAt(ctx, static_cast<int>(i), ctx->fromInteger(0));
+    }
+    if (overflow) {
+        const_cast<proto::ProtoObject*>(self)->setAttribute(ctx,
+            PythonEnvironment::getInternedString(ctx, "__product_done__"), PROTO_TRUE);
+    } else {
+        const_cast<proto::ProtoObject*>(self)->setAttribute(ctx,
+            PythonEnvironment::getInternedString(ctx, "__product_indices__"), newIndices->asObject(ctx));
+    }
+    return result;
+}
+
+static const proto::ProtoObject* py_product(
+    proto::ProtoContext* ctx, const proto::ProtoObject* self,
+    const proto::ParentLink*, const proto::ProtoList* posArgs, const proto::ProtoSparseList* kwargs) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    long long repeat = 1;
+    if (kwargs) {
+        const proto::ProtoString* repeatS = PythonEnvironment::getInternedString(ctx, "repeat");
+        if (kwargs->has(ctx, repeatS->getHash(ctx))) {
+            const proto::ProtoObject* r = kwargs->getAt(ctx, repeatS->getHash(ctx));
+            if (r && r->isInteger(ctx)) repeat = r->asLong(ctx);
+        }
+    }
+    if (repeat < 0) {
+        if (env) env->raiseValueError(ctx,
+            PythonEnvironment::getInternedString(ctx, "repeat argument cannot be negative")->asObject(ctx));
+        return nullptr;
+    }
+    // Drain each input iterable into a list and replicate the whole
+    // sequence `repeat` times (matches CPython's
+    // `pools = [tuple(pool) for pool in args] * repeat`).
+    unsigned long basesz = posArgs ? posArgs->getSize(ctx) : 0UL;
+    const proto::ProtoList* basePools = ctx->newList();
+    for (unsigned long i = 0; i < basesz; ++i) {
+        const proto::ProtoObject* iterable = posArgs->getAt(ctx, static_cast<int>(i));
+        if (!env) return PROTO_NONE;
+        const proto::ProtoObject* it = env->iter(iterable);
+        if (!it) return PROTO_NONE;
+        PythonEnvironment::TransientPin pinIt(env, it);
+        const proto::ProtoList* pool = ctx->newList();
+        while (true) {
+            const proto::ProtoObject* item = env->next(it);
+            if (!item) break;
+            pool = pool->appendLast(ctx, item);
+        }
+        basePools = basePools->appendLast(ctx, pool->asObject(ctx));
+    }
+    const proto::ProtoList* pools = ctx->newList();
+    for (long long r = 0; r < repeat; ++r) {
+        for (unsigned long i = 0; i < basePools->getSize(ctx); ++i) {
+            pools = pools->appendLast(ctx, basePools->getAt(ctx, static_cast<int>(i)));
+        }
+    }
+    unsigned long n = pools->getSize(ctx);
+    const proto::ProtoList* indices = ctx->newList();
+    for (unsigned long i = 0; i < n; ++i) {
+        indices = indices->appendLast(ctx, ctx->fromInteger(0));
+    }
+    const proto::ProtoObject* proto = self->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__product_proto__"));
+    if (!proto) return PROTO_NONE;
+    const proto::ProtoObject* obj = proto->newChild(ctx, true);
+    obj = obj->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__product_pools__"), pools->asObject(ctx));
+    obj = obj->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__product_indices__"), indices->asObject(ctx));
+    obj = obj->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__product_done__"),
+        (n == 0 && repeat == 0) ? PROTO_FALSE : (n == 0 ? PROTO_TRUE : PROTO_FALSE));
+    // repeat=0 with no iterables is the empty product → yields a single empty tuple.
+    if (n == 0 && repeat > 0) {
+        obj = obj->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__product_done__"), PROTO_TRUE);
+    }
+    return obj;
 }
 
 static const proto::ProtoObject* py_combinations_stub(
@@ -710,8 +829,14 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx) {
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_accumulate));
     mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "groupby"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_groupby_stub));
+    const proto::ProtoObject* productProto = ctx->newObject(false);
+    productProto = productProto->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__iter__"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(productProto), py_iter_self));
+    productProto = productProto->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__next__"),
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(productProto), py_product_next));
+    mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__product_proto__"), productProto);
     mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "product"),
-        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_product_stub));
+        ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_product));
     mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "combinations"),
         ctx->fromMethod(const_cast<proto::ProtoObject*>(mod), py_combinations_stub));
     mod = mod->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "combinations_with_replacement"),

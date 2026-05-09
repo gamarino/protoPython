@@ -267,6 +267,46 @@ static const proto::ProtoObject* make_exception_type(proto::ProtoContext* ctx,
     };
     exc = exc->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "with_traceback"),
         ctx->fromMethod(nullptr, exception_with_traceback));
+
+    // PEP 678 add_note: append a string to self.__notes__ (creating the
+    // list lazily).  Mirrors CPython 3.11+ semantics: TypeError when
+    // the argument isn't a string; mutates and returns None.
+    static const auto exception_add_note = [](proto::ProtoContext* ctx,
+                                               const proto::ProtoObject* self,
+                                               const proto::ParentLink*,
+                                               const proto::ProtoList* args,
+                                               const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+        PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+        if (!self || !args || args->getSize(ctx) < 1) return PROTO_NONE;
+        const proto::ProtoObject* note = args->getAt(ctx, 0);
+        if (!note || !note->isString(ctx)) {
+            if (env) env->raiseTypeError(ctx, "note must be a str");
+            return nullptr;
+        }
+        const proto::ProtoString* notesS = PythonEnvironment::getInternedString(ctx, "__notes__");
+        const proto::ProtoString* dataS = env ? env->getDataString() : PythonEnvironment::getInternedString(ctx, "__data__");
+        const proto::ProtoObject* notesObj = self->getAttribute(ctx, notesS);
+        const proto::ProtoList* underlying = nullptr;
+        if (notesObj && notesObj != PROTO_NONE) {
+            // Prefer wrapped Python list __data__; fall back to raw asList.
+            const proto::ProtoObject* d = notesObj->getAttribute(ctx, dataS);
+            underlying = (d && d->asList(ctx)) ? d->asList(ctx) : notesObj->asList(ctx);
+        }
+        if (!underlying) underlying = ctx->newList();
+        underlying = underlying->appendLast(ctx, note);
+        // Always store as a wrapped Python list so `e.__notes__` reads
+        // and indexes work from Python.
+        proto::ProtoObject* wrap = const_cast<proto::ProtoObject*>(ctx->newObject(true));
+        wrap = const_cast<proto::ProtoObject*>(wrap->setAttribute(ctx, dataS, underlying->asObject(ctx)));
+        if (env && env->getListPrototype()) {
+            wrap = const_cast<proto::ProtoObject*>(wrap->addParent(ctx, env->getListPrototype()));
+            wrap = const_cast<proto::ProtoObject*>(wrap->setAttribute(ctx, env->getClassString(), env->getListPrototype()));
+        }
+        const_cast<proto::ProtoObject*>(self)->setAttribute(ctx, notesS, wrap);
+        return PROTO_NONE;
+    };
+    exc = exc->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "add_note"),
+        ctx->fromMethod(nullptr, exception_add_note));
     
     // Set __mro__ for attribute lookup
     const proto::ProtoList* mroList = ctx->newList()->appendLast(ctx, exc);
