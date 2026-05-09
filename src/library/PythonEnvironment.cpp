@@ -9333,57 +9333,6 @@ static const proto::ProtoObject* py_dict_update(
         const_cast<proto::ProtoObject*>(target)->setAttribute(context, keysName, keys->asObject(context));
         const_cast<proto::ProtoObject*>(target)->setAttribute(context, dataName, dict->asObject(context));
     }
-    // Write-through for instance __dict__ proxy: when the target was
-    // produced by py_object_get_dict it carries a back-reference to
-    // the owning instance.  py_dict_update writes the new
-    // __data__/__keys__ on the proxy itself, but the instance's own
-    // __data__/__keys__ would otherwise stay stale and `obj.attr`
-    // lookups miss every key the update added.  Replay the update
-    // onto the underlying instance so attribute access sees it.
-    {
-        const proto::ProtoString* proxyTargetS =
-            PythonEnvironment::getInternedString(context, "__protopy_dict_proxy_target__");
-        const proto::ProtoObject* underlying = target->hasOwnAttribute(context, proxyTargetS) == PROTO_TRUE
-            ? target->getAttribute(context, proxyTargetS) : nullptr;
-        if (underlying && underlying != PROTO_NONE && underlying != target) {
-            // For built-in subclasses, the dict storage is __pydict_*;
-            // otherwise it's the canonical __data__/__keys__.
-            const proto::ProtoString* dS = dataName;
-            const proto::ProtoString* kS = keysName;
-            const proto::ProtoObject* probe = underlying->hasOwnAttribute(context, dS) == PROTO_TRUE
-                ? underlying->getAttribute(context, dS) : nullptr;
-            if (probe && probe != PROTO_NONE && !probe->asSparseList(context)) {
-                dS = PythonEnvironment::getInternedString(context, "__pydict_data__");
-                kS = PythonEnvironment::getInternedString(context, "__pydict_keys__");
-            }
-            // Walk the just-built keys list and copy each (key, value)
-            // onto the underlying instance's storage AND its native
-            // attribute table so subsequent `obj.attr` reads succeed.
-            for (unsigned long i = 0; i < keys->getSize(context); ++i) {
-                const proto::ProtoObject* k = keys->getAt(context, static_cast<int>(i));
-                if (!k || !k->isString(context)) continue;
-                const proto::ProtoString* nm = k->asString(context);
-                const proto::ProtoObject* v = dict->getAt(context, nm->getHash(context));
-                if (!v) continue;
-                // Underlying __data__ / __keys__.
-                const proto::ProtoObject* uDataObj = underlying->hasOwnAttribute(context, dS) == PROTO_TRUE
-                    ? underlying->getAttribute(context, dS) : nullptr;
-                const proto::ProtoSparseList* uDl = uDataObj ? uDataObj->asSparseList(context) : context->newSparseList();
-                uDl = uDl->setAt(context, nm->getHash(context), v);
-                const_cast<proto::ProtoObject*>(underlying)->setAttribute(context, dS, uDl->asObject(context));
-                const proto::ProtoObject* uKeysObj = underlying->hasOwnAttribute(context, kS) == PROTO_TRUE
-                    ? underlying->getAttribute(context, kS) : nullptr;
-                const proto::ProtoList* uKl = (uKeysObj && uKeysObj->asList(context))
-                    ? uKeysObj->asList(context) : context->newList();
-                if (!uKl->has(context, nm->asObject(context))) {
-                    uKl = uKl->appendLast(context, nm->asObject(context));
-                    const_cast<proto::ProtoObject*>(underlying)->setAttribute(context, kS, uKl->asObject(context));
-                }
-                // Native attribute mirror.
-                const_cast<proto::ProtoObject*>(underlying)->setAttribute(context, nm, v);
-            }
-        }
-    }
     return PROTO_NONE;
 }
 
