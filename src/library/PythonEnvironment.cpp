@@ -5590,7 +5590,36 @@ static const proto::ProtoObject* py_str_mul(
     } else if (other && other->isBoolean(ctx)) {
         n = (other == PROTO_TRUE) ? 1 : 0;
     } else {
-        return env ? env->getNotImplementedPrototype() : PROTO_NONE;
+        // Subclass-of-int instance: read __data__ payload directly so
+        // `"a" * MyInt(2)` produces "aa" (test_dynamics).  Walk the
+        // value's MRO looking for intPrototype before resorting to
+        // NotImplemented.
+        bool unwrapped = false;
+        if (env && other) {
+            const proto::ProtoObject* otCls = env->getType(ctx, other);
+            const proto::ProtoObject* otMro = otCls ? otCls->getAttribute(ctx, env->getMroString()) : nullptr;
+            const proto::ProtoTuple* otMroT = otMro ? otMro->asTuple(ctx) : nullptr;
+            bool subOfInt = false;
+            if (otMroT && env->getIntPrototype()) {
+                for (unsigned long i = 0; i < otMroT->getSize(ctx); ++i) {
+                    if (otMroT->getAt(ctx, static_cast<int>(i)) == env->getIntPrototype()) {
+                        subOfInt = true;
+                        break;
+                    }
+                }
+            }
+            if (subOfInt) {
+                const proto::ProtoObject* d = other->getAttribute(ctx, env->getDataString());
+                if (d && d->isInteger(ctx)) {
+                    try { n = d->asLong(ctx); unwrapped = true; }
+                    catch (...) { n = 0; unwrapped = true; }
+                } else if (d == PROTO_TRUE) { n = 1; unwrapped = true; }
+                else if (d == PROTO_FALSE) { n = 0; unwrapped = true; }
+            }
+        }
+        if (!unwrapped) {
+            return env ? env->getNotImplementedPrototype() : PROTO_NONE;
+        }
     }
     std::string s;
     a->asString(ctx)->toUTF8String(ctx, s);
