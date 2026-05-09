@@ -15116,6 +15116,21 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
             }
         }
     }
+    // Special case: instance.__dict__ on a regular Python instance.
+    // objectPrototype registers `__dict__` as a fromMethod descriptor
+    // (py_object_get_dict).  The slow path's MRO walk would otherwise
+    // return that callable cell raw — `getattr(obj, '__dict__')` then
+    // hands a `<object>` (the descriptor itself) instead of the dict
+    // proxy, so subsequent `.copy()` / `.update()` / etc. fail.
+    // Direct attribute access (`obj.__dict__`) works because OP_LOAD_ATTR
+    // synthesises the result on a different code path; getattr() and
+    // any other env->getAttribute consumer needs this explicit branch.
+    if (!isClass && dictString && name == dictString && objectPrototype) {
+        const proto::ProtoObject* dictDescr = objectPrototype->proto::ProtoObject::getAttribute(ctx, dictString);
+        if (dictDescr && dictDescr != PROTO_NONE && dictDescr->isMethod(ctx)) {
+            return dictDescr->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(obj), nullptr, ctx->newList(), nullptr);
+        }
+    }
 
     // Special handling for __class__
     if (classString && name == classString && !isClass) {
