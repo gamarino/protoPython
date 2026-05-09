@@ -1674,6 +1674,40 @@ static const proto::ProtoObject* py_object_setattr(
     nameObj->asString(context)->toUTF8String(context, nameStr);
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     const proto::ProtoString* key = PythonEnvironment::getInternedString(context, nameStr.c_str());
+    // Carlo Verre's hack mitigation: `object.__setattr__(str, "foo", 42)`
+    // tries to inject attributes onto a built-in type by going through
+    // object's setattr (bypassing type's normal validation).  CPython
+    // rejects this with TypeError because the target's metaclass is
+    // not object.  Detect by walking target's MRO: if target is a
+    // class (instance of type) AND the metaclass that resolved
+    // __setattr__ for it is NOT object, the call is illegal.  In
+    // practice we check: target IS a class AND target is not a heap-
+    // allocated user class — i.e. it's one of the built-in
+    // primitive prototypes (int, str, list, dict, ...).
+    if (env && target && env->isActuallyAClass(context, target)) {
+        // Allow setattr on user-defined classes (which routes through
+        // type's setattr by inheritance), but reject on built-ins.
+        if (target == env->getStrPrototype()
+            || target == env->getIntPrototype()
+            || target == env->getFloatPrototype()
+            || target == env->getBoolPrototype()
+            || target == env->getBytesPrototype()
+            || target == env->getListPrototype()
+            || target == env->getDictPrototype()
+            || target == env->getSetPrototype()
+            || target == env->getTuplePrototype()
+            || target == env->getFrozensetPrototype()
+            || target == env->getComplexPrototype()
+            || target == env->getObjectPrototype()
+            || target == env->getTypePrototype()) {
+            std::string clsName = "?";
+            const proto::ProtoObject* nm = target->getAttribute(context, env->getNameString());
+            if (nm && nm->isString(context)) nm->asString(context)->toUTF8String(context, clsName);
+            env->raiseTypeError(context,
+                "cannot set '" + nameStr + "' attribute of immutable type '" + clsName + "'");
+            return nullptr;
+        }
+    }
     if (env) {
         env->setAttribute(context, const_cast<proto::ProtoObject*>(target), key, value);
     } else {
