@@ -1504,6 +1504,22 @@ static const proto::ProtoObject* py_object_init(
                             // mirroring CPython where type overrides object.__init__
                             return PROTO_NONE;
                         }
+                        // Subclass of `type` (custom metaclasses): they
+                        // inherit type's argument-accepting construction
+                        // even though typePrototype carries no __init__
+                        // dunder of its own that this code can detect via
+                        // MRO comparison.  Recognise via the MRO tuple.
+                        {
+                            const proto::ProtoObject* mroAttr = cls->getAttribute(context, env->getMroString());
+                            const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(context) : nullptr;
+                            if (mroT) {
+                                for (size_t i = 0; i < mroT->getSize(context); ++i) {
+                                    if (mroT->getAt(context, (int)i) == env->getTypePrototype()) {
+                                        return PROTO_NONE;
+                                    }
+                                }
+                            }
+                        }
                         // Built-in primitive prototypes (complex, int,
                         // float, bool, str, bytes, list, dict, set,
                         // frozenset, tuple) construct via tp_new written
@@ -1525,7 +1541,16 @@ static const proto::ProtoObject* py_object_init(
                             || cls == env->getDictPrototype()
                             || cls == env->getSetPrototype()
                             || cls == env->getFrozensetPrototype()
-                            || cls == env->getTuplePrototype()) {
+                            || cls == env->getTuplePrototype()
+                            || cls == env->getSliceType()) {
+                            return PROTO_NONE;
+                        }
+                        // module and any other class whose name matches a
+                        // known built-in container also constructs via a
+                        // C-level path; exempt by class-name fallback so
+                        // we don't need a getter for each such prototype.
+                        if (clsName == "module" || clsName == "slice"
+                            || clsName == "memoryview" || clsName == "bytearray") {
                             return PROTO_NONE;
                         }
                     }
