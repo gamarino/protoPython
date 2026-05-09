@@ -17743,13 +17743,42 @@ const proto::ProtoObject* PythonEnvironment::py_method_repr(proto::ProtoContext*
     if (!env) return PROTO_NONE;
     const proto::ProtoObject* func = self->getAttribute(ctx, env->getFuncDunderString());
     const proto::ProtoObject* instance = self->getAttribute(ctx, env->getSelfDunderString());
-    
-    std::string fs = PythonEnvironment::reprObject(ctx, func);
-    
-    // BREAK RECURSION: Use pointer address for instance in bound method repr 
-    // instead of calling full recursive reprObject(instance).
+
+    // CPython repr: `<bound method Class.method of <Class object at 0x...>>`.
+    // Prefer __qualname__ (covers nested-class methods like
+    // `Outer.Inner.method`); fall back to __name__; only as a last
+    // resort use the generic reprObject which prints
+    // "<function object at 0x...>".
+    std::string fname;
+    if (func) {
+        const proto::ProtoObject* qn = func->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__qualname__"));
+        if (!qn || qn == PROTO_NONE || !qn->isString(ctx)) {
+            qn = func->getAttribute(ctx, env->getNameString());
+        }
+        if (qn && qn != PROTO_NONE && qn->isString(ctx)) {
+            qn->asString(ctx)->toUTF8String(ctx, fname);
+        }
+    }
+    if (fname.empty()) fname = PythonEnvironment::reprObject(ctx, func);
+
+    // Build the instance description as `<ClsName object at 0x...>` to
+    // mirror CPython without recursing into reprObject (which could
+    // re-enter __repr__ and loop).
+    std::string instDesc = "?";
+    if (instance) {
+        const proto::ProtoObject* instCls = env->getType(ctx, instance);
+        std::string clsName = "object";
+        if (instCls) {
+            const proto::ProtoObject* nm = instCls->getAttribute(ctx, env->getNameString());
+            if (nm && nm->isString(ctx)) nm->asString(ctx)->toUTF8String(ctx, clsName);
+        }
+        char ibuf[128];
+        snprintf(ibuf, sizeof(ibuf), "<%s object at %p>", clsName.c_str(), (void*)instance);
+        instDesc = ibuf;
+    }
+
     char buf[1024];
-    snprintf(buf, sizeof(buf), "<bound method %s of 0x%p>", fs.c_str(), (void*)instance);
+    snprintf(buf, sizeof(buf), "<bound method %s of %s>", fname.c_str(), instDesc.c_str());
     return PythonEnvironment::getInternedString(ctx, buf)->asObject(ctx);
 }
 
