@@ -1049,9 +1049,23 @@ static proto::ProtoObject* createUserFunction(proto::ProtoContext* ctx, const pr
         }
     }
     if (closureFrame && env) {
-        // Wrap closure frame in a tuple for CPython compatibility (f.__closure__ is a tuple)
+        // Wrap as a proper Python list (with __data__ + __class__) so
+        // Python-side `len(f.__closure__)`, indexing, and repr work.
+        // Previously we set the raw ProtoList here; len()/repr() on the
+        // result then went through listPrototype.__len__ which reads
+        // __data__ — absent — and reported size 0 even though the
+        // underlying list had cells.  asList() still unwraps it for the
+        // LOAD_DEREF closure walk (CLAUDE.md raw/wrapped invariant).
         const proto::ProtoList* closureTuple = ctx->newList()->appendLast(ctx, closureFrame);
-        fn = fn->setAttribute(ctx, env->getClosureString(), closureTuple->asObject(ctx));
+        const proto::ProtoObject* closureWrapped = closureTuple->asObject(ctx);
+        if (env->getListPrototype()) {
+            proto::ProtoObject* w = const_cast<proto::ProtoObject*>(ctx->newObject(true));
+            w = const_cast<proto::ProtoObject*>(w->setAttribute(ctx, env->getDataString(), closureWrapped));
+            w = const_cast<proto::ProtoObject*>(w->addParent(ctx, env->getListPrototype()));
+            w = const_cast<proto::ProtoObject*>(w->setAttribute(ctx, env->getClassString(), env->getListPrototype()));
+            closureWrapped = w;
+        }
+        fn = fn->setAttribute(ctx, env->getClosureString(), closureWrapped);
     }
     if (defaults && env) {
         fn = fn->setAttribute(ctx, env->getDefaultsString(), defaults);
@@ -5139,9 +5153,19 @@ const proto::ProtoObject* executeBytecodeRange(
                         if (!curr || curr == PROTO_NONE || visited.count(curr)) continue;
                         visited.insert(curr);
 
-                        val = curr->getAttribute(ctx, nameS);
-                        // getAttribute returns nullptr when not found; PROTO_NONE is a valid Python None value
-                        if (val != nullptr) { found = true; break; }
+                        // protoCore convention: getAttribute returns
+                        // PROTO_NONE for missing attrs, NOT nullptr (only
+                        // nullptr is "invalid input").  We can't tell
+                        // "stored None" from "missing" via getAttribute
+                        // alone — gate on hasOwnAttribute first so we
+                        // only accept genuine own-attribute hits.  The
+                        // worklist still walks up via __closure__ /
+                        // parents, so an inherited cell is reached on
+                        // a later iteration.
+                        if (curr->hasOwnAttribute(ctx, nameS) == PROTO_TRUE) {
+                            val = curr->getAttribute(ctx, nameS);
+                            if (val) { found = true; break; }
+                        }
 
                     if (env) {
                         const proto::ProtoObject* closureAttr = curr->getAttribute(ctx, env->getClosureString());
@@ -6544,11 +6568,20 @@ const proto::ProtoObject* executeBytecodeRange(
                             const_cast<proto::ProtoObject*>(closureFrame)->setAttribute(
                                 ctx, nameAttr->asString(ctx), fn);
                         if (updatedFrame != closureFrame) {
-                            // Not in-place: rebuild closure tuple so fn sees the updated frame
+                            // Not in-place: rebuild closure tuple so fn sees the updated frame.
+                            // Wrap as Python list so len/repr/indexing work on f.__closure__.
                             const proto::ProtoList* newClosure =
                                 ctx->newList()->appendLast(ctx, updatedFrame);
+                            const proto::ProtoObject* closureWrapped = newClosure->asObject(ctx);
+                            if (env->getListPrototype()) {
+                                proto::ProtoObject* w = const_cast<proto::ProtoObject*>(ctx->newObject(true));
+                                w = const_cast<proto::ProtoObject*>(w->setAttribute(ctx, env->getDataString(), closureWrapped));
+                                w = const_cast<proto::ProtoObject*>(w->addParent(ctx, env->getListPrototype()));
+                                w = const_cast<proto::ProtoObject*>(w->setAttribute(ctx, env->getClassString(), env->getListPrototype()));
+                                closureWrapped = w;
+                            }
                             fn = const_cast<proto::ProtoObject*>(fn->setAttribute(
-                                ctx, env->getClosureString(), newClosure->asObject(ctx)));
+                                ctx, env->getClosureString(), closureWrapped));
                             stack.back() = fn;
                         }
                     }
