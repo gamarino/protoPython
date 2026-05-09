@@ -15805,10 +15805,25 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
     // would store the dict literal as a regular attribute named
     // `__dict__` and `obj.attr` would no longer find the new entries.
     if (name == dictString || (name && dictString && name->getHash(ctx) == dictString->getHash(ctx))) {
-        // Validate type — must be a dict or mappingproxy.
+        // Validate type — must be a dict, dict subclass, or mappingproxy.
+        // CPython accepts any dict-derived class; test_cycle_through_dict
+        // assigns `self.__dict__ = self` where self is a dict-subclass
+        // instance.  Detect by walking value type's MRO.
         const proto::ProtoObject* valType = getType(ctx, value);
         bool isDictLike = (valType == dictPrototype)
                        || (mappingProxyPrototype && valType == mappingProxyPrototype);
+        if (!isDictLike && valType && valType != PROTO_NONE && mroString) {
+            const proto::ProtoObject* vMroAttr = valType->getAttribute(ctx, mroString);
+            const proto::ProtoTuple* vMroT = vMroAttr ? vMroAttr->asTuple(ctx) : nullptr;
+            if (vMroT) {
+                for (unsigned long mi = 0; mi < vMroT->getSize(ctx); ++mi) {
+                    if (vMroT->getAt(ctx, mi) == dictPrototype) {
+                        isDictLike = true;
+                        break;
+                    }
+                }
+            }
+        }
         if (!isDictLike) {
             std::string clsName = "?";
             if (valType) {
