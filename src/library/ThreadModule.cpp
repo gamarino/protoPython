@@ -19,13 +19,22 @@
 namespace protoPython {
 namespace thread_module {
 
+// CPython _thread.lock has no ownership: thread A may acquire and
+// thread B may release, mirroring a binary semaphore.  This is what
+// threading.Condition.wait/notify relies on — the waiter lock is
+// acquired by the waiting thread and released by the notifying
+// thread.  std::mutex / std::timed_mutex are owner-bound: a release
+// from a different thread is undefined behaviour.  Implement the
+// non-owner-bound semantics manually via a condition variable.
 struct LockData {
-    std::mutex m;
+    std::mutex internal_m;
+    std::condition_variable cv;
+    bool taken = false;
     std::atomic<bool> held{false};
 };
 
 struct RLockData {
-    std::recursive_mutex m;
+    std::recursive_timed_mutex m;
     std::atomic<int> count{0};
     // Owner thread id at the moment of acquisition. CPython's RLock
     // raises RuntimeError on release-from-non-owner; protoPython
@@ -62,19 +71,38 @@ static const proto::ProtoObject* py_lock_acquire(
     LockData* ld = static_cast<LockData*>(ext->getPointer(ctx));
     if (!ld) return PROTO_FALSE;
     bool blocking = true;
+    double timeout = -1.0;
     if (posArgs && posArgs->getSize(ctx) >= 1)
         blocking = posArgs->getAt(ctx, 0) != PROTO_FALSE;
+    if (posArgs && posArgs->getSize(ctx) >= 2) {
+        const proto::ProtoObject* tArg = posArgs->getAt(ctx, 1);
+        if (tArg) {
+            if (tArg->isDouble(ctx)) timeout = tArg->asDouble(ctx);
+            else if (tArg->isInteger(ctx)) timeout = (double)tArg->asLong(ctx);
+            else if (tArg == PROTO_TRUE) timeout = 1.0;
+            else if (tArg == PROTO_FALSE) timeout = 0.0;
+        }
+    }
 
-    if (blocking) {
-        ld->m.lock();
+    std::unique_lock<std::mutex> lk(ld->internal_m);
+    if (!blocking) {
+        if (ld->taken) return PROTO_FALSE;
+        ld->taken = true;
         ld->held = true;
         return PROTO_TRUE;
     }
-    if (ld->m.try_lock()) {
-        ld->held = true;
-        return PROTO_TRUE;
+    if (timeout < 0) {
+        ld->cv.wait(lk, [&]{ return !ld->taken; });
+    } else {
+        auto dur = std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::duration<double>(timeout));
+        if (!ld->cv.wait_for(lk, dur, [&]{ return !ld->taken; })) {
+            return PROTO_FALSE;
+        }
     }
-    return PROTO_FALSE;
+    ld->taken = true;
+    ld->held = true;
+    return PROTO_TRUE;
 }
 
 static const proto::ProtoObject* py_lock_release(
@@ -92,8 +120,11 @@ static const proto::ProtoObject* py_lock_release(
     if (!ext) return PROTO_NONE;
     LockData* ld = static_cast<LockData*>(ext->getPointer(ctx));
     if (ld) {
+        std::unique_lock<std::mutex> lk(ld->internal_m);
+        ld->taken = false;
         ld->held = false;
-        ld->m.unlock();
+        lk.unlock();
+        ld->cv.notify_one();
     }
     return PROTO_NONE;
 }
@@ -114,18 +145,37 @@ static const proto::ProtoObject* py_rlock_acquire(
     RLockData* ld = static_cast<RLockData*>(ext->getPointer(ctx));
     if (!ld) return PROTO_FALSE;
     bool blocking = true;
+    double timeout = -1.0;
     if (posArgs && posArgs->getSize(ctx) >= 1)
         blocking = posArgs->getAt(ctx, 0) != PROTO_FALSE;
+    if (posArgs && posArgs->getSize(ctx) >= 2) {
+        const proto::ProtoObject* tArg = posArgs->getAt(ctx, 1);
+        if (tArg) {
+            if (tArg->isDouble(ctx)) timeout = tArg->asDouble(ctx);
+            else if (tArg->isInteger(ctx)) timeout = (double)tArg->asLong(ctx);
+            else if (tArg == PROTO_TRUE) timeout = 1.0;
+            else if (tArg == PROTO_FALSE) timeout = 0.0;
+        }
+    }
 
-    if (blocking) {
-        ld->m.lock();
+    auto recordAcquired = [&]() {
         ld->count++;
         ld->owner.store(current_thread_id(), std::memory_order_release);
+    };
+
+    if (!blocking) {
+        if (ld->m.try_lock()) { recordAcquired(); return PROTO_TRUE; }
+        return PROTO_FALSE;
+    }
+    if (timeout < 0) {
+        ld->m.lock();
+        recordAcquired();
         return PROTO_TRUE;
     }
-    if (ld->m.try_lock()) {
-        ld->count++;
-        ld->owner.store(current_thread_id(), std::memory_order_release);
+    auto dur = std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::duration<double>(timeout));
+    if (ld->m.try_lock_for(dur)) {
+        recordAcquired();
         return PROTO_TRUE;
     }
     return PROTO_FALSE;

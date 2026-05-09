@@ -176,13 +176,138 @@ static const proto::ProtoObject* py_deque_len(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* posArgs,
     const proto::ProtoSparseList* kwArgs) {
-    
+
     DequeState* state = get_deque_state(ctx, self);
     if (state) {
         std::lock_guard<std::mutex> lock(state->mutex);
         return ctx->fromInteger(state->data.size());
     }
     return ctx->fromInteger(0);
+}
+
+static const proto::ProtoObject* py_deque_getitem(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList* /*kwArgs*/) {
+    if (!posArgs || posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    const proto::ProtoObject* idxObj = posArgs->getAt(ctx, 0);
+    long long idx = 0;
+    if (idxObj->isInteger(ctx)) idx = idxObj->asLong(ctx);
+    else if (idxObj == PROTO_TRUE) idx = 1;
+    else if (idxObj == PROTO_FALSE) idx = 0;
+    else return PROTO_NONE;
+    DequeState* state = get_deque_state(ctx, self);
+    if (!state) return PROTO_NONE;
+    std::lock_guard<std::mutex> lock(state->mutex);
+    long long n = static_cast<long long>(state->data.size());
+    if (idx < 0) idx += n;
+    if (idx < 0 || idx >= n) {
+        PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+        if (env) env->raiseIndexError(ctx, "deque index out of range");
+        return nullptr;
+    }
+    return state->data[static_cast<size_t>(idx)];
+}
+
+// deque.remove(value): remove the first occurrence of value (Python ==
+// comparison). Raises ValueError when missing.  threading.Condition.notify
+// calls this on its waiters deque to drop the lock that was just released.
+static const proto::ProtoObject* py_deque_remove(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList* /*kwArgs*/) {
+    if (!posArgs || posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    const proto::ProtoObject* value = posArgs->getAt(ctx, 0);
+    DequeState* state = get_deque_state(ctx, self);
+    if (!state) return PROTO_NONE;
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    std::lock_guard<std::mutex> lock(state->mutex);
+    for (auto it = state->data.begin(); it != state->data.end(); ++it) {
+        bool eq = false;
+        if (*it == value) {
+            eq = true;
+        } else if (env) {
+            const proto::ProtoObject* r = env->compareObjects(ctx, *it, value, 0);
+            eq = (r == PROTO_TRUE);
+        }
+        if (eq) {
+            state->data.erase(it);
+            state->mutationCount++;
+            return PROTO_NONE;
+        }
+    }
+    if (env) env->raiseValueError(ctx,
+        PythonEnvironment::getInternedString(ctx, "deque.remove(x): x not in deque")->asObject(ctx));
+    return nullptr;
+}
+
+static const proto::ProtoObject* py_deque_clear(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* /*posArgs*/,
+    const proto::ProtoSparseList* /*kwArgs*/) {
+    DequeState* state = get_deque_state(ctx, self);
+    if (state) {
+        std::lock_guard<std::mutex> lock(state->mutex);
+        state->data.clear();
+        state->mutationCount++;
+    }
+    return PROTO_NONE;
+}
+
+static const proto::ProtoObject* py_deque_extend(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList* /*kwArgs*/) {
+    if (!posArgs || posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    const proto::ProtoObject* iterable = posArgs->getAt(ctx, 0);
+    DequeState* state = get_deque_state(ctx, self);
+    if (!state) return PROTO_NONE;
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!env) return PROTO_NONE;
+    const proto::ProtoObject* it = env->iter(iterable);
+    if (!it) return PROTO_NONE;
+    PythonEnvironment::TransientPin pinIt(env, it);
+    while (true) {
+        const proto::ProtoObject* item = env->next(it);
+        if (!item) break;
+        std::lock_guard<std::mutex> lock(state->mutex);
+        state->data.push_back(item);
+        state->mutationCount++;
+    }
+    return PROTO_NONE;
+}
+
+static const proto::ProtoObject* py_deque_extendleft(
+    proto::ProtoContext* ctx,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* /*parentLink*/,
+    const proto::ProtoList* posArgs,
+    const proto::ProtoSparseList* /*kwArgs*/) {
+    if (!posArgs || posArgs->getSize(ctx) < 1) return PROTO_NONE;
+    const proto::ProtoObject* iterable = posArgs->getAt(ctx, 0);
+    DequeState* state = get_deque_state(ctx, self);
+    if (!state) return PROTO_NONE;
+    PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+    if (!env) return PROTO_NONE;
+    const proto::ProtoObject* it = env->iter(iterable);
+    if (!it) return PROTO_NONE;
+    PythonEnvironment::TransientPin pinIt(env, it);
+    while (true) {
+        const proto::ProtoObject* item = env->next(it);
+        if (!item) break;
+        std::lock_guard<std::mutex> lock(state->mutex);
+        state->data.push_front(item);
+        state->mutationCount++;
+    }
+    return PROTO_NONE;
 }
 
 static const proto::ProtoObject* py_module_repr(
@@ -468,10 +593,20 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, protoPython::Pyth
                                                  ctx->fromMethod(nullptr, py_deque_pop));
     dequePrototype = dequePrototype->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "popleft"), 
                                                  ctx->fromMethod(nullptr, py_deque_popleft));
-    dequePrototype = dequePrototype->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__len__"), 
+    dequePrototype = dequePrototype->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__len__"),
                                                  ctx->fromMethod(nullptr, py_deque_len));
-    dequePrototype = dequePrototype->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__reversed__"), 
+    dequePrototype = dequePrototype->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__reversed__"),
                                                  ctx->fromMethod(nullptr, py_deque_reversed));
+    dequePrototype = dequePrototype->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "remove"),
+                                                 ctx->fromMethod(nullptr, py_deque_remove));
+    dequePrototype = dequePrototype->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__getitem__"),
+                                                 ctx->fromMethod(nullptr, py_deque_getitem));
+    dequePrototype = dequePrototype->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "clear"),
+                                                 ctx->fromMethod(nullptr, py_deque_clear));
+    dequePrototype = dequePrototype->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "extend"),
+                                                 ctx->fromMethod(nullptr, py_deque_extend));
+    dequePrototype = dequePrototype->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "extendleft"),
+                                                 ctx->fromMethod(nullptr, py_deque_extendleft));
     
     dequePrototype = dequePrototype->setAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__new__"),
                                                  ctx->fromMethod(nullptr, py_deque_new));
