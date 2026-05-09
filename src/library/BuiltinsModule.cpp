@@ -3579,6 +3579,42 @@ static const proto::ProtoObject* py_hasattr(
         if (get_env_diag() && data) { fprintf(stderr, "DEBUG_HASATTR: obj has __data__=%p\n", (void*)data); fflush(stderr); }
     }
 
+    // CPython: `hasattr(obj, name)` is `try: getattr(obj, name);
+    // return True; except AttributeError: return False`.  The
+    // descriptor protocol must run — a property whose getter raises
+    // AttributeError must report hasattr=False even though the
+    // descriptor itself sits on the class's MRO (the chain probe
+    // would say True).  Use env->getAttribute with raiseError=false
+    // and treat a pending AttributeError as "missing".
+    {
+        protoPython::PythonEnvironment* envInner = protoPython::PythonEnvironment::fromContext(context);
+        if (envInner) {
+            envInner->clearPendingException();
+            const proto::ProtoObject* val = envInner->getAttribute(context, obj, nameStr, false);
+            if (envInner->hasPendingException()) {
+                const proto::ProtoObject* exc = envInner->peekPendingException();
+                const proto::ProtoObject* excCls = exc ? envInner->getType(context, exc) : nullptr;
+                const proto::ProtoObject* excName = excCls ? excCls->getAttribute(context, envInner->getNameString()) : nullptr;
+                std::string en;
+                if (excName && excName->isString(context)) excName->asString(context)->toUTF8String(context, en);
+                if (en == "AttributeError") {
+                    envInner->clearPendingException();
+                    // Fall through to the legacy fallback paths so
+                    // synthesise-on-demand __getattr__ overrides still
+                    // get a chance.
+                } else {
+                    // Non-AttributeError — propagate.
+                    return nullptr;
+                }
+            } else if (val && val != PROTO_NONE) {
+                return PROTO_TRUE;
+            } else if (val == PROTO_NONE) {
+                // env->getAttribute returns PROTO_NONE for "missing"
+                // (legacy convention) — fall through to the chain
+                // probe below, which has more aggressive synthesis.
+            }
+        }
+    }
     // 1. Direct chain probe via protoCore.
     if (obj->hasAttribute(context, nameStr) == PROTO_TRUE) return PROTO_TRUE;
 
