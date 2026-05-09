@@ -15861,6 +15861,71 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
     RecursionScope rs(this, ctx);
     if (rs.overflowed()) return obj;
 
+    // CPython: a user-defined `__setattr__` on the class intercepts
+    // every attribute assignment, including from inside the user's
+    // own __setattr__ body (recursion broken by calling
+    // `B.__setattr__(self, name, value)` to invoke object's default).
+    // Without this dispatch, `class C: def __setattr__(self, n, v):
+    // self.<other> = ...` silently bypasses the override, so
+    // observed behaviour diverges from CPython.
+    //
+    // Recursion guard: a thread-local depth counter limited to one
+    // active dispatch per (obj, name) pair.  When we're already
+    // inside the override (re-entering for the inner self.<other>
+    // assignment), skip the dispatch and fall through to the default
+    // path so the inner write actually happens.
+    {
+        static thread_local int setAttrDispatchDepth = 0;
+        struct DispatchGuard {
+            int& d; DispatchGuard(int& d) : d(d) { d++; } ~DispatchGuard() { d--; }
+        };
+        if (setAttrDispatchDepth == 0 && !isActuallyAClass(ctx, obj)) {
+            DispatchGuard g(setAttrDispatchDepth);
+            const proto::ProtoObject* objType = getType(ctx, obj);
+            if (objType && objType != PROTO_NONE) {
+                const proto::ProtoString* setattrS =
+                    PythonEnvironment::getInternedString(ctx, "__setattr__");
+                // Only dispatch when the type carries an OWN __setattr__
+                // (or inherits one from a non-object base).  Walk the MRO
+                // looking for a class that owns __setattr__, stopping at
+                // objectPrototype (the implicit default).
+                const proto::ProtoString* mroS = mroString;
+                const proto::ProtoObject* mroAttr = mroS ? objType->getAttribute(ctx, mroS) : nullptr;
+                const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(ctx) : nullptr;
+                const proto::ProtoObject* override = nullptr;
+                if (mroT) {
+                    for (unsigned long i = 0; i < mroT->getSize(ctx); ++i) {
+                        const proto::ProtoObject* base = mroT->getAt(ctx, static_cast<int>(i));
+                        if (!base || base == PROTO_NONE) continue;
+                        if (base == objectPrototype) break;
+                        if (base->hasOwnAttribute(ctx, setattrS) == PROTO_TRUE) {
+                            override = base->getAttribute(ctx, setattrS);
+                            break;
+                        }
+                    }
+                }
+                if (override && override != PROTO_NONE) {
+                    // Invoke override(obj, name, value).
+                    const proto::ProtoList* args = ctx->newList()
+                        ->appendLast(ctx, name->asObject(ctx))
+                        ->appendLast(ctx, value);
+                    if (override->asMethod(ctx)) {
+                        override->asMethod(ctx)(ctx,
+                            const_cast<proto::ProtoObject*>(obj), nullptr, args, nullptr);
+                    } else {
+                        // Python user dunder — prepend self.
+                        const proto::ProtoList* selfArgs = ctx->newList()
+                            ->appendLast(ctx, obj)
+                            ->appendLast(ctx, name->asObject(ctx))
+                            ->appendLast(ctx, value);
+                        invokePythonCallable(ctx, override, selfArgs, nullptr);
+                    }
+                    return obj;
+                }
+            }
+        }
+    }
+
     // Compute type and MRO once — shared by both the __slots__ check and
     // the data-descriptor check below, avoiding two getType() calls and
     // two getAttribute(mroString) calls per setAttribute invocation.

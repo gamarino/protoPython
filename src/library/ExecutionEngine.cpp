@@ -5707,7 +5707,17 @@ const proto::ProtoObject* executeBytecodeRange(
                             } else {
                                 noDescr = directType->hasOwnAttribute(ctx, nameS) != PROTO_TRUE;
                             }
-                            if (noSlots && noDescr) {
+                            // Bail to slow path when the type defines an
+                            // own __setattr__ override (CPython's data
+                            // descriptor for "__setattr__ has been
+                            // overridden").  env->setAttribute then
+                            // dispatches the user's hook with
+                            // (obj, name, value).
+                            const proto::ProtoString* setattrS =
+                                protoPython::PythonEnvironment::getInternedString(ctx, "__setattr__");
+                            bool hasSetattrOverride =
+                                directType->hasOwnAttribute(ctx, setattrS) == PROTO_TRUE;
+                            if (noSlots && noDescr && !hasSetattrOverride) {
                                 newObj = const_cast<proto::ProtoObject*>(obj)->setAttribute(ctx, nameS, val);
                                 fastStoreTaken = true;
                                 // PEP 468 / dict insertion-order preservation.
