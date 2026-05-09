@@ -4199,6 +4199,40 @@ static const proto::ProtoObject* py_dict_call(
     proto::ProtoSparseList* d = const_cast<proto::ProtoSparseList*>(context->newSparseList());
     proto::ProtoList* keysList = const_cast<proto::ProtoList*>(context->newList());
 
+    // When `cls` is a strict subclass of dict that overrides __init__,
+    // py_dict_init will NOT run on it (type.__call__ dispatches to the
+    // subclass override) — but py_dict_init is the only path that
+    // populates __data__/__keys__.  So we'd return an instance that
+    // lacks the dict storage, and downstream attribute access fails.
+    // Initialise empty __data__/__keys__ unconditionally so the
+    // instance is a valid (empty) dict regardless of which __init__
+    // ultimately runs; the subclass override gets a working canvas.
+    instance->setAttribute(context, dataName, d->asObject(context));
+    instance->setAttribute(context, keysName, keysList->asObject(context));
+
+    // Skip any further positional/kwarg consumption when the receiver
+    // is a strict subclass with its own __init__ — that override is
+    // the source of truth for population, and processing args here
+    // would either double-fill (kwargs case) or raise spuriously when
+    // the arg isn't dict-shaped (e.g. `class C(dict): __init__(*a)`
+    // where caller passes an int).
+    if (env && cls != env->getDictPrototype()) {
+        const proto::ProtoString* initS = env->getInitString();
+        const proto::ProtoObject* dictInit = env->getDictPrototype()
+            ? env->getDictPrototype()->getAttribute(context, initS) : nullptr;
+        const proto::ProtoObject* clsInit = env->getAttribute(context, cls, initS, false);
+        bool initOverridden = false;
+        if (clsInit && clsInit != PROTO_NONE && clsInit != dictInit) {
+            void* a = (void*)clsInit->asMethod(context);
+            void* b = (void*)((dictInit && dictInit != PROTO_NONE)
+                              ? dictInit->asMethod(context) : nullptr);
+            if ((a == nullptr && b == nullptr) || a != b) initOverridden = true;
+        }
+        if (initOverridden) {
+            return instance;
+        }
+    }
+
     if (positionalParameters && positionalParameters->getSize(context) >= 2) {
         const proto::ProtoObject* mapping = positionalParameters->getAt(context, 1);
         // Fast path for native dict objects
