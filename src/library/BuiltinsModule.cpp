@@ -1487,13 +1487,34 @@ static const proto::ProtoObject* py_object_init(
                         // doesn't appear "overridden" just because the raw
                         // protoCore parent chain happens to surface
                         // typePrototype's distinct __init__ first.
+                        // Compare by both native-method pointer AND object
+                        // identity: when __init__ is a Python user function
+                        // (POINTER_TAG_OBJECT, asMethod() == nullptr), the
+                        // method-pointer comparison degenerates to
+                        // `nullptr != nullptr` → false, missing real Python-
+                        // level overrides like `class TextIOWrapper:
+                        // def __init__(self, ...)`.  An object-identity
+                        // check covers that case; the method-pointer check
+                        // still wins for native dunders that share the
+                        // same C function but are wrapped in distinct
+                        // ProtoObjects.
                         const proto::ProtoObject* initAttr = env->getAttribute(context, cls, initS, false);
-                        if (initAttr && initAttr->asMethod(context) != objInitAttr->asMethod(context)) {
-                             isInitOverridden = true;
+                        if (initAttr && initAttr != PROTO_NONE && initAttr != objInitAttr) {
+                            void* a = (void*)initAttr->asMethod(context);
+                            void* b = (void*)((objInitAttr && objInitAttr != PROTO_NONE)
+                                              ? objInitAttr->asMethod(context) : nullptr);
+                            if ((a == nullptr && b == nullptr) || a != b) {
+                                isInitOverridden = true;
+                            }
                         }
                         const proto::ProtoObject* newAttr = env->getAttribute(context, cls, newS, false);
-                        if (newAttr && newAttr->asMethod(context) != objNewAttr->asMethod(context)) {
-                             isNewOverridden = true;
+                        if (newAttr && newAttr != PROTO_NONE && newAttr != objNewAttr) {
+                            void* a = (void*)newAttr->asMethod(context);
+                            void* b = (void*)((objNewAttr && objNewAttr != PROTO_NONE)
+                                              ? objNewAttr->asMethod(context) : nullptr);
+                            if ((a == nullptr && b == nullptr) || a != b) {
+                                isNewOverridden = true;
+                            }
                         }
                         
                         const proto::ProtoObject* nameAttr = cls->getAttribute(context, env->getNameString());
