@@ -5671,7 +5671,15 @@ const proto::ProtoObject* executeBytecodeRange(
                     const proto::ProtoString* classS = env ? env->getClassString() : nullptr;
                     bool isClassAssign = classS && (nameS == classS
                         || nameS->getHash(ctx) == classS->getHash(ctx));
-                    if (!isClassAssign && !disableStoreattrFastpath && env && obj && obj != PROTO_NONE
+                    // __dict__ assignment must always traverse the slow
+                    // path (env->setAttribute) so the dict-replace logic
+                    // runs (validate type + repopulate __data__/__keys__).
+                    // The fast path would store the rhs as a plain
+                    // attribute named "__dict__" and lose the entries.
+                    const proto::ProtoString* dictS = env ? env->getDictDunderString() : nullptr;
+                    bool isDictAssign = dictS && (nameS == dictS
+                        || nameS->getHash(ctx) == dictS->getHash(ctx));
+                    if (!isClassAssign && !isDictAssign && !disableStoreattrFastpath && env && obj && obj != PROTO_NONE
                             && !obj->isString(ctx) && !obj->isInteger(ctx)
                             && !obj->isBoolean(ctx) && !obj->isFloat(ctx)) {
                         // P2 type-flags fast path.  Replaces the legacy 3

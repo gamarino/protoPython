@@ -15758,6 +15758,64 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
         }
     }
 
+    // CPython: assigning to `obj.__dict__` replaces the instance's
+    // attribute storage with the dict on the right-hand side.  Reject
+    // non-dict values with TypeError (CPython parity), and accept dict
+    // / mappingproxy by copying their key/value pairs onto the
+    // instance's __data__ / __keys__.  Without this, the assignment
+    // would store the dict literal as a regular attribute named
+    // `__dict__` and `obj.attr` would no longer find the new entries.
+    if (name == dictString || (name && dictString && name->getHash(ctx) == dictString->getHash(ctx))) {
+        // Validate type — must be a dict or mappingproxy.
+        const proto::ProtoObject* valType = getType(ctx, value);
+        bool isDictLike = (valType == dictPrototype)
+                       || (mappingProxyPrototype && valType == mappingProxyPrototype);
+        if (!isDictLike) {
+            std::string clsName = "?";
+            if (valType) {
+                const proto::ProtoObject* nm = valType->getAttribute(ctx, getNameString());
+                if (nm && nm->isString(ctx)) nm->asString(ctx)->toUTF8String(ctx, clsName);
+            }
+            raiseTypeError(ctx, "__dict__ must be set to a dictionary, not a '" + clsName + "'");
+            return nullptr;
+        }
+        // Replace the instance's __data__ / __keys__ with copies from
+        // `value`'s storage.  Walk the source's __keys__ (preserves
+        // insertion order) and copy each (k, v) pair onto obj's
+        // canonical slots AND its native attribute table so subsequent
+        // `obj.attr` reads find them.
+        const proto::ProtoString* dataS = getDataString();
+        const proto::ProtoString* keysS = getKeysString();
+        const proto::ProtoObject* srcKeysObj = value->getAttribute(ctx, keysS);
+        const proto::ProtoObject* srcDataObj = value->getAttribute(ctx, dataS);
+        const proto::ProtoList* srcKeys = srcKeysObj ? srcKeysObj->asList(ctx) : nullptr;
+        const proto::ProtoSparseList* srcData = srcDataObj ? srcDataObj->asSparseList(ctx) : nullptr;
+        // Reset obj's storage to fresh empty containers, then refill.
+        proto::ProtoObject* mobj = const_cast<proto::ProtoObject*>(obj);
+        mobj->setAttribute(ctx, dataS, ctx->newSparseList()->asObject(ctx));
+        mobj->setAttribute(ctx, keysS, ctx->newList()->asObject(ctx));
+        if (srcKeys && srcData) {
+            for (unsigned long i = 0; i < srcKeys->getSize(ctx); ++i) {
+                const proto::ProtoObject* k = srcKeys->getAt(ctx, static_cast<int>(i));
+                if (!k || !k->isString(ctx)) continue;
+                const proto::ProtoString* nm = k->asString(ctx);
+                const proto::ProtoObject* v = srcData->getAt(ctx, nm->getHash(ctx));
+                if (!v) continue;
+                // Append to keys, set in data, mirror as native attr.
+                const proto::ProtoObject* kObj = mobj->getAttribute(ctx, keysS);
+                const proto::ProtoList* kl = kObj ? kObj->asList(ctx) : ctx->newList();
+                kl = kl->appendLast(ctx, nm->asObject(ctx));
+                mobj->setAttribute(ctx, keysS, kl->asObject(ctx));
+                const proto::ProtoObject* dObj = mobj->getAttribute(ctx, dataS);
+                const proto::ProtoSparseList* dl = dObj ? dObj->asSparseList(ctx) : ctx->newSparseList();
+                dl = dl->setAt(ctx, nm->getHash(ctx), v);
+                mobj->setAttribute(ctx, dataS, dl->asObject(ctx));
+                mobj->setAttribute(ctx, nm, v);
+            }
+        }
+        return obj;
+    }
+
     if (isEmbeddedValue(obj)) return obj;
 
     // Global recursion limit integration
