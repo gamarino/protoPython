@@ -3838,17 +3838,24 @@ const proto::ProtoObject* executeBytecodeRange(
                 }
             }
 
-            const proto::ProtoObject* iadd = isEmbeddedValue(ctx, a) ? nullptr : a->getAttribute(ctx, env ? env->getIAddString() : PythonEnvironment::getInternedString(ctx, "__iadd__"));
+            const proto::ProtoString* iaddS = env ? env->getIAddString() : PythonEnvironment::getInternedString(ctx, "__iadd__");
+            const proto::ProtoObject* iadd = isEmbeddedValue(ctx, a) ? nullptr : a->getAttribute(ctx, iaddS);
+            const proto::ProtoObject* result = nullptr;
             if (iadd && iadd->asMethod(ctx)) {
                 const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
-                const proto::ProtoObject* result = iadd->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
-                stack.pop_back(); // Pop b
-                stack.back() = result ? result : PROTO_NONE;
-            } else {
-                const proto::ProtoObject* r = binaryAdd(ctx, a, b);
-                stack.pop_back(); // Pop b
-                stack.back() = r;
+                result = iadd->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
+                if (env && result == env->getNotImplementedPrototype()) result = nullptr;
+            } else if (iadd && iadd != PROTO_NONE) {
+                const proto::ProtoList* args = ctx->newList()->appendLast(ctx, b);
+                result = invokeDunder(ctx, a, iaddS, args);
+                if (env && result == env->getNotImplementedPrototype()) result = nullptr;
             }
+            if (!result && (!env || !env->hasPendingException())) {
+                result = binaryAdd(ctx, a, b);
+            }
+            stack.pop_back();
+            stack.back() = result ? result : PROTO_NONE;
+            if (!result && env && env->hasPendingException()) continue;
         } break;
         case OP_BINARY_SUBTRACT: {
             if (stack.size() < 2) { i = next_i; continue; }
@@ -3885,15 +3892,24 @@ const proto::ProtoObject* executeBytecodeRange(
             }
             stack.pop_back();
             stack.pop_back();
-            const proto::ProtoObject* isub = isEmbeddedValue(ctx, a) ? nullptr : a->getAttribute(ctx, env ? env->getISubString() : PythonEnvironment::getInternedString(ctx, "__isub__"));
+            const proto::ProtoString* isubS = env ? env->getISubString() : PythonEnvironment::getInternedString(ctx, "__isub__");
+            const proto::ProtoObject* isub = isEmbeddedValue(ctx, a) ? nullptr : a->getAttribute(ctx, isubS);
+            const proto::ProtoObject* result = nullptr;
             if (isub && isub->asMethod(ctx)) {
                 const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
-                const proto::ProtoObject* result = isub->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
-                if (result) stack.push_back(result);
-            } else {
-                const proto::ProtoObject* r = binarySubtract(ctx, a, b);
-                stack.push_back(r);
+                result = isub->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
+                if (env && result == env->getNotImplementedPrototype()) result = nullptr;
+            } else if (isub && isub != PROTO_NONE) {
+                const proto::ProtoList* args = ctx->newList()->appendLast(ctx, b);
+                result = invokeDunder(ctx, a, isubS, args);
+                if (env && result == env->getNotImplementedPrototype()) result = nullptr;
             }
+            if (!result && (!env || !env->hasPendingException())) {
+                result = binarySubtract(ctx, a, b);
+            }
+            if (result) stack.push_back(result);
+            else if (env && env->hasPendingException()) continue;
+            else stack.push_back(PROTO_NONE);
         } break;
         case OP_BINARY_MULTIPLY: {
             if (stack.size() < 2) { i = next_i; continue; }
@@ -3918,17 +3934,25 @@ const proto::ProtoObject* executeBytecodeRange(
             if (stack.size() < 2) { i = next_i; continue; }
             const proto::ProtoObject* b = stack.back();
             const proto::ProtoObject* a = stack[stack.top - 2];
-            const proto::ProtoObject* imul = isEmbeddedValue(ctx, a) ? nullptr : a->getAttribute(ctx, env ? env->getIMulString() : PythonEnvironment::getInternedString(ctx, "__imul__"));
+            const proto::ProtoString* imulS = env ? env->getIMulString() : PythonEnvironment::getInternedString(ctx, "__imul__");
+            const proto::ProtoObject* imul = isEmbeddedValue(ctx, a) ? nullptr : a->getAttribute(ctx, imulS);
+            const proto::ProtoObject* result = nullptr;
             if (imul && imul->asMethod(ctx)) {
                 const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
-                const proto::ProtoObject* result = imul->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
-                stack.pop_back(); // Pop b
-                stack.back() = result ? result : PROTO_NONE;
-            } else {
-                const proto::ProtoObject* r = binaryMultiply(ctx, a, b);
-                stack.pop_back(); // Pop b
-                stack.back() = r;
+                result = imul->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
+                if (env && result == env->getNotImplementedPrototype()) result = nullptr;
+            } else if (imul && imul != PROTO_NONE) {
+                // Python user __imul__ — invokeDunder prepends self.
+                const proto::ProtoList* args = ctx->newList()->appendLast(ctx, b);
+                result = invokeDunder(ctx, a, imulS, args);
+                if (env && result == env->getNotImplementedPrototype()) result = nullptr;
             }
+            if (!result && (!env || !env->hasPendingException())) {
+                result = binaryMultiply(ctx, a, b);
+            }
+            stack.pop_back();
+            stack.back() = result ? result : PROTO_NONE;
+            if (!result && env && env->hasPendingException()) continue;
         } break;
         case OP_BINARY_TRUE_DIVIDE: {
             if (stack.size() < 2) { i = next_i; continue; }
@@ -4101,15 +4125,28 @@ const proto::ProtoObject* executeBytecodeRange(
             if (stack.size() < 2) { i = next_i; continue; }
             const proto::ProtoObject* b = stack.back();
             const proto::ProtoObject* a = stack[stack.top - 2];
-            const proto::ProtoObject* ipow = isEmbeddedValue(ctx, a) ? nullptr : a->getAttribute(ctx, env ? env->getIPowString() : PythonEnvironment::getInternedString(ctx, "__ipow__"));
+            const proto::ProtoString* ipowS = env ? env->getIPowString() : PythonEnvironment::getInternedString(ctx, "__ipow__");
+            const proto::ProtoObject* ipow = isEmbeddedValue(ctx, a) ? nullptr : a->getAttribute(ctx, ipowS);
+            const proto::ProtoObject* result = nullptr;
             if (ipow && ipow->asMethod(ctx)) {
                 const proto::ProtoList* oneArg = ctx->newList()->appendLast(ctx, b);
-                const proto::ProtoObject* result = ipow->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
-                stack.pop_back(); stack.back() = (result ? result : PROTO_NONE);
-            } else {
-                const proto::ProtoObject* r = binaryPower(ctx, a, b);
-                stack.pop_back(); stack.back() = r;
+                result = ipow->asMethod(ctx)(ctx, a, nullptr, oneArg, nullptr);
+                if (env && result == env->getNotImplementedPrototype()) result = nullptr;
+            } else if (ipow && ipow != PROTO_NONE) {
+                // Python-user-defined __ipow__ (POINTER_TAG_OBJECT, no
+                // native asMethod).  Route through invokeDunder which
+                // prepends self for Python callables.  Without this
+                // branch the dispatcher fell through to binaryPower
+                // and raised "unsupported operand type(s) for **".
+                const proto::ProtoList* args = ctx->newList()->appendLast(ctx, b);
+                result = invokeDunder(ctx, a, ipowS, args);
+                if (env && result == env->getNotImplementedPrototype()) result = nullptr;
             }
+            if (!result && (!env || !env->hasPendingException())) {
+                result = binaryPower(ctx, a, b);
+            }
+            stack.pop_back(); stack.back() = (result ? result : PROTO_NONE);
+            if (!result && env && env->hasPendingException()) continue;
         } break;
         case OP_INPLACE_LSHIFT: {
             if (stack.size() < 2) { i = next_i; continue; }
