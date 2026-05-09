@@ -15940,7 +15940,33 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
     // semantics are identical for every non-trivial class.
     if (!objIsClass && type && type != PROTO_NONE) {
         uint32_t typeFlags = ensureClassFlags(ctx, type);
-        if ((typeFlags & PYFLAG_HAS_SLOTS) == 0
+        // The HAS_DATA_DESCR flag only catches classes that own
+        // __set__ themselves (rare).  Most data descriptors are
+        // INSTANCES of a separate class stored as a type attribute
+        // (`x = SomeDescriptor()`), so we always need a per-name
+        // probe before taking the fast bail.  Skip the bail when the
+        // type's MRO has any base owning the target name — the
+        // descriptor block below resolves whether it has __set__.
+        bool typeOwnsName = false;
+        if (type->hasOwnAttribute(ctx, name) == PROTO_TRUE) {
+            typeOwnsName = true;
+        } else if (mroString) {
+            const proto::ProtoObject* mroAttr3 = type->getAttribute(ctx, mroString);
+            const proto::ProtoTuple* mroT3 = mroAttr3 ? mroAttr3->asTuple(ctx) : nullptr;
+            if (mroT3) {
+                for (unsigned long mi = 0; mi < mroT3->getSize(ctx); ++mi) {
+                    const proto::ProtoObject* base = mroT3->getAt(ctx, mi);
+                    if (!base || base == PROTO_NONE) continue;
+                    if (base == objectPrototype) break;
+                    if (base->hasOwnAttribute(ctx, name) == PROTO_TRUE) {
+                        typeOwnsName = true;
+                        break;
+                    }
+                }
+            }
+        }
+        if (!typeOwnsName
+                && (typeFlags & PYFLAG_HAS_SLOTS) == 0
                 && (typeFlags & PYFLAG_HAS_DATA_DESCR) == 0) {
             // No slots, no data descriptors anywhere in the MRO — direct
             // setAttribute is the correct semantic.  Skip the legacy

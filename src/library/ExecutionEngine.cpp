@@ -5701,12 +5701,20 @@ const proto::ProtoObject* executeBytecodeRange(
                                 && directType != env->getTypePrototype()) {
                             uint32_t flags = env->ensureClassFlags(ctx, directType);
                             const bool noSlots = (flags & protoPython::PythonEnvironment::PYFLAG_HAS_SLOTS) == 0;
-                            bool noDescr;
-                            if ((flags & protoPython::PythonEnvironment::PYFLAG_HAS_DATA_DESCR) == 0) {
-                                noDescr = true;
-                            } else {
-                                noDescr = directType->hasOwnAttribute(ctx, nameS) != PROTO_TRUE;
-                            }
+                            // Per-name descriptor probe: when the type
+                            // owns an attribute with the same name as
+                            // the assignment target, that attribute may
+                            // be a data descriptor (`x = SomeDescr()`)
+                            // whose __set__ should run instead of a
+                            // direct write.  ensureClassFlags's
+                            // HAS_DATA_DESCR shortcut only fires when
+                            // a class itself owns __set__ as a method —
+                            // it can't see descriptor INSTANCES stored
+                            // as attribute values, so we always need
+                            // the per-name fallback.  Bail to slow
+                            // path on a hit; the slow path then
+                            // dispatches __set__ correctly.
+                            bool noDescr = directType->hasOwnAttribute(ctx, nameS) != PROTO_TRUE;
                             // Bail to slow path when the type defines an
                             // own __setattr__ override (CPython's data
                             // descriptor for "__setattr__ has been
