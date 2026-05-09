@@ -5738,6 +5738,15 @@ static const proto::ProtoObject* py_classmethod(
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
     if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    PythonEnvironment* envEarly = PythonEnvironment::fromContext(context);
+    // CPython: classmethod() does NOT accept keyword arguments —
+    // both `classmethod(f, kw=1)` and `classmethod(func=f)` raise
+    // TypeError.  test_classmethods explicitly checks this.
+    if (keywordParameters && keywordParameters->getSize(context) > 0) {
+        if (envEarly) envEarly->raiseTypeError(context,
+            "classmethod() takes no keyword arguments");
+        return nullptr;
+    }
     const proto::ProtoObject* cls = positionalParameters->getAt(context, 0);
     
     // Create new instance of cls natively
@@ -5788,6 +5797,12 @@ static const proto::ProtoObject* py_staticmethod(
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
     if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    PythonEnvironment* envEarly = PythonEnvironment::fromContext(context);
+    if (keywordParameters && keywordParameters->getSize(context) > 0) {
+        if (envEarly) envEarly->raiseTypeError(context,
+            "staticmethod() takes no keyword arguments");
+        return nullptr;
+    }
     const proto::ProtoObject* cls = positionalParameters->getAt(context, 0);
 
     proto::ProtoObject* sm = const_cast<proto::ProtoObject*>(cls->newChild(context, true));
