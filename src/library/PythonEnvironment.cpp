@@ -1994,11 +1994,26 @@ static const proto::ProtoObject* py_list_getitem(
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
     const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "__data__");
-    const proto::ProtoObject* data = self->getAttribute(context, dataName);
+    // Resolve receiver: bound (self is list-like) vs unbound
+    // (`list.__getitem__(lst, idx)` — self is the list class, args[0]
+    // is the receiver, args[1] is the index).
+    const proto::ProtoObject* receiver = self;
+    int indexArgIdx = 0;
+    const proto::ProtoObject* selfData = self ? self->getAttribute(context, dataName) : nullptr;
+    bool selfIsList = selfData && selfData->asList(context);
+    if (!selfIsList && positionalParameters && positionalParameters->getSize(context) >= 2) {
+        const proto::ProtoObject* arg0 = positionalParameters->getAt(context, 0);
+        const proto::ProtoObject* arg0Data = arg0 ? arg0->getAttribute(context, dataName) : nullptr;
+        if (arg0Data && arg0Data->asList(context)) {
+            receiver = arg0;
+            indexArgIdx = 1;
+        }
+    }
+    const proto::ProtoObject* data = receiver->getAttribute(context, dataName);
     if (!data || !data->asList(context)) return nullptr; // Fallback to __class_getitem__ for types
     const proto::ProtoList* list = data->asList(context);
-    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
-    const proto::ProtoObject* indexObj = positionalParameters->getAt(context, 0);
+    if (positionalParameters->getSize(context) < (unsigned long)(indexArgIdx + 1)) return PROTO_NONE;
+    const proto::ProtoObject* indexObj = positionalParameters->getAt(context, indexArgIdx);
     long long size = static_cast<long long>(list->getSize(context));
 
     SliceBounds sb = get_slice_bounds(context, indexObj, size);
