@@ -11301,6 +11301,36 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     objectPrototype = objectPrototype->setAttribute(rootContext_, getInternedString(rootContext_, "__hash__"), rootContext_->fromMethod(nullptr, py_object_hash));
     objectPrototype = objectPrototype->setAttribute(rootContext_, getInternedString(rootContext_, "__reduce_ex__"), rootContext_->fromMethod(nullptr, py_object_reduce_ex));
     objectPrototype = objectPrototype->setAttribute(rootContext_, getInternedString(rootContext_, "__reduce__"), rootContext_->fromMethod(nullptr, py_object_reduce));
+    // PEP 690 / Python 3.11+ — object.__getstate__ exposes the
+    // instance __dict__ (and, when __slots__ is defined,
+    // (dict, slotstate) tuple).  copyreg._reduce_ex's identity
+    // check `type(self).__getstate__ is object.__getstate__` (used
+    // to detect a missing override before raising "cannot pickle"
+    // for slot-only classes) requires this attribute to exist on
+    // object so MRO resolution finds it on plain instances.
+    objectPrototype = objectPrototype->setAttribute(rootContext_,
+        getInternedString(rootContext_, "__getstate__"),
+        rootContext_->fromMethod(nullptr,
+        [](proto::ProtoContext* ctx, const proto::ProtoObject* self,
+           const proto::ParentLink*, const proto::ProtoList* args,
+           const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+            PythonEnvironment* envInner = PythonEnvironment::fromContext(ctx);
+            if (!envInner) return PROTO_NONE;
+            // Bound (self=instance) vs unbound (self=null/objectProto,
+            // args=[instance]) dispatch — same shape py_object_reduce
+            // resolves.
+            const proto::ProtoObject* obj = self;
+            if ((!obj || obj == envInner->getObjectPrototype())
+                && args && args->getSize(ctx) >= 1) {
+                obj = args->getAt(ctx, 0);
+            }
+            if (!obj) return PROTO_NONE;
+            // Mirror the instance dict snapshot py_object_get_dict
+            // produces.  Calling that directly returns the live proxy
+            // dict, which is what CPython's default __getstate__
+            // surfaces (callers iterate / pickle it).
+            return py_object_get_dict(ctx, obj, nullptr, nullptr, nullptr);
+        }));
     // PH: object.__init_subclass__ is a no-op; classmethod-bound to keep
     // `super().__init_subclass__(**kwargs)` chains terminating cleanly.
     {
