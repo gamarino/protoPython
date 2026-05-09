@@ -7397,22 +7397,40 @@ static const proto::ProtoObject* py_slice_call(
     const proto::ProtoString* startName = env ? env->getStartString() : PythonEnvironment::getInternedString(context, "start");
     const proto::ProtoString* stopName = env ? env->getStopString() : PythonEnvironment::getInternedString(context, "stop");
     const proto::ProtoString* stepName = env ? env->getStepString() : PythonEnvironment::getInternedString(context, "step");
-    unsigned long n = positionalParameters->getSize(context);
+    unsigned long n = positionalParameters ? positionalParameters->getSize(context) : 0UL;
+    // When invoked as __new__ (via type.__call__), positionalParameters[0]
+    // is the cls (sliceType).  When invoked as a direct method, args
+    // start at [0].  Detect by comparing the first positional to the
+    // sliceType prototype.
+    unsigned long base = 0;
+    const proto::ProtoObject* targetCls = self;
+    if (n >= 1 && env && env->getSliceType()) {
+        const proto::ProtoObject* first = positionalParameters->getAt(context, 0);
+        if (first == env->getSliceType()) {
+            base = 1;
+            targetCls = first;
+        }
+    }
+    unsigned long argCount = n - base;
     const proto::ProtoObject* start = PROTO_NONE;
     const proto::ProtoObject* stop = PROTO_NONE;
     const proto::ProtoObject* step = PROTO_NONE;
-    if (n == 1) {
-        stop = positionalParameters->getAt(context, 0);
-    } else if (n >= 2) {
-        start = positionalParameters->getAt(context, 0);
-        stop = positionalParameters->getAt(context, 1);
-        if (n >= 3) step = positionalParameters->getAt(context, 2);
+    if (argCount == 1) {
+        stop = positionalParameters->getAt(context, base);
+    } else if (argCount >= 2) {
+        start = positionalParameters->getAt(context, base);
+        stop = positionalParameters->getAt(context, base + 1);
+        if (argCount >= 3) step = positionalParameters->getAt(context, base + 2);
     }
     const proto::ProtoObject* sliceObj = context->newObject(false);
-    sliceObj = sliceObj->addParent(context, self);
-    sliceObj = sliceObj->setAttribute(context, startName, start ? start : context->fromInteger(0));
-    sliceObj = sliceObj->setAttribute(context, stopName, stop ? stop : context->fromInteger(0));
-    sliceObj = sliceObj->setAttribute(context, stepName, step ? step : context->fromInteger(1));
+    if (targetCls) sliceObj = sliceObj->addParent(context, targetCls);
+    // CPython slice(): missing args become None, NOT 0.  The previous
+    // defaults (0 for start/stop, 1 for step) made
+    // `slice(100, 200).step` return 1 instead of None and broke
+    // user code that branches on `step is None`.
+    sliceObj = sliceObj->setAttribute(context, startName, start);
+    sliceObj = sliceObj->setAttribute(context, stopName, stop);
+    sliceObj = sliceObj->setAttribute(context, stepName, step);
     return sliceObj;
 }
 
@@ -12348,7 +12366,11 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     sliceType = sliceType->setAttribute(rootContext_, py_name, PythonEnvironment::getInternedString(rootContext_, "slice")->asObject(rootContext_));
     sliceType = sliceType->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__qualname__"), PythonEnvironment::getInternedString(rootContext_, "slice")->asObject(rootContext_));
     sliceType = sliceType->setAttribute(rootContext_, py_module, builtinsVal);
+    // slice(...) construction is dispatched by type.__call__ via cls.__new__,
+    // not via the class's own __call__.  Register on both slots for backward
+    // compatibility (some legacy paths invoke __call__ directly).
     sliceType = sliceType->setAttribute(rootContext_, py_call, rootContext_->fromMethod(nullptr, py_slice_call));
+    sliceType = sliceType->setAttribute(rootContext_, newString, rootContext_->fromMethod(nullptr, py_slice_call));
     sliceType = sliceType->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_slice_repr));
 
     floatPrototype = objectPrototype->newChild(rootContext_, true);

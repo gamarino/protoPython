@@ -7464,7 +7464,17 @@ const proto::ProtoObject* executeBytecodeRange(
             sliceObj = const_cast<proto::ProtoObject*>(sliceObj->setAttribute(ctx, env ? env->getStartString() : PythonEnvironment::getInternedString(ctx, "start"), startObj));
             sliceObj = const_cast<proto::ProtoObject*>(sliceObj->setAttribute(ctx, env ? env->getStopString() : PythonEnvironment::getInternedString(ctx, "stop"), stopObj));
             sliceObj = const_cast<proto::ProtoObject*>(sliceObj->setAttribute(ctx, env ? env->getStepString() : PythonEnvironment::getInternedString(ctx, "step"), stepObj));
-            if (env && env->getSliceType()) sliceObj->addParent(ctx, env->getSliceType());
+            if (env && env->getSliceType()) {
+                sliceObj = const_cast<proto::ProtoObject*>(sliceObj->addParent(ctx, env->getSliceType()));
+                // __class__ is required for isinstance(slice_obj, slice) to
+                // detect the slice type via env->getType (which checks the
+                // own __class__ attribute first, then walks the parent
+                // chain).  Without it, `isinstance(s, slice)` returned
+                // False inside user __getitem__ and the slice branch
+                // never fired.
+                sliceObj = const_cast<proto::ProtoObject*>(sliceObj->setAttribute(ctx,
+                    env->getClassString(), env->getSliceType()));
+            }
             stack.push_back(sliceObj);
         } break;
         case OP_ROT_TWO: {
