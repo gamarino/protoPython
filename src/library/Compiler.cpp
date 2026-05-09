@@ -728,8 +728,11 @@ bool Compiler::compileCall(CallNode* n) {
 
 bool Compiler::compileAttribute(AttributeNode* n, bool pushNull) {
     if (!n || !compileNode(n->value.get())) return false;
-    int idx = addName(n->attr);
-    emit(OP_LOAD_ATTR, (idx << 1) | (pushNull ? 1 : 0)); 
+    // CPython PEP 8 private-name mangling: in a class body (or a
+    // method nested inside one), `obj.__attr` (two-leading-underscores,
+    // not double-underscore-suffix) becomes `obj._<ClassName>__attr`.
+    int idx = addName(mangleIdentifier(n->attr));
+    emit(OP_LOAD_ATTR, (idx << 1) | (pushNull ? 1 : 0));
     return true;
 }
 
@@ -1024,7 +1027,26 @@ bool Compiler::compileSetLiteral(SetLiteralNode* n) {
     return true;
 }
 
-bool Compiler::emitNameOp(const std::string& id, TargetCtx ctx, bool pushNull) {
+std::string Compiler::mangleIdentifier(const std::string& raw) const {
+    if (currentClassName_.empty()) return raw;
+    if (raw.size() < 2 || raw[0] != '_' || raw[1] != '_') return raw;
+    // Names ending in `__` are dunders — never mangled.
+    if (raw.size() >= 4 && raw[raw.size() - 1] == '_' && raw[raw.size() - 2] == '_') return raw;
+    std::string cls = currentClassName_;
+    size_t i = 0;
+    while (i < cls.size() && cls[i] == '_') ++i;
+    cls = cls.substr(i);
+    if (cls.empty()) return raw;
+    return "_" + cls + raw;
+}
+
+bool Compiler::emitNameOp(const std::string& rawId, TargetCtx ctx, bool pushNull) {
+    // Apply CPython name-mangling for `__name` references inside a
+    // class body or method.  The mangled name then participates
+    // identically in scope lookup (locals/globals/nonlocals) and
+    // bytecode emission, so the compiler treats `_C__name` and
+    // `__name` as the same identifier consistently.
+    const std::string id = mangleIdentifier(rawId);
     if (nonlocalNames_.count(id)) {
         int idx = addName(id);
         int op = OP_LOAD_DEREF;
@@ -1076,7 +1098,8 @@ bool Compiler::compileTarget(ASTNode* target, TargetCtx ctx) {
     }
     if (auto* att = dynamic_cast<AttributeNode*>(target)) {
         if (!compileNode(att->value.get())) return false;
-        int idx = addName(att->attr);
+        // PEP 8 private-name mangling — same as compileAttribute load path.
+        int idx = addName(mangleIdentifier(att->attr));
         if (ctx == TargetCtx::Store)
             emit(OP_STORE_ATTR, (idx << 1));
         else if (ctx == TargetCtx::Delete)

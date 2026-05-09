@@ -179,6 +179,13 @@ private:
     /** The name of the immediately enclosing class, propagated to method compilers
      *  so that zero-argument super() can be rewritten to super(ClassName, self). */
     std::string currentClassName_;
+    /** Apply CPython's PEP 8 private-name mangling to `raw` when this
+     *  compiler is inside a class body (or a method nested in one).
+     *  Names of the form `__name` (two-or-more leading underscores, NOT
+     *  ending in two underscores) become `_<ClassName>__name`, with
+     *  leading underscores of ClassName stripped.  All other names
+     *  (including `__dunder__` names) are returned unchanged. */
+    std::string mangleIdentifier(const std::string& raw) const;
     /** PI: the dotted qualified-name prefix for nested definitions
      *  ("Outer", "Outer.Inner", etc.).  compileClassDef uses this to
      *  emit __qualname__ on class objects. */
