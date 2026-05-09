@@ -4675,7 +4675,30 @@ const proto::ProtoObject* py_type(
             }
         }
 
-        
+        // Register `targetClass` in each direct base's __subclasses_list__
+        // so cls.__subclasses__() can return it later.  Mirrors CPython's
+        // tp_subclasses bookkeeping.  Only walk direct __bases__ (not
+        // the full MRO) — that's the CPython semantics.
+        {
+            const proto::ProtoString* subListS =
+                PythonEnvironment::getInternedString(context, "__subclasses_list__");
+            const proto::ProtoObject* basesAttr = targetClass->getAttribute(context,
+                PythonEnvironment::getInternedString(context, "__bases__"));
+            const proto::ProtoTuple* basesTup = basesAttr ? basesAttr->asTuple(context) : nullptr;
+            unsigned long basesN = basesTup ? basesTup->getSize(context) : 0UL;
+            for (unsigned long bi = 0; bi < basesN; ++bi) {
+                const proto::ProtoObject* base = basesTup->getAt(context, static_cast<int>(bi));
+                if (!base || base == PROTO_NONE) continue;
+                const proto::ProtoObject* listObj = base->hasOwnAttribute(context, subListS) == PROTO_TRUE
+                    ? base->getAttribute(context, subListS) : nullptr;
+                const proto::ProtoList* curList = (listObj && listObj->asList(context))
+                    ? listObj->asList(context) : context->newList();
+                curList = curList->appendLast(context, targetClass);
+                const_cast<proto::ProtoObject*>(base)->setAttribute(context, subListS, curList->asObject(context));
+            }
+        }
+
+
         // Set __module__ if not present
         const proto::ProtoString* py_module = PythonEnvironment::getInternedString(context, "__module__");
         if (targetClass->hasOwnAttribute(context, py_module) != PROTO_TRUE) {

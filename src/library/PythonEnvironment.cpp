@@ -11365,6 +11365,45 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     typePrototype = typePrototype->setAttribute(rootContext_, py_init, rootContext_->fromMethod(nullptr, protoPython::builtins::py_type_init));
     typePrototype = typePrototype->setAttribute(rootContext_, prepareString, rootContext_->fromMethod(nullptr, protoPython::builtins::py_type_prepare));
     typePrototype = typePrototype->setAttribute(rootContext_, getInternedString(rootContext_, "__class_getitem__"), rootContext_->fromMethod(nullptr, py_type_class_getitem));
+    // type.__subclasses__(): returns a fresh list of the type's direct
+    // subclasses (read from the __subclasses_list__ slot maintained by
+    // py_type at class creation).  CPython parity: the returned list is
+    // a copy so callers can mutate it without affecting the type.
+    typePrototype = typePrototype->setAttribute(rootContext_,
+        getInternedString(rootContext_, "__subclasses__"),
+        rootContext_->fromMethod(nullptr,
+        [](proto::ProtoContext* ctx, const proto::ProtoObject* self,
+           const proto::ParentLink*, const proto::ProtoList* args,
+           const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+            const proto::ProtoObject* cls = self;
+            // Unbound dispatch: type.__subclasses__(C) — args[0] is the cls.
+            PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+            if (env && (!cls || cls == env->getTypePrototype())
+                && args && args->getSize(ctx) >= 1) {
+                cls = args->getAt(ctx, 0);
+            }
+            if (!cls) return ctx->newList()->asObject(ctx);
+            const proto::ProtoString* subListS =
+                PythonEnvironment::getInternedString(ctx, "__subclasses_list__");
+            const proto::ProtoObject* listObj = cls->hasOwnAttribute(ctx, subListS) == PROTO_TRUE
+                ? cls->getAttribute(ctx, subListS) : nullptr;
+            const proto::ProtoList* src = (listObj && listObj->asList(ctx))
+                ? listObj->asList(ctx) : ctx->newList();
+            // Wrap as a Python list with __data__ + class so the
+            // result behaves as a real list at the Python level.
+            const proto::ProtoList* copy = ctx->newList();
+            for (unsigned long i = 0; i < src->getSize(ctx); ++i) {
+                copy = copy->appendLast(ctx, src->getAt(ctx, static_cast<int>(i)));
+            }
+            if (env && env->getListPrototype()) {
+                proto::ProtoObject* w = const_cast<proto::ProtoObject*>(ctx->newObject(true));
+                w = const_cast<proto::ProtoObject*>(w->setAttribute(ctx, env->getDataString(), copy->asObject(ctx)));
+                w = const_cast<proto::ProtoObject*>(w->addParent(ctx, env->getListPrototype()));
+                w = const_cast<proto::ProtoObject*>(w->setAttribute(ctx, env->getClassString(), env->getListPrototype()));
+                return w;
+            }
+            return copy->asObject(ctx);
+        }));
     typePrototype = typePrototype->setAttribute(rootContext_, getInternedString(rootContext_, "__or__"), rootContext_->fromMethod(nullptr, py_type_or));
     typePrototype = typePrototype->setAttribute(rootContext_, getInternedString(rootContext_, "__instancecheck__"), rootContext_->fromMethod(nullptr, py_type_instancecheck));
     typePrototype = typePrototype->setAttribute(rootContext_, getInternedString(rootContext_, "__subclasscheck__"), rootContext_->fromMethod(nullptr, py_type_subclasscheck));
