@@ -4098,15 +4098,26 @@ bool Compiler::compileFunctionDef(FunctionDefNode* n) {
 
     emit(OP_BUILD_FUNCTION, make_fn_flags);
 
-    // Apply decorators Bottom-to-Top
+    // Apply decorators Bottom-to-Top.  CPython 3.11+ CALL ABI expects
+    // [NULL|self, callable, arg1, ..., argN] on the operand stack.
+    // Emit PUSH_NULL/ROT_TWO so the slot beneath `decorator` is a
+    // genuine NULL marker; otherwise CALL_FUNCTION's "modern" branch
+    // mistakes whatever was below `fn` (e.g. an iterator left by an
+    // enclosing for loop) for `self` and routes the call as a method
+    // dispatch — yielding `iterator(decorator, fn)` and the
+    // characteristic "<tuple_iterator object> object is not callable"
+    // TypeError.
     if (!n->decorator_list.empty()) {
         for (auto it = n->decorator_list.rbegin(); it != n->decorator_list.rend(); ++it) {
-            if (!compileNode(it->get())) return false;
-            emit(OP_ROT_TWO, 0);
-            emit(OP_CALL_FUNCTION, 1);
+            // Stack here: [..., fn]
+            emit(OP_PUSH_NULL, 0);                   // [..., fn, NULL]
+            emit(OP_ROT_TWO, 0);                     // [..., NULL, fn]
+            if (!compileNode(it->get())) return false; // [..., NULL, fn, decorator]
+            emit(OP_ROT_TWO, 0);                     // [..., NULL, decorator, fn]
+            emit(OP_CALL_FUNCTION, 1);               // [..., result]
         }
     }
-    
+
     return emitNameOp(n->name, TargetCtx::Store);
 }
 
@@ -4404,15 +4415,18 @@ bool Compiler::compileAsyncFunctionDef(AsyncFunctionDefNode* n) {
         }
     }
     emit(OP_BUILD_FUNCTION, make_fn_flags);
-    
+
+    // Decorators (CPython 3.11+ CALL ABI: [NULL|self, callable, arg1..]).
     if (!n->decorator_list.empty()) {
         for (auto it = n->decorator_list.rbegin(); it != n->decorator_list.rend(); ++it) {
+            emit(OP_PUSH_NULL, 0);
+            emit(OP_ROT_TWO, 0);
             if (!compileNode(it->get())) return false;
             emit(OP_ROT_TWO, 0);
             emit(OP_CALL_FUNCTION, 1);
         }
     }
-    
+
     return emitNameOp(n->name, TargetCtx::Store);
 }
 
@@ -4760,15 +4774,17 @@ bool Compiler::compileClassDef(ClassDefNode* n) {
     // 4. Build
     emit(OP_BUILD_CLASS);
     
-    // Apply decorators Bottom-to-Top
+    // Apply decorators Bottom-to-Top (CPython 3.11+ CALL ABI).
     if (!n->decorator_list.empty()) {
         for (auto it = n->decorator_list.rbegin(); it != n->decorator_list.rend(); ++it) {
+            emit(OP_PUSH_NULL, 0);
+            emit(OP_ROT_TWO, 0);
             if (!compileNode(it->get())) return false;
             emit(OP_ROT_TWO, 0);
             emit(OP_CALL_FUNCTION, 1);
         }
     }
-    
+
     // 5. Store
     return emitNameOp(n->name, TargetCtx::Store);
 }
