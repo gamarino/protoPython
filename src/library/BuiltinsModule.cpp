@@ -6940,6 +6940,14 @@ const proto::ProtoObject* py_object_new(
         if (clsIsPython && (extraCount > 0 || hasKwargs)) {
             const proto::ProtoString* newS = env->getNewString();
             const proto::ProtoString* initS = env->getInitString();
+            // Capture object's default __new__ / __init__ so we can
+            // tell apart "B explicitly stores object.__new__ as its own
+            // attribute" (still semantically the default — CPython
+            // treats this as NOT overridden) from a genuine override.
+            const proto::ProtoObject* defNew = env->getObjectPrototype()
+                ? env->getObjectPrototype()->getAttribute(context, newS) : nullptr;
+            const proto::ProtoObject* defInit = env->getObjectPrototype()
+                ? env->getObjectPrototype()->getAttribute(context, initS) : nullptr;
             const proto::ProtoObject* mroAttr = cls->getAttribute(context, env->getMroString());
             const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(context) : nullptr;
             bool newOverridden = false;
@@ -6963,16 +6971,28 @@ const proto::ProtoObject* py_object_new(
                         initOverridden = true;
                         break;
                     }
-                    if (!newOverridden && base->hasOwnAttribute(context, newS) == PROTO_TRUE) newOverridden = true;
-                    if (!initOverridden && base->hasOwnAttribute(context, initS) == PROTO_TRUE) initOverridden = true;
+                    if (!newOverridden && base->hasOwnAttribute(context, newS) == PROTO_TRUE) {
+                        // A re-export of object.__new__ (e.g.
+                        // `__new__ = object.__new__`) is NOT a true
+                        // override.  Compare against the default to
+                        // distinguish.
+                        const proto::ProtoObject* ownNew = base->getOwnAttributeDirect(context, newS);
+                        if (ownNew != defNew) newOverridden = true;
+                    }
+                    if (!initOverridden && base->hasOwnAttribute(context, initS) == PROTO_TRUE) {
+                        const proto::ProtoObject* ownInit = base->getOwnAttributeDirect(context, initS);
+                        if (ownInit != defInit) initOverridden = true;
+                    }
                     if (newOverridden && initOverridden) break;
                 }
             }
             // CPython: object.__new__ rejects extra args when
-            // __init__ isn't overridden.  An overridden __new__
-            // alone doesn't help — the extras after __new__'s call
-            // to object.__new__ have nowhere to land.  Reject when
-            // __init__ is NOT overridden.
+            // __init__ is the default (and so are __new__-only
+            // overrides whose call to object.__new__ leaves the
+            // extras unconsumed).  When __init__ is overridden the
+            // extras have a legitimate landing site downstream, so
+            // accept silently — matches the existing protoPython
+            // behaviour that the rest of the suite depends on.
             if (!initOverridden) {
                 std::string clsName = "?";
                 const proto::ProtoObject* nm = cls->getAttribute(context, env->getNameString());
