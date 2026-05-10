@@ -8001,6 +8001,40 @@ static const proto::ProtoObject* py_str_mod(
 
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
 
+    // Numeric extraction helpers — tolerate int/float subclasses, whose
+    // tagged value lives behind `__data__` rather than in the receiver
+    // pointer itself.  CPython's PyArg %d / %f routines do the same via
+    // nb_int / nb_float; here we short-circuit to __data__ which is the
+    // canonical storage convention for wrapped numerics.
+    auto extractDouble = [&](const proto::ProtoObject* x) -> double {
+        if (!x || x == PROTO_NONE) return 0.0;
+        if (x->isInteger(context)) return static_cast<double>(x->asLong(context));
+        if (x->isBoolean(context)) return (x == PROTO_TRUE) ? 1.0 : 0.0;
+        if (x->isFloat(context)) return x->asDouble(context);
+        const proto::ProtoString* dataS = env ? env->getDataString()
+            : PythonEnvironment::getInternalString(context, "__data__");
+        const proto::ProtoObject* d = x->getAttribute(context, dataS);
+        if (d && d != PROTO_NONE) {
+            if (d->isFloat(context))   return d->asDouble(context);
+            if (d->isInteger(context)) return static_cast<double>(d->asLong(context));
+        }
+        return 0.0;
+    };
+    auto extractLong = [&](const proto::ProtoObject* x) -> long long {
+        if (!x || x == PROTO_NONE) return 0LL;
+        if (x->isInteger(context)) return x->asLong(context);
+        if (x->isBoolean(context)) return (x == PROTO_TRUE) ? 1LL : 0LL;
+        if (x->isFloat(context))   return static_cast<long long>(x->asDouble(context));
+        const proto::ProtoString* dataS = env ? env->getDataString()
+            : PythonEnvironment::getInternalString(context, "__data__");
+        const proto::ProtoObject* d = x->getAttribute(context, dataS);
+        if (d && d != PROTO_NONE) {
+            if (d->isInteger(context)) return d->asLong(context);
+            if (d->isFloat(context))   return static_cast<long long>(d->asDouble(context));
+        }
+        return 0LL;
+    };
+
     std::string out;
     for (size_t i = 0; i < fmt.size(); ++i) {
         if (fmt[i] != '%') {
@@ -8133,38 +8167,38 @@ static const proto::ProtoObject* py_str_mod(
             }
             case 'd':
             case 'i': {
-                long long v = arg ? arg->asLong(context) : 0LL;
+                long long v = extractLong(arg);
                 char buf[64]; snprintf(buf, sizeof(buf), makeIntFmt('d').c_str(), v);
                 out += buf;
                 break;
             }
             case 'u': {
-                unsigned long long v = static_cast<unsigned long long>(arg ? arg->asLong(context) : 0LL);
+                unsigned long long v = static_cast<unsigned long long>(extractLong(arg));
                 char buf[64]; snprintf(buf, sizeof(buf), makeIntFmt('u').c_str(), v);
                 out += buf;
                 break;
             }
             case 'o': {
-                long long v = arg ? arg->asLong(context) : 0LL;
+                long long v = extractLong(arg);
                 char buf[64]; snprintf(buf, sizeof(buf), makeIntFmt('o').c_str(), v);
                 out += buf;
                 break;
             }
             case 'x': {
-                long long v = arg ? arg->asLong(context) : 0LL;
+                long long v = extractLong(arg);
                 char buf[64]; snprintf(buf, sizeof(buf), makeIntFmt('x').c_str(), v);
                 out += buf;
                 break;
             }
             case 'X': {
-                long long v = arg ? arg->asLong(context) : 0LL;
+                long long v = extractLong(arg);
                 char buf[64]; snprintf(buf, sizeof(buf), makeIntFmt('X').c_str(), v);
                 out += buf;
                 break;
             }
             case 'f':
             case 'F': {
-                double v = arg ? arg->asDouble(context) : 0.0;
+                double v = extractDouble(arg);
                 std::string ff = makeFltFmt(fmtPrec.empty() ? 'f' : spec);
                 if (fmtPrec.empty()) ff = std::string("%") + fmtFlags + fmtWidth + ".6f";
                 char buf[128]; snprintf(buf, sizeof(buf), ff.c_str(), v);
@@ -8173,14 +8207,14 @@ static const proto::ProtoObject* py_str_mod(
             }
             case 'e':
             case 'E': {
-                double v = arg ? arg->asDouble(context) : 0.0;
+                double v = extractDouble(arg);
                 char buf[128]; snprintf(buf, sizeof(buf), makeFltFmt(spec).c_str(), v);
                 out += buf;
                 break;
             }
             case 'g':
             case 'G': {
-                double v = arg ? arg->asDouble(context) : 0.0;
+                double v = extractDouble(arg);
                 char buf[128]; snprintf(buf, sizeof(buf), makeFltFmt(spec).c_str(), v);
                 out += buf;
                 break;
