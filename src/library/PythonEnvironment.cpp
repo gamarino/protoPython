@@ -4324,8 +4324,33 @@ static const proto::ProtoObject* py_list_call(
 
     const proto::ProtoObject* cls = positionalParameters && positionalParameters->getSize(context) > 0 ? positionalParameters->getAt(context, 0) : self;
     if (!cls) return PROTO_NONE;
-    proto::ProtoObject* instance = const_cast<proto::ProtoObject*>(cls->newChild(context, true));
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    // CPython: list.__new__(cls) requires `cls` to be a subclass of list.
+    // Reject `list.__new__(object)`, `list.__new__(NotAList)`, etc. with
+    // TypeError before any newChild work.  Walk cls.__mro__ for
+    // listPrototype; identity check covers `list.__new__(list)`.
+    if (env && cls != env->getListPrototype()) {
+        bool subclassOfList = false;
+        const proto::ProtoObject* mroAttr = cls->getAttribute(context, env->getMroString());
+        const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(context) : nullptr;
+        if (mroT) {
+            for (unsigned long i = 0; i < mroT->getSize(context); ++i) {
+                if (mroT->getAt(context, static_cast<int>(i)) == env->getListPrototype()) {
+                    subclassOfList = true;
+                    break;
+                }
+            }
+        }
+        if (!subclassOfList) {
+            std::string clsName = "?";
+            const proto::ProtoObject* nm = cls->getAttribute(context, env->getNameString());
+            if (nm && nm->isString(context)) nm->asString(context)->toUTF8String(context, clsName);
+            env->raiseTypeError(context,
+                "list.__new__(" + clsName + "): " + clsName + " is not a subtype of list");
+            return nullptr;
+        }
+    }
+    proto::ProtoObject* instance = const_cast<proto::ProtoObject*>(cls->newChild(context, true));
     const proto::ProtoString* dataName = env ? env->getDataString() : PythonEnvironment::getInternalString(context, "__data__");
     proto::ProtoList* l = const_cast<proto::ProtoList*>(context->newList());
 
