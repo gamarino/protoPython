@@ -723,13 +723,24 @@ const proto::ProtoObject* py_complex(
         }
     }
 
+    // Use the cls argument (when supplied via __new__ dispatch) as
+    // the parent so `complex.__new__(Number, real)` produces a Number
+    // instance rather than a plain complex.
+    const proto::ProtoObject* clsForNew = nullptr;
+    if (base == 1) {
+        clsForNew = positionalParameters->getAt(context, 0);
+    }
+    if (!clsForNew && env) clsForNew = env->getComplexPrototype();
     const proto::ProtoObject* res = context->newObject(false);
-    if (env && env->getComplexPrototype()) {
-        res = res->addParent(context, env->getComplexPrototype());
+    if (clsForNew) {
+        res = res->addParent(context, clsForNew);
+        // __class__ pinning so getType returns the user subclass even
+        // when the prototype chain falls through to env->complexPrototype.
+        res = res->setAttribute(context, PythonEnvironment::getInternedString(context, "__class__"), clsForNew);
     }
     res = res->setAttribute(context, PythonEnvironment::getInternedString(context, "real"), context->fromDouble(real));
     res = res->setAttribute(context, PythonEnvironment::getInternedString(context, "imag"), context->fromDouble(imag));
-    
+
     return res;
 }
 
