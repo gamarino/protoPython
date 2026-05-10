@@ -1624,15 +1624,13 @@ static const proto::ProtoObject* py_object_init(
             }
         }
 
-        if (!isNewOverridden && !isInitOverridden) {
+        if (!isNewOverridden) {
             if (positionalParameters && positionalParameters->getSize(context) > 1) {
                 // CPython: object.__init__(self, *extras) raises TypeError
-                // when neither __new__ nor __init__ is overridden but
-                // extra args were passed.  Now that env->getType resolves
-                // the instance's class correctly (the previous raw lookup
-                // walked past it onto the metaclass), this path no longer
-                // fires for bootstrap users — the typePrototype branch
-                // above handles them.
+                // when __new__ isn't overridden — the extras came from
+                // outside and __new__ didn't consume them.  An
+                // overridden __init__ alone isn't enough, because
+                // object.__init__ is what gets the extras here.
                 if (env) {
                     std::string msg = clsName.empty()
                         ? std::string("object.__init__() takes exactly one argument")
@@ -6943,7 +6941,12 @@ const proto::ProtoObject* py_object_new(
                     if (newOverridden && initOverridden) break;
                 }
             }
-            if (!newOverridden && !initOverridden) {
+            // CPython: object.__new__ rejects extra args when
+            // __init__ isn't overridden.  An overridden __new__
+            // alone doesn't help — the extras after __new__'s call
+            // to object.__new__ have nowhere to land.  Reject when
+            // __init__ is NOT overridden.
+            if (!initOverridden) {
                 std::string clsName = "?";
                 const proto::ProtoObject* nm = cls->getAttribute(context, env->getNameString());
                 if (nm && nm->isString(context)) nm->asString(context)->toUTF8String(context, clsName);
