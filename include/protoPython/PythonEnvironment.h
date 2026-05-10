@@ -456,11 +456,17 @@ public:
      * isPythonClass / slots / descriptor probes, but covering all four
      * answers in one shot.  See ensureClassFlags / fastClassFlags below.
      */
-    static constexpr uint32_t PYFLAG_IS_CLASS       = 1u << 0;
-    static constexpr uint32_t PYFLAG_HAS_SLOTS      = 1u << 1;
-    static constexpr uint32_t PYFLAG_HAS_DATA_DESCR = 1u << 2;
-    static constexpr uint32_t PYFLAG_HAS_GET_DESCR  = 1u << 3;
-    static constexpr uint32_t PYFLAG_COMPUTED       = 1u << 31;
+    static constexpr uint32_t PYFLAG_IS_CLASS              = 1u << 0;
+    static constexpr uint32_t PYFLAG_HAS_SLOTS             = 1u << 1;
+    static constexpr uint32_t PYFLAG_HAS_DATA_DESCR        = 1u << 2;
+    static constexpr uint32_t PYFLAG_HAS_GET_DESCR         = 1u << 3;
+    // Set when any MRO entry (other than the built-in object/type
+    // prototypes that provide the default implementation) owns its own
+    // __getattribute__ attribute.  Forces attribute reads through the
+    // slow path so the user-defined hook actually intercepts every
+    // access, including own-instance attribute lookups.
+    static constexpr uint32_t PYFLAG_HAS_CUSTOM_GETATTR    = 1u << 4;
+    static constexpr uint32_t PYFLAG_COMPUTED              = 1u << 31;
 
     /** Fast read of cached flags; returns 0 when not yet computed. */
     uint32_t fastClassFlags(proto::ProtoContext* ctx, const proto::ProtoObject* cls) const;

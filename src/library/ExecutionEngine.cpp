@@ -5457,7 +5457,25 @@ const proto::ProtoObject* executeBytecodeRange(
                             attrName == env->getDictDunderString()   ||
                             attrName == env->getBasesString()        ||
                             attrName == env->getGetattributeDunderString();
+                        // CPython semantics: a user-supplied __getattribute__
+                        // intercepts EVERY attribute read, even those that
+                        // would be satisfied by an own-instance attribute.
+                        // Skip the fast path entirely when the instance's
+                        // type (or any MRO ancestor) overrides it.  Cached
+                        // per-class flag — same cost as the descriptor check
+                        // we already do below, but discriminates instances
+                        // whose class hook would otherwise be silently
+                        // bypassed.
+                        bool hasCustomGetattr = false;
                         if (!isSynthDunder) {
+                            const proto::ProtoObject* objType = env->getType(ctx, obj);
+                            if (objType && objType != PROTO_NONE) {
+                                uint32_t typeFlags = env->ensureClassFlags(ctx, objType);
+                                hasCustomGetattr = (typeFlags
+                                    & protoPython::PythonEnvironment::PYFLAG_HAS_CUSTOM_GETATTR) != 0;
+                            }
+                        }
+                        if (!isSynthDunder && !hasCustomGetattr) {
                             // 1 uncached AVL lookup: hits for self.field, misses for self.method().
                             const proto::ProtoObject* ownFv =
                                 obj->getOwnAttributeDirect(ctx, attrName);

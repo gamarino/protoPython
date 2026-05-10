@@ -15660,6 +15660,12 @@ uint32_t PythonEnvironment::ensureClassFlags(proto::ProtoContext* ctx,
         if (getS && base->hasOwnAttribute(ctx, getS) == PROTO_TRUE) {
             flags |= PYFLAG_HAS_GET_DESCR;
         }
+        // PYFLAG_HAS_CUSTOM_GETATTR: ignore the built-in defaults
+        // installed on object/type — only user-supplied overrides count.
+        if (getattributeDunderString && base != objectPrototype && base != typePrototype
+                && base->hasOwnAttribute(ctx, getattributeDunderString) == PROTO_TRUE) {
+            flags |= PYFLAG_HAS_CUSTOM_GETATTR;
+        }
     };
     probe(cls);
     if (mroT) {
@@ -15881,6 +15887,25 @@ static const proto::ProtoObject* tryFastGetAttribute(
         name == env->getBasesString()             ||
         name == env->getGetattributeDunderString()) {
         return nullptr;
+    }
+
+    // CPython semantics: a user-supplied __getattribute__ intercepts
+    // every attribute read on the instance, including own-instance
+    // attributes.  The fast path here would otherwise hand back the
+    // stored value directly and silently bypass the hook.  Cached
+    // class flag — same cost as the descriptor probe immediately
+    // below; we only pay it when the call site already needs the
+    // class.  Built-in metaclass overrides (object/type) are excluded
+    // by the flag computation in ensureClassFlags.
+    {
+        const proto::ProtoObject* objType = env->getType(ctx, obj);
+        if (objType && objType != PROTO_NONE) {
+            uint32_t typeFlags = const_cast<PythonEnvironment*>(env)
+                ->ensureClassFlags(ctx, objType);
+            if (typeFlags & PythonEnvironment::PYFLAG_HAS_CUSTOM_GETATTR) {
+                return nullptr;
+            }
+        }
     }
 
     // OBJ-level dispatch: objects with an own __py_getattr_handler__ (e.g.
