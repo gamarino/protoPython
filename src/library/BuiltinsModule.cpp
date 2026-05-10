@@ -6900,9 +6900,59 @@ const proto::ProtoObject* py_object_new(
         }
     }
 
-    // (Strict "takes no arguments" enforcement deferred; the simpler
-    // checks above cover the most common misuse.)
-    (void)keywordParameters;
+    // CPython: object.__new__() rejects extra args ONLY when neither
+    // __new__ nor __init__ is overridden in cls's MRO — when both are
+    // the default, the args have nowhere to go.  Restrict to user-
+    // defined Python classes (those carrying __is_python_class__) so
+    // built-in types like ModuleType (whose __init__ is a native
+    // method not surfaced as an own attr on the prototype) keep
+    // working.
+    if (env && cls) {
+        unsigned long extraCount = positionalParameters->getSize(context) - 1;
+        bool hasKwargs = keywordParameters && keywordParameters->getSize(context) > 0;
+        const proto::ProtoString* isPyS = PythonEnvironment::getInternedString(context, "__is_python_class__");
+        bool clsIsPython = cls->hasOwnAttribute(context, isPyS) == PROTO_TRUE;
+        if (clsIsPython && (extraCount > 0 || hasKwargs)) {
+            const proto::ProtoString* newS = env->getNewString();
+            const proto::ProtoString* initS = env->getInitString();
+            const proto::ProtoObject* mroAttr = cls->getAttribute(context, env->getMroString());
+            const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(context) : nullptr;
+            bool newOverridden = false;
+            bool initOverridden = false;
+            if (mroT) {
+                // Walk the full MRO.  Our C3 linearisation occasionally
+                // places `object` before sibling bases in mixin
+                // hierarchies (e.g. `class C(B, A)` where A inherits
+                // type ends up with mro (C, B, object, A, type)).
+                // Skip object/typePrototype-itself-without-treating-
+                // -object-as-a-stop-marker so we don't miss A or type
+                // sitting further along.  type always counts as
+                // providing both overrides (its __new__/__init__ take
+                // the canonical 3-arg class shape).
+                for (unsigned long mi = 0; mi < mroT->getSize(context); ++mi) {
+                    const proto::ProtoObject* base = mroT->getAt(context, static_cast<int>(mi));
+                    if (!base || base == PROTO_NONE) continue;
+                    if (base == env->getObjectPrototype()) continue;
+                    if (base == env->getTypePrototype()) {
+                        newOverridden = true;
+                        initOverridden = true;
+                        break;
+                    }
+                    if (!newOverridden && base->hasOwnAttribute(context, newS) == PROTO_TRUE) newOverridden = true;
+                    if (!initOverridden && base->hasOwnAttribute(context, initS) == PROTO_TRUE) initOverridden = true;
+                    if (newOverridden && initOverridden) break;
+                }
+            }
+            if (!newOverridden && !initOverridden) {
+                std::string clsName = "?";
+                const proto::ProtoObject* nm = cls->getAttribute(context, env->getNameString());
+                if (nm && nm->isString(context)) nm->asString(context)->toUTF8String(context, clsName);
+                env->raiseTypeError(context,
+                    clsName + "() takes no arguments");
+                return nullptr;
+            }
+        }
+    }
 
     // Create new instance of cls natively.  newChild attaches `cls` as
     // the protoCore parent — getType() / env->getAttribute("__class__")
