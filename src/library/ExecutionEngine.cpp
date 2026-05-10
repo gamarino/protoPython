@@ -3041,6 +3041,15 @@ const proto::ProtoObject* runUserClassCall(proto::ProtoContext* ctx,
     if (obj && obj != PROTO_NONE) {
         bool isInstanceOfSelf = false;
         if (env) {
+            // First, take the protoCore parent link as authoritative
+            // when the instance was built via `self.newChild()`: that
+            // is the canonical pattern for primitive-subclass wrappers
+            // (e.g. cistr extending str) where env->getType folds the
+            // result through the built-in prototype.
+            const proto::ProtoObject* fp_outer = obj->getFirstParent(ctx);
+            if (fp_outer == self) {
+                isInstanceOfSelf = true;
+            }
             const proto::ProtoObject* objCls = env->getType(ctx, obj);
             // CPython: type.__call__ invokes __init__ when `__new__`
             // returned an instance of `cls` OR of a subclass.  protoCore's
@@ -3107,7 +3116,23 @@ const proto::ProtoObject* runUserClassCall(proto::ProtoContext* ctx,
             // SUBCLASS instance (e.g. `C(1) → D` where D extends C),
             // running C.__init__ skips the subclass's customisation
             // and `d.foo = arg` from D.__init__ never executes.
-            const proto::ProtoObject* objCls = env ? env->getType(ctx, obj) : nullptr;
+            // Prefer self as initLookupTarget when obj was created via
+            // `self.newChild()` — i.e. fp == self.  This catches the
+            // primitive-subclass case (cistr extending str) where
+            // env->getType folds back to the built-in prototype and
+            // would otherwise route __init__ through str's ignore-init
+            // shim.  In all other shapes (C(1) returning D where D
+            // extends C; type(name, bases, dict) returning the new
+            // class whose fp is its first base, not type), we keep
+            // env->getType so __init__ resolves correctly on the
+            // returned class's type.
+            const proto::ProtoObject* fp = obj->getFirstParent(ctx);
+            const proto::ProtoObject* objCls = nullptr;
+            if (fp == self && self) {
+                objCls = self;
+            } else if (env) {
+                objCls = env->getType(ctx, obj);
+            }
             const proto::ProtoObject* initLookupTarget = (objCls && objCls != PROTO_NONE) ? objCls : self;
             const proto::ProtoObject* initM = env
                 ? env->getAttribute(ctx, initLookupTarget, initS)
