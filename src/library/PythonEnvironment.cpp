@@ -549,6 +549,9 @@ static const proto::ProtoObject* py_mappingproxy_getitem(
 }
 
 static bool isProtopyClassInternalName(const std::string& nm);
+static bool clsNeedsMetaSlotSynthesis(proto::ProtoContext* ctx,
+                                       PythonEnvironment* env,
+                                       const proto::ProtoObject* cls);
 
 static const proto::ProtoObject* py_mappingproxy_contains(
     proto::ProtoContext* context,
@@ -583,23 +586,17 @@ static const proto::ProtoObject* py_mappingproxy_contains(
                  return PROTO_TRUE;
              }
              // Synthesised CPython meta-slot names: present on every
-             // regular (non-built-in) class in cls.__dict__.
+             // regular (non-built-in) class in cls.__dict__ — but
+             // only when the class is the first in its MRO that
+             // introduces instance state.
              if (sKey) {
                  std::string nm;
                  sKey->toUTF8String(context, nm);
                  bool isSynth = (nm == "__dict__" || nm == "__doc__"
                      || nm == "__firstlineno__" || nm == "__static_attributes__"
                      || nm == "__weakref__");
-                 if (isSynth) {
-                     bool isBuiltinClass = (data == env->getObjectPrototype()
-                         || data == env->getTypePrototype()
-                         || data == env->getStrPrototype() || data == env->getIntPrototype()
-                         || data == env->getFloatPrototype() || data == env->getBoolPrototype()
-                         || data == env->getBytesPrototype() || data == env->getListPrototype()
-                         || data == env->getDictPrototype() || data == env->getSetPrototype()
-                         || data == env->getTuplePrototype() || data == env->getFrozensetPrototype()
-                         || data == env->getComplexPrototype());
-                     if (!isBuiltinClass) return PROTO_TRUE;
+                 if (isSynth && clsNeedsMetaSlotSynthesis(context, env, data)) {
+                     return PROTO_TRUE;
                  }
              }
 
@@ -9392,6 +9389,44 @@ struct KeyCollector {
 // `cls.__dict__`.  Filtering them out keeps mappingproxy iteration
 // aligned with `Cls.__dict__.keys()` from upstream Python — the test
 // suite asserts on the exact key set.
+// Returns true when the class should synthesise CPython's
+// meta-attribute slots (__dict__, __doc__, __weakref__ etc.) in its
+// mappingproxy.  CPython attaches these only at the first class in
+// the MRO that introduces instance state — concretely, a class whose
+// bases are only object (or other built-in primitives), not classes
+// that already declared the slots themselves.
+static bool clsNeedsMetaSlotSynthesis(proto::ProtoContext* ctx,
+                                       PythonEnvironment* env,
+                                       const proto::ProtoObject* cls) {
+    if (!env || !cls) return false;
+    if (cls == env->getObjectPrototype() || cls == env->getTypePrototype()
+        || cls == env->getStrPrototype() || cls == env->getIntPrototype()
+        || cls == env->getFloatPrototype() || cls == env->getBoolPrototype()
+        || cls == env->getBytesPrototype() || cls == env->getListPrototype()
+        || cls == env->getDictPrototype() || cls == env->getSetPrototype()
+        || cls == env->getTuplePrototype() || cls == env->getFrozensetPrototype()
+        || cls == env->getComplexPrototype()) {
+        return false;
+    }
+    const proto::ProtoObject* basesAttr = cls->getAttribute(ctx, env->getBasesString());
+    const proto::ProtoTuple* basesT = basesAttr ? basesAttr->asTuple(ctx) : nullptr;
+    if (!basesT) return true;
+    for (unsigned long bi = 0; bi < basesT->getSize(ctx); ++bi) {
+        const proto::ProtoObject* b = basesT->getAt(ctx, static_cast<int>(bi));
+        if (!b || b == PROTO_NONE) continue;
+        if (b == env->getObjectPrototype()) continue;
+        bool bIsBuiltin = (b == env->getStrPrototype() || b == env->getIntPrototype()
+            || b == env->getFloatPrototype() || b == env->getBoolPrototype()
+            || b == env->getBytesPrototype() || b == env->getListPrototype()
+            || b == env->getDictPrototype() || b == env->getSetPrototype()
+            || b == env->getTuplePrototype() || b == env->getFrozensetPrototype()
+            || b == env->getComplexPrototype() || b == env->getTypePrototype()
+            || b == env->getModulePrototype());
+        if (!bIsBuiltin) return false;
+    }
+    return true;
+}
+
 static bool isProtopyClassInternalName(const std::string& nm) {
     return nm == "__mro__"
         || nm == "__bases__"
@@ -9467,20 +9502,7 @@ static const proto::ProtoObject* py_mappingproxy_keys(
                 keysList = keysList->appendLast(context, k);
             }
         }
-        // CPython synthesises a small set of meta-attribute names on
-        // every regular class.__dict__.  Add them now so callers like
-        // `'__dict__' in C.__dict__` and `'__weakref__' in C.__dict__`
-        // match upstream.  Only when the class isn't a built-in
-        // primitive prototype (those have their own curated namespace).
-        bool isBuiltinClass = (data == env->getObjectPrototype()
-            || data == env->getTypePrototype()
-            || data == env->getStrPrototype() || data == env->getIntPrototype()
-            || data == env->getFloatPrototype() || data == env->getBoolPrototype()
-            || data == env->getBytesPrototype() || data == env->getListPrototype()
-            || data == env->getDictPrototype() || data == env->getSetPrototype()
-            || data == env->getTuplePrototype() || data == env->getFrozensetPrototype()
-            || data == env->getComplexPrototype());
-        if (!isBuiltinClass) {
+        if (clsNeedsMetaSlotSynthesis(context, env, data)) {
             std::unordered_set<std::string> have;
             for (unsigned long i = 0; i < keysList->getSize(context); ++i) {
                 const proto::ProtoObject* k = keysList->getAt(context, static_cast<int>(i));
@@ -9587,33 +9609,22 @@ static const proto::ProtoObject* py_mappingproxy_values(
             }
         }
         // Synthesise meta-attribute slots (matches mappingproxy.keys()).
-        {
-            bool isBuiltinClass = (data == env->getObjectPrototype()
-                || data == env->getTypePrototype()
-                || data == env->getStrPrototype() || data == env->getIntPrototype()
-                || data == env->getFloatPrototype() || data == env->getBoolPrototype()
-                || data == env->getBytesPrototype() || data == env->getListPrototype()
-                || data == env->getDictPrototype() || data == env->getSetPrototype()
-                || data == env->getTuplePrototype() || data == env->getFrozensetPrototype()
-                || data == env->getComplexPrototype());
-            if (!isBuiltinClass) {
-                for (const char* synth : {"__dict__", "__doc__", "__firstlineno__", "__static_attributes__", "__weakref__"}) {
-                    bool already = false;
-                    // Cheap check via __keys__ presence
-                    if (kObj && kObj->asList(context)) {
-                        const proto::ProtoList* il = kObj->asList(context);
-                        unsigned long h = PythonEnvironment::getInternedString(context, synth)->getHash(context);
-                        for (unsigned long i = 0; i < il->getSize(context); ++i) {
-                            const proto::ProtoObject* k = il->getAt(context, static_cast<int>(i));
-                            if (k && k->isString(context) && k->getHash(context) == h) {
-                                already = true;
-                                break;
-                            }
+        if (clsNeedsMetaSlotSynthesis(context, env, data)) {
+            for (const char* synth : {"__dict__", "__doc__", "__firstlineno__", "__static_attributes__", "__weakref__"}) {
+                bool already = false;
+                if (kObj && kObj->asList(context)) {
+                    const proto::ProtoList* il = kObj->asList(context);
+                    unsigned long h = PythonEnvironment::getInternedString(context, synth)->getHash(context);
+                    for (unsigned long i = 0; i < il->getSize(context); ++i) {
+                        const proto::ProtoObject* k = il->getAt(context, static_cast<int>(i));
+                        if (k && k->isString(context) && k->getHash(context) == h) {
+                            already = true;
+                            break;
                         }
                     }
-                    if (already) continue;
-                    s.valuesList = s.valuesList->appendLast(context, PROTO_NONE);
                 }
+                if (already) continue;
+                s.valuesList = s.valuesList->appendLast(context, PROTO_NONE);
             }
         }
         return wrapInDictView(context, s.valuesList, "dict_values");
@@ -9719,15 +9730,7 @@ static const proto::ProtoObject* py_mappingproxy_items(
                     have.insert(nm);
                 }
             }
-            bool isBuiltinClass = (data == env->getObjectPrototype()
-                || data == env->getTypePrototype()
-                || data == env->getStrPrototype() || data == env->getIntPrototype()
-                || data == env->getFloatPrototype() || data == env->getBoolPrototype()
-                || data == env->getBytesPrototype() || data == env->getListPrototype()
-                || data == env->getDictPrototype() || data == env->getSetPrototype()
-                || data == env->getTuplePrototype() || data == env->getFrozensetPrototype()
-                || data == env->getComplexPrototype());
-            if (!isBuiltinClass) {
+            if (clsNeedsMetaSlotSynthesis(context, env, data)) {
                 for (const char* synth : {"__dict__", "__doc__", "__firstlineno__", "__static_attributes__", "__weakref__"}) {
                     if (have.count(synth)) continue;
                     const proto::ProtoString* nmS = PythonEnvironment::getInternedString(context, synth);
@@ -9864,15 +9867,7 @@ static const proto::ProtoObject* py_mappingproxy_len(
                 seen.insert(nm);
             }
         }
-        bool isBuiltinClass = (data == env->getObjectPrototype()
-            || data == env->getTypePrototype()
-            || data == env->getStrPrototype() || data == env->getIntPrototype()
-            || data == env->getFloatPrototype() || data == env->getBoolPrototype()
-            || data == env->getBytesPrototype() || data == env->getListPrototype()
-            || data == env->getDictPrototype() || data == env->getSetPrototype()
-            || data == env->getTuplePrototype() || data == env->getFrozensetPrototype()
-            || data == env->getComplexPrototype());
-        if (!isBuiltinClass) {
+        if (clsNeedsMetaSlotSynthesis(context, env, data)) {
             for (const char* synth : {"__dict__", "__doc__", "__firstlineno__", "__static_attributes__", "__weakref__"}) {
                 seen.insert(synth);
             }
