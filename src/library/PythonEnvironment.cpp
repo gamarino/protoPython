@@ -16697,10 +16697,15 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
         }
         // PI: if any class in MRO declares __slots__ AND no other
         // class adds a __dict__, only slotted names are accepted.
+        // Exception: `__class__` is always accepted regardless of
+        // __slots__ — CPython treats it as a special-cased name that
+        // exists on every instance.
         if (hasSlots && !hasDict && !nameInSlots) {
             if (nameStr.empty()) name->toUTF8String(ctx, nameStr);
-            raiseAttributeError(ctx, obj, nameStr);
-            return nullptr;
+            if (nameStr != "__class__") {
+                raiseAttributeError(ctx, obj, nameStr);
+                return nullptr;
+            }
         }
     }
 

@@ -7721,6 +7721,22 @@ const proto::ProtoObject* executeBytecodeRange(
                 const proto::ProtoObject* nameObj = names->getAt(ctx, nameIdx);
                 if (nameObj && proto::ProtoObject::isStringTagFast(nameObj)) {
                     const proto::ProtoString* nameS = nameObj->asString(ctx);
+                    // CPython: `del obj.__class__` is always rejected.
+                    // The instance's type identity is fixed for the
+                    // lifetime of the object.
+                    const proto::ProtoString* classS = env ? env->getClassString() : nullptr;
+                    if (classS && (nameS == classS || nameS->getHash(ctx) == classS->getHash(ctx))
+                        && env) {
+                        std::string clsName = "?";
+                        const proto::ProtoObject* tp = env->getType(ctx, obj);
+                        if (tp) {
+                            const proto::ProtoObject* nm = tp->getAttribute(ctx, env->getNameString());
+                            if (nm && nm->isString(ctx)) nm->asString(ctx)->toUTF8String(ctx, clsName);
+                        }
+                        env->raiseTypeError(ctx,
+                            "can't delete __class__ attribute of '" + clsName + "' object");
+                        continue;
+                    }
                     // CPython: `del obj.__dict__` resets the instance
                     // dict to empty but leaves the descriptor in place,
                     // so subsequent `obj.__dict__` still returns a

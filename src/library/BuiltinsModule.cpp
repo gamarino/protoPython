@@ -3762,6 +3762,24 @@ static const proto::ProtoObject* py_delattr(
     const proto::ProtoObject* obj = positionalParameters->getAt(context, 0);
     const proto::ProtoObject* nameObj = positionalParameters->getAt(context, 1);
     if (!nameObj->isString(context)) return PROTO_NONE;
+    // CPython: delattr(obj, "__class__") is rejected — the type
+    // identity is immutable for the lifetime of the instance.
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    if (env) {
+        const proto::ProtoString* nameStr = nameObj->asString(context);
+        const proto::ProtoString* classS = env->getClassString();
+        if (classS && (nameStr == classS || nameStr->getHash(context) == classS->getHash(context))) {
+            std::string clsName = "?";
+            const proto::ProtoObject* tp = env->getType(context, obj);
+            if (tp) {
+                const proto::ProtoObject* nm = tp->getAttribute(context, env->getNameString());
+                if (nm && nm->isString(context)) nm->asString(context)->toUTF8String(context, clsName);
+            }
+            env->raiseTypeError(context,
+                "can't delete __class__ attribute of '" + clsName + "' object");
+            return nullptr;
+        }
+    }
     obj->setAttribute(context, nameObj->asString(context), PROTO_NONE);
     return PROTO_NONE;
 }
