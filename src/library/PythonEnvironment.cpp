@@ -453,14 +453,51 @@ static const proto::ProtoObject* py_mappingproxy_new(
     return instance;
 }
 
+static const proto::ProtoObject* py_mappingproxy_items(
+    proto::ProtoContext* context,
+    const proto::ProtoObject* self,
+    const proto::ParentLink* parentLink,
+    const proto::ProtoList* positionalParameters,
+    const proto::ProtoSparseList* keywordParameters);
+
 static const proto::ProtoObject* py_mappingproxy_repr(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
-    const proto::ParentLink*, const proto::ProtoList*, const proto::ProtoSparseList*) {
+    const proto::ParentLink* parentLink, const proto::ProtoList* posArgs, const proto::ProtoSparseList* kwArgs) {
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     const proto::ProtoObject* data = self->getAttribute(context, env ? env->getDataString() : PythonEnvironment::getInternedString(context, "__data__"));
-    std::string r = PythonEnvironment::reprObject(context, data ? data : PROTO_NONE);
-    std::string out = "mappingproxy(" + r + ")";
+    // CPython renders mappingproxy as `mappingproxy({…})` — the dict
+    // form, NOT `mappingproxy(<class 'C'>)`.  Compute the items list
+    // (own-only for class wrappers) and format it like a dict literal.
+    std::string body = "{}";
+    if (data && data != PROTO_NONE && env) {
+        const proto::ProtoObject* itemsObj = py_mappingproxy_items(context, self, parentLink, posArgs, kwArgs);
+        if (itemsObj) {
+            const proto::ProtoString* dataS = env->getDataString();
+            const proto::ProtoObject* itemsData = itemsObj->getAttribute(context, dataS);
+            const proto::ProtoList* itemsList = itemsData ? itemsData->asList(context) : nullptr;
+            if (itemsList) {
+                std::string s = "{";
+                bool first = true;
+                for (unsigned long i = 0; i < itemsList->getSize(context); ++i) {
+                    const proto::ProtoObject* pair = itemsList->getAt(context, static_cast<int>(i));
+                    if (!pair) continue;
+                    const proto::ProtoTuple* pt = pair->asTuple(context);
+                    if (!pt || pt->getSize(context) < 2) continue;
+                    const proto::ProtoObject* k = pt->getAt(context, 0);
+                    const proto::ProtoObject* v = pt->getAt(context, 1);
+                    if (!first) s += ", ";
+                    s += PythonEnvironment::reprObject(context, k);
+                    s += ": ";
+                    s += PythonEnvironment::reprObject(context, v);
+                    first = false;
+                }
+                s += "}";
+                body = s;
+            }
+        }
+    }
+    std::string out = "mappingproxy(" + body + ")";
     return PythonEnvironment::getInternedString(context, out.c_str())->asObject(context);
 }
 
