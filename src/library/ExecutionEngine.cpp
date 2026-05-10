@@ -4167,6 +4167,35 @@ const proto::ProtoObject* executeBytecodeRange(
             }
             if (!result && (!env || !env->hasPendingException())) {
                 result = binaryPower(ctx, a, b);
+                // CPython parity: failed `**=` should mention `**=` in
+                // the TypeError, not `**`. binaryPower routes through
+                // binaryOpDispatch which only knows the binary operator
+                // symbol, so rewrite the message here for the in-place
+                // op.  binaryPower returns PROTO_NONE on error (its
+                // `r ? r : PROTO_NONE` tail), so compare against both.
+                if ((!result || result == PROTO_NONE) && env && env->hasPendingException()) {
+                    const proto::ProtoObject* exc = env->peekPendingException();
+                    const proto::ProtoObject* excType = exc ? env->getType(ctx, exc) : nullptr;
+                    const proto::ProtoObject* tnObj = excType ? excType->getAttribute(ctx, env->getNameString()) : nullptr;
+                    std::string tn;
+                    if (tnObj && tnObj->isString(ctx)) tnObj->asString(ctx)->toUTF8String(ctx, tn);
+                    if (tn == "TypeError") {
+                        std::string aName = "?", bName = "?";
+                        const proto::ProtoString* nameS = env->getNameString();
+                        const proto::ProtoObject* aCls = env->getType(ctx, a);
+                        const proto::ProtoObject* bCls = env->getType(ctx, b);
+                        auto extractName = [&](const proto::ProtoObject* cls, std::string& out) {
+                            if (!cls) return;
+                            const proto::ProtoObject* n = cls->getAttribute(ctx, nameS);
+                            if (n && n->isString(ctx)) n->asString(ctx)->toUTF8String(ctx, out);
+                        };
+                        extractName(aCls, aName);
+                        extractName(bCls, bName);
+                        env->clearPendingException();
+                        env->raiseTypeError(ctx,
+                            "unsupported operand type(s) for **=: '" + aName + "' and '" + bName + "'");
+                    }
+                }
             }
             stack.pop_back(); stack.back() = (result ? result : PROTO_NONE);
             if (!result && env && env->hasPendingException()) continue;

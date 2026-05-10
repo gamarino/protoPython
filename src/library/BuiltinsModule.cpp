@@ -2274,7 +2274,7 @@ static const proto::ProtoObject* py_eval(
     if (!locals) locals = globals;
 
     GlobalsScope gscope(globals);
-    // Note: currently runCodeObject runs in one frame/namespace. 
+    // Note: currently runCodeObject runs in one frame/namespace.
     // If globals and locals are different, we primarily use locals for the execution frame.
     const proto::ProtoObject* result = runCodeObject(context, codeObj, locals);
     if (get_env_diag()) {
