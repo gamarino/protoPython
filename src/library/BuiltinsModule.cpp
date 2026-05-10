@@ -3599,9 +3599,15 @@ static const proto::ProtoObject* py_hasattr(
                 if (excName && excName->isString(context)) excName->asString(context)->toUTF8String(context, en);
                 if (en == "AttributeError") {
                     envInner->clearPendingException();
-                    // Fall through to the legacy fallback paths so
-                    // synthesise-on-demand __getattr__ overrides still
-                    // get a chance.
+                    // env->getAttribute already exhausted the
+                    // descriptor protocol and __getattr__ fallback;
+                    // an AttributeError here means CPython's
+                    // hasattr would return False.  Falling through
+                    // to the legacy chain probe would wrongly
+                    // resurface the descriptor's own presence on
+                    // the type's MRO and report True even though
+                    // accessing the attribute raised.
+                    return PROTO_FALSE;
                 } else {
                     // Non-AttributeError — propagate.
                     return nullptr;
