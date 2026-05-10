@@ -1003,6 +1003,17 @@ static const proto::ProtoObject* py_object_get_dict(
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     if (!self || !env) return PROTO_NONE;
 
+    // CPython: bare `object()` instances have no __dict__ at all —
+    // attribute access raises AttributeError.  Reject when self's
+    // exact type is objectPrototype.
+    if (!env->isActuallyAClass(context, self)) {
+        const proto::ProtoObject* selfType = env->getType(context, self);
+        if (selfType == env->getObjectPrototype()) {
+            env->raiseAttributeError(context, self, std::string("__dict__"));
+            return nullptr;
+        }
+    }
+
     if (env->isActuallyAClass(context, self)) {
         // Classes have MappingProxy (read-only view)
         proto::ProtoObject* proxy = const_cast<proto::ProtoObject*>(env->getMappingProxyPrototype()->newChild(context, true));
@@ -16350,6 +16361,28 @@ const proto::ProtoObject* PythonEnvironment::getAttribute(proto::ProtoContext* c
 
 const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* ctx, const proto::ProtoObject* obj, const proto::ProtoString* name, const proto::ProtoObject* value) {
     if (!obj || !name || !value) return obj;
+
+    // CPython: instances of `object` itself have no __dict__ and
+    // reject attribute assignment entirely.  Detect by checking
+    // type(obj) IS objectPrototype (exact, not a subclass).  Skip
+    // class objects themselves — they need to set their own slots
+    // during construction.
+    if (objectPrototype && !isActuallyAClass(ctx, obj)) {
+        const proto::ProtoObject* objType = getType(ctx, obj);
+        if (objType == objectPrototype) {
+            // Exception: allow setting __class__ (handled by the
+            // dedicated branch below; reaching here means the value
+            // path validates the new class).
+            bool isClassAttr = (name == classString
+                || (name && classString && name->getHash(ctx) == classString->getHash(ctx)));
+            if (!isClassAttr) {
+                std::string nm;
+                name->toUTF8String(ctx, nm);
+                raiseAttributeError(ctx, obj, nm);
+                return nullptr;
+            }
+        }
+    }
 
     // CPython: instances of immutable built-in types (int, float, complex,
     // bool, str, bytes, tuple, frozenset) cannot have their __class__
