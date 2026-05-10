@@ -7037,16 +7037,33 @@ const proto::ProtoObject* py_object_new(
             env->getTuplePrototype(), env->getSetPrototype(),
             env->getFrozensetPrototype(), env->getBytesPrototype(),
         };
-        for (const proto::ProtoObject* bp : badProtos) {
-            if (bp && cls == bp) {
-                std::string clsName = "?";
-                const proto::ProtoObject* nm = cls->getAttribute(context, env->getNameString());
-                if (nm && nm->isString(context)) nm->asString(context)->toUTF8String(context, clsName);
-                env->raiseTypeError(context,
-                    "object.__new__(" + clsName + ") is not safe, use "
-                    + clsName + ".__new__()");
-                return nullptr;
+        // cls itself OR any MRO ancestor of cls — covers `class C(list)`
+        // with `__new__ = object.__new__` where cls is a strict subclass
+        // of a built-in container with its own layout.
+        auto containerInMro = [&]() -> const proto::ProtoObject* {
+            for (const proto::ProtoObject* bp : badProtos) {
+                if (bp && cls == bp) return bp;
             }
+            const proto::ProtoObject* mroAttr = cls->getAttribute(context, env->getMroString());
+            const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(context) : nullptr;
+            if (mroT) {
+                for (unsigned long i = 0; i < mroT->getSize(context); ++i) {
+                    const proto::ProtoObject* m = mroT->getAt(context, static_cast<int>(i));
+                    for (const proto::ProtoObject* bp : badProtos) {
+                        if (bp && m == bp) return bp;
+                    }
+                }
+            }
+            return nullptr;
+        };
+        if (containerInMro()) {
+            std::string clsName = "?";
+            const proto::ProtoObject* nm = cls->getAttribute(context, env->getNameString());
+            if (nm && nm->isString(context)) nm->asString(context)->toUTF8String(context, clsName);
+            env->raiseTypeError(context,
+                "object.__new__(" + clsName + ") is not safe, use "
+                + clsName + ".__new__()");
+            return nullptr;
         }
     }
 
