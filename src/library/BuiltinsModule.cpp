@@ -7051,6 +7051,55 @@ const proto::ProtoObject* initialize(proto::ProtoContext* ctx, const proto::Prot
         const proto::ProtoString* s_setattr = PythonEnvironment::getInternedString(ctx, "__setattr__");
         objectProto = const_cast<proto::ProtoObject*>(objectProto)->setAttribute(ctx, s_setattr, ctx->fromMethod(const_cast<proto::ProtoObject*>(objectProto), py_object_setattr));
         objectProto = const_cast<proto::ProtoObject*>(objectProto)->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__getattribute__"), ctx->fromMethod(const_cast<proto::ProtoObject*>(objectProto), py_object_getattribute));
+        // object.__delattr__(target, name) — Carlo Verre symmetry with
+        // __setattr__: must reject built-in primitive prototypes for the
+        // same reason (their tp_setattro is private to type, and going
+        // through object.__delattr__ would let user code mutate them).
+        objectProto = const_cast<proto::ProtoObject*>(objectProto)->setAttribute(ctx,
+            PythonEnvironment::getInternedString(ctx, "__delattr__"),
+            ctx->fromMethod(const_cast<proto::ProtoObject*>(objectProto),
+            +[](proto::ProtoContext* context, const proto::ProtoObject* self,
+               const proto::ParentLink*,
+               const proto::ProtoList* posArgs,
+               const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+                const proto::ProtoObject* target = self;
+                const proto::ProtoObject* nameObj = nullptr;
+                if (posArgs && posArgs->getSize(context) >= 2) {
+                    target = posArgs->getAt(context, 0);
+                    nameObj = posArgs->getAt(context, 1);
+                } else if (posArgs && posArgs->getSize(context) == 1) {
+                    nameObj = posArgs->getAt(context, 0);
+                }
+                if (!nameObj || !nameObj->isString(context)) return PROTO_NONE;
+                std::string nameStr;
+                nameObj->asString(context)->toUTF8String(context, nameStr);
+                protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(context);
+                if (env && target && env->isActuallyAClass(context, target)) {
+                    if (target == env->getStrPrototype()
+                        || target == env->getIntPrototype()
+                        || target == env->getFloatPrototype()
+                        || target == env->getBoolPrototype()
+                        || target == env->getBytesPrototype()
+                        || target == env->getListPrototype()
+                        || target == env->getDictPrototype()
+                        || target == env->getSetPrototype()
+                        || target == env->getTuplePrototype()
+                        || target == env->getFrozensetPrototype()
+                        || target == env->getComplexPrototype()
+                        || target == env->getObjectPrototype()
+                        || target == env->getTypePrototype()) {
+                        std::string clsName = "?";
+                        const proto::ProtoObject* nm = target->getAttribute(context, env->getNameString());
+                        if (nm && nm->isString(context)) nm->asString(context)->toUTF8String(context, clsName);
+                        env->raiseTypeError(context,
+                            "cannot delete '" + nameStr + "' attribute of immutable type '" + clsName + "'");
+                        return nullptr;
+                    }
+                }
+                const proto::ProtoString* key = PythonEnvironment::getInternedString(context, nameStr.c_str());
+                const_cast<proto::ProtoObject*>(target)->removeAttribute(context, key);
+                return PROTO_NONE;
+            }));
         protoPython::PythonEnvironment* env = protoPython::PythonEnvironment::fromContext(ctx);
         objectProto = const_cast<proto::ProtoObject*>(objectProto)->setAttribute(ctx, env ? env->getInitString() : PythonEnvironment::getInternedString(ctx, "__init__"), ctx->fromMethod(const_cast<proto::ProtoObject*>(objectProto), py_object_init));
         objectProto = const_cast<proto::ProtoObject*>(objectProto)->setAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__eq__"), ctx->fromMethod(const_cast<proto::ProtoObject*>(objectProto), py_object_eq));
