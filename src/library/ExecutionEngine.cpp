@@ -4798,8 +4798,39 @@ const proto::ProtoObject* executeBytecodeRange(
             } else {
                 const proto::ProtoString* posS = env ? env->getPosString() : PythonEnvironment::getInternedString(ctx, "__pos__");
                 const proto::ProtoObject* result = invokeDunder(ctx, a, posS, ctx->newList());
-                if (result) stack.back() = result;
-                // result == nullptr → no __pos__; leave a on stack as identity.
+                if (result) {
+                    stack.back() = result;
+                } else if (env) {
+                    // CPython: `+x` on an int/float/bool subclass without
+                    // an own __pos__ returns a plain int/float — not the
+                    // subclass.  Detect by walking the type chain for a
+                    // numeric primitive and unwrap the __data__ payload.
+                    const proto::ProtoObject* aType = env->getType(ctx, a);
+                    if (aType && aType != PROTO_NONE && aType != env->getIntPrototype()
+                        && aType != env->getFloatPrototype() && aType != env->getBoolPrototype()) {
+                        const proto::ProtoObject* mroAttr = aType->getAttribute(ctx, env->getMroString());
+                        const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(ctx) : nullptr;
+                        if (mroT) {
+                            for (unsigned long mi = 0; mi < mroT->getSize(ctx); ++mi) {
+                                const proto::ProtoObject* base = mroT->getAt(ctx, static_cast<int>(mi));
+                                if (base == env->getIntPrototype() || base == env->getBoolPrototype()) {
+                                    const proto::ProtoObject* payload = a->getAttribute(ctx, env->getDataString());
+                                    if (payload && payload->isInteger(ctx)) {
+                                        stack.back() = ctx->fromInteger(payload->asLong(ctx));
+                                    }
+                                    break;
+                                }
+                                if (base == env->getFloatPrototype()) {
+                                    const proto::ProtoObject* payload = a->getAttribute(ctx, env->getDataString());
+                                    if (payload && payload->isFloat(ctx)) {
+                                        stack.back() = ctx->fromDouble(payload->asDouble(ctx));
+                                    }
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
             }
         } break;
         case OP_NOP: {
