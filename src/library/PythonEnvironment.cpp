@@ -3408,24 +3408,39 @@ static const proto::ProtoObject* py_list_add(
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
     if (!positionalParameters || positionalParameters->getSize(context) < 1) return PROTO_NONE;
-    const proto::ProtoObject* otherObj = positionalParameters->getAt(context, 0);
-    if (!otherObj) return PROTO_NONE;
+    const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "__data__");
+
+    // Accept the unbound calling convention `list.__add__(a, b)` in
+    // addition to the bound one `a.__add__(b)`: when `self` is the
+    // class object (no own __data__ list) and we have two positional
+    // arguments, treat positional[0] as the receiver and positional[1]
+    // as the other operand.
+    const proto::ProtoObject* selfData = self ? self->getAttribute(context, dataName) : nullptr;
+    bool selfIsListInstance = selfData && selfData->asList(context);
+    const proto::ProtoObject* receiver = self;
+    const proto::ProtoObject* otherObj = nullptr;
+    if (!selfIsListInstance && positionalParameters->getSize(context) >= 2) {
+        receiver = positionalParameters->getAt(context, 0);
+        otherObj = positionalParameters->getAt(context, 1);
+    } else {
+        otherObj = positionalParameters->getAt(context, 0);
+    }
+    if (!receiver || !otherObj) return PROTO_NONE;
 
     const proto::ProtoList* otherList = otherObj->asList(context);
     if (!otherList) {
-        const proto::ProtoObject* otherData = otherObj->getAttribute(context, PythonEnvironment::getInternalString(context, "__data__"));
+        const proto::ProtoObject* otherData = otherObj->getAttribute(context, dataName);
         if (otherData) otherList = otherData->asList(context);
     }
-    const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "__data__");
-    const proto::ProtoObject* data = self->getAttribute(context, dataName);
+    const proto::ProtoObject* data = receiver->getAttribute(context, dataName);
     if (!data || !data->asList(context) || !otherList) return PROTO_NONE;
-    
+
     const proto::ProtoList* list = data->asList(context);
     const proto::ProtoList* newList = list->extend(context, otherList);
-    
+
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     if (!env || !env->getListPrototype()) return PROTO_NONE;
-    
+
     proto::ProtoObject* outObj = const_cast<proto::ProtoObject*>(env->getListPrototype()->newChild(context, true));
     outObj->setAttribute(context, dataName, newList->asObject(context));
     return outObj;
@@ -13410,6 +13425,20 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     floatPrototype = floatPrototype->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_float_repr));
     floatPrototype = floatPrototype->setAttribute(rootContext_, py_str, rootContext_->fromMethod(nullptr, py_float_repr));
     floatPrototype = floatPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__getformat__"), rootContext_->fromMethod(nullptr, py_float_getformat));
+    // float.__lt__/__le__/__gt__/__ge__/__eq__/__ne__: missing on the
+    // prototype, so direct dunder calls (e.g. `(100.0).__eq__(3.0)` or
+    // `float.__eq__(100.0, 3.0)`) fell through to objectPrototype's
+    // identity comparison and returned NotImplemented.  py_int_cmp
+    // already accepts mixed int/float operands, so reuse it for
+    // float receivers too — the `<`, `==`, etc. operators are unchanged
+    // (they use the runtime's numeric fast path); this only repairs
+    // the explicit-dunder route.
+    floatPrototype = floatPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__lt__"), rootContext_->fromMethod(nullptr, py_int_lt));
+    floatPrototype = floatPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__le__"), rootContext_->fromMethod(nullptr, py_int_le));
+    floatPrototype = floatPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__gt__"), rootContext_->fromMethod(nullptr, py_int_gt));
+    floatPrototype = floatPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__ge__"), rootContext_->fromMethod(nullptr, py_int_ge));
+    floatPrototype = floatPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__eq__"), rootContext_->fromMethod(nullptr, py_int_eq));
+    floatPrototype = floatPrototype->setAttribute(rootContext_, PythonEnvironment::getInternedString(rootContext_, "__ne__"), rootContext_->fromMethod(nullptr, py_int_ne));
     // float.__radd__/__rsub__/__rmul__/__rtruediv__ — reflected
     // arithmetic.  Accept both bound and unbound shapes so
     // `float.__rsub__(3.0, 1)` (test_explicit_reverse_methods) works.
