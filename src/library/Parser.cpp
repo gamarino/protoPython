@@ -311,7 +311,9 @@ std::unique_ptr<ASTNode> Parser::parseSubscript() {
 std::unique_ptr<ASTNode> Parser::parseAtom() {
     if (cur_.type == TokenType::Number) {
         auto n = createNode<ConstantNode>();
-        n->constType = cur_.isInteger ? ConstantNode::ConstType::Int : ConstantNode::ConstType::Float;
+        n->constType = cur_.isImaginary
+            ? ConstantNode::ConstType::Imaginary
+            : (cur_.isInteger ? ConstantNode::ConstType::Int : ConstantNode::ConstType::Float);
         n->intVal = cur_.intValue;
         n->floatVal = cur_.numValue;
         // Propagate bignum payload for literals that overflow int64.

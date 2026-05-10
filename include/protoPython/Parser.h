@@ -16,7 +16,7 @@ struct ASTNode {
 };
 
 struct ConstantNode : ASTNode {
-    enum class ConstType { Int, Float, Str, Bytes, None, Bool, Ellipsis };
+    enum class ConstType { Int, Float, Str, Bytes, None, Bool, Ellipsis, Imaginary };
     ConstType constType = ConstType::Int;
     long long intVal = 0;
     double floatVal = 0.0;

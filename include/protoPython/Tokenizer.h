@@ -113,6 +113,10 @@ struct Token {
     std::string value;
     double numValue = 0.0;
     bool isInteger = false;
+    // True when the literal carried a trailing 'j'/'J' (PEP-style
+    // imaginary literal).  The compiler turns such tokens into a
+    // complex(0, numValue) constant rather than a plain float.
+    bool isImaginary = false;
     long long intValue = 0;
     int line = 1;
     int column = 1;

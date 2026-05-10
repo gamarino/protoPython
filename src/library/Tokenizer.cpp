@@ -380,10 +380,14 @@ Token Tokenizer::scanNumber() {
     cleanValue.erase(std::remove(cleanValue.begin(), cleanValue.end(), '_'), cleanValue.end());
     try {
         if (isComplex) {
-            // Complex handled as float for now in the stub (just the real part or imaginary part as value)
+            // Strip the trailing j/J and parse the magnitude as a
+            // double.  Mark the token as imaginary so the compiler
+            // can emit a complex(0, numValue) constant instead of a
+            // plain float.
             if (cleanValue.back() == 'j' || cleanValue.back() == 'J') cleanValue.pop_back();
             t.numValue = std::stod(cleanValue);
             t.isInteger = false;
+            t.isImaginary = true;
         } else if (isFloat) {
             t.numValue = std::stod(cleanValue);
             t.isInteger = false;

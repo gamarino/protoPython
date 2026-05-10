@@ -353,6 +353,21 @@ bool Compiler::compileConstant(ConstantNode* n) {
     }
     else if (n->constType == ConstantNode::ConstType::Float)
         obj = ctx_->fromDouble(n->floatVal);
+    else if (n->constType == ConstantNode::ConstType::Imaginary) {
+        // Build a complex(0, n->floatVal) constant by allocating a
+        // fresh complex instance with real=0 and imag=floatVal.  The
+        // complex prototype supplies __eq__/__add__/etc.
+        PythonEnvironment* env = PythonEnvironment::fromContext(ctx_);
+        if (env && env->getComplexPrototype()) {
+            proto::ProtoObject* c = const_cast<proto::ProtoObject*>(env->getComplexPrototype()->newChild(ctx_, true));
+            c->setAttribute(ctx_, PythonEnvironment::getInternedString(ctx_, "real"), ctx_->fromDouble(0.0));
+            c->setAttribute(ctx_, PythonEnvironment::getInternedString(ctx_, "imag"), ctx_->fromDouble(n->floatVal));
+            c->setAttribute(ctx_, PythonEnvironment::getInternedString(ctx_, "__class__"), env->getComplexPrototype());
+            obj = c;
+        } else {
+            obj = ctx_->fromDouble(n->floatVal);
+        }
+    }
     else if (n->constType == ConstantNode::ConstType::Str)
         obj = PythonEnvironment::getInternedString(ctx_, n->strVal.c_str())->asObject(ctx_);
     else if (n->constType == ConstantNode::ConstType::Bytes) {
