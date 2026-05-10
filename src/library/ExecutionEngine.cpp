@@ -15,6 +15,7 @@
 #include <vector>
 
 #include <cstring>
+#include <functional>
 #include <iostream>
 
 namespace protoPython {
@@ -3041,7 +3042,47 @@ const proto::ProtoObject* runUserClassCall(proto::ProtoContext* ctx,
         bool isInstanceOfSelf = false;
         if (env) {
             const proto::ProtoObject* objCls = env->getType(ctx, obj);
-            isInstanceOfSelf = (objCls == self || (objCls && objCls->isInstanceOf(ctx, self) == PROTO_TRUE));
+            // CPython: type.__call__ invokes __init__ when `__new__`
+            // returned an instance of `cls` OR of a subclass.  protoCore's
+            // `isInstanceOf` walks the parent chain of the CLASS object
+            // (i.e. asks "is class D a metaclass-instance of class C?"),
+            // not the Python-level subclass relation we need here.  Walk
+            // objCls.__mro__ looking for `self` instead.
+            if (objCls == self) {
+                isInstanceOfSelf = true;
+            } else if (objCls && objCls != PROTO_NONE) {
+                const proto::ProtoObject* mroAttr =
+                    objCls->getAttribute(ctx, env->getMroString());
+                const proto::ProtoTuple* mroT =
+                    mroAttr ? mroAttr->asTuple(ctx) : nullptr;
+                if (mroT) {
+                    for (unsigned long mi = 0; mi < mroT->getSize(ctx); ++mi) {
+                        if (mroT->getAt(ctx, static_cast<int>(mi)) == self) {
+                            isInstanceOfSelf = true;
+                            break;
+                        }
+                    }
+                }
+                if (!isInstanceOfSelf) {
+                    // __mro__ absent or doesn't include self — walk
+                    // __bases__ recursively as a fallback.
+                    std::function<bool(const proto::ProtoObject*, int)> walkBases =
+                        [&](const proto::ProtoObject* c, int depth) -> bool {
+                            if (!c || c == PROTO_NONE || depth > 32) return false;
+                            if (c == self) return true;
+                            const proto::ProtoObject* basesAttr =
+                                c->getAttribute(ctx, env->getBasesString());
+                            const proto::ProtoTuple* basesT =
+                                basesAttr ? basesAttr->asTuple(ctx) : nullptr;
+                            if (!basesT) return false;
+                            for (unsigned long bi = 0; bi < basesT->getSize(ctx); ++bi) {
+                                if (walkBases(basesT->getAt(ctx, static_cast<int>(bi)), depth + 1)) return true;
+                            }
+                            return false;
+                        };
+                    isInstanceOfSelf = walkBases(objCls, 0);
+                }
+            }
         } else {
             // Very naive fallback if env is missing
             const proto::ProtoObject* cls = obj->getAttribute(ctx, protoPython::PythonEnvironment::getInternalString(ctx, "__class__"));
