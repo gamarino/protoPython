@@ -2024,7 +2024,16 @@ static const proto::ProtoObject* py_list_len(
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
     const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "__data__");
-    const proto::ProtoObject* data = self->getAttribute(context, dataName);
+    const proto::ProtoObject* data = self ? self->getAttribute(context, dataName) : nullptr;
+    // Unbound form: `list.__len__([1,2,3])` — self is list type.
+    if ((!data || !data->asList(context))
+        && positionalParameters && positionalParameters->getSize(context) >= 1) {
+        const proto::ProtoObject* candidate = positionalParameters->getAt(context, 0);
+        if (candidate) {
+            const proto::ProtoObject* cd = candidate->getAttribute(context, dataName);
+            if (cd && cd->asList(context)) data = cd;
+        }
+    }
     if (!data || !data->asList(context)) return context->fromInteger(0);
     return context->fromInteger(data->asList(context)->getSize(context));
 }
@@ -2797,7 +2806,17 @@ static const proto::ProtoObject* py_dict_len(
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
     const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "__data__");
-    const proto::ProtoObject* data = self->getAttribute(context, dataName);
+    const proto::ProtoObject* data = self ? self->getAttribute(context, dataName) : nullptr;
+    // Unbound form: `dict.__len__(d)` — self is the dict type and
+    // positional[0] is the receiver.
+    if ((!data || !data->asSparseList(context))
+        && positionalParameters && positionalParameters->getSize(context) >= 1) {
+        const proto::ProtoObject* candidate = positionalParameters->getAt(context, 0);
+        if (candidate) {
+            const proto::ProtoObject* cd = candidate->getAttribute(context, dataName);
+            if (cd && cd->asSparseList(context)) data = cd;
+        }
+    }
     if (!data || !data->asSparseList(context)) return context->fromInteger(0);
     return context->fromInteger(data->asSparseList(context)->getSize(context));
 }
@@ -6097,10 +6116,22 @@ static const proto::ProtoObject* py_tuple_len(
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
     // Direct ProtoTuple (e.g. *args tuples created natively)
-    if (self->asTuple(context)) return context->fromInteger(self->asTuple(context)->getSize(context));
+    if (self && self->asTuple(context)) return context->fromInteger(self->asTuple(context)->getSize(context));
     // Python-level tuple: data stored in __data__ attribute
     const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "__data__");
-    const proto::ProtoObject* data = self->getAttribute(context, dataName);
+    const proto::ProtoObject* data = self ? self->getAttribute(context, dataName) : nullptr;
+    // Unbound form: `tuple.__len__((1,2,3))` — self is tuple type.
+    if ((!data || !data->asTuple(context))
+        && positionalParameters && positionalParameters->getSize(context) >= 1) {
+        const proto::ProtoObject* candidate = positionalParameters->getAt(context, 0);
+        if (candidate && candidate->asTuple(context)) {
+            return context->fromInteger(candidate->asTuple(context)->getSize(context));
+        }
+        if (candidate) {
+            const proto::ProtoObject* cd = candidate->getAttribute(context, dataName);
+            if (cd && cd->asTuple(context)) data = cd;
+        }
+    }
     if (!data || !data->asTuple(context)) return context->fromInteger(0);
     return context->fromInteger(data->asTuple(context)->getSize(context));
 }
