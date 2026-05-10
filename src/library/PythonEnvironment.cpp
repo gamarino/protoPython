@@ -1877,6 +1877,57 @@ static const proto::ProtoObject* py_str_call(
         x = (posArgs && posArgs->getSize(ctx) > 1)
             ? posArgs->getAt(ctx, 1)
             : kwObject;
+        // CPython: str(bytes, encoding=..., errors=...) decodes the
+        // bytes via bytes.decode().  Detect by probing __class__:
+        // bytes have __class__ == bytesPrototype.
+        {
+            PythonEnvironment* env0 = PythonEnvironment::fromContext(ctx);
+            const proto::ProtoObject* xType = env0 ? env0->getType(ctx, x) : nullptr;
+            if (env0 && xType && xType == env0->getBytesPrototype()) {
+                const proto::ProtoObject* encoding = nullptr;
+                const proto::ProtoObject* errors = nullptr;
+                int posOff = 2;
+                if (posArgs && posArgs->getSize(ctx) > static_cast<unsigned long>(posOff)) encoding = posArgs->getAt(ctx, posOff++);
+                if (posArgs && posArgs->getSize(ctx) > static_cast<unsigned long>(posOff)) errors = posArgs->getAt(ctx, posOff++);
+                if (kwArgs) {
+                    if (!encoding) {
+                        const proto::ProtoString* k = PythonEnvironment::getInternedString(ctx, "encoding");
+                        if (kwArgs->has(ctx, k->getHash(ctx))) encoding = kwArgs->getAt(ctx, k->getHash(ctx));
+                    }
+                    if (!errors) {
+                        const proto::ProtoString* k = PythonEnvironment::getInternedString(ctx, "errors");
+                        if (kwArgs->has(ctx, k->getHash(ctx))) errors = kwArgs->getAt(ctx, k->getHash(ctx));
+                    }
+                }
+                if (encoding || errors) {
+                    const proto::ProtoString* decS = PythonEnvironment::getInternedString(ctx, "decode");
+                    const proto::ProtoObject* decM = env0->getAttribute(ctx, x, decS);
+                    if (decM && decM != PROTO_NONE) {
+                        const proto::ProtoList* da = ctx->newList();
+                        if (encoding) da = da->appendLast(ctx, encoding);
+                        if (errors) da = da->appendLast(ctx, errors);
+                        if (decM->asMethod(ctx)) {
+                            x = decM->asMethod(ctx)(ctx, x, nullptr, da, nullptr);
+                        } else {
+                            const proto::ProtoList* withSelf = ctx->newList()->appendLast(ctx, x);
+                            for (unsigned long ai = 0; ai < da->getSize(ctx); ++ai) {
+                                withSelf = withSelf->appendLast(ctx, da->getAt(ctx, static_cast<int>(ai)));
+                            }
+                            x = invokePythonCallable(ctx, decM, withSelf, nullptr);
+                        }
+                        // Skip the __str__ dispatch — x is already a
+                        // proper unicode string after decode().
+                        if (!targetCls || (env0 && targetCls == env0->getStrPrototype())) {
+                            return x;
+                        }
+                        proto::ProtoObject* inst = const_cast<proto::ProtoObject*>(targetCls->newChild(ctx, true));
+                        const proto::ProtoString* dn = env0->getDataString();
+                        inst->setAttribute(ctx, dn, x);
+                        return inst;
+                    }
+                }
+            }
+        }
         PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
         const proto::ProtoObject* cls = env ? env->getType(ctx, x) : x->getAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__class__"));
         const proto::ProtoString* strS = env ? env->getStrString() : PythonEnvironment::getInternalString(ctx, "__str__");
