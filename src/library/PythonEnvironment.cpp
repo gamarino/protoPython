@@ -6022,18 +6022,27 @@ static const proto::ProtoObject* py_tuple_getitem(
     const proto::ParentLink* parentLink,
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
-    const proto::ProtoTuple* tuple = self->asTuple(context);
-    if (!tuple) {
+    auto unwrap = [&](const proto::ProtoObject* candidate) -> const proto::ProtoTuple* {
+        if (!candidate) return nullptr;
+        const proto::ProtoTuple* t = candidate->asTuple(context);
+        if (t) return t;
         const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "__data__");
-        const proto::ProtoObject* data = self->getAttribute(context, dataName);
-        if (data && data->asTuple(context)) {
-            tuple = data->asTuple(context);
-        }
+        const proto::ProtoObject* data = candidate->getAttribute(context, dataName);
+        if (data && data->asTuple(context)) return data->asTuple(context);
+        return nullptr;
+    };
+    const proto::ProtoTuple* tuple = unwrap(self);
+    int indexArgOff = 0;
+    // Unbound form: `tuple.__getitem__((1,2,3), slice(2))` — self is
+    // the tuple type and positional[0] is the actual receiver.
+    if (!tuple && positionalParameters && positionalParameters->getSize(context) >= 1) {
+        tuple = unwrap(positionalParameters->getAt(context, 0));
+        if (tuple) indexArgOff = 1;
     }
     if (!tuple) return nullptr; // Fallback to __class_getitem__
 
-    if (positionalParameters->getSize(context) < 1) return PROTO_NONE;
-    const proto::ProtoObject* indexObj = positionalParameters->getAt(context, 0);
+    if (positionalParameters->getSize(context) < static_cast<unsigned long>(indexArgOff + 1)) return PROTO_NONE;
+    const proto::ProtoObject* indexObj = positionalParameters->getAt(context, indexArgOff);
     long long size = static_cast<long long>(tuple->getSize(context));
 
     SliceBounds sb = get_slice_bounds(context, indexObj, size);
@@ -7384,11 +7393,20 @@ static const proto::ProtoObject* py_str_getitem(
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
     const proto::ProtoString* str = str_from_self(context, self);
-    if (!str || positionalParameters->getSize(context) < 1) return PROTO_NONE;
+    int indexArgOff = 0;
+    // Unbound form: `str.__getitem__("hello", slice(4))` — self is
+    // the str type rather than a string, and positional[0] carries
+    // the actual receiver.  Detect by trying str_from_self on
+    // positional[0] when self yielded nothing.
+    if (!str && positionalParameters && positionalParameters->getSize(context) >= 1) {
+        str = str_from_self(context, positionalParameters->getAt(context, 0));
+        if (str) indexArgOff = 1;
+    }
+    if (!str || positionalParameters->getSize(context) < static_cast<unsigned long>(indexArgOff + 1)) return PROTO_NONE;
     std::string s;
     str->toUTF8String(context, s);
     long long size = static_cast<long long>(s.size());
-    const proto::ProtoObject* indexObj = positionalParameters->getAt(context, 0);
+    const proto::ProtoObject* indexObj = positionalParameters->getAt(context, indexArgOff);
 
     SliceBounds sb = get_slice_bounds(context, indexObj, size);
     if (sb.isSlice) {
