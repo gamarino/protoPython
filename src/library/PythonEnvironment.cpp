@@ -15834,6 +15834,21 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
     // would store the dict literal as a regular attribute named
     // `__dict__` and `obj.attr` would no longer find the new entries.
     if (name == dictString || (name && dictString && name->getHash(ctx) == dictString->getHash(ctx))) {
+        // CPython rejects `cls.__dict__ = {…}` on classes — the
+        // class dict is exposed read-only via mappingproxy and only
+        // type's tp_setattro can mutate it (through the normal class-
+        // attribute hook, NOT this slot).  Mirror that: when the
+        // assignment target is a class object, raise AttributeError so
+        // verify_dict_readonly's `cant(C, {})` succeeds.
+        if (isActuallyAClass(ctx, obj)) {
+            std::string clsName = "?";
+            const proto::ProtoObject* nm = obj->getAttribute(ctx, getNameString());
+            if (nm && nm->isString(ctx)) nm->asString(ctx)->toUTF8String(ctx, clsName);
+            raiseAttributeErrorWithMessage(ctx, obj,
+                "attribute '__dict__' of '" + clsName + "' objects is not writable",
+                "__dict__");
+            return nullptr;
+        }
         // Validate type — must be a dict, dict subclass, or mappingproxy.
         // CPython accepts any dict-derived class; test_cycle_through_dict
         // assigns `self.__dict__ = self` where self is a dict-subclass

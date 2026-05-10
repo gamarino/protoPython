@@ -7672,6 +7672,16 @@ const proto::ProtoObject* executeBytecodeRange(
                     const proto::ProtoString* dictDunderS = env ? env->getDictDunderString() : nullptr;
                     if (dictDunderS && (nameS == dictDunderS || nameS->getHash(ctx) == dictDunderS->getHash(ctx))
                         && obj && obj != PROTO_NONE && env) {
+                        // CPython: `del cls.__dict__` is rejected because
+                        // the class dict is read-only.  Mirror that.
+                        if (env->isActuallyAClass(ctx, obj)) {
+                            std::string clsName = "?";
+                            const proto::ProtoObject* nm = obj->getAttribute(ctx, env->getNameString());
+                            if (nm && nm->isString(ctx)) nm->asString(ctx)->toUTF8String(ctx, clsName);
+                            env->raiseTypeError(ctx,
+                                "cannot delete attribute '__dict__' of '" + clsName + "' objects");
+                            continue;
+                        }
                         proto::ProtoObject* mobj = const_cast<proto::ProtoObject*>(obj);
                         // initDictStorage rehydrates __data__ from native
                         // attrs every time __dict__ is read, so just
