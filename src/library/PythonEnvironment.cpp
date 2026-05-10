@@ -2729,11 +2729,26 @@ static const proto::ProtoObject* py_dict_contains(
     const proto::ProtoList* positionalParameters,
     const proto::ProtoSparseList* keywordParameters) {
     const proto::ProtoString* dataName = PythonEnvironment::getInternalString(context, "__data__");
-    const proto::ProtoObject* data = self->getAttribute(context, dataName);
+    const proto::ProtoObject* data = self ? self->getAttribute(context, dataName) : nullptr;
+    int keyOff = 0;
+    // Unbound form: dict.__contains__(d, key) — self is the dict
+    // type and positional[0] is the receiver.
+    if ((!data || !data->asSparseList(context))
+        && positionalParameters && positionalParameters->getSize(context) >= 2) {
+        const proto::ProtoObject* candidate = positionalParameters->getAt(context, 0);
+        if (candidate) {
+            const proto::ProtoObject* cd = candidate->getAttribute(context, dataName);
+            if (cd && cd->asSparseList(context)) {
+                self = candidate;
+                data = cd;
+                keyOff = 1;
+            }
+        }
+    }
     const proto::ProtoSparseList* dict = data ? data->asSparseList(context) : nullptr;
-    
-    if (positionalParameters->getSize(context) < 1) return PROTO_FALSE;
-    const proto::ProtoObject* key = positionalParameters->getAt(context, 0);
+
+    if (positionalParameters->getSize(context) < static_cast<unsigned long>(keyOff + 1)) return PROTO_FALSE;
+    const proto::ProtoObject* key = positionalParameters->getAt(context, keyOff);
     
     if (dict) {
         unsigned long h = dictKeyHash(context, key);
