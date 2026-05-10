@@ -5160,10 +5160,54 @@ static const proto::ProtoObject* py_isinstance(
     const proto::ProtoString* classStr = env ? env->getClassString() : PythonEnvironment::getInternedString(context, "__class__");
     const proto::ProtoObject* objClass = obj->getAttribute(context, classStr);
     if (!objClass) objClass = obj->getPrototype(context);
-    
-    
+
     if (objClass && objClass != obj) {
         if (py_issubclass_check_single(context, objClass, cls)) return PROTO_TRUE;
+    }
+
+    // CPython: isinstance also consults obj.__class__ through a full
+    // attribute lookup that triggers user __getattribute__.  Proxy
+    // classes that route attribute access elsewhere (test_isinst_
+    // isclass's Proxy) rely on this — env->getAttribute short-circuits
+    // for `__class__` and returns getType(obj) directly, so we have
+    // to dispatch __getattribute__ manually.
+    if (env) {
+        const proto::ProtoObject* objType = env->getType(context, obj);
+        if (objType && objType != PROTO_NONE) {
+            const proto::ProtoString* gaS = PythonEnvironment::getInternedString(context, "__getattribute__");
+            const proto::ProtoObject* mroAttr = objType->getAttribute(context, env->getMroString());
+            const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(context) : nullptr;
+            const proto::ProtoObject* gaM = nullptr;
+            if (mroT) {
+                for (unsigned long mi = 0; mi < mroT->getSize(context); ++mi) {
+                    const proto::ProtoObject* base = mroT->getAt(context, static_cast<int>(mi));
+                    if (!base || base == PROTO_NONE) continue;
+                    if (base == env->getObjectPrototype() || base == env->getTypePrototype()) break;
+                    if (base->hasOwnAttribute(context, gaS) == PROTO_TRUE) {
+                        gaM = base->getOwnAttributeDirect(context, gaS);
+                        break;
+                    }
+                }
+            }
+            if (gaM && gaM != PROTO_NONE) {
+                env->clearPendingException();
+                const proto::ProtoList* args = context->newList()->appendLast(context, classStr->asObject(context));
+                const proto::ProtoObject* dynamicClass = nullptr;
+                if (gaM->asMethod(context)) {
+                    dynamicClass = gaM->asMethod(context)(context,
+                        const_cast<proto::ProtoObject*>(obj), nullptr, args, nullptr);
+                } else {
+                    const proto::ProtoList* selfArgs = context->newList()
+                        ->appendLast(context, obj)
+                        ->appendLast(context, classStr->asObject(context));
+                    dynamicClass = ::protoPython::invokePythonCallable(context, gaM, selfArgs, nullptr);
+                }
+                if (env->hasPendingException()) env->clearPendingException();
+                if (dynamicClass && dynamicClass != PROTO_NONE && dynamicClass != objClass) {
+                    if (py_issubclass_check_single(context, dynamicClass, cls)) return PROTO_TRUE;
+                }
+            }
+        }
     }
 
     return PROTO_FALSE;
