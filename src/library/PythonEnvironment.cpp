@@ -1895,6 +1895,29 @@ static const proto::ProtoObject* py_str_call(
     const proto::ProtoObject* kwObject = nullptr;
     if (kwArgs) {
         const proto::ProtoString* objKey = PythonEnvironment::getInternedString(ctx, "object");
+        const proto::ProtoString* encKey = PythonEnvironment::getInternedString(ctx, "encoding");
+        const proto::ProtoString* errKey = PythonEnvironment::getInternedString(ctx, "errors");
+        // CPython: str() accepts only object/encoding/errors keywords.
+        // Walk getCurrentKwNames AND verify the name's hash is actually
+        // in this call's kwArgs (getCurrentKwNames is a thread-local
+        // snapshot that can stay set from an outer call when the
+        // immediate call site received no kwargs).
+        PythonEnvironment* envValidator = PythonEnvironment::fromContext(ctx);
+        const proto::ProtoTuple* kwNames = envValidator ? envValidator->getCurrentKwNames() : nullptr;
+        if (kwNames && envValidator) {
+            unsigned long nk = kwNames->getSize(ctx);
+            for (unsigned long ki = 0; ki < nk; ++ki) {
+                const proto::ProtoObject* kn = kwNames->getAt(ctx, static_cast<int>(ki));
+                if (!kn || !kn->isString(ctx)) continue;
+                if (kn == objKey->asObject(ctx) || kn == encKey->asObject(ctx) || kn == errKey->asObject(ctx)) continue;
+                if (!kwArgs->has(ctx, kn->asString(ctx)->getHash(ctx))) continue;
+                std::string kname;
+                kn->asString(ctx)->toUTF8String(ctx, kname);
+                envValidator->raiseTypeError(ctx,
+                    "str() got an unexpected keyword argument '" + kname + "'");
+                return nullptr;
+            }
+        }
         if (kwArgs->has(ctx, objKey->getHash(ctx))) {
             kwObject = kwArgs->getAt(ctx, objKey->getHash(ctx));
         }

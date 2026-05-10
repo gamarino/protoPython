@@ -746,6 +746,26 @@ const proto::ProtoObject* py_complex(
     if (keywordParameters) {
         const proto::ProtoString* realS = PythonEnvironment::getInternedString(context, "real");
         const proto::ProtoString* imagS = PythonEnvironment::getInternedString(context, "imag");
+        // CPython: complex() accepts only `real` and `imag` keywords.
+        // Walk getCurrentKwNames AND verify the name's hash is actually
+        // in this call's keywordParameters (getCurrentKwNames is a
+        // thread-local that can leak from an outer call when this call
+        // site received no kwargs).
+        const proto::ProtoTuple* kwNames = env ? env->getCurrentKwNames() : nullptr;
+        if (kwNames && env) {
+            unsigned long nk = kwNames->getSize(context);
+            for (unsigned long i = 0; i < nk; ++i) {
+                const proto::ProtoObject* kn = kwNames->getAt(context, static_cast<int>(i));
+                if (!kn || !kn->isString(context)) continue;
+                if (kn == realS->asObject(context) || kn == imagS->asObject(context)) continue;
+                if (!keywordParameters->has(context, kn->asString(context)->getHash(context))) continue;
+                std::string kname;
+                kn->asString(context)->toUTF8String(context, kname);
+                env->raiseTypeError(context,
+                    "complex() got an unexpected keyword argument '" + kname + "'");
+                return nullptr;
+            }
+        }
         if (keywordParameters->has(context, realS->getHash(context))) {
             const proto::ProtoObject* r = keywordParameters->getAt(context, realS->getHash(context));
             if (r->isDouble(context)) real = r->asDouble(context);
