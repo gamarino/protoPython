@@ -17139,6 +17139,48 @@ const proto::ProtoObject* PythonEnvironment::compareObjects(proto::ProtoContext*
             c = (sa < sb) ? -1 : (sa > sb) ? 1 : 0;
         }
     } else {
+        // CPython raises TypeError for ordering comparisons on
+        // user-defined types that don't define rich comparison
+        // operators (only `==` / `!=` fall back to identity).  Be
+        // conservative: only raise when BOTH operands are user
+        // (Python-defined) class instances and the dunder lookup
+        // above didn't return a usable result — falling back to
+        // pointer comparison for arbitrary user objects is
+        // meaningless under Python semantics.  Built-in containers
+        // (set, dict, frozenset…) keep the legacy pointer-based
+        // ordering until they grow proper rich comparison methods.
+        if (op >= 2 && op <= 5) {
+            const proto::ProtoObject* aType = getType(ctx, a);
+            const proto::ProtoObject* bType = getType(ctx, b);
+            auto isUserClass = [&](const proto::ProtoObject* t) -> bool {
+                if (!t || t == PROTO_NONE) return false;
+                if (t == getStrPrototype() || t == getIntPrototype()
+                    || t == getFloatPrototype() || t == getBoolPrototype()
+                    || t == getBytesPrototype() || t == getListPrototype()
+                    || t == getDictPrototype() || t == getSetPrototype()
+                    || t == getTuplePrototype() || t == getFrozensetPrototype()
+                    || t == getComplexPrototype() || t == getObjectPrototype()
+                    || t == getTypePrototype()
+                    || t == getMethodPrototype()
+                    || t == getNonePrototype()) return false;
+                return true;
+            };
+            if (isUserClass(aType) && isUserClass(bType)) {
+                std::string aName = "?", bName = "?";
+                const proto::ProtoObject* nm = aType->getAttribute(ctx, getNameString());
+                if (nm && nm->isString(ctx)) nm->asString(ctx)->toUTF8String(ctx, aName);
+                nm = bType->getAttribute(ctx, getNameString());
+                if (nm && nm->isString(ctx)) nm->asString(ctx)->toUTF8String(ctx, bName);
+                const char* opName =
+                    (op == 2) ? "<" :
+                    (op == 3) ? "<=" :
+                    (op == 4) ? ">" : ">=";
+                raiseTypeError(ctx,
+                    "'" + std::string(opName) + "' not supported between instances of '"
+                    + aName + "' and '" + bName + "'");
+                return nullptr;
+            }
+        }
         c = a->compare(ctx, b);
     }
     bool result = false;
@@ -17148,7 +17190,7 @@ const proto::ProtoObject* PythonEnvironment::compareObjects(proto::ProtoContext*
     else if (op == 3) result = (c <= 0);
     else if (op == 4) result = (c > 0);
     else if (op == 5) result = (c >= 0);
-    
+
     return result ? PROTO_TRUE : PROTO_FALSE;
 }
 
