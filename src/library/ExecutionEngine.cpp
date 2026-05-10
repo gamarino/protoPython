@@ -3093,6 +3093,21 @@ const proto::ProtoObject* runUserClassCall(proto::ProtoContext* ctx,
                     if (get_env_diag()) fprintf(stderr, "DEBUG runUserClassCall: initM raised an exception!\n");
                     return nullptr;
                 }
+                // CPython: __init__ MUST return None.  Restrict to
+                // Python-user __init__ functions (i.e. those carrying
+                // own __code__) so native helpers in our bundled
+                // stdlib don't accidentally trip the check.
+                if (env && initRes && initRes != PROTO_NONE && initM) {
+                    const proto::ProtoString* codeS = env->getCodeString();
+                    bool isPythonUserInit = codeS
+                        && initM->hasOwnAttribute(ctx, codeS) == PROTO_TRUE;
+                    if (isPythonUserInit) {
+                        env->raiseTypeError(ctx,
+                            "__init__() should return None, not '"
+                            + std::string("non-None") + "'");
+                        return nullptr;
+                    }
+                }
             }
         }
     }
