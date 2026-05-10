@@ -4927,9 +4927,26 @@ static bool checkInterfaceInstanceOf(proto::ProtoContext* context, const proto::
         if (obj->isInteger(context) && (cls == env->getIntPrototype() || cls == env->getBoolPrototype())) return true;
         if (obj->isFloat(context) && cls == env->getFloatPrototype()) return true;
         if (obj->isBoolean(context) && (cls == env->getBoolPrototype() || cls == env->getIntPrototype())) return true;
-        if (obj->asList(context) != nullptr && cls == env->getListPrototype()) return true;
+        // The native asList()/asSparseList() asks "does the storage
+        // payload look list/dict-like?" — true for instances of
+        // built-in subclasses AND for thin wrappers (dict views,
+        // mappingproxy) whose __data__ is a list/sparse-list.  CPython
+        // rejects `isinstance(d.keys(), list)`, so when the wrapper's
+        // OWN __class__ explicitly points at a non-list/non-dict type,
+        // honour that and skip the storage-shape inference.  Use
+        // hasOwnAttribute to tell apart "no class set, infer from
+        // shape" (plain {} / [] literals) from "wrapper with explicit
+        // class override" (dict_keys, mappingproxy…).
+        const proto::ProtoString* classKey = env->getClassString();
+        const proto::ProtoObject* ownKlass = (obj->hasOwnAttribute(context, classKey) == PROTO_TRUE)
+            ? obj->getOwnAttributeDirect(context, classKey) : nullptr;
+        bool classIsListLike = (!ownKlass || ownKlass == PROTO_NONE
+            || ownKlass == env->getListPrototype());
+        bool classIsDictLike = (!ownKlass || ownKlass == PROTO_NONE
+            || ownKlass == env->getDictPrototype());
+        if (obj->asList(context) != nullptr && cls == env->getListPrototype() && classIsListLike) return true;
         if (obj->isTuple(context) && cls == env->getTuplePrototype()) return true;
-        if (obj->asSparseList(context) && cls == env->getDictPrototype()) return true;
+        if (obj->asSparseList(context) && cls == env->getDictPrototype() && classIsDictLike) return true;
         if (obj->isSet(context) && cls == env->getSetPrototype()) return true;
     }
 

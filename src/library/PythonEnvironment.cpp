@@ -8960,6 +8960,106 @@ static const proto::ProtoObject* py_dict_bool(
     return dict->getSize(context) > 0 ? PROTO_TRUE : PROTO_FALSE;
 }
 
+// View prototype helper.  CPython exposes `dict.keys()/items()/values()`
+// as dict_keys / dict_items / dict_values — distinct types that are
+// iterable but NOT instances of list.  Build a thin per-env cached
+// prototype with `__class__` set to a type whose __name__ matches
+// the CPython view name; the underlying storage is still a ProtoList
+// so iter()/list() see the same elements.
+static const proto::ProtoObject* getOrBuildDictView(
+    proto::ProtoContext* context,
+    PythonEnvironment* env,
+    const char* viewName) {
+    if (!env) return nullptr;
+    const proto::ProtoString* protoKey = PythonEnvironment::getInternedString(context, (std::string("__") + viewName + "_proto__").c_str());
+    const proto::ProtoObject* dictProto = env->getDictPrototype();
+    if (!dictProto) return nullptr;
+    const proto::ProtoObject* cached = dictProto->getAttribute(context, protoKey);
+    if (cached && cached != PROTO_NONE) return cached;
+    // Build the prototype: a new class object whose __name__ is the
+    // view name, parent objectPrototype.  Wire __iter__ to the list
+    // iterator (the view's __data__ is a ProtoList).
+    proto::ProtoObject* proto = const_cast<proto::ProtoObject*>(env->getObjectPrototype()->newChild(context, true));
+    proto = const_cast<proto::ProtoObject*>(proto->setAttribute(context, env->getNameString(),
+        PythonEnvironment::getInternedString(context, viewName)->asObject(context)));
+    proto = const_cast<proto::ProtoObject*>(proto->setAttribute(context, env->getClassString(), env->getTypePrototype()));
+    proto = const_cast<proto::ProtoObject*>(proto->setAttribute(context,
+        PythonEnvironment::getInternedString(context, "__is_python_class__"), PROTO_TRUE));
+    // Delegate __iter__ to the underlying list.
+    proto = const_cast<proto::ProtoObject*>(proto->setAttribute(context,
+        PythonEnvironment::getInternedString(context, "__iter__"),
+        context->fromMethod(nullptr,
+        +[](proto::ProtoContext* ctx, const proto::ProtoObject* self,
+           const proto::ParentLink*, const proto::ProtoList*,
+           const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+            PythonEnvironment* e = PythonEnvironment::fromContext(ctx);
+            const proto::ProtoString* dataS = e ? e->getDataString() : PythonEnvironment::getInternalString(ctx, "__data__");
+            const proto::ProtoObject* d = self->getAttribute(ctx, dataS);
+            const proto::ProtoList* l = d ? d->asList(ctx) : nullptr;
+            if (!l) return PROTO_NONE;
+            return e ? e->iter(const_cast<proto::ProtoObject*>(d)) : PROTO_NONE;
+        })));
+    // __len__ over the data list.
+    proto = const_cast<proto::ProtoObject*>(proto->setAttribute(context,
+        PythonEnvironment::getInternedString(context, "__len__"),
+        context->fromMethod(nullptr,
+        +[](proto::ProtoContext* ctx, const proto::ProtoObject* self,
+           const proto::ParentLink*, const proto::ProtoList*,
+           const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+            PythonEnvironment* e = PythonEnvironment::fromContext(ctx);
+            const proto::ProtoString* dataS = e ? e->getDataString() : PythonEnvironment::getInternalString(ctx, "__data__");
+            const proto::ProtoObject* d = self->getAttribute(ctx, dataS);
+            const proto::ProtoList* l = d ? d->asList(ctx) : nullptr;
+            return ctx->fromInteger(l ? static_cast<long long>(l->getSize(ctx)) : 0);
+        })));
+    // __repr__: dict_keys([...]) shape.
+    proto = const_cast<proto::ProtoObject*>(proto->setAttribute(context,
+        PythonEnvironment::getInternedString(context, "__repr__"),
+        context->fromMethod(nullptr,
+        +[](proto::ProtoContext* ctx, const proto::ProtoObject* self,
+           const proto::ParentLink*, const proto::ProtoList*,
+           const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+            PythonEnvironment* e = PythonEnvironment::fromContext(ctx);
+            if (!e) return PROTO_NONE;
+            const proto::ProtoObject* type = e->getType(ctx, self);
+            std::string vn = "dict_view";
+            if (type) {
+                const proto::ProtoObject* nm = type->getAttribute(ctx, e->getNameString());
+                if (nm && nm->isString(ctx)) nm->asString(ctx)->toUTF8String(ctx, vn);
+            }
+            const proto::ProtoString* dataS = e->getDataString();
+            const proto::ProtoObject* d = self->getAttribute(ctx, dataS);
+            std::string body = d ? PythonEnvironment::reprObject(ctx, const_cast<proto::ProtoObject*>(d)) : "[]";
+            return PythonEnvironment::getInternedString(ctx, (vn + "(" + body + ")").c_str())->asObject(ctx);
+        })));
+    proto = const_cast<proto::ProtoObject*>(proto->setAttribute(context,
+        PythonEnvironment::getInternedString(context, "__bases__"),
+        context->newTupleFromList(context->newList()->appendLast(context, env->getObjectPrototype()))->asObject(context)));
+    // Cache the prototype on the env's dictPrototype as a hidden attr
+    // (perpetual via interned key; instance lifetime matches dict's).
+    const_cast<proto::ProtoObject*>(dictProto)->setAttribute(context, protoKey, proto);
+    return proto;
+}
+
+static const proto::ProtoObject* wrapInDictView(
+    proto::ProtoContext* context,
+    const proto::ProtoList* data,
+    const char* viewName) {
+    PythonEnvironment* env = PythonEnvironment::fromContext(context);
+    const proto::ProtoObject* viewProto = getOrBuildDictView(context, env, viewName);
+    if (!viewProto) {
+        // Fallback: bare list (legacy behaviour) — better than crashing.
+        const proto::ProtoObject* lp = env ? env->getListPrototype() : nullptr;
+        proto::ProtoObject* lo = const_cast<proto::ProtoObject*>(lp ? lp->newChild(context, true) : context->newObject());
+        lo->setAttribute(context, PythonEnvironment::getInternalString(context, "__data__"), data->asObject(context));
+        return lo;
+    }
+    proto::ProtoObject* obj = const_cast<proto::ProtoObject*>(viewProto->newChild(context, true));
+    obj->setAttribute(context, PythonEnvironment::getInternedString(context, "__data__"), data->asObject(context));
+    obj->setAttribute(context, PythonEnvironment::getInternedString(context, "__class__"), viewProto);
+    return obj;
+}
+
 static const proto::ProtoObject* py_dict_keys(
     proto::ProtoContext* context,
     const proto::ProtoObject* self,
@@ -8969,11 +9069,7 @@ static const proto::ProtoObject* py_dict_keys(
     const proto::ProtoString* keysName = PythonEnvironment::getInternalString(context, "__keys__");
     const proto::ProtoObject* keysObj = self->getAttribute(context, keysName);
     const proto::ProtoList* keys = keysObj && keysObj->asList(context) ? keysObj->asList(context) : context->newList();
-    PythonEnvironment* env = PythonEnvironment::fromContext(context);
-    const proto::ProtoObject* listProto = env ? env->getListPrototype() : nullptr;
-    proto::ProtoObject* listObj = const_cast<proto::ProtoObject*>(listProto ? listProto->newChild(context, true) : context->newObject());
-    listObj->setAttribute(context, PythonEnvironment::getInternalString(context, "__data__"), keys->asObject(context));
-    return listObj;
+    return wrapInDictView(context, keys, "dict_keys");
 }
 
 static const proto::ProtoObject* py_dict_values(
@@ -8999,11 +9095,7 @@ static const proto::ProtoObject* py_dict_values(
         const proto::ProtoObject* val = dict->getAt(context, key->getHash(context));
         values = values->appendLast(context, val ? val : PROTO_NONE);
     }
-    PythonEnvironment* env = PythonEnvironment::fromContext(context);
-    const proto::ProtoObject* listProto = env ? env->getListPrototype() : nullptr;
-    proto::ProtoObject* listObj = const_cast<proto::ProtoObject*>(listProto ? listProto->newChild(context, true) : context->newObject());
-    listObj->setAttribute(context, PythonEnvironment::getInternalString(context, "__data__"), values->asObject(context));
-    return listObj;
+    return wrapInDictView(context, values, "dict_values");
 }
 
 static const proto::ProtoObject* py_dict_items(
@@ -9035,18 +9127,7 @@ static const proto::ProtoObject* py_dict_items(
         }
     }
     
-    PythonEnvironment* env = PythonEnvironment::fromContext(context);
-    const proto::ProtoObject* listProto = env ? env->getListPrototype() : nullptr;
-    proto::ProtoObject* listObj = const_cast<proto::ProtoObject*>(listProto ? listProto->newChild(context, true) : context->newObject());
-    listObj->setAttribute(context, PythonEnvironment::getInternalString(context, "__data__"), items->asObject(context));
-    // Ensure it has an iterator
-    if (!listObj->getAttribute(context, PythonEnvironment::getInternalString(context, "__iter__"))) {
-        if (listProto) {
-             const proto::ProtoObject* iterFunc = listProto->getAttribute(context, PythonEnvironment::getInternalString(context, "__iter__"));
-             if (iterFunc) listObj->setAttribute(context, PythonEnvironment::getInternalString(context, "__iter__"), iterFunc);
-        }
-    }
-    return listObj;
+    return wrapInDictView(context, items, "dict_items");
 }
 
 struct KeyCollector {
@@ -9081,7 +9162,7 @@ static const proto::ProtoObject* py_mappingproxy_keys(
         if (attrs) {
             attrs->processElements(context, &s, collectKey);
         }
-        
+
         const proto::ProtoList* keysList = s.keysList;
         // Also check __keys__ if it exists (for moved attributes)
         const proto::ProtoObject* kObj = data->getAttribute(context, env ? env->getKeysString() : PythonEnvironment::getInternedString(context, "__keys__"));
@@ -9092,11 +9173,7 @@ static const proto::ProtoObject* py_mappingproxy_keys(
                 keysList = keysList->appendLast(context, innerKeys->getAt(context, static_cast<int>(i)));
             }
         }
-        
-        const proto::ProtoObject* listProto = env ? env->getListPrototype() : nullptr;
-        proto::ProtoObject* listObj = const_cast<proto::ProtoObject*>(listProto ? listProto->newChild(context, true) : context->newObject());
-        listObj->setAttribute(context, env ? env->getDataString() : PythonEnvironment::getInternedString(context, "__data__"), keysList->asObject(context));
-        return listObj;
+        return wrapInDictView(context, keysList, "dict_keys");
     }
 
     return py_dict_keys(context, data, parentLink, positionalParameters, keywordParameters);
@@ -9154,11 +9231,7 @@ static const proto::ProtoObject* py_mappingproxy_values(
                 s.valuesList = s.valuesList->appendLast(context, v);
             }
         }
-
-        const proto::ProtoObject* listProto = env ? env->getListPrototype() : nullptr;
-        proto::ProtoObject* listObj = const_cast<proto::ProtoObject*>(listProto ? listProto->newChild(context, true) : context->newObject());
-        listObj->setAttribute(context, env ? env->getDataString() : PythonEnvironment::getInternedString(context, "__data__"), s.valuesList->asObject(context));
-        return listObj;
+        return wrapInDictView(context, s.valuesList, "dict_values");
     }
 
     return py_dict_values(context, data, parentLink, positionalParameters, keywordParameters);
@@ -9221,11 +9294,7 @@ static const proto::ProtoObject* py_mappingproxy_items(
                 s.itemsList = s.itemsList->appendLast(context, pairTuple);
             }
         }
-
-        const proto::ProtoObject* listProto = env ? env->getListPrototype() : nullptr;
-        proto::ProtoObject* listObj = const_cast<proto::ProtoObject*>(listProto ? listProto->newChild(context, true) : context->newObject());
-        listObj->setAttribute(context, PythonEnvironment::getInternalString(context, "__data__"), s.itemsList->asObject(context));
-        return listObj;
+        return wrapInDictView(context, s.itemsList, "dict_items");
     }
 
     return py_dict_items(context, data, parentLink, positionalParameters, keywordParameters);
