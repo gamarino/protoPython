@@ -16198,6 +16198,84 @@ const proto::ProtoObject* PythonEnvironment::setAttribute(proto::ProtoContext* c
             raiseTypeError(ctx, msg);
             return nullptr;
         }
+        // CPython rejects __class__ assignment when either the source
+        // or target involves a built-in container/type that's not
+        // layout-compatible with the other side.  Without per-type
+        // layout introspection, the safest CPython-compatible rule is:
+        // reject any __class__ swap whose origin OR destination is a
+        // built-in primitive prototype (list/dict/set/object/type),
+        // and reject swaps between built-in and user classes (heap
+        // type ↔ static type) per CPython's tp_flags check.
+        {
+            const proto::ProtoObject* srcType = getType(ctx, obj);
+            const proto::ProtoObject* dstType = value;
+            auto isBuiltinTypeMarker = [&](const proto::ProtoObject* t) -> bool {
+                if (!t) return false;
+                return t == listPrototype || t == dictPrototype
+                    || t == setPrototype || t == objectPrototype
+                    || t == typePrototype;
+            };
+            bool srcIsBuiltin = isBuiltinTypeMarker(srcType);
+            bool dstIsBuiltin = isBuiltinTypeMarker(dstType);
+            // dst must be a class object at all.  Probe widely so
+            // both heap types (user classes via __is_python_class__),
+            // built-in prototypes (modulePrototype, listPrototype…),
+            // and primitive class markers all qualify.
+            bool dstIsClass = false;
+            if (dstType && dstType != PROTO_NONE) {
+                if (dstType == typePrototype) dstIsClass = true;
+                if (!dstIsClass && isPythonClassString
+                    && dstType->hasOwnAttribute(ctx, isPythonClassString) == PROTO_TRUE) {
+                    dstIsClass = true;
+                }
+                if (!dstIsClass) {
+                    // Built-in prototypes — recognised by identity.
+                    if (dstType == listPrototype || dstType == dictPrototype
+                        || dstType == setPrototype || dstType == frozensetPrototype
+                        || dstType == tuplePrototype || dstType == strPrototype
+                        || dstType == bytesPrototype || dstType == intPrototype
+                        || dstType == floatPrototype || dstType == boolPrototype
+                        || dstType == complexPrototype || dstType == objectPrototype
+                        || dstType == modulePrototype || dstType == nonePrototype
+                        || dstType == methodPrototype) {
+                        dstIsClass = true;
+                    }
+                }
+                // type(dstType) == type also identifies a class.
+                if (!dstIsClass) {
+                    const proto::ProtoObject* meta = getType(ctx, dstType);
+                    if (meta == typePrototype) dstIsClass = true;
+                }
+            }
+            if (!dstIsClass) {
+                std::string msg = "__class__ must be set to a class, not '";
+                if (dstType) {
+                    const proto::ProtoObject* nm = dstType->getAttribute(ctx, getNameString());
+                    std::string n = "?";
+                    if (nm && nm->isString(ctx)) nm->asString(ctx)->toUTF8String(ctx, n);
+                    msg += n;
+                }
+                msg += "' instance";
+                raiseTypeError(ctx, msg);
+                return nullptr;
+            }
+            if (srcIsBuiltin || dstIsBuiltin) {
+                if (srcType != dstType) {
+                    std::string sName = "?", dName = "?";
+                    if (srcType) {
+                        const proto::ProtoObject* nm = srcType->getAttribute(ctx, getNameString());
+                        if (nm && nm->isString(ctx)) nm->asString(ctx)->toUTF8String(ctx, sName);
+                    }
+                    if (dstType) {
+                        const proto::ProtoObject* nm = dstType->getAttribute(ctx, getNameString());
+                        if (nm && nm->isString(ctx)) nm->asString(ctx)->toUTF8String(ctx, dName);
+                    }
+                    raiseTypeError(ctx,
+                        "__class__ assignment: '" + sName + "' object layout differs from '" + dName + "'");
+                    return nullptr;
+                }
+            }
+        }
     }
 
     // CPython: assigning to `obj.__dict__` replaces the instance's
