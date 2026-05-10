@@ -500,7 +500,11 @@ TEST(ExecutionEngineTest, BuildSlice) {
     ASSERT_NE(step, nullptr);
     EXPECT_EQ(start->asLong(&ctx), 1);
     EXPECT_EQ(stop->asLong(&ctx), 4);
-    EXPECT_EQ(step->asLong(&ctx), 1);
+    // CPython BUILD_SLICE(arg=2) sets step to None, NOT 1.  Slice
+    // equality compares the raw triple, so substituting an integer
+    // here would diverge from `slice(1, 4)` constructed via the
+    // slice() builtin and break tuple-of-slice equality.
+    EXPECT_EQ(step, PROTO_NONE);
 }
 
 TEST(ExecutionEngineTest, RotTwo) {

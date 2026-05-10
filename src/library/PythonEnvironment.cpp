@@ -12486,6 +12486,54 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
     sliceType = sliceType->setAttribute(rootContext_, py_call, rootContext_->fromMethod(nullptr, py_slice_call));
     sliceType = sliceType->setAttribute(rootContext_, newString, rootContext_->fromMethod(nullptr, py_slice_call));
     sliceType = sliceType->setAttribute(rootContext_, py_repr, rootContext_->fromMethod(nullptr, py_slice_repr));
+    // CPython: slice equality compares (start, stop, step) tuples; the
+    // identity test that ProtoObject's default __eq__ falls back to
+    // returns False for two freshly-constructed `slice(0, 10)` calls
+    // and breaks `(getitem, slice(...)) == (getitem, slice(...))`.
+    sliceType = sliceType->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "__eq__"),
+        rootContext_->fromMethod(nullptr,
+        +[](proto::ProtoContext* ctx, const proto::ProtoObject* self,
+           const proto::ParentLink*, const proto::ProtoList* args,
+           const proto::ProtoSparseList*) -> const proto::ProtoObject* {
+            if (!args || args->getSize(ctx) < 1) return PROTO_FALSE;
+            PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+            if (!env) return PROTO_FALSE;
+            const proto::ProtoObject* other = args->getAt(ctx, 0);
+            if (!other || other == PROTO_NONE) return PROTO_FALSE;
+            const proto::ProtoObject* otherType = env->getType(ctx, other);
+            if (otherType != env->getSliceType()) return env->getNotImplementedPrototype();
+            const proto::ProtoString* startS = PythonEnvironment::getInternedString(ctx, "start");
+            const proto::ProtoString* stopS = PythonEnvironment::getInternedString(ctx, "stop");
+            const proto::ProtoString* stepS = PythonEnvironment::getInternedString(ctx, "step");
+            auto eqv = [&](const proto::ProtoObject* a, const proto::ProtoObject* b) -> bool {
+                if (a == b) return true;
+                if (!a || !b) return false;
+                const proto::ProtoObject* r = env->binaryOp(a, TokenType::EqEqual, b);
+                return r && env->isTrue(r);
+            };
+            const proto::ProtoObject* sa = self->getAttribute(ctx, startS);
+            const proto::ProtoObject* sb = other->getAttribute(ctx, startS);
+            const proto::ProtoObject* ta = self->getAttribute(ctx, stopS);
+            const proto::ProtoObject* tb = other->getAttribute(ctx, stopS);
+            const proto::ProtoObject* pa = self->getAttribute(ctx, stepS);
+            const proto::ProtoObject* pb = other->getAttribute(ctx, stepS);
+            return (eqv(sa, sb) && eqv(ta, tb) && eqv(pa, pb)) ? PROTO_TRUE : PROTO_FALSE;
+        }));
+    sliceType = sliceType->setAttribute(rootContext_,
+        PythonEnvironment::getInternedString(rootContext_, "__ne__"),
+        rootContext_->fromMethod(nullptr,
+        +[](proto::ProtoContext* ctx, const proto::ProtoObject* self,
+           const proto::ParentLink*, const proto::ProtoList* args,
+           const proto::ProtoSparseList* kwargs) -> const proto::ProtoObject* {
+            PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
+            if (!env) return PROTO_TRUE;
+            const proto::ProtoObject* eqM = self->getAttribute(ctx, PythonEnvironment::getInternedString(ctx, "__eq__"));
+            if (!eqM || !eqM->asMethod(ctx)) return PROTO_TRUE;
+            const proto::ProtoObject* eq = eqM->asMethod(ctx)(ctx, const_cast<proto::ProtoObject*>(self), nullptr, args, kwargs);
+            if (eq == env->getNotImplementedPrototype()) return eq;
+            return (eq == PROTO_TRUE) ? PROTO_FALSE : PROTO_TRUE;
+        }));
 
     floatPrototype = objectPrototype->newChild(rootContext_, true);
     floatPrototype = floatPrototype->setAttribute(rootContext_, py_class, typePrototype);

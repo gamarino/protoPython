@@ -7515,9 +7515,14 @@ const proto::ProtoObject* executeBytecodeRange(
                 stepObj = stack.back();
                 stack.pop_back();
             } else {
-                PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
-                stepObj = env ? env->getOneInteger() : ctx->fromInteger(1);
+                // CPython: `a[i:j]` is `slice(i, j, None)` — step is
+                // None, NOT 1 — and slice equality compares the raw
+                // (start, stop, step) triple, so substituting 1 here
+                // breaks `slice(0,10) == slice(0,10)` for slices that
+                // came from BUILD_SLICE.
+                stepObj = PROTO_NONE;
             }
+            (void)step;
             const proto::ProtoObject* stopObj = stack.back();
             stack.pop_back();
             const proto::ProtoObject* startObj = stack.back();
@@ -7705,6 +7710,56 @@ const proto::ProtoObject* executeBytecodeRange(
                         mobj->setAttribute(ctx, keysS, ctx->newList()->asObject(ctx));
                         i = next_i;
                         continue;
+                    }
+                    // CPython: an OWN __delattr__ on the type's MRO
+                    // intercepts every `del obj.attr`, just like
+                    // __setattr__ intercepts assignment.  Walk the MRO
+                    // (stop at objectPrototype — its default doesn't
+                    // exist as own here) and dispatch the override
+                    // before falling into the data-descriptor / native
+                    // delete paths.  Recursion guard mirrors the
+                    // setAttr depth counter so that
+                    // `def __delattr__(self, n): del self.<other>`
+                    // doesn't loop on the inner del.
+                    if (env) {
+                        static thread_local int delAttrDispatchDepth = 0;
+                        struct DelGuard { int& d; DelGuard(int& d) : d(d) { d++; } ~DelGuard() { d--; } };
+                        if (delAttrDispatchDepth == 0 && !env->isActuallyAClass(ctx, obj)) {
+                            const proto::ProtoObject* objType = env->getType(ctx, obj);
+                            if (objType && objType != PROTO_NONE) {
+                                const proto::ProtoString* delattrS =
+                                    PythonEnvironment::getInternedString(ctx, "__delattr__");
+                                const proto::ProtoObject* mroAttr = objType->getAttribute(ctx, env->getMroString());
+                                const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(ctx) : nullptr;
+                                const proto::ProtoObject* override = nullptr;
+                                if (mroT) {
+                                    for (unsigned long mi = 0; mi < mroT->getSize(ctx); ++mi) {
+                                        const proto::ProtoObject* base = mroT->getAt(ctx, mi);
+                                        if (!base || base == PROTO_NONE) continue;
+                                        if (base == env->getObjectPrototype()) break;
+                                        if (base->hasOwnAttribute(ctx, delattrS) == PROTO_TRUE) {
+                                            override = base->getOwnAttributeDirect(ctx, delattrS);
+                                            break;
+                                        }
+                                    }
+                                }
+                                if (override && override != PROTO_NONE) {
+                                    DelGuard g(delAttrDispatchDepth);
+                                    const proto::ProtoList* args = ctx->newList()
+                                        ->appendLast(ctx, nameS->asObject(ctx));
+                                    if (override->asMethod(ctx)) {
+                                        override->asMethod(ctx)(ctx,
+                                            const_cast<proto::ProtoObject*>(obj), nullptr, args, nullptr);
+                                    } else {
+                                        const proto::ProtoList* selfArgs = ctx->newList()
+                                            ->appendLast(ctx, obj)
+                                            ->appendLast(ctx, nameS->asObject(ctx));
+                                        invokePythonCallable(ctx, override, selfArgs, nullptr);
+                                    }
+                                    continue;
+                                }
+                            }
+                        }
                     }
                     // PH: data-descriptor __delete__ on the type chain.
                     // Mirrors STORE_ATTR's data-descriptor short-circuit:
