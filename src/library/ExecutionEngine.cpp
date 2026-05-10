@@ -7662,6 +7662,40 @@ const proto::ProtoObject* executeBytecodeRange(
                 const proto::ProtoObject* nameObj = names->getAt(ctx, nameIdx);
                 if (nameObj && proto::ProtoObject::isStringTagFast(nameObj)) {
                     const proto::ProtoString* nameS = nameObj->asString(ctx);
+                    // CPython: `del obj.__dict__` resets the instance
+                    // dict to empty but leaves the descriptor in place,
+                    // so subsequent `obj.__dict__` still returns a
+                    // fresh empty dict.  Reuse the well-tested
+                    // `obj.__dict__ = {}` slow path (which validates
+                    // and repopulates __data__/__keys__) to keep the
+                    // semantics aligned.
+                    const proto::ProtoString* dictDunderS = env ? env->getDictDunderString() : nullptr;
+                    if (dictDunderS && (nameS == dictDunderS || nameS->getHash(ctx) == dictDunderS->getHash(ctx))
+                        && obj && obj != PROTO_NONE && env) {
+                        proto::ProtoObject* mobj = const_cast<proto::ProtoObject*>(obj);
+                        // initDictStorage rehydrates __data__ from native
+                        // attrs every time __dict__ is read, so just
+                        // clearing __data__/__keys__ won't stick — we must
+                        // also remove every native instance attribute that
+                        // belongs to the dict (everything except runtime
+                        // bookkeeping slots).
+                        const proto::ProtoString* keysS = env->getKeysString();
+                        const proto::ProtoObject* keysObj = (mobj->hasOwnAttribute(ctx, keysS) == PROTO_TRUE)
+                            ? mobj->getAttribute(ctx, keysS) : nullptr;
+                        const proto::ProtoList* keysList = keysObj ? keysObj->asList(ctx) : nullptr;
+                        if (keysList) {
+                            for (unsigned long ki = 0; ki < keysList->getSize(ctx); ++ki) {
+                                const proto::ProtoObject* k = keysList->getAt(ctx, static_cast<int>(ki));
+                                if (!k || !k->isString(ctx)) continue;
+                                const proto::ProtoString* knm = k->asString(ctx);
+                                mobj->removeAttribute(ctx, knm);
+                            }
+                        }
+                        mobj->setAttribute(ctx, env->getDataString(), ctx->newSparseList()->asObject(ctx));
+                        mobj->setAttribute(ctx, keysS, ctx->newList()->asObject(ctx));
+                        i = next_i;
+                        continue;
+                    }
                     // PH: data-descriptor __delete__ on the type chain.
                     // Mirrors STORE_ATTR's data-descriptor short-circuit:
                     // walk the type's MRO with raw attribute access to
