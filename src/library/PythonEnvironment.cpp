@@ -12472,7 +12472,22 @@ void PythonEnvironment::initializeRootObjects(const std::string& stdLibPath, con
             const proto::ProtoObject* sb = self->getAttribute(ctx, imagS);
             const proto::ProtoObject* oa = nullptr;
             const proto::ProtoObject* ob = nullptr;
-            if (otherType == env->getComplexPrototype()) {
+            // Accept complex (or any subclass) by walking its MRO
+            // for the complex prototype.  Falls back to int/float
+            // promotion otherwise.
+            bool isComplexLike = (otherType == env->getComplexPrototype());
+            if (!isComplexLike && otherType && otherType != PROTO_NONE) {
+                const proto::ProtoObject* mroAttr = otherType->getAttribute(ctx, env->getMroString());
+                const proto::ProtoTuple* mroT = mroAttr ? mroAttr->asTuple(ctx) : nullptr;
+                if (mroT) {
+                    for (unsigned long mi = 0; mi < mroT->getSize(ctx); ++mi) {
+                        if (mroT->getAt(ctx, static_cast<int>(mi)) == env->getComplexPrototype()) {
+                            isComplexLike = true; break;
+                        }
+                    }
+                }
+            }
+            if (isComplexLike) {
                 oa = other->getAttribute(ctx, realS);
                 ob = other->getAttribute(ctx, imagS);
             } else if (other->isInteger(ctx) || other->isFloat(ctx)) {
