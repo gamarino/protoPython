@@ -1858,13 +1858,25 @@ static const proto::ProtoObject* py_object_str(
 
 static const proto::ProtoObject* py_str_call(
     proto::ProtoContext* ctx, const proto::ProtoObject* self, const proto::ParentLink* parentLink,
-    const proto::ProtoList* posArgs, const proto::ProtoSparseList*) {
+    const proto::ProtoList* posArgs, const proto::ProtoSparseList* kwArgs) {
     const proto::ProtoObject* targetCls = posArgs && posArgs->getSize(ctx) > 0 ? posArgs->getAt(ctx, 0) : self;
     const proto::ProtoObject* x = nullptr;
-    if (!posArgs || posArgs->getSize(ctx) <= 1) {
+    // CPython: str(object=..., encoding=..., errors=...) supports
+    // keyword forms.  Pull "object" from kwArgs when no positional
+    // value was supplied.
+    const proto::ProtoObject* kwObject = nullptr;
+    if (kwArgs) {
+        const proto::ProtoString* objKey = PythonEnvironment::getInternedString(ctx, "object");
+        if (kwArgs->has(ctx, objKey->getHash(ctx))) {
+            kwObject = kwArgs->getAt(ctx, objKey->getHash(ctx));
+        }
+    }
+    if ((!posArgs || posArgs->getSize(ctx) <= 1) && !kwObject) {
         x = PythonEnvironment::getInternedString(ctx, "")->asObject(ctx);
     } else {
-        x = posArgs->getAt(ctx, 1);
+        x = (posArgs && posArgs->getSize(ctx) > 1)
+            ? posArgs->getAt(ctx, 1)
+            : kwObject;
         PythonEnvironment* env = PythonEnvironment::fromContext(ctx);
         const proto::ProtoObject* cls = env ? env->getType(ctx, x) : x->getAttribute(ctx, PythonEnvironment::getInternalString(ctx, "__class__"));
         const proto::ProtoString* strS = env ? env->getStrString() : PythonEnvironment::getInternalString(ctx, "__str__");
