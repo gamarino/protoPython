@@ -7894,18 +7894,47 @@ static const proto::ProtoObject* py_str_mod(
             }
         }
 
-        // Collect flags, width, precision to reconstruct snprintf format spec
+        // Collect flags, width, precision to reconstruct snprintf format spec.
+        // Python allows `*` in place of a numeric width or precision —
+        // the value is pulled from the next positional argument and
+        // converted to int.
         std::string fmtFlags;
         while (i < fmt.size() && (fmt[i] == '-' || fmt[i] == '+' || fmt[i] == ' ' || fmt[i] == '0' || fmt[i] == '#'))
             fmtFlags += fmt[i++];
         std::string fmtWidth;
-        while (i < fmt.size() && fmt[i] >= '0' && fmt[i] <= '9')
-            fmtWidth += fmt[i++];
+        if (i < fmt.size() && fmt[i] == '*') {
+            ++i;
+            const proto::ProtoObject* widthArg = getNextArg();
+            long long w = 0;
+            if (widthArg && widthArg->isInteger(context)) {
+                w = widthArg->asLong(context);
+            } else if (widthArg && widthArg->isBoolean(context)) {
+                w = widthArg->asBoolean(context) ? 1 : 0;
+            }
+            if (w < 0) { fmtFlags += '-'; w = -w; }
+            fmtWidth = std::to_string(w);
+        } else {
+            while (i < fmt.size() && fmt[i] >= '0' && fmt[i] <= '9')
+                fmtWidth += fmt[i++];
+        }
         std::string fmtPrec;
         if (i < fmt.size() && fmt[i] == '.') {
             fmtPrec += fmt[i++];
-            while (i < fmt.size() && fmt[i] >= '0' && fmt[i] <= '9')
-                fmtPrec += fmt[i++];
+            if (i < fmt.size() && fmt[i] == '*') {
+                ++i;
+                const proto::ProtoObject* precArg = getNextArg();
+                long long p = 0;
+                if (precArg && precArg->isInteger(context)) {
+                    p = precArg->asLong(context);
+                } else if (precArg && precArg->isBoolean(context)) {
+                    p = precArg->asBoolean(context) ? 1 : 0;
+                }
+                if (p < 0) p = 0;
+                fmtPrec += std::to_string(p);
+            } else {
+                while (i < fmt.size() && fmt[i] >= '0' && fmt[i] <= '9')
+                    fmtPrec += fmt[i++];
+            }
         }
 
         if (i >= fmt.size()) break;
