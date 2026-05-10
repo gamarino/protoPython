@@ -2066,12 +2066,27 @@ static const proto::ProtoObject* py_list_setitem(
     PythonEnvironment* env = PythonEnvironment::fromContext(context);
     const proto::ProtoString* dataName = env ? env->getDataString() : PythonEnvironment::getInternalString(context, "__data__");
     const proto::ProtoObject* data = self->getAttribute(context, dataName);
+    int argOff = 0;
+    // Unbound form: list.__setitem__([1,2,3], slice(1,3), [5,6]) —
+    // self is the list type and positional[0] is the receiver.
+    if ((!data || !data->asList(context))
+        && positionalParameters && positionalParameters->getSize(context) >= 1) {
+        const proto::ProtoObject* candidate = positionalParameters->getAt(context, 0);
+        if (candidate) {
+            const proto::ProtoObject* cd = candidate->getAttribute(context, dataName);
+            if (cd && cd->asList(context)) {
+                self = candidate;
+                data = cd;
+                argOff = 1;
+            }
+        }
+    }
     if (!data || !data->asList(context)) return PROTO_NONE;
     const proto::ProtoList* list = data->asList(context);
-    if (positionalParameters->getSize(context) < 2) return PROTO_NONE;
-    
-    const proto::ProtoObject* indexObj = positionalParameters->getAt(context, 0);
-    const proto::ProtoObject* value = positionalParameters->getAt(context, 1);
+    if (positionalParameters->getSize(context) < static_cast<unsigned long>(argOff + 2)) return PROTO_NONE;
+
+    const proto::ProtoObject* indexObj = positionalParameters->getAt(context, argOff);
+    const proto::ProtoObject* value = positionalParameters->getAt(context, argOff + 1);
     unsigned long size = list->getSize(context);
 
     if (indexObj->isInteger(context)) {
